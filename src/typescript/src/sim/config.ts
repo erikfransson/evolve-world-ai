@@ -51,7 +51,7 @@ export const DEFAULT_CONFIG: SimConfig = {
   world: {
     width: 1600,
     height: 1000,
-    foodDensity: 0.5,
+    foodDensity: 0.7,
     poisonDensity: 0.1,
     respawn: false,
     itemRadius: 4,
@@ -60,10 +60,10 @@ export const DEFAULT_CONFIG: SimConfig = {
   creature: {
     radius: 12,
     startEnergy: 50,
-    livingCost: 1,
-    thrustCost: 2,
-    maxThrust: 120,
-    drag: 1.5,
+    livingCost: 2,
+    thrustCost: 4,
+    maxThrust: 200,
+    drag: 2.5,
     sideDrag: 8,
     maxTurnRate: 3,
     turnDamping: 6,

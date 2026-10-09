@@ -6,6 +6,10 @@ Runs use `npm run headless` with a JSON override merged over `DEFAULT_CONFIG`, p
 
 | Date       | Change from defaults at the time                         | Epoch | Mean gen 0-4 | Mean late          | Best late | Verdict                                   |
 |------------|----------------------------------------------------------|-------|--------------|--------------------|-----------|-------------------------------------------|
+| 2026-10-09 | drag 2.5 + thrust 200 + 2x drain + food 0.7 (D4)         | none  | 26           | 53 (gen 25-29)     | 247       | New default: faster drain, more drag, still learns |
+| 2026-10-09 | drag 2.5 + thrust 200 + 2x drain (D3)                    | none  | 25           | 44 (gen 25-29)     | 137       | Learns slowly                             |
+| 2026-10-09 | 2x drain: living 2, thrust 4 (D2)                        | none  | 24           | 45 (gen 25-29)     | 149       | Halves lifetimes                          |
+| 2026-10-09 | drag 2.5, maxThrust 200 (top speed kept at 80) (D1)      | none  | 53           | 130 (gen 25-29)    | 614       | More drag helps learning                  |
 | 2026-10-09 | uncapped energy storage, poison always kills             | none  | 52           | 90 (gen 25-29)     | 513       | Learns, best life up to 762 s, no idling incentive |
 | 2026-10-09 | creature radius 16, food 0.35                            | none  | 54           | 63 (gen 25-29)     | 228       | Too hard                                  |
 | 2026-10-09 | creature radius 16                                       | none  | 54           | 96 (gen 25-29)     | 346       | Learns slower than radius 12              |
