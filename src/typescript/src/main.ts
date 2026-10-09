@@ -42,13 +42,15 @@ const run: RunState = { phase: "idle", worker: null, config: DEFAULT_CONFIG, lat
 
 // Updated by change events, not read from the DOM every frame.
 const view: ViewOptions = { showAll: true, showRays: true, pov: false };
-let ticksPerFrame = 4;
+let replaySpeed = 4; // simulated seconds per real second
+let tickDebt = 0; // fractional ticks carried between frames
+let lastFrameAt = performance.now();
 
 function readView(): void {
   view.showAll = $<HTMLInputElement>("showAll").checked;
   view.showRays = $<HTMLInputElement>("rays").checked;
   view.pov = $<HTMLInputElement>("pov").checked;
-  ticksPerFrame = Number(document.querySelector<HTMLInputElement>('input[name="speed"]:checked')!.value);
+  replaySpeed = Number(document.querySelector<HTMLInputElement>('input[name="speed"]:checked')!.value);
   renderOverlays();
 }
 
@@ -142,11 +144,19 @@ function togglePause(): void {
   renderControls();
 }
 
-function frame(): void {
+function frame(now: number): void {
   fitCanvas(canvas);
+  // Wall time drives the replay so speed is the same at any refresh rate; long gaps (hidden tab) are capped.
+  const elapsed = Math.min(0.25, Math.max(0, (now - lastFrameAt) / 1000));
+  lastFrameAt = now;
   if (replay.best && run.phase !== "paused") {
-    replay.advance(ticksPerFrame);
+    tickDebt += (elapsed * replaySpeed) / run.config.dt;
+    const ticks = Math.floor(tickDebt);
+    tickDebt -= ticks;
+    replay.advance(ticks);
     if (run.latest && replay.done) loadReplay();
+  } else {
+    tickDebt = 0;
   }
   drawScene(ctx, run.config, replay.episodes, replay.bestIndex, view);
   const best = replay.best;
