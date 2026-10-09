@@ -10,7 +10,7 @@ export type HitKind = typeof HIT_NONE | typeof HIT_FOOD | typeof HIT_POISON | ty
 
 // Brain inputs per ray: closeness, isFood, isPoison, isWall.
 export const RAY_FEATURES = 4;
-// Then energy / maxEnergy, forward speed / top speed, turnRate / maxTurnRate.
+// Then squashed energy 1 - exp(-energy / startEnergy), forward speed / top speed, turnRate / maxTurnRate.
 export const EXTRA_INPUTS = 3;
 // Brain outputs: turn and throttle, both in [-1, 1].
 export const OUTPUT_SIZE = 2;

@@ -4,6 +4,9 @@ import type { SelectionMethod, SimConfig } from "./sim/config.ts";
 import { unpackGenome } from "./sim/protocol.ts";
 import type { GenerationMessage } from "./sim/protocol.ts";
 import { Episode } from "./sim/episode.ts";
+import { HIT_POISON } from "./sim/types.ts";
+import { drawBrain } from "./ui/brainView.ts";
+import { initCard } from "./ui/overlays.ts";
 import { drawScene } from "./ui/render.ts";
 import type { ViewOptions } from "./ui/render.ts";
 
@@ -15,7 +18,17 @@ const settings = $<HTMLFieldSetElement>("settings");
 const startBtn = $<HTMLButtonElement>("start");
 const pauseBtn = $<HTMLButtonElement>("pause");
 const resetBtn = $<HTMLButtonElement>("reset");
+const skipBtn = $<HTMLButtonElement>("skip");
 const setupForm = $<HTMLFormElement>("setup");
+const brainCanvas = $<HTMLCanvasElement>("brainView");
+const brainCtx = brainCanvas.getContext("2d")!;
+const legendCard = $("legendCard");
+const brainCard = $("brainCard");
+const legendRest = $("legendRest");
+const legendPoison = $("legendPoison");
+const narrow = window.matchMedia("(max-width: 700px)").matches;
+initCard(legendCard, "evolve.card.legend", false);
+const brainPanel = initCard(brainCard, "evolve.card.brain", narrow);
 
 const num = (id: string): number => $<HTMLInputElement>(id).valueAsNumber;
 const clamp = (v: number, lo: number, hi: number, fallback: number): number =>
@@ -153,6 +166,7 @@ function onMessage(e: MessageEvent<GenerationMessage>): void {
   const m = e.data;
   if (m.type !== "generation") return;
   latest = m;
+  skipBtn.disabled = false;
   const now = performance.now();
   latestStats = {
     bestEver: m.bestEver,
@@ -199,12 +213,14 @@ function reset(): void {
   pauseBtn.disabled = true;
   pauseBtn.textContent = "Pause";
   resetBtn.disabled = true;
+  skipBtn.disabled = true;
   config = readConfig();
   setStats();
 }
 
 startBtn.onclick = start;
 resetBtn.onclick = reset;
+skipBtn.onclick = buildReplay; // jumps to the newest generation received
 pauseBtn.onclick = () => {
   paused = !paused;
   worker?.postMessage({ type: paused ? "pause" : "resume" });
@@ -271,7 +287,15 @@ function frame(): void {
     for (let t = 0; t < ticks; t++) for (const ep of episodes) if (!ep.done) ep.step();
     if (latest && episodes.every((ep) => ep.done)) buildReplay(); // newest generation, looping if no newer one
   }
-  drawScene(ctx, config, episodes, bestInEpisodes, view());
+  const v = view();
+  drawScene(ctx, config, episodes, bestInEpisodes, v);
+  const best = episodes[bestInEpisodes];
+  legendCard.hidden = brainCard.hidden = !best;
+  if (best) {
+    legendRest.hidden = v.mode !== "all";
+    legendPoison.hidden = !best.world.kinds.subarray(0, best.world.count).includes(HIT_POISON);
+    if (brainPanel.isExpanded()) drawBrain(brainCtx, config, best.brain, best.state.alive);
+  }
   note.textContent = running && !latest ? "Computing generation 0..." : "";
   requestAnimationFrame(frame);
 }

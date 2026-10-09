@@ -80,8 +80,16 @@ export function drawScene(
   }
 
   const r = config.creature.radius;
-  const maxE = config.creature.maxEnergy;
-  const energyRatio = (e: number) => (maxE > 0 ? Math.min(1, Math.max(0, e / maxE)) : 0);
+  const start = config.creature.startEnergy;
+  // Body is full at FULL_AT times the starting energy, so a newborn is one third full.
+  const FULL_AT = 3;
+  const energyRatio = (e: number) => (start > 0 ? Math.min(1, Math.max(0, e / (FULL_AT * start))) : 0);
+  // Hue: red when nearly empty, yellow at the starting level, green from FULL_AT times start.
+  const energyHue = (e: number) => {
+    const q = start > 0 ? e / start : 0;
+    if (q < 1) return 5 + 43 * Math.min(1, Math.max(0, (q - 0.25) / 0.75));
+    return 48 + 82 * Math.min(1, (q - 1) / (FULL_AT - 1));
+  };
   const heading = (s: { x: number; y: number; heading: number }, from: number, to: number) => {
     ctx.moveTo(s.x + Math.cos(s.heading) * from, s.y + Math.sin(s.heading) * from);
     ctx.lineTo(s.x + Math.cos(s.heading) * to, s.y + Math.sin(s.heading) * to);
@@ -107,7 +115,7 @@ export function drawScene(
 
   const drawBest = (ep: EpisodeView) => {
     const s = ep.state;
-    const R = Math.max(r * 3, 12 * px);
+    const R = Math.max(r, 6 * px); // true size so contact on screen matches eating
     const e = energyRatio(s.energy);
     const alive = s.alive;
     if (alive) {
@@ -119,10 +127,10 @@ export function drawScene(
       ctx.fill();
       ctx.clip();
       const top = s.y + R - 2 * R * e;
-      const hue = 5 + 33 * Math.min(1, Math.max(0, (e - 0.1) / 0.6)); // red when low, amber when full
+      const hue = energyHue(s.energy);
       const grad = ctx.createLinearGradient(0, s.y - R, 0, s.y + R);
-      grad.addColorStop(0, `hsl(${hue + 6}, 95%, 62%)`);
-      grad.addColorStop(1, `hsl(${hue}, 90%, ${e < 0.25 ? 45 : 50}%)`);
+      grad.addColorStop(0, `hsl(${hue + 6}, 90%, 62%)`);
+      grad.addColorStop(1, `hsl(${hue}, 85%, 48%)`);
       ctx.fillStyle = grad;
       if (e > 0) ctx.fillRect(s.x - R, top, 2 * R, s.y + R - top);
       if (e > 0.02 && e < 0.98) {
@@ -215,101 +223,4 @@ export function drawScene(
     ctx.fill("evenodd");
   }
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  let hasPoison = false;
-  for (let i = 0; i < w.count; i++) {
-    if (w.kinds[i] === HIT_POISON) {
-      hasPoison = true;
-      break;
-    }
-  }
-  drawLegend(ctx, offsetX, offsetY, view.mode === "all", hasPoison);
 }
-
-function drawLegend(
-  ctx: CanvasRenderingContext2D,
-  originX: number,
-  originY: number,
-  showRest: boolean,
-  showPoison: boolean,
-): void {
-  const cssW = ctx.canvas.clientWidth;
-  const dpr = cssW > 0 && ctx.canvas.width > 0 ? ctx.canvas.width / cssW : 1;
-  // Font grows with the canvas: 2.8% of its CSS height, kept within 18 to 28 CSS px.
-  const cssH = ctx.canvas.clientHeight || ctx.canvas.height / dpr;
-  const fontCss = Math.min(28, Math.max(18, 0.028 * cssH));
-  const k = (dpr * fontCss) / 12;
-  const font = 12 * k;
-  const pad = 7 * k;
-  const rowH = 17 * k;
-  const sw = 14 * k; // swatch cell width
-  const gap = 7 * k;
-  const rows: { label: string; swatch: (cx: number, cy: number) => void }[] = [
-    {
-      label: "Best of generation (fill = energy)",
-      swatch: (cx, cy) => {
-        const R = 5.5 * k;
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(cx, cy, R, 0, Math.PI * 2);
-        ctx.fillStyle = "rgba(15, 23, 20, 0.85)";
-        ctx.fill();
-        ctx.clip();
-        ctx.fillStyle = "hsl(38, 90%, 50%)";
-        ctx.fillRect(cx - R, cy + R - 2 * R * 0.6, 2 * R, 2 * R);
-        ctx.restore();
-        ctx.strokeStyle = "#fde68a";
-        ctx.lineWidth = 1.5 * k;
-        ctx.beginPath();
-        ctx.arc(cx, cy, R, 0, Math.PI * 2);
-        ctx.stroke();
-      },
-    },
-  ];
-  const dot = (color: string) => (cx: number, cy: number) => {
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.arc(cx, cy, 3.5 * k, 0, Math.PI * 2);
-    ctx.fill();
-  };
-  if (showRest) {
-    rows.push({
-      label: "Rest of generation",
-      swatch: (cx, cy) => {
-        ctx.fillStyle = "#7dd3fc";
-        ctx.globalAlpha = 0.08 + 0.3 * 0.6;
-        ctx.beginPath();
-        ctx.arc(cx, cy, 4.5 * k, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.globalAlpha = 1;
-      },
-    });
-  }
-  rows.push({ label: "Food", swatch: dot(FOOD) });
-  if (showPoison) rows.push({ label: "Poison", swatch: dot(POISON) });
-
-  ctx.save();
-  ctx.font = `${font}px system-ui, -apple-system, "Segoe UI", sans-serif`;
-  ctx.textBaseline = "middle";
-  ctx.textAlign = "left";
-  let textW = 0;
-  for (const row of rows) textW = Math.max(textW, ctx.measureText(row.label).width);
-  const panelW = 2 * pad + sw + gap + textW;
-  const panelH = 2 * pad + rows.length * rowH - (rowH - font);
-  const x = originX + 8 * k;
-  const y = originY + 8 * k;
-  ctx.beginPath();
-  ctx.roundRect(x, y, panelW, panelH, 6 * k);
-  ctx.fillStyle = "rgba(8, 20, 15, 0.72)";
-  ctx.fill();
-  ctx.strokeStyle = "rgba(159, 184, 173, 0.35)";
-  ctx.lineWidth = k;
-  ctx.stroke();
-  rows.forEach((row, i) => {
-    const cy = y + pad + font / 2 + i * rowH;
-    row.swatch(x + pad + sw / 2, cy);
-    ctx.fillStyle = "#d6e4dc";
-    ctx.fillText(row.label, x + pad + sw + gap, cy);
-  });
-  ctx.restore();
-}
-

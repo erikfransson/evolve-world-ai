@@ -13,12 +13,10 @@ export interface SimConfig {
     respawn: boolean; // eaten items reappear elsewhere; false makes food finite so lives end naturally
     itemRadius: number;
     foodEnergy: number;
-    poisonEnergy: number; // removed when eaten; above maxEnergy makes poison always lethal
   };
   creature: {
     radius: number;
-    maxEnergy: number;
-    startEnergy: number;
+    startEnergy: number; // no upper limit on stored energy
     livingCost: number; // energy per second
     thrustCost: number; // energy per second at full thrust
     maxThrust: number; // forward acceleration at full thrust, units/s^2; top speed = maxThrust / drag
@@ -58,11 +56,9 @@ export const DEFAULT_CONFIG: SimConfig = {
     respawn: false,
     itemRadius: 4,
     foodEnergy: 20,
-    poisonEnergy: 200,
   },
   creature: {
-    radius: 6,
-    maxEnergy: 100,
+    radius: 12,
     startEnergy: 50,
     livingCost: 1,
     thrustCost: 2,

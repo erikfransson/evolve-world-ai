@@ -51,3 +51,20 @@ describe("brain", () => {
     }
   });
 });
+
+describe("brain activations", () => {
+  test("layerActivations after forward matches input, hidden and output", () => {
+    const genome = new Float32Array([0.5, -1, 0.25, 2, -0.5, 0, 0.1]);
+    const brain = new Brain([2, 1, 2], genome);
+    expect(brain.sizes).toEqual([2, 1, 2]);
+    const input = new Float32Array([1, 0.5]);
+    const out = new Float32Array(2);
+    brain.forward(input, out);
+    const acts = brain.layerActivations();
+    expect(acts.length).toBe(3);
+    expect(acts[0]).toBe(input);
+    expect(acts[2]).toBe(out);
+    expect(acts[1][0]).toBeCloseTo(Math.tanh(0.25), 6);
+    expect(brain.layerActivations()).toBe(acts); // no per-call allocation
+  });
+});

@@ -11,9 +11,9 @@ export class Episode implements EpisodeView {
   readonly state: CreatureState;
   readonly rays: RayHit[];
   readonly world: World;
+  readonly brain: Brain;
 
   private readonly config: SimConfig;
-  private readonly brain: Brain;
   private readonly input: Float32Array;
   private readonly output: Float32Array;
   private readonly offsets: Float32Array;
@@ -63,7 +63,7 @@ export class Episode implements EpisodeView {
       input[k + 3] = ray.kind === HIT_WALL ? 1 : 0;
     }
     const base = rays.length * RAY_FEATURES;
-    input[base] = s.energy / c.maxEnergy;
+    input[base] = 1 - Math.exp(-s.energy / c.startEnergy); // stored energy is unbounded, squash to [0, 1)
     input[base + 1] = ((s.vx * Math.cos(s.heading) + s.vy * Math.sin(s.heading)) * c.drag) / c.maxThrust;
     input[base + 2] = s.turnRate / c.maxTurnRate;
 
@@ -94,8 +94,8 @@ export class Episode implements EpisodeView {
     s.energy -= (c.livingCost + c.thrustCost * thrust) * dt;
 
     const eaten = this.world.eatAt(s.x, s.y, c.radius);
-    if (eaten === HIT_FOOD) s.energy = Math.min(c.maxEnergy, s.energy + w.foodEnergy);
-    else if (eaten === HIT_POISON) s.energy -= w.poisonEnergy;
+    if (eaten === HIT_FOOD) s.energy += w.foodEnergy;
+    else if (eaten === HIT_POISON) s.energy = 0; // poison always kills
 
     if (s.energy <= 0) {
       s.energy = 0;
@@ -107,7 +107,7 @@ export class Episode implements EpisodeView {
 
   fitness(): number {
     const { dt, creature: c } = this.config;
-    return this.state.ticksAlive * dt + (this.state.energy / c.maxEnergy) * dt;
+    return this.state.ticksAlive * dt + (1 - Math.exp(-this.state.energy / c.startEnergy)) * dt;
   }
 }
 

@@ -35,7 +35,7 @@ describe("Episode", () => {
     expect(e.fitness()).toBe(runEpisode(cfg, g, 12, 1));
   });
 
-  it("keeps energy <= maxEnergy and the creature inside the walls", () => {
+  it("keeps energy non-negative and the creature inside the walls", () => {
     const small: SimConfig = { ...cfg, world: { ...cfg.world, width: 200, height: 200, foodDensity: 15 } };
     const r = small.creature.radius;
     for (let seed = 1; seed <= 5; seed++) {
@@ -43,7 +43,7 @@ describe("Episode", () => {
       while (!e.done) {
         e.step();
         const s = e.state;
-        expect(s.energy).toBeLessThanOrEqual(small.creature.maxEnergy);
+        expect(s.energy).toBeGreaterThanOrEqual(0);
         expect(s.x).toBeGreaterThanOrEqual(r);
         expect(s.x).toBeLessThanOrEqual(small.world.width - r);
         expect(s.y).toBeGreaterThanOrEqual(r);

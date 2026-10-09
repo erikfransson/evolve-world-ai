@@ -51,6 +51,7 @@
               <label><input type="radio" name="speed" value="16" /><span>16×</span></label>
             </div>
           </div>
+          <button id="skip" class="secondary skip" type="button" disabled title="Stop this replay and show the newest computed generation">Next generation ⏭</button>
         </section>
 
         <form id="setup" autocomplete="off">
@@ -131,6 +132,25 @@
       <section class="stage">
         <canvas id="view"></canvas>
         <div id="note" class="note"></div>
+        <section id="legendCard" class="ov ov-legend" hidden>
+          <header class="ov-head">
+            <h2>Legend</h2>
+            <button class="ov-toggle" type="button" aria-expanded="true" aria-label="Minimise legend" title="Minimise">−</button>
+          </header>
+          <ul class="ov-body legend">
+            <li><svg viewBox="0 0 20 20" aria-hidden="true"><clipPath id="swClip"><circle cx="10" cy="10" r="8" /></clipPath><circle cx="10" cy="10" r="8" fill="rgba(15, 23, 20, 0.85)" /><rect x="0" y="8.4" width="20" height="12" fill="hsl(38, 90%, 50%)" clip-path="url(#swClip)" /><circle cx="10" cy="10" r="8" fill="none" stroke="#fde68a" stroke-width="1.6" /></svg>Best of generation (fill = energy)</li>
+            <li id="legendRest" hidden><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="6.5" fill="#7dd3fc" fill-opacity="0.26" /></svg>Rest of generation</li>
+            <li><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="5" fill="#4ade80" /></svg>Food</li>
+            <li id="legendPoison" hidden><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="5" fill="#e040fb" /></svg>Poison</li>
+          </ul>
+        </section>
+        <section id="brainCard" class="ov ov-brain" hidden>
+          <header class="ov-head">
+            <h2>Brain</h2>
+            <button class="ov-toggle" type="button" aria-expanded="true" aria-label="Minimise brain" title="Minimise">−</button>
+          </header>
+          <div class="ov-body"><canvas id="brainView"></canvas></div>
+        </section>
       </section>
     </main>
     <script type="module" src="./src/main.ts"></script>

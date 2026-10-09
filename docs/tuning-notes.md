@@ -6,6 +6,11 @@ Runs use `npm run headless` with a JSON override merged over `DEFAULT_CONFIG`, p
 
 | Date       | Change from defaults at the time                         | Epoch | Mean gen 0-4 | Mean late          | Best late | Verdict                                   |
 |------------|----------------------------------------------------------|-------|--------------|--------------------|-----------|-------------------------------------------|
+| 2026-10-09 | uncapped energy storage, poison always kills             | none  | 52           | 90 (gen 25-29)     | 513       | Learns, best life up to 762 s, no idling incentive |
+| 2026-10-09 | creature radius 16, food 0.35                            | none  | 54           | 63 (gen 25-29)     | 228       | Too hard                                  |
+| 2026-10-09 | creature radius 16                                       | none  | 54           | 96 (gen 25-29)     | 346       | Learns slower than radius 12              |
+| 2026-10-09 | creature radius 12, food 0.35                            | none  | 52           | 59 (gen 25-29)     | 251       | Too hard                                  |
+| 2026-10-09 | creature radius 12 (was 6), drawn at true size           | none  | 52           | 119 (gen 25-29)    | 488       | New default, visible and honest contact   |
 | 2026-10-09 | finite food (no respawn), food 0.5, population 150       | none  | 52           | 144 (gen 25-29)    | 519       | Best so far, 3.7 s per late gen, new default |
 | 2026-10-09 | finite food (no respawn), food 0.3                       | none  | 51           | 54 (gen 25-29)     | 249       | Too sparse, no progress                   |
 | 2026-10-09 | finite food (no respawn), food 0.5, population 300       | none  | 51           | 109 (gen 25-29)    | 475       | Learns, no cap saturation, 5.9 s per gen  |
@@ -26,10 +31,11 @@ Runs use `npm run headless` with a JSON override merged over `DEFAULT_CONFIG`, p
 All rows from 2026-10-09 use the fish-like physics.
 
 ## Observations
+- A bigger body does not make foraging easier: it also touches poison more often, so mean survival drops from 144 s (radius 6) to 119 s (12) and 96 s (16).
 - From the finite-food rows on there is no lifetime cap ("none"). Lives end when energy runs out, and a 3600 s safety stop is never reached in practice. Best fitness no longer saturates.
 - Brain inputs now include forward speed and turn rate besides rays and energy.
 - From 2026-10-09 the world is 1600 x 1000 and item amounts are densities (1 = one item per rayLength^2). Food 0.5 and poison 0.1 give 80 and 16 items, similar per-area amounts to the food 40 / poison 20 runs above (50 and 10 per million square units versus 40 and 20).
-- Lethal poison (poisonEnergy above maxEnergy) cuts poison eaten by the top 30 from 0.54 to 0.2 per minute and lowers mean survival, which keeps the max lifetime cap from saturating as fast.
+- Lethal poison (then poisonEnergy above maxEnergy, now poison simply kills) cuts poison eaten by the top 30 from 0.54 to 0.2 per minute and lowers mean survival, which keeps the max lifetime cap from saturating as fast.
 - Best fitness saturates at the epoch cap, so mean fitness is the better progress signal.
 - An evolved creature (food 40, 30 generations) swims smooth looping sweeps across the whole world and survives 300 s, while weak ones curve into a wall and starve.
 - A late generation takes about 10 s to compute because good creatures live the full epoch.

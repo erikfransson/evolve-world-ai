@@ -46,8 +46,8 @@ h1, h2, h3 { margin: 0; }
   scrollbar-width: thin;
   scrollbar-color: var(--border-hi) transparent;
 }
-.stage { flex: 1; min-width: 0; position: relative; }
-.stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; border-radius: 12px; border: 1px solid var(--border); }
+.stage { flex: 1; min-width: 0; position: relative; container-type: size; }
+.stage > canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; border-radius: 12px; border: 1px solid var(--border); }
 .note { position: absolute; left: 0; right: 0; top: 50%; text-align: center; color: var(--muted); pointer-events: none; }
 
 /* run buttons */
@@ -155,6 +155,23 @@ input[type="range"]:disabled { cursor: not-allowed; }
 fieldset:disabled .tip { cursor: help; }
 .tooltip { position: fixed; z-index: 10; max-width: min(16rem, calc(100vw - 16px)); padding: 0.5rem 0.65rem; background: var(--card-hi); color: var(--text); border: 1px solid var(--accent-dim); border-radius: 10px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5); font-size: 0.78rem; font-weight: 400; line-height: 1.4; text-transform: none; letter-spacing: 0; pointer-events: none; }
 
+/* Overlay cards on the world canvas */
+.ov { position: absolute; z-index: 1; display: flex; flex-direction: column; background: color-mix(in srgb, var(--card) 82%, transparent); border: 1px solid color-mix(in srgb, var(--muted) 35%, transparent); border-radius: 12px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.ov[hidden] { display: none; }
+.ov-legend { top: 10px; left: 10px; max-width: calc(100% - 20px); }
+.ov-brain { right: 10px; bottom: 10px; max-width: calc(100% - 20px); }
+.ov-head { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; padding: 0.25rem 0.3rem 0.25rem 0.7rem; }
+.ov-head h2 { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.09em; color: var(--accent); }
+.ov-toggle { width: 1.5rem; height: 1.5rem; padding: 0; display: grid; place-items: center; background: transparent; border: 1px solid transparent; border-radius: 6px; color: var(--muted); font-size: 1rem; line-height: 1; }
+.ov-toggle:hover { color: var(--text); background: var(--card-hi); border-color: var(--border-hi); }
+.ov-body[hidden] { display: none; }
+.legend { list-style: none; margin: 0; padding: 0.15rem 0.8rem 0.6rem; display: flex; flex-direction: column; gap: 0.3em; font-size: clamp(18px, 2.8cqh, 28px); color: #d6e4dc; line-height: 1.2; }
+.legend li { display: flex; align-items: center; gap: 0.45em; }
+.legend li[hidden] { display: none; }
+.legend svg { flex: none; width: 1.1em; height: 1.1em; }
+.ov-brain .ov-body { padding: 0 0.4rem 0.4rem; }
+#brainView { display: block; width: min(300px, calc(100cqw - 2.5rem)); aspect-ratio: 300 / 260; }
+
 @media (max-width: 700px) {
   body { height: auto; min-height: 100%; }
   .layout { flex-direction: column; }
@@ -167,3 +184,5 @@ fieldset:disabled .tip { cursor: help; }
   .layout { padding: 0.6rem; }
   .tile dd { font-size: 1.3rem; }
 }
+
+.skip { width: 100%; margin-top: 12px; }
