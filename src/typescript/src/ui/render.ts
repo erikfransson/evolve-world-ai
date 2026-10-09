@@ -84,11 +84,20 @@ export function drawScene(
   // Body is full at FULL_AT times the starting energy, so a newborn is one third full.
   const FULL_AT = 3;
   const energyRatio = (e: number) => (start > 0 ? Math.min(1, Math.max(0, e / (FULL_AT * start))) : 0);
-  // Hue: red when nearly empty, yellow at the starting level, green from FULL_AT times start.
+  // Hue by fill fraction, linear between stops so colour never jumps: red in the last emergency,
+  // yellow around the starting third, green when full.
+  const HUE_STOPS: [number, number][] = [[0.05, 0], [0.33, 50], [0.6, 62], [1, 125]];
   const energyHue = (e: number) => {
-    const q = start > 0 ? e / start : 0;
-    if (q < 1) return 5 + 43 * Math.min(1, Math.max(0, (q - 0.25) / 0.75));
-    return 48 + 82 * Math.min(1, (q - 1) / (FULL_AT - 1));
+    const f = energyRatio(e);
+    if (f <= HUE_STOPS[0]![0]) return HUE_STOPS[0]![1];
+    for (let i = 1; i < HUE_STOPS.length; i++) {
+      const [f1, h1] = HUE_STOPS[i]!;
+      if (f <= f1) {
+        const [f0, h0] = HUE_STOPS[i - 1]!;
+        return h0 + ((h1 - h0) * (f - f0)) / (f1 - f0);
+      }
+    }
+    return HUE_STOPS[HUE_STOPS.length - 1]![1];
   };
   const heading = (s: { x: number; y: number; heading: number }, from: number, to: number) => {
     ctx.moveTo(s.x + Math.cos(s.heading) * from, s.y + Math.sin(s.heading) * from);
