@@ -7,3 +7,7 @@
 * `tests/` tests for all code
 
 ## What this is
+A live evolution simulation that runs in the browser: press Start and watch creatures evolve.
+The same TypeScript simulation also runs headless (Node) for batch runs, analysed in Python.
+
+Live page: https://erikfransson.github.io/evolve-world-ai/ (GitHub Pages, rebuilt on every push to `main`).
