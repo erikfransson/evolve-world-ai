@@ -38,13 +38,7 @@
 
         <section class="card">
           <h2>View</h2>
-          <div class="field">
-            <div class="row"><span class="lbl"><span class="name">Mode</span><span class="tip" tabindex="0" role="img" aria-label="Watch every creature of the generation at once, or only the best one." data-tip="Watch every creature of the generation at once, or only the best one.">ⓘ</span></span></div>
-            <div class="seg" role="radiogroup" aria-label="Creatures shown">
-            <label><input type="radio" name="mode" value="all" checked /><span>All creatures</span></label>
-            <label><input type="radio" name="mode" value="best" /><span>Best only</span></label>
-            </div>
-          </div>
+          <div class="toggle"><span class="lbl"><label class="name" for="showAll">Show all creatures</label><span class="tip" tabindex="0" role="img" aria-label="Show every creature of the generation at once. When off, only the best one is shown." data-tip="Show every creature of the generation at once. When off, only the best one is shown.">ⓘ</span></span><input id="showAll" type="checkbox" role="switch" checked /></div>
           <div class="toggle"><span class="lbl"><label class="name" for="rays">Show rays</label><span class="tip" tabindex="0" role="img" aria-label="Draw the best creature's vision rays, coloured by what they hit." data-tip="Draw the best creature's vision rays, coloured by what they hit.">ⓘ</span></span><input id="rays" type="checkbox" role="switch" checked /></div>
           <div class="toggle"><span class="lbl"><label class="name" for="pov">Creature point of view</label><span class="tip" tabindex="0" role="img" aria-label="Darken everything the best creature cannot see." data-tip="Darken everything the best creature cannot see.">ⓘ</span></span><input id="pov" type="checkbox" role="switch" /></div>
           <div class="field">

@@ -107,7 +107,7 @@ export function drawScene(
 
   const drawBest = (ep: EpisodeView) => {
     const s = ep.state;
-    const R = Math.max(r * 1.8, 7 * px);
+    const R = Math.max(r * 3, 12 * px);
     const e = energyRatio(s.energy);
     const alive = s.alive;
     if (alive) {

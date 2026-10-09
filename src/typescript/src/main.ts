@@ -116,7 +116,7 @@ let replayGen = -1;
 
 function view(): ViewOptions {
   return {
-    mode: radio("mode") as "all" | "best",
+    mode: $<HTMLInputElement>("showAll").checked ? "all" : "best",
     showRays: $<HTMLInputElement>("rays").checked,
     pov: $<HTMLInputElement>("pov").checked,
   };
@@ -127,14 +127,10 @@ function buildReplay(): void {
   if (!latest) return;
   const { result, genomes, genomeLength } = latest;
   const slice = (i: number) => unpackGenome(genomes, genomeLength, i);
-  if (view().mode === "best") {
-    episodes = [new Episode(config, slice(result.bestIndex), result.layoutSeed, result.bestIndex)];
-    bestInEpisodes = 0;
-  } else {
-    const n = result.fitness.length;
-    for (let i = 0; i < n; i++) episodes.push(new Episode(config, slice(i), result.layoutSeed, i));
-    bestInEpisodes = result.bestIndex;
-  }
+  // Always replay every creature so switching the view never restarts the replay.
+  const n = result.fitness.length;
+  for (let i = 0; i < n; i++) episodes.push(new Episode(config, slice(i), result.layoutSeed, i));
+  bestInEpisodes = result.bestIndex;
   replayGen = result.generation;
   $("statReplay").textContent = String(replayGen);
 }
@@ -214,7 +210,6 @@ pauseBtn.onclick = () => {
   worker?.postMessage({ type: paused ? "pause" : "resume" });
   pauseBtn.textContent = paused ? "Resume" : "Pause";
 };
-document.querySelectorAll('input[name="mode"]').forEach((el) => el.addEventListener("change", buildReplay));
 setupForm.addEventListener("input", (e) => {
   if ((e.target as HTMLInputElement).type === "range") syncSlider(e.target as HTMLInputElement);
   syncItemHints();
