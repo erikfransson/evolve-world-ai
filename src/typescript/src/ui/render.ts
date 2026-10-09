@@ -152,13 +152,18 @@ export function drawScene(
       }
       ctx.restore();
     }
-    // Outline ring with glow.
+    // Thin dark line separates the fill from the light outline ring, which glows softly.
     ctx.save();
-    ctx.strokeStyle = alive ? "#fde68a" : "#9ca3af";
+    ctx.strokeStyle = "rgba(5, 15, 10, 0.9)";
+    ctx.lineWidth = 1.2 * px;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, R - 1.2 * px, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = alive ? "#eef5f1" : "#9ca3af";
     ctx.lineWidth = 1.6 * px;
     if (alive) {
-      ctx.shadowColor = "rgba(251, 191, 36, 0.9)";
-      ctx.shadowBlur = 10;
+      ctx.shadowColor = "rgba(255, 255, 255, 0.55)";
+      ctx.shadowBlur = 8;
     }
     ctx.beginPath();
     ctx.arc(s.x, s.y, R, 0, Math.PI * 2);
@@ -170,7 +175,7 @@ export function drawScene(
     const base = R + 1.5 * px;
     const tip = R + 6 * px;
     const hw = 3.5 * px;
-    ctx.fillStyle = alive ? "#fde68a" : "#9ca3af";
+    ctx.fillStyle = alive ? "#eef5f1" : "#9ca3af";
     ctx.beginPath();
     ctx.moveTo(s.x + cs * tip, s.y + sn * tip);
     ctx.lineTo(s.x + cs * base - sn * hw, s.y + sn * base + cs * hw);
