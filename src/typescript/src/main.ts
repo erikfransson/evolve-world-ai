@@ -144,7 +144,7 @@ function togglePause(): void {
 
 function frame(): void {
   fitCanvas(canvas);
-  if (replay.best) {
+  if (replay.best && run.phase !== "paused") {
     replay.advance(ticksPerFrame);
     if (run.latest && replay.done) loadReplay();
   }
