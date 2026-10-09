@@ -57,7 +57,7 @@ describe("nextGeneration", () => {
     expect(out.every((g) => g.every(Number.isFinite))).toBe(true);
   });
 
-  it.each<SelectionMethod>(["truncation", "proportional", "tournament"])("runs %s", (selection) => {
+  it.each<SelectionMethod>(["truncation", "proportional"])("runs %s", (selection) => {
     const { pop, fitness } = makePop();
     const out = nextGeneration(pop, fitness, { ...base, selection }, testRng());
     expect(out.length).toBe(N);

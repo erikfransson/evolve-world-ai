@@ -39,18 +39,6 @@ export const SELECTION_PICKERS: Record<SelectionMethod, PickerFactory> = {
       return lo;
     };
   },
-  tournament: (fitness, order, ga, rng) => {
-    const n = order.length;
-    const k = Math.max(1, Math.round(ga.tournamentSize));
-    return () => {
-      let best = rng.int(n);
-      for (let j = 1; j < k; j++) {
-        const c = rng.int(n);
-        if (fitness[c] > fitness[best]) best = c;
-      }
-      return best;
-    };
-  },
 };
 
 export function nextGeneration(

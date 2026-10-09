@@ -37,7 +37,7 @@ A genetic algorithm evolves the networks over generations while the user watches
 ## Genetic algorithm starting point
 - Fitness is how long the creature survives, so finding food and avoiding poison pay off through energy.
 - A generation ends when every creature is out of energy. There is no lifetime cap, food is finite instead.
-- Selection is pluggable so we can play with it later, e.g. top 10% breed the rest, fitness-proportional, tournament.
+- Selection is pluggable so we can play with it later, e.g. top 10% breed the rest, or fitness-proportional.
 - The best few are copied unchanged into the next generation.
 - Children get mixed weights from two parents plus small random mutations.
 

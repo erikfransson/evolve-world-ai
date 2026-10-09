@@ -233,7 +233,8 @@ function drawLegend(
   showPoison: boolean,
 ): void {
   const cssW = ctx.canvas.clientWidth;
-  const k = cssW > 0 ? ctx.canvas.width / cssW : 1;
+  const LEGEND_SCALE = 1.6; // legend size relative to its original 12px design
+  const k = (cssW > 0 ? ctx.canvas.width / cssW : 1) * LEGEND_SCALE;
   const font = 12 * k;
   const pad = 7 * k;
   const rowH = 17 * k;

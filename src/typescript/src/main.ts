@@ -239,6 +239,9 @@ document.addEventListener("mouseover", (e) => { const t = tipOf(e.target); if (t
 document.addEventListener("mouseout", (e) => { if (tipOf(e.target)) hideTip(); });
 document.addEventListener("focusin", (e) => { const t = tipOf(e.target); if (t) showTip(t); });
 document.addEventListener("focusout", (e) => { if (tipOf(e.target)) hideTip(); });
+// Enter in a field would otherwise submit the form and reload the page, losing all settings.
+$<HTMLFormElement>("setup").addEventListener("submit", (e) => e.preventDefault());
+
 document.addEventListener("click", (e) => {
   const t = tipOf(e.target);
   if (t && t !== tipOwner) showTip(t); // tap on touch

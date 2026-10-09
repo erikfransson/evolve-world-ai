@@ -1,6 +1,6 @@
 // All tunable values of a run. Units: world units, seconds, energy points.
 
-export type SelectionMethod = "truncation" | "proportional" | "tournament";
+export type SelectionMethod = "truncation" | "proportional";
 
 export interface SimConfig {
   seed: number;
@@ -41,7 +41,6 @@ export interface SimConfig {
     selection: SelectionMethod;
     eliteFraction: number; // copied unchanged
     parentFraction: number; // truncation: top fraction allowed to breed
-    tournamentSize: number;
     crossover: boolean; // uniform crossover between two parents
     mutationRate: number; // probability per gene
     mutationStd: number; // std of Gaussian added to a mutated gene
@@ -82,7 +81,6 @@ export const DEFAULT_CONFIG: SimConfig = {
     selection: "truncation",
     eliteFraction: 0.02,
     parentFraction: 0.1,
-    tournamentSize: 3,
     crossover: true,
     mutationRate: 0.05,
     mutationStd: 0.3,
