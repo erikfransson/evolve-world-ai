@@ -32,6 +32,7 @@ function brute(w: World, config: SimConfig, x: number, y: number, a: number): Ra
     kind = HIT_WALL;
   }
   for (let i = 0; i < w.count; i++) {
+    if (w.kinds[i] === HIT_NONE) continue;
     const fx = w.xs[i] - x;
     const fy = w.ys[i] - y;
     const b = fx * dx + fy * dy;
@@ -108,8 +109,9 @@ describe("World", () => {
     expect(out.kind).toBe(HIT_NONE);
   });
 
-  it("eatAt returns the kind and moves the item", () => {
+  it("eatAt with respawn returns the kind and moves the item", () => {
     const c = cfg();
+    c.world.respawn = true;
     const w = emptyWorld(c);
     w.setItem(3, 300, 300, HIT_FOOD);
     w.setItem(itemCounts(c).food, 600, 600, HIT_POISON);
@@ -121,8 +123,22 @@ describe("World", () => {
     expect(w.eatAt(600, 600, c.creature.radius)).toBe(HIT_POISON);
   });
 
-  it("grid results match brute force over random rays and after respawns", () => {
+  it("eatAt without respawn removes the item for good", () => {
     const c = cfg();
+    c.world.respawn = false;
+    const w = emptyWorld(c);
+    w.setItem(3, 300, 300, HIT_FOOD);
+    expect(w.eatAt(305, 300, c.creature.radius)).toBe(HIT_FOOD);
+    expect(w.kinds[3]).toBe(HIT_NONE);
+    expect(w.eatAt(305, 300, c.creature.radius)).toBe(HIT_NONE);
+    const out: RayHit = { closeness: 0, kind: HIT_NONE };
+    w.castRay(250, 300, 0, out);
+    expect(out.kind).toBe(HIT_NONE);
+  });
+
+  it.each([true, false])("grid results match brute force over random rays and after eating (respawn %s)", (respawn) => {
+    const c = cfg();
+    c.world.respawn = respawn;
     const w = new World(c, testRng(7), testRng(8));
     const rng = testRng(11);
     const out: RayHit = { closeness: 0, kind: HIT_NONE };

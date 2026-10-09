@@ -25,7 +25,6 @@ const clamp = (v: number, lo: number, hi: number, fallback: number): number =>
 const formats: Record<string, (v: number) => string> = {
   size: (v) => `${v}`,
   deg: (v) => `${v}°`,
-  sec: (v) => `${v} s`,
   pct: (v) => `${Math.round(v * 100)}%`,
   dens: (v) => v.toFixed(2),
 };
@@ -60,7 +59,7 @@ function fillForm(c: SimConfig): void {
   $<HTMLInputElement>("foodDensity").value = String(c.world.foodDensity);
   $<HTMLInputElement>("poisonDensity").value = String(c.world.poisonDensity);
   $<HTMLInputElement>("popSize").value = String(c.population.size);
-  $<HTMLInputElement>("epochSeconds").value = String(c.population.epochSeconds);
+  $<HTMLInputElement>("respawn").checked = c.world.respawn;
   $<HTMLInputElement>("mutationRate").value = String(c.ga.mutationRate);
   $<HTMLInputElement>("layers").value = String(c.brain.hiddenLayers.length);
   $<HTMLInputElement>("rayCount").value = String(c.creature.rayCount);
@@ -83,6 +82,7 @@ function readConfig(): SimConfig {
       height: clamp(num("worldHeight"), 200, 3000, d.world.height),
       foodDensity: clamp(num("foodDensity"), 0, 1, d.world.foodDensity),
       poisonDensity: clamp(num("poisonDensity"), 0, 1, d.world.poisonDensity),
+      respawn: $<HTMLInputElement>("respawn").checked,
     },
     creature: {
       ...d.creature,
@@ -92,7 +92,7 @@ function readConfig(): SimConfig {
     brain: { hiddenLayers: new Array<number>(layers).fill(neurons) },
     population: {
       size: Math.round(clamp(num("popSize"), 4, 2000, d.population.size)),
-      epochSeconds: clamp(num("epochSeconds"), 5, 1000, d.population.epochSeconds),
+      epochSeconds: d.population.epochSeconds,
     },
     ga: {
       ...d.ga,
@@ -108,7 +108,8 @@ let config: SimConfig = DEFAULT_CONFIG;
 let running = false;
 let paused = false;
 let latest: GenerationMessage | null = null;
-let latestStats = { bestEver: 0, best: 0, mean: 0, generation: 0, reached: 0 };
+let latestStats = { bestEver: 0, best: 0, mean: 0, generation: 0, compute: 0 };
+let lastMessageAt = 0;
 let episodes: Episode[] = [];
 let bestInEpisodes = 0;
 let replayGen = -1;
@@ -148,7 +149,7 @@ function setStats(): void {
   sec("statBestEver", latest ? latestStats.bestEver : null);
   sec("statBest", latest ? latestStats.best : null);
   sec("statMean", latest ? latestStats.mean : null);
-  $("statLimit").textContent = latest ? `${Math.round(latestStats.reached * 100)}%` : "-";
+  sec("statCompute", latest ? latestStats.compute : null);
   if (!latest) $("statReplay").textContent = "-";
 }
 
@@ -156,17 +157,15 @@ function onMessage(e: MessageEvent<GenerationMessage>): void {
   const m = e.data;
   if (m.type !== "generation") return;
   latest = m;
-  const fit = m.result.fitness;
-  const limit = config.population.epochSeconds - 1e-6;
-  let reached = 0;
-  for (let i = 0; i < fit.length; i++) if (fit[i]! >= limit) reached++;
+  const now = performance.now();
   latestStats = {
     bestEver: m.bestEver,
     best: m.result.bestFitness,
     mean: m.result.meanFitness,
     generation: m.result.generation,
-    reached: fit.length > 0 ? reached / fit.length : 0,
+    compute: (now - lastMessageAt) / 1000,
   };
+  lastMessageAt = now;
   setStats();
   if (episodes.length === 0) buildReplay();
 }
@@ -186,6 +185,7 @@ function start(): void {
   resetBtn.disabled = false;
   worker = new Worker(new URL("./ui/simWorker.ts", import.meta.url), { type: "module" });
   worker.onmessage = onMessage;
+  lastMessageAt = performance.now();
   worker.postMessage({ type: "start", config });
   setStats();
 }

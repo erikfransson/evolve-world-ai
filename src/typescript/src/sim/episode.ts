@@ -62,7 +62,10 @@ export class Episode implements EpisodeView {
       input[k + 2] = ray.kind === HIT_POISON ? 1 : 0;
       input[k + 3] = ray.kind === HIT_WALL ? 1 : 0;
     }
-    input[rays.length * RAY_FEATURES] = s.energy / c.maxEnergy;
+    const base = rays.length * RAY_FEATURES;
+    input[base] = s.energy / c.maxEnergy;
+    input[base + 1] = ((s.vx * Math.cos(s.heading) + s.vy * Math.sin(s.heading)) * c.drag) / c.maxThrust;
+    input[base + 2] = s.turnRate / c.maxTurnRate;
 
     this.brain.forward(input, this.output);
     const thrust = Math.max(0, this.output[1]);

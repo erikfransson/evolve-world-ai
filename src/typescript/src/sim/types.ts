@@ -8,8 +8,10 @@ export const HIT_POISON = 2;
 export const HIT_WALL = 3;
 export type HitKind = typeof HIT_NONE | typeof HIT_FOOD | typeof HIT_POISON | typeof HIT_WALL;
 
-// Brain inputs per ray: closeness, isFood, isPoison, isWall. Then one energy input (energy / maxEnergy).
+// Brain inputs per ray: closeness, isFood, isPoison, isWall.
 export const RAY_FEATURES = 4;
+// Then energy / maxEnergy, forward speed / top speed, turnRate / maxTurnRate.
+export const EXTRA_INPUTS = 3;
 // Brain outputs: turn and throttle, both in [-1, 1].
 export const OUTPUT_SIZE = 2;
 

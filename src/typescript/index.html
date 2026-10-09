@@ -32,7 +32,7 @@
           <div class="tile accent"><dt>Best so far<span class="tip" tabindex="0" role="img" aria-label="Longest survival time seen in any generation." data-tip="Longest survival time seen in any generation.">ⓘ</span></dt><dd id="statBestEver" data-unit=" s">-</dd></div>
           <div class="tile"><dt>Last best<span class="tip" tabindex="0" role="img" aria-label="Longest and average survival time in the most recent generation." data-tip="Longest and average survival time in the most recent generation.">ⓘ</span></dt><dd id="statBest" data-unit=" s">-</dd></div>
           <div class="tile"><dt>Last mean<span class="tip" tabindex="0" role="img" aria-label="Longest and average survival time in the most recent generation." data-tip="Longest and average survival time in the most recent generation.">ⓘ</span></dt><dd id="statMean" data-unit=" s">-</dd></div>
-          <div class="tile"><dt>Reached limit<span class="tip" tabindex="0" role="img" aria-label="Share of the last generation that survived the whole max lifetime. If this is high, raise the max lifetime or make the world harder." data-tip="Share of the last generation that survived the whole max lifetime. If this is high, raise the max lifetime or make the world harder.">ⓘ</span></dt><dd id="statLimit">-</dd></div>
+          <div class="tile"><dt>Compute time<span class="tip" tabindex="0" role="img" aria-label="Real time the last generation took to compute. Longer lives make longer generations." data-tip="Real time the last generation took to compute. Longer lives make longer generations.">ⓘ</span></dt><dd id="statCompute">-</dd></div>
           <div class="tile"><dt>Replaying gen<span class="tip" tabindex="0" role="img" aria-label="Which generation is being shown on the canvas." data-tip="Which generation is being shown on the canvas.">ⓘ</span></dt><dd id="statReplay">-</dd></div>
         </dl>
 
@@ -90,6 +90,7 @@
                 <div class="row"><span class="lbl"><label class="name" for="poisonDensity">Poison density</label><span class="tip" tabindex="0" role="img" aria-label="How much poison there is, on the same scale as food. 0 turns poison off." data-tip="How much poison there is, on the same scale as food. 0 turns poison off.">ⓘ</span></span><span class="vals"><span class="hint" id="poisonItems"></span><output for="poisonDensity" data-fmt="dens"></output></span></div>
                 <input id="poisonDensity" type="range" min="0" max="1" step="0.01" />
               </div>
+              <div class="toggle"><span class="lbl"><label class="name" for="respawn">Food regrows</label><span class="tip" tabindex="0" role="img" aria-label="When on, eaten food reappears elsewhere, so a skilled creature can live very long. When off, food is limited and every life ends." data-tip="When on, eaten food reappears elsewhere, so a skilled creature can live very long. When off, food is limited and every life ends.">ⓘ</span></span><input id="respawn" type="checkbox" role="switch" /></div>
             </section>
 
             <section class="card">
@@ -117,10 +118,6 @@
               <div class="field">
                 <div class="row"><span class="lbl"><label class="name" for="popSize">Population</label><span class="tip" tabindex="0" role="img" aria-label="How many creatures are tested in each generation." data-tip="How many creatures are tested in each generation.">ⓘ</span></span><output for="popSize"></output></div>
                 <input id="popSize" type="range" min="4" max="1000" step="1" />
-              </div>
-              <div class="field">
-                <div class="row"><span class="lbl"><label class="name" for="epochSeconds">Max lifetime</label><span class="tip" tabindex="0" role="img" aria-label="Each generation stops after this many simulated seconds. Creatures still alive then all get the top score." data-tip="Each generation stops after this many simulated seconds. Creatures still alive then all get the top score.">ⓘ</span></span><output for="epochSeconds" data-fmt="sec"></output></div>
-                <input id="epochSeconds" type="range" min="5" max="600" step="1" />
               </div>
               <div class="field">
                 <div class="row"><span class="lbl"><label class="name" for="mutationRate">Mutation rate</label><span class="tip" tabindex="0" role="img" aria-label="Chance that each number in a child's brain is randomly nudged." data-tip="Chance that each number in a child's brain is randomly nudged.">ⓘ</span></span><output for="mutationRate" data-fmt="pct"></output></div>

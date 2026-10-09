@@ -15,16 +15,16 @@ A genetic algorithm evolves the networks over generations while the user watches
 |------------|-----------------------------------------------------------------------------------------------------|
 | Evolution  | Generational: run an epoch, score each creature, breed the next generation, reset the world         |
 | Vision     | 8 rays spread over about 75 degrees, length about 10% of the screen at default zoom                |
-| Ray input  | Per ray, closeness (0 to 1) and what was hit (food, poison, wall)                                    |
+| Ray input  | Per ray, closeness (0 to 1) and what was hit (food, poison, wall), plus energy, speed and turn rate  |
 | Brain      | Inputs, then 1 to 4 hidden layers of 4 to 32 neurons, then outputs for turn and thrust              |
-| World      | Large 2D box with solid walls, eaten food and poison respawn at a random spot, poison optional      |
+| World      | 1600 x 1000 box with solid walls, food and poison given as densities, eaten items are gone (optional regrowth) |
 | Layout     | Same layout for every creature in a generation, new layout each generation                          |
 | Isolation  | Each creature lives alone in its own copy of the world, so a generation can be simulated in parallel |
 | Watching   | The worker computes a generation fast, the page replays it by re-running from the seed            |
 | Energy     | Start at half of max energy (max 100), constant cost for being alive, cost proportional to thrust   |
 | Movement   | Fish-like: thrust forward against drag, high sideways drag, smoothed turning                        |
 | Food       | Eating food gives about +20 energy                                                                  |
-| Poison     | Eating poison removes about 30 to 40 energy                                                         |
+| Poison     | Eating poison removes 200 energy, so it is always lethal                                            |
 | Engine     | Fixed timestep and seeded randomness, simulation code separate from drawing, runs in a Web Worker  |
 | Headless   | The same simulation runs under Node for batch runs, with results analysed in Python               |
 
@@ -36,7 +36,7 @@ A genetic algorithm evolves the networks over generations while the user watches
 
 ## Genetic algorithm starting point
 - Fitness is how long the creature survives, so finding food and avoiding poison pay off through energy.
-- An epoch ends after a fixed time or when every creature is out of energy.
+- A generation ends when every creature is out of energy. There is no lifetime cap, food is finite instead.
 - Selection is pluggable so we can play with it later, e.g. top 10% breed the rest, fitness-proportional, tournament.
 - The best few are copied unchanged into the next generation.
 - Children get mixed weights from two parents plus small random mutations.
@@ -67,3 +67,4 @@ A genetic algorithm evolves the networks over generations while the user watches
 - 2026-10-09: fitness changed to survival time with an energy budget, added viewing modes.
 - 2026-10-09: creatures live in separate world copies, compute fast then replay, new layout each generation, pluggable selection.
 - 2026-10-09: fish-like physics with drag, outputs are turn and thrust. Tuning log in `docs/tuning-notes.md`.
+- 2026-10-09: no lifetime cap, finite food, lethal poison, densities, brain also sees speed and turn rate.

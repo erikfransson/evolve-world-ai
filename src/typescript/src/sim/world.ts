@@ -14,6 +14,7 @@ export class World implements WorldView {
   private readonly itemRadius: number;
   private readonly rayLength: number;
   private readonly respawnRng: Rng;
+  private readonly respawn: boolean;
   // Uniform grid as per-cell linked lists: cellHead[c] -> item -> nextItem[item] -> -1.
   private readonly cell: number;
   private readonly cols: number;
@@ -29,6 +30,7 @@ export class World implements WorldView {
     this.itemRadius = w.itemRadius;
     this.rayLength = config.creature.rayLength;
     this.respawnRng = respawnRng;
+    this.respawn = w.respawn;
     const counts = itemCounts(config);
     this.count = counts.food + counts.poison;
     this.xs = new Float32Array(this.count);
@@ -177,12 +179,12 @@ export class World implements WorldView {
           if (fx * fx + fy * fy < reach2) {
             const kind = this.kinds[i] as HitKind;
             const r = this.itemRadius;
-            this.setItem(
-              i,
-              this.respawnRng.range(r, this.width - r),
-              this.respawnRng.range(r, this.height - r),
-              kind,
-            );
+            if (this.respawn) {
+              this.setItem(i, this.respawnRng.range(r, this.width - r), this.respawnRng.range(r, this.height - r), kind);
+            } else {
+              this.unlink(i);
+              this.kinds[i] = HIT_NONE;
+            }
             return kind;
           }
         }

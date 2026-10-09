@@ -10,6 +10,7 @@ export interface SimConfig {
     height: number;
     foodDensity: number; // 0 none, 1 about one item per rayLength x rayLength area
     poisonDensity: number; // same scale as foodDensity
+    respawn: boolean; // eaten items reappear elsewhere; false makes food finite so lives end naturally
     itemRadius: number;
     foodEnergy: number;
     poisonEnergy: number; // removed when eaten; above maxEnergy makes poison always lethal
@@ -34,7 +35,7 @@ export interface SimConfig {
   };
   population: {
     size: number;
-    epochSeconds: number;
+    epochSeconds: number; // safety stop only, normally lives end when energy runs out
   };
   ga: {
     selection: SelectionMethod;
@@ -55,6 +56,7 @@ export const DEFAULT_CONFIG: SimConfig = {
     height: 1000,
     foodDensity: 0.5,
     poisonDensity: 0.1,
+    respawn: false,
     itemRadius: 4,
     foodEnergy: 20,
     poisonEnergy: 200,
@@ -75,7 +77,7 @@ export const DEFAULT_CONFIG: SimConfig = {
     rayLength: 100,
   },
   brain: { hiddenLayers: [16] },
-  population: { size: 300, epochSeconds: 300 },
+  population: { size: 150, epochSeconds: 3600 },
   ga: {
     selection: "truncation",
     eliteFraction: 0.02,
