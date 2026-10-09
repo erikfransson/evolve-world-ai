@@ -7,6 +7,64 @@
   </head>
   <body>
     <header class="banner"><h1>Evolve World</h1></header>
+    <main class="layout">
+      <aside class="panel">
+        <form id="setup" class="fields" autocomplete="off">
+          <fieldset id="settings">
+            <legend>Settings</legend>
+            <label>Seed <input id="seed" type="number" step="1" /></label>
+            <label>World size <input id="worldSize" type="number" min="200" max="5000" step="50" /></label>
+            <label>Food count <input id="foodCount" type="number" min="0" max="2000" step="10" /></label>
+            <label class="check"><input id="poisonOn" type="checkbox" /> Poison</label>
+            <label>Poison count <input id="poisonCount" type="number" min="0" max="2000" step="10" /></label>
+            <label>Population <input id="popSize" type="number" min="4" max="2000" step="10" /></label>
+            <label>Epoch seconds <input id="epochSeconds" type="number" min="5" max="1000" step="5" /></label>
+            <label>Mutation rate <input id="mutationRate" type="number" min="0" max="1" step="0.01" /></label>
+            <label>Hidden layers <input id="layers" type="number" min="1" max="4" step="1" /></label>
+            <label>Neurons per layer <input id="neurons" type="number" min="4" max="32" step="1" /></label>
+            <label>Selection
+              <select id="selection">
+                <option value="truncation">Truncation</option>
+                <option value="proportional">Proportional</option>
+                <option value="tournament">Tournament</option>
+              </select>
+            </label>
+          </fieldset>
+        </form>
+        <div class="buttons">
+          <button id="start" type="button">Start</button>
+          <button id="pause" type="button" disabled>Pause</button>
+          <button id="reset" type="button" disabled>Reset</button>
+        </div>
+        <dl class="stats">
+          <dt>Generation</dt><dd id="statGen">-</dd>
+          <dt>Best so far</dt><dd id="statBestEver">-</dd>
+          <dt>Last best</dt><dd id="statBest">-</dd>
+          <dt>Last mean</dt><dd id="statMean">-</dd>
+          <dt>Replaying</dt><dd id="statReplay">-</dd>
+        </dl>
+        <fieldset class="fields">
+          <legend>View</legend>
+          <label>Mode
+            <select id="mode">
+              <option value="all">All creatures</option>
+              <option value="best">Best only</option>
+            </select>
+          </label>
+          <label class="check"><input id="rays" type="checkbox" checked /> Show rays</label>
+          <label class="check"><input id="pov" type="checkbox" /> Creature point of view</label>
+          <label>Replay ticks per frame
+            <select id="speed">
+              <option>1</option><option>2</option><option selected>4</option><option>8</option><option>16</option>
+            </select>
+          </label>
+        </fieldset>
+      </aside>
+      <section class="stage">
+        <canvas id="view"></canvas>
+        <div id="note" class="note"></div>
+      </section>
+    </main>
     <script type="module" src="./src/main.ts"></script>
   </body>
 </html>

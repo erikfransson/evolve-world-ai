@@ -18,3 +18,6 @@ npm-debug.log*
 *.swp
 .DS_Store
 Thumbs.db
+
+# headless run output
+runs/
