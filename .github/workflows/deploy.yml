@@ -26,11 +26,14 @@ jobs:
         with:
           node-version: 24
           cache: npm
+          cache-dependency-path: src/typescript/package-lock.json
       - run: npm ci
+        working-directory: src/typescript
       - run: npm run build
+        working-directory: src/typescript
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: dist
+          path: src/typescript/dist
       - id: deployment
         uses: actions/deploy-pages@v4
