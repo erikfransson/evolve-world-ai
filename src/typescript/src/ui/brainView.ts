@@ -15,11 +15,13 @@ const PEAK_DECAY = 0.985; // slow decay keeps the colour scale from flickering
 const PALETTE_STEPS = 16;
 
 const MARGIN_LEFT = 24;
-const MARGIN_RIGHT = 40;
+const MARGIN_RIGHT = 70; // room for the output labels
 const MARGIN_Y = 10;
 const GROUP_GAP = 0.8; // extra slots between ray clusters, in input pitches
 const EXTRA_STEP = 2; // slots between the labelled extra inputs, so E, S and T fit
 const FONT_PX = 9;
+const OUT_FONT_PX = 15;
+const OUT_RADIUS = 9;
 
 const mix = (a: number[], b: number[], t: number): string =>
   `rgb(${Math.round(a[0]! + (b[0]! - a[0]!) * t)}, ${Math.round(a[1]! + (b[1]! - a[1]!) * t)}, ${Math.round(a[2]! + (b[2]! - a[2]!) * t)})`;
@@ -82,10 +84,11 @@ function buildLayout(key: string, sizes: readonly number[], rays: number, w: num
       }
       radius[c] = Math.min(4, Math.max(1.1, inPitch * 0.42));
     } else {
-      const pitch = Math.min(availH / Math.max(1, n - 1), 16);
+      const maxPitch = c === cols - 1 ? 4 * OUT_RADIUS : 16; // outputs spaced so their labels stay apart
+      const pitch = Math.min(availH / Math.max(1, n - 1), maxPitch);
       const top = h / 2 - ((n - 1) * pitch) / 2;
       for (let i = 0; i < n; i++) y[i] = top + i * pitch;
-      radius[c] = c === cols - 1 ? 6 : Math.min(6, Math.max(2, pitch * 0.32));
+      radius[c] = c === cols - 1 ? OUT_RADIUS : Math.min(6, Math.max(2, pitch * 0.32));
     }
     ys.push(y);
   }
@@ -225,8 +228,10 @@ export function drawBrain(ctx: CanvasRenderingContext2D, config: SimConfig, brai
     for (let k = 0; k < EXTRA_INPUTS; k++) ctx.fillText(extras[k]!, lx, yIn[base + k]!);
   }
   ctx.textAlign = "left";
+  ctx.fillStyle = "#d6e4dc";
+  ctx.font = `600 ${OUT_FONT_PX}px system-ui, -apple-system, "Segoe UI", sans-serif`;
   const yOut = ys[layers]!;
-  const ox = xs[layers]! + radius[layers]! + 5;
+  const ox = xs[layers]! + radius[layers]! + 7;
   const outLabels = ["turn", "thrust"];
   for (let k = 0; k < yOut.length && k < outLabels.length; k++) ctx.fillText(outLabels[k]!, ox, yOut[k]!);
 
