@@ -1,100 +1,134 @@
 import type { Brain } from "../sim/brain.ts";
-import { EXTRA_INPUTS, INPUT_EXTRA_LABELS, OUTPUT_LABELS, RAY_FEATURES } from "../sim/sensors.ts";
+import { EXTRA_INPUTS, FEAT_FOOD, FEAT_POISON, INPUT_EXTRA_LABELS, OUTPUT_LABELS, RAY_FEATURE_LABELS, RAY_FEATURES } from "../sim/sensors.ts";
 import { fitCanvas } from "./canvas.ts";
 
-const NEG_RGB = [96, 165, 250]; // cool blue
-const POS_RGB = [251, 176, 38]; // warm amber
-const NEUTRAL_RGB = [52, 70, 62];
+const POS_RGB = [255, 107, 107]; // red, positive
+const NEG_RGB = [78, 168, 255]; // blue, negative
+const NODE_BASE = "#153427";
+const NODE_EMPTY = "#0f241b"; // inputs at exactly 0 read as hollow
+const RING = "#2c5744";
+const TRACK = "rgba(44, 87, 68, 0.5)";
 const LABEL_COLOR = "#8fae9f";
-const RING_COLOR = "rgba(214, 228, 220, 0.3)";
+const TEXT_COLOR = "#d6e4dc";
+const FOOD_COLOR = "#4ade80";
+const POISON_COLOR = "#e040fb";
+const FEATURE_LETTERS = RAY_FEATURE_LABELS.map((l) => l[0]!);
+const FEATURE_COLORS = [TEXT_COLOR, FOOD_COLOR, POISON_COLOR, LABEL_COLOR];
+const HIT_LEVEL = 0.5;
 
 const NB = 6; // edge strength buckets per sign, drawn weakest first so strong edges end on top
-const MIN_REL = 0.03; // edges below this share of the peak contribution are not drawn
+const MIN_REL = 0.07; // edges below this share of the peak contribution are not drawn
 const PEAK_FLOOR = 0.05;
 const PEAK_DECAY = 0.985; // slow decay keeps the colour scale from flickering
 const PALETTE_STEPS = 16;
 
-const MARGIN_LEFT = 24;
-const MARGIN_RIGHT = 70; // room for the output labels
-const MARGIN_Y = 10;
-const GROUP_GAP = 0.8; // extra slots between ray clusters, in input pitches
-const EXTRA_STEP = 2; // slots between the labelled extra inputs, so E, S and T fit
-const FONT_PX = 9;
-const OUT_FONT_PX = 15;
-const OUT_RADIUS = 9;
+const GRID_X = 38; // x of the first feature column
+const FEAT_DX = 12;
+const IN_RADIUS = 2.6;
+const ROW_MAX = 12;
+const HEADER_H = 15; // feature header band above the first ray row
+const EXTRA_BELOW = 14; // E S T labels and padding under the extras row
+const MARGIN_Y = 6;
+const OUT_RADIUS = 8;
+const OUT_PITCH = 36;
+const GAUGE_GAP = 3;
 const FONT_FAMILY = 'system-ui, -apple-system, "Segoe UI", sans-serif';
-const IN_FONT = `${FONT_PX}px ${FONT_FAMILY}`;
-const OUT_FONT = `600 ${OUT_FONT_PX}px ${FONT_FAMILY}`;
+const ROW_FONT = `500 10px ${FONT_FAMILY}`;
+const SMALL_FONT = `9px ${FONT_FAMILY}`;
+const OUT_FONT = `600 15px ${FONT_FAMILY}`;
 const DEAD_FONT = `600 16px ${FONT_FAMILY}`;
 const EXTRA_SHORT = INPUT_EXTRA_LABELS.map((l) => l[0]!.toUpperCase()); // E, S, T
 
-const mix = (a: number[], b: number[], t: number): string =>
-  `rgb(${Math.round(a[0]! + (b[0]! - a[0]!) * t)}, ${Math.round(a[1]! + (b[1]! - a[1]!) * t)}, ${Math.round(a[2]! + (b[2]! - a[2]!) * t)})`;
+const rgba = (c: number[], a: number): string => `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${a.toFixed(3)})`;
 
-// Node fill by activation, index = round(a * steps) + steps.
-const NODE_FILL: string[] = [];
-for (let k = -PALETTE_STEPS; k <= PALETTE_STEPS; k++) {
-  NODE_FILL.push(mix(NEUTRAL_RGB, k < 0 ? NEG_RGB : POS_RGB, Math.abs(k) / PALETTE_STEPS));
+// Activation overlay by |a|, per sign (0 negative, 1 positive), index = round(|a| * steps).
+const HUE_FILL: string[][] = [[], []];
+for (let sign = 0; sign < 2; sign++) {
+  for (let k = 0; k <= PALETTE_STEPS; k++) HUE_FILL[sign]!.push(rgba(sign === 0 ? NEG_RGB : POS_RGB, (k / PALETTE_STEPS) ** 0.7));
 }
+const HUE_RING = [rgba(NEG_RGB, 0.9), rgba(POS_RGB, 0.9)];
+const HUE_SOLID = [rgba(NEG_RGB, 1), rgba(POS_RGB, 1)];
 
-// Edge style per (sign, bucket); sign 0 negative, 1 positive.
+// Edge style per (sign, bucket), index sign * NB + b.
 const EDGE_STYLE: string[] = [];
 const EDGE_WIDTH: number[] = [];
+const EDGE_GLOW = [rgba(NEG_RGB, 0.55), rgba(POS_RGB, 0.55)];
 for (let sign = 0; sign < 2; sign++) {
   const rgb = sign === 0 ? NEG_RGB : POS_RGB;
   for (let b = 0; b < NB; b++) {
     const u = (b + 0.5) / NB;
-    EDGE_STYLE.push(`rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${(0.06 + 0.8 * u ** 1.4).toFixed(3)})`);
-    if (sign === 0) EDGE_WIDTH.push(0.5 + 1.7 * u);
+    EDGE_STYLE.push(rgba(rgb, 0.12 + 0.78 * u ** 1.3));
+    if (sign === 0) EDGE_WIDTH.push(0.6 + 1.6 * u);
   }
 }
-
 
 interface Layout {
   sizes: readonly number[];
   w: number;
   h: number;
-  xs: Float32Array;
+  xs: Float32Array[]; // per node, since the input grid spans several x
   ys: Float32Array[];
   radius: Float32Array;
-  slot: number; // input pitch in CSS px
-  rays: number; // input ray count
+  pitch: number; // ray row pitch in CSS px
+  rays: number;
+  headerY: number;
+  extraLabelY: number;
+  outLabelX: number;
 }
 
-function buildLayout(sizes: readonly number[], w: number, h: number): Layout {
+const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
+
+function buildLayout(ctx: CanvasRenderingContext2D, sizes: readonly number[], w: number, h: number): Layout {
   const nIn = sizes[0]!;
   const rays = (nIn - EXTRA_INPUTS) / RAY_FEATURES;
-  const slots = nIn - 1 + GROUP_GAP * rays + (EXTRA_STEP - 1) * (EXTRA_INPUTS - 1);
-  const availH = h - 2 * MARGIN_Y;
-  const inPitch = slots > 0 ? Math.min(availH / slots, 14) : 0;
   const cols = sizes.length;
-  const x0 = MARGIN_LEFT;
-  const x1 = w - MARGIN_RIGHT;
-  const xs = new Float32Array(cols);
+  const pitch = clamp((h - 2 * MARGIN_Y - HEADER_H - EXTRA_BELOW - 4) / (rays + 1), 1, ROW_MAX);
+  const extraGap = pitch + 4;
+  const blockH = HEADER_H + (rays - 1) * pitch + extraGap + EXTRA_BELOW;
+  const top = (h - blockH) / 2;
+  const row0 = top + HEADER_H;
+
+  const xs: Float32Array[] = [];
   const ys: Float32Array[] = [];
   const radius = new Float32Array(cols);
-  for (let c = 0; c < cols; c++) {
-    const n = sizes[c]!;
-    xs[c] = cols === 1 ? x0 : x0 + ((x1 - x0) * c) / (cols - 1);
-    const y = new Float32Array(n);
-    if (c === 0) {
-      const top = h / 2 - (slots * inPitch) / 2;
-      for (let i = 0; i < n; i++) {
-        const gaps = Math.min(Math.floor(i / RAY_FEATURES), rays);
-        const extra = Math.max(0, i - rays * RAY_FEATURES) * (EXTRA_STEP - 1);
-        y[i] = top + (i + gaps * GROUP_GAP + extra) * inPitch;
-      }
-      radius[c] = Math.min(4, Math.max(1.1, inPitch * 0.42));
-    } else {
-      const maxPitch = c === cols - 1 ? 4 * OUT_RADIUS : 16; // outputs spaced so their labels stay apart
-      const pitch = Math.min(availH / Math.max(1, n - 1), maxPitch);
-      const top = h / 2 - ((n - 1) * pitch) / 2;
-      for (let i = 0; i < n; i++) y[i] = top + i * pitch;
-      radius[c] = c === cols - 1 ? OUT_RADIUS : Math.min(6, Math.max(2, pitch * 0.32));
+
+  const xIn = new Float32Array(nIn);
+  const yIn = new Float32Array(nIn);
+  for (let r = 0; r < rays; r++) {
+    for (let f = 0; f < RAY_FEATURES; f++) {
+      xIn[r * RAY_FEATURES + f] = GRID_X + f * FEAT_DX;
+      yIn[r * RAY_FEATURES + f] = row0 + r * pitch;
     }
-    ys.push(y);
   }
-  return { sizes: sizes.slice(), w, h, xs, ys, radius, slot: inPitch, rays };
+  const yExtra = row0 + (rays - 1) * pitch + extraGap;
+  for (let k = 0; k < EXTRA_INPUTS; k++) {
+    xIn[rays * RAY_FEATURES + k] = GRID_X + (RAY_FEATURES - EXTRA_INPUTS + k) * FEAT_DX;
+    yIn[rays * RAY_FEATURES + k] = yExtra;
+  }
+  xs.push(xIn);
+  ys.push(yIn);
+  radius[0] = IN_RADIUS;
+
+  ctx.font = OUT_FONT;
+  let labelW = 0;
+  for (const l of OUTPUT_LABELS) labelW = Math.max(labelW, ctx.measureText(l).width);
+  const outLabelX = w - 8 - labelW;
+  const outX = outLabelX - 6 - GAUGE_GAP - 1 - OUT_RADIUS;
+  const gridRight = GRID_X + (RAY_FEATURES - 1) * FEAT_DX;
+
+  for (let c = 1; c < cols; c++) {
+    const n = sizes[c]!;
+    const last = c === cols - 1;
+    const x = gridRight + ((outX - gridRight) * c) / (cols - 1);
+    const pitchC = last ? OUT_PITCH : Math.min(13, (h - 16) / Math.max(1, n - 1));
+    const y = new Float32Array(n);
+    const t = h / 2 - ((n - 1) * pitchC) / 2;
+    for (let i = 0; i < n; i++) y[i] = t + i * pitchC;
+    xs.push(new Float32Array(n).fill(x));
+    ys.push(y);
+    radius[c] = last ? OUT_RADIUS : clamp(0.36 * pitchC, 2, 4.8);
+  }
+  return { sizes: sizes.slice(), w, h, xs, ys, radius, pitch, rays, headerY: top + 3, extraLabelY: yExtra + IN_RADIUS + 7, outLabelX };
 }
 
 function fits(layout: Layout | null, sizes: readonly number[], w: number, h: number): layout is Layout {
@@ -128,7 +162,7 @@ export class BrainView {
     ctx.clearRect(0, 0, cssW, cssH);
 
     const sizes = brain.sizes;
-    if (!fits(this.layout, sizes, cssW, cssH)) this.layout = buildLayout(sizes, cssW, cssH);
+    if (!fits(this.layout, sizes, cssW, cssH)) this.layout = buildLayout(ctx, sizes, cssW, cssH);
     const layout = this.layout!;
     const acts = brain.layerActivations();
 
@@ -136,7 +170,8 @@ export class BrainView {
     ctx.globalAlpha = alive ? 1 : 0.3;
     this.drawEdges(sizes, layout);
     this.drawNodes(layout, acts);
-    this.drawLabels(layout);
+    this.drawGauges(layout, acts);
+    this.drawLabels(layout, acts);
     if (!alive) this.drawDead(cssW, cssH);
     ctx.globalAlpha = 1;
   }
@@ -191,78 +226,162 @@ export class BrainView {
     const { ctx, codes, codeCounts } = this;
     const layers = sizes.length - 1;
     ctx.lineCap = "round";
+    ctx.globalCompositeOperation = "lighter";
     for (let b = 0; b < NB; b++) {
       for (let sign = 0; sign < 2; sign++) {
         const code = 1 + sign * NB + b;
         if (codeCounts[code] === 0) continue;
         ctx.strokeStyle = EDGE_STYLE[sign * NB + b]!;
         ctx.lineWidth = EDGE_WIDTH[b]!;
+        if (b === NB - 1) {
+          ctx.shadowBlur = 5;
+          ctx.shadowColor = EDGE_GLOW[sign]!;
+        }
         ctx.beginPath();
         let k = 0;
         for (let l = 0; l < layers; l++) {
           const nIn = sizes[l]!;
           const nOut = sizes[l + 1]!;
-          const ya = ys[l]!;
-          const yb = ys[l + 1]!;
           const xa = xs[l]!;
           const xb = xs[l + 1]!;
-          const xm = (xa + xb) / 2;
+          const ya = ys[l]!;
+          const yb = ys[l + 1]!;
           for (let j = 0; j < nOut; j++) {
             for (let i = 0; i < nIn; i++, k++) {
               if (codes[k] !== code) continue;
-              ctx.moveTo(xa, ya[i]!);
-              ctx.bezierCurveTo(xm, ya[i]!, xm, yb[j]!, xb, yb[j]!);
+              ctx.moveTo(xa[i]!, ya[i]!);
+              ctx.lineTo(xb[j]!, yb[j]!);
             }
           }
         }
         ctx.stroke();
+        ctx.shadowBlur = 0;
       }
     }
+    ctx.globalCompositeOperation = "source-over";
+    ctx.shadowColor = "transparent";
   }
 
   private drawNodes({ xs, ys, radius }: Layout, acts: readonly Float32Array[]): void {
     const ctx = this.ctx;
-    ctx.lineWidth = 0.8;
-    ctx.strokeStyle = RING_COLOR;
+    ctx.lineWidth = 1;
     for (let c = 0; c < ys.length; c++) {
       const r = radius[c]!;
       const act = acts[c]!;
       const y = ys[c]!;
       const x = xs[c]!;
       for (let i = 0; i < y.length; i++) {
-        const a = Math.max(-1, Math.min(1, act[i]!));
-        ctx.fillStyle = NODE_FILL[Math.round(a * PALETTE_STEPS) + PALETTE_STEPS]!;
+        const v = act[i]!;
+        const a = v < -1 ? -1 : v > 1 ? 1 : v;
+        const mag = a < 0 ? -a : a;
+        const sign = a < 0 ? 0 : 1;
         ctx.beginPath();
-        ctx.arc(x, y[i]!, r, 0, Math.PI * 2);
+        ctx.arc(x[i]!, y[i]!, r, 0, Math.PI * 2);
+        ctx.fillStyle = c === 0 && a === 0 ? NODE_EMPTY : NODE_BASE;
         ctx.fill();
-        if (r >= 1.8) ctx.stroke();
+        const step = Math.round(mag * PALETTE_STEPS);
+        if (step > 0) {
+          ctx.fillStyle = HUE_FILL[sign]![step]!;
+          ctx.fill();
+        }
+        ctx.strokeStyle = mag > 0.5 ? HUE_RING[sign]! : RING;
+        ctx.stroke();
       }
     }
   }
 
-  private drawLabels({ xs, ys, radius, slot, rays }: Layout): void {
+  // Output gauges: arc from 12 o'clock sweeping |a| * pi, clockwise when positive.
+  private drawGauges({ xs, ys, radius }: Layout, acts: readonly Float32Array[]): void {
+    const ctx = this.ctx;
+    const c = ys.length - 1;
+    const r = radius[c]! + GAUGE_GAP;
+    const act = acts[c]!;
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
+    for (let i = 0; i < act.length; i++) {
+      const x = xs[c]![i]!;
+      const y = ys[c]![i]!;
+      ctx.strokeStyle = TRACK;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.stroke();
+      const v = act[i]!;
+      const a = v < -1 ? -1 : v > 1 ? 1 : v;
+      if (Math.abs(a) < 0.02) continue;
+      ctx.strokeStyle = HUE_SOLID[a < 0 ? 0 : 1]!;
+      ctx.beginPath();
+      ctx.arc(x, y, r, -Math.PI / 2, -Math.PI / 2 + a * Math.PI, a < 0);
+      ctx.stroke();
+    }
+  }
+
+  private drawLabels({ xs, ys, pitch, rays, headerY, extraLabelY, outLabelX }: Layout, acts: readonly Float32Array[]): void {
     const ctx = this.ctx;
     const last = ys.length - 1;
     const yIn = ys[0]!;
-    ctx.fillStyle = LABEL_COLOR;
-    ctx.font = IN_FONT;
+    const xIn = xs[0]!;
+    const inAct = acts[0]!;
     ctx.textBaseline = "middle";
-    ctx.textAlign = "right";
-    const lx = xs[0]! - radius[0]! - 5;
-    const every = (RAY_FEATURES + GROUP_GAP) * slot >= FONT_PX + 1;
-    for (let g = 0; g < rays; g++) {
-      if (!every && g !== 0 && g !== rays - 1) continue;
-      const k = g * RAY_FEATURES;
-      ctx.fillText(`R${g + 1}`, lx, (yIn[k]! + yIn[k + RAY_FEATURES - 1]!) / 2);
+
+    ctx.font = SMALL_FONT;
+    ctx.textAlign = "center";
+    for (let f = 0; f < RAY_FEATURES; f++) {
+      ctx.fillStyle = FEATURE_COLORS[f]!;
+      ctx.fillText(FEATURE_LETTERS[f]!, GRID_X + f * FEAT_DX, headerY);
     }
-    for (let k = 0; k < EXTRA_INPUTS; k++) ctx.fillText(EXTRA_SHORT[k]!, lx, yIn[rays * RAY_FEATURES + k]!);
+    ctx.fillStyle = LABEL_COLOR;
+    for (let k = 0; k < EXTRA_INPUTS; k++) ctx.fillText(EXTRA_SHORT[k]!, xIn[rays * RAY_FEATURES + k]!, extraLabelY);
+
+    // Ray rows light up green for food and magenta for poison, read from the input features.
+    ctx.font = ROW_FONT;
+    ctx.textAlign = "right";
+    const lx = GRID_X - IN_RADIUS - 5;
+    const every = pitch >= 9;
+    for (let r = 0; r < rays; r++) {
+      const k = r * RAY_FEATURES;
+      const food = inAct[k + FEAT_FOOD]!;
+      const poison = inAct[k + FEAT_POISON]!;
+      const hit = food > HIT_LEVEL || poison > HIT_LEVEL;
+      const color = hit ? (food >= poison ? FOOD_COLOR : POISON_COLOR) : LABEL_COLOR;
+      if (every || r % 2 === 0) {
+        ctx.fillStyle = color;
+        ctx.fillText(`R${r + 1}`, lx, yIn[k]!);
+      } else if (hit) {
+        ctx.fillStyle = color;
+        ctx.fillRect(lx - 3, yIn[k]! - 1, 3, 2);
+      }
+    }
 
     ctx.textAlign = "left";
-    ctx.fillStyle = "#d6e4dc";
+    ctx.fillStyle = TEXT_COLOR;
     ctx.font = OUT_FONT;
     const yOut = ys[last]!;
-    const ox = xs[last]! + radius[last]! + 7;
-    for (let k = 0; k < yOut.length && k < OUTPUT_LABELS.length; k++) ctx.fillText(OUTPUT_LABELS[k]!, ox, yOut[k]!);
+    for (let k = 0; k < yOut.length && k < OUTPUT_LABELS.length; k++) ctx.fillText(OUTPUT_LABELS[k]!, outLabelX, yOut[k]!);
+
+    this.drawKey();
+  }
+
+  // Tiny sign key at the bottom-right corner.
+  private drawKey(): void {
+    const ctx = this.ctx;
+    const y = this.canvas.clientHeight - 8;
+    const items = [["\u2212", NEG_RGB], ["+", POS_RGB]] as const;
+    ctx.font = SMALL_FONT;
+    ctx.textAlign = "right";
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
+    let x = this.canvas.clientWidth - 8;
+    for (const [text, rgb] of items) {
+      ctx.fillStyle = LABEL_COLOR;
+      ctx.fillText(text, x, y);
+      const sx = x - ctx.measureText(text).width - 3;
+      ctx.strokeStyle = rgba(rgb, 1);
+      ctx.beginPath();
+      ctx.moveTo(sx - 9, y);
+      ctx.lineTo(sx, y);
+      ctx.stroke();
+      x = sx - 9 - 8;
+    }
   }
 
   private drawDead(cssW: number, cssH: number): void {

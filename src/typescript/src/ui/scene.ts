@@ -188,13 +188,6 @@ function drawRays(ctx: CanvasRenderingContext2D, f: Frame, ep: EpisodeView): voi
     ctx.moveTo(s.x, s.y);
     ctx.lineTo(ex, ey);
     ctx.stroke();
-    if (hasHit) {
-      ctx.globalAlpha = 1;
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.arc(ex, ey, 2.5 * f.px, 0, Math.PI * 2);
-      ctx.fill();
-    }
   }
   ctx.globalAlpha = 1;
 }

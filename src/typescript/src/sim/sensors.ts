@@ -2,8 +2,13 @@ import type { SimConfig } from "./config.ts";
 import { HIT_FOOD, HIT_POISON, HIT_WALL } from "./types.ts";
 import type { CreatureState, RayHit } from "./types.ts";
 
-// Brain input layout: per ray closeness, isFood, isPoison, isWall; then the extras below.
-export const RAY_FEATURES = 4;
+// Brain input layout: per ray these features, then the extras below.
+export const RAY_FEATURE_LABELS = ["closeness", "food", "poison", "wall"] as const;
+export const RAY_FEATURES = RAY_FEATURE_LABELS.length;
+export const FEAT_CLOSENESS = 0;
+export const FEAT_FOOD = 1;
+export const FEAT_POISON = 2;
+export const FEAT_WALL = 3;
 export const INPUT_EXTRA_LABELS = ["energy", "speed", "turn"] as const;
 export const EXTRA_INPUTS = INPUT_EXTRA_LABELS.length;
 // Brain outputs: turn and thrust (negative thrust acts as 0).
@@ -39,10 +44,10 @@ export function encodeInputs(state: CreatureState, rays: readonly RayHit[], conf
   for (let i = 0; i < rays.length; i++) {
     const ray = rays[i];
     const k = i * RAY_FEATURES;
-    out[k] = ray.closeness;
-    out[k + 1] = ray.kind === HIT_FOOD ? 1 : 0;
-    out[k + 2] = ray.kind === HIT_POISON ? 1 : 0;
-    out[k + 3] = ray.kind === HIT_WALL ? 1 : 0;
+    out[k + FEAT_CLOSENESS] = ray.closeness;
+    out[k + FEAT_FOOD] = ray.kind === HIT_FOOD ? 1 : 0;
+    out[k + FEAT_POISON] = ray.kind === HIT_POISON ? 1 : 0;
+    out[k + FEAT_WALL] = ray.kind === HIT_WALL ? 1 : 0;
   }
   const base = rays.length * RAY_FEATURES;
   out[base] = energySignal(state.energy, c.startEnergy);

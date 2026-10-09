@@ -169,8 +169,9 @@ fieldset:disabled .tip { cursor: help; }
 .legend li { display: flex; align-items: center; gap: 0.45em; }
 .legend li[hidden] { display: none; }
 .legend svg { flex: none; width: 1.1em; height: 1.1em; }
+.ov-brain { background: color-mix(in srgb, var(--card) 95%, transparent); }
 .ov-brain .ov-body { padding: 0 0.4rem 0.4rem; }
-#brainView { display: block; width: min(375px, calc(100cqw - 2.5rem)); aspect-ratio: 375 / 325; }
+#brainView { display: block; width: min(375px, calc(100cqw - 2.5rem)); aspect-ratio: 375 / 220; }
 
 @media (max-width: 700px) {
   body { height: auto; min-height: 100%; }
