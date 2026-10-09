@@ -33,7 +33,9 @@ export class Episode implements EpisodeView {
       x: config.world.width / 2,
       y: config.world.height / 2,
       heading: createRng(deriveSeed(layoutSeed, 0x5eed)).next() * 2 * Math.PI,
-      speed: 0,
+      vx: 0,
+      vy: 0,
+      turnRate: 0,
       energy: config.creature.startEnergy,
       alive: true,
       ticksAlive: 0,
@@ -63,19 +65,30 @@ export class Episode implements EpisodeView {
     input[rays.length * RAY_FEATURES] = s.energy / c.maxEnergy;
 
     this.brain.forward(input, this.output);
-    s.heading += this.output[0] * c.maxTurnRate * dt;
-    const accel = this.output[1] * c.maxAccel;
-    s.speed = Math.min(c.maxSpeed, Math.max(0, s.speed + accel * dt));
+    const thrust = Math.max(0, this.output[1]);
 
-    const ox = s.x;
-    const oy = s.y;
-    s.x += Math.cos(s.heading) * s.speed * dt;
-    s.y += Math.sin(s.heading) * s.speed * dt;
-    s.x = Math.min(w.width - c.radius, Math.max(c.radius, s.x));
-    s.y = Math.min(w.height - c.radius, Math.max(c.radius, s.y));
-    const moved = Math.hypot(s.x - ox, s.y - oy);
+    // Exact exponential relaxation each tick keeps motion smooth and independent of dt.
+    const targetTurn = this.output[0] * c.maxTurnRate;
+    s.turnRate = targetTurn + (s.turnRate - targetTurn) * Math.exp(-c.turnDamping * dt);
+    s.heading += s.turnRate * dt;
 
-    s.energy -= c.livingCost * dt + c.moveCost * moved + c.accelCost * Math.abs(accel) * dt;
+    const cos = Math.cos(s.heading);
+    const sin = Math.sin(s.heading);
+    const terminal = (thrust * c.maxThrust) / c.drag;
+    const fwd = terminal + (s.vx * cos + s.vy * sin - terminal) * Math.exp(-c.drag * dt);
+    const side = (-s.vx * sin + s.vy * cos) * Math.exp(-c.sideDrag * dt);
+    s.vx = fwd * cos - side * sin;
+    s.vy = fwd * sin + side * cos;
+
+    s.x += s.vx * dt;
+    s.y += s.vy * dt;
+    // Walls absorb the velocity component pointing into them.
+    if (s.x < c.radius) { s.x = c.radius; s.vx = Math.max(0, s.vx); }
+    else if (s.x > w.width - c.radius) { s.x = w.width - c.radius; s.vx = Math.min(0, s.vx); }
+    if (s.y < c.radius) { s.y = c.radius; s.vy = Math.max(0, s.vy); }
+    else if (s.y > w.height - c.radius) { s.y = w.height - c.radius; s.vy = Math.min(0, s.vy); }
+
+    s.energy -= (c.livingCost + c.thrustCost * thrust) * dt;
 
     const eaten = this.world.eatAt(s.x, s.y, c.radius);
     if (eaten === HIT_FOOD) s.energy = Math.min(c.maxEnergy, s.energy + w.foodEnergy);

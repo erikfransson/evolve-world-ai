@@ -17,7 +17,7 @@ describe("Episode", () => {
     const e = new Episode(long, new Float32Array(genomeLength(sizes)), 5, 0);
     while (!e.done) {
       e.step();
-      expect(e.state.speed).toBe(0);
+      expect(Math.hypot(e.state.vx, e.state.vy)).toBe(0);
     }
     expect(e.state.alive).toBe(false);
     const expected = cfg.creature.startEnergy / cfg.creature.livingCost;

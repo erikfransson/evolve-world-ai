@@ -52,7 +52,7 @@ describe("World", () => {
   it("equal layout rngs give identical layouts", () => {
     const a = new World(cfg(), testRng(5), testRng(1));
     const b = new World(cfg(), testRng(5), testRng(99));
-    expect(a.count).toBe(210);
+    expect(a.count).toBe(DEFAULT_CONFIG.world.foodCount + DEFAULT_CONFIG.world.poisonCount);
     expect(Array.from(a.xs)).toEqual(Array.from(b.xs));
     expect(Array.from(a.ys)).toEqual(Array.from(b.ys));
     expect(Array.from(a.kinds)).toEqual(Array.from(b.kinds));

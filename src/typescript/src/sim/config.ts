@@ -20,11 +20,12 @@ export interface SimConfig {
     maxEnergy: number;
     startEnergy: number;
     livingCost: number; // energy per second
-    moveCost: number; // energy per world unit travelled
-    accelCost: number; // energy per (unit/s^2) of acceleration per second
-    maxSpeed: number; // units per second, no reversing
-    maxAccel: number; // units per second^2
-    maxTurnRate: number; // radians per second
+    thrustCost: number; // energy per second at full thrust
+    maxThrust: number; // forward acceleration at full thrust, units/s^2; top speed = maxThrust / drag
+    drag: number; // forward velocity decay rate, 1/s
+    sideDrag: number; // sideways velocity decay rate, 1/s; higher than drag gives fish-like gliding turns
+    maxTurnRate: number; // radians per second at full turn output
+    turnDamping: number; // rate at which turning speed approaches its target, 1/s
     rayCount: number;
     raySpread: number; // total fan angle in radians
     rayLength: number;
@@ -53,9 +54,9 @@ export const DEFAULT_CONFIG: SimConfig = {
   world: {
     width: 1000,
     height: 1000,
-    foodCount: 150,
+    foodCount: 40,
     poisonEnabled: true,
-    poisonCount: 60,
+    poisonCount: 20,
     itemRadius: 4,
     foodEnergy: 20,
     poisonEnergy: 35,
@@ -65,17 +66,18 @@ export const DEFAULT_CONFIG: SimConfig = {
     maxEnergy: 100,
     startEnergy: 50,
     livingCost: 1,
-    moveCost: 0.01,
-    accelCost: 0.002,
-    maxSpeed: 80,
-    maxAccel: 160,
+    thrustCost: 2,
+    maxThrust: 120,
+    drag: 1.5,
+    sideDrag: 8,
     maxTurnRate: 3,
+    turnDamping: 6,
     rayCount: 8,
     raySpread: (75 * Math.PI) / 180,
     rayLength: 100,
   },
   brain: { hiddenLayers: [16] },
-  population: { size: 300, epochSeconds: 120 },
+  population: { size: 300, epochSeconds: 300 },
   ga: {
     selection: "truncation",
     eliteFraction: 0.02,

@@ -16,12 +16,13 @@ A genetic algorithm evolves the networks over generations while the user watches
 | Evolution  | Generational: run an epoch, score each creature, breed the next generation, reset the world         |
 | Vision     | 8 rays spread over about 75 degrees, length about 10% of the screen at default zoom                |
 | Ray input  | Per ray, closeness (0 to 1) and what was hit (food, poison, wall)                                    |
-| Brain      | Inputs, then 1 to 4 hidden layers of 4 to 32 neurons, then outputs for turn and speed               |
+| Brain      | Inputs, then 1 to 4 hidden layers of 4 to 32 neurons, then outputs for turn and thrust              |
 | World      | Large 2D box with solid walls, eaten food and poison respawn at a random spot, poison optional      |
 | Layout     | Same layout for every creature in a generation, new layout each generation                          |
 | Isolation  | Each creature lives alone in its own copy of the world, so a generation can be simulated in parallel |
 | Watching   | The worker computes a generation fast, the page replays it by re-running from the seed            |
-| Energy     | Start at half of max energy (max 100), constant cost for being alive, small cost for moving and accelerating |
+| Energy     | Start at half of max energy (max 100), constant cost for being alive, cost proportional to thrust   |
+| Movement   | Fish-like: thrust forward against drag, high sideways drag, smoothed turning                        |
 | Food       | Eating food gives about +20 energy                                                                  |
 | Poison     | Eating poison removes about 30 to 40 energy                                                         |
 | Engine     | Fixed timestep and seeded randomness, simulation code separate from drawing, runs in a Web Worker  |
@@ -65,3 +66,4 @@ A genetic algorithm evolves the networks over generations while the user watches
 - 2026-10-09: first draft.
 - 2026-10-09: fitness changed to survival time with an energy budget, added viewing modes.
 - 2026-10-09: creatures live in separate world copies, compute fast then replay, new layout each generation, pluggable selection.
+- 2026-10-09: fish-like physics with drag, outputs are turn and thrust. Tuning log in `docs/tuning-notes.md`.

@@ -14,3 +14,6 @@ Pushing to `main` deploys the site via `.github/workflows/deploy.yml`, so keep `
 
 ## Git
 You may commit and push to `main` after an independent review passes. Each push redeploys the live page.
+
+## Tuning
+During early iteration you may change physics, genetic algorithm, world and scoring parameters without asking. Log each change and its result in `docs/tuning-notes.md`.

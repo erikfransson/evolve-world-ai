@@ -29,7 +29,9 @@ export interface CreatureState {
   x: number;
   y: number;
   heading: number; // radians, 0 = +x
-  speed: number;
+  vx: number;
+  vy: number;
+  turnRate: number; // radians per second
   energy: number;
   alive: boolean;
   ticksAlive: number;
