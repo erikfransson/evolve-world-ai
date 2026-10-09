@@ -1,0 +1,9 @@
+html, body { height: 100%; margin: 0; }
+body {
+  display: grid;
+  place-items: center;
+  background: #0b1d16;
+  color: #e6f4ea;
+  font-family: system-ui, sans-serif;
+}
+.banner h1 { font-size: clamp(2.5rem, 10vw, 6rem); letter-spacing: 0.05em; }
