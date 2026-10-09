@@ -1,5 +1,5 @@
 import "./style.css";
-import { DEFAULT_CONFIG } from "./sim/config.ts";
+import { DEFAULT_CONFIG, itemCounts } from "./sim/config.ts";
 import type { SelectionMethod, SimConfig } from "./sim/config.ts";
 import { unpackGenome } from "./sim/protocol.ts";
 import type { GenerationMessage } from "./sim/protocol.ts";
@@ -15,28 +15,63 @@ const settings = $<HTMLFieldSetElement>("settings");
 const startBtn = $<HTMLButtonElement>("start");
 const pauseBtn = $<HTMLButtonElement>("pause");
 const resetBtn = $<HTMLButtonElement>("reset");
+const setupForm = $<HTMLFormElement>("setup");
 
 const num = (id: string): number => $<HTMLInputElement>(id).valueAsNumber;
 const clamp = (v: number, lo: number, hi: number, fallback: number): number =>
   Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : fallback;
 
+// Live value badges and filled slider tracks.
+const formats: Record<string, (v: number) => string> = {
+  size: (v) => `${v}`,
+  deg: (v) => `${v}°`,
+  sec: (v) => `${v} s`,
+  pct: (v) => `${Math.round(v * 100)}%`,
+  dens: (v) => v.toFixed(2),
+};
+
+function syncSlider(input: HTMLInputElement): void {
+  const lo = Number(input.min);
+  const hi = Number(input.max);
+  input.style.setProperty("--p", `${((input.valueAsNumber - lo) / (hi - lo)) * 100}%`);
+  const out = document.querySelector<HTMLOutputElement>(`output[for="${input.id}"]`);
+  if (out) out.textContent = (formats[out.dataset.fmt ?? ""] ?? String)(input.valueAsNumber);
+}
+
+function syncControls(): void {
+  document.querySelectorAll<HTMLInputElement>('input[type="range"]').forEach(syncSlider);
+  syncItemHints();
+}
+
+// Resulting item counts for the current width, height and densities.
+function syncItemHints(): void {
+  const c = itemCounts(readConfig());
+  $("foodItems").textContent = `≈ ${c.food} items`;
+  $("poisonItems").textContent = `≈ ${c.poison} items`;
+}
+
+const radio = (name: string): string =>
+  document.querySelector<HTMLInputElement>(`input[name="${name}"]:checked`)!.value;
+
 function fillForm(c: SimConfig): void {
   $<HTMLInputElement>("seed").value = String(c.seed);
-  $<HTMLInputElement>("worldSize").value = String(c.world.width);
-  $<HTMLInputElement>("foodCount").value = String(c.world.foodCount);
-  $<HTMLInputElement>("poisonOn").checked = c.world.poisonEnabled;
-  $<HTMLInputElement>("poisonCount").value = String(c.world.poisonCount);
+  $<HTMLInputElement>("worldWidth").value = String(c.world.width);
+  $<HTMLInputElement>("worldHeight").value = String(c.world.height);
+  $<HTMLInputElement>("foodDensity").value = String(c.world.foodDensity);
+  $<HTMLInputElement>("poisonDensity").value = String(c.world.poisonDensity);
   $<HTMLInputElement>("popSize").value = String(c.population.size);
   $<HTMLInputElement>("epochSeconds").value = String(c.population.epochSeconds);
   $<HTMLInputElement>("mutationRate").value = String(c.ga.mutationRate);
   $<HTMLInputElement>("layers").value = String(c.brain.hiddenLayers.length);
+  $<HTMLInputElement>("rayCount").value = String(c.creature.rayCount);
+  $<HTMLInputElement>("raySpread").value = String(Math.round((c.creature.raySpread * 180) / Math.PI));
   $<HTMLInputElement>("neurons").value = String(c.brain.hiddenLayers[0] ?? 16);
   $<HTMLSelectElement>("selection").value = c.ga.selection;
+  syncControls();
 }
 
 function readConfig(): SimConfig {
   const d = DEFAULT_CONFIG;
-  const size = clamp(num("worldSize"), 200, 5000, d.world.width);
   const layers = Math.round(clamp(num("layers"), 1, 4, 1));
   const neurons = Math.round(clamp(num("neurons"), 4, 32, 16));
   return {
@@ -44,11 +79,15 @@ function readConfig(): SimConfig {
     seed: Math.round(clamp(num("seed"), 0, 2 ** 31, d.seed)),
     world: {
       ...d.world,
-      width: size,
-      height: size,
-      foodCount: Math.round(clamp(num("foodCount"), 0, 2000, d.world.foodCount)),
-      poisonEnabled: $<HTMLInputElement>("poisonOn").checked,
-      poisonCount: Math.round(clamp(num("poisonCount"), 0, 2000, d.world.poisonCount)),
+      width: clamp(num("worldWidth"), 200, 4000, d.world.width),
+      height: clamp(num("worldHeight"), 200, 3000, d.world.height),
+      foodDensity: clamp(num("foodDensity"), 0, 1, d.world.foodDensity),
+      poisonDensity: clamp(num("poisonDensity"), 0, 1, d.world.poisonDensity),
+    },
+    creature: {
+      ...d.creature,
+      rayCount: Math.round(clamp(num("rayCount"), 1, 16, d.creature.rayCount)),
+      raySpread: (clamp(num("raySpread"), 10, 360, 75) * Math.PI) / 180,
     },
     brain: { hiddenLayers: new Array<number>(layers).fill(neurons) },
     population: {
@@ -69,14 +108,14 @@ let config: SimConfig = DEFAULT_CONFIG;
 let running = false;
 let paused = false;
 let latest: GenerationMessage | null = null;
-let latestStats = { bestEver: 0, best: 0, mean: 0, generation: 0 };
+let latestStats = { bestEver: 0, best: 0, mean: 0, generation: 0, reached: 0 };
 let episodes: Episode[] = [];
 let bestInEpisodes = 0;
 let replayGen = -1;
 
 function view(): ViewOptions {
   return {
-    mode: $<HTMLSelectElement>("mode").value as "all" | "best",
+    mode: radio("mode") as "all" | "best",
     showRays: $<HTMLInputElement>("rays").checked,
     pov: $<HTMLInputElement>("pov").checked,
   };
@@ -101,10 +140,15 @@ function buildReplay(): void {
 
 function setStats(): void {
   $("statGen").textContent = running ? String(latestStats.generation) : "-";
-  const sec = (v: number) => `${v.toFixed(1)} s`;
-  $("statBestEver").textContent = latest ? sec(latestStats.bestEver) : "-";
-  $("statBest").textContent = latest ? sec(latestStats.best) : "-";
-  $("statMean").textContent = latest ? sec(latestStats.mean) : "-";
+  const sec = (id: string, v: number | null): void => {
+    const el = $(id);
+    el.textContent = v === null ? "-" : v.toFixed(1);
+    el.dataset.unit = v === null ? "" : " s"; // unit is drawn by CSS
+  };
+  sec("statBestEver", latest ? latestStats.bestEver : null);
+  sec("statBest", latest ? latestStats.best : null);
+  sec("statMean", latest ? latestStats.mean : null);
+  $("statLimit").textContent = latest ? `${Math.round(latestStats.reached * 100)}%` : "-";
   if (!latest) $("statReplay").textContent = "-";
 }
 
@@ -112,11 +156,16 @@ function onMessage(e: MessageEvent<GenerationMessage>): void {
   const m = e.data;
   if (m.type !== "generation") return;
   latest = m;
+  const fit = m.result.fitness;
+  const limit = config.population.epochSeconds - 1e-6;
+  let reached = 0;
+  for (let i = 0; i < fit.length; i++) if (fit[i]! >= limit) reached++;
   latestStats = {
     bestEver: m.bestEver,
     best: m.result.bestFitness,
     mean: m.result.meanFitness,
     generation: m.result.generation,
+    reached: fit.length > 0 ? reached / fit.length : 0,
   };
   setStats();
   if (episodes.length === 0) buildReplay();
@@ -130,6 +179,7 @@ function start(): void {
   running = true;
   paused = false;
   settings.disabled = true;
+  setupForm.classList.add("locked");
   startBtn.disabled = true;
   pauseBtn.disabled = false;
   pauseBtn.textContent = "Pause";
@@ -148,6 +198,7 @@ function reset(): void {
   latest = null;
   episodes = [];
   settings.disabled = false;
+  setupForm.classList.remove("locked");
   startBtn.disabled = false;
   pauseBtn.disabled = true;
   pauseBtn.textContent = "Pause";
@@ -163,7 +214,46 @@ pauseBtn.onclick = () => {
   worker?.postMessage({ type: paused ? "pause" : "resume" });
   pauseBtn.textContent = paused ? "Resume" : "Pause";
 };
-$("mode").onchange = () => buildReplay();
+document.querySelectorAll('input[name="mode"]').forEach((el) => el.addEventListener("change", buildReplay));
+setupForm.addEventListener("input", (e) => {
+  if ((e.target as HTMLInputElement).type === "range") syncSlider(e.target as HTMLInputElement);
+  syncItemHints();
+});
+
+// Tooltips: one shared fixed bubble, so the scrolling sidebar cannot clip it.
+const bubble = $("tooltip");
+let tipOwner: HTMLElement | null = null;
+function showTip(el: HTMLElement): void {
+  tipOwner = el;
+  bubble.textContent = el.dataset.tip ?? "";
+  bubble.hidden = false;
+  const r = el.getBoundingClientRect();
+  const w = bubble.offsetWidth;
+  const h = bubble.offsetHeight;
+  const left = Math.min(Math.max(8, r.left + r.width / 2 - w / 2), window.innerWidth - w - 8);
+  const below = r.bottom + 8 + h <= window.innerHeight;
+  bubble.style.left = `${left}px`;
+  bubble.style.top = `${below ? r.bottom + 8 : Math.max(8, r.top - 8 - h)}px`;
+}
+function hideTip(): void {
+  tipOwner = null;
+  bubble.hidden = true;
+}
+const tipOf = (t: EventTarget | null): HTMLElement | null => (t as HTMLElement | null)?.closest?.<HTMLElement>(".tip") ?? null;
+document.addEventListener("mouseover", (e) => { const t = tipOf(e.target); if (t) showTip(t); });
+document.addEventListener("mouseout", (e) => { if (tipOf(e.target)) hideTip(); });
+document.addEventListener("focusin", (e) => { const t = tipOf(e.target); if (t) showTip(t); });
+document.addEventListener("focusout", (e) => { if (tipOf(e.target)) hideTip(); });
+document.addEventListener("click", (e) => {
+  const t = tipOf(e.target);
+  if (t && t !== tipOwner) showTip(t); // tap on touch
+  else if (!t) hideTip();
+});
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") hideTip(); });
+document.addEventListener("scroll", () => { if (tipOwner) showTip(tipOwner); }, true);
+$("dice").onclick = () => {
+  $<HTMLInputElement>("seed").value = String(Math.floor(Math.random() * 1_000_000));
+};
 
 function resize(): void {
   const dpr = window.devicePixelRatio || 1;
@@ -178,7 +268,7 @@ window.addEventListener("resize", resize);
 
 function frame(): void {
   resize();
-  const ticks = Number($<HTMLSelectElement>("speed").value);
+  const ticks = Number(radio("speed"));
   if (episodes.length > 0) {
     for (let t = 0; t < ticks; t++) for (const ep of episodes) if (!ep.done) ep.step();
     if (latest && episodes.every((ep) => ep.done)) buildReplay(); // newest generation, looping if no newer one

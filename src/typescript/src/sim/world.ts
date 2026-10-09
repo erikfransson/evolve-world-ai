@@ -1,4 +1,5 @@
 import type { SimConfig } from "./config.ts";
+import { itemCounts } from "./config.ts";
 import { HIT_FOOD, HIT_NONE, HIT_POISON, HIT_WALL } from "./types.ts";
 import type { HitKind, RayHit, Rng, WorldView } from "./types.ts";
 
@@ -28,7 +29,8 @@ export class World implements WorldView {
     this.itemRadius = w.itemRadius;
     this.rayLength = config.creature.rayLength;
     this.respawnRng = respawnRng;
-    this.count = w.foodCount + (w.poisonEnabled ? w.poisonCount : 0);
+    const counts = itemCounts(config);
+    this.count = counts.food + counts.poison;
     this.xs = new Float32Array(this.count);
     this.ys = new Float32Array(this.count);
     this.kinds = new Uint8Array(this.count);
@@ -43,7 +45,7 @@ export class World implements WorldView {
     for (let i = 0; i < this.count; i++) {
       const x = layoutRng.range(r, this.width - r);
       const y = layoutRng.range(r, this.height - r);
-      this.setItem(i, x, y, i < w.foodCount ? HIT_FOOD : HIT_POISON);
+      this.setItem(i, x, y, i < counts.food ? HIT_FOOD : HIT_POISON);
     }
   }
 

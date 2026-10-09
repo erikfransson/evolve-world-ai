@@ -1,4 +1,4 @@
-import { DEFAULT_CONFIG } from "../../src/typescript/src/sim/config.ts";
+import { DEFAULT_CONFIG, itemCounts } from "../../src/typescript/src/sim/config.ts";
 import type { SimConfig } from "../../src/typescript/src/sim/config.ts";
 import { World } from "../../src/typescript/src/sim/world.ts";
 import { HIT_FOOD, HIT_NONE, HIT_POISON, HIT_WALL } from "../../src/typescript/src/sim/types.ts";
@@ -52,7 +52,8 @@ describe("World", () => {
   it("equal layout rngs give identical layouts", () => {
     const a = new World(cfg(), testRng(5), testRng(1));
     const b = new World(cfg(), testRng(5), testRng(99));
-    expect(a.count).toBe(DEFAULT_CONFIG.world.foodCount + DEFAULT_CONFIG.world.poisonCount);
+    const n = itemCounts(DEFAULT_CONFIG);
+    expect(a.count).toBe(n.food + n.poison);
     expect(Array.from(a.xs)).toEqual(Array.from(b.xs));
     expect(Array.from(a.ys)).toEqual(Array.from(b.ys));
     expect(Array.from(a.kinds)).toEqual(Array.from(b.kinds));
@@ -60,9 +61,9 @@ describe("World", () => {
 
   it("has no poison when disabled", () => {
     const c = cfg();
-    c.world.poisonEnabled = false;
+    c.world.poisonDensity = 0;
     const w = new World(c, testRng(5), testRng(1));
-    expect(w.count).toBe(c.world.foodCount);
+    expect(w.count).toBe(itemCounts(c).food);
     expect(w.kinds.every((k) => k === HIT_FOOD)).toBe(true);
   });
 
@@ -82,7 +83,7 @@ describe("World", () => {
     const c = cfg();
     const w = emptyWorld(c);
     w.setItem(0, 150, 500, HIT_FOOD);
-    w.setItem(c.world.foodCount, 500, 150, HIT_POISON);
+    w.setItem(itemCounts(c).food, 500, 150, HIT_POISON);
     const out: RayHit = { closeness: 0, kind: HIT_NONE };
     w.castRay(100, 500, 0, out);
     expect(out.kind).toBe(HIT_FOOD);
@@ -94,7 +95,7 @@ describe("World", () => {
   it("ray towards a nearby wall reports HIT_WALL", () => {
     const w = emptyWorld(cfg());
     const out: RayHit = { closeness: 0, kind: HIT_NONE };
-    w.castRay(980, 500, 0, out);
+    w.castRay(DEFAULT_CONFIG.world.width - 20, 500, 0, out);
     expect(out.kind).toBe(HIT_WALL);
     expect(out.closeness).toBeCloseTo(1 - 20 / 100, 5);
   });
@@ -111,7 +112,7 @@ describe("World", () => {
     const c = cfg();
     const w = emptyWorld(c);
     w.setItem(3, 300, 300, HIT_FOOD);
-    w.setItem(c.world.foodCount, 600, 600, HIT_POISON);
+    w.setItem(itemCounts(c).food, 600, 600, HIT_POISON);
     expect(w.eatAt(300 + c.creature.radius + c.world.itemRadius + 0.5, 300, c.creature.radius)).toBe(HIT_NONE);
     expect(w.eatAt(305, 300, c.creature.radius)).toBe(HIT_FOOD);
     expect(w.kinds[3]).toBe(HIT_FOOD);

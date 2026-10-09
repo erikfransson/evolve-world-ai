@@ -8,12 +8,11 @@ export interface SimConfig {
   world: {
     width: number;
     height: number;
-    foodCount: number;
-    poisonEnabled: boolean;
-    poisonCount: number;
+    foodDensity: number; // 0 none, 1 about one item per rayLength x rayLength area
+    poisonDensity: number; // same scale as foodDensity
     itemRadius: number;
     foodEnergy: number;
-    poisonEnergy: number; // removed when eaten
+    poisonEnergy: number; // removed when eaten; above maxEnergy makes poison always lethal
   };
   creature: {
     radius: number;
@@ -52,14 +51,13 @@ export const DEFAULT_CONFIG: SimConfig = {
   seed: 1,
   dt: 1 / 30,
   world: {
-    width: 1000,
+    width: 1600,
     height: 1000,
-    foodCount: 40,
-    poisonEnabled: true,
-    poisonCount: 20,
+    foodDensity: 0.5,
+    poisonDensity: 0.1,
     itemRadius: 4,
     foodEnergy: 20,
-    poisonEnergy: 35,
+    poisonEnergy: 200,
   },
   creature: {
     radius: 6,
@@ -89,16 +87,27 @@ export const DEFAULT_CONFIG: SimConfig = {
   },
 };
 
+// Density 1 means one item per rayLength^2 of area on average, so something is usually in view.
+export function itemCounts(config: SimConfig): { food: number; poison: number } {
+  const perUnit = (config.world.width * config.world.height) / config.creature.rayLength ** 2;
+  return {
+    food: Math.round(config.world.foodDensity * perUnit),
+    poison: Math.round(config.world.poisonDensity * perUnit),
+  };
+}
+
 export function epochTicks(config: SimConfig): number {
   return Math.round(config.population.epochSeconds / config.dt);
 }
 
 // Ray i points at heading + offsets[i], spread evenly from -spread/2 to +spread/2.
+// A full circle leaves out the last endpoint so no two rays coincide behind the creature.
 export function rayAngleOffsets(config: SimConfig): Float32Array {
   const { rayCount, raySpread } = config.creature;
   const offsets = new Float32Array(rayCount);
+  const gaps = raySpread >= 2 * Math.PI - 1e-9 ? rayCount : rayCount - 1;
   for (let i = 0; i < rayCount; i++) {
-    offsets[i] = rayCount === 1 ? 0 : -raySpread / 2 + (raySpread * i) / (rayCount - 1);
+    offsets[i] = rayCount === 1 ? 0 : -raySpread / 2 + (raySpread * i) / gaps;
   }
   return offsets;
 }
