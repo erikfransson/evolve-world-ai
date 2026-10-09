@@ -1,4 +1,4 @@
-import { worldToCanvas } from "../../src/typescript/src/ui/render.ts";
+import { worldToCanvas } from "../../src/typescript/src/ui/scene.ts";
 
 describe("worldToCanvas", () => {
   it("centres a square world horizontally in a wide canvas", () => {

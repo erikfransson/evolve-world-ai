@@ -1,8 +1,9 @@
-import { Brain, inputSize, layerSizes } from "./brain.ts";
-import { epochTicks, rayAngleOffsets } from "./config.ts";
+import { Brain, layerSizes } from "./brain.ts";
+import { maxLifeTicks } from "./config.ts";
 import type { SimConfig } from "./config.ts";
 import { createRng, deriveSeed } from "./rng.ts";
-import { HIT_FOOD, HIT_NONE, HIT_POISON, HIT_WALL, OUTPUT_SIZE, RAY_FEATURES } from "./types.ts";
+import { OUTPUT_SIZE, OUT_THRUST, OUT_TURN, encodeInputs, energySignal, inputSize, rayAngleOffsets } from "./sensors.ts";
+import { HIT_FOOD, HIT_NONE, HIT_POISON } from "./types.ts";
 import type { CreatureState, EpisodeView, Genome, RayHit } from "./types.ts";
 import { World } from "./world.ts";
 
@@ -10,13 +11,13 @@ import { World } from "./world.ts";
 export class Episode implements EpisodeView {
   readonly state: CreatureState;
   readonly rays: RayHit[];
+  readonly rayOffsets: Float32Array;
   readonly world: World;
   readonly brain: Brain;
 
   private readonly config: SimConfig;
   private readonly input: Float32Array;
   private readonly output: Float32Array;
-  private readonly offsets: Float32Array;
   private readonly maxTicks: number;
 
   constructor(config: SimConfig, genome: Genome, layoutSeed: number, creatureIndex: number) {
@@ -25,8 +26,8 @@ export class Episode implements EpisodeView {
     this.brain = new Brain(layerSizes(config), genome);
     this.input = new Float32Array(inputSize(config));
     this.output = new Float32Array(OUTPUT_SIZE);
-    this.offsets = rayAngleOffsets(config);
-    this.maxTicks = epochTicks(config);
+    this.rayOffsets = rayAngleOffsets(config);
+    this.maxTicks = maxLifeTicks(config);
     this.rays = [];
     for (let i = 0; i < config.creature.rayCount; i++) this.rays.push({ closeness: 0, kind: HIT_NONE });
     this.state = {
@@ -50,28 +51,16 @@ export class Episode implements EpisodeView {
     if (this.done) return;
     const { dt, creature: c, world: w } = this.config;
     const s = this.state;
-    const input = this.input;
     const rays = this.rays;
 
-    for (let i = 0; i < rays.length; i++) {
-      const ray = rays[i];
-      this.world.castRay(s.x, s.y, s.heading + this.offsets[i], ray);
-      const k = i * RAY_FEATURES;
-      input[k] = ray.closeness;
-      input[k + 1] = ray.kind === HIT_FOOD ? 1 : 0;
-      input[k + 2] = ray.kind === HIT_POISON ? 1 : 0;
-      input[k + 3] = ray.kind === HIT_WALL ? 1 : 0;
-    }
-    const base = rays.length * RAY_FEATURES;
-    input[base] = 1 - Math.exp(-s.energy / c.startEnergy); // stored energy is unbounded, squash to [0, 1)
-    input[base + 1] = ((s.vx * Math.cos(s.heading) + s.vy * Math.sin(s.heading)) * c.drag) / c.maxThrust;
-    input[base + 2] = s.turnRate / c.maxTurnRate;
+    for (let i = 0; i < rays.length; i++) this.world.castRay(s.x, s.y, s.heading + this.rayOffsets[i], rays[i]);
+    encodeInputs(s, rays, this.config, this.input);
 
-    this.brain.forward(input, this.output);
-    const thrust = Math.max(0, this.output[1]);
+    this.brain.forward(this.input, this.output);
+    const thrust = Math.max(0, this.output[OUT_THRUST]);
 
     // Exact exponential relaxation each tick keeps motion smooth and independent of dt.
-    const targetTurn = this.output[0] * c.maxTurnRate;
+    const targetTurn = this.output[OUT_TURN] * c.maxTurnRate;
     s.turnRate = targetTurn + (s.turnRate - targetTurn) * Math.exp(-c.turnDamping * dt);
     s.heading += s.turnRate * dt;
 
@@ -107,7 +96,7 @@ export class Episode implements EpisodeView {
 
   fitness(): number {
     const { dt, creature: c } = this.config;
-    return this.state.ticksAlive * dt + (1 - Math.exp(-this.state.energy / c.startEnergy)) * dt;
+    return this.state.ticksAlive * dt + energySignal(this.state.energy, c.startEnergy) * dt;
   }
 }
 

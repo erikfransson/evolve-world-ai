@@ -4,7 +4,7 @@
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { DEFAULT_CONFIG } from "./sim/config.ts";
+import { DEFAULT_CONFIG, withOverrides } from "./sim/config.ts";
 import type { SimConfig } from "./sim/config.ts";
 import { Evolution } from "./sim/evolution.ts";
 
@@ -28,23 +28,23 @@ if (values.out === undefined) {
 }
 const outPath = resolve(values.out);
 
-type Plain = Record<string, unknown>;
-const isPlain = (v: unknown): v is Plain => typeof v === "object" && v !== null && !Array.isArray(v);
-
-// Recursively merges over into base; arrays and scalars are replaced.
-function deepMerge(base: Plain, over: Plain): Plain {
-  const out: Plain = { ...base };
-  for (const [key, value] of Object.entries(over)) {
-    const current = out[key];
-    out[key] = isPlain(value) && isPlain(current) ? deepMerge(current, value) : value;
+let seed: number | undefined;
+if (values.seed !== undefined) {
+  if (!/^-?\d+$/.test(values.seed)) {
+    console.error(`error: --seed must be an integer, got "${values.seed}"`);
+    process.exit(1);
   }
-  return out;
+  seed = Number(values.seed);
 }
 
-const overrides: Plain = values.config ? JSON.parse(readFileSync(values.config, "utf8")) : {};
-const merged = deepMerge(structuredClone(DEFAULT_CONFIG) as unknown as Plain, overrides);
-const config = merged as unknown as SimConfig;
-if (values.seed !== undefined) config.seed = Number(values.seed);
+let config: SimConfig;
+try {
+  const overrides = values.config ? JSON.parse(readFileSync(values.config, "utf8")) : {};
+  config = withOverrides(DEFAULT_CONFIG, seed === undefined ? overrides : { ...overrides, seed });
+} catch (e) {
+  console.error(`error: ${e instanceof Error ? e.message : String(e)}`);
+  process.exit(1);
+}
 
 mkdirSync(dirname(outPath), { recursive: true });
 writeFileSync(outPath, JSON.stringify({ type: "config", config }) + "\n");

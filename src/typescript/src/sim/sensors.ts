@@ -1,0 +1,51 @@
+import type { SimConfig } from "./config.ts";
+import { HIT_FOOD, HIT_POISON, HIT_WALL } from "./types.ts";
+import type { CreatureState, RayHit } from "./types.ts";
+
+// Brain input layout: per ray closeness, isFood, isPoison, isWall; then the extras below.
+export const RAY_FEATURES = 4;
+export const INPUT_EXTRA_LABELS = ["energy", "speed", "turn"] as const;
+export const EXTRA_INPUTS = INPUT_EXTRA_LABELS.length;
+// Brain outputs: turn and thrust (negative thrust acts as 0).
+export const OUTPUT_LABELS = ["turn", "thrust"] as const;
+export const OUTPUT_SIZE = OUTPUT_LABELS.length;
+export const OUT_TURN = 0;
+export const OUT_THRUST = 1;
+
+export function inputSize(config: SimConfig): number {
+  return config.creature.rayCount * RAY_FEATURES + EXTRA_INPUTS;
+}
+
+// Ray i points at heading + offsets[i], spread evenly from -spread/2 to +spread/2.
+// A full circle leaves out the last endpoint so no two rays coincide behind the creature.
+export function rayAngleOffsets(config: SimConfig): Float32Array {
+  const { rayCount, raySpread } = config.creature;
+  const offsets = new Float32Array(rayCount);
+  const gaps = raySpread >= 2 * Math.PI - 1e-9 ? rayCount : rayCount - 1;
+  for (let i = 0; i < rayCount; i++) {
+    offsets[i] = rayCount === 1 ? 0 : -raySpread / 2 + (raySpread * i) / gaps;
+  }
+  return offsets;
+}
+
+// Stored energy is unbounded, so squash it to [0, 1).
+export function energySignal(energy: number, startEnergy: number): number {
+  return 1 - Math.exp(-energy / startEnergy);
+}
+
+// Extras: squashed energy, forward speed / top speed, turnRate / maxTurnRate. Allocation-free.
+export function encodeInputs(state: CreatureState, rays: readonly RayHit[], config: SimConfig, out: Float32Array): void {
+  const c = config.creature;
+  for (let i = 0; i < rays.length; i++) {
+    const ray = rays[i];
+    const k = i * RAY_FEATURES;
+    out[k] = ray.closeness;
+    out[k + 1] = ray.kind === HIT_FOOD ? 1 : 0;
+    out[k + 2] = ray.kind === HIT_POISON ? 1 : 0;
+    out[k + 3] = ray.kind === HIT_WALL ? 1 : 0;
+  }
+  const base = rays.length * RAY_FEATURES;
+  out[base] = energySignal(state.energy, c.startEnergy);
+  out[base + 1] = ((state.vx * Math.cos(state.heading) + state.vy * Math.sin(state.heading)) * c.drag) / c.maxThrust;
+  out[base + 2] = state.turnRate / c.maxTurnRate;
+}

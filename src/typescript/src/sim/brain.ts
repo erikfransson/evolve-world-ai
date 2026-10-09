@@ -1,12 +1,8 @@
 import type { SimConfig } from "./config.ts";
-import { OUTPUT_SIZE, RAY_FEATURES, EXTRA_INPUTS } from "./types.ts";
+import { OUTPUT_SIZE, inputSize } from "./sensors.ts";
 import type { Genome, Rng } from "./types.ts";
 
 // Genome layout, per layer in order: weights row-major [out][in], then biases [out].
-
-export function inputSize(config: SimConfig): number {
-  return config.creature.rayCount * RAY_FEATURES + EXTRA_INPUTS;
-}
 
 export function layerSizes(config: SimConfig): number[] {
   return [inputSize(config), ...config.brain.hiddenLayers, OUTPUT_SIZE];

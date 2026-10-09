@@ -144,7 +144,7 @@ export class World implements WorldView {
           }
           if (t < best || (t === best && kind === HIT_WALL)) {
             best = t;
-            kind = this.kinds[i] as HitKind;
+            kind = this.itemKind(i);
           }
         }
       }
@@ -157,6 +157,11 @@ export class World implements WorldView {
       out.closeness = 1 - best / L;
       out.kind = kind;
     }
+  }
+
+  // Items in the grid are always food or poison; eaten ones are unlinked.
+  private itemKind(i: number): HitKind {
+    return this.kinds[i] === HIT_FOOD ? HIT_FOOD : HIT_POISON;
   }
 
   eatAt(x: number, y: number, radius: number): HitKind {
@@ -177,7 +182,7 @@ export class World implements WorldView {
           const fx = this.xs[i] - x;
           const fy = this.ys[i] - y;
           if (fx * fx + fy * fy < reach2) {
-            const kind = this.kinds[i] as HitKind;
+            const kind = this.itemKind(i);
             const r = this.itemRadius;
             if (this.respawn) {
               this.setItem(i, this.respawnRng.range(r, this.width - r), this.respawnRng.range(r, this.height - r), kind);

@@ -6,14 +6,15 @@ import { createRng } from "../../src/typescript/src/sim/rng.ts";
 
 const cfg: SimConfig = {
   ...DEFAULT_CONFIG,
-  population: { size: 8, epochSeconds: 20 },
+  creature: { ...DEFAULT_CONFIG.creature, maxLifeSeconds: 20 },
+  population: { size: 8 },
 };
 const sizes = layerSizes(cfg);
 const rand = (seed: number) => randomGenome(sizes, createRng(seed));
 
 describe("Episode", () => {
   it("all-zero genome never moves and starves at startEnergy / livingCost", () => {
-    const long: SimConfig = { ...cfg, population: { size: 8, epochSeconds: 80 }, world: { ...cfg.world, foodDensity: 0, poisonDensity: 0 } };
+    const long: SimConfig = { ...cfg, creature: { ...cfg.creature, maxLifeSeconds: 80 }, world: { ...cfg.world, foodDensity: 0, poisonDensity: 0 } };
     const e = new Episode(long, new Float32Array(genomeLength(sizes)), 5, 0);
     while (!e.done) {
       e.step();

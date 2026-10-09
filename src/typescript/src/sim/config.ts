@@ -8,7 +8,7 @@ export interface SimConfig {
   world: {
     width: number;
     height: number;
-    foodDensity: number; // 0 none, 1 about one item per rayLength x rayLength area
+    foodDensity: number; // 0 none, 1 about one item per DENSITY_CELL x DENSITY_CELL area
     poisonDensity: number; // same scale as foodDensity
     respawn: boolean; // eaten items reappear elsewhere; false makes food finite so lives end naturally
     itemRadius: number;
@@ -27,13 +27,13 @@ export interface SimConfig {
     rayCount: number;
     raySpread: number; // total fan angle in radians
     rayLength: number;
+    maxLifeSeconds: number; // safety stop only, normally a life ends when energy runs out
   };
   brain: {
     hiddenLayers: number[]; // neurons per hidden layer, 1 to 4 layers of 4 to 32
   };
   population: {
     size: number;
-    epochSeconds: number; // safety stop only, normally lives end when energy runs out
   };
   ga: {
     selection: SelectionMethod;
@@ -70,9 +70,10 @@ export const DEFAULT_CONFIG: SimConfig = {
     rayCount: 8,
     raySpread: (75 * Math.PI) / 180,
     rayLength: 100,
+    maxLifeSeconds: 3600,
   },
   brain: { hiddenLayers: [16] },
-  population: { size: 150, epochSeconds: 3600 },
+  population: { size: 150 },
   ga: {
     selection: "truncation",
     eliteFraction: 0.02,
@@ -83,27 +84,57 @@ export const DEFAULT_CONFIG: SimConfig = {
   },
 };
 
-// Density 1 means one item per rayLength^2 of area on average, so something is usually in view.
+const DENSITY_CELL = 100; // world units; density 1 = one item per 100 x 100 area
+
+// Independent of rayLength, so changing the vision range does not change the amount of food.
 export function itemCounts(config: SimConfig): { food: number; poison: number } {
-  const perUnit = (config.world.width * config.world.height) / config.creature.rayLength ** 2;
+  const perUnit = (config.world.width * config.world.height) / DENSITY_CELL ** 2;
   return {
     food: Math.round(config.world.foodDensity * perUnit),
     poison: Math.round(config.world.poisonDensity * perUnit),
   };
 }
 
-export function epochTicks(config: SimConfig): number {
-  return Math.round(config.population.epochSeconds / config.dt);
+export function maxLifeTicks(config: SimConfig): number {
+  return Math.round(config.creature.maxLifeSeconds / config.dt);
 }
 
-// Ray i points at heading + offsets[i], spread evenly from -spread/2 to +spread/2.
-// A full circle leaves out the last endpoint so no two rays coincide behind the creature.
-export function rayAngleOffsets(config: SimConfig): Float32Array {
-  const { rayCount, raySpread } = config.creature;
-  const offsets = new Float32Array(rayCount);
-  const gaps = raySpread >= 2 * Math.PI - 1e-9 ? rayCount : rayCount - 1;
-  for (let i = 0; i < rayCount; i++) {
-    offsets[i] = rayCount === 1 ? 0 : -raySpread / 2 + (raySpread * i) / gaps;
+export type DeepPartial<T> = T extends readonly unknown[] ? T : T extends object ? { [K in keyof T]?: DeepPartial<T[K]> } : T;
+
+const isPlain = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+
+const describe = (v: unknown): string => (Array.isArray(v) ? "array" : v === null ? "null" : typeof v);
+
+// Writes over into target, which has the shape of a SimConfig branch. Arrays and scalars are replaced.
+function applyOverrides(target: Record<string, unknown>, over: Record<string, unknown>, path: string): void {
+  for (const [key, value] of Object.entries(over)) {
+    const where = path ? `${path}.${key}` : key;
+    if (!Object.hasOwn(target, key)) throw new Error(`unknown config key "${where}"`);
+    if (value === undefined) continue;
+    const current = target[key];
+    if (isPlain(current)) {
+      if (!isPlain(value)) throw new Error(`config "${where}" must be an object, got ${describe(value)}`);
+      applyOverrides(current, value, where);
+    } else if (Array.isArray(current)) {
+      if (!Array.isArray(value)) throw new Error(`config "${where}" must be an array, got ${describe(value)}`);
+      const itemType = typeof current[0];
+      value.forEach((item, i) => {
+        if (current.length > 0 && typeof item !== itemType) {
+          throw new Error(`config "${where}[${i}]" must be a ${itemType}, got ${describe(item)}`);
+        }
+      });
+      target[key] = value.slice();
+    } else {
+      if (typeof value !== typeof current) throw new Error(`config "${where}" must be a ${typeof current}, got ${describe(value)}`);
+      target[key] = value;
+    }
   }
-  return offsets;
+}
+
+// Returns a new config with overrides applied. Throws on unknown keys or values of the wrong type.
+export function withOverrides(base: SimConfig, overrides: DeepPartial<SimConfig>): SimConfig {
+  if (!isPlain(overrides)) throw new Error(`config overrides must be an object, got ${describe(overrides)}`);
+  const config = structuredClone(base);
+  applyOverrides(config as unknown as Record<string, unknown>, overrides, "");
+  return config;
 }

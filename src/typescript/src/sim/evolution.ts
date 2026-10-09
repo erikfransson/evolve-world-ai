@@ -1,13 +1,14 @@
-import { layerSizes, randomGenome } from "./brain.ts";
+import { genomeLength, layerSizes, randomGenome } from "./brain.ts";
 import type { SimConfig } from "./config.ts";
 import { runEpisode } from "./episode.ts";
 import { nextGeneration } from "./ga.ts";
+import { Population } from "./population.ts";
 import { createRng, deriveSeed } from "./rng.ts";
-import type { GenerationResult, Genome } from "./types.ts";
+import type { GenerationResult } from "./types.ts";
 
 export class Evolution {
   generation = 0;
-  population: Genome[];
+  population: Population;
   bestEver = 0;
 
   private readonly config: SimConfig;
@@ -16,38 +17,40 @@ export class Evolution {
     this.config = config;
     const sizes = layerSizes(config);
     const rng = createRng(deriveSeed(config.seed, 0xbeef));
-    this.population = [];
-    for (let i = 0; i < config.population.size; i++) this.population.push(randomGenome(sizes, rng));
+    this.population = new Population(config.population.size, genomeLength(sizes));
+    for (let i = 0; i < config.population.size; i++) this.population.genome(i).set(randomGenome(sizes, rng));
   }
 
-  layoutSeedFor(generation: number): number {
+  private layoutSeedFor(generation: number): number {
     return deriveSeed(this.config.seed, generation);
   }
 
-  runGeneration(): { result: GenerationResult; genomes: Genome[] } {
+  // Returns the evaluated population; this.population becomes its children.
+  runGeneration(): { result: GenerationResult; population: Population } {
     const generation = this.generation;
     const layoutSeed = this.layoutSeedFor(generation);
-    const genomes = this.population;
-    const fitness = new Float64Array(genomes.length);
+    const population = this.population;
+    const n = population.size;
+    const fitness = new Float64Array(n);
     let bestIndex = 0;
     let sum = 0;
-    for (let i = 0; i < genomes.length; i++) {
-      fitness[i] = runEpisode(this.config, genomes[i], layoutSeed, i);
+    for (let i = 0; i < n; i++) {
+      fitness[i] = runEpisode(this.config, population.genome(i), layoutSeed, i);
       sum += fitness[i];
       if (fitness[i] > fitness[bestIndex]) bestIndex = i;
     }
-    const bestFitness = genomes.length ? fitness[bestIndex] : 0;
+    const bestFitness = n ? fitness[bestIndex] : 0;
     const result: GenerationResult = {
       generation,
       layoutSeed,
       fitness,
       bestIndex,
       bestFitness,
-      meanFitness: genomes.length ? sum / genomes.length : 0,
+      meanFitness: n ? sum / n : 0,
     };
     if (bestFitness > this.bestEver) this.bestEver = bestFitness;
-    this.population = nextGeneration(genomes, fitness, this.config.ga, createRng(deriveSeed(this.config.seed, generation, 7)));
+    this.population = nextGeneration(population, fitness, this.config.ga, createRng(deriveSeed(this.config.seed, generation, 7)));
     this.generation = generation + 1;
-    return { result, genomes };
+    return { result, population };
   }
 }

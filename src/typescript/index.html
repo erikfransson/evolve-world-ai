@@ -70,15 +70,15 @@
                 </div>
               </div>
               <div class="field">
-                <div class="row"><span class="lbl"><label class="name" for="worldWidth">World width</label><span class="tip" tabindex="0" role="img" aria-label="Size of the box the creatures swim in. For scale, a creature's vision rays are 100 units long." data-tip="Size of the box the creatures swim in. For scale, a creature's vision rays are 100 units long.">ⓘ</span></span><output for="worldWidth" data-fmt="size"></output></div>
+                <div class="row"><span class="lbl"><label class="name" for="worldWidth">World width</label><span class="tip" tabindex="0" role="img" aria-label="Size of the box the creatures swim in. For scale, the default vision range is 100 units." data-tip="Size of the box the creatures swim in. For scale, the default vision range is 100 units.">ⓘ</span></span><output for="worldWidth" data-fmt="size"></output></div>
                 <input id="worldWidth" type="range" min="200" max="4000" step="10" />
               </div>
               <div class="field">
-                <div class="row"><span class="lbl"><label class="name" for="worldHeight">World height</label><span class="tip" tabindex="0" role="img" aria-label="Size of the box the creatures swim in. For scale, a creature's vision rays are 100 units long." data-tip="Size of the box the creatures swim in. For scale, a creature's vision rays are 100 units long.">ⓘ</span></span><output for="worldHeight" data-fmt="size"></output></div>
+                <div class="row"><span class="lbl"><label class="name" for="worldHeight">World height</label><span class="tip" tabindex="0" role="img" aria-label="Size of the box the creatures swim in. For scale, the default vision range is 100 units." data-tip="Size of the box the creatures swim in. For scale, the default vision range is 100 units.">ⓘ</span></span><output for="worldHeight" data-fmt="size"></output></div>
                 <input id="worldHeight" type="range" min="200" max="3000" step="10" />
               </div>
               <div class="field">
-                <div class="row"><span class="lbl"><label class="name" for="foodDensity">Food density</label><span class="tip" tabindex="0" role="img" aria-label="How much food is in the world. 0 is none, 1 means roughly one piece in every ray-length square." data-tip="How much food is in the world. 0 is none, 1 means roughly one piece in every ray-length square.">ⓘ</span></span><span class="vals"><span class="hint" id="foodItems"></span><output for="foodDensity" data-fmt="dens"></output></span></div>
+                <div class="row"><span class="lbl"><label class="name" for="foodDensity">Food density</label><span class="tip" tabindex="0" role="img" aria-label="How much food is in the world. 0 is none, 1 means roughly one piece in every 100 × 100 area." data-tip="How much food is in the world. 0 is none, 1 means roughly one piece in every 100 × 100 area.">ⓘ</span></span><span class="vals"><span class="hint" id="foodItems"></span><output for="foodDensity" data-fmt="dens"></output></span></div>
                 <input id="foodDensity" type="range" min="0" max="1" step="0.01" />
               </div>
               <div class="field">
@@ -97,6 +97,10 @@
               <div class="field">
                 <div class="row"><span class="lbl"><label class="name" for="raySpread">Vision angle</label><span class="tip" tabindex="0" role="img" aria-label="Total width of the fan of rays, centred on where the creature faces." data-tip="Total width of the fan of rays, centred on where the creature faces.">ⓘ</span></span><output for="raySpread" data-fmt="deg"></output></div>
                 <input id="raySpread" type="range" min="10" max="360" step="5" />
+              </div>
+              <div class="field">
+                <div class="row"><span class="lbl"><label class="name" for="rayLength">Vision range</label><span class="tip" tabindex="0" role="img" aria-label="How far each vision ray reaches, in world units. The world is 1600 units wide by default." data-tip="How far each vision ray reaches, in world units. The world is 1600 units wide by default.">ⓘ</span></span><output for="rayLength" data-fmt="size"></output></div>
+                <input id="rayLength" type="range" min="40" max="300" step="5" />
               </div>
               <div class="field">
                 <div class="row"><span class="lbl"><label class="name" for="layers">Hidden layers</label><span class="tip" tabindex="0" role="img" aria-label="How many layers of neurons sit between the creature's eyes and its muscles." data-tip="How many layers of neurons sit between the creature's eyes and its muscles.">ⓘ</span></span><output for="layers"></output></div>

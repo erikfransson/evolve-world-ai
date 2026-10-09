@@ -1,5 +1,6 @@
 import type { SelectionMethod, SimConfig } from "./config.ts";
-import type { Genome, Rng } from "./types.ts";
+import { Population } from "./population.ts";
+import type { Rng } from "./types.ts";
 
 type GaConfig = SimConfig["ga"];
 
@@ -42,33 +43,32 @@ export const SELECTION_PICKERS: Record<SelectionMethod, PickerFactory> = {
 };
 
 export function nextGeneration(
-  population: readonly Genome[],
+  population: Population,
   fitness: ArrayLike<number>,
   ga: GaConfig,
   rng: Rng,
-): Genome[] {
-  const n = population.length;
-  if (n === 0) return [];
+): Population {
+  const n = population.size;
+  const next = new Population(n, population.genomeLength);
+  if (n === 0) return next;
   const order = Array.from({ length: n }, (_, i) => i).sort((a, b) => fitness[b] - fitness[a]);
 
   let eliteCount = Math.min(n, Math.round(ga.eliteFraction * n));
   if (ga.eliteFraction > 0) eliteCount = Math.max(1, eliteCount);
 
-  const next: Genome[] = [];
-  for (let i = 0; i < eliteCount; i++) next.push(new Float32Array(population[order[i]]));
+  for (let i = 0; i < eliteCount; i++) next.genome(i).set(population.genome(order[i]));
 
   const pick = SELECTION_PICKERS[ga.selection](fitness, order, ga, rng);
-  while (next.length < n) {
-    const a = population[pick()];
-    const child = new Float32Array(a);
+  for (let i = eliteCount; i < n; i++) {
+    const child = next.genome(i);
+    child.set(population.genome(pick()));
     if (ga.crossover) {
-      const b = population[pick()];
+      const b = population.genome(pick());
       for (let g = 0; g < child.length; g++) if (rng.next() < 0.5) child[g] = b[g];
     }
     for (let g = 0; g < child.length; g++) {
       if (rng.next() < ga.mutationRate) child[g] += rng.normal() * ga.mutationStd;
     }
-    next.push(child);
   }
   return next;
 }

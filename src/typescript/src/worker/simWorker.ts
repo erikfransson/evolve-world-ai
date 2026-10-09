@@ -1,5 +1,4 @@
-import type { InMessage, OutMessage } from "../sim/protocol.ts";
-import { packGenomes } from "../sim/protocol.ts";
+import type { GenerationMessage, InMessage } from "./protocol.ts";
 import { Evolution } from "../sim/evolution.ts";
 
 let evolution: Evolution | null = null;
@@ -15,16 +14,16 @@ function schedule(): void {
 function loop(): void {
   scheduled = false;
   if (!evolution || paused) return;
-  const { result, genomes } = evolution.runGeneration();
-  const flat = packGenomes(genomes);
-  const msg: OutMessage = {
+  const { result, population } = evolution.runGeneration();
+  const msg: GenerationMessage = {
     type: "generation",
     result,
     bestEver: evolution.bestEver,
-    genomes: flat,
-    genomeLength: genomes[0]?.length ?? 0,
+    genomes: population.data,
+    genomeLength: population.genomeLength,
+    populationSize: population.size,
   };
-  self.postMessage(msg, { transfer: [flat.buffer, result.fitness.buffer] });
+  self.postMessage(msg, { transfer: [population.data.buffer, result.fitness.buffer] });
   schedule();
 }
 
