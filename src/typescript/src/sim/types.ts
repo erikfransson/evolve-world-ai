@@ -32,12 +32,12 @@ export interface CreatureState {
   ticksAlive: number;
 }
 
-// Read-only view of one creature's world copy. Indices >= count are unused.
+// Read-only view of a world's item slots.
 export interface WorldView {
-  readonly count: number;
+  readonly count: number; // slot capacity
   readonly xs: Float32Array;
   readonly ys: Float32Array;
-  readonly kinds: Uint8Array; // HIT_FOOD or HIT_POISON, HIT_NONE once eaten
+  readonly kinds: Uint8Array; // HIT_FOOD or HIT_POISON, HIT_NONE for a free slot
 }
 
 // What the replay draws of a creature it plays back rather than simulates.

@@ -5,8 +5,13 @@ import type { Evaluator } from "./evaluator.ts";
 import { nextGeneration } from "./ga.ts";
 import { Population } from "./population.ts";
 import { createRng, deriveSeed } from "./rng.ts";
+import type { StatefulRng } from "./rng.ts";
 import type { RecordOptions, Trajectories } from "./trajectory.ts";
 import type { GenerationResult } from "./types.ts";
+
+// Draws the generation-0 genomes in creature order.
+export const founderRng = (seed: number): StatefulRng => createRng(deriveSeed(seed, 0xbeef));
+export const layoutSeedFor = (seed: number, generation: number): number => deriveSeed(seed, generation);
 
 export class Evolution {
   generation = 0;
@@ -20,13 +25,9 @@ export class Evolution {
     this.config = config;
     this.serial = new SerialEvaluator(config);
     const sizes = layerSizes(config);
-    const rng = createRng(deriveSeed(config.seed, 0xbeef));
+    const rng = founderRng(config.seed);
     this.population = new Population(config.population.size, genomeLength(sizes));
     for (let i = 0; i < config.population.size; i++) this.population.genome(i).set(randomGenome(sizes, rng));
-  }
-
-  private layoutSeedFor(generation: number): number {
-    return deriveSeed(this.config.seed, generation);
   }
 
   // Returns the evaluated population; this.population becomes its children. Pass a worker pool to evaluate in parallel.
@@ -35,7 +36,7 @@ export class Evolution {
     evaluator: Evaluator = this.serial,
     record?: RecordOptions,
   ): Promise<{ result: GenerationResult; population: Population; frames?: Trajectories }> {
-    const layoutSeed = this.layoutSeedFor(this.generation);
+    const layoutSeed = layoutSeedFor(this.config.seed, this.generation);
     const population = this.population;
     const { fitness, frames } = await evaluator.evaluate(population, layoutSeed, record);
     if (population !== this.population) throw new Error("population changed during evaluation");

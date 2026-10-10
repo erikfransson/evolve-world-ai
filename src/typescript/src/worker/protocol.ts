@@ -33,7 +33,6 @@ export interface PastMessage {
   request: number;
   generation: number;
   layoutSeed: number;
-  fitness: Float64Array; // of the requested creatures (transferred), best first
   bestIndex: number; // creature index of the best in its generation
   genome: Float32Array; // the best's genome
   trajectories: Trajectories; // the others, fittest first (transferred)

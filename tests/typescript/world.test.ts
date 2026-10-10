@@ -1,22 +1,37 @@
 import { DEFAULT_CONFIG, itemCounts } from "../../src/typescript/src/sim/config.ts";
 import type { SimConfig } from "../../src/typescript/src/sim/config.ts";
-import { World } from "../../src/typescript/src/sim/world.ts";
+import { RayCache, World } from "../../src/typescript/src/sim/world.ts";
 import { HIT_FOOD, HIT_NONE, HIT_POISON, HIT_WALL } from "../../src/typescript/src/sim/types.ts";
-import type { RayHit } from "../../src/typescript/src/sim/types.ts";
+import type { HitKind, RayHit, Rng } from "../../src/typescript/src/sim/types.ts";
 import { testRng } from "./helpers.ts";
 
 const cfg = (): SimConfig => structuredClone(DEFAULT_CONFIG);
 
 // One ray at angle a through the batch API.
-function castRay(w: World, x: number, y: number, a: number, out: RayHit): void {
-  w.castRays(x, y, Float64Array.of(Math.cos(a)), Float64Array.of(Math.sin(a)), [out]);
+function castRay(w: World, x: number, y: number, a: number, out: RayHit, cache = new RayCache()): void {
+  w.castRays(x, y, Float64Array.of(Math.cos(a)), Float64Array.of(Math.sin(a)), [out], cache);
 }
 
-// Empty world with all items parked far in a corner, then hand-placed.
+// Empty world with room for the config's items, to place them by hand.
 function emptyWorld(config: SimConfig): World {
-  const w = new World(config, testRng(1), testRng(2));
-  for (let i = 0; i < w.count; i++) w.setItem(i, 900, 900, w.kinds[i] as 1 | 2);
+  const n = itemCounts(config);
+  return new World(config, n.food + n.poison);
+}
+
+// The config's items scattered as Trials does.
+function scattered(config: SimConfig, rng: Rng): World {
+  const n = itemCounts(config);
+  const w = new World(config, n.food + n.poison);
+  w.scatter(n.food, n.poison, rng);
   return w;
+}
+
+// Applies Trials' rule to an eaten item: respawn elsewhere, else remove.
+function eat(w: World, x: number, y: number, radius: number, cache: RayCache, respawn: boolean, rng: Rng): void {
+  const i = w.eatAt(x, y, radius, cache);
+  if (i < 0) return;
+  if (respawn) w.placeRandomly(i, w.kinds[i] as HitKind, rng);
+  else w.removeItem(i);
 }
 
 function brute(w: World, config: SimConfig, x: number, y: number, a: number): RayHit {
@@ -56,8 +71,8 @@ function brute(w: World, config: SimConfig, x: number, y: number, a: number): Ra
 
 describe("World", () => {
   it("equal layout rngs give identical layouts", () => {
-    const a = new World(cfg(), testRng(5), testRng(1));
-    const b = new World(cfg(), testRng(5), testRng(99));
+    const a = scattered(cfg(), testRng(5));
+    const b = scattered(cfg(), testRng(5));
     const n = itemCounts(DEFAULT_CONFIG);
     expect(a.count).toBe(n.food + n.poison);
     expect(Array.from(a.xs)).toEqual(Array.from(b.xs));
@@ -68,14 +83,14 @@ describe("World", () => {
   it("has no poison when disabled", () => {
     const c = cfg();
     c.world.poisonDensity = 0;
-    const w = new World(c, testRng(5), testRng(1));
+    const w = scattered(c, testRng(5));
     expect(w.count).toBe(itemCounts(c).food);
     expect(w.kinds.every((k) => k === HIT_FOOD)).toBe(true);
   });
 
   it("items lie inside the allowed box", () => {
     const c = cfg();
-    const w = new World(c, testRng(3), testRng(1));
+    const w = scattered(c, testRng(3));
     const r = c.world.itemRadius;
     for (let i = 0; i < w.count; i++) {
       expect(w.xs[i]).toBeGreaterThanOrEqual(r);
@@ -89,7 +104,7 @@ describe("World", () => {
     const c = cfg();
     const w = emptyWorld(c);
     w.setItem(0, 150, 500, HIT_FOOD);
-    w.setItem(itemCounts(c).food, 500, 150, HIT_POISON);
+    w.setItem(1, 500, 150, HIT_POISON);
     const out: RayHit = { closeness: 0, kind: HIT_NONE };
     castRay(w, 100, 500, 0, out);
     expect(out.kind).toBe(HIT_FOOD);
@@ -114,75 +129,91 @@ describe("World", () => {
     expect(out.kind).toBe(HIT_NONE);
   });
 
-  it("eatAt with respawn returns the kind and moves the item", () => {
+  it("eatAt returns the touched item's index and leaves the item in place", () => {
     const c = cfg();
-    c.world.respawn = true;
     const w = emptyWorld(c);
+    const cache = new RayCache();
     w.setItem(3, 300, 300, HIT_FOOD);
-    w.setItem(itemCounts(c).food, 600, 600, HIT_POISON);
-    expect(w.eatAt(300 + c.creature.radius + c.world.itemRadius + 0.5, 300, c.creature.radius)).toBe(HIT_NONE);
-    expect(w.eatAt(305, 300, c.creature.radius)).toBe(HIT_FOOD);
+    w.setItem(7, 600, 600, HIT_POISON);
+    expect(w.eatAt(300 + c.creature.radius + c.world.itemRadius + 0.5, 300, c.creature.radius, cache)).toBe(-1);
+    expect(w.eatAt(305, 300, c.creature.radius, cache)).toBe(3);
     expect(w.kinds[3]).toBe(HIT_FOOD);
-    expect(w.xs[3] === 300 && w.ys[3] === 300).toBe(false);
-    expect(w.eatAt(300, 300, c.creature.radius)).toBe(HIT_NONE);
-    expect(w.eatAt(600, 600, c.creature.radius)).toBe(HIT_POISON);
+    expect(w.eatAt(600, 600, c.creature.radius, cache)).toBe(7);
+    // Through the anchored list too.
+    castRay(w, 300, 300, 0, { closeness: 0, kind: HIT_NONE }, cache);
+    expect(w.eatAt(302, 300, c.creature.radius, cache)).toBe(3);
   });
 
-  it("eatAt without respawn removes the item for good", () => {
+  it("removeItem frees the slot, out of eating and ray reach, and addItem refills free slots", () => {
     const c = cfg();
-    c.world.respawn = false;
-    const w = emptyWorld(c);
-    w.setItem(3, 300, 300, HIT_FOOD);
-    expect(w.eatAt(305, 300, c.creature.radius)).toBe(HIT_FOOD);
-    expect(w.kinds[3]).toBe(HIT_NONE);
-    expect(w.eatAt(305, 300, c.creature.radius)).toBe(HIT_NONE);
+    const w = new World(c, 2);
+    const cache = new RayCache();
+    expect(w.addItem(300, 300, HIT_FOOD)).toBe(0);
+    expect(w.addItem(700, 700, HIT_POISON)).toBe(1);
+    expect(w.addItem(500, 500, HIT_FOOD)).toBe(-1);
     const out: RayHit = { closeness: 0, kind: HIT_NONE };
-    castRay(w, 250, 300, 0, out);
+    castRay(w, 250, 300, 0, out, cache);
+    expect(out.kind).toBe(HIT_FOOD);
+    w.removeItem(0);
+    expect(w.kinds[0]).toBe(HIT_NONE);
+    expect(w.eatAt(305, 300, c.creature.radius, cache)).toBe(-1);
+    castRay(w, 250, 300, 0, out, cache);
     expect(out.kind).toBe(HIT_NONE);
+    expect(w.addItem(310, 300, HIT_POISON)).toBe(0);
+    castRay(w, 250, 300, 0, out, cache);
+    expect(out.kind).toBe(HIT_POISON);
+    expect(w.eatAt(305, 300, c.creature.radius, cache)).toBe(0);
   });
 
   it.each([true, false])("grid results match brute force over random rays and after eating (respawn %s)", (respawn) => {
     const c = cfg();
-    c.world.respawn = respawn;
-    const w = new World(c, testRng(7), testRng(8));
+    const w = scattered(c, testRng(7));
+    const respawnRng = testRng(8);
     const rng = testRng(11);
+    const cache = new RayCache();
     const out: RayHit = { closeness: 0, kind: HIT_NONE };
     for (let n = 0; n < 5000; n++) {
-      if (n % 10 === 0) w.eatAt(rng.range(0, 1000), rng.range(0, 1000), 40);
+      if (n % 10 === 0) eat(w, rng.range(0, 1000), rng.range(0, 1000), 40, cache, respawn, respawnRng);
       const x = rng.range(0, 1000);
       const y = rng.range(0, 1000);
       const a = rng.range(-Math.PI, Math.PI);
-      castRay(w, x, y, a, out);
+      castRay(w, x, y, a, out, cache);
       const ref = brute(w, c, x, y, a);
       expect(out.kind).toBe(ref.kind);
       expect(out.closeness).toBeCloseTo(ref.closeness, 9);
     }
   });
 
-  it.each([true, false])("a fan cast by a walking, eating creature matches brute force (respawn %s)", (respawn) => {
+  it.each([true, false])("fans cast by creatures walking and eating in one world match brute force (respawn %s)", (respawn) => {
     const c = cfg();
-    c.world.respawn = respawn;
     c.world.foodDensity = 4;
-    const w = new World(c, testRng(21), testRng(22));
+    const w = scattered(c, testRng(21));
+    const respawnRng = testRng(22);
     const rng = testRng(23);
     const n = c.creature.rayCount;
     const offsets = Array.from({ length: n }, (_, i) => -c.creature.raySpread / 2 + (c.creature.raySpread * i) / (n - 1));
+    // Each walker keeps its own anchored list, so one's eating must invalidate the other's when nearby.
+    const walkers = [
+      { x: 500, y: 400, heading: 0, cache: new RayCache() },
+      { x: 560, y: 420, heading: 2, cache: new RayCache() },
+      { x: 100, y: 900, heading: 4, cache: new RayCache() },
+    ];
     const rays: RayHit[] = offsets.map(() => ({ closeness: 0, kind: HIT_NONE }));
-    let x = 500;
-    let y = 400;
-    let heading = 0;
-    for (let tick = 0; tick < 3000; tick++) {
-      heading += rng.range(-0.3, 0.3);
-      x = Math.min(c.world.width, Math.max(0, x + 2.5 * Math.cos(heading)));
-      y = Math.min(c.world.height, Math.max(0, y + 2.5 * Math.sin(heading)));
-      const angles = offsets.map((o) => heading + o);
-      w.castRays(x, y, Float64Array.from(angles, Math.cos), Float64Array.from(angles, Math.sin), rays);
-      angles.forEach((a, i) => {
-        const ref = brute(w, c, x, y, a);
-        expect(rays[i].kind).toBe(ref.kind);
-        expect(rays[i].closeness).toBeCloseTo(ref.closeness, 9);
-      });
-      w.eatAt(x, y, c.creature.radius);
+    for (let tick = 0; tick < 1000; tick++) {
+      for (const k of walkers) {
+        k.heading += rng.range(-0.3, 0.3);
+        k.x = Math.min(c.world.width, Math.max(0, k.x + 2.5 * Math.cos(k.heading)));
+        k.y = Math.min(c.world.height, Math.max(0, k.y + 2.5 * Math.sin(k.heading)));
+        const angles = offsets.map((o) => k.heading + o);
+        w.castRays(k.x, k.y, Float64Array.from(angles, Math.cos), Float64Array.from(angles, Math.sin), rays, k.cache);
+        angles.forEach((a, i) => {
+          const ref = brute(w, c, k.x, k.y, a);
+          expect(rays[i].kind).toBe(ref.kind);
+          expect(rays[i].closeness).toBeCloseTo(ref.closeness, 9);
+        });
+        expect(w.eatAt(k.x, k.y, c.creature.radius, k.cache)).toBe(w.eatAt(k.x, k.y, c.creature.radius, new RayCache()));
+        eat(w, k.x, k.y, c.creature.radius, k.cache, respawn, respawnRng);
+      }
     }
   });
 });

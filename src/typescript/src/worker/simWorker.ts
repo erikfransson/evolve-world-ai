@@ -56,18 +56,17 @@ async function loop(): Promise<void> {
 function replayPast(msg: PastRequest): void {
   if (!config || !evolution) return; // no run (anymore), main drops the missing reply
   try {
-    const { fitness, frames } = evaluateCreatures(config, msg.genomes, msg.genomeLength, msg.layoutSeed, msg.indices);
+    const { frames } = evaluateCreatures(config, msg.genomes, msg.genomeLength, msg.layoutSeed, msg.indices);
     const reply: OutMessage = {
       type: "past",
       request: msg.request,
       generation: msg.generation,
       layoutSeed: msg.layoutSeed,
-      fitness,
       bestIndex: msg.indices[0]!,
       genome: msg.genomes.slice(0, msg.genomeLength),
       trajectories: frames,
     };
-    post(reply, [fitness.buffer, frames.offsets.buffer, frames.data.buffer]);
+    post(reply, [frames.offsets.buffer, frames.data.buffer]);
   } catch (error) {
     post({ type: "pastError", request: msg.request, message: error instanceof Error ? error.message : String(error) });
   }

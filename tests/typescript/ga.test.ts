@@ -1,6 +1,6 @@
 import { DEFAULT_CONFIG } from "../../src/typescript/src/sim/config.ts";
 import type { SelectionMethod } from "../../src/typescript/src/sim/config.ts";
-import { SELECTION_PICKERS, nextGeneration } from "../../src/typescript/src/sim/ga.ts";
+import { SELECTION_PICKERS, mutate, nextGeneration } from "../../src/typescript/src/sim/ga.ts";
 import { Population } from "../../src/typescript/src/sim/population.ts";
 import { createRng } from "../../src/typescript/src/sim/rng.ts";
 import { testRng } from "./helpers.ts";
@@ -90,5 +90,21 @@ describe("nextGeneration", () => {
     }
     const out = nextGeneration(pop, fitness, ga, createRng(5));
     expect(same(out.data, expected.data)).toBe(true);
+  });
+});
+
+describe("mutate", () => {
+  it.each([0, 0.3, 1])("draws the same stream as plain Rng calls (rate %s)", (mutationRate) => {
+    const ga = { mutationRate, mutationStd: 0.5 };
+    const parent = Float32Array.from({ length: 50 }, (_, g) => g / 10);
+    const child = parent.slice();
+    const rng = createRng(9);
+    mutate(child, ga, rng);
+    const expected = parent.slice();
+    const ref = createRng(9);
+    for (let g = 0; g < expected.length; g++) if (ref.next() < mutationRate) expected[g] += ref.normal() * ga.mutationStd;
+    expect(same(child, expected)).toBe(true);
+    expect(rng.next()).toBe(ref.next());
+    expect(same(child, parent)).toBe(mutationRate === 0);
   });
 });
