@@ -23,7 +23,6 @@ export class Episode implements EpisodeView {
   private readonly turnDecay: number;
   private readonly dragDecay: number;
   private readonly sideDecay: number;
-  private trigHeading = NaN;
   private headCos = 0;
   private headSin = 0;
   private readonly rayOffCos: Float64Array;
@@ -55,10 +54,10 @@ export class Episode implements EpisodeView {
       alive: true,
       ticksAlive: 0,
     };
+    this.setTrig(this.state.heading);
   }
 
   private setTrig(heading: number): void {
-    this.trigHeading = heading;
     this.headCos = Math.cos(heading);
     this.headSin = Math.sin(heading);
   }
@@ -74,7 +73,6 @@ export class Episode implements EpisodeView {
     const rays = this.rays;
 
     // Ray directions by angle addition from the heading's cos/sin.
-    if (s.heading !== this.trigHeading) this.setTrig(s.heading);
     const hc = this.headCos;
     const hs = this.headSin;
     const oc = this.rayOffCos;

@@ -24,7 +24,7 @@ describe("sensors", () => {
     const kinds = [HIT_NONE, HIT_FOOD, HIT_POISON, HIT_WALL] as const;
     const rays: RayHit[] = kinds.map((kind, i) => ({ closeness: kind === HIT_NONE ? 0 : 0.25 * i, kind }));
     const out = new Float32Array(inputSize(cfg));
-    encodeInputs(state, rays, cfg, out);
+    encodeInputs(state, rays, cfg, out, Math.cos(state.heading), Math.sin(state.heading));
     expect(Array.from(out.subarray(0, 16))).toEqual([0, 0, 0, 0, 0.25, 1, 0, 0, 0.5, 0, 1, 0, 0.75, 0, 0, 1]);
     expect(out[16]).toBeCloseTo(energySignal(25, c.startEnergy), 6);
     expect(out[17]).toBeCloseTo((30 * c.drag) / c.maxThrust, 6);

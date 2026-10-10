@@ -39,7 +39,7 @@ export function energySignal(energy: number, startEnergy: number): number {
 }
 
 // Extras: squashed energy, forward speed / top speed, turnRate / maxTurnRate. Allocation-free.
-export function encodeInputs(state: CreatureState, rays: readonly RayHit[], config: SimConfig, out: Float32Array, cosHeading = Math.cos(state.heading), sinHeading = Math.sin(state.heading)): void {
+export function encodeInputs(state: CreatureState, rays: readonly RayHit[], config: SimConfig, out: Float32Array, cosHeading: number, sinHeading: number): void {
   const c = config.creature;
   for (let i = 0; i < rays.length; i++) {
     const ray = rays[i];

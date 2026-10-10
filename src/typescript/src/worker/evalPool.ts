@@ -1,13 +1,39 @@
 import type { SimConfig } from "../sim/config.ts";
+import { evaluateRange } from "../sim/evaluator.ts";
 import type { Evaluator } from "../sim/evaluator.ts";
 import type { Population } from "../sim/population.ts";
-import type { EvalDone, EvalIn } from "./evalProtocol.ts";
+
+// Creatures [start, end) of one generation; genomes holds only those creatures (transferred).
+export interface EvalJob {
+  type: "eval";
+  job: number;
+  config: SimConfig;
+  start: number;
+  end: number;
+  layoutSeed: number;
+  genomeLength: number;
+  genomes: Float32Array;
+}
+
+export interface EvalDone {
+  type: "done";
+  job: number;
+  start: number;
+  fitness: Float64Array; // transferred, one per creature of the job
+}
+
+// Body of an evaluation worker, shared by the browser and Node entries.
+export function evalJob(msg: EvalJob): EvalDone {
+  const fitness = new Float64Array(msg.end - msg.start);
+  evaluateRange(msg.config, msg.genomes, msg.genomeLength, msg.layoutSeed, msg.start, msg.end, fitness, msg.start);
+  return { type: "done", job: msg.job, start: msg.start, fitness };
+}
 
 // What the pool needs from a worker, implemented for web workers and for node worker_threads.
 export interface PoolWorker {
-  post(msg: EvalIn, transfer: ArrayBuffer[]): void;
+  post(msg: EvalJob, transfer: ArrayBuffer[]): void;
   onMessage(callback: (msg: EvalDone) => void): void;
-  onError(callback: (error: unknown) => void): void;
+  onError(callback: (error: unknown) => void): void; // any error or unexpected exit
   terminate(): void;
 }
 
@@ -31,21 +57,25 @@ interface Pending {
 }
 
 // Splits the creatures into index chunks, hands them to idle workers and gathers the fitness.
+// After any worker error or close() the pool is broken for good: workers are terminated and every evaluate rejects.
 export class PoolEvaluator implements Evaluator {
+  private readonly config: SimConfig;
   private readonly workers: PoolWorker[];
   private pending: Pending | null = null;
+  private broken: { error: unknown } | null = null;
   private jobCounter = 0;
 
   constructor(config: SimConfig, workers: PoolWorker[]) {
+    this.config = config;
     this.workers = workers;
     for (const worker of workers) {
       worker.onMessage((msg) => this.handleDone(worker, msg));
       worker.onError((error) => this.fail(error));
-      worker.post({ type: "init", config }, []);
     }
   }
 
   evaluate(population: Population, layoutSeed: number): Promise<Float64Array> {
+    if (this.broken) return Promise.reject(this.broken.error);
     if (this.pending) return Promise.reject(new Error("evaluation already running"));
     const n = population.size;
     if (n === 0) return Promise.resolve(new Float64Array(0));
@@ -57,7 +87,6 @@ export class PoolEvaluator implements Evaluator {
   }
 
   close(): void {
-    for (const worker of this.workers) worker.terminate();
     this.fail(new Error("evaluator closed"));
   }
 
@@ -69,7 +98,7 @@ export class PoolEvaluator implements Evaluator {
     p.next = end;
     const { genomeLength, data } = p.population;
     const genomes = data.slice(start * genomeLength, end * genomeLength); // copy, so the caller keeps its buffer
-    worker.post({ type: "eval", job: p.job, start, end, layoutSeed: p.layoutSeed, genomeLength, genomes }, [genomes.buffer as ArrayBuffer]);
+    worker.post({ type: "eval", job: p.job, config: this.config, start, end, layoutSeed: p.layoutSeed, genomeLength, genomes }, [genomes.buffer as ArrayBuffer]);
   }
 
   private handleDone(worker: PoolWorker, msg: EvalDone): void {
@@ -86,6 +115,9 @@ export class PoolEvaluator implements Evaluator {
   }
 
   private fail(error: unknown): void {
+    if (this.broken) return;
+    this.broken = { error };
+    for (const worker of this.workers) worker.terminate();
     const p = this.pending;
     this.pending = null;
     p?.reject(error);

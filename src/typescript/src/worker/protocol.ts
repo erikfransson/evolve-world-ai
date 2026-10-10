@@ -12,3 +12,10 @@ export interface GenerationMessage {
   genomeLength: number;
   populationSize: number;
 }
+
+export interface ErrorMessage {
+  type: "error";
+  message: string;
+}
+
+export type OutMessage = GenerationMessage | ErrorMessage;

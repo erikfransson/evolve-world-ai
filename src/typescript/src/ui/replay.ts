@@ -11,9 +11,8 @@ export class Replay {
   others: Episode[] = []; // the fittest after the best, descending
   generation = -1; // generation being replayed
   private clock = 0; // ticks the best has run
-  private othersClock = 0; // ticks the others have run, behind the clock while they were not stepped
 
-  // Builds the others too so switching the view never restarts the replay.
+  // Builds the others too, they always run so switching the view never restarts the replay.
   load(msg: GenerationMessage, config: SimConfig): void {
     const { result, genomes, genomeLength, populationSize: n } = msg;
     const population = new Population(n, genomeLength, genomes);
@@ -24,7 +23,7 @@ export class Replay {
     this.best = make(result.bestIndex);
     this.others = rest.slice(0, MAX_OTHERS).map(make);
     this.generation = result.generation;
-    this.clock = this.othersClock = 0;
+    this.clock = 0;
   }
 
   clear(): void {
@@ -33,27 +32,16 @@ export class Replay {
     this.generation = -1;
   }
 
-  // Runs up to `ticks` ticks of the best, and of the others when withOthers, stopping at the deadline (a performance.now() time).
-  advance(ticks: number, withOthers: boolean, deadline: number): void {
+  // Runs up to `ticks` ticks of the best and the others, stopping at the deadline (a performance.now() time).
+  advance(ticks: number, deadline: number): void {
     const best = this.best;
     if (!best) return;
     const target = this.clock + ticks;
-    while (performance.now() < deadline) {
-      if (withOthers && this.othersClock < this.clock) {
-        this.stepOthers(); // catch up after the others sat out
-      } else if (this.clock < target) {
-        best.step();
-        this.clock++;
-        if (withOthers) this.stepOthers();
-      } else {
-        break;
-      }
+    while (this.clock < target && performance.now() < deadline) {
+      best.step();
+      this.clock++;
+      for (let i = 0; i < this.others.length; i++) this.others[i]!.step(); // step() ignores finished episodes
     }
-  }
-
-  private stepOthers(): void {
-    for (let i = 0; i < this.others.length; i++) this.others[i]!.step(); // step() ignores finished episodes
-    this.othersClock++;
   }
 
   get done(): boolean {

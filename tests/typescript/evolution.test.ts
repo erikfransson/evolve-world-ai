@@ -11,10 +11,10 @@ const withLife = (size: number, maxLifeSeconds: number): SimConfig => ({
 const cfg = withLife(20, 10);
 
 describe("Evolution", () => {
-  it("runs a generation and breeds the next", () => {
+  it("runs a generation and breeds the next", async () => {
     const evo = new Evolution(cfg);
     const first = evo.population;
-    const { result, population } = evo.runGeneration();
+    const { result, population } = await evo.runGeneration();
     expect(result.generation).toBe(0);
     expect(population).toBe(first);
     expect(evo.population).not.toBe(first);
@@ -26,10 +26,10 @@ describe("Evolution", () => {
     expect(result.bestFitness).toBe(result.fitness[result.bestIndex]);
   });
 
-  it("replays a creature to the same fitness", () => {
+  it("replays a creature to the same fitness", async () => {
     const small = withLife(6, 3);
     const evo = new Evolution(small);
-    const { result, population } = evo.runGeneration();
+    const { result, population } = await evo.runGeneration();
     for (const i of [0, 2, 5]) {
       const ep = new Episode(small, population.genome(i), result.layoutSeed, i);
       while (!ep.done) ep.step();
@@ -37,10 +37,10 @@ describe("Evolution", () => {
     }
   });
 
-  it("times one default generation", () => {
+  it("times one default generation", async () => {
     const evo = new Evolution(DEFAULT_CONFIG);
     const t0 = performance.now();
-    evo.runGeneration();
+    await evo.runGeneration();
     console.log(`default generation: ${(performance.now() - t0).toFixed(0)} ms`);
   }, 120_000);
 });

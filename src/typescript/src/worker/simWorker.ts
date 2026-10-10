@@ -1,15 +1,16 @@
-import type { GenerationMessage, InMessage } from "./protocol.ts";
+import type { GenerationMessage, InMessage, OutMessage } from "./protocol.ts";
 import { createBrowserEvaluator } from "./browserPool.ts";
-import { SerialEvaluator } from "../sim/evaluator.ts";
 import type { Evaluator } from "../sim/evaluator.ts";
 import { Evolution } from "../sim/evolution.ts";
-import type { SimConfig } from "../sim/config.ts";
 
 let evolution: Evolution | null = null;
 let evaluator: Evaluator | null = null;
-let config: SimConfig | null = null;
 let paused = false;
 let looping = false; // true while a loop is running, so resume cannot start a second one
+
+function post(msg: OutMessage, transfer: Transferable[] = []): void {
+  self.postMessage(msg, { transfer });
+}
 
 async function loop(): Promise<void> {
   if (looping) return;
@@ -19,13 +20,10 @@ async function loop(): Promise<void> {
       const current = evolution;
       let step;
       try {
-        step = await current.runGenerationWith(evaluator);
+        step = await current.runGeneration(evaluator);
       } catch (error) {
         if (current !== evolution) continue; // restarted, the old pool was closed under us
-        if (!config || evaluator instanceof SerialEvaluator) throw error;
-        evaluator.close(); // the pool failed, e.g. nested workers unsupported; continue serially
-        evaluator = new SerialEvaluator(config);
-        continue;
+        throw error;
       }
       if (current !== evolution) continue; // restarted while evaluating, drop the stale generation
       const { result, population } = step;
@@ -37,8 +35,12 @@ async function loop(): Promise<void> {
         genomeLength: population.genomeLength,
         populationSize: population.size,
       };
-      self.postMessage(msg, { transfer: [population.data.buffer, result.fitness.buffer] });
+      post(msg, [population.data.buffer, result.fitness.buffer]);
     }
+  } catch (error) {
+    evaluator?.close();
+    evolution = evaluator = null; // the run is over, main stops it on the error message
+    post({ type: "error", message: error instanceof Error ? error.message : String(error) });
   } finally {
     looping = false;
   }
@@ -49,7 +51,6 @@ self.onmessage = (e: MessageEvent<InMessage>) => {
   if (msg.type === "start") {
     paused = false;
     evaluator?.close();
-    config = msg.config;
     evaluator = createBrowserEvaluator(msg.config);
     evolution = new Evolution(msg.config);
     void loop();

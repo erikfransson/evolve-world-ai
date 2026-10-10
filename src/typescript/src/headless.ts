@@ -3,13 +3,11 @@
 
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { availableParallelism } from "node:os";
 import { parseArgs } from "node:util";
 import { DEFAULT_CONFIG, withOverrides } from "./sim/config.ts";
 import type { SimConfig } from "./sim/config.ts";
 import { Evolution } from "./sim/evolution.ts";
-import { defaultThreads } from "./worker/evalPool.ts";
-import { createNodeEvaluator } from "./worker/nodePool.ts";
+import { createNodeEvaluator, parseThreads } from "./worker/nodePool.ts";
 
 // parameters
 const { values } = parseArgs({
@@ -50,9 +48,11 @@ try {
   process.exit(1);
 }
 
-const threads = values.threads === undefined ? defaultThreads(availableParallelism()) : Number(values.threads);
-if (!Number.isInteger(threads) || threads <= 0) {
-  console.error("error: --threads must be a positive integer");
+let threads: number;
+try {
+  threads = parseThreads(values.threads);
+} catch (e) {
+  console.error(`error: ${e instanceof Error ? e.message : String(e)}`);
   process.exit(1);
 }
 
@@ -63,7 +63,7 @@ const evolution = new Evolution(config);
 const evaluator = createNodeEvaluator(config, threads);
 for (let i = 0; i < generations; i++) {
   const start = performance.now();
-  const { result } = await evolution.runGenerationWith(evaluator);
+  const { result } = await evolution.runGeneration(evaluator);
   const seconds = (performance.now() - start) / 1000;
   const line = {
     type: "generation",

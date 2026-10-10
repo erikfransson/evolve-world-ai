@@ -25,12 +25,6 @@ export function evaluateRange(
   }
 }
 
-export function evaluateSerial(config: SimConfig, population: Population, layoutSeed: number): Float64Array {
-  const fitness = new Float64Array(population.size);
-  evaluateRange(config, population.data, population.genomeLength, layoutSeed, 0, population.size, fitness);
-  return fitness;
-}
-
 export class SerialEvaluator implements Evaluator {
   private readonly config: SimConfig;
 
@@ -39,7 +33,9 @@ export class SerialEvaluator implements Evaluator {
   }
 
   evaluate(population: Population, layoutSeed: number): Promise<Float64Array> {
-    return Promise.resolve(evaluateSerial(this.config, population, layoutSeed));
+    const fitness = new Float64Array(population.size);
+    evaluateRange(this.config, population.data, population.genomeLength, layoutSeed, 0, population.size, fitness);
+    return Promise.resolve(fitness);
   }
 
   close(): void {}

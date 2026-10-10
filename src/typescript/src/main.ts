@@ -1,7 +1,7 @@
 import "./style.css";
 import { DEFAULT_CONFIG, itemCounts } from "./sim/config.ts";
 import type { SimConfig } from "./sim/config.ts";
-import type { GenerationMessage, InMessage } from "./worker/protocol.ts";
+import type { GenerationMessage, InMessage, OutMessage } from "./worker/protocol.ts";
 import { BrainView } from "./ui/brainView.ts";
 import { fitCanvas } from "./ui/canvas.ts";
 import { initCard } from "./ui/overlays.ts";
@@ -38,8 +38,9 @@ interface RunState {
   latest: GenerationMessage | null; // newest generation received
   computeSeconds: number; // wall time between the last two generations
   lastMessageAt: number;
+  error: string | null; // why the last run stopped, shown until the next start
 }
-const run: RunState = { phase: "idle", worker: null, config: DEFAULT_CONFIG, latest: null, computeSeconds: 0, lastMessageAt: 0 };
+const run: RunState = { phase: "idle", worker: null, config: DEFAULT_CONFIG, latest: null, computeSeconds: 0, lastMessageAt: 0, error: null };
 
 // Updated by change events, not read from the DOM every frame.
 const view: ViewOptions = { showAll: true, showRays: true, pov: false };
@@ -77,7 +78,7 @@ function renderControls(): void {
   skipBtn.disabled = run.latest === null;
   settings.disabled = !idle;
   setupForm.classList.toggle("locked", !idle);
-  note.textContent = !idle && run.latest === null ? "Computing generation 0..." : "";
+  note.textContent = run.error ?? (!idle && run.latest === null ? "Computing generation 0..." : "");
   legendCard.hidden = brainCard.hidden = replay.best === null;
 }
 
@@ -108,8 +109,14 @@ function loadReplay(): void {
   refresh();
 }
 
-function onMessage(e: MessageEvent<GenerationMessage>): void {
+function onMessage(e: MessageEvent<OutMessage>): void {
   if (e.target !== run.worker) return;
+  if (e.data.type === "error") {
+    reset();
+    run.error = `Run stopped: ${e.data.message}`;
+    renderControls();
+    return;
+  }
   const now = performance.now();
   run.latest = e.data;
   run.computeSeconds = (now - run.lastMessageAt) / 1000;
@@ -122,6 +129,7 @@ function start(): void {
   run.config = readConfig();
   fillForm(run.config);
   run.latest = null;
+  run.error = null;
   replay.clear();
   run.phase = "running";
   run.worker = new Worker(new URL("./worker/simWorker.ts", import.meta.url), { type: "module" });
@@ -157,7 +165,7 @@ function frame(now: number): void {
     tickDebt += (elapsed * replaySpeed) / run.config.dt;
     const ticks = Math.floor(tickDebt);
     tickDebt -= ticks;
-    replay.advance(ticks, view.showAll, performance.now() + STEP_BUDGET_MS);
+    replay.advance(ticks, performance.now() + STEP_BUDGET_MS);
     if (run.latest && replay.done) loadReplay();
   } else {
     tickDebt = 0;

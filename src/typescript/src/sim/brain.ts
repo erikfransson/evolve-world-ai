@@ -31,6 +31,8 @@ export function randomGenome(sizes: number[], rng: Rng): Genome {
 
 // Padé (7,6) tanh, clamped to [-1, 1]; max abs error about 1e-4.
 export function fastTanh(x: number): number {
+  if (x >= 4.97) return 1;
+  if (x <= -4.97) return -1;
   const x2 = x * x;
   const r = (x * (135135 + x2 * (17325 + x2 * (378 + x2)))) / (135135 + x2 * (62370 + x2 * (3150 + 28 * x2)));
   return r > 1 ? 1 : r < -1 ? -1 : r;

@@ -1,6 +1,6 @@
 import { genomeLength, layerSizes, randomGenome } from "./brain.ts";
 import type { SimConfig } from "./config.ts";
-import { evaluateSerial } from "./evaluator.ts";
+import { SerialEvaluator } from "./evaluator.ts";
 import type { Evaluator } from "./evaluator.ts";
 import { nextGeneration } from "./ga.ts";
 import { Population } from "./population.ts";
@@ -13,9 +13,11 @@ export class Evolution {
   bestEver = 0;
 
   private readonly config: SimConfig;
+  private readonly serial: Evaluator;
 
   constructor(config: SimConfig) {
     this.config = config;
+    this.serial = new SerialEvaluator(config);
     const sizes = layerSizes(config);
     const rng = createRng(deriveSeed(config.seed, 0xbeef));
     this.population = new Population(config.population.size, genomeLength(sizes));
@@ -26,14 +28,8 @@ export class Evolution {
     return deriveSeed(this.config.seed, generation);
   }
 
-  // Returns the evaluated population; this.population becomes its children.
-  runGeneration(): { result: GenerationResult; population: Population } {
-    const layoutSeed = this.layoutSeedFor(this.generation);
-    return this.breed(layoutSeed, evaluateSerial(this.config, this.population, layoutSeed));
-  }
-
-  // Same as runGeneration with the evaluation delegated, e.g. to a worker pool.
-  async runGenerationWith(evaluator: Evaluator): Promise<{ result: GenerationResult; population: Population }> {
+  // Returns the evaluated population; this.population becomes its children. Pass a worker pool to evaluate in parallel.
+  async runGeneration(evaluator: Evaluator = this.serial): Promise<{ result: GenerationResult; population: Population }> {
     const layoutSeed = this.layoutSeedFor(this.generation);
     const population = this.population;
     const fitness = await evaluator.evaluate(population, layoutSeed);
