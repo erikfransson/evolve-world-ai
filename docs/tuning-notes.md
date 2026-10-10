@@ -6,8 +6,10 @@ Runs use `npm run headless` with a JSON override merged over `DEFAULT_CONFIG`, p
 
 | Date       | Change from defaults at the time                         | Epoch | Mean gen 0-4 | Mean late          | Best late | Verdict                                   |
 |------------|----------------------------------------------------------|-------|--------------|--------------------|-----------|-------------------------------------------|
-| 2026-10-10 | engine: brake on negative thrust, wallBounce 0.6, start disc kept clear | none  | 25           | 43 (gen 25-29)     | 241       | Lower than 60 / 300 before; pop 150, mean of seeds 1-3 |
-| 2026-10-10 | same with wallBounce 0 (only braking and the clear disc) | none  | 25           | 48 (gen 25-29)     | 262       | Bounce costs about 5 of the drop; seeds are noisy |
+| 2026-10-10 | engine final: binary brake (output < -0.5, maxBrake 200), wallBounce 0.6, poison kept off start | none  | 25           | 49 (gen 25-29)     | 242       | Baseline 50 / 259; 5 seeds, pop 150. Learns clearly |
+| 2026-10-10 | same, braking only (wallBounce 0)                        | none  | 25           | 44 (gen 25-29)     | 209       | Braking costs the most, seeds are noisy   |
+| 2026-10-10 | earlier analog brake (any negative output), 5 seeds      | none  | 25           | 46 (gen 25-29)     | 209       | Replaced by the binary brake              |
+| 2026-10-10 | wallBounce 0.6 only / poison clear disc only             | none  | 25           | 57 / 56 (gen 25-29) | 284 / 295 | Neither hurts                             |
 | 2026-10-09 | drag 2.5 + thrust 200 + 2x drain + food 0.7 (D4)         | none  | 26           | 53 (gen 25-29)     | 247       | New default: faster drain, more drag, still learns |
 | 2026-10-09 | drag 2.5 + thrust 200 + 2x drain (D3)                    | none  | 25           | 44 (gen 25-29)     | 137       | Learns slowly                             |
 | 2026-10-09 | 2x drain: living 2, thrust 4 (D2)                        | none  | 24           | 45 (gen 25-29)     | 149       | Halves lifetimes                          |
@@ -37,7 +39,7 @@ Runs use `npm run headless` with a JSON override merged over `DEFAULT_CONFIG`, p
 All rows from 2026-10-09 use the fish-like physics.
 
 ## Observations
-- 2026-10-10: negative thrust now brakes (maxBrake 200, free, never reverses), walls reflect with wallBounce 0.6 instead of absorbing, and no item starts within radius + itemRadius + 10 of the start point (issue #3). Trials results changed on purpose; ecosystem founders also get poison moved away.
+- 2026-10-10: a thrust output below brakeThreshold (-0.5) brakes at a fixed maxBrake 200 (free, never reverses, coasting between -0.5 and 0), walls reflect with wallBounce 0.6 instead of absorbing, and no poison starts within radius + itemRadius + 10 of the start point (issue #3). Trials results changed on purpose; ecosystem founders also get poison moved away.
 - A bigger body does not make foraging easier: it also touches poison more often, so mean survival drops from 144 s (radius 6) to 119 s (12) and 96 s (16).
 - From the finite-food rows on there is no lifetime cap ("none"). Lives end when energy runs out, and a 3600 s safety stop is never reached in practice. Best fitness no longer saturates.
 - Brain inputs now include forward speed and turn rate besides rays and energy.

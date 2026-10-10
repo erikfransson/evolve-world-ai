@@ -2,6 +2,7 @@ import { DEFAULT_CONFIG } from "../../src/typescript/src/sim/config.ts";
 import type { SimConfig } from "../../src/typescript/src/sim/config.ts";
 import { genomeLength, layerSizes, randomGenome } from "../../src/typescript/src/sim/brain.ts";
 import { Episode, runEpisode } from "../../src/typescript/src/sim/episode.ts";
+import { HIT_POISON } from "../../src/typescript/src/sim/types.ts";
 import { createRng } from "../../src/typescript/src/sim/rng.ts";
 
 const cfg: SimConfig = {
@@ -25,16 +26,16 @@ describe("Episode", () => {
     expect(Math.abs(e.state.ticksAlive * cfg.dt - expected)).toBeLessThan(2 * cfg.dt);
   });
 
-  it("keeps every item off the start position", () => {
+  it("keeps poison off the start position", () => {
     const dense: SimConfig = { ...cfg, world: { ...cfg.world, width: 400, height: 400, foodDensity: 20, poisonDensity: 20 } };
     const c = dense.creature;
     for (let layout = 0; layout < 5; layout++) {
       const e = new Episode(dense, rand(1), layout, 0);
       for (let i = 0; i < e.world.count; i++) {
-        expect(Math.hypot(e.world.xs[i] - e.state.x, e.world.ys[i] - e.state.y)).toBeGreaterThan(c.radius + dense.world.itemRadius);
+        if (e.world.kinds[i] === HIT_POISON) expect(Math.hypot(e.world.xs[i] - e.state.x, e.world.ys[i] - e.state.y)).toBeGreaterThan(c.radius + dense.world.itemRadius);
       }
       e.step();
-      expect(e.state.energy).toBeGreaterThan(0); // no poison eaten on tick one
+      expect(e.state.alive).toBe(true); // no poison eaten on tick one
     }
   });
 

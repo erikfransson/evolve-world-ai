@@ -118,9 +118,16 @@ export class World implements WorldView {
   }
 
   // Fills slots 0..food+poison-1 at uniform random positions, food first.
-  // With clear, positions inside that disc are drawn again.
+  // With clear, poison positions inside that disc are drawn again.
   scatter(food: number, poison: number, rng: Rng, clear?: { x: number; y: number; radius: number }): void {
-    for (let i = 0; i < food + poison; i++) this.placeRandomly(i, i < food ? HIT_FOOD : HIT_POISON, rng, clear);
+    if (clear && poison > 0 && this.discCoversBox(clear)) throw new Error("clear disc leaves no room for poison");
+    for (let i = 0; i < food + poison; i++) this.placeRandomly(i, i < food ? HIT_FOOD : HIT_POISON, rng, i < food ? undefined : clear);
+  }
+
+  // True when the disc contains all four corners of the item box, so no position is left outside it.
+  private discCoversBox(d: { x: number; y: number; radius: number }): boolean {
+    const r = this.itemRadius;
+    return [r, this.width - r].every((x) => [r, this.height - r].every((y) => (x - d.x) ** 2 + (y - d.y) ** 2 < d.radius ** 2));
   }
 
   // Puts item i at a uniform random position inside the walls, outside the clear disc if given.

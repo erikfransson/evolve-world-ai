@@ -80,7 +80,7 @@ describe("World", () => {
     expect(Array.from(a.kinds)).toEqual(Array.from(b.kinds));
   });
 
-  it("scatter keeps items out of the clear disc and stays deterministic", () => {
+  it("scatter keeps poison out of the clear disc and stays deterministic", () => {
     const c = cfg();
     c.world.poisonDensity = 3;
     const n = itemCounts(c);
@@ -91,8 +91,17 @@ describe("World", () => {
       return w;
     };
     const w = make();
-    for (let i = 0; i < w.count; i++) expect(Math.hypot(w.xs[i] - clear.x, w.ys[i] - clear.y)).toBeGreaterThanOrEqual(200 - 1e-3);
+    for (let i = 0; i < w.count; i++) {
+      if (w.kinds[i] === HIT_POISON) expect(Math.hypot(w.xs[i] - clear.x, w.ys[i] - clear.y)).toBeGreaterThanOrEqual(200 - 1e-3);
+    }
     expect(Array.from(make().xs)).toEqual(Array.from(w.xs));
+  });
+
+  it("scatter throws when the clear disc covers the whole box", () => {
+    const c = cfg();
+    const w = emptyWorld(c);
+    const huge = { x: c.world.width / 2, y: c.world.height / 2, radius: 5000 };
+    expect(() => w.scatter(1, 1, testRng(1), huge)).toThrow(/clear disc/);
   });
 
   it("clearPoison moves only poison touching the body and keeps the item count", () => {

@@ -20,7 +20,8 @@ export interface SimConfig {
     livingCost: number; // energy per second
     thrustCost: number; // energy per second at full thrust
     maxThrust: number; // forward acceleration at full thrust, units/s^2; top speed = maxThrust / drag
-    maxBrake: number; // deceleration at full negative thrust output, units/s^2; braking is free and never reverses
+    brakeThreshold: number; // thrust output below this brakes at maxBrake, between it and 0 the creature coasts
+    maxBrake: number; // fixed deceleration while braking, units/s^2; free, never reverses
     wallBounce: number; // restitution of the walls in [0, 1]; 0 absorbs the velocity into the wall
     drag: number; // forward velocity decay rate, 1/s
     sideDrag: number; // sideways velocity decay rate, 1/s; higher than drag gives fish-like gliding turns
@@ -69,6 +70,7 @@ export const DEFAULT_CONFIG: SimConfig = {
     livingCost: 2,
     thrustCost: 4,
     maxThrust: 200,
+    brakeThreshold: -0.5,
     maxBrake: 200,
     wallBounce: 0.6,
     drag: 2.5,

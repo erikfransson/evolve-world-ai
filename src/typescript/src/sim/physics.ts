@@ -25,7 +25,7 @@ export function decaysFor(config: EngineConfig): Decays {
 }
 
 // Advances one creature's motion and energy by one tick: turn, thrust with drag, walls, energy costs.
-// turnOut and thrust in [-1, 1]; negative thrust brakes (up to maxBrake, free, never reverses). Eating and death are separate (consume, settle).
+// turnOut and thrust in [-1, 1]; negative thrust brakes at maxBrake x its size (free, never reverses). Eating and death are separate (consume, settle).
 export function stepBody(s: CreatureState, turnOut: number, thrust: number, config: EngineConfig, k: Decays, heading: Heading): void {
   const { dt, creature: c, world: w } = config;
   // Exact exponential relaxation each tick keeps motion smooth and independent of dt.
