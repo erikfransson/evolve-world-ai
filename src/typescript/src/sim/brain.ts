@@ -117,14 +117,31 @@ export class Brain {
         val[n++] = v;
       }
     }
-    const sums = this.firstLayerSums;
-    for (let j = 0; j < nOut; j++) sums[j] = b[j];
-    for (let k = 0; k < n; k++) {
-      const row = idx[k] * nOut;
-      const v = val[k];
-      for (let j = 0; j < nOut; j++) sums[j] += wt[row + j] * v;
+    // Four outputs at a time keep the running sums in registers; each sum still adds in input order.
+    let j = 0;
+    for (; j + 4 <= nOut; j += 4) {
+      let s0 = b[j];
+      let s1 = b[j + 1];
+      let s2 = b[j + 2];
+      let s3 = b[j + 3];
+      for (let k = 0; k < n; k++) {
+        const p = idx[k] * nOut + j;
+        const v = val[k];
+        s0 += wt[p] * v;
+        s1 += wt[p + 1] * v;
+        s2 += wt[p + 2] * v;
+        s3 += wt[p + 3] * v;
+      }
+      dst[j] = fastTanh(s0);
+      dst[j + 1] = fastTanh(s1);
+      dst[j + 2] = fastTanh(s2);
+      dst[j + 3] = fastTanh(s3);
     }
-    for (let j = 0; j < nOut; j++) dst[j] = fastTanh(sums[j]);
+    for (; j < nOut; j++) {
+      let s = b[j];
+      for (let k = 0; k < n; k++) s += wt[idx[k] * nOut + j] * val[k];
+      dst[j] = fastTanh(s);
+    }
   }
 
   private denseLayer(l: number, src: Float32Array, dst: Float32Array): void {
@@ -132,7 +149,21 @@ export class Brain {
     const b = this.biases[l];
     const nIn = this.fanIn[l];
     const nOut = this.fanOut[l];
-    for (let j = 0; j < nOut; j++) {
+    // Two outputs at a time overlap their dependent add chains; each sum still adds in input order.
+    let j = 0;
+    for (; j + 2 <= nOut; j += 2) {
+      let s0 = b[j];
+      let s1 = b[j + 1];
+      const row = j * nIn;
+      for (let i = 0; i < nIn; i++) {
+        const v = src[i];
+        s0 += w[row + i] * v;
+        s1 += w[row + nIn + i] * v;
+      }
+      dst[j] = fastTanh(s0);
+      dst[j + 1] = fastTanh(s1);
+    }
+    for (; j < nOut; j++) {
       let sum = b[j];
       const row = j * nIn;
       for (let i = 0; i < nIn; i++) sum += w[row + i] * src[i];
