@@ -45,7 +45,7 @@ describe("sim worker", () => {
     expect(generations()[2]!.result.generation).toBe(2);
   });
 
-  it("re-simulates a past generation to the fitness it had, and reports a bad request", async () => {
+  it("replays the best genome of a past generation and reports a bad request", async () => {
     const first = generations()[0]!;
     const length = first.genomeLength;
     const i = first.result.bestIndex;
@@ -58,7 +58,7 @@ describe("sim worker", () => {
     if (past.type !== "past") throw new Error("unreachable");
     expect(past.request).toBe(1);
     expect(past.bestIndex).toBe(i);
-    expect(past.fitness[0]).toBe(first.result.bestFitness);
+    expect(past.genome).toEqual(first.genomes.slice(i * length, (i + 1) * length));
 
     send({ type: "past", request: 2, generation: 0, layoutSeed: 1, genomeLength: length, indices: Uint32Array.of(0), genomes: new Float32Array(3) });
     await vi.waitFor(() => expect(sent.some((m) => m.type === "pastError" && m.request === 2)).toBe(true));
