@@ -30,9 +30,9 @@ export const WALL = "#9fb8ad";
 export const FOOD = "#4ade80";
 export const POISON = "#e040fb";
 export const OTHER = "#7dd3fc"; // the rest of a generation
-const RAY_COLORS = ["#6b7f76", FOOD, POISON, "#facc15", OTHER]; // indexed by HIT_NONE, HIT_FOOD, HIT_POISON, HIT_WALL, HIT_CREATURE
-// Body is full at FULL_AT times the starting energy, so a newborn is one third full.
-const FULL_AT = 3;
+export const RAY_COLORS = ["#6b7f76", FOOD, POISON, "#facc15", OTHER]; // indexed by HIT_NONE, HIT_FOOD, HIT_POISON, HIT_WALL, HIT_CREATURE
+// Trials: the body is full at this many times the starting energy, so a newborn is one third full.
+export const TRIALS_FULL_AT = 3;
 // Hue by fill fraction, linear between stops so colour never jumps: red in the last emergency,
 // yellow around the starting third, green when full.
 const HUE_FILL = [0.05, 0.33, 0.6, 1];
@@ -204,17 +204,18 @@ function drawPov(ctx: CanvasRenderingContext2D, f: Frame, s: CreatureState): voi
 }
 
 // Screen-space text in the top-right corner, sized in CSS pixels; the top-left holds the overlay cards.
-function drawLabel(ctx: CanvasRenderingContext2D, text: string, dpr: number): void {
+// inset leaves room for controls over the canvas corner.
+export function drawLabel(ctx: CanvasRenderingContext2D, text: string, dpr: number, inset = 12): void {
   ctx.font = `${13 * dpr}px system-ui, sans-serif`;
   ctx.textBaseline = "top";
   ctx.textAlign = "right";
   ctx.fillStyle = "rgba(238, 245, 241, 0.7)";
-  ctx.fillText(text, ctx.canvas.width - 12 * dpr, 10 * dpr);
+  ctx.fillText(text, ctx.canvas.width - inset * dpr, 10 * dpr);
   ctx.textAlign = "left";
 }
 
 // Clears the canvas and draws floor and walls; leaves the context in world coordinates and returns the frame values.
-export function beginFrame(ctx: CanvasRenderingContext2D, config: SimConfig): Frame {
+export function beginFrame(ctx: CanvasRenderingContext2D, config: SimConfig, fullAt = TRIALS_FULL_AT): Frame {
   const cw = ctx.canvas.width;
   const ch = ctx.canvas.height;
   const { width: ww, height: wh } = config.world;
@@ -224,7 +225,7 @@ export function beginFrame(ctx: CanvasRenderingContext2D, config: SimConfig): Fr
   f.creatureR = config.creature.radius;
   f.itemR = Math.max(config.world.itemRadius, 1.5 * f.px);
   f.rayLength = config.creature.rayLength;
-  f.fullEnergy = FULL_AT * config.creature.startEnergy;
+  f.fullEnergy = fullAt * config.creature.startEnergy;
 
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalAlpha = 1;

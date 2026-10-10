@@ -1,37 +1,308 @@
 import "./base.css";
 import "./style.css";
 import "./ecosystem.css";
+import { Brain, layerSizes } from "./sim/brain.ts";
 import { DEFAULT_ECO_CONFIG } from "./sim/ecoConfig.ts";
 import type { EcoConfig } from "./sim/ecoConfig.ts";
+import { inputLayout } from "./sim/sensors.ts";
+import type { EcoInMessage, EcoOutMessage, EcoSnapshot, SelectedDetails, SnapshotViews } from "./worker/ecoProtocol.ts";
+import { snapshotViews } from "./worker/ecoProtocol.ts";
+import { Camera } from "./ui/camera.ts";
+import type { Point } from "./ui/camera.ts";
 import { fitCanvas } from "./ui/canvas.ts";
+import { formatElapsed } from "./ui/elapsed.ts";
+import { pickCreature } from "./ui/ecoPick.ts";
 import { drawIdleWorld } from "./ui/ecoIdle.ts";
 import { createEcoView } from "./ui/ecoPage.ts";
+import { EcoRenderer } from "./ui/ecoScene.ts";
+import type { EcoDrawConfig } from "./ui/ecoScene.ts";
+import type { PopulationSample } from "./ui/populationGraph.ts";
+import { drawLabel } from "./ui/scene.ts";
 
-// Page shell only. The simulation attaches by filling in these handlers and drawing instead of drawIdleWorld.
-let config: EcoConfig = DEFAULT_ECO_CONFIG;
-let running = false;
+const SELECT_DIAMETERS = 6; // creature diameters across the shorter screen side after a click
+const MAX_CREATURE_PX = 60; // CSS px radius of a creature at the closest zoom
+const PICK_RADII = 3; // click reach in creature radii
+const PICK_MIN_PX = 14; // click reach never below this many CSS px
+const UI_INTERVAL_MS = 100; // stat tiles and selected card
+const BRAIN_INTERVAL_MS = 25;
+const ZOOM_STEP = 1.6;
+const ZOOM_BUTTONS_INSET = 60; // CSS px the timer keeps clear of the zoom buttons
+
+interface Live {
+  msg: EcoSnapshot;
+  views: SnapshotViews;
+}
+
+// The followed creature: the latest details, the last ones while alive (for the card), and a brain rebuilt from its genome.
+interface Selection {
+  id: number;
+  details: SelectedDetails | null;
+  last: SelectedDetails | null;
+  brain: Brain | null;
+  died: boolean;
+}
+
+let config: EcoConfig = DEFAULT_ECO_CONFIG; // the form's while idle, the run's while active
+let active = false; // a run exists (running, paused or extinct)
+let run = 0; // run number, so snapshots of an earlier run are dropped
+let worker: Worker | null = null;
+let live: Live | null = null;
+let selection: Selection | null = null;
+let following = false; // the Follow toggle as the page shows it
+let pendingFollow = false; // follow once the zoom-in animation has ended
+let showRays = true;
+let extinctShown = false;
+let canvasW = 0;
+let canvasH = 0;
+let lastUiAt = 0;
+let lastBrainAt = 0;
+const brainOut = new Float32Array(2);
+
+const camera = new Camera(config.world.width, config.world.height, 1, 1);
+const renderer = new EcoRenderer();
 
 function drawIdle(): void {
-  if (running) return;
+  if (active) return;
   const dpr = fitCanvas(view.canvas);
   drawIdleWorld(view.canvas.getContext("2d")!, config, view.canvas.width, view.canvas.height, dpr);
 }
 
-const noop = (): void => {};
+function send(msg: EcoInMessage, transfer: Transferable[] = []): void {
+  worker?.postMessage(msg, { transfer });
+}
+
+function drawConfig(): EcoDrawConfig {
+  const { world, creature, eco } = config;
+  return { worldW: world.width, worldH: world.height, radius: creature.radius, itemRadius: world.itemRadius, rayLength: creature.rayLength, fullEnergy: eco.birthEnergy };
+}
+
+// Matches the canvas and camera to the layout; returns the device pixel ratio.
+function syncCanvas(): number {
+  const dpr = fitCanvas(view.canvas);
+  if (view.canvas.width !== canvasW || view.canvas.height !== canvasH) {
+    canvasW = view.canvas.width;
+    canvasH = view.canvas.height;
+    camera.resize(canvasW, canvasH);
+  }
+  camera.maxZoom = (MAX_CREATURE_PX * dpr) / config.creature.radius;
+  return dpr;
+}
+
+function releaseLive(): void {
+  if (live) send({ type: "recycle", buffer: live.msg.buffer }, [live.msg.buffer]);
+  live = null;
+}
+
+function clearSelection(): void {
+  selection = null;
+  pendingFollow = false;
+  following = false;
+  camera.follow(null);
+  send({ type: "select", id: null });
+  view.setSelected(null);
+}
+
+function onSnapshot(e: MessageEvent<EcoOutMessage>): void {
+  const msg = e.data;
+  if (msg.type === "error") {
+    active = false;
+    view.setPhase("idle");
+    view.setNote(`Run stopped: ${msg.message}`);
+    return;
+  }
+  if (!active || msg.run !== run) {
+    send({ type: "recycle", buffer: msg.buffer }, [msg.buffer]);
+    return;
+  }
+  const previous = live;
+  live = { msg, views: snapshotViews(msg.buffer, msg.count, msg.itemCount, msg.creatureCap, msg.itemCap) };
+  if (previous) send({ type: "recycle", buffer: previous.msg.buffer }, [previous.msg.buffer]);
+  if (msg.history) view.setHistory(toSamples(msg.history));
+  const d = msg.selected;
+  if (selection && d && d.id === selection.id) {
+    if (d.genome) selection.brain = new Brain(layerSizes(config), d.genome);
+    selection.details = d;
+    selection.died = !d.alive;
+    if (d.alive) selection.last = d;
+  }
+  if (msg.extinct && !extinctShown) {
+    extinctShown = true;
+    view.showExtinct(msg.simTime);
+  }
+}
+
+function toSamples(h: Float64Array): PopulationSample[] {
+  const out: PopulationSample[] = [];
+  for (let i = 0; i + 2 < h.length; i += 3) out.push({ time: h[i]!, population: h[i + 1]!, food: h[i + 2]! });
+  return out;
+}
+
+function startRun(c: EcoConfig): void {
+  config = c;
+  active = true;
+  run++;
+  extinctShown = false;
+  worker ??= createWorker();
+  releaseLive();
+  clearSelection();
+  syncCanvas();
+  camera.setWorld(c.world.width, c.world.height);
+  view.setHistory([]);
+  view.setStats(null);
+  view.setNote(null);
+  send({ type: "start", config: c, run });
+  send({ type: "speed", speed: view.speed() });
+}
+
+function createWorker(): Worker {
+  const w = new Worker(new URL("./worker/ecoWorker.ts", import.meta.url), { type: "module" });
+  w.onmessage = onSnapshot;
+  w.onerror = (e) => {
+    active = false;
+    view.setPhase("idle");
+    view.setNote(`Run stopped: ${e.message}`);
+  };
+  return w;
+}
+
+function startFollow(): void {
+  pendingFollow = false;
+  following = true;
+  camera.follow((): Point | null => (selection?.details?.alive ? selection.details : null));
+  view.setFollowing(true);
+}
+
+// Zooms in on a clicked creature, then follows it.
+function select(index: number): void {
+  const v = live!.views;
+  clearSelection();
+  selection = { id: v.ids[index]!, details: null, last: null, brain: null, died: false };
+  send({ type: "select", id: selection.id });
+  const zoom = Math.min(canvasW, canvasH) / (SELECT_DIAMETERS * 2 * config.creature.radius);
+  camera.cancel();
+  camera.animateTo(v.x[index]!, v.y[index]!, zoom);
+  pendingFollow = true;
+  following = true;
+  view.setFollowing(true);
+}
+
+camera.onClick = (wx, wy) => {
+  if (!live) return;
+  const dpr = window.devicePixelRatio || 1;
+  const reach = Math.max(PICK_RADII * config.creature.radius, (PICK_MIN_PX * dpr) / camera.zoom);
+  const index = pickCreature(live.views.x, live.views.y, live.views.count, wx, wy, reach);
+  if (index >= 0) select(index);
+  else if (selection) clearSelection();
+};
+
+// Starts following once the zoom-in has ended, and notices when following stopped: the user dragged, or the creature died.
+function syncFollow(): void {
+  if (pendingFollow) {
+    if (camera.animating) return;
+    if (Math.abs(camera.zoom / camera.goal.zoom - 1) < 0.02 && selection?.details?.alive) startFollow();
+    else {
+      pendingFollow = false;
+      following = false;
+      view.setFollowing(false);
+    }
+  } else if (following && !camera.following) {
+    following = false;
+    view.setFollowing(false);
+  }
+}
+
+function updateUi(): void {
+  if (!live) return;
+  const m = live.msg;
+  view.setStats({ population: m.population, births: m.births, deaths: m.deaths, food: m.food, poison: m.poison, simTime: m.simTime, oldestDepth: m.oldestDepth, speed: m.speed > 0 ? m.speed : null });
+  const d = selection?.last;
+  if (selection && d) {
+    view.setSelected({ id: d.id, energy: d.energy, fullEnergy: config.eco.birthEnergy, age: d.age, children: d.children, depth: d.depth, died: selection.died });
+    view.setFollowing(following);
+  }
+}
+
+function drawBrain(now: number): void {
+  const s = selection;
+  if (!s?.brain || !s.last || !view.brainPanel.isExpanded() || now - lastBrainAt < BRAIN_INTERVAL_MS) return;
+  lastBrainAt = now;
+  s.brain.forward(s.last.inputs, brainOut);
+  view.brain.draw(s.brain, !s.died, inputLayout(config));
+}
+
+function frame(now: number): void {
+  requestAnimationFrame(frame);
+  if (!live || !active) return;
+  const dpr = syncCanvas();
+  camera.update(now);
+  syncFollow();
+  const ctx = view.canvas.getContext("2d")!;
+  renderer.draw(ctx, camera, drawConfig(), live.views, selection?.details ?? null, showRays, dpr);
+  drawLabel(ctx, formatElapsed(live.msg.simTime), dpr, ZOOM_BUTTONS_INSET);
+  if (now - lastUiAt >= UI_INTERVAL_MS) {
+    lastUiAt = now;
+    updateUi();
+  }
+  drawBrain(now);
+}
+
 const view = createEcoView({
-  onStart: () => { view.setPhase("idle"); view.setNote("The simulation engine is still being built, so Start does nothing yet."); },
-  onPause: noop,
-  onResume: noop,
-  onReset: () => { running = false; config = view.readConfig(); drawIdle(); },
-  onReseed: noop,
-  onSpeed: noop,
-  onZoom: noop,
-  onFollow: noop,
-  onWorldView: noop,
-  onShowRays: noop,
-  onConfigChange: (c) => { config = c; drawIdle(); },
+  onStart: startRun,
+  onPause: () => send({ type: "pause" }),
+  onResume: () => send({ type: "resume" }),
+  onReset() {
+    active = false;
+    send({ type: "reset" });
+    releaseLive();
+    clearSelection();
+    view.setStats(null);
+    view.setHistory([]);
+    view.setNote(null);
+    config = view.readConfig();
+    camera.setWorld(config.world.width, config.world.height);
+    drawIdle();
+  },
+  onReseed() {
+    const next = { ...config, seed: Math.floor(Math.random() * 1_000_000) };
+    view.fillConfig(next);
+    startRun(next);
+  },
+  onSpeed: (speed) => send({ type: "speed", speed }),
+  onZoom(action) {
+    if (action === "fit") {
+      pendingFollow = false;
+      camera.cancel();
+      camera.animateToFit();
+      return;
+    }
+    const g = camera.goal;
+    camera.animateTo(g.cx, g.cy, action === "in" ? g.zoom * ZOOM_STEP : g.zoom / ZOOM_STEP);
+  },
+  onFollow(on) {
+    if (on && selection?.details?.alive) startFollow();
+    else {
+      pendingFollow = false;
+      following = false;
+      camera.follow(null);
+      view.setFollowing(false);
+    }
+  },
+  onWorldView() {
+    pendingFollow = false;
+    following = false;
+    camera.cancel();
+    camera.animateToFit();
+  },
+  onShowRays: (show) => { showRays = show; },
+  onConfigChange(c) {
+    config = c;
+    drawIdle();
+  },
 });
 
+camera.attach(view.canvas);
+showRays = view.showRays();
 view.fillConfig(DEFAULT_ECO_CONFIG);
 new ResizeObserver(drawIdle).observe(view.canvas);
 drawIdle();
+requestAnimationFrame(frame);
