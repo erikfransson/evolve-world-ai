@@ -67,6 +67,7 @@
       <section class="stage">
         <canvas id="view" tabindex="0" aria-label="World view. Drag to pan, scroll or pinch to zoom, arrow keys pan, plus and minus zoom, 0 fits the world."></canvas>
         <div id="note" class="note"></div>
+        <div id="timer" class="timer" title="Simulated time" hidden></div>
         <div class="zoom" role="group" aria-label="Zoom">
           <button id="zoomIn" type="button" aria-label="Zoom in" title="Zoom in">+</button>
           <button id="zoomOut" type="button" aria-label="Zoom out" title="Zoom out">−</button>
@@ -82,7 +83,7 @@
             </header>
             <ul class="ov-body legend">
               <li><svg viewBox="0 0 20 20" aria-hidden="true"><clipPath id="swClip"><circle cx="10" cy="10" r="8" /></clipPath><circle cx="10" cy="10" r="8" fill="rgba(15, 23, 20, 0.85)" /><rect x="0" y="8.4" width="20" height="12" fill="hsl(200, 75%, 58%)" clip-path="url(#swClip)" /><circle cx="10" cy="10" r="8" fill="none" stroke="hsl(200, 75%, 58%)" stroke-width="1.6" /></svg>Creature (fill = energy)</li>
-              <li><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8" fill="none" stroke="#eef5f1" stroke-width="1.6" stroke-dasharray="3 2.4" /></svg>Selected creature</li>
+              <li><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8" fill="none" stroke="#eef5f1" stroke-width="1.6" /></svg>Selected creature</li>
               <li><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="5" fill="#4ade80" /></svg>Food</li>
               <li><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="5" fill="#e040fb" /></svg>Poison</li>
             </ul>

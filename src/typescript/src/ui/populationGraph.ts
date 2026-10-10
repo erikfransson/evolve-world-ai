@@ -70,7 +70,13 @@ export class PopulationGraph {
     ctx.lineTo(PAD.left + w, PAD.top + h);
     ctx.lineTo(PAD.left + w, PAD.top);
     ctx.stroke();
-    if (s.length === 0) return;
+    if (s.length === 0) {
+      ctx.fillStyle = TEXT_COLOR;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("Waiting for data", PAD.left + w / 2, PAD.top + h / 2);
+      return;
+    }
     ctx.textBaseline = "top";
     ctx.textAlign = "right";
     ctx.fillStyle = POP_COLOR;

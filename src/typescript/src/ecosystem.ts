@@ -10,23 +10,20 @@ import { snapshotViews } from "./worker/ecoProtocol.ts";
 import { Camera } from "./ui/camera.ts";
 import type { Point } from "./ui/camera.ts";
 import { fitCanvas } from "./ui/canvas.ts";
-import { formatElapsed } from "./ui/elapsed.ts";
 import { pickCreature } from "./ui/ecoPick.ts";
 import { drawIdleWorld } from "./ui/ecoIdle.ts";
 import { createEcoView } from "./ui/ecoPage.ts";
 import { EcoRenderer } from "./ui/ecoScene.ts";
 import type { EcoDrawConfig } from "./ui/ecoScene.ts";
 import type { PopulationSample } from "./ui/populationGraph.ts";
-import { drawLabel } from "./ui/scene.ts";
 
-const SELECT_DIAMETERS = 6; // creature diameters across the shorter screen side after a click
+const SELECT_RAY_LENGTHS = 3; // ray lengths across the shorter free side after a click
 const MAX_CREATURE_PX = 60; // CSS px radius of a creature at the closest zoom
 const PICK_RADII = 3; // click reach in creature radii
 const PICK_MIN_PX = 14; // click reach never below this many CSS px
 const UI_INTERVAL_MS = 100; // stat tiles and selected card
 const BRAIN_INTERVAL_MS = 25;
 const ZOOM_STEP = 1.6;
-const ZOOM_BUTTONS_INSET = 60; // CSS px the timer keeps clear of the zoom buttons
 
 interface Live {
   msg: EcoSnapshot;
@@ -88,6 +85,17 @@ function syncCanvas(): number {
   return dpr;
 }
 
+// Shifts the view centre into the part of the canvas the overlay cards leave free. Phones have the cards below the canvas.
+function overlayShift(): number {
+  const stack = document.querySelector<HTMLElement>(".ov-stack");
+  if (!stack || getComputedStyle(stack).position !== "absolute") return 0;
+  const c = view.canvas.getBoundingClientRect();
+  const r = stack.getBoundingClientRect();
+  const free = c.right - r.right;
+  if (free < 0.4 * c.width) return 0; // too narrow to be worth it
+  return ((r.right - c.left) / 2) * (view.canvas.width / c.width);
+}
+
 function releaseLive(): void {
   if (live) send({ type: "recycle", buffer: live.msg.buffer }, [live.msg.buffer]);
   live = null;
@@ -98,6 +106,7 @@ function clearSelection(): void {
   pendingFollow = false;
   following = false;
   camera.follow(null);
+  camera.setFocusOffset(0, 0);
   send({ type: "select", id: null });
   view.setSelected(null);
 }
@@ -178,8 +187,10 @@ function select(index: number): void {
   clearSelection();
   selection = { id: v.ids[index]!, details: null, last: null, brain: null, died: false };
   send({ type: "select", id: selection.id });
-  const zoom = Math.min(canvasW, canvasH) / (SELECT_DIAMETERS * 2 * config.creature.radius);
+  const shift = overlayShift();
+  const zoom = Math.min(canvasW - 2 * shift, canvasH) / (SELECT_RAY_LENGTHS * config.creature.rayLength);
   camera.cancel();
+  camera.setFocusOffset(shift, 0);
   camera.animateTo(v.x[index]!, v.y[index]!, zoom);
   pendingFollow = true;
   following = true;
@@ -238,7 +249,6 @@ function frame(now: number): void {
   syncFollow();
   const ctx = view.canvas.getContext("2d")!;
   renderer.draw(ctx, camera, drawConfig(), live.views, selection?.details ?? null, showRays, dpr);
-  drawLabel(ctx, formatElapsed(live.msg.simTime), dpr, ZOOM_BUTTONS_INSET);
   if (now - lastUiAt >= UI_INTERVAL_MS) {
     lastUiAt = now;
     updateUi();
