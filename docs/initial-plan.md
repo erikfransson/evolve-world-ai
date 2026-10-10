@@ -54,11 +54,13 @@ A genetic algorithm evolves the networks over generations while the user watches
 3. Add epochs, fitness and breeding, and watch whether behaviour improves over generations.
 4. Add the settings screen.
 
+## Wanted next (owner requests, not started)
+- Choose which generation to watch next, in a neat way. For example watch generation 1, then 20, then jump to 60, or set a stride such as every 100th generation. Today the replay always shows the newest computed generation, and only one generation is kept, so this needs the worker to keep or re-create the chosen generations (genomes and layout seed are enough to replay one).
+- Live world preview while editing settings, before Start. The canvas shows an example world for the current values: food and poison at the chosen densities, world size, and one creature with its rays at the chosen ray count, angle and vision range. It updates as each slider moves.
+
 ## Open questions
 - Is 8 rays over 75 degrees enough to find food, or do creatures need a wider view?
-- How long should an epoch be, and how big a population runs smoothly in the browser?
 - Should poison look different from food to the creature, or only by its effect?
-- If many creatures survive the whole epoch they tie on fitness. Break ties by energy left, or make epochs long enough that this is rare?
 - Later, should creatures share a world, compete and see each other?
 - Should the page also plot best fitness over generations?
 
@@ -68,3 +70,4 @@ A genetic algorithm evolves the networks over generations while the user watches
 - 2026-10-09: creatures live in separate world copies, compute fast then replay, new layout each generation, pluggable selection.
 - 2026-10-09: fish-like physics with drag, outputs are turn and thrust. Tuning log in `docs/tuning-notes.md`.
 - 2026-10-09: no lifetime cap, finite food, lethal poison, densities, brain also sees speed and turn rate.
+- 2026-10-10: refactor into focused modules, faster drain and more drag, performance work for populations up to 2000 (see `docs/perf-notes.md`).
