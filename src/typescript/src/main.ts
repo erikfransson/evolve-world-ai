@@ -1,11 +1,12 @@
 import "./style.css";
 import { DEFAULT_CONFIG, itemCounts } from "./sim/config.ts";
 import type { SimConfig } from "./sim/config.ts";
+import { MAX_TRAJECTORIES } from "./sim/trajectory.ts";
 import type { GenerationMessage, InMessage, OutMessage } from "./worker/protocol.ts";
 import { BrainView } from "./ui/brainView.ts";
 import { fitCanvas } from "./ui/canvas.ts";
 import { initCard } from "./ui/overlays.ts";
-import { MAX_OTHERS, Replay } from "./ui/replay.ts";
+import { Replay } from "./ui/replay.ts";
 import { drawScene } from "./ui/scene.ts";
 import type { ViewOptions } from "./ui/scene.ts";
 import { fillForm, initSettingsForm, readConfig } from "./ui/settingsForm.ts";
@@ -60,7 +61,7 @@ function readView(): void {
 // Legend rows follow the view and run config, the cards appear once a replay exists.
 function renderOverlays(): void {
   legendRest.hidden = !view.showAll;
-  legendRestText.textContent = run.config.population.size > MAX_OTHERS + 1 ? `Top ${MAX_OTHERS} of the rest` : "Rest of generation";
+  legendRestText.textContent = run.config.population.size > MAX_TRAJECTORIES + 1 ? `Top ${MAX_TRAJECTORIES} of the rest` : "Rest of generation";
   legendPoison.hidden = itemCounts(run.config).poison <= 0;
   legendCard.hidden = brainCard.hidden = replay.best === null;
 }

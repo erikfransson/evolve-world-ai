@@ -27,9 +27,9 @@ export function parseThreads(value: string | undefined): number {
 }
 
 // Pool of worker_threads, or the serial evaluator for one thread. Call close() so the process can exit.
-export function createNodeEvaluator(config: SimConfig, threads: number): Evaluator {
-  if (threads <= 1) return new SerialEvaluator(config);
+export function createNodeEvaluator(config: SimConfig, threads: number, recordFrames = false): Evaluator {
+  if (threads <= 1) return new SerialEvaluator(config, recordFrames);
   const workers: PoolWorker[] = [];
   for (let i = 0; i < threads; i++) workers.push(wrap(new Worker(new URL("./evalWorkerNode.ts", import.meta.url))));
-  return new PoolEvaluator(config, workers);
+  return new PoolEvaluator(config, workers, recordFrames);
 }

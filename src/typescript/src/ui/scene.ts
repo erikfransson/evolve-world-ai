@@ -1,4 +1,4 @@
-import type { CreatureState, EpisodeView, WorldView } from "../sim/types.ts";
+import type { CreatureState, EpisodeView, PlaybackState, WorldView } from "../sim/types.ts";
 import { HIT_FOOD, HIT_NONE, HIT_POISON } from "../sim/types.ts";
 import type { SimConfig } from "../sim/config.ts";
 
@@ -89,7 +89,7 @@ function drawItems(ctx: CanvasRenderingContext2D, f: Frame, w: WorldView): void 
 }
 
 // Cheap faint creature: body opacity scales with energy.
-function drawOther(ctx: CanvasRenderingContext2D, f: Frame, s: CreatureState): void {
+function drawOther(ctx: CanvasRenderingContext2D, f: Frame, s: PlaybackState): void {
   const r = f.creatureR;
   ctx.fillStyle = "#7dd3fc";
   ctx.strokeStyle = "#7dd3fc";
@@ -206,7 +206,7 @@ export function drawScene(
   ctx: CanvasRenderingContext2D,
   config: SimConfig,
   best: EpisodeView | null,
-  others: readonly EpisodeView[],
+  others: readonly PlaybackState[],
   view: ViewOptions,
 ): void {
   const cw = ctx.canvas.width;
@@ -236,7 +236,7 @@ export function drawScene(
     drawItems(ctx, f, best.world);
     if (view.showAll) {
       for (let i = 0; i < others.length; i++) {
-        if (others[i]!.state.alive) drawOther(ctx, f, others[i]!.state);
+        if (others[i]!.alive) drawOther(ctx, f, others[i]!);
       }
     }
     drawBest(ctx, f, best.state);

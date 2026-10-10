@@ -1,38 +1,40 @@
 import type { SimConfig } from "../sim/config.ts";
 import { Episode } from "../sim/episode.ts";
 import { Population } from "../sim/population.ts";
+import { FRAME_FLOATS } from "../sim/trajectory.ts";
+import type { Trajectories } from "../sim/trajectory.ts";
+import type { PlaybackState } from "../sim/types.ts";
 import type { GenerationMessage } from "../worker/protocol.ts";
 
-export const MAX_OTHERS = 300; // fittest creatures besides the best that are replayed and drawn
-
-// Re-runs one generation from its genomes and layout seed, every shown creature in its own world copy.
+// Replays one generation: the best creature is re-simulated live for its brain and rays,
+// the fittest others are played back from the trajectories the worker recorded.
 export class Replay {
   best: Episode | null = null;
-  others: Episode[] = []; // the fittest after the best, descending
+  others: PlaybackState[] = []; // the fittest after the best, descending
   generation = -1; // generation being replayed
+  private trajectories: Trajectories | null = null;
   private clock = 0; // ticks the best has run
 
-  // Builds the others too, they always run so switching the view never restarts the replay.
+  // The others always play, so switching the view never restarts the replay.
   load(msg: GenerationMessage, config: SimConfig): void {
     const { result, genomes, genomeLength, populationSize: n } = msg;
     const population = new Population(n, genomeLength, genomes);
-    const rest: number[] = [];
-    for (let i = 0; i < n; i++) if (i !== result.bestIndex) rest.push(i);
-    rest.sort((a, b) => result.fitness[b]! - result.fitness[a]!);
-    const make = (i: number): Episode => new Episode(config, population.genome(i), result.layoutSeed, i);
-    this.best = make(result.bestIndex);
-    this.others = rest.slice(0, MAX_OTHERS).map(make);
+    this.best = new Episode(config, population.genome(result.bestIndex), result.layoutSeed, result.bestIndex);
+    this.trajectories = msg.trajectories;
+    this.others = Array.from({ length: msg.trajectories.offsets.length - 1 }, () => ({ x: 0, y: 0, heading: 0, energy: 0, alive: true }));
     this.generation = result.generation;
     this.clock = 0;
+    this.placeOthers();
   }
 
   clear(): void {
     this.best = null;
     this.others = [];
+    this.trajectories = null;
     this.generation = -1;
   }
 
-  // Runs up to `ticks` ticks of the best and the others, stopping at the deadline (a performance.now() time).
+  // Runs up to `ticks` ticks of the best, stopping at the deadline (a performance.now() time), and moves the others to match.
   advance(ticks: number, deadline: number): void {
     const best = this.best;
     if (!best) return;
@@ -40,11 +42,27 @@ export class Replay {
     while (this.clock < target && performance.now() < deadline) {
       best.step();
       this.clock++;
-      for (let i = 0; i < this.others.length; i++) this.others[i]!.step(); // step() ignores finished episodes
     }
+    this.placeOthers();
   }
 
   get done(): boolean {
     return this.best?.done ?? false; // the best outlives the others
+  }
+
+  // Others at the frame after `clock` steps; a finished path holds its last frame.
+  private placeOthers(): void {
+    const t = this.trajectories;
+    if (!t) return;
+    for (let k = 0; k < this.others.length; k++) {
+      const frame = Math.min(t.offsets[k]! + this.clock, t.offsets[k + 1]! - 1);
+      const at = frame * FRAME_FLOATS;
+      const o = this.others[k]!;
+      o.x = t.data[at]!;
+      o.y = t.data[at + 1]!;
+      o.heading = t.data[at + 2]!;
+      o.energy = t.data[at + 3]!;
+      o.alive = o.energy > 0;
+    }
   }
 }

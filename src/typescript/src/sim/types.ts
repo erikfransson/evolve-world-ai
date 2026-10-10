@@ -40,6 +40,9 @@ export interface WorldView {
   readonly kinds: Uint8Array; // HIT_FOOD or HIT_POISON, HIT_NONE once eaten
 }
 
+// What the replay draws of a creature it plays back rather than simulates.
+export type PlaybackState = Pick<CreatureState, "x" | "y" | "heading" | "energy" | "alive">;
+
 export interface EpisodeView {
   readonly state: CreatureState;
   readonly rays: readonly RayHit[]; // last sensed, one per ray
