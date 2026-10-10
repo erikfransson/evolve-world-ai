@@ -112,6 +112,10 @@
                 <div class="row"><span class="lbl"><label class="name" for="neurons">Neurons per layer</label><span class="tip" tabindex="0" role="img" aria-label="Neurons in each hidden layer. More can learn richer behaviour but evolve more slowly." data-tip="Neurons in each hidden layer. More can learn richer behaviour but evolve more slowly.">ⓘ</span></span><output for="neurons"></output></div>
                 <input id="neurons" type="range" min="4" max="32" step="1" />
               </div>
+              <div class="field">
+                <div class="row"><span class="lbl"><label class="name" for="memory">Memory</label><span class="tip" tabindex="0" role="img" aria-label="Short- and long-term memory the brain can write to and read back on the next moment, so it can remember what it saw. 0 is none, 0.5 gives 4 short-term and 4 long-term memory units, 1 gives 8 of each." data-tip="Short- and long-term memory the brain can write to and read back on the next moment, so it can remember what it saw. 0 is none, 0.5 gives 4 short-term and 4 long-term memory units, 1 gives 8 of each.">ⓘ</span></span><output for="memory" data-fmt="dens"></output></div>
+                <input id="memory" type="range" min="0" max="1" step="0.05" />
+              </div>
             </section>
 
             <section class="card">

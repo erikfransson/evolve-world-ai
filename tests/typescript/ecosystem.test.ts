@@ -29,7 +29,7 @@ function ecoCfg(over: Over = {}): EcoConfig {
 const still = (eco: Partial<EcoConfig["eco"]>, startEnergy: number): EcoConfig =>
   ecoCfg({
     world: { foodDensity: 0, poisonDensity: 0 },
-    creature: { startEnergy, livingCost: 0, thrustCost: 0 },
+    creature: { startEnergy, livingCost: 0, thrustCost: 0, turnCost: 0, rayCost: 0, neuronCost: 0 },
     eco: { foodRegrow: 0, poisonRegrow: 0, collisions: false, ...eco },
   });
 
@@ -167,6 +167,33 @@ describe("Ecosystem", () => {
     expect(poison.eco.deaths).toBe(1);
     expect(poison.m.eaten).toBe(0);
   });
+
+  it("varied founders and mutating plans run deterministically, with every creature sized by its own plan", () => {
+    const varied = ecoCfg({
+      creature: { startEnergy: 140 },
+      brain: { memory: 1 },
+      eco: { initialPopulation: 60, foodRegrow: 0.3, foodMaxDensity: 2, foundersVary: true, planDrift: 0.05, structuralRate: 0.5 },
+    });
+    const run = () => {
+      const eco = new Ecosystem(varied);
+      for (let t = 0; t < 900 && !eco.extinct; t++) eco.step();
+      return eco;
+    };
+    const eco = run();
+    expect(eco.fingerprint()).toBe(run().fingerprint());
+    expect(eco.births).toBeGreaterThan(0);
+    expect(eco.deaths).toBeGreaterThan(0);
+    const shapes = new Set<string>();
+    for (const m of eco.members) {
+      const { plan, brain, rays, memory } = m.creature;
+      expect(brain.sizes).toEqual(layerSizes(varied, plan));
+      expect(brain.genome.length).toBe(genomeLength(brain.sizes));
+      expect([rays.length, memory.length]).toEqual([plan.rayCount, plan.memoryShort + plan.memoryLong]);
+      expect(Array.from(brain.layerActivations().at(-1)!).every(Number.isFinite)).toBe(true);
+      shapes.add(brain.sizes.join());
+    }
+    expect(shapes.size).toBeGreaterThan(1);
+  });
 });
 
 describe("Crowd", () => {
@@ -188,7 +215,7 @@ describe("Crowd", () => {
     expect(viewer.rays[0].kind).toBe(HIT_NONE);
 
     const layout = inputLayout(c);
-    expect(layout.size).toBe(3 * 6 + 4);
+    expect(layout.size).toBe(3 * 6 + 4 + 4); // rays x features, extras, memory (0.25: 2 + 2 units)
     viewer.think();
     const input = viewer.brain.layerActivations()[0];
     expect(input[layout.rayFeatures + FEAT_CREATURE]).toBe(1);

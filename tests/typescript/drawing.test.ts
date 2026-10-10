@@ -103,7 +103,7 @@ describe("BrainView", () => {
   const withBrain = (rayCount: number, hiddenLayers: number[]): SimConfig => ({
     ...DEFAULT_CONFIG,
     creature: { ...DEFAULT_CONFIG.creature, rayCount },
-    brain: { hiddenLayers },
+    brain: { ...DEFAULT_CONFIG.brain, hiddenLayers },
   });
 
   it("draws nodes, labels and output names with finite coordinates", () => {

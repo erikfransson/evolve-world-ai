@@ -1,3 +1,4 @@
+import { genomeLength, layerSizes } from "../../src/typescript/src/sim/brain.ts";
 import { DEFAULT_CONFIG } from "../../src/typescript/src/sim/config.ts";
 import type { SimConfig } from "../../src/typescript/src/sim/config.ts";
 import { Episode } from "../../src/typescript/src/sim/episode.ts";
@@ -35,6 +36,20 @@ describe("Evolution", () => {
       while (!ep.done) ep.step();
       expect(ep.fitness()).toBe(result.fitness[i]);
     }
+  });
+
+  it.each([0, 1])("evolves deterministically with memory %s and sizes genomes by it", async (memory) => {
+    const config: SimConfig = { ...cfg, brain: { ...cfg.brain, memory } };
+    const run = async () => {
+      const evo = new Evolution(config);
+      const fitness: number[] = [];
+      for (let g = 0; g < 3; g++) fitness.push(...(await evo.runGeneration()).result.fitness);
+      return { fitness, genomeLength: evo.population.genomeLength };
+    };
+    const a = await run();
+    expect(a).toEqual(await run());
+    expect(a.fitness.every((f) => Number.isFinite(f) && f > 0)).toBe(true);
+    expect(a.genomeLength).toBe(genomeLength(layerSizes(config)));
   });
 
   it("times one default generation", async () => {

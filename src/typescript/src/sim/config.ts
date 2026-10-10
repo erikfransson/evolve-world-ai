@@ -20,6 +20,9 @@ export interface SimConfig {
     startEnergy: number; // no upper limit on stored energy
     livingCost: number; // energy per second
     thrustCost: number; // energy per second at full thrust
+    turnCost: number; // energy per second at full turn rate
+    rayCost: number; // energy per second per ray of length 100, linear in length
+    neuronCost: number; // energy per second per hidden neuron and memory unit
     maxThrust: number; // forward acceleration at full thrust, units/s^2; top speed = maxThrust / drag
     brakeThreshold: number; // thrust output below this brakes at maxBrake, between it and 0 the creature coasts
     maxBrake: number; // fixed deceleration while braking, units/s^2; free, never reverses
@@ -28,6 +31,7 @@ export interface SimConfig {
     sideDrag: number; // sideways velocity decay rate, 1/s; higher than drag gives fish-like gliding turns
     maxTurnRate: number; // radians per second at full turn output
     turnDamping: number; // rate at which turning speed approaches its target, 1/s
+    // rayCount, raySpread, rayLength and the brain's layers and memory form the config's body plan (planOf).
     rayCount: number;
     raySpread: number; // total fan angle in radians
     rayLength: number;
@@ -36,6 +40,9 @@ export interface SimConfig {
   };
   brain: {
     hiddenLayers: number[]; // neurons per hidden layer, 1 to 4 layers of 4 to 32
+    memory: number; // 0 to 1, see memoryUnits; each unit is a leaky average of one brain output fed back as an input next tick
+    shortRate: number; // per tick: m += rate * (target - m)
+    longRate: number;
   };
   population: {
     size: number;
@@ -71,6 +78,9 @@ export const DEFAULT_CONFIG: SimConfig = {
     startEnergy: 50,
     livingCost: 2,
     thrustCost: 4,
+    turnCost: 0.5,
+    rayCost: 0.02,
+    neuronCost: 0.005,
     maxThrust: 200,
     brakeThreshold: -0.5,
     maxBrake: 200,
@@ -85,7 +95,7 @@ export const DEFAULT_CONFIG: SimConfig = {
     seesCreatures: false,
     maxLifeSeconds: 3600,
   },
-  brain: { hiddenLayers: [16] },
+  brain: { hiddenLayers: [16], memory: 0.25, shortRate: 0.3, longRate: 0.01 },
   population: { size: 150 },
   ga: {
     selection: "truncation",
@@ -96,6 +106,14 @@ export const DEFAULT_CONFIG: SimConfig = {
     mutationStd: 0.3,
   },
 };
+
+const MEMORY_UNITS = 16; // memory units at brain.memory 1, about 46% of the weights of the default brain
+
+// Short and long memory units for a memory setting in [0, 1], independent of the network size; the odd unit is short-term.
+export function memoryUnits(memory: number): { short: number; long: number } {
+  const units = Math.round(MEMORY_UNITS * Math.min(1, Math.max(0, memory)));
+  return { short: Math.ceil(units / 2), long: Math.floor(units / 2) };
+}
 
 const DENSITY_CELL = 100; // world units; density 1 = one item per 100 x 100 area
 

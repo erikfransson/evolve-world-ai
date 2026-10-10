@@ -56,4 +56,32 @@ describe("BrainView layout", () => {
     expect(badCoordinateCalls(eco)).toEqual([]);
     expect(header(eco)).toEqual(["c", "f", "p", "w", "o", "e"]);
   });
+
+  it("places short and long memory inputs in rows under the extras and their targets under thrust", () => {
+    const config = { ...DEFAULT_CONFIG, brain: { ...DEFAULT_CONFIG.brain, memory: 1 } }; // 8 short + 8 long
+    const sizes = layerSizes(config);
+    const layout = buildLayout(fakeCtx().ctx, sizes, 4, 375, 220, 8);
+    expect(layout.rays).toBe(DEFAULT_CONFIG.creature.rayCount);
+    const yIn = layout.ys[0]!;
+    const extras = layout.rays * 4;
+    const mem = Array.from(yIn.subarray(layout.memoryAt));
+    expect(mem.every((y) => y > layout.extraLabelY && y < 220)).toBe(true);
+    expect(layout.memoryRows.map((r) => r.long)).toEqual([false, false, true, true]);
+    expect(Math.min(...mem.slice(8))).toBeGreaterThan(Math.max(...mem.slice(0, 8))); // long rows below short ones
+    expect(layout.memoryAt).toBe(extras + 4);
+    const yOut = layout.ys.at(-1)!;
+    const xOut = layout.xs.at(-1)!;
+    expect(Math.min(...yOut.subarray(2))).toBeGreaterThan(yOut[1]!);
+    expect(Math.max(...yOut)).toBeLessThan(220);
+    expect(xOut[2]).toBeLessThan(xOut[0]!); // short column left, long right
+    expect(xOut[10]).toBeGreaterThan(xOut[0]!);
+
+    const { canvas, calls } = fakeCanvas(375, 220);
+    const brain = new Brain(sizes, randomGenome(sizes, testRng(4)));
+    brain.forward(new Float32Array(sizes[0]!).fill(0.3), new Float32Array(sizes.at(-1)!));
+    new BrainView(canvas).draw(brain, true, inputLayout(config));
+    expect(badCoordinateCalls(calls)).toEqual([]);
+    const texts = calls.filter((c) => c.name === "fillText").map((c) => c.args[0]);
+    expect(texts).toEqual(expect.arrayContaining(["S", "L", "memory", "turn", "thrust"]));
+  });
 });

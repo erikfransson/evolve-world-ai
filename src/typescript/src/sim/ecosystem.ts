@@ -1,12 +1,15 @@
-import { genomeLength, layerSizes, randomGenome } from "./brain.ts";
+import { genomeLength, layerSizes, randomGenome, refit } from "./brain.ts";
 import { itemCounts, itemsPerDensity } from "./config.ts";
 import { Creature } from "./creature.ts";
 import { Crowd } from "./crowd.ts";
 import type { EcoConfig } from "./ecoConfig.ts";
 import { mutate } from "./ga.ts";
+import { driftPlan, mutateStructure, randomPlan, remapWeights } from "./planMutation.ts";
 import { collide, keepInside, settle } from "./physics.ts";
 import { createRng, deriveSeed } from "./rng.ts";
 import type { StatefulRng } from "./rng.ts";
+import { copyPlan, inputLayout, planOf } from "./sensors.ts";
+import type { BodyPlan } from "./sensors.ts";
 import { HIT_FOOD, HIT_POISON } from "./types.ts";
 import type { CreatureState, Genome, HitKind, WorldView } from "./types.ts";
 import { World } from "./world.ts";
@@ -65,8 +68,10 @@ export class Ecosystem {
   private readonly byId = new Map<number, EcoCreature>();
   private readonly spare: EcoCreature[] = [];
   private readonly rng: StatefulRng;
-  private readonly sizes: number[];
-  private readonly childGenome: Genome;
+  // Scratch of one birth, grown as plans need: the child's plan, its genome, and the parent's weights remapped to a new shape.
+  private readonly childPlan: BodyPlan;
+  private childGenome = new Float32Array(0);
+  private remapped = new Float32Array(0);
   private readonly mutation: { mutationRate: number; mutationStd: number };
   private readonly cooldownTicks: number;
   private readonly foodCap: number;
@@ -94,19 +99,20 @@ export class Ecosystem {
     this.food = start.food;
     this.poison = start.poison;
     this.crowd = new Crowd(config, Math.min(eco.initialPopulation, eco.maxPopulation));
-    this.sizes = layerSizes(config);
-    this.childGenome = new Float32Array(genomeLength(this.sizes));
+    this.childPlan = planOf(config);
     this.mutation = { mutationRate: config.mutation.rate, mutationStd: config.mutation.std };
 
     const { width, height } = config.world;
     const r = config.creature.radius;
     const founders = Math.max(0, Math.min(eco.initialPopulation, eco.maxPopulation));
+    const plan = this.childPlan;
     for (let i = 0; i < founders; i++) {
-      const genome = randomGenome(this.sizes, this.rng);
+      if (eco.foundersVary) randomPlan(eco, this.rng, plan);
+      const genome = randomGenome(layerSizes(config, plan), this.rng);
       const x = this.rng.range(r, width - r);
       const y = this.rng.range(r, height - r);
       this.items.clearPoison(x, y, r, this.rng);
-      const m = this.spawn(genome, x, y, this.rng.next() * 2 * Math.PI, config.creature.startEnergy);
+      const m = this.spawn(genome, plan, x, y, this.rng.next() * 2 * Math.PI, config.creature.startEnergy);
       m.hue = this.rng.next() * 360;
     }
   }
@@ -224,14 +230,27 @@ export class Ecosystem {
     ps.energy -= eco.birthCost;
     parent.lastBirthTick = this.tick;
     parent.children++;
-    const genome = this.childGenome;
-    genome.set(parent.creature.brain.genome);
+    const pc = parent.creature;
+    const plan = this.childPlan;
+    copyPlan(pc.plan, plan);
+    let source = pc.brain.genome;
+    if (eco.planDrift > 0) driftPlan(plan, eco.planDrift, eco, this.rng);
+    if (eco.structuralRate > 0 && this.rng.next() < eco.structuralRate) {
+      const maps = mutateStructure(plan, inputLayout(this.config, pc.plan), pc.brain.sizes, eco, this.rng);
+      if (maps) {
+        this.remapped = refit(this.remapped, genomeLength(maps.map((m) => m.length)));
+        remapWeights(pc.brain.sizes, source, maps, this.remapped, this.rng);
+        source = this.remapped;
+      }
+    }
+    const genome = (this.childGenome = refit(this.childGenome, source.length));
+    genome.set(source);
     mutate(genome, this.mutation, this.rng);
     const angle = this.rng.next() * 2 * Math.PI;
     const cos = Math.cos(angle);
     const sin = Math.sin(angle);
     const gap = 2 * cc.radius + 1; // just clear of the parent
-    const child = this.spawn(genome, ps.x + cos * gap, ps.y + sin * gap, angle, eco.childEnergy);
+    const child = this.spawn(genome, plan, ps.x + cos * gap, ps.y + sin * gap, angle, eco.childEnergy);
     const s = child.creature.state;
     s.vx = cos * eco.birthSpeed;
     s.vy = sin * eco.birthSpeed;
@@ -242,12 +261,12 @@ export class Ecosystem {
     this.births++;
   }
 
-  // Adds a creature, reusing a dead one's storage when there is one; the genome is copied when reused.
-  private spawn(genome: Genome, x: number, y: number, heading: number, energy: number): EcoCreature {
+  // Adds a creature, reusing a dead one's storage when there is one; genome and plan are copied, except a founder's genome for a new creature.
+  private spawn(genome: Genome, plan: BodyPlan, x: number, y: number, heading: number, energy: number): EcoCreature {
     let m = this.spare.pop();
-    if (m) m.creature.reset(genome, x, y, heading, energy);
+    if (m) m.creature.reset(genome, x, y, heading, energy, plan);
     else {
-      m = new EcoCreature(new Creature(this.config, genome === this.childGenome ? genome.slice() : genome, x, y, heading));
+      m = new EcoCreature(new Creature(this.config, genome === this.childGenome ? genome.slice() : genome, x, y, heading, plan));
       m.creature.state.energy = energy;
     }
     m.id = this.nextId++;

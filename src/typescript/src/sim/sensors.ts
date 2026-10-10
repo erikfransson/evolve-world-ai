@@ -1,8 +1,46 @@
+import { memoryUnits } from "./config.ts";
 import type { EngineConfig } from "./config.ts";
 import { HIT_CREATURE, HIT_FOOD, HIT_POISON, HIT_WALL } from "./types.ts";
 import type { CreatureState, RayHit } from "./types.ts";
 
-// Brain input layout: per ray these features, then the extras below. inputLayout picks the ray features for a config.
+// A creature's body plan: senses and brain shape. Its genome is the plan plus a weight vector sized by layerSizes.
+// Plain data, so it serialises as JSON.
+export interface BodyPlan {
+  rayCount: number;
+  raySpread: number; // total fan angle in radians
+  rayLength: number;
+  hiddenLayers: number[]; // neurons per hidden layer
+  memoryShort: number; // leaky memory units at brain.shortRate per tick
+  memoryLong: number; // at brain.longRate
+}
+
+// The plan a config describes; Trials uses it for every creature.
+export function planOf(config: EngineConfig): BodyPlan {
+  const { rayCount, raySpread, rayLength } = config.creature;
+  const { short, long } = memoryUnits(config.brain.memory);
+  return { rayCount, raySpread, rayLength, hiddenLayers: config.brain.hiddenLayers.slice(), memoryShort: short, memoryLong: long };
+}
+
+// Copies from into to without allocating.
+export function copyPlan(from: BodyPlan, to: BodyPlan): void {
+  to.rayCount = from.rayCount;
+  to.raySpread = from.raySpread;
+  to.rayLength = from.rayLength;
+  to.hiddenLayers.length = from.hiddenLayers.length;
+  for (let i = 0; i < from.hiddenLayers.length; i++) to.hiddenLayers[i] = from.hiddenLayers[i]!;
+  to.memoryShort = from.memoryShort;
+  to.memoryLong = from.memoryLong;
+}
+
+// True when both plans give the same brain layer sizes.
+export function sameShape(a: BodyPlan, b: BodyPlan): boolean {
+  if (a.rayCount !== b.rayCount || a.memoryShort !== b.memoryShort || a.memoryLong !== b.memoryLong) return false;
+  if (a.hiddenLayers.length !== b.hiddenLayers.length) return false;
+  for (let i = 0; i < a.hiddenLayers.length; i++) if (a.hiddenLayers[i] !== b.hiddenLayers[i]) return false;
+  return true;
+}
+
+// Brain input layout: per ray these features, then the extras, then the memory units (short first). inputLayout picks the ray features for a config.
 export const RAY_FEATURE_LABELS = ["closeness", "food", "poison", "wall"] as const;
 export const RAY_FEATURES = RAY_FEATURE_LABELS.length; // without creature features, as in Trials
 export const CREATURE_RAY_FEATURE_LABELS = [...RAY_FEATURE_LABELS, "creature", "seen energy"] as const;
@@ -15,42 +53,70 @@ export const FEAT_SEEN_ENERGY = 5;
 export const INPUT_EXTRA_LABELS = ["energy", "speed", "lateral", "turn"] as const; // speed is forward, lateral is sideways
 export const EXTRA_INPUTS = INPUT_EXTRA_LABELS.length;
 
+// Brain outputs: turn and thrust (thrust below brakeThreshold brakes), then one target per memory unit.
+export const OUTPUT_LABELS = ["turn", "thrust"] as const;
+export const OUTPUT_SIZE = OUTPUT_LABELS.length; // outputs without memory targets
+export const OUT_TURN = 0;
+export const OUT_THRUST = 1;
+
 export interface InputLayout {
   readonly rayFeatureLabels: readonly string[];
   readonly rayFeatures: number;
   readonly rays: number;
-  readonly size: number; // rays * rayFeatures + EXTRA_INPUTS
+  readonly extras: readonly string[];
+  readonly memoryShort: number;
+  readonly memoryLong: number;
+  readonly memoryAt: number; // input index of the first memory unit; its target is output OUTPUT_SIZE + unit
+  readonly memoryLabels: readonly string[]; // s1.., l1.., for both the memory inputs and their targets
+  readonly size: number; // rays * rayFeatures + EXTRA_INPUTS + memory units
+  readonly outputs: number; // OUTPUT_SIZE + memory units
 }
 
 const rayFeatureLabels = (config: EngineConfig): readonly string[] =>
   config.creature.seesCreatures ? CREATURE_RAY_FEATURE_LABELS : RAY_FEATURE_LABELS;
 
-export function inputLayout(config: EngineConfig): InputLayout {
+export function inputLayout(config: EngineConfig, plan: BodyPlan = planOf(config)): InputLayout {
   const labels = rayFeatureLabels(config);
-  const rays = config.creature.rayCount;
-  return { rayFeatureLabels: labels, rayFeatures: labels.length, rays, size: rays * labels.length + EXTRA_INPUTS };
+  const rays = plan.rayCount;
+  const { memoryShort, memoryLong } = plan;
+  const memory = memoryShort + memoryLong;
+  const memoryAt = rays * labels.length + EXTRA_INPUTS;
+  const memoryLabels = [...Array.from({ length: memoryShort }, (_, i) => `s${i + 1}`), ...Array.from({ length: memoryLong }, (_, i) => `l${i + 1}`)];
+  return {
+    rayFeatureLabels: labels,
+    rayFeatures: labels.length,
+    rays,
+    extras: INPUT_EXTRA_LABELS,
+    memoryShort,
+    memoryLong,
+    memoryAt,
+    memoryLabels,
+    size: memoryAt + memory,
+    outputs: OUTPUT_SIZE + memory,
+  };
 }
 
-// Brain outputs: turn and thrust (thrust below brakeThreshold brakes).
-export const OUTPUT_LABELS = ["turn", "thrust"] as const;
-export const OUTPUT_SIZE = OUTPUT_LABELS.length;
-export const OUT_TURN = 0;
-export const OUT_THRUST = 1;
+export function inputSize(config: EngineConfig, plan?: BodyPlan): number {
+  return inputLayout(config, plan).size;
+}
 
 // Thrust command for stepBody from the raw thrust output: below brakeThreshold a full brake (-1), otherwise coasting or thrust.
 export function thrustCommand(out: number, brakeThreshold: number): number {
   return out < brakeThreshold ? -1 : Math.max(0, out);
 }
 
-export function inputSize(config: EngineConfig): number {
-  return inputLayout(config).size;
+// Energy per second a creature of this plan pays besides thrust and turning: living, sensing and neurons.
+export function planUpkeep(plan: BodyPlan, config: EngineConfig): number {
+  const c = config.creature;
+  let neurons = plan.memoryShort + plan.memoryLong;
+  for (const n of plan.hiddenLayers) neurons += n;
+  return c.livingCost + (c.rayCost * plan.rayCount * plan.rayLength) / 100 + c.neuronCost * neurons;
 }
 
 // Ray i points at heading + offsets[i], spread evenly from -spread/2 to +spread/2.
 // A full circle leaves out the last endpoint so no two rays coincide behind the creature.
-export function rayAngleOffsets(config: EngineConfig): Float32Array {
-  const { rayCount, raySpread } = config.creature;
-  const offsets = new Float32Array(rayCount);
+export function rayAngleOffsets(plan: Pick<BodyPlan, "rayCount" | "raySpread">, offsets = new Float32Array(plan.rayCount)): Float32Array {
+  const { rayCount, raySpread } = plan;
   const gaps = raySpread >= 2 * Math.PI - 1e-9 ? rayCount : rayCount - 1;
   for (let i = 0; i < rayCount; i++) {
     offsets[i] = rayCount === 1 ? 0 : -raySpread / 2 + (raySpread * i) / gaps;
