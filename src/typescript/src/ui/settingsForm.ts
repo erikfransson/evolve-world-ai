@@ -104,5 +104,6 @@ export function initSettingsForm(form: HTMLFormElement, onChange: (c: SimConfig)
   form.addEventListener("submit", (e) => e.preventDefault());
   document.getElementById("dice")!.onclick = () => {
     el("seed", HTMLInputElement).value = String(Math.floor(Math.random() * 1_000_000));
+    onChange(readConfig());
   };
 }

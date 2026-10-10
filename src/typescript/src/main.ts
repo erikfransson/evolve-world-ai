@@ -1,11 +1,13 @@
 import "./style.css";
 import { DEFAULT_CONFIG, itemCounts } from "./sim/config.ts";
 import type { SimConfig } from "./sim/config.ts";
+import type { Episode } from "./sim/episode.ts";
 import { MAX_TRAJECTORIES } from "./sim/trajectory.ts";
 import type { GenerationMessage, InMessage, OutMessage } from "./worker/protocol.ts";
 import { BrainView } from "./ui/brainView.ts";
 import { fitCanvas } from "./ui/canvas.ts";
 import { initCard } from "./ui/overlays.ts";
+import { buildPreview } from "./ui/preview.ts";
 import { Replay } from "./ui/replay.ts";
 import { drawScene } from "./ui/scene.ts";
 import type { ViewOptions } from "./ui/scene.ts";
@@ -31,6 +33,7 @@ initCard(legendCard, "evolve.card.legend", false);
 const brainPanel = initCard(brainCard, "evolve.card.brain", window.matchMedia("(max-width: 700px)").matches);
 const brainView = new BrainView($<HTMLCanvasElement>("brainView"));
 const replay = new Replay();
+let preview: Episode | null = null; // idle-phase world built from the form, rebuilt on change only
 
 interface RunState {
   phase: "idle" | "running" | "paused";
@@ -66,6 +69,10 @@ function renderOverlays(): void {
   legendRestText.textContent = run.config.population.size > MAX_TRAJECTORIES + 1 ? `Top ${MAX_TRAJECTORIES} of the rest` : "Rest of generation";
   legendPoison.hidden = itemCounts(run.config).poison <= 0;
   legendCard.hidden = brainCard.hidden = replay.best === null;
+}
+
+function rebuildPreview(): void {
+  preview = run.phase === "idle" ? buildPreview(run.config) : null;
 }
 
 function send(msg: InMessage): void {
@@ -134,6 +141,7 @@ function start(): void {
   run.latest = null;
   run.error = null;
   replay.clear();
+  preview = null;
   run.phase = "running";
   run.worker = new Worker(new URL("./worker/simWorker.ts", import.meta.url), { type: "module" });
   run.worker.onmessage = onMessage;
@@ -149,6 +157,7 @@ function reset(): void {
   run.latest = null;
   replay.clear();
   run.config = readConfig();
+  rebuildPreview();
   refresh();
 }
 
@@ -160,7 +169,7 @@ function togglePause(): void {
 }
 
 function frame(now: number): void {
-  fitCanvas(canvas);
+  const dpr = fitCanvas(canvas);
   // Wall time drives the replay so speed is the same at any refresh rate; long gaps (hidden tab) are capped.
   const elapsed = Math.min(0.25, Math.max(0, (now - lastFrameAt) / 1000));
   lastFrameAt = now;
@@ -173,8 +182,10 @@ function frame(now: number): void {
   } else {
     tickDebt = 0;
   }
-  drawScene(ctx, run.config, replay.best, replay.others, view);
   const best = replay.best;
+  if (best) drawScene(ctx, run.config, best, replay.others, view, `Generation ${replay.generation}`, dpr);
+  else if (preview) drawScene(ctx, run.config, preview, [], { showAll: false, showRays: true, pov: false }, "Preview", dpr);
+  else drawScene(ctx, run.config, null, [], view, null, dpr);
   if (best && brainPanel.isExpanded() && now - lastBrainAt >= BRAIN_INTERVAL_MS) {
     brainView.draw(best.brain, best.state.alive);
     lastBrainAt = now;
@@ -188,10 +199,15 @@ skipBtn.onclick = loadReplay;
 pauseBtn.onclick = togglePause;
 for (const id of ["showAll", "rays", "pov"]) $(id).addEventListener("change", readView);
 document.querySelector(".seg")!.addEventListener("change", readView);
-initSettingsForm(setupForm, (c) => { if (run.phase === "idle") run.config = c; });
+initSettingsForm(setupForm, (c) => {
+  if (run.phase !== "idle") return;
+  run.config = c;
+  rebuildPreview();
+});
 initTooltips($("tooltip"));
 
 fillForm(DEFAULT_CONFIG);
+rebuildPreview();
 readView();
 refresh();
 requestAnimationFrame(frame);

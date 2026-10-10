@@ -71,12 +71,10 @@ export class Episode implements EpisodeView {
     return !this.state.alive || this.state.ticksAlive >= this.maxTicks;
   }
 
-  step(): void {
-    if (this.done) return;
-    const { dt, creature: c, world: w } = this.config;
+  // Casts the rays from the current pose into this.rays without advancing the simulation.
+  sense(): void {
     const s = this.state;
     const rays = this.rays;
-
     // Ray directions by angle addition from the heading's cos/sin.
     const hc = this.headCos;
     const hs = this.headSin;
@@ -89,7 +87,15 @@ export class Episode implements EpisodeView {
       dirY[i] = hs * oc[i] + hc * os[i];
     }
     this.world.castRays(s.x, s.y, dirX, dirY, rays);
-    encodeInputs(s, rays, this.config, this.input, hc, hs);
+  }
+
+  step(): void {
+    if (this.done) return;
+    const { dt, creature: c, world: w } = this.config;
+    const s = this.state;
+
+    this.sense();
+    encodeInputs(s, this.rays, this.config, this.input, this.headCos, this.headSin);
 
     this.brain.forward(this.input, this.output);
     const thrust = Math.max(0, this.output[OUT_THRUST]);

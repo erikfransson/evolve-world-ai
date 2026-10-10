@@ -202,12 +202,22 @@ function drawPov(ctx: CanvasRenderingContext2D, f: Frame, s: CreatureState): voi
   ctx.fill("evenodd");
 }
 
+// Screen-space text in the top-left corner, sized in CSS pixels.
+function drawLabel(ctx: CanvasRenderingContext2D, text: string, dpr: number): void {
+  ctx.font = `${13 * dpr}px system-ui, sans-serif`;
+  ctx.textBaseline = "top";
+  ctx.fillStyle = "rgba(238, 245, 241, 0.7)";
+  ctx.fillText(text, 12 * dpr, 10 * dpr);
+}
+
 export function drawScene(
   ctx: CanvasRenderingContext2D,
   config: SimConfig,
   best: EpisodeView | null,
   others: readonly PlaybackState[],
   view: ViewOptions,
+  label: string | null = null,
+  dpr = 1,
 ): void {
   const cw = ctx.canvas.width;
   const ch = ctx.canvas.height;
@@ -244,4 +254,5 @@ export function drawScene(
     if (view.pov) drawPov(ctx, f, best.state);
   }
   ctx.setTransform(1, 0, 0, 1, 0, 0);
+  if (label) drawLabel(ctx, label, dpr);
 }

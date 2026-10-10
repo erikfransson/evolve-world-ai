@@ -53,3 +53,17 @@ describe("Episode", () => {
     }
   });
 });
+
+describe("Episode.sense", () => {
+  it("fills the rays the first step then senses, without moving the creature", () => {
+    const dense: SimConfig = { ...cfg, world: { ...cfg.world, foodDensity: 15, poisonDensity: 15 } };
+    const e = new Episode(dense, rand(6), 21, 0);
+    const before = { ...e.state };
+    e.sense();
+    expect(e.state).toEqual(before);
+    expect(e.rays.some((r) => r.kind !== 0)).toBe(true);
+    const sensed = e.rays.map((r) => ({ ...r }));
+    e.step();
+    expect(e.rays).toEqual(sensed);
+  });
+});
