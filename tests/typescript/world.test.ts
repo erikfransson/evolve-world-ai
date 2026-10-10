@@ -9,7 +9,7 @@ const cfg = (): SimConfig => structuredClone(DEFAULT_CONFIG);
 
 // One ray at angle a through the batch API.
 function castRay(w: World, x: number, y: number, a: number, out: RayHit, cache = new RayCache()): void {
-  w.castRays(x, y, Float64Array.of(Math.cos(a)), Float64Array.of(Math.sin(a)), [out], cache);
+  w.castRays(x, y, Float64Array.of(Math.cos(a)), Float64Array.of(Math.sin(a)), [out], cache, DEFAULT_CONFIG.creature.rayLength);
 }
 
 // Empty world with room for the config's items, to place them by hand.
@@ -258,7 +258,7 @@ describe("World", () => {
         k.x = Math.min(c.world.width, Math.max(0, k.x + 2.5 * Math.cos(k.heading)));
         k.y = Math.min(c.world.height, Math.max(0, k.y + 2.5 * Math.sin(k.heading)));
         const angles = offsets.map((o) => k.heading + o);
-        w.castRays(k.x, k.y, Float64Array.from(angles, Math.cos), Float64Array.from(angles, Math.sin), rays, k.cache);
+        w.castRays(k.x, k.y, Float64Array.from(angles, Math.cos), Float64Array.from(angles, Math.sin), rays, k.cache, c.creature.rayLength);
         angles.forEach((a, i) => {
           const ref = brute(w, c, k.x, k.y, a);
           expect(rays[i].kind).toBe(ref.kind);

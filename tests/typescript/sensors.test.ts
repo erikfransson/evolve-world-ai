@@ -1,5 +1,6 @@
-import { DEFAULT_CONFIG } from "../../src/typescript/src/sim/config.ts";
-import { EXTRA_INPUTS, INPUT_EXTRA_LABELS, OUTPUT_LABELS, OUTPUT_SIZE, RAY_FEATURES, encodeInputs, energySignal, inputSize, thrustCommand } from "../../src/typescript/src/sim/sensors.ts";
+import { layerSizes } from "../../src/typescript/src/sim/brain.ts";
+import { DEFAULT_CONFIG, memoryUnits } from "../../src/typescript/src/sim/config.ts";
+import { CREATURE_RAY_FEATURE_LABELS, EXTRA_INPUTS, INPUT_EXTRA_LABELS, OUTPUT_LABELS, OUTPUT_SIZE, RAY_FEATURES, encodeInputs, energySignal, inputLayout, inputSize, planOf, planUpkeep, thrustCommand } from "../../src/typescript/src/sim/sensors.ts";
 import { HIT_FOOD, HIT_NONE, HIT_POISON, HIT_WALL } from "../../src/typescript/src/sim/types.ts";
 import type { CreatureState, RayHit } from "../../src/typescript/src/sim/types.ts";
 
@@ -13,10 +14,35 @@ describe("sensors", () => {
     expect(thrustCommand(0.7, -0.5)).toBe(0.7);
   });
 
-  it("sizes follow the layout constants", () => {
-    expect(inputSize(cfg)).toBe(4 * RAY_FEATURES + EXTRA_INPUTS);
+  it("sizes follow the layout constants and the plan", () => {
+    expect(inputSize({ ...cfg, brain: { ...cfg.brain, memory: 0 } })).toBe(4 * RAY_FEATURES + EXTRA_INPUTS);
     expect(INPUT_EXTRA_LABELS.length).toBe(EXTRA_INPUTS);
     expect(OUTPUT_LABELS.length).toBe(OUTPUT_SIZE);
+    const layout = inputLayout(cfg); // memory 0.5: 4 + 4 units
+    expect([layout.memoryShort, layout.memoryLong, layout.memoryAt]).toEqual([4, 4, 4 * RAY_FEATURES + EXTRA_INPUTS]);
+    expect([layout.size, layout.outputs]).toEqual([layout.memoryAt + 8, OUTPUT_SIZE + 8]);
+    expect(layout.memoryLabels).toEqual(["s1", "s2", "s3", "s4", "l1", "l2", "l3", "l4"]);
+    const plan = { ...planOf(cfg), rayCount: 7, hiddenLayers: [5, 6], memoryShort: 1, memoryLong: 3 };
+    expect(layerSizes(cfg, plan)).toEqual([7 * RAY_FEATURES + EXTRA_INPUTS + 4, 5, 6, OUTPUT_SIZE + 4]);
+    const eco = { ...cfg, creature: { ...cfg.creature, seesCreatures: true } };
+    expect(inputLayout(eco, plan).size).toBe(7 * CREATURE_RAY_FEATURE_LABELS.length + EXTRA_INPUTS + 4);
+  });
+
+  it("memoryUnits maps the 0-1 setting to units, the odd one short-term", () => {
+    expect([0, 0.25, 0.3125, 0.5, 1, 2].map(memoryUnits)).toEqual([
+      { short: 0, long: 0 }, { short: 2, long: 2 }, { short: 3, long: 2 }, { short: 4, long: 4 }, { short: 8, long: 8 }, { short: 8, long: 8 },
+    ]);
+  });
+
+  it("planUpkeep is the living cost when the other costs are 0, and sensing is linear in ray length", () => {
+    const free = { ...cfg, creature: { ...cfg.creature, rayCost: 0, neuronCost: 0 } };
+    expect(planUpkeep(planOf(free), free)).toBe(free.creature.livingCost);
+    const sensing = { ...cfg, creature: { ...cfg.creature, rayCost: 0.1, neuronCost: 0 } };
+    const at = (rayLength: number) => planUpkeep({ ...planOf(sensing), rayLength }, sensing) - c.livingCost;
+    expect(at(100)).toBeCloseTo(4 * 0.1, 12);
+    expect(at(300)).toBeCloseTo(3 * at(100), 12);
+    const brainy = { ...cfg, creature: { ...cfg.creature, rayCost: 0, neuronCost: 0.01 } };
+    expect(planUpkeep(planOf(brainy), brainy) - c.livingCost).toBeCloseTo(0.01 * (16 + 8), 12);
   });
 
   it("energySignal squashes into [0, 1)", () => {

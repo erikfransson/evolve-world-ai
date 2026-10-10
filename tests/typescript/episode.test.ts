@@ -4,6 +4,7 @@ import { genomeLength, layerSizes, randomGenome } from "../../src/typescript/src
 import { Episode, runEpisode } from "../../src/typescript/src/sim/episode.ts";
 import { HIT_POISON } from "../../src/typescript/src/sim/types.ts";
 import { createRng } from "../../src/typescript/src/sim/rng.ts";
+import { planOf, planUpkeep } from "../../src/typescript/src/sim/sensors.ts";
 
 const cfg: SimConfig = {
   ...DEFAULT_CONFIG,
@@ -14,7 +15,7 @@ const sizes = layerSizes(cfg);
 const rand = (seed: number) => randomGenome(sizes, createRng(seed));
 
 describe("Episode", () => {
-  it("all-zero genome never moves and starves at startEnergy / livingCost", () => {
+  it("all-zero genome never moves and starves at startEnergy / upkeep", () => {
     const long: SimConfig = { ...cfg, creature: { ...cfg.creature, maxLifeSeconds: 80 }, world: { ...cfg.world, foodDensity: 0, poisonDensity: 0 } };
     const e = new Episode(long, new Float32Array(genomeLength(sizes)), 5, 0);
     while (!e.done) {
@@ -22,7 +23,7 @@ describe("Episode", () => {
       expect(Math.hypot(e.state.vx, e.state.vy)).toBe(0);
     }
     expect(e.state.alive).toBe(false);
-    const expected = cfg.creature.startEnergy / cfg.creature.livingCost;
+    const expected = cfg.creature.startEnergy / planUpkeep(planOf(cfg), cfg);
     expect(Math.abs(e.state.ticksAlive * cfg.dt - expected)).toBeLessThan(2 * cfg.dt);
   });
 

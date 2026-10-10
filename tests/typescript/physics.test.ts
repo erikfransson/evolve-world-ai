@@ -123,4 +123,15 @@ describe("stepBody", () => {
     expect(brake.energy).toBe(idle.energy);
     expect(push.energy).toBeLessThan(idle.energy);
   });
+
+  it("turning costs turnCost per second at full turn rate, nothing when turnCost is 0, and upkeep replaces livingCost", () => {
+    const spin = (turnCost: number, upkeep: number) => {
+      const s = { ...state(0), turnRate: config.creature.maxTurnRate };
+      stepBody(s, 1, 0, { ...config, creature: { ...config.creature, turnCost } }, k, { cos: 1, sin: 0 }, upkeep);
+      return 50 - s.energy;
+    };
+    expect(spin(0, 2)).toBeCloseTo(2 * config.dt, 12);
+    expect(spin(0.6, 2)).toBeCloseTo(2.6 * config.dt, 12);
+    expect(spin(0, 3)).toBeCloseTo(3 * config.dt, 12);
+  });
 });

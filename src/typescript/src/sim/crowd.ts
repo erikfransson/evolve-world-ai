@@ -2,7 +2,7 @@ import type { EngineConfig } from "./config.ts";
 import { HIT_CREATURE, HIT_NONE } from "./types.ts";
 import type { CreatureState, RayHit } from "./types.ts";
 
-// Creatures in a uniform grid of cell size rayLength, rebuilt by counting sort each tick.
+// Creatures in a uniform grid of cell size config.creature.rayLength, rebuilt by counting sort each tick.
 // Each cell's creatures are contiguous in the sorted arrays: slots cellStart[c] .. cellStart[c + 1] - 1.
 // A perf study measured the rebuild under 1% of a tick and queries 20-25% faster than per-cell linked lists.
 export class Crowd {
@@ -18,8 +18,6 @@ export class Crowd {
 
   private readonly cell: number;
   private readonly radius: number;
-  private readonly rayLength: number;
-  private readonly fanNarrow: boolean;
   private cellOf: Int32Array;
   private readonly cursor: Int32Array;
   // Candidates of one sensing: offset to the creature, squared distance minus squared radius, energy.
@@ -30,9 +28,7 @@ export class Crowd {
 
   constructor(config: EngineConfig, capacity = 64) {
     this.radius = config.creature.radius;
-    this.rayLength = config.creature.rayLength;
-    this.fanNarrow = config.creature.raySpread < Math.PI - 1e-3;
-    this.cell = Math.max(this.rayLength, 2 * this.radius, 1);
+    this.cell = Math.max(config.creature.rayLength, 2 * this.radius, 1);
     this.cols = Math.max(1, Math.ceil(config.world.width / this.cell));
     this.rows = Math.max(1, Math.ceil(config.world.height / this.cell));
     this.cellStart = new Int32Array(this.cols * this.rows + 1);
@@ -89,16 +85,15 @@ export class Crowd {
     this.cellOf = new Int32Array(size);
   }
 
-  // Overwrites each ray in out whose nearest creature, other than owner self, is nearer than what it already holds.
-  castRays(x: number, y: number, dirX: Float64Array, dirY: Float64Array, out: readonly RayHit[], self: number): void {
-    const L = this.rayLength;
+  // Overwrites each ray of length L in out whose nearest creature, other than owner self, is nearer than what it already holds.
+  castRays(x: number, y: number, dirX: Float64Array, dirY: Float64Array, out: readonly RayHit[], self: number, L: number): void {
     const r = this.radius;
     const r2 = r * r;
     const far = L + r + 1e-9 * L;
     const margin = r + 1e-9 * L;
     const last = out.length - 1;
     // Same wedge cull as World.castRays.
-    const wedge = last > 0 && dirX[0] * dirY[last] - dirY[0] * dirX[last] > 1e-9 && this.fanNarrow;
+    const wedge = last > 0 && dirX[0] * dirY[last] - dirY[0] * dirX[last] > 1e-9;
     const d0x = dirX[0];
     const d0y = dirY[0];
     const d1x = dirX[last];

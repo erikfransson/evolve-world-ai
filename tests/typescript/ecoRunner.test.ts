@@ -108,7 +108,7 @@ describe("EcoRunner", () => {
     expect(a.x).toBeCloseTo(v.x[3]!);
     expect(a.rayKinds.length).toBe(8);
     expect(a.rayOffsets.length).toBe(8);
-    expect(a.inputs.length).toBe(8 * 6 + 4);
+    expect(a.inputs.length).toBe(8 * 6 + 4 + 8); // rays x features, extras, memory
     expect(a.genome).not.toBeNull();
     runner.handle({ type: "select", id: 123456 });
     expect(last().selected).toMatchObject({ id: 123456, alive: false });
@@ -145,7 +145,7 @@ describe("EcoRunner", () => {
 
   it("thins the history by halving the sampling when it is full", () => {
     const { runner, sent, last } = setup(0.5);
-    const immortal = cfg({ creature: { livingCost: 0, thrustCost: 0 }, eco: { initialPopulation: 3, foodRegrow: 0 } });
+    const immortal = cfg({ creature: { livingCost: 0, thrustCost: 0, turnCost: 0, rayCost: 0, neuronCost: 0 }, eco: { initialPopulation: 3, foodRegrow: 0 } });
     runner.handle({ type: "start", config: immortal, run: 1 });
     runner.handle({ type: "speed", speed: "max" });
     let history = last().history!;

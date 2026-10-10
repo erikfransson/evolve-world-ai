@@ -17,6 +17,15 @@ export interface EcoConfig extends EngineConfig {
     birthSpeed: number; // units/s the child is launched at, in a random direction
     hueDrift: number; // std of the child's colour change, degrees
     collisions: boolean; // creatures bounce off each other
+    foundersVary: boolean; // founders draw their body plans from the ranges below, otherwise all get the config plan
+    planDrift: number; // relative std of the change of a child's ray spread and length
+    structuralRate: number; // chance per birth that the child gains or loses one ray, hidden neuron or memory unit
+    // [min, max] for varied founders, drift and structural mutations.
+    rayCountRange: number[];
+    raySpreadRange: number[]; // radians
+    rayLengthRange: number[];
+    hiddenRange: number[]; // neurons per hidden layer
+    memoryRange: number[]; // short and long units each
   };
   mutation: { rate: number; std: number }; // per gene, as in Trials' ga
 }
@@ -27,7 +36,7 @@ export const DEFAULT_ECO_CONFIG: EcoConfig = {
   dt: DEFAULT_CONFIG.dt,
   world: { ...DEFAULT_CONFIG.world, width: 8000, height: 5000, foodDensity: 0.5, poisonDensity: 0.05, respawn: false },
   creature: { ...DEFAULT_CONFIG.creature, startEnergy: 50, seesCreatures: true },
-  brain: { hiddenLayers: [...DEFAULT_CONFIG.brain.hiddenLayers] },
+  brain: { ...DEFAULT_CONFIG.brain, hiddenLayers: [...DEFAULT_CONFIG.brain.hiddenLayers] },
   eco: {
     initialPopulation: 500,
     maxPopulation: 10000,
@@ -42,6 +51,14 @@ export const DEFAULT_ECO_CONFIG: EcoConfig = {
     birthSpeed: 60,
     hueDrift: 8,
     collisions: true,
+    foundersVary: false,
+    planDrift: 0,
+    structuralRate: 0,
+    rayCountRange: [2, 16],
+    raySpreadRange: [(20 * Math.PI) / 180, 2 * Math.PI],
+    rayLengthRange: [50, 250],
+    hiddenRange: [4, 32],
+    memoryRange: [0, 8],
   },
   mutation: { rate: DEFAULT_CONFIG.ga.mutationRate, std: DEFAULT_CONFIG.ga.mutationStd },
 };
