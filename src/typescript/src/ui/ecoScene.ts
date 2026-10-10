@@ -22,7 +22,7 @@ const DETAIL_MIN_RADIUS = 3; // CSS px; smaller creatures are drawn as flat dots
 const DETAIL_MAX_COUNT = 800; // more visible creatures than this are drawn as flat dots too
 const TINY_ITEM = 1.5; // device px; items smaller than this are drawn as small dim squares
 const SOLID_ITEM = 4; // device px radius from which items are drawn fully opaque
-const ITEM_DIM = 0.5; // item opacity at the smallest size, so the creatures stand out
+const ITEM_DIM = 0.75; // item opacity at the smallest size, so the creatures stand out
 const DOT_RADIUS = 2.4; // CSS px; creatures never draw smaller than this when drawn as dots
 const DOT_OUTLINE = "rgba(6, 12, 9, 0.75)";
 
