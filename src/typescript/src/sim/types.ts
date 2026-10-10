@@ -6,7 +6,8 @@ export const HIT_NONE = 0;
 export const HIT_FOOD = 1;
 export const HIT_POISON = 2;
 export const HIT_WALL = 3;
-export type HitKind = typeof HIT_NONE | typeof HIT_FOOD | typeof HIT_POISON | typeof HIT_WALL;
+export const HIT_CREATURE = 4;
+export type HitKind = typeof HIT_NONE | typeof HIT_FOOD | typeof HIT_POISON | typeof HIT_WALL | typeof HIT_CREATURE;
 
 export interface Rng {
   next(): number; // uniform in [0, 1)
@@ -18,6 +19,7 @@ export interface Rng {
 export interface RayHit {
   closeness: number; // 0 nothing within range, 1 touching
   kind: HitKind;
+  energy: number; // the seen creature's energy when kind is HIT_CREATURE, otherwise stale
 }
 
 export interface CreatureState {

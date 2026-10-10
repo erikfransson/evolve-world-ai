@@ -1,4 +1,4 @@
-import type { SimConfig } from "./config.ts";
+import type { EngineConfig } from "./config.ts";
 import { HIT_FOOD, HIT_NONE, HIT_POISON, HIT_WALL } from "./types.ts";
 import type { HitKind, RayHit, Rng, WorldView } from "./types.ts";
 
@@ -69,6 +69,10 @@ export class World implements WorldView {
   private readonly cellHead: Int32Array;
   private readonly nextItem: Int32Array;
   private readonly itemCell: Int32Array;
+  // Free slots as a stack; freePos[i] is slot i's place in it, -1 while taken.
+  private readonly freeSlots: Int32Array;
+  private readonly freePos: Int32Array;
+  private freeCount: number;
   // Bumped by every item change; cellStamp[c] is the version of the last change in cell c.
   private version = 0;
   private readonly cellStamp: Int32Array;
@@ -78,7 +82,7 @@ export class World implements WorldView {
   private readonly slack: number;
   private readonly listReach: number;
 
-  constructor(config: SimConfig, capacity: number) {
+  constructor(config: EngineConfig, capacity: number) {
     const w = config.world;
     this.width = w.width;
     this.height = w.height;
@@ -98,6 +102,19 @@ export class World implements WorldView {
     this.cellStamp = new Int32Array(this.cols * this.rows);
     this.nextItem = new Int32Array(capacity).fill(-1);
     this.itemCell = new Int32Array(capacity).fill(-1);
+    // Lowest slot on top, so scatter takes its slots from the top.
+    this.freeSlots = new Int32Array(capacity);
+    this.freePos = new Int32Array(capacity);
+    for (let k = 0; k < capacity; k++) {
+      this.freeSlots[k] = capacity - 1 - k;
+      this.freePos[capacity - 1 - k] = k;
+    }
+    this.freeCount = capacity;
+  }
+
+  // Slots holding an item.
+  get used(): number {
+    return this.count - this.freeCount;
   }
 
   // Fills slots 0..food+poison-1 at uniform random positions, food first.
@@ -115,6 +132,7 @@ export class World implements WorldView {
   setItem(i: number, x: number, y: number, kind: HitKind): void {
     this.version++;
     this.unlink(i);
+    this.takeSlot(i);
     this.xs[i] = x;
     this.ys[i] = y;
     this.kinds[i] = kind;
@@ -130,13 +148,28 @@ export class World implements WorldView {
     this.version++;
     this.unlink(i);
     this.kinds[i] = HIT_NONE;
+    if (this.freePos[i] < 0) {
+      this.freePos[i] = this.freeCount;
+      this.freeSlots[this.freeCount++] = i;
+    }
   }
 
-  // Places an item in the first free slot and returns the slot, or -1 when all are taken.
+  // Places an item in the most recently freed slot and returns the slot, or -1 when all are taken.
   addItem(x: number, y: number, kind: HitKind): number {
-    const i = this.kinds.indexOf(HIT_NONE);
-    if (i >= 0) this.setItem(i, x, y, kind);
+    if (this.freeCount === 0) return -1;
+    const i = this.freeSlots[this.freeCount - 1];
+    this.setItem(i, x, y, kind);
     return i;
+  }
+
+  // Removes slot i from the free stack by swapping the top into its place.
+  private takeSlot(i: number): void {
+    const p = this.freePos[i];
+    if (p < 0) return;
+    const top = this.freeSlots[--this.freeCount];
+    this.freeSlots[p] = top;
+    this.freePos[top] = p;
+    this.freePos[i] = -1;
   }
 
   private cellIndex(x: number, y: number): number {
