@@ -6,6 +6,7 @@ Runs use `npm run headless` with a JSON override merged over `DEFAULT_CONFIG`, p
 
 | Date       | Change from defaults at the time                         | Epoch | Mean gen 0-4 | Mean late          | Best late | Verdict                                   |
 |------------|----------------------------------------------------------|-------|--------------|--------------------|-----------|-------------------------------------------|
+| 2026-10-10 | stuck-generation fix: 5% immigrants, 5% big mutations, 3x std after zero-spread gen, distance tie-break 1e-6 s/unit | none  | 25           | 44 vs 49 (gen 25-29, 5 seeds, pop 150) | 242 | Mean 10% lower by construction (10% of children are not tuned offspring); rescues collapsed pops (see observations) |
 | 2026-10-10 | engine final: binary brake (output < -0.5, maxBrake 200), wallBounce 0.6, poison kept off start | none  | 25           | 49 (gen 25-29)     | 242       | Baseline 50 / 259; 5 seeds, pop 150. Learns clearly |
 | 2026-10-10 | same, braking only (wallBounce 0)                        | none  | 25           | 44 (gen 25-29)     | 209       | Braking costs the most, seeds are noisy   |
 | 2026-10-10 | earlier analog brake (any negative output), 5 seeds      | none  | 25           | 46 (gen 25-29)     | 209       | Replaced by the binary brake              |
@@ -39,6 +40,7 @@ Runs use `npm run headless` with a JSON override merged over `DEFAULT_CONFIG`, p
 All rows from 2026-10-09 use the fish-like physics.
 
 ## Observations
+- 2026-10-10: stuck generations (all creatures idle or brake, identical fitness, no selection signal) did NOT occur at defaults (pop 1000, seeds 1-4, 50 gens: zero generations with spread 0, mean last 5 gens 56-81 s) nor in a hard world (poison 0.4, 4 rays: 33-41 s; poison 1.5, food 0.3, 3 rays: mean 22-25 s, close to the 25 s idle lifetime, but spread still about 40 s). Forced collapse (every thrust bias set to -6, pop 1000, 60 gens, 3 seeds): before the fix 60 of 60 generations had zero spread in every seed and the mean stayed at 25-27 s; after, only generation 0 and the mean of the last 5 generations is 65-91 s. Fix: `immigrantFraction` 0.05, `bigMutationFraction` 0.05 (rate 0.3, std 1, a quarter of mutated genes flip sign), children of a generation with (max - min) <= 1% of the mean get 3x mutation std, fitness gains 1e-6 s per unit travelled.
 - 2026-10-10: a thrust output below brakeThreshold (-0.5) brakes at a fixed maxBrake 200 (free, never reverses, coasting between -0.5 and 0), walls reflect with wallBounce 0.6 instead of absorbing, and no poison starts within radius + itemRadius + 10 of the start point (issue #3). Trials results changed on purpose; ecosystem founders also get poison moved away.
 - A bigger body does not make foraging easier: it also touches poison more often, so mean survival drops from 144 s (radius 6) to 119 s (12) and 96 s (16).
 - From the finite-food rows on there is no lifetime cap ("none"). Lives end when energy runs out, and a 3600 s safety stop is never reached in practice. Best fitness no longer saturates.

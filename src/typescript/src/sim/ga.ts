@@ -43,11 +43,33 @@ export const SELECTION_PICKERS: Record<SelectionMethod, PickerFactory> = {
   },
 };
 
+export const STAGNATION_SPREAD = 0.01; // (max - min) / mean below this counts as no selection signal
+export const STAGNATION_BOOST = 3; // mutationStd factor for the children of a stagnant generation
+export const BIG_MUTATION = { rate: 0.3, std: 1, flipChance: 0.25 }; // flipChance: a mutated gene flips sign instead of getting noise
+
+// True when everyone scored (nearly) the same, so ranking carries no information.
+export function isStagnant(fitness: ArrayLike<number>): boolean {
+  const n = fitness.length;
+  if (n < 2) return false;
+  let min = Infinity;
+  let max = -Infinity;
+  let sum = 0;
+  for (let i = 0; i < n; i++) {
+    min = Math.min(min, fitness[i]);
+    max = Math.max(max, fitness[i]);
+    sum += fitness[i];
+  }
+  return max - min <= STAGNATION_SPREAD * (sum / n);
+}
+
+// Breeds the next generation: elites first, then children, then fresh random immigrants (made by randomGenome) at the end.
+// A stagnant generation (see isStagnant) breeds its children with STAGNATION_BOOST times the mutation std.
 export function nextGeneration(
   population: Population,
   fitness: ArrayLike<number>,
   ga: GaConfig,
   rng: StatefulRng,
+  randomGenome?: (rng: StatefulRng) => Genome,
 ): Population {
   const n = population.size;
   const next = new Population(n, population.genomeLength);
@@ -59,9 +81,15 @@ export function nextGeneration(
 
   for (let i = 0; i < eliteCount; i++) next.genome(i).set(population.genome(order[i]));
 
+  const immigrants = randomGenome ? Math.min(n - eliteCount, Math.round(ga.immigrantFraction * n)) : 0;
+  const childEnd = n - immigrants;
+  const bigEnd = Math.min(childEnd, eliteCount + Math.round(ga.bigMutationFraction * n));
+  const std = ga.mutationStd * (isStagnant(fitness) ? STAGNATION_BOOST : 1);
+  const mutation = { mutationRate: ga.mutationRate, mutationStd: std };
+
   const pick = SELECTION_PICKERS[ga.selection](fitness, order, ga, rng);
   const length = population.genomeLength;
-  for (let i = eliteCount; i < n; i++) {
+  for (let i = eliteCount; i < childEnd; i++) {
     const child = next.genome(i);
     child.set(population.genome(pick()));
     if (ga.crossover) {
@@ -75,9 +103,20 @@ export function nextGeneration(
       }
       rng.state = s;
     }
-    mutate(child, ga, rng);
+    if (i < bigEnd) bigMutate(child, rng);
+    else mutate(child, mutation, rng);
   }
+  for (let i = childEnd; i < n; i++) next.genome(i).set(randomGenome!(rng));
   return next;
+}
+
+// Large mutation: each gene with probability BIG_MUTATION.rate either flips sign or gets BIG_MUTATION.std noise.
+export function bigMutate(child: Genome, rng: StatefulRng): void {
+  for (let g = 0; g < child.length; g++) {
+    if (rng.next() >= BIG_MUTATION.rate) continue;
+    if (rng.next() < BIG_MUTATION.flipChance) child[g] = -child[g];
+    else child[g] += rng.normal() * BIG_MUTATION.std;
+  }
 }
 
 // Adds mutationStd normal noise to each gene with probability mutationRate, drawing from rng exactly as rng.next() calls would.

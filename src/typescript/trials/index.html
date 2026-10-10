@@ -121,8 +121,16 @@
                 <input id="popSize" type="range" min="4" max="2000" step="1" />
               </div>
               <div class="field">
-                <div class="row"><span class="lbl"><label class="name" for="mutationRate">Mutation rate</label><span class="tip" tabindex="0" role="img" aria-label="Chance that each number in a child's brain is randomly nudged." data-tip="Chance that each number in a child's brain is randomly nudged.">ⓘ</span></span><output for="mutationRate" data-fmt="pct"></output></div>
+                <div class="row"><span class="lbl"><label class="name" for="mutationRate">Mutation rate</label><span class="tip" tabindex="0" role="img" aria-label="Chance that each number in a child's brain is randomly nudged. If a whole generation scores the same, the next one mutates three times as hard until selection has a signal again." data-tip="Chance that each number in a child's brain is randomly nudged. If a whole generation scores the same, the next one mutates three times as hard until selection has a signal again.">ⓘ</span></span><output for="mutationRate" data-fmt="pct"></output></div>
                 <input id="mutationRate" type="range" min="0" max="0.5" step="0.01" />
+              </div>
+              <div class="field">
+                <div class="row"><span class="lbl"><label class="name" for="immigrants">Newcomers</label><span class="tip" tabindex="0" role="img" aria-label="Share of each generation that is brand new random creatures. They help when the population is stuck." data-tip="Share of each generation that is brand new random creatures. They help when the population is stuck.">ⓘ</span></span><output for="immigrants" data-fmt="pct"></output></div>
+                <input id="immigrants" type="range" min="0" max="0.2" step="0.01" />
+              </div>
+              <div class="field">
+                <div class="row"><span class="lbl"><label class="name" for="bigMutations">Wild children</label><span class="tip" tabindex="0" role="img" aria-label="Share of children that get a large mutation, some numbers flipping sign. Rarely better, but can break out of a rut." data-tip="Share of children that get a large mutation, some numbers flipping sign. Rarely better, but can break out of a rut.">ⓘ</span></span><output for="bigMutations" data-fmt="pct"></output></div>
+                <input id="bigMutations" type="range" min="0" max="0.2" step="0.01" />
               </div>
               <div class="field">
                 <div class="row"><span class="lbl"><label class="name" for="selection">Selection</label><span class="tip" tabindex="0" role="img" aria-label="How parents are picked. Truncation: the top 10% breed. Proportional: chance grows with score." data-tip="How parents are picked. Truncation: the top 10% breed. Proportional: chance grows with score.">ⓘ</span></span></div>
