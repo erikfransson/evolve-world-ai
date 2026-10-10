@@ -13,7 +13,7 @@ export default defineConfig({
     },
   },
   // Tests live outside this folder; the DOM test environment fetches them through the dev server.
-  server: { fs: { allow: ["../.."] } },
+  server: { fs: { allow: [".", "../../tests"] } },
   test: {
     dir: "../../tests/typescript",
     globals: true,
