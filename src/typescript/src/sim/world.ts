@@ -124,8 +124,8 @@ export class World implements WorldView {
     if (cx1 >= this.cols) cx1 = this.cols - 1;
     if (cy1 >= this.rows) cy1 = this.rows - 1;
     const r2 = r * r;
-    // An item farther than rayLength + r from the origin is never hit within rayLength.
-    const far = this.rayLength + r;
+    // An item farther than rayLength + r from the origin is never hit within rayLength, plus a rounding margin.
+    const far = this.rayLength + r + 1e-9 * this.rayLength;
     const far2 = far * far;
     const xs = this.xs;
     const ys = this.ys;
