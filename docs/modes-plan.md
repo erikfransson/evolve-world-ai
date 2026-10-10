@@ -42,4 +42,4 @@ Contract: `EcoConfig` in `src/sim/ecoConfig.ts`, built on `EngineConfig` (the sh
 | E2   | Camera: zoom at cursor, drag and pinch pan, fit world, smooth follow                              | -          |
 | E3   | Page shell: settings form, controls, stat tiles, cards, extinction overlay                        | contract   |
 | E4   | Worker, snapshot protocol, rendering with camera, selection and follow, brain panel, graph        | E1 to E3   |
-| E5   | Performance: parallel workers and faster kernels, from the exploration reports                    | E1         |
+| E5   | Performance: worker pool (postMessage), shared memory when cross-origin isolated (coi-serviceworker), WebAssembly SIMD brain and creature rays | E4 |
