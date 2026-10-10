@@ -1,7 +1,9 @@
 # Evolve World AI
 
 ## Repo structure
-* `src/typescript/` web app and simulation (Vite + TypeScript)
+* `src/typescript/` web app and simulation (Vite + TypeScript), one HTML page per mode
+  * `index.html` landing page, `trials/` the current app, `ecosystem/` and `live/` placeholders
+  * `src/sim/` simulation, `src/sim/physics.ts` per-creature physics shared by modes
 * `src/python/` analysis of headless run output
 * `docs/` for e.g. adr documents, and planning etc
 * `tests/` tests for all code

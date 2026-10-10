@@ -1,3 +1,4 @@
+import "./base.css";
 import "./style.css";
 import { DEFAULT_CONFIG, itemCounts } from "./sim/config.ts";
 import type { SimConfig } from "./sim/config.ts";

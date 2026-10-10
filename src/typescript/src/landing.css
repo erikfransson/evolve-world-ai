@@ -1,0 +1,52 @@
+.landing { max-width: 72rem; margin: 0 auto; padding: 4rem 16px 2rem; min-height: 100vh; display: flex; flex-direction: column; }
+
+/* hero */
+.hero { text-align: center; margin-bottom: 3rem; }
+.hero .logo { width: 3.6rem; height: 3.6rem; margin-bottom: 1rem; filter: drop-shadow(0 0 18px rgba(61, 220, 151, 0.35)); }
+.hero h1 { font-size: clamp(2.4rem, 7vw, 3.8rem); font-weight: 700; letter-spacing: 0.01em; line-height: 1.1; }
+.lede { margin: 0.8rem auto 0; max-width: 34rem; text-wrap: balance; color: var(--muted); font-size: clamp(1rem, 2.4vw, 1.2rem); line-height: 1.45; }
+
+/* mode cards */
+.modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.25rem; }
+.mode {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  text-decoration: none;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.2s, transform 0.2s;
+}
+.mode:hover, .mode:focus-visible {
+  border-color: var(--accent-dim);
+  background: var(--card-hi);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35), 0 0 0 1px var(--accent-dim);
+  transform: translateY(-3px);
+}
+.mode:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.mode canvas { display: block; width: 100%; aspect-ratio: 8 / 5; border-bottom: 1px solid var(--border); }
+.mode-body { display: flex; flex-direction: column; gap: 0.5rem; flex: 1; padding: 1.1rem 1.2rem 1.2rem; }
+.mode h2 { display: flex; align-items: center; gap: 0.6rem; font-size: 1.3rem; font-weight: 700; }
+.mode p { margin: 0; color: var(--muted); font-size: 0.95rem; line-height: 1.45; }
+.go { margin-top: auto; padding-top: 0.5rem; color: var(--accent); font-size: 0.9rem; font-weight: 600; }
+.go span { display: inline-block; transition: transform 0.15s; }
+.mode:hover .go span, .mode:focus-visible .go span { transform: translateX(4px); }
+.badge { padding: 0.15rem 0.55rem; border: 1px solid var(--border-hi); border-radius: 999px; color: var(--muted); font-size: 0.68rem; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase; }
+.soon .go { color: var(--muted); }
+
+.foot { margin-top: auto; padding-top: 3rem; text-align: center; font-size: 0.85rem; }
+.foot a { color: var(--muted); text-decoration: none; }
+.foot a:hover { color: var(--accent); }
+.foot a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+
+@media (max-width: 900px) {
+  .landing { padding-top: 2.5rem; }
+  .hero { margin-bottom: 2rem; }
+  .modes { grid-template-columns: 1fr; max-width: 30rem; margin: 0 auto; width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mode, .go span { transition: none; }
+  .mode:hover, .mode:focus-visible { transform: none; }
+}
