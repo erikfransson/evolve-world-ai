@@ -21,3 +21,6 @@ Thumbs.db
 
 # headless run output
 runs/
+
+# agent worktrees
+.claude/worktrees/
