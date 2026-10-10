@@ -1,7 +1,11 @@
 import type { Rng } from "./types.ts";
 
+export interface StatefulRng extends Rng {
+  state: number; // the generator state, so a hot loop can run the same stream inline and hand it back
+}
+
 // mulberry32: small, fast, seedable 32-bit generator.
-export function createRng(seed: number): Rng {
+export function createRng(seed: number): StatefulRng {
   let state = seed >>> 0;
 
   const next = (): number => {
@@ -12,6 +16,8 @@ export function createRng(seed: number): Rng {
   };
 
   return {
+    get state() { return state; },
+    set state(value) { state = value | 0; },
     next,
     range: (min, max) => min + (max - min) * next(),
     int: (maxExclusive) => Math.floor(next() * maxExclusive),

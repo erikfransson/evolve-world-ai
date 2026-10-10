@@ -1,5 +1,6 @@
 import type { SelectionMethod, SimConfig } from "./config.ts";
 import { Population } from "./population.ts";
+import type { StatefulRng } from "./rng.ts";
 import type { Rng } from "./types.ts";
 
 type GaConfig = SimConfig["ga"];
@@ -46,7 +47,7 @@ export function nextGeneration(
   population: Population,
   fitness: ArrayLike<number>,
   ga: GaConfig,
-  rng: Rng,
+  rng: StatefulRng,
 ): Population {
   const n = population.size;
   const next = new Population(n, population.genomeLength);
@@ -59,16 +60,34 @@ export function nextGeneration(
   for (let i = 0; i < eliteCount; i++) next.genome(i).set(population.genome(order[i]));
 
   const pick = SELECTION_PICKERS[ga.selection](fitness, order, ga, rng);
+  const length = population.genomeLength;
+  const mutateBelow = ga.mutationRate * 4294967296; // next() < rate is next32 < rate * 2^32, exactly
+  let s = rng.state; // the mulberry32 stream of rng, run inline below for speed; synced around pick()
   for (let i = eliteCount; i < n; i++) {
     const child = next.genome(i);
+    rng.state = s;
     child.set(population.genome(pick()));
-    if (ga.crossover) {
-      const b = population.genome(pick());
-      for (let g = 0; g < child.length; g++) if (rng.next() < 0.5) child[g] = b[g];
+    const b = ga.crossover ? population.genome(pick()) : null;
+    s = rng.state;
+    if (b) {
+      for (let g = 0; g < length; g++) {
+        s = (s + 0x6d2b79f5) | 0;
+        let t = Math.imul(s ^ (s >>> 15), 1 | s);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        if (((t ^ (t >>> 14)) >>> 0) < 0x80000000) child[g] = b[g];
+      }
     }
-    for (let g = 0; g < child.length; g++) {
-      if (rng.next() < ga.mutationRate) child[g] += rng.normal() * ga.mutationStd;
+    for (let g = 0; g < length; g++) {
+      s = (s + 0x6d2b79f5) | 0;
+      let t = Math.imul(s ^ (s >>> 15), 1 | s);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      if (((t ^ (t >>> 14)) >>> 0) < mutateBelow) {
+        rng.state = s;
+        child[g] += rng.normal() * ga.mutationStd;
+        s = rng.state;
+      }
     }
   }
+  rng.state = s;
   return next;
 }
