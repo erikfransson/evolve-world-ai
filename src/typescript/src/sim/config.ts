@@ -90,7 +90,7 @@ export const DEFAULT_CONFIG: SimConfig = {
 const DENSITY_CELL = 100; // world units; density 1 = one item per 100 x 100 area
 
 // Independent of rayLength, so changing the vision range does not change the amount of food.
-export function itemCounts(config: SimConfig): { food: number; poison: number } {
+export function itemCounts(config: Pick<SimConfig, "world">): { food: number; poison: number } {
   const perUnit = (config.world.width * config.world.height) / DENSITY_CELL ** 2;
   return {
     food: Math.round(config.world.foodDensity * perUnit),

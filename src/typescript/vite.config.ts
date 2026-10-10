@@ -7,6 +7,7 @@ const pages = ["index.html", "trials/index.html", "ecosystem/index.html", "live/
 // Relative base works on any host path (e.g. GitHub Pages project sites).
 export default defineConfig({
   base: "./",
+  server: { fs: { allow: ["../.."] } }, // tests live outside this root and run through the client environment (happy-dom)
   build: {
     rollupOptions: {
       input: pages.map((p) => resolve(import.meta.dirname, p)),
