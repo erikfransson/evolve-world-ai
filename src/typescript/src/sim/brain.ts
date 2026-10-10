@@ -54,7 +54,6 @@ export class Brain {
   private readonly activeValue: Float64Array;
   // First-layer weights stored input-major [in][out] as doubles, so one input's weights are contiguous.
   private readonly firstLayerByInput: Float64Array;
-  private readonly firstLayerSums: Float64Array;
 
   constructor(sizes: number[], genome: Genome) {
     if (genome.length !== genomeLength(sizes)) {
@@ -79,7 +78,6 @@ export class Brain {
     for (let j = 0; j < sizes[1]; j++) {
       for (let i = 0; i < sizes[0]; i++) this.firstLayerByInput[i * sizes[1] + j] = this.weights[0][j * sizes[0] + i];
     }
-    this.firstLayerSums = new Float64Array(sizes[1]);
     this.activations = [new Float32Array(sizes[0]), ...this.hidden, new Float32Array(sizes[sizes.length - 1])];
   }
 

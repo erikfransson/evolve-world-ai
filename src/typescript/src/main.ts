@@ -49,7 +49,7 @@ let replaySpeed = 4; // simulated seconds per real second
 const STEP_BUDGET_MS = 6; // replay stepping per frame, beyond it the replay runs slower than asked
 let tickDebt = 0; // fractional ticks carried between frames
 let lastFrameAt = performance.now();
-const BRAIN_INTERVAL_MS = 25; // the brain panel is the costliest draw, so it refreshes at most about 40 times a second
+const BRAIN_INTERVAL_MS = 25; // the brain panel is the costliest draw, so it refreshes about every second frame at 60 Hz, so about 30 Hz
 let lastBrainAt = 0;
 
 function readView(): void {

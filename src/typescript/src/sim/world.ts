@@ -5,6 +5,7 @@ import type { HitKind, RayHit, Rng, WorldView } from "./types.ts";
 
 export class World implements WorldView {
   readonly count: number;
+  // Writes must go through setItem to keep the item lists valid.
   readonly xs: Float32Array;
   readonly ys: Float32Array;
   readonly kinds: Uint8Array;
@@ -28,6 +29,11 @@ export class World implements WorldView {
   private candC = new Float64Array(32); // squared distance minus squared item radius
   private candKind = new Uint8Array(32);
   private candCount = 0;
+  private rangeX0 = 0;
+  private rangeX1 = 0;
+  private rangeY0 = 0;
+  private rangeY1 = 0;
+  // Redundant guard: the cross-product test already excludes spreads of pi or more.
   private readonly fanNarrow: boolean;
   // Items within reach of an anchor origin, reused while the origin stays within slack of it; version bumps invalidate.
   private readonly slack: number;
@@ -128,7 +134,7 @@ export class World implements WorldView {
     // An item farther than rayLength + r from the origin is never hit within rayLength, plus a rounding margin.
     const far = this.rayLength + r + 1e-9 * this.rayLength;
     const far2 = far * far;
-    const margin = r + 1e-6;
+    const margin = r + 1e-9 * this.rayLength;
     const lx = this.listX;
     const ly = this.listY;
     const lk = this.listKind;
@@ -151,19 +157,21 @@ export class World implements WorldView {
     this.candCount = n;
   }
 
+  // Writes the grid cells overlapping the square of half-width reach around (x, y) into the range fields, clamped to the grid.
+  private clampCellRange(x: number, y: number, reach: number): void {
+    const inv = 1 / this.cell;
+    this.rangeX0 = Math.max(0, Math.floor((x - reach) * inv));
+    this.rangeX1 = Math.min(this.cols - 1, Math.floor((x + reach) * inv));
+    this.rangeY0 = Math.max(0, Math.floor((y - reach) * inv));
+    this.rangeY1 = Math.min(this.rows - 1, Math.floor((y + reach) * inv));
+  }
+
   // Lists the items within rayLength + radius + slack of (x, y) in grid order; valid while the origin stays within slack.
   private rebuildList(x: number, y: number): void {
     const reach = this.listReach;
     const reach2 = reach * reach;
-    const inv = 1 / this.cell;
-    let cx0 = Math.floor((x - reach) * inv);
-    let cx1 = Math.floor((x + reach) * inv);
-    let cy0 = Math.floor((y - reach) * inv);
-    let cy1 = Math.floor((y + reach) * inv);
-    if (cx0 < 0) cx0 = 0;
-    if (cy0 < 0) cy0 = 0;
-    if (cx1 >= this.cols) cx1 = this.cols - 1;
-    if (cy1 >= this.rows) cy1 = this.rows - 1;
+    this.clampCellRange(x, y, reach);
+    const { rangeX0: cx0, rangeX1: cx1, rangeY0: cy0, rangeY1: cy1 } = this;
     const xs = this.xs;
     const ys = this.ys;
     let n = 0;
@@ -282,15 +290,8 @@ export class World implements WorldView {
       }
       return HIT_NONE;
     }
-    const inv = 1 / this.cell;
-    let cx0 = Math.floor((x - reach) * inv);
-    let cx1 = Math.floor((x + reach) * inv);
-    let cy0 = Math.floor((y - reach) * inv);
-    let cy1 = Math.floor((y + reach) * inv);
-    if (cx0 < 0) cx0 = 0;
-    if (cy0 < 0) cy0 = 0;
-    if (cx1 >= this.cols) cx1 = this.cols - 1;
-    if (cy1 >= this.rows) cy1 = this.rows - 1;
+    this.clampCellRange(x, y, reach);
+    const { rangeX0: cx0, rangeX1: cx1, rangeY0: cy0, rangeY1: cy1 } = this;
     for (let cy = cy0; cy <= cy1; cy++) {
       for (let cx = cx0; cx <= cx1; cx++) {
         for (let i = this.cellHead[cy * this.cols + cx]; i >= 0; i = this.nextItem[i]) {
