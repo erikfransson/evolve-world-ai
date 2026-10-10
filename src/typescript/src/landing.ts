@@ -42,13 +42,13 @@ function frame(now: number): void {
     for (let i = 0; i < ticks; i++) c.scene.step();
     drawCard(c);
   }
-  schedule();
+  schedule(true);
 }
 
-// Runs only while motion is allowed and some card is on screen.
-function schedule(): void {
+// Runs only while motion is allowed and some card is on screen; a restart drops the time spent stopped.
+function schedule(continuing = false): void {
   if (raf || reducedMotion.matches || document.hidden || !cards.some((c) => c.visible)) return;
-  clock.reset(performance.now());
+  if (!continuing) clock.reset(performance.now());
   raf = requestAnimationFrame(frame);
 }
 
@@ -67,5 +67,5 @@ for (const c of cards) {
   observer.observe(c.canvas);
   resizer.observe(c.canvas);
 }
-document.addEventListener("visibilitychange", schedule);
-reducedMotion.addEventListener("change", schedule);
+document.addEventListener("visibilitychange", () => schedule());
+reducedMotion.addEventListener("change", () => schedule());
