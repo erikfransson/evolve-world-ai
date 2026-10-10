@@ -19,7 +19,7 @@ function drawIdle(): void {
 
 const noop = (): void => {};
 const view = createEcoView({
-  onStart: (c) => { config = c; running = true; },
+  onStart: () => { view.setPhase("idle"); view.setNote("The simulation engine is still being built, so Start does nothing yet."); },
   onPause: noop,
   onResume: noop,
   onReset: () => { running = false; config = view.readConfig(); drawIdle(); },
