@@ -13,6 +13,7 @@ export interface SimConfig {
     respawn: boolean; // eaten items reappear elsewhere; false makes food finite so lives end naturally
     itemRadius: number;
     foodEnergy: number;
+    poisonClearRadius: number; // Trials: no poison starts this close to the creature
   };
   creature: {
     radius: number;
@@ -63,6 +64,7 @@ export const DEFAULT_CONFIG: SimConfig = {
     respawn: false,
     itemRadius: 4,
     foodEnergy: 20,
+    poisonClearRadius: 150,
   },
   creature: {
     radius: 12,

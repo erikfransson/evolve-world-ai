@@ -53,3 +53,4 @@ All rows from 2026-10-09 use the fish-like physics.
 - Evaluate each creature on two layouts to reduce layout luck.
 - Tournament with a larger size (5 to 7).
 - Plot best and mean fitness over generations on the page.
+- 2026-10-10: Trials poison-free start radius raised to 150 units (world.poisonClearRadius, capped at 35% of the shorter world side) after the owner saw poison right next to the start.
