@@ -38,6 +38,8 @@ export class World implements WorldView {
   private listX = new Float64Array(32);
   private listY = new Float64Array(32);
   private listKind = new Uint8Array(32);
+  private listId = new Int32Array(32);
+  private readonly listReach: number;
 
   constructor(config: SimConfig, layoutRng: Rng, respawnRng: Rng) {
     const w = config.world;
@@ -48,6 +50,7 @@ export class World implements WorldView {
     this.respawnRng = respawnRng;
     this.respawn = w.respawn;
     this.slack = 0.3 * this.rayLength;
+    this.listReach = this.rayLength + this.itemRadius + 2e-9 * this.rayLength + this.slack;
     const counts = itemCounts(config);
     this.count = counts.food + counts.poison;
     this.xs = new Float32Array(this.count);
@@ -143,7 +146,7 @@ export class World implements WorldView {
 
   // Lists the items within rayLength + radius + slack of (x, y) in grid order; valid while the origin stays within slack.
   private rebuildList(x: number, y: number): void {
-    const reach = this.rayLength + this.itemRadius + 2e-9 * this.rayLength + this.slack;
+    const reach = this.listReach;
     const reach2 = reach * reach;
     const inv = 1 / this.cell;
     let cx0 = Math.floor((x - reach) * inv);
@@ -166,6 +169,7 @@ export class World implements WorldView {
           if (n === this.listX.length) this.growLists();
           this.listX[n] = xs[i];
           this.listY[n] = ys[i];
+          this.listId[n] = i;
           this.listKind[n++] = this.itemKind(i);
         }
       }
@@ -189,6 +193,9 @@ export class World implements WorldView {
       grown.set(this[key]);
       this[key] = grown;
     }
+    const ids = new Int32Array(size);
+    ids.set(this.listId);
+    this.listId = ids;
   }
 
   // Nearest of the wall and the gathered candidates along the unit direction (dx, dy).
@@ -254,6 +261,20 @@ export class World implements WorldView {
   eatAt(x: number, y: number, radius: number): HitKind {
     const reach = radius + this.itemRadius;
     const reach2 = reach * reach;
+    // The anchored list holds every item within listReach of its anchor, in the same order as the grid walk below.
+    const ax = x - this.listAnchorX;
+    const ay = y - this.listAnchorY;
+    const lim = this.listReach - reach - 1e-6;
+    if (this.listVersion === this.version && lim > 0 && ax * ax + ay * ay <= lim * lim) {
+      const lx = this.listX;
+      const ly = this.listY;
+      for (let k = 0; k < this.listCount; k++) {
+        const fx = lx[k] - x;
+        const fy = ly[k] - y;
+        if (fx * fx + fy * fy < reach2) return this.consume(this.listId[k]);
+      }
+      return HIT_NONE;
+    }
     const inv = 1 / this.cell;
     let cx0 = Math.floor((x - reach) * inv);
     let cx1 = Math.floor((x + reach) * inv);
@@ -268,21 +289,24 @@ export class World implements WorldView {
         for (let i = this.cellHead[cy * this.cols + cx]; i >= 0; i = this.nextItem[i]) {
           const fx = this.xs[i] - x;
           const fy = this.ys[i] - y;
-          if (fx * fx + fy * fy < reach2) {
-            const kind = this.itemKind(i);
-            const r = this.itemRadius;
-            if (this.respawn) {
-              this.setItem(i, this.respawnRng.range(r, this.width - r), this.respawnRng.range(r, this.height - r), kind);
-            } else {
-              this.version++;
-              this.unlink(i);
-              this.kinds[i] = HIT_NONE;
-            }
-            return kind;
-          }
+          if (fx * fx + fy * fy < reach2) return this.consume(i);
         }
       }
     }
     return HIT_NONE;
+  }
+
+  // Eats item i: it respawns elsewhere or leaves the grid.
+  private consume(i: number): HitKind {
+    const kind = this.itemKind(i);
+    const r = this.itemRadius;
+    if (this.respawn) {
+      this.setItem(i, this.respawnRng.range(r, this.width - r), this.respawnRng.range(r, this.height - r), kind);
+    } else {
+      this.version++;
+      this.unlink(i);
+      this.kinds[i] = HIT_NONE;
+    }
+    return kind;
   }
 }
