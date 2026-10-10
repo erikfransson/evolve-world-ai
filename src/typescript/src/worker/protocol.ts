@@ -44,4 +44,11 @@ export interface ErrorMessage {
   message: string;
 }
 
-export type OutMessage = GenerationMessage | PastMessage | ErrorMessage;
+// A past-generation replay failed; the run itself goes on.
+export interface PastErrorMessage {
+  type: "pastError";
+  request: number;
+  message: string;
+}
+
+export type OutMessage = GenerationMessage | PastMessage | PastErrorMessage | ErrorMessage;

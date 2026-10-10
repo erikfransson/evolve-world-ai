@@ -46,6 +46,7 @@ const graph = new FitnessGraph($<HTMLCanvasElement>("fitnessView"), requestPast)
 let watching: ReplaySource | null = null; // a picked past generation, looped until the newest is asked for again
 let pastRequest = 0; // id of the newest request, replies to older ones are dropped
 let loadingGeneration: number | null = null;
+let pastError: string | null = null; // why the last past replay failed, shown until the next request
 
 interface RunState {
   phase: "idle" | "running" | "paused";
@@ -107,7 +108,7 @@ function renderControls(): void {
 function renderFitness(): void {
   graph.setWatched(replay.best ? replay.generation : null);
   watchLatestBtn.hidden = watching === null;
-  fitnessNote.textContent = loadingGeneration !== null ? `Loading gen ${loadingGeneration}...` : watching ? `Watching gen ${watching.generation}` : "";
+  fitnessNote.textContent = pastError ?? (loadingGeneration !== null ? `Loading gen ${loadingGeneration}...` : watching ? `Watching gen ${watching.generation}` : "");
 }
 
 function renderStats(): void {
@@ -143,6 +144,7 @@ function loadReplay(): void {
 function watchLatest(): void {
   watching = null;
   loadingGeneration = null;
+  pastError = null;
   pastRequest++;
   loadReplay();
 }
@@ -152,6 +154,7 @@ function requestPast(generation: number): void {
   const past = history.nearest(generation);
   if (!past || !run.worker) return;
   loadingGeneration = past.generation;
+  pastError = null;
   send({ type: "past", request: ++pastRequest, ...past });
   renderFitness();
 }
@@ -162,6 +165,13 @@ function onMessage(e: MessageEvent<OutMessage>): void {
     reset();
     run.error = `Run stopped: ${e.data.message}`;
     renderControls();
+    return;
+  }
+  if (e.data.type === "pastError") {
+    if (e.data.request !== pastRequest) return;
+    loadingGeneration = null;
+    pastError = `Replay failed: ${e.data.message}`;
+    renderFitness();
     return;
   }
   if (e.data.type === "past") {
@@ -187,6 +197,7 @@ function clearHistory(): void {
   graph.setData([], []);
   watching = null;
   loadingGeneration = null;
+  pastError = null;
   pastRequest++;
 }
 

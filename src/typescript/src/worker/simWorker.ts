@@ -69,14 +69,23 @@ function replayPast(msg: PastRequest): void {
     };
     post(reply, [fitness.buffer, frames.offsets.buffer, frames.data.buffer]);
   } catch (error) {
-    post({ type: "error", message: error instanceof Error ? error.message : String(error) });
+    post({ type: "pastError", request: msg.request, message: error instanceof Error ? error.message : String(error) });
   }
+}
+
+// Only the newest request runs, so a burst of graph clicks costs one re-simulation.
+let pendingPast: PastRequest | null = null;
+function runPendingPast(): void {
+  const msg = pendingPast;
+  pendingPast = null;
+  if (msg) replayPast(msg);
 }
 
 self.onmessage = (e: MessageEvent<InMessage>) => {
   const msg = e.data;
   if (msg.type === "past") {
-    replayPast(msg);
+    if (!pendingPast) setTimeout(runPendingPast, 0);
+    pendingPast = msg;
   } else if (msg.type === "start") {
     config = msg.config;
     paused = false;
