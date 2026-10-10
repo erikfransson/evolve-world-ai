@@ -172,6 +172,17 @@ fieldset:disabled .tip { cursor: help; }
 .ov-brain { background: color-mix(in srgb, var(--card) 95%, transparent); }
 .ov-brain .ov-body { padding: 0 0.4rem 0.4rem; }
 #brainView { display: block; width: min(375px, calc(100cqw - 2.5rem)); aspect-ratio: 375 / 220; }
+.ov-fitness { right: 10px; bottom: 10px; background: color-mix(in srgb, var(--card) 95%, transparent); }
+.ov-fitness .ov-body { padding: 0 0.4rem 0.4rem; }
+#fitnessView { display: block; width: min(375px, calc(100cqw - 2.5rem)); aspect-ratio: 375 / 150; cursor: pointer; }
+.fit-foot { display: flex; align-items: center; gap: 0.6rem; padding: 0.2rem 0.3rem 0; font-size: 0.7rem; color: var(--muted); }
+.key::before { content: ""; display: inline-block; width: 0.7em; height: 2px; margin-right: 0.3em; vertical-align: middle; background: currentColor; }
+.key.best { color: #3ddc97; }
+.key.mean { color: #7dd3fc; }
+.fit-note { margin-left: auto; color: var(--text); }
+.fit-latest { padding: 0.1rem 0.5rem; font-size: 0.7rem; background: transparent; border: 1px solid var(--border-hi); border-radius: 6px; color: var(--text); }
+.fit-latest:hover { background: var(--card-hi); border-color: var(--accent-dim); }
+.fit-latest[hidden] { display: none; }
 
 @media (max-width: 700px) {
   body { height: auto; min-height: 100%; }

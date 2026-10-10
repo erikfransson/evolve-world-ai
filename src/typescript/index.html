@@ -158,6 +158,20 @@
           <div class="ov-body"><canvas id="brainView"></canvas></div>
         </section>
         </div>
+        <section id="fitnessCard" class="ov ov-fitness" hidden>
+          <header class="ov-head">
+            <h2>Fitness</h2>
+            <button class="ov-toggle" type="button" aria-expanded="true" aria-label="Minimise fitness" title="Minimise">−</button>
+          </header>
+          <div class="ov-body">
+            <canvas id="fitnessView" title="Click to watch a generation"></canvas>
+            <div class="fit-foot">
+              <span class="key best">best</span><span class="key mean">mean</span>
+              <span id="fitnessNote" class="fit-note"></span>
+              <button id="watchLatest" class="fit-latest" type="button" hidden>Watch latest</button>
+            </div>
+          </div>
+        </section>
       </section>
     </main>
     <script type="module" src="./src/main.ts"></script>

@@ -38,6 +38,30 @@ export function evaluateRange(
 
 const SERIAL_CHUNK = 64; // creatures evaluated between two merges of recorded frames
 
+// Re-simulates chosen creatures with recording. Creature k of the genomes buffer ran as creature indices[k] of its generation,
+// and the buffer must be ordered best first (see History), so that frames holds the creatures after the best, in that order.
+export function evaluateCreatures(
+  config: SimConfig,
+  genomes: Float32Array,
+  genomeLength: number,
+  layoutSeed: number,
+  indices: ArrayLike<number>,
+  record?: RecordOptions,
+): { fitness: Float64Array; frames: Trajectories } {
+  const count = indices.length;
+  const fitness = new Float64Array(count);
+  const top = new TopFrames({ ...record, maxOthers: count - 1 });
+  for (let start = 0; start < count; start += SERIAL_CHUNK) {
+    const end = Math.min(count, start + SERIAL_CHUNK);
+    const recorder = new FrameRecorder(end - start, record?.maxFrames);
+    for (let k = start; k < end; k++) {
+      fitness[k] = runEpisode(config, genomes.subarray(k * genomeLength, (k + 1) * genomeLength), layoutSeed, indices[k]!, recorder);
+    }
+    top.add(start, fitness.subarray(start, end), recorder.result());
+  }
+  return { fitness, frames: top.result() };
+}
+
 export class SerialEvaluator implements Evaluator {
   private readonly config: SimConfig;
 
