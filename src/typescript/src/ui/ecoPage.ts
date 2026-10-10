@@ -1,4 +1,5 @@
 import type { EcoConfig } from "../sim/ecoConfig.ts";
+import type { BestBy } from "../worker/ecoProtocol.ts";
 import { BrainView } from "./brainView.ts";
 import { buildEcoForm, fillEcoForm, initEcoSettingsForm, readEcoConfig } from "./ecoSettingsForm.ts";
 import { formatElapsed } from "./elapsed.ts";
@@ -29,6 +30,7 @@ export interface EcoSelected {
   fullEnergy: number; // energy at which the bar is full (the birth threshold)
   age: number; // seconds
   children: number;
+  eaten: number; // food items eaten
   depth: number; // lineage depth, founders are 0
   died?: boolean; // the values are those of its last moment
 }
@@ -42,6 +44,7 @@ export interface EcoHandlers {
   onReseed(): void; // after extinction; the page is running again, the caller picks the new seed and calls fillConfig
   onSpeed(speed: EcoSpeed): void;
   onZoom(action: ZoomAction): void;
+  onPickBest(by: BestBy): void; // select and follow the best living creature
   onFollow(follow: boolean): void; // the Follow toggle
   onWorldView(): void; // the World view button; the page has already cleared the Follow toggle
   onShowRays(show: boolean): void;
@@ -60,7 +63,7 @@ export interface EcoView {
   showRays(): boolean;
   setPhase(phase: EcoPhase): void;
   setStats(stats: EcoStats | null): void; // null clears the tiles
-  setSelected(selected: EcoSelected | null): void; // null hides the selected and brain cards
+  setSelected(selected: EcoSelected | null): void; // null shows only the pick buttons and hides the brain card
   setFollowing(follow: boolean): void;
   setHistory(samples: readonly PopulationSample[]): void;
   setNote(text: string | null): void;
@@ -99,6 +102,7 @@ export function createEcoView(handlers: EcoHandlers): EcoView {
   const mobile = window.matchMedia("(max-width: 700px)").matches;
   let phase: EcoPhase = "idle";
   let returnFocus: HTMLElement | null = null;
+  let hasSelection = false;
 
   buildEcoForm($("settings"));
   fillEcoForm(readEcoConfig());
@@ -123,6 +127,8 @@ export function createEcoView(handlers: EcoHandlers): EcoView {
     reset.disabled = idle;
     $<HTMLFieldSetElement>("settings").disabled = !idle;
     setup.classList.toggle("locked", !idle);
+    selectedCard.hidden = idle;
+    brainCard.hidden = idle || !hasSelection;
     extinct.hidden = p !== "extinct";
     if (p !== "extinct" && returnFocus) {
       if (extinct.contains(document.activeElement) || document.activeElement === document.body) returnFocus.focus();
@@ -155,7 +161,10 @@ export function createEcoView(handlers: EcoHandlers): EcoView {
       setTile("statSpeed", s && s.speed !== null ? s.speed.toFixed(1) : null, " ×");
     },
     setSelected(sel) {
-      selectedCard.hidden = brainCard.hidden = sel === null;
+      hasSelection = sel !== null;
+      selectedCard.classList.toggle("has-sel", hasSelection);
+      selectedCard.hidden = phase === "idle";
+      brainCard.hidden = phase === "idle" || !hasSelection;
       if (!sel) {
         view.setFollowing(false);
         return;
@@ -169,6 +178,7 @@ export function createEcoView(handlers: EcoHandlers): EcoView {
       const age = formatSimTime(sel.age);
       $("selAge").textContent = age.text + age.unit;
       $("selChildren").textContent = nf.format(sel.children);
+      $("selEaten").textContent = nf.format(sel.eaten);
       $("selDepth").textContent = nf.format(sel.depth);
       $("selId").textContent = `#${sel.id}`;
     },
@@ -204,6 +214,7 @@ export function createEcoView(handlers: EcoHandlers): EcoView {
   $("zoomIn").onclick = () => handlers.onZoom("in");
   $("zoomOut").onclick = () => handlers.onZoom("out");
   $("zoomFit").onclick = () => handlers.onZoom("fit");
+  for (const [id, by] of [["pickAge", "age"], ["pickChildren", "children"], ["pickEaten", "eaten"]] as const) $(id).onclick = () => handlers.onPickBest(by);
   follow.onclick = () => {
     const on = follow.getAttribute("aria-pressed") !== "true";
     view.setFollowing(on);

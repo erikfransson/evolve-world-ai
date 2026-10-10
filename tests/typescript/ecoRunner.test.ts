@@ -2,6 +2,7 @@ import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoOutMessage, EcoSnapshot } from "../../src/typescript/src/worker/ecoProtocol.ts";
 import { snapshotViews } from "../../src/typescript/src/worker/ecoProtocol.ts";
+import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
 import { EcoRunner } from "../../src/typescript/src/worker/ecoRunner.ts";
 
 function cfg(over: { creature?: Partial<EcoConfig["creature"]>; eco?: Partial<EcoConfig["eco"]> } = {}): EcoConfig {
@@ -178,5 +179,31 @@ describe("EcoRunner", () => {
     expect(n).toBeGreaterThan(300);
     expect(history[3]! - history[0]!).toBe(2); // spacing doubled once
     for (let i = 1; i < n; i++) expect(history[3 * i]!).toBeGreaterThan(history[3 * (i - 1)]!);
+  });
+
+  it("selectBest picks the highest age, children or eaten, ties to the lowest id, and sends the genome", () => {
+    const { runner, last, sent } = setup();
+    runner.handle({ type: "start", config: cfg(), run: 1 });
+    const members = (runner as unknown as { eco: Ecosystem }).eco.members;
+    const set = (id: number, over: { children?: number; eaten?: number; ticks?: number }) => {
+      const m = members.find((c) => c.id === id)!;
+      if (over.children !== undefined) m.children = over.children;
+      if (over.eaten !== undefined) m.eaten = over.eaten;
+      if (over.ticks !== undefined) m.creature.state.ticksAlive = over.ticks;
+    };
+    for (const m of members) m.creature.state.ticksAlive = 5;
+    set(9, { children: 3, eaten: 7, ticks: 50 });
+    set(4, { children: 3, eaten: 7, ticks: 50 });
+    set(12, { children: 2, eaten: 8, ticks: 40 });
+    const before = sent.length;
+    runner.handle({ type: "selectBest", by: "age" });
+    expect(sent.length).toBe(before + 1);
+    expect(last().selected).toMatchObject({ id: 4, alive: true });
+    expect(last().selected!.genome).not.toBeNull();
+    runner.handle({ type: "selectBest", by: "children" });
+    expect(last().selected!.id).toBe(4);
+    expect(last().selected!.children).toBe(3);
+    runner.handle({ type: "selectBest", by: "eaten" });
+    expect(last().selected).toMatchObject({ id: 12, eaten: 8 });
   });
 });

@@ -18,6 +18,7 @@ export class EcoCreature {
   depth = 0; // generations since its founder
   birthTick = 0;
   children = 0;
+  eaten = 0; // food items eaten, poison not counted
   hue = 0; // degrees
   lastBirthTick = -Infinity;
   readonly creature: Creature; // state, rays, rayOffsets and brain.layerActivations() of the last tick
@@ -146,11 +147,13 @@ export class Ecosystem {
     let n = members.length;
     let first = this.rng.int(n);
     for (let k = 0; k < n; k++) {
-      const c = members[(first + k) % n].creature;
-      const eaten = c.eat(this.items);
+      const m = members[(first + k) % n];
+      const eaten = m.creature.eat(this.items);
       if (eaten < 0) continue;
-      if (this.items.kinds[eaten] === HIT_FOOD) this.food--;
-      else this.poison--;
+      if (this.items.kinds[eaten] === HIT_FOOD) {
+        this.food--;
+        m.eaten++;
+      } else this.poison--;
       this.items.removeItem(eaten); // so no one else eats it this tick
     }
 
@@ -252,6 +255,7 @@ export class Ecosystem {
     m.depth = 0;
     m.birthTick = this.tick;
     m.children = 0;
+    m.eaten = 0;
     m.lastBirthTick = -Infinity;
     this.members.push(m);
     this.states.push(m.creature.state);

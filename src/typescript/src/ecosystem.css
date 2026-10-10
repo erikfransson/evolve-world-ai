@@ -8,11 +8,15 @@
 /* selected creature */
 .ov-selected { background: color-mix(in srgb, var(--card) 95%, transparent); width: min(calc(375px + 0.8rem + 2px), calc(100cqw - 20px)); }
 .sel-body { display: flex; flex-direction: column; gap: 0.6rem; padding: 0.15rem 0.8rem 0.7rem; }
+.sel-hint { margin: 0; color: var(--muted); font-size: 0.8rem; }
+.ov-selected:not(.has-sel) .sel-only, .ov-selected.has-sel .sel-hint { display: none; }
+.sel-pick { display: flex; gap: 0.4rem; }
+.sel-pick button { flex: 1 1 0; min-width: 0; padding: 0.3rem 0.4rem; font-size: 0.8rem; white-space: nowrap; }
 .sel-energy { display: flex; align-items: center; gap: 0.6rem; }
 .meter { flex: 1; height: 8px; border-radius: 4px; background: var(--border-hi); overflow: hidden; }
 .meter span { display: block; height: 100%; width: 0; border-radius: 4px; background: var(--accent); transition: width 0.15s; }
 .sel-energy-val { min-width: 4.8rem; text-align: right; color: var(--text); font-size: 0.8rem; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.sel-facts { margin: 0; display: grid; grid-template-columns: repeat(4, auto); justify-content: space-between; gap: 0.5rem; }
+.sel-facts { margin: 0; display: grid; grid-template-columns: repeat(5, auto); justify-content: space-between; gap: 0.5rem; }
 .sel-facts div { display: flex; flex-direction: column-reverse; min-width: 0; }
 .sel-facts dt { color: var(--muted); font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.06em; white-space: nowrap; }
 .sel-facts dd { margin: 0; font-size: 1rem; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }

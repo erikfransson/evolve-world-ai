@@ -147,6 +147,26 @@ describe("Ecosystem", () => {
     expect(ids.size).toBe(60 + eco.births);
     for (const m of eco.members) expect(Array.from(m.creature.brain.layerActivations().at(-1)!).every(Number.isFinite)).toBe(true);
   });
+
+  it("counts eaten food but not poison", () => {
+    const place = (kind: typeof HIT_FOOD | typeof HIT_POISON) => {
+      const eco = new Ecosystem(still({ initialPopulation: 1, maxPopulation: 1 }, 100));
+      const m = eco.members[0]!;
+      const { x, y } = m.creature.state;
+      (eco.world as World).addItem(x, y, kind);
+      if (kind === HIT_FOOD) eco.food++;
+      else eco.poison++;
+      eco.step();
+      return { eco, m };
+    };
+    const food = place(HIT_FOOD);
+    expect(food.eco.food).toBe(0);
+    expect(food.m.eaten).toBe(1);
+    const poison = place(HIT_POISON);
+    expect(poison.eco.poison).toBe(0);
+    expect(poison.eco.deaths).toBe(1);
+    expect(poison.m.eaten).toBe(0);
+  });
 });
 
 describe("Crowd", () => {

@@ -1,7 +1,7 @@
 import type { EcoConfig } from "../sim/ecoConfig.ts";
 import { Ecosystem } from "../sim/ecosystem.ts";
-import type { CreatureFrame } from "../sim/ecosystem.ts";
-import type { EcoInMessage, EcoOutMessage, EcoSnapshot, EcoSpeedSetting, SelectedDetails } from "./ecoProtocol.ts";
+import type { CreatureFrame, EcoCreature } from "../sim/ecosystem.ts";
+import type { BestBy, EcoInMessage, EcoOutMessage, EcoSnapshot, EcoSpeedSetting, SelectedDetails } from "./ecoProtocol.ts";
 import { snapshotBytes, snapshotViews } from "./ecoProtocol.ts";
 
 const SLICE_MS = 12; // longest stretch of ticks before the worker checks messages and posts
@@ -68,6 +68,15 @@ export class EcoRunner {
         this.sendGenome = msg.id !== null;
         if (this.eco) this.postSnapshot();
         break;
+      case "selectBest": {
+        const best = this.eco ? this.best(this.eco, msg.by) : null;
+        if (best) {
+          this.selectedId = best.id;
+          this.sendGenome = true;
+          this.postSnapshot();
+        }
+        break;
+      }
       case "recycle":
         if (msg.run === undefined || msg.run === this.run) this.inFlight = Math.max(0, this.inFlight - 1);
         if (this.pool.length < MAX_IN_FLIGHT) this.pool.push(msg.buffer);
@@ -214,13 +223,27 @@ export class EcoRunner {
     this.post(msg, [buffer]);
   }
 
+  // Scans on demand only. Ties go to the lowest id so the pick does not depend on list order.
+  private best(eco: Ecosystem, by: BestBy): EcoCreature | null {
+    let best: EcoCreature | null = null;
+    let bestValue = -1;
+    for (const m of eco.members) {
+      const v = by === "age" ? m.ageTicks : by === "children" ? m.children : m.eaten;
+      if (v > bestValue || (v === bestValue && m.id < best!.id)) {
+        best = m;
+        bestValue = v;
+      }
+    }
+    return best;
+  }
+
   private selectedDetails(eco: Ecosystem): SelectedDetails | null {
     if (this.selectedId === null) return null;
     const m = eco.get(this.selectedId);
     if (!m) {
       const s = this.rayScratch;
       return {
-        id: this.selectedId, alive: false, x: 0, y: 0, heading: 0, energy: 0, age: 0, children: 0, depth: 0, parentId: -1, hue: 0,
+        id: this.selectedId, alive: false, x: 0, y: 0, heading: 0, energy: 0, age: 0, children: 0, eaten: 0, depth: 0, parentId: -1, hue: 0,
         rayKinds: s?.rayKinds ?? new Uint8Array(0), rayCloseness: s?.rayCloseness ?? new Float32Array(0), rayEnergy: s?.rayEnergy ?? new Float32Array(0),
         rayOffsets: s?.rayOffsets ?? new Float32Array(0), inputs: s?.inputs ?? new Float32Array(0), genome: null,
       };
@@ -249,7 +272,7 @@ export class EcoRunner {
     this.sendGenome = false;
     return {
       id: m.id, alive: true, x: s.x, y: s.y, heading: s.heading, energy: s.energy, age: m.ageTicks * eco.config.dt,
-      children: m.children, depth: m.depth, parentId: m.parentId, hue: m.hue, ...sc, genome,
+      children: m.children, eaten: m.eaten, depth: m.depth, parentId: m.parentId, hue: m.hue, ...sc, genome,
     };
   }
 }

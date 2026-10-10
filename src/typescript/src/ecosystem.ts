@@ -5,7 +5,7 @@ import { Brain, layerSizes } from "./sim/brain.ts";
 import { DEFAULT_ECO_CONFIG } from "./sim/ecoConfig.ts";
 import type { EcoConfig } from "./sim/ecoConfig.ts";
 import { inputLayout } from "./sim/sensors.ts";
-import type { EcoInMessage, EcoOutMessage, EcoSnapshot, SelectedDetails, SnapshotViews } from "./worker/ecoProtocol.ts";
+import type { BestBy, EcoInMessage, EcoOutMessage, EcoSnapshot, SelectedDetails, SnapshotViews } from "./worker/ecoProtocol.ts";
 import { snapshotViews } from "./worker/ecoProtocol.ts";
 import { Camera } from "./ui/camera.ts";
 import type { Point } from "./ui/camera.ts";
@@ -47,6 +47,7 @@ let live: Live | null = null;
 let selection: Selection | null = null;
 let following = false; // the Follow toggle as the page shows it
 let pendingFollow = false; // follow once the zoom-in animation has ended
+let pendingBest = false; // a selectBest request is out; its first snapshot starts the selection
 let followAfter = 0; // camera.animationsCompleted that means the zoom-in finished
 let showRays = true;
 let extinctShown = false;
@@ -104,6 +105,7 @@ function releaseLive(): void {
 
 function clearSelection(): void {
   selection = null;
+  pendingBest = false;
   pendingFollow = false;
   following = false;
   camera.follow(null);
@@ -129,6 +131,10 @@ function onSnapshot(e: MessageEvent<EcoOutMessage>): void {
   if (previous) send({ type: "recycle", buffer: previous.msg.buffer, run: previous.msg.run }, [previous.msg.buffer]);
   if (msg.history) view.setHistory(toSamples(msg.history));
   const d = msg.selected;
+  if (pendingBest && d?.alive && d.genome) {
+    beginSelection(d.id, d.x, d.y);
+    pendingBest = false;
+  }
   if (selection && d && d.id === selection.id) {
     if (d.genome) selection.brain = new Brain(layerSizes(config), d.genome);
     selection.details = d;
@@ -186,13 +192,25 @@ function startFollow(): void {
 function select(index: number): void {
   const v = live!.views;
   clearSelection();
-  selection = { id: v.ids[index]!, details: null, last: null, brain: null, died: false };
-  send({ type: "select", id: selection.id });
+  send({ type: "select", id: v.ids[index]! });
+  beginSelection(v.ids[index]!, v.x[index]!, v.y[index]!);
+}
+
+// Asks the worker for the best creature; the zoom-in starts when it answers.
+function selectBest(by: BestBy): void {
+  if (!live) return;
+  clearSelection();
+  send({ type: "selectBest", by });
+  pendingBest = true;
+}
+
+function beginSelection(id: number, x: number, y: number): void {
+  selection = { id, details: null, last: null, brain: null, died: false };
   const shift = overlayShift();
   const zoom = Math.min(canvasW - 2 * shift, canvasH) / (SELECT_RAY_LENGTHS * config.creature.rayLength);
   camera.cancel();
   camera.setFocusOffset(shift, 0);
-  camera.animateTo(v.x[index]!, v.y[index]!, zoom);
+  camera.animateTo(x, y, zoom);
   pendingFollow = true;
   followAfter = camera.animationsCompleted + 1;
   following = true;
@@ -232,7 +250,7 @@ function updateUi(): void {
   view.setStats({ population: m.population, births: m.births, deaths: m.deaths, food: m.food, poison: m.poison, simTime: m.simTime, oldestDepth: m.oldestDepth, speed: m.speed > 0 ? m.speed : null });
   const d = selection?.last;
   if (selection && d) {
-    view.setSelected({ id: d.id, energy: d.energy, fullEnergy: config.eco.birthEnergy, age: d.age, children: d.children, depth: d.depth, died: selection.died });
+    view.setSelected({ id: d.id, energy: d.energy, fullEnergy: config.eco.birthEnergy, age: d.age, children: d.children, eaten: d.eaten, depth: d.depth, died: selection.died });
     view.setFollowing(following);
   }
 }
@@ -293,6 +311,7 @@ const view = createEcoView({
     const g = camera.goal;
     camera.animateTo(g.cx, g.cy, action === "in" ? g.zoom * ZOOM_STEP : g.zoom / ZOOM_STEP);
   },
+  onPickBest: selectBest,
   onFollow(on) {
     if (on && selection?.details?.alive) startFollow();
     else {
