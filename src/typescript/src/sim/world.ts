@@ -92,14 +92,6 @@ export class World implements WorldView {
     this.itemCell[i] = -1;
   }
 
-  // Casts a ray of length rayLength along the unit direction (dx, dy) and writes the nearest hit.
-  castRayDir(x: number, y: number, dx: number, dy: number, out: RayHit): void {
-    const ex = x + dx * this.rayLength;
-    const ey = y + dy * this.rayLength;
-    this.gatherCandidates(x, y, Math.min(x, ex), Math.min(y, ey), Math.max(x, ex), Math.max(y, ey));
-    this.traceRay(x, y, dx, dy, out);
-  }
-
   // Casts one ray per direction (dirX[i], dirY[i]) from (x, y), sharing the item lookup between them.
   castRays(x: number, y: number, dirX: Float64Array, dirY: Float64Array, out: readonly RayHit[]): void {
     const L = this.rayLength;

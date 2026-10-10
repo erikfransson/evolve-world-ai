@@ -7,6 +7,11 @@ import { testRng } from "./helpers.ts";
 
 const cfg = (): SimConfig => structuredClone(DEFAULT_CONFIG);
 
+// One ray at angle a through the batch API.
+function castRay(w: World, x: number, y: number, a: number, out: RayHit): void {
+  w.castRays(x, y, Float64Array.of(Math.cos(a)), Float64Array.of(Math.sin(a)), [out]);
+}
+
 // Empty world with all items parked far in a corner, then hand-placed.
 function emptyWorld(config: SimConfig): World {
   const w = new World(config, testRng(1), testRng(2));
@@ -86,17 +91,17 @@ describe("World", () => {
     w.setItem(0, 150, 500, HIT_FOOD);
     w.setItem(itemCounts(c).food, 500, 150, HIT_POISON);
     const out: RayHit = { closeness: 0, kind: HIT_NONE };
-    w.castRayDir(100, 500, Math.cos(0), Math.sin(0), out);
+    castRay(w, 100, 500, 0, out);
     expect(out.kind).toBe(HIT_FOOD);
     expect(out.closeness).toBeCloseTo(1 - (50 - c.world.itemRadius) / c.creature.rayLength, 5);
-    w.castRayDir(500, 100, Math.cos(Math.PI / 2), Math.sin(Math.PI / 2), out);
+    castRay(w, 500, 100, Math.PI / 2, out);
     expect(out.kind).toBe(HIT_POISON);
   });
 
   it("ray towards a nearby wall reports HIT_WALL", () => {
     const w = emptyWorld(cfg());
     const out: RayHit = { closeness: 0, kind: HIT_NONE };
-    w.castRayDir(DEFAULT_CONFIG.world.width - 20, 500, Math.cos(0), Math.sin(0), out);
+    castRay(w, DEFAULT_CONFIG.world.width - 20, 500, 0, out);
     expect(out.kind).toBe(HIT_WALL);
     expect(out.closeness).toBeCloseTo(1 - 20 / 100, 5);
   });
@@ -104,7 +109,7 @@ describe("World", () => {
   it("ray into empty space reports nothing", () => {
     const w = emptyWorld(cfg());
     const out: RayHit = { closeness: 1, kind: HIT_WALL };
-    w.castRayDir(500, 500, Math.cos(1), Math.sin(1), out);
+    castRay(w, 500, 500, 1, out);
     expect(out.closeness).toBe(0);
     expect(out.kind).toBe(HIT_NONE);
   });
@@ -132,7 +137,7 @@ describe("World", () => {
     expect(w.kinds[3]).toBe(HIT_NONE);
     expect(w.eatAt(305, 300, c.creature.radius)).toBe(HIT_NONE);
     const out: RayHit = { closeness: 0, kind: HIT_NONE };
-    w.castRayDir(250, 300, Math.cos(0), Math.sin(0), out);
+    castRay(w, 250, 300, 0, out);
     expect(out.kind).toBe(HIT_NONE);
   });
 
@@ -147,7 +152,7 @@ describe("World", () => {
       const x = rng.range(0, 1000);
       const y = rng.range(0, 1000);
       const a = rng.range(-Math.PI, Math.PI);
-      w.castRayDir(x, y, Math.cos(a), Math.sin(a), out);
+      castRay(w, x, y, a, out);
       const ref = brute(w, c, x, y, a);
       expect(out.kind).toBe(ref.kind);
       expect(out.closeness).toBeCloseTo(ref.closeness, 9);
