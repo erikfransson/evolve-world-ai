@@ -20,6 +20,9 @@ The fingerprint hashes all fitness values, so an unchanged fingerprint means unc
 | 2026-10-10 | Round 3: cull items outside the ray fan wedge | 2.65 vs 2.45 | 1.08x | bit-identical | Kept |
 | 2026-10-10 | Round 3: brain panel redrawn at most every 25 ms (browser) | main-thread busy 16.1 vs 12.5 ms per frame | -22% | n/a | Kept |
 | 2026-10-10 | Round 3 merged (serial, 6 alternating pairs, medians) | 3.39 vs 2.44 | 1.39x | bit-identical | Kept |
+| 2026-10-10 | Round 4: breeding runs the mulberry32 stream inline     | breeding 51 vs 37 ms at pop 1000 | about 3% per generation | bit-identical | Kept |
+| 2026-10-10 | Round 4: overlap breeding with evaluation of the next generation | pop 2000 5 gens 4.08 vs 3.85 s | 1.01-1.06x | bit-identical | Rejected, 212 lines across 7 files for the gain |
+| 2026-10-10 | Round 4: pre-warm pool workers                          | 1.50 vs 1.53 s             | none    | n/a              | Rejected, startup only moves |
 
 Rejected in round 3: typed-array RNG state (breeding 37 to 24 ms, 1% of a generation), wall skip again (0.6%), branchless input compaction (0%), slack 0.15 and 0.6 (0%), branch-free encodeInputs (0%).
 Rejected in round 2: wall skip when far from walls (2%), Float64 dense weights (0%), input-major dense layer (7% slower).
@@ -57,6 +60,12 @@ Seconds per generation by worker threads, quiet pass; the CPU has 4 physical cor
 
 Scaling stops at the physical core count. Per-generation overheads are 1-5 ms, load imbalance about 5%, breeding about 45 ms serial. Chunk counts from 4 to 32 per worker made no difference. No change kept: browsers only report logical cores, so the default stays min(cores - 1, 8).
 
+## Generation breakdown (round 4, 7 threads, steady state)
+
+Pop 1000 / 2000: evaluation 290 / 580 ms, breeding 40 / 82 ms serial, frame merge 10-15 ms overlapped. Generation 0 takes about 0.93 s at pop 1000: about 320 ms worker startup and 190 ms JIT warm-up.
+Threads 4 vs 7 at pop 1000: steady generations equal at about 0.29 s; 4 threads start faster (gen 0 0.69 vs 0.96 s).
+
 ## Ideas not yet tried
 - Profile after round 3 (ns per tick, duplicate-the-call method): forward about 500, castRays about 200, encodeInputs about 100, setTrig about 55, rest about 300. The tanh division is about a third of forward.
 - Fuse encodeInputs with the first-layer nonzero scan.
+- WebAssembly port of castRays and Brain.forward (needs a toolchain dependency, ask first).
