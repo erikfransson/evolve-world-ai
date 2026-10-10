@@ -6,7 +6,7 @@ import type { Evaluator } from "../../src/typescript/src/sim/evaluator.ts";
 import { Evolution } from "../../src/typescript/src/sim/evolution.ts";
 import { FRAME_FLOATS, MAX_RECORDED_FRAMES, MAX_TRAJECTORIES, TopFrames } from "../../src/typescript/src/sim/trajectory.ts";
 import type { RecordOptions, Trajectories } from "../../src/typescript/src/sim/trajectory.ts";
-import { Replay } from "../../src/typescript/src/ui/replay.ts";
+import { Replay, sourceOfLive } from "../../src/typescript/src/ui/replay.ts";
 import { createNodeEvaluator } from "../../src/typescript/src/worker/nodePool.ts";
 import type { GenerationMessage } from "../../src/typescript/src/worker/protocol.ts";
 
@@ -130,7 +130,7 @@ describe("replay playback", () => {
       trajectories: frames,
     } satisfies GenerationMessage;
     const replay = new Replay();
-    replay.load(msg, cfg);
+    replay.load(sourceOfLive(msg), cfg);
     return { replay, population, fitness, bestIndex, top: expectedTop(fitness, bestIndex, record.maxOthers ?? MAX_TRAJECTORIES) };
   }
 

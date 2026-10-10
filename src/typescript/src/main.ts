@@ -2,13 +2,16 @@ import "./style.css";
 import { DEFAULT_CONFIG, itemCounts } from "./sim/config.ts";
 import type { SimConfig } from "./sim/config.ts";
 import type { Episode } from "./sim/episode.ts";
+import { History, captureTop } from "./sim/history.ts";
 import { MAX_TRAJECTORIES } from "./sim/trajectory.ts";
 import type { GenerationMessage, InMessage, OutMessage } from "./worker/protocol.ts";
 import { BrainView } from "./ui/brainView.ts";
 import { fitCanvas } from "./ui/canvas.ts";
+import { FitnessGraph } from "./ui/fitnessGraph.ts";
 import { initCard } from "./ui/overlays.ts";
 import { buildPreview } from "./ui/preview.ts";
-import { Replay } from "./ui/replay.ts";
+import { Replay, sourceOfLive, sourceOfPast } from "./ui/replay.ts";
+import type { ReplaySource } from "./ui/replay.ts";
 import { drawScene } from "./ui/scene.ts";
 import type { ViewOptions } from "./ui/scene.ts";
 import { fillForm, initSettingsForm, readConfig } from "./ui/settingsForm.ts";
@@ -34,6 +37,15 @@ const brainPanel = initCard(brainCard, "evolve.card.brain", window.matchMedia("(
 const brainView = new BrainView($<HTMLCanvasElement>("brainView"));
 const replay = new Replay();
 let preview: Episode | null = null; // idle-phase world built from the form, rebuilt on change only
+const fitnessCard = $("fitnessCard");
+const fitnessNote = $("fitnessNote");
+const watchLatestBtn = $<HTMLButtonElement>("watchLatest");
+initCard(fitnessCard, "evolve.card.fitness", window.matchMedia("(max-width: 700px)").matches);
+const history = new History();
+const graph = new FitnessGraph($<HTMLCanvasElement>("fitnessView"), requestPast);
+let watching: ReplaySource | null = null; // a picked past generation, looped until the newest is asked for again
+let pastRequest = 0; // id of the newest request, replies to older ones are dropped
+let loadingGeneration: number | null = null;
 
 interface RunState {
   phase: "idle" | "running" | "paused";
@@ -68,7 +80,7 @@ function renderOverlays(): void {
   legendRest.hidden = !view.showAll;
   legendRestText.textContent = run.config.population.size > MAX_TRAJECTORIES + 1 ? `Top ${MAX_TRAJECTORIES} of the rest` : "Rest of generation";
   legendPoison.hidden = itemCounts(run.config).poison <= 0;
-  legendCard.hidden = brainCard.hidden = replay.best === null;
+  legendCard.hidden = brainCard.hidden = fitnessCard.hidden = replay.best === null;
 }
 
 function rebuildPreview(): void {
@@ -89,7 +101,13 @@ function renderControls(): void {
   settings.disabled = !idle;
   setupForm.classList.toggle("locked", !idle);
   note.textContent = run.error ?? (!idle && run.latest === null ? "Computing generation 0..." : "");
-  legendCard.hidden = brainCard.hidden = replay.best === null;
+  legendCard.hidden = brainCard.hidden = fitnessCard.hidden = replay.best === null;
+}
+
+function renderFitness(): void {
+  graph.setWatched(replay.best ? replay.generation : null);
+  watchLatestBtn.hidden = watching === null;
+  fitnessNote.textContent = loadingGeneration !== null ? `Loading gen ${loadingGeneration}...` : watching ? `Watching gen ${watching.generation}` : "";
 }
 
 function renderStats(): void {
@@ -111,12 +129,31 @@ function refresh(): void {
   renderControls();
   renderStats();
   renderOverlays();
+  renderFitness();
 }
 
-// Replays the newest generation received, looping the same one if no newer has arrived.
+// Replays the picked past generation, else the newest received, looping the same one if no newer has arrived.
 function loadReplay(): void {
-  if (run.latest) replay.load(run.latest, run.config);
+  const source = watching ?? (run.latest ? sourceOfLive(run.latest) : null);
+  if (source) replay.load(source, run.config);
   refresh();
+}
+
+// Back to following the newest generation.
+function watchLatest(): void {
+  watching = null;
+  loadingGeneration = null;
+  pastRequest++;
+  loadReplay();
+}
+
+// The worker re-simulates the kept generation nearest to the clicked one.
+function requestPast(generation: number): void {
+  const past = history.nearest(generation);
+  if (!past || !run.worker) return;
+  loadingGeneration = past.generation;
+  send({ type: "past", request: ++pastRequest, ...past });
+  renderFitness();
 }
 
 function onMessage(e: MessageEvent<OutMessage>): void {
@@ -127,12 +164,30 @@ function onMessage(e: MessageEvent<OutMessage>): void {
     renderControls();
     return;
   }
+  if (e.data.type === "past") {
+    if (e.data.request !== pastRequest) return;
+    loadingGeneration = null;
+    watching = sourceOfPast(e.data);
+    loadReplay();
+    return;
+  }
+  const { result } = e.data;
+  history.add({ generation: result.generation, best: result.bestFitness, mean: result.meanFitness }, captureTop(result.generation, result.layoutSeed, result.fitness, e.data.genomes, e.data.genomeLength));
+  graph.setData(history.stats, history.keptGenerations);
   const now = performance.now();
   run.latest = e.data;
   run.computeSeconds = (now - run.lastMessageAt) / 1000;
   run.lastMessageAt = now;
   if (replay.best) refresh();
   else loadReplay();
+}
+
+function clearHistory(): void {
+  history.clear();
+  graph.setData([], []);
+  watching = null;
+  loadingGeneration = null;
+  pastRequest++;
 }
 
 function start(): void {
@@ -142,6 +197,7 @@ function start(): void {
   run.error = null;
   replay.clear();
   preview = null;
+  clearHistory();
   run.phase = "running";
   run.worker = new Worker(new URL("./worker/simWorker.ts", import.meta.url), { type: "module" });
   run.worker.onmessage = onMessage;
@@ -156,6 +212,7 @@ function reset(): void {
   run.phase = "idle";
   run.latest = null;
   replay.clear();
+  clearHistory();
   run.config = readConfig();
   rebuildPreview();
   refresh();
@@ -195,7 +252,8 @@ function frame(now: number): void {
 
 startBtn.onclick = start;
 resetBtn.onclick = reset;
-skipBtn.onclick = loadReplay;
+skipBtn.onclick = watchLatest;
+watchLatestBtn.onclick = watchLatest;
 pauseBtn.onclick = togglePause;
 for (const id of ["showAll", "rays", "pov"]) $(id).addEventListener("change", readView);
 document.querySelector(".seg")!.addEventListener("change", readView);

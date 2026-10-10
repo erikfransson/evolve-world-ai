@@ -1,8 +1,11 @@
-import type { GenerationMessage, InMessage, OutMessage } from "./protocol.ts";
+import type { GenerationMessage, InMessage, OutMessage, PastRequest } from "./protocol.ts";
 import { createBrowserEvaluator } from "./browserPool.ts";
+import type { SimConfig } from "../sim/config.ts";
+import { evaluateCreatures } from "../sim/evaluator.ts";
 import type { Evaluator } from "../sim/evaluator.ts";
 import { Evolution } from "../sim/evolution.ts";
 
+let config: SimConfig | null = null;
 let evolution: Evolution | null = null;
 let evaluator: Evaluator | null = null;
 let paused = false;
@@ -49,9 +52,33 @@ async function loop(): Promise<void> {
   }
 }
 
+// Runs between the awaits of the generation loop, so it works while running and paused.
+function replayPast(msg: PastRequest): void {
+  if (!config || !evolution) return; // no run (anymore), main drops the missing reply
+  try {
+    const { fitness, frames } = evaluateCreatures(config, msg.genomes, msg.genomeLength, msg.layoutSeed, msg.indices);
+    const reply: OutMessage = {
+      type: "past",
+      request: msg.request,
+      generation: msg.generation,
+      layoutSeed: msg.layoutSeed,
+      fitness,
+      bestIndex: msg.indices[0]!,
+      genome: msg.genomes.slice(0, msg.genomeLength),
+      trajectories: frames,
+    };
+    post(reply, [fitness.buffer, frames.offsets.buffer, frames.data.buffer]);
+  } catch (error) {
+    post({ type: "error", message: error instanceof Error ? error.message : String(error) });
+  }
+}
+
 self.onmessage = (e: MessageEvent<InMessage>) => {
   const msg = e.data;
-  if (msg.type === "start") {
+  if (msg.type === "past") {
+    replayPast(msg);
+  } else if (msg.type === "start") {
+    config = msg.config;
     paused = false;
     evaluator?.close();
     evaluator = createBrowserEvaluator(msg.config);
