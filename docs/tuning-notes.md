@@ -48,9 +48,9 @@ All rows from 2026-10-09 use the fish-like physics.
 - Best fitness saturates at the epoch cap, so mean fitness is the better progress signal.
 - An evolved creature (food 40, 30 generations) swims smooth looping sweeps across the whole world and survives 300 s, while weak ones curve into a wall and starve.
 - A late generation takes about 10 s to compute because good creatures live the full epoch.
+- 2026-10-10: Trials poison-free start radius raised to 150 units (world.poisonClearRadius, capped at 35% of the shorter world side) after the owner saw poison right next to the start.
 
 ## Ideas not yet tried
 - Evaluate each creature on two layouts to reduce layout luck.
 - Tournament with a larger size (5 to 7).
 - Plot best and mean fitness over generations on the page.
-- 2026-10-10: Trials poison-free start radius raised to 150 units (world.poisonClearRadius, capped at 35% of the shorter world side) after the owner saw poison right next to the start.
