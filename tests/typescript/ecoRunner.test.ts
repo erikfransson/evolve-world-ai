@@ -96,6 +96,24 @@ describe("EcoRunner", () => {
     expect(sent[3]!.buffer).toBe(sent[0]!.buffer);
   });
 
+  it("does not count recycled buffers of an earlier run against the new run", () => {
+    const { runner, clock, sent } = setup();
+    runner.handle({ type: "start", config: cfg(), run: 1 });
+    runner.handle({ type: "speed", speed: 32 });
+    for (let i = 1; i <= 8; i++) {
+      clock.t = i * 40;
+      runner.pump();
+    }
+    const old = sent.splice(0, sent.length);
+    runner.handle({ type: "start", config: cfg(), run: 2 });
+    for (const m of old) runner.handle({ type: "recycle", buffer: m.buffer, run: 1 });
+    for (let i = 9; i <= 20; i++) {
+      clock.t = i * 40;
+      runner.pump();
+    }
+    expect(sent.length).toBe(3); // still limited to three unreturned snapshots of run 2
+  });
+
   it("describes the selected creature, sends its genome on selecting, and reports it dead when it is gone", () => {
     const { runner, last } = setup();
     runner.handle({ type: "start", config: cfg(), run: 1 });

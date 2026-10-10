@@ -62,6 +62,7 @@ export class Camera {
   cy: number;
   zoom: number;
   minZoom: number;
+  animationsCompleted = 0; // animations that ran to their end, as opposed to being cancelled
   focusX = 0; // where the view centre sits on screen, as a canvas-pixel offset from the canvas centre (eased towards the goal)
   focusY = 0;
   onClick: ((worldX: number, worldY: number) => void) | null = null;
@@ -248,7 +249,10 @@ export class Camera {
       this.cx = a.from.cx + (a.to.cx - a.from.cx) * k;
       this.cy = a.from.cy + (a.to.cy - a.from.cy) * k;
       this.zoom = a.from.zoom * (a.to.zoom / a.from.zoom) ** k; // geometric, so zoom feels uniform
-      if (t >= 1) this.anim = null;
+      if (t >= 1) {
+        this.anim = null;
+        this.animationsCompleted++;
+      }
       return true;
     }
     if (this.target) {

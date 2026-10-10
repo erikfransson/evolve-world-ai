@@ -69,7 +69,7 @@ export class EcoRunner {
         if (this.eco) this.postSnapshot();
         break;
       case "recycle":
-        this.inFlight = Math.max(0, this.inFlight - 1);
+        if (msg.run === undefined || msg.run === this.run) this.inFlight = Math.max(0, this.inFlight - 1);
         if (this.pool.length < MAX_IN_FLIGHT) this.pool.push(msg.buffer);
         break;
     }

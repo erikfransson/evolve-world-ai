@@ -108,6 +108,18 @@ describe("camera motion", () => {
     expect(c.cx).toBeCloseTo(1000);
     expect(c.animating).toBe(false);
   });
+
+  it("counts finished animations but not cancelled ones", () => {
+    const c = make();
+    c.animateTo(1000, 800, 3);
+    c.update(0);
+    c.cancel();
+    expect(c.animationsCompleted).toBe(0);
+    c.animateTo(1000, 800, 3);
+    c.update(500);
+    c.update(1000);
+    expect(c.animationsCompleted).toBe(1);
+  });
 });
 
 describe("DragDetector", () => {

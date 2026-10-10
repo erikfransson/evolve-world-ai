@@ -47,6 +47,7 @@ let live: Live | null = null;
 let selection: Selection | null = null;
 let following = false; // the Follow toggle as the page shows it
 let pendingFollow = false; // follow once the zoom-in animation has ended
+let followAfter = 0; // camera.animationsCompleted that means the zoom-in finished
 let showRays = true;
 let extinctShown = false;
 let canvasW = 0;
@@ -97,7 +98,7 @@ function overlayShift(): number {
 }
 
 function releaseLive(): void {
-  if (live) send({ type: "recycle", buffer: live.msg.buffer }, [live.msg.buffer]);
+  if (live) send({ type: "recycle", buffer: live.msg.buffer, run: live.msg.run }, [live.msg.buffer]);
   live = null;
 }
 
@@ -120,12 +121,12 @@ function onSnapshot(e: MessageEvent<EcoOutMessage>): void {
     return;
   }
   if (!active || msg.run !== run) {
-    send({ type: "recycle", buffer: msg.buffer }, [msg.buffer]);
+    send({ type: "recycle", buffer: msg.buffer, run: msg.run }, [msg.buffer]);
     return;
   }
   const previous = live;
   live = { msg, views: snapshotViews(msg.buffer, msg.count, msg.itemCount, msg.creatureCap, msg.itemCap) };
-  if (previous) send({ type: "recycle", buffer: previous.msg.buffer }, [previous.msg.buffer]);
+  if (previous) send({ type: "recycle", buffer: previous.msg.buffer, run: previous.msg.run }, [previous.msg.buffer]);
   if (msg.history) view.setHistory(toSamples(msg.history));
   const d = msg.selected;
   if (selection && d && d.id === selection.id) {
@@ -193,6 +194,7 @@ function select(index: number): void {
   camera.setFocusOffset(shift, 0);
   camera.animateTo(v.x[index]!, v.y[index]!, zoom);
   pendingFollow = true;
+  followAfter = camera.animationsCompleted + 1;
   following = true;
   view.setFollowing(true);
 }
@@ -210,7 +212,9 @@ camera.onClick = (wx, wy) => {
 function syncFollow(): void {
   if (pendingFollow) {
     if (camera.animating) return;
-    if (Math.abs(camera.zoom / camera.goal.zoom - 1) < 0.02 && selection?.details?.alive) startFollow();
+    const arrived = camera.animationsCompleted >= followAfter; // else the user took over
+    if (arrived && !selection?.details) return; // the first details have not arrived yet
+    if (arrived && selection?.details?.alive) startFollow();
     else {
       pendingFollow = false;
       following = false;
