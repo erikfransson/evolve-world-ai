@@ -289,6 +289,7 @@ const view = createEcoView({
       camera.animateToFit();
       return;
     }
+    pendingFollow = false; // a zoom press during the zoom-in to a selection is the user taking over
     const g = camera.goal;
     camera.animateTo(g.cx, g.cy, action === "in" ? g.zoom * ZOOM_STEP : g.zoom / ZOOM_STEP);
   },

@@ -179,6 +179,7 @@ export class Camera {
   }
 
   clampCentre(): void {
+    if (this.zoom <= this.minZoom * 1.0001) this.focusGoalX = this.focusGoalY = 0; // a fitted world sits centred
     this.cx = clampAxis(this.cx, this.worldW, this.viewW);
     this.cy = clampAxis(this.cy, this.worldH, this.viewH);
   }

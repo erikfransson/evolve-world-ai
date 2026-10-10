@@ -122,6 +122,20 @@ describe("camera motion", () => {
   });
 });
 
+describe("camera focus offset", () => {
+  it("drops the overlay offset once zoomed out to the whole world", () => {
+    const cam = new Camera(8000, 5000, 1600, 1000);
+    cam.zoomAt(800, 500, 4);
+    cam.setFocusOffset(200, 0, true);
+    cam.zoomAt(800, 500, 1e-3); // wheel all the way out
+    for (let t = 0; t <= 2000; t += 16) cam.update(t);
+    expect(cam.focusX).toBeCloseTo(0, 3);
+    const left = cam.worldToScreen(0, 0);
+    const right = cam.worldToScreen(8000, 0);
+    expect((left.x + right.x) / 2).toBeCloseTo(800, 3);
+  });
+});
+
 describe("DragDetector", () => {
   it("small movement stays a click, larger becomes a drag and stays one", () => {
     const d = new DragDetector(5);
