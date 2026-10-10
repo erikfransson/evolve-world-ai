@@ -6,7 +6,7 @@ import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
 import { FEAT_CREATURE, FEAT_SEEN_ENERGY, energySignal, inputLayout } from "../../src/typescript/src/sim/sensors.ts";
-import { HIT_CREATURE, HIT_FOOD, HIT_NONE } from "../../src/typescript/src/sim/types.ts";
+import { HIT_CREATURE, HIT_FOOD, HIT_NONE, HIT_POISON } from "../../src/typescript/src/sim/types.ts";
 import { World } from "../../src/typescript/src/sim/world.ts";
 
 type Over = { [K in keyof EcoConfig]?: Partial<EcoConfig[K]> };
@@ -44,6 +44,20 @@ describe("Ecosystem", () => {
     };
     expect(run(3)).toEqual(run(3));
     expect(run(3)[0]).not.toBe(run(4)[0]);
+  });
+
+  it("no founder spawns on poison", () => {
+    for (const seed of [1, 2, 3]) {
+      const eco = new Ecosystem(ecoCfg({ seed, world: { foodDensity: 0, poisonDensity: 3 }, eco: { initialPopulation: 60 } }));
+      const reach = eco.config.creature.radius + eco.config.world.itemRadius;
+      const w = eco.world;
+      expect(countKind(eco, HIT_POISON)).toBe(300);
+      for (const m of eco.members) {
+        for (let i = 0; i < w.count; i++) {
+          if (w.kinds[i] === HIT_POISON) expect(Math.hypot(w.xs[i] - m.creature.state.x, w.ys[i] - m.creature.state.y)).toBeGreaterThanOrEqual(reach);
+        }
+      }
+    }
   });
 
   it("regrows fractional items over ticks and stops at the max density", () => {
@@ -106,7 +120,7 @@ describe("Ecosystem", () => {
   });
 
   it("flags extinction when everyone has died and then stops", () => {
-    const eco = new Ecosystem(ecoCfg({ creature: { startEnergy: 0.01 } }));
+    const eco = new Ecosystem(ecoCfg({ creature: { startEnergy: 0.01 }, world: { foodDensity: 0 } }));
     expect(eco.extinct).toBe(false);
     eco.step();
     expect(eco.extinct).toBe(true);

@@ -118,14 +118,44 @@ export class World implements WorldView {
   }
 
   // Fills slots 0..food+poison-1 at uniform random positions, food first.
-  scatter(food: number, poison: number, rng: Rng): void {
-    for (let i = 0; i < food + poison; i++) this.placeRandomly(i, i < food ? HIT_FOOD : HIT_POISON, rng);
+  // With clear, positions inside that disc are drawn again.
+  scatter(food: number, poison: number, rng: Rng, clear?: { x: number; y: number; radius: number }): void {
+    for (let i = 0; i < food + poison; i++) this.placeRandomly(i, i < food ? HIT_FOOD : HIT_POISON, rng, clear);
   }
 
-  // Puts item i at a uniform random position inside the walls.
-  placeRandomly(i: number, kind: HitKind, rng: Rng): void {
+  // Puts item i at a uniform random position inside the walls, outside the clear disc if given.
+  placeRandomly(i: number, kind: HitKind, rng: Rng, clear?: { x: number; y: number; radius: number }): void {
     const r = this.itemRadius;
-    this.setItem(i, rng.range(r, this.width - r), rng.range(r, this.height - r), kind);
+    let x: number;
+    let y: number;
+    do {
+      x = rng.range(r, this.width - r);
+      y = rng.range(r, this.height - r);
+    } while (clear && (x - clear.x) ** 2 + (y - clear.y) ** 2 < clear.radius ** 2);
+    this.setItem(i, x, y, kind);
+  }
+
+  // Moves every poison item touching a body of this radius at (x, y) to a random spot, repeating until none touches.
+  clearPoison(x: number, y: number, radius: number, rng: Rng): void {
+    for (let p = this.poisonAt(x, y, radius); p >= 0; p = this.poisonAt(x, y, radius)) {
+      this.placeRandomly(p, HIT_POISON, rng);
+    }
+  }
+
+  private poisonAt(x: number, y: number, radius: number): number {
+    const reach = radius + this.itemRadius;
+    this.clampCellRange(x, y, reach, this.eatRange);
+    const { rangeX0: cx0, rangeX1: cx1, rangeY0: cy0, rangeY1: cy1 } = this.eatRange;
+    for (let cy = cy0; cy <= cy1; cy++) {
+      for (let cx = cx0; cx <= cx1; cx++) {
+        for (let i = this.cellHead[cy * this.cols + cx]; i >= 0; i = this.nextItem[i]) {
+          const fx = this.xs[i] - x;
+          const fy = this.ys[i] - y;
+          if (this.kinds[i] === HIT_POISON && fx * fx + fy * fy < reach * reach) return i;
+        }
+      }
+    }
+    return -1;
   }
 
   // Places item i and keeps the grid valid.

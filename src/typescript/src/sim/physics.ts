@@ -25,7 +25,7 @@ export function decaysFor(config: EngineConfig): Decays {
 }
 
 // Advances one creature's motion and energy by one tick: turn, thrust with drag, walls, energy costs.
-// turnOut in [-1, 1], thrust in [0, 1]. Eating and death are separate (consume, settle).
+// turnOut and thrust in [-1, 1]; negative thrust brakes (up to maxBrake, free, never reverses). Eating and death are separate (consume, settle).
 export function stepBody(s: CreatureState, turnOut: number, thrust: number, config: EngineConfig, k: Decays, heading: Heading): void {
   const { dt, creature: c, world: w } = config;
   // Exact exponential relaxation each tick keeps motion smooth and independent of dt.
@@ -37,27 +37,36 @@ export function stepBody(s: CreatureState, turnOut: number, thrust: number, conf
   heading.sin = Math.sin(s.heading);
   const cos = heading.cos;
   const sin = heading.sin;
-  const terminal = (thrust * c.maxThrust) / c.drag;
-  const fwd = terminal + (s.vx * cos + s.vy * sin - terminal) * k.drag;
+  const v = s.vx * cos + s.vy * sin;
+  let fwd: number;
+  if (thrust >= 0) {
+    const terminal = (thrust * c.maxThrust) / c.drag;
+    fwd = terminal + (v - terminal) * k.drag;
+  } else {
+    // Braking shrinks the forward speed toward 0, never past it.
+    const slowed = Math.abs(v) * k.drag + thrust * c.maxBrake * dt;
+    fwd = slowed > 0 ? (v < 0 ? -slowed : slowed) : 0;
+  }
   const side = (-s.vx * sin + s.vy * cos) * k.side;
   s.vx = fwd * cos - side * sin;
   s.vy = fwd * sin + side * cos;
 
   s.x += s.vx * dt;
   s.y += s.vy * dt;
-  keepInside(s, c.radius, w.width, w.height);
+  keepInside(s, c.radius, w.width, w.height, c.wallBounce);
 
-  s.energy -= (c.livingCost + c.thrustCost * thrust) * dt;
+  s.energy -= (c.livingCost + c.thrustCost * Math.max(0, thrust)) * dt;
 }
 
 type Body = Pick<CreatureState, "x" | "y" | "vx" | "vy">;
 
-// Clamps a disc into the box; walls absorb the velocity component pointing into them.
-export function keepInside(s: Body, radius: number, width: number, height: number): void {
-  if (s.x < radius) { s.x = radius; s.vx = Math.max(0, s.vx); }
-  else if (s.x > width - radius) { s.x = width - radius; s.vx = Math.min(0, s.vx); }
-  if (s.y < radius) { s.y = radius; s.vy = Math.max(0, s.vy); }
-  else if (s.y > height - radius) { s.y = height - radius; s.vy = Math.min(0, s.vy); }
+// Clamps a disc into the box and reflects the velocity component pointing into a wall, scaled by restitution
+// (0 absorbs it). Tangential velocity is kept, so kinetic energy never grows.
+export function keepInside(s: Body, radius: number, width: number, height: number, restitution: number): void {
+  if (s.x < radius) { s.x = radius; if (s.vx < 0) s.vx = -restitution * s.vx; }
+  else if (s.x > width - radius) { s.x = width - radius; if (s.vx > 0) s.vx = -restitution * s.vx; }
+  if (s.y < radius) { s.y = radius; if (s.vy < 0) s.vy = -restitution * s.vy; }
+  else if (s.y > height - radius) { s.y = height - radius; if (s.vy > 0) s.vy = -restitution * s.vy; }
 }
 
 // Pushes two overlapping equal-mass discs of this radius apart along the line between their centres, half each,

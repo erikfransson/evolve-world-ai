@@ -19,13 +19,13 @@ describe("Creature", () => {
     const config: SimConfig = { ...cfg, world: { ...cfg.world, respawn } };
     const seed = 31;
     const index = 4;
-    const genome = randomGenome(layerSizes(config), createRng(2));
+    const genome = randomGenome(layerSizes(config), createRng(3));
     const episode = new Episode(config, genome, seed, index);
     const counts = itemCounts(config);
     const world = new World(config, counts.food + counts.poison);
-    world.scatter(counts.food, counts.poison, createRng(seed));
-    const respawnRng = createRng(deriveSeed(seed, index));
     const { x, y, heading } = episode.state;
+    world.scatter(counts.food, counts.poison, createRng(seed), { x, y, radius: config.creature.radius + config.world.itemRadius + 10 });
+    const respawnRng = createRng(deriveSeed(seed, index));
     const creature = new Creature(config, genome, x, y, heading);
     let eats = 0;
     while (!episode.done) {

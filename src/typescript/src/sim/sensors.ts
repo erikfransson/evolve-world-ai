@@ -31,7 +31,7 @@ export function inputLayout(config: EngineConfig): InputLayout {
   return { rayFeatureLabels: labels, rayFeatures: labels.length, rays, size: rays * labels.length + EXTRA_INPUTS };
 }
 
-// Brain outputs: turn and thrust (negative thrust acts as 0).
+// Brain outputs: turn and thrust (negative thrust brakes).
 export const OUTPUT_LABELS = ["turn", "thrust"] as const;
 export const OUTPUT_SIZE = OUTPUT_LABELS.length;
 export const OUT_TURN = 0;
