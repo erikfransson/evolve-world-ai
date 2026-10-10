@@ -23,6 +23,11 @@ export class Episode implements EpisodeView {
   private readonly turnDecay: number;
   private readonly dragDecay: number;
   private readonly sideDecay: number;
+  private trigHeading = NaN;
+  private headCos = 0;
+  private headSin = 0;
+  private readonly rayOffCos: Float64Array;
+  private readonly rayOffSin: Float64Array;
 
   constructor(config: SimConfig, genome: Genome, layoutSeed: number, creatureIndex: number) {
     this.config = config;
@@ -31,6 +36,8 @@ export class Episode implements EpisodeView {
     this.input = new Float32Array(inputSize(config));
     this.output = new Float32Array(OUTPUT_SIZE);
     this.rayOffsets = rayAngleOffsets(config);
+    this.rayOffCos = Float64Array.from(this.rayOffsets, Math.cos);
+    this.rayOffSin = Float64Array.from(this.rayOffsets, Math.sin);
     this.maxTicks = maxLifeTicks(config);
     this.turnDecay = Math.exp(-config.creature.turnDamping * config.dt);
     this.dragDecay = Math.exp(-config.creature.drag * config.dt);
@@ -50,6 +57,12 @@ export class Episode implements EpisodeView {
     };
   }
 
+  private setTrig(heading: number): void {
+    this.trigHeading = heading;
+    this.headCos = Math.cos(heading);
+    this.headSin = Math.sin(heading);
+  }
+
   get done(): boolean {
     return !this.state.alive || this.state.ticksAlive >= this.maxTicks;
   }
@@ -60,8 +73,14 @@ export class Episode implements EpisodeView {
     const s = this.state;
     const rays = this.rays;
 
-    for (let i = 0; i < rays.length; i++) this.world.castRay(s.x, s.y, s.heading + this.rayOffsets[i], rays[i]);
-    encodeInputs(s, rays, this.config, this.input);
+    // Ray directions by angle addition from the heading's cos/sin.
+    if (s.heading !== this.trigHeading) this.setTrig(s.heading);
+    const hc = this.headCos;
+    const hs = this.headSin;
+    const oc = this.rayOffCos;
+    const os = this.rayOffSin;
+    for (let i = 0; i < rays.length; i++) this.world.castRayDir(s.x, s.y, hc * oc[i] - hs * os[i], hs * oc[i] + hc * os[i], rays[i]);
+    encodeInputs(s, rays, this.config, this.input, hc, hs);
 
     this.brain.forward(this.input, this.output);
     const thrust = Math.max(0, this.output[OUT_THRUST]);
@@ -71,8 +90,9 @@ export class Episode implements EpisodeView {
     s.turnRate = targetTurn + (s.turnRate - targetTurn) * this.turnDecay;
     s.heading += s.turnRate * dt;
 
-    const cos = Math.cos(s.heading);
-    const sin = Math.sin(s.heading);
+    this.setTrig(s.heading); // reused by the next step's rays and inputs
+    const cos = this.headCos;
+    const sin = this.headSin;
     const terminal = (thrust * c.maxThrust) / c.drag;
     const fwd = terminal + (s.vx * cos + s.vy * sin - terminal) * this.dragDecay;
     const side = (-s.vx * sin + s.vy * cos) * this.sideDecay;

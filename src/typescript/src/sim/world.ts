@@ -87,10 +87,13 @@ export class World implements WorldView {
   }
 
   castRay(x: number, y: number, angle: number, out: RayHit): void {
+    this.castRayDir(x, y, Math.cos(angle), Math.sin(angle), out);
+  }
+
+  // Same as castRay with the unit direction (dx, dy) given directly.
+  castRayDir(x: number, y: number, dx: number, dy: number, out: RayHit): void {
     const L = this.rayLength;
     const r = this.itemRadius;
-    const dx = Math.cos(angle);
-    const dy = Math.sin(angle);
     let best = L;
     let kind: HitKind = HIT_NONE;
 
