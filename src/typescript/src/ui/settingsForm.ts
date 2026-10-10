@@ -47,6 +47,7 @@ const buildFields = (): readonly Field[] => [
   num("rayLength", (c) => c.creature.rayLength, (c, v) => { c.creature.rayLength = v; }),
   num("layers", (c) => c.brain.hiddenLayers.length, (c, v) => { c.brain.hiddenLayers = new Array<number>(v).fill(c.brain.hiddenLayers[0] ?? defaultNeurons); }),
   num("neurons", (c) => c.brain.hiddenLayers[0] ?? defaultNeurons, (c, v) => { c.brain.hiddenLayers.fill(v); }),
+  num("memory", (c) => c.brain.memory, (c, v) => { c.brain.memory = v; }),
   num("popSize", (c) => c.population.size, (c, v) => { c.population.size = v; }),
   num("mutationRate", (c) => c.ga.mutationRate, (c, v) => { c.ga.mutationRate = v; }),
   choice("selection", SELECTION_OPTIONS, (c) => c.ga.selection, (c, v) => { c.ga.selection = v; }),

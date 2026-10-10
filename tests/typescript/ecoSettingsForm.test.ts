@@ -59,6 +59,7 @@ describe("Ecosystem settings form", () => {
     c.eco.birthCooldown = 4;
     c.eco.collisions = false;
     c.brain.hiddenLayers = [12, 12, 12];
+    c.brain.memory = 0.75;
     c.mutation.std = 0.45;
     fillEcoForm(c);
     expect(readEcoConfig()).toEqual(c);

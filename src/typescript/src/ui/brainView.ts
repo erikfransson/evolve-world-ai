@@ -1,5 +1,5 @@
 import type { Brain } from "../sim/brain.ts";
-import { EXTRA_INPUTS, FEAT_CREATURE, FEAT_FOOD, FEAT_POISON, INPUT_EXTRA_LABELS, OUTPUT_LABELS, RAY_FEATURE_LABELS } from "../sim/sensors.ts";
+import { EXTRA_INPUTS, FEAT_CREATURE, FEAT_FOOD, FEAT_POISON, INPUT_EXTRA_LABELS, OUTPUT_LABELS, OUTPUT_SIZE, RAY_FEATURE_LABELS } from "../sim/sensors.ts";
 import type { InputLayout } from "../sim/sensors.ts";
 import { fitCanvas } from "./canvas.ts";
 
@@ -34,6 +34,15 @@ const MARGIN_Y = 6;
 const OUT_RADIUS = 8;
 const OUT_PITCH = 36;
 const GAUGE_GAP = 3;
+const MEM_GAP = 6; // from the extras' labels to the first memory row
+const MEM_LETTER_H = 11; // band for the S and L letters above the memory targets
+const MEM_OUT_PITCH = 10;
+const MEM_OUT_RADIUS = 3.4;
+const MEM_OUT_DX = 6; // short targets left of the output column, long ones right
+// Memory nodes per kind (0 short, 1 long): amber and violet tints for the base fill, ring and labels.
+const MEM_BASE = ["#33301a", "#27243f"];
+const MEM_RING = ["#a88a3c", "#7766b8"];
+const MEM_TEXT = ["#e9c46a", "#a99cf0"];
 const FONT_FAMILY = 'system-ui, -apple-system, "Segoe UI", sans-serif';
 const ROW_FONT = `500 10px ${FONT_FAMILY}`;
 const SMALL_FONT = `9px ${FONT_FAMILY}`;
@@ -77,18 +86,35 @@ export interface Layout {
   headerY: number;
   extraLabelY: number;
   outLabelX: number;
+  memoryShort: number;
+  memoryAt: number; // input index of the first memory unit
+  memoryRows: { y: number; long: boolean }[]; // input rows of memory units, for their labels
+  memoryOutY: number; // y of the S and L letters above the memory targets
 }
 
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
 
-// The input layer is drawn as one row per ray with one column per ray feature, then a row of the extra inputs.
-export function buildLayout(ctx: CanvasRenderingContext2D, sizes: readonly number[], features: number, w: number, h: number): Layout {
+// Memory unit k of a brain with memoryShort short units: 0 short, 1 long.
+const memoryKind = (k: number, memoryShort: number): number => (k < memoryShort ? 0 : 1);
+
+// The input layer is drawn as one row per ray with one column per ray feature, a row of the extra inputs,
+// then rows of short and of long memory units. Outputs: turn and thrust, with the memory targets in two short columns below.
+// memoryShort defaults to the larger half of the memory units, as memoryUnits splits them.
+export function buildLayout(ctx: CanvasRenderingContext2D, sizes: readonly number[], features: number, w: number, h: number, memoryShort?: number): Layout {
   const nIn = sizes[0]!;
-  const rays = (nIn - EXTRA_INPUTS) / features;
   const cols = sizes.length;
-  const pitch = clamp((h - 2 * MARGIN_Y - HEADER_H - EXTRA_BELOW - 4) / (rays + 1), 1, ROW_MAX);
+  const memory = sizes[cols - 1]! - OUTPUT_SIZE;
+  const short = Math.min(memory, memoryShort ?? Math.ceil(memory / 2));
+  const long = memory - short;
+  const memoryAt = nIn - memory;
+  const rays = (memoryAt - EXTRA_INPUTS) / features;
+  const perRow = Math.max(features, EXTRA_INPUTS);
+  const shortRows = Math.ceil(short / perRow);
+  const memRows = shortRows + Math.ceil(long / perRow);
+  const memBelow = memRows > 0 ? MEM_GAP + IN_RADIUS : 0;
+  const pitch = clamp((h - 2 * MARGIN_Y - HEADER_H - EXTRA_BELOW - 4 - memBelow) / (rays + 1 + Math.max(0, memRows - 1)), 1, ROW_MAX);
   const extraGap = pitch + 4;
-  const blockH = HEADER_H + (rays - 1) * pitch + extraGap + EXTRA_BELOW;
+  const blockH = HEADER_H + (rays - 1) * pitch + extraGap + EXTRA_BELOW + (memRows > 0 ? MEM_GAP + (memRows - 1) * pitch + IN_RADIUS : 0);
   const top = (h - blockH) / 2;
   const row0 = top + HEADER_H;
 
@@ -109,6 +135,15 @@ export function buildLayout(ctx: CanvasRenderingContext2D, sizes: readonly numbe
     xIn[rays * features + k] = GRID_X + (features - EXTRA_INPUTS + k) * FEAT_DX;
     yIn[rays * features + k] = yExtra;
   }
+  const memoryRows: Layout["memoryRows"] = [];
+  const yMem0 = yExtra + EXTRA_BELOW + MEM_GAP;
+  for (let row = 0; row < memRows; row++) memoryRows.push({ y: yMem0 + row * pitch, long: row >= shortRows });
+  for (let k = 0; k < memory; k++) {
+    const long = memoryKind(k, short) === 1;
+    const idx = long ? k - short : k;
+    xIn[memoryAt + k] = GRID_X + (idx % perRow) * FEAT_DX;
+    yIn[memoryAt + k] = yMem0 + ((long ? shortRows : 0) + Math.floor(idx / perRow)) * pitch;
+  }
   xs.push(xIn);
   ys.push(yIn);
   radius[0] = IN_RADIUS;
@@ -120,23 +155,47 @@ export function buildLayout(ctx: CanvasRenderingContext2D, sizes: readonly numbe
   const outX = outLabelX - 6 - GAUGE_GAP - 1 - OUT_RADIUS;
   const gridRight = GRID_X + (features - 1) * FEAT_DX;
 
-  for (let c = 1; c < cols; c++) {
+  for (let c = 1; c < cols - 1; c++) {
     const n = sizes[c]!;
-    const last = c === cols - 1;
     const x = gridRight + ((outX - gridRight) * c) / (cols - 1);
-    const pitchC = last ? OUT_PITCH : Math.min(13, (h - 16) / Math.max(1, n - 1));
+    const pitchC = Math.min(13, (h - 16) / Math.max(1, n - 1));
     const y = new Float32Array(n);
     const t = h / 2 - ((n - 1) * pitchC) / 2;
     for (let i = 0; i < n; i++) y[i] = t + i * pitchC;
     xs.push(new Float32Array(n).fill(x));
     ys.push(y);
-    radius[c] = last ? OUT_RADIUS : clamp(0.36 * pitchC, 2, 4.8);
+    radius[c] = clamp(0.36 * pitchC, 2, 4.8);
   }
-  return { sizes: sizes.slice(), features, w, h, xs, ys, radius, pitch, rays, headerY: top + 3, extraLabelY: yExtra + IN_RADIUS + 7, outLabelX };
+
+  // Outputs: turn and thrust, then the memory targets in a short and a long column under them.
+  const nOut = sizes[cols - 1]!;
+  const xOut = new Float32Array(nOut).fill(outX);
+  const yOut = new Float32Array(nOut);
+  const memDeep = Math.max(short, long);
+  const outPitch = memDeep > 0 ? Math.min(OUT_PITCH, 30) : OUT_PITCH;
+  const memTop = OUT_RADIUS + GAUGE_GAP + MEM_LETTER_H; // from the thrust centre to the first target
+  const memPitch = memDeep > 0 ? clamp((h - 2 * MARGIN_Y - 2 * (OUT_RADIUS + GAUGE_GAP) - outPitch - memTop) / memDeep, 4, MEM_OUT_PITCH) : 0;
+  const outH = outPitch + (memDeep > 0 ? memTop + (memDeep - 1) * memPitch + MEM_OUT_RADIUS - OUT_RADIUS - GAUGE_GAP : 0);
+  const yTurn = h / 2 - outH / 2;
+  yOut[0] = yTurn;
+  yOut[1] = yTurn + outPitch;
+  for (let k = 0; k < memory; k++) {
+    const long = memoryKind(k, short) === 1;
+    xOut[OUTPUT_SIZE + k] = outX + (long ? MEM_OUT_DX : -MEM_OUT_DX);
+    yOut[OUTPUT_SIZE + k] = yOut[1] + memTop + (long ? k - short : k) * memPitch;
+  }
+  xs.push(xOut);
+  ys.push(yOut);
+  radius[cols - 1] = OUT_RADIUS;
+  return {
+    sizes: sizes.slice(), features, w, h, xs, ys, radius, pitch, rays, headerY: top + 3, extraLabelY: yExtra + IN_RADIUS + 7, outLabelX,
+    memoryShort: short, memoryAt, memoryRows, memoryOutY: yOut[1] + OUT_RADIUS + GAUGE_GAP + MEM_LETTER_H / 2 - 1,
+  };
 }
 
-function fits(layout: Layout | null, sizes: readonly number[], features: number, w: number, h: number): layout is Layout {
+function fits(layout: Layout | null, sizes: readonly number[], features: number, w: number, h: number, memoryShort: number | undefined): layout is Layout {
   if (layout === null || layout.features !== features || layout.w !== w || layout.h !== h || layout.sizes.length !== sizes.length) return false;
+  if (memoryShort !== undefined && layout.memoryShort !== Math.min(memoryShort, sizes[sizes.length - 1]! - OUTPUT_SIZE)) return false;
   for (let i = 0; i < sizes.length; i++) if (layout.sizes[i] !== sizes[i]) return false;
   return true;
 }
@@ -158,8 +217,8 @@ export class BrainView {
     this.ctx = canvas.getContext("2d")!;
   }
 
-  // layout says what the input columns mean; the default is the four ray features of Trials.
-  draw(brain: Brain, alive = true, layout: Pick<InputLayout, "rayFeatureLabels"> = TRIALS_LAYOUT): void {
+  // layout says what the input columns mean, the default is the four ray features of Trials; memoryShort splits the memory units.
+  draw(brain: Brain, alive = true, layout: Pick<InputLayout, "rayFeatureLabels"> & Partial<Pick<InputLayout, "memoryShort">> = TRIALS_LAYOUT): void {
     const { canvas, ctx } = this;
     const cssW = canvas.clientWidth;
     const cssH = canvas.clientHeight;
@@ -170,7 +229,7 @@ export class BrainView {
 
     const sizes = brain.sizes;
     const labels = layout.rayFeatureLabels;
-    if (!fits(this.layout, sizes, labels.length, cssW, cssH)) this.layout = buildLayout(ctx, sizes, labels.length, cssW, cssH);
+    if (!fits(this.layout, sizes, labels.length, cssW, cssH, layout.memoryShort)) this.layout = buildLayout(ctx, sizes, labels.length, cssW, cssH, layout.memoryShort);
     const placed = this.layout!;
     const acts = brain.layerActivations();
 
@@ -270,29 +329,32 @@ export class BrainView {
     ctx.shadowColor = "transparent";
   }
 
-  private drawNodes({ xs, ys, radius }: Layout, acts: readonly Float32Array[]): void {
+  // Memory nodes keep their tinted base and ring; activity fills every node alike.
+  private drawNodes({ xs, ys, radius, memoryAt, memoryShort }: Layout, acts: readonly Float32Array[]): void {
     const ctx = this.ctx;
     ctx.lineWidth = 1;
+    const last = ys.length - 1;
     for (let c = 0; c < ys.length; c++) {
-      const r = radius[c]!;
       const act = acts[c]!;
       const y = ys[c]!;
       const x = xs[c]!;
+      const firstMemory = c === 0 ? memoryAt : c === last ? OUTPUT_SIZE : y.length;
       for (let i = 0; i < y.length; i++) {
-        const v = act[i]!;
+        const v = act[i] ?? 0; // a caller's output buffer may hold only turn and thrust
         const a = v < -1 ? -1 : v > 1 ? 1 : v;
         const mag = a < 0 ? -a : a;
         const sign = a < 0 ? 0 : 1;
+        const kind = i < firstMemory ? -1 : memoryKind(i - firstMemory, memoryShort);
         ctx.beginPath();
-        ctx.arc(x[i]!, y[i]!, r, 0, Math.PI * 2);
-        ctx.fillStyle = c === 0 && a === 0 ? NODE_EMPTY : NODE_BASE;
+        ctx.arc(x[i]!, y[i]!, kind >= 0 && c === last ? MEM_OUT_RADIUS : radius[c]!, 0, Math.PI * 2);
+        ctx.fillStyle = kind >= 0 ? MEM_BASE[kind]! : c === 0 && a === 0 ? NODE_EMPTY : NODE_BASE;
         ctx.fill();
         const step = Math.round(mag * PALETTE_STEPS);
         if (step > 0) {
           ctx.fillStyle = HUE_FILL[sign]![step]!;
           ctx.fill();
         }
-        ctx.strokeStyle = mag > 0.5 ? HUE_RING[sign]! : RING;
+        ctx.strokeStyle = kind >= 0 ? MEM_RING[kind]! : mag > 0.5 ? HUE_RING[sign]! : RING;
         ctx.stroke();
       }
     }
@@ -306,7 +368,7 @@ export class BrainView {
     const act = acts[c]!;
     ctx.lineWidth = 2;
     ctx.lineCap = "round";
-    for (let i = 0; i < act.length; i++) {
+    for (let i = 0; i < act.length && i < OUTPUT_SIZE; i++) {
       const x = xs[c]![i]!;
       const y = ys[c]![i]!;
       ctx.strokeStyle = TRACK;
@@ -323,7 +385,7 @@ export class BrainView {
     }
   }
 
-  private drawLabels({ xs, ys, pitch, rays, features, headerY, extraLabelY, outLabelX }: Layout, labels: readonly string[], acts: readonly Float32Array[]): void {
+  private drawLabels({ xs, ys, pitch, rays, features, headerY, extraLabelY, outLabelX, memoryRows, memoryShort, memoryOutY }: Layout, labels: readonly string[], acts: readonly Float32Array[]): void {
     const ctx = this.ctx;
     const last = ys.length - 1;
     const yIn = ys[0]!;
@@ -361,11 +423,41 @@ export class BrainView {
       }
     }
 
+    // Memory input rows in their tints; the extras already use S and L.
+    for (let r = 0; r < memoryRows.length; r++) {
+      const row = memoryRows[r]!;
+      if (r > 0 && memoryRows[r - 1]!.long === row.long) continue; // one label per kind
+      ctx.fillStyle = MEM_TEXT[row.long ? 1 : 0]!;
+      ctx.fillText(row.long ? "long" : "short", lx, row.y);
+    }
+
     ctx.textAlign = "left";
     ctx.fillStyle = TEXT_COLOR;
     ctx.font = OUT_FONT;
     const yOut = ys[last]!;
     for (let k = 0; k < yOut.length && k < OUTPUT_LABELS.length; k++) ctx.fillText(OUTPUT_LABELS[k]!, outLabelX, yOut[k]!);
+
+    // Memory targets: S and L over their columns, and a group label beside them.
+    const memory = yOut.length - OUTPUT_SIZE;
+    if (memory > 0) {
+      const outX = xs[last]![0]!;
+      ctx.font = SMALL_FONT;
+      ctx.textAlign = "center";
+      if (memoryShort > 0) {
+        ctx.fillStyle = MEM_TEXT[0]!;
+        ctx.fillText("S", outX - MEM_OUT_DX, memoryOutY);
+      }
+      if (memory > memoryShort) {
+        ctx.fillStyle = MEM_TEXT[1]!;
+        ctx.fillText("L", outX + MEM_OUT_DX, memoryOutY);
+      }
+      ctx.textAlign = "left";
+      ctx.fillStyle = LABEL_COLOR;
+      ctx.font = ROW_FONT;
+      let deepest = 0;
+      for (let k = OUTPUT_SIZE; k < yOut.length; k++) deepest = Math.max(deepest, yOut[k]!);
+      ctx.fillText("memory", outLabelX, (yOut[OUTPUT_SIZE]! + deepest) / 2);
+    }
 
     this.drawKey();
   }
