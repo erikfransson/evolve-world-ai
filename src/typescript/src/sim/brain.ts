@@ -29,6 +29,13 @@ export function randomGenome(sizes: number[], rng: Rng): Genome {
   return genome;
 }
 
+// Padé (7,6) tanh, clamped to [-1, 1]; max abs error about 1e-4.
+export function fastTanh(x: number): number {
+  const x2 = x * x;
+  const r = (x * (135135 + x2 * (17325 + x2 * (378 + x2)))) / (135135 + x2 * (62370 + x2 * (3150 + 28 * x2)));
+  return r > 1 ? 1 : r < -1 ? -1 : r;
+}
+
 export class Brain {
   readonly sizes: readonly number[];
   // Per layer views into the genome: weights row-major [out][in], biases [out].
@@ -104,7 +111,7 @@ export class Brain {
       let sum = b[j];
       const row = j * nIn;
       for (let k = 0; k < n; k++) sum += w[row + idx[k]] * val[k];
-      dst[j] = Math.tanh(sum);
+      dst[j] = fastTanh(sum);
     }
   }
 
@@ -117,7 +124,7 @@ export class Brain {
       let sum = b[j];
       const row = j * nIn;
       for (let i = 0; i < nIn; i++) sum += w[row + i] * src[i];
-      dst[j] = Math.tanh(sum);
+      dst[j] = fastTanh(sum);
     }
   }
 }
