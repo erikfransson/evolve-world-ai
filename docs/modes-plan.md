@@ -28,7 +28,7 @@ Vite multi-page build, so each mode has its own `index.html` and entry script.
 - If every creature dies the run stops and offers Reseed or Back to menu.
 - Stats: population, births, deaths, food and poison counts, and a population graph over time.
 - Population cap 10000 (births wait at the cap); food scarcity should keep it well below.
-- Default world 4000 x 2500, notably bigger than Trials; the view zooms and pans over the whole world.
+- Default world 8000 x 5000 (25x the Trials area), founders at random positions with random colours, notably bigger than Trials; the view zooms and pans over the whole world.
 - Click a creature to follow it zoomed in (rays, brain, energy, age, children, lineage depth); a World view button zooms back out.
 - Speed buttons 1x to 32x plus Max (simulate as fast as possible, draw a few frames per second), pause and resume.
 - Brain inputs in both modes gain sideways speed; Ecosystem rays add a creature flag and the seen creature's energy.
@@ -42,4 +42,4 @@ Contract: `EcoConfig` in `src/sim/ecoConfig.ts`, built on `EngineConfig` (the sh
 | E2   | Camera: zoom at cursor, drag and pinch pan, fit world, smooth follow                              | -          |
 | E3   | Page shell: settings form, controls, stat tiles, cards, extinction overlay                        | contract   |
 | E4   | Worker, snapshot protocol, rendering with camera, selection and follow, brain panel, graph        | E1 to E3   |
-| E5   | Performance: parallel workers and faster kernels, from the exploration reports                    | E1         |
+| E5   | Performance: worker pool (postMessage), shared memory when cross-origin isolated (coi-serviceworker), WebAssembly SIMD brain and creature rays | E4 |

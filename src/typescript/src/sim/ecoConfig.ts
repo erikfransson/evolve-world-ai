@@ -25,13 +25,13 @@ export interface EcoConfig extends EngineConfig {
 export const DEFAULT_ECO_CONFIG: EcoConfig = {
   seed: 1,
   dt: DEFAULT_CONFIG.dt,
-  world: { ...DEFAULT_CONFIG.world, width: 4000, height: 2500, foodDensity: 0.5, poisonDensity: 0.05, respawn: false },
+  world: { ...DEFAULT_CONFIG.world, width: 8000, height: 5000, foodDensity: 0.5, poisonDensity: 0.05, respawn: false },
   creature: { ...DEFAULT_CONFIG.creature, startEnergy: 50, seesCreatures: true },
   brain: { hiddenLayers: [...DEFAULT_CONFIG.brain.hiddenLayers] },
   eco: {
-    initialPopulation: 300,
+    initialPopulation: 500,
     maxPopulation: 10000,
-    foodRegrow: 0.05, // 50 items/s on the default world, about 1000 energy/s, so roughly 300 creatures at equilibrium
+    foodRegrow: 0.05, // 200 items/s on the default world, about 4000 energy/s, so roughly 1200 creatures at equilibrium
     foodMaxDensity: 0.7,
     poisonRegrow: 0.005,
     poisonMaxDensity: 0.1,

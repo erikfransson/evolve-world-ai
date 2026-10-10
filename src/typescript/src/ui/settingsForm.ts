@@ -6,7 +6,7 @@ interface Field {
   write(c: SimConfig): void; // config into form element
 }
 
-function el<T extends HTMLElement>(id: string, kind: new () => T): T {
+export function el<T extends HTMLElement>(id: string, kind: new () => T): T {
   const e = document.getElementById(id);
   if (!(e instanceof kind)) throw new Error(`element #${id} is not a ${kind.name}`);
   return e;
@@ -53,11 +53,14 @@ const buildFields = (): readonly Field[] => [
 ];
 
 // Value badge formats, chosen by the output element's data-fmt.
-const FORMATS: Record<string, (v: number) => string> = {
+export const FORMATS: Record<string, (v: number) => string> = {
   size: (v) => `${v}`,
   deg: (v) => `${v}°`,
   pct: (v) => `${Math.round(v * 100)}%`,
   dens: (v) => v.toFixed(2),
+  dens3: (v) => v.toFixed(3),
+  sec: (v) => `${v} s`,
+  speed: (v) => `${v}/s`,
 };
 
 let fields: readonly Field[] | null = null;
@@ -70,7 +73,7 @@ export function readConfig(): SimConfig {
 }
 
 // Filled slider track and value badge.
-function syncSlider(input: HTMLInputElement): void {
+export function syncSlider(input: HTMLInputElement): void {
   const lo = Number(input.min);
   const hi = Number(input.max);
   input.style.setProperty("--p", `${((input.valueAsNumber - lo) / (hi - lo)) * 100}%`);

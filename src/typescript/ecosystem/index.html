@@ -7,7 +7,6 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="../src/base.css" />
   </head>
   <body>
     <header class="banner">
@@ -17,11 +16,130 @@
         <path d="M19 16 L29 8 M19 16 L30 16 M19 16 L29 24" />
       </svg>
       <h1>Ecosystem</h1>
+      <span class="tagline">one shared world, no generations</span>
     </header>
-    <main class="stub">
-      <h2>Ecosystem: coming next</h2>
-      <p>Many creatures share one world, compete for food and pass on their brains.</p>
-      <a class="btn" href="../">Back to the start page</a>
+    <main class="layout">
+      <aside class="panel">
+        <section class="run">
+          <div class="buttons">
+            <button id="start" class="primary" type="button">Start</button>
+            <button id="pause" class="secondary" type="button" disabled>Pause</button>
+            <button id="reset" class="secondary" type="button" disabled>Reset</button>
+          </div>
+        </section>
+
+        <dl class="stats">
+          <div class="tile accent"><dt>Population<span class="tip" tabindex="0" role="img" aria-label="Creatures alive now." data-tip="Creatures alive now.">ⓘ</span></dt><dd id="statPop">-</dd></div>
+          <div class="tile"><dt>Births<span class="tip" tabindex="0" role="img" aria-label="Creatures born since the start." data-tip="Creatures born since the start.">ⓘ</span></dt><dd id="statBirths">-</dd></div>
+          <div class="tile"><dt>Deaths<span class="tip" tabindex="0" role="img" aria-label="Creatures that starved, ate poison or otherwise died since the start." data-tip="Creatures that starved, ate poison or otherwise died since the start.">ⓘ</span></dt><dd id="statDeaths">-</dd></div>
+          <div class="tile"><dt>Food items<span class="tip" tabindex="0" role="img" aria-label="Pieces of food lying in the world now." data-tip="Pieces of food lying in the world now.">ⓘ</span></dt><dd id="statFood">-</dd></div>
+          <div class="tile"><dt>Poison items<span class="tip" tabindex="0" role="img" aria-label="Pieces of poison lying in the world now." data-tip="Pieces of poison lying in the world now.">ⓘ</span></dt><dd id="statPoison">-</dd></div>
+          <div class="tile"><dt>Simulated time<span class="tip" tabindex="0" role="img" aria-label="How long the world has run, in simulated time." data-tip="How long the world has run, in simulated time.">ⓘ</span></dt><dd id="statTime">-</dd></div>
+          <div class="tile"><dt>Oldest lineage<span class="tip" tabindex="0" role="img" aria-label="Generations in the longest unbroken family line alive now. A founder is depth 0." data-tip="Generations in the longest unbroken family line alive now. A founder is depth 0.">ⓘ</span></dt><dd id="statDepth">-</dd></div>
+          <div class="tile"><dt>Speed<span class="tip" tabindex="0" role="img" aria-label="Simulated seconds per real second the computer is achieving. It can be lower than the speed asked for." data-tip="Simulated seconds per real second the computer is achieving. It can be lower than the speed asked for.">ⓘ</span></dt><dd id="statSpeed">-</dd></div>
+        </dl>
+
+        <section class="card">
+          <h2>View</h2>
+          <div class="toggle"><span class="lbl"><label class="name" for="rays">Show rays</label><span class="tip" tabindex="0" role="img" aria-label="Draw the vision rays of the selected creature, coloured by what they hit." data-tip="Draw the vision rays of the selected creature, coloured by what they hit.">ⓘ</span></span><input id="rays" type="checkbox" role="switch" checked /></div>
+          <div class="field">
+            <div class="row"><span class="lbl"><span class="name">Speed</span><span class="tip" tabindex="0" role="img" aria-label="How fast the world runs compared with real time. 1× is real time. Max simulates as fast as possible and draws only a few frames per second." data-tip="How fast the world runs compared with real time. 1× is real time. Max simulates as fast as possible and draws only a few frames per second.">ⓘ</span></span><span class="hint">× real time</span></div>
+            <div class="seg" role="radiogroup" aria-label="Speed">
+              <label><input type="radio" name="speed" value="1" /><span>1×</span></label>
+              <label><input type="radio" name="speed" value="2" /><span>2×</span></label>
+              <label><input type="radio" name="speed" value="4" checked /><span>4×</span></label>
+              <label><input type="radio" name="speed" value="8" /><span>8×</span></label>
+              <label><input type="radio" name="speed" value="16" /><span>16×</span></label>
+              <label><input type="radio" name="speed" value="32" /><span>32×</span></label>
+              <label><input type="radio" name="speed" value="max" /><span>Max</span></label>
+            </div>
+          </div>
+        </section>
+
+        <form id="setup" autocomplete="off">
+          <div class="group-head">
+            <h2>Settings</h2>
+            <span class="lock-note">Locked while running</span>
+          </div>
+          <fieldset id="settings"></fieldset>
+        </form>
+      </aside>
+      <section class="stage">
+        <canvas id="view"></canvas>
+        <div id="note" class="note"></div>
+        <div class="zoom" role="group" aria-label="Zoom">
+          <button id="zoomIn" type="button" aria-label="Zoom in" title="Zoom in">+</button>
+          <button id="zoomOut" type="button" aria-label="Zoom out" title="Zoom out">−</button>
+          <button id="zoomFit" type="button" aria-label="Fit world to view" title="Fit world to view">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" /></svg>
+          </button>
+        </div>
+        <div class="ov-stack">
+          <section id="legendCard" class="ov ov-legend">
+            <header class="ov-head">
+              <h2>Legend</h2>
+              <button class="ov-toggle" type="button" aria-expanded="true" aria-label="Minimise legend" title="Minimise">−</button>
+            </header>
+            <ul class="ov-body legend">
+              <li><svg viewBox="0 0 20 20" aria-hidden="true"><clipPath id="swClip"><circle cx="10" cy="10" r="8" /></clipPath><circle cx="10" cy="10" r="8" fill="rgba(15, 23, 20, 0.85)" /><rect x="0" y="8.4" width="20" height="12" fill="hsl(200, 75%, 58%)" clip-path="url(#swClip)" /><circle cx="10" cy="10" r="8" fill="none" stroke="hsl(200, 75%, 58%)" stroke-width="1.6" /></svg>Creature (fill = energy)</li>
+              <li><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8" fill="none" stroke="#eef5f1" stroke-width="1.6" stroke-dasharray="3 2.4" /></svg>Selected creature</li>
+              <li><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="5" fill="#4ade80" /></svg>Food</li>
+              <li><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="5" fill="#e040fb" /></svg>Poison</li>
+            </ul>
+          </section>
+          <section id="selectedCard" class="ov ov-selected" hidden>
+            <header class="ov-head">
+              <h2>Selected creature</h2>
+              <button class="ov-toggle" type="button" aria-expanded="true" aria-label="Minimise selected creature" title="Minimise">−</button>
+            </header>
+            <div class="ov-body sel-body">
+              <div class="sel-energy">
+                <div class="meter" role="meter" id="selMeter" aria-label="Energy" aria-valuemin="0" aria-valuenow="0"><span id="selFill"></span></div>
+                <span id="selEnergy" class="sel-energy-val">-</span>
+              </div>
+              <dl class="sel-facts">
+                <div><dt>Age</dt><dd id="selAge">-</dd></div>
+                <div><dt>Children</dt><dd id="selChildren">-</dd></div>
+                <div><dt>Lineage depth</dt><dd id="selDepth">-</dd></div>
+                <div><dt>Id</dt><dd id="selId">-</dd></div>
+              </dl>
+              <div class="sel-actions">
+                <button id="follow" class="secondary" type="button" aria-pressed="false" title="Keep the view centred on this creature">Follow</button>
+                <button id="worldView" class="secondary" type="button" title="Zoom out to the whole world">World view</button>
+              </div>
+            </div>
+          </section>
+          <section id="brainCard" class="ov ov-brain" hidden>
+            <header class="ov-head">
+              <h2>Brain</h2>
+              <button class="ov-toggle" type="button" aria-expanded="true" aria-label="Minimise brain" title="Minimise">−</button>
+            </header>
+            <div class="ov-body"><canvas id="brainView"></canvas></div>
+          </section>
+          <section id="graphCard" class="ov ov-graph">
+            <header class="ov-head">
+              <h2>Population</h2>
+              <button class="ov-toggle" type="button" aria-expanded="true" aria-label="Minimise population" title="Minimise">−</button>
+            </header>
+            <div class="ov-body">
+              <canvas id="graphView"></canvas>
+              <div class="fit-foot"><span class="key pop">creatures</span><span class="key food">food</span><span class="fit-note">simulated time</span></div>
+            </div>
+          </section>
+        </div>
+        <div id="extinct" class="scrim" hidden>
+          <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="extinctTitle">
+            <h2 id="extinctTitle">Extinct</h2>
+            <p>Every creature has died. Reseed starts again with new founders and a new seed, or go back to the start page.</p>
+            <div class="dialog-actions">
+              <button id="reseed" class="primary" type="button">Reseed</button>
+              <a class="btn secondary" href="../">Back to menu</a>
+            </div>
+          </div>
+        </div>
+      </section>
     </main>
+    <script type="module" src="../src/ecosystem.ts"></script>
+    <div id="tooltip" class="tooltip" role="tooltip" hidden></div>
   </body>
 </html>
