@@ -9,6 +9,15 @@ import { fillForm, readConfig } from "../../src/typescript/src/ui/settingsForm.t
 
 const page = (name: string): string => readFileSync(resolve(import.meta.dirname, `../../src/typescript/${name}/index.html`), "utf8").replace(/^[\s\S]*<body>|<\/body>[\s\S]*$/g, "").replace(/<script[\s\S]*?<\/script>/g, "");
 
+// Browsers snap a range to min + n * step, which happy-dom does not, so check that every default sits on a step.
+function expectRangesOnStep(): void {
+  for (const r of document.querySelectorAll<HTMLInputElement>('input[type="range"]')) {
+    const steps = (Number(r.value) - Number(r.min)) / Number(r.step);
+    expect(Math.abs(steps - Math.round(steps)), r.id).toBeLessThan(1e-6);
+    expect(Number(r.value), r.id).toBeLessThanOrEqual(Number(r.max));
+  }
+}
+
 describe("Trials settings form", () => {
   beforeEach(() => {
     document.body.innerHTML = page("trials");
@@ -25,6 +34,7 @@ describe("Trials settings form", () => {
     expect(readConfig()).toEqual(c);
     fillForm(DEFAULT_CONFIG);
     expect(readConfig()).toEqual(DEFAULT_CONFIG);
+    expectRangesOnStep();
   });
 });
 
@@ -37,6 +47,7 @@ describe("Ecosystem settings form", () => {
   it("reads back the defaults", () => {
     fillEcoForm(DEFAULT_ECO_CONFIG);
     expect(readEcoConfig()).toEqual(DEFAULT_ECO_CONFIG);
+    expectRangesOnStep();
   });
 
   it("reads back a changed config", () => {
