@@ -1,19 +1,22 @@
 import type { SimConfig } from "./config.ts";
 import { runEpisode } from "./episode.ts";
 import type { Population } from "./population.ts";
-import { FrameRecorder, assembleFrames } from "./trajectory.ts";
-import type { ChunkFrames, RecordPlan } from "./trajectory.ts";
+import { FrameRecorder, TopFrames } from "./trajectory.ts";
+import type { RecordOptions, Trajectories } from "./trajectory.ts";
+
+export interface Evaluation {
+  fitness: Float64Array;
+  frames?: Trajectories; // when recording: the fittest creatures after the best, fittest first
+}
 
 // Scores a whole population for one generation. Implementations must return identical fitness for identical input.
 export interface Evaluator {
-  evaluate(population: Population, layoutSeed: number): Promise<Float64Array>;
-  // Frames of the plan's creatures from the last evaluate(), laid out by plan.offsets. Needs an evaluator that records.
-  frames(plan: RecordPlan): Float32Array;
+  evaluate(population: Population, layoutSeed: number, record?: RecordOptions): Promise<Evaluation>;
   close(): void;
 }
 
 // Fitness of creatures [start, end) into out[0..end-start). The genomes buffer holds creatures from index genomeOffset on.
-// A recorder, when given, also collects every creature's frames.
+// With record, also returns the frames of each of these creatures.
 export function evaluateRange(
   config: SimConfig,
   genomes: Float32Array,
@@ -23,35 +26,35 @@ export function evaluateRange(
   end: number,
   out: Float64Array,
   genomeOffset = 0,
-  recorder?: FrameRecorder,
-): void {
+  record?: RecordOptions,
+): Trajectories | undefined {
+  const recorder = record ? new FrameRecorder(end - start, record.maxFrames) : undefined;
   for (let i = start; i < end; i++) {
     const at = (i - genomeOffset) * genomeLength;
     out[i - start] = runEpisode(config, genomes.subarray(at, at + genomeLength), layoutSeed, i, recorder);
   }
+  return recorder?.result();
 }
+
+const SERIAL_CHUNK = 64; // creatures evaluated between two merges of recorded frames
 
 export class SerialEvaluator implements Evaluator {
   private readonly config: SimConfig;
-  private readonly recordFrames: boolean;
-  private recorded: { size: number; frames: ChunkFrames } | null = null;
 
-  constructor(config: SimConfig, recordFrames = false) {
+  constructor(config: SimConfig) {
     this.config = config;
-    this.recordFrames = recordFrames;
   }
 
-  evaluate(population: Population, layoutSeed: number): Promise<Float64Array> {
+  evaluate(population: Population, layoutSeed: number, record?: RecordOptions): Promise<Evaluation> {
     const fitness = new Float64Array(population.size);
-    const recorder = this.recordFrames ? new FrameRecorder(population.size) : undefined;
-    evaluateRange(this.config, population.data, population.genomeLength, layoutSeed, 0, population.size, fitness, 0, recorder);
-    if (recorder) this.recorded = { size: population.size, frames: recorder.result() };
-    return Promise.resolve(fitness);
-  }
-
-  frames(plan: RecordPlan): Float32Array {
-    if (!this.recorded) throw new Error("no recorded generation");
-    return assembleFrames(plan, Math.max(1, this.recorded.size), [this.recorded.frames]);
+    const top = record ? new TopFrames(record) : undefined;
+    for (let start = 0; start < population.size; start += SERIAL_CHUNK) {
+      const end = Math.min(population.size, start + SERIAL_CHUNK);
+      const part = fitness.subarray(start, end);
+      const frames = evaluateRange(this.config, population.data, population.genomeLength, layoutSeed, start, end, part, 0, record);
+      if (top) top.add(start, part, frames!);
+    }
+    return Promise.resolve({ fitness, frames: top?.result() });
   }
 
   close(): void {}

@@ -1,8 +1,8 @@
 import type { SimConfig } from "../sim/config.ts";
 import { SerialEvaluator } from "../sim/evaluator.ts";
-import type { Evaluator } from "../sim/evaluator.ts";
+import type { Evaluation, Evaluator } from "../sim/evaluator.ts";
 import type { Population } from "../sim/population.ts";
-import type { RecordPlan } from "../sim/trajectory.ts";
+import type { RecordOptions } from "../sim/trajectory.ts";
 import type { PoolWorker } from "./evalPool.ts";
 import { PoolEvaluator, defaultThreads } from "./evalPool.ts";
 
@@ -19,37 +19,31 @@ function wrap(worker: Worker): PoolWorker {
 // e.g. because the browser cannot start nested workers. Later failures are real errors and propagate.
 class BrowserEvaluator implements Evaluator {
   private readonly config: SimConfig;
-  private readonly recordFrames: boolean;
   private pool: PoolEvaluator | null;
   private serial: SerialEvaluator | null = null;
   private started = false;
   private closed = false;
 
-  constructor(config: SimConfig, pool: PoolEvaluator, recordFrames: boolean) {
+  constructor(config: SimConfig, pool: PoolEvaluator) {
     this.config = config;
     this.pool = pool;
-    this.recordFrames = recordFrames;
   }
 
-  async evaluate(population: Population, layoutSeed: number): Promise<Float64Array> {
+  async evaluate(population: Population, layoutSeed: number, record?: RecordOptions): Promise<Evaluation> {
     const pool = this.pool;
-    if (!pool) return this.serial!.evaluate(population, layoutSeed);
+    if (!pool) return this.serial!.evaluate(population, layoutSeed, record);
     try {
-      const fitness = await pool.evaluate(population, layoutSeed);
+      const evaluation = await pool.evaluate(population, layoutSeed, record);
       this.started = true;
-      return fitness;
+      return evaluation;
     } catch (error) {
       if (this.started || this.closed) throw error;
       console.warn("Nested workers failed to start, evaluating serially:", error);
       pool.close();
       this.pool = null;
-      this.serial = new SerialEvaluator(this.config, this.recordFrames);
-      return this.serial.evaluate(population, layoutSeed);
+      this.serial = new SerialEvaluator(this.config);
+      return this.serial.evaluate(population, layoutSeed, record);
     }
-  }
-
-  frames(plan: RecordPlan): Float32Array {
-    return (this.pool ?? this.serial!).frames(plan);
   }
 
   close(): void {
@@ -59,8 +53,8 @@ class BrowserEvaluator implements Evaluator {
 }
 
 // Pool of nested dedicated workers, or the serial evaluator when one thread is wanted or workers cannot be spawned.
-export function createBrowserEvaluator(config: SimConfig, threads = defaultThreads(navigator.hardwareConcurrency || 2), recordFrames = false): Evaluator {
-  if (threads <= 1 || typeof Worker === "undefined") return new SerialEvaluator(config, recordFrames);
+export function createBrowserEvaluator(config: SimConfig, threads = defaultThreads(navigator.hardwareConcurrency || 2)): Evaluator {
+  if (threads <= 1 || typeof Worker === "undefined") return new SerialEvaluator(config);
   const workers: PoolWorker[] = [];
   try {
     for (let i = 0; i < threads; i++) {
@@ -69,7 +63,7 @@ export function createBrowserEvaluator(config: SimConfig, threads = defaultThrea
   } catch (error) {
     console.warn("Nested workers unavailable, evaluating serially:", error);
     for (const worker of workers) worker.terminate();
-    return new SerialEvaluator(config, recordFrames);
+    return new SerialEvaluator(config);
   }
-  return new BrowserEvaluator(config, new PoolEvaluator(config, workers, recordFrames), recordFrames);
+  return new BrowserEvaluator(config, new PoolEvaluator(config, workers));
 }

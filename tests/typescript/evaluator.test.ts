@@ -67,8 +67,8 @@ describe("PoolEvaluator error state", () => {
 
   it("evaluates through workers when nothing goes wrong", async () => {
     const pool = new PoolEvaluator(cfg, [new FakeWorker(true), new FakeWorker(true)]);
-    const fitness = await pool.evaluate(population, 5);
-    expect(Array.from(fitness)).toEqual(Array.from(await new SerialEvaluator(cfg).evaluate(population, 5)));
+    const { fitness } = await pool.evaluate(population, 5);
+    expect(Array.from(fitness)).toEqual(Array.from((await new SerialEvaluator(cfg).evaluate(population, 5)).fitness));
   });
 
   it("close() rejects the pending call, later calls and terminates the workers", async () => {
@@ -114,9 +114,9 @@ describe("browser evaluator", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const population = new Evolution(cfg).population;
     const evaluator = createBrowserEvaluator(cfg, 2);
-    const expected = await new SerialEvaluator(cfg).evaluate(population, 5);
-    expect(Array.from(await evaluator.evaluate(population, 5))).toEqual(Array.from(expected));
-    expect(Array.from(await evaluator.evaluate(population, 5))).toEqual(Array.from(expected));
+    const expected = (await new SerialEvaluator(cfg).evaluate(population, 5)).fitness;
+    expect(Array.from((await evaluator.evaluate(population, 5)).fitness)).toEqual(Array.from(expected));
+    expect(Array.from((await evaluator.evaluate(population, 5)).fitness)).toEqual(Array.from(expected));
     expect(warn).toHaveBeenCalledTimes(1);
     warn.mockRestore();
   });

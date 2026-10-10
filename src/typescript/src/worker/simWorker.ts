@@ -2,8 +2,6 @@ import type { GenerationMessage, InMessage, OutMessage } from "./protocol.ts";
 import { createBrowserEvaluator } from "./browserPool.ts";
 import type { Evaluator } from "../sim/evaluator.ts";
 import { Evolution } from "../sim/evolution.ts";
-import { planRecording } from "../sim/trajectory.ts";
-import type { Trajectories } from "../sim/trajectory.ts";
 
 let evolution: Evolution | null = null;
 let evaluator: Evaluator | null = null;
@@ -22,19 +20,15 @@ async function loop(): Promise<void> {
       const current = evolution;
       const pool = evaluator;
       let step;
-      let plan;
-      let frames;
       try {
-        step = await current.runGeneration(pool);
-        plan = planRecording(step.result.fitness, step.result.bestIndex, current.config.dt);
-        frames = pool.frames(plan);
+        step = await current.runGeneration(pool, {});
       } catch (error) {
         if (current !== evolution) continue; // restarted, the old pool was closed under us
         throw error;
       }
       if (current !== evolution) continue; // restarted while evaluating, drop the stale generation
       const { result, population } = step;
-      const trajectories: Trajectories = { offsets: plan.offsets, data: frames };
+      const trajectories = step.frames!; // recorded, since runGeneration got record options
       const msg: GenerationMessage = {
         type: "generation",
         result,
@@ -60,7 +54,7 @@ self.onmessage = (e: MessageEvent<InMessage>) => {
   if (msg.type === "start") {
     paused = false;
     evaluator?.close();
-    evaluator = createBrowserEvaluator(msg.config, undefined, true);
+    evaluator = createBrowserEvaluator(msg.config);
     evolution = new Evolution(msg.config);
     void loop();
   } else if (msg.type === "pause") {

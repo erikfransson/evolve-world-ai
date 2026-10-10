@@ -5,6 +5,7 @@ import type { Evaluator } from "./evaluator.ts";
 import { nextGeneration } from "./ga.ts";
 import { Population } from "./population.ts";
 import { createRng, deriveSeed } from "./rng.ts";
+import type { RecordOptions, Trajectories } from "./trajectory.ts";
 import type { GenerationResult } from "./types.ts";
 
 export class Evolution {
@@ -12,7 +13,7 @@ export class Evolution {
   population: Population;
   bestEver = 0;
 
-  readonly config: SimConfig;
+  private readonly config: SimConfig;
   private readonly serial: Evaluator;
 
   constructor(config: SimConfig) {
@@ -29,12 +30,16 @@ export class Evolution {
   }
 
   // Returns the evaluated population; this.population becomes its children. Pass a worker pool to evaluate in parallel.
-  async runGeneration(evaluator: Evaluator = this.serial): Promise<{ result: GenerationResult; population: Population }> {
+  // With record, also returns the frames of the fittest creatures after the best.
+  async runGeneration(
+    evaluator: Evaluator = this.serial,
+    record?: RecordOptions,
+  ): Promise<{ result: GenerationResult; population: Population; frames?: Trajectories }> {
     const layoutSeed = this.layoutSeedFor(this.generation);
     const population = this.population;
-    const fitness = await evaluator.evaluate(population, layoutSeed);
+    const { fitness, frames } = await evaluator.evaluate(population, layoutSeed, record);
     if (population !== this.population) throw new Error("population changed during evaluation");
-    return this.breed(layoutSeed, fitness);
+    return { ...this.breed(layoutSeed, fitness), frames };
   }
 
   private breed(layoutSeed: number, fitness: Float64Array): { result: GenerationResult; population: Population } {

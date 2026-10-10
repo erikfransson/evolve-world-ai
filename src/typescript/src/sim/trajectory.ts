@@ -1,53 +1,40 @@
 import type { CreatureState } from "./types.ts";
 
 export const MAX_TRAJECTORIES = 300; // fittest creatures besides the best that the replay plays back
+export const MAX_RECORDED_FRAMES = 9000; // per creature, 300 s at dt 1/30; a longer life holds its last recorded frame in the replay
 export const FRAME_FLOATS = 4; // x, y, heading, energy per frame
-const FRAME_SLACK = 2; // frames beyond fitness / dt: the initial frame and the dying step
 const FIRST_CAPACITY = 256; // frames reserved per creature up front, the buffer doubles when full
 
 // Paths of several creatures in one flat buffer, creature k at frames [offsets[k], offsets[k + 1]).
-// Frame f is the state after f steps; a path shorter than its slot repeats its last frame.
+// Frame f is the state after f steps; a path shorter than the creature's life was capped and the replay holds its last frame.
 export interface Trajectories {
   offsets: Uint32Array; // count + 1 frame indices
   data: Float32Array; // FRAME_FLOATS per frame
 }
 
-// Which creatures to take and where their frames go.
-export interface RecordPlan {
-  indices: Int32Array; // population indices, fittest first, the best excluded
-  offsets: Uint32Array; // frame offsets, one more than indices
-}
-
-// Frames of the creatures of one evaluation chunk, creature k at frames [k ? ends[k - 1] : 0, ends[k]).
-export interface ChunkFrames {
-  ends: Uint32Array;
-  frames: Float32Array;
-}
-
-// Fitness is ticksAlive * dt plus an energy term below dt, so fitness alone bounds the frames needed.
-export function planRecording(fitness: Float64Array, bestIndex: number, dt: number, maxCount = MAX_TRAJECTORIES): RecordPlan {
-  const order: number[] = [];
-  for (let i = 0; i < fitness.length; i++) if (i !== bestIndex) order.push(i);
-  order.sort((a, b) => fitness[b]! - fitness[a]!);
-  const indices = Int32Array.from(order.slice(0, maxCount));
-  const offsets = new Uint32Array(indices.length + 1);
-  for (let k = 0; k < indices.length; k++) offsets[k + 1] = offsets[k]! + Math.ceil(fitness[indices[k]!]! / dt) + FRAME_SLACK;
-  return { indices, offsets };
+// What to record during an evaluation, defaults as above.
+export interface RecordOptions {
+  maxOthers?: number; // creatures kept besides the best
+  maxFrames?: number; // frames kept per creature
 }
 
 // Collects the frames of consecutive creatures. push() allocates only when the buffer doubles.
 export class FrameRecorder {
   private buffer: Float32Array;
   private length = 0; // frames stored
+  private first = 0; // first frame of the current creature
   private done = 0; // creatures finished
-  private readonly ends: Uint32Array;
+  private readonly offsets: Uint32Array;
+  private readonly maxFrames: number;
 
-  constructor(creatures: number) {
+  constructor(creatures: number, maxFrames = MAX_RECORDED_FRAMES) {
     this.buffer = new Float32Array(creatures * FIRST_CAPACITY * FRAME_FLOATS);
-    this.ends = new Uint32Array(creatures);
+    this.offsets = new Uint32Array(creatures + 1);
+    this.maxFrames = Math.max(1, maxFrames);
   }
 
   push(s: CreatureState): void {
+    if (this.length - this.first >= this.maxFrames) return;
     let at = this.length * FRAME_FLOATS;
     if (at + FRAME_FLOATS > this.buffer.length) {
       const bigger = new Float32Array(Math.max(1, this.buffer.length) * 2);
@@ -62,33 +49,58 @@ export class FrameRecorder {
   }
 
   endCreature(): void {
-    this.ends[this.done++] = this.length;
+    this.offsets[++this.done] = this.length;
+    this.first = this.length;
   }
 
   // Trimmed copy of everything recorded, ready to transfer.
-  result(): ChunkFrames {
-    return { ends: this.ends, frames: this.buffer.slice(0, this.length * FRAME_FLOATS) };
+  result(): Trajectories {
+    return { offsets: this.offsets, data: this.buffer.slice(0, this.length * FRAME_FLOATS) };
   }
 }
 
-// Copies the planned creatures' frames out of the evaluation chunks (chunk c holds creatures [c * chunkSize, ...)).
-// A creature shorter than its slot holds its last frame.
-export function assembleFrames(plan: RecordPlan, chunkSize: number, chunks: readonly ChunkFrames[]): Float32Array {
-  const count = plan.indices.length;
-  const out = new Float32Array(plan.offsets[count]! * FRAME_FLOATS);
-  for (let k = 0; k < count; k++) {
-    const index = plan.indices[k]!;
-    const chunk = chunks[Math.floor(index / chunkSize)];
-    if (!chunk) throw new Error("no recorded frames for creature " + index);
-    const local = index % chunkSize;
-    const from = local > 0 ? chunk.ends[local - 1]! : 0;
-    const n = chunk.ends[local]! - from;
-    const start = plan.offsets[k]!;
-    const slot = plan.offsets[k + 1]! - start;
-    if (n > slot) throw new Error("trajectory slot too short");
-    const at = start * FRAME_FLOATS;
-    out.set(chunk.frames.subarray(from * FRAME_FLOATS, (from + n) * FRAME_FLOATS), at);
-    for (let f = n; f < slot; f++) out.copyWithin(at + f * FRAME_FLOATS, at + (f - 1) * FRAME_FLOATS, at + f * FRAME_FLOATS);
+interface Kept {
+  index: number;
+  fitness: number;
+  frames: Float32Array;
+}
+
+// Ranks by fitness, ties to the lower index (the order breed() picks the best in and the replay lists the others in).
+function ranksBefore(fitness: number, index: number, other: Kept): boolean {
+  return fitness > other.fitness || (fitness === other.fitness && index < other.index);
+}
+
+// Running top set of an evaluation: the best creature and the fittest others, with a copy of their frames only.
+export class TopFrames {
+  private readonly kept: Kept[] = []; // best first
+  private readonly capacity: number;
+
+  constructor(options: RecordOptions = {}) {
+    this.capacity = (options.maxOthers ?? MAX_TRAJECTORIES) + 1;
   }
-  return out;
+
+  // Takes in creatures start, start + 1, ... of one chunk; the chunk can be dropped afterwards.
+  add(start: number, fitness: Float64Array, chunk: Trajectories): void {
+    const kept = this.kept;
+    for (let k = 0; k < fitness.length; k++) {
+      const index = start + k;
+      const f = fitness[k]!;
+      if (kept.length === this.capacity && !ranksBefore(f, index, kept[kept.length - 1]!)) continue;
+      let at = kept.length;
+      while (at > 0 && ranksBefore(f, index, kept[at - 1]!)) at--;
+      const frames = chunk.data.slice(chunk.offsets[k]! * FRAME_FLOATS, chunk.offsets[k + 1]! * FRAME_FLOATS);
+      kept.splice(at, 0, { index, fitness: f, frames });
+      if (kept.length > this.capacity) kept.pop();
+    }
+  }
+
+  // The kept creatures without the best, fittest first.
+  result(): Trajectories {
+    const others = this.kept.slice(1);
+    const offsets = new Uint32Array(others.length + 1);
+    for (let k = 0; k < others.length; k++) offsets[k + 1] = offsets[k]! + others[k]!.frames.length / FRAME_FLOATS;
+    const data = new Float32Array(offsets[others.length]! * FRAME_FLOATS);
+    for (let k = 0; k < others.length; k++) data.set(others[k]!.frames, offsets[k]! * FRAME_FLOATS);
+    return { offsets, data };
+  }
 }
