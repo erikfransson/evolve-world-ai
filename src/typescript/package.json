@@ -9,7 +9,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "headless": "node src/headless.ts"
+    "headless": "node src/headless.ts",
+    "bench": "node src/bench.ts"
   },
   "devDependencies": {
     "@types/node": "^26.6.4",
