@@ -45,6 +45,9 @@ export interface SimConfig {
   };
 }
 
+// The parts every mode shares; population and ga belong to Trials.
+export type EngineConfig = Pick<SimConfig, "seed" | "dt" | "world" | "creature" | "brain">;
+
 export const DEFAULT_CONFIG: SimConfig = {
   seed: 1,
   dt: 1 / 30,
