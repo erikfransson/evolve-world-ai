@@ -158,4 +158,31 @@ describe("World", () => {
       expect(out.closeness).toBeCloseTo(ref.closeness, 9);
     }
   });
+
+  it.each([true, false])("a fan cast by a walking, eating creature matches brute force (respawn %s)", (respawn) => {
+    const c = cfg();
+    c.world.respawn = respawn;
+    c.world.foodDensity = 4;
+    const w = new World(c, testRng(21), testRng(22));
+    const rng = testRng(23);
+    const n = c.creature.rayCount;
+    const offsets = Array.from({ length: n }, (_, i) => -c.creature.raySpread / 2 + (c.creature.raySpread * i) / (n - 1));
+    const rays: RayHit[] = offsets.map(() => ({ closeness: 0, kind: HIT_NONE }));
+    let x = 500;
+    let y = 400;
+    let heading = 0;
+    for (let tick = 0; tick < 3000; tick++) {
+      heading += rng.range(-0.3, 0.3);
+      x = Math.min(c.world.width, Math.max(0, x + 2.5 * Math.cos(heading)));
+      y = Math.min(c.world.height, Math.max(0, y + 2.5 * Math.sin(heading)));
+      const angles = offsets.map((o) => heading + o);
+      w.castRays(x, y, Float64Array.from(angles, Math.cos), Float64Array.from(angles, Math.sin), rays);
+      angles.forEach((a, i) => {
+        const ref = brute(w, c, x, y, a);
+        expect(rays[i].kind).toBe(ref.kind);
+        expect(rays[i].closeness).toBeCloseTo(ref.closeness, 9);
+      });
+      w.eatAt(x, y, c.creature.radius);
+    }
+  });
 });

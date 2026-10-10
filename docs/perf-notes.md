@@ -15,7 +15,12 @@ The fingerprint hashes all fitness values, so an unchanged fingerprint means unc
 | 2026-10-10 | Round 2: one item gather per tick for all rays, input-major first layer | serial 3.47 vs 4.69 | 1.35x serial | bit-identical | Kept |
 | 2026-10-10 | Round 2: workers record top-300 trajectories for replay | +3-5% eval time            | n/a     | bit-identical    | Kept     |
 | 2026-10-10 | Round 2 merged, recording bounded                       | 1.56 (from 9.2)            | 5.9x    | bit-identical to round 1 | Kept |
+| 2026-10-10 | Round 3: anchored item list reused across ticks (slack 0.3 x ray length), eating from the same list | serial 3.46 vs 2.94, then 2.76 vs 2.63 | 1.16x, 1.05x | bit-identical | Kept |
+| 2026-10-10 | Round 3: register-blocked brain layers (4 outputs first layer, 2 outputs dense) | 2.94 vs 2.75 | 1.07x | bit-identical | Kept |
+| 2026-10-10 | Round 3: cull items outside the ray fan wedge | 2.65 vs 2.45 | 1.08x | bit-identical | Kept |
+| 2026-10-10 | Round 3 merged (serial, 6 alternating pairs, medians) | 3.39 vs 2.44 | 1.39x | bit-identical | Kept |
 
+Rejected in round 3: typed-array RNG state (breeding 37 to 24 ms, 1% of a generation), wall skip again (0.6%), branchless input compaction (0%), slack 0.15 and 0.6 (0%), branch-free encodeInputs (0%).
 Rejected in round 2: wall skip when far from walls (2%), Float64 dense weights (0%), input-major dense layer (7% slower).
 Rejected on 2026-10-10: shared layout per generation (layout under 1% of runtime), castRay field hoisting, other grid cell sizes, one grid gather per tick for all rays (0.97x).
 
@@ -52,4 +57,5 @@ Seconds per generation by worker threads, quiet pass; the CPU has 4 physical cor
 Scaling stops at the physical core count. Per-generation overheads are 1-5 ms, load imbalance about 5%, breeding about 45 ms serial. Chunk counts from 4 to 32 per worker made no difference. No change kept: browsers only report logical cores, so the default stays min(cores - 1, 8).
 
 ## Ideas not yet tried
-- Profile after round 2: forward 32%, castRays 22%, step 13%, item gather 9%.
+- Profile after round 3 (ns per tick, duplicate-the-call method): forward about 500, castRays about 200, encodeInputs about 100, setTrig about 55, rest about 300. The tanh division is about a third of forward.
+- Fuse encodeInputs with the first-layer nonzero scan.
