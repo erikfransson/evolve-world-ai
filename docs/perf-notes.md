@@ -18,6 +18,7 @@ The fingerprint hashes all fitness values, so an unchanged fingerprint means unc
 | 2026-10-10 | Round 3: anchored item list reused across ticks (slack 0.3 x ray length), eating from the same list | serial 3.46 vs 2.94, then 2.76 vs 2.63 | 1.16x, 1.05x | bit-identical | Kept |
 | 2026-10-10 | Round 3: register-blocked brain layers (4 outputs first layer, 2 outputs dense) | 2.94 vs 2.75 | 1.07x | bit-identical | Kept |
 | 2026-10-10 | Round 3: cull items outside the ray fan wedge | 2.65 vs 2.45 | 1.08x | bit-identical | Kept |
+| 2026-10-10 | Round 3: brain panel redrawn at most every 25 ms (browser) | main-thread busy 16.1 vs 12.5 ms per frame | -22% | n/a | Kept |
 | 2026-10-10 | Round 3 merged (serial, 6 alternating pairs, medians) | 3.39 vs 2.44 | 1.39x | bit-identical | Kept |
 
 Rejected in round 3: typed-array RNG state (breeding 37 to 24 ms, 1% of a generation), wall skip again (0.6%), branchless input compaction (0%), slack 0.15 and 0.6 (0%), branch-free encodeInputs (0%).
