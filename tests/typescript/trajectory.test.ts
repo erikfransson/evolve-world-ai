@@ -2,6 +2,7 @@ import { DEFAULT_CONFIG } from "../../src/typescript/src/sim/config.ts";
 import type { SimConfig } from "../../src/typescript/src/sim/config.ts";
 import { Episode } from "../../src/typescript/src/sim/episode.ts";
 import { SerialEvaluator } from "../../src/typescript/src/sim/evaluator.ts";
+import type { Evaluator } from "../../src/typescript/src/sim/evaluator.ts";
 import { Evolution } from "../../src/typescript/src/sim/evolution.ts";
 import { FRAME_FLOATS, planRecording } from "../../src/typescript/src/sim/trajectory.ts";
 import { Replay } from "../../src/typescript/src/ui/replay.ts";
@@ -15,29 +16,29 @@ const cfg: SimConfig = {
 };
 const SEED = 5;
 
-async function generation() {
+async function generation(evaluator: Evaluator = new SerialEvaluator(cfg, true)) {
   const population = new Evolution(cfg).population;
-  const fitness = await new SerialEvaluator(cfg).evaluate(population, SEED);
+  const fitness = await evaluator.evaluate(population, SEED);
   let bestIndex = 0;
   for (let i = 0; i < fitness.length; i++) if (fitness[i]! > fitness[bestIndex]!) bestIndex = i;
-  return { population, fitness, bestIndex };
+  return { evaluator, population, fitness, bestIndex };
 }
 
 describe("trajectory recording", () => {
   it("plans the fittest creatures without the best, with room for every frame", async () => {
-    const { population, fitness, bestIndex } = await generation();
+    const { evaluator, fitness, bestIndex } = await generation();
     const plan = planRecording(fitness, bestIndex, cfg.dt, 5);
     expect(plan.indices.length).toBe(5);
     expect(plan.indices).not.toContain(bestIndex);
     for (let k = 1; k < 5; k++) expect(fitness[plan.indices[k - 1]!]).toBeGreaterThanOrEqual(fitness[plan.indices[k]!]!);
-    const frames = await new SerialEvaluator(cfg).record(population, SEED, plan);
+    const frames = evaluator.frames(plan);
     expect(frames.length).toBe(plan.offsets[5]! * FRAME_FLOATS);
   });
 
   it("stores the state after each step and holds the last frame", async () => {
-    const { population, fitness, bestIndex } = await generation();
+    const { evaluator, population, fitness, bestIndex } = await generation();
     const plan = planRecording(fitness, bestIndex, cfg.dt, 4);
-    const frames = await new SerialEvaluator(cfg).record(population, SEED, plan);
+    const frames = evaluator.frames(plan);
     for (let k = 0; k < 4; k++) {
       const index = plan.indices[k]!;
       const ep = new Episode(cfg, population.genome(index), SEED, index);
@@ -55,13 +56,13 @@ describe("trajectory recording", () => {
   });
 
   it("gives the same frames from the worker pool as from the serial evaluator", async () => {
-    const { population, fitness, bestIndex } = await generation();
-    const plan = planRecording(fitness, bestIndex, cfg.dt);
-    const pool = createNodeEvaluator(cfg, 3);
+    const serial = await generation();
+    const plan = planRecording(serial.fitness, serial.bestIndex, cfg.dt);
+    const pool = createNodeEvaluator(cfg, 3, true);
     try {
-      const a = await new SerialEvaluator(cfg).record(population, SEED, plan);
-      const b = await pool.record(population, SEED, plan);
-      expect(Array.from(b)).toEqual(Array.from(a));
+      const parallel = await generation(pool);
+      expect(Array.from(parallel.fitness)).toEqual(Array.from(serial.fitness));
+      expect(Array.from(pool.frames(plan))).toEqual(Array.from(serial.evaluator.frames(plan)));
     } finally {
       pool.close();
     }
@@ -70,9 +71,9 @@ describe("trajectory recording", () => {
 
 describe("replay playback", () => {
   it("places the others where a live episode would be", async () => {
-    const { population, fitness, bestIndex } = await generation();
+    const { evaluator, population, fitness, bestIndex } = await generation();
     const plan = planRecording(fitness, bestIndex, cfg.dt);
-    const data = await new SerialEvaluator(cfg).record(population, SEED, plan);
+    const data = evaluator.frames(plan);
     const msg = {
       type: "generation",
       result: { generation: 0, layoutSeed: SEED, fitness, bestIndex, bestFitness: fitness[bestIndex]!, meanFitness: 0 },

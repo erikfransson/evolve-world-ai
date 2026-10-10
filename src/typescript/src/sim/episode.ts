@@ -3,6 +3,7 @@ import { maxLifeTicks } from "./config.ts";
 import type { SimConfig } from "./config.ts";
 import { createRng, deriveSeed } from "./rng.ts";
 import { OUTPUT_SIZE, OUT_THRUST, OUT_TURN, encodeInputs, energySignal, inputSize, rayAngleOffsets } from "./sensors.ts";
+import type { FrameRecorder } from "./trajectory.ts";
 import { HIT_FOOD, HIT_NONE, HIT_POISON } from "./types.ts";
 import type { CreatureState, EpisodeView, Genome, RayHit } from "./types.ts";
 import { World } from "./world.ts";
@@ -125,8 +126,18 @@ export class Episode implements EpisodeView {
   }
 }
 
-export function runEpisode(config: SimConfig, genome: Genome, layoutSeed: number, creatureIndex: number): number {
+// Runs the episode to its end and returns its fitness, recording every frame too when given a recorder.
+export function runEpisode(config: SimConfig, genome: Genome, layoutSeed: number, creatureIndex: number, recorder?: FrameRecorder): number {
   const episode = new Episode(config, genome, layoutSeed, creatureIndex);
-  while (!episode.done) episode.step();
+  if (recorder) {
+    recorder.push(episode.state);
+    while (!episode.done) {
+      episode.step();
+      recorder.push(episode.state);
+    }
+    recorder.endCreature();
+  } else {
+    while (!episode.done) episode.step();
+  }
   return episode.fitness();
 }

@@ -27,7 +27,7 @@ async function loop(): Promise<void> {
       try {
         step = await current.runGeneration(pool);
         plan = planRecording(step.result.fitness, step.result.bestIndex, current.config.dt);
-        frames = await pool.record(step.population, step.result.layoutSeed, plan);
+        frames = pool.frames(plan);
       } catch (error) {
         if (current !== evolution) continue; // restarted, the old pool was closed under us
         throw error;
@@ -60,7 +60,7 @@ self.onmessage = (e: MessageEvent<InMessage>) => {
   if (msg.type === "start") {
     paused = false;
     evaluator?.close();
-    evaluator = createBrowserEvaluator(msg.config);
+    evaluator = createBrowserEvaluator(msg.config, undefined, true);
     evolution = new Evolution(msg.config);
     void loop();
   } else if (msg.type === "pause") {

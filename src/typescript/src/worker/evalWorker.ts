@@ -1,8 +1,8 @@
 // Browser entry of an evaluation worker, spawned by the sim worker's pool.
-import { runJob } from "./evalPool.ts";
-import type { PoolJob } from "./evalPool.ts";
+import { evalJob, transferList } from "./evalPool.ts";
+import type { EvalJob } from "./evalPool.ts";
 
-self.onmessage = (e: MessageEvent<PoolJob>) => {
-  const { done, transfer } = runJob(e.data);
-  self.postMessage(done, { transfer });
+self.onmessage = (e: MessageEvent<EvalJob>) => {
+  const done = evalJob(e.data);
+  self.postMessage(done, { transfer: transferList(done) });
 };
