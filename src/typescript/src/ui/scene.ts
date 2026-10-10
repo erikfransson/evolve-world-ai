@@ -15,7 +15,7 @@ export interface Transform {
 }
 
 // Values shared by all draw functions of one frame, computed once in drawScene.
-interface Frame extends Transform {
+export interface Frame extends Transform {
   px: number; // one canvas pixel in world units
   creatureR: number;
   itemR: number;
@@ -24,11 +24,12 @@ interface Frame extends Transform {
 }
 
 const MARGIN = 12; // canvas pixels around the world
-const BACKGROUND = "#0b1d16";
-const FLOOR = "#10291f";
-const WALL = "#9fb8ad";
-const FOOD = "#4ade80";
-const POISON = "#e040fb";
+export const BACKGROUND = "#0b1d16";
+export const FLOOR = "#10291f";
+export const WALL = "#9fb8ad";
+export const FOOD = "#4ade80";
+export const POISON = "#e040fb";
+export const OTHER = "#7dd3fc"; // the rest of a generation
 const RAY_COLORS = ["#6b7f76", FOOD, POISON, "#facc15"]; // indexed by HIT_NONE, HIT_FOOD, HIT_POISON, HIT_WALL
 // Body is full at FULL_AT times the starting energy, so a newborn is one third full.
 const FULL_AT = 3;
@@ -83,7 +84,7 @@ function fillItems(ctx: CanvasRenderingContext2D, f: Frame, w: WorldView, kind: 
 }
 
 // Items of the best creature's world copy.
-function drawItems(ctx: CanvasRenderingContext2D, f: Frame, w: WorldView): void {
+export function drawItems(ctx: CanvasRenderingContext2D, f: Frame, w: WorldView): void {
   fillItems(ctx, f, w, HIT_FOOD, FOOD);
   fillItems(ctx, f, w, HIT_POISON, POISON);
 }
@@ -91,8 +92,8 @@ function drawItems(ctx: CanvasRenderingContext2D, f: Frame, w: WorldView): void 
 // Cheap faint creature: body opacity scales with energy.
 function drawOther(ctx: CanvasRenderingContext2D, f: Frame, s: PlaybackState): void {
   const r = f.creatureR;
-  ctx.fillStyle = "#7dd3fc";
-  ctx.strokeStyle = "#7dd3fc";
+  ctx.fillStyle = OTHER;
+  ctx.strokeStyle = OTHER;
   ctx.lineWidth = f.px;
   ctx.globalAlpha = 0.08 + 0.3 * energyRatio(f, s.energy);
   ctx.beginPath();
@@ -202,23 +203,18 @@ function drawPov(ctx: CanvasRenderingContext2D, f: Frame, s: CreatureState): voi
   ctx.fill("evenodd");
 }
 
-// Screen-space text in the top-left corner, sized in CSS pixels.
+// Screen-space text in the top-right corner, sized in CSS pixels; the top-left holds the overlay cards.
 function drawLabel(ctx: CanvasRenderingContext2D, text: string, dpr: number): void {
   ctx.font = `${13 * dpr}px system-ui, sans-serif`;
   ctx.textBaseline = "top";
+  ctx.textAlign = "right";
   ctx.fillStyle = "rgba(238, 245, 241, 0.7)";
-  ctx.fillText(text, 12 * dpr, 10 * dpr);
+  ctx.fillText(text, ctx.canvas.width - 12 * dpr, 10 * dpr);
+  ctx.textAlign = "left";
 }
 
-export function drawScene(
-  ctx: CanvasRenderingContext2D,
-  config: SimConfig,
-  best: EpisodeView | null,
-  others: readonly PlaybackState[],
-  view: ViewOptions,
-  label: string | null = null,
-  dpr = 1,
-): void {
+// Clears the canvas and draws floor and walls; leaves the context in world coordinates and returns the frame values.
+export function beginFrame(ctx: CanvasRenderingContext2D, config: SimConfig): Frame {
   const cw = ctx.canvas.width;
   const ch = ctx.canvas.height;
   const { width: ww, height: wh } = config.world;
@@ -241,6 +237,19 @@ export function drawScene(
   ctx.strokeStyle = WALL;
   ctx.lineWidth = Math.max(2, 3 / f.scale);
   ctx.strokeRect(0, 0, ww, wh);
+  return f;
+}
+
+export function drawScene(
+  ctx: CanvasRenderingContext2D,
+  config: SimConfig,
+  best: EpisodeView | null,
+  others: readonly PlaybackState[],
+  view: ViewOptions,
+  label: string | null = null,
+  dpr = 1,
+): void {
+  const f = beginFrame(ctx, config);
 
   if (best) {
     drawItems(ctx, f, best.world);

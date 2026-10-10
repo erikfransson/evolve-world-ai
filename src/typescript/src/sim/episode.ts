@@ -1,10 +1,12 @@
 import { Brain, layerSizes } from "./brain.ts";
 import { maxLifeTicks } from "./config.ts";
 import type { SimConfig } from "./config.ts";
+import { consume, decaysFor, settle, stepBody } from "./physics.ts";
+import type { Decays, Heading } from "./physics.ts";
 import { createRng, deriveSeed } from "./rng.ts";
 import { OUTPUT_SIZE, OUT_THRUST, OUT_TURN, encodeInputs, energySignal, inputSize, rayAngleOffsets } from "./sensors.ts";
 import type { FrameRecorder } from "./trajectory.ts";
-import { HIT_FOOD, HIT_NONE, HIT_POISON } from "./types.ts";
+import { HIT_NONE } from "./types.ts";
 import type { CreatureState, EpisodeView, Genome, RayHit } from "./types.ts";
 import { World } from "./world.ts";
 
@@ -20,12 +22,8 @@ export class Episode implements EpisodeView {
   private readonly input: Float32Array;
   private readonly output: Float32Array;
   private readonly maxTicks: number;
-  // Per-tick decay factors of the exact exponential relaxation, constant for the episode.
-  private readonly turnDecay: number;
-  private readonly dragDecay: number;
-  private readonly sideDecay: number;
-  private headCos = 0;
-  private headSin = 0;
+  private readonly decays: Decays;
+  private readonly heading: Heading = { cos: 0, sin: 0 };
   private readonly rayOffCos: Float64Array;
   private readonly rayOffSin: Float64Array;
   private readonly rayDirX: Float64Array;
@@ -43,9 +41,7 @@ export class Episode implements EpisodeView {
     this.rayDirX = new Float64Array(config.creature.rayCount);
     this.rayDirY = new Float64Array(config.creature.rayCount);
     this.maxTicks = maxLifeTicks(config);
-    this.turnDecay = Math.exp(-config.creature.turnDamping * config.dt);
-    this.dragDecay = Math.exp(-config.creature.drag * config.dt);
-    this.sideDecay = Math.exp(-config.creature.sideDrag * config.dt);
+    this.decays = decaysFor(config);
     this.rays = [];
     for (let i = 0; i < config.creature.rayCount; i++) this.rays.push({ closeness: 0, kind: HIT_NONE });
     this.state = {
@@ -59,12 +55,8 @@ export class Episode implements EpisodeView {
       alive: true,
       ticksAlive: 0,
     };
-    this.setTrig(this.state.heading);
-  }
-
-  private setTrig(heading: number): void {
-    this.headCos = Math.cos(heading);
-    this.headSin = Math.sin(heading);
+    this.heading.cos = Math.cos(this.state.heading);
+    this.heading.sin = Math.sin(this.state.heading);
   }
 
   get done(): boolean {
@@ -76,8 +68,8 @@ export class Episode implements EpisodeView {
     const s = this.state;
     const rays = this.rays;
     // Ray directions by angle addition from the heading's cos/sin.
-    const hc = this.headCos;
-    const hs = this.headSin;
+    const hc = this.heading.cos;
+    const hs = this.heading.sin;
     const oc = this.rayOffCos;
     const os = this.rayOffSin;
     const dirX = this.rayDirX;
@@ -91,49 +83,18 @@ export class Episode implements EpisodeView {
 
   step(): void {
     if (this.done) return;
-    const { dt, creature: c, world: w } = this.config;
+    const { creature: c, world: w } = this.config;
     const s = this.state;
 
     this.sense();
-    encodeInputs(s, this.rays, this.config, this.input, this.headCos, this.headSin);
+    encodeInputs(s, this.rays, this.config, this.input, this.heading.cos, this.heading.sin);
 
     this.brain.forward(this.input, this.output);
     const thrust = Math.max(0, this.output[OUT_THRUST]);
 
-    // Exact exponential relaxation each tick keeps motion smooth and independent of dt.
-    const targetTurn = this.output[OUT_TURN] * c.maxTurnRate;
-    s.turnRate = targetTurn + (s.turnRate - targetTurn) * this.turnDecay;
-    s.heading += s.turnRate * dt;
-
-    this.setTrig(s.heading); // reused by the next step's rays and inputs
-    const cos = this.headCos;
-    const sin = this.headSin;
-    const terminal = (thrust * c.maxThrust) / c.drag;
-    const fwd = terminal + (s.vx * cos + s.vy * sin - terminal) * this.dragDecay;
-    const side = (-s.vx * sin + s.vy * cos) * this.sideDecay;
-    s.vx = fwd * cos - side * sin;
-    s.vy = fwd * sin + side * cos;
-
-    s.x += s.vx * dt;
-    s.y += s.vy * dt;
-    // Walls absorb the velocity component pointing into them.
-    if (s.x < c.radius) { s.x = c.radius; s.vx = Math.max(0, s.vx); }
-    else if (s.x > w.width - c.radius) { s.x = w.width - c.radius; s.vx = Math.min(0, s.vx); }
-    if (s.y < c.radius) { s.y = c.radius; s.vy = Math.max(0, s.vy); }
-    else if (s.y > w.height - c.radius) { s.y = w.height - c.radius; s.vy = Math.min(0, s.vy); }
-
-    s.energy -= (c.livingCost + c.thrustCost * thrust) * dt;
-
-    const eaten = this.world.eatAt(s.x, s.y, c.radius);
-    if (eaten === HIT_FOOD) s.energy += w.foodEnergy;
-    else if (eaten === HIT_POISON) s.energy = 0; // poison always kills
-
-    if (s.energy <= 0) {
-      s.energy = 0;
-      s.alive = false;
-    } else {
-      s.ticksAlive++;
-    }
+    stepBody(s, this.output[OUT_TURN], thrust, this.config, this.decays, this.heading);
+    consume(s, this.world.eatAt(s.x, s.y, c.radius), w.foodEnergy);
+    settle(s);
   }
 
   fitness(): number {
