@@ -49,6 +49,8 @@ let replaySpeed = 4; // simulated seconds per real second
 const STEP_BUDGET_MS = 6; // replay stepping per frame, beyond it the replay runs slower than asked
 let tickDebt = 0; // fractional ticks carried between frames
 let lastFrameAt = performance.now();
+const BRAIN_INTERVAL_MS = 25; // the brain panel is the costliest draw, so it refreshes at most about 40 times a second
+let lastBrainAt = 0;
 
 function readView(): void {
   view.showAll = $<HTMLInputElement>("showAll").checked;
@@ -173,7 +175,10 @@ function frame(now: number): void {
   }
   drawScene(ctx, run.config, replay.best, replay.others, view);
   const best = replay.best;
-  if (best && brainPanel.isExpanded()) brainView.draw(best.brain, best.state.alive);
+  if (best && brainPanel.isExpanded() && now - lastBrainAt >= BRAIN_INTERVAL_MS) {
+    brainView.draw(best.brain, best.state.alive);
+    lastBrainAt = now;
+  }
   requestAnimationFrame(frame);
 }
 
