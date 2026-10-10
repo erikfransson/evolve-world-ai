@@ -1,11 +1,10 @@
-import { DEFAULT_CONFIG, withOverrides } from "../sim/config.ts";
+import { genomeLength, layerSizes } from "../sim/brain.ts";
+import { DEFAULT_CONFIG, itemCounts, withOverrides } from "../sim/config.ts";
 import type { SimConfig } from "../sim/config.ts";
-import { consume, decaysFor, stepBody } from "../sim/physics.ts";
-import type { Heading } from "../sim/physics.ts";
+import { Creature } from "../sim/creature.ts";
 import { createRng } from "../sim/rng.ts";
-import { rayAngleOffsets } from "../sim/sensors.ts";
 import { HIT_NONE } from "../sim/types.ts";
-import type { CreatureState, EpisodeView, RayHit } from "../sim/types.ts";
+import type { CreatureState, EpisodeView, HitKind, Rng } from "../sim/types.ts";
 import { World } from "../sim/world.ts";
 import { BACKGROUND, FOOD, OTHER, beginFrame, drawItems, drawScene } from "./scene.ts";
 
@@ -24,8 +23,22 @@ const sceneConfig = (width: number, height: number, foodDensity: number, creatur
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
 const wrapAngle = (a: number): number => Math.atan2(Math.sin(a), Math.cos(a));
 
-function newCreature(config: SimConfig, x: number, y: number, heading: number): CreatureState {
-  return { x, y, heading, vx: 0, vy: 0, turnRate: 0, energy: config.creature.startEnergy, alive: true, ticksAlive: 0 };
+function foodWorld(config: SimConfig, rng: Rng): World {
+  const { food } = itemCounts(config);
+  const world = new World(config, food);
+  world.scatter(food, 0, rng);
+  return world;
+}
+
+// The scenes steer their creatures by script, so the brain stays unused.
+function scriptedCreature(config: SimConfig, x: number, y: number, heading: number): Creature {
+  return new Creature(config, new Float32Array(genomeLength(layerSizes(config))), x, y, heading);
+}
+
+// Moves the creature one tick and respawns what it ate elsewhere.
+function moveAndEat(c: Creature, world: World, turn: number, thrust: number, rng: Rng): void {
+  const eaten = c.move(world, turn, thrust);
+  if (eaten >= 0) world.placeRandomly(eaten, world.kinds[eaten] as HitKind, rng);
 }
 
 // Index of the food item closest to (x, y), skipping `skip` nearer ones so creatures do not all chase the same piece.
@@ -52,29 +65,18 @@ function steer(s: CreatureState, tx: number, ty: number): { turn: number; thrust
 // Trials: one creature with its ray fan, chasing food in its own arena. Energy never runs out here.
 export function trialsScene(seed: number): Scene {
   const config = sceneConfig(300, 190, 1.6, { raySpread: (110 * Math.PI) / 180 });
-  const world = new World(config, createRng(seed), createRng(seed + 1));
-  const state = newCreature(config, 150, 95, 0.4);
-  const rays: RayHit[] = Array.from({ length: config.creature.rayCount }, () => ({ closeness: 0, kind: HIT_NONE }));
-  const view: EpisodeView = { state, rays, rayOffsets: rayAngleOffsets(config), world };
-  const offCos = Float64Array.from(view.rayOffsets, Math.cos);
-  const offSin = Float64Array.from(view.rayOffsets, Math.sin);
-  const dirX = new Float64Array(rays.length);
-  const dirY = new Float64Array(rays.length);
-  const decays = decaysFor(config);
-  const heading: Heading = { cos: Math.cos(state.heading), sin: Math.sin(state.heading) };
-  const c = config.creature;
+  const world = foodWorld(config, createRng(seed));
+  const respawnRng = createRng(seed + 1);
+  const creature = scriptedCreature(config, 150, 95, 0.4);
+  const { state, rays, rayOffsets } = creature;
+  const view: EpisodeView = { state, rays, rayOffsets, world };
   return {
     step() {
-      for (let i = 0; i < rays.length; i++) {
-        dirX[i] = heading.cos * offCos[i]! - heading.sin * offSin[i]!;
-        dirY[i] = heading.sin * offCos[i]! + heading.cos * offSin[i]!;
-      }
-      world.castRays(state.x, state.y, dirX, dirY, rays);
+      creature.sense(world);
       const target = nearestFood(world, state.x, state.y);
       const { turn, thrust } = steer(state, world.xs[target]!, world.ys[target]!);
-      stepBody(state, turn, thrust, config, decays, heading);
-      consume(state, world.eatAt(state.x, state.y, c.radius), config.world.foodEnergy);
-      state.energy = Math.max(state.energy, 0.2 * c.startEnergy); // keep the body fill in the readable range
+      moveAndEat(creature, world, turn, thrust, respawnRng);
+      state.energy = Math.max(state.energy, 0.2 * config.creature.startEnergy); // keep the body fill in the readable range
     },
     draw(ctx) {
       drawScene(ctx, config, view, [], VIEW);
@@ -87,13 +89,13 @@ const ECO_HUES = [200, 20, 280, 50, 340];
 // Ecosystem: several coloured creatures sharing regrowing food and bumping into each other.
 export function ecosystemScene(seed: number): Scene {
   const config = sceneConfig(360, 225, 1.6, { radius: 10 });
-  const world = new World(config, createRng(seed), createRng(seed + 1));
+  const world = foodWorld(config, createRng(seed));
+  const respawnRng = createRng(seed + 1);
   const rng = createRng(seed + 2);
-  const decays = decaysFor(config);
   const r = config.creature.radius;
   const bodies = ECO_HUES.map((hue, i) => {
-    const state = newCreature(config, rng.range(r, 360 - r), rng.range(r, 225 - r), rng.range(0, 2 * Math.PI));
-    return { hue, state, heading: { cos: Math.cos(state.heading), sin: Math.sin(state.heading) } as Heading, skip: i % 2 };
+    const creature = scriptedCreature(config, rng.range(r, 360 - r), rng.range(r, 225 - r), rng.range(0, 2 * Math.PI));
+    return { hue, creature, state: creature.state, skip: i % 2 };
   });
   return {
     step() {
@@ -101,8 +103,7 @@ export function ecosystemScene(seed: number): Scene {
         const s = b.state;
         const target = nearestFood(world, s.x, s.y, b.skip);
         const { turn, thrust } = steer(s, world.xs[target]!, world.ys[target]!);
-        stepBody(s, turn, thrust, config, decays, b.heading);
-        consume(s, world.eatAt(s.x, s.y, r), config.world.foodEnergy);
+        moveAndEat(b.creature, world, turn, thrust, respawnRng);
         s.energy = clamp(s.energy, 0.5 * config.creature.startEnergy, 3 * config.creature.startEnergy);
       }
       for (let i = 0; i < bodies.length; i++) {

@@ -1,11 +1,59 @@
 import type { SimConfig } from "./config.ts";
-import { itemCounts } from "./config.ts";
 import { HIT_FOOD, HIT_NONE, HIT_POISON, HIT_WALL } from "./types.ts";
 import type { HitKind, RayHit, Rng, WorldView } from "./types.ts";
 
+interface CellRange {
+  rangeX0: number;
+  rangeX1: number;
+  rangeY0: number;
+  rangeY1: number;
+}
+
+// One sensing creature's items within reach of its anchor, reused while it stays within slack of the anchor. Serves one world.
+export class RayCache implements CellRange {
+  version = -1; // world version the list is known valid at, -1 before the first build
+  anchorX = 0;
+  anchorY = 0;
+  count = 0;
+  listX = new Float64Array(32);
+  listY = new Float64Array(32);
+  listKind = new Uint8Array(32);
+  listId = new Int32Array(32);
+  // Cells the list was gathered from.
+  rangeX0 = 0;
+  rangeX1 = -1;
+  rangeY0 = 0;
+  rangeY1 = -1;
+  // Items near the ray origin, gathered once per sensing; ray-independent terms are precomputed.
+  candFx = new Float64Array(32);
+  candFy = new Float64Array(32);
+  candC = new Float64Array(32); // squared distance minus squared item radius
+  candKind = new Uint8Array(32);
+  candCount = 0;
+
+  // Doubles every list and candidate array so a candidate never overflows.
+  grow(): void {
+    const size = this.listX.length * 2;
+    for (const key of ["listX", "listY", "candFx", "candFy", "candC"] as const) {
+      const grown = new Float64Array(size);
+      grown.set(this[key]);
+      this[key] = grown;
+    }
+    for (const key of ["listKind", "candKind"] as const) {
+      const grown = new Uint8Array(size);
+      grown.set(this[key]);
+      this[key] = grown;
+    }
+    const ids = new Int32Array(size);
+    ids.set(this.listId);
+    this.listId = ids;
+  }
+}
+
+// Food and poison items in fixed slots; a slot of kind HIT_NONE is free.
 export class World implements WorldView {
-  readonly count: number;
-  // Writes must go through setItem to keep the item lists valid.
+  readonly count: number; // slot capacity
+  // Writes must go through setItem or removeItem to keep the grid valid.
   readonly xs: Float32Array;
   readonly ys: Float32Array;
   readonly kinds: Uint8Array;
@@ -14,8 +62,6 @@ export class World implements WorldView {
   private readonly height: number;
   private readonly itemRadius: number;
   private readonly rayLength: number;
-  private readonly respawnRng: Rng;
-  private readonly respawn: boolean;
   // Uniform grid as per-cell linked lists: cellHead[c] -> item -> nextItem[item] -> -1.
   private readonly cell: number;
   private readonly cols: number;
@@ -23,60 +69,46 @@ export class World implements WorldView {
   private readonly cellHead: Int32Array;
   private readonly nextItem: Int32Array;
   private readonly itemCell: Int32Array;
-  // Items near the ray origin, gathered once per sensing; ray-independent terms are precomputed.
-  private candFx = new Float64Array(32);
-  private candFy = new Float64Array(32);
-  private candC = new Float64Array(32); // squared distance minus squared item radius
-  private candKind = new Uint8Array(32);
-  private candCount = 0;
-  private rangeX0 = 0;
-  private rangeX1 = 0;
-  private rangeY0 = 0;
-  private rangeY1 = 0;
+  // Bumped by every item change; cellStamp[c] is the version of the last change in cell c.
+  private version = 0;
+  private readonly cellStamp: Int32Array;
+  private readonly eatRange: CellRange = { rangeX0: 0, rangeX1: 0, rangeY0: 0, rangeY1: 0 };
   // Redundant guard: the cross-product test already excludes spreads of pi or more.
   private readonly fanNarrow: boolean;
-  // Items within reach of an anchor origin, reused while the origin stays within slack of it; version bumps invalidate.
   private readonly slack: number;
-  private version = 0;
-  private listVersion = -1;
-  private listAnchorX = 0;
-  private listAnchorY = 0;
-  private listCount = 0;
-  private listX = new Float64Array(32);
-  private listY = new Float64Array(32);
-  private listKind = new Uint8Array(32);
-  private listId = new Int32Array(32);
   private readonly listReach: number;
 
-  constructor(config: SimConfig, layoutRng: Rng, respawnRng: Rng) {
+  constructor(config: SimConfig, capacity: number) {
     const w = config.world;
     this.width = w.width;
     this.height = w.height;
     this.itemRadius = w.itemRadius;
     this.rayLength = config.creature.rayLength;
-    this.respawnRng = respawnRng;
-    this.respawn = w.respawn;
     this.slack = 0.3 * this.rayLength;
     this.fanNarrow = config.creature.raySpread < Math.PI - 1e-3;
     this.listReach = this.rayLength + this.itemRadius + 2e-9 * this.rayLength + this.slack;
-    const counts = itemCounts(config);
-    this.count = counts.food + counts.poison;
-    this.xs = new Float32Array(this.count);
-    this.ys = new Float32Array(this.count);
-    this.kinds = new Uint8Array(this.count);
+    this.count = capacity;
+    this.xs = new Float32Array(capacity);
+    this.ys = new Float32Array(capacity);
+    this.kinds = new Uint8Array(capacity);
     this.cell = Math.max(this.rayLength, 4 * this.itemRadius, 1);
     this.cols = Math.max(1, Math.ceil(this.width / this.cell));
     this.rows = Math.max(1, Math.ceil(this.height / this.cell));
     this.cellHead = new Int32Array(this.cols * this.rows).fill(-1);
-    this.nextItem = new Int32Array(this.count).fill(-1);
-    this.itemCell = new Int32Array(this.count).fill(-1);
+    this.cellStamp = new Int32Array(this.cols * this.rows);
+    this.nextItem = new Int32Array(capacity).fill(-1);
+    this.itemCell = new Int32Array(capacity).fill(-1);
+  }
 
+  // Fills slots 0..food+poison-1 at uniform random positions, food first.
+  scatter(food: number, poison: number, rng: Rng): void {
+    for (let i = 0; i < food + poison; i++) this.placeRandomly(i, i < food ? HIT_FOOD : HIT_POISON, rng);
+  }
+
+  // Puts item i at a uniform random position inside the walls.
+  placeRandomly(i: number, kind: HitKind, rng: Rng): void {
     const r = this.itemRadius;
-    for (let i = 0; i < this.count; i++) {
-      const x = layoutRng.range(r, this.width - r);
-      const y = layoutRng.range(r, this.height - r);
-      this.setItem(i, x, y, i < counts.food ? HIT_FOOD : HIT_POISON);
-    }
+    this.setItem(i, rng.range(r, this.width - r), rng.range(r, this.height - r), kind);
   }
 
   // Places item i and keeps the grid valid.
@@ -90,6 +122,21 @@ export class World implements WorldView {
     this.itemCell[i] = c;
     this.nextItem[i] = this.cellHead[c];
     this.cellHead[c] = i;
+    this.cellStamp[c] = this.version;
+  }
+
+  // Frees slot i; its item leaves the grid.
+  removeItem(i: number): void {
+    this.version++;
+    this.unlink(i);
+    this.kinds[i] = HIT_NONE;
+  }
+
+  // Places an item in the first free slot and returns the slot, or -1 when all are taken.
+  addItem(x: number, y: number, kind: HitKind): number {
+    const i = this.kinds.indexOf(HIT_NONE);
+    if (i >= 0) this.setItem(i, x, y, kind);
+    return i;
   }
 
   private cellIndex(x: number, y: number): number {
@@ -113,37 +160,52 @@ export class World implements WorldView {
       if (j >= 0) this.nextItem[j] = this.nextItem[i];
     }
     this.itemCell[i] = -1;
+    this.cellStamp[c] = this.version;
   }
 
   // Casts one ray per direction (dirX[i], dirY[i]) from (x, y), sharing the item lookup between them.
-  castRays(x: number, y: number, dirX: Float64Array, dirY: Float64Array, out: readonly RayHit[]): void {
+  castRays(x: number, y: number, dirX: Float64Array, dirY: Float64Array, out: readonly RayHit[], cache: RayCache): void {
     const last = out.length - 1;
     // Rays are ordered across a fan narrower than a half turn, so an item further than its radius outside the first and last ray cannot be hit.
     const wedge = last > 0 && dirX[0] * dirY[last] - dirY[0] * dirX[last] > 1e-9 && this.fanNarrow;
-    this.gatherCandidates(x, y, wedge, dirX[0], dirY[0], dirX[last], dirY[last]);
-    for (let i = 0; i < out.length; i++) this.traceRay(x, y, dirX[i], dirY[i], out[i]);
+    this.gatherCandidates(x, y, wedge, dirX[0], dirY[0], dirX[last], dirY[last], cache);
+    for (let i = 0; i < out.length; i++) this.traceRay(x, y, dirX[i], dirY[i], out[i], cache);
+  }
+
+  // True while no item changed in the cells the cached list was gathered from.
+  private listValid(cache: RayCache): boolean {
+    if (cache.version === this.version) return true;
+    if (cache.version < 0) return false;
+    const { rangeX0: cx0, rangeX1: cx1, rangeY0: cy0, rangeY1: cy1 } = cache;
+    for (let cy = cy0; cy <= cy1; cy++) {
+      for (let cx = cx0; cx <= cx1; cx++) {
+        if (this.cellStamp[cy * this.cols + cx] > cache.version) return false;
+      }
+    }
+    cache.version = this.version;
+    return true;
   }
 
   // Collects items that can be hit by a ray from (x, y), with their ray-independent terms.
-  private gatherCandidates(x: number, y: number, wedge: boolean, d0x: number, d0y: number, d1x: number, d1y: number): void {
-    const ax = x - this.listAnchorX;
-    const ay = y - this.listAnchorY;
-    if (this.listVersion !== this.version || ax * ax + ay * ay > this.slack * this.slack) this.rebuildList(x, y);
+  private gatherCandidates(x: number, y: number, wedge: boolean, d0x: number, d0y: number, d1x: number, d1y: number, cache: RayCache): void {
+    const ax = x - cache.anchorX;
+    const ay = y - cache.anchorY;
+    if (ax * ax + ay * ay > this.slack * this.slack || !this.listValid(cache)) this.rebuildList(x, y, cache);
     const r = this.itemRadius;
     const r2 = r * r;
     // An item farther than rayLength + r from the origin is never hit within rayLength, plus a rounding margin.
     const far = this.rayLength + r + 1e-9 * this.rayLength;
     const far2 = far * far;
     const margin = r + 1e-9 * this.rayLength;
-    const lx = this.listX;
-    const ly = this.listY;
-    const lk = this.listKind;
-    const cfx = this.candFx;
-    const cfy = this.candFy;
-    const cc = this.candC;
-    const ck = this.candKind;
+    const lx = cache.listX;
+    const ly = cache.listY;
+    const lk = cache.listKind;
+    const cfx = cache.candFx;
+    const cfy = cache.candFy;
+    const cc = cache.candC;
+    const ck = cache.candKind;
     let n = 0;
-    for (let k = 0; k < this.listCount; k++) {
+    for (let k = 0; k < cache.count; k++) {
       const fx = lx[k] - x;
       const fy = ly[k] - y;
       const d2 = fx * fx + fy * fy;
@@ -154,24 +216,24 @@ export class World implements WorldView {
       cc[n] = d2 - r2;
       ck[n++] = lk[k];
     }
-    this.candCount = n;
+    cache.candCount = n;
   }
 
-  // Writes the grid cells overlapping the square of half-width reach around (x, y) into the range fields, clamped to the grid.
-  private clampCellRange(x: number, y: number, reach: number): void {
+  // Writes the grid cells overlapping the square of half-width reach around (x, y) into target, clamped to the grid.
+  private clampCellRange(x: number, y: number, reach: number, target: CellRange): void {
     const inv = 1 / this.cell;
-    this.rangeX0 = Math.max(0, Math.floor((x - reach) * inv));
-    this.rangeX1 = Math.min(this.cols - 1, Math.floor((x + reach) * inv));
-    this.rangeY0 = Math.max(0, Math.floor((y - reach) * inv));
-    this.rangeY1 = Math.min(this.rows - 1, Math.floor((y + reach) * inv));
+    target.rangeX0 = Math.max(0, Math.floor((x - reach) * inv));
+    target.rangeX1 = Math.min(this.cols - 1, Math.floor((x + reach) * inv));
+    target.rangeY0 = Math.max(0, Math.floor((y - reach) * inv));
+    target.rangeY1 = Math.min(this.rows - 1, Math.floor((y + reach) * inv));
   }
 
   // Lists the items within rayLength + radius + slack of (x, y) in grid order; valid while the origin stays within slack.
-  private rebuildList(x: number, y: number): void {
+  private rebuildList(x: number, y: number, cache: RayCache): void {
     const reach = this.listReach;
     const reach2 = reach * reach;
-    this.clampCellRange(x, y, reach);
-    const { rangeX0: cx0, rangeX1: cx1, rangeY0: cy0, rangeY1: cy1 } = this;
+    this.clampCellRange(x, y, reach, cache);
+    const { rangeX0: cx0, rangeX1: cx1, rangeY0: cy0, rangeY1: cy1 } = cache;
     const xs = this.xs;
     const ys = this.ys;
     let n = 0;
@@ -181,40 +243,22 @@ export class World implements WorldView {
           const fx = xs[i] - x;
           const fy = ys[i] - y;
           if (fx * fx + fy * fy > reach2) continue;
-          if (n === this.listX.length) this.growLists();
-          this.listX[n] = xs[i];
-          this.listY[n] = ys[i];
-          this.listId[n] = i;
-          this.listKind[n++] = this.itemKind(i);
+          if (n === cache.listX.length) cache.grow();
+          cache.listX[n] = xs[i];
+          cache.listY[n] = ys[i];
+          cache.listId[n] = i;
+          cache.listKind[n++] = this.itemKind(i);
         }
       }
     }
-    this.listCount = n;
-    this.listAnchorX = x;
-    this.listAnchorY = y;
-    this.listVersion = this.version;
-  }
-
-  // Doubles every list and candidate array so a candidate never overflows.
-  private growLists(): void {
-    const size = this.listX.length * 2;
-    for (const key of ["listX", "listY", "candFx", "candFy", "candC"] as const) {
-      const grown = new Float64Array(size);
-      grown.set(this[key]);
-      this[key] = grown;
-    }
-    for (const key of ["listKind", "candKind"] as const) {
-      const grown = new Uint8Array(size);
-      grown.set(this[key]);
-      this[key] = grown;
-    }
-    const ids = new Int32Array(size);
-    ids.set(this.listId);
-    this.listId = ids;
+    cache.count = n;
+    cache.anchorX = x;
+    cache.anchorY = y;
+    cache.version = this.version;
   }
 
   // Nearest of the wall and the gathered candidates along the unit direction (dx, dy).
-  private traceRay(x: number, y: number, dx: number, dy: number, out: RayHit): void {
+  private traceRay(x: number, y: number, dx: number, dy: number, out: RayHit, cache: RayCache): void {
     const L = this.rayLength;
     let best = L;
     let kind: HitKind = HIT_NONE;
@@ -236,10 +280,10 @@ export class World implements WorldView {
       kind = HIT_WALL;
     }
 
-    const fxs = this.candFx;
-    const fys = this.candFy;
-    const cs = this.candC;
-    for (let k = 0; k < this.candCount; k++) {
+    const fxs = cache.candFx;
+    const fys = cache.candFy;
+    const cs = cache.candC;
+    for (let k = 0; k < cache.candCount; k++) {
       const fx = fxs[k];
       const fy = fys[k];
       const c = cs[k];
@@ -255,7 +299,7 @@ export class World implements WorldView {
       }
       if (t < best || (t === best && kind === HIT_WALL)) {
         best = t;
-        kind = this.candKind[k] as HitKind;
+        kind = cache.candKind[k] as HitKind;
       }
     }
 
@@ -268,53 +312,40 @@ export class World implements WorldView {
     }
   }
 
-  // Items in the grid are always food or poison; eaten ones are unlinked.
+  // Items in the grid are always food or poison; free slots are unlinked.
   private itemKind(i: number): HitKind {
     return this.kinds[i] === HIT_FOOD ? HIT_FOOD : HIT_POISON;
   }
 
-  eatAt(x: number, y: number, radius: number): HitKind {
+  // Index of the first item a body of radius at (x, y) touches, or -1; the item stays until the caller moves or removes it.
+  eatAt(x: number, y: number, radius: number, cache: RayCache): number {
     const reach = radius + this.itemRadius;
     const reach2 = reach * reach;
     // The anchored list holds every item within listReach of its anchor, in the same order as the grid walk below.
-    const ax = x - this.listAnchorX;
-    const ay = y - this.listAnchorY;
+    const ax = x - cache.anchorX;
+    const ay = y - cache.anchorY;
     const lim = this.listReach - reach - 1e-6;
-    if (this.listVersion === this.version && lim > 0 && ax * ax + ay * ay <= lim * lim) {
-      const lx = this.listX;
-      const ly = this.listY;
-      for (let k = 0; k < this.listCount; k++) {
+    if (lim > 0 && ax * ax + ay * ay <= lim * lim && this.listValid(cache)) {
+      const lx = cache.listX;
+      const ly = cache.listY;
+      for (let k = 0; k < cache.count; k++) {
         const fx = lx[k] - x;
         const fy = ly[k] - y;
-        if (fx * fx + fy * fy < reach2) return this.consume(this.listId[k]);
+        if (fx * fx + fy * fy < reach2) return cache.listId[k];
       }
-      return HIT_NONE;
+      return -1;
     }
-    this.clampCellRange(x, y, reach);
-    const { rangeX0: cx0, rangeX1: cx1, rangeY0: cy0, rangeY1: cy1 } = this;
+    this.clampCellRange(x, y, reach, this.eatRange);
+    const { rangeX0: cx0, rangeX1: cx1, rangeY0: cy0, rangeY1: cy1 } = this.eatRange;
     for (let cy = cy0; cy <= cy1; cy++) {
       for (let cx = cx0; cx <= cx1; cx++) {
         for (let i = this.cellHead[cy * this.cols + cx]; i >= 0; i = this.nextItem[i]) {
           const fx = this.xs[i] - x;
           const fy = this.ys[i] - y;
-          if (fx * fx + fy * fy < reach2) return this.consume(i);
+          if (fx * fx + fy * fy < reach2) return i;
         }
       }
     }
-    return HIT_NONE;
-  }
-
-  // Eats item i: it respawns elsewhere or leaves the grid.
-  private consume(i: number): HitKind {
-    const kind = this.itemKind(i);
-    const r = this.itemRadius;
-    if (this.respawn) {
-      this.setItem(i, this.respawnRng.range(r, this.width - r), this.respawnRng.range(r, this.height - r), kind);
-    } else {
-      this.version++;
-      this.unlink(i);
-      this.kinds[i] = HIT_NONE;
-    }
-    return kind;
+    return -1;
   }
 }

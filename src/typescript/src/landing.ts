@@ -3,6 +3,7 @@ import "./landing.css";
 import { fitCanvas } from "./ui/canvas.ts";
 import { TICK_SECONDS, ecosystemScene, liveScene, trialsScene } from "./ui/landingScenes.ts";
 import type { Scene } from "./ui/landingScenes.ts";
+import { TickClock } from "./ui/tickClock.ts";
 
 const SCENES: Record<string, (seed: number) => Scene> = { trials: trialsScene, ecosystem: ecosystemScene, live: liveScene };
 const SPEED = 1.5; // times real time
@@ -30,16 +31,12 @@ const drawCard = (c: Card): void => {
   c.scene.draw(c.ctx);
 };
 
-let last = 0;
-let debt = 0;
+const clock = new TickClock(0);
 let raf = 0;
 
 function frame(now: number): void {
   raf = 0;
-  debt += Math.min(0.25, (now - last) / 1000) * SPEED / TICK_SECONDS; // long gaps (hidden tab) are capped
-  last = now;
-  const ticks = Math.floor(debt);
-  debt -= ticks;
+  const ticks = clock.advance(now, SPEED / TICK_SECONDS);
   for (const c of cards) {
     if (!c.visible) continue;
     for (let i = 0; i < ticks; i++) c.scene.step();
@@ -51,7 +48,7 @@ function frame(now: number): void {
 // Runs only while motion is allowed and some card is on screen.
 function schedule(): void {
   if (raf || reducedMotion.matches || document.hidden || !cards.some((c) => c.visible)) return;
-  last = performance.now();
+  clock.reset(performance.now());
   raf = requestAnimationFrame(frame);
 }
 

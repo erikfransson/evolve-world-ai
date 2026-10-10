@@ -16,6 +16,7 @@ import type { ReplaySource } from "./ui/replay.ts";
 import { drawScene } from "./ui/scene.ts";
 import type { ViewOptions } from "./ui/scene.ts";
 import { fillForm, initSettingsForm, readConfig } from "./ui/settingsForm.ts";
+import { TickClock } from "./ui/tickClock.ts";
 import { initTooltips } from "./ui/tooltip.ts";
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
@@ -64,8 +65,7 @@ const run: RunState = { phase: "idle", worker: null, config: DEFAULT_CONFIG, lat
 const view: ViewOptions = { showAll: true, showRays: true, pov: false };
 let replaySpeed = 4; // simulated seconds per real second
 const STEP_BUDGET_MS = 6; // replay stepping per frame, beyond it the replay runs slower than asked
-let tickDebt = 0; // fractional ticks carried between frames
-let lastFrameAt = performance.now();
+const clock = new TickClock(performance.now());
 const BRAIN_INTERVAL_MS = 25; // the brain panel is the costliest draw, so it refreshes about every second frame at 60 Hz, so about 30 Hz
 let lastBrainAt = 0;
 
@@ -103,7 +103,6 @@ function renderControls(): void {
   settings.disabled = !idle;
   setupForm.classList.toggle("locked", !idle);
   note.textContent = run.error ?? (!idle && run.latest === null ? "Computing generation 0..." : "");
-  legendCard.hidden = brainCard.hidden = fitnessCard.hidden = replay.best === null;
 }
 
 function renderFitness(): void {
@@ -239,17 +238,12 @@ function togglePause(): void {
 
 function frame(now: number): void {
   const dpr = fitCanvas(canvas);
-  // Wall time drives the replay so speed is the same at any refresh rate; long gaps (hidden tab) are capped.
-  const elapsed = Math.min(0.25, Math.max(0, (now - lastFrameAt) / 1000));
-  lastFrameAt = now;
+  // Wall time drives the replay so speed is the same at any refresh rate.
   if (replay.best && run.phase !== "paused") {
-    tickDebt += (elapsed * replaySpeed) / run.config.dt;
-    const ticks = Math.floor(tickDebt);
-    tickDebt -= ticks;
-    replay.advance(ticks, performance.now() + STEP_BUDGET_MS);
+    replay.advance(clock.advance(now, replaySpeed / run.config.dt), performance.now() + STEP_BUDGET_MS);
     if (run.latest && replay.done) loadReplay();
   } else {
-    tickDebt = 0;
+    clock.reset(now);
   }
   const best = replay.best;
   if (best) drawScene(ctx, run.config, best, replay.others, view, `Generation ${replay.generation}`, dpr);

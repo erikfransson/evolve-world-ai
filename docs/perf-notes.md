@@ -23,6 +23,7 @@ The fingerprint hashes all fitness values, so an unchanged fingerprint means unc
 | 2026-10-10 | Round 4: breeding runs the mulberry32 stream inline     | breeding 51 vs 37 ms at pop 1000 | about 3% per generation | bit-identical | Kept |
 | 2026-10-10 | Round 4: overlap breeding with evaluation of the next generation | pop 2000 5 gens 4.08 vs 3.85 s | 1.01-1.06x | bit-identical | Rejected, 212 lines across 7 files for the gain |
 | 2026-10-10 | Round 4: pre-warm pool workers                          | 1.50 vs 1.53 s             | none    | n/a              | Rejected, startup only moves |
+| 2026-10-10 | Shared-world refactor: per-creature ray cache with per-cell invalidation, Creature unit, mutate() | serial medians 3.02 vs 3.05 (8 pairs); threaded later gens equal, first gen +40-60 ms | ~1.0x | bit-identical | Kept, needed for Ecosystem |
 
 Rejected in round 3: typed-array RNG state (breeding 37 to 24 ms, 1% of a generation), wall skip again (0.6%), branchless input compaction (0%), slack 0.15 and 0.6 (0%), branch-free encodeInputs (0%).
 Rejected in round 2: wall skip when far from walls (2%), Float64 dense weights (0%), input-major dense layer (7% slower).
