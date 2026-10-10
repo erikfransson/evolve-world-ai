@@ -27,6 +27,8 @@ export class Episode implements EpisodeView {
   private headSin = 0;
   private readonly rayOffCos: Float64Array;
   private readonly rayOffSin: Float64Array;
+  private readonly rayDirX: Float64Array;
+  private readonly rayDirY: Float64Array;
 
   constructor(config: SimConfig, genome: Genome, layoutSeed: number, creatureIndex: number) {
     this.config = config;
@@ -37,6 +39,8 @@ export class Episode implements EpisodeView {
     this.rayOffsets = rayAngleOffsets(config);
     this.rayOffCos = Float64Array.from(this.rayOffsets, Math.cos);
     this.rayOffSin = Float64Array.from(this.rayOffsets, Math.sin);
+    this.rayDirX = new Float64Array(config.creature.rayCount);
+    this.rayDirY = new Float64Array(config.creature.rayCount);
     this.maxTicks = maxLifeTicks(config);
     this.turnDecay = Math.exp(-config.creature.turnDamping * config.dt);
     this.dragDecay = Math.exp(-config.creature.drag * config.dt);
@@ -77,7 +81,13 @@ export class Episode implements EpisodeView {
     const hs = this.headSin;
     const oc = this.rayOffCos;
     const os = this.rayOffSin;
-    for (let i = 0; i < rays.length; i++) this.world.castRayDir(s.x, s.y, hc * oc[i] - hs * os[i], hs * oc[i] + hc * os[i], rays[i]);
+    const dirX = this.rayDirX;
+    const dirY = this.rayDirY;
+    for (let i = 0; i < rays.length; i++) {
+      dirX[i] = hc * oc[i] - hs * os[i];
+      dirY[i] = hs * oc[i] + hc * os[i];
+    }
+    this.world.castRays(s.x, s.y, dirX, dirY, rays);
     encodeInputs(s, rays, this.config, this.input, hc, hs);
 
     this.brain.forward(this.input, this.output);

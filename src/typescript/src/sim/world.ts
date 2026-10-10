@@ -22,6 +22,12 @@ export class World implements WorldView {
   private readonly cellHead: Int32Array;
   private readonly nextItem: Int32Array;
   private readonly itemCell: Int32Array;
+  // Items near the ray origin, gathered once per sensing; ray-independent terms are precomputed.
+  private candFx = new Float64Array(32);
+  private candFy = new Float64Array(32);
+  private candC = new Float64Array(32); // squared distance minus squared item radius
+  private candKind = new Uint8Array(32);
+  private candCount = 0;
 
   constructor(config: SimConfig, layoutRng: Rng, respawnRng: Rng) {
     const w = config.world;
@@ -88,8 +94,83 @@ export class World implements WorldView {
 
   // Casts a ray of length rayLength along the unit direction (dx, dy) and writes the nearest hit.
   castRayDir(x: number, y: number, dx: number, dy: number, out: RayHit): void {
+    const ex = x + dx * this.rayLength;
+    const ey = y + dy * this.rayLength;
+    this.gatherCandidates(x, y, Math.min(x, ex), Math.min(y, ey), Math.max(x, ex), Math.max(y, ey));
+    this.traceRay(x, y, dx, dy, out);
+  }
+
+  // Casts one ray per direction (dirX[i], dirY[i]) from (x, y), sharing the item lookup between them.
+  castRays(x: number, y: number, dirX: Float64Array, dirY: Float64Array, out: readonly RayHit[]): void {
     const L = this.rayLength;
+    let minX = x;
+    let minY = y;
+    let maxX = x;
+    let maxY = y;
+    for (let i = 0; i < out.length; i++) {
+      const ex = x + dirX[i] * L;
+      const ey = y + dirY[i] * L;
+      if (ex < minX) minX = ex;
+      else if (ex > maxX) maxX = ex;
+      if (ey < minY) minY = ey;
+      else if (ey > maxY) maxY = ey;
+    }
+    this.gatherCandidates(x, y, minX, minY, maxX, maxY);
+    for (let i = 0; i < out.length; i++) this.traceRay(x, y, dirX[i], dirY[i], out[i]);
+  }
+
+  // Collects items that can be hit by a ray from (x, y) inside the box, with their ray-independent terms.
+  private gatherCandidates(x: number, y: number, minX: number, minY: number, maxX: number, maxY: number): void {
     const r = this.itemRadius;
+    const inv = 1 / this.cell;
+    let cx0 = Math.floor((minX - r) * inv);
+    let cx1 = Math.floor((maxX + r) * inv);
+    let cy0 = Math.floor((minY - r) * inv);
+    let cy1 = Math.floor((maxY + r) * inv);
+    if (cx0 < 0) cx0 = 0;
+    if (cy0 < 0) cy0 = 0;
+    if (cx1 >= this.cols) cx1 = this.cols - 1;
+    if (cy1 >= this.rows) cy1 = this.rows - 1;
+    const r2 = r * r;
+    // An item farther than rayLength + r from the origin is never hit within rayLength.
+    const far = this.rayLength + r;
+    const far2 = far * far;
+    const xs = this.xs;
+    const ys = this.ys;
+    let n = 0;
+    for (let cy = cy0; cy <= cy1; cy++) {
+      for (let cx = cx0; cx <= cx1; cx++) {
+        for (let i = this.cellHead[cy * this.cols + cx]; i >= 0; i = this.nextItem[i]) {
+          const fx = xs[i] - x;
+          const fy = ys[i] - y;
+          const d2 = fx * fx + fy * fy;
+          if (d2 > far2) continue;
+          if (n === this.candFx.length) this.growCandidates();
+          this.candFx[n] = fx;
+          this.candFy[n] = fy;
+          this.candC[n] = d2 - r2;
+          this.candKind[n++] = this.itemKind(i);
+        }
+      }
+    }
+    this.candCount = n;
+  }
+
+  private growCandidates(): void {
+    const size = this.candFx.length * 2;
+    for (const key of ["candFx", "candFy", "candC"] as const) {
+      const grown = new Float64Array(size);
+      grown.set(this[key]);
+      this[key] = grown;
+    }
+    const kinds = new Uint8Array(size);
+    kinds.set(this.candKind);
+    this.candKind = kinds;
+  }
+
+  // Nearest of the wall and the gathered candidates along the unit direction (dx, dy).
+  private traceRay(x: number, y: number, dx: number, dy: number, out: RayHit): void {
+    const L = this.rayLength;
     let best = L;
     let kind: HitKind = HIT_NONE;
 
@@ -110,42 +191,26 @@ export class World implements WorldView {
       kind = HIT_WALL;
     }
 
-    // Items in cells overlapping the segment's bounding box grown by r.
-    const ex = x + dx * L;
-    const ey = y + dy * L;
-    const inv = 1 / this.cell;
-    let cx0 = Math.floor(((dx < 0 ? ex : x) - r) * inv);
-    let cx1 = Math.floor(((dx < 0 ? x : ex) + r) * inv);
-    let cy0 = Math.floor(((dy < 0 ? ey : y) - r) * inv);
-    let cy1 = Math.floor(((dy < 0 ? y : ey) + r) * inv);
-    if (cx0 < 0) cx0 = 0;
-    if (cy0 < 0) cy0 = 0;
-    if (cx1 >= this.cols) cx1 = this.cols - 1;
-    if (cy1 >= this.rows) cy1 = this.rows - 1;
-    const r2 = r * r;
-    const xs = this.xs;
-    const ys = this.ys;
-    for (let cy = cy0; cy <= cy1; cy++) {
-      for (let cx = cx0; cx <= cx1; cx++) {
-        for (let i = this.cellHead[cy * this.cols + cx]; i >= 0; i = this.nextItem[i]) {
-          const fx = xs[i] - x;
-          const fy = ys[i] - y;
-          const b = fx * dx + fy * dy;
-          const c = fx * fx + fy * fy - r2;
-          let t: number;
-          if (c < 0) {
-            t = 0;
-          } else {
-            if (b <= 0) continue;
-            const disc = b * b - c;
-            if (disc < 0) continue;
-            t = b - Math.sqrt(disc);
-          }
-          if (t < best || (t === best && kind === HIT_WALL)) {
-            best = t;
-            kind = this.itemKind(i);
-          }
-        }
+    const fxs = this.candFx;
+    const fys = this.candFy;
+    const cs = this.candC;
+    for (let k = 0; k < this.candCount; k++) {
+      const fx = fxs[k];
+      const fy = fys[k];
+      const c = cs[k];
+      const b = fx * dx + fy * dy;
+      let t: number;
+      if (c < 0) {
+        t = 0;
+      } else {
+        if (b <= 0) continue;
+        const disc = b * b - c;
+        if (disc < 0) continue;
+        t = b - Math.sqrt(disc);
+      }
+      if (t < best || (t === best && kind === HIT_WALL)) {
+        best = t;
+        kind = this.candKind[k] as HitKind;
       }
     }
 
