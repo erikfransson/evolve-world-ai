@@ -3,7 +3,7 @@
 Running log of optimisation experiments for large populations (500 to 2000).
 Benchmark: `node src/bench.ts --pop 1000 --gens 2` in `src/typescript` on an 8-core machine, quiet unless noted.
 The fingerprint hashes all fitness values, so an unchanged fingerprint means unchanged results.
-Current fingerprints (since braking, wall bounce and the poison-free start disc): `--pop 1000 --gens 2` 166337991, `--pop 300 --gens 12 --seed 2` 171490408 (before: 484937839, 288163504).
+Current fingerprints (since memory 0.5 and the turn, ray and neuron costs): `--pop 1000 --gens 2` 853982342, `--pop 300 --gens 12 --seed 2` 847740024 (before: 166337991, 171490408, which memory 0 and zero costs still reproduce).
 
 | Date       | Idea                                                    | Seconds (pop 1000, 2 gens) | Speedup | Results          | Verdict  |
 |------------|---------------------------------------------------------|----------------------------|---------|------------------|----------|
@@ -83,4 +83,5 @@ Threads 4 vs 7 at pop 1000: steady generations equal at about 0.29 s; 4 threads 
 | 5000     | 3, 0.5               | 25.5    | 125k             |
 
 Profile at 2000 (4000 x 2500 world): first brain layer 19%, creature rays 17%, item gather 13%, item ray tracing about 12%, eatAt 5%, collisions and crowd rebuild under 4%.
+Body plans and memory (2026-10-10, load about 20): 765 -> 640 ticks/s, 169k -> 133k creature-ticks/s at the defaults (memory 4 + 4, costs on); memory 0 with zero costs is unchanged, fingerprint included.
 Random founders do not reach birthEnergy, so all runs decline; the default goes extinct after about 75 s without a birth.

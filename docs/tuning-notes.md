@@ -6,6 +6,15 @@ Runs use `npm run headless` with a JSON override merged over `DEFAULT_CONFIG`, p
 
 | Date       | Change from defaults at the time                         | Epoch | Mean gen 0-4 | Mean late          | Best late | Verdict                                   |
 |------------|----------------------------------------------------------|-------|--------------|--------------------|-----------|-------------------------------------------|
+| 2026-10-10 | memory 0.5 (4 short + 4 long) + costs (turn 0.5, ray 0.02, neuron 0.005) | none | 24 | 29 (gen 25-29) | 179 | Learns weakly; main baseline today 49 / 242 |
+| 2026-10-10 | costs only (memory 0)                                    | none  | 25           | 50 (gen 25-29)     | 248       | Costs do not hurt learning                |
+| 2026-10-10 | memory 0.5, costs 0                                      | none  | 28           | 33 (gen 25-29)     | 181       | Memory causes the drop                    |
+| 2026-10-10 | memory 0.5 with both rates 0 (dead memory, extra genes)  | none  | 24           | 48 (gen 25-29)     | 250       | Extra genes alone are harmless            |
+| 2026-10-10 | memory 0.5, long rate 0 (4 short units active)           | none  | 24           | 46 (gen 25-29)     | 240       | Short memory alone is fine                |
+| 2026-10-10 | memory 0.5, long rate 0.05                               | none  | 24           | 31 (gen 25-29)     | 183       | Faster long memory does not help          |
+| 2026-10-10 | memory 0.25 (2 + 2)                                      | none  | 24           | 39 (gen 25-29)     | 232       | Less memory, less harm                    |
+| 2026-10-10 | memory 1 (8 + 8), founders with memory inputs at 0     | none  | 23           | 27 (gen 25-29)     | 143       | Most memory, most harm                    |
+| 2026-10-10 | memory 0.5, founders with memory weights at 0            | none  | 24           | 29 (gen 25-29)     | 201       | No help, dropped                          |
 | 2026-10-10 | engine final: binary brake (output < -0.5, maxBrake 200), wallBounce 0.6, poison kept off start | none  | 25           | 49 (gen 25-29)     | 242       | Baseline 50 / 259; 5 seeds, pop 150. Learns clearly |
 | 2026-10-10 | same, braking only (wallBounce 0)                        | none  | 25           | 44 (gen 25-29)     | 209       | Braking costs the most, seeds are noisy   |
 | 2026-10-10 | earlier analog brake (any negative output), 5 seeds      | none  | 25           | 46 (gen 25-29)     | 209       | Replaced by the binary brake              |
@@ -39,6 +48,7 @@ Runs use `npm run headless` with a JSON override merged over `DEFAULT_CONFIG`, p
 All rows from 2026-10-09 use the fish-like physics.
 
 ## Observations
+- 2026-10-10: body plans and memory (#4, #10). Energy per second now also pays turnCost 0.5 at full turn rate, rayCost 0.02 per ray at length 100 (linear in length) and neuronCost 0.005 per hidden neuron and memory unit; braking stays free. Memory setting 0.5 gives 4 short (rate 0.3/tick) + 4 long (0.01/tick) units, 30% of the default Trials weights (23% in the Ecosystem); 1 gives 8 + 8, 46%. Rows above are 5 seeds x 30 generations, pop 150. Learning slows with the long-term units; open question whether to lower the default memory.
 - 2026-10-10: a thrust output below brakeThreshold (-0.5) brakes at a fixed maxBrake 200 (free, never reverses, coasting between -0.5 and 0), walls reflect with wallBounce 0.6 instead of absorbing, and no poison starts within radius + itemRadius + 10 of the start point (issue #3). Trials results changed on purpose; ecosystem founders also get poison moved away.
 - A bigger body does not make foraging easier: it also touches poison more often, so mean survival drops from 144 s (radius 6) to 119 s (12) and 96 s (16).
 - From the finite-food rows on there is no lifetime cap ("none"). Lives end when energy runs out, and a 3600 s safety stop is never reached in practice. Best fitness no longer saturates.
