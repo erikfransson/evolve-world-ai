@@ -27,6 +27,7 @@ export interface SimConfig {
     rayCount: number;
     raySpread: number; // total fan angle in radians
     rayLength: number;
+    seesCreatures: boolean; // rays also report other creatures (Ecosystem); changes the brain input layout
     maxLifeSeconds: number; // safety stop only, normally a life ends when energy runs out
   };
   brain: {
@@ -73,6 +74,7 @@ export const DEFAULT_CONFIG: SimConfig = {
     rayCount: 8,
     raySpread: (75 * Math.PI) / 180,
     rayLength: 100,
+    seesCreatures: false,
     maxLifeSeconds: 3600,
   },
   brain: { hiddenLayers: [16] },
@@ -89,16 +91,20 @@ export const DEFAULT_CONFIG: SimConfig = {
 
 const DENSITY_CELL = 100; // world units; density 1 = one item per 100 x 100 area
 
-// Independent of rayLength, so changing the vision range does not change the amount of food.
-export function itemCounts(config: SimConfig): { food: number; poison: number } {
-  const perUnit = (config.world.width * config.world.height) / DENSITY_CELL ** 2;
+// Items at density 1 on this world. Independent of rayLength, so changing the vision range does not change the amount of food.
+export function itemsPerDensity(config: EngineConfig): number {
+  return (config.world.width * config.world.height) / DENSITY_CELL ** 2;
+}
+
+export function itemCounts(config: EngineConfig): { food: number; poison: number } {
+  const perUnit = itemsPerDensity(config);
   return {
     food: Math.round(config.world.foodDensity * perUnit),
     poison: Math.round(config.world.poisonDensity * perUnit),
   };
 }
 
-export function maxLifeTicks(config: SimConfig): number {
+export function maxLifeTicks(config: EngineConfig): number {
   return Math.round(config.creature.maxLifeSeconds / config.dt);
 }
 

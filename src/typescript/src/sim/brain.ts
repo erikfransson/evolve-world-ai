@@ -1,10 +1,10 @@
-import type { SimConfig } from "./config.ts";
+import type { EngineConfig } from "./config.ts";
 import { OUTPUT_SIZE, inputSize } from "./sensors.ts";
 import type { Genome, Rng } from "./types.ts";
 
 // Genome layout, per layer in order: weights row-major [out][in], then biases [out].
 
-export function layerSizes(config: SimConfig): number[] {
+export function layerSizes(config: EngineConfig): number[] {
   return [inputSize(config), ...config.brain.hiddenLayers, OUTPUT_SIZE];
 }
 
@@ -40,6 +40,7 @@ export function fastTanh(x: number): number {
 
 export class Brain {
   readonly sizes: readonly number[];
+  readonly genome: Genome; // the constructor's buffer, which weights and biases view
   // Per layer views into the genome: weights row-major [out][in], biases [out].
   readonly weights: Float32Array[] = []; // treat as read-only
   readonly biases: Float32Array[] = [];
@@ -60,6 +61,7 @@ export class Brain {
       throw new Error(`genome length ${genome.length} does not match expected ${genomeLength(sizes)}`);
     }
     this.sizes = sizes.slice();
+    this.genome = genome;
     let offset = 0;
     for (let l = 0; l + 1 < sizes.length; l++) {
       const inSize = sizes[l];
@@ -75,10 +77,23 @@ export class Brain {
     this.activeIndex = new Int32Array(sizes[0]);
     this.activeValue = new Float64Array(sizes[0]);
     this.firstLayerByInput = new Float64Array(sizes[0] * sizes[1]);
-    for (let j = 0; j < sizes[1]; j++) {
-      for (let i = 0; i < sizes[0]; i++) this.firstLayerByInput[i * sizes[1] + j] = this.weights[0][j * sizes[0] + i];
-    }
+    this.transposeFirstLayer();
     this.activations = [new Float32Array(sizes[0]), ...this.hidden, new Float32Array(sizes[sizes.length - 1])];
+  }
+
+  // Copies genome into this brain's buffer, so a brain can be reused for another creature.
+  load(genome: Genome): void {
+    if (genome.length !== this.genome.length) throw new Error(`genome length ${genome.length} does not match expected ${this.genome.length}`);
+    this.genome.set(genome);
+    this.transposeFirstLayer();
+  }
+
+  private transposeFirstLayer(): void {
+    const nIn = this.fanIn[0];
+    const nOut = this.fanOut[0];
+    for (let j = 0; j < nOut; j++) {
+      for (let i = 0; i < nIn; i++) this.firstLayerByInput[i * nOut + j] = this.weights[0][j * nIn + i];
+    }
   }
 
   // Valid after forward; before that the input and output are zeros. The array is reused, not a copy.

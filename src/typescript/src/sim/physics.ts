@@ -1,4 +1,4 @@
-import type { SimConfig } from "./config.ts";
+import type { EngineConfig } from "./config.ts";
 import { HIT_FOOD, HIT_POISON } from "./types.ts";
 import type { CreatureState, HitKind } from "./types.ts";
 
@@ -15,7 +15,7 @@ export interface Heading {
   sin: number;
 }
 
-export function decaysFor(config: SimConfig): Decays {
+export function decaysFor(config: EngineConfig): Decays {
   const c = config.creature;
   return {
     turn: Math.exp(-c.turnDamping * config.dt),
@@ -26,7 +26,7 @@ export function decaysFor(config: SimConfig): Decays {
 
 // Advances one creature's motion and energy by one tick: turn, thrust with drag, walls, energy costs.
 // turnOut in [-1, 1], thrust in [0, 1]. Eating and death are separate (consume, settle).
-export function stepBody(s: CreatureState, turnOut: number, thrust: number, config: SimConfig, k: Decays, heading: Heading): void {
+export function stepBody(s: CreatureState, turnOut: number, thrust: number, config: EngineConfig, k: Decays, heading: Heading): void {
   const { dt, creature: c, world: w } = config;
   // Exact exponential relaxation each tick keeps motion smooth and independent of dt.
   const targetTurn = turnOut * c.maxTurnRate;
@@ -45,13 +45,52 @@ export function stepBody(s: CreatureState, turnOut: number, thrust: number, conf
 
   s.x += s.vx * dt;
   s.y += s.vy * dt;
-  // Walls absorb the velocity component pointing into them.
-  if (s.x < c.radius) { s.x = c.radius; s.vx = Math.max(0, s.vx); }
-  else if (s.x > w.width - c.radius) { s.x = w.width - c.radius; s.vx = Math.min(0, s.vx); }
-  if (s.y < c.radius) { s.y = c.radius; s.vy = Math.max(0, s.vy); }
-  else if (s.y > w.height - c.radius) { s.y = w.height - c.radius; s.vy = Math.min(0, s.vy); }
+  keepInside(s, c.radius, w.width, w.height);
 
   s.energy -= (c.livingCost + c.thrustCost * thrust) * dt;
+}
+
+type Body = Pick<CreatureState, "x" | "y" | "vx" | "vy">;
+
+// Clamps a disc into the box; walls absorb the velocity component pointing into them.
+export function keepInside(s: Body, radius: number, width: number, height: number): void {
+  if (s.x < radius) { s.x = radius; s.vx = Math.max(0, s.vx); }
+  else if (s.x > width - radius) { s.x = width - radius; s.vx = Math.min(0, s.vx); }
+  if (s.y < radius) { s.y = radius; s.vy = Math.max(0, s.vy); }
+  else if (s.y > height - radius) { s.y = height - radius; s.vy = Math.min(0, s.vy); }
+}
+
+// Pushes two overlapping equal-mass discs of this radius apart along the line between their centres, half each,
+// and if they approach, reflects their relative normal velocity scaled by restitution (1 swaps the normal components).
+// Momentum is conserved. Returns whether they overlapped.
+export function collide(a: Body, b: Body, radius: number, restitution: number): boolean {
+  let nx = b.x - a.x;
+  let ny = b.y - a.y;
+  const d2 = nx * nx + ny * ny;
+  const reach = 2 * radius;
+  if (d2 >= reach * reach) return false;
+  const d = Math.sqrt(d2);
+  if (d > 0) {
+    nx /= d;
+    ny /= d;
+  } else {
+    nx = 1; // coincident centres: separate along +x
+    ny = 0;
+  }
+  const push = (reach - d) / 2;
+  a.x -= nx * push;
+  a.y -= ny * push;
+  b.x += nx * push;
+  b.y += ny * push;
+  const approach = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
+  if (approach < 0) {
+    const j = (-(1 + restitution) * approach) / 2;
+    a.vx -= j * nx;
+    a.vy -= j * ny;
+    b.vx += j * nx;
+    b.vy += j * ny;
+  }
+  return true;
 }
 
 // Applies what the creature ate this tick (a HitKind from World.eatAt).

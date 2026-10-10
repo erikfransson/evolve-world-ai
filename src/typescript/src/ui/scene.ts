@@ -30,7 +30,7 @@ export const WALL = "#9fb8ad";
 export const FOOD = "#4ade80";
 export const POISON = "#e040fb";
 export const OTHER = "#7dd3fc"; // the rest of a generation
-const RAY_COLORS = ["#6b7f76", FOOD, POISON, "#facc15"]; // indexed by HIT_NONE, HIT_FOOD, HIT_POISON, HIT_WALL
+const RAY_COLORS = ["#6b7f76", FOOD, POISON, "#facc15", OTHER]; // indexed by HIT_NONE, HIT_FOOD, HIT_POISON, HIT_WALL, HIT_CREATURE
 // Body is full at FULL_AT times the starting energy, so a newborn is one third full.
 const FULL_AT = 3;
 // Hue by fill fraction, linear between stops so colour never jumps: red in the last emergency,
