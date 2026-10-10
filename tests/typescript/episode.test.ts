@@ -89,9 +89,19 @@ describe("poison-free start", () => {
     const r = poisonClearRadius(config);
     expect(r).toBe(150);
     const { xs, ys, kinds, count } = e.world;
+    let justOutside = 0; // poison is dense enough that a smaller disc would let some in
     for (let i = 0; i < count; i++) {
       if (kinds[i] !== HIT_POISON) continue;
-      expect(Math.hypot(xs[i]! - e.state.x, ys[i]! - e.state.y)).toBeGreaterThanOrEqual(r);
+      const d = Math.hypot(xs[i]! - e.state.x, ys[i]! - e.state.y);
+      expect(d).toBeGreaterThanOrEqual(r);
+      if (d < r + 30) justOutside++;
     }
+    expect(justOutside).toBeGreaterThan(0);
+  });
+
+  it("caps the radius in small worlds so poison still fits", () => {
+    const config = withOverrides(DEFAULT_CONFIG, { world: { width: 200, height: 200, poisonDensity: 1 } });
+    expect(poisonClearRadius(config)).toBeCloseTo(70);
+    expect(() => new Episode(config, new Float32Array(genomeLength(layerSizes(config))), 1, 0)).not.toThrow();
   });
 });
