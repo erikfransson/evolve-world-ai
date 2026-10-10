@@ -17,6 +17,7 @@ import { formatElapsed } from "./ui/elapsed.ts";
 import { drawScene } from "./ui/scene.ts";
 import type { ViewOptions } from "./ui/scene.ts";
 import { fillForm, initSettingsForm, readConfig } from "./ui/settingsForm.ts";
+import { initSettingsIO } from "./ui/settingsIO.ts";
 import { TickClock } from "./ui/tickClock.ts";
 import { initTooltips } from "./ui/tooltip.ts";
 
@@ -276,6 +277,7 @@ initSettingsForm(setupForm, (c) => {
   run.config = c;
   rebuildPreview();
 });
+initSettingsIO({ mode: "trials", form: setupForm, read: readConfig, fill: fillForm });
 initTooltips($("tooltip"));
 
 fillForm(DEFAULT_CONFIG);

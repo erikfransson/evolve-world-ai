@@ -148,10 +148,12 @@ function applyOverrides(target: Record<string, unknown>, over: Record<string, un
   }
 }
 
-// Returns a new config with overrides applied. Throws on unknown keys or values of the wrong type.
-export function withOverrides(base: SimConfig, overrides: DeepPartial<SimConfig>): SimConfig {
+// Returns a copy of base with overrides applied. Throws on unknown keys or values of the wrong type.
+export function overrideConfig<T extends object>(base: T, overrides: DeepPartial<T>): T {
   if (!isPlain(overrides)) throw new Error(`config overrides must be an object, got ${describe(overrides)}`);
   const config = structuredClone(base);
-  applyOverrides(config as unknown as Record<string, unknown>, overrides, "");
+  applyOverrides(config as Record<string, unknown>, overrides, "");
   return config;
 }
+
+export const withOverrides = (base: SimConfig, overrides: DeepPartial<SimConfig>): SimConfig => overrideConfig<SimConfig>(base, overrides);
