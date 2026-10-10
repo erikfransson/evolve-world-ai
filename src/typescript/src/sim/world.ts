@@ -28,6 +28,7 @@ export class World implements WorldView {
   private candC = new Float64Array(32); // squared distance minus squared item radius
   private candKind = new Uint8Array(32);
   private candCount = 0;
+  private readonly fanNarrow: boolean;
   // Items within reach of an anchor origin, reused while the origin stays within slack of it; version bumps invalidate.
   private readonly slack: number;
   private version = 0;
@@ -50,6 +51,7 @@ export class World implements WorldView {
     this.respawnRng = respawnRng;
     this.respawn = w.respawn;
     this.slack = 0.3 * this.rayLength;
+    this.fanNarrow = config.creature.raySpread < Math.PI - 1e-3;
     this.listReach = this.rayLength + this.itemRadius + 2e-9 * this.rayLength + this.slack;
     const counts = itemCounts(config);
     this.count = counts.food + counts.poison;
@@ -109,12 +111,15 @@ export class World implements WorldView {
 
   // Casts one ray per direction (dirX[i], dirY[i]) from (x, y), sharing the item lookup between them.
   castRays(x: number, y: number, dirX: Float64Array, dirY: Float64Array, out: readonly RayHit[]): void {
-    this.gatherCandidates(x, y);
+    const last = out.length - 1;
+    // Rays are ordered across a fan narrower than a half turn, so an item further than its radius outside the first and last ray cannot be hit.
+    const wedge = last > 0 && dirX[0] * dirY[last] - dirY[0] * dirX[last] > 1e-9 && this.fanNarrow;
+    this.gatherCandidates(x, y, wedge, dirX[0], dirY[0], dirX[last], dirY[last]);
     for (let i = 0; i < out.length; i++) this.traceRay(x, y, dirX[i], dirY[i], out[i]);
   }
 
   // Collects items that can be hit by a ray from (x, y), with their ray-independent terms.
-  private gatherCandidates(x: number, y: number): void {
+  private gatherCandidates(x: number, y: number, wedge: boolean, d0x: number, d0y: number, d1x: number, d1y: number): void {
     const ax = x - this.listAnchorX;
     const ay = y - this.listAnchorY;
     if (this.listVersion !== this.version || ax * ax + ay * ay > this.slack * this.slack) this.rebuildList(x, y);
@@ -123,6 +128,7 @@ export class World implements WorldView {
     // An item farther than rayLength + r from the origin is never hit within rayLength, plus a rounding margin.
     const far = this.rayLength + r + 1e-9 * this.rayLength;
     const far2 = far * far;
+    const margin = r + 1e-6;
     const lx = this.listX;
     const ly = this.listY;
     const lk = this.listKind;
@@ -136,6 +142,7 @@ export class World implements WorldView {
       const fy = ly[k] - y;
       const d2 = fx * fx + fy * fy;
       if (d2 > far2) continue;
+      if (wedge && (d0x * fy - d0y * fx < -margin || d1x * fy - d1y * fx > margin)) continue;
       cfx[n] = fx;
       cfy[n] = fy;
       cc[n] = d2 - r2;
