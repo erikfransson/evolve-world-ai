@@ -1,0 +1,46 @@
+import type { SimConfig } from "./config.ts";
+import { runEpisode } from "./episode.ts";
+import type { Population } from "./population.ts";
+
+// Scores a whole population for one generation. Implementations must return identical fitness for identical input.
+export interface Evaluator {
+  evaluate(population: Population, layoutSeed: number): Promise<Float64Array>;
+  close(): void;
+}
+
+// Fitness of creatures [start, end) into out[0..end-start). The genomes buffer holds creatures from index genomeOffset on.
+export function evaluateRange(
+  config: SimConfig,
+  genomes: Float32Array,
+  genomeLength: number,
+  layoutSeed: number,
+  start: number,
+  end: number,
+  out: Float64Array,
+  genomeOffset = 0,
+): void {
+  for (let i = start; i < end; i++) {
+    const at = (i - genomeOffset) * genomeLength;
+    out[i - start] = runEpisode(config, genomes.subarray(at, at + genomeLength), layoutSeed, i);
+  }
+}
+
+export function evaluateSerial(config: SimConfig, population: Population, layoutSeed: number): Float64Array {
+  const fitness = new Float64Array(population.size);
+  evaluateRange(config, population.data, population.genomeLength, layoutSeed, 0, population.size, fitness);
+  return fitness;
+}
+
+export class SerialEvaluator implements Evaluator {
+  private readonly config: SimConfig;
+
+  constructor(config: SimConfig) {
+    this.config = config;
+  }
+
+  evaluate(population: Population, layoutSeed: number): Promise<Float64Array> {
+    return Promise.resolve(evaluateSerial(this.config, population, layoutSeed));
+  }
+
+  close(): void {}
+}

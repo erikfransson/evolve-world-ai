@@ -1,6 +1,7 @@
 import { genomeLength, layerSizes, randomGenome } from "./brain.ts";
 import type { SimConfig } from "./config.ts";
-import { runEpisode } from "./episode.ts";
+import { evaluateSerial } from "./evaluator.ts";
+import type { Evaluator } from "./evaluator.ts";
 import { nextGeneration } from "./ga.ts";
 import { Population } from "./population.ts";
 import { createRng, deriveSeed } from "./rng.ts";
@@ -27,15 +28,26 @@ export class Evolution {
 
   // Returns the evaluated population; this.population becomes its children.
   runGeneration(): { result: GenerationResult; population: Population } {
+    const layoutSeed = this.layoutSeedFor(this.generation);
+    return this.breed(layoutSeed, evaluateSerial(this.config, this.population, layoutSeed));
+  }
+
+  // Same as runGeneration with the evaluation delegated, e.g. to a worker pool.
+  async runGenerationWith(evaluator: Evaluator): Promise<{ result: GenerationResult; population: Population }> {
+    const layoutSeed = this.layoutSeedFor(this.generation);
+    const population = this.population;
+    const fitness = await evaluator.evaluate(population, layoutSeed);
+    if (population !== this.population) throw new Error("population changed during evaluation");
+    return this.breed(layoutSeed, fitness);
+  }
+
+  private breed(layoutSeed: number, fitness: Float64Array): { result: GenerationResult; population: Population } {
     const generation = this.generation;
-    const layoutSeed = this.layoutSeedFor(generation);
     const population = this.population;
     const n = population.size;
-    const fitness = new Float64Array(n);
     let bestIndex = 0;
     let sum = 0;
     for (let i = 0; i < n; i++) {
-      fitness[i] = runEpisode(this.config, population.genome(i), layoutSeed, i);
       sum += fitness[i];
       if (fitness[i] > fitness[bestIndex]) bestIndex = i;
     }

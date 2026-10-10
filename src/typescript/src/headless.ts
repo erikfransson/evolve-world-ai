@@ -1,12 +1,15 @@
 // Headless runner: evolves for N generations and writes one JSON line per generation.
-// Usage: node src/headless.ts --generations 50 --out runs/run.jsonl [--seed 3] [--config overrides.json]
+// Usage: node src/headless.ts --generations 50 --out runs/run.jsonl [--seed 3] [--config overrides.json] [--threads N]
 
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { availableParallelism } from "node:os";
 import { parseArgs } from "node:util";
 import { DEFAULT_CONFIG, withOverrides } from "./sim/config.ts";
 import type { SimConfig } from "./sim/config.ts";
 import { Evolution } from "./sim/evolution.ts";
+import { defaultThreads } from "./worker/evalPool.ts";
+import { createNodeEvaluator } from "./worker/nodePool.ts";
 
 // parameters
 const { values } = parseArgs({
@@ -15,6 +18,7 @@ const { values } = parseArgs({
     out: { type: "string" },
     seed: { type: "string" },
     config: { type: "string" },
+    threads: { type: "string" }, // 1 = serial, default min(cores - 1, 8)
   },
 });
 const generations = Number(values.generations);
@@ -46,13 +50,20 @@ try {
   process.exit(1);
 }
 
+const threads = values.threads === undefined ? defaultThreads(availableParallelism()) : Number(values.threads);
+if (!Number.isInteger(threads) || threads <= 0) {
+  console.error("error: --threads must be a positive integer");
+  process.exit(1);
+}
+
 mkdirSync(dirname(outPath), { recursive: true });
 writeFileSync(outPath, JSON.stringify({ type: "config", config }) + "\n");
 
 const evolution = new Evolution(config);
+const evaluator = createNodeEvaluator(config, threads);
 for (let i = 0; i < generations; i++) {
   const start = performance.now();
-  const { result } = evolution.runGeneration();
+  const { result } = await evolution.runGenerationWith(evaluator);
   const seconds = (performance.now() - start) / 1000;
   const line = {
     type: "generation",
@@ -68,3 +79,4 @@ for (let i = 0; i < generations; i++) {
     `gen ${result.generation}: best ${result.bestFitness.toFixed(2)} mean ${result.meanFitness.toFixed(2)} bestEver ${evolution.bestEver.toFixed(2)} (${seconds.toFixed(2)}s)`,
   );
 }
+evaluator.close();
