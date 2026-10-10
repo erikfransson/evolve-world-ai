@@ -65,7 +65,7 @@
         </form>
       </aside>
       <section class="stage">
-        <canvas id="view"></canvas>
+        <canvas id="view" tabindex="0" aria-label="World view. Drag to pan, scroll or pinch to zoom, arrow keys pan, plus and minus zoom, 0 fits the world."></canvas>
         <div id="note" class="note"></div>
         <div class="zoom" role="group" aria-label="Zoom">
           <button id="zoomIn" type="button" aria-label="Zoom in" title="Zoom in">+</button>
@@ -94,7 +94,7 @@
             </header>
             <div class="ov-body sel-body">
               <div class="sel-energy">
-                <div class="meter" role="meter" id="selMeter" aria-label="Energy" aria-valuemin="0" aria-valuenow="0"><span id="selFill"></span></div>
+                <div class="meter" role="meter" id="selMeter" aria-label="Energy" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="selFill"></span></div>
                 <span id="selEnergy" class="sel-energy-val">-</span>
               </div>
               <dl class="sel-facts">

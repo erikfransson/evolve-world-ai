@@ -28,6 +28,8 @@
 .zoom button:focus-visible { outline-offset: -2px; }
 .zoom svg { width: 1rem; height: 1rem; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 
+.stage > canvas:focus-visible { outline: 1px solid var(--border-hi); outline-offset: -2px; }
+
 /* extinction dialog */
 .scrim { position: absolute; inset: 0; z-index: 3; display: grid; place-items: center; padding: 16px; background: rgba(5, 15, 10, 0.55); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); border-radius: 12px; }
 .scrim[hidden] { display: none; }

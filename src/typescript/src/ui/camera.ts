@@ -5,7 +5,7 @@ export interface Point {
   y: number;
 }
 
-interface View {
+export interface View {
   cx: number;
   cy: number;
   zoom: number;
@@ -91,6 +91,20 @@ export class Camera {
 
   get animating(): boolean {
     return this.anim !== null;
+  }
+
+  // Where the view is heading: the end of the running animation, else the current view.
+  get goal(): View {
+    return this.anim ? { ...this.anim.to } : { cx: this.cx, cy: this.cy, zoom: this.zoom };
+  }
+
+  // Jumps to the view without animating, clamped like animateTo.
+  setView(cx: number, cy: number, zoom: number): void {
+    this.cancel();
+    this.zoom = this.clampZoom(zoom);
+    this.cx = cx;
+    this.cy = cy;
+    this.clampCentre();
   }
 
   // Visible world extent.
