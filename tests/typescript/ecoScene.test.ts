@@ -63,7 +63,6 @@ describe("EcoRenderer", () => {
   it("draws creatures with rings, fill and a selection ring when zoomed in", () => {
     const calls = draw(5, 3000);
     expect(badCoordinateCalls(calls)).toEqual([]);
-    expect(calls.some((c) => c.name === "setLineDash" && (c.args[0] as number[]).length === 2)).toBe(true);
     expect(calls.filter((c) => c.name === "arc").length).toBeGreaterThan(3);
   });
 

@@ -1,6 +1,7 @@
 import type { EcoConfig } from "../sim/ecoConfig.ts";
 import { BrainView } from "./brainView.ts";
 import { buildEcoForm, fillEcoForm, initEcoSettingsForm, readEcoConfig } from "./ecoSettingsForm.ts";
+import { formatElapsed } from "./elapsed.ts";
 import { initCard } from "./overlays.ts";
 import type { Card } from "./overlays.ts";
 import { PopulationGraph } from "./populationGraph.ts";
@@ -140,6 +141,9 @@ export function createEcoView(handlers: EcoHandlers): EcoView {
     showRays: () => $<HTMLInputElement>("rays").checked,
     setPhase,
     setStats(s) {
+      const timer = $("timer");
+      timer.hidden = s === null;
+      if (s) timer.textContent = formatElapsed(s.simTime);
       setTile("statPop", s && nf.format(s.population));
       setTile("statBirths", s && nf.format(s.births));
       setTile("statDeaths", s && nf.format(s.deaths));

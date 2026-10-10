@@ -1,7 +1,7 @@
-import { DEFAULT_CONFIG } from "../../src/typescript/src/sim/config.ts";
+import { DEFAULT_CONFIG, withOverrides } from "../../src/typescript/src/sim/config.ts";
 import type { SimConfig } from "../../src/typescript/src/sim/config.ts";
 import { genomeLength, layerSizes, randomGenome } from "../../src/typescript/src/sim/brain.ts";
-import { Episode, runEpisode } from "../../src/typescript/src/sim/episode.ts";
+import { Episode, poisonClearRadius, runEpisode } from "../../src/typescript/src/sim/episode.ts";
 import { HIT_POISON } from "../../src/typescript/src/sim/types.ts";
 import { createRng } from "../../src/typescript/src/sim/rng.ts";
 import { planOf, planUpkeep } from "../../src/typescript/src/sim/sensors.ts";
@@ -80,5 +80,29 @@ describe("Episode.sense", () => {
     const sensed = e.rays.map((r) => ({ ...r }));
     e.step();
     expect(e.rays).toEqual(sensed);
+  });
+});
+
+describe("poison-free start", () => {
+  it("keeps poison out of the clear radius around the start point", () => {
+    const config = withOverrides(DEFAULT_CONFIG, { world: { poisonDensity: 1 } });
+    const e = new Episode(config, new Float32Array(genomeLength(layerSizes(config))), 123, 0);
+    const r = poisonClearRadius(config);
+    expect(r).toBe(150);
+    const { xs, ys, kinds, count } = e.world;
+    let justOutside = 0; // poison is dense enough that a smaller disc would let some in
+    for (let i = 0; i < count; i++) {
+      if (kinds[i] !== HIT_POISON) continue;
+      const d = Math.hypot(xs[i]! - e.state.x, ys[i]! - e.state.y);
+      expect(d).toBeGreaterThanOrEqual(r);
+      if (d < r + 30) justOutside++;
+    }
+    expect(justOutside).toBeGreaterThan(0);
+  });
+
+  it("caps the radius in small worlds so poison still fits", () => {
+    const config = withOverrides(DEFAULT_CONFIG, { world: { width: 200, height: 200, poisonDensity: 1 } });
+    expect(poisonClearRadius(config)).toBeCloseTo(70);
+    expect(() => new Episode(config, new Float32Array(genomeLength(layerSizes(config))), 1, 0)).not.toThrow();
   });
 });

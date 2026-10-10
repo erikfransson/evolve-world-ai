@@ -9,6 +9,14 @@ import type { CreatureState, EpisodeView, Genome, HitKind, RayHit, Rng } from ".
 import { World } from "./world.ts";
 
 const CLEAR_MARGIN = 10; // world units kept free of items around the start point
+const CLEAR_MAX_SHARE = 0.35; // of the shorter world side, so small worlds keep room for poison
+
+// Radius around the start point where no poison is placed.
+export function poisonClearRadius(config: SimConfig): number {
+  const { width, height, itemRadius, poisonClearRadius: wanted } = config.world;
+  const touching = config.creature.radius + itemRadius + CLEAR_MARGIN;
+  return Math.max(touching, Math.min(wanted, CLEAR_MAX_SHARE * Math.min(width, height)));
+}
 
 // One creature alone in its own world copy.
 export class Episode implements EpisodeView {
@@ -28,7 +36,7 @@ export class Episode implements EpisodeView {
     const counts = itemCounts(config);
     this.world = new World(config, counts.food + counts.poison);
     const { width, height } = config.world;
-    const clear = { x: width / 2, y: height / 2, radius: config.creature.radius + config.world.itemRadius + CLEAR_MARGIN };
+    const clear = { x: width / 2, y: height / 2, radius: poisonClearRadius(config) };
     this.world.scatter(counts.food, counts.poison, createRng(layoutSeed), clear);
     this.respawnRng = createRng(deriveSeed(layoutSeed, creatureIndex));
     const heading = createRng(deriveSeed(layoutSeed, 0x5eed)).next() * 2 * Math.PI;

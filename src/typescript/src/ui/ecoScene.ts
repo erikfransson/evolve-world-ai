@@ -20,7 +20,11 @@ const BODY = "rgba(15, 23, 20, 0.85)";
 const SELECT_RING = "#eef5f1";
 const DETAIL_MIN_RADIUS = 3; // CSS px; smaller creatures are drawn as flat dots
 const DETAIL_MAX_COUNT = 800; // more visible creatures than this are drawn as flat dots too
-const TINY_ITEM = 1.5; // device px; items smaller than this are drawn as squares
+const TINY_ITEM = 1.5; // device px; items smaller than this are drawn as small dim squares
+const SOLID_ITEM = 4; // device px radius from which items are drawn fully opaque
+const ITEM_DIM = 0.75; // item opacity at the smallest size, so the creatures stand out
+const DOT_RADIUS = 2.4; // CSS px; creatures never draw smaller than this when drawn as dots
+const DOT_OUTLINE = "rgba(6, 12, 9, 0.75)";
 
 // Bright and saturated when young, lighter touch of grey-green when old.
 const STYLES: string[] = [];
@@ -55,13 +59,13 @@ export class EcoRenderer {
     const z = cam.zoom;
     const dev = 1 / z; // one device pixel in world units
     const css = dpr / z;
-    const halfW = cam.viewW / 2;
-    const halfH = cam.viewH / 2;
     const pad = 2 * cfg.radius + 4 * css;
-    const x0 = cam.cx - halfW - pad;
-    const x1 = cam.cx + halfW + pad;
-    const y0 = cam.cy - halfH - pad;
-    const y1 = cam.cy + halfH + pad;
+    const tl = cam.screenToWorld(0, 0);
+    const br = cam.screenToWorld(ctx.canvas.width, ctx.canvas.height);
+    const x0 = tl.x - pad;
+    const x1 = br.x + pad;
+    const y0 = tl.y - pad;
+    const y1 = br.y + pad;
 
     ctx.fillStyle = FLOOR;
     ctx.fillRect(0, 0, cfg.worldW, cfg.worldH);
@@ -76,11 +80,15 @@ export class EcoRenderer {
   }
 
   private drawItems(ctx: CanvasRenderingContext2D, cfg: EcoDrawConfig, v: SnapshotViews, x0: number, x1: number, y0: number, y1: number, dev: number, z: number): void {
-    const tiny = cfg.itemRadius * z < TINY_ITEM;
     const r = cfg.itemRadius;
-    const side = 2 * TINY_ITEM * dev;
-    for (const [kind, color] of [[1, FOOD], [2, POISON]] as const) {
+    const px = r * z; // device px radius
+    const tiny = px < TINY_ITEM;
+    const side = 2 * TINY_ITEM * dev * 0.55; // about 1.6 device px
+    // Dim while small, opaque once large, so mid zoom blends into the full-size items.
+    const solid = Math.min(1, Math.max(0, (px - TINY_ITEM) / (SOLID_ITEM - TINY_ITEM)));
+    for (const [kind, color, boost] of [[1, FOOD, 0], [2, POISON, 0.15]] as const) {
       ctx.fillStyle = color;
+      ctx.globalAlpha = Math.min(1, ITEM_DIM + boost + (1 - ITEM_DIM - boost) * solid);
       ctx.beginPath();
       for (let i = 0; i < v.itemCount; i++) {
         if (v.itemKind[i] !== kind) continue;
@@ -96,6 +104,7 @@ export class EcoRenderer {
       }
       ctx.fill();
     }
+    ctx.globalAlpha = 1;
   }
 
   private drawCreatures(ctx: CanvasRenderingContext2D, cfg: EcoDrawConfig, v: SnapshotViews, x0: number, x1: number, y0: number, y1: number, css: number, cssZoom: number): void {
@@ -127,8 +136,19 @@ export class EcoRenderer {
     const order = this.order;
     for (let k = 0; k < n; k++) order[counts[visBucket[k]!]!++] = vis[k]!;
     // counts[b] is now the end of bucket b, which is the start of bucket b + 1.
-    const round = R * cssZoom >= 1.5;
-    const side = Math.max(2 * R, 3.4 * css);
+    // Round dots at least DOT_RADIUS big, over a dark outline pass, so creatures stand out from the small dim items.
+    const dotR = Math.max(R, DOT_RADIUS * css);
+    const outline = dotR + 0.9 * css;
+    ctx.fillStyle = DOT_OUTLINE;
+    ctx.beginPath();
+    for (let k = 0; k < n; k++) {
+      const i = vis[k]!;
+      const x = v.x[i]!;
+      const y = v.y[i]!;
+      ctx.moveTo(x + outline, y);
+      ctx.arc(x, y, outline, 0, Math.PI * 2);
+    }
+    ctx.fill();
     let at = 0;
     for (let b = 0; b < BUCKETS; b++) {
       const end = counts[b]!;
@@ -139,12 +159,8 @@ export class EcoRenderer {
         const i = order[at]!;
         const x = v.x[i]!;
         const y = v.y[i]!;
-        if (round) {
-          ctx.moveTo(x + R, y);
-          ctx.arc(x, y, R, 0, Math.PI * 2);
-        } else {
-          ctx.rect(x - side / 2, y - side / 2, side, side);
-        }
+        ctx.moveTo(x + dotR, y);
+        ctx.arc(x, y, dotR, 0, Math.PI * 2);
       }
       ctx.fill();
     }
@@ -200,12 +216,13 @@ export class EcoRenderer {
       ctx.globalAlpha = 1;
     }
     const r = Math.max(cfg.radius * 1.4, 7 * css);
-    ctx.strokeStyle = SELECT_RING;
-    ctx.lineWidth = 1.6 * css;
-    ctx.setLineDash([4 * css, 3 * css]);
     ctx.beginPath();
     ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(6, 12, 9, 0.7)"; // dark halo keeps the ring readable on any background
+    ctx.lineWidth = 3.6 * css;
     ctx.stroke();
-    ctx.setLineDash([]);
+    ctx.strokeStyle = SELECT_RING;
+    ctx.lineWidth = 1.6 * css;
+    ctx.stroke();
   }
 }

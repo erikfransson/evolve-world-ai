@@ -108,6 +108,32 @@ describe("camera motion", () => {
     expect(c.cx).toBeCloseTo(1000);
     expect(c.animating).toBe(false);
   });
+
+  it("counts finished animations but not cancelled ones", () => {
+    const c = make();
+    c.animateTo(1000, 800, 3);
+    c.update(0);
+    c.cancel();
+    expect(c.animationsCompleted).toBe(0);
+    c.animateTo(1000, 800, 3);
+    c.update(500);
+    c.update(1000);
+    expect(c.animationsCompleted).toBe(1);
+  });
+});
+
+describe("camera focus offset", () => {
+  it("drops the overlay offset once zoomed out to the whole world", () => {
+    const cam = new Camera(8000, 5000, 1600, 1000);
+    cam.zoomAt(800, 500, 4);
+    cam.setFocusOffset(200, 0, true);
+    cam.zoomAt(800, 500, 1e-3); // wheel all the way out
+    for (let t = 0; t <= 2000; t += 16) cam.update(t);
+    expect(cam.focusX).toBeCloseTo(0, 3);
+    const left = cam.worldToScreen(0, 0);
+    const right = cam.worldToScreen(8000, 0);
+    expect((left.x + right.x) / 2).toBeCloseTo(800, 3);
+  });
 });
 
 describe("DragDetector", () => {

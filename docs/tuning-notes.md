@@ -48,7 +48,7 @@ Runs use `npm run headless` with a JSON override merged over `DEFAULT_CONFIG`, p
 All rows from 2026-10-09 use the fish-like physics.
 
 ## Observations
-- 2026-10-10: body plans and memory (#4, #10). Energy per second now also pays turnCost 0.5 at full turn rate, rayCost 0.02 per ray at length 100 (linear in length) and neuronCost 0.005 per hidden neuron and memory unit; braking stays free. Memory setting 0.5 gives 4 short (rate 0.3/tick) + 4 long (0.01/tick) units, 30% of the default Trials weights (23% in the Ecosystem); 1 gives 8 + 8, 46%. Rows above are 5 seeds x 30 generations, pop 150. Learning slows with the long-term units; open question whether to lower the default memory.
+- 2026-10-10: body plans and memory (#4, #10). Energy per second now also pays turnCost 0.5 at full turn rate, rayCost 0.02 per ray at length 100 (linear in length) and neuronCost 0.005 per hidden neuron and memory unit; braking stays free. Memory setting 0.5 gives 4 short (rate 0.3/tick) + 4 long (0.01/tick) units, 30% of the default Trials weights (23% in the Ecosystem); 1 gives 8 + 8, 46%. Rows above are 5 seeds x 30 generations, pop 150, measured before the 150-unit poison-free start radius. Learning slows with the long-term units; open question whether to lower the default memory.
 - 2026-10-10: a thrust output below brakeThreshold (-0.5) brakes at a fixed maxBrake 200 (free, never reverses, coasting between -0.5 and 0), walls reflect with wallBounce 0.6 instead of absorbing, and no poison starts within radius + itemRadius + 10 of the start point (issue #3). Trials results changed on purpose; ecosystem founders also get poison moved away.
 - A bigger body does not make foraging easier: it also touches poison more often, so mean survival drops from 144 s (radius 6) to 119 s (12) and 96 s (16).
 - From the finite-food rows on there is no lifetime cap ("none"). Lives end when energy runs out, and a 3600 s safety stop is never reached in practice. Best fitness no longer saturates.
@@ -58,6 +58,7 @@ All rows from 2026-10-09 use the fish-like physics.
 - Best fitness saturates at the epoch cap, so mean fitness is the better progress signal.
 - An evolved creature (food 40, 30 generations) swims smooth looping sweeps across the whole world and survives 300 s, while weak ones curve into a wall and starve.
 - A late generation takes about 10 s to compute because good creatures live the full epoch.
+- 2026-10-10: Trials poison-free start radius raised to 150 units (world.poisonClearRadius, capped at 35% of the shorter world side) after the owner saw poison right next to the start.
 
 ## Ideas not yet tried
 - Evaluate each creature on two layouts to reduce layout luck.

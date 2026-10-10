@@ -2,7 +2,7 @@ import { fastTanh, genomeLength, layerSizes, randomGenome } from "../../src/type
 import { DEFAULT_CONFIG, itemCounts } from "../../src/typescript/src/sim/config.ts";
 import type { SimConfig } from "../../src/typescript/src/sim/config.ts";
 import { Creature } from "../../src/typescript/src/sim/creature.ts";
-import { Episode } from "../../src/typescript/src/sim/episode.ts";
+import { Episode, poisonClearRadius } from "../../src/typescript/src/sim/episode.ts";
 import { createRng, deriveSeed } from "../../src/typescript/src/sim/rng.ts";
 import { OUTPUT_SIZE, inputLayout, planOf } from "../../src/typescript/src/sim/sensors.ts";
 import type { BodyPlan } from "../../src/typescript/src/sim/sensors.ts";
@@ -26,7 +26,7 @@ describe("Creature", () => {
     const counts = itemCounts(config);
     const world = new World(config, counts.food + counts.poison);
     const { x, y, heading } = episode.state;
-    world.scatter(counts.food, counts.poison, createRng(seed), { x, y, radius: config.creature.radius + config.world.itemRadius + 10 });
+    world.scatter(counts.food, counts.poison, createRng(seed), { x, y, radius: poisonClearRadius(config) });
     const respawnRng = createRng(deriveSeed(seed, index));
     const creature = new Creature(config, genome, x, y, heading);
     let eats = 0;

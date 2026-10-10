@@ -9,7 +9,7 @@ export type EcoInMessage =
   | { type: "reset" }
   | { type: "speed"; speed: EcoSpeedSetting }
   | { type: "select"; id: number | null }
-  | { type: "recycle"; buffer: ArrayBuffer }; // hands a consumed snapshot buffer back for reuse
+  | { type: "recycle"; buffer: ArrayBuffer; run?: number }; // run: the snapshot's run, only current-run buffers count as returned; hands a consumed snapshot buffer back for reuse
 
 // The selected creature. alive is false once it has died, then only id is meaningful.
 export interface SelectedDetails {
