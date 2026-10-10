@@ -92,14 +92,15 @@ export class Ecosystem {
     this.items.scatter(start.food, start.poison, this.rng);
     this.food = start.food;
     this.poison = start.poison;
-    this.crowd = new Crowd(config, eco.initialPopulation);
+    this.crowd = new Crowd(config, Math.min(eco.initialPopulation, eco.maxPopulation));
     this.sizes = layerSizes(config);
     this.childGenome = new Float32Array(genomeLength(this.sizes));
     this.mutation = { mutationRate: config.mutation.rate, mutationStd: config.mutation.std };
 
     const { width, height } = config.world;
     const r = config.creature.radius;
-    for (let i = 0; i < eco.initialPopulation; i++) {
+    const founders = Math.max(0, Math.min(eco.initialPopulation, eco.maxPopulation));
+    for (let i = 0; i < founders; i++) {
       const genome = randomGenome(this.sizes, this.rng);
       const x = this.rng.range(r, width - r);
       const y = this.rng.range(r, height - r);
@@ -164,7 +165,9 @@ export class Ecosystem {
     const eco = this.config.eco;
     for (let k = 0; k < n && members.length < eco.maxPopulation; k++) {
       const parent = members[(first + k) % n];
-      if (parent.creature.state.energy >= eco.birthEnergy && this.tick - parent.lastBirthTick >= this.cooldownTicks) this.giveBirth(parent);
+      const energy = parent.creature.state.energy;
+      // Above birthCost too, so a birth never kills the parent whatever the settings.
+      if (energy >= eco.birthEnergy && energy > eco.birthCost && this.tick - parent.lastBirthTick >= this.cooldownTicks) this.giveBirth(parent);
     }
 
     this.regrow();

@@ -97,6 +97,14 @@ describe("Ecosystem", () => {
     expect(eco.births).toBe(1);
   });
 
+  it("clamps founders to maxPopulation and never lets a birth cost the parent all its energy", () => {
+    expect(new Ecosystem(still({ initialPopulation: 50, maxPopulation: 10 }, 100)).population).toBe(10);
+    const eco = new Ecosystem(still({ initialPopulation: 1, birthEnergy: 60, birthCost: 300 }, 200));
+    for (let t = 0; t < 5; t++) eco.step();
+    expect(eco.births).toBe(0);
+    expect(eco.members[0].creature.state.energy).toBe(200);
+  });
+
   it("flags extinction when everyone has died and then stops", () => {
     const eco = new Ecosystem(ecoCfg({ creature: { startEnergy: 0.01 } }));
     expect(eco.extinct).toBe(false);

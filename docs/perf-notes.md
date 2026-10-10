@@ -71,3 +71,16 @@ Threads 4 vs 7 at pop 1000: steady generations equal at about 0.29 s; 4 threads 
 - Profile after round 3 (ns per tick, duplicate-the-call method): forward about 500, castRays about 200, encodeInputs about 100, setTrig about 55, rest about 300. The tanh division is about a third of forward.
 - Fuse encodeInputs with the first-layer nonzero scan.
 - WebAssembly port of castRays and Brain.forward (needs a toolchain dependency, ask first).
+
+## Ecosystem (serial, one thread)
+
+`node src/ecoBench.ts --seconds 20 --every 5 [--pop N --food D --regrow R]`, world 8000 x 5000, machine load about 5.
+
+| Founders | Food density, regrow | Ticks/s | Creature-ticks/s |
+|----------|----------------------|---------|------------------|
+| 500      | default 0.5, 0.05    | 556     | 271k             |
+| 2000     | 1.5, 0.2             | 92      | 180k             |
+| 5000     | 3, 0.5               | 25.5    | 125k             |
+
+Profile at 2000 (4000 x 2500 world): first brain layer 19%, creature rays 17%, item gather 13%, item ray tracing about 12%, eatAt 5%, collisions and crowd rebuild under 4%.
+Random founders do not reach birthEnergy, so all runs decline; the default goes extinct after about 75 s without a birth.
