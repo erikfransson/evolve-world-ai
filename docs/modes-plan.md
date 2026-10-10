@@ -43,3 +43,17 @@ Contract: `EcoConfig` in `src/sim/ecoConfig.ts`, built on `EngineConfig` (the sh
 | E3   | Page shell: settings form, controls, stat tiles, cards, extinction overlay                        | contract   |
 | E4   | Worker, snapshot protocol, rendering with camera, selection and follow, brain panel, graph        | E1 to E3   |
 | E5   | Performance: worker pool (postMessage), shared memory when cross-origin isolated (coi-serviceworker), WebAssembly SIMD brain and creature rays | E4 |
+
+## Body plans, memory, seed pool (issues #4, #10, #11), draft
+- Each creature carries a body plan: ray count, ray angle, vision length, hidden layers, memory size. Its genome is the plan plus weights sized by it.
+- Energy per second also pays for sensing, `rayCost x rays x length / 100`, and for turning, so long or many rays are a trade-off, not free.
+- Trials: one plan per run, set in the form as today; different plans compete across runs (the preset challenge, #8).
+- Ecosystem: founders may differ. Vision angle and length drift slightly with mutation; rare structural mutations add or remove a ray or a hidden neuron, with weights remapped.
+- Memory (#10): recurrent units fed back as brain inputs on the next tick, as leaky averages of their targets: short-term at rate 0.3 per tick, long-term at 0.01 per tick. Default 4 + 4, roughly up to 20% of the weights.
+- A tiny energy cost per hidden and memory neuron per second, so bigger brains are not free (tunable, 0 turns it off).
+- Seed pool (#11): a headless builder runs Trials evolutions over many plans and worlds and keeps about 50 diverse good creatures in a JSON file shipped with the site. Ecosystem setting: share of founders from the pool, default 50%; pool founders also seed children.
+
+## Presets and lineages (issues #8, #5), draft
+- Trials and Ecosystem get about 4 preset worlds (normal, poison everywhere, starvation with long vision, ...) plus custom; Trials worlds grow to 2300 x 1400.
+- Top 3 per preset kept in this browser (localStorage); a global board needs a backend and comes later.
+- Lineages: every creature remembers its founder; the page shows the share of the population per founder lineage in founder colours. A family tree view comes later.
