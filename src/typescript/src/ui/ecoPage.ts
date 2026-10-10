@@ -29,6 +29,7 @@ export interface EcoSelected {
   age: number; // seconds
   children: number;
   depth: number; // lineage depth, founders are 0
+  died?: boolean; // the values are those of its last moment
 }
 
 // What the page tells the simulation side. The page switches phase itself, setPhase is for changes the simulation causes.
@@ -160,7 +161,7 @@ export function createEcoView(handlers: EcoHandlers): EcoView {
       const meter = $("selMeter");
       meter.setAttribute("aria-valuemax", String(Math.round(sel.fullEnergy)));
       meter.setAttribute("aria-valuenow", String(Math.round(sel.energy)));
-      $("selEnergy").textContent = `${Math.round(sel.energy)} / ${Math.round(sel.fullEnergy)}`;
+      $("selEnergy").textContent = sel.died ? "died" : `${Math.round(sel.energy)} / ${Math.round(sel.fullEnergy)}`;
       const age = formatSimTime(sel.age);
       $("selAge").textContent = age.text + age.unit;
       $("selChildren").textContent = nf.format(sel.children);

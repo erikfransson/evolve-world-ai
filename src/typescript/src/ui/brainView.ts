@@ -1,5 +1,6 @@
 import type { Brain } from "../sim/brain.ts";
-import { EXTRA_INPUTS, FEAT_FOOD, FEAT_POISON, INPUT_EXTRA_LABELS, OUTPUT_LABELS, RAY_FEATURE_LABELS, RAY_FEATURES } from "../sim/sensors.ts";
+import { EXTRA_INPUTS, FEAT_CREATURE, FEAT_FOOD, FEAT_POISON, INPUT_EXTRA_LABELS, OUTPUT_LABELS, RAY_FEATURE_LABELS } from "../sim/sensors.ts";
+import type { InputLayout } from "../sim/sensors.ts";
 import { fitCanvas } from "./canvas.ts";
 
 const POS_RGB = [255, 107, 107]; // red, positive
@@ -12,8 +13,9 @@ const LABEL_COLOR = "#8fae9f";
 const TEXT_COLOR = "#d6e4dc";
 const FOOD_COLOR = "#4ade80";
 const POISON_COLOR = "#e040fb";
-const FEATURE_LETTERS = RAY_FEATURE_LABELS.map((l) => l[0]!);
-const FEATURE_COLORS = [TEXT_COLOR, FOOD_COLOR, POISON_COLOR, LABEL_COLOR];
+const CREATURE_COLOR = "#7dd3fc";
+const FEATURE_LETTERS: Record<string, string> = { closeness: "c", food: "f", poison: "p", wall: "w", creature: "o", "seen energy": "e" };
+const FEATURE_COLORS = [TEXT_COLOR, FOOD_COLOR, POISON_COLOR, LABEL_COLOR, CREATURE_COLOR, CREATURE_COLOR];
 const HIT_LEVEL = 0.5;
 
 const NB = 6; // edge strength buckets per sign, drawn weakest first so strong edges end on top
@@ -62,8 +64,9 @@ for (let sign = 0; sign < 2; sign++) {
   }
 }
 
-interface Layout {
+export interface Layout {
   sizes: readonly number[];
+  features: number; // input columns per ray
   w: number;
   h: number;
   xs: Float32Array[]; // per node, since the input grid spans several x
@@ -78,9 +81,10 @@ interface Layout {
 
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
 
-function buildLayout(ctx: CanvasRenderingContext2D, sizes: readonly number[], w: number, h: number): Layout {
+// The input layer is drawn as one row per ray with one column per ray feature, then a row of the extra inputs.
+export function buildLayout(ctx: CanvasRenderingContext2D, sizes: readonly number[], features: number, w: number, h: number): Layout {
   const nIn = sizes[0]!;
-  const rays = (nIn - EXTRA_INPUTS) / RAY_FEATURES;
+  const rays = (nIn - EXTRA_INPUTS) / features;
   const cols = sizes.length;
   const pitch = clamp((h - 2 * MARGIN_Y - HEADER_H - EXTRA_BELOW - 4) / (rays + 1), 1, ROW_MAX);
   const extraGap = pitch + 4;
@@ -95,15 +99,15 @@ function buildLayout(ctx: CanvasRenderingContext2D, sizes: readonly number[], w:
   const xIn = new Float32Array(nIn);
   const yIn = new Float32Array(nIn);
   for (let r = 0; r < rays; r++) {
-    for (let f = 0; f < RAY_FEATURES; f++) {
-      xIn[r * RAY_FEATURES + f] = GRID_X + f * FEAT_DX;
-      yIn[r * RAY_FEATURES + f] = row0 + r * pitch;
+    for (let f = 0; f < features; f++) {
+      xIn[r * features + f] = GRID_X + f * FEAT_DX;
+      yIn[r * features + f] = row0 + r * pitch;
     }
   }
   const yExtra = row0 + (rays - 1) * pitch + extraGap;
   for (let k = 0; k < EXTRA_INPUTS; k++) {
-    xIn[rays * RAY_FEATURES + k] = GRID_X + (RAY_FEATURES - EXTRA_INPUTS + k) * FEAT_DX;
-    yIn[rays * RAY_FEATURES + k] = yExtra;
+    xIn[rays * features + k] = GRID_X + (features - EXTRA_INPUTS + k) * FEAT_DX;
+    yIn[rays * features + k] = yExtra;
   }
   xs.push(xIn);
   ys.push(yIn);
@@ -114,7 +118,7 @@ function buildLayout(ctx: CanvasRenderingContext2D, sizes: readonly number[], w:
   for (const l of OUTPUT_LABELS) labelW = Math.max(labelW, ctx.measureText(l).width);
   const outLabelX = w - 8 - labelW;
   const outX = outLabelX - 6 - GAUGE_GAP - 1 - OUT_RADIUS;
-  const gridRight = GRID_X + (RAY_FEATURES - 1) * FEAT_DX;
+  const gridRight = GRID_X + (features - 1) * FEAT_DX;
 
   for (let c = 1; c < cols; c++) {
     const n = sizes[c]!;
@@ -128,14 +132,16 @@ function buildLayout(ctx: CanvasRenderingContext2D, sizes: readonly number[], w:
     ys.push(y);
     radius[c] = last ? OUT_RADIUS : clamp(0.36 * pitchC, 2, 4.8);
   }
-  return { sizes: sizes.slice(), w, h, xs, ys, radius, pitch, rays, headerY: top + 3, extraLabelY: yExtra + IN_RADIUS + 7, outLabelX };
+  return { sizes: sizes.slice(), features, w, h, xs, ys, radius, pitch, rays, headerY: top + 3, extraLabelY: yExtra + IN_RADIUS + 7, outLabelX };
 }
 
-function fits(layout: Layout | null, sizes: readonly number[], w: number, h: number): layout is Layout {
-  if (layout === null || layout.w !== w || layout.h !== h || layout.sizes.length !== sizes.length) return false;
+function fits(layout: Layout | null, sizes: readonly number[], features: number, w: number, h: number): layout is Layout {
+  if (layout === null || layout.features !== features || layout.w !== w || layout.h !== h || layout.sizes.length !== sizes.length) return false;
   for (let i = 0; i < sizes.length; i++) if (layout.sizes[i] !== sizes[i]) return false;
   return true;
 }
+
+const TRIALS_LAYOUT = { rayFeatureLabels: RAY_FEATURE_LABELS };
 
 // Redraws the network of one creature on its own canvas, in CSS pixel units.
 export class BrainView {
@@ -152,7 +158,8 @@ export class BrainView {
     this.ctx = canvas.getContext("2d")!;
   }
 
-  draw(brain: Brain, alive = true): void {
+  // layout says what the input columns mean; the default is the four ray features of Trials.
+  draw(brain: Brain, alive = true, layout: Pick<InputLayout, "rayFeatureLabels"> = TRIALS_LAYOUT): void {
     const { canvas, ctx } = this;
     const cssW = canvas.clientWidth;
     const cssH = canvas.clientHeight;
@@ -162,16 +169,17 @@ export class BrainView {
     ctx.clearRect(0, 0, cssW, cssH);
 
     const sizes = brain.sizes;
-    if (!fits(this.layout, sizes, cssW, cssH)) this.layout = buildLayout(ctx, sizes, cssW, cssH);
-    const layout = this.layout!;
+    const labels = layout.rayFeatureLabels;
+    if (!fits(this.layout, sizes, labels.length, cssW, cssH)) this.layout = buildLayout(ctx, sizes, labels.length, cssW, cssH);
+    const placed = this.layout!;
     const acts = brain.layerActivations();
 
     this.bucketEdges(brain, acts);
     ctx.globalAlpha = alive ? 1 : 0.3;
-    this.drawEdges(sizes, layout);
-    this.drawNodes(layout, acts);
-    this.drawGauges(layout, acts);
-    this.drawLabels(layout, acts);
+    this.drawEdges(sizes, placed);
+    this.drawNodes(placed, acts);
+    this.drawGauges(placed, acts);
+    this.drawLabels(placed, labels, acts);
     if (!alive) this.drawDead(cssW, cssH);
     ctx.globalAlpha = 1;
   }
@@ -315,7 +323,7 @@ export class BrainView {
     }
   }
 
-  private drawLabels({ xs, ys, pitch, rays, headerY, extraLabelY, outLabelX }: Layout, acts: readonly Float32Array[]): void {
+  private drawLabels({ xs, ys, pitch, rays, features, headerY, extraLabelY, outLabelX }: Layout, labels: readonly string[], acts: readonly Float32Array[]): void {
     const ctx = this.ctx;
     const last = ys.length - 1;
     const yIn = ys[0]!;
@@ -325,12 +333,12 @@ export class BrainView {
 
     ctx.font = SMALL_FONT;
     ctx.textAlign = "center";
-    for (let f = 0; f < RAY_FEATURES; f++) {
+    for (let f = 0; f < features; f++) {
       ctx.fillStyle = FEATURE_COLORS[f]!;
-      ctx.fillText(FEATURE_LETTERS[f]!, GRID_X + f * FEAT_DX, headerY);
+      ctx.fillText(FEATURE_LETTERS[labels[f]!] ?? labels[f]![0]!, GRID_X + f * FEAT_DX, headerY);
     }
     ctx.fillStyle = LABEL_COLOR;
-    for (let k = 0; k < EXTRA_INPUTS; k++) ctx.fillText(EXTRA_SHORT[k]!, xIn[rays * RAY_FEATURES + k]!, extraLabelY);
+    for (let k = 0; k < EXTRA_INPUTS; k++) ctx.fillText(EXTRA_SHORT[k]!, xIn[rays * features + k]!, extraLabelY);
 
     // Ray rows light up green for food and magenta for poison, read from the input features.
     ctx.font = ROW_FONT;
@@ -338,11 +346,12 @@ export class BrainView {
     const lx = GRID_X - IN_RADIUS - 5;
     const every = pitch >= 9;
     for (let r = 0; r < rays; r++) {
-      const k = r * RAY_FEATURES;
+      const k = r * features;
       const food = inAct[k + FEAT_FOOD]!;
       const poison = inAct[k + FEAT_POISON]!;
-      const hit = food > HIT_LEVEL || poison > HIT_LEVEL;
-      const color = hit ? (food >= poison ? FOOD_COLOR : POISON_COLOR) : LABEL_COLOR;
+      const creature = features > FEAT_CREATURE ? inAct[k + FEAT_CREATURE]! : 0;
+      const hit = food > HIT_LEVEL || poison > HIT_LEVEL || creature > HIT_LEVEL;
+      const color = !hit ? LABEL_COLOR : creature > HIT_LEVEL ? CREATURE_COLOR : food >= poison ? FOOD_COLOR : POISON_COLOR;
       if (every || r % 2 === 0) {
         ctx.fillStyle = color;
         ctx.fillText(`R${r + 1}`, lx, yIn[k]!);

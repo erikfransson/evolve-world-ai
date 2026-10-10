@@ -13,6 +13,7 @@ import { initCard } from "./ui/overlays.ts";
 import { buildPreview } from "./ui/preview.ts";
 import { Replay, sourceOfLive, sourceOfPast } from "./ui/replay.ts";
 import type { ReplaySource } from "./ui/replay.ts";
+import { formatElapsed } from "./ui/elapsed.ts";
 import { drawScene } from "./ui/scene.ts";
 import type { ViewOptions } from "./ui/scene.ts";
 import { fillForm, initSettingsForm, readConfig } from "./ui/settingsForm.ts";
@@ -236,6 +237,13 @@ function togglePause(): void {
   renderControls();
 }
 
+// Generation, how long the replayed creature has lived, and the longest life so far.
+function replayLabel(ticksAlive: number): string {
+  const elapsed = formatElapsed(ticksAlive * run.config.dt);
+  const bestEver = run.latest ? ` · best ${formatElapsed(run.latest.bestEver)}` : "";
+  return `Generation ${replay.generation} · ${elapsed}${bestEver}`;
+}
+
 function frame(now: number): void {
   const dpr = fitCanvas(canvas);
   // Wall time drives the replay so speed is the same at any refresh rate.
@@ -246,7 +254,7 @@ function frame(now: number): void {
     clock.reset(now);
   }
   const best = replay.best;
-  if (best) drawScene(ctx, run.config, best, replay.others, view, `Generation ${replay.generation}`, dpr);
+  if (best) drawScene(ctx, run.config, best, replay.others, view, replayLabel(best.state.ticksAlive), dpr);
   else if (preview) drawScene(ctx, run.config, preview, [], { showAll: false, showRays: true, pov: false }, "Preview", dpr);
   else drawScene(ctx, run.config, null, [], view, null, dpr);
   if (best && brainPanel.isExpanded() && now - lastBrainAt >= BRAIN_INTERVAL_MS) {
