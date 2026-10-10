@@ -19,6 +19,10 @@ export class Episode implements EpisodeView {
   private readonly input: Float32Array;
   private readonly output: Float32Array;
   private readonly maxTicks: number;
+  // Per-tick decay factors of the exact exponential relaxation, constant for the episode.
+  private readonly turnDecay: number;
+  private readonly dragDecay: number;
+  private readonly sideDecay: number;
 
   constructor(config: SimConfig, genome: Genome, layoutSeed: number, creatureIndex: number) {
     this.config = config;
@@ -28,6 +32,9 @@ export class Episode implements EpisodeView {
     this.output = new Float32Array(OUTPUT_SIZE);
     this.rayOffsets = rayAngleOffsets(config);
     this.maxTicks = maxLifeTicks(config);
+    this.turnDecay = Math.exp(-config.creature.turnDamping * config.dt);
+    this.dragDecay = Math.exp(-config.creature.drag * config.dt);
+    this.sideDecay = Math.exp(-config.creature.sideDrag * config.dt);
     this.rays = [];
     for (let i = 0; i < config.creature.rayCount; i++) this.rays.push({ closeness: 0, kind: HIT_NONE });
     this.state = {
@@ -61,14 +68,14 @@ export class Episode implements EpisodeView {
 
     // Exact exponential relaxation each tick keeps motion smooth and independent of dt.
     const targetTurn = this.output[OUT_TURN] * c.maxTurnRate;
-    s.turnRate = targetTurn + (s.turnRate - targetTurn) * Math.exp(-c.turnDamping * dt);
+    s.turnRate = targetTurn + (s.turnRate - targetTurn) * this.turnDecay;
     s.heading += s.turnRate * dt;
 
     const cos = Math.cos(s.heading);
     const sin = Math.sin(s.heading);
     const terminal = (thrust * c.maxThrust) / c.drag;
-    const fwd = terminal + (s.vx * cos + s.vy * sin - terminal) * Math.exp(-c.drag * dt);
-    const side = (-s.vx * sin + s.vy * cos) * Math.exp(-c.sideDrag * dt);
+    const fwd = terminal + (s.vx * cos + s.vy * sin - terminal) * this.dragDecay;
+    const side = (-s.vx * sin + s.vy * cos) * this.sideDecay;
     s.vx = fwd * cos - side * sin;
     s.vy = fwd * sin + side * cos;
 

@@ -40,6 +40,9 @@ export class Brain {
   private readonly hidden: Float32Array[] = [];
   // [input, ...hidden, output] of the last forward call; the ends are the caller's buffers.
   private readonly activations: Float32Array[] = [];
+  // Scratch for the nonzero inputs of the first layer.
+  private readonly activeIndex: Int32Array;
+  private readonly activeValue: Float64Array;
 
   constructor(sizes: number[], genome: Genome) {
     if (genome.length !== genomeLength(sizes)) {
@@ -58,6 +61,8 @@ export class Brain {
       this.fanOut.push(outSize);
       if (l + 2 < sizes.length) this.hidden.push(new Float32Array(outSize));
     }
+    this.activeIndex = new Int32Array(sizes[0]);
+    this.activeValue = new Float64Array(sizes[0]);
     this.activations = [new Float32Array(sizes[0]), ...this.hidden, new Float32Array(sizes[sizes.length - 1])];
   }
 
@@ -73,17 +78,46 @@ export class Brain {
     let src = input;
     for (let l = 0; l < layers; l++) {
       const dst = l === layers - 1 ? output : this.hidden[l];
-      const w = this.weights[l];
-      const b = this.biases[l];
-      const nIn = this.fanIn[l];
-      const nOut = this.fanOut[l];
-      for (let j = 0; j < nOut; j++) {
-        let sum = b[j];
-        const row = j * nIn;
-        for (let i = 0; i < nIn; i++) sum += w[row + i] * src[i];
-        dst[j] = Math.tanh(sum);
-      }
+      if (l === 0) this.sparseLayer(input, dst);
+      else this.denseLayer(l, src, dst);
       src = dst;
+    }
+  }
+
+  // First layer: skips zero inputs (mostly one-hot ray flags). Adding w * 0 leaves a finite sum unchanged, so results are identical.
+  private sparseLayer(input: Float32Array, dst: Float32Array): void {
+    const w = this.weights[0];
+    const b = this.biases[0];
+    const nIn = this.fanIn[0];
+    const nOut = this.fanOut[0];
+    const idx = this.activeIndex;
+    const val = this.activeValue;
+    let n = 0;
+    for (let i = 0; i < nIn; i++) {
+      const v = input[i];
+      if (v !== 0) {
+        idx[n] = i;
+        val[n++] = v;
+      }
+    }
+    for (let j = 0; j < nOut; j++) {
+      let sum = b[j];
+      const row = j * nIn;
+      for (let k = 0; k < n; k++) sum += w[row + idx[k]] * val[k];
+      dst[j] = Math.tanh(sum);
+    }
+  }
+
+  private denseLayer(l: number, src: Float32Array, dst: Float32Array): void {
+    const w = this.weights[l];
+    const b = this.biases[l];
+    const nIn = this.fanIn[l];
+    const nOut = this.fanOut[l];
+    for (let j = 0; j < nOut; j++) {
+      let sum = b[j];
+      const row = j * nIn;
+      for (let i = 0; i < nIn; i++) sum += w[row + i] * src[i];
+      dst[j] = Math.tanh(sum);
     }
   }
 }
