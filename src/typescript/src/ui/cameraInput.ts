@@ -1,11 +1,13 @@
 import type { Camera } from "./camera.ts";
 import { DragDetector } from "./camera.ts";
 
-const DRAG_PX = 5; // device pixels of movement before a press becomes a drag
+const DRAG_CSS_PX = { mouse: 4, touch: 10 }; // CSS pixels of movement before a press becomes a drag
+const WHEEL_STEP_PX = 50; // a pixel-mode vertical step at least this big (and no deltaX) is a mouse wheel notch
 const WHEEL_K = 0.0015; // zoom factor is exp(-deltaY * k)
 const PINCH_WHEEL_K = 0.01; // trackpad pinch arrives as ctrl+wheel with small deltas
 const KEY_ZOOM = 1.25;
 const KEY_PAN = 0.15; // fraction of the view per arrow press
+const KEY_REPEAT = 1 / 3; // auto-repeat events apply this share of a press directly, so held keys glide
 const DBLCLICK_ZOOM = 2.5;
 
 // Canvas-relative position in backing-store pixels, so it holds for any devicePixelRatio and CSS size.
@@ -16,7 +18,7 @@ function pos(canvas: HTMLCanvasElement, clientX: number, clientY: number): { x: 
 
 export function attachCameraInput(cam: Camera, canvas: HTMLCanvasElement): () => void {
   const pointers = new Map<number, { x: number; y: number }>();
-  const drag = new DragDetector(DRAG_PX);
+  let drag = new DragDetector(0);
   let startX = 0;
   let startY = 0;
   let pinchDist = 0;
@@ -28,11 +30,16 @@ export function attachCameraInput(cam: Camera, canvas: HTMLCanvasElement): () =>
     return { dist: Math.hypot(a!.x - b!.x, a!.y - b!.y), x: (a!.x + b!.x) / 2, y: (a!.y + b!.y) / 2 };
   };
 
+  // Backing-store pixels per CSS pixel.
+  const cssScale = (): number => canvas.width / (canvas.getBoundingClientRect().width || 1);
+
   const onDown = (e: PointerEvent): void => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
     const p = pos(canvas, e.clientX, e.clientY);
     pointers.set(e.pointerId, p);
     canvas.setPointerCapture?.(e.pointerId);
     if (pointers.size === 1) {
+      drag = new DragDetector((e.pointerType === "touch" ? DRAG_CSS_PX.touch : DRAG_CSS_PX.mouse) * cssScale());
       drag.start(p.x, p.y);
       startX = p.x;
       startY = p.y;
@@ -75,8 +82,17 @@ export function attachCameraInput(cam: Camera, canvas: HTMLCanvasElement): () =>
     if (pointers.size === 1) drag.dragging = true; // the remaining finger of a pinch pans, never clicks
   };
 
+  // ctrl+wheel (trackpad pinch) and mouse wheels zoom at the cursor, a trackpad two-finger scroll pans.
+  // A mouse wheel reports line or page units, or pixel steps of 50+ with no deltaX. Small pixel deltas or any deltaX mean a trackpad.
   const onWheel = (e: WheelEvent): void => {
     e.preventDefault();
+    const zooms = e.ctrlKey || e.deltaMode !== 0 || (e.deltaX === 0 && Math.abs(e.deltaY) >= WHEEL_STEP_PX);
+    if (!zooms) {
+      cam.cancel();
+      const k = cssScale();
+      cam.panBy(-e.deltaX * k, -e.deltaY * k);
+      return;
+    }
     const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
     const factor = Math.exp(-e.deltaY * unit * (e.ctrlKey ? PINCH_WHEEL_K : WHEEL_K));
     if (cam.following) {
@@ -95,31 +111,44 @@ export function attachCameraInput(cam: Camera, canvas: HTMLCanvasElement): () =>
     cam.animateTo(v.cx, v.cy, v.zoom);
   };
 
+  const clearPointers = (): void => {
+    pointers.clear();
+    pinchDist = 0;
+  };
+
+  const onLostCapture = (e: PointerEvent): void => {
+    pointers.delete(e.pointerId);
+    pinchDist = 0;
+  };
+
+  // Keys act only while the canvas has focus. Targets build on the animation goal, repeats move the view directly.
   const onKey = (e: KeyboardEvent): void => {
-    if (e.ctrlKey || e.metaKey || e.altKey) return;
-    const t = e.target as HTMLElement | null;
-    if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
-    let { cx, cy, zoom } = cam;
+    if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+    const g = cam.goal;
+    const step = e.repeat ? KEY_REPEAT : 1;
+    let { cx, cy, zoom } = g;
+    const vw = canvas.width / zoom;
+    const vh = canvas.height / zoom;
     switch (e.key) {
       case "+":
       case "=":
-        zoom *= KEY_ZOOM;
+        zoom *= KEY_ZOOM ** step;
         break;
       case "-":
       case "_":
-        zoom /= KEY_ZOOM;
+        zoom /= KEY_ZOOM ** step;
         break;
       case "ArrowLeft":
-        cx -= cam.viewW * KEY_PAN;
+        cx -= vw * KEY_PAN * step;
         break;
       case "ArrowRight":
-        cx += cam.viewW * KEY_PAN;
+        cx += vw * KEY_PAN * step;
         break;
       case "ArrowUp":
-        cy -= cam.viewH * KEY_PAN;
+        cy -= vh * KEY_PAN * step;
         break;
       case "ArrowDown":
-        cy += cam.viewH * KEY_PAN;
+        cy += vh * KEY_PAN * step;
         break;
       case "0":
         e.preventDefault();
@@ -130,25 +159,32 @@ export function attachCameraInput(cam: Camera, canvas: HTMLCanvasElement): () =>
         return;
     }
     e.preventDefault();
-    cam.cancel();
-    cam.animateTo(cx, cy, zoom);
+    if (e.repeat) cam.setView(cx, cy, zoom);
+    else {
+      cam.cancel();
+      cam.animateTo(cx, cy, zoom);
+    }
   };
 
   canvas.addEventListener("pointerdown", onDown);
   canvas.addEventListener("pointermove", onMove);
   canvas.addEventListener("pointerup", onUp);
   canvas.addEventListener("pointercancel", onUp);
+  canvas.addEventListener("lostpointercapture", onLostCapture);
   canvas.addEventListener("wheel", onWheel, { passive: false });
   canvas.addEventListener("dblclick", onDblClick);
-  window.addEventListener("keydown", onKey);
+  canvas.addEventListener("keydown", onKey);
+  window.addEventListener("blur", clearPointers);
   return () => {
     canvas.removeEventListener("pointerdown", onDown);
     canvas.removeEventListener("pointermove", onMove);
     canvas.removeEventListener("pointerup", onUp);
     canvas.removeEventListener("pointercancel", onUp);
+    canvas.removeEventListener("lostpointercapture", onLostCapture);
     canvas.removeEventListener("wheel", onWheel);
     canvas.removeEventListener("dblclick", onDblClick);
-    window.removeEventListener("keydown", onKey);
+    canvas.removeEventListener("keydown", onKey);
+    window.removeEventListener("blur", clearPointers);
     canvas.style.touchAction = prevTouchAction;
     pointers.clear();
   };

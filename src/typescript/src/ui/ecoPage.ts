@@ -96,6 +96,7 @@ export function createEcoView(handlers: EcoHandlers): EcoView {
   const extinct = $("extinct");
   const mobile = window.matchMedia("(max-width: 700px)").matches;
   let phase: EcoPhase = "idle";
+  let returnFocus: HTMLElement | null = null;
 
   buildEcoForm($("settings"));
   fillEcoForm(readEcoConfig());
@@ -121,6 +122,10 @@ export function createEcoView(handlers: EcoHandlers): EcoView {
     $<HTMLFieldSetElement>("settings").disabled = !idle;
     setup.classList.toggle("locked", !idle);
     extinct.hidden = p !== "extinct";
+    if (p !== "extinct" && returnFocus) {
+      if (extinct.contains(document.activeElement) || document.activeElement === document.body) returnFocus.focus();
+      returnFocus = null;
+    }
   };
 
   const view: EcoView = {
@@ -171,7 +176,9 @@ export function createEcoView(handlers: EcoHandlers): EcoView {
     },
     showExtinct(simSeconds) {
       $("extinctTitle").textContent = `Extinct after ${Math.round(simSeconds)} s`;
+      if (phase !== "extinct") returnFocus = document.activeElement as HTMLElement | null;
       setPhase("extinct");
+      $("reseed").focus();
     },
     hideExtinct() {
       if (phase === "extinct") setPhase("running");
