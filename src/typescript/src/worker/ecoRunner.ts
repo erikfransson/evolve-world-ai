@@ -23,6 +23,7 @@ export class EcoRunner {
   private speed: EcoSpeedSetting = 1;
   private selectedId: number | null = null;
   private sendGenome = false;
+  private bestRequest = 0;
   private debt = 0; // ticks owed to the clock
   private last = 0;
   private lastPost = 0;
@@ -70,11 +71,10 @@ export class EcoRunner {
         break;
       case "selectBest": {
         const best = this.eco ? this.best(this.eco, msg.by) : null;
-        if (best) {
-          this.selectedId = best.id;
-          this.sendGenome = true;
-          this.postSnapshot();
-        }
+        this.bestRequest = msg.request;
+        this.selectedId = best ? best.id : null;
+        this.sendGenome = best !== null;
+        if (this.eco) this.postSnapshot();
         break;
       }
       case "recycle":
@@ -214,6 +214,7 @@ export class EcoRunner {
       itemCap,
       buffer,
       selected: this.selectedDetails(eco),
+      bestRequest: this.bestRequest,
     };
     if (this.historyChanged) {
       msg.history = Float64Array.from(this.samples);

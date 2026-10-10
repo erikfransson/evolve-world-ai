@@ -47,7 +47,8 @@ let live: Live | null = null;
 let selection: Selection | null = null;
 let following = false; // the Follow toggle as the page shows it
 let pendingFollow = false; // follow once the zoom-in animation has ended
-let pendingBest = false; // a selectBest request is out; its first snapshot starts the selection
+let bestRequests = 0; // selectBest requests sent
+let pendingBest = 0; // the selectBest request whose answer starts the next selection, 0 for none
 let followAfter = 0; // camera.animationsCompleted that means the zoom-in finished
 let showRays = true;
 let extinctShown = false;
@@ -105,7 +106,7 @@ function releaseLive(): void {
 
 function clearSelection(): void {
   selection = null;
-  pendingBest = false;
+  pendingBest = 0;
   pendingFollow = false;
   following = false;
   camera.follow(null);
@@ -131,9 +132,9 @@ function onSnapshot(e: MessageEvent<EcoOutMessage>): void {
   if (previous) send({ type: "recycle", buffer: previous.msg.buffer, run: previous.msg.run }, [previous.msg.buffer]);
   if (msg.history) view.setHistory(toSamples(msg.history));
   const d = msg.selected;
-  if (pendingBest && d?.alive && d.genome) {
-    beginSelection(d.id, d.x, d.y);
-    pendingBest = false;
+  if (pendingBest && msg.bestRequest === pendingBest) {
+    pendingBest = 0;
+    if (d?.alive && d.genome) beginSelection(d.id, d.x, d.y);
   }
   if (selection && d && d.id === selection.id) {
     if (d.genome) selection.brain = new Brain(layerSizes(config), d.genome);
@@ -200,8 +201,8 @@ function select(index: number): void {
 function selectBest(by: BestBy): void {
   if (!live) return;
   clearSelection();
-  send({ type: "selectBest", by });
-  pendingBest = true;
+  pendingBest = ++bestRequests;
+  send({ type: "selectBest", by, request: pendingBest });
 }
 
 function beginSelection(id: number, x: number, y: number): void {
