@@ -205,8 +205,8 @@ function drawPov(ctx: CanvasRenderingContext2D, f: Frame, s: CreatureState): voi
 export function drawScene(
   ctx: CanvasRenderingContext2D,
   config: SimConfig,
-  episodes: readonly EpisodeView[],
-  bestIndex: number,
+  best: EpisodeView | null,
+  others: readonly EpisodeView[],
   view: ViewOptions,
 ): void {
   const cw = ctx.canvas.width;
@@ -232,12 +232,11 @@ export function drawScene(
   ctx.lineWidth = Math.max(2, 3 / f.scale);
   ctx.strokeRect(0, 0, ww, wh);
 
-  const best = episodes[bestIndex];
   if (best) {
     drawItems(ctx, f, best.world);
     if (view.showAll) {
-      for (let i = 0; i < episodes.length; i++) {
-        if (i !== bestIndex && episodes[i]!.state.alive) drawOther(ctx, f, episodes[i]!.state);
+      for (let i = 0; i < others.length; i++) {
+        if (others[i]!.state.alive) drawOther(ctx, f, others[i]!.state);
       }
     }
     drawBest(ctx, f, best.state);

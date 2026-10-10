@@ -5,7 +5,7 @@ import type { GenerationMessage, InMessage } from "./worker/protocol.ts";
 import { BrainView } from "./ui/brainView.ts";
 import { fitCanvas } from "./ui/canvas.ts";
 import { initCard } from "./ui/overlays.ts";
-import { Replay } from "./ui/replay.ts";
+import { MAX_OTHERS, Replay } from "./ui/replay.ts";
 import { drawScene } from "./ui/scene.ts";
 import type { ViewOptions } from "./ui/scene.ts";
 import { fillForm, initSettingsForm, readConfig } from "./ui/settingsForm.ts";
@@ -24,6 +24,7 @@ const setupForm = $<HTMLFormElement>("setup");
 const legendCard = $("legendCard");
 const brainCard = $("brainCard");
 const legendRest = $("legendRest");
+const legendRestText = $("legendRestText");
 const legendPoison = $("legendPoison");
 initCard(legendCard, "evolve.card.legend", false);
 const brainPanel = initCard(brainCard, "evolve.card.brain", window.matchMedia("(max-width: 700px)").matches);
@@ -43,6 +44,7 @@ const run: RunState = { phase: "idle", worker: null, config: DEFAULT_CONFIG, lat
 // Updated by change events, not read from the DOM every frame.
 const view: ViewOptions = { showAll: true, showRays: true, pov: false };
 let replaySpeed = 4; // simulated seconds per real second
+const STEP_BUDGET_MS = 6; // replay stepping per frame, beyond it the replay runs slower than asked
 let tickDebt = 0; // fractional ticks carried between frames
 let lastFrameAt = performance.now();
 
@@ -57,6 +59,7 @@ function readView(): void {
 // Legend rows follow the view and run config, the cards appear once a replay exists.
 function renderOverlays(): void {
   legendRest.hidden = !view.showAll;
+  legendRestText.textContent = run.config.population.size > MAX_OTHERS + 1 ? `Top ${MAX_OTHERS} of the rest` : "Rest of generation";
   legendPoison.hidden = itemCounts(run.config).poison <= 0;
   legendCard.hidden = brainCard.hidden = replay.best === null;
 }
@@ -96,6 +99,7 @@ function renderStats(): void {
 function refresh(): void {
   renderControls();
   renderStats();
+  renderOverlays();
 }
 
 // Replays the newest generation received, looping the same one if no newer has arrived.
@@ -153,12 +157,12 @@ function frame(now: number): void {
     tickDebt += (elapsed * replaySpeed) / run.config.dt;
     const ticks = Math.floor(tickDebt);
     tickDebt -= ticks;
-    replay.advance(ticks);
+    replay.advance(ticks, view.showAll, performance.now() + STEP_BUDGET_MS);
     if (run.latest && replay.done) loadReplay();
   } else {
     tickDebt = 0;
   }
-  drawScene(ctx, run.config, replay.episodes, replay.bestIndex, view);
+  drawScene(ctx, run.config, replay.best, replay.others, view);
   const best = replay.best;
   if (best && brainPanel.isExpanded()) brainView.draw(best.brain, best.state.alive);
   requestAnimationFrame(frame);
