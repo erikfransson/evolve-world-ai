@@ -20,9 +20,6 @@
 .sel-actions button { flex: 1; padding: 0.3rem 0.6rem; font-size: 0.85rem; }
 .sel-actions button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
 
-/* every card in the desktop stack shares the widest card's width */
-.ov-stack { align-items: stretch; }
-
 /* timer pill, level with the zoom cluster's first button */
 .timer { position: absolute; z-index: 1; top: 10px; right: calc(10px + 2.2rem + 2px + 8px); height: calc(2.2rem + 2px); padding: 0 0.8rem; display: flex; align-items: center; background: color-mix(in srgb, var(--card) 82%, transparent); border: 1px solid color-mix(in srgb, var(--muted) 35%, transparent); border-radius: 12px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); color: var(--text); font-size: 0.85rem; font-weight: 500; font-variant-numeric: tabular-nums; pointer-events: none; }
 .timer[hidden] { display: none; }
