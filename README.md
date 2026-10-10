@@ -1,5 +1,8 @@
 # Evolve World AI
 
+[![Test and deploy](https://github.com/erikfransson/evolve-world-ai/actions/workflows/deploy.yml/badge.svg)](https://github.com/erikfransson/evolve-world-ai/actions/workflows/deploy.yml)
+[![Coverage](https://img.shields.io/endpoint?url=https://erikfransson.github.io/evolve-world-ai/coverage/badge.json)](https://erikfransson.github.io/evolve-world-ai/coverage/)
+
 ## Repo structure
 * `src/typescript/` web app and simulation (Vite + TypeScript), one HTML page per mode
   * `index.html` landing page, `trials/` the current app, `ecosystem/` and `live/` placeholders

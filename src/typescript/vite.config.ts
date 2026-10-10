@@ -15,5 +15,10 @@ export default defineConfig({
   test: {
     dir: "../../tests/typescript",
     globals: true,
+    coverage: {
+      provider: "v8",
+      include: ["src/**/*.ts"],
+      reporter: ["text-summary", "html", "json-summary"],
+    },
   },
 });
