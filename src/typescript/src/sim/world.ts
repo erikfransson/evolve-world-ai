@@ -86,11 +86,7 @@ export class World implements WorldView {
     this.itemCell[i] = -1;
   }
 
-  castRay(x: number, y: number, angle: number, out: RayHit): void {
-    this.castRayDir(x, y, Math.cos(angle), Math.sin(angle), out);
-  }
-
-  // Same as castRay with the unit direction (dx, dy) given directly.
+  // Casts a ray of length rayLength along the unit direction (dx, dy) and writes the nearest hit.
   castRayDir(x: number, y: number, dx: number, dy: number, out: RayHit): void {
     const L = this.rayLength;
     const r = this.itemRadius;
