@@ -2,6 +2,7 @@ import type { SimConfig } from "../sim/config.ts";
 import { SerialEvaluator } from "../sim/evaluator.ts";
 import type { Evaluator } from "../sim/evaluator.ts";
 import type { Population } from "../sim/population.ts";
+import type { RecordPlan } from "../sim/trajectory.ts";
 import type { PoolWorker } from "./evalPool.ts";
 import { PoolEvaluator, defaultThreads } from "./evalPool.ts";
 
@@ -43,6 +44,10 @@ class BrowserEvaluator implements Evaluator {
       this.serial = new SerialEvaluator(this.config);
       return this.serial.evaluate(population, layoutSeed);
     }
+  }
+
+  record(population: Population, layoutSeed: number, plan: RecordPlan): Promise<Float32Array> {
+    return (this.pool ?? this.serial!).record(population, layoutSeed, plan);
   }
 
   close(): void {

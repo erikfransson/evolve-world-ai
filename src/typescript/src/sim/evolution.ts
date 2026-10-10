@@ -12,7 +12,7 @@ export class Evolution {
   population: Population;
   bestEver = 0;
 
-  private readonly config: SimConfig;
+  readonly config: SimConfig;
   private readonly serial: Evaluator;
 
   constructor(config: SimConfig) {
