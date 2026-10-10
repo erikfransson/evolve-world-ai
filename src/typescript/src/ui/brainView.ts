@@ -27,7 +27,7 @@ const FEAT_DX = 12;
 const IN_RADIUS = 2.6;
 const ROW_MAX = 12;
 const HEADER_H = 15; // feature header band above the first ray row
-const EXTRA_BELOW = 14; // E S T labels and padding under the extras row
+const EXTRA_BELOW = 14; // E S L T labels and padding under the extras row
 const MARGIN_Y = 6;
 const OUT_RADIUS = 8;
 const OUT_PITCH = 36;
@@ -37,7 +37,7 @@ const ROW_FONT = `500 10px ${FONT_FAMILY}`;
 const SMALL_FONT = `9px ${FONT_FAMILY}`;
 const OUT_FONT = `600 15px ${FONT_FAMILY}`;
 const DEAD_FONT = `600 16px ${FONT_FAMILY}`;
-const EXTRA_SHORT = INPUT_EXTRA_LABELS.map((l) => l[0]!.toUpperCase()); // E, S, T
+const EXTRA_SHORT = INPUT_EXTRA_LABELS.map((l) => l[0]!.toUpperCase()); // E, S, L, T
 
 const rgba = (c: number[], a: number): string => `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${a.toFixed(3)})`;
 

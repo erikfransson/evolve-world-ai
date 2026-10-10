@@ -9,7 +9,7 @@ export const FEAT_CLOSENESS = 0;
 export const FEAT_FOOD = 1;
 export const FEAT_POISON = 2;
 export const FEAT_WALL = 3;
-export const INPUT_EXTRA_LABELS = ["energy", "speed", "turn"] as const;
+export const INPUT_EXTRA_LABELS = ["energy", "speed", "lateral", "turn"] as const; // speed is forward, lateral is sideways
 export const EXTRA_INPUTS = INPUT_EXTRA_LABELS.length;
 // Brain outputs: turn and thrust (negative thrust acts as 0).
 export const OUTPUT_LABELS = ["turn", "thrust"] as const;
@@ -38,7 +38,7 @@ export function energySignal(energy: number, startEnergy: number): number {
   return 1 - Math.exp(-energy / startEnergy);
 }
 
-// Extras: squashed energy, forward speed / top speed, turnRate / maxTurnRate. Allocation-free.
+// Extras: squashed energy, forward and sideways speed / top speed, turnRate / maxTurnRate. Allocation-free.
 export function encodeInputs(state: CreatureState, rays: readonly RayHit[], config: SimConfig, out: Float32Array, cosHeading: number, sinHeading: number): void {
   const c = config.creature;
   for (let i = 0; i < rays.length; i++) {
@@ -52,5 +52,6 @@ export function encodeInputs(state: CreatureState, rays: readonly RayHit[], conf
   const base = rays.length * RAY_FEATURES;
   out[base] = energySignal(state.energy, c.startEnergy);
   out[base + 1] = ((state.vx * cosHeading + state.vy * sinHeading) * c.drag) / c.maxThrust;
-  out[base + 2] = state.turnRate / c.maxTurnRate;
+  out[base + 2] = ((state.vy * cosHeading - state.vx * sinHeading) * c.drag) / c.maxThrust;
+  out[base + 3] = state.turnRate / c.maxTurnRate;
 }

@@ -28,6 +28,7 @@ describe("sensors", () => {
     expect(Array.from(out.subarray(0, 16))).toEqual([0, 0, 0, 0, 0.25, 1, 0, 0, 0.5, 0, 1, 0, 0.75, 0, 0, 1]);
     expect(out[16]).toBeCloseTo(energySignal(25, c.startEnergy), 6);
     expect(out[17]).toBeCloseTo((30 * c.drag) / c.maxThrust, 6);
-    expect(out[18]).toBeCloseTo(1.5 / c.maxTurnRate, 6);
+    expect(out[18]).toBeCloseTo((7 * c.drag) / c.maxThrust, 6);
+    expect(out[19]).toBeCloseTo(1.5 / c.maxTurnRate, 6);
   });
 });
