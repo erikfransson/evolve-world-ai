@@ -1,5 +1,5 @@
 import { DEFAULT_CONFIG } from "../../src/typescript/src/sim/config.ts";
-import { EXTRA_INPUTS, INPUT_EXTRA_LABELS, OUTPUT_LABELS, OUTPUT_SIZE, RAY_FEATURES, encodeInputs, energySignal, inputSize } from "../../src/typescript/src/sim/sensors.ts";
+import { EXTRA_INPUTS, INPUT_EXTRA_LABELS, OUTPUT_LABELS, OUTPUT_SIZE, RAY_FEATURES, encodeInputs, energySignal, inputSize, thrustCommand } from "../../src/typescript/src/sim/sensors.ts";
 import { HIT_FOOD, HIT_NONE, HIT_POISON, HIT_WALL } from "../../src/typescript/src/sim/types.ts";
 import type { CreatureState, RayHit } from "../../src/typescript/src/sim/types.ts";
 
@@ -7,6 +7,12 @@ const cfg = { ...DEFAULT_CONFIG, creature: { ...DEFAULT_CONFIG.creature, rayCoun
 const c = cfg.creature;
 
 describe("sensors", () => {
+  it("thrustCommand brakes only below the threshold and coasts between it and 0", () => {
+    expect([-1, -0.51].map((o) => thrustCommand(o, -0.5))).toEqual([-1, -1]);
+    expect([-0.5, -0.2, 0].map((o) => thrustCommand(o, -0.5))).toEqual([0, 0, 0]);
+    expect(thrustCommand(0.7, -0.5)).toBe(0.7);
+  });
+
   it("sizes follow the layout constants", () => {
     expect(inputSize(cfg)).toBe(4 * RAY_FEATURES + EXTRA_INPUTS);
     expect(INPUT_EXTRA_LABELS.length).toBe(EXTRA_INPUTS);

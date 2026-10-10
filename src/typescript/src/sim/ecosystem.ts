@@ -104,6 +104,7 @@ export class Ecosystem {
       const genome = randomGenome(this.sizes, this.rng);
       const x = this.rng.range(r, width - r);
       const y = this.rng.range(r, height - r);
+      this.items.clearPoison(x, y, r, this.rng);
       const m = this.spawn(genome, x, y, this.rng.next() * 2 * Math.PI, config.creature.startEnergy);
       m.hue = this.rng.next() * 360;
     }
@@ -210,8 +211,8 @@ export class Ecosystem {
 
   private bump(a: CreatureState, b: CreatureState, radius: number, e: number, width: number, height: number): void {
     if (!collide(a, b, radius, e)) return;
-    keepInside(a, radius, width, height);
-    keepInside(b, radius, width, height);
+    keepInside(a, radius, width, height, this.config.creature.wallBounce);
+    keepInside(b, radius, width, height, this.config.creature.wallBounce);
   }
 
   private giveBirth(parent: EcoCreature): void {
@@ -231,7 +232,7 @@ export class Ecosystem {
     const s = child.creature.state;
     s.vx = cos * eco.birthSpeed;
     s.vy = sin * eco.birthSpeed;
-    keepInside(s, cc.radius, w.width, w.height);
+    keepInside(s, cc.radius, w.width, w.height, cc.wallBounce);
     child.parentId = parent.id;
     child.depth = parent.depth + 1;
     child.hue = (((parent.hue + this.rng.normal() * eco.hueDrift) % 360) + 360) % 360;

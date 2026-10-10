@@ -8,6 +8,8 @@ import type { FrameRecorder } from "./trajectory.ts";
 import type { CreatureState, EpisodeView, Genome, HitKind, RayHit, Rng } from "./types.ts";
 import { World } from "./world.ts";
 
+const CLEAR_MARGIN = 10; // world units kept free of items around the start point
+
 // One creature alone in its own world copy.
 export class Episode implements EpisodeView {
   readonly creature: Creature;
@@ -25,10 +27,12 @@ export class Episode implements EpisodeView {
     this.config = config;
     const counts = itemCounts(config);
     this.world = new World(config, counts.food + counts.poison);
-    this.world.scatter(counts.food, counts.poison, createRng(layoutSeed));
+    const { width, height } = config.world;
+    const clear = { x: width / 2, y: height / 2, radius: config.creature.radius + config.world.itemRadius + CLEAR_MARGIN };
+    this.world.scatter(counts.food, counts.poison, createRng(layoutSeed), clear);
     this.respawnRng = createRng(deriveSeed(layoutSeed, creatureIndex));
     const heading = createRng(deriveSeed(layoutSeed, 0x5eed)).next() * 2 * Math.PI;
-    this.creature = new Creature(config, genome, config.world.width / 2, config.world.height / 2, heading);
+    this.creature = new Creature(config, genome, clear.x, clear.y, heading);
     this.maxTicks = maxLifeTicks(config);
     this.state = this.creature.state;
     this.rays = this.creature.rays;

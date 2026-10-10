@@ -31,11 +31,16 @@ export function inputLayout(config: EngineConfig): InputLayout {
   return { rayFeatureLabels: labels, rayFeatures: labels.length, rays, size: rays * labels.length + EXTRA_INPUTS };
 }
 
-// Brain outputs: turn and thrust (negative thrust acts as 0).
+// Brain outputs: turn and thrust (thrust below brakeThreshold brakes).
 export const OUTPUT_LABELS = ["turn", "thrust"] as const;
 export const OUTPUT_SIZE = OUTPUT_LABELS.length;
 export const OUT_TURN = 0;
 export const OUT_THRUST = 1;
+
+// Thrust command for stepBody from the raw thrust output: below brakeThreshold a full brake (-1), otherwise coasting or thrust.
+export function thrustCommand(out: number, brakeThreshold: number): number {
+  return out < brakeThreshold ? -1 : Math.max(0, out);
+}
 
 export function inputSize(config: EngineConfig): number {
   return inputLayout(config).size;

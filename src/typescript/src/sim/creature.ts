@@ -2,7 +2,7 @@ import { Brain, layerSizes } from "./brain.ts";
 import type { EngineConfig } from "./config.ts";
 import { consume, decaysFor, settle, stepBody } from "./physics.ts";
 import type { Decays, Heading } from "./physics.ts";
-import { OUTPUT_SIZE, OUT_THRUST, OUT_TURN, encodeInputs, inputSize, rayAngleOffsets } from "./sensors.ts";
+import { OUTPUT_SIZE, OUT_THRUST, OUT_TURN, encodeInputs, thrustCommand, inputSize, rayAngleOffsets } from "./sensors.ts";
 import { HIT_NONE } from "./types.ts";
 import type { CreatureState, Genome, HitKind, RayHit } from "./types.ts";
 import { RayCache } from "./world.ts";
@@ -96,12 +96,12 @@ export class Creature {
   // One tick driven by the brain from the last sensed rays; returns what move returns.
   act(world: World): number {
     this.think();
-    return this.move(world, this.output[OUT_TURN], Math.max(0, this.output[OUT_THRUST]));
+    return this.move(world, this.output[OUT_TURN], thrustCommand(this.output[OUT_THRUST], this.config.creature.brakeThreshold));
   }
 
   // Motion and energy costs from the last think, without eating or death; touches only this creature.
   steer(): void {
-    stepBody(this.state, this.output[OUT_TURN], Math.max(0, this.output[OUT_THRUST]), this.config, this.decays, this.heading);
+    stepBody(this.state, this.output[OUT_TURN], thrustCommand(this.output[OUT_THRUST], this.config.creature.brakeThreshold), this.config, this.decays, this.heading);
   }
 
   // Eats the first item touched, if any. Returns its index, still in the world for the caller to move or remove, or -1.
