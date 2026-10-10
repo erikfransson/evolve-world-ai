@@ -52,6 +52,9 @@ export class Brain {
   // Scratch for the nonzero inputs of the first layer.
   private readonly activeIndex: Int32Array;
   private readonly activeValue: Float64Array;
+  // First-layer weights stored input-major [in][out] as doubles, so one input's weights are contiguous.
+  private readonly firstLayerByInput: Float64Array;
+  private readonly firstLayerSums: Float64Array;
 
   constructor(sizes: number[], genome: Genome) {
     if (genome.length !== genomeLength(sizes)) {
@@ -72,6 +75,11 @@ export class Brain {
     }
     this.activeIndex = new Int32Array(sizes[0]);
     this.activeValue = new Float64Array(sizes[0]);
+    this.firstLayerByInput = new Float64Array(sizes[0] * sizes[1]);
+    for (let j = 0; j < sizes[1]; j++) {
+      for (let i = 0; i < sizes[0]; i++) this.firstLayerByInput[i * sizes[1] + j] = this.weights[0][j * sizes[0] + i];
+    }
+    this.firstLayerSums = new Float64Array(sizes[1]);
     this.activations = [new Float32Array(sizes[0]), ...this.hidden, new Float32Array(sizes[sizes.length - 1])];
   }
 
@@ -95,7 +103,7 @@ export class Brain {
 
   // First layer: skips zero inputs (mostly one-hot ray flags). Adding w * 0 leaves a finite sum unchanged, so results are identical.
   private sparseLayer(input: Float32Array, dst: Float32Array): void {
-    const w = this.weights[0];
+    const wt = this.firstLayerByInput;
     const b = this.biases[0];
     const nIn = this.fanIn[0];
     const nOut = this.fanOut[0];
@@ -109,12 +117,14 @@ export class Brain {
         val[n++] = v;
       }
     }
-    for (let j = 0; j < nOut; j++) {
-      let sum = b[j];
-      const row = j * nIn;
-      for (let k = 0; k < n; k++) sum += w[row + idx[k]] * val[k];
-      dst[j] = fastTanh(sum);
+    const sums = this.firstLayerSums;
+    for (let j = 0; j < nOut; j++) sums[j] = b[j];
+    for (let k = 0; k < n; k++) {
+      const row = idx[k] * nOut;
+      const v = val[k];
+      for (let j = 0; j < nOut; j++) sums[j] += wt[row + j] * v;
     }
+    for (let j = 0; j < nOut; j++) dst[j] = fastTanh(sums[j]);
   }
 
   private denseLayer(l: number, src: Float32Array, dst: Float32Array): void {
