@@ -28,6 +28,16 @@ export class World implements WorldView {
   private candC = new Float64Array(32); // squared distance minus squared item radius
   private candKind = new Uint8Array(32);
   private candCount = 0;
+  // Items within reach of an anchor origin, reused while the origin stays within slack of it; version bumps invalidate.
+  private readonly slack: number;
+  private version = 0;
+  private listVersion = -1;
+  private listAnchorX = 0;
+  private listAnchorY = 0;
+  private listCount = 0;
+  private listX = new Float64Array(32);
+  private listY = new Float64Array(32);
+  private listKind = new Uint8Array(32);
 
   constructor(config: SimConfig, layoutRng: Rng, respawnRng: Rng) {
     const w = config.world;
@@ -37,6 +47,7 @@ export class World implements WorldView {
     this.rayLength = config.creature.rayLength;
     this.respawnRng = respawnRng;
     this.respawn = w.respawn;
+    this.slack = 0.3 * this.rayLength;
     const counts = itemCounts(config);
     this.count = counts.food + counts.poison;
     this.xs = new Float32Array(this.count);
@@ -59,6 +70,7 @@ export class World implements WorldView {
 
   // Places item i and keeps the grid valid.
   setItem(i: number, x: number, y: number, kind: HitKind): void {
+    this.version++;
     this.unlink(i);
     this.xs[i] = x;
     this.ys[i] = y;
@@ -94,39 +106,54 @@ export class World implements WorldView {
 
   // Casts one ray per direction (dirX[i], dirY[i]) from (x, y), sharing the item lookup between them.
   castRays(x: number, y: number, dirX: Float64Array, dirY: Float64Array, out: readonly RayHit[]): void {
-    const L = this.rayLength;
-    let minX = x;
-    let minY = y;
-    let maxX = x;
-    let maxY = y;
-    for (let i = 0; i < out.length; i++) {
-      const ex = x + dirX[i] * L;
-      const ey = y + dirY[i] * L;
-      if (ex < minX) minX = ex;
-      else if (ex > maxX) maxX = ex;
-      if (ey < minY) minY = ey;
-      else if (ey > maxY) maxY = ey;
-    }
-    this.gatherCandidates(x, y, minX, minY, maxX, maxY);
+    this.gatherCandidates(x, y);
     for (let i = 0; i < out.length; i++) this.traceRay(x, y, dirX[i], dirY[i], out[i]);
   }
 
-  // Collects items that can be hit by a ray from (x, y) inside the box, with their ray-independent terms.
-  private gatherCandidates(x: number, y: number, minX: number, minY: number, maxX: number, maxY: number): void {
+  // Collects items that can be hit by a ray from (x, y), with their ray-independent terms.
+  private gatherCandidates(x: number, y: number): void {
+    const ax = x - this.listAnchorX;
+    const ay = y - this.listAnchorY;
+    if (this.listVersion !== this.version || ax * ax + ay * ay > this.slack * this.slack) this.rebuildList(x, y);
     const r = this.itemRadius;
-    const inv = 1 / this.cell;
-    let cx0 = Math.floor((minX - r) * inv);
-    let cx1 = Math.floor((maxX + r) * inv);
-    let cy0 = Math.floor((minY - r) * inv);
-    let cy1 = Math.floor((maxY + r) * inv);
-    if (cx0 < 0) cx0 = 0;
-    if (cy0 < 0) cy0 = 0;
-    if (cx1 >= this.cols) cx1 = this.cols - 1;
-    if (cy1 >= this.rows) cy1 = this.rows - 1;
     const r2 = r * r;
     // An item farther than rayLength + r from the origin is never hit within rayLength, plus a rounding margin.
     const far = this.rayLength + r + 1e-9 * this.rayLength;
     const far2 = far * far;
+    const lx = this.listX;
+    const ly = this.listY;
+    const lk = this.listKind;
+    const cfx = this.candFx;
+    const cfy = this.candFy;
+    const cc = this.candC;
+    const ck = this.candKind;
+    let n = 0;
+    for (let k = 0; k < this.listCount; k++) {
+      const fx = lx[k] - x;
+      const fy = ly[k] - y;
+      const d2 = fx * fx + fy * fy;
+      if (d2 > far2) continue;
+      cfx[n] = fx;
+      cfy[n] = fy;
+      cc[n] = d2 - r2;
+      ck[n++] = lk[k];
+    }
+    this.candCount = n;
+  }
+
+  // Lists the items within rayLength + radius + slack of (x, y) in grid order; valid while the origin stays within slack.
+  private rebuildList(x: number, y: number): void {
+    const reach = this.rayLength + this.itemRadius + 2e-9 * this.rayLength + this.slack;
+    const reach2 = reach * reach;
+    const inv = 1 / this.cell;
+    let cx0 = Math.floor((x - reach) * inv);
+    let cx1 = Math.floor((x + reach) * inv);
+    let cy0 = Math.floor((y - reach) * inv);
+    let cy1 = Math.floor((y + reach) * inv);
+    if (cx0 < 0) cx0 = 0;
+    if (cy0 < 0) cy0 = 0;
+    if (cx1 >= this.cols) cx1 = this.cols - 1;
+    if (cy1 >= this.rows) cy1 = this.rows - 1;
     const xs = this.xs;
     const ys = this.ys;
     let n = 0;
@@ -135,29 +162,33 @@ export class World implements WorldView {
         for (let i = this.cellHead[cy * this.cols + cx]; i >= 0; i = this.nextItem[i]) {
           const fx = xs[i] - x;
           const fy = ys[i] - y;
-          const d2 = fx * fx + fy * fy;
-          if (d2 > far2) continue;
-          if (n === this.candFx.length) this.growCandidates();
-          this.candFx[n] = fx;
-          this.candFy[n] = fy;
-          this.candC[n] = d2 - r2;
-          this.candKind[n++] = this.itemKind(i);
+          if (fx * fx + fy * fy > reach2) continue;
+          if (n === this.listX.length) this.growLists();
+          this.listX[n] = xs[i];
+          this.listY[n] = ys[i];
+          this.listKind[n++] = this.itemKind(i);
         }
       }
     }
-    this.candCount = n;
+    this.listCount = n;
+    this.listAnchorX = x;
+    this.listAnchorY = y;
+    this.listVersion = this.version;
   }
 
-  private growCandidates(): void {
-    const size = this.candFx.length * 2;
-    for (const key of ["candFx", "candFy", "candC"] as const) {
+  // Doubles every list and candidate array so a candidate never overflows.
+  private growLists(): void {
+    const size = this.listX.length * 2;
+    for (const key of ["listX", "listY", "candFx", "candFy", "candC"] as const) {
       const grown = new Float64Array(size);
       grown.set(this[key]);
       this[key] = grown;
     }
-    const kinds = new Uint8Array(size);
-    kinds.set(this.candKind);
-    this.candKind = kinds;
+    for (const key of ["listKind", "candKind"] as const) {
+      const grown = new Uint8Array(size);
+      grown.set(this[key]);
+      this[key] = grown;
+    }
   }
 
   // Nearest of the wall and the gathered candidates along the unit direction (dx, dy).
@@ -243,6 +274,7 @@ export class World implements WorldView {
             if (this.respawn) {
               this.setItem(i, this.respawnRng.range(r, this.width - r), this.respawnRng.range(r, this.height - r), kind);
             } else {
+              this.version++;
               this.unlink(i);
               this.kinds[i] = HIT_NONE;
             }
