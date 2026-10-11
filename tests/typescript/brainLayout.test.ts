@@ -23,11 +23,11 @@ describe("BrainView layout", () => {
     const xIn = layout.xs[0]!;
     expect(Array.from(xIn.subarray(0, 8))).toEqual([0, 1, 2, 3, 0, 1, 2, 3].map((f) => GRID_X + f * FEAT_DX));
     const extras = layout.rays * 4;
-    expect(Array.from(xIn.subarray(extras, extras + 4))).toEqual([0, 1, 2, 3].map((k) => GRID_X + k * FEAT_DX));
+    expect(Array.from(xIn.subarray(extras, extras + 5))).toEqual([0, 1, 2, 3, 4].map((k) => GRID_X + k * FEAT_DX));
     expect(layout.ys[0]![extras]).toBeGreaterThan(layout.ys[0]![extras - 1]!);
   });
 
-  it("gives Ecosystem six feature columns per ray and the extras in the last four", () => {
+  it("gives Ecosystem six feature columns per ray and the extras in the last five", () => {
     const sizes = layerSizes(DEFAULT_ECO_CONFIG);
     const layout = buildLayout(fakeCtx().ctx, sizes, 6, 300, 200);
     expect(layout.rays).toBe(DEFAULT_ECO_CONFIG.creature.rayCount);
@@ -35,7 +35,7 @@ describe("BrainView layout", () => {
     const xIn = layout.xs[0]!;
     expect(Array.from(xIn.subarray(0, 6))).toEqual([0, 1, 2, 3, 4, 5].map((f) => GRID_X + f * FEAT_DX));
     const extras = layout.rays * 6;
-    expect(Array.from(xIn.subarray(extras, extras + 4))).toEqual([2, 3, 4, 5].map((f) => GRID_X + f * FEAT_DX));
+    expect(Array.from(xIn.subarray(extras, extras + 5))).toEqual([1, 2, 3, 4, 5].map((f) => GRID_X + f * FEAT_DX));
     expect(layout.xs[1]![0]).toBeGreaterThan(GRID_X + 5 * FEAT_DX); // hidden layer right of the grid
   });
 
@@ -69,7 +69,7 @@ describe("BrainView layout", () => {
     expect(mem.every((y) => y > layout.extraLabelY && y < 220)).toBe(true);
     expect(layout.memoryRows.map((r) => r.long)).toEqual([false, false, true, true]);
     expect(Math.min(...mem.slice(8))).toBeGreaterThan(Math.max(...mem.slice(0, 8))); // long rows below short ones
-    expect(layout.memoryAt).toBe(extras + 4);
+    expect(layout.memoryAt).toBe(extras + 5);
     const yOut = layout.ys.at(-1)!;
     const xOut = layout.xs.at(-1)!;
     expect(Math.min(...yOut.subarray(2))).toBeGreaterThan(yOut[1]!);

@@ -27,6 +27,27 @@ export function genomeLength(sizes: readonly number[]): number {
   return total;
 }
 
+// The genome in the current input layout: as given when it already fits, or, for one made before the terrain input (#34), with a
+// zero weight column inserted for it into every first-layer neuron, so the creature acts exactly as before on normal ground.
+// Null when the length fits neither layout.
+export function upgradeGenome(genome: Genome, config: EngineConfig, plan: PlanView = planOf(config)): Genome | null {
+  const sizes = layerSizes(config, plan);
+  if (genome.length === genomeLength(sizes)) return genome;
+  const inputs = sizes[0]!;
+  const hidden = sizes[1]!;
+  if (genome.length !== genomeLength([inputs - 1, ...sizes.slice(1)])) return null;
+  const at = inputLayout(config, plan).terrainAt;
+  const out = new Float32Array(genomeLength(sizes));
+  for (let row = 0; row < hidden; row++) {
+    const from = row * (inputs - 1);
+    const to = row * inputs;
+    out.set(genome.subarray(from, from + at), to);
+    out.set(genome.subarray(from + at, from + inputs - 1), to + at + 1);
+  }
+  out.set(genome.subarray(hidden * (inputs - 1)), hidden * inputs);
+  return out;
+}
+
 export function randomGenome(sizes: readonly number[], rng: Rng): Genome {
   const genome = new Float32Array(genomeLength(sizes));
   let offset = 0;

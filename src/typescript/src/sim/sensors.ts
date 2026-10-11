@@ -46,8 +46,9 @@ export const FEAT_POISON = 2;
 export const FEAT_WALL = 3;
 export const FEAT_CREATURE = 4; // the first species flag
 export const FEAT_SEEN_ENERGY = 5; // with one species; in general the last ray feature
-export const INPUT_EXTRA_LABELS = ["energy", "speed", "lateral", "turn"] as const; // speed is forward, lateral is sideways
+export const INPUT_EXTRA_LABELS = ["energy", "speed", "lateral", "turn", "terrain"] as const; // speed is forward, lateral is sideways; terrain is -1 slow, 0 normal, 1 fast ground under the creature
 export const EXTRA_INPUTS = INPUT_EXTRA_LABELS.length;
+export const EXTRA_TERRAIN = 4; // index of the terrain input among the extras
 
 // Brain outputs: turn and thrust (thrust below brakeThreshold brakes), then one target per memory unit.
 export const OUTPUT_LABELS = ["turn", "thrust"] as const;
@@ -62,6 +63,7 @@ export interface InputLayout {
   readonly extras: readonly string[];
   readonly memoryShort: number;
   readonly memoryLong: number;
+  readonly terrainAt: number; // input index of the terrain input
   readonly memoryAt: number; // input index of the first memory unit; its target is output OUTPUT_SIZE + unit
   readonly memoryLabels: readonly string[]; // s1.., l1.., for both the memory inputs and their targets
   readonly size: number; // rays * rayFeatures + EXTRA_INPUTS + memory units
@@ -88,6 +90,7 @@ export function inputLayout(config: EngineConfig, plan: PlanView = planOf(config
   const { memoryShort, memoryLong } = plan;
   const memory = memoryShort + memoryLong;
   const memoryAt = rays * labels.length + EXTRA_INPUTS;
+  const terrainAt = rays * labels.length + EXTRA_TERRAIN;
   const memoryLabels = [...Array.from({ length: memoryShort }, (_, i) => `s${i + 1}`), ...Array.from({ length: memoryLong }, (_, i) => `l${i + 1}`)];
   return {
     rayFeatureLabels: labels,
@@ -96,6 +99,7 @@ export function inputLayout(config: EngineConfig, plan: PlanView = planOf(config
     extras: INPUT_EXTRA_LABELS,
     memoryShort,
     memoryLong,
+    terrainAt,
     memoryAt,
     memoryLabels,
     size: memoryAt + memory,
@@ -136,8 +140,8 @@ export function energySignal(energy: number, startEnergy: number): number {
   return 1 - Math.exp(-energy / startEnergy);
 }
 
-// Extras: squashed energy, forward and sideways speed / top speed, turnRate / maxTurnRate. Allocation-free.
-export function encodeInputs(state: CreatureState, rays: readonly RayHit[], config: EngineConfig, out: Float32Array, cosHeading: number, sinHeading: number): void {
+// Extras: squashed energy, forward and sideways speed / top speed, turnRate / maxTurnRate, terrain (valueAt of the ground). Allocation-free.
+export function encodeInputs(state: CreatureState, rays: readonly RayHit[], config: EngineConfig, out: Float32Array, cosHeading: number, sinHeading: number, terrain = 0): void {
   const c = config.creature;
   const stride = rayFeatureCount(config);
   for (let i = 0; i < rays.length; i++) {
@@ -159,4 +163,5 @@ export function encodeInputs(state: CreatureState, rays: readonly RayHit[], conf
   out[base + 1] = ((state.vx * cosHeading + state.vy * sinHeading) * c.drag) / c.maxThrust;
   out[base + 2] = ((state.vy * cosHeading - state.vx * sinHeading) * c.drag) / c.maxThrust;
   out[base + 3] = state.turnRate / c.maxTurnRate;
+  out[base + EXTRA_TERRAIN] = terrain;
 }

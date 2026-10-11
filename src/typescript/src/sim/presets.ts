@@ -24,7 +24,7 @@ export interface EcoPreset extends PresetInfo {
   regrowth: Regrowth & Partial<SeasonFields>; // seasons are fixed only by presets that list them (Ecosystem)
 }
 
-const TRIALS_BASE: World = { width: 2300, height: 1400, foodDensity: 0.7, poisonDensity: 0.1, respawn: false, itemRadius: 4, foodEnergy: 20, poisonDamage: POISON_LETHAL, poisonClearRadius: 150 };
+const TRIALS_BASE: World = { width: 2300, height: 1400, foodDensity: 0.7, poisonDensity: 0.1, respawn: false, itemRadius: 4, foodEnergy: 20, poisonDamage: POISON_LETHAL, poisonClearRadius: 150, stoneDensity: 0, ridgeDensity: 0, slowDensity: 0, fastDensity: 0 };
 
 export const TRIALS_PRESETS: readonly TrialsPreset[] = [
   { id: "normal", name: "Normal", description: "A wide world with plenty of food and a little poison.", world: { ...TRIALS_BASE, foodDensity: 0.8, poisonDensity: 0.15 } },

@@ -375,7 +375,7 @@ describe("sense.wat (SenseKernels)", () => {
     const spots: Spot[] = Array.from({ length: 120 }, () => [rng.range(0, 600), rng.range(0, 400), rng.range(0, 7)]);
     const { bad, species, kernel } = check({ width: 600, height: 400, rays: 8, spread: 2, length: 120, creatures: spots, items: items.filter(([x, y]) => x < 600 && y < 400), species: 3 }, false);
     expect([...species].sort()).toEqual([0, 1, 2]);
-    expect(kernel[0]!.brain.layerActivations()[0]!.length).toBe(8 * (5 + 3) + 4 + 4);
+    expect(kernel[0]!.brain.layerActivations()[0]!.length).toBe(8 * (5 + 3) + 5 + 4);
     expect(bad).toBeLessThanOrEqual(2);
     check({ rays: 6, spread: 2, creatures: [[300, 300, 0], [900, 600, 2]], items, species: 2 }, true); // no creature in sight: flags all zero, exact
   });

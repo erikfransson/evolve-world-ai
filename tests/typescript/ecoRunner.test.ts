@@ -175,7 +175,7 @@ describe("EcoRunner", () => {
     expect(a.x).toBeCloseTo(v.x[3]!);
     expect(a.rayKinds.length).toBe(8);
     expect(a.rayOffsets.length).toBe(8);
-    expect(a.inputs.length).toBe(8 * 6 + 4 + 4); // rays x features, extras, memory (0.25: 2 + 2 units)
+    expect(a.inputs.length).toBe(8 * 6 + 5 + 4); // rays x features, extras, memory (0.25: 2 + 2 units)
     expect(a.genome).not.toBeNull();
     runner.handle({ type: "select", id: 123456 });
     expect(last().selected).toMatchObject({ id: 123456, alive: false });
