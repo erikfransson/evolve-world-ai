@@ -87,6 +87,21 @@ describe("EcoRunner", () => {
     expect(last().tick).toBeLessThanOrEqual(25);
   });
 
+  it("counts a snapshot as handled only when the page acknowledges it, not when a render worker returns the buffer", () => {
+    const { runner, sent } = setup(0.5);
+    runner.handle({ type: "start", config: cfg(), run: 1 });
+    runner.handle({ type: "speed", speed: "max" });
+    const pumpFor = (rounds: number): void => { for (let i = 0; i < rounds; i++) runner.pump(); };
+    pumpFor(12);
+    expect(sent.length).toBe(3); // three in flight, then it waits
+    for (const m of sent) runner.handle({ type: "refill", buffer: m.buffer });
+    pumpFor(12);
+    expect(sent.length).toBe(3); // returned buffers do not count as the page keeping up
+    runner.handle({ type: "recycle", run: 1 }); // the page's acknowledgement carries no buffer
+    pumpFor(12);
+    expect(sent.length).toBe(4);
+  });
+
   it("runs as many ticks as fit in a slice at max speed and posts about 30 snapshots per second", () => {
     const { runner, clock, sent } = setup(0.5);
     runner.handle({ type: "start", config: cfg(), run: 1 });

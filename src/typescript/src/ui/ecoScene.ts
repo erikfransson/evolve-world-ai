@@ -68,6 +68,8 @@ export class EcoRenderer {
   draw(ctx: CanvasRenderingContext2D, cam: Camera, cfg: EcoDrawConfig, v: SnapshotViews, selected: SelectedDetails | null, showRays: boolean, dpr: number, highlight = -1, births: BirthRings | null = null, now = 0, impacts: ImpactEffects | null = null): void {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = 1;
+    ctx.lineCap = "butt"; // impacts and hunters set round ends and joins, which would otherwise carry over to the next frame
+    ctx.lineJoin = "miter";
     ctx.fillStyle = BACKGROUND;
     ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
     cam.apply(ctx);

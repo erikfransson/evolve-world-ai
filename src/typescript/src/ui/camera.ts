@@ -91,6 +91,23 @@ export class Camera {
     this.cy = worldH / 2;
   }
 
+  get width(): number {
+    return this.canvasW;
+  }
+
+  get height(): number {
+    return this.canvasH;
+  }
+
+  // Copies a view made by another camera, e.g. in a render worker.
+  setState(v: { cx: number; cy: number; zoom: number; focusX: number; focusY: number }): void {
+    this.cx = v.cx;
+    this.cy = v.cy;
+    this.zoom = v.zoom;
+    this.focusX = v.focusX;
+    this.focusY = v.focusY;
+  }
+
   get following(): boolean {
     return this.target !== null;
   }
@@ -272,9 +289,9 @@ export class Camera {
   }
 
   // Installs wheel, pointer (mouse and touch) and keyboard handlers. Returns the matching detach.
-  attach(canvas: HTMLCanvasElement): () => void {
+  attach(canvas: HTMLCanvasElement, backing?: () => { width: number; height: number }): () => void {
     this.detach();
-    this.detachInput = attachCameraInput(this, canvas);
+    this.detachInput = attachCameraInput(this, canvas, backing);
     return () => this.detach();
   }
 
