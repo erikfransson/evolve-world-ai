@@ -56,11 +56,7 @@ export class SenseKernels {
     this.senser.run(world, crowd, creatures, slots, selves, n, this.stride, this.energyScale, detail);
     brains.forwardSlots(slots, n);
     const f32 = brains.f32;
-    for (let k = 0; k < n; k++) {
-      const out = creatures[k]!.outputs;
-      const at = brains.outputAt(slots[k]!);
-      for (let i = 0; i < out.length; i++) out[i] = f32[at + i]!;
-    }
+    for (let k = 0; k < n; k++) creatures[k]!.adoptOutput(brains, brains.outputAt(slots[k]!));
     if (detail) {
       this.senser.readRays(detail, crowd);
       detail.adoptInput(f32, brains.inputAt(slots[at]!));

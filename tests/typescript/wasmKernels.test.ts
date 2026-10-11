@@ -92,6 +92,30 @@ describe("WasmBrainBank", () => {
     expect(maxAbs).toBeLessThan(2e-6);
   });
 
+  it("sums only the non-zero inputs for any input length, zero pattern and output width", async () => {
+    const bank = WasmBrainBank.createSync()!;
+    const rng = testRng(21);
+    let slot = 0;
+    let maxAbs = 0;
+    for (let nIn = 1; nIn <= 19; nIn++) {
+      for (const nOut of [1, 4, 5, 8, 13]) {
+        const sizes = [nIn, 6, nOut];
+        const g = randomGenome(sizes, rng);
+        bank.set(slot, sizes, g);
+        const input = new Float32Array(nIn);
+        if (slot % 3 !== 0) for (let i = 0; i < nIn; i++) input[i] = rng.next() < 0.3 ? rng.next() * 2 - 1 : 0; // slot % 3 === 0: all zero
+        bank.f32.set(input, bank.inputAt(slot));
+        const want = new Float32Array(nOut);
+        new Brain(sizes, g).forward(input, want);
+        bank.forwardSlots(Int32Array.of(slot), 1);
+        const got = bank.f32.subarray(bank.outputAt(slot), bank.outputAt(slot) + nOut);
+        for (let k = 0; k < nOut; k++) maxAbs = Math.max(maxAbs, Math.abs(got[k]! - want[k]!));
+        slot++;
+      }
+    }
+    expect(maxAbs).toBeLessThan(2e-6);
+  });
+
   it("saturates large sums to exactly +-1 like the JS tanh", async () => {
     const bank = WasmBrainBank.createSync()!;
     const sizes = [2, 2];
@@ -329,6 +353,19 @@ describe("sense.wat (SenseKernels)", () => {
     expect(kernel[0]!.brain.layerActivations()[0]!.length).toBe(8 * (5 + 3) + 4 + 4);
     expect(bad).toBeLessThanOrEqual(2);
     check({ rays: 6, spread: 2, creatures: [[300, 300, 0], [900, 600, 2]], items, species: 2 }, true); // no creature in sight: flags all zero, exact
+  });
+
+  it("reads the outputs in place across a kernel memory growth", () => {
+    const { kernel, kernels } = check({ rays: 4, spread: 1, creatures: [[300, 300, 0], [320, 300, 3], [700, 500, 1]], items }, false);
+    const before = kernel.map((c) => Array.from(c.outputs));
+    const bank = (kernels as unknown as { brains: WasmBrainBank }).brains;
+    const old = bank.memory.buffer;
+    bank.alloc(20_000_000); // grows the memory, detaching the old buffer
+    expect(old.byteLength).toBe(0);
+    kernel.forEach((c, k) => {
+      expect(Array.from(c.outputs)).toEqual(before[k]);
+      expect(Number.isFinite(c.drain)).toBe(true);
+    });
   });
 
   it("keeps the rays of non-detail creatures untouched and needs no detail", () => {
