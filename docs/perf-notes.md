@@ -73,7 +73,7 @@ Threads 4 vs 7 at pop 1000: steady generations equal at about 0.29 s; 4 threads 
 
 ## Ecosystem (serial, one thread)
 
-`node src/ecoBench.ts --seconds 20 --every 5 [--pop N --food D --regrow R]`, world 8000 x 5000, machine load about 5.
+`node src/ecoBench.ts --seconds 20 --every 5 [--pop N --set world.foodDensity=D --set eco.foodRegrow=R]`, world 8000 x 5000, machine load about 5.
 
 | Founders | Food density, regrow | Ticks/s | Creature-ticks/s |
 |----------|----------------------|---------|------------------|
@@ -112,7 +112,7 @@ Trials stays on the JS path. Ecosystem uses them with `eco.wasm` (default true s
 
 ## Ecosystem helper threads (E5a)
 
-`node src/ecoBench.ts --seconds 10 --pop N --threads H [--shared]`, steady ms per tick (last three quarters), world 12000 x 7500, 2026-10-11.
+`node src/ecoBench.ts --seconds 10 --pop N --threads H [--shared]` (`--shared` since removed, see the shared-memory decision below), steady ms per tick (last three quarters), world 12000 x 7500, 2026-10-11.
 The machine has 4 physical cores (8 logical) and a browser tab used 1.3-2 cores throughout, so scaling past 2-3 threads is understated.
 Fingerprints are equal for every helper count and mode.
 
@@ -129,7 +129,7 @@ Browser (headless Chrome, preview, about 1000-1100 creatures, default world): on
 
 ## WebAssembly in Ecosystem sense and think (E5c)
 
-`node src/ecoBench.ts --seconds 10 --pop N [--threads 4 --shared] --wasm true|false`, steady ms per tick, world 12000 x 7500, 2026-10-11, JS and WASM run in alternating pairs.
+`node src/ecoBench.ts --seconds 10 --pop N [--threads 4 --shared] --set eco.wasm=true|false`, steady ms per tick, world 12000 x 7500, 2026-10-11, JS and WASM run in alternating pairs.
 Item and wall rays, encoding and the shared phase stay in JS; crowd rays and brains run in WASM, each thread with its own kernels.
 Several runs per cell, machine load 5-12 from other jobs.
 
@@ -163,3 +163,18 @@ Default set to WASM (`eco.wasm` true, "Use WebAssembly" under Life cycle); runti
 `sense.wat` does ray directions, item and wall rays (f64, same candidate order as `World.castRays`), crowd rays (f32) and the ray features written into the brain input, for a whole batch in one call. The item grid and crowd are copied into WASM memory each tick. The old `rays.wat` is gone. Only `Ecosystem.detail` (the selected creature) gets its `creature.rays` and brain input read back.
 Width 20000 (about 2700 creatures), user CPU ms per steady tick, main e17cba7 vs branch in alternating pairs: serial 28.4, 29.3, 28.2 vs 20.5, 20.7, 21.8 (1.37x); 3 shared helpers, total CPU 40.4, 40.0 vs 32.2, 32.8 (1.24x). Fingerprints equal to main for serial, 3 shared, 3 message and 1 shared helpers.
 Details and rejected f64x2 variant in `docs/perf-explore/wasm.md`.
+
+## Shared-memory helper mode removed (WP3, WP4)
+
+Decision: helper threads use message passing (fork-join) only. The shared-memory transport, the `?shared` flag, `ecoBench --shared` and the coi-serviceworker are gone.
+Browser comparison on current main (headless Chrome, preview, 1440x900, 4 helpers, WebAssembly, Max speed, median of the last 60 s after 30 s warm-up, x real time, 3 alternating pairs, machine load 12-40 from other jobs):
+
+| Case                  | Messages      | Shared memory |
+|-----------------------|---------------|---------------|
+| Ecosystem default     | 2.5, 3.3, 2.8 | 3.1, 2.9, 2.5 |
+| Ecosystem width 20000 | 2.7, 3.6, 3.9 | 2.8, 3.1, 3.5 |
+| Predators & prey      | 1.8, 4.0, 4.1 | 3.2, 3.4, 4.4 |
+
+Means 2.9 vs 2.8, 3.4 vs 3.1, 3.3 vs 3.7. No case is clearly better by 10%, and run-to-run spread (load 12 vs 40) is larger than the difference, so the extra barrier code, second resize path and installed service worker are not paid back.
+Fingerprints are unchanged: `ecoBench --seconds 30 --pop 600` 417250420 and `--predators --seconds 40` 657843665 for 0 and 3 helpers, Trials `bench --pop 300 --gens 12 --seed 2` 836727452.
+The `unref` on node helper workers was only needed for shared-mode waits; without it a closed pool still lets the process exit, so it was dropped.

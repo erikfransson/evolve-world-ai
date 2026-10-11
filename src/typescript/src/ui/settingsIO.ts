@@ -5,15 +5,15 @@ import type { EcoConfig } from "../sim/ecoConfig.ts";
 import { mergeSpeciesList } from "../sim/species.ts";
 import { CUSTOM, ECO_PRESETS, PREDATOR_PRESETS, TRIALS_PRESETS } from "../sim/presets.ts";
 
-// Copy and paste of the settings as JSON, shared by Trials, Ecosystem and Predators & prey.
+// Copy and paste of the settings as JSON, shared by Trials, Ecosystem and The Great Hunt.
 export type Mode = "trials" | "ecosystem" | "predators";
-interface ConfigOf {
+export interface ConfigOf {
   trials: SimConfig;
   ecosystem: EcoConfig;
   predators: EcoConfig;
 }
 const DEFAULTS: { [M in Mode]: ConfigOf[M] } = { trials: DEFAULT_CONFIG, ecosystem: DEFAULT_ECO_CONFIG, predators: DEFAULT_PREDATOR_CONFIG };
-const PAGE: Record<Mode, string> = { trials: "Trials", ecosystem: "Ecosystem", predators: "Predators & prey" };
+const PAGE: Record<Mode, string> = { trials: "Trials", ecosystem: "Ecosystem", predators: "The Great Hunt" };
 const MODES = Object.keys(PAGE) as Mode[];
 export const VERSION = 1;
 
@@ -46,7 +46,7 @@ export function parseWithPreset<M extends Mode>(text: string, mode: M): Parsed<M
     if (!["mode", "preset", "version", "angles", "config"].includes(key)) throw new Error(`Unknown key "${key}" at the top level.`);
   }
   if (!MODES.includes(data.mode as Mode)) throw new Error(`Missing "mode", expected ${MODES.map((m) => `"${m}"`).join(", ").replace(/, ([^,]*)$/, " or $1")}.`);
-  if (data.mode !== mode) throw new Error(`These settings are for ${PAGE[data.mode as Mode]}, but this is the ${PAGE[mode]} page.`);
+  if (data.mode !== mode) throw new Error(`These settings are for ${PAGE[data.mode as Mode]}, but this page is ${PAGE[mode]}.`);
   if (data.version !== VERSION) throw new Error(`Unsupported version ${JSON.stringify(data.version)}, expected ${VERSION}.`);
   if (data.angles !== undefined && data.angles !== "radians") throw new Error('Angles must be in "radians".');
   let preset: string | null = null;
@@ -90,6 +90,10 @@ export interface IOOptions<M extends Mode> {
   read(): ConfigOf[M];
   fill(config: ConfigOf[M]): void;
   preset?: { get(): string; set(id: string): void }; // the preset picker; pasted settings select their preset
+}
+
+export interface SettingsIO {
+  apply(text: string): void; // as a paste: applies the settings, and a failure or a note opens the dialog
 }
 
 // The outcome of applying text: an error, or applied with an optional note about adjusted values.
@@ -196,7 +200,7 @@ function buildDialog(applyText: (text: string) => Outcome): Dialog {
 }
 
 // Adds the Copy and Paste buttons to the settings header and the paste shortcut. Paste is off while the form is locked.
-export function initSettingsIO<M extends Mode>(o: IOOptions<M>): void {
+export function initSettingsIO<M extends Mode>(o: IOOptions<M>): SettingsIO {
   const io = document.createElement("div");
   io.className = "io";
   io.innerHTML =
@@ -256,14 +260,19 @@ export function initSettingsIO<M extends Mode>(o: IOOptions<M>): void {
     }, () => undefined);
   };
 
-  // Shortcut: pasting JSON anywhere outside a field applies it, and a failure or a note opens the dialog.
+  const apply = (text: string): void => {
+    const outcome = applyText(text);
+    if (!outcome.ok || outcome.message !== null) dialog.paste(text, outcome);
+  };
+
+  // Shortcut: pasting JSON anywhere outside a field applies it.
   document.addEventListener("paste", (e) => {
     const t = e.target;
     if (t instanceof HTMLElement && (t.closest("input, textarea, select") || t.isContentEditable)) return;
     const text = e.clipboardData?.getData("text") ?? "";
     if (!text.trimStart().startsWith("{") || locked()) return;
     e.preventDefault();
-    const outcome = applyText(text);
-    if (!outcome.ok || outcome.message !== null) dialog.paste(text, outcome);
+    apply(text);
   });
+  return { apply };
 }

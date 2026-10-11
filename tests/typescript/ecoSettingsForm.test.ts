@@ -97,6 +97,22 @@ describe("Ecosystem settings form", () => {
     expect(DEFAULT_ECO_CONFIG.eco).toMatchObject({ foundersVary: true, planDrift: 0.02, structuralRate: 0.02 });
   });
 
+  it("disables settings whose toggle is off", () => {
+    const off = (id: string): boolean => (document.getElementById(id) as HTMLInputElement).disabled;
+    const c: EcoConfig = structuredClone(DEFAULT_ECO_CONFIG);
+    c.eco.seasons = false; c.eco.aging = false; c.eco.collisions = true; c.eco.collisionDamage = false;
+    form.fill(c);
+    expect(["yearMinutes", "winterFood", "agingStart", "agingRate", "damagePerSpeed"].map(off)).toEqual([true, true, true, true, true]);
+    expect(off("collisionDamage")).toBe(false);
+    c.eco.seasons = true; c.eco.aging = true; c.eco.collisionDamage = true;
+    form.fill(c);
+    expect(["yearMinutes", "winterFood", "agingStart", "agingRate", "damagePerSpeed"].map(off)).toEqual([false, false, false, false, false]);
+    c.eco.collisions = false;
+    form.fill(c);
+    expect([off("collisionDamage"), off("damagePerSpeed")]).toEqual([true, true]);
+    expect(form.read()).toEqual(c); // disabled inputs still read back
+  });
+
   it("shows item counts as hints", () => {
     form.fill(DEFAULT_ECO_CONFIG);
     expect(document.getElementById("foodDensityHint")!.textContent).toBe("≈ 4500 items");
@@ -104,7 +120,7 @@ describe("Ecosystem settings form", () => {
   });
 });
 
-describe("Predators & prey settings form", () => {
+describe("The Great Hunt settings form", () => {
   beforeEach(() => {
     document.body.innerHTML = page("predators");
     form = buildForm(document.getElementById("settings")!, PREDATOR_FORM);
@@ -117,8 +133,8 @@ describe("Predators & prey settings form", () => {
     const c: EcoConfig = structuredClone(DEFAULT_PREDATOR_CONFIG);
     c.seed = 9;
     c.eco.foodRegrow = 0.03;
-    c.eco.initialPopulation = 600;
-    c.eco.poolFraction = 0.25;
+    c.species![0]!.founders = 600;
+    c.species![0]!.poolFraction = 0.25;
     c.species![1]!.speed = 1.5;
     c.species![1]!.birthCostRange = [150, 250];
     c.species![1]!.eatEfficiency = 0.5;

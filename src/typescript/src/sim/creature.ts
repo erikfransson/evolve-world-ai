@@ -94,6 +94,13 @@ export class Creature {
     return this.energyUpkeep;
   }
 
+  // Energy per second right now: upkeep with old age, plus thrust and turning as of the last tick.
+  get drain(): number {
+    const c = this.config.creature;
+    const thrust = Math.max(0, thrustCommand(this.output[OUT_THRUST] ?? 0, c.brakeThreshold));
+    return this.energyUpkeep * agingFactor(this.aging, this.state.ticksAlive) + c.thrustCost * thrust + (c.turnCost * Math.abs(this.state.turnRate)) / c.maxTurnRate;
+  }
+
   // Sizes the per-plan buffers, reusing them when large enough.
   private fitPlan(sizes: readonly number[]): void {
     const plan = this.ownPlan;

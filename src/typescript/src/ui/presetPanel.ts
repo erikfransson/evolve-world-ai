@@ -2,7 +2,7 @@ import type { EngineConfig } from "../sim/config.ts";
 import { CUSTOM } from "../sim/presets.ts";
 import type { PresetInfo } from "../sim/presets.ts";
 import { describeSettings, withSettings } from "./scoreboard.ts";
-import type { EntrySettings, Scoreboard } from "./scoreboard.ts";
+import type { Entry, Scoreboard } from "./scoreboard.ts";
 import { escapeAttr } from "./page.ts";
 
 type Creature = Pick<EngineConfig, "seed" | "creature" | "brain">;
@@ -17,6 +17,7 @@ export interface PresetPanelOptions<C extends Creature> {
   read(): C;
   fill(c: C): void;
   withPreset(c: C, id: string): C;
+  apply(text: string): void; // loads an entry's saved settings the way a paste does
 }
 
 export interface PresetPanel {
@@ -31,8 +32,9 @@ const TIP = "Fixes the world and how it renews. Creatures, brain and evolution s
 function setLocked(id: string, on: boolean): void {
   const input = document.getElementById(id) as HTMLInputElement | null;
   if (!input) return;
-  input.disabled = on;
-  input.closest(".field, .toggle")?.classList.toggle("preset-locked", on);
+  const box = input.closest(".field, .toggle");
+  box?.classList.toggle("preset-locked", on);
+  input.disabled = on || (box?.classList.contains("dep-off") ?? false); // a setting switched off by its toggle stays disabled
 }
 
 export function initPresetPanel<C extends Creature>(o: PresetPanelOptions<C>): PresetPanel {
@@ -52,8 +54,10 @@ export function initPresetPanel<C extends Creature>(o: PresetPanelOptions<C>): P
   const list = board.querySelector<HTMLOListElement>("ol")!;
   let current = CUSTOM;
 
-  const load = (s: EntrySettings): void => {
-    o.fill(withSettings(o.read(), s));
+  // Entries saved before the full settings were kept only have the creature and brain, merged over the current form.
+  const load = (e: Entry): void => {
+    if (e.config !== undefined) return o.apply(e.config);
+    o.fill(withSettings(o.read(), e.settings));
     o.form.dispatchEvent(new Event("input", { bubbles: true }));
   };
 
@@ -89,8 +93,8 @@ export function initPresetPanel<C extends Creature>(o: PresetPanelOptions<C>): P
       button.type = "button";
       button.className = "mini";
       button.textContent = "Load settings";
-      button.title = "Fill the creature and brain settings with these";
-      button.onclick = () => load(e.settings);
+      button.title = "Fill the settings with the ones of this run";
+      button.onclick = () => load(e);
       body.append(p, button);
       details.append(summary, body);
       li.append(details);

@@ -5,7 +5,7 @@ import { Crowd } from "../../src/typescript/src/sim/crowd.ts";
 import { createRng } from "../../src/typescript/src/sim/rng.ts";
 import { DEFAULT_ECO_CONFIG, seasonFactor, seasonName } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
-import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
+import { EVENT_CAP, EVENT_DEATH, EVENT_IMPACT, EVENT_STRIDE, Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
 import { trialsSizes } from "../../src/typescript/src/sim/seedPool.ts";
 import type { PoolEntry } from "../../src/typescript/src/sim/seedPool.ts";
 import { FEAT_CREATURE, FEAT_SEEN_ENERGY, energySignal, inputLayout } from "../../src/typescript/src/sim/sensors.ts";
@@ -353,6 +353,33 @@ describe("Ecosystem collision damage", () => {
     expect([e.lineageSize(idA), e.lineageSize(idB)]).toEqual([0, 1]);
     expect(b.energy).toBeGreaterThan(30);
     expect(a).toBeDefined();
+  });
+
+  it("reports a big impact and a death as events, nothing for a soft touch, and drains them", () => {
+    const soft = pair({}, 100, 100, 10, -10); // loss 10 < BIG_IMPACT
+    soft.bump();
+    expect(soft.e.drainEvents()).toBeNull();
+    const { e, bump } = pair({}, 100, 100);
+    bump();
+    expect(Array.from(e.drainEvents()!)).toEqual([EVENT_IMPACT, 510, 500, 40]);
+    expect(e.drainEvents()).toBeNull();
+    const dying = pair({}, 30, 100, 45, -45);
+    const hue = dying.e.members[0]!.hue;
+    dying.e.step();
+    const events = Array.from(dying.e.drainEvents()!);
+    expect(events.length).toBe(2 * EVENT_STRIDE); // the impact, then the death
+    expect(events[EVENT_STRIDE]).toBe(EVENT_DEATH);
+    expect(events[EVENT_STRIDE + 3]).toBeCloseTo(hue);
+  });
+
+  it("keeps at most EVENT_CAP events between drains", () => {
+    const { e, a, b, bump } = pair({}, 1e6, 1e6);
+    for (let k = 0; k < 3 * EVENT_CAP; k++) {
+      Object.assign(a, { x: 500, vx: 40 });
+      Object.assign(b, { x: 520, vx: -40 });
+      bump();
+    }
+    expect(e.drainEvents()!.length).toBe(EVENT_CAP * EVENT_STRIDE);
   });
 
   it("with damage off the run is unchanged (fingerprint recorded before the feature)", () => {

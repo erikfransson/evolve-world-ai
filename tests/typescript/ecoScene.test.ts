@@ -32,7 +32,7 @@ function views(n: number, items = 50) {
 }
 
 const selected: SelectedDetails = {
-  id: 3, alive: true, x: 211, y: 373, heading: 1, energy: 80, age: 20, children: 0, eaten: 0, kills: 0, species: 0, depth: 0, parentId: -1, hue: 10, founderId: 3, founderPool: false, founderHue: 10, plan: { ...planOf(DEFAULT_ECO_CONFIG), rayCount: 3, rayLength: 100 }, upkeep: 0.3, birthEnergy: 150, birthCost: 75, birthCooldown: 10,
+  id: 3, alive: true, x: 211, y: 373, heading: 1, energy: 80, age: 20, children: 0, eaten: 0, kills: 0, species: 0, depth: 0, parentId: -1, hue: 10, founderId: 3, founderPool: false, founderHue: 10, plan: { ...planOf(DEFAULT_ECO_CONFIG), rayCount: 3, rayLength: 100 }, upkeep: 0.3, drain: 0.3, birthEnergy: 150, birthCost: 75, birthCooldown: 10,
   rayKinds: Uint8Array.of(HIT_FOOD, 0, HIT_WALL), rayCloseness: Float32Array.of(0.5, 0, 0.2), rayEnergy: new Float32Array(3),
   rayOffsets: Float32Array.of(-0.3, 0, 0.3), inputs: new Float32Array(0), genome: null,
 };

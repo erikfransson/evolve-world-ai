@@ -12,7 +12,7 @@ const config = DEFAULT_ECO_CONFIG;
 function details(plan: BodyPlan): SelectedDetails {
   const genome = randomGenome(layerSizes(config, plan), createRng(5));
   return {
-    id: 1, alive: true, x: 0, y: 0, heading: 0, energy: 50, age: 0, children: 0, eaten: 0, kills: 0, species: 0, depth: 0, parentId: -1, hue: 0, founderId: 1, founderPool: false, founderHue: 0, plan, upkeep: planUpkeep(plan, config), birthEnergy: 150, birthCost: 75, birthCooldown: 10,
+    id: 1, alive: true, x: 0, y: 0, heading: 0, energy: 50, age: 0, children: 0, eaten: 0, kills: 0, species: 0, depth: 0, parentId: -1, hue: 0, founderId: 1, founderPool: false, founderHue: 0, plan, upkeep: planUpkeep(plan, config), drain: 0, birthEnergy: 150, birthCost: 75, birthCooldown: 10,
     rayKinds: new Uint8Array(plan.rayCount), rayCloseness: new Float32Array(plan.rayCount), rayEnergy: new Float32Array(plan.rayCount), rayOffsets: new Float32Array(plan.rayCount),
     inputs: new Float32Array(inputLayout(config, plan).size), genome,
   };
@@ -44,9 +44,9 @@ describe("buildSelectedBrain", () => {
 });
 
 describe("formatPlan", () => {
-  it("lists rays, angle, range, layers, memory and upkeep", () => {
+  it("lists rays, angle, range, layers and memory", () => {
     const plan: BodyPlan = { rayCount: 8, raySpread: (75 * Math.PI) / 180, rayLength: 100, hiddenLayers: [16], memoryShort: 2, memoryLong: 2 };
-    expect(formatPlan(plan, 0.451)).toBe("8 rays · 75° · 100 range · 16 hidden · mem 2+2 · upkeep 0.45/s");
-    expect(formatPlan({ ...plan, rayCount: 1, hiddenLayers: [12, 6], memoryShort: 0, memoryLong: 0 }, 1)).toBe("1 ray · 75° · 100 range · 12+6 hidden · no mem · upkeep 1.00/s");
+    expect(formatPlan(plan)).toBe("8 rays · 75° · 100 range · 16 hidden · mem 2+2");
+    expect(formatPlan({ ...plan, rayCount: 1, hiddenLayers: [12, 6], memoryShort: 0, memoryLong: 0 })).toBe("1 ray · 75° · 100 range · 12+6 hidden · no mem");
   });
 });

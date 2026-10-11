@@ -13,7 +13,7 @@ import type { CreatureState, RayHit } from "../../src/typescript/src/sim/types.t
 import { layerSizes } from "../../src/typescript/src/sim/brain.ts";
 import { testRng } from "./helpers.ts";
 
-// A small Predators & prey world; prey and predators founders, everything else from the defaults.
+// A small The Great Hunt world; prey and predators founders, everything else from the defaults.
 function predCfg(prey: number, predators: number, seed = 3, over: Partial<EcoConfig["eco"]> = {}): EcoConfig {
   const d = structuredClone(DEFAULT_PREDATOR_CONFIG);
   d.species![0]!.founders = prey;
@@ -36,7 +36,7 @@ const place = (eco: Ecosystem, i: number, x: number, y: number, energy?: number)
   return s;
 };
 
-describe("Predators & prey", () => {
+describe("The Great Hunt", () => {
   it("a one-species list computes exactly as the Ecosystem without one", () => {
     const d = structuredClone(DEFAULT_ECO_CONFIG);
     const base: EcoConfig = { ...d, seed: 4, world: { ...d.world, width: 1000, height: 1000 }, creature: { ...d.creature, startEnergy: 140 }, eco: { ...d.eco, initialPopulation: 60, birthEnergyRange: [80, 80], birthCostRange: [75, 75], birthCooldownRange: [10, 10] } };

@@ -4,13 +4,14 @@ import { escapeAttr } from "./page.ts";
 
 // Settings forms: one table drives the markup, the config read and the fill, so a field is declared once.
 // C is the config a page edits (Trials' SimConfig, the Ecosystem's EcoConfig).
-interface Base {
+interface Base<C> {
   id: string;
   label: string;
   tip: string;
   advanced?: boolean; // shown under the section's "More settings"
+  enabledWhen?: (c: C) => boolean; // greyed out and disabled while false, e.g. season settings with Seasons off
 }
-export interface Range<C> extends Base {
+export interface Range<C> extends Base<C> {
   kind: "range";
   min: number;
   max: number;
@@ -20,26 +21,27 @@ export interface Range<C> extends Base {
   get: (c: C) => number;
   set: (c: C, v: number) => void;
 }
-export interface Toggle<C> extends Base {
+export interface Toggle<C> extends Base<C> {
   kind: "toggle";
   get: (c: C) => boolean;
   set: (c: C, v: boolean) => void;
 }
-export interface Choice<C> extends Base {
+export interface Choice<C> extends Base<C> {
   kind: "choice";
   options: readonly (readonly [value: string, label: string])[];
   get: (c: C) => string;
   set: (c: C, v: string) => void;
 }
-interface Seed extends Base {
+interface Seed<C> extends Base<C> {
   kind: "seed";
 }
-export type Field<C> = Range<C> | Toggle<C> | Choice<C> | Seed;
+export type Field<C> = Range<C> | Toggle<C> | Choice<C> | Seed<C>;
 export interface Section<C> {
   title: string;
   fields: readonly Field<C>[];
   folded?: boolean; // the whole section starts collapsed
   swatch?: string; // CSS colour of a dot before the title
+  note?: (c: C) => string; // live line under the title
 }
 // A settings form: its sections and the config that fields without an input keep.
 export interface FormSpec<C> {
@@ -93,7 +95,7 @@ export function syncSlider(input: HTMLInputElement): void {
   if (out) out.textContent = (FORMATS[out.dataset.fmt ?? ""] ?? String)(input.valueAsNumber);
 }
 
-const label = (f: Base): string =>
+const label = <C>(f: Base<C>): string =>
   `<span class="lbl"><label class="name" for="${f.id}">${f.label}</label><span class="tip" tabindex="0" role="img" aria-label="${escapeAttr(f.tip)}" data-tip="${escapeAttr(f.tip)}">ⓘ</span></span>`;
 
 function fieldHtml<C>(f: Field<C>): string {
@@ -110,13 +112,14 @@ function fieldHtml<C>(f: Field<C>): string {
   return `<div class="field"><div class="row">${label(f)}<span class="vals">${hint}<output for="${f.id}"${fmt}></output></span></div><input id="${f.id}" type="range" min="${f.min}" max="${f.max}" step="${f.step}" /></div>`;
 }
 
-function sectionHtml<C>(s: Section<C>): string {
+function sectionHtml<C>(s: Section<C>, index = 0): string {
+  const note = s.note ? `<p class="sec-note" id="secNote${index}"></p>` : "";
   const swatch = s.swatch ? `<i class="sw" style="background: ${s.swatch}"></i>` : "";
   const main = s.fields.filter((f) => !f.advanced).map(fieldHtml).join("");
   const advanced = s.fields.filter((f) => f.advanced);
   const more = advanced.length ? `<details class="more"><summary>More settings</summary><div class="more-body">${advanced.map(fieldHtml).join("")}</div></details>` : "";
-  if (s.folded) return `<details class="card fold"><summary><h3>${swatch}${s.title}</h3></summary>${main}${more}</details>`;
-  return `<section class="card"><h3>${swatch}${s.title}</h3>${main}${more}</section>`;
+  if (s.folded) return `<details class="card fold"><summary><h3>${swatch}${s.title}</h3></summary>${note}${main}${more}</details>`;
+  return `<section class="card"><h3>${swatch}${s.title}</h3>${note}${main}${more}</section>`;
 }
 
 // A built settings form: read the config it describes, fill it from one, and wire it up.
@@ -133,6 +136,18 @@ export function buildForm<C extends { seed: number }>(container: HTMLElement, sp
   const fields = spec.sections.flatMap((s) => [...s.fields]);
   const syncHints = (c: C): void => {
     for (const f of fields) if (f.kind === "range" && f.hint) el(`${f.id}Hint`, HTMLElement).textContent = f.hint(c);
+    spec.sections.forEach((s, i) => { if (s.note) el(`secNote${i}`, HTMLElement).textContent = s.note(c); });
+  };
+  // A field whose enabledWhen is false is disabled; a preset-locked field stays disabled either way (see presetPanel).
+  const syncEnabled = (c: C): void => {
+    for (const f of fields) {
+      if (!f.enabledWhen) continue;
+      const input = el(f.id, HTMLElement) as HTMLInputElement;
+      const off = !f.enabledWhen(c);
+      const box = input.closest(".field, .toggle");
+      box?.classList.toggle("dep-off", off);
+      input.disabled = off || (box?.classList.contains("preset-locked") ?? false);
+    }
   };
   const read = (): C => {
     const c = structuredClone(spec.defaults);
@@ -154,6 +169,7 @@ export function buildForm<C extends { seed: number }>(container: HTMLElement, sp
     }
     container.querySelectorAll<HTMLInputElement>('input[type="range"]').forEach(syncSlider);
     syncHints(c);
+    syncEnabled(c);
   };
   const init = (form: HTMLFormElement, onChange: (c: C) => void): void => {
     form.addEventListener("input", (e) => {
@@ -161,6 +177,7 @@ export function buildForm<C extends { seed: number }>(container: HTMLElement, sp
       if (target.type === "range") syncSlider(target);
       const c = read();
       syncHints(c);
+      syncEnabled(c);
       onChange(c);
     });
     // Enter in a field would otherwise submit the form and reload the page, losing all settings.

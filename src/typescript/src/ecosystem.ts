@@ -16,6 +16,7 @@ import type { SelectedBrain } from "./ui/ecoBrain.ts";
 import { createEcoView } from "./ui/ecoPage.ts";
 import { ECOSYSTEM_PAGE, PREDATORS_PAGE, openingConfig } from "./ui/ecoModes.ts";
 import { BirthRings } from "./ui/ecoBirths.ts";
+import { ImpactEffects } from "./ui/ecoImpacts.ts";
 import { EcoRenderer } from "./ui/ecoScene.ts";
 import type { EcoDrawConfig } from "./ui/ecoScene.ts";
 import type { PopulationSample } from "./ui/populationGraph.ts";
@@ -29,10 +30,9 @@ const BRAIN_INTERVAL_MS = 25;
 const ZOOM_STEP = 1.6;
 // public/pool.json sits at the site root, one level above this page; resolved here since the worker's own URL differs in dev and build.
 const POOL_URL = new URL("../pool.json", document.baseURI).href;
-// Overrides for testing: ?threads=N helper threads (0 runs on one thread), ?shared=0 keeps helpers on messages.
+// Overrides for testing: ?threads=N helper threads (0 runs on one thread).
 const params = new URLSearchParams(location.search);
 const THREADS = params.has("threads") ? Math.max(0, Math.floor(Number(params.get("threads"))) || 0) : undefined;
-const SHARED = params.get("shared") !== "0";
 
 interface Live {
   msg: EcoSnapshot;
@@ -48,7 +48,7 @@ interface Selection {
   died: boolean;
 }
 
-// This script runs the Ecosystem page and, with <body data-mode="predators">, the Predators & prey page.
+// This script runs the Ecosystem page and, with <body data-mode="predators">, the Great Hunt page.
 const PAGE = document.body.dataset.mode === "predators" ? PREDATORS_PAGE : ECOSYSTEM_PAGE;
 // The page opens on the Normal preset.
 const NORMAL = openingConfig(PAGE);
@@ -75,6 +75,7 @@ let lastBrainAt = 0;
 const camera = new Camera(config.world.width, config.world.height, 1, 1);
 const renderer = new EcoRenderer();
 const births = new BirthRings();
+const impacts = new ImpactEffects();
 
 function drawIdle(): void {
   if (active) return;
@@ -154,9 +155,13 @@ function onSnapshot(e: MessageEvent<EcoOutMessage>): void {
   const previous = live;
   live = { msg, views: snapshotViews(msg.buffer, msg.count, msg.itemCount, msg.creatureCap, msg.itemCap) };
   if (previous) send({ type: "recycle", buffer: previous.msg.buffer, run: previous.msg.run }, [previous.msg.buffer]);
-  births.observe(live.views, performance.now());
+  const stamp = performance.now();
+  births.observe(live.views, stamp);
+  if (msg.events) impacts.add(msg.events, stamp);
   if (msg.history) view.setHistory(toSamples(msg.history));
   if (msg.lineageHistory) view.setLineageHistory(msg.lineageHistory);
+  if (msg.traits) view.setTraits(msg.traits);
+  if (msg.leaders) view.setLeaders(msg.leaders);
   if (msg.lineages) view.setLineages(msg.lineages, msg.population, msg.species?.map((c) => c.population));
   if (msg.species && !msg.extinct) noteGone(msg.species.map((c) => c.population));
   const d = msg.selected;
@@ -207,16 +212,18 @@ function startRun(c: EcoConfig): void {
   worker ??= createWorker();
   releaseLive();
   births.reset();
+  impacts.reset();
   clearSelection();
   syncCanvas();
   camera.setWorld(c.world.width, c.world.height);
   view.setHistory([]);
   view.setSeasons(c.eco);
   view.clearLineages();
+  view.clearStatistics();
   highlight = -1;
   view.setStats(null);
   view.setNote(null);
-  send({ type: "start", config: c, run, poolUrl: POOL_URL, threads: THREADS, shared: SHARED });
+  send({ type: "start", config: c, run, poolUrl: POOL_URL, threads: THREADS });
   send({ type: "speed", speed: view.speed() });
 }
 
@@ -297,12 +304,12 @@ function syncFollow(): void {
 function updateUi(): void {
   if (!live) return;
   const m = live.msg;
-  view.setStats({ population: m.population, births: m.births, deaths: m.deaths, food: m.food, poison: m.poison, simTime: m.simTime, oldestDepth: m.oldestDepth, speed: m.speed > 0 ? m.speed : null, helpers: m.helpers, sharedMemory: m.sharedMemory, wasm: m.wasm, season: config.eco.seasons ? { name: seasonName(config.eco, m.simTime), factor: seasonFactor(config.eco, m.simTime) } : null, species: m.species });
+  view.setStats({ population: m.population, births: m.births, deaths: m.deaths, food: m.food, poison: m.poison, simTime: m.simTime, oldestDepth: m.oldestDepth, speed: m.speed > 0 ? m.speed : null, helpers: m.helpers, wasm: m.wasm, season: config.eco.seasons ? { name: seasonName(config.eco, m.simTime), factor: seasonFactor(config.eco, m.simTime) } : null, species: m.species });
   const d = selection?.last;
   if (selection && d) {
     const sp = species[d.species]!;
     const kind = several(config) ? { name: sp.name, index: d.species, kills: d.kills, hunter: sp.prey.length > 0 } : undefined;
-    view.setSelected({ id: d.id, energy: d.energy, fullEnergy: d.birthEnergy, age: d.age, children: d.children, eaten: d.eaten, depth: d.depth, plan: d.plan, upkeep: d.upkeep, birth: { energy: d.birthEnergy, cost: d.birthCost, cooldown: d.birthCooldown }, founderId: d.founderId, founderPool: d.founderPool, founderHue: d.founderHue, species: kind, died: selection.died });
+    view.setSelected({ id: d.id, energy: d.energy, fullEnergy: d.birthEnergy, age: d.age, children: d.children, eaten: d.eaten, depth: d.depth, plan: d.plan, upkeep: d.upkeep, drain: d.drain, birth: { energy: d.birthEnergy, cost: d.birthCost, cooldown: d.birthCooldown }, founderId: d.founderId, founderPool: d.founderPool, founderHue: d.founderHue, species: kind, died: selection.died });
     view.setFollowing(following);
   }
 }
@@ -322,7 +329,7 @@ function frame(now: number): void {
   camera.update(now);
   syncFollow();
   const ctx = view.canvas.getContext("2d")!;
-  renderer.draw(ctx, camera, drawConfig(), live.views, selection?.details ?? null, showRays, dpr, highlight, births, now);
+  renderer.draw(ctx, camera, drawConfig(), live.views, selection?.details ?? null, showRays, dpr, highlight, births, now, impacts);
   if (now - lastUiAt >= UI_INTERVAL_MS) {
     lastUiAt = now;
     updateUi();

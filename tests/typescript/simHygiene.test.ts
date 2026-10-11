@@ -49,7 +49,7 @@ describe("watched creature with helpers", () => {
     for (let t = 0; t < 300; t++) serial.step();
     expect(serial.fingerprint()).toBe(fingerprint);
 
-    const pool = new ThinkPool(fakePorts(2), false);
+    const pool = new ThinkPool(fakePorts(2));
     try {
       const eco = new Ecosystem(cfg(wasm), null, { journal: true });
       await pool.start(eco);

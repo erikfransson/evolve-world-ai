@@ -43,7 +43,7 @@ export interface EcoConfig extends EngineConfig {
     memoryRange: number[]; // short and long units each
   };
   mutation: { rate: number; std: number }; // per gene, as in Trials' ga
-  // Predators & prey: the species, which replace eco.initialPopulation, poolFraction, the birth settings and the ray
+  // The Great Hunt: the species, which replace eco.initialPopulation, poolFraction, the birth settings and the ray
   // ranges, and the creature's start energy, speed and costs (see species.ts). Absent for the Ecosystem's one species.
   species?: SpeciesConfig[];
 }
@@ -93,8 +93,8 @@ export const DEFAULT_ECO_CONFIG: EcoConfig = {
 
 const deg = (d: number): number => (d * Math.PI) / 180;
 
-// Predators & prey (#12): species A grazes the plants, species B hunts A. The prey take the shared creature and eco
-// settings; the predators override theirs. Tuned in docs/tuning-notes.md.
+// The Great Hunt (#12): species A grazes the plants, species B hunts A. Both species carry all their own values; the
+// shared creature and eco settings hold the same numbers for the prey. Tuned in docs/tuning-notes.md.
 export const DEFAULT_PREDATOR_CONFIG: EcoConfig = {
   ...DEFAULT_ECO_CONFIG,
   world: { ...DEFAULT_ECO_CONFIG.world, width: 6000, height: 4000, foodDensity: 0.5, poisonDensity: 0.02, foodEnergy: 40 },
@@ -117,7 +117,28 @@ export const DEFAULT_PREDATOR_CONFIG: EcoConfig = {
   },
   mutation: { ...DEFAULT_ECO_CONFIG.mutation },
   species: [
-    { name: "Prey", hue: 205, hueSpread: 50, plants: true, prey: [], eatEfficiency: 0, eatBaseline: 0, speed: 1 },
+    {
+      name: "Prey",
+      hue: 205,
+      hueSpread: 50,
+      plants: true,
+      prey: [],
+      eatEfficiency: 0,
+      eatBaseline: 0,
+      speed: 1,
+      founders: 400,
+      poolFraction: 0.5,
+      startEnergy: 50,
+      livingCost: 2,
+      thrustCost: 4,
+      turnCost: 0.5,
+      birthEnergyRange: [85, 170],
+      birthCostRange: [40, 90],
+      birthCooldownRange: [5.5, 11.5],
+      rayCountRange: [2, 16],
+      raySpreadRange: [deg(20), deg(360)],
+      rayLengthRange: [50, 250],
+    },
     {
       name: "Predator",
       hue: 4,

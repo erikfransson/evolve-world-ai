@@ -2,6 +2,7 @@ import type { Lineage } from "../sim/ecosystem.ts";
 import { LINEAGE_STRIDE, LINEAGE_TOP } from "../worker/ecoProtocol.ts";
 import { fitCanvas, graphFont } from "./canvas.ts";
 import { creatureStyle } from "./ecoScene.ts";
+import { formatDuration } from "./populationGraph.ts";
 
 const OTHERS_COLOR = "#5f7a6c";
 const AXIS_COLOR = "rgba(143, 174, 159, 0.5)";
@@ -263,6 +264,6 @@ export class LineagePanel {
     ctx.textAlign = "left";
     ctx.fillText("0 s", PAD.left, PAD.top + h + 3);
     ctx.textAlign = "right";
-    ctx.fillText(`${Math.round(end)} s`, PAD.left + w, PAD.top + h + 3);
+    ctx.fillText(formatDuration(end), PAD.left + w, PAD.top + h + 3);
   }
 }

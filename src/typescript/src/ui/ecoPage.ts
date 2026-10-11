@@ -1,19 +1,21 @@
 import type { EcoConfig } from "../sim/ecoConfig.ts";
-import { CUSTOM, withEcoPreset } from "../sim/presets.ts";
+import { withEcoPreset } from "../sim/presets.ts";
 import type { BodyPlan } from "../sim/sensors.ts";
 import type { Lineage, SpeciesCount } from "../sim/ecosystem.ts";
+import type { Leaders } from "../sim/leaderboard.ts";
+import type { TraitHistogram } from "../sim/popStats.ts";
 import type { BestBy } from "../worker/ecoProtocol.ts";
 import { BrainView } from "./brainView.ts";
 import type { ModePage } from "./ecoModes.ts";
 import { buildForm } from "./settingsForm.ts";
 import { initCard } from "./overlays.ts";
 import type { Card } from "./overlays.ts";
-import { initPresetPanel } from "./presetPanel.ts";
+import { initRunSession, renderRunControls } from "./runSession.ts";
+import { LeaderPanel } from "./leaderPanel.ts";
 import { LineagePanel, lineageColor } from "./lineagePanel.ts";
+import { TraitPanel } from "./traitPanel.ts";
 import { PopulationGraph } from "./populationGraph.ts";
 import type { PopulationSample } from "./populationGraph.ts";
-import { Scoreboard, settingsOf, today } from "./scoreboard.ts";
-import { initSettingsIO } from "./settingsIO.ts";
 import { $, durationText, setTile } from "./page.ts";
 import { initTooltips } from "./tooltip.ts";
 import { LINEAGE_STRIDE } from "../worker/ecoProtocol.ts";
@@ -32,7 +34,6 @@ export interface EcoStats {
   oldestDepth: number; // longest lineage among living creatures
   speed: number | null; // simulated seconds per real second achieved, null until measured
   helpers: number; // helper threads sensing and thinking, 0 when the simulation runs on one thread
-  sharedMemory: boolean;
   wasm: boolean; // sense and think run on the WebAssembly kernels
   species?: readonly SpeciesCount[]; // with several species
   season: { name: string; factor: number } | null; // null when seasons are off
@@ -49,6 +50,7 @@ export interface EcoSelected {
   plan: BodyPlan;
   upkeep: number; // energy per second besides thrust and turning
   birth: { energy: number; cost: number; cooldown: number }; // its heritable birth traits
+  drain: number; // energy per second now, thrust and turning included
   founderId: number;
   founderPool: boolean; // the founder came from the seed pool
   founderHue: number;
@@ -92,6 +94,9 @@ export interface EcoView {
   setLineages(lineages: readonly Lineage[], population: number, speciesCounts?: readonly number[]): void; // speciesCounts with several species
   setLineageHistory(history: Float64Array): void;
   clearLineages(): void;
+  setTraits(traits: readonly (readonly TraitHistogram[] | null)[]): void; // body plan histograms per species
+  setLeaders(leaders: readonly Leaders[]): void; // the run's records
+  clearStatistics(): void; // traits and records, at a new run
   setNote(text: string | null): void;
   showExtinct(simSeconds: number): void;
   hideExtinct(): void;
@@ -102,10 +107,10 @@ const nf = new Intl.NumberFormat("en-US");
 const SPEED_TIP = "Simulated seconds per real second the computer is achieving. It can be lower than the speed asked for.";
 
 // How the run uses the cores, for the speed tooltip.
-export function threadsText(helpers: number, shared: boolean, wasm = false): string {
+export function threadsText(helpers: number, wasm = false): string {
   const kernels = wasm ? ", with WebAssembly" : "";
   if (helpers === 0) return `Runs on one thread${kernels}.`;
-  return `Runs on ${helpers + 1} threads (${helpers} ${helpers === 1 ? "helper" : "helpers"}), ${shared ? "in shared memory" : "by messages"}${kernels}.`;
+  return `Runs on ${helpers + 1} threads (${helpers} ${helpers === 1 ? "helper" : "helpers"}), by messages${kernels}.`;
 }
 
 function setTip(tileId: string, text: string): void {
@@ -120,11 +125,11 @@ export function formatBirth(b: EcoSelected["birth"]): string {
   return `birth at ${Math.round(b.energy)} · cost ${Math.round(b.cost)} · every ${b.cooldown < 10 ? b.cooldown.toFixed(1) : Math.round(b.cooldown)} s`;
 }
 
-// "8 rays · 75° · 100 range · 16 hidden · mem 2+2 · upkeep 0.45/s"; layers join with +, no memory reads "no mem".
-export function formatPlan(plan: BodyPlan, upkeep: number): string {
+// "8 rays · 75° · 100 range · 16 hidden · mem 2+2"; layers join with +, no memory reads "no mem".
+export function formatPlan(plan: BodyPlan): string {
   const rays = `${plan.rayCount} ${plan.rayCount === 1 ? "ray" : "rays"}`;
   const mem = plan.memoryShort + plan.memoryLong === 0 ? "no mem" : `mem ${plan.memoryShort}+${plan.memoryLong}`;
-  return [rays, `${Math.round((plan.raySpread * 180) / Math.PI)}°`, `${Math.round(plan.rayLength)} range`, `${plan.hiddenLayers.join("+")} hidden`, mem, `upkeep ${upkeep.toFixed(2)}/s`].join(" · ");
+  return [rays, `${Math.round((plan.raySpread * 180) / Math.PI)}°`, `${Math.round(plan.rayLength)} range`, `${plan.hiddenLayers.join("+")} hidden`, mem].join(" · ");
 }
 
 export function createEcoView(handlers: EcoHandlers, page: ModePage): EcoView {
@@ -148,31 +153,31 @@ export function createEcoView(handlers: EcoHandlers, page: ModePage): EcoView {
   const fillEcoForm = settingsForm.fill;
   fillEcoForm(readEcoConfig());
   settingsForm.init(setup, (c) => { if (phase === "idle") handlers.onConfigChange(c); });
-  const board = new Scoreboard(mode);
-  const presets = initPresetPanel({
+  const session = initRunSession({
+    mode,
     container: $("settings"),
     form: setup,
     presets: page.presets,
     locked: page.locked,
-    board,
     formatScore: durationText,
     read: readEcoConfig,
     fill: fillEcoForm,
     withPreset: (c, id) => withEcoPreset(c, id, page.presets),
   });
-  initSettingsIO({ mode, form: setup, read: readEcoConfig, fill: fillEcoForm, preset: { get: presets.current, set: presets.select } });
+  const presets = session.presets;
   // The score is how long the world has lived (page.peak says while it counts), so it counts while the run does and at its end.
   presets.select("normal", false); // the page's first fill is the defaults, which Normal matches
-  const scored = { preset: CUSTOM, key: "", date: "", settings: settingsOf(page.form.defaults), peak: 0 };
+  let founders = ""; // "40 founders" or "2 species", shown with the score
+  let peak = 0;
   const beginScoring = (): void => {
     const c = readEcoConfig();
-    Object.assign(scored, { preset: presets.current(), key: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, date: today(), settings: settingsOf(c), peak: 0 });
+    founders = c.species ? `${c.species.length} species` : `${c.eco.initialPopulation} founders`;
+    peak = 0;
+    session.begin(c);
   };
   const recordScore = (simTime: number, population: number): void => {
-    scored.peak = Math.max(scored.peak, population);
-    if (scored.preset === CUSTOM) return;
-    const note = `peak ${nf.format(scored.peak)} ${page.peakLabel}`;
-    if (board.submit(scored.preset, { run: scored.key, score: Math.floor(simTime), date: scored.date, settings: scored.settings, note })) presets.refresh();
+    peak = Math.max(peak, population);
+    session.record(Math.floor(simTime), `${founders} · peak ${nf.format(peak)} ${page.peakLabel}`);
   };
   initTooltips($("tooltip"));
   const store = page.store;
@@ -181,6 +186,12 @@ export function createEcoView(handlers: EcoHandlers, page: ModePage): EcoView {
   const brainPanel = initCard(brainCard, `${store}.brain`, mobile);
   initCard($("graphCard"), `${store}.graph`, mobile);
   initCard($("lineageCard"), `${store}.lineage`, mobile);
+  initCard($("traitCard"), `${store}.traits`, true);
+  initCard($("leaderCard"), `${store}.leaders`, true);
+  const speciesNames = page.form.defaults.species?.map((sp) => sp.name) ?? [];
+  const traitPanel = new TraitPanel($("traitCard"), speciesNames);
+  const leaderPanel = new LeaderPanel($("leaderCard"), speciesNames, page.form.defaults.creature.radius);
+  let drain: { id: number; value: number } | null = null; // smoothed, since thrust flickers from tick to tick
   let selectedFounder = -1;
   const lineages = new LineagePanel($("lineageCard"), (f) => { setFounderButton(); handlers.onHighlight(f); });
   // With several species the Lineages card shows one species at a time, picked by the switch in its header.
@@ -214,12 +225,7 @@ export function createEcoView(handlers: EcoHandlers, page: ModePage): EcoView {
   const setPhase = (p: EcoPhase): void => {
     phase = p;
     const idle = p === "idle";
-    start.disabled = !idle;
-    pause.disabled = idle || p === "extinct";
-    pause.textContent = p === "paused" ? "Resume" : "Pause";
-    reset.disabled = idle;
-    $<HTMLFieldSetElement>("settings").disabled = !idle;
-    setup.classList.toggle("locked", !idle);
+    renderRunControls({ start, pause, reset, settings: $<HTMLFieldSetElement>("settings"), form: setup }, p === "extinct" ? "running" : p, p !== "extinct");
     selectedCard.hidden = idle;
     brainCard.hidden = idle || !hasSelection;
     extinct.hidden = p !== "extinct";
@@ -250,7 +256,7 @@ export function createEcoView(handlers: EcoHandlers, page: ModePage): EcoView {
       for (const tile of page.tiles) setTile(tile.id, s && tile.value(s), s ? tile.unit?.(s) : undefined);
       $("statSeasonTile").hidden = !s?.season;
       if (s?.season) setTile("statSeason", s.season.name, ` · ${s.season.factor.toFixed(2)}×`);
-      if (s) setTip("statSpeed", `${SPEED_TIP} ${threadsText(s.helpers, s.sharedMemory, s.wasm)}`);
+      if (s) setTip("statSpeed", `${SPEED_TIP} ${threadsText(s.helpers, s.wasm)}`);
     },
     setSelected(sel) {
       hasSelection = sel !== null;
@@ -278,7 +284,10 @@ export function createEcoView(handlers: EcoHandlers, page: ModePage): EcoView {
       }
       $("selDepth").textContent = nf.format(sel.depth);
       $("selId").textContent = `#${sel.id}`;
-      $("selPlan").textContent = `${formatPlan(sel.plan, sel.upkeep)} · ${formatBirth(sel.birth)}`;
+      $("selPlan").textContent = `${formatPlan(sel.plan)} · ${formatBirth(sel.birth)}`;
+      drain = drain?.id === sel.id ? { id: sel.id, value: drain.value + 0.25 * (sel.drain - drain.value) } : { id: sel.id, value: sel.drain };
+      $("selBase").textContent = sel.upkeep.toFixed(2);
+      $("selDrain").textContent = sel.died ? "-" : drain.value.toFixed(2);
       selectedFounder = sel.founderId;
       $("selFounderSw").style.background = lineageColor(sel.founderHue);
       $("selFounderText").textContent = `Founder #${sel.founderId} · ${sel.founderPool ? "trained pool" : "random"}`;
@@ -312,6 +321,12 @@ export function createEcoView(handlers: EcoHandlers, page: ModePage): EcoView {
       lastLineages = null;
       lastLineageHistory = null;
       lineages.reset();
+    },
+    setTraits: (traits) => traitPanel.set(traits),
+    setLeaders: (leaders) => leaderPanel.set(leaders),
+    clearStatistics() {
+      traitPanel.clear();
+      leaderPanel.clear();
     },
     setNote(text) {
       $("note").textContent = text ?? "";

@@ -4,11 +4,6 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Ecosystem · Evolve World</title>
-    <!-- Cross-origin isolation for shared memory: on the first visit this registers a service worker and reloads once; without it the page runs as before.
-         It never reloads during a run (Start disabled); the next visit picks up the service worker then. -->
-    <script>window.coi = { quiet: true, doReload: () => document.getElementById("start")?.disabled || location.reload() };</script>
-    <!-- Vite warns that this script "can't be bundled without type=module"; expected, the worker must stay a classic script served as is from public/. -->
-    <script src="../coi-serviceworker.js"></script>
     <link rel="icon" type="image/svg+xml" href="../favicon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -113,6 +108,7 @@
                 <div><dt>Id</dt><dd id="selId">-</dd></div>
               </dl>
               <p class="sel-only sel-plan" id="selPlan"></p>
+              <p class="sel-only sel-burn" title="Energy per second. Base is living, vision and neurons. Now adds thrust, turning and old age."><span>Energy use</span><span><b id="selBase">-</b> base</span><span><b id="selDrain">-</b> now</span><span>per second</span></p>
               <button id="selFounder" class="sel-only sel-founder" type="button" title="Highlight this founder's lineage in the world"><i id="selFounderSw"></i><span id="selFounderText"></span></button>
               <p class="sel-hint">Click a creature or pick one:</p>
               <div class="sel-pick" role="group" aria-label="Pick a creature">
@@ -154,6 +150,20 @@
               <canvas class="lin-graph" aria-label="Share of each lineage over simulated time"></canvas>
               <div class="fit-foot"><span class="fit-note">share of creatures · simulated time</span><button class="lin-clear secondary" type="button" hidden>Show all</button></div>
             </div>
+          </section>
+          <section id="traitCard" class="ov ov-traits">
+            <header class="ov-head">
+              <h2>Traits now</h2>
+              <button class="ov-toggle" type="button" aria-expanded="true" aria-label="Minimise traits" title="Minimise">−</button>
+            </header>
+            <div class="ov-body"><ul class="trait-list"></ul><p class="stat-note">Living creatures now. Bars run from the lowest to the highest value.</p></div>
+          </section>
+          <section id="leaderCard" class="ov ov-leaders">
+            <header class="ov-head">
+              <h2>Records</h2>
+              <button class="ov-toggle" type="button" aria-expanded="true" aria-label="Minimise records" title="Minimise">−</button>
+            </header>
+            <div class="ov-body"><ul class="lead-list"></ul><p class="stat-note">This run so far, dead creatures included. Times are simulated time lived.</p></div>
           </section>
         </div>
         <div id="extinct" class="scrim" hidden>
