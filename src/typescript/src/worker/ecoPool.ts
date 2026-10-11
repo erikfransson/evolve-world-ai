@@ -1,6 +1,7 @@
 import type { EcoConfig } from "../sim/ecoConfig.ts";
 import type { Ecosystem } from "../sim/ecosystem.ts";
 import { ShareCoordinator, ShareHelper, fittedCaps, packetBytes, packetViews, publishedBytes } from "../sim/ecoShare.ts";
+import type { Port } from "./port.ts";
 import type { Caps, Packet } from "../sim/ecoShare.ts";
 
 // Helper threads for one Ecosystem run (see ecoShare.ts), over message passing or shared memory.
@@ -15,13 +16,7 @@ export type HelperIn =
 
 export type HelperOut = { type: "ready"; gen: number } | { type: "done"; gen: number; buffer: ArrayBuffer } | { type: "error"; gen: number; message: string };
 
-// What the pool needs from a helper thread, for web workers and node worker_threads.
-export interface HelperPort {
-  post(msg: HelperIn, transfer?: Transferable[]): void;
-  onMessage(callback: (msg: HelperOut) => void): void;
-  onError(callback: (error: unknown) => void): void; // any error or unexpected exit
-  terminate(): void;
-}
+export type HelperPort = Port<HelperIn, HelperOut>;
 
 // Control slots (Int32) in shared mode.
 const C_EPOCH = 0; // bumped by the coordinator when a packet is ready
