@@ -52,6 +52,8 @@ export class TileGrid {
   private zoom: { k: number; target: ZoomTarget } | null = null;
   speed = 4; // playback seconds per real second
   onOpen: (k: number) => void = () => {};
+  onFinished: () => void = () => {}; // once per show, when every tile has played to the end and no newer show waits
+  private asked = false;
 
   constructor(root: HTMLElement) {
     this.root = root;
@@ -115,6 +117,7 @@ export class TileGrid {
 
   private start(s: Show, now: number): void {
     this.playing = s;
+    this.asked = false;
     this.clock = 0;
     this.last = now;
     this.loop = Math.max(0.1, ...s.recordings.map(loopSeconds));
@@ -144,6 +147,10 @@ export class TileGrid {
       this.queued = null;
     }
     const s = this.playing;
+    if (s && !this.queued && !this.asked && this.clock >= this.loop) {
+      this.asked = true;
+      this.onFinished();
+    }
     let first: { rec: Recording; frame: number } | null = null;
     const paint = (rec: Recording, canvas: HTMLCanvasElement): number => {
       const dpr = fitCanvas(canvas);

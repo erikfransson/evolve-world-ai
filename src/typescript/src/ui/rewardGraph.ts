@@ -11,6 +11,32 @@ const PAD = { left: 44, right: 10, top: 14, bottom: 20 }; // CSS px
 
 const nice = (v: number): string => (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(1));
 
+interface Point {
+  iter: number;
+  v: number;
+}
+
+// At most about `max` points: each bucket of neighbours becomes one point at their mean, so a 5000 iteration run draws in a few hundred segments.
+export function thin(pts: readonly Point[], max: number): Point[] {
+  if (pts.length <= max) return pts.slice();
+  const out: Point[] = [];
+  const size = pts.length / max;
+  for (let b = 0; b < max; b++) {
+    const from = Math.floor(b * size);
+    const to = Math.max(from + 1, Math.floor((b + 1) * size));
+    let it = 0;
+    let v = 0;
+    for (let k = from; k < to; k++) {
+      it += pts[k]!.iter;
+      v += pts[k]!.v;
+    }
+    out.push({ iter: it / (to - from), v: v / (to - from) });
+  }
+  return out;
+}
+
+const DOT_LIMIT = 150; // more held-out checks than this and the dots would blur into a band, so only the line is drawn
+
 // Draws the reward curves into a cssW x cssH area: train mean per iteration (thin) and held-out checks (bold, with dots).
 export function drawRewardGraph(ctx: CanvasRenderingContext2D, its: readonly RlIteration[], start: number | null, cssW: number, cssH: number): void {
   ctx.clearRect(0, 0, cssW, cssH);
@@ -18,12 +44,21 @@ export function drawRewardGraph(ctx: CanvasRenderingContext2D, its: readonly RlI
   const w = cssW - PAD.left - PAD.right;
   const h = cssH - PAD.top - PAD.bottom;
   if (w <= 0 || h <= 0) return;
-  const held: { iter: number; v: number }[] = [];
+  const held: Point[] = [];
   if (start !== null) held.push({ iter: 0, v: start });
   for (const it of its) if (it.held !== null) held.push({ iter: it.iter, v: it.held });
-  const values = [...its.map((it) => it.train), ...its.map((it) => it.best), ...held.map((p) => p.v)].filter(Number.isFinite);
-  const lo = Math.min(0, ...values);
-  let hi = Math.max(1, ...values);
+  let lo = 0;
+  let hi = 1;
+  const span = (v: number): void => {
+    if (!Number.isFinite(v)) return;
+    if (v < lo) lo = v;
+    if (v > hi) hi = v;
+  };
+  for (const it of its) {
+    span(it.train);
+    span(it.best);
+  }
+  for (const p of held) span(p.v);
   if (hi - lo < 1e-9) hi = lo + 1;
   const last = Math.max(1, its.length ? its[its.length - 1]!.iter : 1);
   const px = (i: number): number => x0 + (i / last) * w;
@@ -55,8 +90,10 @@ export function drawRewardGraph(ctx: CanvasRenderingContext2D, its: readonly RlI
   ctx.textAlign = "right";
   ctx.fillText(`${last}`, x0 + w, PAD.top + h + 4);
 
-  const line = (pts: readonly { iter: number; v: number }[], color: string, width: number, dots: boolean): void => {
-    if (pts.length === 0) return;
+  const line = (all: readonly Point[], color: string, width: number, dots: boolean): void => {
+    if (all.length === 0) return;
+    const pts = thin(all, Math.max(2, Math.floor(w)));
+    dots &&= pts.length <= DOT_LIMIT;
     ctx.strokeStyle = color;
     ctx.fillStyle = color;
     ctx.lineWidth = width;

@@ -1,9 +1,10 @@
 // @vitest-environment happy-dom
 import { drawArena, frameAt, learnerAlive, loopSeconds } from "../../src/typescript/src/ui/arenaScene.ts";
-import { drawRewardGraph } from "../../src/typescript/src/ui/rewardGraph.ts";
-import { ARENA_KIND, bestFounder, change, customEnv, envsForKind, kindRejection, planSummary } from "../../src/typescript/src/ui/arenaPick.ts";
+import { drawRewardGraph, thin } from "../../src/typescript/src/ui/rewardGraph.ts";
+import { ARENA_KIND, bestFounder, change, customEnv, envGroups, envsForKind, kindRejection, planSummary } from "../../src/typescript/src/ui/arenaPick.ts";
 import type { CustomEnvForm } from "../../src/typescript/src/ui/arenaPick.ts";
 import { DEFAULT_SPEED, FAVOURITES_KEY, MAX_FAVOURITES, SPEED_KEY, addFavourite, loadFavourites, loadSpeed, removeFavourite, saveSpeed } from "../../src/typescript/src/ui/arenaStore.ts";
+import { DEFAULT_DESIGN, designPlan, planDesign } from "../../src/typescript/src/ui/arenaForm.ts";
 import { TILE_COUNTS, resultLine, tileColumns, tileTitle } from "../../src/typescript/src/ui/arenaTiles.ts";
 import { BLANK_ENV, envConfig } from "../../src/typescript/src/sim/rl/env.ts";
 import { ENVS } from "../../src/typescript/src/sim/rl/envs.ts";
@@ -224,5 +225,43 @@ describe("replay speed", () => {
     const bad = { getItem: () => { throw new Error("no"); }, setItem: () => { throw new Error("no"); } };
     expect(loadSpeed(bad)).toBe(DEFAULT_SPEED);
     expect(() => saveSpeed(2, bad)).not.toThrow();
+  });
+});
+
+describe("reward graph at 5000 iterations", () => {
+  it("thin keeps few points near the means and short series whole", () => {
+    const pts = Array.from({ length: 5000 }, (_, i) => ({ iter: i, v: i }));
+    const t = thin(pts, 400);
+    expect(t).toHaveLength(400);
+    expect(t[0]!.v).toBeLessThan(t[399]!.v);
+    expect(t[399]!.iter).toBeGreaterThan(4900);
+    expect(thin(pts.slice(0, 10), 400)).toHaveLength(10);
+  });
+
+  it("draws 5000 iterations in a bounded number of segments", () => {
+    const its = Array.from({ length: 5000 }, (_, i) => ({ iter: i + 1, train: i / 10, best: i / 8, held: i % 5 === 0 ? i / 9 : null, perEnv: null, seconds: i }));
+    const { ctx, calls } = fakeCtx(800, 300);
+    drawRewardGraph(ctx, its, 0, 800, 300);
+    expect(badCoordinateCalls(calls)).toEqual([]);
+    expect(named(calls, "lineTo")).toBeLessThan(3 * 800 + 20);
+  });
+});
+
+describe("envGroups", () => {
+  it("puts the small and custom worlds first and the advanced ones apart", () => {
+    const { quick, advanced } = envGroups(envsForKind(ENVS, "forager"));
+    expect(quick.every((e) => e.tags.includes("small"))).toBe(true);
+    expect(quick.some((e) => e.id === "nibble")).toBe(true);
+    expect(advanced.length).toBeGreaterThan(0);
+    expect(advanced.every((e) => e.tags.includes("advanced"))).toBe(true);
+  });
+});
+
+describe("arena design form", () => {
+  it("maps a design to a plan inside the limits and back", () => {
+    const plan = designPlan(DEFAULT_DESIGN);
+    expect(plan.hiddenLayers).toEqual([12]);
+    expect(plan.memoryShort + plan.memoryLong).toBe(4);
+    expect(designPlan(planDesign(plan))).toEqual(plan);
   });
 });

@@ -24,29 +24,13 @@
         <form id="setup" autocomplete="off" onsubmit="return false">
           <fieldset id="settings">
             <section class="card">
-              <h2>Creature</h2>
+              <h2>Start from</h2>
               <p id="kindDesc" class="preset-desc"></p>
               <div class="seg" role="radiogroup" aria-label="Start from">
-                <label><input type="radio" name="source" value="design" /><span>Design</span></label>
-                <label><input type="radio" name="source" value="pool" checked /><span>Seed pool</span></label>
+                <label><input type="radio" name="source" value="design" checked /><span>Design</span></label>
+                <label><input type="radio" name="source" value="pool" /><span>Seed pool</span></label>
                 <label><input type="radio" name="source" value="import" /><span>Import</span></label>
                 <label><input type="radio" name="source" value="saved" /><span>Saved</span></label>
-              </div>
-              <div id="srcDesign" class="src" hidden>
-                <div class="pair">
-                  <div class="field"><div class="row"><span class="lbl"><label class="name" for="rays">Rays</label><span class="tip" tabindex="0" role="img" aria-label="How many vision rays the creature casts." data-tip="How many vision rays the creature casts.">ⓘ</span></span></div><input id="rays" type="number" min="1" max="16" step="1" value="5" /></div>
-                  <div class="field"><div class="row"><span class="lbl"><label class="name" for="fan">Fan angle (°)</label><span class="tip" tabindex="0" role="img" aria-label="Total angle the rays are spread over. 360 looks all around." data-tip="Total angle the rays are spread over. 360 looks all around.">ⓘ</span></span></div><input id="fan" type="number" min="0" max="360" step="5" value="120" /></div>
-                </div>
-                <div class="field"><div class="row"><span class="lbl"><label class="name" for="sight">Sight length</label><span class="tip" tabindex="0" role="img" aria-label="How far the rays reach. Longer sight costs more energy per second." data-tip="How far the rays reach. Longer sight costs more energy per second.">ⓘ</span></span></div><input id="sight" type="number" min="10" max="400" step="10" value="180" /></div>
-                <div class="pair">
-                  <div class="field"><div class="row"><span class="lbl"><label class="name" for="layers">Hidden layers</label><span class="tip" tabindex="0" role="img" aria-label="Layers of neurons between the rays and the muscles." data-tip="Layers of neurons between the rays and the muscles.">ⓘ</span></span></div><input id="layers" type="number" min="1" max="4" step="1" value="1" /></div>
-                  <div class="field"><div class="row"><span class="lbl"><span class="name">Neurons</span><span class="tip" tabindex="0" role="img" aria-label="Neurons in each hidden layer, 1 to 32. More neurons can learn more and cost more energy per second." data-tip="Neurons in each hidden layer, 1 to 32. More neurons can learn more and cost more energy per second.">ⓘ</span></span></div><div id="neurons" class="neurons"></div></div>
-                </div>
-                <div class="pair">
-                  <div class="field"><div class="row"><span class="lbl"><label class="name" for="memShort">Short memory</label><span class="tip" tabindex="0" role="img" aria-label="Memory units that fade quickly." data-tip="Memory units that fade quickly.">ⓘ</span></span></div><input id="memShort" type="number" min="0" max="8" step="1" value="2" /></div>
-                  <div class="field"><div class="row"><span class="lbl"><label class="name" for="memLong">Long memory</label><span class="tip" tabindex="0" role="img" aria-label="Memory units that fade slowly." data-tip="Memory units that fade slowly.">ⓘ</span></span></div><input id="memLong" type="number" min="0" max="8" step="1" value="2" /></div>
-                </div>
-                <p class="hint">Starting weights are random.</p>
               </div>
               <div id="srcPool" class="src"><div class="field"><div class="row"><span class="lbl"><label class="name" for="founder">Seed pool founder</label><span class="tip" tabindex="0" role="img" aria-label="Creatures evolved in the Ecosystem. The strongest is preselected." data-tip="Creatures evolved in the Ecosystem. The strongest is preselected.">ⓘ</span></span></div><select id="founder"></select></div></div>
               <div id="srcImport" class="src" hidden>
@@ -59,10 +43,11 @@
               <p id="planDesc" class="preset-desc"></p>
               <p id="startNote" class="msg error" role="status"></p>
             </section>
+            <div id="designForm" class="built"></div>
 
             <section class="card">
               <h2>Environments</h2>
-              <p class="hint">Pick one or more. Each iteration the creature trains in all of them.</p>
+              <p class="hint">Pick one or more. Each iteration the creature trains in all of them. Small worlds learn within a few dozen iterations, bigger ones take longer.</p>
               <div id="envList" class="env-list"></div>
               <details class="more" id="customBox">
                 <summary>Custom environment</summary>
@@ -85,26 +70,7 @@
               </details>
             </section>
 
-            <section class="card">
-              <h2>Run settings</h2>
-              <div class="field"><div class="row"><span class="lbl"><label class="name" for="pop">Population</label><span class="tip" tabindex="0" role="img" aria-label="Candidate brains tried per iteration, an even number from 4 to 64. More is steadier and slower." data-tip="Candidate brains tried per iteration, an even number from 4 to 64. More is steadier and slower.">ⓘ</span></span></div><input id="pop" type="number" min="4" max="64" step="2" value="32" /></div>
-              <div class="field"><div class="row"><span class="lbl"><label class="name" for="iterations">Iterations</label><span class="tip" tabindex="0" role="img" aria-label="The run stops after this many iterations." data-tip="The run stops after this many iterations.">ⓘ</span></span></div><input id="iterations" type="number" min="1" max="10000" step="10" value="100" /></div>
-              <div class="pair">
-                <div class="field"><div class="row"><span class="lbl"><label class="name" for="sigma">Mutation size</label><span class="tip" tabindex="0" role="img" aria-label="How far each candidate is nudged from the current brain (sigma)." data-tip="How far each candidate is nudged from the current brain (sigma).">ⓘ</span></span></div><input id="sigma" type="number" min="0.001" max="0.5" step="0.005" value="0.08" /></div>
-                <div class="field"><div class="row"><span class="lbl"><label class="name" for="lr">Learning rate</label><span class="tip" tabindex="0" role="img" aria-label="How far the brain moves toward the better-scoring direction each iteration." data-tip="How far the brain moves toward the better-scoring direction each iteration.">ⓘ</span></span></div><input id="lr" type="number" min="0.001" max="1" step="0.005" value="0.02" /></div>
-              </div>
-              <div class="field"><div class="row"><span class="lbl"><label class="name" for="episodes">Episodes per candidate</label><span class="tip" tabindex="0" role="img" aria-label="Worlds each candidate plays per environment and iteration. More is less noisy and slower." data-tip="Worlds each candidate plays per environment and iteration. More is less noisy and slower.">ⓘ</span></span></div><input id="episodes" type="number" min="1" max="8" step="1" value="2" /></div>
-              <div class="field">
-                <div class="row"><span class="lbl"><span class="name">Tiles shown</span><span class="tip" tabindex="0" role="img" aria-label="How many replays of the iteration's best candidate to watch. Tile k plays environment k, repeating if there are fewer environments, each time on a different layout." data-tip="How many replays of the iteration's best candidate to watch. Tile k plays environment k, repeating if there are fewer environments, each time on a different layout.">ⓘ</span></span></div>
-                <div class="seg" role="radiogroup" aria-label="Tiles shown">
-                  <label><input type="radio" name="tiles" value="1" /><span>1</span></label>
-                  <label><input type="radio" name="tiles" value="4" /><span>4</span></label>
-                  <label><input type="radio" name="tiles" value="6" /><span>6</span></label>
-                  <label><input type="radio" name="tiles" value="12" checked /><span>12</span></label>
-                </div>
-              </div>
-              <p class="hint">Training starts from the chosen creature; a seed-pool founder improves visibly within about 20 iterations, a random brain needs many more.</p>
-            </section>
+            <div id="runForm" class="built"></div>
           </fieldset>
         </form>
       </aside>
