@@ -167,6 +167,7 @@ export function castFor(env: EnvSpec, config: EcoConfig, learner: Learner, seed:
       } else if (rv.source === "self" && rv.species === env.role) rival = learner; // no league yet: a mirror of the learner
       else rival = randomLearner({ world: env.world, role: rv.species }, rng.int(2 ** 31));
       const m = place(rv.species, rival.plan, rival.genome, hue);
+      if (start) m.y = Math.min(h - r, Math.max(r, start.y + rng.range(-20, 20))); // with a layout, rivals start at the learner's height, off the walls
       if (rv.energy !== undefined) m.energy = rv.energy;
       cast.push(m);
     }
@@ -295,13 +296,21 @@ export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | s
   if (v.layout !== undefined) {
     const l = v.layout as Record<string, unknown> | null;
     if (!l || !(LAYOUT_KINDS as readonly unknown[]).includes(l.kind)) return `layout must be one of ${LAYOUT_KINDS.join(", ")}`;
-    const param = l.kind === "patch" ? l.radius : l.gap;
     const [sw, sh] = size as number[];
-    const most = l.kind === "patch" ? Math.min(sw!, sh!) / 2 - 20 : sw! / 4; // the patch must fit, and fence and maze gaps leave wall on both sides
-    if (!n(param, [L.layoutSize[0], Math.min(L.layoutSize[1], most)])) return `layout ${l.kind === "patch" ? "radius" : "gap"} must be ${L.layoutSize[0]} to ${Math.floor(Math.min(L.layoutSize[1], most))} for this world size`;
-    if (l.kind !== "patch" && rivals.some((r) => r.count > 0)) return "walls with rivals are not supported yet";
+    const round = l.kind === "patch" || l.kind === "islands"; // sized by a radius; ring by its lane; the walled ones by a gap; sprint by nothing
+    const param = round ? l.radius : l.kind === "ring" ? l.lane : l.gap;
+    // A patch must fit and three islands must fit apart; wall gaps leave wall on both sides of a door.
+    const most = l.kind === "patch" ? Math.min(sw!, sh!) / 2 - 20 : l.kind === "islands" ? Math.min(sw!, sh!) / 6 - 10 : l.kind === "rooms" ? Math.min(sw!, sh!) / 4 - 20 : l.kind === "ring" ? Math.min(sw!, sh!) / 4 : sw! / 4;
+    if (l.kind !== "sprint" && !n(param, [L.layoutSize[0], Math.min(L.layoutSize[1], most)])) return `layout ${round ? "radius" : l.kind === "ring" ? "lane" : "gap"} must be ${L.layoutSize[0]} to ${Math.floor(Math.min(L.layoutSize[1], most))} for this world size`;
+    if ((l.kind === "fence" || l.kind === "maze" || l.kind === "rooms" || l.kind === "ring") && rivals.some((r) => r.count > 0)) return "walls with rivals are not supported yet";
     if (l.near !== undefined && !(Number.isInteger(l.near) && (l.near as number) >= 0 && (l.near as number) <= (v.food as number))) return "near food must be a whole number up to the food count";
-    layout = l.kind === "patch" ? { kind: "patch", radius: param } : { kind: l.kind as "fence" | "maze", gap: param, ...(l.near === undefined ? {} : { near: l.near as number }) };
+    const nearOf = l.near === undefined ? {} : { near: l.near as number };
+    layout =
+      l.kind === "sprint" ? { kind: "sprint", ...nearOf }
+      : l.kind === "patch" || l.kind === "islands" ? { kind: l.kind, radius: param as number }
+      : l.kind === "rooms" ? { kind: "rooms", gap: param as number, ...nearOf }
+      : l.kind === "ring" ? { kind: "ring", lane: param as number }
+      : { kind: l.kind as "fence" | "maze", gap: param as number, ...nearOf };
   }
   return {
     id: `custom-${plainText(v.id, 40).toLowerCase().replace(/^custom-/, "").replace(/[^a-z0-9-]/g, "-") || "env"}`, // never a built-in id

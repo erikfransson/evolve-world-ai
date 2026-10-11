@@ -122,5 +122,5 @@ export function drawCreaturePreview(ctx: CanvasRenderingContext2D, plan: PlanVie
   ctx.textBaseline = "top";
   ctx.fillText(`sight ${Math.round(plan.rayLength)}`, (x0 + x1) / 2, y + 4);
   ctx.textAlign = "left";
-  ctx.fillText(`body ${2 * PREVIEW_RADIUS} wide`, 6, 6);
+  ctx.fillText(`body ${2 * PREVIEW_RADIUS} wide`, 10, 10);
 }

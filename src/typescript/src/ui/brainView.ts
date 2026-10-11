@@ -228,6 +228,8 @@ export class BrainView {
   private readonly codeCounts = new Uint32Array(2 * NB + 1);
   private peak = PEAK_FLOOR;
 
+  zoom = 1; // draws the layout made for a canvas this many times smaller, scaled up: a big canvas then shows a big network, not a small one in the middle
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d")!;
@@ -236,11 +238,12 @@ export class BrainView {
   // layout says what the input columns mean, the default is the four ray features of Trials; memoryShort splits the memory units.
   draw(brain: Brain, alive = true, layout: Pick<InputLayout, "rayFeatureLabels"> & Partial<Pick<InputLayout, "memoryShort">> = TRIALS_LAYOUT): void {
     const { canvas, ctx } = this;
-    const cssW = canvas.clientWidth;
-    const cssH = canvas.clientHeight;
+    const z = this.zoom;
+    const cssW = canvas.clientWidth / z;
+    const cssH = canvas.clientHeight / z;
     if (cssW <= 0 || cssH <= 0) return;
     const dpr = fitCanvas(canvas);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.setTransform(dpr * z, 0, 0, dpr * z, 0, 0);
     ctx.clearRect(0, 0, cssW, cssH);
 
     const sizes = brain.sizes;

@@ -1,6 +1,6 @@
 /* RL Arena page, on top of style.css */
 .panel { position: relative; } /* the visually hidden radios of the segmented controls are absolute and must not extend the page */
-.panel #setup { display: block; }
+.panel #setup { display: flex; }
 #settings { gap: 0.8rem; }
 .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
 .pair .field { min-width: 0; }
@@ -51,7 +51,8 @@ details.more > summary { color: var(--text); font-weight: 500; font-size: 0.85re
 .tile dd .delta { margin-left: 0.35rem; font-size: 0.8rem; font-weight: 600; color: var(--muted); }
 .tile dd .delta.up { color: var(--accent); }
 .tile dd .delta.down { color: #f87171; }
-.viewbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.viewbar { display: flex; align-items: center; gap: 1rem 1.6rem; flex-wrap: wrap; }
+.viewbar .legend.arena-legend { margin-left: auto; } /* Brain and Speed together on the left, the legend on the right */
 .viewbar .toggle { gap: 0.7rem; }
 .speed { display: flex; align-items: center; gap: 0.6rem; }
 .speed .seg { min-width: 12rem; }
@@ -119,15 +120,19 @@ details.more > summary { color: var(--text); font-weight: 500; font-size: 0.85re
 /* creature preview */
 .preview-card { gap: 0.5rem; padding: 0.7rem 0.8rem; }
 .preview-card[hidden] { display: none; }
-.preview-body { display: grid; grid-template-columns: minmax(0, 17rem) minmax(0, 1fr); gap: 0.9rem; align-items: start; }
-.preview-fig { margin: 0; display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; }
+.preview-body { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 1rem; align-items: start; width: 100%; max-width: 84rem; margin: 0 auto; } /* fills the card, capped so very wide screens keep the pair balanced */
+.preview-fig { margin: 0; display: flex; flex-direction: column; gap: 0.4rem; min-width: 0; }
 .preview-fig canvas { display: block; width: 100%; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); }
-#previewView { aspect-ratio: 1 / 1; }
-#previewBrain { height: 17rem; }
-@media (max-width: 700px) {
-  .preview-body { grid-template-columns: minmax(0, 1fr); }
-  #previewBrain { height: 15rem; }
+#previewView { aspect-ratio: 1 / 1; } /* the creature: square, as large as the column */
+#previewBrain { aspect-ratio: 7 / 5; } /* as tall as the square creature beside it (7 : 5 columns), so the pair lines up */
+@media (max-width: 900px) {
+  .preview-body { grid-template-columns: minmax(0, 1fr); justify-items: center; }
+  .preview-fig { width: 100%; max-width: 30rem; }
+  #previewView { max-width: 20rem; margin: 0 auto; } /* on a phone the creature stays modest so the brain shows too */
+  #previewBrain { aspect-ratio: 4 / 3; }
 }
+.stats dd.empty { color: var(--muted); opacity: 0.6; }
+#setup { display: flex; flex-direction: column; gap: 0.8rem; }
 .preview-fig figcaption { font-size: 0.75rem; color: var(--muted); line-height: 1.35; font-variant-numeric: tabular-nums; }
 
 /* environment gallery */

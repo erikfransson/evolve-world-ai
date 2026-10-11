@@ -162,10 +162,12 @@ function drawPreview(): void {
   const layout = inputLayout(config, plan);
   const brain = new Brain(sizes, genome);
   brain.forward(previewInput(plan, layout), new Float32Array(layout.outputs));
+  const box = $<HTMLCanvasElement>("previewBrain");
+  previewBrainView.zoom = Math.min(2.2, Math.max(1, Math.min(box.clientWidth / 440, box.clientHeight / 300))); // grow the network with its box
   previewBrainView.draw(brain, true, layout);
   const deg = Math.round((plan.raySpread * 180) / Math.PI);
-  $("previewStats").textContent = `${plan.rayCount} ray${plan.rayCount === 1 ? "" : "s"} over ${deg}°, sight ${Math.round(plan.rayLength)}, body 24 wide. Each ray shows what it sees: green food, purple poison. Upkeep ${planUpkeep(plan, worldConfig(kind())).toFixed(2)} energy per second.`;
-  $("previewBrainText").textContent = `Brain: ${sizes[0]} inputs (${layout.rayFeatures} per ray, energy, speed, turn, memory), hidden ${plan.hiddenLayers.join(" + ") || "none"}, ${sizes[sizes.length - 1]} outputs (turn, thrust, ${plan.memoryShort + plan.memoryLong} memory). Shown thinking about the scene on the left; colours show what drives each connection.`;
+  $("previewStats").textContent = `Its eyes: ${plan.rayCount} ray${plan.rayCount === 1 ? "" : "s"} over ${deg}°, seeing ${Math.round(plan.rayLength)} units far (the dashed ring). A ray turns green on food, purple on poison. Living costs it ${planUpkeep(plan, worldConfig(kind())).toFixed(2)} energy a second.`;
+  $("previewBrainText").textContent = `Its brain: what each ray sees (left), ${plan.hiddenLayers.length === 1 ? `a layer of ${plan.hiddenLayers[0]} neurons` : `${plan.hiddenLayers.length} layers of neurons`} (middle), and turn and thrust (right). Lit lines show how it reacts to the scene beside it.`;
 }
 window.addEventListener("resize", drawPreview);
 
@@ -440,7 +442,8 @@ function reset(): void {
   render();
 }
 
-const fixed = (v: number | null | undefined): string => (v === null || v === undefined ? "-" : v.toFixed(1));
+const EMPTY = "—"; // a stat before training has a value
+const fixed = (v: number | null | undefined): string => (v === null || v === undefined ? EMPTY : v.toFixed(1));
 function lastHeld(r: Run): RlIteration | undefined {
   for (let i = r.its.length - 1; i >= 0; i--) if (r.its[i]!.held !== null) return r.its[i];
   return undefined;
@@ -469,7 +472,8 @@ function render(): void {
   $("statBestTip").dataset.tip = tip;
   $("statBestTip").ariaLabel = tip;
   $("statTrain").textContent = fixed(last?.train);
-  $("statTime").textContent = last ? durationText(last.seconds) : "-";
+  $("statTime").textContent = last ? durationText(last.seconds) : EMPTY;
+  for (const dd of document.querySelectorAll<HTMLElement>(".stats dd")) dd.classList.toggle("empty", dd.textContent === EMPTY);
   graph.setData(r?.its ?? [], r?.startHeld ?? null);
   renderTable(r, heldIt);
   const canSave = !!r?.latest;
