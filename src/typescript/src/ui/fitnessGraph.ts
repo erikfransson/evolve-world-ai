@@ -1,10 +1,9 @@
 import type { GenerationStat } from "../sim/history.ts";
 import { fitCanvas, graphFont } from "./canvas.ts";
+import { AXIS, LABEL, OTHER } from "./palette.ts";
 
 const BEST_COLOR = "#3ddc97";
-const MEAN_COLOR = "#7dd3fc";
-const AXIS_COLOR = "rgba(143, 174, 159, 0.5)";
-const TEXT_COLOR = "#8fae9f";
+const MEAN_COLOR = OTHER;
 const WATCH_COLOR = "#e6f4ea";
 const PAD = { left: 40, right: 8, top: 16, bottom: 19 }; // CSS px
 
@@ -79,8 +78,8 @@ export class FitnessGraph {
     const py = (v: number): number => plot.y + plot.h - (v / top) * plot.h;
 
     ctx.font = graphFont();
-    ctx.fillStyle = TEXT_COLOR;
-    ctx.strokeStyle = AXIS_COLOR;
+    ctx.fillStyle = LABEL;
+    ctx.strokeStyle = AXIS;
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(plot.x, plot.y);
@@ -99,7 +98,7 @@ export class FitnessGraph {
     ctx.fillText(`${last}`, plot.x + plot.w, plot.y + plot.h + 3);
     if (stats.length === 0) return;
 
-    ctx.fillStyle = AXIS_COLOR; // ticks mark the generations that can be watched
+    ctx.fillStyle = AXIS; // ticks mark the generations that can be watched
     for (const g of this.kept) ctx.fillRect(px(g) - 0.5, plot.y + plot.h, 1, 3);
 
     const line = (color: string, value: (s: GenerationStat) => number): void => {

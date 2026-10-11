@@ -350,7 +350,7 @@ describe("Ecosystem collision damage", () => {
     e.step();
     expect([e.population, e.deaths]).toEqual([1, 1]);
     expect(e.journal!.died).toEqual([idA]);
-    expect([e.lineageSize(idA), e.lineageSize(idB)]).toEqual([0, 1]);
+    expect([e.lineages.size(idA), e.lineages.size(idB)]).toEqual([0, 1]);
     expect(b.energy).toBeGreaterThan(30);
     expect(a).toBeDefined();
   });
@@ -515,15 +515,15 @@ describe("Ecosystem lineages and aging", () => {
         eco.step();
         if (t % 100 !== 0) continue;
         const counts = recount(eco);
-        for (let f = 0; f < eco.founders; f++) expect(eco.lineageSize(f)).toBe(counts.get(f) ?? 0);
+        for (let f = 0; f < eco.founders; f++) expect(eco.lineages.size(f)).toBe(counts.get(f) ?? 0);
       }
       expect(eco.births).toBeGreaterThan(0);
       expect(eco.deaths).toBeGreaterThan(0);
       const counts = recount(eco);
       let total = 0;
       for (let f = 0; f < eco.founders; f++) {
-        expect(eco.lineageSize(f)).toBe(counts.get(f) ?? 0);
-        total += eco.lineageSize(f);
+        expect(eco.lineages.size(f)).toBe(counts.get(f) ?? 0);
+        total += eco.lineages.size(f);
       }
       expect(total).toBe(eco.population);
     });
@@ -533,21 +533,21 @@ describe("Ecosystem lineages and aging", () => {
       for (let t = 0; t < 1200 && !eco.extinct; t++) eco.step();
       const counts = [...recount(eco)].map(([founder, count]) => ({ founder, count }));
       counts.sort((a, b) => b.count - a.count || a.founder - b.founder);
-      const top = eco.topLineages(5);
+      const top = eco.lineages.top(5);
       expect(top.length).toBe(Math.min(5, counts.length));
       expect(top.map((l) => [l.founder, l.count])).toEqual(counts.slice(0, top.length).map((c) => [c.founder, c.count]));
       for (const l of top) {
-        expect(l.hue).toBe(eco.founderColour(l.founder));
+        expect(l.hue).toBe(eco.lineages.colour(l.founder));
         expect(l.pool).toBe(false);
         expect(l.count).toBeGreaterThan(0);
       }
-      expect(eco.topLineages(1000).length).toBe(counts.length);
+      expect(eco.lineages.top(1000).length).toBe(counts.length);
     });
 
     it("marks pool founders", () => {
       const eco = new Ecosystem(ecoCfg({ eco: { initialPopulation: 10, poolFraction: 0.5 } }), [poolEntry()]);
       expect(eco.poolFounders).toBe(5);
-      expect(eco.topLineages(10).map((l) => l.pool)).toEqual([true, true, true, true, true, false, false, false, false, false]);
+      expect(eco.lineages.top(10).map((l) => l.pool)).toEqual([true, true, true, true, true, false, false, false, false, false]);
     });
 
     it("the frame carries each creature's founder", () => {

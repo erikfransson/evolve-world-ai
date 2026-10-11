@@ -1,12 +1,11 @@
 import type { RlIteration } from "../worker/rlProtocol.ts";
 import { fitCanvas, graphFont } from "./canvas.ts";
+import { AXIS, LABEL, OTHER } from "./palette.ts";
 
-export const TRAIN_COLOR = "#7dd3fc";
+export const TRAIN_COLOR = OTHER;
 export const BEST_COLOR = "#fbbf24";
 export const HELD_COLOR = "#3ddc97";
-const AXIS_COLOR = "rgba(143, 174, 159, 0.5)";
 const GRID_COLOR = "rgba(143, 174, 159, 0.15)";
-const TEXT_COLOR = "#8fae9f";
 const PAD = { left: 44, right: 10, top: 14, bottom: 20 }; // CSS px
 
 const nice = (v: number): string => (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(1));
@@ -73,13 +72,13 @@ export function drawRewardGraph(ctx: CanvasRenderingContext2D, its: readonly RlI
     ctx.lineTo(x0 + w, py(v));
   }
   ctx.stroke();
-  ctx.strokeStyle = AXIS_COLOR;
+  ctx.strokeStyle = AXIS;
   ctx.beginPath();
   ctx.moveTo(x0, PAD.top);
   ctx.lineTo(x0, PAD.top + h);
   ctx.lineTo(x0 + w, PAD.top + h);
   ctx.stroke();
-  ctx.fillStyle = TEXT_COLOR;
+  ctx.fillStyle = LABEL;
   ctx.textAlign = "right";
   ctx.textBaseline = "middle";
   ctx.fillText(nice(hi), x0 - 5, py(hi));

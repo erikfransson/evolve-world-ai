@@ -62,6 +62,7 @@ async function receive(msg: EcoInMessage): Promise<void> {
   try {
     if (msg.type === "start") {
       runner.seedPool = await (seedPool ??= msg.poolUrl ? loadPool(msg.poolUrl) : Promise.resolve(null));
+      if (!runner.seedPool) seedPool = undefined; // a failed load is tried again on the next start
       runner.useHelpers(helpersFor(msg));
     }
     runner.handle(msg);
