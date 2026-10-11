@@ -34,7 +34,7 @@ const ECO_BASE: EcoPreset["world"] = { width: 12000, height: 7500, foodDensity: 
 const ECO_REGROWTH: Regrowth = { foodRegrow: 0.05, foodMaxDensity: 0.7, poisonRegrow: 0.005, poisonMaxDensity: 0.1 };
 
 export const ECO_PRESETS: readonly EcoPreset[] = [
-  { id: "normal", name: "Normal", description: "A vast world where food regrows fast enough for a large population.", world: ECO_BASE, regrowth: ECO_REGROWTH },
+  { id: "normal", name: "Normal", description: "A vast world where food regrows fast enough for a large population.", world: { ...ECO_BASE, foodEnergy: 20 }, regrowth: ECO_REGROWTH },
   { id: "poison", name: "Poison everywhere", description: "Poison keeps regrowing and covers much of the world.", world: { ...ECO_BASE, poisonDensity: 0.3 }, regrowth: { ...ECO_REGROWTH, poisonRegrow: 0.02, poisonMaxDensity: 0.35 } },
   { id: "scarcity", name: "Scarcity", description: "Food regrows slowly, so only thrifty lineages survive.", world: { ...ECO_BASE, foodDensity: 0.4 }, regrowth: { ...ECO_REGROWTH, foodRegrow: 0.025, foodMaxDensity: 0.5 } },
   { id: "crowded", name: "Crowded", description: "A small world with rich regrowth. Creatures fill it and bump into each other.", world: { ...ECO_BASE, width: 2400, height: 1500 }, regrowth: { ...ECO_REGROWTH, foodRegrow: 0.15 } },
