@@ -351,7 +351,9 @@ describe("Ecosystem preset panel", () => {
   it("unlocks in Custom", () => {
     pick("scarcity");
     pick(CUSTOM);
-    for (const f of ECO_LOCKED) expect(disabled(f), f).toBe(false);
+    // Fields that hang off an off toggle (year length with Seasons off) stay greyed by that toggle, not by the preset.
+    for (const f of ECO_LOCKED) expect(document.getElementById(f)!.closest(".field, .toggle")!.classList.contains("preset-locked"), f).toBe(false);
+    expect(disabled("foodRegrow")).toBe(false);
     expect(form.read().eco.foodRegrow).toBe(ECO_PRESETS[2]!.regrowth.foodRegrow);
   });
 
