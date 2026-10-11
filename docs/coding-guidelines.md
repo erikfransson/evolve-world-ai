@@ -2,7 +2,7 @@
 
 
 ## Tests
-Use `pytest` or similar.
+Use vitest: `npm test` in `src/typescript`, tests in `tests/typescript`.
 * Try to add tests that makes sense , and covering the basic, and protects against bugs but dont overdo it.
 * When fixing bugs, try to follow procedure of: add test that fails, fix bug, verify test is green. 
 
