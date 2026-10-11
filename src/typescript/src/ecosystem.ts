@@ -94,45 +94,42 @@ function drawIdle(): void {
   drawIdleWorld(view.canvas.getContext("2d")!, config, view.canvas.width, view.canvas.height, dpr);
 }
 
-// Moves the canvas to a render worker, once per page. It needs the OffscreenCanvas 2D API (Chrome, Firefox, Safari 16.4+).
+// Moves the canvas to a render worker, once per page, when the browser can draw 2D on an OffscreenCanvas (Chrome, Firefox,
+// Safari 16.4+). Otherwise, or with ?offscreen=0, the page draws itself.
+function offscreenSupported(): boolean {
+  if (params.get("offscreen") === "0" || typeof Worker === "undefined" || typeof OffscreenCanvas === "undefined") return false;
+  if (typeof view.canvas.transferControlToOffscreen !== "function") return false;
+  try {
+    return new OffscreenCanvas(1, 1).getContext("2d") !== null;
+  } catch {
+    return false;
+  }
+}
+
 function startRenderWorker(): void {
-  if (!params.has("offscreen") || typeof view.canvas.transferControlToOffscreen !== "function") return;
+  if (!offscreenSupported()) return;
+  let w: Worker;
+  try {
+    w = new Worker(new URL("./worker/renderWorker.ts", import.meta.url), { type: "module" });
+  } catch {
+    return;
+  }
   fitCanvas(view.canvas);
   backW = view.canvas.width;
   backH = view.canvas.height;
   const offscreen = view.canvas.transferControlToOffscreen();
-  const w = new Worker(new URL("./worker/renderWorker.ts", import.meta.url), { type: "module" });
   const channel = new MessageChannel();
   w.postMessage({ type: "init", canvas: offscreen, port: channel.port1 } satisfies RenderInMessage, [offscreen, channel.port1]);
+  w.onerror = (e) => view.setNote(`Drawing stopped: ${e.message}`);
   w.onmessage = (e: MessageEvent<RenderOutMessage>) => {
     const m = e.data;
-    if (m.type === "grabbed") void compareGrab(m);
-    else if (m.type === "drew") ((globalThis as { __draws?: number[] }).__draws ??= []).push(m.ms);
-    else if (m.request === pickRequests) {
+    if (m.request === pickRequests) {
       if (m.id >= 0) select(m.id, m.x, m.y);
       else if (selection) clearSelection();
     }
   };
   renderWorker = w;
-  (globalThis as { __grab?: () => void }).__grab = () => w.postMessage({ type: "grab" } satisfies RenderInMessage);
   pendingPort = channel.port2;
-}
-
-// Debug (?offscreen=1): compares the worker's canvas with a main-thread draw of a copy of the same snapshot, same camera.
-async function compareGrab(m: Extract<RenderOutMessage, { type: "grabbed" }>): Promise<void> {
-  const w = canvasW;
-  const h = canvasH;
-  const a = new OffscreenCanvas(w, h).getContext("2d")!;
-  a.drawImage(await createImageBitmap(m.png), 0, 0);
-  const b = new OffscreenCanvas(w, h).getContext("2d")!;
-  const s = m.snapshot;
-  new EcoRenderer().draw(b as unknown as CanvasRenderingContext2D, camera, drawConfig(), snapshotViews(m.buffer, s.count, s.itemCount, s.creatureCap, s.itemCap), null, showRays, window.devicePixelRatio || 1, highlight);
-  const da = a.getImageData(0, 0, w, h).data;
-  const db = b.getImageData(0, 0, w, h).data;
-  let diff = 0;
-  let maxd = 0;
-  for (let i = 0; i < da.length; i++) if (da[i] !== db[i]) { diff++; maxd = Math.max(maxd, Math.abs(da[i]! - db[i]!)); }
-  (globalThis as { __grabResult?: unknown }).__grabResult = { w, h, zoom: camera.zoom, bytes: da.length, diff, maxd, count: s.count, items: s.itemCount };
 }
 
 // Matches the backing size to the layout and tells the render worker; returns the device pixel ratio.
@@ -414,9 +411,7 @@ function frame(now: number): void {
     const { cx, cy, zoom, focusX, focusY } = camera;
     renderWorker.postMessage({ type: "frame", run, view: { cx, cy, zoom, focusX, focusY }, cfg: drawConfig(), selectedId: selection?.details?.id ?? null, showRays, dpr, highlight } satisfies RenderInMessage);
   } else {
-    const t0 = performance.now();
     renderer.draw(view.canvas.getContext("2d")!, camera, drawConfig(), live.views!, selection?.details ?? null, showRays, dpr, highlight, births, now, impacts);
-    ((globalThis as { __draws?: number[] }).__draws ??= []).push(performance.now() - t0);
   }
   if (now - lastUiAt >= UI_INTERVAL_MS) {
     lastUiAt = now;

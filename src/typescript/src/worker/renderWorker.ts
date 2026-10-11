@@ -20,7 +20,6 @@ let camera: Camera | null = null;
 const renderer = new EcoRenderer();
 const births = new BirthRings();
 const impacts = new ImpactEffects();
-const NO_BUFFER = new ArrayBuffer(0);
 const out = (m: RenderOutMessage): void => self.postMessage(m);
 
 function giveBack(msg: RenderSnapshot): void {
@@ -57,13 +56,11 @@ function draw(): void {
   if (!camera) camera = new Camera(f.cfg.worldW, f.cfg.worldH, canvas.width, canvas.height);
   if (camera.width !== canvas.width || camera.height !== canvas.height) camera.resize(canvas.width, canvas.height);
   camera.setState(f.view);
-  const t0 = performance.now();
   const sel = snap.msg.selected;
   renderer.draw(ctx, camera, f.cfg, snap.views, sel && sel.id === f.selectedId ? sel : null, f.showRays, f.dpr, f.highlight, births, performance.now(), impacts);
-  out({ type: "drew", ms: performance.now() - t0 });
 }
 
-self.onmessage = async (e: MessageEvent<RenderInMessage>) => {
+self.onmessage = (e: MessageEvent<RenderInMessage>) => {
   const m = e.data;
   switch (m.type) {
     case "init":
@@ -86,10 +83,8 @@ self.onmessage = async (e: MessageEvent<RenderInMessage>) => {
       out({ type: "picked", request: m.request, id: i >= 0 ? v!.ids[i]! : -1, x: i >= 0 ? v!.x[i]! : 0, y: i >= 0 ? v!.y[i]! : 0 });
       break;
     }
-    case "grab":
-      out({ type: "grabbed", png: await canvas.convertToBlob(), buffer: snap!.msg.buffer.slice(0), snapshot: { ...snap!.msg, buffer: NO_BUFFER } });
-      break;
     case "idle":
+      frame = null; // a pending frame would draw over the preview
       drawIdleWorld(ctx, m.config, canvas.width, canvas.height, m.dpr);
       break;
   }

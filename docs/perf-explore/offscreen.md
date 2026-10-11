@@ -36,6 +36,16 @@ Debug hook (`?offscreen=1` page, `__grab()`): pauses, waits for effects to fade,
 
 About 200 lines: renderWorker 96, renderProtocol 27, ecosystem.ts about 70 net (branches, pick round trip, size sync), ecoWorker 15, camera and cameraInput 25. Plus tests for the pick round trip and the stale-run guard (about 60). The Great Hunt page is the same script, so it comes free. Landing scenes (`landingScenes.ts`, 618 lines) draw on their own and would need separate work. New concepts: a third worker, a MessageChannel between workers, a second owner of births and impacts state.
 
-Recommendation: worth merging behind the feature test, as the default where supported, since the page is unusable at 20000+ width today (111% main thread). Keep `?offscreen=0` as an escape hatch.
+Recommendation: merge. Default on where supported, `?offscreen=0` as an escape hatch.
 
-Prototype: branch worktree-agent-ade2ebfecdded4c15. Scripts: scratchpad `opt2/measure.mjs`, `opt2/pairs.sh`, results `opt2/runs.txt`. Remove the `__draws` timing lines and the `grab` debug hook before merging.
+## Merge-ready version
+
+On by default where `OffscreenCanvas` 2D and `transferControlToOffscreen` exist (feature test, worker creation in try/catch). `?offscreen=0` forces the old main-thread path. The timing lines and the debug hook are removed. A render worker error shows a page note (the canvas cannot go back to the page once transferred).
+
+Pixel checks (temporary hook, not committed): the worker redraws its canvas at a fixed time and returns the PNG plus all draw inputs and the canvas state; a second page with `?offscreen=0` redraws them on the page's own canvas and diffs every RGBA byte. Frames covered on the Ecosystem page and the Great Hunt page: whole world, highlighted lineage dimming, selected creature with rays and follow view (4 frames), rays off, click-picked and followed, window resize, devicePixelRatio 2, after a tab switch. Live in all of them: birth rings (up to 64), impact and death sparks (up to 64), winter tint (0 to 1 across frames). Result with the same raster backend (`--disable-gpu`): 0 differing bytes in all 12 frames on both pages. With the default flags, headless Chrome rasterises the worker's canvas on the GPU path (SwiftShader) and the page's canvas in software: flat-dot, highlight, winter and Ecosystem ray frames are still 0, and Great Hunt frames with hunters differ by 58-269 bytes of at most 11 levels (clip edge antialiasing), which is a backend difference and not the code.
+
+Found while checking: `ecoImpacts` sets `ctx.lineCap = "round"` and `drawHunter` sets `lineJoin = "round"` and nothing resets them, so how the next frame's creature ticks and ray ends look depends on whether earlier frames drew sparks. This exists on the main thread too and is the same in both modes (the worker keeps its own context state), but a fresh context would draw the first frame differently.
+
+Behaviour checked in headless Chrome (Ecosystem and Great Hunt): click picking through the worker selects and follows the creature; window resize and dpr 2 resize the worker canvas and the camera; Reset draws the idle preview in the worker; a new run after Reset draws; the extinction dialog shows over the last frame; switching to another tab and back keeps the run going and drawing (snapshots keep being recycled while hidden).
+
+Prototype scripts: scratchpad `opt2/measure.mjs`, `opt2/pairs.sh`, `opt2/check.mjs`, `opt2/replay.mjs`.

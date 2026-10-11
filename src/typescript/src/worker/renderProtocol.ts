@@ -21,7 +21,6 @@ export type RenderInMessage =
   | { type: "size"; width: number; height: number }
   | { type: "frame"; run: number; view: { cx: number; cy: number; zoom: number; focusX: number; focusY: number }; cfg: EcoDrawConfig; selectedId: number | null; showRays: boolean; dpr: number; highlight: number }
   | { type: "pick"; request: number; x: number; y: number; reach: number }
-  | { type: "idle"; config: EcoConfig; dpr: number }
-  | { type: "grab" }; // debug: the canvas as PNG and a copy of the snapshot, to compare with a main-thread draw
+  | { type: "idle"; config: EcoConfig; dpr: number };
 
-export type RenderOutMessage = { type: "picked"; request: number; id: number; x: number; y: number } | { type: "drew"; ms: number } | { type: "grabbed"; png: Blob; buffer: ArrayBuffer; snapshot: RenderSnapshot };
+export type RenderOutMessage = { type: "picked"; request: number; id: number; x: number; y: number };
