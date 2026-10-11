@@ -30,7 +30,7 @@ export const WALL = "#9fb8ad";
 export const FOOD = "#4ade80";
 export const POISON = "#e040fb";
 export const OTHER = "#7dd3fc"; // the rest of a generation
-export const RAY_COLORS = ["#6b7f76", FOOD, POISON, "#facc15", OTHER]; // indexed by HIT_NONE, HIT_FOOD, HIT_POISON, HIT_WALL, HIT_CREATURE
+export const RAY_COLORS = ["#9db3a8", FOOD, POISON, "#facc15", OTHER]; // indexed by HIT_NONE, HIT_FOOD, HIT_POISON, HIT_WALL, HIT_CREATURE
 // Trials: the body is full at this many times the starting energy, so a newborn is one third full.
 export const TRIALS_FULL_AT = 3;
 // Hue by fill fraction, linear between stops so colour never jumps: red in the last emergency,
@@ -184,7 +184,7 @@ function drawRays(ctx: CanvasRenderingContext2D, f: Frame, ep: EpisodeView): voi
     const ey = s.y + Math.sin(a) * d;
     const color = RAY_COLORS[hit.kind]!;
     ctx.strokeStyle = color;
-    ctx.globalAlpha = hasHit ? 0.9 : 0.4;
+    ctx.globalAlpha = hasHit ? 0.9 : 0.6;
     ctx.beginPath();
     ctx.moveTo(s.x, s.y);
     ctx.lineTo(ex, ey);

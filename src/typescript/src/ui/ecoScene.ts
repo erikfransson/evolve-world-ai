@@ -266,7 +266,7 @@ export class EcoRenderer {
         const d = kind === HIT_NONE ? rayLength : rayLength * (1 - s.rayCloseness[i]!);
         const a = s.heading + s.rayOffsets[i]!;
         ctx.strokeStyle = RAY_COLORS[kind]!;
-        ctx.globalAlpha = kind === HIT_NONE ? 0.4 : 0.9;
+        ctx.globalAlpha = kind === HIT_NONE ? 0.6 : 0.9;
         ctx.beginPath();
         ctx.moveTo(s.x, s.y);
         ctx.lineTo(s.x + Math.cos(a) * d, s.y + Math.sin(a) * d);
