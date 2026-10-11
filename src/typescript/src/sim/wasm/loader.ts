@@ -1,4 +1,4 @@
-import { BRAIN_WASM_BASE64, RAYS_WASM_BASE64 } from "./kernels.generated.ts";
+import { BRAIN_WASM_BASE64, RAYS_WASM_BASE64, SENSE_WASM_BASE64 } from "./kernels.generated.ts";
 
 // WebAssembly SIMD kernels are optional: callers get null from the create functions when they are unavailable and keep the JS path.
 
@@ -13,6 +13,7 @@ function decode(base64: string): Uint8Array<ArrayBuffer> {
 
 export const BRAIN_BYTES = decode(BRAIN_WASM_BASE64);
 export const RAYS_BYTES = decode(RAYS_WASM_BASE64);
+export const SENSE_BYTES = decode(SENSE_WASM_BASE64);
 
 let disabled = false;
 let supported: boolean | undefined;

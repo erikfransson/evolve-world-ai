@@ -3,6 +3,7 @@ import type { Crowd } from "../crowd.ts";
 import type { World } from "../world.ts";
 import { WasmBrainBank } from "./brainKernel.ts";
 import { WasmRayCaster } from "./rayKernel.ts";
+import { WasmSenser } from "./senser.ts";
 
 // senseThinkBatch on the WASM kernels: item and wall rays stay in JS, the crowd rays and the brains run in WebAssembly.
 // Each creature keeps a brain slot here for as long as this owner holds it (creatures are recycled, not dropped), and
@@ -12,6 +13,8 @@ export class SenseKernels {
   private readonly brains: WasmBrainBank;
   private readonly caster: WasmRayCaster;
   private readonly versions: number[] = []; // brainVersion of the creature each slot was set from
+  static full = typeof process !== "undefined" && process.env.SENSE_FULL === "1"; // prototype switch: one-call sense (sense.wat)
+  private senser: WasmSenser | null = null;
   private nextSlot = 0;
   private slots = new Int32Array(64);
 
@@ -31,6 +34,7 @@ export class SenseKernels {
     const n = batch.count;
     if (n === 0) return;
     const { creatures, selves } = batch;
+    if (SenseKernels.full) return this.runFull(world, crowd, batch);
     const caster = this.caster;
     caster.loadCrowd(crowd);
     for (let k = 0; k < n; k++) {
@@ -56,6 +60,26 @@ export class SenseKernels {
     }
   }
 
+  private runFull(world: World, crowd: Crowd, batch: SenseBatch): void {
+    const n = batch.count;
+    const { creatures, selves } = batch;
+    const senser = (this.senser ??= WasmSenser.create(this.brains));
+    if (!senser) throw new Error("sense.wat unavailable");
+    if (n > this.slots.length) this.slots = new Int32Array(Math.max(n, 2 * this.slots.length));
+    const slots = this.slots;
+    const brains = this.brains;
+    for (let k = 0; k < n; k++) slots[k] = this.slotOf(creatures[k]!);
+    const stride = creatures[0]!.rayStride;
+    senser.run(world, crowd, creatures, slots, selves, n, stride, creatures[0]!.startEnergy);
+    brains.forwardSlots(slots, n);
+    const f32 = brains.f32;
+    for (let k = 0; k < n; k++) {
+      const out = creatures[k]!.outputs;
+      const at = brains.outputAt(slots[k]!);
+      for (let i = 0; i < out.length; i++) out[i] = f32[at + i]!;
+    }
+  }
+
   // The creature's slot, holding its current brain.
   private slotOf(c: Creature): number {
     if (c.kernelOwner !== this) {
@@ -66,6 +90,7 @@ export class SenseKernels {
     const slot = c.kernelSlot;
     if (this.versions[slot] !== c.brainVersion) {
       this.brains.set(slot, c.brain.sizes, c.brain.genome);
+      if (SenseKernels.full) (this.senser ??= WasmSenser.create(this.brains))!.setOffsets(slot, c);
       this.versions[slot] = c.brainVersion;
     }
     return slot;

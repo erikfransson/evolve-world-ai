@@ -65,15 +65,15 @@ export class World implements WorldView {
   readonly ys: Float32Array;
   readonly kinds: Uint8Array;
 
-  private readonly width: number;
-  private readonly height: number;
-  private readonly itemRadius: number;
+  readonly width: number;
+  readonly height: number;
+  readonly itemRadius: number;
   // Uniform grid as per-cell linked lists: cellHead[c] -> item -> nextItem[item] -> -1.
-  private readonly cell: number;
-  private readonly cols: number;
-  private readonly rows: number;
-  private readonly cellHead: Int32Array;
-  private readonly nextItem: Int32Array;
+  readonly cell: number;
+  readonly cols: number;
+  readonly rows: number;
+  readonly cellHead: Int32Array;
+  readonly nextItem: Int32Array;
   private readonly itemCell: Int32Array;
   // Free slots as a stack; freePos[i] is slot i's place in it, -1 while taken.
   private readonly freeSlots: Int32Array;

@@ -8,6 +8,7 @@ import { parseArgs } from "node:util";
 import { DEFAULT_ECO_CONFIG } from "./sim/ecoConfig.ts";
 import type { EcoConfig } from "./sim/ecoConfig.ts";
 import { Ecosystem } from "./sim/ecosystem.ts";
+import { SenseKernels } from "./sim/wasm/senseKernels.ts";
 import { parsePool } from "./sim/seedPool.ts";
 import { createNodeThinkPool } from "./worker/nodePool.ts";
 
@@ -25,6 +26,8 @@ const { values } = parseArgs({
     aging: { type: "boolean" },
     threads: { type: "string", default: "0" }, // helper threads for sense and think; 0 runs on this thread alone
     shared: { type: "boolean" }, // helpers use shared memory instead of messages
+    full: { type: "boolean" }, // prototype one-call sense kernel
+    scale: { type: "string", default: "1" }, // world side factor; width, height and the founder count (area) scale with it
     wasm: { type: "string" }, // true or false: sense and think on the WebAssembly kernels; default from the config
     agingStart: { type: "string" },
     agingRate: { type: "string" },
@@ -35,13 +38,15 @@ const { values } = parseArgs({
 const num = (v: string | undefined, fallback: number): number => (v === undefined ? fallback : Number(v));
 const d = DEFAULT_ECO_CONFIG;
 const food = num(values.food, d.world.foodDensity);
+if (values.full) SenseKernels.full = true;
+const scale = num(values.scale, 1);
 const config: EcoConfig = {
   ...structuredClone(d),
   seed: num(values.seed, d.seed),
-  world: { ...d.world, foodDensity: food },
+  world: { ...d.world, width: d.world.width * scale, height: d.world.height * scale, foodDensity: food },
   eco: {
     ...d.eco,
-    initialPopulation: num(values.pop, d.eco.initialPopulation),
+    initialPopulation: Math.round(num(values.pop, d.eco.initialPopulation) * scale * scale),
     poolFraction: num(values.poolFraction, d.eco.poolFraction),
     aging: values.aging ?? d.eco.aging,
     wasm: values.wasm === undefined ? d.eco.wasm : values.wasm === "true",
@@ -77,6 +82,7 @@ while (eco.tick < ticks && !eco.extinct) {
 const t1 = performance.now();
 const wall = (t1 - t0) / 1000;
 helpers?.close();
+if ((globalThis as any).__t) console.error(JSON.stringify(Object.fromEntries(Object.entries((globalThis as any).__t).map(([k, v]) => [k, +((v as number) / eco.tick).toFixed(2)]))));
 console.log(JSON.stringify({
   seed: config.seed,
   seconds,
