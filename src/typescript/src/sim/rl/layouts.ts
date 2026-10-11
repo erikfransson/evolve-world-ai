@@ -7,8 +7,8 @@ import { HIT_FOOD, HIT_POISON } from "../types.ts";
 // cannot pass between two without touching one, so they work as obstacles with gaps.
 
 export type Layout =
-  | { kind: "fence"; gap: number } // one poison wall across the middle with a gap; the learner starts below, the food lies above
-  | { kind: "maze"; gap: number } // two poison walls with gaps at opposite ends; learner at the bottom, food at the top
+  | { kind: "fence"; gap: number; near?: number } // one poison wall across the middle with a gap; the learner starts below, the food lies above (near of it below, as a first step)
+  | { kind: "maze"; gap: number; near?: number } // two poison walls with gaps at opposite ends; learner at the bottom, food at the top (near of it in the bottom room)
   | { kind: "patch"; radius: number }; // all food in one patch away from the learner, the poison scattered
 
 export const LAYOUT_KINDS = ["fence", "maze", "patch"] as const;
@@ -37,14 +37,18 @@ export function placeLayout(layout: Layout, size: readonly [number, number], foo
   if (layout.kind === "fence") {
     const gx = rng.range(layout.gap, w - layout.gap);
     wall(items, w, h / 2, gx, layout.gap);
-    for (let k = 0; k < food; k++) items.push({ ...spot(rng, MARGIN, w - MARGIN, MARGIN, h / 2 - 3 * MARGIN), kind: HIT_FOOD });
+    const near = Math.min(food, layout.near ?? 0);
+    for (let k = 0; k < food - near; k++) items.push({ ...spot(rng, MARGIN, w - MARGIN, MARGIN, h / 2 - 3 * MARGIN), kind: HIT_FOOD });
+    for (let k = 0; k < near; k++) items.push({ ...spot(rng, MARGIN, w - MARGIN, h / 2 + 2 * MARGIN, h - MARGIN), kind: HIT_FOOD });
     start = spot(rng, MARGIN, w - MARGIN, h / 2 + 3 * MARGIN, h - MARGIN);
   } else if (layout.kind === "maze") {
     const left = rng.next() < 0.5;
     const end = (atLeft: boolean): number => (atLeft ? layout.gap : w - layout.gap);
     wall(items, w, h / 3, end(left), layout.gap * 2);
     wall(items, w, (2 * h) / 3, end(!left), layout.gap * 2);
-    for (let k = 0; k < food; k++) items.push({ ...spot(rng, MARGIN, w - MARGIN, MARGIN, h / 3 - 2 * MARGIN), kind: HIT_FOOD });
+    const near = Math.min(food, layout.near ?? 0);
+    for (let k = 0; k < food - near; k++) items.push({ ...spot(rng, MARGIN, w - MARGIN, MARGIN, h / 3 - 2 * MARGIN), kind: HIT_FOOD });
+    for (let k = 0; k < near; k++) items.push({ ...spot(rng, MARGIN, w - MARGIN, (2 * h) / 3 + MARGIN, h - MARGIN), kind: HIT_FOOD });
     start = spot(rng, MARGIN, w - MARGIN, (2 * h) / 3 + 2 * MARGIN, h - MARGIN);
   } else {
     // The patch sits in a random corner region.
