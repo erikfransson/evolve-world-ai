@@ -96,6 +96,8 @@ export class Ecosystem {
   tick = 0;
   births = 0;
   deaths = 0;
+  foodEaten = 0;
+  poisonEaten = 0;
   readonly poolFounders: number; // founders taken from the seed pool, the first ones of each species in id order
   readonly founders: number; // founders are ids 0 .. founders-1, species by species
   readonly species: readonly Species[];
@@ -337,7 +339,11 @@ export class Ecosystem {
       if (this.items.kinds[eaten] === HIT_FOOD) {
         this.food--;
         m.eaten++;
-      } else this.poison--;
+        this.foodEaten++;
+      } else {
+        this.poison--;
+        this.poisonEaten++;
+      }
       this.items.removeItem(eaten); // so no one else eats it this tick
     }
 
