@@ -95,7 +95,7 @@ describe("helper fallbacks", () => {
     } finally {
       vi.unstubAllGlobals();
     }
-    expect(defaultHelpers(8)).toBe(6);
+    expect(defaultHelpers(8)).toBe(4);
     expect(defaultHelpers(4)).toBe(3);
     expect(defaultHelpers(1)).toBe(1);
   });

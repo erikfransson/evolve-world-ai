@@ -31,9 +31,9 @@ const WAIT_MS = 20_000; // a shared tick waiting longer than this has lost a hel
 type WaitAsync = (a: Int32Array, i: number, v: number) => { async: boolean; value: Promise<unknown> | string };
 const waitAsync = (Atomics as unknown as { waitAsync?: WaitAsync }).waitAsync;
 
-// Helper threads when none are asked for: leave one core for the page and one for the coordinator, at most 6.
+// Helper threads when none are asked for: leave one core for the page and one for the coordinator, at most 4; on a 4-core machine 6 were no faster than 4.
 export function defaultHelpers(cores: number): number {
-  return Math.max(1, Math.min(cores - 1, 6));
+  return Math.max(1, Math.min(cores - 1, 4));
 }
 
 // Shared memory needs a cross-origin isolated page (or Node), SharedArrayBuffer and Atomics.waitAsync for the helpers.
