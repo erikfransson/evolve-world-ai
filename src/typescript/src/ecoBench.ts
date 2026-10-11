@@ -91,6 +91,7 @@ while (eco.tick < ticks && !eco.extinct) {
   if (eco.tick % every === 0) {
     population.push(eco.population);
     speciesPopulation.push(perSpecies());
+    if (eco.species.length > 1) console.error(`${Math.round(eco.tick * config.dt)} s ${perSpecies().join(" ")} food ${eco.food}`); // progress
   }
 }
 const t1 = performance.now();

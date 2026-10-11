@@ -159,6 +159,16 @@ function applyOverrides(target: Record<string, unknown>, over: Record<string, un
       applyOverrides(current, value, where);
     } else if (Array.isArray(current)) {
       if (!Array.isArray(value)) throw new Error(`config "${where}" must be an array, got ${describe(value)}`);
+      if (isPlain(current[0])) {
+        // A list of settings objects (the species): each item merges over the default at its index, or the last one.
+        target[key] = value.map((item, i) => {
+          if (!isPlain(item)) throw new Error(`config "${where}[${i}]" must be an object, got ${describe(item)}`);
+          const merged = structuredClone(current[Math.min(i, current.length - 1)]) as Record<string, unknown>;
+          applyOverrides(merged, item, `${where}[${i}]`);
+          return merged;
+        });
+        continue;
+      }
       const itemType = typeof current[0];
       value.forEach((item, i) => {
         if (current.length > 0 && typeof item !== itemType) {

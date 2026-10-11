@@ -16,6 +16,9 @@ const POISON_COLOR = "#e040fb";
 const CREATURE_COLOR = "#7dd3fc";
 const FEATURE_LETTERS: Record<string, string> = { closeness: "c", food: "f", poison: "p", wall: "w", creature: "o", "seen energy": "e" };
 const FEATURE_COLORS = [TEXT_COLOR, FOOD_COLOR, POISON_COLOR, LABEL_COLOR, CREATURE_COLOR, CREATURE_COLOR];
+const SPECIES_COLORS = ["#60a5fa", "#f87171"]; // species flags, as on the Predators & prey page
+// Colour of ray feature f of n: with one flag per species (n > 6), each flag in its species' colour.
+const featureColor = (f: number, n: number): string => (f < 4 || n <= FEATURE_COLORS.length ? FEATURE_COLORS[f]! : f === n - 1 ? CREATURE_COLOR : SPECIES_COLORS[f - 4] ?? CREATURE_COLOR);
 const HIT_LEVEL = 0.5;
 
 const NB = 6; // edge strength buckets per sign, drawn weakest first so strong edges end on top
@@ -396,7 +399,7 @@ export class BrainView {
     ctx.font = SMALL_FONT;
     ctx.textAlign = "center";
     for (let f = 0; f < features; f++) {
-      ctx.fillStyle = FEATURE_COLORS[f]!;
+      ctx.fillStyle = featureColor(f, features);
       ctx.fillText(FEATURE_LETTERS[labels[f]!] ?? labels[f]![0]!, GRID_X + f * FEAT_DX, headerY);
     }
     ctx.fillStyle = LABEL_COLOR;

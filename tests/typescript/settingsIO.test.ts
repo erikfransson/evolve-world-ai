@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { DEFAULT_CONFIG } from "../../src/typescript/src/sim/config.ts";
-import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
+import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { buildEcoForm, fillEcoForm, readEcoConfig } from "../../src/typescript/src/ui/ecoSettingsForm.ts";
 import { fillForm, initSettingsForm, readConfig } from "../../src/typescript/src/ui/settingsForm.ts";
 import { initSettingsIO, parseSettings, serialise } from "../../src/typescript/src/ui/settingsIO.ts";
@@ -20,6 +20,21 @@ describe("settings JSON", () => {
     const eco = structuredClone(DEFAULT_ECO_CONFIG);
     eco.eco.birthCost = 33;
     expect(parseSettings(serialise("ecosystem", eco), "ecosystem")).toEqual(eco);
+  });
+
+  it("round-trips Predators & prey and merges each pasted species over its default", () => {
+    const c = structuredClone(DEFAULT_PREDATOR_CONFIG);
+    c.species![1]!.speed = 1.6;
+    c.species![0]!.rayLengthRange = [60, 200];
+    const text = serialise("predators", c, "custom");
+    expect(JSON.parse(text)).toMatchObject({ mode: "predators", preset: "custom" });
+    expect(parseSettings(text, "predators")).toEqual(c);
+    const partial = JSON.stringify({ mode: "predators", version: 1, config: { species: [{ founders: 10 }, { eatBaseline: 5 }] } });
+    const merged = parseSettings(partial, "predators");
+    expect(merged.species![0]).toEqual({ ...DEFAULT_PREDATOR_CONFIG.species![0]!, founders: 10 });
+    expect(merged.species![1]).toEqual({ ...DEFAULT_PREDATOR_CONFIG.species![1]!, eatBaseline: 5 });
+    expect(() => parseSettings(JSON.stringify({ mode: "predators", version: 1, config: { species: [{ fangs: 3 }] } }), "predators")).toThrow(/unknown config key "species\[0\].fangs"/);
+    expect(() => parseSettings(serialise("ecosystem", DEFAULT_ECO_CONFIG), "predators")).toThrow(/for Ecosystem, but this is the Predators & prey page/);
   });
 
   it("keeps defaults for missing keys", () => {

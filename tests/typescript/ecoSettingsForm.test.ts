@@ -2,12 +2,13 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { DEFAULT_CONFIG } from "../../src/typescript/src/sim/config.ts";
-import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
+import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { buildEcoForm, fillEcoForm, readEcoConfig } from "../../src/typescript/src/ui/ecoSettingsForm.ts";
 import { fillForm, readConfig } from "../../src/typescript/src/ui/settingsForm.ts";
+import { PREDATOR_FORM } from "../../src/typescript/src/ui/predatorForm.ts";
 
-const page = (name: string): string => readFileSync(resolve(import.meta.dirname, `../../src/typescript/${name}/index.html`), "utf8").replace(/^[\s\S]*<body>|<\/body>[\s\S]*$/g, "").replace(/<script[\s\S]*?<\/script>/g, "");
+const page = (name: string): string => readFileSync(resolve(import.meta.dirname, `../../src/typescript/${name}/index.html`), "utf8").replace(/^[\s\S]*<body[^>]*>|<\/body>[\s\S]*$/g, "").replace(/<script[\s\S]*?<\/script>/g, "");
 
 // Browsers snap a range to min + n * step, which happy-dom does not, so check that every default sits on a step.
 function expectRangesOnStep(): void {
@@ -79,5 +80,38 @@ describe("Ecosystem settings form", () => {
     fillEcoForm(DEFAULT_ECO_CONFIG);
     expect(document.getElementById("foodDensityHint")!.textContent).toBe("≈ 4500 items");
     expect(document.getElementById("foodRegrowHint")!.textContent).toBe("≈ 450 items/s");
+  });
+});
+
+describe("Predators & prey settings form", () => {
+  beforeEach(() => {
+    document.body.innerHTML = page("predators");
+    buildEcoForm(document.getElementById("settings")!, PREDATOR_FORM);
+  });
+
+  it("reads back the defaults and a changed config, species included", () => {
+    fillEcoForm(DEFAULT_PREDATOR_CONFIG);
+    expect(readEcoConfig()).toEqual(DEFAULT_PREDATOR_CONFIG);
+    expectRangesOnStep();
+    const c: EcoConfig = structuredClone(DEFAULT_PREDATOR_CONFIG);
+    c.seed = 9;
+    c.eco.foodRegrow = 0.03;
+    c.species![0]!.founders = 600;
+    c.species![0]!.poolFraction = 0.25;
+    c.species![1]!.speed = 1.5;
+    c.species![1]!.birthCost = 150;
+    c.species![1]!.eatEfficiency = 0.5;
+    c.species![1]!.eatBaseline = 25;
+    c.species![1]!.rayLengthRange = [120, 320];
+    c.eco.collisions = false;
+    fillEcoForm(c);
+    expect(readEcoConfig()).toEqual(c);
+  });
+
+  it("folds the shared Ecosystem sections and tucks costs under More settings", () => {
+    const folded = [...document.querySelectorAll("details.fold h3")].map((h) => h.textContent);
+    expect(folded).toEqual(["Life cycle", "Variation", "Brain", "Mutation"]);
+    expect(document.getElementById("predBirthCost")!.closest("details.more")).not.toBeNull();
+    expect(document.getElementById("predSpeed")!.closest("details")).toBeNull();
   });
 });

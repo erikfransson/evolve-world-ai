@@ -1,8 +1,8 @@
 import type { EcoConfig } from "../sim/ecoConfig.ts";
-import type { Lineage } from "../sim/ecosystem.ts";
+import type { Lineage, SpeciesCount } from "../sim/ecosystem.ts";
 import type { BodyPlan } from "../sim/sensors.ts";
 
-export type BestBy = "age" | "children" | "eaten";
+export type BestBy = "age" | "children" | "eaten" | "kills";
 export type EcoSpeedSetting = number | "max"; // simulated seconds per real second, "max" = as many ticks as fit
 
 export type EcoInMessage =
@@ -28,6 +28,8 @@ export interface SelectedDetails {
   age: number; // seconds
   children: number;
   eaten: number; // food items eaten
+  kills: number; // prey eaten
+  species: number; // index into the config's species
   depth: number;
   parentId: number;
   hue: number;
@@ -67,10 +69,12 @@ export interface EcoSnapshot {
   buffer: ArrayBuffer; // transferred; see snapshotViews
   selected: SelectedDetails | null;
   bestRequest: number; // the last selectBest request handled, so the page ignores selections from before it
-  history?: Float64Array; // [time, population, food] per sample, only when it changed
-  // Lineages, sent about once a second (and with the first and last snapshot of a run).
+  history?: Float64Array; // [time, population, food] per sample, then each species' population with several species; only when it changed
+  species?: SpeciesCount[]; // per species, with several species
+  // Lineages, sent about once a second (and with the first and last snapshot of a run). With several species, each
+  // species has its own: lineages lists each species' in turn, and each history sample holds one block per species.
   lineages?: Lineage[]; // the LINEAGE_TOP largest living lineages, biggest first
-  lineageHistory?: Float64Array; // LINEAGE_STRIDE numbers per sample, at the times of `history`, only when it changed
+  lineageHistory?: Float64Array; // LINEAGE_STRIDE numbers per sample and species, at the times of `history`, only when it changed
 }
 
 export const LINEAGE_TOP = 8;

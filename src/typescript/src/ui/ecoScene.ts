@@ -9,6 +9,22 @@ export interface EcoDrawConfig {
   radius: number;
   itemRadius: number;
   fullEnergy: number; // energy at which the body fill is full
+  species?: readonly { fullEnergy: number; hunter: boolean }[]; // per species, with several; hunters are drawn with a pointed nose
+}
+
+const NOSE = 2; // a hunter's nose tip, in radii ahead of its centre
+const NOSE_HALF = Math.acos(1 / NOSE); // where the nose lines touch the round back, so the outline is a smooth teardrop
+
+// Adds a creature's outline to the current path: a circle, or for a hunter a round back with a pointed nose along its heading.
+function bodyPath(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, heading: number, hunter: boolean): void {
+  if (!hunter) {
+    ctx.moveTo(x + r, y);
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    return;
+  }
+  ctx.moveTo(x + Math.cos(heading) * r * NOSE, y + Math.sin(heading) * r * NOSE);
+  ctx.arc(x, y, r, heading + NOSE_HALF, heading - NOSE_HALF + 2 * Math.PI);
+  ctx.closePath();
 }
 
 const HUE_BUCKETS = 72;
@@ -142,6 +158,7 @@ export class EcoRenderer {
     // Round dots at least DOT_RADIUS big, over a dark outline pass, so creatures stand out from the small dim items.
     const dotR = Math.max(R, DOT_RADIUS * css);
     const outline = dotR + 0.9 * css;
+    const hunter = (i: number): boolean => cfg.species?.[v.species[i]!]?.hunter ?? false;
     // Creatures outside the highlighted lineage come first, faint and without outline, so the lineage is drawn over them.
     const dimAt = counts[DIM_BUCKET - 1]!;
     const dimEnd = counts[DIM_BUCKET]!;
@@ -151,8 +168,7 @@ export class EcoRenderer {
       ctx.beginPath();
       for (let at = dimAt; at < dimEnd; at++) {
         const i = order[at]!;
-        ctx.moveTo(v.x[i]! + dotR, v.y[i]!);
-        ctx.arc(v.x[i]!, v.y[i]!, dotR, 0, Math.PI * 2);
+        bodyPath(ctx, v.x[i]!, v.y[i]!, dotR, v.heading[i]!, hunter(i));
       }
       ctx.fill();
       ctx.globalAlpha = 1;
@@ -161,10 +177,7 @@ export class EcoRenderer {
     ctx.beginPath();
     for (let k = 0; k < dimAt; k++) {
       const i = order[k]!;
-      const x = v.x[i]!;
-      const y = v.y[i]!;
-      ctx.moveTo(x + outline, y);
-      ctx.arc(x, y, outline, 0, Math.PI * 2);
+      bodyPath(ctx, v.x[i]!, v.y[i]!, outline, v.heading[i]!, hunter(i));
     }
     ctx.fill();
     let at = 0;
@@ -175,22 +188,25 @@ export class EcoRenderer {
       ctx.beginPath();
       for (; at < end; at++) {
         const i = order[at]!;
-        const x = v.x[i]!;
-        const y = v.y[i]!;
-        ctx.moveTo(x + dotR, y);
-        ctx.arc(x, y, dotR, 0, Math.PI * 2);
+        bodyPath(ctx, v.x[i]!, v.y[i]!, dotR, v.heading[i]!, hunter(i));
       }
       ctx.fill();
     }
   }
 
-  // Dark body, level fill in the creature's colour, ring and heading tick.
+  // Dark body, level fill in the creature's colour, ring and heading tick; a hunter has a pointed nose instead of the tick.
   private drawDetailed(ctx: CanvasRenderingContext2D, cfg: EcoDrawConfig, v: SnapshotViews, i: number, style: string, css: number, alpha: number): void {
     const x = v.x[i]!;
     const y = v.y[i]!;
     const R = cfg.radius;
-    const e = Math.min(1, Math.max(0, v.energy[i]! / cfg.fullEnergy));
+    const sp = cfg.species?.[v.species[i]!];
+    const e = Math.min(1, Math.max(0, v.energy[i]! / (sp?.fullEnergy ?? cfg.fullEnergy)));
     ctx.globalAlpha = alpha;
+    if (sp?.hunter) {
+      this.drawHunter(ctx, x, y, R, v.heading[i]!, e, style, css);
+      ctx.globalAlpha = 1;
+      return;
+    }
     ctx.fillStyle = BODY;
     ctx.beginPath();
     ctx.arc(x, y, R, 0, Math.PI * 2);
@@ -217,6 +233,26 @@ export class EcoRenderer {
     ctx.lineTo(x + cs * R * 1.6, y + sn * R * 1.6);
     ctx.stroke();
     ctx.globalAlpha = 1;
+  }
+
+  // The pointed body filled from the bottom up to the energy level, which reaches the nose tip only when full.
+  private drawHunter(ctx: CanvasRenderingContext2D, x: number, y: number, R: number, heading: number, e: number, style: string, css: number): void {
+    ctx.beginPath();
+    bodyPath(ctx, x, y, R, heading, true);
+    ctx.fillStyle = BODY;
+    ctx.fill();
+    if (e > 0) {
+      ctx.save();
+      ctx.clip();
+      const reach = NOSE * R; // the shape lies within this distance of the centre
+      ctx.fillStyle = style;
+      ctx.fillRect(x - reach, y + reach - 2 * reach * e, 2 * reach, 2 * reach * e);
+      ctx.restore();
+    }
+    ctx.strokeStyle = style;
+    ctx.lineWidth = 1.5 * css;
+    ctx.lineJoin = "round";
+    ctx.stroke();
   }
 
   private drawSelected(ctx: CanvasRenderingContext2D, cfg: EcoDrawConfig, s: SelectedDetails, showRays: boolean, css: number): void {

@@ -1,20 +1,22 @@
 import { DEFAULT_CONFIG, overrideConfig } from "../sim/config.ts";
 import type { DeepPartial, SimConfig } from "../sim/config.ts";
-import { DEFAULT_ECO_CONFIG } from "../sim/ecoConfig.ts";
+import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "../sim/ecoConfig.ts";
 import type { EcoConfig } from "../sim/ecoConfig.ts";
-import { CUSTOM, ECO_PRESETS, TRIALS_PRESETS } from "../sim/presets.ts";
+import { CUSTOM, ECO_PRESETS, PREDATOR_PRESETS, TRIALS_PRESETS } from "../sim/presets.ts";
 
-// Copy and paste of the settings as JSON, shared by Trials and Ecosystem.
-export type Mode = "trials" | "ecosystem";
+// Copy and paste of the settings as JSON, shared by Trials, Ecosystem and Predators & prey.
+export type Mode = "trials" | "ecosystem" | "predators";
 interface ConfigOf {
   trials: SimConfig;
   ecosystem: EcoConfig;
+  predators: EcoConfig;
 }
-const DEFAULTS: { [M in Mode]: ConfigOf[M] } = { trials: DEFAULT_CONFIG, ecosystem: DEFAULT_ECO_CONFIG };
-const PAGE: Record<Mode, string> = { trials: "Trials", ecosystem: "Ecosystem" };
+const DEFAULTS: { [M in Mode]: ConfigOf[M] } = { trials: DEFAULT_CONFIG, ecosystem: DEFAULT_ECO_CONFIG, predators: DEFAULT_PREDATOR_CONFIG };
+const PAGE: Record<Mode, string> = { trials: "Trials", ecosystem: "Ecosystem", predators: "Predators & prey" };
+const MODES = Object.keys(PAGE) as Mode[];
 export const VERSION = 1;
 
-const PRESET_IDS: Record<Mode, readonly string[]> = { trials: TRIALS_PRESETS.map((p) => p.id), ecosystem: ECO_PRESETS.map((p) => p.id) };
+const PRESET_IDS: Record<Mode, readonly string[]> = { trials: TRIALS_PRESETS.map((p) => p.id), ecosystem: ECO_PRESETS.map((p) => p.id), predators: PREDATOR_PRESETS.map((p) => p.id) };
 
 // {"mode": ..., "preset": "normal", "version": 1, "angles": "radians", "config": <full config>}; the preset is left out when not given.
 export function serialise<M extends Mode>(mode: M, config: ConfigOf[M], preset?: string): string {
@@ -42,8 +44,8 @@ export function parseWithPreset<M extends Mode>(text: string, mode: M): Parsed<M
   for (const key of Object.keys(data)) {
     if (!["mode", "preset", "version", "angles", "config"].includes(key)) throw new Error(`Unknown key "${key}" at the top level.`);
   }
-  if (data.mode !== "trials" && data.mode !== "ecosystem") throw new Error('Missing "mode", expected "trials" or "ecosystem".');
-  if (data.mode !== mode) throw new Error(`These settings are for ${PAGE[data.mode]}, but this is the ${PAGE[mode]} page.`);
+  if (!MODES.includes(data.mode as Mode)) throw new Error(`Missing "mode", expected ${MODES.map((m) => `"${m}"`).join(", ").replace(/, ([^,]*)$/, " or $1")}.`);
+  if (data.mode !== mode) throw new Error(`These settings are for ${PAGE[data.mode as Mode]}, but this is the ${PAGE[mode]} page.`);
   if (data.version !== VERSION) throw new Error(`Unsupported version ${JSON.stringify(data.version)}, expected ${VERSION}.`);
   if (data.angles !== undefined && data.angles !== "radians") throw new Error('Angles must be in "radians".');
   let preset: string | null = null;
@@ -58,11 +60,13 @@ export function parseWithPreset<M extends Mode>(text: string, mode: M): Parsed<M
 // Leaf paths where a and b differ, e.g. "world.width". Angles may differ by the form's whole-degree rounding.
 export function differences(a: unknown, b: unknown, path = ""): string[] {
   if (isObject(a) && isObject(b)) return [...new Set([...Object.keys(a), ...Object.keys(b)])].flatMap((k) => differences(a[k], b[k], path ? `${path}.${k}` : k));
+  if (Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.some(isObject)) return a.flatMap((v, i) => differences(v, b[i], `${path}.${i}`));
   if (typeof a === "number" && typeof b === "number") return Math.abs(a - b) <= (path === "creature.raySpread" ? 0.009 : 1e-9) ? [] : [path];
   return JSON.stringify(a) === JSON.stringify(b) ? [] : [path];
 }
 
-const get = (o: unknown, path: string): string => JSON.stringify(path.split(".").reduce<unknown>((v, k) => (isObject(v) ? v[k] : undefined), o));
+const get = (o: unknown, path: string): string =>
+  JSON.stringify(path.split(".").reduce<unknown>((v, k) => (isObject(v) ? v[k] : Array.isArray(v) ? v[Number(k)] : undefined), o));
 
 // What the form made of the pasted config, as a note for the dialog. Null when nothing changed.
 export function adjustmentNote(pasted: unknown, applied: unknown): string | null {

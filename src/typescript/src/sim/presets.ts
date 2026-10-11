@@ -1,7 +1,8 @@
 import type { SimConfig } from "./config.ts";
+import { DEFAULT_PREDATOR_CONFIG } from "./ecoConfig.ts";
 import type { EcoConfig } from "./ecoConfig.ts";
 
-// Preset worlds for Trials and Ecosystem. A preset fixes the world (and in Ecosystem the regrowth), never the creature, brain or evolution.
+// Preset worlds for Trials, Ecosystem and Predators & prey. A preset fixes the world (and in Ecosystem the regrowth), never the creature, brain or evolution.
 export const CUSTOM = "custom";
 
 export interface PresetInfo {
@@ -40,12 +41,25 @@ export const ECO_PRESETS: readonly EcoPreset[] = [
   { id: "crowded", name: "Crowded", description: "A small world with rich regrowth. Creatures fill it and bump into each other.", world: { ...ECO_BASE, width: 2400, height: 1500 }, regrowth: { ...ECO_REGROWTH, foodRegrow: 0.15 } },
 ];
 
+// Predators & prey: one preset, the tuned defaults (docs/tuning-notes.md).
+const { width, height, foodDensity, poisonDensity, itemRadius, foodEnergy } = DEFAULT_PREDATOR_CONFIG.world;
+const { foodRegrow, foodMaxDensity, poisonRegrow, poisonMaxDensity } = DEFAULT_PREDATOR_CONFIG.eco;
+export const PREDATOR_PRESETS: readonly EcoPreset[] = [
+  {
+    id: "normal",
+    name: "Normal",
+    description: "Plants regrow steadily. Prey graze, predators hunt them, and both rise and fall in turn.",
+    world: { width, height, foodDensity, poisonDensity, itemRadius, foodEnergy },
+    regrowth: { foodRegrow, foodMaxDensity, poisonRegrow, poisonMaxDensity },
+  },
+];
+
 // Form field ids a preset fixes; the forms disable them while a preset is chosen.
 export const TRIALS_LOCKED: readonly string[] = ["worldWidth", "worldHeight", "foodDensity", "poisonDensity", "respawn"];
 export const ECO_LOCKED: readonly string[] = ["worldWidth", "worldHeight", "foodDensity", "poisonDensity", "itemRadius", "foodEnergy", "foodRegrow", "foodMaxDensity", "poisonRegrow", "poisonMaxDensity"];
 
 export const trialsPreset = (id: string): TrialsPreset | undefined => TRIALS_PRESETS.find((p) => p.id === id);
-export const ecoPreset = (id: string): EcoPreset | undefined => ECO_PRESETS.find((p) => p.id === id);
+export const ecoPreset = (id: string, presets: readonly EcoPreset[] = ECO_PRESETS): EcoPreset | undefined => presets.find((p) => p.id === id);
 
 // A copy of the config with the preset's world; unchanged for Custom or an unknown id.
 export function withTrialsPreset(c: SimConfig, id: string): SimConfig {
@@ -55,8 +69,8 @@ export function withTrialsPreset(c: SimConfig, id: string): SimConfig {
   return out;
 }
 
-export function withEcoPreset(c: EcoConfig, id: string): EcoConfig {
-  const p = ecoPreset(id);
+export function withEcoPreset(c: EcoConfig, id: string, presets: readonly EcoPreset[] = ECO_PRESETS): EcoConfig {
+  const p = ecoPreset(id, presets);
   const out = structuredClone(c);
   if (p) {
     out.world = { ...out.world, ...p.world };
@@ -64,3 +78,5 @@ export function withEcoPreset(c: EcoConfig, id: string): EcoConfig {
   }
   return out;
 }
+
+export const withPredatorPreset = (c: EcoConfig, id: string): EcoConfig => withEcoPreset(c, id, PREDATOR_PRESETS);

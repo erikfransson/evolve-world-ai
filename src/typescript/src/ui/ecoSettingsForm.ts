@@ -8,8 +8,9 @@ interface Base {
   id: string;
   label: string;
   tip: string;
+  advanced?: boolean; // shown under the section's "More settings"
 }
-interface Range extends Base {
+export interface Range extends Base {
   kind: "range";
   min: number;
   max: number;
@@ -19,7 +20,7 @@ interface Range extends Base {
   get: (c: EcoConfig) => number;
   set: (c: EcoConfig, v: number) => void;
 }
-interface Toggle extends Base {
+export interface Toggle extends Base {
   kind: "toggle";
   get: (c: EcoConfig) => boolean;
   set: (c: EcoConfig, v: boolean) => void;
@@ -27,19 +28,26 @@ interface Toggle extends Base {
 interface Seed extends Base {
   kind: "seed";
 }
-type Field = Range | Toggle | Seed;
-interface Section {
+export type Field = Range | Toggle | Seed;
+export interface Section {
   title: string;
   fields: readonly Field[];
+  folded?: boolean; // the whole section starts collapsed
+  swatch?: string; // CSS colour of a dot before the title
+}
+// A settings form: its sections and the config that fields without an input keep.
+export interface EcoForm {
+  sections: readonly Section[];
+  defaults: EcoConfig;
 }
 
 const defaultNeurons = DEFAULT_ECO_CONFIG.brain.hiddenLayers[0]!;
 // A density (or density per second) times the world area, in items.
-const itemsOf = (c: EcoConfig, density: number): number => itemCounts({ world: { ...c.world, foodDensity: density } }).food;
-const items = (c: EcoConfig, density: number): string => `≈ ${itemsOf(c, density)} items`;
-const perSecond = (c: EcoConfig, density: number): string => `≈ ${itemsOf(c, density)} items/s`;
+export const itemsOf = (c: EcoConfig, density: number): number => itemCounts({ world: { ...c.world, foodDensity: density } }).food;
+export const items = (c: EcoConfig, density: number): string => `≈ ${itemsOf(c, density)} items`;
+export const perSecond = (c: EcoConfig, density: number): string => `≈ ${itemsOf(c, density)} items/s`;
 
-const range = (f: Omit<Range, "kind">): Range => ({ kind: "range", ...f });
+export const range = (f: Omit<Range, "kind">): Range => ({ kind: "range", ...f });
 
 export const ECO_SECTIONS: readonly Section[] = [
   {
@@ -132,15 +140,28 @@ function fieldHtml(f: Field): string {
   return `<div class="field"><div class="row">${label(f)}<span class="vals">${hint}<output for="${f.id}"${fmt}></output></span></div><input id="${f.id}" type="range" min="${f.min}" max="${f.max}" step="${f.step}" /></div>`;
 }
 
-// Fills the container with one card per section.
-export function buildEcoForm(container: HTMLElement): void {
-  container.innerHTML = ECO_SECTIONS.map((s) => `<section class="card"><h3>${s.title}</h3>${s.fields.map(fieldHtml).join("")}</section>`).join("");
+export const ECO_FORM: EcoForm = { sections: ECO_SECTIONS, defaults: DEFAULT_ECO_CONFIG };
+let form: EcoForm = ECO_FORM; // the form buildEcoForm built last
+
+function sectionHtml(s: Section): string {
+  const swatch = s.swatch ? `<i class="sw" style="background: ${s.swatch}"></i>` : "";
+  const main = s.fields.filter((f) => !f.advanced).map(fieldHtml).join("");
+  const advanced = s.fields.filter((f) => f.advanced);
+  const more = advanced.length ? `<details class="more"><summary>More settings</summary><div class="more-body">${advanced.map(fieldHtml).join("")}</div></details>` : "";
+  if (s.folded) return `<details class="card fold"><summary><h3>${swatch}${s.title}</h3></summary>${main}${more}</details>`;
+  return `<section class="card"><h3>${swatch}${s.title}</h3>${main}${more}</section>`;
 }
 
-const allFields = (): Field[] => ECO_SECTIONS.flatMap((s) => [...s.fields]);
+// Fills the container with one card per section of spec (the Ecosystem's by default).
+export function buildEcoForm(container: HTMLElement, spec: EcoForm = ECO_FORM): void {
+  form = spec;
+  container.innerHTML = spec.sections.map(sectionHtml).join("");
+}
+
+const allFields = (): Field[] => form.sections.flatMap((s) => [...s.fields]);
 
 export function readEcoConfig(): EcoConfig {
-  const c = structuredClone(DEFAULT_ECO_CONFIG);
+  const c = structuredClone(form.defaults);
   for (const f of allFields()) {
     const input = el(f.id, HTMLInputElement);
     if (f.kind === "toggle") f.set(c, input.checked);

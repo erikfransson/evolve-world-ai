@@ -10,19 +10,24 @@ export interface PopulationSample {
   time: number; // simulated seconds
   population: number;
   food: number;
+  species?: readonly number[]; // each species' population, with several species
 }
 
 const compact = (v: number): string => (v >= 10000 ? `${Math.round(v / 1000)}k` : v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(Math.round(v)));
 
 // Population on the left scale and food count on the right scale, against simulated time. Redraws only when the data or the size changes.
+// With speciesColors, one line per species instead of the total, each on its own scale, whose top is labelled in its
+// colour on the left, so a small predator population still shows its rise and fall next to the prey.
 export class PopulationGraph {
   private samples: readonly PopulationSample[] = [];
   private pending = false;
   private readonly canvas: HTMLCanvasElement;
   private readonly ctx: CanvasRenderingContext2D;
+  private readonly speciesColors: readonly string[];
 
-  constructor(canvas: HTMLCanvasElement) {
+  constructor(canvas: HTMLCanvasElement, speciesColors: readonly string[] = []) {
     this.canvas = canvas;
+    this.speciesColors = speciesColors;
     this.ctx = canvas.getContext("2d")!;
     new ResizeObserver(() => this.invalidate()).observe(canvas); // also fires when the card is expanded
   }
@@ -53,9 +58,12 @@ export class PopulationGraph {
     const end = s.length > 0 ? Math.max(1, s[s.length - 1]!.time) : 1;
     let popTop = 1;
     let foodTop = 1;
+    const perSpecies = this.speciesColors.length > 0;
+    const speciesTop = this.speciesColors.map(() => 1);
     for (const p of s) {
       popTop = Math.max(popTop, p.population);
       foodTop = Math.max(foodTop, p.food);
+      p.species?.forEach((v, k) => { if (k < speciesTop.length) speciesTop[k] = Math.max(speciesTop[k]!, v); });
     }
     const px = (t: number): number => PAD.left + (t / end) * w;
     const py = (v: number, top: number): number => PAD.top + h - (v / top) * h;
@@ -78,8 +86,15 @@ export class PopulationGraph {
     }
     ctx.textBaseline = "top";
     ctx.textAlign = "right";
-    ctx.fillStyle = POP_COLOR;
-    ctx.fillText(compact(popTop), PAD.left - 4, PAD.top - 4);
+    if (perSpecies) {
+      this.speciesColors.forEach((color, k) => {
+        ctx.fillStyle = color;
+        ctx.fillText(compact(speciesTop[k]!), PAD.left - 4, PAD.top - 4 + 13 * k);
+      });
+    } else {
+      ctx.fillStyle = POP_COLOR;
+      ctx.fillText(compact(popTop), PAD.left - 4, PAD.top - 4);
+    }
     ctx.textAlign = "left";
     ctx.fillStyle = FOOD_COLOR;
     ctx.fillText(compact(foodTop), PAD.left + w + 4, PAD.top - 4);
@@ -97,6 +112,7 @@ export class PopulationGraph {
       ctx.stroke();
     };
     line(FOOD_COLOR, foodTop, (p) => p.food);
-    line(POP_COLOR, popTop, (p) => p.population);
+    if (perSpecies) this.speciesColors.forEach((color, k) => line(color, speciesTop[k]!, (p) => p.species?.[k] ?? 0));
+    else line(POP_COLOR, popTop, (p) => p.population);
   }
 }

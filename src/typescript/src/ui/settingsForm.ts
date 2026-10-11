@@ -65,6 +65,7 @@ export const FORMATS: Record<string, (v: number) => string> = {
   dens3: (v) => v.toFixed(3),
   sec: (v) => `${v} s`,
   speed: (v) => `${v}/s`,
+  mult: (v) => `${v.toFixed(2)}×`,
 };
 
 let fields: readonly Field[] | null = null;

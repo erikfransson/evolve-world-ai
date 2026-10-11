@@ -143,7 +143,7 @@ describe("Species ray features", () => {
 
   it("the input layout has one flag per species, then the seen energy", () => {
     expect(rayFeatureCount(two)).toBe(RAY_FEATURES + 3);
-    expect(inputLayout(two).rayFeatureLabels).toEqual(["closeness", "food", "poison", "wall", "Prey", "Predators", "seen energy"]);
+    expect(inputLayout(two).rayFeatureLabels).toEqual(["closeness", "food", "poison", "wall", "Prey", "Predator", "seen energy"]);
     expect(rayFeatureCount(DEFAULT_ECO_CONFIG)).toBe(RAY_FEATURES + 2);
   });
 
