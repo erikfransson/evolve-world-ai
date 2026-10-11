@@ -51,6 +51,10 @@ export class RayCache implements CellRange {
   }
 }
 
+// Records of World.log.
+export const ITEM_SET = 1;
+export const ITEM_REMOVE = 2;
+
 // Food and poison items in fixed slots; a slot of kind HIT_NONE is free.
 export class World implements WorldView {
   readonly count: number; // slot capacity
@@ -77,6 +81,8 @@ export class World implements WorldView {
   private version = 0;
   private readonly cellStamp: Int32Array;
   private readonly eatRange: CellRange = { rangeX0: 0, rangeX1: 0, rangeY0: 0, rangeY1: 0 };
+  // When set, every item change is appended (ITEM_SET, slot, x, y, kind or ITEM_REMOVE, slot), so a copy of this world replaying them stays identical.
+  log: number[] | null = null;
 
   constructor(config: EngineConfig, capacity: number) {
     const w = config.world;
@@ -160,6 +166,7 @@ export class World implements WorldView {
 
   // Places item i and keeps the grid valid.
   setItem(i: number, x: number, y: number, kind: HitKind): void {
+    this.log?.push(ITEM_SET, i, x, y, kind);
     this.version++;
     this.unlink(i);
     this.takeSlot(i);
@@ -175,6 +182,7 @@ export class World implements WorldView {
 
   // Frees slot i; its item leaves the grid.
   removeItem(i: number): void {
+    this.log?.push(ITEM_REMOVE, i);
     this.version++;
     this.unlink(i);
     this.kinds[i] = HIT_NONE;

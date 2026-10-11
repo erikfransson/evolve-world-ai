@@ -1,5 +1,5 @@
 // Ecosystem benchmark: runs a seeded world headless and prints ticks/s, population over time and a fingerprint.
-// Usage: node src/ecoBench.ts [--seconds 120] [--seed 1] [--pop 300] [--food 0.5] [--regrow 0.05] [--every 10] [--pool public/pool.json] [--poolFraction 0.5] [--aging] [--agingStart 120] [--agingRate 0.5]
+// Usage: node src/ecoBench.ts [--seconds 120] [--seed 1] [--pop 300] [--food 0.5] [--regrow 0.05] [--every 10] [--pool public/pool.json] [--poolFraction 0.5] [--aging] [--agingStart 120] [--agingRate 0.5] [--threads 0] [--shared]
 // --food sets the starting and maximum food density, --regrow the food regrowth rate, --pool none runs without the seed pool.
 
 import { readFileSync } from "node:fs";
@@ -9,6 +9,7 @@ import { DEFAULT_ECO_CONFIG } from "./sim/ecoConfig.ts";
 import type { EcoConfig } from "./sim/ecoConfig.ts";
 import { Ecosystem } from "./sim/ecosystem.ts";
 import { parsePool } from "./sim/seedPool.ts";
+import { createNodeThinkPool } from "./worker/nodePool.ts";
 
 // parameters
 const { values } = parseArgs({
@@ -22,6 +23,8 @@ const { values } = parseArgs({
     pool: { type: "string", default: fileURLToPath(new URL("../public/pool.json", import.meta.url)) },
     poolFraction: { type: "string" },
     aging: { type: "boolean" },
+    threads: { type: "string", default: "0" }, // helper threads for sense and think; 0 runs on this thread alone
+    shared: { type: "boolean" }, // helpers use shared memory instead of messages
     agingStart: { type: "string" },
     agingRate: { type: "string" },
   },
@@ -49,23 +52,30 @@ const every = Math.max(1, Math.round(num(values.every, 10) / config.dt));
 const ticks = Math.round(seconds / config.dt);
 
 const pool = values.pool === "none" ? null : parsePool(JSON.parse(readFileSync(values.pool!, "utf8"))).entries;
-const eco = new Ecosystem(config, pool);
+const threads = num(values.threads, 0);
+const helpers = threads > 0 ? createNodeThinkPool(threads, values.shared ?? false) : null;
+const eco = new Ecosystem(config, pool, { journal: helpers !== null });
+await helpers?.start(eco);
 const population: number[] = [eco.population];
 let creatureTicks = 0;
 const t0 = performance.now();
 while (eco.tick < ticks && !eco.extinct) {
   creatureTicks += eco.population;
-  eco.step();
+  if (helpers) await helpers.step(eco);
+  else eco.step();
   if (eco.tick % every === 0) population.push(eco.population);
 }
 const wall = (performance.now() - t0) / 1000;
+helpers?.close();
 console.log(JSON.stringify({
   seed: config.seed,
   seconds,
+  threads: helpers ? `${threads} ${helpers.shared ? "shared" : "fork-join"}` : "serial",
   poolFounders: eco.poolFounders,
   ticks: eco.tick,
   wallSeconds: +wall.toFixed(2),
   ticksPerSecond: +(eco.tick / wall).toFixed(1),
+  msPerTick: +((1000 * wall) / Math.max(1, eco.tick)).toFixed(2),
   meanPopulation: Math.round(creatureTicks / Math.max(1, eco.tick)),
   creatureTicksPerSecond: Math.round(creatureTicks / wall),
   births: eco.births,

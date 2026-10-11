@@ -5,6 +5,8 @@ import type { Population } from "../sim/population.ts";
 import type { RecordOptions } from "../sim/trajectory.ts";
 import type { PoolWorker } from "./evalPool.ts";
 import { PoolEvaluator, defaultThreads } from "./evalPool.ts";
+import { ThinkPool, canShare } from "./ecoPool.ts";
+import type { HelperPort } from "./ecoPool.ts";
 
 function wrap(worker: Worker): PoolWorker {
   return {
@@ -50,6 +52,27 @@ class BrowserEvaluator implements Evaluator {
     this.closed = true;
     this.pool?.close();
   }
+}
+
+// Ecosystem helper threads as nested workers, with shared memory when the page is cross-origin isolated.
+// Throws when workers cannot be created; a helper that fails to load shows up as a rejected ThinkPool.start.
+export function createBrowserThinkPool(helpers: number, shared: boolean): ThinkPool {
+  const ports: HelperPort[] = [];
+  try {
+    for (let i = 0; i < helpers; i++) {
+      const worker = new Worker(new URL("./ecoHelperWorker.ts", import.meta.url), { type: "module" });
+      ports.push({
+        post: (msg, transfer) => worker.postMessage(msg, transfer ?? []),
+        onMessage: (callback) => { worker.onmessage = (e) => callback(e.data); },
+        onError: (callback) => { worker.onerror = (e) => callback(e.error ?? new Error(e.message || "helper thread failed to load")); },
+        terminate: () => worker.terminate(),
+      });
+    }
+  } catch (error) {
+    for (const port of ports) port.terminate();
+    throw error;
+  }
+  return new ThinkPool(ports, shared && canShare(self));
 }
 
 // Pool of nested dedicated workers, or the serial evaluator when one thread is wanted or workers cannot be spawned.

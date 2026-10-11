@@ -138,12 +138,40 @@ export class Creature {
 
   // Runs the brain on the last sensed rays, the current body and the memory, then updates the memory from its targets.
   think(): void {
+    this.decide();
+    this.remember();
+  }
+
+  // Senses, then runs the brain on the result, without changing body or memory: writes rays and outputs only.
+  // The per-creature work helper threads run (see ecoShare.ts); keep it behind this one call.
+  senseThink(world: World, crowd: Crowd, self: number): void {
+    this.sense(world, crowd, self);
+    this.decide();
+  }
+
+  // Brain outputs of the last decide: turn, thrust, then one target per memory unit. Writable, so a coordinator can put in a helper's result.
+  get outputs(): Float32Array {
+    return this.output;
+  }
+
+  // Overwrites the memory units with from[at ..], e.g. with a coordinator's published values.
+  setMemory(from: ArrayLike<number>, at: number): void {
+    const memory = this.units;
+    for (let i = 0; i < memory.length; i++) memory[i] = from[at + i]!;
+  }
+
+  // The brain on the last sensed rays, the current body and the memory, into outputs.
+  private decide(): void {
     const input = this.input;
+    encodeInputs(this.state, this.rays, this.config, input, this.heading.cos, this.heading.sin);
+    input.set(this.units, this.memoryAt);
+    this.brain.forward(input, this.output);
+  }
+
+  // Moves each memory unit toward its target from the last decide.
+  remember(): void {
     const output = this.output;
     const memory = this.units;
-    encodeInputs(this.state, this.rays, this.config, input, this.heading.cos, this.heading.sin);
-    input.set(memory, this.memoryAt);
-    this.brain.forward(input, output);
     // Outputs are already tanh-squashed, so each unit relaxes toward tanh of its target's pre-activation.
     const { shortRate, longRate } = this.config.brain;
     const short = this.ownPlan.memoryShort;

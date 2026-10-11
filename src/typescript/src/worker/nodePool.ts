@@ -5,6 +5,8 @@ import { SerialEvaluator } from "../sim/evaluator.ts";
 import type { Evaluator } from "../sim/evaluator.ts";
 import type { PoolWorker } from "./evalPool.ts";
 import { PoolEvaluator, defaultThreads } from "./evalPool.ts";
+import { ThinkPool, canShare } from "./ecoPool.ts";
+import type { HelperPort } from "./ecoPool.ts";
 
 function wrap(worker: Worker): PoolWorker {
   return {
@@ -24,6 +26,25 @@ export function parseThreads(value: string | undefined): number {
   const threads = Number(value);
   if (!Number.isInteger(threads) || threads <= 0) throw new Error("--threads must be a positive integer");
   return threads;
+}
+
+// Ecosystem helper threads; shared uses shared memory. Call close() so the process can exit.
+export function createNodeThinkPool(helpers: number, shared: boolean): ThinkPool {
+  const ports: HelperPort[] = [];
+  for (let i = 0; i < helpers; i++) {
+    const worker = new Worker(new URL("./ecoHelperNode.ts", import.meta.url));
+    worker.unref(); // a blocked helper never keeps the process alive
+    ports.push({
+      post: (msg, transfer) => worker.postMessage(msg, (transfer ?? []) as ArrayBuffer[]),
+      onMessage: (callback) => { worker.on("message", callback); },
+      onError: (callback) => {
+        worker.on("error", callback);
+        worker.on("exit", (code) => callback(new Error(`helper thread exited with code ${code}`)));
+      },
+      terminate: () => { void worker.terminate(); },
+    });
+  }
+  return new ThinkPool(ports, shared && canShare(globalThis, true));
 }
 
 // Pool of worker_threads, or the serial evaluator for one thread. Call close() so the process can exit.

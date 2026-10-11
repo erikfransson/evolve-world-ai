@@ -19,6 +19,9 @@ export class Crowd {
   private readonly cell: number;
   private readonly radius: number;
   private cellOf: Int32Array;
+  private px = new Float64Array(0); // rebuild's copy of the states, in list order
+  private py = new Float64Array(0);
+  private pe = new Float64Array(0);
   private readonly cursor: Int32Array;
   // Candidates of one sensing: offset to the creature, squared distance minus squared radius, energy.
   private candFx = new Float64Array(64);
@@ -52,12 +55,29 @@ export class Crowd {
 
   // Snapshots positions and energies of states[0 .. n-1].
   rebuild(states: readonly CreatureState[], n: number): void {
+    if (n > this.px.length) {
+      const size = Math.max(n, 2 * this.px.length);
+      this.px = new Float64Array(size);
+      this.py = new Float64Array(size);
+      this.pe = new Float64Array(size);
+    }
+    for (let i = 0; i < n; i++) {
+      const s = states[i];
+      this.px[i] = s.x;
+      this.py[i] = s.y;
+      this.pe[i] = s.energy;
+    }
+    this.rebuildFrom(this.px, this.py, this.pe, n);
+  }
+
+  // The same from arrays: creature i at (x[i], y[i]) with energy e[i].
+  rebuildFrom(x: Float64Array, y: Float64Array, e: Float64Array, n: number): void {
     if (n > this.xs.length) this.grow(n);
     const start = this.cellStart;
     start.fill(0);
     const cellOf = this.cellOf;
     for (let i = 0; i < n; i++) {
-      const c = this.cellIndex(states[i].x, states[i].y);
+      const c = this.cellIndex(x[i], y[i]);
       cellOf[i] = c;
       start[c + 1]++;
     }
@@ -67,10 +87,9 @@ export class Crowd {
     }
     for (let i = 0; i < n; i++) {
       const k = this.cursor[cellOf[i]]++;
-      const s = states[i];
-      this.xs[k] = s.x;
-      this.ys[k] = s.y;
-      this.energies[k] = s.energy;
+      this.xs[k] = x[i];
+      this.ys[k] = y[i];
+      this.energies[k] = e[i];
       this.owners[k] = i;
     }
     this.count = n;

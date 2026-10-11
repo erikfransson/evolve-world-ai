@@ -51,6 +51,12 @@ export interface CreatureFrame {
   founder: Int32Array;
 }
 
+export interface EcoJournal {
+  born: number[];
+  died: number[];
+  items: number[];
+}
+
 // One founder's family among the living.
 export interface Lineage {
   founder: number;
@@ -60,8 +66,9 @@ export interface Lineage {
 }
 
 // All creatures in one shared world. Each tick has two phases:
-// 1. sensePhase: every creature senses a snapshot (items, and creatures as gridded at the tick start), thinks and moves.
-//    It touches only its own creature, so creature order cannot matter and the phase can be split across workers.
+// 1. sensePhase: every creature senses a snapshot (items, and creatures as gridded at the tick start) and thinks; then each
+//    updates its memory and moves. Sensing and thinking write only the creature's own rays and outputs, so creature order
+//    cannot matter and helper threads can run them (ecoShare.ts).
 // 2. sharedPhase: eating, collisions, deaths, births and regrowth, serially. Eating and births walk the creatures
 //    from a random start each tick, so no creature wins contested food or the last free place by its list position.
 export class Ecosystem {
@@ -76,6 +83,8 @@ export class Ecosystem {
   poison = 0;
   // Living creatures in list order; states[i] is members[i].creature.state.
   readonly members: EcoCreature[] = [];
+  // With the journal option: changes not yet drained by a helper coordinator (ecoShare.ts). born and died hold ids, items World.log records.
+  journal: EcoJournal | null;
 
   private readonly items: World;
   private readonly crowd: Crowd;
@@ -102,7 +111,7 @@ export class Ecosystem {
   private readonly aging: Aging | null;
 
   // pool: trained founders (see seedPool.ts); without one, or at poolFraction 0, every founder is random.
-  constructor(config: EcoConfig, pool: readonly PoolEntry[] | null = null) {
+  constructor(config: EcoConfig, pool: readonly PoolEntry[] | null = null, options: { journal?: boolean } = {}) {
     this.config = config;
     const { eco, dt } = config;
     const perDensity = itemsPerDensity(config);
@@ -116,6 +125,8 @@ export class Ecosystem {
     this.aging = eco.aging ? { startTicks: Math.round(eco.agingStart / dt), perTick: (eco.agingRate * dt) / 60 } : null;
     this.items = new World(config, Math.max(start.food, this.foodCap) + Math.max(start.poison, this.poisonCap));
     this.world = this.items;
+    this.journal = options.journal ? { born: [], died: [], items: [] } : null;
+    this.items.log = this.journal?.items ?? null;
     this.items.scatter(start.food, start.poison, this.rng);
     this.food = start.food;
     this.poison = start.poison;
@@ -173,23 +184,38 @@ export class Ecosystem {
 
   step(): void {
     if (this.extinct) return;
-    this.crowd.rebuild(this.states, this.states.length);
+    this.prepareTick();
     this.sensePhase(0, this.members.length);
+    this.finishTick();
+  }
+
+  // Stops recording the journal, once no helper threads read it.
+  dropJournal(): void {
+    this.journal = null;
+    this.items.log = null;
+  }
+
+  // Grids the creatures as they stand at the tick start, for sensePhase.
+  prepareTick(): void {
+    this.crowd.rebuild(this.states, this.states.length);
+  }
+
+  // Phase 1a for members start .. end-1, after prepareTick: sense and think into each creature's outputs.
+  sensePhase(start: number, end: number): void {
+    for (let i = start; i < end; i++) this.members[i].creature.senseThink(this.items, this.crowd, i);
+  }
+
+  // Phase 1b and 2, once every creature has its outputs (from sensePhase or helper threads): memory and motion, then sharedPhase.
+  finishTick(): void {
+    for (const m of this.members) {
+      m.creature.remember();
+      m.creature.steer();
+    }
     this.sharedPhase();
   }
 
-  // Phase 1 for members start .. end-1; needs the crowd built at the tick start.
-  sensePhase(start: number, end: number): void {
-    for (let i = start; i < end; i++) {
-      const c = this.members[i].creature;
-      c.sense(this.items, this.crowd, i);
-      c.think();
-      c.steer();
-    }
-  }
-
-  // Phase 2, after sensePhase has run for every creature.
-  sharedPhase(): void {
+  // Phase 2, after every creature moved.
+  private sharedPhase(): void {
     const members = this.members;
     let n = members.length;
     let first = this.rng.int(n);
@@ -322,6 +348,7 @@ export class Ecosystem {
     m.children = 0;
     m.eaten = 0;
     m.lastBirthTick = -Infinity;
+    this.journal?.born.push(m.id);
     this.members.push(m);
     this.states.push(m.creature.state);
     this.byId.set(m.id, m);
@@ -338,6 +365,7 @@ export class Ecosystem {
     this.states.pop();
     this.byId.delete(m.id);
     this.lineageLive[m.founderId]!--;
+    this.journal?.died.push(m.id);
     this.spare.push(m);
     this.deaths++;
   }

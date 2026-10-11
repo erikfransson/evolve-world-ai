@@ -5,6 +5,7 @@ import type { CreatureFrame, EcoCreature } from "../sim/ecosystem.ts";
 import type { PoolEntry } from "../sim/seedPool.ts";
 import type { BestBy, EcoInMessage, EcoOutMessage, EcoSnapshot, EcoSpeedSetting, SelectedDetails } from "./ecoProtocol.ts";
 import { LINEAGE_STRIDE, LINEAGE_TOP, snapshotBytes, snapshotViews } from "./ecoProtocol.ts";
+import type { ThinkPool } from "./ecoPool.ts";
 
 const SLICE_MS = 12; // longest stretch of ticks before the worker checks messages and posts
 const POST_MS = 1000 / 30; // snapshot interval
@@ -20,6 +21,8 @@ export type Post = (msg: EcoOutMessage, transfer: Transferable[]) => void;
 export class EcoRunner {
   seedPool: readonly PoolEntry[] | null = null; // trained founders for the next start; null gives all-random founders
   private eco: Ecosystem | null = null;
+  private helpers: ThinkPool | null = null;
+  private starting: Promise<void> | null = null; // the helpers getting ready for the current run
   private readonly post: Post;
   private readonly now: () => number;
   private paused = false;
@@ -91,23 +94,87 @@ export class EcoRunner {
   }
 
   // Runs the ticks due, posts a snapshot when one is due. Returns the delay in ms before the next call, or -1 when there is nothing to run.
+  // Ticks run on this thread only; see pumpAsync for helper threads.
   pump(): number {
+    const eco = this.due();
+    if (!eco) return -1;
+    const t0 = this.last;
+    while (this.wantTick(eco)) {
+      eco.step();
+      if (this.ticked(eco, t0)) break;
+    }
+    return this.settle(eco);
+  }
+
+  // pump with the helper threads when there are any. A pool that fails, at the start or later, is dropped and the run
+  // continues on this thread: a failed tick never reached finishTick, so stepping it again here gives the same result.
+  async pumpAsync(): Promise<number> {
+    if (this.starting) {
+      try {
+        await this.starting;
+      } catch (error) {
+        this.dropHelpers(error);
+      }
+      this.starting = null;
+    }
+    const pool = this.helpers;
+    if (!pool) return this.pump();
+    const eco = this.due();
+    if (!eco) return -1;
+    const t0 = this.last;
+    pool.watch = this.selectedId;
+    try {
+      while (this.wantTick(eco)) {
+        await pool.step(eco);
+        if (this.ticked(eco, t0)) break;
+      }
+    } catch (error) {
+      this.dropHelpers(error);
+    }
+    return this.settle(eco);
+  }
+
+  // Uses these helper threads from the next start on; null runs on this thread.
+  useHelpers(pool: ThinkPool | null): void {
+    this.helpers = pool;
+  }
+
+  private dropHelpers(error: unknown): void {
+    console.warn("Helper threads failed, running on one thread:", error);
+    this.helpers?.close();
+    this.helpers = null;
+    this.eco?.dropJournal();
+  }
+
+  // The ecosystem when ticks may run now, after adding the ticks the clock owes.
+  private due(): Ecosystem | null {
     const eco = this.eco;
-    if (!eco || this.paused || eco.extinct) return -1;
+    if (!eco || this.paused || eco.extinct) return null;
     const t0 = this.now();
-    const dt = eco.config.dt;
-    const max = this.speed === "max";
-    if (!max) {
-      this.debt += Math.min(MAX_CATCH_UP, Math.max(0, (t0 - this.last) / 1000)) * (this.speed as number) / dt;
-      this.debt = Math.min(this.debt, (MAX_CATCH_UP * (this.speed as number)) / dt);
+    if (this.speed !== "max") {
+      this.debt += Math.min(MAX_CATCH_UP, Math.max(0, (t0 - this.last) / 1000)) * this.speed / eco.config.dt;
+      this.debt = Math.min(this.debt, (MAX_CATCH_UP * this.speed) / eco.config.dt);
     }
     this.last = t0;
-    while (!eco.extinct && (max || this.debt >= 1)) {
-      eco.step();
-      this.debt--;
-      this.sampleIfDue(eco);
-      if (this.now() - t0 >= SLICE_MS) break;
-    }
+    return eco;
+  }
+
+  private wantTick(eco: Ecosystem): boolean {
+    return eco === this.eco && !eco.extinct && (this.speed === "max" || this.debt >= 1);
+  }
+
+  // Bookkeeping after one tick; true when the slice that began at t0 is used up.
+  private ticked(eco: Ecosystem, t0: number): boolean {
+    this.debt--;
+    this.sampleIfDue(eco);
+    return this.now() - t0 >= SLICE_MS;
+  }
+
+  // Posts what is due after a slice; returns pump's delay.
+  private settle(eco: Ecosystem): number {
+    if (eco !== this.eco) return 0;
+    const dt = eco.config.dt;
+    const max = this.speed === "max";
     const t1 = this.now();
     if (eco.extinct) {
       this.sampleIfDue(eco, true);
@@ -121,7 +188,9 @@ export class EcoRunner {
   }
 
   private begin(config: EcoConfig, run: number): void {
-    this.eco = new Ecosystem(config, this.seedPool);
+    this.eco = new Ecosystem(config, this.seedPool, { journal: this.helpers !== null });
+    this.starting = this.helpers?.start(this.eco) ?? null;
+    this.starting?.catch(() => {}); // handled by the next pumpAsync
     this.run = run;
     this.inFlight = 0;
     this.paused = false;
@@ -232,6 +301,8 @@ export class EcoRunner {
       oldestDepth: oldest,
       extinct: eco.extinct,
       speed: this.achieved,
+      helpers: this.helpers?.helpers ?? 0,
+      sharedMemory: this.helpers?.shared ?? false,
       count: n,
       itemCount: items,
       creatureCap,

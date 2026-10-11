@@ -6,7 +6,9 @@ export type BestBy = "age" | "children" | "eaten";
 export type EcoSpeedSetting = number | "max"; // simulated seconds per real second, "max" = as many ticks as fit
 
 export type EcoInMessage =
-  | { type: "start"; config: EcoConfig; run: number; poolUrl?: string } // poolUrl: seed pool JSON, fetched once by the worker
+  // poolUrl: seed pool JSON, fetched once by the worker. threads: helper threads, 0 for none, default from the core count.
+  // shared: false keeps the helpers on messages even when shared memory is available.
+  | { type: "start"; config: EcoConfig; run: number; poolUrl?: string; threads?: number; shared?: boolean }
   | { type: "pause" }
   | { type: "resume" }
   | { type: "reset" }
@@ -55,6 +57,8 @@ export interface EcoSnapshot {
   oldestDepth: number;
   extinct: boolean;
   speed: number; // simulated seconds per real second achieved, 0 until measured
+  helpers: number; // helper threads sensing and thinking, 0 when the worker runs alone
+  sharedMemory: boolean; // the helpers use shared memory rather than messages
   count: number; // creatures in the buffer
   itemCount: number;
   creatureCap: number; // array capacities that define the buffer layout
