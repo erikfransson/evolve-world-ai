@@ -6,7 +6,6 @@ import type { Lineage } from "../sim/ecosystem.ts";
 import type { BestBy } from "../worker/ecoProtocol.ts";
 import { BrainView } from "./brainView.ts";
 import { buildEcoForm, fillEcoForm, initEcoSettingsForm, readEcoConfig } from "./ecoSettingsForm.ts";
-import { formatElapsed } from "./elapsed.ts";
 import { initCard } from "./overlays.ts";
 import type { Card } from "./overlays.ts";
 import { initPresetPanel } from "./presetPanel.ts";
@@ -15,6 +14,7 @@ import { PopulationGraph } from "./populationGraph.ts";
 import type { PopulationSample } from "./populationGraph.ts";
 import { Scoreboard, settingsOf, today } from "./scoreboard.ts";
 import { initSettingsIO } from "./settingsIO.ts";
+import { $, durationText, formatDuration, setTile } from "./page.ts";
 import { initTooltips } from "./tooltip.ts";
 
 export type EcoSpeed = number | "max"; // simulated seconds per real second asked for, "max" = as fast as possible
@@ -93,24 +93,7 @@ export interface EcoView {
   hideExtinct(): void;
 }
 
-const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 const nf = new Intl.NumberFormat("en-US");
-
-// Seconds under a minute, then m:ss, then h:mm:ss.
-export function formatSimTime(s: number): { text: string; unit: string } {
-  if (s < 60) return { text: s.toFixed(1), unit: " s" };
-  const t = Math.floor(s);
-  const pad = (n: number): string => String(n).padStart(2, "0");
-  const h = Math.floor(t / 3600);
-  const m = Math.floor((t % 3600) / 60);
-  return { text: h > 0 ? `${h}:${pad(m)}:${pad(t % 60)}` : `${m}:${pad(t % 60)}`, unit: "" };
-}
-
-function setTile(id: string, value: string | null, unit = ""): void {
-  const e = $(id);
-  e.textContent = value ?? "-";
-  e.dataset.unit = value === null ? "" : unit; // unit is drawn by CSS
-}
 
 const SPEED_TIP = "Simulated seconds per real second the computer is achieving. It can be lower than the speed asked for.";
 
@@ -159,7 +142,7 @@ export function createEcoView(handlers: EcoHandlers): EcoView {
     presets: ECO_PRESETS,
     locked: ECO_LOCKED,
     board,
-    formatScore: formatElapsed,
+    formatScore: durationText,
     read: readEcoConfig,
     fill: fillEcoForm,
     withPreset: withEcoPreset,
@@ -227,7 +210,7 @@ export function createEcoView(handlers: EcoHandlers): EcoView {
       const timer = $("timer");
       timer.hidden = s === null;
       if (s) {
-        timer.textContent = formatElapsed(s.simTime);
+        timer.textContent = durationText(s.simTime);
         recordScore(s.simTime, s.population);
       }
       setTile("statPop", s && nf.format(s.population));
@@ -235,7 +218,7 @@ export function createEcoView(handlers: EcoHandlers): EcoView {
       setTile("statDeaths", s && nf.format(s.deaths));
       setTile("statFood", s && nf.format(s.food));
       setTile("statPoison", s && nf.format(s.poison));
-      const t = s && formatSimTime(s.simTime);
+      const t = s && formatDuration(s.simTime);
       setTile("statTime", t && t.text, t?.unit);
       $("statSeasonTile").hidden = !s?.season;
       if (s?.season) setTile("statSeason", s.season.name, ` · ${s.season.factor.toFixed(2)}×`);
@@ -258,8 +241,7 @@ export function createEcoView(handlers: EcoHandlers): EcoView {
       meter.setAttribute("aria-valuemax", String(Math.round(sel.fullEnergy)));
       meter.setAttribute("aria-valuenow", String(Math.round(sel.energy)));
       $("selEnergy").textContent = sel.died ? "died" : `${Math.round(sel.energy)} / ${Math.round(sel.fullEnergy)}`;
-      const age = formatSimTime(sel.age);
-      $("selAge").textContent = age.text + age.unit;
+      $("selAge").textContent = durationText(sel.age);
       $("selChildren").textContent = nf.format(sel.children);
       $("selEaten").textContent = nf.format(sel.eaten);
       $("selDepth").textContent = nf.format(sel.depth);
@@ -282,7 +264,7 @@ export function createEcoView(handlers: EcoHandlers): EcoView {
       $("note").textContent = text ?? "";
     },
     showExtinct(simSeconds) {
-      $("extinctTitle").textContent = `Extinct after ${Math.round(simSeconds)} s`;
+      $("extinctTitle").textContent = `Extinct after ${durationText(simSeconds)}`;
       recordScore(simSeconds, 0);
       if (phase !== "extinct") returnFocus = document.activeElement as HTMLElement | null;
       setPhase("extinct");

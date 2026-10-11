@@ -13,7 +13,6 @@ import { initCard } from "./ui/overlays.ts";
 import { buildPreview } from "./ui/preview.ts";
 import { Replay, sourceOfLive, sourceOfPast } from "./ui/replay.ts";
 import type { ReplaySource } from "./ui/replay.ts";
-import { formatElapsed } from "./ui/elapsed.ts";
 import { drawScene } from "./ui/scene.ts";
 import type { ViewOptions } from "./ui/scene.ts";
 import { TRIALS_LOCKED, TRIALS_PRESETS, CUSTOM, withTrialsPreset } from "./sim/presets.ts";
@@ -22,9 +21,9 @@ import { Scoreboard, settingsOf, today } from "./ui/scoreboard.ts";
 import { fillForm, initSettingsForm, readConfig, setFormPreset } from "./ui/settingsForm.ts";
 import { initSettingsIO } from "./ui/settingsIO.ts";
 import { TickClock } from "./ui/tickClock.ts";
+import { $, durationText, formatDuration, setTile } from "./ui/page.ts";
 import { initTooltips } from "./ui/tooltip.ts";
 
-const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 const canvas = $<HTMLCanvasElement>("view");
 const ctx = canvas.getContext("2d")!;
 const note = $("note");
@@ -122,9 +121,8 @@ function renderFitness(): void {
 function renderStats(): void {
   const m = run.latest;
   const sec = (id: string, v: number | null): void => {
-    const el = $(id);
-    el.textContent = v === null ? "-" : v.toFixed(1);
-    el.dataset.unit = v === null ? "" : " s"; // unit is drawn by CSS
+    const d = v === null ? null : formatDuration(v);
+    setTile(id, d && d.text, d?.unit);
   };
   $("statGen").textContent = m ? String(m.result.generation) : run.phase === "idle" ? "-" : "0";
   sec("statBestEver", m && m.bestEver);
@@ -256,8 +254,8 @@ function togglePause(): void {
 
 // Generation, how long the replayed creature has lived, and the longest life so far.
 function replayLabel(ticksAlive: number): string {
-  const elapsed = formatElapsed(ticksAlive * run.config.dt);
-  const bestEver = run.latest ? ` · best ${formatElapsed(run.latest.bestEver)}` : "";
+  const elapsed = durationText(ticksAlive * run.config.dt);
+  const bestEver = run.latest ? ` · best ${durationText(run.latest.bestEver)}` : "";
   return `Generation ${replay.generation} · ${elapsed}${bestEver}`;
 }
 

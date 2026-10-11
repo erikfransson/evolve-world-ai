@@ -31,6 +31,7 @@ export const TRIALS_PRESETS: readonly TrialsPreset[] = [
   { id: "giants", name: "Sparse giants", description: "Few, huge pieces of food and poison. Easy to see, costly to miss.", world: { ...TRIALS_BASE, foodDensity: 0.22, poisonDensity: 0.07, itemRadius: 9, foodEnergy: 60 } },
 ];
 
+// foodEnergy 40 is the base the other presets keep on purpose; Normal alone overrides it to 20.
 const ECO_BASE: EcoPreset["world"] = { width: 12000, height: 7500, foodDensity: 0.5, poisonDensity: 0.05, itemRadius: 4, foodEnergy: 40, poisonDamage: POISON_LETHAL };
 const ECO_REGROWTH: Regrowth = { foodRegrow: 0.05, foodMaxDensity: 0.7, poisonRegrow: 0.005, poisonMaxDensity: 0.1 };
 

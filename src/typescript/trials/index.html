@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Trials · Evolve World</title>
+    <link rel="icon" type="image/svg+xml" href="../favicon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" crossorigin />
@@ -31,8 +32,8 @@
         <dl class="stats">
           <div class="tile"><dt>Generation<span class="tip" tabindex="0" role="img" aria-label="Number of generations computed so far." data-tip="Number of generations computed so far.">ⓘ</span></dt><dd id="statGen">-</dd></div>
           <div class="tile accent"><dt>Best so far<span class="tip" tabindex="0" role="img" aria-label="Longest survival time seen in any generation." data-tip="Longest survival time seen in any generation.">ⓘ</span></dt><dd id="statBestEver" data-unit=" s">-</dd></div>
-          <div class="tile"><dt>Last best<span class="tip" tabindex="0" role="img" aria-label="Longest and average survival time in the most recent generation." data-tip="Longest and average survival time in the most recent generation.">ⓘ</span></dt><dd id="statBest" data-unit=" s">-</dd></div>
-          <div class="tile"><dt>Last mean<span class="tip" tabindex="0" role="img" aria-label="Longest and average survival time in the most recent generation." data-tip="Longest and average survival time in the most recent generation.">ⓘ</span></dt><dd id="statMean" data-unit=" s">-</dd></div>
+          <div class="tile"><dt>Last best<span class="tip" tabindex="0" role="img" aria-label="Longest survival time in the most recent generation." data-tip="Longest survival time in the most recent generation.">ⓘ</span></dt><dd id="statBest" data-unit=" s">-</dd></div>
+          <div class="tile"><dt>Last mean<span class="tip" tabindex="0" role="img" aria-label="Average survival time in the most recent generation." data-tip="Average survival time in the most recent generation.">ⓘ</span></dt><dd id="statMean" data-unit=" s">-</dd></div>
           <div class="tile"><dt>Compute time<span class="tip" tabindex="0" role="img" aria-label="Real time the last generation took to compute. Longer lives make longer generations." data-tip="Real time the last generation took to compute. Longer lives make longer generations.">ⓘ</span></dt><dd id="statCompute">-</dd></div>
           <div class="tile"><dt>Replaying gen<span class="tip" tabindex="0" role="img" aria-label="Which generation is being shown on the canvas." data-tip="Which generation is being shown on the canvas.">ⓘ</span></dt><dd id="statReplay">-</dd></div>
         </dl>
@@ -72,19 +73,19 @@
                 </div>
               </div>
               <div class="field">
-                <div class="row"><span class="lbl"><label class="name" for="worldWidth">World width</label><span class="tip" tabindex="0" role="img" aria-label="Size of the box the creatures swim in. For scale, the default vision range is 100 units." data-tip="Size of the box the creatures swim in. For scale, the default vision range is 100 units.">ⓘ</span></span><output for="worldWidth" data-fmt="size"></output></div>
+                <div class="row"><span class="lbl"><label class="name" for="worldWidth">World width</label><span class="tip" tabindex="0" role="img" aria-label="Size of the box the creatures live in. For scale, the default vision range is 100 units." data-tip="Size of the box the creatures live in. For scale, the default vision range is 100 units.">ⓘ</span></span><output for="worldWidth" data-fmt="size"></output></div>
                 <input id="worldWidth" type="range" min="200" max="4000" step="10" />
               </div>
               <div class="field">
-                <div class="row"><span class="lbl"><label class="name" for="worldHeight">World height</label><span class="tip" tabindex="0" role="img" aria-label="Size of the box the creatures swim in. For scale, the default vision range is 100 units." data-tip="Size of the box the creatures swim in. For scale, the default vision range is 100 units.">ⓘ</span></span><output for="worldHeight" data-fmt="size"></output></div>
+                <div class="row"><span class="lbl"><label class="name" for="worldHeight">World height</label><span class="tip" tabindex="0" role="img" aria-label="Size of the box the creatures live in. For scale, the default vision range is 100 units." data-tip="Size of the box the creatures live in. For scale, the default vision range is 100 units.">ⓘ</span></span><output for="worldHeight" data-fmt="size"></output></div>
                 <input id="worldHeight" type="range" min="200" max="3000" step="10" />
               </div>
               <div class="field">
-                <div class="row"><span class="lbl"><label class="name" for="foodDensity">Food density</label><span class="tip" tabindex="0" role="img" aria-label="How much food is in the world. 0 is none, 1 means roughly one piece in every 100 × 100 area." data-tip="How much food is in the world. 0 is none, 1 means roughly one piece in every 100 × 100 area.">ⓘ</span></span><span class="vals"><span class="hint" id="foodItems"></span><output for="foodDensity" data-fmt="dens"></output></span></div>
+                <div class="row"><span class="lbl"><label class="name" for="foodDensity">Start food</label><span class="tip" tabindex="0" role="img" aria-label="How much food is in the world. 0 is none, 1 means roughly one piece in every 100 × 100 area." data-tip="How much food is in the world. 0 is none, 1 means roughly one piece in every 100 × 100 area.">ⓘ</span></span><span class="vals"><span class="hint" id="foodItems"></span><output for="foodDensity" data-fmt="dens"></output></span></div>
                 <input id="foodDensity" type="range" min="0" max="1" step="0.01" />
               </div>
               <div class="field">
-                <div class="row"><span class="lbl"><label class="name" for="poisonDensity">Poison density</label><span class="tip" tabindex="0" role="img" aria-label="How much poison there is, on the same scale as food. 0 turns poison off." data-tip="How much poison there is, on the same scale as food. 0 turns poison off.">ⓘ</span></span><span class="vals"><span class="hint" id="poisonItems"></span><output for="poisonDensity" data-fmt="dens"></output></span></div>
+                <div class="row"><span class="lbl"><label class="name" for="poisonDensity">Start poison</label><span class="tip" tabindex="0" role="img" aria-label="How much poison there is, on the same scale as food. 0 turns poison off." data-tip="How much poison there is, on the same scale as food. 0 turns poison off.">ⓘ</span></span><span class="vals"><span class="hint" id="poisonItems"></span><output for="poisonDensity" data-fmt="dens"></output></span></div>
                 <input id="poisonDensity" type="range" min="0" max="1" step="0.01" />
               </div>
               <div class="field">
@@ -95,7 +96,7 @@
             </section>
 
             <section class="card">
-              <h3>Creatures &amp; brain</h3>
+              <h3>Creature</h3>
               <div class="field">
                 <div class="row"><span class="lbl"><label class="name" for="rayCount">Vision rays</label><span class="tip" tabindex="0" role="img" aria-label="How many laser rays each creature sees with. More rays give a finer view and more inputs to the brain." data-tip="How many laser rays each creature sees with. More rays give a finer view and more inputs to the brain.">ⓘ</span></span><output for="rayCount"></output></div>
                 <input id="rayCount" type="range" min="1" max="16" step="1" />
@@ -105,9 +106,13 @@
                 <input id="raySpread" type="range" min="10" max="360" step="5" />
               </div>
               <div class="field">
-                <div class="row"><span class="lbl"><label class="name" for="rayLength">Vision range</label><span class="tip" tabindex="0" role="img" aria-label="How far each vision ray reaches, in world units. The world is 1600 units wide by default." data-tip="How far each vision ray reaches, in world units. The world is 1600 units wide by default.">ⓘ</span></span><output for="rayLength" data-fmt="size"></output></div>
+                <div class="row"><span class="lbl"><label class="name" for="rayLength">Vision range</label><span class="tip" tabindex="0" role="img" aria-label="How far each vision ray reaches, in world units." data-tip="How far each vision ray reaches, in world units.">ⓘ</span></span><output for="rayLength" data-fmt="size"></output></div>
                 <input id="rayLength" type="range" min="40" max="300" step="5" />
               </div>
+            </section>
+
+            <section class="card">
+              <h3>Brain</h3>
               <div class="field">
                 <div class="row"><span class="lbl"><label class="name" for="layers">Hidden layers</label><span class="tip" tabindex="0" role="img" aria-label="How many layers of neurons sit between the creature's eyes and its muscles." data-tip="How many layers of neurons sit between the creature's eyes and its muscles.">ⓘ</span></span><output for="layers"></output></div>
                 <input id="layers" type="range" min="1" max="4" step="1" />
