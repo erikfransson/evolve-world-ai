@@ -276,6 +276,7 @@ export class Ecosystem {
 
   // Grids the creatures as they stand at the tick start, for sensePhase.
   prepareTick(): void {
+    if (this.states.length < 2 && this.crowd.count < 2) return; // a lone creature, or none, only sees itself in a grid of at most itself
     this.crowd.rebuild(this.states, this.states.length, this.multi ? this.kinds : undefined);
   }
 
@@ -428,6 +429,7 @@ export class Ecosystem {
   private collideAll(gridded = false): void {
     const crowd = this.crowd;
     const states = this.states;
+    if (states.length < 2) return; // no pairs
     if (!gridded) crowd.rebuild(states, states.length);
     const { cols, rows, cellStart, owners } = crowd;
     const { radius } = this.config.creature;

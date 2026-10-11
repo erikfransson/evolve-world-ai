@@ -163,3 +163,10 @@ Default set to WASM (`eco.wasm` true, "Use WebAssembly" under Life cycle); runti
 `sense.wat` does ray directions, item and wall rays (f64, same candidate order as `World.castRays`), crowd rays (f32) and the ray features written into the brain input, for a whole batch in one call. The item grid and crowd are copied into WASM memory each tick. The old `rays.wat` is gone. Only `Ecosystem.detail` (the selected creature) gets its `creature.rays` and brain input read back.
 Width 20000 (about 2700 creatures), user CPU ms per steady tick, main e17cba7 vs branch in alternating pairs: serial 28.4, 29.3, 28.2 vs 20.5, 20.7, 21.8 (1.37x); 3 shared helpers, total CPU 40.4, 40.0 vs 32.2, 32.8 (1.24x). Fingerprints equal to main for serial, 3 shared, 3 message and 1 shared helpers.
 Details and rejected f64x2 variant in `docs/perf-explore/wasm.md`.
+
+## RL episodes (single thread)
+
+`nice -n 17 node src/rlBench.ts [--reps 3] [--env id]` in `src/typescript`: ms of CPU time per episode for pool:39 and a random learner over 6 seeds; the fingerprint (2462283740) hashes every result, so it must not change.
+Profile: brain forward/first layer about 30%, sensing and input encoding 15-20%; episode setup 5-10% (random rival genomes dominate in hunt envs); crowd grid, collisions and prepare about 20% for single-creature envs.
+Kept (bit-identical): no collision pass and no grid rebuild for a lone creature, one cached layout config for random learners. Single-creature envs 1.3-2.5x faster (forage-sparse pool 9.7 to 3.8 ms, endurance random 8.7 to 3.3), multi-creature envs unchanged within noise.
+Not done: wasm kernels (f32, changes results, brain-bound at 1-9 creatures anyway).
