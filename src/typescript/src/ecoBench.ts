@@ -28,20 +28,22 @@ const { values } = parseArgs({
     wasm: { type: "string" }, // true or false: sense and think on the WebAssembly kernels; default from the config
     agingStart: { type: "string" },
     agingRate: { type: "string" },
+    width: { type: "string" }, // world width; height and the default population scale with it (area) so densities stay
     damage: { type: "boolean" }, // collision damage
     damagePerSpeed: { type: "string" },
   },
 });
 const num = (v: string | undefined, fallback: number): number => (v === undefined ? fallback : Number(v));
 const d = DEFAULT_ECO_CONFIG;
+const scale = num(values.width, d.world.width) / d.world.width;
 const food = num(values.food, d.world.foodDensity);
 const config: EcoConfig = {
   ...structuredClone(d),
   seed: num(values.seed, d.seed),
-  world: { ...d.world, foodDensity: food },
+  world: { ...d.world, width: d.world.width * scale, height: d.world.height * scale, foodDensity: food },
   eco: {
     ...d.eco,
-    initialPopulation: num(values.pop, d.eco.initialPopulation),
+    initialPopulation: num(values.pop, Math.round(d.eco.initialPopulation * scale * scale)),
     poolFraction: num(values.poolFraction, d.eco.poolFraction),
     aging: values.aging ?? d.eco.aging,
     wasm: values.wasm === undefined ? d.eco.wasm : values.wasm === "true",
