@@ -5,7 +5,6 @@ import { creatureFile, parseCreatureFile } from "../../src/typescript/src/sim/rl
 import type { EnvSpec } from "../../src/typescript/src/sim/rl/env.ts";
 import { ENVS, ENV_GROUPS, envById, groupOf } from "../../src/typescript/src/sim/rl/envs.ts";
 import { Es, centredRanks, standardise } from "../../src/typescript/src/sim/rl/es.ts";
-import { Trainer } from "../../src/typescript/src/sim/rl/trainer.ts";
 import { parseLibrary, serialiseLearner } from "../../src/typescript/src/sim/rl/library.ts";
 import { testRng } from "./helpers.ts";
 
@@ -226,20 +225,5 @@ describe("hidden food in envs", () => {
     if (eco.wasm) expect(() => eco.setFoodHidden(true)).toThrow(/JS sense path/);
     const r = runEpisode(env, randomLearner(env, 2), 3);
     expect(r.seconds).toBeGreaterThan(0);
-  });
-});
-
-describe("Trainer env sampling", () => {
-  it("trains each step on envsPerStep envs, all envs taking turns", async () => {
-    const seen: number[][] = [];
-    const scorer = { rewards: async (tasks: readonly { env: number }[]) => { seen.push([...new Set(tasks.map((t) => t.env))]); return tasks.map(() => 0); } };
-    const t = new Trainer(new Float32Array(8), { pairs: 2 }, scorer, 5, 1, 1);
-    t.envsPerStep = 2;
-    for (let k = 0; k < 5; k++) await t.step();
-    for (const s of seen) expect(s).toHaveLength(2);
-    expect(new Set(seen.flat()).size).toBe(5); // every env got its turn
-    seen.length = 0;
-    await t.held([1, 2]);
-    expect(seen[0]).toHaveLength(5); // held-out covers all
   });
 });

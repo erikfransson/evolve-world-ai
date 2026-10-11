@@ -30,19 +30,16 @@ export interface Score {
 
 // Each genome on every env and seed (the same seeds for all, so candidates meet the same layouts). Sums seed by seed in a fixed
 // order, so scores do not depend on how many threads played the episodes.
-// envs: how many envs (all of them) or which env indices; perEnv follows that order.
-export async function scoreGenomes(scorer: Scorer, envs: number | readonly number[], genomes: readonly Float32Array[], seeds: readonly number[]): Promise<Score[]> {
-  const ids = typeof envs === "number" ? Array.from({ length: envs }, (_, k) => k) : envs;
-  const n = ids.length;
-  const tasks = genomes.flatMap((genome) => ids.map((env) => seeds.map((seed) => ({ env, genome, seed }))).flat());
+export async function scoreGenomes(scorer: Scorer, envs: number, genomes: readonly Float32Array[], seeds: readonly number[]): Promise<Score[]> {
+  const tasks = genomes.flatMap((genome) => Array.from({ length: envs }, (_, env) => seeds.map((seed) => ({ env, genome, seed }))).flat());
   const rewards = await scorer.rewards(tasks);
   return genomes.map((_, g) => {
-    const perEnv = Array.from({ length: n }, (_, e) => {
+    const perEnv = Array.from({ length: envs }, (_, e) => {
       let sum = 0;
-      for (let s = 0; s < seeds.length; s++) sum += rewards[(g * n + e) * seeds.length + s]! / seeds.length;
+      for (let s = 0; s < seeds.length; s++) sum += rewards[(g * envs + e) * seeds.length + s]! / seeds.length;
       return sum;
     });
-    return { mean: perEnv.reduce((a, b) => a + b, 0) / n, perEnv };
+    return { mean: perEnv.reduce((a, b) => a + b, 0) / envs, perEnv };
   });
 }
 
@@ -83,7 +80,6 @@ export class Trainer implements RlTrainer {
   setEnvs(scorer: Scorer, envs: readonly EnvSpec[]): void {
     this.scorer = scorer;
     this.envs = envs.length;
-    this.cycle = [];
   }
 
   get iter(): number {
@@ -92,28 +88,6 @@ export class Trainer implements RlTrainer {
 
   get theta(): Float32Array {
     return this.es.theta;
-  }
-
-  // With many envs a step trains on envsPerStep of them, the next ones of a shuffled cycle, so all take turns and a step stays
-  // affordable; every candidate of the step meets the same envs. Held-out checks always cover all envs.
-  envsPerStep = Infinity;
-  private cycle: number[] = [];
-
-  private nextEnvs(): number[] {
-    if (this.envsPerStep >= this.envs) return Array.from({ length: this.envs }, (_, k) => k);
-    const out: number[] = [];
-    while (out.length < this.envsPerStep) {
-      if (!this.cycle.length) {
-        this.cycle = Array.from({ length: this.envs }, (_, k) => k);
-        for (let i = this.cycle.length - 1; i > 0; i--) {
-          const j = this.rng.int(i + 1);
-          [this.cycle[i], this.cycle[j]] = [this.cycle[j]!, this.cycle[i]!];
-        }
-      }
-      const e = this.cycle.pop()!;
-      if (!out.includes(e)) out.push(e);
-    }
-    return out.sort((a, b) => a - b);
   }
 
   // Self-play rivals: the current weights and the best candidates of the last few steps.
@@ -125,7 +99,7 @@ export class Trainer implements RlTrainer {
     this.sendLeague();
     const seeds = Array.from({ length: this.episodes }, () => this.rng.int(HELD_BASE)); // fresh layouts each step, so none is learned by heart
     const candidates = this.es.ask(this.rng);
-    const rewards = (await scoreGenomes(this.scorer, this.nextEnvs(), candidates, seeds)).map((s) => s.mean);
+    const rewards = (await scoreGenomes(this.scorer, this.envs, candidates, seeds)).map((s) => s.mean);
     this.es.tell(rewards);
     let best = 0;
     for (let k = 1; k < rewards.length; k++) if (rewards[k]! > rewards[best]!) best = k;
