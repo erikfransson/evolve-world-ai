@@ -18,12 +18,15 @@ import type { BodyPlan, PlanView } from "./sim/sensors.ts";
 import type { RlInMessage, RlIteration, RlOutMessage } from "./worker/rlProtocol.ts";
 import { BrainReplay } from "./ui/arenaBrain.ts";
 import { DEFAULT_DESIGN, DEFAULT_RUN, DESIGN_FORM, RUN_FORM, designPlan, planDesign } from "./ui/arenaForm.ts";
-import { ARENA_KIND, bestFounder, change, customEnv, envGroups, envsForKind, kindRejection, planSummary } from "./ui/arenaPick.ts";
+import { ARENA_KIND, bestFounder, change, customEnv, envsForKind, kindRejection, planSummary } from "./ui/arenaPick.ts";
 import { addFavourite, loadFavourites, loadSpeed, removeFavourite, saveSpeed } from "./ui/arenaStore.ts";
 import { drawBrainSketch, drawCreaturePreview } from "./ui/creaturePreview.ts";
 import { fitCanvas } from "./ui/canvas.ts";
 import { DEFAULT_TILES, TILE_COUNTS, TileGrid } from "./ui/arenaTiles.ts";
 import { Zoom } from "./ui/arenaZoom.ts";
+import { EnvGallery } from "./ui/envGallery.ts";
+import { setEnvs, summaryLine, toggleEnv } from "./ui/envSelect.ts";
+import type { PreviewIn, PreviewOut } from "./worker/envPreviewWorker.ts";
 import { $, durationText } from "./ui/page.ts";
 import { buildForm } from "./ui/settingsForm.ts";
 import { RewardGraph } from "./ui/rewardGraph.ts";
@@ -44,7 +47,8 @@ let imported: CreatureFile | null = null;
 let favourites: CreatureFile[] = [];
 const customs: EnvSpec[] = [];
 const DEFAULT_ENV = "nibble";
-const picked = new Set<string>();
+let picked = new Set<string>();
+let seeded = false; // the default env is picked once, so Clear all can leave none
 let customCount = 0;
 
 // The run in progress or just finished.
@@ -195,70 +199,58 @@ async function importFile(): Promise<void> {
 
 // ---- environments
 
-function envOption(e: EnvSpec): HTMLLabelElement {
-  const label = document.createElement("label");
-  label.className = "env-opt";
-  const check = document.createElement("input");
-  check.type = "checkbox";
-  check.checked = picked.has(e.id);
-  check.addEventListener("change", () => {
-    if (check.checked) picked.add(e.id);
-    else picked.delete(e.id);
+const allEnvs = (): EnvSpec[] => envsForKind([...ENVS, ...customs], kind());
+
+function pick(next: Set<string>): void {
+  picked = next;
+  gallery.sync(picked);
+  showStart();
+}
+
+const gallery = new EnvGallery($("gallery"), {
+  toggle: (id) => pick(toggleEnv(picked, id)),
+  setMany: (ids, on) => pick(setEnvs(picked, ids, on)),
+  remove: (id) => {
+    customs.splice(customs.findIndex((e) => e.id === id), 1);
+    picked.delete(id);
+    showEnvs();
     showStart();
-  });
-  const body = document.createElement("span");
-  body.className = "env-body";
-  const name = document.createElement("b");
-  name.textContent = e.name;
-  const desc = document.createElement("small");
-  desc.textContent = e.description;
-  const chips = document.createElement("span");
-  chips.className = "chips";
-  const facts = [`${e.size[0]}×${e.size[1]}`, `${e.seconds} s`, ...(e.rivals.length ? [`${e.rivals.reduce((n, r) => n + r.count, 0)} rivals`] : []), ...e.tags.filter((t) => t !== "small" && t !== "advanced")];
-  for (const f of facts) chips.append(Object.assign(document.createElement("span"), { textContent: f }));
-  body.append(name, desc, chips);
-  label.append(check, body);
-  if (e.tags.includes("custom")) {
-    const del = document.createElement("button");
-    del.type = "button";
-    del.className = "env-del";
-    del.textContent = "×";
-    del.title = "Remove this environment";
-    del.addEventListener("click", (ev) => {
-      ev.preventDefault();
-      customs.splice(customs.indexOf(e), 1);
-      picked.delete(e.id);
-      showEnvs();
-      showStart();
-    });
-    label.append(del);
-  }
-  return label;
+  },
+});
+
+// Clips are recorded by a worker, once per env id, as soon as the page loads and whenever a custom env is added.
+const previewWorker = new Worker(new URL("./worker/envPreviewWorker.ts", import.meta.url), { type: "module" });
+const requested = new Set<string>();
+previewWorker.onmessage = (ev: MessageEvent<PreviewOut>) => {
+  if (ev.data.type === "clip") gallery.setClip(ev.data.id, ev.data.rec);
+  else console.warn("env preview failed", ev.data.id, ev.data.message);
+};
+function requestClips(envs: readonly EnvSpec[]): void {
+  const fresh = envs.filter((e) => !requested.has(e.id));
+  for (const e of fresh) requested.add(e.id);
+  if (fresh.length) previewWorker.postMessage({ type: "record", envs: fresh, poolUrl: POOL_URL, libraryUrl: LIBRARY_URL } satisfies PreviewIn);
 }
 
 function showEnvs(): void {
-  const list = envsForKind([...ENVS, ...customs], kind());
-  const box = $("envList");
-  box.replaceChildren();
-  if (!list.some((e) => picked.has(e.id))) picked.add((list.find((e) => e.id === DEFAULT_ENV) ?? list[0])?.id ?? "");
-  const { quick, advanced } = envGroups(list); // Quick (and custom) ones in the open, Advanced ones folded
-  box.append(Object.assign(document.createElement("p"), { className: "env-head", textContent: "Quick" }), ...quick.map(envOption));
-  if (advanced.length) {
-    const more = document.createElement("details");
-    more.className = "more";
-    more.open = advanced.some((e) => picked.has(e.id));
-    const sum = document.createElement("summary");
-    sum.textContent = `Advanced (${advanced.length}, bigger and slower)`;
-    const body = document.createElement("div");
-    body.className = "more-body env-list";
-    body.append(...advanced.map(envOption));
-    more.append(sum, body);
-    box.append(more);
+  const list = allEnvs();
+  if (!seeded) {
+    seeded = true;
+    picked.add((list.find((e) => e.id === DEFAULT_ENV) ?? list[0])?.id ?? "");
   }
+  gallery.setEnvs(list, picked);
+  requestClips(list);
   updateStartButton();
 }
 
-const selectedEnvs = (): EnvSpec[] => envsForKind([...ENVS, ...customs], kind()).filter((e) => picked.has(e.id));
+// The gallery shows unless a run is going; while paused or finished it folds, so the tiles stay in view.
+function showGallery(): void {
+  $("gallery").hidden = state === "running";
+  gallery.setCompact(run !== null);
+  gallery.play(state !== "running");
+  $("viewrow").hidden = run === null && state === "idle";
+}
+
+const selectedEnvs = (): EnvSpec[] => allEnvs().filter((e) => picked.has(e.id));
 
 function addRivalRow(r: Rivals = { species: 0, count: 2, source: "random" }): void {
   const hunt = KINDS[kind()].world === "hunt";
@@ -331,7 +323,7 @@ function addCustom(): void {
   if (typeof r === "string") return;
   customCount++;
   customs.push(r);
-  picked.add(r.id);
+  picked = new Set(picked).add(r.id);
   showEnvs();
   showStart();
 }
@@ -339,6 +331,9 @@ function addCustom(): void {
 // ---- running
 
 function updateStartButton(): void {
+  const n = selectedEnvs().length;
+  $("envSummary").textContent = summaryLine(n);
+  $("envSummary").classList.toggle("warn", n === 0);
   const blocked = typeof resolveStart() === "string" || selectedEnvs().length === 0;
   startBtn.disabled = state !== "idle" || blocked;
   if (state === "paused") pauseBtn.disabled = selectedEnvs().length === 0; // Resume needs an env
@@ -353,6 +348,7 @@ function setState(s: RunState): void {
   settings.disabled = runSettings.disabled = s !== "idle";
   envSettings.disabled = s === "running"; // envs can change while paused, and apply on Resume
   grid.paused = s === "paused";
+  showGallery();
   updateStartButton();
 }
 

@@ -49,8 +49,8 @@
           <fieldset id="envSettings">
             <section class="card">
               <h2>Environments</h2>
-              <p class="hint">Pick one or more. Each iteration the creature trains in all of them. Small worlds learn within a few dozen iterations, bigger ones take longer. Pause to change them during a run.</p>
-              <div id="envList" class="env-list"></div>
+              <p id="envSummary" class="env-summary" role="status"></p>
+              <p class="hint">Choose them in the gallery on the right. Pause to change them during a run.</p>
               <details class="more" id="customBox">
                 <summary>Custom environment</summary>
                 <div class="more-body">
@@ -130,7 +130,8 @@
             </figure>
           </div>
         </section>
-        <div class="viewrow">
+        <section id="gallery" class="card gallery"></section>
+        <div id="viewrow" class="viewrow">
           <div class="tiles-wrap">
             <div id="tiles" class="tiles"></div>
             <p id="note" class="empty-note">Design or pick a creature, choose environments, then press Start.</p>
