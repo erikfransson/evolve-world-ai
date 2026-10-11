@@ -1,10 +1,12 @@
-import { genomeLength, layerSizes } from "../../src/typescript/src/sim/brain.ts";
+import { genomeLength, layerSizes, randomGenome } from "../../src/typescript/src/sim/brain.ts";
 import { Creature } from "../../src/typescript/src/sim/creature.ts";
 import { Crowd } from "../../src/typescript/src/sim/crowd.ts";
 import { createRng } from "../../src/typescript/src/sim/rng.ts";
 import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
+import { trialsSizes } from "../../src/typescript/src/sim/seedPool.ts";
+import type { PoolEntry } from "../../src/typescript/src/sim/seedPool.ts";
 import { FEAT_CREATURE, FEAT_SEEN_ENERGY, energySignal, inputLayout } from "../../src/typescript/src/sim/sensors.ts";
 import { HIT_CREATURE, HIT_FOOD, HIT_NONE, HIT_POISON } from "../../src/typescript/src/sim/types.ts";
 import { World } from "../../src/typescript/src/sim/world.ts";
@@ -35,6 +37,11 @@ const still = (eco: Partial<EcoConfig["eco"]>, startEnergy: number): EcoConfig =
 
 const countKind = (eco: Ecosystem, kind: number) => eco.world.kinds.filter((k) => k === kind).length;
 
+const poolEntry = (): PoolEntry => {
+  const plan = { rayCount: 4, raySpread: 1.2, rayLength: 90, hiddenLayers: [8], memoryShort: 1, memoryLong: 1 };
+  return { plan, genome: randomGenome(trialsSizes(plan), createRng(9)), fitness: 60, world: { food: 0.7, poison: 0.1 } };
+};
+
 describe("Ecosystem", () => {
   it("is deterministic per seed", () => {
     const run = (seed: number) => {
@@ -46,9 +53,10 @@ describe("Ecosystem", () => {
     expect(run(3)[0]).not.toBe(run(4)[0]);
   });
 
-  it("no founder spawns on poison", () => {
-    for (const seed of [1, 2, 3]) {
-      const eco = new Ecosystem(ecoCfg({ seed, world: { foodDensity: 0, poisonDensity: 3 }, eco: { initialPopulation: 60 } }));
+  it("no founder spawns on poison, with varied founders and moved poison", () => {
+    // Dense poison and many founders: poison moved off one founder often lands on a founder placed before it.
+    for (const seed of [1, 2, 3, 4, 5, 6]) {
+      const eco = new Ecosystem(ecoCfg({ seed, world: { foodDensity: 0, poisonDensity: 3 }, eco: { initialPopulation: 300, foundersVary: true } }));
       const reach = eco.config.creature.radius + eco.config.world.itemRadius;
       const w = eco.world;
       expect(countKind(eco, HIT_POISON)).toBe(300);
@@ -282,5 +290,123 @@ describe("Crowd", () => {
       });
     }
     expect(hits).toBeGreaterThan(20);
+  });
+
+});
+
+describe("Ecosystem lineages and aging", () => {
+  describe("lineages", () => {
+    const busy = (extra: Partial<EcoConfig["eco"]> = {}) =>
+      new Ecosystem(ecoCfg({ creature: { startEnergy: 140 }, eco: { initialPopulation: 30, foodRegrow: 0.3, foodMaxDensity: 2, ...extra } }));
+    const recount = (eco: Ecosystem) => {
+      const counts = new Map<number, number>();
+      for (const m of eco.members) counts.set(m.founderId, (counts.get(m.founderId) ?? 0) + 1);
+      return counts;
+    };
+
+    it("founders are their own founder, children inherit it", () => {
+      const eco = busy();
+      for (const m of eco.members) expect(m.founderId).toBe(m.id);
+      expect(eco.founders).toBe(30);
+      let descendants = 0;
+      for (let t = 0; t < 1500 && !eco.extinct; t++) {
+        eco.step();
+        if (t % 50 !== 0) continue;
+        for (const m of eco.members) {
+          expect(m.founderId).toBeLessThan(30);
+          if (m.depth === 0) expect(m.founderId).toBe(m.id);
+          else descendants++;
+          const parent = eco.get(m.parentId);
+          if (parent) expect(parent.founderId).toBe(m.founderId);
+        }
+      }
+      expect(eco.births).toBeGreaterThan(0);
+      expect(descendants).toBeGreaterThan(0);
+    });
+
+    it("live counts match a brute-force recount after births and deaths", () => {
+      const eco = busy();
+      for (let t = 0; t < 1500 && !eco.extinct; t++) {
+        eco.step();
+        if (t % 100 !== 0) continue;
+        const counts = recount(eco);
+        for (let f = 0; f < eco.founders; f++) expect(eco.lineageSize(f)).toBe(counts.get(f) ?? 0);
+      }
+      expect(eco.births).toBeGreaterThan(0);
+      expect(eco.deaths).toBeGreaterThan(0);
+      const counts = recount(eco);
+      let total = 0;
+      for (let f = 0; f < eco.founders; f++) {
+        expect(eco.lineageSize(f)).toBe(counts.get(f) ?? 0);
+        total += eco.lineageSize(f);
+      }
+      expect(total).toBe(eco.population);
+    });
+
+    it("topLineages lists the biggest living lineages, biggest first, with colour and origin", () => {
+      const eco = busy();
+      for (let t = 0; t < 1200 && !eco.extinct; t++) eco.step();
+      const counts = [...recount(eco)].map(([founder, count]) => ({ founder, count }));
+      counts.sort((a, b) => b.count - a.count || a.founder - b.founder);
+      const top = eco.topLineages(5);
+      expect(top.length).toBe(Math.min(5, counts.length));
+      expect(top.map((l) => [l.founder, l.count])).toEqual(counts.slice(0, top.length).map((c) => [c.founder, c.count]));
+      for (const l of top) {
+        expect(l.hue).toBe(eco.founderColour(l.founder));
+        expect(l.pool).toBe(false);
+        expect(l.count).toBeGreaterThan(0);
+      }
+      expect(eco.topLineages(1000).length).toBe(counts.length);
+    });
+
+    it("marks pool founders", () => {
+      const eco = new Ecosystem(ecoCfg({ eco: { initialPopulation: 10, poolFraction: 0.5 } }), [poolEntry()]);
+      expect(eco.poolFounders).toBe(5);
+      expect(eco.topLineages(10).map((l) => l.pool)).toEqual([true, true, true, true, true, false, false, false, false, false]);
+    });
+
+    it("the frame carries each creature's founder", () => {
+      const eco = busy();
+      for (let t = 0; t < 600; t++) eco.step();
+      const frame = eco.readCreatures();
+      for (let i = 0; i < frame.count; i++) expect(frame.founder[i]).toBe(eco.get(frame.ids[i]!)!.founderId);
+    });
+  });
+
+  describe("aging", () => {
+    // One creature with only a flat living cost of 2 energy/s; the energy lost in a tick is that cost times dt times the aging factor.
+    const lone = (eco: Partial<EcoConfig["eco"]>) =>
+      new Ecosystem(ecoCfg({
+        world: { foodDensity: 0, poisonDensity: 0 },
+        creature: { startEnergy: 1e6, livingCost: 2, thrustCost: 0, turnCost: 0, rayCost: 0, neuronCost: 0 },
+        eco: { initialPopulation: 1, foodRegrow: 0, poisonRegrow: 0, collisions: false, birthEnergy: 1e9, ...eco },
+      }));
+    const lossPerTick = (e: Ecosystem) => {
+      const s = e.members[0]!.creature.state;
+      const before = s.energy;
+      e.step();
+      return before - s.energy;
+    };
+
+    it("costs the plain upkeep with aging off, whatever the age", () => {
+      const eco = lone({ aging: false, agingStart: 1, agingRate: 5 });
+      const dt = eco.config.dt;
+      for (let t = 0; t < 600; t++) expect(lossPerTick(eco)).toBeCloseTo(2 * dt, 3);
+    });
+
+    it("is zero before agingStart, then grows smoothly", () => {
+      const eco = lone({ aging: true, agingStart: 5, agingRate: 0.6 });
+      const dt = eco.config.dt;
+      const startTicks = Math.round(5 / dt);
+      for (let t = 0; t < startTicks; t++) expect(lossPerTick(eco)).toBeCloseTo(2 * dt, 3);
+      const losses: number[] = [];
+      for (let t = 0; t < 12 / dt; t++) losses.push(lossPerTick(eco));
+      expect(losses[0]).toBeGreaterThan(2 * dt - 1e-3);
+      for (let i = 1; i < losses.length; i++) expect(losses[i]!).toBeGreaterThanOrEqual(losses[i - 1]! - 1e-3);
+      // 6 s past the start at 0.6 per minute: 1 + 0.6 * 6 / 60 = 1.06 times the upkeep.
+      const at = Math.round(6 / dt) - 1;
+      expect(losses[at]! / (2 * dt)).toBeCloseTo(1.06, 2);
+      expect(losses.at(-1)!).toBeGreaterThan(losses[0]! + 1e-4);
+    });
   });
 });

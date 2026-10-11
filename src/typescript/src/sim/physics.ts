@@ -24,6 +24,17 @@ export function decaysFor(config: EngineConfig): Decays {
   };
 }
 
+// Old-age upkeep: from startTicks on, the upkeep grows by perTick of itself per tick lived (agingRate per minute).
+export interface Aging {
+  startTicks: number;
+  perTick: number;
+}
+
+// Factor on the plan's upkeep for a creature that has lived this many ticks; 1 up to startTicks.
+export function agingFactor(aging: Aging | null, ticksAlive: number): number {
+  return aging && ticksAlive > aging.startTicks ? 1 + aging.perTick * (ticksAlive - aging.startTicks) : 1;
+}
+
 // Advances one creature's motion and energy by one tick: turn, thrust with drag, walls, energy costs.
 // turnOut and thrust in [-1, 1]; negative thrust brakes at maxBrake x its size (free, never reverses). Eating and death are separate (consume, settle).
 // upkeep is the plan's energy per second besides thrust and turning (planUpkeep).

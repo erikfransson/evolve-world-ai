@@ -1,5 +1,5 @@
 // Ecosystem benchmark: runs a seeded world headless and prints ticks/s, population over time and a fingerprint.
-// Usage: node src/ecoBench.ts [--seconds 120] [--seed 1] [--pop 300] [--food 0.5] [--regrow 0.05] [--every 10] [--pool public/pool.json] [--poolFraction 0.5]
+// Usage: node src/ecoBench.ts [--seconds 120] [--seed 1] [--pop 300] [--food 0.5] [--regrow 0.05] [--every 10] [--pool public/pool.json] [--poolFraction 0.5] [--aging] [--agingStart 120] [--agingRate 0.5]
 // --food sets the starting and maximum food density, --regrow the food regrowth rate, --pool none runs without the seed pool.
 
 import { readFileSync } from "node:fs";
@@ -21,6 +21,9 @@ const { values } = parseArgs({
     every: { type: "string", default: "10" }, // seconds between population samples
     pool: { type: "string", default: fileURLToPath(new URL("../public/pool.json", import.meta.url)) },
     poolFraction: { type: "string" },
+    aging: { type: "boolean" },
+    agingStart: { type: "string" },
+    agingRate: { type: "string" },
   },
 });
 const num = (v: string | undefined, fallback: number): number => (v === undefined ? fallback : Number(v));
@@ -34,6 +37,9 @@ const config: EcoConfig = {
     ...d.eco,
     initialPopulation: num(values.pop, d.eco.initialPopulation),
     poolFraction: num(values.poolFraction, d.eco.poolFraction),
+    aging: values.aging ?? d.eco.aging,
+    agingStart: num(values.agingStart, d.eco.agingStart),
+    agingRate: num(values.agingRate, d.eco.agingRate),
     foodMaxDensity: values.food === undefined ? d.eco.foodMaxDensity : food,
     foodRegrow: num(values.regrow, d.eco.foodRegrow),
   },

@@ -6,6 +6,7 @@ import type { EcoConfig } from "./ecoConfig.ts";
 import { mutate } from "./ga.ts";
 import { driftPlan, mutateStructure, randomPlan, remapWeights } from "./planMutation.ts";
 import { collide, keepInside, settle } from "./physics.ts";
+import type { Aging } from "./physics.ts";
 import { createRng, deriveSeed } from "./rng.ts";
 import type { StatefulRng } from "./rng.ts";
 import { copyPlan, inputLayout, planOf } from "./sensors.ts";
@@ -25,6 +26,7 @@ export class EcoCreature {
   children = 0;
   eaten = 0; // food items eaten, poison not counted
   hue = 0; // degrees
+  founderId = 0; // id of the founder this family descends from; a founder is its own
   lastBirthTick = -Infinity;
   readonly creature: Creature; // state, rays, rayOffsets and brain.layerActivations() of the last tick
 
@@ -46,6 +48,15 @@ export interface CreatureFrame {
   heading: Float32Array;
   energy: Float32Array;
   hue: Float32Array;
+  founder: Int32Array;
+}
+
+// One founder's family among the living.
+export interface Lineage {
+  founder: number;
+  hue: number; // the founder's own colour, degrees
+  pool: boolean; // the founder came from the seed pool
+  count: number; // living descendants, the founder included
 }
 
 // All creatures in one shared world. Each tick has two phases:
@@ -60,6 +71,7 @@ export class Ecosystem {
   births = 0;
   deaths = 0;
   readonly poolFounders: number; // founders taken from the seed pool, the first ones in id order
+  readonly founders: number; // founders are ids 0 .. founders-1
   food = 0;
   poison = 0;
   // Living creatures in list order; states[i] is members[i].creature.state.
@@ -84,6 +96,10 @@ export class Ecosystem {
   private foodDue = 0; // fractional items accumulated by regrowth
   private poisonDue = 0;
   private nextId = 0;
+  // Living creatures per founder and each founder's colour, indexed by founder id; updated on birth and death only.
+  private readonly lineageLive: Int32Array;
+  private readonly founderHue: Float32Array;
+  private readonly aging: Aging | null;
 
   // pool: trained founders (see seedPool.ts); without one, or at poolFraction 0, every founder is random.
   constructor(config: EcoConfig, pool: readonly PoolEntry[] | null = null) {
@@ -97,6 +113,7 @@ export class Ecosystem {
     this.poisonPerTick = eco.poisonRegrow * perDensity * dt;
     this.cooldownTicks = Math.round(eco.birthCooldown / dt);
     this.rng = createRng(deriveSeed(config.seed, 0xec0));
+    this.aging = eco.aging ? { startTicks: Math.round(eco.agingStart / dt), perTick: (eco.agingRate * dt) / 60 } : null;
     this.items = new World(config, Math.max(start.food, this.foodCap) + Math.max(start.poison, this.poisonCap));
     this.world = this.items;
     this.items.scatter(start.food, start.poison, this.rng);
@@ -113,6 +130,9 @@ export class Ecosystem {
     this.poolFounders = seeds.length ? Math.round(Math.min(1, Math.max(0, eco.poolFraction)) * founders) : 0;
     const first = this.poolFounders ? this.rng.int(seeds.length) : 0;
     const randomPlanScratch = this.childPlan;
+    this.founders = founders;
+    this.lineageLive = new Int32Array(founders);
+    this.founderHue = new Float32Array(founders);
     for (let i = 0; i < founders; i++) {
       let plan: PlanView = randomPlanScratch;
       let genome: Genome;
@@ -128,10 +148,14 @@ export class Ecosystem {
       }
       const x = this.rng.range(r, width - r);
       const y = this.rng.range(r, height - r);
-      this.items.clearPoison(x, y, r, this.rng);
       const m = this.spawn(genome, plan, x, y, this.rng.next() * 2 * Math.PI, config.creature.startEnergy);
-      m.hue = this.rng.next() * 360;
+      m.hue = this.founderHue[i] = this.rng.next() * 360;
     }
+    // Poison moves only once every founder stands, and never onto one, so none ends up on a founder placed earlier.
+    const reach = r + config.world.itemRadius;
+    const states = this.states;
+    const onFounder = (px: number, py: number): boolean => states.some((s) => (s.x - px) ** 2 + (s.y - py) ** 2 < reach * reach);
+    for (const s of states) this.items.clearPoison(s.x, s.y, r, this.rng, onFounder);
   }
 
   get population(): number {
@@ -273,6 +297,8 @@ export class Ecosystem {
     s.vy = sin * eco.birthSpeed;
     keepInside(s, cc.radius, w.width, w.height, cc.wallBounce);
     child.parentId = parent.id;
+    child.founderId = parent.founderId;
+    this.lineageLive[child.founderId]!++;
     child.depth = parent.depth + 1;
     child.hue = (((parent.hue + this.rng.normal() * eco.hueDrift) % 360) + 360) % 360;
     this.births++;
@@ -287,6 +313,9 @@ export class Ecosystem {
       m.creature.state.energy = energy;
     }
     m.id = this.nextId++;
+    m.founderId = m.id; // a child overwrites this
+    m.creature.aging = this.aging;
+    if (m.id < this.founders) this.lineageLive[m.id] = 1;
     m.parentId = -1;
     m.depth = 0;
     m.birthTick = this.tick;
@@ -308,6 +337,7 @@ export class Ecosystem {
     this.members.pop();
     this.states.pop();
     this.byId.delete(m.id);
+    this.lineageLive[m.founderId]!--;
     this.spare.push(m);
     this.deaths++;
   }
@@ -339,6 +369,7 @@ export class Ecosystem {
         heading: new Float32Array(size),
         energy: new Float32Array(size),
         hue: new Float32Array(size),
+        founder: new Int32Array(size),
       };
     }
     for (let i = 0; i < n; i++) {
@@ -350,9 +381,35 @@ export class Ecosystem {
       frame.heading[i] = s.heading;
       frame.energy[i] = s.energy;
       frame.hue[i] = m.hue;
+      frame.founder[i] = m.founderId;
     }
     frame.count = n;
     return frame;
+  }
+
+  // The founder's own colour, degrees.
+  founderColour(founder: number): number {
+    return this.founderHue[founder] ?? 0;
+  }
+
+  // Living creatures descended from this founder.
+  lineageSize(founder: number): number {
+    return this.lineageLive[founder] ?? 0;
+  }
+
+  // The k largest living lineages, biggest first, ties to the lowest founder id. Scans the founders, not the creatures.
+  topLineages(k: number): Lineage[] {
+    const top: Lineage[] = [];
+    for (let f = 0; f < this.founders; f++) {
+      const count = this.lineageLive[f]!;
+      if (count === 0 || (top.length === k && count <= top[k - 1]!.count)) continue;
+      const entry = { founder: f, hue: this.founderHue[f]!, pool: f < this.poolFounders, count };
+      let at = top.length;
+      while (at > 0 && top[at - 1]!.count < count) at--;
+      top.splice(at, 0, entry);
+      if (top.length > k) top.pop();
+    }
+    return top;
   }
 
   // Hash of the counts and every creature's id, position and energy; equal runs give equal fingerprints.

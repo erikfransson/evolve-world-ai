@@ -1,7 +1,7 @@
 import { Brain, layerSizes, refit } from "./brain.ts";
 import type { EngineConfig } from "./config.ts";
-import { consume, decaysFor, settle, stepBody } from "./physics.ts";
-import type { Decays, Heading } from "./physics.ts";
+import { agingFactor, consume, decaysFor, settle, stepBody } from "./physics.ts";
+import type { Aging, Decays, Heading } from "./physics.ts";
 import { OUTPUT_SIZE, OUT_THRUST, OUT_TURN, copyPlan, encodeInputs, planOf, planUpkeep, rayAngleOffsets, thrustCommand } from "./sensors.ts";
 import type { BodyPlan, PlanView } from "./sensors.ts";
 import { HIT_NONE } from "./types.ts";
@@ -17,6 +17,7 @@ export class Creature {
   readonly rays: RayHit[] = [];
   readonly brain: Brain;
   readonly heading: Heading = { cos: 0, sin: 0 };
+  aging: Aging | null = null; // old-age upkeep, set by the owner
 
   private readonly ownPlan: BodyPlan; // this creature's own copy
   private offsets = new Float32Array(0);
@@ -157,7 +158,8 @@ export class Creature {
 
   // Motion and energy costs from the last think, without eating or death; touches only this creature.
   steer(): void {
-    stepBody(this.state, this.output[OUT_TURN], thrustCommand(this.output[OUT_THRUST], this.config.creature.brakeThreshold), this.config, this.decays, this.heading, this.energyUpkeep);
+    const upkeep = this.energyUpkeep * agingFactor(this.aging, this.state.ticksAlive);
+    stepBody(this.state, this.output[OUT_TURN], thrustCommand(this.output[OUT_THRUST], this.config.creature.brakeThreshold), this.config, this.decays, this.heading, upkeep);
   }
 
   // Eats the first item touched, if any. Returns its index, still in the world for the caller to move or remove, or -1.

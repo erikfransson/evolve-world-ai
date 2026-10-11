@@ -17,6 +17,9 @@ export interface EcoConfig extends EngineConfig {
     birthCooldown: number; // seconds before a parent can give birth again
     birthSpeed: number; // units/s the child is launched at, in a random direction
     hueDrift: number; // std of the child's colour change, degrees
+    aging: boolean; // old creatures pay more upkeep
+    agingStart: number; // age in seconds after which the upkeep starts to grow
+    agingRate: number; // upkeep grows by this fraction of itself per minute beyond agingStart
     collisions: boolean; // creatures bounce off each other
     foundersVary: boolean; // founders draw their body plans from the ranges below, otherwise all get the config plan
     planDrift: number; // relative std of the change of a child's ray spread and length
@@ -52,6 +55,9 @@ export const DEFAULT_ECO_CONFIG: EcoConfig = {
     birthCooldown: 10,
     birthSpeed: 60,
     hueDrift: 8,
+    aging: false,
+    agingStart: 120,
+    agingRate: 0.5,
     collisions: true,
     foundersVary: true,
     planDrift: 0.02,

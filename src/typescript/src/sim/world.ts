@@ -122,22 +122,23 @@ export class World implements WorldView {
     return [r, this.width - r].every((x) => [r, this.height - r].every((y) => (x - d.x) ** 2 + (y - d.y) ** 2 < d.radius ** 2));
   }
 
-  // Puts item i at a uniform random position inside the walls, outside the clear disc if given.
-  placeRandomly(i: number, kind: HitKind, rng: Rng, clear?: { x: number; y: number; radius: number }): void {
+  // Puts item i at a uniform random position inside the walls, outside the clear disc if given and where reject says no.
+  placeRandomly(i: number, kind: HitKind, rng: Rng, clear?: { x: number; y: number; radius: number }, reject?: (x: number, y: number) => boolean): void {
     const r = this.itemRadius;
     let x: number;
     let y: number;
     do {
       x = rng.range(r, this.width - r);
       y = rng.range(r, this.height - r);
-    } while (clear && (x - clear.x) ** 2 + (y - clear.y) ** 2 < clear.radius ** 2);
+    } while ((clear && (x - clear.x) ** 2 + (y - clear.y) ** 2 < clear.radius ** 2) || reject?.(x, y));
     this.setItem(i, x, y, kind);
   }
 
   // Moves every poison item touching a body of this radius at (x, y) to a random spot, repeating until none touches.
-  clearPoison(x: number, y: number, radius: number, rng: Rng): void {
+  // avoid: spots it must not move poison to, such as other bodies already placed (a body of the same radius at each).
+  clearPoison(x: number, y: number, radius: number, rng: Rng, avoid?: (x: number, y: number) => boolean): void {
     for (let p = this.poisonAt(x, y, radius); p >= 0; p = this.poisonAt(x, y, radius)) {
-      this.placeRandomly(p, HIT_POISON, rng);
+      this.placeRandomly(p, HIT_POISON, rng, undefined, avoid);
     }
   }
 
