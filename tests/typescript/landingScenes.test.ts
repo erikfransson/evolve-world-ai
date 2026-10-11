@@ -1,6 +1,4 @@
-import { TICK_SECONDS, WARMUP_TICKS, ecosystemScene, predatorScene } from "../../src/typescript/src/ui/landingScenes.ts";
-
-import { arenaScene } from "../../src/typescript/src/ui/arenaCardScene.ts";
+import { TICK_SECONDS, WARMUP_TICKS, arenaScene, ecosystemScene, predatorScene } from "../../src/typescript/src/ui/landing/index.ts";
 
 const TICKS = Math.round(60 / TICK_SECONDS);
 
