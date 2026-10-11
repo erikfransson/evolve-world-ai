@@ -160,6 +160,8 @@ function onSnapshot(e: MessageEvent<EcoOutMessage>): void {
   if (msg.events) impacts.add(msg.events, stamp);
   if (msg.history) view.setHistory(toSamples(msg.history));
   if (msg.lineageHistory) view.setLineageHistory(msg.lineageHistory);
+  if (msg.traits) view.setTraits(msg.traits);
+  if (msg.leaders) view.setLeaders(msg.leaders);
   if (msg.lineages) view.setLineages(msg.lineages, msg.population, msg.species?.map((c) => c.population));
   if (msg.species && !msg.extinct) noteGone(msg.species.map((c) => c.population));
   const d = msg.selected;
@@ -217,6 +219,7 @@ function startRun(c: EcoConfig): void {
   view.setHistory([]);
   view.setSeasons(c.eco);
   view.clearLineages();
+  view.clearStatistics();
   highlight = -1;
   view.setStats(null);
   view.setNote(null);
@@ -306,7 +309,7 @@ function updateUi(): void {
   if (selection && d) {
     const sp = species[d.species]!;
     const kind = several(config) ? { name: sp.name, index: d.species, kills: d.kills, hunter: sp.prey.length > 0 } : undefined;
-    view.setSelected({ id: d.id, energy: d.energy, fullEnergy: sp.birthEnergy, age: d.age, children: d.children, eaten: d.eaten, depth: d.depth, plan: d.plan, upkeep: d.upkeep, founderId: d.founderId, founderPool: d.founderPool, founderHue: d.founderHue, species: kind, died: selection.died });
+    view.setSelected({ id: d.id, energy: d.energy, fullEnergy: sp.birthEnergy, age: d.age, children: d.children, eaten: d.eaten, depth: d.depth, plan: d.plan, upkeep: d.upkeep, drain: d.drain, founderId: d.founderId, founderPool: d.founderPool, founderHue: d.founderHue, species: kind, died: selection.died });
     view.setFollowing(following);
   }
 }

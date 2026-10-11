@@ -41,6 +41,7 @@ export interface Section<C> {
   fields: readonly Field<C>[];
   folded?: boolean; // the whole section starts collapsed
   swatch?: string; // CSS colour of a dot before the title
+  note?: (c: C) => string; // live line under the title
 }
 // A settings form: its sections and the config that fields without an input keep.
 export interface FormSpec<C> {
@@ -102,13 +103,14 @@ function fieldHtml<C>(f: Field<C>): string {
   return `<div class="field"><div class="row">${label(f)}<span class="vals">${hint}<output for="${f.id}"${fmt}></output></span></div><input id="${f.id}" type="range" min="${f.min}" max="${f.max}" step="${f.step}" /></div>`;
 }
 
-function sectionHtml<C>(s: Section<C>): string {
+function sectionHtml<C>(s: Section<C>, index = 0): string {
+  const note = s.note ? `<p class="sec-note" id="secNote${index}"></p>` : "";
   const swatch = s.swatch ? `<i class="sw" style="background: ${s.swatch}"></i>` : "";
   const main = s.fields.filter((f) => !f.advanced).map(fieldHtml).join("");
   const advanced = s.fields.filter((f) => f.advanced);
   const more = advanced.length ? `<details class="more"><summary>More settings</summary><div class="more-body">${advanced.map(fieldHtml).join("")}</div></details>` : "";
-  if (s.folded) return `<details class="card fold"><summary><h3>${swatch}${s.title}</h3></summary>${main}${more}</details>`;
-  return `<section class="card"><h3>${swatch}${s.title}</h3>${main}${more}</section>`;
+  if (s.folded) return `<details class="card fold"><summary><h3>${swatch}${s.title}</h3></summary>${note}${main}${more}</details>`;
+  return `<section class="card"><h3>${swatch}${s.title}</h3>${note}${main}${more}</section>`;
 }
 
 // A built settings form: read the config it describes, fill it from one, and wire it up.
@@ -125,6 +127,7 @@ export function buildForm<C extends { seed: number }>(container: HTMLElement, sp
   const fields = spec.sections.flatMap((s) => [...s.fields]);
   const syncHints = (c: C): void => {
     for (const f of fields) if (f.kind === "range" && f.hint) el(`${f.id}Hint`, HTMLElement).textContent = f.hint(c);
+    spec.sections.forEach((s, i) => { if (s.note) el(`secNote${i}`, HTMLElement).textContent = s.note(c); });
   };
   // A field whose enabledWhen is false is disabled; a preset-locked field stays disabled either way (see presetPanel).
   const syncEnabled = (c: C): void => {

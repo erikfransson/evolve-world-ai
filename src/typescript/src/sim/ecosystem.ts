@@ -144,6 +144,7 @@ export class Ecosystem {
   private readonly lineages: Lineages;
   private readonly aging: Aging | null;
   private readonly contact: Contact = { speed: 0 };
+  onDeath: ((m: EcoCreature) => void) | null = null; // called with each creature as it leaves, before its object is recycled
 
   // pool: trained founders (see seedPool.ts); without one, or at poolFraction 0, every founder is random.
   constructor(config: EcoConfig, pool: readonly PoolEntry[] | null = null, options: { journal?: boolean } = {}) {
@@ -570,6 +571,7 @@ export class Ecosystem {
     this.states.pop();
     this.kinds.pop();
     this.byId.delete(m.id);
+    this.onDeath?.(m);
     this.lineages.died(m.founderId);
     this.journal?.died.push(m.id);
     this.spare[m.species]!.push(m);
