@@ -355,6 +355,20 @@ describe("Ecosystem preset panel", () => {
     expect(form.read().eco.foodRegrow).toBe(ECO_PRESETS[2]!.regrowth.foodRegrow);
   });
 
+  it("loads a Top 3 entry saved with the old single birth settings", () => {
+    pick("scarcity");
+    const old = JSON.stringify({ mode: "ecosystem", preset: "scarcity", version: 1, config: { eco: { birthEnergy: 130, birthCost: 70, childEnergy: 45, birthCooldown: 8 } } });
+    board.submit("scarcity", { run: "old", score: 900, date: "2026-10-01", settings: settingsOf(DEFAULT_ECO_CONFIG), config: old });
+    pick("normal");
+    pick("scarcity");
+    document.querySelector<HTMLButtonElement>("#presetBoard button")!.click();
+    const c = form.read();
+    expect(c.eco.birthEnergyRange).toEqual([130, 130]);
+    expect(c.eco.birthCostRange).toEqual([70, 70]);
+    expect(c.eco.birthCooldownRange).toEqual([8, 8]);
+    expect(document.querySelector(".io-msg")?.textContent ?? "").toContain("Old settings converted");
+  });
+
   it("lists the best lifetimes with the peak population", () => {
     pick("crowded");
     board.submit("crowded", { run: "a", score: 400, date: "2026-10-11", settings: settingsOf(DEFAULT_ECO_CONFIG), note: "peak 812 creatures" });

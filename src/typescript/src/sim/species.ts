@@ -98,15 +98,42 @@ export function founderCounts(species: readonly Species[], maxPopulation: number
 const IDENTITY_TYPES: Record<string, "string" | "number" | "boolean" | "array"> = { name: "string", hue: "number", hueSpread: "number", plants: "boolean", prey: "array", eatEfficiency: "number", eatBaseline: "number", speed: "number" };
 const RANGE_KEYS = new Set(["rayCountRange", "raySpreadRange", "rayLengthRange", "birthEnergyRange", "birthCostRange", "birthCooldownRange"]);
 
+// Settings saved before birth traits were heritable held single birthEnergy, birthCost and birthCooldown values and a childEnergy.
+// Returns a copy of obj (a pasted eco block or species item) with those turned into [v, v] ranges, childEnergy dropped, and a note per change.
+export function migrateBirthKeys(obj: Record<string, unknown>, where: string, notes: string[]): Record<string, unknown> {
+  const out = { ...obj };
+  for (const key of ["birthEnergy", "birthCost", "birthCooldown"]) {
+    if (!(key in out)) continue;
+    const v = out[key];
+    delete out[key];
+    if (typeof v !== "number") continue; // left to the range keys' own checks
+    out[`${key}Range`] ??= [v, v];
+    notes.push(`${where}.${key} ${v} → ${key}Range [${v}, ${v}]`);
+  }
+  if ("childEnergy" in out) {
+    delete out.childEnergy;
+    notes.push(`${where}.childEnergy dropped (a child now starts with the birth cost)`);
+  }
+  return out;
+}
+
+// Throws when a [min, max] setting of obj (an eco block or species item) has min above max.
+export function checkRanges(obj: Record<string, unknown>, where: string): void {
+  for (const [key, v] of Object.entries(obj)) {
+    if (key.endsWith("Range") && Array.isArray(v) && v.length === 2 && (v[0] as number) > (v[1] as number)) throw new Error(`config "${where}.${key}" must have min at most max, got [${v.join(", ")}].`);
+  }
+}
+
 // A pasted species list merged item by item over the defaults. Throws a readable Error when the list does not have
 // the defaults' length, an item has an unknown key or a wrong type, or a prey index names no other species.
-export function mergeSpeciesList(value: unknown, defaults: readonly SpeciesConfig[]): SpeciesConfig[] {
+export function mergeSpeciesList(value: unknown, defaults: readonly SpeciesConfig[], notes: string[] = []): SpeciesConfig[] {
   const n = defaults.length;
   if (!Array.isArray(value)) throw new Error(`config "species" must be a list of ${n} species.`);
   if (value.length !== n) throw new Error(`config "species" must list exactly ${n} species (${defaults.map((d) => d.name).join(", ")}), got ${value.length}.`);
   return value.map((item, i) => {
     const where = `species[${i}]`;
     if (typeof item !== "object" || item === null || Array.isArray(item)) throw new Error(`config "${where}" must be an object.`);
+    item = migrateBirthKeys(item as Record<string, unknown>, where, notes);
     const out = structuredClone(defaults[i]!) as unknown as Record<string, unknown>;
     for (const [key, v] of Object.entries(item as Record<string, unknown>)) {
       const type = IDENTITY_TYPES[key] ?? (RANGE_KEYS.has(key) ? "array" : key in SPECIES_OVERRIDES ? "number" : undefined);
@@ -117,6 +144,7 @@ export function mergeSpeciesList(value: unknown, defaults: readonly SpeciesConfi
       if (key === "prey" && !(v as number[]).every((p) => Number.isInteger(p) && p >= 0 && p < n && p !== i)) throw new Error(`config "${where}.prey" must list other species by index, 0 to ${n - 1}.`);
       out[key] = Array.isArray(v) ? v.slice() : v;
     }
+    checkRanges(out, where);
     return out as unknown as SpeciesConfig;
   });
 }

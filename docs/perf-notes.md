@@ -83,7 +83,7 @@ Threads 4 vs 7 at pop 1000: steady generations equal at about 0.29 s; 4 threads 
 
 Profile at 2000 (4000 x 2500 world): first brain layer 19%, creature rays 17%, item gather 13%, item ray tracing about 12%, eatAt 5%, collisions and crowd rebuild under 4%.
 Body plans and memory (2026-10-10, load about 20): 765 -> 640 ticks/s, 169k -> 133k creature-ticks/s at the defaults (memory 4 + 4, costs on); memory 0 with zero costs is unchanged, fingerprint included.
-Random founders do not reach birthEnergy, so all runs decline; the default goes extinct after about 75 s without a birth.
+Random founders do not reach their birth energy, so all runs decline; the default goes extinct after about 75 s without a birth.
 
 ## WebAssembly SIMD kernels (E5b)
 

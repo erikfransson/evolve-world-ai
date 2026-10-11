@@ -534,16 +534,13 @@ export class Ecosystem {
     traits.cost = parent.birth.cost;
     traits.cooldown = parent.birth.cooldown;
     if (eco.birthDrift > 0) driftBirth(traits, eco.birthDrift, ranges, this.rng);
-    let angle = this.rng.next() * 2 * Math.PI;
+    const angle = this.rng.next() * 2 * Math.PI;
     const gap = 2 * cc.radius + 1; // just clear of the parent
-    // Next to the parent along the launch direction; against a wall that can leave no room, so try the other sides.
+    // Next to the parent along the launch direction; against a wall the clamp can leave them touching, and collisions part them.
     const spot = this.spot;
-    for (let side = 0; side < 4; side++, angle += Math.PI / 2) {
-      spot.x = ps.x + Math.cos(angle) * gap;
-      spot.y = ps.y + Math.sin(angle) * gap;
-      keepInside(spot, cc.radius, w.width, w.height, cc.wallBounce);
-      if (Math.hypot(spot.x - ps.x, spot.y - ps.y) >= 2 * cc.radius) break;
-    }
+    spot.x = ps.x + Math.cos(angle) * gap;
+    spot.y = ps.y + Math.sin(angle) * gap;
+    keepInside(spot, cc.radius, w.width, w.height, cc.wallBounce);
     const child = this.spawn(genome, plan, spot.x, spot.y, angle, paid, parent.species);
     this.setBirth(child, traits);
     const s = child.creature.state;

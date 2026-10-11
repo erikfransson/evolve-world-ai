@@ -343,7 +343,10 @@ export class EcoRunner {
       msg.lineageHistory = Float64Array.from(this.lineageSamples);
       for (const m of eco.members) this.offerRecord(eco, m, true);
       msg.leaders = this.board.snapshot();
-      msg.traits = eco.species.map((_, s) => traitStats(eco.members.filter((m) => m.species === s).map((m) => m.creature.plan)));
+      msg.traits = eco.species.map((_, s) => {
+        const of = eco.members.filter((m) => m.species === s);
+        return traitStats(of.map((m) => m.creature.plan), of.map((m) => m.birth));
+      });
     }
     this.inFlight++;
     this.post(msg, [buffer]);
