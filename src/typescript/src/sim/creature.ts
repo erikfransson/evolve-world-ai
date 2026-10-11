@@ -216,7 +216,7 @@ export class Creature {
   eat(world: World): number {
     const s = this.state;
     const eaten = world.eatAt(s.x, s.y, this.config.creature.radius, this.cache);
-    consume(s, eaten < 0 ? HIT_NONE : (world.kinds[eaten] as HitKind), this.config.world.foodEnergy);
+    consume(s, eaten < 0 ? HIT_NONE : (world.kinds[eaten] as HitKind), this.config.world.foodEnergy, this.config.world.poisonDamage);
     return eaten;
   }
 

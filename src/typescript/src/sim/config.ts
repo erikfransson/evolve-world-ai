@@ -2,6 +2,9 @@
 
 export type SelectionMethod = "truncation" | "proportional";
 
+// Poison damage at or above this kills outright; below it poison drains that much energy.
+export const POISON_LETHAL = 100;
+
 export interface SimConfig {
   seed: number;
   dt: number; // seconds per tick
@@ -13,6 +16,7 @@ export interface SimConfig {
     respawn: boolean; // eaten items reappear elsewhere; false makes food finite so lives end naturally
     itemRadius: number;
     foodEnergy: number;
+    poisonDamage: number; // energy one poison item drains, POISON_LETHAL or more kills
     poisonClearRadius: number; // Trials: no poison starts this close to the creature
   };
   creature: {
@@ -73,6 +77,7 @@ export const DEFAULT_CONFIG: SimConfig = {
     respawn: false,
     itemRadius: 4,
     foodEnergy: 20,
+    poisonDamage: POISON_LETHAL,
     poisonClearRadius: 150,
   },
   creature: {
