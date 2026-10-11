@@ -3,12 +3,13 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { DEFAULT_CONFIG } from "../../src/typescript/src/sim/config.ts";
 import type { SimConfig } from "../../src/typescript/src/sim/config.ts";
-import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
+import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
-import { CUSTOM, ECO_LOCKED, ECO_PRESETS, TRIALS_LOCKED, TRIALS_PRESETS, withEcoPreset, withTrialsPreset } from "../../src/typescript/src/sim/presets.ts";
+import { CUSTOM, ECO_LOCKED, ECO_PRESETS, PREDATOR_PRESETS, TRIALS_LOCKED, TRIALS_PRESETS, withEcoPreset, withTrialsPreset } from "../../src/typescript/src/sim/presets.ts";
 import { buildForm } from "../../src/typescript/src/ui/settingsForm.ts";
 import type { FormHandle } from "../../src/typescript/src/ui/settingsForm.ts";
 import { ECO_FORM } from "../../src/typescript/src/ui/ecoSettingsForm.ts";
+import { PREDATOR_FORM } from "../../src/typescript/src/ui/predatorForm.ts";
 import { TRIALS_FORM } from "../../src/typescript/src/ui/trialsForm.ts";
 
 let form: FormHandle<EcoConfig>;
@@ -391,5 +392,29 @@ describe("Ecosystem preset panel", () => {
     expect(panel.current()).toBe("crowded");
     expect(form.read().eco.birthEnergyRange).toEqual([61, 120]);
     expect(form.read().eco.initialPopulation).toBe(123);
+  });
+});
+
+describe("Slider steps on both Ecosystem pages", () => {
+  const stepAligned = (r: HTMLInputElement): void => {
+    const steps = (Number(r.value) - Number(r.min)) / Number(r.step);
+    expect(Math.abs(steps - Math.round(steps)), r.id).toBeLessThan(1e-6);
+  };
+  it.each([["ecosystem", ECO_FORM, DEFAULT_ECO_CONFIG], ["predators", PREDATOR_FORM, DEFAULT_PREDATOR_CONFIG]] as const)("%s defaults sit on slider steps and one step up stays on the grid", (name, spec, defaults) => {
+    document.body.innerHTML = page(name);
+    const f = buildForm(document.getElementById("settings")!, spec);
+    f.fill(defaults);
+    expectOnSteps();
+    for (const r of document.querySelectorAll<HTMLInputElement>('input[type="range"]')) {
+      if (Number(r.value) + Number(r.step) > Number(r.max)) continue;
+      r.stepUp();
+      stepAligned(r);
+    }
+  });
+  it("the Great Hunt preset lands on the steps", () => {
+    document.body.innerHTML = page("predators");
+    const f = buildForm(document.getElementById("settings")!, PREDATOR_FORM);
+    f.fill(withEcoPreset(DEFAULT_PREDATOR_CONFIG, PREDATOR_PRESETS[0]!.id, PREDATOR_PRESETS));
+    expectOnSteps();
   });
 });
