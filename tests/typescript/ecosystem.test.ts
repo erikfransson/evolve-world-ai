@@ -208,6 +208,22 @@ describe("Ecosystem", () => {
     expect(poison.m.eaten).toBe(0);
   });
 
+  it("non-lethal poison drains energy and is removed like food", () => {
+    const cfg = still({ initialPopulation: 1, maxPopulation: 1 }, 100);
+    cfg.world.poisonDamage = 30;
+    const eco = new Ecosystem(cfg);
+    const m = eco.members[0]!;
+    const { x, y } = m.creature.state;
+    (eco.world as World).addItem(x, y, HIT_POISON);
+    eco.poison++;
+    eco.step();
+    expect(eco.poison).toBe(0);
+    expect(countKind(eco, HIT_POISON)).toBe(0);
+    expect(eco.deaths).toBe(0);
+    expect(m.creature.state.energy).toBeCloseTo(70, 6);
+    expect(m.eaten).toBe(0);
+  });
+
   it("varied founders and mutating plans run deterministically, with every creature sized by its own plan", () => {
     const varied = ecoCfg({
       creature: { startEnergy: 140 },

@@ -1,4 +1,4 @@
-import { DEFAULT_CONFIG, itemCounts } from "../sim/config.ts";
+import { DEFAULT_CONFIG, itemCounts, POISON_LETHAL } from "../sim/config.ts";
 import type { SelectionMethod, SimConfig } from "../sim/config.ts";
 import { trialsPreset } from "../sim/presets.ts";
 
@@ -42,6 +42,7 @@ const buildFields = (): readonly Field[] => [
   num("worldHeight", (c) => c.world.height, (c, v) => { c.world.height = v; }),
   num("foodDensity", (c) => c.world.foodDensity, (c, v) => { c.world.foodDensity = v; }),
   num("poisonDensity", (c) => c.world.poisonDensity, (c, v) => { c.world.poisonDensity = v; }),
+  num("poisonDamage", (c) => c.world.poisonDamage, (c, v) => { c.world.poisonDamage = v; }),
   bool("respawn", (c) => c.world.respawn, (c, v) => { c.world.respawn = v; }),
   num("rayCount", (c) => c.creature.rayCount, (c, v) => { c.creature.rayCount = v; }),
   num("raySpread", (c) => Math.round((c.creature.raySpread * 180) / Math.PI), (c, v) => { c.creature.raySpread = (v * Math.PI) / 180; }),
@@ -66,6 +67,7 @@ export const FORMATS: Record<string, (v: number) => string> = {
   sec: (v) => `${v} s`,
   min: (v) => `${v} min`,
   speed: (v) => `${v}/s`,
+  poison: (v) => (v >= POISON_LETHAL ? "Lethal" : `${v}`),
 };
 
 let fields: readonly Field[] | null = null;

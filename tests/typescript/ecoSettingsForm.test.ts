@@ -28,6 +28,7 @@ describe("Trials settings form", () => {
     c.seed = 42;
     c.world.width = 1200;
     c.world.respawn = true;
+    c.world.poisonDamage = 25;
     c.brain.hiddenLayers = [8, 8];
     c.ga.selection = "proportional";
     fillForm(c);
@@ -55,6 +56,7 @@ describe("Ecosystem settings form", () => {
     c.seed = 77;
     c.world.width = 3000;
     c.world.itemRadius = 5.5;
+    c.world.poisonDamage = 25;
     c.eco.foodRegrow = 0.025;
     c.eco.birthCooldown = 4;
     c.eco.collisions = false;
@@ -72,6 +74,15 @@ describe("Ecosystem settings form", () => {
     c.eco.winterFood = 0.45;
     fillEcoForm(c);
     expect(readEcoConfig()).toEqual(c);
+  });
+
+  it("shows the top poison step as Lethal", () => {
+    fillEcoForm(DEFAULT_ECO_CONFIG);
+    expect(document.querySelector('output[for="poisonDamage"]')!.textContent).toBe("Lethal");
+    const c = structuredClone(DEFAULT_ECO_CONFIG);
+    c.world.poisonDamage = 40;
+    fillEcoForm(c);
+    expect(document.querySelector('output[for="poisonDamage"]')!.textContent).toBe("40");
   });
 
   it("has the variation fields on by default", () => {

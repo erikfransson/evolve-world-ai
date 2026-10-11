@@ -17,7 +17,7 @@ const configs: Record<string, DeepPartial<SimConfig>> = {
   defaults: {},
   "slider minimums": {
     seed: 0,
-    world: { width: 200, height: 200, foodDensity: 0, poisonDensity: 0 },
+    world: { width: 200, height: 200, foodDensity: 0, poisonDensity: 0, poisonDamage: 0 },
     creature: { rayCount: 1, raySpread: deg(10), rayLength: 40 },
     brain: { hiddenLayers: [4], memory: 0 },
     population: { size: 4 },
@@ -47,6 +47,7 @@ describe("settings form", () => {
     expect(document.querySelector('output[for="rayCount"]')!.textContent).toBe("8");
     expect(document.querySelector('output[for="raySpread"]')!.textContent).toBe("75°");
     expect(document.querySelector('output[for="mutationRate"]')!.textContent).toBe("5%");
+    expect(document.querySelector('output[for="poisonDamage"]')!.textContent).toBe("Lethal");
   });
 
   it("clamps an out-of-range or invalid seed", () => {
