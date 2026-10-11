@@ -1,18 +1,18 @@
 // @vitest-environment happy-dom
-import { MAX_DOTS, drawBrainSketch, drawCreaturePreview } from "../../src/typescript/src/ui/creaturePreview.ts";
+import { drawCreaturePreview, previewSight } from "../../src/typescript/src/ui/creaturePreview.ts";
 import type { BodyPlan } from "../../src/typescript/src/sim/sensors.ts";
 import { badCoordinateCalls, fakeCtx } from "./helpers.ts";
 
 const plan = (over: Partial<BodyPlan> = {}): BodyPlan => ({ rayCount: 5, raySpread: (120 * Math.PI) / 180, rayLength: 180, hiddenLayers: [12], memoryShort: 2, memoryLong: 2, ...over });
-// Ray lines start at the creature (the origin) and are drawn twice, the whole fan and the part inside the room.
-const rayMoves = (calls: { name: string; args: unknown[] }[]) => calls.filter((c) => c.name === "moveTo" && c.args[0] === 0 && c.args[1] === 0);
+// Each ray line starts at the edge of the body (radius 12 around the origin).
+const rayMoves = (calls: { name: string; args: unknown[] }[]) => calls.filter((c) => c.name === "moveTo" && Math.abs(Math.hypot(c.args[0] as number, c.args[1] as number) - 12) < 1e-6);
 
 describe("drawCreaturePreview", () => {
-  it("draws every ray, twice (fan and in-room part)", () => {
+  it("draws every ray once from the body", () => {
     for (const n of [1, 5, 32]) {
       const { ctx, calls } = fakeCtx();
       drawCreaturePreview(ctx, plan({ rayCount: n }), 300, 300);
-      expect(rayMoves(calls)).toHaveLength(2 * n + 1); // plus the heading line
+      expect(rayMoves(calls)).toHaveLength(n);
       expect(badCoordinateCalls(calls)).toEqual([]);
     }
   });
@@ -40,22 +40,20 @@ describe("drawCreaturePreview", () => {
   });
 });
 
-describe("drawBrainSketch", () => {
-  it("draws one dot per neuron and caps big layers", () => {
-    const { ctx, calls } = fakeCtx();
-    drawBrainSketch(ctx, [3, 4, 2], 300, 200);
-    expect(calls.filter((c) => c.name === "arc")).toHaveLength(9);
-    const big = fakeCtx();
-    drawBrainSketch(big.ctx, [200, 32, 20], 300, 200);
-    expect(big.calls.filter((c) => c.name === "arc")).toHaveLength(2 * MAX_DOTS + 20);
-    expect(badCoordinateCalls(big.calls)).toEqual([]);
+
+describe("previewSight", () => {
+  const plan = (rayCount: number, spreadDeg: number) => ({ rayCount, raySpread: (spreadDeg * Math.PI) / 180, rayLength: 180, hiddenLayers: [8], memoryShort: 0, memoryLong: 0 });
+
+  it("puts the food on the ray nearest straight ahead and the poison on another ray", () => {
+    const hits = previewSight(plan(5, 120));
+    expect(hits.filter((h) => h.kind === "food")).toHaveLength(1);
+    expect(hits.filter((h) => h.kind === "poison")).toHaveLength(1);
+    expect(hits[2]!.kind).toBe("food"); // the middle ray points straight ahead
+    for (const h of hits) expect(h.distance).toBeLessThanOrEqual(180);
   });
 
-  it("copes with no layers and a tiny canvas", () => {
-    const a = fakeCtx();
-    drawBrainSketch(a.ctx, [], 300, 200);
-    const b = fakeCtx();
-    drawBrainSketch(b.ctx, [1, 1], 10, 10);
-    expect(badCoordinateCalls([...a.calls, ...b.calls])).toEqual([]);
+  it("leaves an item unseen when no ray points near it", () => {
+    const hits = previewSight(plan(1, 0));
+    expect(hits.map((h) => h.kind)).toEqual(["food"]);
   });
 });

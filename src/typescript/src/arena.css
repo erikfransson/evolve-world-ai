@@ -119,13 +119,15 @@ details.more > summary { color: var(--text); font-weight: 500; font-size: 0.85re
 /* creature preview */
 .preview-card { gap: 0.5rem; padding: 0.7rem 0.8rem; }
 .preview-card[hidden] { display: none; }
-.preview-body { display: flex; flex-wrap: wrap; gap: 0.8rem; }
-.preview-fig { margin: 0; display: flex; flex-direction: column; gap: 0.3rem; min-width: 0; }
-.preview-fig { flex: 1 1 18rem; max-width: 26rem; flex-direction: row; align-items: center; gap: 0.7rem; }
-.preview-fig canvas { width: 8.5rem; flex: none; }
-.preview-fig canvas { display: block; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); }
+.preview-body { display: grid; grid-template-columns: minmax(0, 17rem) minmax(0, 1fr); gap: 0.9rem; align-items: start; }
+.preview-fig { margin: 0; display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; }
+.preview-fig canvas { display: block; width: 100%; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); }
 #previewView { aspect-ratio: 1 / 1; }
-#previewBrain { aspect-ratio: 1 / 1; }
+#previewBrain { height: 17rem; }
+@media (max-width: 700px) {
+  .preview-body { grid-template-columns: minmax(0, 1fr); }
+  #previewBrain { height: 15rem; }
+}
 .preview-fig figcaption { font-size: 0.75rem; color: var(--muted); line-height: 1.35; font-variant-numeric: tabular-nums; }
 
 /* environment gallery */
