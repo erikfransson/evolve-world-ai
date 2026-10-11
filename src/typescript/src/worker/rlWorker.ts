@@ -13,6 +13,7 @@ const post = (msg: RlOutMessage, transfer: Transferable[] = []): void => self.po
 const report = (error: unknown): void => post({ type: "error", message: error instanceof Error ? error.message : String(error) });
 
 let run: ArenaRun | null = null;
+let early: RlInMessage[] = []; // pause, envs and show messages that arrive while the assets still load, applied once the run exists
 let assets: Promise<{ pool: PoolEntry[] | null; library: Library }> | undefined;
 
 // Fetched once from the URLs of the first start; a missing library leaves the league rivals random.
@@ -42,14 +43,21 @@ self.onmessage = (e: MessageEvent<RlInMessage>) => {
     void loadAssets(msg.poolUrl, msg.libraryUrl)
       .then((loaded) => {
         const r = (run = new ArenaRun(msg, loaded, createBrowserRlPool, post));
+        for (const m of early) apply(m);
+        early = [];
         return r.run().catch((error) => {
           r.stop();
           throw error;
         });
       })
       .catch(report);
-  } else if (msg.type === "pause") run?.pause();
+  } else if (run) apply(msg);
+  else early.push(msg);
+};
+
+function apply(msg: RlInMessage): void {
+  if (msg.type === "pause") run?.pause();
   else if (msg.type === "resume") run?.resume();
   else if (msg.type === "envs") run?.setEnvs(msg.envs);
   else if (msg.type === "show") run?.wantShow();
-};
+}

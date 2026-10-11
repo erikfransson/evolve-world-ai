@@ -172,6 +172,8 @@ export function castFor(env: EnvSpec, config: EcoConfig, learner: Learner, seed:
   return cast;
 }
 
+const learnerStartEnergy = (env: EnvSpec, config: EcoConfig): number => env.learnerEnergy ?? speciesList(config)[env.role]!.startEnergy;
+
 // Plays one episode and scores the learner. onTick, when given, sees the world after every tick (the Arena draws it).
 export function runEpisode(
   env: EnvSpec,
@@ -193,7 +195,8 @@ export function runEpisode(
       // A rival dying in contact with the living learner in a collision-damage world was rammed by it.
       const me = eco.get(0)?.creature.state;
       const s = m.creature.state;
-      if (env.collisionDamage && me?.alive && (me.x - s.x) ** 2 + (me.y - s.y) ** 2 <= reach * reach) out.rams++;
+      // It must also hand the learner its energy this tick, so a rival starving next to it does not count.
+      if (env.collisionDamage && me?.alive && me.energy > lastEnergy && (me.x - s.x) ** 2 + (me.y - s.y) ** 2 <= reach * reach) out.rams++;
       return;
     }
     out.food = m.eaten;
@@ -201,6 +204,7 @@ export function runEpisode(
     out.energy = 0;
   };
   let cleared = 0; // seconds left when the learner ate the last food
+  let lastEnergy = learnerStartEnergy(env, config); // the learner's energy after the previous tick
   // Only speed-scored envs without regrowth end early, and only when the learner itself ate every item (not a rival).
   const clearable = env.reward.fast !== undefined && env.food > 0 && env.foodRegrow === 0;
   for (let t = 0; t < ticks; t++) {
@@ -210,7 +214,7 @@ export function runEpisode(
     if (!me) break;
     out.food = me.eaten;
     out.kills = me.kills;
-    out.energy = me.creature.state.energy;
+    out.energy = lastEnergy = me.creature.state.energy;
     out.seconds = (t + 1) * config.dt;
     if (clearable && me.eaten === env.food) {
       cleared = env.seconds - out.seconds;
@@ -278,7 +282,10 @@ export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | s
     const l = v.layout as Record<string, unknown> | null;
     if (!l || !(LAYOUT_KINDS as readonly unknown[]).includes(l.kind)) return `layout must be one of ${LAYOUT_KINDS.join(", ")}`;
     const param = l.kind === "patch" ? l.radius : l.gap;
-    if (!n(param, L.layoutSize)) return `layout ${l.kind === "patch" ? "radius" : "gap"} must be ${L.layoutSize[0]} to ${L.layoutSize[1]}`;
+    const [sw, sh] = size as number[];
+    const most = l.kind === "patch" ? Math.min(sw!, sh!) / 2 - 20 : sw! / 4; // the patch must fit, and fence and maze gaps leave wall on both sides
+    if (!n(param, [L.layoutSize[0], Math.min(L.layoutSize[1], most)])) return `layout ${l.kind === "patch" ? "radius" : "gap"} must be ${L.layoutSize[0]} to ${Math.floor(Math.min(L.layoutSize[1], most))} for this world size`;
+    if (l.kind !== "patch" && rivals.some((r) => r.count > 0)) return "walls with rivals are not supported yet";
     layout = l.kind === "patch" ? { kind: "patch", radius: param } : { kind: l.kind as "fence" | "maze", gap: param };
   }
   return {
