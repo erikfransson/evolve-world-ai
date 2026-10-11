@@ -10,7 +10,7 @@
   * `src/sim/species.ts` species of a Great Hunt world (own body ranges, costs, births and diet); the Ecosystem is the one-species case
   * `src/trials.ts`, `src/ecosystem.ts` (also the Great Hunt page), `src/landing.ts` one entry script per page
   * `src/sim/wasm/` optional WebAssembly SIMD kernels (brain forward, one-call sense); `.wat` sources are assembled into `kernels.generated.ts` with `npm run wasm` (wabt), and a test fails if they drift
-  * `public/pool.json` Ecosystem seed pool of Trials-trained creatures, rebuilt with `node src/buildPool.ts` (about 30 min on 4 threads)
+  * `public/pool.json` Ecosystem seed pool: 300 Trials-trained founders picked for diversity from two `node src/buildPool.ts` sweeps and the earlier pool; the file's `command` field holds the recipe (each sweep about 3 h on 6 threads)
   * `public/coi-serviceworker.js` self-unregistering stub, kept at the old URL because visitors may still have the retired shared-memory service worker installed; on its next update check it removes itself and reloads their pages once. Nothing registers it any more, so it can be deleted once old installs are unlikely
 * `src/python/` planned analysis of headless run output (empty so far)
 * `docs/` for e.g. adr documents, and planning etc
