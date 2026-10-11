@@ -70,7 +70,6 @@ Threads 4 vs 7 at pop 1000: steady generations equal at about 0.29 s; 4 threads 
 ## Ideas not yet tried
 - Profile after round 3 (ns per tick, duplicate-the-call method): forward about 500, castRays about 200, encodeInputs about 100, setTrig about 55, rest about 300. The tanh division is about a third of forward.
 - Fuse encodeInputs with the first-layer nonzero scan.
-- WebAssembly port of castRays and Brain.forward (needs a toolchain dependency, ask first).
 
 ## Ecosystem (serial, one thread)
 
@@ -85,3 +84,26 @@ Threads 4 vs 7 at pop 1000: steady generations equal at about 0.29 s; 4 threads 
 Profile at 2000 (4000 x 2500 world): first brain layer 19%, creature rays 17%, item gather 13%, item ray tracing about 12%, eatAt 5%, collisions and crowd rebuild under 4%.
 Body plans and memory (2026-10-10, load about 20): 765 -> 640 ticks/s, 169k -> 133k creature-ticks/s at the defaults (memory 4 + 4, costs on); memory 0 with zero costs is unchanged, fingerprint included.
 Random founders do not reach birthEnergy, so all runs decline; the default goes extinct after about 75 s without a birth.
+
+## WebAssembly SIMD kernels (E5b)
+
+`node src/wasmBench.ts`, ms per call for the whole batch, median of 20, machine load about 15 (so absolute times are inflated, ratios are indicative). Large plan: 16 rays, hidden 4 x 32, memory 1. Rays run in a crowd at the 2000-creature ecosystem density.
+
+| Kernel | Plan    | Creatures | JS ms  | WASM ms | Speedup | Max abs diff |
+|--------|---------|-----------|--------|---------|---------|--------------|
+| brain  | default | 1000      | 4.19   | 0.81    | 5.2x    | 1.8e-7       |
+| brain  | default | 3000      | 8.57   | 2.68    | 3.2x    | 2.4e-7       |
+| brain  | default | 10000     | 30.56  | 9.23    | 3.3x    | 2.4e-7       |
+| brain  | large   | 1000      | 21.23  | 5.38    | 3.9x    | 3.0e-7       |
+| brain  | large   | 3000      | 67.84  | 18.49   | 3.7x    | 3.0e-7       |
+| brain  | large   | 10000     | 317.67 | 77.14   | 4.1x    | 3.6e-7       |
+| rays   | default | 1000      | 1.74   | 1.40    | 1.2x    | 2.0e-5       |
+| rays   | default | 3000      | 4.53   | 2.58    | 1.8x    | 1.4e-4       |
+| rays   | default | 10000     | 19.36  | 10.76   | 1.8x    | 1.0 (a)      |
+| rays   | large   | 1000      | 4.70   | 1.97    | 2.4x    | 7.6e-5       |
+| rays   | large   | 3000      | 15.47  | 8.55    | 1.8x    | 1.2e-4       |
+| rays   | large   | 10000     | 66.86  | 30.09   | 2.2x    | 1.7 (a)      |
+
+(a) Closeness difference plus 1 per ray whose kind differs. A rare grazing ray hits in f64 and misses in f32 (or the reverse), so a few rays out of 10^5 differ in kind. Otherwise closeness agrees to about 1e-4.
+Ray time includes queueing the rays and applying results into `RayHit` objects, which is about 40% of the WASM time (10000 large: queue 10.4, run 18.8, apply 1.2 ms), so the speedup grows once callers write straight into the batch buffers.
+Trials stays on the JS path. Ecosystem opts in with `eco.wasm` (default false).
