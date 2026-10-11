@@ -16,8 +16,8 @@ export class Crowd {
   energies: Float64Array;
   owners: Int32Array;
 
-  private readonly cell: number;
-  private readonly radius: number;
+  readonly cell: number;
+  readonly radius: number;
   private cellOf: Int32Array;
   private px = new Float64Array(0); // rebuild's copy of the states, in list order
   private py = new Float64Array(0);

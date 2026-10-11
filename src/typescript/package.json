@@ -11,7 +11,8 @@
     "test": "vitest run",
     "coverage": "vitest run --coverage && node scripts/coverageBadge.ts",
     "headless": "node src/headless.ts",
-    "bench": "node src/bench.ts"
+    "bench": "node src/bench.ts",
+    "wasm": "node scripts/buildWasm.ts"
   },
   "devDependencies": {
     "@types/node": "^26.6.4",
@@ -19,6 +20,7 @@
     "happy-dom": "^20.14.6",
     "typescript": "^7.0.2",
     "vite": "^8.3.4",
-    "vitest": "^5.0.3"
+    "vitest": "^5.0.3",
+    "wabt": "^1.0.39"
   }
 }
