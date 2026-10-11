@@ -15,8 +15,8 @@ import { copyPlan, inputLayout, planOf } from "./sensors.ts";
 import type { BodyPlan, PlanView } from "./sensors.ts";
 import { trialsToEcoGenome } from "./seedPool.ts";
 import type { PoolEntry } from "./seedPool.ts";
-import { bandHue, speciesEngine, speciesList, speciesRanges } from "./species.ts";
-import type { SpeciesConfig } from "./species.ts";
+import { bandHue, founderCounts, speciesEngine, speciesList, speciesRanges } from "./species.ts";
+import type { Species } from "./species.ts";
 import { HIT_FOOD, HIT_NONE, HIT_POISON } from "./types.ts";
 import type { CreatureState, Genome, HitKind, WorldView } from "./types.ts";
 import { World } from "./world.ts";
@@ -89,7 +89,7 @@ export interface Lineage {
 // 2. sharedPhase: eating, hunting, collisions (with optional damage), deaths, births and regrowth, serially. Eating, hunting and births
 //    walk the creatures from a random start each tick, so no creature wins contested food, prey or the last free place by its list position.
 // With a species list (Predators & prey) every creature belongs to one species, with that species' body, costs, births and
-// diet; a hunter eats a touching creature of a species it preys on. Without one there is a single implicit species.
+// diet; a hunter eats a touching creature of a species it preys on. Without one there is a single species with the shared settings.
 export class Ecosystem {
   readonly config: EcoConfig;
   readonly world: WorldView;
@@ -98,7 +98,7 @@ export class Ecosystem {
   deaths = 0;
   readonly poolFounders: number; // founders taken from the seed pool, the first ones of each species in id order
   readonly founders: number; // founders are ids 0 .. founders-1, species by species
-  readonly species: readonly SpeciesConfig[];
+  readonly species: readonly Species[];
   food = 0;
   poison = 0;
   // Living creatures in list order; states[i] is members[i].creature.state.
@@ -154,8 +154,8 @@ export class Ecosystem {
     this.species = speciesList(config);
     this.multi = this.species.length > 1;
     this.hunters = this.species.some((sp) => sp.prey.length > 0);
-    this.engines = this.species.map((_, s) => speciesEngine(config, s));
-    this.ranges = this.species.map((sp) => (config.species?.length ? speciesRanges(config, sp) : eco));
+    this.engines = this.species.map((sp) => speciesEngine(config, sp));
+    this.ranges = this.species.map((sp) => speciesRanges(config, sp));
     this.cooldowns = this.species.map((sp) => Math.round(sp.birthCooldown / dt));
     this.counts = this.species.map(() => ({ population: 0, births: 0, deaths: 0, eaten: 0 }));
     this.spare = this.species.map(() => []);
@@ -168,15 +168,15 @@ export class Ecosystem {
     this.items.scatter(start.food, start.poison, this.rng);
     this.food = start.food;
     this.poison = start.poison;
-    const wanted = this.species.reduce((n, sp) => n + Math.max(0, sp.founders), 0);
-    this.crowd = new Crowd(config, Math.min(wanted, eco.maxPopulation));
+    const counts = founderCounts(this.species, eco.maxPopulation);
+    const founders = counts.reduce((a, b) => a + b, 0);
+    this.crowd = new Crowd(config, founders);
     this.kernels = eco.wasm ? SenseKernels.create() : null;
     this.childPlan = planOf(config);
     this.mutation = { mutationRate: config.mutation.rate, mutationStd: config.mutation.std };
 
     const { width, height } = config.world;
     const r = config.creature.radius;
-    const founders = Math.max(0, Math.min(wanted, eco.maxPopulation));
     const seeds = pool?.length ? pool.map((e) => (config.creature.seesCreatures ? trialsToEcoGenome(e.plan, e.genome, config) : e.genome)) : [];
     const randomPlanScratch = this.childPlan;
     this.founders = founders;
@@ -188,7 +188,7 @@ export class Ecosystem {
     let i = 0;
     for (let sp = 0; sp < this.species.length; sp++) {
       const spec = this.species[sp]!;
-      const count = Math.min(Math.max(0, spec.founders), founders - i);
+      const count = counts[sp]!;
       const fromPool = seeds.length ? Math.round(Math.min(1, Math.max(0, spec.poolFraction)) * count) : 0;
       const first = fromPool ? this.rng.int(seeds.length) : 0;
       for (let k = 0; k < count; k++, i++) {
@@ -325,8 +325,8 @@ export class Ecosystem {
       this.items.removeItem(eaten); // so no one else eats it this tick
     }
 
-    if (this.hunters) this.hunt();
-    if (this.config.eco.collisions) this.collideAll();
+    if (this.hunters) this.hunt(); // grids the moved positions, which collideAll reuses since hunting moves no one
+    if (this.config.eco.collisions) this.collideAll(this.hunters);
 
     for (let i = n - 1; i >= 0; i--) {
       settle(this.states[i]);
@@ -398,10 +398,11 @@ export class Ecosystem {
   }
 
   // Pushes overlapping pairs apart with a bounce, using a grid of the moved positions. Pairs resolve in grid order.
-  private collideAll(): void {
+  // gridded: the crowd already holds the moved positions.
+  private collideAll(gridded = false): void {
     const crowd = this.crowd;
     const states = this.states;
-    crowd.rebuild(states, states.length);
+    if (!gridded) crowd.rebuild(states, states.length);
     const { cols, rows, cellStart, owners } = crowd;
     const { radius } = this.config.creature;
     const { width, height } = this.config.world;
@@ -433,6 +434,7 @@ export class Ecosystem {
 
   private bump(a: CreatureState, b: CreatureState, radius: number, e: number, width: number, height: number): void {
     const eco = this.config.eco;
+    if (!a.alive || !b.alive) return; // an eaten prey; everyone else is alive until settle
     if (!collide(a, b, radius, e, this.contact)) return;
     if (eco.collisionDamage) hurt(a, b, this.contact.speed, eco.damagePerSpeed);
     keepInside(a, radius, width, height, this.config.creature.wallBounce);

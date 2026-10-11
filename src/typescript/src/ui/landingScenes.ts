@@ -5,7 +5,9 @@ import { Creature } from "../sim/creature.ts";
 import { createRng } from "../sim/rng.ts";
 import { HIT_NONE } from "../sim/types.ts";
 import type { CreatureState, EpisodeView, HitKind, Rng } from "../sim/types.ts";
+import { DEFAULT_PREDATOR_CONFIG } from "../sim/ecoConfig.ts";
 import { World } from "../sim/world.ts";
+import { HUNTER_REACH, hunterPath } from "./speciesStyle.ts";
 import { BACKGROUND, FOOD, OTHER, beginFrame, drawItems, drawScene } from "./scene.ts";
 
 // Small looping worlds for the landing page cards, built from the real simulation pieces.
@@ -269,8 +271,10 @@ function drawColoured(ctx: CanvasRenderingContext2D, px: number, s: CreatureStat
   ctx.stroke();
 }
 
-const PREY_HUES = [190, 205, 215, 198, 225]; // calm blues, as on the Predators & prey page
-const HUNTER_HUE = 4;
+// Hues within each species' band of the Predators & prey defaults: calm blue prey, a red hunter.
+const [PREY_SPECIES, HUNTER_SPECIES] = DEFAULT_PREDATOR_CONFIG.species!;
+const PREY_HUES = [-0.3, 0, 0.2, -0.15, 0.4].map((k) => PREY_SPECIES!.hue + k * PREY_SPECIES!.hueSpread);
+const HUNTER_HUE = HUNTER_SPECIES!.hue;
 const PREY_SLOTS = 7; // living prey plus fading ones
 const PREY_LIVE = 5;
 const HUNTER_EDGE = 1.2; // the hunter's top speed over the prey's
@@ -278,8 +282,6 @@ const FLEE_RANGE = 80; // prey bolt when the hunter is this close
 const REST_SECONDS = 4.5; // the hunter cruises after a catch, so each chase reads as one story
 const REPLACE_SECONDS = 2.5; // a surviving prey gives birth this long after a catch
 const CATCH_RING_SECONDS = 0.9;
-const NOSE = 2; // nose tip in radii, as ecoScene.ts draws hunters
-const NOSE_HALF = Math.acos(1 / NOSE); // where the nose lines touch the round back
 
 interface PreyBody {
   creature: Creature;
@@ -451,16 +453,14 @@ function drawHunter(ctx: CanvasRenderingContext2D, px: number, s: CreatureState,
   const h = s.heading;
   const path = (): void => {
     ctx.beginPath();
-    ctx.moveTo(s.x + Math.cos(h) * r * NOSE, s.y + Math.sin(h) * r * NOSE);
-    ctx.arc(s.x, s.y, r, h + NOSE_HALF, h - NOSE_HALF + 2 * Math.PI);
-    ctx.closePath();
+    hunterPath(ctx, s.x, s.y, r, h);
   };
   path();
   ctx.fillStyle = "rgba(15, 23, 20, 0.9)";
   ctx.fill();
   ctx.save();
   ctx.clip();
-  const reach = NOSE * r;
+  const reach = HUNTER_REACH * r;
   ctx.fillStyle = `hsl(${HUNTER_HUE}, 82%, 60%)`;
   ctx.fillRect(s.x - reach, s.y + reach - 2 * reach * fullness, 2 * reach, 2 * reach * fullness);
   ctx.restore();

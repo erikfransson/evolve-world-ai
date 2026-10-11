@@ -1,8 +1,8 @@
 import "./base.css";
 import "./style.css";
 import "./ecosystem.css";
-import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG, seasonFactor, seasonName, winterness } from "./sim/ecoConfig.ts";
-import { withEcoPreset, withPredatorPreset } from "./sim/presets.ts";
+import { seasonFactor, seasonName, winterness } from "./sim/ecoConfig.ts";
+import { speciesList } from "./sim/species.ts";
 import type { EcoConfig } from "./sim/ecoConfig.ts";
 import type { BestBy, EcoInMessage, EcoOutMessage, EcoSnapshot, SelectedDetails, SnapshotViews } from "./worker/ecoProtocol.ts";
 import { snapshotViews } from "./worker/ecoProtocol.ts";
@@ -14,7 +14,7 @@ import { drawIdleWorld } from "./ui/ecoIdle.ts";
 import { buildSelectedBrain } from "./ui/ecoBrain.ts";
 import type { SelectedBrain } from "./ui/ecoBrain.ts";
 import { createEcoView } from "./ui/ecoPage.ts";
-import type { EcoMode } from "./ui/ecoPage.ts";
+import { ECOSYSTEM_PAGE, PREDATORS_PAGE, openingConfig } from "./ui/ecoModes.ts";
 import { BirthRings } from "./ui/ecoBirths.ts";
 import { EcoRenderer } from "./ui/ecoScene.ts";
 import type { EcoDrawConfig } from "./ui/ecoScene.ts";
@@ -49,9 +49,9 @@ interface Selection {
 }
 
 // This script runs the Ecosystem page and, with <body data-mode="predators">, the Predators & prey page.
-const MODE: EcoMode = document.body.dataset.mode === "predators" ? "predators" : "ecosystem";
+const PAGE = document.body.dataset.mode === "predators" ? PREDATORS_PAGE : ECOSYSTEM_PAGE;
 // The page opens on the Normal preset.
-const NORMAL = MODE === "predators" ? withPredatorPreset(DEFAULT_PREDATOR_CONFIG, "normal") : withEcoPreset(DEFAULT_ECO_CONFIG, "normal");
+const NORMAL = openingConfig(PAGE);
 let config: EcoConfig = NORMAL; // the form's while idle, the run's while active
 let active = false; // a run exists (running, paused or extinct)
 let run = 0; // run number, so snapshots of an earlier run are dropped
@@ -87,12 +87,17 @@ function send(msg: EcoInMessage, transfer: Transferable[] = []): void {
 }
 
 const several = (c: EcoConfig): boolean => (c.species?.length ?? 0) > 1;
+let species = speciesList(config); // the config's species, resolved
+function setConfig(c: EcoConfig): void {
+  config = c;
+  species = speciesList(c);
+}
 
 function drawConfig(): EcoDrawConfig {
   const { world, creature, eco } = config;
   const winter = eco.seasons && live ? winterness(eco, live.msg.simTime) : 0;
-  const species = several(config) ? config.species!.map((sp) => ({ fullEnergy: sp.birthEnergy, hunter: sp.prey.length > 0 })) : undefined;
-  return { worldW: world.width, worldH: world.height, radius: creature.radius, itemRadius: world.itemRadius, fullEnergy: eco.birthEnergy, species, winter };
+  const kinds = species.map((sp) => ({ fullEnergy: sp.birthEnergy, hunter: sp.prey.length > 0 }));
+  return { worldW: world.width, worldH: world.height, radius: creature.radius, itemRadius: world.itemRadius, species: kinds, winter };
 }
 
 // Matches the canvas and camera to the layout; returns the device pixel ratio.
@@ -177,24 +182,24 @@ function noteGone(populations: readonly number[]): void {
   populations.forEach((p, s) => { if (p === 0) gone |= 1 << s; });
   if (gone === goneNoted) return;
   goneNoted = gone;
-  const names = config.species!.filter((_, s) => gone & (1 << s)).map((sp) => sp.name.toLowerCase());
+  const names = species.filter((_, s) => gone & (1 << s)).map((sp) => sp.name.toLowerCase());
   view.setNote(names.length ? `Every ${names.join(" and every ")} has died. The run goes on without them.` : null);
 }
 
 function toSamples(h: Float64Array): PopulationSample[] {
   const out: PopulationSample[] = [];
-  const species = several(config) ? config.species!.length : 0;
-  const size = 3 + species;
+  const kinds = several(config) ? species.length : 0;
+  const size = 3 + kinds;
   for (let i = 0; i + size - 1 < h.length; i += size) {
     const sample: PopulationSample = { time: h[i]!, population: h[i + 1]!, food: h[i + 2]! };
-    if (species) sample.species = Array.from(h.subarray(i + 3, i + size));
+    if (kinds) sample.species = Array.from(h.subarray(i + 3, i + size));
     out.push(sample);
   }
   return out;
 }
 
 function startRun(c: EcoConfig): void {
-  config = c;
+  setConfig(c);
   active = true;
   run++;
   extinctShown = false;
@@ -295,9 +300,9 @@ function updateUi(): void {
   view.setStats({ population: m.population, births: m.births, deaths: m.deaths, food: m.food, poison: m.poison, simTime: m.simTime, oldestDepth: m.oldestDepth, speed: m.speed > 0 ? m.speed : null, helpers: m.helpers, sharedMemory: m.sharedMemory, wasm: m.wasm, season: config.eco.seasons ? { name: seasonName(config.eco, m.simTime), factor: seasonFactor(config.eco, m.simTime) } : null, species: m.species });
   const d = selection?.last;
   if (selection && d) {
-    const sp = several(config) ? config.species![d.species] : undefined;
-    const species = sp && { name: sp.name, index: d.species, kills: d.kills, hunter: sp.prey.length > 0 };
-    view.setSelected({ id: d.id, energy: d.energy, fullEnergy: sp?.birthEnergy ?? config.eco.birthEnergy, age: d.age, children: d.children, eaten: d.eaten, depth: d.depth, plan: d.plan, upkeep: d.upkeep, founderId: d.founderId, founderPool: d.founderPool, founderHue: d.founderHue, species, died: selection.died });
+    const sp = species[d.species]!;
+    const kind = several(config) ? { name: sp.name, index: d.species, kills: d.kills, hunter: sp.prey.length > 0 } : undefined;
+    view.setSelected({ id: d.id, energy: d.energy, fullEnergy: sp.birthEnergy, age: d.age, children: d.children, eaten: d.eaten, depth: d.depth, plan: d.plan, upkeep: d.upkeep, founderId: d.founderId, founderPool: d.founderPool, founderHue: d.founderHue, species: kind, died: selection.died });
     view.setFollowing(following);
   }
 }
@@ -340,7 +345,7 @@ const view = createEcoView({
     highlight = -1;
     view.setNote(null);
     goneNoted = 0;
-    config = view.readConfig();
+    setConfig(view.readConfig());
     camera.setWorld(config.world.width, config.world.height);
     drawIdle();
   },
@@ -380,10 +385,10 @@ const view = createEcoView({
   onShowRays: (show) => { showRays = show; },
   onHighlight: (founder) => { highlight = founder ?? -1; },
   onConfigChange(c) {
-    config = c;
+    setConfig(c);
     drawIdle();
   },
-}, MODE);
+}, PAGE);
 
 camera.attach(view.canvas);
 showRays = view.showRays();

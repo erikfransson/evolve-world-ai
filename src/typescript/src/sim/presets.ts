@@ -81,4 +81,3 @@ export function withEcoPreset(c: EcoConfig, id: string, presets: readonly EcoPre
   return out;
 }
 
-export const withPredatorPreset = (c: EcoConfig, id: string): EcoConfig => withEcoPreset(c, id, PREDATOR_PRESETS);

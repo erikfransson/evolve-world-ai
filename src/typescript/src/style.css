@@ -46,6 +46,7 @@ button:disabled { cursor: not-allowed; }
 .stats { margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
 .tile { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 0.55rem 0.7rem; display: flex; flex-direction: column-reverse; min-width: 0; }
 .tile.accent dd { color: var(--accent); }
+.tile[hidden] { display: none; } /* the Season tile while seasons are off */
 .tile dt { color: var(--muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; }
 .tile dd { margin: 0; font-size: 1.5rem; font-weight: 600; line-height: 1.2; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tile dd[data-unit]:not([data-unit=""])::after { content: attr(data-unit); font-size: 0.8rem; font-weight: 500; color: var(--muted); }

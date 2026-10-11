@@ -2,6 +2,7 @@ import { DEFAULT_CONFIG, overrideConfig } from "../sim/config.ts";
 import type { DeepPartial, SimConfig } from "../sim/config.ts";
 import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "../sim/ecoConfig.ts";
 import type { EcoConfig } from "../sim/ecoConfig.ts";
+import { mergeSpeciesList } from "../sim/species.ts";
 import { CUSTOM, ECO_PRESETS, PREDATOR_PRESETS, TRIALS_PRESETS } from "../sim/presets.ts";
 
 // Copy and paste of the settings as JSON, shared by Trials, Ecosystem and Predators & prey.
@@ -54,7 +55,13 @@ export function parseWithPreset<M extends Mode>(text: string, mode: M): Parsed<M
     preset = data.preset;
   }
   if (data.config === undefined) return { config: structuredClone(DEFAULTS[mode]), preset };
-  return { config: overrideConfig<ConfigOf[M]>(DEFAULTS[mode], data.config as DeepPartial<ConfigOf[M]>), preset };
+  const defaults = DEFAULTS[mode];
+  if (!isObject(data.config) || !("species" in data.config) || !("species" in defaults)) return { config: overrideConfig<ConfigOf[M]>(defaults, data.config as DeepPartial<ConfigOf[M]>), preset };
+  // The species list merges item by item and is checked as a whole (see mergeSpeciesList).
+  const { species, ...rest } = data.config;
+  const config = overrideConfig<ConfigOf[M]>(defaults, rest as DeepPartial<ConfigOf[M]>);
+  (config as EcoConfig).species = mergeSpeciesList(species, (defaults as EcoConfig).species!);
+  return { config, preset };
 }
 
 // Leaf paths where a and b differ, e.g. "world.width". Angles may differ by the form's whole-degree rounding.

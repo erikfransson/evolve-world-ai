@@ -8,7 +8,7 @@ import type { SelectedDetails } from "../../src/typescript/src/worker/ecoProtoco
 import { snapshotBytes, snapshotViews } from "../../src/typescript/src/worker/ecoProtocol.ts";
 import { badCoordinateCalls, fakeCtx } from "./helpers.ts";
 
-const cfg: EcoDrawConfig = { worldW: 4000, worldH: 2500, radius: 12, itemRadius: 4, fullEnergy: 150 };
+const cfg: EcoDrawConfig = { worldW: 4000, worldH: 2500, radius: 12, itemRadius: 4, species: [{ fullEnergy: 150, hunter: false }] };
 
 function views(n: number, items = 50) {
   const buffer = new ArrayBuffer(snapshotBytes(n, items));

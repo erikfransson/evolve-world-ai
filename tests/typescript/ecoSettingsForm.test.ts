@@ -4,7 +4,10 @@ import { resolve } from "node:path";
 import { DEFAULT_CONFIG } from "../../src/typescript/src/sim/config.ts";
 import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
-import { buildEcoForm, fillEcoForm, readEcoConfig } from "../../src/typescript/src/ui/ecoSettingsForm.ts";
+import { buildEcoForm } from "../../src/typescript/src/ui/ecoSettingsForm.ts";
+import type { EcoFormHandle } from "../../src/typescript/src/ui/ecoSettingsForm.ts";
+
+let form: EcoFormHandle;
 import { fillForm, readConfig } from "../../src/typescript/src/ui/settingsForm.ts";
 import { PREDATOR_FORM } from "../../src/typescript/src/ui/predatorForm.ts";
 
@@ -43,12 +46,12 @@ describe("Trials settings form", () => {
 describe("Ecosystem settings form", () => {
   beforeEach(() => {
     document.body.innerHTML = page("ecosystem");
-    buildEcoForm(document.getElementById("settings")!);
+    form = buildEcoForm(document.getElementById("settings")!);
   });
 
   it("reads back the defaults", () => {
-    fillEcoForm(DEFAULT_ECO_CONFIG);
-    expect(readEcoConfig()).toEqual(DEFAULT_ECO_CONFIG);
+    form.fill(DEFAULT_ECO_CONFIG);
+    expect(form.read()).toEqual(DEFAULT_ECO_CONFIG);
     expectRangesOnStep();
   });
 
@@ -73,16 +76,16 @@ describe("Ecosystem settings form", () => {
     c.eco.seasons = true;
     c.eco.yearMinutes = 12;
     c.eco.winterFood = 0.45;
-    fillEcoForm(c);
-    expect(readEcoConfig()).toEqual(c);
+    form.fill(c);
+    expect(form.read()).toEqual(c);
   });
 
   it("shows the top poison step as Lethal", () => {
-    fillEcoForm(DEFAULT_ECO_CONFIG);
+    form.fill(DEFAULT_ECO_CONFIG);
     expect(document.querySelector('output[for="poisonDamage"]')!.textContent).toBe("Lethal");
     const c = structuredClone(DEFAULT_ECO_CONFIG);
     c.world.poisonDamage = 40;
-    fillEcoForm(c);
+    form.fill(c);
     expect(document.querySelector('output[for="poisonDamage"]')!.textContent).toBe("40");
   });
 
@@ -91,7 +94,7 @@ describe("Ecosystem settings form", () => {
   });
 
   it("shows item counts as hints", () => {
-    fillEcoForm(DEFAULT_ECO_CONFIG);
+    form.fill(DEFAULT_ECO_CONFIG);
     expect(document.getElementById("foodDensityHint")!.textContent).toBe("≈ 4500 items");
     expect(document.getElementById("foodRegrowHint")!.textContent).toBe("≈ 450 items/s");
   });
@@ -100,26 +103,26 @@ describe("Ecosystem settings form", () => {
 describe("Predators & prey settings form", () => {
   beforeEach(() => {
     document.body.innerHTML = page("predators");
-    buildEcoForm(document.getElementById("settings")!, PREDATOR_FORM);
+    form = buildEcoForm(document.getElementById("settings")!, PREDATOR_FORM);
   });
 
   it("reads back the defaults and a changed config, species included", () => {
-    fillEcoForm(DEFAULT_PREDATOR_CONFIG);
-    expect(readEcoConfig()).toEqual(DEFAULT_PREDATOR_CONFIG);
+    form.fill(DEFAULT_PREDATOR_CONFIG);
+    expect(form.read()).toEqual(DEFAULT_PREDATOR_CONFIG);
     expectRangesOnStep();
     const c: EcoConfig = structuredClone(DEFAULT_PREDATOR_CONFIG);
     c.seed = 9;
     c.eco.foodRegrow = 0.03;
-    c.species![0]!.founders = 600;
-    c.species![0]!.poolFraction = 0.25;
+    c.eco.initialPopulation = 600;
+    c.eco.poolFraction = 0.25;
     c.species![1]!.speed = 1.5;
     c.species![1]!.birthCost = 150;
     c.species![1]!.eatEfficiency = 0.5;
     c.species![1]!.eatBaseline = 25;
     c.species![1]!.rayLengthRange = [120, 320];
     c.eco.collisions = false;
-    fillEcoForm(c);
-    expect(readEcoConfig()).toEqual(c);
+    form.fill(c);
+    expect(form.read()).toEqual(c);
   });
 
   it("folds the shared Ecosystem sections and tucks costs under More settings", () => {

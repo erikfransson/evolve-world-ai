@@ -7,7 +7,7 @@ import { trialsSizes, trialsToEcoGenome } from "../../src/typescript/src/sim/see
 import type { PoolEntry } from "../../src/typescript/src/sim/seedPool.ts";
 import { FEAT_CREATURE, RAY_FEATURES, encodeInputs, energySignal, inputLayout, rayFeatureCount } from "../../src/typescript/src/sim/sensors.ts";
 import type { BodyPlan } from "../../src/typescript/src/sim/sensors.ts";
-import { bandHue, implicitSpecies, speciesEngine } from "../../src/typescript/src/sim/species.ts";
+import { ONE_SPECIES, bandHue, founderCounts, resolveSpecies, speciesEngine, speciesList } from "../../src/typescript/src/sim/species.ts";
 import { HIT_CREATURE, HIT_NONE } from "../../src/typescript/src/sim/types.ts";
 import type { CreatureState, RayHit } from "../../src/typescript/src/sim/types.ts";
 import { layerSizes } from "../../src/typescript/src/sim/brain.ts";
@@ -46,11 +46,33 @@ describe("Predators & prey", () => {
     };
     const a = run(base);
     expect(a[1]).toBeGreaterThan(0);
-    expect(run({ ...base, species: [implicitSpecies(base)] })).toEqual(a);
+    expect(run({ ...base, species: [ONE_SPECIES] })).toEqual(a);
+    // Overrides equal to the shared settings change nothing either.
+    const same = { ...ONE_SPECIES, founders: 60, birthEnergy: 70, startEnergy: 140, speed: 1, rayLengthRange: [...base.eco.rayLengthRange] };
+    expect(run({ ...base, species: [same] })).toEqual(a);
+  });
+
+  it("leaves the plain Ecosystem bit-identical to main before species (golden fingerprint)", () => {
+    const d = structuredClone(DEFAULT_ECO_CONFIG);
+    const c: EcoConfig = { ...d, seed: 4, world: { ...d.world, width: 1000, height: 1000 }, creature: { ...d.creature, startEnergy: 140 }, eco: { ...d.eco, initialPopulation: 60, birthEnergy: 70, structuralRate: 0.2, collisionDamage: true, wasm: false } };
+    const eco = new Ecosystem(c);
+    for (let t = 0; t < 300; t++) eco.step();
+    expect([eco.fingerprint(), eco.births, eco.deaths]).toEqual([351733877, 60, 24]); // main e17cba7
+  });
+
+  it("shares the population limit among the species' founders in proportion", () => {
+    const list = speciesList(DEFAULT_PREDATOR_CONFIG); // 400 prey, 40 predators
+    expect(founderCounts(list, 10000)).toEqual([400, 40]);
+    expect(founderCounts(list, 400)).toEqual([364, 36]);
+    expect(founderCounts(list, 11)).toEqual([10, 1]);
+    expect(founderCounts(speciesList(DEFAULT_ECO_CONFIG), 300)).toEqual([300]);
+    const c = predCfg(400, 40);
+    const eco = new Ecosystem({ ...c, eco: { ...c.eco, maxPopulation: 400 } });
+    expect(eco.speciesCounts.map((k) => k.population)).toEqual([364, 36]);
   });
 
   it("children keep their parent's species and stay in the species' colour band", () => {
-    const eco = new Ecosystem(predCfg(80, 20, 2));
+    const eco = new Ecosystem(predCfg(80, 20, 2, { birthEnergy: 70, birthCost: 35, childEnergy: 30 })); // prey breed readily
     const founderSpecies = new Map(eco.topLineages(eco.founders).map((l) => [l.founder, l.species]));
     for (let t = 0; t < 900; t++) eco.step();
     const counts = eco.speciesCounts;
@@ -75,7 +97,7 @@ describe("Predators & prey", () => {
     expect(bandHue(sp, 24)).toBeCloseTo(14); // 5 past the edge at 19
     expect(bandHue(sp, 350)).toBeCloseTo(350);
     expect(bandHue(sp, 340)).toBeCloseTo(358); // 9 past the edge at 349
-    expect(bandHue(implicitSpecies(DEFAULT_ECO_CONFIG), 370)).toBeCloseTo(10);
+    expect(bandHue(ONE_SPECIES, 370)).toBeCloseTo(10);
   });
 
   it("a hunter gains the prey's energy times the efficiency plus the baseline", () => {
@@ -129,6 +151,17 @@ describe("Predators & prey", () => {
     expect(one.members[0]!.kills).toBe(2);
   });
 
+  it("a hunter between two prey at the same distance eats the one with the lower id", () => {
+    const c = bare(2, 1);
+    const eco = new Ecosystem({ ...c, creature: { ...c.creature, maxThrust: 1e-300 } }); // moves below a rounding step, so distances stay exact
+    // Across a grid row boundary (cells of 100), so the grid meets the higher id first.
+    place(eco, 0, 500, 612, 40);
+    place(eco, 1, 500, 588, 40);
+    place(eco, 2, 500, 600, 90);
+    eco.step();
+    expect(eco.members.filter((m) => m.species === 0).map((m) => m.id)).toEqual([1]); // id 0 was eaten
+  });
+
   it("plant-free hunters pass over food", () => {
     const c = predCfg(0, 30, 6, { foodRegrow: 0, poisonRegrow: 0 });
     const eco = new Ecosystem({ ...c, world: { ...c.world, foodDensity: 3, poisonDensity: 0 } });
@@ -159,9 +192,9 @@ describe("Species ray features", () => {
     crowd.castRays(100, 100, Float64Array.of(1, 0), Float64Array.of(0, 1), rays, 0, 100);
     expect(rays.map((r) => [r.kind, r.species, r.energy])).toEqual([[HIT_CREATURE, 1, 77], [HIT_CREATURE, 0, 33]]);
     // Both species read the seen energy on one shared scale, the larger start energy.
-    const scale = Math.max(...two.species!.map((sp) => sp.startEnergy));
+    const scale = Math.max(...speciesList(two).map((sp) => sp.startEnergy));
     for (const s of [0, 1]) {
-      const base = speciesEngine(two, s);
+      const base = speciesEngine(two, speciesList(two)[s]!);
       const engine = { ...base, creature: { ...base.creature, rayCount: 2 } };
       expect(engine.seenEnergyScale).toBe(scale);
       const F = rayFeatureCount(engine);

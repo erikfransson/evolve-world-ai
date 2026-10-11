@@ -63,6 +63,9 @@ const config: EcoConfig = {
     foodRegrow: num(values.regrow, d.eco.foodRegrow),
   },
 };
+// --pop and --width scale every species' founders alike: the prey take initialPopulation, the predators their own count.
+const founderScale = config.eco.initialPopulation / d.eco.initialPopulation;
+if (config.species) config.species = config.species.map((sp) => (sp.founders === undefined ? sp : { ...sp, founders: Math.round(sp.founders * founderScale) }));
 for (const assignment of values.set ?? []) {
   const [path, value] = assignment.split("=") as [string, string];
   const keys = path.split(".");

@@ -3,12 +3,20 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createEcoView } from "../../src/typescript/src/ui/ecoPage.ts";
 import type { EcoHandlers } from "../../src/typescript/src/ui/ecoPage.ts";
+import { ECOSYSTEM_PAGE } from "../../src/typescript/src/ui/ecoModes.ts";
 import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 
 // happy-dom leaves range inputs empty until filled, so fill the freshly built form with the defaults a browser shows.
 vi.mock("../../src/typescript/src/ui/ecoSettingsForm.ts", async (importActual) => {
   const actual = await importActual<typeof import("../../src/typescript/src/ui/ecoSettingsForm.ts")>();
-  return { ...actual, buildEcoForm: (el: HTMLElement) => { actual.buildEcoForm(el); actual.fillEcoForm(DEFAULT_ECO_CONFIG); } };
+  return {
+    ...actual,
+    buildEcoForm: (el: HTMLElement, spec: Parameters<typeof actual.buildEcoForm>[1]) => {
+      const form = actual.buildEcoForm(el, spec);
+      form.fill(DEFAULT_ECO_CONFIG);
+      return form;
+    },
+  };
 });
 
 const html = readFileSync(resolve(import.meta.dirname, "../../src/typescript/ecosystem/index.html"), "utf8").replace(/^[\s\S]*<body>|<\/body>[\s\S]*$/g, "").replace(/<script[\s\S]*?<\/script>/g, "");
@@ -21,7 +29,7 @@ describe("Ecosystem extinction dialog", () => {
     document.body.innerHTML = html;
     const onReset = vi.fn();
     const handlers = new Proxy({ onReset }, { get: (t, k) => (t as Record<string | symbol, unknown>)[k] ?? vi.fn() }) as unknown as EcoHandlers;
-    const view = createEcoView(handlers);
+    const view = createEcoView(handlers, ECOSYSTEM_PAGE);
     const config = { ...view.readConfig(), seed: 4242 };
     view.fillConfig(config);
     document.getElementById("start")!.click();

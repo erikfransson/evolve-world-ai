@@ -1,4 +1,5 @@
 import type { Brain } from "../sim/brain.ts";
+import { SPECIES_COLORS } from "./speciesStyle.ts";
 import { EXTRA_INPUTS, FEAT_CREATURE, FEAT_FOOD, FEAT_POISON, INPUT_EXTRA_LABELS, OUTPUT_LABELS, OUTPUT_SIZE, RAY_FEATURE_LABELS } from "../sim/sensors.ts";
 import type { InputLayout } from "../sim/sensors.ts";
 import { fitCanvas } from "./canvas.ts";
@@ -16,9 +17,20 @@ const POISON_COLOR = "#e040fb";
 const CREATURE_COLOR = "#7dd3fc";
 const FEATURE_LETTERS: Record<string, string> = { closeness: "c", food: "f", poison: "p", wall: "w", creature: "o", "seen energy": "e" };
 const FEATURE_COLORS = [TEXT_COLOR, FOOD_COLOR, POISON_COLOR, LABEL_COLOR, CREATURE_COLOR, CREATURE_COLOR];
-const SPECIES_COLORS = ["#60a5fa", "#f87171"]; // species flags, as on the Predators & prey page
 // True when ray feature f of n is one of several species flags (Predators & prey), labelled by a short upright word.
 const isSpeciesFlag = (f: number, n: number): boolean => n > FEATURE_COLORS.length && f >= 4 && f < n - 1;
+// Colour of a ray's row label from its inputs at k (features per ray): what it sees, a seen creature in its species'
+// colour (the strongest flag of any species), otherwise grey.
+export function rayLabelColor(inputs: ArrayLike<number>, k: number, features: number): string {
+  const food = inputs[k + FEAT_FOOD]!;
+  const poison = inputs[k + FEAT_POISON]!;
+  let flag = -1;
+  for (let f = FEAT_CREATURE; f < features - 1; f++) if (inputs[k + f]! > HIT_LEVEL && (flag < 0 || inputs[k + f]! > inputs[k + flag]!)) flag = f;
+  if (flag >= 0) return featureColor(flag, features);
+  if (food > HIT_LEVEL || poison > HIT_LEVEL) return food >= poison ? FOOD_COLOR : POISON_COLOR;
+  return LABEL_COLOR;
+}
+
 // Colour of ray feature f of n: with one flag per species (n > 6), each flag in its species' colour.
 const featureColor = (f: number, n: number): string => (f < 4 || n <= FEATURE_COLORS.length ? FEATURE_COLORS[f]! : f === n - 1 ? CREATURE_COLOR : SPECIES_COLORS[f - 4] ?? CREATURE_COLOR);
 const HIT_LEVEL = 0.5;
@@ -424,11 +436,8 @@ export class BrainView {
     const every = pitch >= 9;
     for (let r = 0; r < rays; r++) {
       const k = r * features;
-      const food = inAct[k + FEAT_FOOD]!;
-      const poison = inAct[k + FEAT_POISON]!;
-      const creature = features > FEAT_CREATURE ? inAct[k + FEAT_CREATURE]! : 0;
-      const hit = food > HIT_LEVEL || poison > HIT_LEVEL || creature > HIT_LEVEL;
-      const color = !hit ? LABEL_COLOR : creature > HIT_LEVEL ? CREATURE_COLOR : food >= poison ? FOOD_COLOR : POISON_COLOR;
+      const color = rayLabelColor(inAct, k, features);
+      const hit = color !== LABEL_COLOR;
       if (every || r % 2 === 0) {
         ctx.fillStyle = color;
         ctx.fillText(`R${r + 1}`, lx, yIn[k]!);

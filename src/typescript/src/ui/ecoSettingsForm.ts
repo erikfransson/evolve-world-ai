@@ -80,7 +80,7 @@ export const ECO_SECTIONS: readonly Section[] = [
     fields: [
       range({ id: "initialPopulation", label: "Start creatures", tip: "How many creatures the run starts with, each with a random colour.", min: 10, max: 10000, step: 10, get: (c) => c.eco.initialPopulation, set: (c, v) => { c.eco.initialPopulation = v; } }),
       range({ id: "poolFraction", label: "Trained founders", tip: "Share of the start creatures copied, with small mutations, from a pool of creatures trained in Trials with many different eyes and brains. They keep their own rays and brain shape. The rest start with random brains.", min: 0, max: 1, step: 0.05, fmt: "pct", get: (c) => c.eco.poolFraction, set: (c, v) => { c.eco.poolFraction = v; } }),
-      range({ id: "maxPopulation", label: "Population limit", tip: "Most creatures alive at once. Births wait while the world is full.", min: 100, max: 10000, step: 100, get: (c) => c.eco.maxPopulation, set: (c, v) => { c.eco.maxPopulation = v; } }),
+      range({ id: "maxPopulation", label: "Population limit", tip: "Most creatures alive at once, of every kind together. Births wait while the world is full, and when there are more starting creatures than this, every kind starts with fewer in proportion.", min: 100, max: 10000, step: 100, get: (c) => c.eco.maxPopulation, set: (c, v) => { c.eco.maxPopulation = v; } }),
       range({ id: "birthEnergy", label: "Birth energy", tip: "A creature with at least this much energy can have a child. A creature's body is drawn full at this level.", min: 60, max: 400, step: 5, get: (c) => c.eco.birthEnergy, set: (c, v) => { c.eco.birthEnergy = v; } }),
       range({ id: "birthCost", label: "Birth cost", tip: "Energy the parent pays for a child.", min: 10, max: 300, step: 5, get: (c) => c.eco.birthCost, set: (c, v) => { c.eco.birthCost = v; } }),
       range({ id: "childEnergy", label: "Child energy", tip: "Energy a newborn starts with. Less than the birth cost means each birth burns energy.", min: 10, max: 200, step: 5, get: (c) => c.eco.childEnergy, set: (c, v) => { c.eco.childEnergy = v; } }),
@@ -145,7 +145,6 @@ function fieldHtml(f: Field): string {
 }
 
 export const ECO_FORM: EcoForm = { sections: ECO_SECTIONS, defaults: DEFAULT_ECO_CONFIG };
-let form: EcoForm = ECO_FORM; // the form buildEcoForm built last
 
 function sectionHtml(s: Section): string {
   const swatch = s.swatch ? `<i class="sw" style="background: ${s.swatch}"></i>` : "";
@@ -156,52 +155,54 @@ function sectionHtml(s: Section): string {
   return `<section class="card"><h3>${swatch}${s.title}</h3>${main}${more}</section>`;
 }
 
+// A built settings form: read the config it describes, fill it from one, and wire it up.
+export interface EcoFormHandle {
+  read(): EcoConfig;
+  fill(c: EcoConfig): void;
+  // onChange gets the config the form currently describes after every edit.
+  init(form: HTMLFormElement, onChange: (c: EcoConfig) => void): void;
+}
+
 // Fills the container with one card per section of spec (the Ecosystem's by default).
-export function buildEcoForm(container: HTMLElement, spec: EcoForm = ECO_FORM): void {
-  form = spec;
+export function buildEcoForm(container: HTMLElement, spec: EcoForm = ECO_FORM): EcoFormHandle {
   container.innerHTML = spec.sections.map(sectionHtml).join("");
-}
-
-const allFields = (): Field[] => form.sections.flatMap((s) => [...s.fields]);
-
-export function readEcoConfig(): EcoConfig {
-  const c = structuredClone(form.defaults);
-  for (const f of allFields()) {
-    const input = el(f.id, HTMLInputElement);
-    if (f.kind === "toggle") f.set(c, input.checked);
-    else if (f.kind === "range") f.set(c, input.valueAsNumber);
-    else if (Number.isFinite(input.valueAsNumber)) c.seed = Math.min(2 ** 31, Math.max(0, Math.round(input.valueAsNumber)));
-  }
-  return c;
-}
-
-function syncHints(c: EcoConfig): void {
-  for (const f of allFields()) if (f.kind === "range" && f.hint) el(`${f.id}Hint`, HTMLElement).textContent = f.hint(c);
-}
-
-export function fillEcoForm(c: EcoConfig): void {
-  for (const f of allFields()) {
-    const input = el(f.id, HTMLInputElement);
-    if (f.kind === "toggle") input.checked = f.get(c);
-    else if (f.kind === "range") input.value = String(f.get(c));
-    else input.value = String(c.seed);
-  }
-  document.querySelectorAll<HTMLInputElement>('input[type="range"]').forEach(syncSlider);
-  syncHints(c);
-}
-
-// onChange gets the config the form currently describes after every edit.
-export function initEcoSettingsForm(form: HTMLFormElement, onChange: (c: EcoConfig) => void): void {
-  form.addEventListener("input", (e) => {
-    const target = e.target as HTMLInputElement;
-    if (target.type === "range") syncSlider(target);
-    const c = readEcoConfig();
-    syncHints(c);
-    onChange(c);
-  });
-  form.addEventListener("submit", (e) => e.preventDefault());
-  el("dice", HTMLButtonElement).onclick = () => {
-    el("seed", HTMLInputElement).value = String(Math.floor(Math.random() * 1_000_000));
-    onChange(readEcoConfig());
+  const fields = spec.sections.flatMap((s) => [...s.fields]);
+  const syncHints = (c: EcoConfig): void => {
+    for (const f of fields) if (f.kind === "range" && f.hint) el(`${f.id}Hint`, HTMLElement).textContent = f.hint(c);
   };
+  const read = (): EcoConfig => {
+    const c = structuredClone(spec.defaults);
+    for (const f of fields) {
+      const input = el(f.id, HTMLInputElement);
+      if (f.kind === "toggle") f.set(c, input.checked);
+      else if (f.kind === "range") f.set(c, input.valueAsNumber);
+      else if (Number.isFinite(input.valueAsNumber)) c.seed = Math.min(2 ** 31, Math.max(0, Math.round(input.valueAsNumber)));
+    }
+    return c;
+  };
+  const fill = (c: EcoConfig): void => {
+    for (const f of fields) {
+      const input = el(f.id, HTMLInputElement);
+      if (f.kind === "toggle") input.checked = f.get(c);
+      else if (f.kind === "range") input.value = String(f.get(c));
+      else input.value = String(c.seed);
+    }
+    container.querySelectorAll<HTMLInputElement>('input[type="range"]').forEach(syncSlider);
+    syncHints(c);
+  };
+  const init = (form: HTMLFormElement, onChange: (c: EcoConfig) => void): void => {
+    form.addEventListener("input", (e) => {
+      const target = e.target as HTMLInputElement;
+      if (target.type === "range") syncSlider(target);
+      const c = read();
+      syncHints(c);
+      onChange(c);
+    });
+    form.addEventListener("submit", (e) => e.preventDefault());
+    el("dice", HTMLButtonElement).onclick = () => {
+      el("seed", HTMLInputElement).value = String(Math.floor(Math.random() * 1_000_000));
+      onChange(read());
+    };
+  };
+  return { read, fill, init };
 }

@@ -7,7 +7,7 @@ import { agingOf } from "./physics.ts";
 import type { Aging } from "./physics.ts";
 import type { Ecosystem } from "./ecosystem.ts";
 import type { BodyPlan } from "./sensors.ts";
-import { speciesEngine } from "./species.ts";
+import { speciesEngine, speciesList } from "./species.ts";
 import type { HitKind } from "./types.ts";
 import { ITEM_REMOVE, ITEM_SET, World } from "./world.ts";
 import { SenseKernels } from "./wasm/senseKernels.ts";
@@ -336,7 +336,7 @@ export class ShareHelper {
   // wasm: sense and think on the WebAssembly kernels when available, as the coordinator does.
   constructor(config: EcoConfig, worldCapacity: number, index: number, wasm = false) {
     this.kernels = wasm ? SenseKernels.create() : null;
-    this.engines = Array.from({ length: Math.max(1, config.species?.length ?? 0) }, (_, s) => speciesEngine(config, s));
+    this.engines = speciesList(config).map((sp) => speciesEngine(config, sp));
     this.spare = this.engines.map(() => []);
     this.index = index;
     this.aging = agingOf(config.eco, config.dt);

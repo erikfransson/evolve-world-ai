@@ -1,6 +1,7 @@
 import type { SelectedDetails, SnapshotViews } from "../worker/ecoProtocol.ts";
 import { HIT_NONE } from "../sim/types.ts";
 import type { Camera } from "./camera.ts";
+import { HUNTER_REACH, hunterPath } from "./speciesStyle.ts";
 import type { BirthRings } from "./ecoBirths.ts";
 import { BACKGROUND, FLOOR, FOOD, POISON, RAY_COLORS, WALL } from "./scene.ts";
 
@@ -9,24 +10,15 @@ export interface EcoDrawConfig {
   worldH: number;
   radius: number;
   itemRadius: number;
-  fullEnergy: number; // energy at which the body fill is full
-  species?: readonly { fullEnergy: number; hunter: boolean }[]; // per species, with several; hunters are drawn with a pointed nose
+  species: readonly { fullEnergy: number; hunter: boolean }[]; // per species: energy at which the body fill is full, and hunters drawn with a pointed nose
   winter?: number; // 0 (summer) to 1 (mid-winter): how far the floor is tinted cold
 }
 
-const NOSE = 2; // a hunter's nose tip, in radii ahead of its centre
-const NOSE_HALF = Math.acos(1 / NOSE); // where the nose lines touch the round back, so the outline is a smooth teardrop
-
-// Adds a creature's outline to the current path: a circle, or for a hunter a round back with a pointed nose along its heading.
+// Adds a creature's outline to the current path: a circle, or a hunter's teardrop.
 function bodyPath(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, heading: number, hunter: boolean): void {
-  if (!hunter) {
-    ctx.moveTo(x + r, y);
-    ctx.arc(x, y, r, 0, Math.PI * 2);
-    return;
-  }
-  ctx.moveTo(x + Math.cos(heading) * r * NOSE, y + Math.sin(heading) * r * NOSE);
-  ctx.arc(x, y, r, heading + NOSE_HALF, heading - NOSE_HALF + 2 * Math.PI);
-  ctx.closePath();
+  if (hunter) return hunterPath(ctx, x, y, r, heading);
+  ctx.moveTo(x + r, y);
+  ctx.arc(x, y, r, 0, Math.PI * 2);
 }
 
 const WINTER_TINT = 0.16; // floor overlay opacity at mid-winter
@@ -166,7 +158,7 @@ export class EcoRenderer {
     // Round dots at least DOT_RADIUS big, over a dark outline pass, so creatures stand out from the small dim items.
     const dotR = Math.max(R, DOT_RADIUS * css);
     const outline = dotR + 0.9 * css;
-    const hunter = (i: number): boolean => cfg.species?.[v.species[i]!]?.hunter ?? false;
+    const hunter = (i: number): boolean => cfg.species[v.species[i]!]!.hunter;
     // Creatures outside the highlighted lineage come first, faint and without outline, so the lineage is drawn over them.
     const dimAt = counts[DIM_BUCKET - 1]!;
     const dimEnd = counts[DIM_BUCKET]!;
@@ -207,10 +199,10 @@ export class EcoRenderer {
     const x = v.x[i]!;
     const y = v.y[i]!;
     const R = cfg.radius;
-    const sp = cfg.species?.[v.species[i]!];
-    const e = Math.min(1, Math.max(0, v.energy[i]! / (sp?.fullEnergy ?? cfg.fullEnergy)));
+    const sp = cfg.species[v.species[i]!]!;
+    const e = Math.min(1, Math.max(0, v.energy[i]! / sp.fullEnergy));
     ctx.globalAlpha = alpha;
-    if (sp?.hunter) {
+    if (sp.hunter) {
       this.drawHunter(ctx, x, y, R, v.heading[i]!, e, style, css);
       ctx.globalAlpha = 1;
       return;
@@ -252,7 +244,7 @@ export class EcoRenderer {
     if (e > 0) {
       ctx.save();
       ctx.clip();
-      const reach = NOSE * R; // the shape lies within this distance of the centre
+      const reach = HUNTER_REACH * R; // the shape lies within this distance of the centre
       ctx.fillStyle = style;
       ctx.fillRect(x - reach, y + reach - 2 * reach * e, 2 * reach, 2 * reach * e);
       ctx.restore();
