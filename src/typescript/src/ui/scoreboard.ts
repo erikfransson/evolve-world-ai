@@ -80,7 +80,7 @@ export function browserStorage(): Store | null {
 }
 
 export class Scoreboard {
-  private boards: Record<string, Entry[]> = {};
+  private boards: Record<string, Entry[]> = Object.create(null); // no prototype, so a preset id like "constructor" finds nothing
   private readonly key: string;
 
   private readonly storage: Store | null;
@@ -94,7 +94,7 @@ export class Scoreboard {
         for (const [id, list] of Object.entries(raw)) if (Array.isArray(list)) this.boards[id] = list.filter(validEntry).slice(0, TOP);
       }
     } catch {
-      this.boards = {};
+      this.boards = Object.create(null);
     }
   }
 
