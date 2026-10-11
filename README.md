@@ -5,8 +5,9 @@
 
 ## Repo structure
 * `src/typescript/` web app and simulation (Vite + TypeScript), one HTML page per mode
-  * `index.html` landing page, `trials/` the current app, `ecosystem/` and `live/` placeholders
+  * `index.html` landing page, `trials/`, `ecosystem/` and `predators/` (Predators & prey, the Ecosystem page script in predators mode), `live/` placeholder
   * `src/sim/` simulation; `creature.ts` (body, brain, senses) and `world.ts` (items, rays) are shared by modes
+  * `src/sim/species.ts` species of a Predators & prey world (own body ranges, costs, births and diet); the Ecosystem is the one-species case
   * `src/trials.ts`, `src/landing.ts` one entry script per page
   * `src/sim/wasm/` optional WebAssembly SIMD kernels (brain forward, creature rays); `.wat` sources are assembled into `kernels.generated.ts` with `npm run wasm` (wabt), and a test fails if they drift
   * `public/pool.json` Ecosystem seed pool of Trials-trained creatures, rebuilt with `node src/buildPool.ts` (about 30 min on 4 threads)
