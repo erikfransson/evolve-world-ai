@@ -16,7 +16,7 @@ import type { StoredLearner } from "./sim/rl/library.ts";
 import { planUpkeep } from "./sim/sensors.ts";
 import type { BodyPlan } from "./sim/sensors.ts";
 import { BrainView } from "./ui/brainView.ts";
-import { energyBudget, renderEnergy } from "./ui/energyCard.ts";
+import { energyBudget, f1, renderEnergy } from "./ui/energyCard.ts";
 import type { RlInMessage, RlIteration, RlOutMessage, TrainMethod } from "./worker/rlProtocol.ts";
 import { BrainReplay } from "./ui/arenaBrain.ts";
 import { DEFAULT_DESIGN, DEFAULT_RUN, DESIGN_FORM, RUN_FORM, designPlan, planDesign } from "./ui/arenaForm.ts";
@@ -134,7 +134,7 @@ function showStart(): void {
     note.textContent = selectedEnvs().length === 0 ? "Pick at least one environment." : "";
     const plan = r.learner.plan;
     preview = r.learner;
-    desc.textContent = `${planSummary(plan)}. Upkeep ${planUpkeep(plan, worldConfig(k)).toFixed(2)} energy per second: a bigger body and brain cost more to keep alive.`;
+    desc.textContent = `${planSummary(plan)}. Upkeep ${f1(planUpkeep(plan, worldConfig(k)))}\u00a0energy/s: a bigger body and brain cost more to keep alive.`;
   }
   updateStartButton();
   drawPreview();
