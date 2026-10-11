@@ -3,11 +3,13 @@
 The site becomes a landing page with one card per mode.
 All modes share one engine (world items, ray casting, creature physics, brain, mutation); each mode owns its layout, loop and drawing.
 
-| Mode       | Path          | State                                                                 |
-| ---------- | ------------- | --------------------------------------------------------------------- |
-| Trials     | `trials/`     | The current app: each creature alone in its world copy, generations. |
-| Ecosystem  | `ecosystem/`  | New: one shared world, regrowing food, births, collisions.            |
-| Live World | `live/`       | Placeholder: an always-on shared world, built later.                  |
+| Mode           | Path          | State                                                                                          |
+| -------------- | ------------- | ---------------------------------------------------------------------------------------------- |
+| Trials         | `trials/`     | The current app: each creature alone in its world copy, generations.                           |
+| Ecosystem      | `ecosystem/`  | New: one shared world, regrowing food, births, collisions.                                     |
+| The Great Hunt | `predators/`  | Ecosystem engine with two species: plants feed prey, predators hunt prey.                      |
+| RL Arena       | `arena/`      | Design a creature, train it with evolution strategies in short environments, watch and save.   |
+| Live World     | `live/`       | Placeholder: an always-on shared world, built later.                                           |
 
 Landing page at the site root: big "Evolve World" title and a selection card per mode, each with a small animated or drawn preview of what happens there.
 Vite multi-page build, so each mode has its own `index.html` and entry script.
@@ -50,7 +52,7 @@ Contract: `EcoConfig` in `src/sim/ecoConfig.ts`, built on `EngineConfig` (the sh
 - Ecosystem: founders may differ. Vision angle and length drift slightly with mutation; rare structural mutations add or remove a ray or a hidden neuron, with weights remapped.
 - Memory (#10): recurrent units fed back as brain inputs on the next tick, as leaky averages of their targets: short-term at rate 0.3 per tick, long-term at 0.01 per tick. Default 4 + 4, roughly up to 20% of the weights.
 - A tiny energy cost per hidden and memory neuron per second, so bigger brains are not free (tunable, 0 turns it off).
-- Seed pool (#11, done): `src/buildPool.ts` runs Trials evolutions over a sampled grid of plans and worlds and keeps 60 diverse validated creatures in `public/pool.json`. Ecosystem `poolFraction` (default 50%) of founders are mutated copies, round-robin over the pool; their Trials genomes get zero weights for the creature ray features. Without the file, all founders are random.
+- Seed pool (#11, done): `src/buildPool.ts` runs Trials evolutions over a sampled grid of plans and worlds and keeps 300 diverse validated creatures in `public/pool.json`. Ecosystem `poolFraction` (default 30%, 50% per species in the Great Hunt) of founders are mutated copies, round-robin over the pool; their Trials genomes get zero weights for the creature ray features. Without the file, all founders are random.
 
 ## Presets and lineages (issues #8, #5), draft
 - Trials and Ecosystem get about 4 preset worlds (normal, poison everywhere, starvation with long vision, ...) plus custom; Trials worlds grow to 2300 x 1400.
@@ -67,7 +69,6 @@ Contract: `EcoConfig` in `src/sim/ecoConfig.ts`, built on `EngineConfig` (the sh
 - Rays tell species apart and report the seen creature's energy.
 - Later: a who-eats-whom table for more species (C, D, E).
 - Known follow-ups:
-  - Scoreboard entries keep only seed, creature and brain settings, not the species, birth, regrowth, aging or collision settings.
   - Lineages tend to collapse to one founder per species after about 10 minutes.
 
 ## RL environments and Arena (issues #27, #32), agreed 2026-10-11

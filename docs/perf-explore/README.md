@@ -7,7 +7,8 @@ One write-up per exploration, with the tables of tried ideas and their verdicts.
 - `parallel.md`: helpers also doing memory, motion and item lookup gave 1.2x at 20k, bit-identical; merged. Work stealing not worth it.
 - `wasm.md`: one-call WASM sense gave about 1.36x, bit-identical; recommended and merged.
 - `gpu.md`: WebGPU compute not worth it, at most about 1.2x and not bit-exact.
-- `render.md`: pixel-layer items about 14x faster to draw but change pixels; prototype only. OffscreenCanvas is untried.
+- `render.md`: pixel-layer items about 14x faster to draw but change pixels; prototype only.
+- `offscreen.md`: render worker with OffscreenCanvas, page busy 111% to about 10% of wall time, pixel-identical; merged, on by default with a page fallback.
 - `trig.md`: WASM sin and cos gain nothing; not worth porting.
 - `profile2.md`: per-phase profile at 12k to 30k; PhaseTimer kept. Helper gains measured under load, so pessimistic.
 - Shared-memory helper mode was removed on 2026-10-11 (see `docs/perf-notes.md`), so notes here that mention shared helpers or `--shared` describe a retired mode.

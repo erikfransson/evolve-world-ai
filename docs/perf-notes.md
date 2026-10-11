@@ -26,6 +26,10 @@ Current fingerprints (since the 2026-10-11 item spacing from poison; before: 265
 | 2026-10-10 | Round 4: pre-warm pool workers                          | 1.50 vs 1.53 s             | none    | n/a              | Rejected, startup only moves |
 | 2026-10-10 | Shared-world refactor: per-creature ray cache with per-cell invalidation, Creature unit, mutate() | serial medians 3.02 vs 3.05 (8 pairs); threaded later gens equal, first gen +40-60 ms | ~1.0x | bit-identical | Kept, needed for Ecosystem |
 
+Merged on 2026-10-11 (rounds 2 and 3 of `docs/perf-explore/`): crowd rebuild by radix sort (1.3-1.7x at 30k to 50k), brain kernel (1.33x kernel), lazy JS-only scratch buffers (RSS 508 to 322 MB at 50k), helper genomes sent only to the owning helper with an adaptive first-tick timeout (start-up RSS 1.37 to 1.0 GB), packed item cells (kernel 1.2x), and the render worker (page busy 111% to about 10%).
+All except the render worker are bit-identical.
+Details per idea in `docs/perf-explore/`.
+
 Rejected in round 3: typed-array RNG state (breeding 37 to 24 ms, 1% of a generation), wall skip again (0.6%), branchless input compaction (0%), slack 0.15 and 0.6 (0%), branch-free encodeInputs (0%).
 Rejected in round 2: wall skip when far from walls (2%), Float64 dense weights (0%), input-major dense layer (7% slower).
 Rejected on 2026-10-10: shared layout per generation (layout under 1% of runtime), castRay field hoisting, other grid cell sizes, one grid gather per tick for all rays (0.97x).
