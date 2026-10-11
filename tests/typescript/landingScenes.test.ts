@@ -56,4 +56,14 @@ describe("predatorScene", () => {
     for (let t = 0; t < WARMUP_TICKS + TICKS; t++) again.step();
     expect(again.catches).toBe(scene.catches);
   });
+
+  it("catches a prey whenever it visibly touches the hunter, never overlapping otherwise", () => {
+    for (const seed of [1, 7, 21]) {
+      const scene = predatorScene(seed);
+      for (let t = 0; t < WARMUP_TICKS + TICKS; t++) {
+        scene.step();
+        expect(scene.overlaps()).toBe(0);
+      }
+    }
+  });
 });
