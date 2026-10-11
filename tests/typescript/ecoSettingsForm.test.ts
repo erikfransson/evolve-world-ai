@@ -58,6 +58,7 @@ describe("Ecosystem settings form", () => {
     c.eco.foodRegrow = 0.025;
     c.eco.birthCooldown = 4;
     c.eco.collisions = false;
+    c.eco.wasm = !c.eco.wasm;
     c.brain.hiddenLayers = [12, 12, 12];
     c.brain.memory = 0.75;
     c.mutation.std = 0.45;

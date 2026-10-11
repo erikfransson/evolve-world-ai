@@ -79,6 +79,7 @@ export const ECO_SECTIONS: readonly Section[] = [
       range({ id: "agingStart", label: "Aging starts at", tip: "Age in seconds after which a creature's living cost starts to grow. Only used when Aging is on.", min: 30, max: 600, step: 10, fmt: "sec", get: (c) => c.eco.agingStart, set: (c, v) => { c.eco.agingStart = v; } }),
       range({ id: "agingRate", label: "Aging rate", tip: "How much the living cost grows for each minute of age past the start age, as a share of the normal cost. 50% means a creature one minute past the start pays half as much again. Only used when Aging is on.", min: 0, max: 2, step: 0.05, fmt: "pct", get: (c) => c.eco.agingRate, set: (c, v) => { c.eco.agingRate = v; } }),
       { kind: "toggle", id: "collisions", label: "Collisions", tip: "When on, creatures bounce off each other. Rays see other creatures either way.", get: (c) => c.eco.collisions, set: (c, v) => { c.eco.collisions = v; } },
+      { kind: "toggle", id: "wasm", label: "Use WebAssembly", tip: "When on, creatures look at each other and think with faster WebAssembly code, if the browser supports it. It rounds numbers a little differently, so a run differs in detail from one with this off, but behaves the same on average.", get: (c) => c.eco.wasm, set: (c, v) => { c.eco.wasm = v; } },
     ],
   },
   {

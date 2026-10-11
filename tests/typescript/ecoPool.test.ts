@@ -67,12 +67,13 @@ async function runFor(pool: ThinkPool, ticks: number, onTick: (tick: number) => 
 }
 
 describe("ThinkPool", () => {
-  it("matches the single-threaded run for 1 and 3 helpers, with births and deaths between ticks", async () => {
-    const ref = serial(cfg(), 400);
+  it("matches the single-threaded run for 1 and 3 helpers, with births and deaths between ticks, on the JS path", async () => {
+    const js = (): EcoConfig => ({ ...cfg(), eco: { ...cfg().eco, wasm: false } });
+    const ref = serial(js(), 400);
     expect(ref.births).toBeGreaterThan(0);
     expect(ref.deaths).toBeGreaterThan(0);
     for (const n of [1, 3]) {
-      const eco = await pooled(new ThinkPool(fakePorts(n), false), cfg(), 400);
+      const eco = await pooled(new ThinkPool(fakePorts(n), false), js(), 400);
       expect([eco.fingerprint(), eco.births, eco.deaths]).toEqual([ref.fingerprint(), ref.births, ref.deaths]);
     }
   });
@@ -142,7 +143,8 @@ describe("WebAssembly kernels", () => {
     expect(serial(wasmCfg(), 300).fingerprint()).toBe(a.fingerprint());
     const js = serial(wasmCfg(5, false), 300);
     expect(js.wasm).toBe(false);
-    expect(js.fingerprint()).toBe(serial(cfg(), 300).fingerprint());
+    expect(serial(cfg(), 300).fingerprint()).toBe(a.fingerprint()); // WASM is the default
+    expect(js.fingerprint()).not.toBe(a.fingerprint());
     // f32 changes trajectories, but one tick from the same start barely moves anyone.
     const [w1, j1] = [serial(wasmCfg(), 1), serial(wasmCfg(5, false), 1)];
     let maxMove = 0;

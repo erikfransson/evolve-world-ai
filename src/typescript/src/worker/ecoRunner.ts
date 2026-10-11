@@ -303,6 +303,7 @@ export class EcoRunner {
       speed: this.achieved,
       helpers: this.helpers?.helpers ?? 0,
       sharedMemory: this.helpers?.shared ?? false,
+      wasm: eco.wasm,
       count: n,
       itemCount: items,
       creatureCap,

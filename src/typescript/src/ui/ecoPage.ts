@@ -32,6 +32,7 @@ export interface EcoStats {
   speed: number | null; // simulated seconds per real second achieved, null until measured
   helpers: number; // helper threads sensing and thinking, 0 when the simulation runs on one thread
   sharedMemory: boolean;
+  wasm: boolean; // sense and think run on the WebAssembly kernels
 }
 
 export interface EcoSelected {
@@ -112,9 +113,10 @@ function setTile(id: string, value: string | null, unit = ""): void {
 const SPEED_TIP = "Simulated seconds per real second the computer is achieving. It can be lower than the speed asked for.";
 
 // How the run uses the cores, for the speed tooltip.
-export function threadsText(helpers: number, shared: boolean): string {
-  if (helpers === 0) return "Runs on one thread.";
-  return `Runs on ${helpers + 1} threads (${helpers} ${helpers === 1 ? "helper" : "helpers"}), ${shared ? "in shared memory" : "by messages"}.`;
+export function threadsText(helpers: number, shared: boolean, wasm = false): string {
+  const kernels = wasm ? ", with WebAssembly" : "";
+  if (helpers === 0) return `Runs on one thread${kernels}.`;
+  return `Runs on ${helpers + 1} threads (${helpers} ${helpers === 1 ? "helper" : "helpers"}), ${shared ? "in shared memory" : "by messages"}${kernels}.`;
 }
 
 function setTip(tileId: string, text: string): void {
@@ -235,7 +237,7 @@ export function createEcoView(handlers: EcoHandlers): EcoView {
       setTile("statTime", t && t.text, t?.unit);
       setTile("statDepth", s && nf.format(s.oldestDepth));
       setTile("statSpeed", s && s.speed !== null ? s.speed.toFixed(1) : null, " ×");
-      if (s) setTip("statSpeed", `${SPEED_TIP} ${threadsText(s.helpers, s.sharedMemory)}`);
+      if (s) setTip("statSpeed", `${SPEED_TIP} ${threadsText(s.helpers, s.sharedMemory, s.wasm)}`);
     },
     setSelected(sel) {
       hasSelection = sel !== null;
