@@ -1,6 +1,5 @@
 // @vitest-environment happy-dom
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { pageBody } from "./pageLoader.ts";
 import { DEFAULT_CONFIG } from "../../src/typescript/src/sim/config.ts";
 import type { SimConfig } from "../../src/typescript/src/sim/config.ts";
 import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
@@ -25,7 +24,6 @@ import type { Entry } from "../../src/typescript/src/ui/scoreboard.ts";
 import { initSettingsIO, parseWithPreset, serialise } from "../../src/typescript/src/ui/settingsIO.ts";
 import type { SettingsIO } from "../../src/typescript/src/ui/settingsIO.ts";
 
-const page = (name: string): string => readFileSync(resolve(import.meta.dirname, `../../src/typescript/${name}/index.html`), "utf8").replace(/^[\s\S]*<body>|<\/body>[\s\S]*$/g, "").replace(/<script[\s\S]*?<\/script>/g, "");
 
 const entry = (run: string, score: number): Entry => ({ run, score, date: "2026-10-11", settings: settingsOf(DEFAULT_CONFIG) });
 
@@ -147,7 +145,7 @@ describe("Trials preset panel", () => {
   let written = "";
 
   beforeAll(() => {
-    document.body.innerHTML = page("trials");
+    document.body.innerHTML = pageBody("trials");
     const form = document.getElementById("setup") as HTMLFormElement;
     buildTrials().fill(DEFAULT_CONFIG);
     trials.init(form, () => { inputs++; });
@@ -319,7 +317,7 @@ describe("Ecosystem preset panel", () => {
   let io: SettingsIO;
 
   beforeAll(() => {
-    document.body.innerHTML = page("ecosystem");
+    document.body.innerHTML = pageBody("ecosystem");
     form = buildForm(document.getElementById("settings")!, ECO_FORM);
     form.fill(DEFAULT_ECO_CONFIG);
     panel = initPresetPanel({
@@ -401,7 +399,7 @@ describe("Slider steps on both Ecosystem pages", () => {
     expect(Math.abs(steps - Math.round(steps)), r.id).toBeLessThan(1e-6);
   };
   it.each([["ecosystem", ECO_FORM, DEFAULT_ECO_CONFIG], ["predators", PREDATOR_FORM, DEFAULT_PREDATOR_CONFIG]] as const)("%s defaults sit on slider steps and one step up stays on the grid", (name, spec, defaults) => {
-    document.body.innerHTML = page(name);
+    document.body.innerHTML = pageBody(name);
     const f = buildForm(document.getElementById("settings")!, spec);
     f.fill(defaults);
     expectOnSteps();
@@ -412,7 +410,7 @@ describe("Slider steps on both Ecosystem pages", () => {
     }
   });
   it("the Great Hunt preset lands on the steps", () => {
-    document.body.innerHTML = page("predators");
+    document.body.innerHTML = pageBody("predators");
     const f = buildForm(document.getElementById("settings")!, PREDATOR_FORM);
     f.fill(withEcoPreset(DEFAULT_PREDATOR_CONFIG, PREDATOR_PRESETS[0]!.id, PREDATOR_PRESETS));
     expectOnSteps();

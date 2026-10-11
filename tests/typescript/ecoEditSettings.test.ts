@@ -1,6 +1,5 @@
 // @vitest-environment happy-dom
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { pageBody } from "./pageLoader.ts";
 import { createEcoView } from "../../src/typescript/src/ui/ecoPage.ts";
 import type { EcoHandlers } from "../../src/typescript/src/ui/ecoPage.ts";
 import { ECOSYSTEM_PAGE } from "../../src/typescript/src/ui/ecoModes.ts";
@@ -20,7 +19,7 @@ vi.mock("../../src/typescript/src/ui/settingsForm.ts", async (importActual) => {
   };
 });
 
-const html = readFileSync(resolve(import.meta.dirname, "../../src/typescript/ecosystem/index.html"), "utf8").replace(/^[\s\S]*<body>|<\/body>[\s\S]*$/g, "").replace(/<script[\s\S]*?<\/script>/g, "");
+const html = pageBody("ecosystem");
 
 describe("Ecosystem extinction dialog", () => {
   it("Edit settings returns to idle and keeps the run's settings", () => {

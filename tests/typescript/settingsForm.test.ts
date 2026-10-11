@@ -1,13 +1,11 @@
 // @vitest-environment happy-dom
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { pageBody } from "./pageLoader.ts";
 import { DEFAULT_CONFIG, withOverrides } from "../../src/typescript/src/sim/config.ts";
 import type { DeepPartial, SimConfig } from "../../src/typescript/src/sim/config.ts";
 import { buildForm } from "../../src/typescript/src/ui/settingsForm.ts";
 import type { FormHandle } from "../../src/typescript/src/ui/settingsForm.ts";
 import { TRIALS_FORM } from "../../src/typescript/src/ui/trialsForm.ts";
 
-const html = readFileSync(resolve(process.cwd(), "trials/index.html"), "utf8");
 const deg = (d: number): number => (d * Math.PI) / 180;
 
 let form: FormHandle<SimConfig>;
@@ -15,7 +13,7 @@ const readConfig = (): SimConfig => form.read();
 const fillForm = (c: SimConfig): void => form.fill(c);
 
 beforeAll(() => {
-  document.body.innerHTML = /<body[^>]*>([\s\S]*)<\/body>/.exec(html)![1]!.replace(/<script[\s\S]*?<\/script>/g, ""); // page scripts must not load
+  document.body.innerHTML = pageBody("trials");
   form = buildForm(document.getElementById("settings")!, TRIALS_FORM);
 });
 

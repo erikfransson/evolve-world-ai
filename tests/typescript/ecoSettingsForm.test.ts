@@ -1,6 +1,5 @@
 // @vitest-environment happy-dom
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { pageBody } from "./pageLoader.ts";
 import { DEFAULT_CONFIG } from "../../src/typescript/src/sim/config.ts";
 import type { SimConfig } from "../../src/typescript/src/sim/config.ts";
 import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
@@ -13,7 +12,6 @@ import { TRIALS_FORM } from "../../src/typescript/src/ui/trialsForm.ts";
 let form: FormHandle<EcoConfig>;
 import { PREDATOR_FORM } from "../../src/typescript/src/ui/predatorForm.ts";
 
-const page = (name: string): string => readFileSync(resolve(import.meta.dirname, `../../src/typescript/${name}/index.html`), "utf8").replace(/^[\s\S]*<body[^>]*>|<\/body>[\s\S]*$/g, "").replace(/<script[\s\S]*?<\/script>/g, "");
 
 // Browsers snap a range to min + n * step, which happy-dom does not, so check that every default sits on a step.
 function expectRangesOnStep(): void {
@@ -27,7 +25,7 @@ function expectRangesOnStep(): void {
 describe("Trials settings form", () => {
   let trials: FormHandle<SimConfig>;
   beforeEach(() => {
-    document.body.innerHTML = page("trials");
+    document.body.innerHTML = pageBody("trials");
     trials = buildForm(document.getElementById("settings")!, TRIALS_FORM);
   });
 
@@ -49,7 +47,7 @@ describe("Trials settings form", () => {
 
 describe("Ecosystem settings form", () => {
   beforeEach(() => {
-    document.body.innerHTML = page("ecosystem");
+    document.body.innerHTML = pageBody("ecosystem");
     form = buildForm(document.getElementById("settings")!, ECO_FORM);
   });
 
@@ -122,7 +120,7 @@ describe("Ecosystem settings form", () => {
 
 describe("The Great Hunt settings form", () => {
   beforeEach(() => {
-    document.body.innerHTML = page("predators");
+    document.body.innerHTML = pageBody("predators");
     form = buildForm(document.getElementById("settings")!, PREDATOR_FORM);
   });
 

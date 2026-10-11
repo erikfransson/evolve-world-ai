@@ -29,8 +29,7 @@ function speciesFields(i: number, p: string, who: string, maxFounders: number): 
     range({ id: `${p}StartEnergy`, label: "Founder energy", tip: `Energy each starting creature has. It also sets the scale of how full a creature feels to its own brain.`, min: 10, max: 300, step: 1, advanced: true, get: (c) => value(c, i, "startEnergy"), set: (c, v) => { assign(c, i, "startEnergy", v); } }),
     range({ id: `${p}LivingCost`, label: "Living cost", tip: "Energy per second just for being alive.", min: 0, max: 6, step: 0.01, fmt: "dens", advanced: true, get: (c) => value(c, i, "livingCost"), set: (c, v) => { assign(c, i, "livingCost", v); } }),
     range({ id: `${p}ThrustCost`, label: "Thrust cost", tip: "Energy per second at full thrust.", min: 0, max: 12, step: 0.1, fmt: "dens", advanced: true, get: (c) => value(c, i, "thrustCost"), set: (c, v) => { assign(c, i, "thrustCost", v); } }),
-    range({ id: `${p}RayMin`, label: "Shortest vision", tip: "Founders and mutations keep each creature's vision range at or above this.", min: 20, max: 400, step: 1, fmt: "size", advanced: true, get: (c) => value(c, i, "rayLengthRange")[0]!, set: (c, v) => { assign(c, i, "rayLengthRange", [v, Math.max(v, value(c, i, "rayLengthRange")[1]!)]); } }),
-    range({ id: `${p}RayMax`, label: "Longest vision", tip: "Founders and mutations keep each creature's vision range at or below this. Longer sight costs more upkeep.", min: 20, max: 400, step: 1, fmt: "size", advanced: true, get: (c) => value(c, i, "rayLengthRange")[1]!, set: (c, v) => { assign(c, i, "rayLengthRange", [Math.min(v, value(c, i, "rayLengthRange")[0]!), v]); } }),
+    ...rangePair<EcoConfig>({ id: `${p}Ray`, label: "Vision", tip: "Founders and mutations keep each creature's vision range between these. Longer sight costs more upkeep.", min: 20, max: 400, step: 1, fmt: "size", advanced: true, get: (c) => value(c, i, "rayLengthRange"), set: (c, v) => { assign(c, i, "rayLengthRange", v); } }),
   ];
 }
 
