@@ -3,12 +3,13 @@ import { Brain, genomeLength, layerSizes, randomGenome } from "../../src/typescr
 import { Crowd } from "../../src/typescript/src/sim/crowd.ts";
 import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { createRng } from "../../src/typescript/src/sim/rng.ts";
-import { inputLayout, planOf, rayAngleOffsets } from "../../src/typescript/src/sim/sensors.ts";
+import { inputLayout, planOf } from "../../src/typescript/src/sim/sensors.ts";
 import { HIT_CREATURE, HIT_FOOD, HIT_NONE, HIT_WALL } from "../../src/typescript/src/sim/types.ts";
-import type { CreatureState, RayHit } from "../../src/typescript/src/sim/types.ts";
 import { WasmBrainBank } from "../../src/typescript/src/sim/wasm/brainKernel.ts";
 import { setWasmDisabled, wasmAvailable } from "../../src/typescript/src/sim/wasm/loader.ts";
-import { WasmRayCaster } from "../../src/typescript/src/sim/wasm/rayKernel.ts";
+import { SenseKernels } from "../../src/typescript/src/sim/wasm/senseKernels.ts";
+import { Creature, SenseBatch } from "../../src/typescript/src/sim/creature.ts";
+import { World } from "../../src/typescript/src/sim/world.ts";
 import { readFileSync } from "node:fs";
 import { testRng } from "./helpers.ts";
 
@@ -30,7 +31,7 @@ describe("fallback", () => {
     setWasmDisabled(true);
     expect(wasmAvailable()).toBe(false);
     expect(await WasmBrainBank.create()).toBeNull();
-    expect(await WasmRayCaster.create()).toBeNull();
+    expect(SenseKernels.create()).toBeNull();
     setWasmDisabled(false);
     expect(await WasmBrainBank.create()).not.toBeNull();
   });
@@ -173,120 +174,140 @@ describe("WasmBrainBank", () => {
   });
 });
 
-describe("WasmRayCaster", () => {
-  const world = { width: 1500, height: 1000 };
-  const cfg = { ...DEFAULT_ECO_CONFIG, world: { ...DEFAULT_ECO_CONFIG.world, ...world } };
-
-  function scene(seed: number, n: number) {
-    const rng = createRng(seed);
-    const states: CreatureState[] = Array.from({ length: n }, () => ({
-      x: rng.range(0, world.width),
-      y: rng.range(0, world.height),
-      heading: rng.range(0, 7),
-      vx: 0,
-      vy: 0,
-      turnRate: 0,
-      energy: rng.range(0.5, 200),
-      alive: true,
-      ticksAlive: 0,
-    }));
-    const crowd = new Crowd(cfg);
-    crowd.rebuild(states, n);
-    return { rng, states, crowd };
+describe("sense.wat (SenseKernels)", () => {
+  type Spot = [number, number, number]; // x, y, heading
+  interface Setup {
+    width?: number;
+    height?: number;
+    rays: number;
+    spread: number;
+    length?: number;
+    creatures: Spot[];
+    items?: [number, number, number][]; // x, y, kind
   }
 
-  const randomHits = (rays: number, L: number, rng: ReturnType<typeof createRng>): RayHit[] =>
-    Array.from({ length: rays }, () => {
-      const u = rng.next();
-      if (u < 0.5) return { closeness: 0, kind: HIT_NONE, energy: 0 };
-      return { closeness: rng.next(), kind: u < 0.8 ? HIT_FOOD : HIT_WALL, energy: 0 };
+  function build(o: Setup) {
+    const base = DEFAULT_ECO_CONFIG;
+    const cfg = {
+      ...base,
+      world: { ...base.world, width: o.width ?? 1200, height: o.height ?? 800 },
+      creature: { ...base.creature, rayCount: o.rays, raySpread: o.spread, rayLength: o.length ?? 100 },
+    };
+    const world = new World(cfg, 400);
+    (o.items ?? []).forEach(([x, y, kind], i) => world.setItem(i, x, y, kind as 1 | 2));
+    const rng = createRng(3);
+    const make = () => o.creatures.map(([x, y, h]) => {
+      const g = randomGenome(layerSizes(cfg, planOf(cfg)), rng);
+      return new Creature(cfg, g, x, y, h);
     });
+    const genomes = make();
+    const kernel = genomes; // creatures for the kernel
+    const reference = o.creatures.map(([x, y, h], k) => new Creature(cfg, kernel[k]!.brain.genome.slice(), x, y, h));
+    const states = kernel.map((c) => c.state);
+    states.forEach((s, k) => (s.energy = 10 + 37 * k));
+    reference.forEach((c, k) => (c.state.energy = states[k]!.energy));
+    return { cfg, world, kernel, reference };
+  }
 
-  it("matches Crowd.castRays over varied plans and starting hits", async () => {
-    const caster = (await WasmRayCaster.create())!;
-    const { rng, states, crowd } = scene(3, 600);
-    caster.loadCrowd(crowd);
-    const jobs = [];
-    for (let v = 0; v < states.length; v += 2) {
-      const rays = [1, 3, 8, 9, 16][v % 5]!;
-      const spread = v % 7 === 0 ? 2 * Math.PI : rng.range(0.4, 3.5);
-      const L = rng.range(50, 160);
-      const offsets = rayAngleOffsets({ rayCount: rays, raySpread: spread });
-      const dirX = Float64Array.from(offsets, (o) => Math.cos(states[v]!.heading + o));
-      const dirY = Float64Array.from(offsets, (o) => Math.sin(states[v]!.heading + o));
-      const start = randomHits(rays, L, rng);
-      jobs.push({ v, L, dirX, dirY, js: start.map((h) => ({ ...h })), wasm: start.map((h) => ({ ...h })) });
-    }
-    for (const j of jobs) {
-      crowd.castRays(states[j.v]!.x, states[j.v]!.y, j.dirX, j.dirY, j.js, j.v, j.L);
-      caster.queue(states[j.v]!.x, states[j.v]!.y, j.dirX, j.dirY, j.wasm, j.v, j.L);
-    }
-    caster.run();
-    caster.apply();
-    let creatureHits = 0;
-    let rays = 0;
-    let maxDiff = 0;
-    for (const j of jobs) {
-      for (let i = 0; i < j.js.length; i++) {
-        rays++;
-        const a = j.js[i]!;
-        const b = j.wasm[i]!;
-        expect(b.kind).toBe(a.kind);
-        maxDiff = Math.max(maxDiff, Math.abs(a.closeness - b.closeness));
-        if (a.kind === HIT_CREATURE) {
-          creatureHits++;
-          expect(b.energy).toBe(a.energy);
-        }
-      }
-    }
-    expect(rays).toBeGreaterThan(2000);
-    expect(creatureHits).toBeGreaterThan(100);
-    expect(maxDiff).toBeLessThan(1e-4);
+  // Runs the kernel with each creature in turn as the detail one and compares rays and brain input with the JS sense.
+  // exact: no creature is in sight of another, so the f32 crowd path does not enter and every bit must agree.
+  function check(o: Setup, exact: boolean) {
+    const { cfg, world, kernel, reference } = build(o);
+    const crowd = new Crowd(cfg);
+    crowd.rebuild(kernel.map((c) => c.state), kernel.length);
+    const kernels = SenseKernels.create()!;
+    const batch = new SenseBatch();
+    kernel.forEach((c, k) => batch.add(c, k));
+    reference.forEach((c, k) => {
+      c.sense(world, crowd, k);
+      c.encode();
+    });
+    let bad = 0;
+    const seen = new Set<number>();
+    kernel.forEach((c, k) => {
+      kernels.detail = c;
+      kernels.run(world, crowd, batch);
+      const ref = reference[k]!;
+      c.rays.forEach((ray, i) => {
+        seen.add(ray.kind);
+        const want = ref.rays[i]!;
+        if (exact) {
+          expect(ray.kind).toBe(want.kind);
+          expect(ray.closeness).toBe(want.closeness);
+        } else if (ray.kind !== want.kind || Math.abs(ray.closeness - want.closeness) > 1e-4 || (ray.kind === HIT_CREATURE && ray.energy !== want.energy)) bad++;
+      });
+      const got = c.brain.layerActivations()[0]!;
+      const want = ref.encode();
+      expect(got.length).toBe(want.length);
+      if (exact) expect(Array.from(got)).toEqual(Array.from(want));
+      else for (let i = 0; i < got.length; i++) if (Math.abs(got[i]! - want[i]!) > 1e-4) bad++;
+      expect(Array.from(c.outputs).every(Number.isFinite)).toBe(true);
+    });
+    return { bad, seen, world, crowd, kernels, batch, kernel, reference, rays: kernel.length * o.rays };
+  }
+
+  const items: [number, number, number][] = [];
+  const itemRng = createRng(11);
+  for (let i = 0; i < 300; i++) items.push([itemRng.range(4, 1196), itemRng.range(4, 796), 1 + (i % 3 === 0 ? 1 : 0)]);
+
+  it("matches the JS rays bit for bit next to walls and in corners", () => {
+    const r = 12;
+    const spots: Spot[] = [[r, r, 5.5], [1200 - r, 800 - r, 2.4], [r, 800 - r, -1], [1200 - r, r, 3.5], [600, r, 1.6], [-300, 400, 0.7], [1300, 900, 4]];
+    const { seen } = check({ rays: 9, spread: 1.5, creatures: spots, items }, true);
+    expect(seen).toContain(HIT_WALL);
+    expect(seen).toContain(HIT_FOOD);
+    expect(seen).toContain(HIT_NONE);
   });
 
-  it("grows its memory with the crowd and can be reused across ticks", async () => {
-    const caster = (await WasmRayCaster.create())!;
-    const before = caster.memoryBytes;
-    for (const n of [50, 4000, 200]) {
-      const { states, crowd } = scene(n, n);
-      caster.loadCrowd(crowd);
-      const js: RayHit[][] = [];
-      const wasm: RayHit[][] = [];
-      const offsets = rayAngleOffsets({ rayCount: 8, raySpread: 1.5 });
-      for (let v = 0; v < n; v++) {
-        const dirX = Float64Array.from(offsets, (o) => Math.cos(states[v]!.heading + o));
-        const dirY = Float64Array.from(offsets, (o) => Math.sin(states[v]!.heading + o));
-        js.push(Array.from({ length: 8 }, () => ({ closeness: 0, kind: HIT_NONE, energy: 0 })));
-        wasm.push(js[v]!.map((h) => ({ ...h })));
-        crowd.castRays(states[v]!.x, states[v]!.y, dirX, dirY, js[v]!, v, 100);
-        caster.queue(states[v]!.x, states[v]!.y, dirX, dirY, wasm[v]!, v, 100);
-      }
-      caster.run();
-      caster.apply();
-      let bad = 0;
-      for (let v = 0; v < n; v++) for (let i = 0; i < 8; i++) if (js[v]![i]!.kind !== wasm[v]![i]!.kind || Math.abs(js[v]![i]!.closeness - wasm[v]![i]!.closeness) > 1e-4) bad++;
-      expect(bad).toBe(0);
+  it("matches with a full 360 degree fan, and with one ray", () => {
+    check({ rays: 12, spread: 2 * Math.PI, creatures: [[300, 300, 0.3], [20, 400, 3], [1190, 790, 5]], items }, true);
+    check({ rays: 1, spread: 0, creatures: [[300, 300, 0.3], [20, 400, 3]], items }, true);
+  });
+
+  it("handles a plan with zero rays", () => {
+    const { kernel } = check({ rays: 0, spread: 0, creatures: [[300, 300, 0.3], [400, 300, 1]], items }, true);
+    expect(kernel[0]!.rays.length).toBe(0);
+  });
+
+  it("agrees with JS on an item exactly at the ray length, and a hair either side", () => {
+    const r = DEFAULT_ECO_CONFIG.world.itemRadius;
+    for (const d of [0, -1e-3, 1e-3, -0.5, 0.5]) {
+      const { rays } = check({ rays: 1, spread: 0, length: 100, creatures: [[200, 300, 0]], items: [[200 + 100 + r + d, 300, 1]] }, true);
+      expect(rays).toBe(1);
     }
-    expect(caster.memoryBytes).toBeGreaterThan(before);
+    check({ rays: 3, spread: 0.2, length: 100, creatures: [[200, 300, 0]], items: [[200 + 100 + r, 300, 2], [200 + 100, 300 + r, 1], [250, 300, 2]] }, true);
   });
 
-  it("finds nothing for a creature far outside the world, without reading outside the grid", async () => {
-    const caster = (await WasmRayCaster.create())!;
-    const { crowd } = scene(5, 300);
-    caster.loadCrowd(crowd);
-    const offsets = rayAngleOffsets({ rayCount: 8, raySpread: 2 });
-    const dirX = Float64Array.from(offsets, (o) => Math.cos(o));
-    const dirY = Float64Array.from(offsets, (o) => Math.sin(o));
-    const far = [[-5000, 500], [9000, 500], [700, -5000], [700, 9000], [-5000, -5000], [9000, 9000]];
-    const outs = far.map((): RayHit[] => Array.from({ length: 8 }, () => ({ closeness: 0, kind: HIT_NONE, energy: 0 })));
-    far.forEach(([x, y], v) => caster.queue(x!, y!, dirX, dirY, outs[v]!, -1, 150));
-    caster.run();
-    caster.apply();
-    for (const out of outs) for (const ray of out) expect(ray.kind).toBe(HIT_NONE);
+  it("sees item changes between runs, such as an item eaten or placed mid-tick", () => {
+    const o: Setup = { rays: 5, spread: 1, creatures: [[300, 300, 0]], items: [[360, 300, 1], [380, 305, 2]] };
+    const { world, crowd, kernels, batch, kernel, reference } = check(o, true);
+    for (const step of [() => world.removeItem(0), () => world.setItem(0, 340, 295, 2), () => world.removeItem(1)]) {
+      step();
+      reference[0]!.sense(world, crowd, 0);
+      kernels.detail = kernel[0]!;
+      kernels.run(world, crowd, batch);
+      kernel[0]!.rays.forEach((ray, i) => {
+        expect(ray.kind).toBe(reference[0]!.rays[i]!.kind);
+        expect(ray.closeness).toBe(reference[0]!.rays[i]!.closeness);
+      });
+    }
   });
 
-  it("needs a crowd first", async () => {
-    const caster = (await WasmRayCaster.create())!;
-    expect(() => caster.run()).toThrow(/loadCrowd/);
+  it("sees other creatures with their energy, within f32 rounding of the JS crowd rays", () => {
+    const rng = createRng(7);
+    const spots: Spot[] = Array.from({ length: 120 }, () => [rng.range(0, 600), rng.range(0, 400), rng.range(0, 7)]);
+    const { bad, rays } = check({ width: 600, height: 400, rays: 8, spread: 2, length: 120, creatures: spots, items: items.filter(([x, y]) => x < 600 && y < 400) }, false);
+    expect(rays).toBe(960);
+    expect(bad).toBeLessThanOrEqual(2);
+  });
+
+  it("keeps the rays of non-detail creatures untouched and needs no detail", () => {
+    const { kernel, world, crowd, kernels, batch } = check({ rays: 4, spread: 1, creatures: [[300, 300, 0], [320, 300, 3]], items }, false);
+    kernel[1]!.rays[0]!.closeness = 0.123;
+    kernels.detail = kernel[0]!;
+    kernels.run(world, crowd, batch);
+    expect(kernel[1]!.rays[0]!.closeness).toBe(0.123);
+    kernels.detail = null;
+    kernels.run(world, crowd, batch);
   });
 });

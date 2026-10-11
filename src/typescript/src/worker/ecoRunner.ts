@@ -156,6 +156,7 @@ export class EcoRunner {
       this.debt = Math.min(this.debt, (MAX_CATCH_UP * this.speed) / eco.config.dt);
     }
     this.last = t0;
+    eco.detail = this.selectedId;
     return eco;
   }
 

@@ -3,12 +3,14 @@ import type { Crowd } from "../crowd.ts";
 import { energySignal } from "../sensors.ts";
 import type { World } from "../world.ts";
 import type { WasmBrainBank } from "./brainKernel.ts";
+import { HIT_CREATURE } from "../types.ts";
 import { SENSE_BYTES } from "./loader.ts";
 
 // The whole Ecosystem sense in one WebAssembly call per batch (sense.wat): ray directions, item and wall rays in f64 with the
 // JS candidate order, crowd rays in f32 as rays.wat, and the ray features written into the brain's input vector in place.
 // Shares the brain bank's linear memory. Per tick the item grid and the crowd are copied in whole, which costs far less
-// than the per-creature object traffic it replaces. The creature's RayHit objects are not updated.
+// than the per-creature object traffic it replaces. The creature's RayHit objects are not updated, except for the one
+// creature given as detail (the selected one), whose rays are read back for the UI.
 
 const MAX_RAYS = 64;
 const P_BYTES = 128;
@@ -75,7 +77,7 @@ export class WasmSenser {
   }
 
   // Senses the batch and writes each creature's complete brain input (rays, extras, memory) at its slot.
-  run(world: World, crowd: Crowd, creatures: readonly Creature[], slots: Int32Array, selves: Int32Array, n: number, stride: number, startEnergy: number): void {
+  run(world: World, crowd: Crowd, creatures: readonly Creature[], slots: Int32Array, selves: Int32Array, n: number, stride: number, startEnergy: number, detail: Creature | null = null): void {
     const cells = world.cols * world.rows;
     const count = crowd.count;
     const ccells = crowd.cols * crowd.rows;
@@ -92,6 +94,7 @@ export class WasmSenser {
     const pRec = this.region("rc", n * REC_BYTES);
     const pCand = this.region("cd", Math.max(world.count * 32, count * 16) + 64);
     const pScr = this.region("sr", SCRATCH_BYTES);
+    const pDetail = this.region("dt", 16 * MAX_RAYS);
     const pP = this.region("pp", P_BYTES);
     const buffer = this.bank.memory.buffer;
     const f32 = new Float32Array(buffer);
@@ -132,6 +135,7 @@ export class WasmSenser {
       recI[w + 12] = this.offPtr[slot]!;
       const inFloat = this.bank.inputAt(slot);
       recI[w + 13] = inFloat * 4;
+      recI[w + 14] = c === detail ? pDetail : 0;
       c.writeBodyInputs(f32, inFloat + rays * stride);
     }
     const P = new Float64Array(buffer, pP, P_BYTES / 8);
@@ -163,5 +167,19 @@ export class WasmSenser {
     PI[27] = pCand;
     PI[28] = pScr;
     this.exports.sense(pP);
+  }
+
+  // After run with this creature as detail: writes its rays (closeness, kind, seen energy) into c.rays.
+  readRays(c: Creature, crowd: Crowd): void {
+    const ptr = this.regions.get("dt")!.ptr;
+    const buffer = this.bank.memory.buffer;
+    const f64 = new Float64Array(buffer, ptr, 2 * c.rays.length);
+    const i32 = new Int32Array(buffer, ptr, 4 * c.rays.length);
+    for (let i = 0; i < c.rays.length; i++) {
+      const ray = c.rays[i]!;
+      ray.closeness = f64[2 * i]!;
+      ray.kind = i32[4 * i + 2] as typeof ray.kind;
+      if (ray.kind === HIT_CREATURE) ray.energy = crowd.energies[i32[4 * i + 3]!]!;
+    }
   }
 }

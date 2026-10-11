@@ -70,3 +70,12 @@ New: `sense.wat` 288 lines, `senser.ts` 167 lines, about 60 lines of glue (Creat
 ## Files
 
 Prototype: `src/typescript/src/sim/wasm/sense.wat`, `senser.ts`, `senseKernels.ts` (`runFull`), `src/typescript/src/ecoBench.ts` (`--scale S`, `--full`, `cpuMsPerTick`). Reproduce: `cd src/typescript && SENSE_FULL=1 nice -n 15 node src/ecoBench.ts --seconds 12 --scale 1.6667 --pop 1500` vs the same without `SENSE_FULL`; fingerprints must match (543106933).
+
+## Merge-ready update (after merging main e17cba7)
+
+- Merged main (block stamps, wall skip, parallel helpers, sortBySlot, poison damage, seasons). The kernel's candidate order is still the grid walk order, which the cached list keeps, and the wall skip is mirrored (walls computed only within L x (1 + 1e-6) of an edge; it never changes a result).
+- `Ecosystem.detail` (set by `EcoRunner` to the selected id) names the one creature whose `rays` and brain input are read back after each batch (`SenseKernels.detail`, rec word 14 in `sense.wat`). Consumers checked: `selectedDetails` in ecoRunner (rays and `layerActivations()[0]`), the brain panel (same input), `episode.ts` and `ui/scene.ts` (Trials, JS path, unchanged). With helper threads the existing `watch` already puts the selected creature in the coordinator's batch. A creature selected mid-tick shows last tick's rays until the next tick.
+- Deleted `rays.wat`, `rayKernel.ts`, `Creature.queueCrowd`, the ray half of `wasmBench.ts`. Net source growth vs main is about +210 lines (`sense.wat` 305 + `senser.ts` 185 - 281 removed - small glue).
+- Extension point for Predators and prey: the crowd feature path is the merge loop at the end of `sense.wat` (hit crowd slot `$k`, per-slot f32 table `sig` filled in `senser.ts`). A species flag or other per-creature feature is one more per-slot table indexed by `$k`, plus its stride in the feature write.
+- Tests: `wasmKernels.test.ts` compares the kernel with `Creature.sense` for corners and walls, 360 degree fan, one ray, zero rays, an item at the ray length and a hair either side, item removal and placement between runs, and crowds (within f32 rounding). Helper counts 1 and 3 by fake ports, message and shared workers are in `ecoPool.test.ts` ("give the same run for any helper count and mode").
+- Measured at width 20000 against main: see `docs/perf-notes.md` E5d.

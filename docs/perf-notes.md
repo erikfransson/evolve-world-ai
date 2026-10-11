@@ -155,3 +155,9 @@ Population over 600 s, default world and seed pool, 4 shared helpers, samples ev
 Same shape and plateau (1500-1700); seed-to-seed spread is as large as the JS-WASM difference.
 Browser (headless Chrome, preview, default world at Max, median of the last 20 s of 40 s, 3200-3700 creatures): one thread 1.1x JS and 1.1x WASM; 4 helpers in shared memory 1.4, 1.4x JS and 1.5, 1.4x WASM. The tile's 0.1 resolution hides a 10% gain.
 Default set to WASM (`eco.wasm` true, "Use WebAssembly" under Life cycle); runtimes without SIMD fall back to JS.
+
+## One-call WebAssembly sense (E5d)
+
+`sense.wat` does ray directions, item and wall rays (f64, same candidate order as `World.castRays`), crowd rays (f32) and the ray features written into the brain input, for a whole batch in one call. The item grid and crowd are copied into WASM memory each tick. The old `rays.wat` is gone. Only `Ecosystem.detail` (the selected creature) gets its `creature.rays` and brain input read back.
+Width 20000 (about 2700 creatures), user CPU ms per steady tick, main e17cba7 vs branch in alternating pairs: serial 28.4, 29.3, 28.2 vs 20.5, 20.7, 21.8 (1.37x); 3 shared helpers, total CPU 40.4, 40.0 vs 32.2, 32.8 (1.24x). Fingerprints equal to main for serial, 3 shared, 3 message and 1 shared helpers.
+Details and rejected f64x2 variant in `docs/perf-explore/wasm.md`.

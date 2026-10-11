@@ -3,7 +3,8 @@
 ;; Memory is the brain bank's (imported), so inputs need no copy. Everything is scratch per tick except the per-slot offset tables.
 ;; Param block P (bytes): f64 W@0 H@8 itemR@16 invWorldCell@24; f32 invCrowdCell@32 crowdR@36;
 ;;   i32 wCols@40 wRows@44 cellHead@48 nextItem@52 itemX@56 itemY@60 itemKind@64 cCols@68 cRows@72 cStart@76 sx@80 sy@84 own@88 sig@92 rec@96 n@100 stride@104 cand@108 scr@112.
-;; Creature record, 64 bytes: f64 x y cos sin L; i32 self@40 rays@44 offsets@48 (f64 cos[rays], then sin[rays]) input@52 (byte address).
+;; Creature record, 64 bytes: f64 x y cos sin L; i32 self@40 rays@44 offsets@48 (f64 cos[rays], then sin[rays]) input@52 (byte address)
+;;   detail@56 (0, or the address where to also write each ray as f64 closeness, i32 kind, i32 crowd slot hit or -1, for the UI).
 ;; Ray scratch (max 64 rays): dx f64@0 dy f64@512 clo f64@1024 kind i32@1536 dxf f32@1792 dyf f32@2048 best f32@2304 hit i32@2560.
 (module
   (import "brain" "mem" (memory 1))
@@ -17,7 +18,7 @@
     (local $cx0 i32) (local $cx1 i32) (local $cy0 i32) (local $cy1 i32) (local $cx i32) (local $cy i32) (local $c i32)
     (local $it i32) (local $fx f64) (local $fy f64) (local $d2 f64) (local $cp i32) (local $ce i32) (local $inv f64) (local $cols i32) (local $rows i32)
     (local $dx f64) (local $dy f64) (local $best f64) (local $kind i32) (local $tw f64) (local $t f64) (local $b f64) (local $cc f64) (local $disc f64)
-    (local $cur i32) (local $clo f64) (local $oc f64) (local $os f64)
+    (local $cur i32) (local $det i32) (local $walls i32) (local $clo f64) (local $oc f64) (local $os f64)
     ;; crowd phase
     (local $x32 f32) (local $y32 f32) (local $L32 f32) (local $rc f32) (local $invc f32) (local $r2c f32) (local $farc f32) (local $far2c f32) (local $marginc f32)
     (local $d0xf f32) (local $d0yf f32) (local $d1xf f32) (local $d1yf f32) (local $fxf f32) (local $fyf f32) (local $d2f f32)
@@ -47,6 +48,7 @@
     (local.set $sigp (i32.load offset=92 (local.get $P)))
     (block $jd (loop $jl
       (br_if $jd (i32.ge_u (local.get $j) (local.get $n)))
+      (block $jn
       (local.set $q (i32.add (i32.load offset=96 (local.get $P)) (i32.shl (local.get $j) (i32.const 6))))
       (local.set $x (f64.load (local.get $q)))
       (local.set $y (f64.load offset=8 (local.get $q)))
@@ -57,6 +59,14 @@
       (local.set $nR (i32.load offset=44 (local.get $q)))
       (local.set $off (i32.load offset=48 (local.get $q)))
       (local.set $inp (i32.load offset=52 (local.get $q)))
+      (local.set $det (i32.load offset=56 (local.get $q)))
+      (br_if $jn (i32.eqz (local.get $nR)))
+      (local.set $walls (i32.or (i32.or
+        (f64.lt (local.get $x) (f64.mul (local.get $L) (f64.add (f64.const 1) (f64.const 1e-6))))
+        (f64.lt (f64.sub (local.get $W) (local.get $x)) (f64.mul (local.get $L) (f64.add (f64.const 1) (f64.const 1e-6)))))
+        (i32.or
+        (f64.lt (local.get $y) (f64.mul (local.get $L) (f64.add (f64.const 1) (f64.const 1e-6))))
+        (f64.lt (f64.sub (local.get $H) (local.get $y)) (f64.mul (local.get $L) (f64.add (f64.const 1) (f64.const 1e-6)))))))
       ;; directions by angle addition
       (local.set $i (i32.const 0))
       (block $dd (loop $dl
@@ -132,6 +142,7 @@
         (local.set $best (local.get $L))
         (local.set $kind (i32.const 0))
         (local.set $tw (f64.const inf))
+        (if (local.get $walls) (then
         (if (f64.gt (local.get $dx) (f64.const 0)) (then (local.set $tw (f64.div (f64.sub (local.get $W) (local.get $x)) (local.get $dx))))
           (else (if (f64.lt (local.get $dx) (f64.const 0)) (then (local.set $tw (f64.div (f64.neg (local.get $x)) (local.get $dx)))))))
         (if (f64.gt (local.get $dy) (f64.const 0)) (then
@@ -141,7 +152,7 @@
             (local.set $t (f64.div (f64.neg (local.get $y)) (local.get $dy)))
             (if (f64.lt (local.get $t) (local.get $tw)) (then (local.set $tw (local.get $t))))))))
         (if (f64.lt (local.get $tw) (f64.const 0)) (then (local.set $tw (f64.const 0))))
-        (if (f64.lt (local.get $tw) (local.get $best)) (then (local.set $best (local.get $tw)) (local.set $kind (i32.const 3))))
+        (if (f64.lt (local.get $tw) (local.get $best)) (then (local.set $best (local.get $tw)) (local.set $kind (i32.const 3))))))
         (local.set $cp (local.get $cand))
         (block $cd (loop $cl
           (br_if $cd (i32.ge_u (local.get $cp) (local.get $ce)))
@@ -273,6 +284,11 @@
           (local.set $clo (f64.sub (f64.const 1) (f64.div (f64.promote_f32 (f32.load offset=2304 (local.get $ps))) (f64.promote_f32 (local.get $L32)))))
           (local.set $kind (i32.const 4))
           (local.set $cc (f64.promote_f32 (f32.load (i32.add (local.get $sigp) (i32.shl (local.get $k) (i32.const 2))))))))
+        (if (local.get $det) (then
+          (f64.store (i32.add (local.get $det) (i32.shl (local.get $i) (i32.const 4))) (local.get $clo))
+          (i32.store offset=8 (i32.add (local.get $det) (i32.shl (local.get $i) (i32.const 4))) (local.get $kind))
+          (i32.store offset=12 (i32.add (local.get $det) (i32.shl (local.get $i) (i32.const 4))) (local.get $k))))
+        ;; Crowd feature extension point: the seen creature is crowd slot $k (-1 for none); per-slot tables like sig are indexed by it here.
         (local.set $base (i32.add (local.get $inp) (i32.mul (i32.shl (local.get $i) (i32.const 2)) (local.get $stride))))
         (f32.store (local.get $base) (f32.demote_f64 (local.get $clo)))
         (f32.store offset=4 (local.get $base) (select (f32.const 1) (f32.const 0) (i32.eq (local.get $kind) (i32.const 1))))
@@ -283,6 +299,7 @@
           (f32.store offset=20 (local.get $base) (f32.demote_f64 (local.get $cc)))))
         (local.set $i (i32.add (local.get $i) (i32.const 1)))
         (br $wl)))
+      )
       (local.set $j (i32.add (local.get $j) (i32.const 1)))
       (br $jl))))
 )

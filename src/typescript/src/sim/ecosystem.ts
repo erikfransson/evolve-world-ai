@@ -85,6 +85,8 @@ export class Ecosystem {
   poison = 0;
   // Living creatures in list order; states[i] is members[i].creature.state.
   readonly members: EcoCreature[] = [];
+  // Id of a creature whose rays and brain input must be current after each tick (the selected one); the WASM sense leaves everyone else's stale.
+  detail: number | null = null;
   // With the journal option: changes not yet drained by a helper coordinator (ecoShare.ts). born and died hold ids, items World.log records.
   journal: EcoJournal | null;
 
@@ -227,6 +229,7 @@ export class Ecosystem {
 
   // Phase 1a for a batch of members, each at its list index, after prepareTick.
   senseBatch(batch: SenseBatch): void {
+    if (this.kernels) this.kernels.detail = this.detail === null ? null : (this.byId.get(this.detail)?.creature ?? null);
     senseThinkBatch(this.items, this.crowd, batch, this.kernels);
   }
 

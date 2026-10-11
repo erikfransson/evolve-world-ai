@@ -9,7 +9,6 @@ import type { CreatureState, Genome, HitKind, RayHit } from "./types.ts";
 import { RayCache } from "./world.ts";
 import type { World } from "./world.ts";
 import type { Crowd } from "./crowd.ts";
-import type { WasmRayCaster } from "./wasm/rayKernel.ts";
 import type { SenseKernels } from "./wasm/senseKernels.ts";
 
 let created = 0; // objects made so far in this process
@@ -180,9 +179,10 @@ export class Creature {
     world.castRays(this.state.x, this.state.y, dirX, dirY, rays, this.cache, length);
   }
 
-  // Queues the crowd part of sense on a WASM caster, after senseWorld; the caster's apply() finishes the rays.
-  queueCrowd(caster: WasmRayCaster, self: number): void {
-    caster.queue(this.state.x, this.state.y, this.rayDirX, this.rayDirY, this.rays, self, this.ownPlan.rayLength);
+  // Takes the brain input a WASM kernel built for this creature (f32[at ..]), so encode()'s view of it (what the brain panel shows) is current.
+  adoptInput(f32: Float32Array, at: number): void {
+    this.input.set(f32.subarray(at, at + this.input.length));
+    this.brain.showInput(this.input);
   }
 
   // Runs the brain on the last sensed rays, the current body and the memory, then updates the memory from its targets.
