@@ -2,11 +2,12 @@ import { createRng, deriveSeed } from "../sim/rng.ts";
 import type { StatefulRng } from "../sim/rng.ts";
 import { loadPool } from "../sim/seedPool.ts";
 import type { PoolEntry } from "../sim/seedPool.ts";
-import { scoreLearner } from "../sim/rl/env.ts";
 import type { EnvSpec, Learner, Library } from "../sim/rl/env.ts";
 import { Es } from "../sim/rl/es.ts";
 import { parseLibrary, serialiseLearner } from "../sim/rl/library.ts";
-import { recordEpisode, recordingBuffers } from "../sim/rl/recording.ts";
+import { recordingBuffers } from "../sim/rl/recording.ts";
+import { createBrowserRlPool } from "./browserPool.ts";
+import type { RlPool } from "./rlPool.ts";
 import type { RlInMessage, RlOutMessage, RlRunOptions } from "./rlProtocol.ts";
 
 // The Arena's training loop: one ES step per pump over all chosen envs, then the step's best candidate is shown on fresh layouts.
@@ -22,6 +23,7 @@ interface Run {
   options: RlRunOptions;
   tiles: number;
   rng: StatefulRng;
+  helpers: RlPool; // plays the episodes on nested workers, or here when there are none
   t0: number;
   token: number;
 }
@@ -40,40 +42,62 @@ const loadAssets = (poolUrl: string, libraryUrl: string): Promise<{ pool: PoolEn
       .catch((): Library => ({})),
   ]).then(([pool, library]) => ({ pool, library })));
 
-// Mean reward over the envs, each on the same seeds (so candidates meet the same layouts), and the per-env rewards.
-function score(r: Run, genome: Float32Array, seeds: readonly number[], pool: PoolEntry[] | null, library: Library): { mean: number; perEnv: number[] } {
-  const perEnv = r.envs.map((env) => scoreLearner(env, { plan: r.plan, genome }, seeds, pool, library).reward);
-  return { mean: perEnv.reduce((a, b) => a + b, 0) / perEnv.length, perEnv };
+// Mean reward over the envs of each genome, each env on the same seeds (so candidates meet the same layouts), and the per-env rewards.
+// Sums seed by seed as scoreLearner does, so the numbers do not depend on the thread count.
+async function score(r: Run, genomes: readonly Float32Array[], seeds: readonly number[]): Promise<{ mean: number; perEnv: number[] }[]> {
+  const tasks = genomes.flatMap((genome) => r.envs.flatMap((_, env) => seeds.map((seed) => ({ env, genome, seed }))));
+  const rewards = await r.helpers.rewards(tasks);
+  return genomes.map((_, g) => {
+    const perEnv = r.envs.map((_, e) => {
+      let sum = 0;
+      for (let s = 0; s < seeds.length; s++) sum += rewards[(g * r.envs.length + e) * seeds.length + s]! / seeds.length;
+      return sum;
+    });
+    return { mean: perEnv.reduce((a, b) => a + b, 0) / perEnv.length, perEnv };
+  });
 }
 
-function show(r: Run, iter: number, genome: Float32Array, pool: PoolEntry[] | null, library: Library): void {
-  const recordings = Array.from({ length: r.tiles }, (_, k) => recordEpisode(r.envs[k % r.envs.length]!, { plan: r.plan, genome }, deriveSeed(iter, k, 0x5404), pool, library, 2, k === 0));
+async function show(r: Run, iter: number, genome: Float32Array): Promise<void> {
+  const tasks = Array.from({ length: r.tiles }, (_, k) => ({ env: k % r.envs.length, genome, seed: deriveSeed(iter, k, 0x5404) }));
+  const recordings = await r.helpers.recordings(tasks, 2, (k) => k === 0);
   post({ type: "show", iter, genome, recordings }, recordings.flatMap(recordingBuffers));
 }
 
+let pumping = -1; // token of the pump that is running, so a resume during an iteration does not start a second one
+
 async function pump(mine: number): Promise<void> {
-  const { pool, library } = await assets!;
-  while (run && run.token === mine && !paused) {
-    const r = run;
-    if (r.es.step >= r.options.iterations) {
-      post({ type: "learner", iter: r.es.step, learner: serialiseLearner({ plan: r.plan, genome: r.es.theta }) });
-      post({ type: "done", iter: r.es.step });
-      run = null;
-      return;
+  if (pumping === mine) return;
+  pumping = mine;
+  try {
+    while (run && run.token === mine && !paused) {
+      const r = run;
+      if (r.es.step >= r.options.iterations) {
+        post({ type: "learner", iter: r.es.step, learner: serialiseLearner({ plan: r.plan, genome: r.es.theta }) });
+        post({ type: "done", iter: r.es.step });
+        endRun();
+        return;
+      }
+      const seeds = Array.from({ length: r.options.episodes }, () => r.rng.int(0x5eed0000));
+      const candidates = r.es.ask(r.rng);
+      const rewards = (await score(r, candidates, seeds)).map((s) => s.mean);
+      r.es.tell(rewards);
+      const iter = r.es.step;
+      let best = 0;
+      for (let k = 1; k < rewards.length; k++) if (rewards[k]! > rewards[best]!) best = k;
+      const held = iter % HELD_EVERY === 0 ? (await score(r, [r.es.theta], HELD_SEEDS))[0]! : null;
+      post({ type: "iteration", it: { iter, train: rewards.reduce((a, b) => a + b, 0) / rewards.length, best: rewards[best]!, held: held?.mean ?? null, perEnv: held?.perEnv ?? null, seconds: (performance.now() - r.t0) / 1000 } });
+      if (held) post({ type: "learner", iter, learner: serialiseLearner({ plan: r.plan, genome: r.es.theta }) });
+      await show(r, iter, candidates[best]!);
+      await new Promise((done) => setTimeout(done, 0)); // let pause and stop messages in
     }
-    const seeds = Array.from({ length: r.options.episodes }, () => r.rng.int(0x5eed0000));
-    const candidates = r.es.ask(r.rng);
-    const rewards = candidates.map((g) => score(r, g, seeds, pool, library).mean);
-    r.es.tell(rewards);
-    const iter = r.es.step;
-    let best = 0;
-    for (let k = 1; k < rewards.length; k++) if (rewards[k]! > rewards[best]!) best = k;
-    const held = iter % HELD_EVERY === 0 ? score(r, r.es.theta, HELD_SEEDS, pool, library) : null;
-    post({ type: "iteration", it: { iter, train: rewards.reduce((a, b) => a + b, 0) / rewards.length, best: rewards[best]!, held: held?.mean ?? null, perEnv: held?.perEnv ?? null, seconds: (performance.now() - r.t0) / 1000 } });
-    if (held) post({ type: "learner", iter, learner: serialiseLearner({ plan: r.plan, genome: r.es.theta }) });
-    show(r, iter, candidates[best]!, pool, library);
-    await new Promise((done) => setTimeout(done, 0)); // let pause and stop messages in
+  } finally {
+    if (pumping === mine) pumping = -1;
   }
+}
+
+function endRun(): void {
+  run?.helpers.close();
+  run = null;
 }
 
 self.onmessage = (e: MessageEvent<RlInMessage>) => {
@@ -81,26 +105,30 @@ self.onmessage = (e: MessageEvent<RlInMessage>) => {
   try {
     if (msg.type === "start") {
       if (!msg.envs.length) throw new Error("choose at least one environment");
-      const es = new Es(Float32Array.from(msg.learner.genome), msg.options);
+      endRun();
       const mine = ++token;
       paused = false;
-      const r: Run = { envs: msg.envs, plan: msg.learner.plan, es, options: msg.options, tiles: Math.max(1, Math.min(9, msg.tiles)), rng: createRng(deriveSeed(msg.seed, 0xa7e)), t0: performance.now(), token: mine };
-      run = r;
       void loadAssets(msg.poolUrl, msg.libraryUrl)
-        .then(({ pool, library }) => {
-          if (run?.token !== mine) return;
-          const held = score(r, es.theta, HELD_SEEDS, pool, library);
+        .then(async ({ pool, library }) => {
+          if (token !== mine) return;
+          const es = new Es(Float32Array.from(msg.learner.genome), msg.options);
+          const helpers = createBrowserRlPool({ envs: msg.envs, plan: msg.learner.plan, pool, library });
+          const r: Run = { envs: msg.envs, plan: msg.learner.plan, es, options: msg.options, tiles: Math.max(1, Math.min(9, msg.tiles)), rng: createRng(deriveSeed(msg.seed, 0xa7e)), helpers, t0: performance.now(), token: mine };
+          run = r;
+          const held = (await score(r, [es.theta], HELD_SEEDS))[0]!;
           post({ type: "ready", held: held.mean, perEnv: held.perEnv });
-          show(r, 0, es.theta, pool, library);
+          await show(r, 0, es.theta);
           return pump(mine);
         })
-        .catch((error) => post({ type: "error", message: String(error) }));
+        .catch((error) => {
+          if (token === mine) post({ type: "error", message: String(error) });
+        });
     } else if (msg.type === "pause") paused = true;
     else if (msg.type === "resume" && run && paused) {
       paused = false;
       void pump(run.token);
     } else if (msg.type === "stop") {
-      run = null;
+      endRun();
       token++;
     }
   } catch (error) {
