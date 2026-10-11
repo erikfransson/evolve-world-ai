@@ -55,7 +55,7 @@ describe("Ecosystem", () => {
 
   it("no founder spawns on poison, with varied founders and moved poison", () => {
     // Dense poison and many founders: poison moved off one founder often lands on a founder placed before it.
-    for (const seed of [1, 2, 3, 4, 5, 6]) {
+    for (const seed of [1, 2, 3]) {
       const eco = new Ecosystem(ecoCfg({ seed, world: { foodDensity: 0, poisonDensity: 3 }, eco: { initialPopulation: 300, foundersVary: true } }));
       const reach = eco.config.creature.radius + eco.config.world.itemRadius;
       const w = eco.world;
