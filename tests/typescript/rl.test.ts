@@ -171,10 +171,18 @@ describe("episode reward", () => {
 });
 
 describe("cleared boxes", () => {
-  it("end the episode once the food is gone and pay the seconds left", () => {
-    const env: EnvSpec = { ...envById("nibble")!, food: 0, poison: 2 }; // nothing to find, so cleared after the first tick
+  it("pay nothing for a box that starts without food", () => {
+    const env: EnvSpec = { ...envById("nibble")!, food: 0, poison: 2, seconds: 5 };
     const r = runEpisode(env, randomLearner(env, 1), 4);
-    expect(r.seconds).toBe(env.seconds);
-    expect(r.reward).toBeCloseTo(0.1 * (env.seconds - 1 / 30), 9);
+    expect(r.reward).toBe(0);
+  });
+
+  it("end early only when the learner itself ate every starting food, and pay the seconds left", () => {
+    const env: EnvSpec = { ...envById("nibble")!, food: 3, poison: 0, size: [200, 200] };
+    for (let seed = 1; seed < 40; seed++) {
+      const r = runEpisode(env, randomLearner(env, seed), seed);
+      if (r.food < env.food) expect(r.reward).toBe(r.food);
+      else expect(r.reward).toBeGreaterThan(r.food); // cleared before the end: food plus 0.1 per second left
+    }
   });
 });

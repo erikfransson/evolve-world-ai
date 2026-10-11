@@ -42,8 +42,8 @@ export interface EnvSpec {
   foodRegrow: number; // items per second, up to food
   seconds: number; // episode length; it ends early when the learner dies
   rivals: Rivals[];
-  // Per item, per kill, per second alive, x energy signal at the end, and per second left when the learner clears the food
-  // (without regrowth the episode then ends early, the learner counting as alive to the end).
+  // Per item, per kill, per second alive, x energy signal at the end, and per second left when the learner has eaten all the
+  // starting food itself (without regrowth the episode then ends early, the learner counting as alive to the end).
   reward: { food?: number; kill?: number; survive?: number; energy?: number; fast?: number };
   tags: string[];
 }
@@ -166,7 +166,9 @@ export function runEpisode(
     out.kills = m.kills;
     out.energy = 0;
   };
-  let cleared = 0; // seconds left when the food ran out
+  let cleared = 0; // seconds left when the learner ate the last food
+  // Only speed-scored envs without regrowth end early, and only when the learner itself ate every item (not a rival).
+  const clearable = env.reward.fast !== undefined && env.food > 0 && env.foodRegrow === 0;
   for (let t = 0; t < ticks; t++) {
     eco.step();
     onTick?.(eco);
@@ -176,7 +178,7 @@ export function runEpisode(
     out.kills = me.kills;
     out.energy = me.creature.state.energy;
     out.seconds = (t + 1) * config.dt;
-    if (eco.food === 0 && env.foodRegrow === 0) {
+    if (clearable && me.eaten === env.food) {
       cleared = env.seconds - out.seconds;
       out.seconds = env.seconds;
       break;

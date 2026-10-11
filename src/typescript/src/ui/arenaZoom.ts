@@ -25,7 +25,12 @@ export class Zoom {
   open(k: number): void {
     this.root.hidden = false;
     this.grid.setZoom(k, this.target);
-    this.root.requestFullscreen?.().catch(() => {}); // the fixed overlay stays when fullscreen is refused
+    this.root
+      .requestFullscreen?.()
+      .then(() => {
+        if (this.root.hidden && document.fullscreenElement) void document.exitFullscreen().catch(() => {}); // closed while the request was pending
+      })
+      .catch(() => {}); // the fixed overlay stays when fullscreen is refused
   }
 
   close(): void {
