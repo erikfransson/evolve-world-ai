@@ -41,7 +41,7 @@ const CANDIDATES = 8; // fittest distinct genomes of a run's last generation tha
 const KEEP_PER_RUN = 3; // validated candidates a run may pass to the final selection
 const VALIDATION_LAYOUTS = 6; // held-out layouts each candidate is scored on
 const BASELINE_GENOMES = 16; // random genomes of the run's plan scored on the same layouts
-const SATURATED = 0.95; // refine skips a start that validates at this share of LIFE_CAP or more
+const SATURATED = 0.95; // refine skips a start whose validated fitness (mostly seconds alive) reaches this share of LIFE_CAP
 const STALL_GENERATIONS = 50; // a run whose fittest creature still validates below MIN_GAIN x baseline here stops
 const MIN_GAIN = 1.5; // a kept creature lives at least this times as long as the random baseline
 const DECIMALS = 3; // genome rounding in the file; validation uses the rounded genomes
@@ -183,7 +183,7 @@ if (!isMainThread) {
   const seed = Number(values.seed);
   for (const [name, v] of Object.entries({ runs, generations, pop, size, threads, seed })) {
     if (!Number.isInteger(v) || v < (name === "seed" || name === "runs" || name === "generations" ? 0 : 1)) {
-      console.error(`error: --${name} must be a positive integer`);
+      console.error(`error: --${name} must be a ${name === "seed" || name === "runs" || name === "generations" ? "non-negative" : "positive"} integer`);
       process.exit(1);
     }
   }
@@ -243,8 +243,11 @@ if (!isMainThread) {
   const label = (file: number, run: number): number => (run >= 1000 ? run : 1000 * (file + 1) + run); // file number, then its run; merged labels stay
   for (const [fi, file] of (values.refine?.split(",") ?? []).entries()) {
     const data = JSON.parse(readFileSync(file, "utf8"));
-    const { entries } = parsePool(data);
-    entries.forEach((e, k) => {
+    parsePool(data); // throws on a file that is not a pool
+    (data.entries as unknown[]).forEach((entry, k) => {
+      // Each raw entry parsed alone, so its index keeps matching its world and run fields when another one is malformed.
+      const { entries: [e], rejected } = parsePool({ version: data.version, entries: [entry] });
+      if (!e) return void console.warn(`${file} entry ${k}: ${rejected[0]}, skipped`);
       const raw = data.entries[k].world;
       const units = e.plan.memoryShort + e.plan.memoryLong;
       const memory = units / 16;

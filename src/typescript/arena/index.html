@@ -44,10 +44,12 @@
               <p id="startNote" class="msg error" role="status"></p>
             </section>
             <div id="designForm" class="built"></div>
+          </fieldset>
 
+          <fieldset id="envSettings">
             <section class="card">
               <h2>Environments</h2>
-              <p class="hint">Pick one or more. Each iteration the creature trains in all of them. Small worlds learn within a few dozen iterations, bigger ones take longer.</p>
+              <p class="hint">Pick one or more. Each iteration the creature trains in all of them. Small worlds learn within a few dozen iterations, bigger ones take longer. Pause to change them during a run.</p>
               <div id="envList" class="env-list"></div>
               <details class="more" id="customBox">
                 <summary>Custom environment</summary>
@@ -70,6 +72,9 @@
               </details>
             </section>
 
+          </fieldset>
+
+          <fieldset id="runSettings">
             <div id="runForm" class="built"></div>
           </fieldset>
         </form>
@@ -107,6 +112,7 @@
           </div>
           <ul class="legend arena-legend">
             <li><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7" fill="#fbbf24" /></svg>Learner</li>
+            <li id="legendRival" hidden><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7" class="rival-dot" /></svg>Rival</li>
             <li><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="5" fill="#4ade80" /></svg>Food</li>
             <li><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="5" fill="#e040fb" /></svg>Poison</li>
           </ul>

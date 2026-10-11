@@ -18,7 +18,8 @@ const post = (msg: RlOutMessage, transfer: Transferable[] = []): void => self.po
 let token = 0; // the current run's; a newer start or a stop ends the older loop at its next check
 let helpers: RlPool | null = null;
 let resumeGate: { wait: Promise<void>; open: () => void } | null = null; // set while paused
-let showWanted = false; // the page asked for a new show; steps run much faster than the page plays them
+let showWanted = false;
+let nextEnvs: EnvSpec[] | null = null; // envs to switch to at the next step, sent while paused // the page asked for a new show; steps run much faster than the page plays them
 let assets: Promise<{ pool: PoolEntry[] | null; library: Library }> | undefined;
 
 // Fetched once per page from the URLs of the first start; a missing library leaves the league rivals random.
@@ -41,7 +42,8 @@ async function show(pool: RlPool, envs: readonly EnvSpec[], tiles: number, iter:
 async function train(msg: Extract<RlInMessage, { type: "start" }>, mine: number): Promise<void> {
   const { pool, library } = await loadAssets(msg.poolUrl, msg.libraryUrl);
   if (token !== mine) return;
-  const helpersHere = (helpers = createBrowserRlPool({ envs: msg.envs, plan: msg.learner.plan, pool, library }));
+  let envs = msg.envs;
+  let helpersHere = (helpers = createBrowserRlPool({ envs, plan: msg.learner.plan, pool, library }));
   const plan = msg.learner.plan;
   const tiles = Math.max(1, Math.min(12, msg.tiles));
   const trainer = new Trainer(Float32Array.from(msg.learner.genome), msg.options, helpersHere, msg.envs.length, msg.options.episodes, msg.seed);
@@ -49,10 +51,21 @@ async function train(msg: Extract<RlInMessage, { type: "start" }>, mine: number)
   let lastBest: Float32Array | null = null; // the latest step's best candidate
   const start = await trainer.held(HELD_SEEDS);
   post({ type: "ready", held: start.mean, perEnv: start.perEnv });
-  await show(helpersHere, msg.envs, tiles, 0, trainer.es.theta);
+  await show(helpersHere, envs, tiles, 0, trainer.es.theta);
   while (token === mine && trainer.iter < msg.options.iterations) {
     if (resumeGate) await resumeGate.wait;
     if (token !== mine) return;
+    if (nextEnvs) {
+      // New helpers for the new envs; the held-out reference restarts there, so before and after compare on the same worlds.
+      envs = nextEnvs;
+      nextEnvs = null;
+      helpersHere.close();
+      helpersHere = helpers = createBrowserRlPool({ envs, plan, pool, library });
+      trainer.setEnvs(helpersHere, envs.length);
+      const held = await trainer.held(HELD_SEEDS);
+      post({ type: "rebased", iter: trainer.iter, held: held.mean, perEnv: held.perEnv });
+      showWanted = true;
+    }
     const step = await trainer.step();
     lastBest = step.bestGenome;
     const held = step.iter % HELD_EVERY === 0 ? await trainer.held(HELD_SEEDS) : null;
@@ -60,12 +73,12 @@ async function train(msg: Extract<RlInMessage, { type: "start" }>, mine: number)
     if (held) post({ type: "learner", iter: step.iter, learner: serialiseLearner({ plan, genome: trainer.es.theta }) });
     if (showWanted) {
       showWanted = false;
-      await show(helpersHere, msg.envs, tiles, step.iter, step.bestGenome);
+      await show(helpersHere, envs, tiles, step.iter, step.bestGenome);
     }
     await new Promise((done) => setTimeout(done, 0)); // let pause and stop messages in
   }
   if (token !== mine) return;
-  if (lastBest) await show(helpersHere, msg.envs, tiles, trainer.iter, lastBest); // so the tiles end on the trained creature
+  if (lastBest) await show(helpersHere, envs, tiles, trainer.iter, lastBest); // so the tiles end on the trained creature
   if (token !== mine) return;
   post({ type: "learner", iter: trainer.iter, learner: serialiseLearner({ plan, genome: trainer.es.theta }) });
   post({ type: "done", iter: trainer.iter });
@@ -85,6 +98,7 @@ self.onmessage = (e: MessageEvent<RlInMessage>) => {
     endRun();
     const mine = ++token;
     showWanted = false;
+    nextEnvs = null;
     if (!msg.envs.length) return post({ type: "error", message: "choose at least one environment" });
     train(msg, mine).catch((error) => {
       if (token !== mine) return;
@@ -92,6 +106,7 @@ self.onmessage = (e: MessageEvent<RlInMessage>) => {
       endRun();
     });
   } else if (msg.type === "show") showWanted = true;
+  else if (msg.type === "envs" && msg.envs.length) nextEnvs = msg.envs;
   else if (msg.type === "pause" && !resumeGate) {
     let open = (): void => {};
     const wait = new Promise<void>((done) => (open = done));

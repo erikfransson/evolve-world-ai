@@ -51,6 +51,7 @@ export class TileGrid {
   private last = 0;
   private zoom: { k: number; target: ZoomTarget } | null = null;
   speed = 4; // playback seconds per real second
+  paused = false; // holds every tile, and the large view, on its current frame
   onOpen: (k: number) => void = () => {};
   onFinished: () => void = () => {}; // once per show, when every tile has played to the end and no newer show waits
   private asked = false;
@@ -140,7 +141,7 @@ export class TileGrid {
 
   // Draws every tile and the opened one; returns tile 0's recording and frame for the brain view.
   draw(now: number): { rec: Recording; frame: number } | null {
-    this.clock += Math.min(0.25, Math.max(0, (now - this.last) / 1000)) * this.speed; // the cap keeps a background tab from jumping ahead
+    if (!this.paused) this.clock += Math.min(0.25, Math.max(0, (now - this.last) / 1000)) * this.speed; // the cap keeps a background tab from jumping ahead
     this.last = now;
     if (this.queued && this.clock >= this.loop) {
       this.start(this.queued, now);
