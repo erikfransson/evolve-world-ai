@@ -106,6 +106,7 @@ export class LineagePanel {
     this.canvas = root.querySelector<HTMLCanvasElement>(".lin-graph")!;
     this.clear = root.querySelector<HTMLButtonElement>(".lin-clear")!;
     this.onPick = onPick;
+    this.bar.hidden = true; // nothing to show until data exists
     this.clear.onclick = () => this.pick(null);
     this.list.addEventListener("click", (e) => {
       const row = (e.target as HTMLElement).closest<HTMLElement>("[data-founder]");
@@ -151,6 +152,7 @@ export class LineagePanel {
     const signature = rows.map((r) => `${r.founder}:${r.count}`).join(",") + `|${this.picked}`;
     if (signature === this.signature) return;
     this.signature = signature;
+    this.bar.hidden = rows.length === 0;
     const pct = (s: number): string => (s >= 0.995 || s < 0.001 ? `${Math.round(s * 100)}%` : s < 0.1 ? `${(s * 100).toFixed(1)}%` : `${Math.round(s * 100)}%`);
     this.bar.replaceChildren(
       ...rows.map((r) => {
@@ -203,6 +205,7 @@ export class LineagePanel {
   reset(): void {
     this.signature = "";
     this.bar.replaceChildren();
+    this.bar.hidden = true;
     this.list.replaceChildren();
     this.stack = { times: [], bands: [] };
     this.setHighlight(null);
@@ -227,23 +230,28 @@ export class LineagePanel {
     const h = this.canvas.clientHeight - PAD.top - PAD.bottom;
     if (w <= 0 || h <= 0) return;
     const { times, bands } = this.stack;
-    const end = times.length > 0 ? Math.max(1, times[times.length - 1]!) : 1;
+    const end = Math.max(1, times[times.length - 1] ?? 1);
     const px = (t: number): number => PAD.left + (t / end) * w;
     const py = (share: number): number => PAD.top + h - share * h;
     ctx.font = graphFont();
-    if (times.length > 0) {
-      for (const band of bands) {
-        if (band.upper.every((u, i) => u === band.lower[i])) continue;
-        ctx.fillStyle = band.color;
-        ctx.globalAlpha = this.picked === null || band.founder === this.picked ? 1 : 0.3;
-        ctx.beginPath();
-        times.forEach((t, i) => (i === 0 ? ctx.moveTo(px(t), py(band.upper[i]!)) : ctx.lineTo(px(t), py(band.upper[i]!))));
-        for (let i = times.length - 1; i >= 0; i--) ctx.lineTo(px(times[i]!), py(band.lower[i]!));
-        ctx.closePath();
-        ctx.fill();
-      }
-      ctx.globalAlpha = 1;
+    if (times.length === 0) {
+      ctx.fillStyle = TEXT_COLOR;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("Waiting for data", PAD.left + w / 2, PAD.top + h / 2);
+      return;
     }
+    for (const band of bands) {
+      if (band.upper.every((u, i) => u === band.lower[i])) continue;
+      ctx.fillStyle = band.color;
+      ctx.globalAlpha = this.picked === null || band.founder === this.picked ? 1 : 0.3;
+      ctx.beginPath();
+      times.forEach((t, i) => (i === 0 ? ctx.moveTo(px(t), py(band.upper[i]!)) : ctx.lineTo(px(t), py(band.upper[i]!))));
+      for (let i = times.length - 1; i >= 0; i--) ctx.lineTo(px(times[i]!), py(band.lower[i]!));
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
     ctx.lineWidth = 1;
     ctx.strokeStyle = AXIS_COLOR;
     ctx.strokeRect(PAD.left, PAD.top, w, h);
@@ -256,10 +264,5 @@ export class LineagePanel {
     ctx.fillText("0 s", PAD.left, PAD.top + h + 3);
     ctx.textAlign = "right";
     ctx.fillText(`${Math.round(end)} s`, PAD.left + w, PAD.top + h + 3);
-    if (times.length === 0) {
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText("Waiting for data", PAD.left + w / 2, PAD.top + h / 2);
-    }
   }
 }
