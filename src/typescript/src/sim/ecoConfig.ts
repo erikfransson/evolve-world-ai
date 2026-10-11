@@ -42,8 +42,8 @@ export const DEFAULT_ECO_CONFIG: EcoConfig = {
   seed: 1,
   dt: DEFAULT_CONFIG.dt,
   world: { ...DEFAULT_CONFIG.world, width: 12000, height: 7500, foodDensity: 0.5, poisonDensity: 0.05, respawn: false },
-  creature: { ...DEFAULT_CONFIG.creature, startEnergy: 50, seesCreatures: true },
-  brain: { ...DEFAULT_CONFIG.brain, hiddenLayers: [...DEFAULT_CONFIG.brain.hiddenLayers] },
+  creature: { ...DEFAULT_CONFIG.creature, startEnergy: 50, rayLength: 100, raySpread: (75 * Math.PI) / 180, seesCreatures: true },
+  brain: { ...DEFAULT_CONFIG.brain, hiddenLayers: [16] },
   eco: {
     initialPopulation: 1000,
     poolFraction: 0.5,

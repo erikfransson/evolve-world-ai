@@ -77,7 +77,7 @@ describe("Scoreboard storage", () => {
     c.creature.raySpread = (120 * Math.PI) / 180;
     c.brain.hiddenLayers = [12, 12];
     const s = settingsOf(c);
-    expect(describeSettings(s)).toBe("5 rays · 120° · range 100 · hidden 12+12 · memory 0.25 · seed 9");
+    expect(describeSettings(s)).toBe("5 rays · 120° · range 150 · hidden 12+12 · memory 0.25 · seed 9");
     const back = withSettings(structuredClone(DEFAULT_CONFIG), s);
     expect(back.creature.rayCount).toBe(5);
     expect(back.brain.hiddenLayers).toEqual([12, 12]);
