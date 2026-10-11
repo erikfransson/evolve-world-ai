@@ -5,7 +5,7 @@ import type { Lineage, SpeciesCount } from "../sim/ecosystem.ts";
 import type { BestBy } from "../worker/ecoProtocol.ts";
 import { BrainView } from "./brainView.ts";
 import type { ModePage } from "./ecoModes.ts";
-import { buildEcoForm } from "./ecoSettingsForm.ts";
+import { buildForm } from "./settingsForm.ts";
 import { initCard } from "./overlays.ts";
 import type { Card } from "./overlays.ts";
 import { initPresetPanel } from "./presetPanel.ts";
@@ -137,7 +137,7 @@ export function createEcoView(handlers: EcoHandlers, page: ModePage): EcoView {
   let returnFocus: HTMLElement | null = null;
   let hasSelection = false;
 
-  const settingsForm = buildEcoForm($("settings"), page.form);
+  const settingsForm = buildForm($("settings"), page.form);
   const readEcoConfig = settingsForm.read;
   const fillEcoForm = settingsForm.fill;
   fillEcoForm(readEcoConfig());
@@ -153,7 +153,6 @@ export function createEcoView(handlers: EcoHandlers, page: ModePage): EcoView {
     read: readEcoConfig,
     fill: fillEcoForm,
     withPreset: (c, id) => withEcoPreset(c, id, page.presets),
-    setPreset: () => undefined, // every world field has a form input
   });
   initSettingsIO({ mode, form: setup, read: readEcoConfig, fill: fillEcoForm, preset: { get: presets.current, set: presets.select } });
   // The score is how long the world has lived (page.peak says while it counts), so it counts while the run does and at its end.

@@ -1,61 +1,65 @@
-import { DEFAULT_CONFIG, itemCounts, POISON_LETHAL } from "../sim/config.ts";
-import type { SelectionMethod, SimConfig } from "../sim/config.ts";
-import { trialsPreset } from "../sim/presets.ts";
+import { itemCounts, POISON_LETHAL } from "../sim/config.ts";
+import type { EngineConfig } from "../sim/config.ts";
+import { escapeAttr } from "./page.ts";
 
-interface Field {
-  read(c: SimConfig): void; // form element into config
-  write(c: SimConfig): void; // config into form element
+// Settings forms: one table drives the markup, the config read and the fill, so a field is declared once.
+// C is the config a page edits (Trials' SimConfig, the Ecosystem's EcoConfig).
+interface Base {
+  id: string;
+  label: string;
+  tip: string;
+  advanced?: boolean; // shown under the section's "More settings"
 }
+export interface Range<C> extends Base {
+  kind: "range";
+  min: number;
+  max: number;
+  step: number;
+  fmt?: string; // key of FORMATS
+  hint?: (c: C) => string; // live text next to the value
+  get: (c: C) => number;
+  set: (c: C, v: number) => void;
+}
+export interface Toggle<C> extends Base {
+  kind: "toggle";
+  get: (c: C) => boolean;
+  set: (c: C, v: boolean) => void;
+}
+export interface Choice<C> extends Base {
+  kind: "choice";
+  options: readonly (readonly [value: string, label: string])[];
+  get: (c: C) => string;
+  set: (c: C, v: string) => void;
+}
+interface Seed extends Base {
+  kind: "seed";
+}
+export type Field<C> = Range<C> | Toggle<C> | Choice<C> | Seed;
+export interface Section<C> {
+  title: string;
+  fields: readonly Field<C>[];
+  folded?: boolean; // the whole section starts collapsed
+  swatch?: string; // CSS colour of a dot before the title
+}
+// A settings form: its sections and the config that fields without an input keep.
+export interface FormSpec<C> {
+  sections: readonly Section<C>[];
+  defaults: C;
+}
+
+export const range = <C>(f: Omit<Range<C>, "kind">): Range<C> => ({ kind: "range", ...f });
+
+// A density (or density per second) times the world area, in items.
+type Sized = Pick<EngineConfig, "world">;
+export const itemsOf = (c: Sized, density: number): number => itemCounts({ world: { ...c.world, foodDensity: density } }).food;
+export const items = (c: Sized, density: number): string => `≈ ${itemsOf(c, density)} items`;
+export const perSecond = (c: Sized, density: number): string => `≈ ${itemsOf(c, density)} items/s`;
 
 export function el<T extends HTMLElement>(id: string, kind: new () => T): T {
   const e = document.getElementById(id);
   if (!(e instanceof kind)) throw new Error(`element #${id} is not a ${kind.name}`);
   return e;
 }
-
-function num(id: string, get: (c: SimConfig) => number, set: (c: SimConfig, v: number) => void): Field {
-  const input = el(id, HTMLInputElement);
-  return { read: (c) => set(c, input.valueAsNumber), write: (c) => { input.value = String(get(c)); } };
-}
-
-function bool(id: string, get: (c: SimConfig) => boolean, set: (c: SimConfig, v: boolean) => void): Field {
-  const input = el(id, HTMLInputElement);
-  return { read: (c) => set(c, input.checked), write: (c) => { input.checked = get(c); } };
-}
-
-function choice<T extends string>(id: string, options: readonly T[], get: (c: SimConfig) => T, set: (c: SimConfig, v: T) => void): Field {
-  const select = el(id, HTMLSelectElement);
-  const valid = (v: string): v is T => (options as readonly string[]).includes(v);
-  return { read: (c) => { if (valid(select.value)) set(c, select.value); }, write: (c) => { select.value = get(c); } };
-}
-
-const defaultNeurons = DEFAULT_CONFIG.brain.hiddenLayers[0]!;
-
-// Ranges (min, max, step) come from the HTML attributes, which browsers enforce on range inputs.
-const SELECTION_OPTIONS: readonly SelectionMethod[] = ["truncation", "proportional"];
-
-// Built on first use, once the DOM exists.
-const buildFields = (): readonly Field[] => [
-  // Only the seed is a free number input, so only it needs checking.
-  num("seed", (c) => c.seed, (c, v) => { if (Number.isFinite(v)) c.seed = Math.min(2 ** 31, Math.max(0, Math.round(v))); }),
-  num("worldWidth", (c) => c.world.width, (c, v) => { c.world.width = v; }),
-  num("worldHeight", (c) => c.world.height, (c, v) => { c.world.height = v; }),
-  num("foodDensity", (c) => c.world.foodDensity, (c, v) => { c.world.foodDensity = v; }),
-  num("poisonDensity", (c) => c.world.poisonDensity, (c, v) => { c.world.poisonDensity = v; }),
-  num("poisonDamage", (c) => c.world.poisonDamage, (c, v) => { c.world.poisonDamage = v; }),
-  bool("respawn", (c) => c.world.respawn, (c, v) => { c.world.respawn = v; }),
-  num("rayCount", (c) => c.creature.rayCount, (c, v) => { c.creature.rayCount = v; }),
-  num("raySpread", (c) => Math.round((c.creature.raySpread * 180) / Math.PI), (c, v) => { c.creature.raySpread = (v * Math.PI) / 180; }),
-  num("rayLength", (c) => c.creature.rayLength, (c, v) => { c.creature.rayLength = v; }),
-  num("layers", (c) => c.brain.hiddenLayers.length, (c, v) => { c.brain.hiddenLayers = new Array<number>(v).fill(c.brain.hiddenLayers[0] ?? defaultNeurons); }),
-  num("neurons", (c) => c.brain.hiddenLayers[0] ?? defaultNeurons, (c, v) => { c.brain.hiddenLayers.fill(v); }),
-  num("memory", (c) => c.brain.memory, (c, v) => { c.brain.memory = v; }),
-  num("popSize", (c) => c.population.size, (c, v) => { c.population.size = v; }),
-  num("mutationRate", (c) => c.ga.mutationRate, (c, v) => { c.ga.mutationRate = v; }),
-  num("immigrants", (c) => c.ga.immigrantFraction, (c, v) => { c.ga.immigrantFraction = v; }),
-  num("bigMutations", (c) => c.ga.bigMutationFraction, (c, v) => { c.ga.bigMutationFraction = v; }),
-  choice("selection", SELECTION_OPTIONS, (c) => c.ga.selection, (c, v) => { c.ga.selection = v; }),
-];
 
 // Value badge formats, chosen by the output element's data-fmt.
 export const FORMATS: Record<string, (v: number) => string> = {
@@ -71,30 +75,6 @@ export const FORMATS: Record<string, (v: number) => string> = {
   poison: (v) => (v >= POISON_LETHAL ? "Lethal" : `${v}`),
 };
 
-let fields: readonly Field[] | null = null;
-const getFields = (): readonly Field[] => (fields ??= buildFields());
-
-// The chosen preset's world also covers values the form has no field for (item size and energy, poison-free start radius).
-let presetId = "";
-// World values without a form field; Custom keeps those of the last preset so its world stays consistent.
-let hiddenWorld = pickHidden(DEFAULT_CONFIG.world);
-function pickHidden(w: SimConfig["world"]): Pick<SimConfig["world"], "itemRadius" | "foodEnergy" | "poisonClearRadius"> {
-  return { itemRadius: w.itemRadius, foodEnergy: w.foodEnergy, poisonClearRadius: w.poisonClearRadius };
-}
-export const setFormPreset = (id: string): void => {
-  presetId = id;
-  const preset = trialsPreset(id);
-  if (preset) hiddenWorld = pickHidden(preset.world);
-};
-
-export function readConfig(): SimConfig {
-  const c = structuredClone(DEFAULT_CONFIG);
-  for (const f of getFields()) f.read(c);
-  const preset = trialsPreset(presetId);
-  c.world = preset ? { ...preset.world } : { ...c.world, ...hiddenWorld };
-  return c;
-}
-
 // Filled slider track and value badge.
 export function syncSlider(input: HTMLInputElement): void {
   const lo = Number(input.min);
@@ -104,32 +84,82 @@ export function syncSlider(input: HTMLInputElement): void {
   if (out) out.textContent = (FORMATS[out.dataset.fmt ?? ""] ?? String)(input.valueAsNumber);
 }
 
-// Resulting item counts for the current width, height and densities.
-function syncItemHints(c: SimConfig): void {
-  const counts = itemCounts(c);
-  document.getElementById("foodItems")!.textContent = `≈ ${counts.food} items`;
-  document.getElementById("poisonItems")!.textContent = `≈ ${counts.poison} items`;
+const label = (f: Base): string =>
+  `<span class="lbl"><label class="name" for="${f.id}">${f.label}</label><span class="tip" tabindex="0" role="img" aria-label="${escapeAttr(f.tip)}" data-tip="${escapeAttr(f.tip)}">ⓘ</span></span>`;
+
+function fieldHtml<C>(f: Field<C>): string {
+  if (f.kind === "toggle") return `<div class="toggle">${label(f)}<input id="${f.id}" type="checkbox" role="switch" /></div>`;
+  if (f.kind === "seed") {
+    return `<div class="field"><div class="row">${label(f)}</div><div class="seed-row"><input id="seed" type="number" step="1" min="0" /><button id="dice" class="icon" type="button" title="Random seed" aria-label="Random seed">🎲</button></div></div>`;
+  }
+  if (f.kind === "choice") {
+    const options = f.options.map(([value, text]) => `<option value="${value}">${text}</option>`).join("");
+    return `<div class="field"><div class="row">${label(f)}</div><select id="${f.id}">${options}</select></div>`;
+  }
+  const fmt = f.fmt ? ` data-fmt="${f.fmt}"` : "";
+  const hint = f.hint ? `<span class="hint" id="${f.id}Hint"></span>` : "";
+  return `<div class="field"><div class="row">${label(f)}<span class="vals">${hint}<output for="${f.id}"${fmt}></output></span></div><input id="${f.id}" type="range" min="${f.min}" max="${f.max}" step="${f.step}" /></div>`;
 }
 
-export function fillForm(c: SimConfig): void {
-  for (const f of getFields()) f.write(c);
-  document.querySelectorAll<HTMLInputElement>('input[type="range"]').forEach(syncSlider);
-  syncItemHints(c);
+function sectionHtml<C>(s: Section<C>): string {
+  const swatch = s.swatch ? `<i class="sw" style="background: ${s.swatch}"></i>` : "";
+  const main = s.fields.filter((f) => !f.advanced).map(fieldHtml).join("");
+  const advanced = s.fields.filter((f) => f.advanced);
+  const more = advanced.length ? `<details class="more"><summary>More settings</summary><div class="more-body">${advanced.map(fieldHtml).join("")}</div></details>` : "";
+  if (s.folded) return `<details class="card fold"><summary><h3>${swatch}${s.title}</h3></summary>${main}${more}</details>`;
+  return `<section class="card"><h3>${swatch}${s.title}</h3>${main}${more}</section>`;
 }
 
-// onChange gets the config the form currently describes after every edit.
-export function initSettingsForm(form: HTMLFormElement, onChange: (c: SimConfig) => void): void {
-  form.addEventListener("input", (e) => {
-    const target = e.target as HTMLInputElement;
-    if (target.type === "range") syncSlider(target);
-    const c = readConfig();
-    syncItemHints(c);
-    onChange(c);
-  });
-  // Enter in a field would otherwise submit the form and reload the page, losing all settings.
-  form.addEventListener("submit", (e) => e.preventDefault());
-  document.getElementById("dice")!.onclick = () => {
-    el("seed", HTMLInputElement).value = String(Math.floor(Math.random() * 1_000_000));
-    onChange(readConfig());
+// A built settings form: read the config it describes, fill it from one, and wire it up.
+export interface FormHandle<C> {
+  read(): C;
+  fill(c: C): void;
+  // onChange gets the config the form currently describes after every edit.
+  init(form: HTMLFormElement, onChange: (c: C) => void): void;
+}
+
+// Fills the container with one card per section of the spec.
+export function buildForm<C extends { seed: number }>(container: HTMLElement, spec: FormSpec<C>): FormHandle<C> {
+  container.innerHTML = spec.sections.map(sectionHtml).join("");
+  const fields = spec.sections.flatMap((s) => [...s.fields]);
+  const syncHints = (c: C): void => {
+    for (const f of fields) if (f.kind === "range" && f.hint) el(`${f.id}Hint`, HTMLElement).textContent = f.hint(c);
   };
+  const read = (): C => {
+    const c = structuredClone(spec.defaults);
+    for (const f of fields) {
+      const input = el(f.id, HTMLElement) as HTMLInputElement; // a select shares .value
+      if (f.kind === "toggle") f.set(c, input.checked);
+      else if (f.kind === "range") f.set(c, input.valueAsNumber);
+      else if (f.kind === "choice") { if (f.options.some(([value]) => value === input.value)) f.set(c, input.value); }
+      else if (Number.isFinite(input.valueAsNumber)) c.seed = Math.min(2 ** 31, Math.max(0, Math.round(input.valueAsNumber)));
+    }
+    return c;
+  };
+  const fill = (c: C): void => {
+    for (const f of fields) {
+      const input = el(f.id, HTMLElement) as HTMLInputElement; // a select shares .value
+      if (f.kind === "toggle") input.checked = f.get(c);
+      else if (f.kind === "seed") input.value = String(c.seed);
+      else input.value = String(f.get(c));
+    }
+    container.querySelectorAll<HTMLInputElement>('input[type="range"]').forEach(syncSlider);
+    syncHints(c);
+  };
+  const init = (form: HTMLFormElement, onChange: (c: C) => void): void => {
+    form.addEventListener("input", (e) => {
+      const target = e.target as HTMLInputElement;
+      if (target.type === "range") syncSlider(target);
+      const c = read();
+      syncHints(c);
+      onChange(c);
+    });
+    // Enter in a field would otherwise submit the form and reload the page, losing all settings.
+    form.addEventListener("submit", (e) => e.preventDefault());
+    el("dice", HTMLButtonElement).onclick = () => {
+      el("seed", HTMLInputElement).value = String(Math.floor(Math.random() * 1_000_000));
+      onChange(read());
+    };
+  };
+  return { read, fill, init };
 }

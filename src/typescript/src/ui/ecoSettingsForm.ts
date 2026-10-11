@@ -1,55 +1,13 @@
-import { itemCounts, POISON_LETHAL } from "../sim/config.ts";
+import { POISON_LETHAL } from "../sim/config.ts";
 import { DEFAULT_ECO_CONFIG } from "../sim/ecoConfig.ts";
 import type { EcoConfig } from "../sim/ecoConfig.ts";
-import { el, syncSlider } from "./settingsForm.ts";
+import { items, perSecond, range } from "./settingsForm.ts";
+import type { FormSpec, Section } from "./settingsForm.ts";
 
-// Ecosystem settings: one table drives the markup, the config read and the fill, so a field is declared once.
-interface Base {
-  id: string;
-  label: string;
-  tip: string;
-  advanced?: boolean; // shown under the section's "More settings"
-}
-export interface Range extends Base {
-  kind: "range";
-  min: number;
-  max: number;
-  step: number;
-  fmt?: string; // key of FORMATS in settingsForm.ts
-  hint?: (c: EcoConfig) => string; // live text next to the value
-  get: (c: EcoConfig) => number;
-  set: (c: EcoConfig, v: number) => void;
-}
-export interface Toggle extends Base {
-  kind: "toggle";
-  get: (c: EcoConfig) => boolean;
-  set: (c: EcoConfig, v: boolean) => void;
-}
-interface Seed extends Base {
-  kind: "seed";
-}
-export type Field = Range | Toggle | Seed;
-export interface Section {
-  title: string;
-  fields: readonly Field[];
-  folded?: boolean; // the whole section starts collapsed
-  swatch?: string; // CSS colour of a dot before the title
-}
-// A settings form: its sections and the config that fields without an input keep.
-export interface EcoForm {
-  sections: readonly Section[];
-  defaults: EcoConfig;
-}
-
+// Ecosystem settings, built by buildForm in settingsForm.ts.
 const defaultNeurons = DEFAULT_ECO_CONFIG.brain.hiddenLayers[0]!;
-// A density (or density per second) times the world area, in items.
-export const itemsOf = (c: EcoConfig, density: number): number => itemCounts({ world: { ...c.world, foodDensity: density } }).food;
-export const items = (c: EcoConfig, density: number): string => `≈ ${itemsOf(c, density)} items`;
-export const perSecond = (c: EcoConfig, density: number): string => `≈ ${itemsOf(c, density)} items/s`;
 
-export const range = (f: Omit<Range, "kind">): Range => ({ kind: "range", ...f });
-
-export const ECO_SECTIONS: readonly Section[] = [
+export const ECO_SECTIONS: readonly Section<EcoConfig>[] = [
   {
     title: "World",
     fields: [
@@ -129,80 +87,4 @@ export const ECO_SECTIONS: readonly Section[] = [
   },
 ];
 
-const escapeAttr = (s: string): string => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
-
-const label = (f: Field): string =>
-  `<span class="lbl"><label class="name" for="${f.id}">${f.label}</label><span class="tip" tabindex="0" role="img" aria-label="${escapeAttr(f.tip)}" data-tip="${escapeAttr(f.tip)}">ⓘ</span></span>`;
-
-function fieldHtml(f: Field): string {
-  if (f.kind === "toggle") return `<div class="toggle">${label(f)}<input id="${f.id}" type="checkbox" role="switch" /></div>`;
-  if (f.kind === "seed") {
-    return `<div class="field"><div class="row">${label(f)}</div><div class="seed-row"><input id="seed" type="number" step="1" min="0" /><button id="dice" class="icon" type="button" title="Random seed" aria-label="Random seed">🎲</button></div></div>`;
-  }
-  const fmt = f.fmt ? ` data-fmt="${f.fmt}"` : "";
-  const hint = f.hint ? `<span class="hint" id="${f.id}Hint"></span>` : "";
-  return `<div class="field"><div class="row">${label(f)}<span class="vals">${hint}<output for="${f.id}"${fmt}></output></span></div><input id="${f.id}" type="range" min="${f.min}" max="${f.max}" step="${f.step}" /></div>`;
-}
-
-export const ECO_FORM: EcoForm = { sections: ECO_SECTIONS, defaults: DEFAULT_ECO_CONFIG };
-
-function sectionHtml(s: Section): string {
-  const swatch = s.swatch ? `<i class="sw" style="background: ${s.swatch}"></i>` : "";
-  const main = s.fields.filter((f) => !f.advanced).map(fieldHtml).join("");
-  const advanced = s.fields.filter((f) => f.advanced);
-  const more = advanced.length ? `<details class="more"><summary>More settings</summary><div class="more-body">${advanced.map(fieldHtml).join("")}</div></details>` : "";
-  if (s.folded) return `<details class="card fold"><summary><h3>${swatch}${s.title}</h3></summary>${main}${more}</details>`;
-  return `<section class="card"><h3>${swatch}${s.title}</h3>${main}${more}</section>`;
-}
-
-// A built settings form: read the config it describes, fill it from one, and wire it up.
-export interface EcoFormHandle {
-  read(): EcoConfig;
-  fill(c: EcoConfig): void;
-  // onChange gets the config the form currently describes after every edit.
-  init(form: HTMLFormElement, onChange: (c: EcoConfig) => void): void;
-}
-
-// Fills the container with one card per section of spec (the Ecosystem's by default).
-export function buildEcoForm(container: HTMLElement, spec: EcoForm = ECO_FORM): EcoFormHandle {
-  container.innerHTML = spec.sections.map(sectionHtml).join("");
-  const fields = spec.sections.flatMap((s) => [...s.fields]);
-  const syncHints = (c: EcoConfig): void => {
-    for (const f of fields) if (f.kind === "range" && f.hint) el(`${f.id}Hint`, HTMLElement).textContent = f.hint(c);
-  };
-  const read = (): EcoConfig => {
-    const c = structuredClone(spec.defaults);
-    for (const f of fields) {
-      const input = el(f.id, HTMLInputElement);
-      if (f.kind === "toggle") f.set(c, input.checked);
-      else if (f.kind === "range") f.set(c, input.valueAsNumber);
-      else if (Number.isFinite(input.valueAsNumber)) c.seed = Math.min(2 ** 31, Math.max(0, Math.round(input.valueAsNumber)));
-    }
-    return c;
-  };
-  const fill = (c: EcoConfig): void => {
-    for (const f of fields) {
-      const input = el(f.id, HTMLInputElement);
-      if (f.kind === "toggle") input.checked = f.get(c);
-      else if (f.kind === "range") input.value = String(f.get(c));
-      else input.value = String(c.seed);
-    }
-    container.querySelectorAll<HTMLInputElement>('input[type="range"]').forEach(syncSlider);
-    syncHints(c);
-  };
-  const init = (form: HTMLFormElement, onChange: (c: EcoConfig) => void): void => {
-    form.addEventListener("input", (e) => {
-      const target = e.target as HTMLInputElement;
-      if (target.type === "range") syncSlider(target);
-      const c = read();
-      syncHints(c);
-      onChange(c);
-    });
-    form.addEventListener("submit", (e) => e.preventDefault());
-    el("dice", HTMLButtonElement).onclick = () => {
-      el("seed", HTMLInputElement).value = String(Math.floor(Math.random() * 1_000_000));
-      onChange(read());
-    };
-  };
-  return { read, fill, init };
-}
+export const ECO_FORM: FormSpec<EcoConfig> = { sections: ECO_SECTIONS, defaults: DEFAULT_ECO_CONFIG };
