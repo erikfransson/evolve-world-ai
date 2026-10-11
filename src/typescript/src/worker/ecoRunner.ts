@@ -11,7 +11,7 @@ import type { ThinkPool } from "./ecoPool.ts";
 
 const SLICE_MS = 12; // longest stretch of ticks before the worker checks messages and posts
 const POST_MS = 1000 / 30; // snapshot interval
-const MAX_IN_FLIGHT = 3; // snapshots posted but not yet recycled, so a slow page is not flooded
+const MAX_IN_FLIGHT = 3; // snapshots posted but not yet acknowledged by the page, so a slow page is not flooded
 const MAX_CATCH_UP = 0.25; // real seconds of ticks that can be owed after a stall
 const SAMPLE_CAP = 600; // graph samples kept; at the cap every other one is dropped and sampling slows to half
 const MIN_CREATURE_CAP = 256;
@@ -96,6 +96,9 @@ export class EcoRunner {
       }
       case "recycle":
         if (msg.run === undefined || msg.run === this.run) this.inFlight = Math.max(0, this.inFlight - 1);
+        if (msg.buffer && this.pool.length < MAX_IN_FLIGHT) this.pool.push(msg.buffer);
+        break;
+      case "refill":
         if (this.pool.length < MAX_IN_FLIGHT) this.pool.push(msg.buffer);
         break;
     }

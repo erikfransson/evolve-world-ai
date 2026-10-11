@@ -11,12 +11,15 @@ const KEY_REPEAT = 1 / 3; // auto-repeat events apply this share of a press dire
 const DBLCLICK_ZOOM = 2.5;
 
 // Canvas-relative position in backing-store pixels, so it holds for any devicePixelRatio and CSS size.
-function pos(canvas: HTMLCanvasElement, clientX: number, clientY: number): { x: number; y: number } {
+function pos(canvas: HTMLCanvasElement, backing: Backing, clientX: number, clientY: number): { x: number; y: number } {
   const r = canvas.getBoundingClientRect();
-  return { x: ((clientX - r.left) * canvas.width) / (r.width || 1), y: ((clientY - r.top) * canvas.height) / (r.height || 1) };
+  return { x: ((clientX - r.left) * backing().width) / (r.width || 1), y: ((clientY - r.top) * backing().height) / (r.height || 1) };
 }
 
-export function attachCameraInput(cam: Camera, canvas: HTMLCanvasElement): () => void {
+// Backing-store size; a canvas handed to an OffscreenCanvas cannot be resized from here, so the owner passes its own.
+export type Backing = () => { width: number; height: number };
+
+export function attachCameraInput(cam: Camera, canvas: HTMLCanvasElement, backing: Backing = () => canvas): () => void {
   const pointers = new Map<number, { x: number; y: number }>();
   let drag = new DragDetector(0);
   let startX = 0;
@@ -31,11 +34,11 @@ export function attachCameraInput(cam: Camera, canvas: HTMLCanvasElement): () =>
   };
 
   // Backing-store pixels per CSS pixel.
-  const cssScale = (): number => canvas.width / (canvas.getBoundingClientRect().width || 1);
+  const cssScale = (): number => backing().width / (canvas.getBoundingClientRect().width || 1);
 
   const onDown = (e: PointerEvent): void => {
     if (e.pointerType === "mouse" && e.button !== 0) return;
-    const p = pos(canvas, e.clientX, e.clientY);
+    const p = pos(canvas, backing, e.clientX, e.clientY);
     pointers.set(e.pointerId, p);
     canvas.setPointerCapture?.(e.pointerId);
     if (pointers.size === 1) {
@@ -53,7 +56,7 @@ export function attachCameraInput(cam: Camera, canvas: HTMLCanvasElement): () =>
   const onMove = (e: PointerEvent): void => {
     const prev = pointers.get(e.pointerId);
     if (!prev) return;
-    const p = pos(canvas, e.clientX, e.clientY);
+    const p = pos(canvas, backing, e.clientX, e.clientY);
     pointers.set(e.pointerId, p);
     if (pointers.size >= 2) {
       const s = pinchState();
@@ -96,16 +99,16 @@ export function attachCameraInput(cam: Camera, canvas: HTMLCanvasElement): () =>
     const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
     const factor = Math.exp(-e.deltaY * unit * (e.ctrlKey ? PINCH_WHEEL_K : WHEEL_K));
     if (cam.following) {
-      cam.zoomAt(canvas.width / 2, canvas.height / 2, factor); // keeps the followed target centred
+      cam.zoomAt(backing().width / 2, backing().height / 2, factor); // keeps the followed target centred
       return;
     }
     cam.cancel();
-    const p = pos(canvas, e.clientX, e.clientY);
+    const p = pos(canvas, backing, e.clientX, e.clientY);
     cam.zoomAt(p.x, p.y, factor);
   };
 
   const onDblClick = (e: MouseEvent): void => {
-    const p = pos(canvas, e.clientX, e.clientY);
+    const p = pos(canvas, backing, e.clientX, e.clientY);
     const v = cam.viewZoomingAt(p.x, p.y, cam.zoom * DBLCLICK_ZOOM);
     cam.cancel();
     cam.animateTo(v.cx, v.cy, v.zoom);
@@ -127,8 +130,8 @@ export function attachCameraInput(cam: Camera, canvas: HTMLCanvasElement): () =>
     const g = cam.goal;
     const step = e.repeat ? KEY_REPEAT : 1;
     let { cx, cy, zoom } = g;
-    const vw = canvas.width / zoom;
-    const vh = canvas.height / zoom;
+    const vw = backing().width / zoom;
+    const vh = backing().height / zoom;
     switch (e.key) {
       case "+":
       case "=":
