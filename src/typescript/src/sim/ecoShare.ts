@@ -14,7 +14,7 @@ import { SenseKernels } from "./wasm/senseKernels.ts";
 
 // Sense and think on helper threads. Each tick the coordinator, which owns the Ecosystem, publishes a packet:
 // every creature's pose, energy, species and memory, plus the changes since the last packet (item changes, deaths, and births
-// with their plan and genome). Each helper keeps a copy of the item world and the brains of the creatures it owns,
+// with their plan; the genome goes only to the helper that owns the creature). Each helper keeps a copy of the item world and the brains of the creatures it owns,
 // runs senseThinkBatch for those and writes their outputs into the packet. The coordinator owns a share too and senses
 // it on its own creatures meanwhile; then it copies the helpers' outputs into its creatures and finishes the tick.
 // Each thread also does memory and motion of its own creatures and looks up what each touches (the part of the tick that
@@ -23,7 +23,7 @@ import { SenseKernels } from "./wasm/senseKernels.ts";
 // The packet is a plain buffer, so it travels by postMessage (one copy per helper).
 
 const DIED = 3; // delta record: DIED, id
-const BORN = 4; // delta record: BORN, id, owner, species, rayCount, raySpread, rayLength, memoryShort, memoryLong, hidden layers, ...sizes, genome length, ...genome
+const BORN = 4; // delta record: BORN, id, owner, species, rayCount, raySpread, rayLength, memoryShort, memoryLong, hidden layers, ...sizes, genome length (the genome itself goes only to its owner, in Packet.genomes)
 
 // Header slots (Int32).
 const H_COUNT = 0;
@@ -31,12 +31,14 @@ const H_CREATURE_CAP = 1;
 const H_MEMORY_CAP = 2;
 const H_DELTA_CAP = 3;
 const H_DELTA_LENGTH = 4;
+const H_GENOME_CAP = 5;
 const HEADER_BYTES = 64;
 
 export interface Caps {
   creatures: number;
   memory: number; // memory units of all creatures
   delta: number; // Float64 words of changes
+  genome: number; // Float64 words of genomes, per helper packet: only those of its own new creatures
 }
 
 // Typed views over one packet buffer. Outputs come last, so the bytes before outputAt are the published state.
@@ -60,6 +62,7 @@ export interface Packet {
   ticks: Float64Array; // ticks alive
   memory: Float64Array;
   delta: Float64Array;
+  genomes: Float64Array; // genomes of the helper's own births, in birth order; the delta records carry only their lengths
   // Outputs of the thread that owns creature i: its state after memory and motion, the new memory (laid out like memory)
   // and the item it touches there (-1 for none).
   after: Record<"x" | "y" | "vx" | "vy" | "turnRate" | "energy" | "angle" | "cos" | "sin", Float64Array>;
@@ -99,7 +102,7 @@ function writeState(c: Creature, a: StateColumns, i: number): void {
 function layout(caps: Caps): { f64At: number; outputAt: number; bytes: number } {
   const ints = HEADER_BYTES + 4 * (4 * caps.creatures + 1);
   const f64At = Math.ceil(ints / 8) * 8;
-  const outputAt = f64At + 8 * (10 * caps.creatures + caps.memory + caps.delta);
+  const outputAt = f64At + 8 * (10 * caps.creatures + caps.memory + caps.delta + caps.genome);
   return { f64At, outputAt, bytes: outputAt + 8 * (9 * caps.creatures + caps.memory) + 4 * caps.creatures };
 }
 
@@ -114,7 +117,8 @@ export function packetViews(buffer: ArrayBufferLike, caps?: Caps): Packet {
     header[H_CREATURE_CAP] = caps.creatures;
     header[H_MEMORY_CAP] = caps.memory;
     header[H_DELTA_CAP] = caps.delta;
-  } else caps = { creatures: header[H_CREATURE_CAP]!, memory: header[H_MEMORY_CAP]!, delta: header[H_DELTA_CAP]! };
+    header[H_GENOME_CAP] = caps.genome;
+  } else caps = { creatures: header[H_CREATURE_CAP]!, memory: header[H_MEMORY_CAP]!, delta: header[H_DELTA_CAP]!, genome: header[H_GENOME_CAP]! };
   const C = caps.creatures;
   const { f64At, outputAt } = layout(caps);
   let at = f64At;
@@ -143,6 +147,7 @@ export function packetViews(buffer: ArrayBufferLike, caps?: Caps): Packet {
     ticks: f64(C),
     memory: f64(caps.memory),
     delta: f64(caps.delta),
+    genomes: f64(caps.genome),
     after: {
       x: f64(C),
       y: f64(C),
@@ -165,14 +170,15 @@ export function publishedBytes(p: Packet): number {
   return p.delta.byteOffset + 8 * p.header[H_DELTA_LENGTH]!;
 }
 
-// Caps covering need with room to grow, or null when have already fits. The delta cap also shrinks once far too big
-// (after the first packet, which carries every founder's genome), since in fork-join each tick moves whole buffers.
+// Caps covering need with room to grow, or null when have already fits. The delta and genome caps also shrink once far
+// too big (after the first packet, which carries every founder's genome), since in fork-join each tick moves whole buffers.
 export function fittedCaps(have: Caps | null, need: Caps): Caps | null {
-  const oversized = have !== null && have.delta > 4 * need.delta + 65536;
-  if (have && need.creatures <= have.creatures && need.memory <= have.memory && need.delta <= have.delta && !oversized) return null;
+  const big = (h: number, n: number): boolean => h > 4 * n + 65536;
+  const oversized = have !== null && (big(have.delta, need.delta) || big(have.genome, need.genome));
+  if (have && need.creatures <= have.creatures && need.memory <= have.memory && need.delta <= have.delta && need.genome <= have.genome && !oversized) return null;
   const up = (n: number, h: number): number => (have && n <= h ? h : Math.ceil(n * 1.5) + 64);
-  const delta = oversized ? Math.ceil(need.delta * 1.5) + 4096 : up(need.delta, have?.delta ?? 0);
-  return { creatures: up(need.creatures, have?.creatures ?? 0), memory: up(need.memory, have?.memory ?? 0), delta };
+  const shrink = (n: number, h: number): number => (big(h, n) ? Math.ceil(n * 1.5) + 4096 : up(n, h));
+  return { creatures: up(need.creatures, have?.creatures ?? 0), memory: up(need.memory, have?.memory ?? 0), delta: shrink(need.delta, have?.delta ?? 0), genome: shrink(need.genome, have?.genome ?? 0) };
 }
 
 // Coordinator side: assigns each new creature to the least loaded thread, writes packets and reads the outputs back.
@@ -182,12 +188,14 @@ export class ShareCoordinator {
   private readonly ownerOf = new Map<number, number>();
   private readonly costOf = new Map<number, number>();
   private readonly load: Float64Array;
+  private readonly genomeAt: Float64Array; // words of genomes written into each helper's packet this tick
   private readonly batch = new SenseBatch();
   private advanced = false; // senseOwn has moved the own creatures since the last publish
 
   constructor(helpers: number) {
     this.helpers = helpers;
     this.load = new Float64Array(helpers + 1);
+    this.genomeAt = new Float64Array(helpers + 1);
   }
 
   // Sizes the next packet needs; eco must have been built with the journal option.
@@ -196,19 +204,24 @@ export class ShareCoordinator {
     let memory = 0;
     for (const m of eco.members) memory += m.creature.memory.length;
     let delta = j.items.length + 2 * j.died.length;
+    let genome = 0;
     for (const id of j.born) {
       const c = eco.get(id)?.creature;
-      if (c) delta += 11 + c.plan.hiddenLayers.length + c.brain.genome.length;
+      if (!c) continue;
+      delta += 11 + c.plan.hiddenLayers.length;
+      genome += c.brain.genome.length;
     }
-    return { creatures: eco.population, memory, delta };
+    return { creatures: eco.population, memory, delta, genome };
   }
 
-  // Writes the tick-start state and drains the journal into p, whose caps must cover need(eco).
-  publish(eco: Ecosystem, p: Packet): void {
+  // Writes the tick-start state and drains the journal into p, whose caps must cover need(eco). Each new helper
+  // creature's genome goes into that helper's packet only (packets[h]); the other threads need no copy.
+  publish(eco: Ecosystem, p: Packet, packets: readonly Packet[]): void {
     this.advanced = false;
     const j = eco.journal!;
     const d = p.delta;
     let k = 0;
+    const genomeAt = this.genomeAt.fill(0);
     const items = j.items;
     for (let i = 0; i < items.length; i++) d[k++] = items[i]!;
     for (const id of j.died) {
@@ -231,6 +244,7 @@ export class ShareCoordinator {
       const cost = genome.length + 30 * plan.rayCount; // rough relative work of one creature
       this.load[owner] += cost;
       this.ownerOf.set(id, owner);
+      m.owner = owner;
       this.costOf.set(id, cost);
       d[k++] = BORN;
       d[k++] = id;
@@ -244,7 +258,12 @@ export class ShareCoordinator {
       d[k++] = plan.hiddenLayers.length;
       for (const n of plan.hiddenLayers) d[k++] = n;
       d[k++] = genome.length;
-      for (let g = 0; g < genome.length; g++) d[k++] = genome[g]!;
+      if (owner < this.helpers) {
+        const to = packets[owner]!.genomes;
+        let at = genomeAt[owner]!;
+        for (let g = 0; g < genome.length; g++) to[at++] = genome[g]!;
+        genomeAt[owner] = at;
+      }
     }
     eco.drainJournal();
     p.header[H_DELTA_LENGTH] = k;
@@ -258,7 +277,7 @@ export class ShareCoordinator {
       const c = m.creature;
       const s = c.state;
       p.ids[i] = m.id;
-      p.owner[i] = this.ownerOf.get(m.id)!;
+      p.owner[i] = m.owner;
       p.species[i] = m.species;
       p.memoryAt[i] = at;
       writeState(c, p, i);
@@ -328,6 +347,7 @@ export class ShareHelper {
   private readonly batch = new SenseBatch();
   private readonly spare: Creature[][]; // per species
   private genome = new Float32Array(0);
+  private genomeAt = 0; // words of the packet's genomes read so far
   private readonly plan: BodyPlan = { rayCount: 0, raySpread: 0, rayLength: 0, hiddenLayers: [], memoryShort: 0, memoryLong: 0 };
 
   private readonly kernels: SenseKernels | null;
@@ -354,7 +374,8 @@ export class ShareHelper {
 
   // Applies p's changes, then senses and thinks for the creatures this helper owns, writing their outputs into p.
   run(p: Packet): void {
-    this.apply(p.delta, p.header[H_DELTA_LENGTH]!);
+    this.genomeAt = 0;
+    this.apply(p.delta, p.genomes, p.header[H_DELTA_LENGTH]!);
     const n = p.header[H_COUNT]!;
     this.crowd.rebuildFrom(p.x, p.y, p.energy, n, p.species);
     const batch = this.batch;
@@ -382,7 +403,7 @@ export class ShareHelper {
     }
   }
 
-  private apply(d: Float64Array, length: number): void {
+  private apply(d: Float64Array, genomes: Float64Array, length: number): void {
     let k = 0;
     while (k < length) {
       const code = d[k++];
@@ -400,13 +421,13 @@ export class ShareHelper {
           this.speciesOf.delete(id);
         }
       } else if (code === BORN) {
-        k = this.born(d, k);
+        k = this.born(d, genomes, k);
       } else throw new Error(`bad packet record ${code}`);
     }
   }
 
   // Reads one birth record from d[k ..]; returns the index after it.
-  private born(d: Float64Array, k: number): number {
+  private born(d: Float64Array, genomes: Float64Array, k: number): number {
     const id = d[k++]!;
     const owner = d[k++]!;
     const species = d[k++]!;
@@ -419,10 +440,10 @@ export class ShareHelper {
     plan.hiddenLayers.length = d[k++]!;
     for (let l = 0; l < plan.hiddenLayers.length; l++) plan.hiddenLayers[l] = d[k++]!;
     const length = d[k++]!;
-    if (owner !== this.index) return k + length;
+    if (owner !== this.index) return k;
     this.genome = refit(this.genome, length);
     const genome = this.genome;
-    for (let g = 0; g < length; g++) genome[g] = d[k++]!;
+    for (let g = 0; g < length; g++) genome[g] = genomes[this.genomeAt++]!;
     let c = this.spare[species]!.pop();
     if (c) c.reset(genome, 0, 0, 0, 0, plan);
     else c = new Creature(this.engines[species]!, genome, 0, 0, 0, plan);
