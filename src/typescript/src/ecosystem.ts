@@ -13,6 +13,7 @@ import { buildSelectedBrain } from "./ui/ecoBrain.ts";
 import type { SelectedBrain } from "./ui/ecoBrain.ts";
 import { createEcoView } from "./ui/ecoPage.ts";
 import { ECOSYSTEM_PAGE, PREDATORS_PAGE, openingConfig } from "./ui/ecoModes.ts";
+import { ecoBody } from "./ui/ecoMarkup.ts";
 import { createRenderHost } from "./ui/renderHost.ts";
 import type { RenderHost } from "./ui/renderHost.ts";
 import type { EcoDrawConfig } from "./ui/ecoScene.ts";
@@ -47,6 +48,7 @@ interface Selection {
 
 // This script runs the Ecosystem page and, with <body data-mode="predators">, the Great Hunt page.
 const PAGE = document.body.dataset.mode === "predators" ? PREDATORS_PAGE : ECOSYSTEM_PAGE;
+document.body.insertAdjacentHTML("afterbegin", ecoBody(PAGE)); // the page structure comes from the spec; the HTML files only name the mode
 // The page opens on the Normal preset.
 const NORMAL = openingConfig(PAGE);
 let config: EcoConfig = NORMAL; // the form's while idle, the run's while active
@@ -325,7 +327,7 @@ function frame(now: number): void {
   const dpr = syncCanvas();
   camera.update(now);
   syncFollow();
-  if (!host!.frame({ run, camera, cfg: drawConfig(), views: live.views, selected: selection?.details ?? null, showRays, dpr, highlight, now })) return;
+  host!.frame({ run, camera, cfg: drawConfig(), views: live.views, selected: selection?.details ?? null, showRays, dpr, highlight, now }); // false once drawing has stopped; stats and brain panel keep updating
   if (now - lastUiAt >= UI_INTERVAL_MS) {
     lastUiAt = now;
     updateUi();
