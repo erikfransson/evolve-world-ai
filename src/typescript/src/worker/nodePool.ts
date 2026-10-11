@@ -30,6 +30,11 @@ export function parseThreads(value: string | undefined): number {
 
 // Ecosystem helper threads; shared uses shared memory. Call close() so the process can exit.
 export function createNodeThinkPool(helpers: number, shared: boolean): ThinkPool {
+  return new ThinkPool(nodeHelperPorts(helpers), shared && canShare(globalThis, true));
+}
+
+// Ports to n new helper worker_threads.
+export function nodeHelperPorts(helpers: number): HelperPort[] {
   const ports: HelperPort[] = [];
   for (let i = 0; i < helpers; i++) {
     const worker = new Worker(new URL("./ecoHelperNode.ts", import.meta.url));
@@ -44,7 +49,7 @@ export function createNodeThinkPool(helpers: number, shared: boolean): ThinkPool
       terminate: () => { void worker.terminate(); },
     });
   }
-  return new ThinkPool(ports, shared && canShare(globalThis, true));
+  return ports;
 }
 
 // Pool of worker_threads, or the serial evaluator for one thread. Call close() so the process can exit.

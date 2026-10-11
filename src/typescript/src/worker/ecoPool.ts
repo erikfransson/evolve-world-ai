@@ -6,13 +6,14 @@ import type { Caps, Packet } from "../sim/ecoShare.ts";
 // Helper threads for one Ecosystem run (see ecoShare.ts), over message passing or shared memory.
 // Fork-join: each tick every helper gets a copy of the coordinator's packet by transfer and hands it back with its outputs.
 // Shared: one SharedArrayBuffer packet, and an epoch counter and a done counter as barriers (Atomics); no messages per tick.
+// gen: the run a message belongs to, echoed in the reply, so a late reply from an earlier run is dropped.
 
 export type HelperIn =
-  | { type: "init"; config: EngineConfig; worldCapacity: number; index: number; control?: SharedArrayBuffer } // a new run; control in shared mode
-  | { type: "packet"; packet: SharedArrayBuffer } // shared mode: the packet buffer, sent again when it grows
-  | { type: "tick"; buffer: ArrayBuffer }; // fork-join: one tick's packet, transferred both ways
+  | { type: "init"; gen: number; config: EngineConfig; worldCapacity: number; index: number; control?: SharedArrayBuffer } // a new run; control in shared mode
+  | { type: "packet"; gen: number; packet: SharedArrayBuffer } // shared mode: the packet buffer, sent again when it grows
+  | { type: "tick"; gen: number; buffer: ArrayBuffer }; // fork-join: one tick's packet, transferred both ways
 
-export type HelperOut = { type: "ready" } | { type: "done"; buffer: ArrayBuffer } | { type: "error"; message: string };
+export type HelperOut = { type: "ready"; gen: number } | { type: "done"; gen: number; buffer: ArrayBuffer } | { type: "error"; gen: number; message: string };
 
 // What the pool needs from a helper thread, for web workers and node worker_threads.
 export interface HelperPort {
@@ -26,9 +27,10 @@ export interface HelperPort {
 const C_EPOCH = 0; // bumped by the coordinator when a packet is ready
 const C_DONE = 1; // helpers finished with the current packet
 const C_FAIL = 2; // set by a helper that threw
-const WAIT_MS = 20_000; // a shared tick waiting longer than this has lost a helper
+const START_MS = 20_000; // helpers not ready for a run after this long are lost (the first start loads their scripts)
+const TICK_MS = 5_000; // default for a tick or packet waiting so long that a helper is lost
 
-type WaitAsync = (a: Int32Array, i: number, v: number) => { async: boolean; value: Promise<unknown> | string };
+type WaitAsync = (a: Int32Array, i: number, v: number, timeout?: number) => { async: boolean; value: Promise<unknown> | string };
 const waitAsync = (Atomics as unknown as { waitAsync?: WaitAsync }).waitAsync;
 
 // Helper threads when none are asked for: leave one core for the page and one for the coordinator, at most 4; on a 4-core machine 6 were no faster than 4.
@@ -36,7 +38,7 @@ export function defaultHelpers(cores: number): number {
   return Math.max(1, Math.min(cores - 1, 4));
 }
 
-// Shared memory needs a cross-origin isolated page (or Node), SharedArrayBuffer and Atomics.waitAsync for the helpers.
+// Shared memory needs a cross-origin isolated page (or Node), SharedArrayBuffer and Atomics.waitAsync (helpers and coordinator wait without blocking).
 export function canShare(scope: { crossOriginIsolated?: boolean } = globalThis, node = false): boolean {
   return (node || scope.crossOriginIsolated === true) && typeof SharedArrayBuffer === "function" && typeof waitAsync === "function";
 }
@@ -50,11 +52,15 @@ export class ThinkPool {
   private home: Packet | null = null; // the coordinator's packet: published here, read by senseOwn and collect
   private packets: Packet[] = []; // helper h's packet; all home when shared
   private readonly control: Int32Array | null;
+  private readonly tickMs: number;
   private waiting: { count: number; resolve: () => void; reject: (e: unknown) => void } | null = null;
   private broken: unknown = null;
+  private gen = 0; // the current run, see HelperIn
+  private last: Promise<unknown> = Promise.resolve(); // the latest start or step; a new start waits for it
 
-  // shared: use shared memory; check canShare() first.
-  constructor(ports: HelperPort[], shared: boolean) {
+  // shared: use shared memory; check canShare() first. tickMs: how long a tick waits for the helpers before the pool fails.
+  constructor(ports: HelperPort[], shared: boolean, tickMs = TICK_MS) {
+    this.tickMs = tickMs;
     this.ports = ports;
     this.shared = shared;
     this.coordinator = new ShareCoordinator(ports.length);
@@ -74,30 +80,43 @@ export class ThinkPool {
     return this.broken === null;
   }
 
-  // Prepares the helpers for a new run; eco must have been built with the journal option and not stepped yet.
+  // Prepares the helpers for a new run, after the previous start or step has finished; eco must have been built with
+  // the journal option and not stepped yet.
   start(eco: Ecosystem): Promise<void> {
+    const started = this.last.catch(() => {}).then(() => this.begin(eco));
+    this.last = started;
+    return started;
+  }
+
+  // One tick of eco, once start has resolved: helpers sense and think, then the coordinator moves and runs the shared phase.
+  step(eco: Ecosystem): Promise<void> {
+    const stepped = this.stepNow(eco);
+    this.last = stepped;
+    return stepped;
+  }
+
+  close(): void {
+    this.fail(new Error("pool closed"));
+  }
+
+  private begin(eco: Ecosystem): Promise<void> {
     if (this.broken) return Promise.reject(this.broken);
+    const gen = ++this.gen;
     this.coordinator = new ShareCoordinator(this.ports.length);
     this.caps = null;
     this.home = null;
     this.packets = [];
     const control = this.control?.buffer as SharedArrayBuffer | undefined;
-    const done = this.expect();
-    this.ports.forEach((port, index) => port.post({ type: "init", config: eco.config, worldCapacity: eco.world.count, index, control }));
+    const done = this.expect(START_MS);
+    this.ports.forEach((port, index) => port.post({ type: "init", gen, config: eco.config, worldCapacity: eco.world.count, index, control }));
     return done;
   }
 
-  // One tick of eco: helpers sense and think, then the coordinator moves and runs the shared phase.
-  // Returns a promise when the tick waits for messages (always in fork-join, when the packet grows in shared mode).
-  step(eco: Ecosystem): void | Promise<void> {
+  private async stepNow(eco: Ecosystem): Promise<void> {
     if (this.broken) throw this.broken;
     const caps = fittedCaps(this.caps, this.coordinator.need(eco));
-    if (caps) return this.resize(caps).then(() => this.tick(eco));
-    return this.tick(eco);
-  }
-
-  close(): void {
-    this.fail(new Error("pool closed"));
+    if (caps) await this.resize(caps);
+    await this.tick(eco);
   }
 
   private resize(caps: Caps): Promise<void> {
@@ -112,12 +131,12 @@ export class ThinkPool {
     const views = packetViews(packet, caps);
     this.home = views;
     this.packets = this.ports.map(() => views);
-    const done = this.expect();
-    for (const port of this.ports) port.post({ type: "packet", packet });
+    const done = this.expect(this.tickMs);
+    for (const port of this.ports) port.post({ type: "packet", gen: this.gen, packet });
     return done;
   }
 
-  private tick(eco: Ecosystem): void | Promise<void> {
+  private async tick(eco: Ecosystem): Promise<void> {
     const home = this.home!;
     this.coordinator.publish(eco, home);
     if (this.shared) {
@@ -127,8 +146,10 @@ export class ThinkPool {
       Atomics.notify(control, C_EPOCH);
       this.senseOwn(eco);
       const n = this.ports.length;
+      // Waits without blocking, so a helper's error or exit event fails the pool (and wakes this wait) right away.
       for (let done = Atomics.load(control, C_DONE); done < n; done = Atomics.load(control, C_DONE)) {
-        if (Atomics.wait(control, C_DONE, done, WAIT_MS) === "timed-out") this.fail(new Error("helper threads stopped answering"));
+        const r = waitAsync!(control, C_DONE, done, this.tickMs);
+        if (r.async && (await r.value) === "timed-out") this.fail(new Error("helper threads stopped answering"));
         if (this.broken) throw this.broken;
       }
       if (Atomics.load(control, C_FAIL)) {
@@ -140,13 +161,15 @@ export class ThinkPool {
     }
     const state = new Uint8Array(home.buffer, 0, publishedBytes(home));
     for (const p of this.packets) new Uint8Array(p.buffer).set(state);
-    const done = this.expect();
+    const done = this.expect(this.tickMs);
+    const gen = this.gen;
     this.ports.forEach((port, h) => {
       const buffer = this.packets[h]!.buffer as ArrayBuffer;
-      port.post({ type: "tick", buffer }, [buffer]);
+      port.post({ type: "tick", gen, buffer }, [buffer]);
     });
     this.senseOwn(eco);
-    return done.then(() => this.finish(eco));
+    await done;
+    this.finish(eco);
   }
 
   private finish(eco: Ecosystem): void {
@@ -160,15 +183,22 @@ export class ThinkPool {
     this.coordinator.senseOwn(eco, this.home!, this.watch);
   }
 
-  // A promise for one reply from every helper.
-  private expect(): Promise<void> {
+  // A promise for one reply of the current run from every helper; fails the pool after ms.
+  private expect(ms: number): Promise<void> {
+    if (this.waiting) throw new Error("helper threads are still busy");
     return new Promise((resolve, reject) => {
-      this.waiting = { count: this.ports.length, resolve, reject };
+      const timer = setTimeout(() => this.fail(new Error("helper threads stopped answering")), ms);
+      this.waiting = {
+        count: this.ports.length,
+        resolve: () => { clearTimeout(timer); resolve(); },
+        reject: (e) => { clearTimeout(timer); reject(e); },
+      };
     });
   }
 
   private receive(h: number, msg: HelperOut): void {
     if (msg.type === "error") return this.fail(new Error(msg.message));
+    if (msg.gen !== this.gen) return;
     if (msg.type === "done") this.packets[h] = packetViews(msg.buffer);
     const w = this.waiting;
     if (w && --w.count === 0) {
@@ -181,6 +211,7 @@ export class ThinkPool {
     if (this.broken) return;
     this.broken = error;
     for (const port of this.ports) port.terminate();
+    if (this.control) Atomics.notify(this.control, C_DONE); // wakes a shared tick waiting for the helpers
     const w = this.waiting;
     this.waiting = null;
     w?.reject(error);
@@ -192,13 +223,14 @@ export function serveHelper(post: (msg: HelperOut, transfer?: Transferable[]) =>
   let helper: ShareHelper | null = null;
   let control: Int32Array | null = null;
   let packet: Packet | null = null;
+  let gen = 0;
 
   const runShared = (): void => {
     try {
       helper!.run(packet!);
     } catch (error) {
       Atomics.store(control!, C_FAIL, 1);
-      post({ type: "error", message: error instanceof Error ? error.message : String(error) });
+      post({ type: "error", gen, message: error instanceof Error ? error.message : String(error) });
     }
     Atomics.add(control!, C_DONE, 1);
     Atomics.notify(control!, C_DONE);
@@ -216,6 +248,7 @@ export function serveHelper(post: (msg: HelperOut, transfer?: Transferable[]) =>
   };
 
   return (msg) => {
+    gen = msg.gen;
     switch (msg.type) {
       case "init":
         helper = new ShareHelper(msg.config, msg.worldCapacity, msg.index);
@@ -223,15 +256,15 @@ export function serveHelper(post: (msg: HelperOut, transfer?: Transferable[]) =>
           control = new Int32Array(msg.control);
           void loop(control);
         }
-        post({ type: "ready" });
+        post({ type: "ready", gen });
         break;
       case "packet":
         packet = packetViews(msg.packet);
-        post({ type: "ready" });
+        post({ type: "ready", gen });
         break;
       case "tick":
         helper!.run(packetViews(msg.buffer));
-        post({ type: "done", buffer: msg.buffer }, [msg.buffer]);
+        post({ type: "done", gen, buffer: msg.buffer }, [msg.buffer]);
         break;
     }
   };

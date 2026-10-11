@@ -4,7 +4,7 @@ import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
 import { ThinkPool, canShare, defaultHelpers, serveHelper } from "../../src/typescript/src/worker/ecoPool.ts";
 import type { HelperIn, HelperOut, HelperPort } from "../../src/typescript/src/worker/ecoPool.ts";
 import { EcoRunner } from "../../src/typescript/src/worker/ecoRunner.ts";
-import { createNodeThinkPool } from "../../src/typescript/src/worker/nodePool.ts";
+import { createNodeThinkPool, nodeHelperPorts } from "../../src/typescript/src/worker/nodePool.ts";
 
 // A small crowded world with varied plans and structural mutations, so creatures are born and die within a few hundred ticks.
 function cfg(seed = 5): EcoConfig {
@@ -18,8 +18,8 @@ function cfg(seed = 5): EcoConfig {
   };
 }
 
-// In-process helpers over cloned messages; failAt: the tick message on which the helper reports an error instead.
-function fakePorts(n: number, failAt = Infinity): HelperPort[] {
+// In-process helpers over cloned messages; failAt: the tick message on which the helper reports an error instead, or never answers with hang.
+function fakePorts(n: number, failAt = Infinity, hang = false): HelperPort[] {
   return Array.from({ length: n }, () => {
     let reply: (msg: HelperOut) => void = () => {};
     let fail: (error: unknown) => void = () => {};
@@ -27,7 +27,7 @@ function fakePorts(n: number, failAt = Infinity): HelperPort[] {
     const handle = serveHelper((msg, transfer) => queueMicrotask(() => reply(structuredClone(msg, { transfer: transfer as ArrayBuffer[] }))));
     return {
       post: (msg: HelperIn, transfer?: Transferable[]) => {
-        if (msg.type === "tick" && ++ticks >= failAt) return queueMicrotask(() => fail(new Error("helper lost")));
+        if (msg.type === "tick" && ++ticks >= failAt) return hang ? undefined : queueMicrotask(() => fail(new Error("helper lost")));
         const copy = structuredClone(msg, { transfer: (transfer ?? []) as ArrayBuffer[] });
         queueMicrotask(() => handle(copy));
       },
@@ -51,6 +51,21 @@ async function pooled(pool: ThinkPool, config: EcoConfig, ticks: number): Promis
   return eco;
 }
 
+// A runner on pool at full speed; onTick runs after each pump.
+async function runFor(pool: ThinkPool, ticks: number, onTick: (tick: number) => void = () => {}): Promise<Ecosystem> {
+  const clock = { t: 0 };
+  const runner = new EcoRunner(() => {}, () => (clock.t += 1));
+  runner.useHelpers(pool);
+  runner.handle({ type: "start", config: cfg(), run: 1 });
+  runner.handle({ type: "speed", speed: "max" });
+  const eco = () => (runner as unknown as { eco: Ecosystem }).eco;
+  while (eco().tick < ticks) {
+    await runner.pumpAsync();
+    onTick(eco().tick);
+  }
+  return eco();
+}
+
 describe("ThinkPool", () => {
   it("matches the single-threaded run for 1 and 3 helpers, with births and deaths between ticks", async () => {
     const ref = serial(cfg(), 400);
@@ -67,6 +82,36 @@ describe("ThinkPool", () => {
     await pooled(pool, cfg(1), 50);
     const eco = await pooled(pool, cfg(2), 100);
     expect(eco.fingerprint()).toBe(serial(cfg(2), 100).fingerprint());
+  });
+
+  it("reuses shared-memory helpers for a second run", async () => {
+    const pool = createNodeThinkPool(2, true);
+    try {
+      await pooled(pool, cfg(1), 50);
+      expect((await pooled(pool, cfg(2), 100)).fingerprint()).toBe(serial(cfg(2), 100).fingerprint());
+    } finally {
+      pool.close();
+    }
+  });
+
+  it("a second start before the first one is ready keeps the helpers in step", async () => {
+    const pools = [new ThinkPool(fakePorts(2), false), createNodeThinkPool(2, false), createNodeThinkPool(2, true)];
+    for (const pool of pools) {
+      try {
+        const clock = { t: 0 };
+        const runner = new EcoRunner(() => {}, () => (clock.t += 1));
+        runner.useHelpers(pool);
+        runner.handle({ type: "start", config: cfg(1), run: 1 });
+        runner.handle({ type: "start", config: cfg(2), run: 2 });
+        runner.handle({ type: "speed", speed: "max" });
+        const eco = () => (runner as unknown as { eco: Ecosystem }).eco;
+        while (eco().tick < 150) await runner.pumpAsync();
+        expect(pool.alive).toBe(true);
+        expect(eco().fingerprint()).toBe(serial(cfg(2), eco().tick).fingerprint());
+      } finally {
+        pool.close();
+      }
+    }
   });
 
   it("matches on worker threads, by messages and in shared memory", async () => {
@@ -101,16 +146,6 @@ describe("helper fallbacks", () => {
   });
 
   it("a runner whose helpers fail mid-run continues on one thread with the same result", async () => {
-    const runFor = async (pool: ThinkPool, ticks: number) => {
-      const clock = { t: 0 };
-      const runner = new EcoRunner(() => {}, () => (clock.t += 1));
-      runner.useHelpers(pool);
-      runner.handle({ type: "start", config: cfg(), run: 1 });
-      runner.handle({ type: "speed", speed: "max" });
-      const eco = () => (runner as unknown as { eco: Ecosystem }).eco;
-      while (eco().tick < ticks) await runner.pumpAsync();
-      return eco();
-    };
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const pool = new ThinkPool(fakePorts(2, 30), false);
     const eco = await runFor(pool, 200);
@@ -118,6 +153,32 @@ describe("helper fallbacks", () => {
     warn.mockRestore();
     expect(pool.alive).toBe(false);
     expect(eco.journal).toBeNull();
+    expect(eco.fingerprint()).toBe(serial(cfg(), eco.tick).fingerprint());
+  });
+
+  it("a helper that never answers a tick fails the pool after the timeout", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const pool = new ThinkPool(fakePorts(2, 30, true), false, 50);
+    const eco = await runFor(pool, 100);
+    warn.mockRestore();
+    expect(pool.alive).toBe(false);
+    expect(eco.fingerprint()).toBe(serial(cfg(), eco.tick).fingerprint());
+  });
+
+  it("a shared-memory helper that exits mid-run fails the pool at once", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const ports = nodeHelperPorts(2);
+    const pool = new ThinkPool(ports, true);
+    let killedAt = 0;
+    const eco = await runFor(pool, 200, (tick) => {
+      if (tick >= 30 && !killedAt) {
+        killedAt = Date.now();
+        ports[0]!.terminate();
+      }
+    });
+    warn.mockRestore();
+    expect(pool.alive).toBe(false);
+    expect(Date.now() - killedAt).toBeLessThan(2000); // well under the 5 s tick timeout
     expect(eco.fingerprint()).toBe(serial(cfg(), eco.tick).fingerprint());
   });
 });
