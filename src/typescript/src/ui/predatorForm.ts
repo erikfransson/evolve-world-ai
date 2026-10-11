@@ -41,7 +41,9 @@ export const PREDATOR_SECTIONS: readonly Section[] = [
       range({ id: "foodRegrow", label: "Plant regrowth", tip: "How fast new plants appear, in the same density units as the start plants, per second. Together with the energy per plant this sets how many prey the world can feed.", min: 0, max: 0.2, step: 0.005, fmt: "dens3", hint: (c) => perSecond(c, c.eco.foodRegrow), get: (c) => c.eco.foodRegrow, set: (c, v) => { c.eco.foodRegrow = v; } }),
       range({ id: "foodMaxDensity", label: "Plant limit", tip: "Plants stop regrowing when the world holds this much, on the density scale.", min: 0, max: 1, step: 0.01, fmt: "dens", hint: (c) => items(c, c.eco.foodMaxDensity), get: (c) => c.eco.foodMaxDensity, set: (c, v) => { c.eco.foodMaxDensity = v; } }),
       range({ id: "foodEnergy", label: "Energy per plant", tip: "Energy a prey gains from one plant. Poison takes the same amount away.", min: 5, max: 100, step: 1, get: (c) => c.world.foodEnergy, set: (c, v) => { c.world.foodEnergy = v; } }),
-      ...advanced(pick("World", ["poisonDensity", "itemRadius"])),
+      ...pick("Regrowth", ["seasons"]),
+      ...advanced(pick("Regrowth", ["yearMinutes", "winterFood"])),
+      ...advanced(pick("World", ["poisonDensity", "poisonDamage", "itemRadius"])),
       ...advanced(pick("Regrowth", ["poisonRegrow", "poisonMaxDensity"])),
       ...advanced(pick("Life cycle", ["maxPopulation"])),
     ],
@@ -62,4 +64,4 @@ export const PREDATOR_SECTIONS: readonly Section[] = [
 export const PREDATOR_FORM: EcoForm = { sections: PREDATOR_SECTIONS, defaults: DEFAULT_PREDATOR_CONFIG };
 
 // Form fields a preset fixes on this page.
-export const PREDATOR_LOCKED: readonly string[] = ["worldWidth", "worldHeight", "foodDensity", "poisonDensity", "itemRadius", "foodEnergy", "foodRegrow", "foodMaxDensity", "poisonRegrow", "poisonMaxDensity"];
+export const PREDATOR_LOCKED: readonly string[] = ["worldWidth", "worldHeight", "foodDensity", "poisonDensity", "itemRadius", "foodEnergy", "poisonDamage", "foodRegrow", "foodMaxDensity", "poisonRegrow", "poisonMaxDensity"];

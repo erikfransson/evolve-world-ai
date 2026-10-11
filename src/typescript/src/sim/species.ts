@@ -66,6 +66,7 @@ export function speciesEngine(config: EngineConfig, s: number): EngineConfig {
   const c = config.creature;
   return {
     ...config,
+    seenEnergyScale: Math.max(...config.species.map((x) => x.startEnergy)), // so prey and predators read a seen creature's energy alike
     creature: { ...c, maxThrust: c.maxThrust * sp.speed, startEnergy: sp.startEnergy, livingCost: sp.livingCost, thrustCost: sp.thrustCost, turnCost: sp.turnCost },
   };
 }

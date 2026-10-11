@@ -7,7 +7,7 @@ import { trialsSizes, trialsToEcoGenome } from "../../src/typescript/src/sim/see
 import type { PoolEntry } from "../../src/typescript/src/sim/seedPool.ts";
 import { FEAT_CREATURE, RAY_FEATURES, encodeInputs, energySignal, inputLayout, rayFeatureCount } from "../../src/typescript/src/sim/sensors.ts";
 import type { BodyPlan } from "../../src/typescript/src/sim/sensors.ts";
-import { bandHue, implicitSpecies } from "../../src/typescript/src/sim/species.ts";
+import { bandHue, implicitSpecies, speciesEngine } from "../../src/typescript/src/sim/species.ts";
 import { HIT_CREATURE, HIT_NONE } from "../../src/typescript/src/sim/types.ts";
 import type { CreatureState, RayHit } from "../../src/typescript/src/sim/types.ts";
 import { layerSizes } from "../../src/typescript/src/sim/brain.ts";
@@ -158,12 +158,18 @@ describe("Species ray features", () => {
     const rays: RayHit[] = [0, 1].map(() => ({ closeness: 0, kind: HIT_NONE, energy: 0, species: 0 }));
     crowd.castRays(100, 100, Float64Array.of(1, 0), Float64Array.of(0, 1), rays, 0, 100);
     expect(rays.map((r) => [r.kind, r.species, r.energy])).toEqual([[HIT_CREATURE, 1, 77], [HIT_CREATURE, 0, 33]]);
-    const engine = { ...two, creature: { ...two.creature, rayCount: 2 } };
-    const F = rayFeatureCount(engine);
-    const out = new Float32Array(inputLayout(engine).size);
-    encodeInputs(states[0]!, rays, engine, out, 1, 0);
-    expect(Array.from(out.subarray(FEAT_CREATURE, F))).toEqual([0, 1, Math.fround(energySignal(77, engine.creature.startEnergy))]);
-    expect(Array.from(out.subarray(F + FEAT_CREATURE, 2 * F))).toEqual([1, 0, Math.fround(energySignal(33, engine.creature.startEnergy))]);
+    // Both species read the seen energy on one shared scale, the larger start energy.
+    const scale = Math.max(...two.species!.map((sp) => sp.startEnergy));
+    for (const s of [0, 1]) {
+      const base = speciesEngine(two, s);
+      const engine = { ...base, creature: { ...base.creature, rayCount: 2 } };
+      expect(engine.seenEnergyScale).toBe(scale);
+      const F = rayFeatureCount(engine);
+      const out = new Float32Array(inputLayout(engine).size);
+      encodeInputs(states[0]!, rays, engine, out, 1, 0);
+      expect(Array.from(out.subarray(FEAT_CREATURE, F))).toEqual([0, 1, Math.fround(energySignal(77, scale))]);
+      expect(Array.from(out.subarray(F + FEAT_CREATURE, 2 * F))).toEqual([1, 0, Math.fround(energySignal(33, scale))]);
+    }
   });
 
   it("seed-pool genomes map in with zero weights on the species features", () => {

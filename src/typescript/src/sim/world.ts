@@ -56,6 +56,7 @@ export const ITEM_SET = 1;
 export const ITEM_REMOVE = 2;
 
 // Food and poison items in fixed slots; a slot of kind HIT_NONE is free.
+const BLOCK = 4; // cells per block side in blockStamp; the shifts by 2 below divide by it
 const MAX_REJECTS = 256; // placement tries that honour reject before giving up on it
 
 export class World implements WorldView {
@@ -82,6 +83,9 @@ export class World implements WorldView {
   // Bumped by every item change; cellStamp[c] is the version of the last change in cell c.
   private version = 0;
   private readonly cellStamp: Int32Array;
+  // The same per block of BLOCK x BLOCK cells, so a cache check can skip whole blocks that did not change.
+  private readonly blockCols: number;
+  private readonly blockStamp: Int32Array;
   private readonly eatRange: CellRange = { rangeX0: 0, rangeX1: 0, rangeY0: 0, rangeY1: 0 };
   // When set, every item change is appended (ITEM_SET, slot, x, y, kind or ITEM_REMOVE, slot), so a copy of this world replaying them stays identical.
   log: number[] | null = null;
@@ -100,6 +104,8 @@ export class World implements WorldView {
     this.rows = Math.max(1, Math.ceil(this.height / this.cell));
     this.cellHead = new Int32Array(this.cols * this.rows).fill(-1);
     this.cellStamp = new Int32Array(this.cols * this.rows);
+    this.blockCols = Math.ceil(this.cols / BLOCK);
+    this.blockStamp = new Int32Array(this.blockCols * Math.ceil(this.rows / BLOCK));
     this.nextItem = new Int32Array(capacity).fill(-1);
     this.itemCell = new Int32Array(capacity).fill(-1);
     // Lowest slot on top, so scatter takes its slots from the top.
@@ -181,7 +187,7 @@ export class World implements WorldView {
     this.itemCell[i] = c;
     this.nextItem[i] = this.cellHead[c];
     this.cellHead[c] = i;
-    this.cellStamp[c] = this.version;
+    this.stampCell(c);
   }
 
   // Frees slot i; its item leaves the grid.
@@ -235,7 +241,13 @@ export class World implements WorldView {
       if (j >= 0) this.nextItem[j] = this.nextItem[i];
     }
     this.itemCell[i] = -1;
+    this.stampCell(c);
+  }
+
+  private stampCell(c: number): void {
     this.cellStamp[c] = this.version;
+    const cy = Math.floor(c / this.cols);
+    this.blockStamp[(cy >> 2) * this.blockCols + ((c - cy * this.cols) >> 2)] = this.version;
   }
 
   // Casts one ray per direction (dirX[i], dirY[i]) from (x, y), sharing the item lookup between them.
@@ -245,7 +257,10 @@ export class World implements WorldView {
     // Rays are ordered across a fan narrower than a half turn, so an item further than its radius outside the first and last ray cannot be hit.
     const wedge = last > 0 && dirX[0] * dirY[last] - dirY[0] * dirX[last] > 1e-9;
     this.gatherCandidates(x, y, length, wedge, dirX[0], dirY[0], dirX[last], dirY[last], cache);
-    for (let i = 0; i < out.length; i++) this.traceRay(x, y, dirX[i], dirY[i], out[i], cache, length);
+    // Directions are unit length to within rounding, so a wall at least length (plus a margin) away on every side cannot be reached.
+    const m = length * (1 + 1e-6);
+    const walls = x < m || this.width - x < m || y < m || this.height - y < m;
+    for (let i = 0; i < out.length; i++) this.traceRay(x, y, dirX[i], dirY[i], out[i], cache, length, walls);
   }
 
   // True while no item changed in the cells the cached list was gathered from.
@@ -253,9 +268,19 @@ export class World implements WorldView {
     if (cache.version === this.version) return true;
     if (cache.version < 0) return false;
     const { rangeX0: cx0, rangeX1: cx1, rangeY0: cy0, rangeY1: cy1 } = cache;
-    for (let cy = cy0; cy <= cy1; cy++) {
-      for (let cx = cx0; cx <= cx1; cx++) {
-        if (this.cellStamp[cy * this.cols + cx] > cache.version) return false;
+    const v = cache.version;
+    for (let by = cy0 >> 2; by <= cy1 >> 2; by++) {
+      for (let bx = cx0 >> 2; bx <= cx1 >> 2; bx++) {
+        if (this.blockStamp[by * this.blockCols + bx] <= v) continue;
+        const y0 = Math.max(cy0, by << 2);
+        const y1 = Math.min(cy1, (by << 2) + 3);
+        const x0 = Math.max(cx0, bx << 2);
+        const x1 = Math.min(cx1, (bx << 2) + 3);
+        for (let cy = y0; cy <= y1; cy++) {
+          for (let cx = x0; cx <= x1; cx++) {
+            if (this.cellStamp[cy * this.cols + cx] > v) return false;
+          }
+        }
       }
     }
     cache.version = this.version;
@@ -336,25 +361,27 @@ export class World implements WorldView {
   }
 
   // Nearest of the wall and the gathered candidates along the unit direction (dx, dy).
-  private traceRay(x: number, y: number, dx: number, dy: number, out: RayHit, cache: RayCache, L: number): void {
+  private traceRay(x: number, y: number, dx: number, dy: number, out: RayHit, cache: RayCache, L: number, walls: boolean): void {
     let best = L;
     let kind: HitKind = HIT_NONE;
 
     // Walls: ray exits the box at the smallest positive t.
-    let tw = Infinity;
-    if (dx > 0) tw = (this.width - x) / dx;
-    else if (dx < 0) tw = -x / dx;
-    if (dy > 0) {
-      const t = (this.height - y) / dy;
-      if (t < tw) tw = t;
-    } else if (dy < 0) {
-      const t = -y / dy;
-      if (t < tw) tw = t;
-    }
-    if (tw < 0) tw = 0;
-    if (tw < best) {
-      best = tw;
-      kind = HIT_WALL;
+    if (walls) {
+      let tw = Infinity;
+      if (dx > 0) tw = (this.width - x) / dx;
+      else if (dx < 0) tw = -x / dx;
+      if (dy > 0) {
+        const t = (this.height - y) / dy;
+        if (t < tw) tw = t;
+      } else if (dy < 0) {
+        const t = -y / dy;
+        if (t < tw) tw = t;
+      }
+      if (tw < 0) tw = 0;
+      if (tw < best) {
+        best = tw;
+        kind = HIT_WALL;
+      }
     }
 
     const fxs = cache.candFx;

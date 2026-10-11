@@ -9,6 +9,7 @@
 .ov-lineage { background: color-mix(in srgb, var(--card) 95%, transparent); width: min(calc(375px + 0.8rem + 2px), calc(100cqw - 20px)); }
 .ov-lineage .ov-body { padding: 0 0.8rem 0.5rem; }
 .lin-bar { display: flex; height: 14px; gap: 1px; border-radius: 4px; overflow: hidden; background: var(--border-hi); }
+.lin-bar[hidden] { display: none; }
 .lin-bar span { min-width: 1px; cursor: pointer; }
 .lin-list { list-style: none; margin: 0.4rem 0 0.3rem; padding: 0; display: flex; flex-direction: column; gap: 1px; }
 .lin-row { width: 100%; display: grid; grid-template-columns: 0.8rem 3.4rem 1fr 3.2rem 3rem; align-items: center; gap: 0.5rem; padding: 0.08rem 0.3rem; background: transparent; border: 1px solid transparent; border-radius: 6px; color: var(--text); font: inherit; font-size: 0.78rem; text-align: left; font-variant-numeric: tabular-nums; }

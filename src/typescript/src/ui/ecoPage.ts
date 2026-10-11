@@ -7,7 +7,6 @@ import type { BestBy } from "../worker/ecoProtocol.ts";
 import { BrainView } from "./brainView.ts";
 import { ECO_FORM, buildEcoForm, fillEcoForm, initEcoSettingsForm, readEcoConfig } from "./ecoSettingsForm.ts";
 import { PREDATOR_COLOR, PREDATOR_FORM, PREDATOR_LOCKED, PREY_COLOR } from "./predatorForm.ts";
-import { formatElapsed } from "./elapsed.ts";
 import { initCard } from "./overlays.ts";
 import type { Card } from "./overlays.ts";
 import { initPresetPanel } from "./presetPanel.ts";
@@ -16,6 +15,7 @@ import { PopulationGraph } from "./populationGraph.ts";
 import type { PopulationSample } from "./populationGraph.ts";
 import { Scoreboard, settingsOf, today } from "./scoreboard.ts";
 import { initSettingsIO } from "./settingsIO.ts";
+import { $, durationText, formatDuration, setTile } from "./page.ts";
 import { initTooltips } from "./tooltip.ts";
 import { LINEAGE_STRIDE } from "../worker/ecoProtocol.ts";
 
@@ -40,6 +40,7 @@ export interface EcoStats {
   sharedMemory: boolean;
   wasm: boolean; // sense and think run on the WebAssembly kernels
   species?: readonly SpeciesCount[]; // with several species
+  season: { name: string; factor: number } | null; // null when seasons are off
 }
 
 export interface EcoSelected {
@@ -91,6 +92,7 @@ export interface EcoView {
   setSelected(selected: EcoSelected | null): void; // null shows only the pick buttons and hides the brain card
   setFollowing(follow: boolean): void;
   setHistory(samples: readonly PopulationSample[]): void;
+  setSeasons(eco: EcoConfig["eco"] | null): void; // the graph shades winters; null for none
   setLineages(lineages: readonly Lineage[], population: number, speciesCounts?: readonly number[]): void; // speciesCounts with several species
   setLineageHistory(history: Float64Array): void;
   clearLineages(): void;
@@ -99,26 +101,7 @@ export interface EcoView {
   hideExtinct(): void;
 }
 
-const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 const nf = new Intl.NumberFormat("en-US");
-
-// Seconds under a minute, then m:ss, then h:mm:ss.
-export function formatSimTime(s: number): { text: string; unit: string } {
-  if (s < 60) return { text: s.toFixed(1), unit: " s" };
-  const t = Math.floor(s);
-  const pad = (n: number): string => String(n).padStart(2, "0");
-  const h = Math.floor(t / 3600);
-  const m = Math.floor((t % 3600) / 60);
-  return { text: h > 0 ? `${h}:${pad(m)}:${pad(t % 60)}` : `${m}:${pad(t % 60)}`, unit: "" };
-}
-
-// Tiles a page leaves out are skipped.
-function setTile(id: string, value: string | null, unit = ""): void {
-  const e = document.getElementById(id);
-  if (!e) return;
-  e.textContent = value ?? "-";
-  e.dataset.unit = value === null ? "" : unit; // unit is drawn by CSS
-}
 
 const SPEED_TIP = "Simulated seconds per real second the computer is achieving. It can be lower than the speed asked for.";
 
@@ -168,7 +151,7 @@ export function createEcoView(handlers: EcoHandlers, mode: EcoMode = "ecosystem"
     presets: predators ? PREDATOR_PRESETS : ECO_PRESETS,
     locked: predators ? PREDATOR_LOCKED : ECO_LOCKED,
     board,
-    formatScore: formatElapsed,
+    formatScore: durationText,
     read: readEcoConfig,
     fill: fillEcoForm,
     withPreset: predators ? withPredatorPreset : withEcoPreset,
@@ -257,7 +240,7 @@ export function createEcoView(handlers: EcoHandlers, mode: EcoMode = "ecosystem"
       const timer = $("timer");
       timer.hidden = s === null;
       if (s) {
-        timer.textContent = formatElapsed(s.simTime);
+        timer.textContent = durationText(s.simTime);
         if (!s.species) recordScore(s.simTime, s.population);
         else if (s.species.every((c) => c.population > 0)) recordScore(s.simTime, s.species[1]!.population);
       }
@@ -270,8 +253,10 @@ export function createEcoView(handlers: EcoHandlers, mode: EcoMode = "ecosystem"
       setTile("statDeaths", s && nf.format(s.deaths));
       setTile("statFood", s && nf.format(s.food));
       setTile("statPoison", s && nf.format(s.poison));
-      const t = s && formatSimTime(s.simTime);
+      const t = s && formatDuration(s.simTime);
       setTile("statTime", t && t.text, t?.unit);
+      $("statSeasonTile").hidden = !s?.season;
+      if (s?.season) setTile("statSeason", s.season.name, ` · ${s.season.factor.toFixed(2)}×`);
       setTile("statDepth", s && nf.format(s.oldestDepth));
       setTile("statSpeed", s && s.speed !== null ? s.speed.toFixed(1) : null, " ×");
       if (s) setTip("statSpeed", `${SPEED_TIP} ${threadsText(s.helpers, s.sharedMemory, s.wasm)}`);
@@ -291,8 +276,7 @@ export function createEcoView(handlers: EcoHandlers, mode: EcoMode = "ecosystem"
       meter.setAttribute("aria-valuemax", String(Math.round(sel.fullEnergy)));
       meter.setAttribute("aria-valuenow", String(Math.round(sel.energy)));
       $("selEnergy").textContent = sel.died ? "died" : `${Math.round(sel.energy)} / ${Math.round(sel.fullEnergy)}`;
-      const age = formatSimTime(sel.age);
-      $("selAge").textContent = age.text + age.unit;
+      $("selAge").textContent = durationText(sel.age);
       $("selChildren").textContent = nf.format(sel.children);
       $("selEaten").textContent = nf.format(sel.species?.hunter ? sel.species.kills : sel.eaten);
       const tag = document.getElementById("selSpecies");
@@ -322,6 +306,7 @@ export function createEcoView(handlers: EcoHandlers, mode: EcoMode = "ecosystem"
       follow.setAttribute("aria-pressed", String(on));
     },
     setHistory: (samples) => view.graph.setData(samples),
+    setSeasons: (eco) => view.graph.setSeasons(eco),
     setLineages(l, population, counts) {
       if (!counts) return lineages.setLineages(l, population);
       lastLineages = { list: l, counts };
@@ -341,7 +326,7 @@ export function createEcoView(handlers: EcoHandlers, mode: EcoMode = "ecosystem"
       $("note").textContent = text ?? "";
     },
     showExtinct(simSeconds) {
-      $("extinctTitle").textContent = `Extinct after ${Math.round(simSeconds)} s`;
+      $("extinctTitle").textContent = `Extinct after ${durationText(simSeconds)}`;
       recordScore(simSeconds, 0);
       if (phase !== "extinct") returnFocus = document.activeElement as HTMLElement | null;
       setPhase("extinct");

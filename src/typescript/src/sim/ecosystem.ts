@@ -3,10 +3,11 @@ import { itemCounts, itemsPerDensity } from "./config.ts";
 import type { EngineConfig } from "./config.ts";
 import { Creature, SenseBatch, senseThinkBatch } from "./creature.ts";
 import { Crowd } from "./crowd.ts";
+import { seasonFactor } from "./ecoConfig.ts";
 import type { EcoConfig } from "./ecoConfig.ts";
 import { mutate } from "./ga.ts";
 import { driftPlan, mutateStructure, randomPlan, remapWeights } from "./planMutation.ts";
-import { collide, hurt, keepInside, settle } from "./physics.ts";
+import { agingOf, collide, hurt, keepInside, settle } from "./physics.ts";
 import type { Aging, Contact } from "./physics.ts";
 import { createRng, deriveSeed } from "./rng.ts";
 import type { StatefulRng } from "./rng.ts";
@@ -16,7 +17,7 @@ import { trialsToEcoGenome } from "./seedPool.ts";
 import type { PoolEntry } from "./seedPool.ts";
 import { bandHue, speciesEngine, speciesList, speciesRanges } from "./species.ts";
 import type { SpeciesConfig } from "./species.ts";
-import { HIT_FOOD, HIT_POISON } from "./types.ts";
+import { HIT_FOOD, HIT_NONE, HIT_POISON } from "./types.ts";
 import type { CreatureState, Genome, HitKind, WorldView } from "./types.ts";
 import { World } from "./world.ts";
 import { SenseKernels } from "./wasm/senseKernels.ts";
@@ -159,7 +160,7 @@ export class Ecosystem {
     this.counts = this.species.map(() => ({ population: 0, births: 0, deaths: 0, eaten: 0 }));
     this.spare = this.species.map(() => []);
     this.rng = createRng(deriveSeed(config.seed, 0xec0));
-    this.aging = eco.aging ? { startTicks: Math.round(eco.agingStart / dt), perTick: (eco.agingRate * dt) / 60 } : null;
+    this.aging = agingOf(eco, dt);
     this.items = new World(config, Math.max(start.food, this.foodCap) + Math.max(start.poison, this.poisonCap));
     this.world = this.items;
     this.journal = options.journal ? { born: [], died: [], items: [] } : null;
@@ -281,24 +282,41 @@ export class Ecosystem {
     senseThinkBatch(this.items, this.crowd, batch, this.kernels);
   }
 
+  // Phase 1b for one creature: memory and motion. Returns the item it touches there (Creature.touched), for finishTick.
+  advance(creature: Creature): number {
+    creature.remember();
+    creature.steer();
+    return creature.touched(this.items);
+  }
+
   // Phase 1b and 2, once every creature has its outputs (from sensePhase or helper threads): memory and motion, then sharedPhase.
-  finishTick(): void {
-    for (const m of this.members) {
-      m.creature.remember();
-      m.creature.steer();
+  // With touched, helper threads already did memory and motion and looked up what each creature touches (touched[i] for members[i],
+  // see Creature.touched), so only the shared phase runs.
+  finishTick(touched?: Int32Array): void {
+    if (!touched) {
+      for (const m of this.members) {
+        m.creature.remember();
+        m.creature.steer();
+      }
     }
-    this.sharedPhase();
+    this.sharedPhase(touched);
   }
 
   // Phase 2, after every creature moved.
-  private sharedPhase(): void {
+  private sharedPhase(touched?: Int32Array): void {
     const members = this.members;
     let n = members.length;
     let first = this.rng.int(n);
     for (let k = 0; k < n; k++) {
-      const m = members[(first + k) % n];
+      const at = (first + k) % n;
+      const m = members[at];
       if (!this.species[m.species]!.plants) continue;
-      const eaten = m.creature.eat(this.items);
+      let eaten: number;
+      if (touched && (touched[at] < 0 || this.items.kinds[touched[at]] !== HIT_NONE)) {
+        // Items are only removed in this loop, so a looked-up item still there is still the first touched, and none stays none.
+        eaten = touched[at];
+        if (eaten >= 0) m.creature.eatItem(this.items, eaten);
+      } else eaten = m.creature.eat(this.items); // looked up item taken by an earlier creature, or no lookup
       if (eaten < 0) continue;
       if (this.items.kinds[eaten] === HIT_FOOD) {
         this.food--;
@@ -513,7 +531,7 @@ export class Ecosystem {
   }
 
   private regrow(): void {
-    this.foodDue += this.foodPerTick;
+    this.foodDue += this.config.eco.seasons ? this.foodPerTick * seasonFactor(this.config.eco, this.tick * this.config.dt) : this.foodPerTick;
     this.poisonDue += this.poisonPerTick;
     for (; this.foodDue >= 1; this.foodDue--) if (this.food < this.foodCap) this.food += this.grow(HIT_FOOD);
     for (; this.poisonDue >= 1; this.poisonDue--) if (this.poison < this.poisonCap) this.poison += this.grow(HIT_POISON);

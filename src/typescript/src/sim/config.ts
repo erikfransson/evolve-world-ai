@@ -4,6 +4,9 @@ import type { SpeciesConfig } from "./species.ts";
 
 export type SelectionMethod = "truncation" | "proportional";
 
+// Poison damage at or above this kills outright; below it poison drains that much energy.
+export const POISON_LETHAL = 100;
+
 export interface SimConfig {
   seed: number;
   dt: number; // seconds per tick
@@ -15,6 +18,7 @@ export interface SimConfig {
     respawn: boolean; // eaten items reappear elsewhere; false makes food finite so lives end naturally
     itemRadius: number;
     foodEnergy: number;
+    poisonDamage: number; // energy one poison item drains, POISON_LETHAL or more kills
     poisonClearRadius: number; // Trials: no poison starts this close to the creature
   };
   creature: {
@@ -62,8 +66,9 @@ export interface SimConfig {
 }
 
 // The parts every mode shares; population and ga belong to Trials. species: the species of a Predators & prey world, whose
-// rays tell them apart (see sensors.ts); absent elsewhere.
-export type EngineConfig = Pick<SimConfig, "seed" | "dt" | "world" | "creature" | "brain"> & { species?: readonly SpeciesConfig[] };
+// rays tell them apart (see sensors.ts); absent elsewhere. seenEnergyScale: the energy that scales every species' seen-energy
+// input alike (set by speciesEngine); without it, the creature's own start energy.
+export type EngineConfig = Pick<SimConfig, "seed" | "dt" | "world" | "creature" | "brain"> & { species?: readonly SpeciesConfig[]; seenEnergyScale?: number };
 
 export const DEFAULT_CONFIG: SimConfig = {
   seed: 1,
@@ -76,6 +81,7 @@ export const DEFAULT_CONFIG: SimConfig = {
     respawn: false,
     itemRadius: 4,
     foodEnergy: 20,
+    poisonDamage: POISON_LETHAL,
     poisonClearRadius: 150,
   },
   creature: {

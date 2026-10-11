@@ -7,7 +7,9 @@
     <!-- Cross-origin isolation for shared memory: on the first visit this registers a service worker and reloads once; without it the page runs as before.
          It never reloads during a run (Start disabled); the next visit picks up the service worker then. -->
     <script>window.coi = { quiet: true, doReload: () => document.getElementById("start")?.disabled || location.reload() };</script>
+    <!-- Vite warns that this script "can't be bundled without type=module"; expected, the worker must stay a classic script served as is from public/. -->
     <script src="../coi-serviceworker.js"></script>
+    <link rel="icon" type="image/svg+xml" href="../favicon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" crossorigin />
@@ -40,6 +42,7 @@
           <div class="tile"><dt>Births<span class="tip" tabindex="0" role="img" aria-label="Creatures of both kinds born since the start." data-tip="Creatures of both kinds born since the start.">ⓘ</span></dt><dd id="statBirths">-</dd></div>
           <div class="tile"><dt>Deaths<span class="tip" tabindex="0" role="img" aria-label="Creatures that starved, ate poison, were eaten or otherwise died since the start." data-tip="Creatures that starved, ate poison, were eaten or otherwise died since the start.">ⓘ</span></dt><dd id="statDeaths">-</dd></div>
           <div class="tile"><dt>Simulated time<span class="tip" tabindex="0" role="img" aria-label="How long the world has run, in simulated time." data-tip="How long the world has run, in simulated time.">ⓘ</span></dt><dd id="statTime">-</dd></div>
+          <div class="tile" id="statSeasonTile" hidden><dt>Season<span class="tip" tabindex="0" role="img" aria-label="The season now and the plant regrowth multiplier it gives." data-tip="The season now and the plant regrowth multiplier it gives.">ⓘ</span></dt><dd id="statSeason">-</dd></div>
           <div class="tile"><dt>Speed<span class="tip" tabindex="0" role="img" aria-label="Simulated seconds per real second the computer is achieving. It can be lower than the speed asked for." data-tip="Simulated seconds per real second the computer is achieving. It can be lower than the speed asked for.">ⓘ</span></dt><dd id="statSpeed">-</dd></div>
         </dl>
 

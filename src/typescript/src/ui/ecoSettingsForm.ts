@@ -1,4 +1,4 @@
-import { itemCounts } from "../sim/config.ts";
+import { itemCounts, POISON_LETHAL } from "../sim/config.ts";
 import { DEFAULT_ECO_CONFIG } from "../sim/ecoConfig.ts";
 import type { EcoConfig } from "../sim/ecoConfig.ts";
 import { el, syncSlider } from "./settingsForm.ts";
@@ -59,7 +59,8 @@ export const ECO_SECTIONS: readonly Section[] = [
       range({ id: "foodDensity", label: "Start food", tip: "How much food lies around at the start. 1 means roughly one piece in every 100 × 100 area.", min: 0, max: 1, step: 0.01, fmt: "dens", hint: (c) => items(c, c.world.foodDensity), get: (c) => c.world.foodDensity, set: (c, v) => { c.world.foodDensity = v; } }),
       range({ id: "poisonDensity", label: "Start poison", tip: "How much poison lies around at the start, on the same scale as food. 0 turns poison off.", min: 0, max: 1, step: 0.01, fmt: "dens", hint: (c) => items(c, c.world.poisonDensity), get: (c) => c.world.poisonDensity, set: (c, v) => { c.world.poisonDensity = v; } }),
       range({ id: "itemRadius", label: "Item size", tip: "Radius of food and poison pieces. Bigger pieces are easier to hit and to see.", min: 2, max: 10, step: 0.5, fmt: "size", get: (c) => c.world.itemRadius, set: (c, v) => { c.world.itemRadius = v; } }),
-      range({ id: "foodEnergy", label: "Energy per food", tip: "Energy a creature gains from one piece of food. Poison takes the same amount away.", min: 5, max: 100, step: 1, get: (c) => c.world.foodEnergy, set: (c, v) => { c.world.foodEnergy = v; } }),
+      range({ id: "poisonDamage", label: "Poison damage", tip: "Energy a creature loses from one piece of poison. The top step, Lethal, kills it at once.", min: 0, max: POISON_LETHAL, step: 5, fmt: "poison", get: (c) => c.world.poisonDamage, set: (c, v) => { c.world.poisonDamage = v; } }),
+      range({ id: "foodEnergy", label: "Energy per food", tip: "Energy a creature gains from one piece of food.", min: 5, max: 100, step: 1, get: (c) => c.world.foodEnergy, set: (c, v) => { c.world.foodEnergy = v; } }),
     ],
   },
   {
@@ -67,6 +68,9 @@ export const ECO_SECTIONS: readonly Section[] = [
     fields: [
       range({ id: "foodRegrow", label: "Food regrowth", tip: "How fast new food appears, in the same density units as the start food, per second. Together with the energy per food this sets how many creatures the world can feed.", min: 0, max: 0.2, step: 0.005, fmt: "dens3", hint: (c) => perSecond(c, c.eco.foodRegrow), get: (c) => c.eco.foodRegrow, set: (c, v) => { c.eco.foodRegrow = v; } }),
       range({ id: "foodMaxDensity", label: "Food limit", tip: "Food stops regrowing when the world holds this much, on the density scale.", min: 0, max: 1, step: 0.01, fmt: "dens", hint: (c) => items(c, c.eco.foodMaxDensity), get: (c) => c.eco.foodMaxDensity, set: (c, v) => { c.eco.foodMaxDensity = v; } }),
+      { kind: "toggle", id: "seasons", label: "Seasons", tip: "When on, food regrowth swings over the year between full speed in summer and a fraction of it in winter. Poison is not affected. The run starts at mid-summer.", get: (c) => c.eco.seasons, set: (c, v) => { c.eco.seasons = v; } },
+      range({ id: "yearMinutes", label: "Year length", tip: "Simulated minutes from one summer to the next. A season is a quarter of this. Only used when Seasons is on.", min: 4, max: 120, step: 1, fmt: "min", get: (c) => c.eco.yearMinutes, set: (c, v) => { c.eco.yearMinutes = v; } }),
+      range({ id: "winterFood", label: "Winter food", tip: "Food regrowth at mid-winter as a share of the full rate. 30% means winter food grows at 0.3 times the summer speed. Only used when Seasons is on.", min: 0, max: 1, step: 0.05, fmt: "pct", get: (c) => c.eco.winterFood, set: (c, v) => { c.eco.winterFood = v; } }),
       range({ id: "poisonRegrow", label: "Poison regrowth", tip: "How fast new poison appears, per second, on the same scale as food regrowth.", min: 0, max: 0.05, step: 0.001, fmt: "dens3", hint: (c) => perSecond(c, c.eco.poisonRegrow), get: (c) => c.eco.poisonRegrow, set: (c, v) => { c.eco.poisonRegrow = v; } }),
       range({ id: "poisonMaxDensity", label: "Poison limit", tip: "Poison stops regrowing when the world holds this much, so it cannot fill the board.", min: 0, max: 0.5, step: 0.01, fmt: "dens", hint: (c) => items(c, c.eco.poisonMaxDensity), get: (c) => c.eco.poisonMaxDensity, set: (c, v) => { c.eco.poisonMaxDensity = v; } }),
     ],

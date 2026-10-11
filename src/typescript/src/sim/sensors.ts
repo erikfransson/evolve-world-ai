@@ -151,7 +151,7 @@ export function encodeInputs(state: CreatureState, rays: readonly RayHit[], conf
       const seen = ray.kind === HIT_CREATURE;
       for (let f = FEAT_CREATURE; f < stride - 1; f++) out[k + f] = 0;
       if (seen) out[k + FEAT_CREATURE + ray.species] = 1;
-      out[k + stride - 1] = seen ? energySignal(ray.energy, c.startEnergy) : 0;
+      out[k + stride - 1] = seen ? energySignal(ray.energy, config.seenEnergyScale ?? c.startEnergy) : 0;
     }
   }
   const base = rays.length * stride;

@@ -49,6 +49,7 @@ Runs use `npm run headless` with a JSON override merged over `DEFAULT_CONFIG`, p
 All rows from 2026-10-09 use the fish-like physics.
 
 ## Observations
+- 2026-10-11: Ecosystem Normal preset food energy 40 -> 20 (owner chose about 1500 creatures for speed). The engine default already used 20 and settled at 1560-1670 creatures by 600 s on seeds 1-3 with the pool; with 40 the browser grew to about 3500 and ran at about 1.4x.
 - 2026-10-11: Predators & prey defaults (#12), `DEFAULT_PREDATOR_CONFIG`: world 6000 x 4000, plants start 0.5, regrow 0.05, limit 0.7, 40 energy each. Prey: 400 founders, speed 1x, birth at 120 (cost 60, child 45, cooldown 8 s), vision 50-250. Predators: 40 founders, speed 1.3x, start 120, birth at 260 (cost 140, child 110, cooldown 10 s), vision 150-300, turn cost 0.2, eat 70% of the prey's energy plus 40. Both species half from the seed pool. `node src/ecoBench.ts --predators --seconds 900 --seed N`, seeds 1 to 5, prey / predators every 30 s:
   - seed 1: prey 400 568 1005 754 563 535 432 177 121 189 444 783 333 95 95 235 701 542 167 92 173 386 397 129 57 216 781 423 217 108 197; predators 40 49 94 182 264 311 411 452 203 85 81 162 392 323 110 44 87 282 409 231 107 126 293 344 147 46 67 223 278 194 120
   - seed 2: prey 400 601 1102 788 706 650 493 435 311 214 285 476 560 274 149 202 480 712 341 191 210 387 627 364 130 142 220 539 657 352 200; predators 40 47 68 123 193 291 380 425 429 371 259 245 364 476 349 172 143 255 426 363 227 175 249 407 367 154 82 103 255 377 384
@@ -77,6 +78,7 @@ All rows from 2026-10-09 use the fish-like physics.
 - An evolved creature (food 40, 30 generations) swims smooth looping sweeps across the whole world and survives 300 s, while weak ones curve into a wall and starve.
 - A late generation takes about 10 s to compute because good creatures live the full epoch.
 - 2026-10-10: Trials poison-free start radius raised to 150 units (world.poisonClearRadius, capped at 35% of the shorter world side) after the owner saw poison right next to the start.
+- 2026-10-11: Ecosystem seasons (issue #18), off by default. Food regrowth is scaled by m(t) = winterFood + (1 - winterFood) * (1 + cos(2 pi t / year)) / 2 in simulated time, with winterFood 0.3 and yearMinutes 40. Untested on long runs, so the defaults are the issue's suggestion.
 
 ## Ideas not yet tried
 - Evaluate each creature on two layouts to reduce layout luck.

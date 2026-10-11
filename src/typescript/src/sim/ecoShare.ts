@@ -2,6 +2,9 @@ import { refit } from "./brain.ts";
 import { Creature, SenseBatch, senseThinkBatch } from "./creature.ts";
 import { Crowd } from "./crowd.ts";
 import type { EngineConfig } from "./config.ts";
+import type { EcoConfig } from "./ecoConfig.ts";
+import { agingOf } from "./physics.ts";
+import type { Aging } from "./physics.ts";
 import type { Ecosystem } from "./ecosystem.ts";
 import type { BodyPlan } from "./sensors.ts";
 import { speciesEngine } from "./species.ts";
@@ -14,6 +17,8 @@ import { SenseKernels } from "./wasm/senseKernels.ts";
 // with their plan and genome). Each helper keeps a copy of the item world and the brains of the creatures it owns,
 // runs senseThinkBatch for those and writes their outputs into the packet. The coordinator owns a share too and senses
 // it on its own creatures meanwhile; then it copies the helpers' outputs into its creatures and finishes the tick.
+// Each thread also does memory and motion of its own creatures and looks up what each touches (the part of the tick that
+// touches only one creature), so the coordinator is left with the order-dependent shared phase and the copies.
 // Helpers see exactly what Ecosystem.sensePhase sees, so results are identical.
 // The packet is a plain buffer, so it travels by postMessage (one copy per helper) or lives in a SharedArrayBuffer.
 
@@ -51,18 +56,51 @@ export interface Packet {
   vy: Float64Array;
   turnRate: Float64Array;
   energy: Float64Array;
+  angle: Float64Array; // heading angle
+  ticks: Float64Array; // ticks alive
   memory: Float64Array;
   delta: Float64Array;
-  out: Float32Array; // turn and thrust of creature i at 2i, 2i + 1
-  memoryOut: Float32Array; // memory targets, laid out like memory
-  outputAt: number; // byte offset of out
+  // Outputs of the thread that owns creature i: its state after memory and motion, the new memory (laid out like memory)
+  // and the item it touches there (-1 for none).
+  after: Record<"x" | "y" | "vx" | "vy" | "turnRate" | "energy" | "angle" | "cos" | "sin", Float64Array>;
+  memoryOut: Float64Array;
+  touched: Int32Array;
+  outputAt: number; // byte offset of the outputs
+}
+
+type StateColumns = Packet["after"]; // the nine state columns, also those of a published Packet
+
+function readState(c: Creature, a: StateColumns, i: number): void {
+  const s = c.state;
+  s.x = a.x[i]!;
+  s.y = a.y[i]!;
+  s.vx = a.vx[i]!;
+  s.vy = a.vy[i]!;
+  s.turnRate = a.turnRate[i]!;
+  s.energy = a.energy[i]!;
+  s.heading = a.angle[i]!;
+  c.heading.cos = a.cos[i]!;
+  c.heading.sin = a.sin[i]!;
+}
+
+function writeState(c: Creature, a: StateColumns, i: number): void {
+  const s = c.state;
+  a.x[i] = s.x;
+  a.y[i] = s.y;
+  a.vx[i] = s.vx;
+  a.vy[i] = s.vy;
+  a.turnRate[i] = s.turnRate;
+  a.energy[i] = s.energy;
+  a.angle[i] = s.heading;
+  a.cos[i] = c.heading.cos;
+  a.sin[i] = c.heading.sin;
 }
 
 function layout(caps: Caps): { f64At: number; outputAt: number; bytes: number } {
   const ints = HEADER_BYTES + 4 * (4 * caps.creatures + 1);
   const f64At = Math.ceil(ints / 8) * 8;
-  const outputAt = f64At + 8 * (8 * caps.creatures + caps.memory + caps.delta);
-  return { f64At, outputAt, bytes: outputAt + 4 * (2 * caps.creatures + caps.memory) };
+  const outputAt = f64At + 8 * (10 * caps.creatures + caps.memory + caps.delta);
+  return { f64At, outputAt, bytes: outputAt + 8 * (9 * caps.creatures + caps.memory) + 4 * caps.creatures };
 }
 
 export function packetBytes(caps: Caps): number {
@@ -101,10 +139,23 @@ export function packetViews(buffer: ArrayBufferLike, caps?: Caps): Packet {
     vy: f64(C),
     turnRate: f64(C),
     energy: f64(C),
+    angle: f64(C),
+    ticks: f64(C),
     memory: f64(caps.memory),
     delta: f64(caps.delta),
-    out: new Float32Array(buffer, outputAt, 2 * C),
-    memoryOut: new Float32Array(buffer, outputAt + 8 * C, caps.memory),
+    after: {
+      x: f64(C),
+      y: f64(C),
+      vx: f64(C),
+      vy: f64(C),
+      turnRate: f64(C),
+      energy: f64(C),
+      angle: f64(C),
+      cos: f64(C),
+      sin: f64(C),
+    },
+    memoryOut: f64(caps.memory),
+    touched: new Int32Array(buffer, at, C),
     outputAt,
   };
 }
@@ -132,6 +183,7 @@ export class ShareCoordinator {
   private readonly costOf = new Map<number, number>();
   private readonly load: Float64Array;
   private readonly batch = new SenseBatch();
+  private advanced = false; // senseOwn has moved the own creatures since the last publish
 
   constructor(helpers: number) {
     this.helpers = helpers;
@@ -153,6 +205,7 @@ export class ShareCoordinator {
 
   // Writes the tick-start state and drains the journal into p, whose caps must cover need(eco).
   publish(eco: Ecosystem, p: Packet): void {
+    this.advanced = false;
     const j = eco.journal!;
     const d = p.delta;
     let k = 0;
@@ -208,14 +261,8 @@ export class ShareCoordinator {
       p.owner[i] = this.ownerOf.get(m.id)!;
       p.species[i] = m.species;
       p.memoryAt[i] = at;
-      p.x[i] = s.x;
-      p.y[i] = s.y;
-      p.cos[i] = c.heading.cos;
-      p.sin[i] = c.heading.sin;
-      p.vx[i] = s.vx;
-      p.vy[i] = s.vy;
-      p.turnRate[i] = s.turnRate;
-      p.energy[i] = s.energy;
+      writeState(c, p, i);
+      p.ticks[i] = s.ticksAlive;
       const memory = c.memory;
       for (let u = 0; u < memory.length; u++) p.memory[at + u] = memory[u]!;
       at += memory.length;
@@ -231,21 +278,41 @@ export class ShareCoordinator {
     batch.clear();
     for (let i = 0; i < n; i++) if (p.owner[i] === this.helpers || p.ids[i] === watch) batch.add(eco.members[i]!.creature, i);
     eco.senseBatch(batch);
+    // Memory and motion of the own creatures; a watched creature of a helper gets them from that helper.
+    for (let k = 0; k < batch.count; k++) {
+      const i = batch.selves[k]!;
+      if (p.owner[i] === this.helpers) p.touched[i] = eco.advance(batch.creatures[k]!);
+    }
+    this.advanced = true;
   }
 
-  // Copies the outputs of creatures a helper owns from that helper's packet; home is the published one, packets[h] is
-  // helper h's (all home when shared).
+  // Puts the coordinator's own creatures back to the tick start from the published packet, after a tick that failed before
+  // finishing (senseOwn has already moved them), so the ecosystem can run that tick again on this thread.
+  undoOwn(eco: Ecosystem, p: Packet): void {
+    if (!this.advanced) return; // senseOwn did not run, so nothing moved
+    this.advanced = false;
+    const members = eco.members;
+    const n = Math.min(p.header[H_COUNT]!, members.length);
+    for (let i = 0; i < n; i++) {
+      if (p.owner[i] !== this.helpers) continue;
+      const c = members[i]!.creature;
+      readState(c, p, i);
+      c.setMemory(p.memory, p.memoryAt[i]!);
+    }
+  }
+
+  // Copies the results for creatures a helper owns from that helper's packet; home is the published one, packets[h] is
+  // helper h's (all home when shared). Leaves what every creature touches in home.touched.
   collect(eco: Ecosystem, home: Packet, packets: readonly Packet[]): void {
     const members = eco.members;
     for (let i = 0; i < members.length; i++) {
       const owner = home.owner[i]!;
       if (owner === this.helpers) continue;
       const p = packets[owner]!;
-      const out = members[i]!.creature.outputs;
-      out[0] = p.out[2 * i]!;
-      out[1] = p.out[2 * i + 1]!;
-      const at = home.memoryAt[i]!;
-      for (let u = 2; u < out.length; u++) out[u] = p.memoryOut[at + u - 2]!;
+      const c = members[i]!.creature;
+      readState(c, p.after, i);
+      c.setMemory(p.memoryOut, home.memoryAt[i]!);
+      home.touched[i] = p.touched[i]!;
     }
   }
 }
@@ -264,13 +331,15 @@ export class ShareHelper {
   private readonly plan: BodyPlan = { rayCount: 0, raySpread: 0, rayLength: 0, hiddenLayers: [], memoryShort: 0, memoryLong: 0 };
 
   private readonly kernels: SenseKernels | null;
+  private readonly aging: Aging | null;
 
   // wasm: sense and think on the WebAssembly kernels when available, as the coordinator does.
-  constructor(config: EngineConfig, worldCapacity: number, index: number, wasm = false) {
+  constructor(config: EcoConfig, worldCapacity: number, index: number, wasm = false) {
     this.kernels = wasm ? SenseKernels.create() : null;
     this.engines = Array.from({ length: Math.max(1, config.species?.length ?? 0) }, (_, s) => speciesEngine(config, s));
     this.spare = this.engines.map(() => []);
     this.index = index;
+    this.aging = agingOf(config.eco, config.dt);
     this.world = new World(config, worldCapacity);
     this.crowd = new Crowd(config);
   }
@@ -290,26 +359,23 @@ export class ShareHelper {
     for (let i = 0; i < n; i++) {
       if (p.owner[i] !== this.index) continue;
       const c = this.mine.get(p.ids[i]!)!;
-      const s = c.state;
-      s.x = p.x[i]!;
-      s.y = p.y[i]!;
-      s.vx = p.vx[i]!;
-      s.vy = p.vy[i]!;
-      s.turnRate = p.turnRate[i]!;
-      s.energy = p.energy[i]!;
-      c.heading.cos = p.cos[i]!;
-      c.heading.sin = p.sin[i]!;
+      readState(c, p, i);
+      c.state.ticksAlive = p.ticks[i]!;
       c.setMemory(p.memory, p.memoryAt[i]!);
       batch.add(c, i);
     }
     senseThinkBatch(this.world, this.crowd, batch, this.kernels);
+    const a = p.after;
     for (let k = 0; k < batch.count; k++) {
       const i = batch.selves[k]!;
+      const c = batch.creatures[k]!;
+      c.remember();
+      c.steer();
+      p.touched[i] = c.touched(this.world);
+      writeState(c, a, i);
+      const memory = c.memory;
       const at = p.memoryAt[i]!;
-      const out = batch.creatures[k]!.outputs;
-      p.out[2 * i] = out[0]!;
-      p.out[2 * i + 1] = out[1]!;
-      for (let u = 2; u < out.length; u++) p.memoryOut[at + u - 2] = out[u]!;
+      for (let u = 0; u < memory.length; u++) p.memoryOut[at + u] = memory[u]!;
     }
   }
 
@@ -357,6 +423,7 @@ export class ShareHelper {
     let c = this.spare[species]!.pop();
     if (c) c.reset(genome, 0, 0, 0, 0, plan);
     else c = new Creature(this.engines[species]!, genome.slice(), 0, 0, 0, plan);
+    c.aging = this.aging;
     this.mine.set(id, c);
     this.speciesOf.set(id, species);
     return k;

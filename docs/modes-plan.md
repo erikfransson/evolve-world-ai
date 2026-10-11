@@ -25,10 +25,10 @@ Vite multi-page build, so each mode has its own `index.html` and entry script.
 - Creatures collide and bounce off each other.
 - Rays also see creatures: a creature hit flag, plus the seen creature's energy (squashed like the own energy input).
 - Trials keeps its current ray inputs.
-- If every creature dies the run stops and offers Reseed or Back to menu.
+- If every creature dies the run stops and offers Reseed or Edit settings.
 - Stats: population, births, deaths, food and poison counts, and a population graph over time.
 - Population cap 10000 (births wait at the cap); food scarcity should keep it well below.
-- Default world 8000 x 5000 (25x the Trials area), founders at random positions with random colours, notably bigger than Trials; the view zooms and pans over the whole world.
+- Default world 12000 x 7500 (about 56x the Trials area), founders at random positions with random colours, notably bigger than Trials; the view zooms and pans over the whole world.
 - Click a creature to follow it zoomed in (rays, brain, energy, age, children, lineage depth); a World view button zooms back out.
 - Speed buttons 1x to 32x plus Max (simulate as fast as possible, draw a few frames per second), pause and resume.
 - Brain inputs in both modes gain sideways speed; Ecosystem rays add a creature flag and the seen creature's energy.
@@ -67,3 +67,7 @@ Contract: `EcoConfig` in `src/sim/ecoConfig.ts`, built on `EngineConfig` (the sh
 - Species are fixed: children keep the parent's species. Each species has its own founders, body ranges, speed, costs and energy gain.
 - Rays tell species apart and report the seen creature's energy.
 - Later: a who-eats-whom table for more species (C, D, E).
+- Known follow-ups:
+  - Scoreboard entries keep only seed, creature and brain settings, not the species settings.
+  - A prey eaten this tick is still pushed around in that tick's collisions (it deals no damage).
+  - Lineages tend to collapse to one founder per species after about 10 minutes.
