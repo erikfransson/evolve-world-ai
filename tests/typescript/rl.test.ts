@@ -215,3 +215,15 @@ describe("env groups", () => {
     expect(groupOf(envById("poison-field")!)).toBe("Advanced");
   });
 });
+
+describe("hidden food in envs", () => {
+  it("hides food only on the JS sense path, which RL envs use", () => {
+    const env = envById("flash")!;
+    const config = envConfig(env, 1);
+    expect(config.eco.wasm).toBe(false);
+    const eco = new Ecosystem({ ...config, eco: { ...config.eco, wasm: true } }, null, { cast: castFor(env, config, randomLearner(env, 1), 1, null, {}) });
+    if (eco.wasm) expect(() => eco.setFoodHidden(true)).toThrow(/JS sense path/);
+    const r = runEpisode(env, randomLearner(env, 2), 3);
+    expect(r.seconds).toBeGreaterThan(0);
+  });
+});
