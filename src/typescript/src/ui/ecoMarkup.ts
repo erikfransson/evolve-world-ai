@@ -1,4 +1,5 @@
 import type { ModePage } from "./ecoModes.ts";
+import { GENTLE_TIP } from "./gentle.ts";
 
 // The wording and drawings that differ between the Ecosystem and The Great Hunt pages.
 export interface PageCopy {
@@ -123,6 +124,7 @@ ${tiles.join("\n")}
         <section class="card">
           <h2>View</h2>
           <div class="toggle"><span class="lbl"><label class="name" for="rays">Show rays</label>${tip("Draw the vision rays of the selected creature, coloured by what they hit.")}</span><input id="rays" type="checkbox" role="switch" checked /></div>
+          <div class="toggle"><span class="lbl"><label class="name" for="gentle">Gentle on CPU</label>${tip(GENTLE_TIP)}</span><input id="gentle" type="checkbox" role="switch" checked /></div>
           <div class="field">
             <div class="row"><span class="lbl"><span class="name">Speed</span>${tip("How fast the world runs compared with real time. 1× is real time. Max simulates as fast as possible and draws only a few frames per second.")}</span><span class="hint">× real time</span></div>
             <div class="seg" role="radiogroup" aria-label="Speed">

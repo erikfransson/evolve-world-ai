@@ -5,6 +5,8 @@ import type { Population } from "../sim/population.ts";
 import type { RecordOptions } from "../sim/trajectory.ts";
 import type { EvalDone, EvalJob, EvalPort } from "./evalPool.ts";
 import { PoolEvaluator, defaultThreads } from "./evalPool.ts";
+import { gentleController, idleMs } from "./pacer.ts";
+import type { DutyController } from "./pacer.ts";
 import { ThinkPool } from "./ecoPool.ts";
 import type { HelperIn, HelperOut } from "./ecoPool.ts";
 import type { Port } from "./port.ts";
@@ -43,17 +45,30 @@ class BrowserEvaluator implements Evaluator {
   private readonly config: SimConfig;
   private pool: PoolEvaluator | null;
   private serial: SerialEvaluator | null = null;
+  private gentle: DutyController | null = null;
   private started = false;
   private closed = false;
 
-  constructor(config: SimConfig, pool: PoolEvaluator) {
+  // pool null: evaluate on this thread.
+  constructor(config: SimConfig, pool: PoolEvaluator | null) {
     this.config = config;
     this.pool = pool;
+    if (!pool) this.serial = new SerialEvaluator(config);
+  }
+
+  // On this thread the generation is the slice of work: idle after it, as the pooled workers do between jobs.
+  private async evaluateSerial(population: Population, layoutSeed: number, record?: RecordOptions): Promise<Evaluation> {
+    const t0 = performance.now();
+    const evaluation = await this.serial!.evaluate(population, layoutSeed, record);
+    const work = performance.now() - t0;
+    const idle = this.gentle ? idleMs(work, this.gentle.duty()) : 0;
+    if (idle > 0) await new Promise((resolve) => setTimeout(resolve, idle));
+    return evaluation;
   }
 
   async evaluate(population: Population, layoutSeed: number, record?: RecordOptions): Promise<Evaluation> {
     const pool = this.pool;
-    if (!pool) return this.serial!.evaluate(population, layoutSeed, record);
+    if (!pool) return this.evaluateSerial(population, layoutSeed, record);
     try {
       const evaluation = await pool.evaluate(population, layoutSeed, record);
       this.started = true;
@@ -64,8 +79,13 @@ class BrowserEvaluator implements Evaluator {
       pool.close();
       this.pool = null;
       this.serial = new SerialEvaluator(this.config);
-      return this.serial.evaluate(population, layoutSeed, record);
+      return this.evaluateSerial(population, layoutSeed, record);
     }
+  }
+
+  setGentle(on: boolean): void {
+    this.gentle = on ? (this.gentle ?? gentleController()) : null;
+    if (this.pool) this.pool.gentle = on;
   }
 
   close(): void {
@@ -82,14 +102,20 @@ export function createBrowserThinkPool(helpers: number): ThinkPool {
 }
 
 // Pool of nested dedicated workers, or the serial evaluator when one thread is wanted or workers cannot be spawned.
-export function createBrowserEvaluator(config: SimConfig, threads = defaultThreads(navigator.hardwareConcurrency || 2)): Evaluator {
-  if (threads <= 1 || typeof Worker === "undefined") return new SerialEvaluator(config);
+export function createBrowserEvaluator(config: SimConfig, gentle = false, threads = defaultThreads(navigator.hardwareConcurrency || 2, gentle)): Evaluator & { setGentle(on: boolean): void } {
+  const evaluator = makeBrowserEvaluator(config, threads);
+  evaluator.setGentle(gentle);
+  return evaluator;
+}
+
+function makeBrowserEvaluator(config: SimConfig, threads: number): BrowserEvaluator {
+  if (threads <= 1 || typeof Worker === "undefined") return new BrowserEvaluator(config, null);
   let workers: EvalPort[];
   try {
     workers = browserPorts<EvalJob, EvalDone>(threads, () => new Worker(new URL("./evalWorker.ts", import.meta.url), { type: "module" }), "evaluation worker");
   } catch (error) {
     console.warn("Nested workers unavailable, evaluating serially:", error);
-    return new SerialEvaluator(config);
+    return new BrowserEvaluator(config, null);
   }
   return new BrowserEvaluator(config, new PoolEvaluator(config, workers));
 }
