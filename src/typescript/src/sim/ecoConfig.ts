@@ -122,7 +122,7 @@ export const DEFAULT_PREDATOR_CONFIG: EcoConfig = {
       plants: false,
       prey: [0],
       eatEfficiency: 0.7,
-      eatBaseline: 40,
+      eatBaseline: 30,
       speed: 1.3,
       founders: 40,
       poolFraction: 0.5,
