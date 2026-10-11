@@ -16,11 +16,9 @@ import type { ReplaySource } from "./ui/replay.ts";
 import { drawScene } from "./ui/scene.ts";
 import type { ViewOptions } from "./ui/scene.ts";
 import { TRIALS_LOCKED, TRIALS_PRESETS, CUSTOM, withTrialsPreset } from "./sim/presets.ts";
-import { initPresetPanel } from "./ui/presetPanel.ts";
-import { Scoreboard, settingsOf, today } from "./ui/scoreboard.ts";
+import { initRunSession, renderRunControls } from "./ui/runSession.ts";
 import { buildForm } from "./ui/settingsForm.ts";
 import { TRIALS_FORM } from "./ui/trialsForm.ts";
-import { initSettingsIO } from "./ui/settingsIO.ts";
 import { TickClock } from "./ui/tickClock.ts";
 import { $, durationText, formatDuration, setTile } from "./ui/page.ts";
 import { initTooltips } from "./ui/tooltip.ts";
@@ -66,9 +64,6 @@ interface RunState {
   lastMessageAt: number;
   error: string | null; // why the last run stopped, shown until the next start
 }
-let runPreset = CUSTOM; // the preset the active run was started on, Custom runs keep no score
-let runKey = "";
-let runDate = "";
 const run: RunState = { phase: "idle", worker: null, config: DEFAULT_CONFIG, latest: null, computeSeconds: 0, lastMessageAt: 0, error: null };
 
 // Updated by change events, not read from the DOM every frame.
@@ -105,13 +100,8 @@ function send(msg: InMessage): void {
 
 function renderControls(): void {
   const idle = run.phase === "idle";
-  startBtn.disabled = !idle;
-  pauseBtn.disabled = idle;
-  pauseBtn.textContent = run.phase === "paused" ? "Resume" : "Pause";
-  resetBtn.disabled = idle;
+  renderRunControls({ start: startBtn, pause: pauseBtn, reset: resetBtn, settings, form: setupForm }, run.phase);
   skipBtn.disabled = run.latest === null;
-  settings.disabled = !idle;
-  setupForm.classList.toggle("locked", !idle);
   note.textContent = run.error ?? (!idle && run.latest === null ? "Computing generation 0..." : "");
 }
 
@@ -195,17 +185,11 @@ function onMessage(e: MessageEvent<OutMessage>): void {
   graph.setData(history.stats, history.keptGenerations);
   const now = performance.now();
   run.latest = e.data;
-  recordScore(e.data.bestEver);
+  session.record(e.data.bestEver);
   run.computeSeconds = (now - run.lastMessageAt) / 1000;
   run.lastMessageAt = now;
   if (replay.best) refresh();
   else loadReplay();
-}
-
-// The run's best survival time so far goes on the preset's Top 3 as it improves.
-function recordScore(seconds: number): void {
-  if (runPreset === CUSTOM || seconds <= 0) return;
-  if (board.submit(runPreset, { run: runKey, score: seconds, date: runDate, settings: settingsOf(run.config) })) presets.refresh();
 }
 
 function clearHistory(): void {
@@ -220,9 +204,7 @@ function clearHistory(): void {
 function start(): void {
   run.config = readConfig();
   fillForm(run.config);
-  runPreset = presets.current();
-  runKey = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  runDate = today();
+  session.begin(run.config); // the run's best survival time goes on the preset's Top 3 as it improves
   run.latest = null;
   run.error = null;
   replay.clear();
@@ -294,19 +276,18 @@ form.init(setupForm, (c) => {
   run.config = c;
   rebuildPreview();
 });
-const board = new Scoreboard("trials");
-const presets = initPresetPanel({
+const session = initRunSession({
+  mode: "trials",
   container: settings,
   form: setupForm,
   presets: TRIALS_PRESETS,
   locked: TRIALS_LOCKED,
-  board,
   formatScore: (s) => `${s.toFixed(1)} s`,
   read: readConfig,
   fill: fillForm,
   withPreset: withTrialsPreset,
 });
-initSettingsIO({ mode: "trials", form: setupForm, read: readConfig, fill: fillForm, preset: { get: presets.current, set: presets.select } });
+const presets = session.presets;
 initTooltips($("tooltip"));
 
 fillForm(DEFAULT_CONFIG);

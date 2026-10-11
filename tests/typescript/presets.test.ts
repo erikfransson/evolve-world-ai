@@ -22,6 +22,7 @@ import type { PresetPanel } from "../../src/typescript/src/ui/presetPanel.ts";
 import { Scoreboard, TOP, describeSettings, insertEntry, settingsOf, withSettings } from "../../src/typescript/src/ui/scoreboard.ts";
 import type { Entry } from "../../src/typescript/src/ui/scoreboard.ts";
 import { initSettingsIO, parseWithPreset, serialise } from "../../src/typescript/src/ui/settingsIO.ts";
+import type { SettingsIO } from "../../src/typescript/src/ui/settingsIO.ts";
 
 const page = (name: string): string => readFileSync(resolve(import.meta.dirname, `../../src/typescript/${name}/index.html`), "utf8").replace(/^[\s\S]*<body>|<\/body>[\s\S]*$/g, "").replace(/<script[\s\S]*?<\/script>/g, "");
 
@@ -140,6 +141,7 @@ describe("Trials preset panel", () => {
   const storage = new MemoryStorage();
   const board = new Scoreboard("trials", storage);
   let panel: PresetPanel;
+  let io: SettingsIO;
   let inputs = 0;
   let written = "";
 
@@ -158,9 +160,10 @@ describe("Trials preset panel", () => {
       read: readConfig,
       fill: fillForm,
       withPreset: withTrialsPreset,
+      apply: (t) => io.apply(t),
     });
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: (t: string) => { written = t; return Promise.resolve(); }, readText: () => Promise.reject(new Error("denied")) } });
-    initSettingsIO({ mode: "trials", form, read: readConfig, fill: fillForm, preset: { get: panel.current, set: panel.select } });
+    io = initSettingsIO({ mode: "trials", form, read: readConfig, fill: fillForm, preset: { get: panel.current, set: panel.select } });
   });
 
   it("lists every preset and Custom with a description", () => {
@@ -231,6 +234,37 @@ describe("Trials preset panel", () => {
     expect(disabled("worldWidth")).toBe(true);
   });
 
+  it("loads a saved run's full settings, world and preset included", () => {
+    const c = withTrialsPreset(DEFAULT_CONFIG, "giants");
+    c.population.size = 77;
+    c.brain.memory = 0.5;
+    const e: Entry = { run: "full", score: 999, date: "2026-10-11", settings: settingsOf(c), config: serialise("trials", c, "giants") };
+    pick(CUSTOM);
+    board.submit("giants", e);
+    pick("giants");
+    pick("normal");
+    pick("giants");
+    document.querySelector<HTMLButtonElement>("#presetBoard button")!.click();
+    expect(panel.current()).toBe("giants");
+    expect(readConfig().population.size).toBe(77);
+    expect(readConfig().brain.memory).toBe(0.5);
+    expect(readConfig().world).toEqual(TRIALS_PRESETS[3]!.world);
+  });
+
+  it("loads old entries that only have creature and brain over the current settings", () => {
+    pick("starvation");
+    const c = structuredClone(DEFAULT_CONFIG);
+    c.creature.rayCount = 7;
+    c.population.size = 77;
+    board.submit("starvation", { run: "old", score: 5, date: "2026-10-11", settings: settingsOf(c) });
+    fillForm(withTrialsPreset(DEFAULT_CONFIG, "starvation"));
+    panel.refresh();
+    document.querySelector<HTMLButtonElement>("#presetBoard button")!.click();
+    expect(readConfig().creature.rayCount).toBe(7);
+    expect(readConfig().population.size).toBe(DEFAULT_CONFIG.population.size);
+    expect(readConfig().world).toEqual(TRIALS_PRESETS[2]!.world);
+  });
+
   it("writes the preset into copied settings and selects it on paste", async () => {
     pick("starvation");
     document.getElementById("copySettings")!.click();
@@ -281,6 +315,7 @@ describe("preset in settings JSON", () => {
 describe("Ecosystem preset panel", () => {
   const board = new Scoreboard("ecosystem", new MemoryStorage());
   let panel: PresetPanel;
+  let io: SettingsIO;
 
   beforeAll(() => {
     document.body.innerHTML = page("ecosystem");
@@ -296,7 +331,9 @@ describe("Ecosystem preset panel", () => {
       read: form.read,
       fill: form.fill,
       withPreset: withEcoPreset,
+      apply: (t) => io.apply(t),
     });
+    io = initSettingsIO({ mode: "ecosystem", form: document.getElementById("setup") as HTMLFormElement, read: form.read, fill: form.fill, preset: { get: panel.current, set: panel.select } });
   });
 
   it("offers the four presets and Custom", () => {
@@ -324,5 +361,19 @@ describe("Ecosystem preset panel", () => {
     panel.refresh();
     expect(rows()[0]).toContain("400 s");
     expect(document.querySelector("#presetBoard .entry p")!.textContent).toContain("peak 812 creatures");
+  });
+
+  it("loads a saved run's birth and aging settings, not only the creature", () => {
+    pick("crowded");
+    const c = withEcoPreset(DEFAULT_ECO_CONFIG, "crowded");
+    c.eco.birthEnergy = 61;
+    c.eco.initialPopulation = 123;
+    board.submit("crowded", { run: "cfg", score: 5000, date: "2026-10-11", settings: settingsOf(c), config: serialise("ecosystem", c, "crowded") });
+    pick("normal");
+    pick("crowded");
+    document.querySelector<HTMLButtonElement>("#presetBoard button")!.click();
+    expect(panel.current()).toBe("crowded");
+    expect(form.read().eco.birthEnergy).toBe(61);
+    expect(form.read().eco.initialPopulation).toBe(123);
   });
 });
