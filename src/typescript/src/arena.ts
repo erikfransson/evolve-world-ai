@@ -410,6 +410,7 @@ function setState(s: RunState): void {
   settings.disabled = runSettings.disabled = s !== "idle";
   envSettings.disabled = s === "running"; // envs can change while paused, and apply on Resume
   grid.paused = s === "paused";
+  syncMaxNote();
   showGallery();
   updateStartButton();
 }
@@ -503,6 +504,7 @@ function lastHeld(r: Run): RlIteration | undefined {
 }
 
 function render(): void {
+  syncMaxNote();
   const r = run;
   const last = r?.its[r.its.length - 1];
   $("iterNow").textContent = String(last?.iter ?? 0);
@@ -644,12 +646,15 @@ $("brainOn").addEventListener("change", () => {
   brainReplay.reset();
 });
 const speedRadios = document.querySelectorAll<HTMLInputElement>("input[name=speed]");
-const maxNote = $("maxNote");
+// The Max note shares the tiles' overlay spot with the idle and starting note, so it shows only once that note is gone.
+function syncMaxNote(): void {
+  $("maxNote").hidden = grid.speed !== 0 || !$("note").hidden;
+}
 const tilesBox = $("tiles");
 function applySpeed(v: number, wasMax: boolean): void {
   grid.speed = v;
   const max = v === 0;
-  maxNote.hidden = !max;
+  syncMaxNote();
   tilesBox.classList.toggle("dim", max);
   if (max !== wasMax && state !== "idle") send({ type: "playback", on: !max }); // leaving Max also asks for a show at once
 }

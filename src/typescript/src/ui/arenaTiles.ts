@@ -114,7 +114,10 @@ export class TileGrid {
 
   show(s: Show, now: number): void {
     if (this.playing && this.speed > 0) this.queued = s;
-    else this.start(s, now);
+    else {
+      this.queued = null; // a show queued before Max would otherwise replay after this newer one
+      this.start(s, now);
+    }
   }
 
   private start(s: Show, now: number): void {
