@@ -9,6 +9,7 @@
   * `src/sim/` simulation; `creature.ts` (body, brain, senses) and `world.ts` (items, rays) are shared by modes
   * `src/trials.ts`, `src/landing.ts` one entry script per page
   * `public/pool.json` Ecosystem seed pool of Trials-trained creatures, rebuilt with `node src/buildPool.ts` (about 30 min on 4 threads)
+  * `public/coi-serviceworker.js` vendored (MIT) service worker, registered by the Ecosystem page, that cross-origin isolates the site, so Ecosystem helper threads can share memory
 * `src/python/` analysis of headless run output
 * `docs/` for e.g. adr documents, and planning etc
 * `tests/` tests for all code

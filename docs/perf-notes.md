@@ -85,3 +85,20 @@ Threads 4 vs 7 at pop 1000: steady generations equal at about 0.29 s; 4 threads 
 Profile at 2000 (4000 x 2500 world): first brain layer 19%, creature rays 17%, item gather 13%, item ray tracing about 12%, eatAt 5%, collisions and crowd rebuild under 4%.
 Body plans and memory (2026-10-10, load about 20): 765 -> 640 ticks/s, 169k -> 133k creature-ticks/s at the defaults (memory 4 + 4, costs on); memory 0 with zero costs is unchanged, fingerprint included.
 Random founders do not reach birthEnergy, so all runs decline; the default goes extinct after about 75 s without a birth.
+
+## Ecosystem helper threads (E5a)
+
+`node src/ecoBench.ts --seconds 10 --pop N --threads H [--shared]`, steady ms per tick (last three quarters), world 12000 x 7500, 2026-10-11.
+The machine has 4 physical cores (8 logical) and a browser tab used 1.3-2 cores throughout, so scaling past 2-3 threads is understated.
+Fingerprints are equal for every helper count and mode.
+
+| Creatures | Serial | FJ 1 | FJ 2 | FJ 4 | FJ 6 | Shared 1 | Shared 2 | Shared 4 | Shared 6 |
+|-----------|--------|------|------|------|------|----------|----------|----------|----------|
+| 1000      | 8.7    | 7.5  | 6.4  | 6.1  | 5.8  | 6.7      | 6.0      | 5.0      | 5.8      |
+| 3000      | 27.4   | 23.0 | 20.1 | 15.7 | 16.0 | 21.1     | 18.2     | 14.5     | 15.4     |
+| 5000      | 47.6   | 37.9 | 32.7 | 25.8 | 26.0 | 37.4     | 32.6     | 25.8     | 25.2     |
+
+FJ is fork-join by messages. H helpers plus the coordinator make H + 1 sensing threads.
+At 5000 the serial rest (memory, motion, shared phase, publish and collect) is about 13 ms, so sensing scales about 2x on 5 threads; the same slices run on one thread take 12 ms per 1000 creatures, on helper threads about 20 ms, which points at core sharing and clock drop rather than overhead.
+Fixed on the way: the first packet carries every founder genome, and a delta area kept at that size made fork-join slower than serial (17-50 MB moved per helper per tick); it now shrinks after the founders.
+Browser (headless Chrome, preview, about 1000-1100 creatures, default world): one thread 2.5-3.0x real time at both 16x and Max; 6 helpers 3.7-4.5x shared, 4.3-4.9x by messages.

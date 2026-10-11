@@ -1,5 +1,5 @@
 /* Vendored unchanged from https://github.com/gzuidhof/coi-serviceworker (npm coi-serviceworker 0.1.7).
-   Gives the Ecosystem page COOP/COEP headers on hosts that cannot set them (GitHub Pages), so it can use SharedArrayBuffer.
+   Registered by the Ecosystem page. Gives the site COOP/COEP headers on hosts that cannot set them (GitHub Pages), so it can use SharedArrayBuffer.
 
    MIT License
 
