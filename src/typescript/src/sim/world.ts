@@ -240,7 +240,12 @@ export class World implements WorldView {
     this.nextItem[i] = this.cellHead[c];
     this.cellHead[c] = i;
     this.stampCell(c);
-    this.dirtyCells?.push(c);
+    this.markDirty(c);
+  }
+
+  // Records a changed cell for the WASM item rows; null (rebuild all) once the list is longer than the grid, so it stays bounded when nobody syncs.
+  private markDirty(c: number): void {
+    if (this.dirtyCells && this.dirtyCells.push(c) > this.cellHead.length) this.dirtyCells = null;
   }
 
   // Frees slot i; its item leaves the grid.
@@ -293,7 +298,7 @@ export class World implements WorldView {
       while (j >= 0 && this.nextItem[j] !== i) j = this.nextItem[j];
       if (j >= 0) this.nextItem[j] = this.nextItem[i];
     }
-    this.dirtyCells?.push(c);
+    this.markDirty(c);
     this.itemCell[i] = -1;
     this.stampCell(c);
   }

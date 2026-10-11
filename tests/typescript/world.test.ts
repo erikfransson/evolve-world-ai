@@ -70,6 +70,13 @@ function brute(w: World, config: SimConfig, x: number, y: number, a: number): Ra
 }
 
 describe("World", () => {
+  it("drops the dirty-cell list for a full rebuild once it outgrows the grid", () => {
+    const w = new World(cfg(), 4);
+    w.dirtyCells = [];
+    for (let n = 0; n < w.cellHead.length; n++) w.removeItem(w.addItem(10, 10, HIT_FOOD));
+    expect(w.dirtyCells).toBeNull();
+  });
+
   it("equal layout rngs give identical layouts", () => {
     const a = scattered(cfg(), testRng(5));
     const b = scattered(cfg(), testRng(5));

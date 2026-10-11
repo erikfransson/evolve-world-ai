@@ -120,7 +120,7 @@ export const DEFAULT_CONFIG: SimConfig = {
   },
 };
 
-const MEMORY_UNITS = 16; // memory units at brain.memory 1, about 46% of the weights of the default brain
+export const MEMORY_UNITS = 16; // memory units at brain.memory 1, about 46% of the weights of the default brain
 
 // Short and long memory units for a memory setting in [0, 1], independent of the network size; the odd unit is short-term.
 export function memoryUnits(memory: number): { short: number; long: number } {
