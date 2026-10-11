@@ -344,7 +344,7 @@ describe("Ecosystem preset panel", () => {
     pick(id);
     expect(form.read()).toEqual(withEcoPreset(DEFAULT_ECO_CONFIG, id));
     for (const f of ECO_LOCKED) expect(disabled(f), f).toBe(true);
-    for (const f of ["initialPopulation", "birthEnergy", "rayCount", "neurons", "mutationRate", "collisions", "seed"]) expect(disabled(f), f).toBe(false);
+    for (const f of ["initialPopulation", "birthEnergyMin", "rayCount", "neurons", "mutationRate", "collisions", "seed"]) expect(disabled(f), f).toBe(false);
     expectOnSteps();
   });
 
@@ -353,6 +353,20 @@ describe("Ecosystem preset panel", () => {
     pick(CUSTOM);
     for (const f of ECO_LOCKED) expect(disabled(f), f).toBe(false);
     expect(form.read().eco.foodRegrow).toBe(ECO_PRESETS[2]!.regrowth.foodRegrow);
+  });
+
+  it("loads a Top 3 entry saved with the old single birth settings", () => {
+    pick("scarcity");
+    const old = JSON.stringify({ mode: "ecosystem", preset: "scarcity", version: 1, config: { eco: { birthEnergy: 130, birthCost: 70, childEnergy: 45, birthCooldown: 8 } } });
+    board.submit("scarcity", { run: "old", score: 900, date: "2026-10-01", settings: settingsOf(DEFAULT_ECO_CONFIG), config: old });
+    pick("normal");
+    pick("scarcity");
+    document.querySelector<HTMLButtonElement>("#presetBoard button")!.click();
+    const c = form.read();
+    expect(c.eco.birthEnergyRange).toEqual([130, 130]);
+    expect(c.eco.birthCostRange).toEqual([70, 70]);
+    expect(c.eco.birthCooldownRange).toEqual([8, 8]);
+    expect(document.querySelector(".io-msg")?.textContent ?? "").toContain("Old settings converted");
   });
 
   it("lists the best lifetimes with the peak population", () => {
@@ -366,14 +380,14 @@ describe("Ecosystem preset panel", () => {
   it("loads a saved run's birth and aging settings, not only the creature", () => {
     pick("crowded");
     const c = withEcoPreset(DEFAULT_ECO_CONFIG, "crowded");
-    c.eco.birthEnergy = 61;
+    c.eco.birthEnergyRange = [61, 120];
     c.eco.initialPopulation = 123;
     board.submit("crowded", { run: "cfg", score: 5000, date: "2026-10-11", settings: settingsOf(c), config: serialise("ecosystem", c, "crowded") });
     pick("normal");
     pick("crowded");
     document.querySelector<HTMLButtonElement>("#presetBoard button")!.click();
     expect(panel.current()).toBe("crowded");
-    expect(form.read().eco.birthEnergy).toBe(61);
+    expect(form.read().eco.birthEnergyRange).toEqual([61, 120]);
     expect(form.read().eco.initialPopulation).toBe(123);
   });
 });

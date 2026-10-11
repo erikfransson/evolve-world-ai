@@ -1,3 +1,4 @@
+import type { BirthTraits } from "./planMutation.ts";
 import type { PlanView } from "./sensors.ts";
 
 // Traits of a population's body plans, shown as small histograms. Values are in display units (angle in degrees).
@@ -6,7 +7,7 @@ export interface Trait {
   label: string;
   unit: string;
   integer: boolean; // counts: one bar per value when few
-  of(plan: PlanView): number;
+  of(plan: PlanView, birth: BirthTraits): number;
 }
 
 const sum = (xs: readonly number[]): number => xs.reduce((a, b) => a + b, 0);
@@ -18,6 +19,9 @@ export const TRAITS: readonly Trait[] = [
   { key: "hidden", label: "Hidden neurons", unit: "", integer: true, of: (p) => sum(p.hiddenLayers) },
   { key: "layers", label: "Hidden layers", unit: "", integer: true, of: (p) => p.hiddenLayers.length },
   { key: "memory", label: "Memory units", unit: "", integer: true, of: (p) => p.memoryShort + p.memoryLong },
+  { key: "birthEnergy", label: "Birth energy", unit: "", integer: false, of: (_, b) => b.energy },
+  { key: "birthCost", label: "Birth cost", unit: "", integer: false, of: (_, b) => b.cost },
+  { key: "cooldown", label: "Birth cooldown", unit: " s", integer: false, of: (_, b) => b.cooldown },
 ];
 
 export const TRAIT_BINS = 8;
@@ -30,10 +34,10 @@ export interface TraitHistogram {
 }
 
 // One histogram per entry of TRAITS; null for an empty population. Integer traits with a narrow span get one bin per value.
-export function traitStats(plans: readonly PlanView[]): TraitHistogram[] | null {
+export function traitStats(plans: readonly PlanView[], births: readonly BirthTraits[]): TraitHistogram[] | null {
   if (plans.length === 0) return null;
   return TRAITS.map((t) => {
-    const values = plans.map(t.of);
+    const values = plans.map((plan, i) => t.of(plan, births[i]!));
     let min = Infinity;
     let max = -Infinity;
     let total = 0;

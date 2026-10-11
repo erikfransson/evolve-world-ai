@@ -24,6 +24,7 @@ function predCfg(prey: number, predators: number, seed = 3, over: Partial<EcoCon
 // No items and no collisions, so only the hunting changes energies besides the creatures' own costs.
 const bare = (prey: number, predators: number): EcoConfig => {
   const c = predCfg(prey, predators, 1, { foodRegrow: 0, poisonRegrow: 0, collisions: false });
+  c.species![1]!.birthEnergyRange = [1e9, 1e9]; // no births, which would change the counts
   return { ...c, world: { ...c.world, foodDensity: 0, poisonDensity: 0 } };
 };
 
@@ -38,7 +39,7 @@ const place = (eco: Ecosystem, i: number, x: number, y: number, energy?: number)
 describe("The Great Hunt", () => {
   it("a one-species list computes exactly as the Ecosystem without one", () => {
     const d = structuredClone(DEFAULT_ECO_CONFIG);
-    const base: EcoConfig = { ...d, seed: 4, world: { ...d.world, width: 1000, height: 1000 }, creature: { ...d.creature, startEnergy: 140 }, eco: { ...d.eco, initialPopulation: 60, birthEnergy: 70 } };
+    const base: EcoConfig = { ...d, seed: 4, world: { ...d.world, width: 1000, height: 1000 }, creature: { ...d.creature, startEnergy: 140 }, eco: { ...d.eco, initialPopulation: 60, birthEnergyRange: [80, 80], birthCostRange: [75, 75], birthCooldownRange: [10, 10] } };
     const run = (c: EcoConfig) => {
       const eco = new Ecosystem(c);
       for (let t = 0; t < 300; t++) eco.step();
@@ -48,16 +49,16 @@ describe("The Great Hunt", () => {
     expect(a[1]).toBeGreaterThan(0);
     expect(run({ ...base, species: [ONE_SPECIES] })).toEqual(a);
     // Overrides equal to the shared settings change nothing either.
-    const same = { ...ONE_SPECIES, founders: 60, birthEnergy: 70, startEnergy: 140, speed: 1, rayLengthRange: [...base.eco.rayLengthRange] };
+    const same = { ...ONE_SPECIES, founders: 60, birthEnergyRange: [80, 80], birthCostRange: [75, 75], birthCooldownRange: [10, 10], startEnergy: 140, speed: 1, rayLengthRange: [...base.eco.rayLengthRange] };
     expect(run({ ...base, species: [same] })).toEqual(a);
   });
 
-  it("leaves the plain Ecosystem bit-identical to main before species (golden fingerprint)", () => {
+  it("keeps the plain Ecosystem run fixed (pinned fingerprint)", () => {
     const d = structuredClone(DEFAULT_ECO_CONFIG);
-    const c: EcoConfig = { ...d, seed: 4, world: { ...d.world, width: 1000, height: 1000 }, creature: { ...d.creature, startEnergy: 140 }, eco: { ...d.eco, initialPopulation: 60, birthEnergy: 70, structuralRate: 0.2, collisionDamage: true, wasm: false } };
+    const c: EcoConfig = { ...d, seed: 4, world: { ...d.world, width: 1000, height: 1000 }, creature: { ...d.creature, startEnergy: 140 }, eco: { ...d.eco, initialPopulation: 60, birthEnergyRange: [80, 80], birthCostRange: [75, 75], birthCooldownRange: [10, 10], structuralRate: 0.2, collisionDamage: true, wasm: false } };
     const eco = new Ecosystem(c);
     for (let t = 0; t < 300; t++) eco.step();
-    expect([eco.fingerprint(), eco.births, eco.deaths]).toEqual([351733877, 60, 24]); // main e17cba7
+    expect([eco.fingerprint(), eco.births, eco.deaths]).toEqual([764941132, 66, 20]); // re-pinned for heritable birth traits and recoil births (#22, #31), then newborns clamped at walls without side retry; was 351733877, 60, 24 on main e17cba7
   });
 
   it("shares the population limit among the species' founders in proportion", () => {
@@ -72,7 +73,7 @@ describe("The Great Hunt", () => {
   });
 
   it("children keep their parent's species and stay in the species' colour band", () => {
-    const eco = new Ecosystem(predCfg(80, 20, 2, { birthEnergy: 70, birthCost: 35, childEnergy: 30 })); // prey breed readily
+    const eco = new Ecosystem(predCfg(80, 20, 2, { birthEnergyRange: [70, 70], birthCostRange: [35, 35] })); // prey breed readily
     const founderSpecies = new Map(eco.topLineages(eco.founders).map((l) => [l.founder, l.species]));
     for (let t = 0; t < 900; t++) eco.step();
     const counts = eco.speciesCounts;

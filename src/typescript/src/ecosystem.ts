@@ -2,7 +2,7 @@ import "./base.css";
 import "./style.css";
 import "./ecosystem.css";
 import { seasonFactor, seasonName, winterness } from "./sim/ecoConfig.ts";
-import { speciesList } from "./sim/species.ts";
+import { fullEnergy, speciesList } from "./sim/species.ts";
 import type { EcoConfig } from "./sim/ecoConfig.ts";
 import type { BestBy, EcoInMessage, EcoOutMessage, EcoSnapshot, SelectedDetails, SnapshotViews } from "./worker/ecoProtocol.ts";
 import { snapshotViews } from "./worker/ecoProtocol.ts";
@@ -97,7 +97,7 @@ function setConfig(c: EcoConfig): void {
 function drawConfig(): EcoDrawConfig {
   const { world, creature, eco } = config;
   const winter = eco.seasons && live ? winterness(eco, live.msg.simTime) : 0;
-  const kinds = species.map((sp) => ({ fullEnergy: sp.birthEnergy, hunter: sp.prey.length > 0 }));
+  const kinds = species.map((sp) => ({ fullEnergy: fullEnergy(sp), hunter: sp.prey.length > 0 }));
   return { worldW: world.width, worldH: world.height, radius: creature.radius, itemRadius: world.itemRadius, species: kinds, winter };
 }
 
@@ -309,7 +309,7 @@ function updateUi(): void {
   if (selection && d) {
     const sp = species[d.species]!;
     const kind = several(config) ? { name: sp.name, index: d.species, kills: d.kills, hunter: sp.prey.length > 0 } : undefined;
-    view.setSelected({ id: d.id, energy: d.energy, fullEnergy: sp.birthEnergy, age: d.age, children: d.children, eaten: d.eaten, depth: d.depth, plan: d.plan, upkeep: d.upkeep, drain: d.drain, founderId: d.founderId, founderPool: d.founderPool, founderHue: d.founderHue, species: kind, died: selection.died });
+    view.setSelected({ id: d.id, energy: d.energy, fullEnergy: d.birthEnergy, age: d.age, children: d.children, eaten: d.eaten, depth: d.depth, plan: d.plan, upkeep: d.upkeep, drain: d.drain, birth: { energy: d.birthEnergy, cost: d.birthCost, cooldown: d.birthCooldown }, founderId: d.founderId, founderPool: d.founderPool, founderHue: d.founderHue, species: kind, died: selection.died });
     view.setFollowing(following);
   }
 }

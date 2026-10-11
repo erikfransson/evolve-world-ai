@@ -13,18 +13,21 @@ import { TraitPanel, traitText } from "../../src/typescript/src/ui/traitPanel.ts
 import { TRIALS_SECTIONS } from "../../src/typescript/src/ui/trialsForm.ts";
 import { DEFAULT_CONFIG } from "../../src/typescript/src/sim/config.ts";
 
+const BIRTH = { energy: 150, cost: 75, cooldown: 10 };
+const births = (plans: readonly unknown[]) => plans.map(() => BIRTH);
 const plan = (over: Partial<BodyPlan> = {}): BodyPlan => ({ rayCount: 5, raySpread: Math.PI / 2, rayLength: 100, hiddenLayers: [8], memoryShort: 1, memoryLong: 1, ...over });
 
 describe("traitStats", () => {
   it("counts integer traits per value and gives mean, min and max", () => {
-    const h = traitStats([plan({ rayCount: 3 }), plan({ rayCount: 3 }), plan({ rayCount: 6 })])!;
+    const three = [plan({ rayCount: 3 }), plan({ rayCount: 3 }), plan({ rayCount: 6 })];
+    const h = traitStats(three, births(three))!;
     expect(h.length).toBe(TRAITS.length);
     expect(h[0]).toEqual({ min: 3, max: 6, mean: 4, bins: [2, 0, 0, 1] });
   });
 
   it("bins wide ranges into equal parts, with the maximum in the last bin, and reports angle in degrees", () => {
     const plans = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100].map((rayLength) => plan({ rayLength, raySpread: Math.PI }));
-    const h = traitStats(plans)!;
+    const h = traitStats(plans, births(plans))!;
     expect(h[1]!.bins.reduce((a, b) => a + b, 0)).toBe(10);
     expect(h[1]!.bins.length).toBe(8);
     expect(h[1]!.bins[7]).toBeGreaterThan(0);
@@ -32,8 +35,11 @@ describe("traitStats", () => {
   });
 
   it("sums hidden layers into neurons and has no stats for nobody", () => {
-    expect(traitStats([plan({ hiddenLayers: [8, 4] })])![3]!.mean).toBe(12);
-    expect(traitStats([])).toBeNull();
+    expect(traitStats([plan({ hiddenLayers: [8, 4] })], [BIRTH])![3]!.mean).toBe(12);
+    expect(traitStats([], [])).toBeNull();
+    const t = traitStats([plan(), plan()], [BIRTH, { energy: 300, cost: 90, cooldown: 4 }])!;
+    expect(TRAITS.slice(-3).map((x) => x.key)).toEqual(["birthEnergy", "birthCost", "cooldown"]);
+    expect(t.slice(-3).map((x) => x.mean)).toEqual([225, 82.5, 7]);
   });
 });
 
@@ -171,7 +177,7 @@ describe("trait panel", () => {
     expect(traitText({ min: 90, max: 90, mean: 90, bins: [4] }, "°")).toEqual({ mean: "90°", range: "all equal" });
     document.body.innerHTML = `<section><div class="ov-body"><ul class="trait-list"></ul></div></section>`;
     const panel = new TraitPanel(document.querySelector("section")!, []);
-    panel.set([traitStats([plan(), plan({ rayCount: 8 })])!]);
+    panel.set([traitStats([plan(), plan({ rayCount: 8 })], [BIRTH, BIRTH])!]);
     expect(document.querySelectorAll(".trait-row").length).toBe(TRAITS.length);
     expect(document.querySelectorAll(".trait-row")[0]!.querySelectorAll("i").length).toBe(4);
     panel.clear();

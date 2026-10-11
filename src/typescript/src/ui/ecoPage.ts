@@ -49,6 +49,7 @@ export interface EcoSelected {
   depth: number; // lineage depth, founders are 0
   plan: BodyPlan;
   upkeep: number; // energy per second besides thrust and turning
+  birth: { energy: number; cost: number; cooldown: number }; // its heritable birth traits
   drain: number; // energy per second now, thrust and turning included
   founderId: number;
   founderPool: boolean; // the founder came from the seed pool
@@ -117,6 +118,11 @@ function setTip(tileId: string, text: string): void {
   if (tip.dataset.tip === text) return;
   tip.dataset.tip = text;
   tip.setAttribute("aria-label", text);
+}
+
+// "birth at 150 · cost 75 · every 10 s": the energy that triggers a birth, what it costs the parent (the child starts with that), the cooldown.
+export function formatBirth(b: EcoSelected["birth"]): string {
+  return `birth at ${Math.round(b.energy)} · cost ${Math.round(b.cost)} · every ${b.cooldown < 10 ? b.cooldown.toFixed(1) : Math.round(b.cooldown)} s`;
 }
 
 // "8 rays · 75° · 100 range · 16 hidden · mem 2+2"; layers join with +, no memory reads "no mem".
@@ -278,7 +284,7 @@ export function createEcoView(handlers: EcoHandlers, page: ModePage): EcoView {
       }
       $("selDepth").textContent = nf.format(sel.depth);
       $("selId").textContent = `#${sel.id}`;
-      $("selPlan").textContent = formatPlan(sel.plan);
+      $("selPlan").textContent = `${formatPlan(sel.plan)} · ${formatBirth(sel.birth)}`;
       drain = drain?.id === sel.id ? { id: sel.id, value: drain.value + 0.25 * (sel.drain - drain.value) } : { id: sel.id, value: sel.drain };
       $("selBase").textContent = sel.upkeep.toFixed(2);
       $("selDrain").textContent = sel.died ? "-" : drain.value.toFixed(2);

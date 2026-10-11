@@ -14,7 +14,7 @@ function cfg(seed = 5): EcoConfig {
     seed,
     world: { ...d.world, width: 900, height: 900 },
     creature: { ...d.creature, startEnergy: 60 },
-    eco: { ...d.eco, initialPopulation: 60, foundersVary: true, structuralRate: 0.3, birthEnergy: 40 },
+    eco: { ...d.eco, initialPopulation: 60, foundersVary: true, structuralRate: 0.3, birthEnergyRange: [76, 76], birthCostRange: [75, 75], birthCooldownRange: [10, 10] },
   };
 }
 
@@ -186,7 +186,7 @@ describe("WebAssembly kernels", () => {
     expect(a.births).toBeGreaterThan(0);
     expect(a.deaths).toBeGreaterThan(0);
     expect(serial(wasmCfg(), 300).fingerprint()).toBe(a.fingerprint());
-    expect(a.fingerprint()).toBe(746480886); // pinned: the same value main gave before the one-call sense kernel (e17cba7); change it only on purpose
+    expect(a.fingerprint()).toBe(693541288); // pinned; re-pinned for heritable birth traits and the recoil birth (#22, #31), was 746480886 on main e17cba7; change it only on purpose
     const js = serial(wasmCfg(5, false), 300);
     expect(js.wasm).toBe(false);
     expect(serial(cfg(), 300).fingerprint()).toBe(a.fingerprint()); // WASM is the default
@@ -213,7 +213,7 @@ describe("WebAssembly kernels", () => {
 
   it("keep each creature's brain across births, deaths, recycling and plan mutations", () => {
     const c = wasmCfg();
-    const eco = new Ecosystem({ ...c, world: { ...c.world, foodDensity: 2 }, eco: { ...c.eco, foodRegrow: 1, foodMaxDensity: 2, birthEnergy: 30, birthCost: 20, childEnergy: 15, birthCooldown: 2 } }); // fast turnover
+    const eco = new Ecosystem({ ...c, world: { ...c.world, foodDensity: 2 }, eco: { ...c.eco, foodRegrow: 1, foodMaxDensity: 2, birthEnergyRange: [30, 30], birthCostRange: [20, 20], birthCooldownRange: [2, 2] } }); // fast turnover
     const out = new Float32Array(64);
     let checked = 0;
     const recycledShapes = new Set<number>(); // genome lengths of creatures that took over a dead one

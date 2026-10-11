@@ -17,11 +17,10 @@ Vite multi-page build, so each mode has its own `index.html` and entry script.
 - Food regrows at `foodRegrowRate` items per second per density cell, up to `foodMaxDensity`.
 - Poison regrows at `poisonRegrowRate` up to `poisonMaxDensity`, so the board cannot fill with poison.
 - Start energy 50, one food gives 20.
-- Birth when energy reaches 150: the parent pays 75, the child starts with 50 next to the parent.
-- After a birth the parent waits `birthCooldown` seconds (default 10) before the next one.
-- The child is launched in a random direction at `birthSpeed` instead of sitting still next to the parent.
+- Each creature carries its own birth energy, birth cost and birth cooldown, drawn for founders from run-setting ranges (defaults 100-225, 50-110, 5-20 s) and nudged by `birthDrift` in each child. The child starts with exactly the energy the parent pays, and a parent that pays all it has dies.
+- The child appears next to the parent and leaves at `birthSpeed` relative to it, split between them so momentum is kept and they do not collide at once.
 - The child gets the parent's genome with mutation and the parent's colour with a small hue drift; every founder gets a random colour.
-- A creature's energy fill is full at the birth threshold.
+- A creature's energy fill is full at the middle of the birth energy range.
 - Creatures collide and bounce off each other.
 - Rays also see creatures: a creature hit flag, plus the seen creature's energy (squashed like the own energy input).
 - Trials keeps its current ray inputs.

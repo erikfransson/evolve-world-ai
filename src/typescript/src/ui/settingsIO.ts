@@ -2,7 +2,7 @@ import { DEFAULT_CONFIG, overrideConfig } from "../sim/config.ts";
 import type { DeepPartial, SimConfig } from "../sim/config.ts";
 import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "../sim/ecoConfig.ts";
 import type { EcoConfig } from "../sim/ecoConfig.ts";
-import { mergeSpeciesList } from "../sim/species.ts";
+import { checkRanges, mergeSpeciesList, migrateBirthKeys } from "../sim/species.ts";
 import { CUSTOM, ECO_PRESETS, PREDATOR_PRESETS, TRIALS_PRESETS } from "../sim/presets.ts";
 
 // Copy and paste of the settings as JSON, shared by Trials, Ecosystem and The Great Hunt.
@@ -29,6 +29,7 @@ const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "obj
 export interface Parsed<M extends Mode> {
   config: ConfigOf[M];
   preset: string | null; // a preset id, CUSTOM, or null when the text names none
+  migrated: string[]; // old settings turned into current ones
 }
 
 // Returns the pasted config merged over the defaults. Throws an Error with a readable message on anything wrong.
@@ -54,14 +55,19 @@ export function parseWithPreset<M extends Mode>(text: string, mode: M): Parsed<M
     if (typeof data.preset !== "string" || (data.preset !== CUSTOM && !PRESET_IDS[mode].includes(data.preset))) throw new Error(`Unknown preset ${JSON.stringify(data.preset)}.`);
     preset = data.preset;
   }
-  if (data.config === undefined) return { config: structuredClone(DEFAULTS[mode]), preset };
+  const migrated: string[] = [];
+  if (data.config === undefined) return { config: structuredClone(DEFAULTS[mode]), preset, migrated };
   const defaults = DEFAULTS[mode];
-  if (!isObject(data.config) || !("species" in data.config) || !("species" in defaults)) return { config: overrideConfig<ConfigOf[M]>(defaults, data.config as DeepPartial<ConfigOf[M]>), preset };
+  const pasted = data.config;
+  if (!isObject(pasted)) return { config: overrideConfig<ConfigOf[M]>(defaults, pasted as DeepPartial<ConfigOf[M]>), preset, migrated };
+  const { species, ...rest } = pasted;
+  if (isObject(rest.eco)) rest.eco = migrateBirthKeys(rest.eco, "eco", migrated);
+  const withSpecies = "species" in pasted && "species" in defaults;
+  const config = overrideConfig<ConfigOf[M]>(defaults, (withSpecies || !("species" in pasted) ? rest : { ...rest, species }) as DeepPartial<ConfigOf[M]>);
   // The species list merges item by item and is checked as a whole (see mergeSpeciesList).
-  const { species, ...rest } = data.config;
-  const config = overrideConfig<ConfigOf[M]>(defaults, rest as DeepPartial<ConfigOf[M]>);
-  (config as EcoConfig).species = mergeSpeciesList(species, (defaults as EcoConfig).species!);
-  return { config, preset };
+  if (withSpecies) (config as EcoConfig).species = mergeSpeciesList(species, (defaults as EcoConfig).species!, migrated);
+  if ("eco" in config) checkRanges((config as EcoConfig).eco as unknown as Record<string, unknown>, "eco");
+  return { config, preset, migrated };
 }
 
 // Leaf paths where a and b differ, e.g. "world.width". Angles may differ by the form's whole-degree rounding.
@@ -216,10 +222,12 @@ export function initSettingsIO<M extends Mode>(o: IOOptions<M>): SettingsIO {
     if (locked()) return { ok: false, message: "Settings are locked while a run is active." };
     let pasted: ConfigOf[M];
     let preset: string;
+    let migrated: string[];
     try {
       const parsed = parseWithPreset(text, o.mode);
       pasted = parsed.config;
       preset = parsed.preset ?? CUSTOM;
+      migrated = parsed.migrated;
     } catch (e) {
       return { ok: false, message: e instanceof Error ? e.message : String(e) };
     }
@@ -230,7 +238,8 @@ export function initSettingsIO<M extends Mode>(o: IOOptions<M>): SettingsIO {
     const applied = o.read();
     o.fill(applied);
     o.form.dispatchEvent(new Event("input", { bubbles: true })); // the page's change handler rebuilds its preview
-    return { ok: true, message: adjustmentNote(pasted, applied) };
+    const notes = [migrated.length ? `Old settings converted: ${migrated.join(", ")}.` : null, adjustmentNote(pasted, applied)].filter((n) => n !== null);
+    return { ok: true, message: notes.length ? notes.join(" ") : null };
   };
   const dialog = buildDialog(applyText);
 

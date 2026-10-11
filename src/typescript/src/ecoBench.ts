@@ -19,7 +19,7 @@ import type { EcoConfig } from "./sim/ecoConfig.ts";
 import { Ecosystem } from "./sim/ecosystem.ts";
 import { ECO_PRESETS, PREDATOR_PRESETS, withEcoPreset } from "./sim/presets.ts";
 import { parsePool } from "./sim/seedPool.ts";
-import { mergeSpeciesList } from "./sim/species.ts";
+import { checkRanges, mergeSpeciesList } from "./sim/species.ts";
 import { parseSettings } from "./ui/settingsIO.ts";
 import { createNodeThinkPool } from "./worker/nodePool.ts";
 
@@ -83,6 +83,7 @@ const founderScale = config.eco.initialPopulation / startPopulation;
 config.species = config.species?.map((sp) => (sp.founders === undefined ? sp : { ...sp, founders: Math.round(sp.founders * founderScale) }));
 const { species: speciesPatch, ...patch } = overridesOf(values.set ?? []);
 config = overrideConfig<EcoConfig>(config, patch as DeepPartial<EcoConfig>);
+checkRanges(config.eco as unknown as Record<string, unknown>, "eco");
 if (speciesPatch !== undefined) {
   if (!config.species) throw new Error("this config has no species list");
   const list = config.species;
