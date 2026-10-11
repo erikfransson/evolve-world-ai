@@ -46,7 +46,7 @@ export const DEFAULT_ECO_CONFIG: EcoConfig = {
   brain: { ...DEFAULT_CONFIG.brain, hiddenLayers: [...DEFAULT_CONFIG.brain.hiddenLayers] },
   eco: {
     initialPopulation: 1000,
-    poolFraction: 0.5,
+    poolFraction: 0.3,
     maxPopulation: 10000,
     foodRegrow: 0.05, // 200 items/s on the default world, about 4000 energy/s, so roughly 1200 creatures at equilibrium
     foodMaxDensity: 0.7,
