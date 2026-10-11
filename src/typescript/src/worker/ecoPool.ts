@@ -34,6 +34,7 @@ export class ThinkPool {
   private readonly tickMs: number;
   private waiting: { count: number; resolve: () => void; reject: (e: unknown) => void } | null = null;
   private broken: unknown = null;
+  private fresh = true; // no tick has run since the last start
   private gen = 0; // the current run, see HelperIn
   private last: Promise<unknown> = Promise.resolve(); // the latest start or step; a new start waits for it
 
@@ -83,6 +84,7 @@ export class ThinkPool {
     this.caps = null;
     this.home = null;
     this.packets = [];
+    this.fresh = true;
     const done = this.expect(START_MS);
     this.ports.forEach((port, index) => port.post({ type: "init", gen, config: eco.config, worldCapacity: eco.world.count, index, wasm: eco.wasm }));
     return done;
@@ -109,10 +111,11 @@ export class ThinkPool {
 
   private async tick(eco: Ecosystem): Promise<void> {
     const home = this.home!;
-    this.coordinator.publish(eco, home);
+    this.coordinator.publish(eco, home, this.packets);
     const state = new Uint8Array(home.buffer, 0, publishedBytes(home));
     for (const p of this.packets) new Uint8Array(p.buffer).set(state);
-    const done = this.expect(this.tickMs);
+    const done = this.expect(this.fresh ? Math.max(START_MS, this.tickMs) : this.tickMs); // the first tick builds every creature's brain and runs cold code
+    this.fresh = false;
     const gen = this.gen;
     this.ports.forEach((port, h) => {
       const buffer = this.packets[h]!.buffer as ArrayBuffer;

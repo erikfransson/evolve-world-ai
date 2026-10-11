@@ -50,6 +50,7 @@ export class EcoCreature {
   // Heritable birth traits (#31): energy at which it has a child, energy it pays (the child's start energy), seconds between births.
   birth: BirthTraits = { energy: 0, cost: 0, cooldown: 0 };
   cooldownTicks = 0;
+  owner = 0; // helper thread that thinks for it, set by the coordinator of helper threads
   readonly creature: Creature; // state, rays, rayOffsets and brain.layerActivations() of the last tick
 
   constructor(creature: Creature) {
