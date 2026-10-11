@@ -61,13 +61,15 @@ export function resolveSpecies(config: EcoConfig, sp: SpeciesConfig): Species {
 // The species of a world, resolved: its list, or the one species.
 export const speciesList = (config: EcoConfig): Species[] => (config.species?.length ? config.species : [ONE_SPECIES]).map((sp) => resolveSpecies(config, sp));
 
-// The engine config a creature of species sp runs on: its body, costs and speed. All species read a seen creature's
-// energy on one scale, the largest start energy, which for one species is its own as before.
-export function speciesEngine(config: EcoConfig, sp: Species): EngineConfig {
+// All species read a seen creature's energy on one scale, the largest start energy, which for one species is its own.
+export const seenEnergyScale = (species: readonly Species[]): number => Math.max(...species.map((x) => x.startEnergy));
+
+// The engine config a creature of species sp runs on: its body, costs and speed. scale is seenEnergyScale of the world's species.
+export function speciesEngine(config: EcoConfig, sp: Species, scale = seenEnergyScale(speciesList(config))): EngineConfig {
   const c = config.creature;
   return {
     ...config,
-    seenEnergyScale: Math.max(...speciesList(config).map((x) => x.startEnergy)),
+    seenEnergyScale: scale,
     creature: { ...c, maxThrust: c.maxThrust * sp.speed, startEnergy: sp.startEnergy, livingCost: sp.livingCost, thrustCost: sp.thrustCost, turnCost: sp.turnCost },
   };
 }
