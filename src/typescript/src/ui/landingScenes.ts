@@ -449,7 +449,8 @@ export function predatorScene(seed: number): PredatorScene {
       // The hunter's gaze: a faint cone ahead of it.
       const h = hs.heading;
       const gaze = ctx.createRadialGradient(hs.x, hs.y, r, hs.x, hs.y, 95);
-      gaze.addColorStop(0, `hsla(${HUNTER_HUE}, 90%, 62%, 0.16)`);
+      gaze.addColorStop(0, `hsla(${HUNTER_HUE}, 90%, 62%, 0.26)`);
+      gaze.addColorStop(0.6, `hsla(${HUNTER_HUE}, 90%, 62%, 0.12)`);
       gaze.addColorStop(1, `hsla(${HUNTER_HUE}, 90%, 62%, 0)`);
       ctx.fillStyle = gaze;
       ctx.beginPath();
@@ -457,6 +458,18 @@ export function predatorScene(seed: number): PredatorScene {
       ctx.arc(hs.x, hs.y, 95, h - 0.45, h + 0.45);
       ctx.closePath();
       ctx.fill();
+      // Faint edge rays, so the field of view reads at a glance.
+      const edge = ctx.createLinearGradient(hs.x, hs.y, hs.x + 95 * Math.cos(h), hs.y + 95 * Math.sin(h));
+      edge.addColorStop(0, `hsla(${HUNTER_HUE}, 90%, 70%, 0.35)`);
+      edge.addColorStop(1, `hsla(${HUNTER_HUE}, 90%, 70%, 0)`);
+      ctx.strokeStyle = edge;
+      ctx.lineWidth = f.px;
+      ctx.beginPath();
+      for (const a of [h - 0.45, h + 0.45]) {
+        ctx.moveTo(hs.x, hs.y);
+        ctx.lineTo(hs.x + 95 * Math.cos(a), hs.y + 95 * Math.sin(a));
+      }
+      ctx.stroke();
       for (const p of prey) {
         if (!p.live) continue;
         const grow = p.bornAt === 0 ? 1 : easeOutBack(Math.min(1, ((tick - p.bornAt) * TICK_SECONDS) / POP_SECONDS));
