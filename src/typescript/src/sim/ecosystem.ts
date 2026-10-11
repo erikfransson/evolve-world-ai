@@ -25,6 +25,18 @@ import { SenseKernels } from "./wasm/senseKernels.ts";
 
 export type { Lineage } from "./lineages.ts";
 
+// A founder placed as given; genome in the config's input layout for its species.
+export interface CastMember {
+  species: number;
+  plan: PlanView;
+  genome: Genome;
+  x: number;
+  y: number;
+  heading: number;
+  hue: number;
+  energy?: number; // the species' start energy when left out
+}
+
 // One creature of the ecosystem with its family record. Objects are recycled after death, so hold ids, not references.
 export class EcoCreature {
   id = 0;
@@ -135,7 +147,8 @@ export class Ecosystem {
   private readonly contact: Contact = { speed: 0 };
 
   // pool: trained founders (see seedPool.ts); without one, or at poolFraction 0, every founder is random.
-  constructor(config: EcoConfig, pool: readonly PoolEntry[] | null = null, options: { journal?: boolean } = {}) {
+  // cast: exactly these founders instead of the species' founder counts (RL environments, see rl/env.ts).
+  constructor(config: EcoConfig, pool: readonly PoolEntry[] | null = null, options: { journal?: boolean; cast?: readonly CastMember[] } = {}) {
     this.config = config;
     const { eco, dt } = config;
     const perDensity = itemsPerDensity(config);
@@ -162,11 +175,12 @@ export class Ecosystem {
     this.items.scatter(start.food, start.poison, this.rng);
     this.food = start.food;
     this.poison = start.poison;
-    const counts = founderCounts(this.species, eco.maxPopulation);
-    const founders = counts.reduce((a, b) => a + b, 0);
+    const cast = options.cast;
+    const counts = cast ? this.species.map(() => 0) : founderCounts(this.species, eco.maxPopulation);
+    const founders = cast ? cast.length : counts.reduce((a, b) => a + b, 0);
     this.crowd = new Crowd(config, founders);
     // Plans past the kernel's ray limit (a huge ray count setting or pool entry) run on the JS path.
-    const maxRays = Math.max(config.creature.rayCount, ...this.ranges.map((r) => r.rayCountRange[1] ?? 0), ...(pool ?? []).map((e) => e.plan.rayCount));
+    const maxRays = Math.max(config.creature.rayCount, ...this.ranges.map((r) => r.rayCountRange[1] ?? 0), ...(pool ?? []).map((e) => e.plan.rayCount), ...(cast ?? []).map((c) => c.plan.rayCount));
     this.kernels = eco.wasm ? SenseKernels.create(config, maxRays) : null;
     this.childPlan = planOf(config);
 
@@ -204,6 +218,11 @@ export class Ecosystem {
         this.lineages.describe(i, hue, sp, k < fromPool);
       }
       poolFounders += fromPool;
+    }
+    for (const c of cast ?? []) {
+      const m = this.spawn(c.genome, c.plan, c.x, c.y, c.heading, c.energy ?? this.species[c.species]!.startEnergy, c.species);
+      m.hue = c.hue;
+      this.lineages.describe(i++, c.hue, c.species, false);
     }
     this.poolFounders = poolFounders;
     // Poison moves only once every founder stands, and never onto one, so none ends up on a founder placed earlier.
