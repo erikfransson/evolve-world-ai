@@ -65,7 +65,7 @@ export interface SimConfig {
   };
 }
 
-// The parts every mode shares; population and ga belong to Trials. species: the species of a Predators & prey world, whose
+// The parts every mode shares; population and ga belong to Trials. species: the species of a Great Hunt world, whose
 // rays tell them apart (see sensors.ts); absent elsewhere. seenEnergyScale: the energy that scales every species' seen-energy
 // input alike (set by speciesEngine); without it, the creature's own start energy.
 export type EngineConfig = Pick<SimConfig, "seed" | "dt" | "world" | "creature" | "brain"> & { species?: readonly SpeciesConfig[]; seenEnergyScale?: number };

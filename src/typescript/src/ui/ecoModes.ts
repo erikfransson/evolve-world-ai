@@ -9,7 +9,7 @@ import { formatDuration } from "./page.ts";
 import { PREDATOR_FORM, PREDATOR_LOCKED } from "./predatorForm.ts";
 import { SPECIES_COLORS } from "./speciesStyle.ts";
 
-// What differs between the pages the Ecosystem page script runs: the Ecosystem and Predators & prey.
+// What differs between the pages the Ecosystem page script runs: the Ecosystem and The Great Hunt.
 export interface ModePage {
   mode: "ecosystem" | "predators"; // also the copy/paste mode and the scoreboard name
   form: FormSpec<EcoConfig>;

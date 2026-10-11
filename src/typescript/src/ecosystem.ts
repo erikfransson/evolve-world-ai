@@ -47,7 +47,7 @@ interface Selection {
   died: boolean;
 }
 
-// This script runs the Ecosystem page and, with <body data-mode="predators">, the Predators & prey page.
+// This script runs the Ecosystem page and, with <body data-mode="predators">, the Great Hunt page.
 const PAGE = document.body.dataset.mode === "predators" ? PREDATORS_PAGE : ECOSYSTEM_PAGE;
 // The page opens on the Normal preset.
 const NORMAL = openingConfig(PAGE);
