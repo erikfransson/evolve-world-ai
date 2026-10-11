@@ -12,10 +12,13 @@ import type { Crowd } from "./crowd.ts";
 import type { WasmRayCaster } from "./wasm/rayKernel.ts";
 import type { SenseKernels } from "./wasm/senseKernels.ts";
 
+let created = 0; // objects made so far in this process
+
 // One creature's body, brain and senses; the world it lives in is passed to each call.
 // rays, rayOffsets, memory and brain sizes follow the plan, which only reset changes.
 export class Creature {
   readonly state: CreatureState;
+  readonly slot = created++; // construction order, which follows heap order; SenseBatch sorts by it
   readonly rays: RayHit[] = [];
   readonly brain: Brain;
   readonly heading: Heading = { cos: 0, sin: 0 };
@@ -239,14 +242,43 @@ export class Creature {
   }
 }
 
+const KEY_STRIDE = 2 ** 22; // batch positions below this; slot * stride + position stays exact in a double
+
 // Creatures to sense and think for in one tick: creatures[k] sits at crowd index selves[k], k < count. Reused across ticks.
 export class SenseBatch {
   readonly creatures: Creature[] = [];
   selves = new Int32Array(64);
   count = 0;
+  private keys = new Float64Array(64);
+  private scratchCreatures: Creature[] = [];
+  private scratchSelves = new Int32Array(64);
 
   clear(): void {
     this.count = 0;
+  }
+
+  // Puts the batch in creature construction order, so the per-creature data (brain weights, ray caches) is read front to back
+  // however the list was reordered by deaths and births. Sensing and thinking write only a creature's own data, so results do not depend on it.
+  sortBySlot(): void {
+    const n = this.count;
+    if (n < 2) return;
+    if (this.keys.length < n) this.keys = new Float64Array(Math.max(n, 2 * this.keys.length));
+    const keys = this.keys.subarray(0, n);
+    const { creatures, selves } = this;
+    for (let k = 0; k < n; k++) keys[k] = creatures[k]!.slot * KEY_STRIDE + k;
+    keys.sort();
+    const sortedCreatures: Creature[] = this.scratchCreatures;
+    sortedCreatures.length = n;
+    const sortedSelves = this.scratchSelves.length >= n ? this.scratchSelves : (this.scratchSelves = new Int32Array(selves.length));
+    for (let j = 0; j < n; j++) {
+      const k = keys[j]! % KEY_STRIDE;
+      sortedCreatures[j] = creatures[k]!;
+      sortedSelves[j] = selves[k]!;
+    }
+    for (let j = 0; j < n; j++) {
+      creatures[j] = sortedCreatures[j]!;
+      selves[j] = sortedSelves[j]!;
+    }
   }
 
   add(creature: Creature, self: number): void {
@@ -265,6 +297,7 @@ export class SenseBatch {
 // creature work, used by Ecosystem.sensePhase and the helper threads (ecoShare.ts). With kernels, the crowd rays and the
 // brains run in WebAssembly (f32); every owner of creatures (an Ecosystem, a helper) has its own kernels.
 export function senseThinkBatch(world: World, crowd: Crowd, batch: SenseBatch, kernels: SenseKernels | null = null): void {
+  batch.sortBySlot();
   if (kernels) return kernels.run(world, crowd, batch);
   const { creatures, selves } = batch;
   for (let k = 0; k < batch.count; k++) creatures[k]!.senseThink(world, crowd, selves[k]!);
