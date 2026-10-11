@@ -1,7 +1,7 @@
 import "./base.css";
 import "./style.css";
 import "./ecosystem.css";
-import { DEFAULT_ECO_CONFIG } from "./sim/ecoConfig.ts";
+import { DEFAULT_ECO_CONFIG, seasonFactor, seasonName, winterness } from "./sim/ecoConfig.ts";
 import { withEcoPreset } from "./sim/presets.ts";
 import type { EcoConfig } from "./sim/ecoConfig.ts";
 import type { BestBy, EcoInMessage, EcoOutMessage, EcoSnapshot, SelectedDetails, SnapshotViews } from "./worker/ecoProtocol.ts";
@@ -14,6 +14,7 @@ import { drawIdleWorld } from "./ui/ecoIdle.ts";
 import { buildSelectedBrain } from "./ui/ecoBrain.ts";
 import type { SelectedBrain } from "./ui/ecoBrain.ts";
 import { createEcoView } from "./ui/ecoPage.ts";
+import { BirthRings } from "./ui/ecoBirths.ts";
 import { EcoRenderer } from "./ui/ecoScene.ts";
 import type { EcoDrawConfig } from "./ui/ecoScene.ts";
 import type { PopulationSample } from "./ui/populationGraph.ts";
@@ -68,6 +69,7 @@ let lastBrainAt = 0;
 
 const camera = new Camera(config.world.width, config.world.height, 1, 1);
 const renderer = new EcoRenderer();
+const births = new BirthRings();
 
 function drawIdle(): void {
   if (active) return;
@@ -81,7 +83,8 @@ function send(msg: EcoInMessage, transfer: Transferable[] = []): void {
 
 function drawConfig(): EcoDrawConfig {
   const { world, creature, eco } = config;
-  return { worldW: world.width, worldH: world.height, radius: creature.radius, itemRadius: world.itemRadius, fullEnergy: eco.birthEnergy };
+  const winter = eco.seasons && live ? winterness(eco, live.msg.simTime) : 0;
+  return { worldW: world.width, worldH: world.height, radius: creature.radius, itemRadius: world.itemRadius, fullEnergy: eco.birthEnergy, winter };
 }
 
 // Matches the canvas and camera to the layout; returns the device pixel ratio.
@@ -138,6 +141,7 @@ function onSnapshot(e: MessageEvent<EcoOutMessage>): void {
   const previous = live;
   live = { msg, views: snapshotViews(msg.buffer, msg.count, msg.itemCount, msg.creatureCap, msg.itemCap) };
   if (previous) send({ type: "recycle", buffer: previous.msg.buffer, run: previous.msg.run }, [previous.msg.buffer]);
+  births.observe(live.views, performance.now());
   if (msg.history) view.setHistory(toSamples(msg.history));
   if (msg.lineageHistory) view.setLineageHistory(msg.lineageHistory);
   if (msg.lineages) view.setLineages(msg.lineages, msg.population);
@@ -171,10 +175,12 @@ function startRun(c: EcoConfig): void {
   extinctShown = false;
   worker ??= createWorker();
   releaseLive();
+  births.reset();
   clearSelection();
   syncCanvas();
   camera.setWorld(c.world.width, c.world.height);
   view.setHistory([]);
+  view.setSeasons(c.eco);
   view.clearLineages();
   highlight = -1;
   view.setStats(null);
@@ -260,7 +266,7 @@ function syncFollow(): void {
 function updateUi(): void {
   if (!live) return;
   const m = live.msg;
-  view.setStats({ population: m.population, births: m.births, deaths: m.deaths, food: m.food, poison: m.poison, simTime: m.simTime, oldestDepth: m.oldestDepth, speed: m.speed > 0 ? m.speed : null, helpers: m.helpers, sharedMemory: m.sharedMemory, wasm: m.wasm });
+  view.setStats({ population: m.population, births: m.births, deaths: m.deaths, food: m.food, poison: m.poison, simTime: m.simTime, oldestDepth: m.oldestDepth, speed: m.speed > 0 ? m.speed : null, helpers: m.helpers, sharedMemory: m.sharedMemory, wasm: m.wasm, season: config.eco.seasons ? { name: seasonName(config.eco, m.simTime), factor: seasonFactor(config.eco, m.simTime) } : null });
   const d = selection?.last;
   if (selection && d) {
     view.setSelected({ id: d.id, energy: d.energy, fullEnergy: config.eco.birthEnergy, age: d.age, children: d.children, eaten: d.eaten, depth: d.depth, plan: d.plan, upkeep: d.upkeep, founderId: d.founderId, founderPool: d.founderPool, founderHue: d.founderHue, died: selection.died });
@@ -283,7 +289,7 @@ function frame(now: number): void {
   camera.update(now);
   syncFollow();
   const ctx = view.canvas.getContext("2d")!;
-  renderer.draw(ctx, camera, drawConfig(), live.views, selection?.details ?? null, showRays, dpr, highlight);
+  renderer.draw(ctx, camera, drawConfig(), live.views, selection?.details ?? null, showRays, dpr, highlight, births, now);
   if (now - lastUiAt >= UI_INTERVAL_MS) {
     lastUiAt = now;
     updateUi();

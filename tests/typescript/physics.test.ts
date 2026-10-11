@@ -1,5 +1,6 @@
-import { DEFAULT_CONFIG } from "../../src/typescript/src/sim/config.ts";
-import { collide, decaysFor, hurt, keepInside, stepBody } from "../../src/typescript/src/sim/physics.ts";
+import { DEFAULT_CONFIG, POISON_LETHAL } from "../../src/typescript/src/sim/config.ts";
+import { collide, consume, decaysFor, hurt, keepInside, stepBody } from "../../src/typescript/src/sim/physics.ts";
+import { HIT_FOOD, HIT_POISON } from "../../src/typescript/src/sim/types.ts";
 import type { CreatureState } from "../../src/typescript/src/sim/types.ts";
 
 const body = (x: number, y: number, vx: number, vy: number) => ({ x, y, vx, vy });
@@ -183,5 +184,25 @@ describe("hurt", () => {
     hurt(c, d, 40, 0.5);
     hurt(c, cr(50), 0, 0.5);
     expect([c.energy, d.energy]).toEqual([50, 0]);
+  });
+});
+
+describe("consume", () => {
+  const eat = (kind: typeof HIT_FOOD | typeof HIT_POISON, energy = 50) => {
+    const s = { energy } as CreatureState;
+    consume(s, kind, 20, kind === HIT_POISON ? 15 : POISON_LETHAL);
+    return s.energy;
+  };
+
+  it("food adds energy and a poison below the lethal step drains that much", () => {
+    expect(eat(HIT_FOOD)).toBe(70);
+    expect(eat(HIT_POISON)).toBe(35);
+    expect(eat(HIT_POISON, 10)).toBe(-5); // settle ends it
+  });
+
+  it("the lethal step zeroes energy whatever the creature holds", () => {
+    const s = { energy: 900 } as CreatureState;
+    consume(s, HIT_POISON, 20, POISON_LETHAL);
+    expect(s.energy).toBe(0);
   });
 });

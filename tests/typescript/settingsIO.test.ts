@@ -19,6 +19,9 @@ describe("settings JSON", () => {
     expect(parseSettings(text, "trials")).toEqual(trials);
     const eco = structuredClone(DEFAULT_ECO_CONFIG);
     eco.eco.birthCost = 33;
+    eco.eco.seasons = true;
+    eco.eco.yearMinutes = 8;
+    eco.eco.winterFood = 0.2;
     expect(parseSettings(serialise("ecosystem", eco), "ecosystem")).toEqual(eco);
   });
 

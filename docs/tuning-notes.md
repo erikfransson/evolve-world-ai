@@ -70,6 +70,7 @@ All rows from 2026-10-09 use the fish-like physics.
 - An evolved creature (food 40, 30 generations) swims smooth looping sweeps across the whole world and survives 300 s, while weak ones curve into a wall and starve.
 - A late generation takes about 10 s to compute because good creatures live the full epoch.
 - 2026-10-10: Trials poison-free start radius raised to 150 units (world.poisonClearRadius, capped at 35% of the shorter world side) after the owner saw poison right next to the start.
+- 2026-10-11: Ecosystem seasons (issue #18), off by default. Food regrowth is scaled by m(t) = winterFood + (1 - winterFood) * (1 + cos(2 pi t / year)) / 2 in simulated time, with winterFood 0.3 and yearMinutes 40. Untested on long runs, so the defaults are the issue's suggestion.
 
 ## Ideas not yet tried
 - Evaluate each creature on two layouts to reduce layout luck.

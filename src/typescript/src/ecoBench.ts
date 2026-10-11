@@ -1,5 +1,5 @@
 // Ecosystem benchmark: runs a seeded world headless and prints ticks/s, population over time and a fingerprint.
-// Usage: node src/ecoBench.ts [--seconds 120] [--seed 1] [--pop 300] [--food 0.5] [--regrow 0.05] [--every 10] [--pool public/pool.json] [--poolFraction 0.5] [--aging] [--agingStart 120] [--agingRate 0.5] [--damage] [--damagePerSpeed 0.3] [--threads 0] [--shared]
+// Usage: node src/ecoBench.ts [--seconds 120] [--seed 1] [--pop 300] [--food 0.5] [--regrow 0.05] [--every 10] [--pool public/pool.json] [--poolFraction 0.5] [--aging] [--agingStart 120] [--agingRate 0.5] [--damage] [--damagePerSpeed 0.3] [--threads 0] [--shared] [--width 12000] [--poisonDamage 30] [--seasons]
 // --food sets the starting and maximum food density, --regrow the food regrowth rate, --pool none runs without the seed pool.
 
 import { readFileSync } from "node:fs";
@@ -8,7 +8,6 @@ import { parseArgs } from "node:util";
 import { DEFAULT_ECO_CONFIG } from "./sim/ecoConfig.ts";
 import type { EcoConfig } from "./sim/ecoConfig.ts";
 import { Ecosystem } from "./sim/ecosystem.ts";
-import { SenseKernels } from "./sim/wasm/senseKernels.ts";
 import { parsePool } from "./sim/seedPool.ts";
 import { createNodeThinkPool } from "./worker/nodePool.ts";
 
@@ -26,29 +25,30 @@ const { values } = parseArgs({
     aging: { type: "boolean" },
     threads: { type: "string", default: "0" }, // helper threads for sense and think; 0 runs on this thread alone
     shared: { type: "boolean" }, // helpers use shared memory instead of messages
-    full: { type: "boolean" }, // prototype one-call sense kernel
-    scale: { type: "string", default: "1" }, // world side factor; width, height and the founder count (area) scale with it
     wasm: { type: "string" }, // true or false: sense and think on the WebAssembly kernels; default from the config
     agingStart: { type: "string" },
     agingRate: { type: "string" },
+    width: { type: "string" }, // world width; height and the default population scale with it (area) so densities stay
+    poisonDamage: { type: "string" }, // energy lost per poison item; 100 or more kills
+    seasons: { type: "boolean" },
     damage: { type: "boolean" }, // collision damage
     damagePerSpeed: { type: "string" },
   },
 });
 const num = (v: string | undefined, fallback: number): number => (v === undefined ? fallback : Number(v));
 const d = DEFAULT_ECO_CONFIG;
+const scale = num(values.width, d.world.width) / d.world.width;
 const food = num(values.food, d.world.foodDensity);
-if (values.full) SenseKernels.full = true;
-const scale = num(values.scale, 1);
 const config: EcoConfig = {
   ...structuredClone(d),
   seed: num(values.seed, d.seed),
-  world: { ...d.world, width: d.world.width * scale, height: d.world.height * scale, foodDensity: food },
+  world: { ...d.world, width: d.world.width * scale, height: d.world.height * scale, poisonDamage: num(values.poisonDamage, d.world.poisonDamage), foodDensity: food },
   eco: {
     ...d.eco,
-    initialPopulation: Math.round(num(values.pop, d.eco.initialPopulation) * scale * scale),
+    initialPopulation: num(values.pop, Math.round(d.eco.initialPopulation * scale * scale)),
     poolFraction: num(values.poolFraction, d.eco.poolFraction),
     aging: values.aging ?? d.eco.aging,
+    seasons: values.seasons ?? d.eco.seasons,
     wasm: values.wasm === undefined ? d.eco.wasm : values.wasm === "true",
     agingStart: num(values.agingStart, d.eco.agingStart),
     agingRate: num(values.agingRate, d.eco.agingRate),
@@ -93,8 +93,8 @@ console.log(JSON.stringify({
   wallSeconds: +wall.toFixed(2),
   ticksPerSecond: +(eco.tick / wall).toFixed(1),
   msPerTick: +((1000 * wall) / Math.max(1, eco.tick)).toFixed(2),
+  cpuMsPerTick: +(process.cpuUsage(cpuWarm).user / 1000 / Math.max(1, eco.tick - warm)).toFixed(2), // user CPU of all threads, steadier than wall under load
   steadyMsPerTick: +((t1 - tWarm) / Math.max(1, eco.tick - warm)).toFixed(2),
-  cpuMsPerTick: +((process.cpuUsage(cpuWarm).user / 1000) / Math.max(1, eco.tick - warm)).toFixed(2), // this thread group's user CPU, steadier than wall under load
   meanPopulation: Math.round(creatureTicks / Math.max(1, eco.tick)),
   creatureTicksPerSecond: Math.round(creatureTicks / wall),
   births: eco.births,

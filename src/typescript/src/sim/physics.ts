@@ -1,3 +1,4 @@
+import { POISON_LETHAL } from "./config.ts";
 import type { EngineConfig } from "./config.ts";
 import { HIT_FOOD, HIT_POISON } from "./types.ts";
 import type { CreatureState, HitKind } from "./types.ts";
@@ -28,6 +29,11 @@ export function decaysFor(config: EngineConfig): Decays {
 export interface Aging {
   startTicks: number;
   perTick: number;
+}
+
+// The old-age settings of an ecosystem config, or null when ageing is off.
+export function agingOf(eco: { aging: boolean; agingStart: number; agingRate: number }, dt: number): Aging | null {
+  return eco.aging ? { startTicks: Math.round(eco.agingStart / dt), perTick: (eco.agingRate * dt) / 60 } : null;
 }
 
 // Factor on the plan's upkeep for a creature that has lived this many ticks; 1 up to startTicks.
@@ -125,9 +131,9 @@ export function collide(a: Body, b: Body, radius: number, restitution: number, c
 }
 
 // Applies what the creature ate this tick (a HitKind from World.eatAt).
-export function consume(s: CreatureState, eaten: HitKind, foodEnergy: number): void {
+export function consume(s: CreatureState, eaten: HitKind, foodEnergy: number, poisonDamage: number): void {
   if (eaten === HIT_FOOD) s.energy += foodEnergy;
-  else if (eaten === HIT_POISON) s.energy = 0; // poison always kills
+  else if (eaten === HIT_POISON) s.energy = poisonDamage >= POISON_LETHAL ? 0 : s.energy - poisonDamage;
 }
 
 // Ends the tick: dies at zero energy, otherwise counts the tick alive.
