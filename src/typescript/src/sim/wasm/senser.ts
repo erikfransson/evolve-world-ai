@@ -4,7 +4,7 @@ import { energySignal } from "../sensors.ts";
 import type { World } from "../world.ts";
 import type { WasmBrainBank } from "./brainKernel.ts";
 import { HIT_CREATURE } from "../types.ts";
-import { SENSE_BYTES } from "./loader.ts";
+import { SENSE_BYTES, compiled } from "./loader.ts";
 
 // The whole Ecosystem sense in one WebAssembly call per batch (sense.wat): ray directions, item and wall rays in f64 with the
 // JS candidate order, crowd rays in f32 as rays.wat, and the ray features written into the brain's input vector in place.
@@ -46,7 +46,7 @@ export class WasmSenser {
   static create(bank: WasmBrainBank): WasmSenser | null {
     try {
       const imports = { brain: { mem: bank.memory } };
-      const instance = new WebAssembly.Instance(new WebAssembly.Module(SENSE_BYTES), imports);
+      const instance = new WebAssembly.Instance(compiled(SENSE_BYTES), imports);
       return new WasmSenser(bank, instance.exports as SenseExports);
     } catch {
       return null;

@@ -14,6 +14,14 @@ function decode(base64: string): Uint8Array<ArrayBuffer> {
 export const BRAIN_BYTES = decode(BRAIN_WASM_BASE64);
 export const SENSE_BYTES = decode(SENSE_WASM_BASE64);
 
+// Compiled modules by their bytes: compiling is most of an instance's cost, and a module holds no state.
+const modules = new WeakMap<Uint8Array, WebAssembly.Module>();
+export function compiled(bytes: Uint8Array<ArrayBuffer>): WebAssembly.Module {
+  let m = modules.get(bytes);
+  if (!m) modules.set(bytes, (m = new WebAssembly.Module(bytes)));
+  return m;
+}
+
 let disabled = false;
 let supported: boolean | undefined;
 
@@ -41,11 +49,11 @@ export class Kernel<E extends WebAssembly.Exports> {
     this.memory = exports.mem as WebAssembly.Memory;
   }
 
-  // Compiled on this thread; fine in workers and Node, and the kernels are small enough for a page's main thread.
+  // Compiled on this thread, once per bytes (RL makes an ecosystem per episode); each kernel still gets its own instance.
   static createSync<E extends WebAssembly.Exports>(bytes: Uint8Array<ArrayBuffer>): Kernel<E> | null {
     if (!wasmAvailable()) return null;
     try {
-      return new Kernel(new WebAssembly.Instance(new WebAssembly.Module(bytes), {}).exports as E);
+      return new Kernel(new WebAssembly.Instance(compiled(bytes), {}).exports as E);
     } catch {
       return null;
     }
