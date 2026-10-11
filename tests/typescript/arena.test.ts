@@ -17,6 +17,8 @@ import { badCoordinateCalls, fakeCtx } from "./helpers.ts";
 function recording(): Recording {
   return {
     width: 600,
+    creatureRadius: 12,
+    itemRadius: 4,
     height: 400,
     dt: 0.1,
     frames: 2,
@@ -30,7 +32,7 @@ function recording(): Recording {
     rays: Float32Array.from([0.5, 1, 0, 0, 0, 0, 1, 3]),
     inputSize: 0,
     inputs: new Float32Array(0),
-    result: { reward: 1, food: 1, kills: 0, seconds: 5, energy: 10 },
+    result: { reward: 1, food: 1, kills: 0, rams: 0, seconds: 5, energy: 10 },
   };
 }
 

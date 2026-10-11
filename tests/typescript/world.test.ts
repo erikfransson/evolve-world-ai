@@ -279,3 +279,25 @@ describe("World", () => {
     expect(mismatches).toEqual([]);
   });
 });
+
+describe("item spacing", () => {
+  it("keeps food and poison apart by 3 item radii plus a creature radius, while food may cluster", () => {
+    const c = cfg();
+    c.world.width = c.world.height = 800;
+    const w = new World(c, 120);
+    w.scatter(60, 60, testRng(9));
+    for (let k = 0; k < 20; k++) w.addRandomly(k % 2 ? HIT_FOOD : HIT_POISON, testRng(100 + k));
+    const d = 3 * c.world.itemRadius + c.creature.radius;
+    const items = Array.from({ length: w.count }, (_, i) => i).filter((i) => w.kinds[i] !== HIT_NONE);
+    let foodPairs = 0;
+    for (const i of items) {
+      for (const j of items) {
+        if (j <= i) continue;
+        const close = Math.hypot(w.xs[i]! - w.xs[j]!, w.ys[i]! - w.ys[j]!) < d;
+        if (w.kinds[i] === HIT_FOOD && w.kinds[j] === HIT_FOOD) foodPairs += close ? 1 : 0;
+        else expect(close).toBe(false);
+      }
+    }
+    expect(foodPairs).toBeGreaterThan(0); // food is not spaced from food, so not a clean zone
+  });
+});

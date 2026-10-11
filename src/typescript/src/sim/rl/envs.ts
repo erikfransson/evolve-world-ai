@@ -1,51 +1,105 @@
-import { PREDATOR, PREY } from "./env.ts";
-import type { EnvSpec } from "./env.ts";
+import type { EnvSpec } from "./env.ts"; // types only, so env.ts can import this module without a cycle at load time
+
+export const PREY = 0; // species index of the forager / prey
+export const PREDATOR = 1;
 
 // The environment index. Ids are stable: keep an env's id when tuning it, add a new one for a new task.
 
-// Small, quick tasks first: one box, a few items, an episode that ends when the food is gone. Each takes milliseconds, so a
-// population of hundreds can train for thousands of iterations; the bigger "advanced" envs below come after.
-const small = (id: string, name: string, description: string, size: [number, number], food: number, poison: number, seconds: number, tags: string[], rivals: EnvSpec["rivals"] = []): EnvSpec => ({
-  id,
-  name,
-  description,
+// Small, quick tasks first: one idea each, a few items, short episodes. Each takes milliseconds, so a population of hundreds
+// can train for thousands of iterations; the bigger "advanced" envs below come after.
+const small = (o: Pick<EnvSpec, "id" | "name" | "description" | "size" | "food" | "poison" | "seconds"> & Partial<EnvSpec> & { tags: string[] }): EnvSpec => ({
   world: "ecosystem",
   role: PREY,
-  size,
-  food,
-  poison,
   foodRegrow: 0,
-  seconds,
-  rivals,
+  rivals: [],
   reward: { food: 1, fast: 0.1 },
-  tags: ["small", ...tags],
+  ...o,
+  tags: ["small", "forager", ...o.tags],
 });
 
 export const ENVS: readonly EnvSpec[] = [
-  small("nibble", "Nibble", "Three bites of food in a tiny box. Find them fast.", [200, 200], 3, 0, 15, ["forager", "basic"]),
-  small("nibble-poison", "Nibble and avoid", "A tiny box with three food and two poison. Eat, do not touch the purple.", [200, 200], 3, 2, 20, ["forager", "caution"]),
-  small("box", "Box", "Five food in a small box.", [300, 300], 5, 0, 20, ["forager", "basic"]),
-  small("box-poison", "Box with poison", "Five food and five poison in a small box.", [300, 300], 5, 5, 25, ["forager", "caution"]),
-  small("minefield", "Minefield", "Four food hidden among twelve poison.", [300, 300], 4, 12, 25, ["forager", "caution"]),
-  small("corridor", "Corridor", "A long, narrow room with food at both ends.", [600, 150], 4, 2, 25, ["forager", "search"]),
-  small("far-food", "Far food", "Two pieces of food somewhere in a bigger room. Search.", [450, 450], 2, 0, 30, ["forager", "search"]),
-  small("scatter", "Scatter", "Eight food and four poison spread over a room.", [400, 400], 8, 4, 30, ["forager"]),
-  small("duel", "Duel", "Six food and one trained rival who wants them too.", [300, 300], 6, 0, 25, ["forager", "competition"], [{ species: PREY, count: 1, source: "pool" }]),
-  {
-    id: "forage-box",
-    name: "Forage box",
-    description: "A small box with a little food and some poison. Eat the food fast.",
-    world: "ecosystem",
-    role: PREY,
-    size: [600, 600],
+  // Finding food
+  small({ id: "nibble", name: "Nibble", description: "Three bites of food in a tiny box. Find them fast.", size: [200, 200], food: 3, poison: 0, seconds: 15, tags: ["seek"] }),
+  small({ id: "corridor", name: "Corridor", description: "A long, narrow room with food along it. Turn around at the ends.", size: [600, 150], food: 4, poison: 2, seconds: 25, tags: ["seek", "shape"] }),
+  small({ id: "far-food", name: "Far food", description: "Three pieces of food somewhere in a bigger room. Search.", size: [400, 400], food: 3, poison: 0, seconds: 30, tags: ["search"] }),
+  small({ id: "patch", name: "Patch", description: "All the food lies in one patch across the room. Find it, then clear it.", size: [450, 450], food: 10, poison: 4, seconds: 30, layout: { kind: "patch", radius: 70 }, tags: ["search"] }),
+  // Avoiding poison and finding a way round
+  small({ id: "minefield", name: "Minefield", description: "Four food hidden among twelve poison. One wrong bite ends it.", size: [300, 300], food: 4, poison: 12, seconds: 25, tags: ["caution"] }),
+  small({ id: "fence", name: "Fence", description: "A wall of stinging poison with one gap. The food is on the other side.", size: [400, 400], food: 5, poison: 0, seconds: 30, layout: { kind: "fence", gap: 110 }, poisonDamage: 25, tags: ["navigate"] }),
+  small({ id: "maze", name: "Zigzag", description: "Two walls of stinging poison with gaps at opposite ends. Weave through to the food.", size: [450, 450], food: 4, poison: 0, seconds: 40, layout: { kind: "maze", gap: 60 }, poisonDamage: 25, tags: ["navigate"] }),
+  // Energy
+  small({
+    id: "lean-times",
+    name: "Lean times",
+    description: "Little energy, slow-growing food. Do not waste effort; end the minute alive with energy to spare.",
+    size: [400, 400],
+    food: 5,
+    poison: 3,
+    foodRegrow: 0.2,
+    seconds: 60,
+    learnerEnergy: 30,
+    reward: { survive: 0.05, food: 0.3, energy: 2 },
+    tags: ["energy"],
+  }),
+  // Fighting
+  small({
+    id: "aggressor",
+    name: "Aggressor",
+    description: "You are big and full of energy among weak grazers. Ram them: a kill hands you their energy.",
+    size: [400, 400],
     food: 10,
-    poison: 6,
-    foodRegrow: 0,
+    poison: 0,
+    foodRegrow: 0.4,
+    seconds: 30,
+    collisionDamage: true,
+    learnerEnergy: 200,
+    rivals: [{ species: PREY, count: 6, source: "pool", energy: 30 }],
+    reward: { ram: 1, energy: 1 },
+    tags: ["fight"],
+  }),
+  small({
+    id: "escape",
+    name: "Escape",
+    description: "Graze while trained aggressors try to ram you. Stay out of reach and keep eating.",
+    size: [500, 500],
+    food: 8,
+    poison: 0,
+    foodRegrow: 0.3,
     seconds: 40,
-    rivals: [],
+    collisionDamage: true,
+    rivals: [{ species: PREY, count: 2, source: "library:aggressor", energy: 200 }],
+    reward: { survive: 0.05, food: 0.5 },
+    tags: ["fight", "league"],
+  }),
+  // Competing (self-play: rivals are the learner's own current brain and its recent best candidates)
+  small({ id: "duel", name: "Duel", description: "Six food and one trained rival from the seed pool who wants them too.", size: [300, 300], food: 6, poison: 0, seconds: 25, rivals: [{ species: PREY, count: 1, source: "pool" }], tags: ["compete"] }),
+  small({
+    id: "melee",
+    name: "Melee",
+    description: "You and four copies of your own best selves share slowly regrowing food. Out-eat yourself.",
+    size: [500, 500],
+    food: 10,
+    poison: 2,
+    foodRegrow: 0.4,
+    seconds: 30,
+    rivals: [{ species: PREY, count: 4, source: "self" }],
     reward: { food: 1 },
-    tags: ["forager", "advanced"],
-  },
+    tags: ["compete", "self-play"],
+  }),
+  small({
+    id: "brawl",
+    name: "Brawl",
+    description: "Melee with collision damage: copies of yourself fight over food, and a kill takes the loser's energy.",
+    size: [400, 400],
+    food: 6,
+    poison: 0,
+    foodRegrow: 0.3,
+    seconds: 30,
+    collisionDamage: true,
+    rivals: [{ species: PREY, count: 3, source: "self" }],
+    reward: { food: 1, ram: 1, survive: 0.02 },
+    tags: ["compete", "fight", "self-play"],
+  }),
   {
     id: "forage-sparse",
     name: "Sparse plains",

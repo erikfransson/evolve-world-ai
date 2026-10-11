@@ -1,4 +1,3 @@
-import type { CreatureKind } from "../sim/rl/creatureFile.ts";
 import type { EnvSpec } from "../sim/rl/env.ts";
 import type { EsOptions } from "../sim/rl/es.ts";
 import type { StoredLearner } from "../sim/rl/library.ts";
@@ -14,7 +13,6 @@ export interface RlRunOptions extends Omit<EsOptions, "shaping">, Partial<Pick<E
 export type RlInMessage =
   | {
       type: "start";
-      kind: CreatureKind;
       envs: EnvSpec[]; // checked by the page (checkEnv for custom ones), all of the kind's world and species
       learner: StoredLearner;
       options: RlRunOptions;
@@ -26,8 +24,7 @@ export type RlInMessage =
   | { type: "envs"; envs: EnvSpec[] } // while paused: train on these from the next step on (checked like start's)
   | { type: "show" } // record the latest best candidate at the next step's end (the page asks when its tiles finished playing)
   | { type: "pause" }
-  | { type: "resume" }
-  | { type: "stop" };
+  | { type: "resume" };
 
 export interface RlIteration {
   iter: number;

@@ -55,7 +55,7 @@ details.more > summary { color: var(--text); font-weight: 500; font-size: 0.85re
 .stage-head .buttons { display: flex; gap: 0.5rem; }
 .stage-head .primary { grid-column: auto; padding: 0.55rem 1.6rem; }
 .stage-head .secondary { padding: 0.5rem 1rem; }
-.stats { grid-template-columns: repeat(5, 1fr); }
+.arena-stage .stats { grid-template-columns: repeat(5, 1fr); } /* more specific than style.css, whose order in the bundle may change */
 .tile dd .delta { margin-left: 0.35rem; font-size: 0.8rem; font-weight: 600; color: var(--muted); }
 .tile dd .delta.up { color: var(--accent); }
 .tile dd .delta.down { color: #f87171; }
@@ -63,7 +63,7 @@ details.more > summary { color: var(--text); font-weight: 500; font-size: 0.85re
 .viewbar .toggle { gap: 0.7rem; }
 .speed { display: flex; align-items: center; gap: 0.6rem; }
 .speed .seg { min-width: 12rem; }
-.arena-legend { padding: 0; flex-direction: row; flex-wrap: wrap; gap: 0.3rem 0.9rem; color: var(--muted); font-size: 0.75rem; }
+.legend.arena-legend { padding: 0; flex-direction: row; flex-wrap: wrap; gap: 0.3rem 0.9rem; color: var(--muted); font-size: 0.75rem; }
 .viewrow { display: flex; flex-wrap: wrap; gap: 0.8rem; align-items: flex-start; }
 .tiles-wrap { position: relative; flex: 1 1 28rem; min-width: 0; }
 .tiles { --cols: 4; display: grid; grid-template-columns: repeat(var(--cols), 1fr); gap: 0.5rem; max-width: calc(var(--cols) * 17rem); }
@@ -109,8 +109,8 @@ details.more > summary { color: var(--text); font-weight: 500; font-size: 0.85re
 
 @media (max-width: 700px) {
   .arena-stage { order: -1; overflow: visible; padding-right: 0; }
-  .stats { grid-template-columns: 1fr 1fr; }
-  .stats .tile:last-child { grid-column: 1 / -1; }
+  .arena-stage .stats { grid-template-columns: 1fr 1fr; }
+  .arena-stage .stats .tile:last-child { grid-column: 1 / -1; }
   .stage-head .buttons { width: 100%; }
   .stage-head .buttons > * { flex: 1; }
   .tiles { --cols: 2 !important; max-width: none; }
@@ -125,3 +125,14 @@ details.more > summary { color: var(--text); font-weight: 500; font-size: 0.85re
 #envList { display: flex; flex-direction: column; gap: 0.4rem; }
 
 .rival-dot { fill: #60a5fa; } /* SPECIES_COLORS[0], how arenaScene draws rivals of the learner's species */
+
+/* creature preview */
+.preview-card { gap: 0.5rem; padding: 0.7rem 0.8rem; }
+.preview-card[hidden] { display: none; }
+.preview-body { display: flex; flex-wrap: wrap; gap: 0.8rem; }
+.preview-fig { margin: 0; display: flex; flex-direction: column; gap: 0.3rem; min-width: 0; }
+.preview-fig { flex: 1 1 15rem; max-width: 22rem; }
+.preview-fig canvas { width: 100%; display: block; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); }
+#previewView { aspect-ratio: 1 / 1; }
+#previewBrain { aspect-ratio: 1 / 1; }
+.preview-fig figcaption { font-size: 0.75rem; color: var(--muted); line-height: 1.35; font-variant-numeric: tabular-nums; }

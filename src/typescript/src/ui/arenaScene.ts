@@ -4,8 +4,6 @@ import type { Recording } from "../sim/rl/recording.ts";
 import { BACKGROUND, FLOOR, FOOD, POISON, RAY_COLORS, WALL } from "./scene.ts";
 import { SPECIES_COLORS, hunterPath } from "./speciesStyle.ts";
 
-const CREATURE_R = 12; // world units, as in the ecosystem config
-const ITEM_R = 4;
 const MIN_CREATURE_PX = 4; // never smaller than this on screen, so big worlds stay readable
 const MIN_ITEM_PX = 2;
 const LEARNER = "#fbbf24";
@@ -38,7 +36,7 @@ export function drawArena(ctx: CanvasRenderingContext2D, rec: Recording, f: numb
   drawItems(ctx, rec, frame, scale);
   const c0 = rec.creatureStart[frame]!;
   const c1 = rec.creatureStart[frame + 1]!;
-  const r = Math.max(CREATURE_R, MIN_CREATURE_PX / scale);
+  const r = Math.max(rec.creatureRadius, MIN_CREATURE_PX / scale);
   let learner = -1;
   for (let c = c0; c < c1; c++) {
     const o = c * CREATURE_FIELDS;
@@ -56,7 +54,7 @@ export function drawArena(ctx: CanvasRenderingContext2D, rec: Recording, f: numb
 }
 
 function drawItems(ctx: CanvasRenderingContext2D, rec: Recording, frame: number, scale: number): void {
-  const r = Math.max(ITEM_R, MIN_ITEM_PX / scale);
+  const r = Math.max(rec.itemRadius, MIN_ITEM_PX / scale);
   const i0 = rec.itemStart[frame]!;
   const i1 = rec.itemStart[frame + 1]!;
   for (const [kind, color] of [[1, FOOD], [2, POISON]] as const) {

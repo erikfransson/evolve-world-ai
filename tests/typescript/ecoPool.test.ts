@@ -186,7 +186,7 @@ describe("WebAssembly kernels", () => {
     expect(a.births).toBeGreaterThan(0);
     expect(a.deaths).toBeGreaterThan(0);
     expect(serial(wasmCfg(), 300).fingerprint()).toBe(a.fingerprint());
-    expect(a.fingerprint()).toBe(693541288); // pinned; re-pinned for heritable birth traits and the recoil birth (#22, #31), was 746480886 on main e17cba7; change it only on purpose
+    expect(a.fingerprint()).toBe(116543125); // pinned; re-pinned for item spacing from poison, was 693541288; change it only on purpose
     const js = serial(wasmCfg(5, false), 300);
     expect(js.wasm).toBe(false);
     expect(serial(cfg(), 300).fingerprint()).toBe(a.fingerprint()); // WASM is the default

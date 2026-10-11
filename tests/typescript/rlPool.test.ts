@@ -8,7 +8,7 @@ import { RlPool, inlineRlPort, rlHelper } from "../../src/typescript/src/worker/
 import type { RlDone, RlJob, RlPort, RlSetup, RlTask } from "../../src/typescript/src/worker/rlPool.ts";
 
 const short = (id: string): EnvSpec => ({ ...envById(id)!, seconds: 6 });
-const envs = [short("forage-box"), short("rivals")];
+const envs = [short("minefield"), short("rivals")];
 const learner = randomLearner(envs[0]!, 3);
 const library: Library = {};
 const setup: RlSetup = { envs, plan: learner.plan, pool: null, library };
@@ -112,5 +112,21 @@ describe("RlPool", () => {
     const closed = new RlPool([inlineRlPort()], setup);
     closed.close();
     await expect(closed.rewards(tasks)).rejects.toThrow("closed");
+  });
+});
+
+describe("RlPool watchdog", () => {
+  it("fails a batch whose helpers never answer", async () => {
+    vi.useFakeTimers();
+    try {
+      const silent: RlPort = { post: () => {}, onMessage: () => {}, onError: () => {}, terminate: () => {} };
+      const pool = new RlPool([silent], setup);
+      const run = pool.rewards(tasks.slice(0, 1));
+      const caught = run.catch((e: Error) => e.message);
+      await vi.advanceTimersByTimeAsync(121_000);
+      expect(await caught).toMatch(/no episode result/);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

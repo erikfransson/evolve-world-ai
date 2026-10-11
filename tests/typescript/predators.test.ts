@@ -58,7 +58,7 @@ describe("The Great Hunt", () => {
     const c: EcoConfig = { ...d, seed: 4, world: { ...d.world, width: 1000, height: 1000 }, creature: { ...d.creature, startEnergy: 140 }, eco: { ...d.eco, initialPopulation: 60, birthEnergyRange: [80, 80], birthCostRange: [75, 75], birthCooldownRange: [10, 10], structuralRate: 0.2, collisionDamage: true, wasm: false } };
     const eco = new Ecosystem(c);
     for (let t = 0; t < 300; t++) eco.step();
-    expect([eco.fingerprint(), eco.births, eco.deaths]).toEqual([764941132, 66, 20]); // re-pinned for heritable birth traits and recoil births (#22, #31), then newborns clamped at walls without side retry; was 351733877, 60, 24 on main e17cba7
+    expect([eco.fingerprint(), eco.births, eco.deaths]).toEqual([558194966, 66, 19]); // re-pinned for item spacing from poison; was 764941132, 66, 20
   });
 
   it("shares the population limit among the species' founders in proportion", () => {

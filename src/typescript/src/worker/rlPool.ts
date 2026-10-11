@@ -1,5 +1,5 @@
 import type { PoolEntry } from "../sim/seedPool.ts";
-import { runEpisode } from "../sim/rl/env.ts";
+import { SELF, runEpisode } from "../sim/rl/env.ts";
 import type { EnvSpec, Learner, Library } from "../sim/rl/env.ts";
 import { recordEpisode, recordingBuffers } from "../sim/rl/recording.ts";
 import type { Recording } from "../sim/rl/recording.ts";
@@ -22,6 +22,7 @@ export interface RlSetup {
 
 export type RlJob =
   | ({ type: "setup" } & RlSetup)
+  | { type: "league"; genomes: Float32Array[] } // the self-play rivals from now on (see SELF)
   | ({ type: "episode"; id: number } & RlTask)
   | ({ type: "record"; id: number; every: number; inputs: boolean } & RlTask); // inputs: also record the brain input
 
@@ -36,6 +37,11 @@ export function rlHelper(): (job: RlJob) => RlDone | null {
   return (job) => {
     if (job.type === "setup") {
       setup = job;
+      return null;
+    }
+    if (job.type === "league") {
+      const league = job.genomes.map((genome) => ({ plan: setup.plan, genome }));
+      setup = { ...setup, library: Object.assign(Object.create(null) as Library, setup.library, { [SELF]: league }) };
       return null;
     }
     try {
@@ -67,6 +73,7 @@ export function inlineRlPort(): RlPort {
   };
 }
 
+const STALL_MS = 120_000; // no result at all for this long fails the run: an episode takes well under a second
 const IN_FLIGHT = 2; // jobs queued per helper, so it never waits for the next one
 
 interface Run {
@@ -82,12 +89,13 @@ interface Run {
 // A failure before the first result switches to `fallback` (e.g. the browser cannot start nested workers); a later one, or close(), breaks the pool for good.
 export class RlPool {
   private ports: RlPort[];
-  private readonly setup: RlSetup;
+  private setup: RlSetup;
   private readonly fallback: () => RlPort;
   private load = new Map<RlPort, number>(); // jobs in flight per port
   private run: Run | null = null;
   private broken: { error: unknown } | null = null;
   private started = false;
+  private league: Float32Array[] | null = null; // sent again to a fallback port
 
   constructor(ports: RlPort[], setup: RlSetup, fallback: () => RlPort = inlineRlPort) {
     this.setup = setup;
@@ -108,6 +116,23 @@ export class RlPool {
     return done.map((d) => (d as { recording: Recording }).recording);
   }
 
+  // Other envs for the episodes that follow: the helpers keep running and get the new setup (and the league again).
+  setEnvs(envs: EnvSpec[]): void {
+    if (this.broken) return;
+    this.setup = { ...this.setup, envs };
+    for (const port of this.ports) {
+      port.post({ type: "setup", ...this.setup });
+      if (this.league) port.post({ type: "league", genomes: this.league });
+    }
+  }
+
+  // Self-play rivals for the episodes that follow (helpers handle messages in order).
+  setLeague(genomes: readonly Float32Array[]): void {
+    if (this.broken) return;
+    this.league = genomes.map((g) => Float32Array.from(g));
+    for (const port of this.ports) port.post({ type: "league", genomes: this.league });
+  }
+
   close(): void {
     this.fail(new Error("pool closed"));
   }
@@ -118,6 +143,7 @@ export class RlPool {
       port.onMessage((done) => this.handleDone(port, done));
       port.onError((error) => this.handleError(port, error));
       port.post({ type: "setup", ...this.setup });
+      if (this.league) port.post({ type: "league", genomes: this.league });
     }
   }
 
@@ -127,6 +153,7 @@ export class RlPool {
     if (!jobs.length) return Promise.resolve([]);
     return new Promise((resolve, reject) => {
       this.run = { jobs, results: new Array(jobs.length), next: 0, remaining: jobs.length, resolve, reject };
+      this.arm();
       this.dispatch();
     });
   }
@@ -151,9 +178,13 @@ export class RlPool {
     this.load.set(port, this.load.get(port)! - 1);
     r.results[done.id] = done;
     if (--r.remaining === 0) {
+      this.disarm();
       this.run = null;
       r.resolve(r.results);
-    } else this.dispatch();
+    } else {
+      this.arm();
+      this.dispatch();
+    }
   }
 
   private handleError(port: RlPort, error: unknown): void {
@@ -169,7 +200,21 @@ export class RlPool {
     this.dispatch();
   }
 
+  private watchdog: ReturnType<typeof setTimeout> | null = null;
+
+  // (Re)starts the no-progress timer of the running batch.
+  private arm(): void {
+    this.disarm();
+    this.watchdog = setTimeout(() => this.fail(new Error(`no episode result for ${STALL_MS / 1000} s, the helper threads seem stuck`)), STALL_MS);
+  }
+
+  private disarm(): void {
+    if (this.watchdog !== null) clearTimeout(this.watchdog);
+    this.watchdog = null;
+  }
+
   private fail(error: unknown): void {
+    this.disarm();
     if (this.broken) return;
     this.broken = { error };
     for (const port of this.ports) port.terminate();

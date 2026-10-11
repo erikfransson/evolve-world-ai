@@ -6,7 +6,7 @@ import { layerSizes, randomGenome } from "./sim/brain.ts";
 import { createRng } from "./sim/rng.ts";
 import { loadPool } from "./sim/seedPool.ts";
 import type { PoolEntry } from "./sim/seedPool.ts";
-import { layoutConfig, poolLearner } from "./sim/rl/env.ts";
+import { layoutConfig, libraryFits, poolLearner } from "./sim/rl/env.ts";
 import type { EnvSpec, Learner, Rivals } from "./sim/rl/env.ts";
 import { ENVS } from "./sim/rl/envs.ts";
 import { KINDS, MAX_FILE_BYTES, creatureFile, fileLearner, parseCreatureFile } from "./sim/rl/creatureFile.ts";
@@ -14,12 +14,14 @@ import type { CreatureFile, CreatureKind } from "./sim/rl/creatureFile.ts";
 import { serialiseLearner } from "./sim/rl/library.ts";
 import type { StoredLearner } from "./sim/rl/library.ts";
 import { planOf, planUpkeep } from "./sim/sensors.ts";
-import type { BodyPlan } from "./sim/sensors.ts";
+import type { BodyPlan, PlanView } from "./sim/sensors.ts";
 import type { RlInMessage, RlIteration, RlOutMessage } from "./worker/rlProtocol.ts";
 import { BrainReplay } from "./ui/arenaBrain.ts";
 import { DEFAULT_DESIGN, DEFAULT_RUN, DESIGN_FORM, RUN_FORM, designPlan, planDesign } from "./ui/arenaForm.ts";
 import { ARENA_KIND, bestFounder, change, customEnv, envGroups, envsForKind, kindRejection, planSummary } from "./ui/arenaPick.ts";
 import { addFavourite, loadFavourites, loadSpeed, removeFavourite, saveSpeed } from "./ui/arenaStore.ts";
+import { drawBrainSketch, drawCreaturePreview } from "./ui/creaturePreview.ts";
+import { fitCanvas } from "./ui/canvas.ts";
 import { DEFAULT_TILES, TILE_COUNTS, TileGrid } from "./ui/arenaTiles.ts";
 import { Zoom } from "./ui/arenaZoom.ts";
 import { $, durationText } from "./ui/page.ts";
@@ -116,13 +118,42 @@ function showStart(): void {
   if (typeof r === "string") {
     note.textContent = r;
     desc.textContent = "";
+    preview = null;
   } else {
     note.textContent = selectedEnvs().length === 0 ? "Pick at least one environment." : "";
     const plan = r.learner.plan;
+    preview = plan;
     desc.textContent = `${planSummary(plan)}. Upkeep ${planUpkeep(plan, worldConfig(k)).toFixed(2)} energy per second: a bigger body and brain cost more to keep alive.`;
   }
   updateStartButton();
+  drawPreview();
 }
+
+// The creature preview shows the plan about to start, only while no run is on screen.
+let preview: PlanView | null = null;
+function drawPreview(): void {
+  const card = $("previewCard");
+  card.hidden = run !== null || preview === null;
+  if (card.hidden || !preview) return;
+  const plan = preview;
+  const paint = (id: string, draw: (ctx: CanvasRenderingContext2D, w: number, h: number) => void): void => {
+    const canvas = $<HTMLCanvasElement>(id);
+    const w = canvas.clientWidth;
+    const h = canvas.clientHeight;
+    if (w <= 0 || h <= 0) return;
+    const dpr = fitCanvas(canvas);
+    const ctx = canvas.getContext("2d")!;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    draw(ctx, w, h);
+  };
+  const sizes = layerSizes(worldConfig(kind()), plan);
+  paint("previewView", (ctx, w, h) => drawCreaturePreview(ctx, plan, w, h));
+  paint("previewBrain", (ctx, w, h) => drawBrainSketch(ctx, sizes, w, h));
+  const deg = Math.round((plan.raySpread * 180) / Math.PI);
+  $("previewStats").textContent = `${plan.rayCount} ray${plan.rayCount === 1 ? "" : "s"} over ${deg}°, sight ${Math.round(plan.rayLength)} (room 200 x 200, creature radius 12). Upkeep ${planUpkeep(plan, worldConfig(kind())).toFixed(2)} energy per second.`;
+  $("previewBrainText").textContent = `Brain: ${sizes[0]} inputs, hidden ${plan.hiddenLayers.join(" + ") || "none"}, ${sizes[sizes.length - 1]} outputs (turn, thrust, ${plan.memoryShort + plan.memoryLong} memory).`;
+}
+window.addEventListener("resize", drawPreview);
 
 function fillFounders(): void {
   const sel = $<HTMLSelectElement>("founder");
@@ -246,7 +277,14 @@ function addRivalRow(r: Rivals = { species: 0, count: 2, source: "random" }): vo
   count.ariaLabel = "Rival count";
   const src = document.createElement("select");
   src.ariaLabel = "Rival brains";
-  src.append(new Option("random brains", "random"), new Option("seed pool", "pool"), ...ENVS.map((e) => new Option(`trained in ${e.name}`, `library:${e.id}`)));
+  // Only creatures trained as this world's foragers fit a forager rival slot (same input layout and species).
+  const { world, role } = KINDS[kind()];
+  src.append(
+    new Option("random brains", "random"),
+    new Option("seed pool", "pool"),
+    new Option("copies of itself", "self"),
+    ...ENVS.filter((e) => libraryFits(e.id, world, role)).map((e) => new Option(`trained in ${e.name}`, `library:${e.id}`)),
+  );
   src.value = r.source;
   const del = document.createElement("button");
   del.type = "button";
@@ -334,15 +372,19 @@ function begin(): void {
   worker?.terminate();
   worker = new Worker(new URL("./worker/rlWorker.ts", import.meta.url), { type: "module" });
   worker.onmessage = (ev: MessageEvent<RlOutMessage>) => onMessage(ev.data);
-  worker.onerror = (ev) => fail(ev.message);
+  worker.onerror = (ev) => {
+    console.error("RL Arena worker error", ev.error ?? ev);
+    fail(ev.message || "the training worker crashed (details in the browser console)");
+  };
   grid.setCount(TILE_COUNTS.includes(tiles as 1) ? tiles : DEFAULT_TILES);
   zoom.close();
   grid.clear();
   brainReplay.reset();
-  send({ type: "start", kind: run.kind, envs, learner: serialiseLearner(start.learner), options, tiles: grid.size, seed, poolUrl: POOL_URL, libraryUrl: LIBRARY_URL });
+  send({ type: "start", envs, learner: serialiseLearner(start.learner), options, tiles: grid.size, seed, poolUrl: POOL_URL, libraryUrl: LIBRARY_URL });
   $("note").textContent = "Starting…";
   $("note").hidden = false;
   setState("running");
+  drawPreview();
   render();
 }
 
@@ -388,6 +430,7 @@ function reset(): void {
   $("note").textContent = "Design or pick a creature, choose environments, then press Start.";
   $("note").hidden = false;
   setState("idle");
+  drawPreview();
   render();
 }
 

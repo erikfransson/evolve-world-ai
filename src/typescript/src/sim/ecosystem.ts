@@ -29,6 +29,13 @@ import { PLAN_LIMITS } from "./rl/validate.ts";
 
 export type { Lineage } from "./lineages.ts";
 
+// An item placed as given (RL environments with a layout), instead of the scattered start items.
+export interface ItemSpot {
+  x: number;
+  y: number;
+  kind: HitKind;
+}
+
 // A founder placed as given; genome in the config's input layout for its species.
 export interface CastMember {
   species: number;
@@ -209,14 +216,19 @@ export class Ecosystem {
   onDeath: ((m: EcoCreature) => void) | null = null; // called with each creature as it leaves, before its object is recycled
 
   // pool: trained founders (see seedPool.ts); without one, or at poolFraction 0, every founder is random.
-  // cast: exactly these founders instead of the species' founder counts (RL environments, see rl/env.ts).
+  // cast: exactly these founders instead of the species' founder counts; items: exactly these start items (RL environments, see rl/env.ts).
   // restore: builds the world empty, for restoreState (ecoState.ts) to fill: no founders and no items, the founder count and item capacity of the saved run.
-  constructor(config: EcoConfig, pool: readonly PoolEntry[] | null = null, options: { journal?: boolean; cast?: readonly CastMember[]; restore?: { founders: number; poolFounders: number; itemCapacity: number } } = {}) {
+  constructor(
+    config: EcoConfig,
+    pool: readonly PoolEntry[] | null = null,
+    options: { journal?: boolean; cast?: readonly CastMember[]; items?: readonly ItemSpot[]; restore?: { founders: number; poolFounders: number; itemCapacity: number } } = {},
+  ) {
     const restore = options.restore;
     this.config = config;
     const { eco, dt } = config;
     const perDensity = itemsPerDensity(config);
-    const start = itemCounts(config);
+    const layout = options.items;
+    const start = layout ? { food: layout.filter((it) => it.kind === HIT_FOOD).length, poison: layout.filter((it) => it.kind === HIT_POISON).length } : itemCounts(config);
     this.foodCap = Math.round(eco.foodMaxDensity * perDensity);
     this.poisonCap = Math.round(eco.poisonMaxDensity * perDensity);
     this.foodPerTick = eco.foodRegrow * perDensity * dt;
@@ -235,7 +247,8 @@ export class Ecosystem {
     this.world = this.items;
     this.journal = options.journal ? { born: [], died: [], items: [] } : null;
     this.items.log = this.journal?.items ?? null;
-    this.items.scatter(restore ? 0 : start.food, restore ? 0 : start.poison, this.rng);
+    if (layout && !restore) layout.forEach((it, i) => this.items.setItem(i, it.x, it.y, it.kind));
+    else this.items.scatter(restore ? 0 : start.food, restore ? 0 : start.poison, this.rng);
     this.food = start.food;
     this.poison = start.poison;
     const cast = options.cast;
@@ -713,11 +726,9 @@ export class Ecosystem {
     this.poisonDue -= Math.floor(this.poisonDue);
   }
 
-  // Places one item at a uniform random position; returns 1, or 0 if no slot was free.
+  // Places one item at a random spot, spaced from poison like every placement; returns 1, or 0 if no slot was free.
   private grow(kind: HitKind): number {
-    const r = this.config.world.itemRadius;
-    const { width, height } = this.config.world;
-    return this.items.addItem(this.rng.range(r, width - r), this.rng.range(r, height - r), kind) >= 0 ? 1 : 0;
+    return this.items.addRandomly(kind, this.rng) >= 0 ? 1 : 0;
   }
 
   // Copies every living creature into frame, growing its arrays when needed.

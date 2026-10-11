@@ -83,7 +83,7 @@ describe("RL envs", () => {
   });
 
   it("scores the reward from the learner's own food", () => {
-    const env: EnvSpec = { ...envById("forage-box")!, food: 200, poison: 0, seconds: 20, size: [300, 300] };
+    const env: EnvSpec = { ...envById("minefield")!, food: 200, poison: 0, seconds: 20, size: [300, 300] };
     const r = runEpisode(env, randomLearner(env, 1), 3);
     expect(r.reward).toBe(r.food);
     expect(r.seconds).toBeGreaterThan(0);
@@ -92,21 +92,21 @@ describe("RL envs", () => {
 
 describe("library", () => {
   it("round-trips a learner at 3 decimals and skips malformed entries", () => {
-    const l = randomLearner(envById("forage-box")!, 1);
+    const l = randomLearner(envById("minefield")!, 1);
     const short = { ...serialiseLearner(l), genome: serialiseLearner(l).genome.slice(1) };
-    const lib = parseLibrary({ version: 1, envs: { "forage-box": [serialiseLearner(l), { plan: {}, genome: ["x"] }, short], nope: [serialiseLearner(l)] } });
-    expect(lib["forage-box"]).toHaveLength(1);
-    expect(lib["forage-box"]![0]!.genome[0]).toBeCloseTo(l.genome[0]!, 3);
-    expect(Object.keys(lib)).toEqual(["forage-box"]); // only built-in env ids, whose world fixes the layout
+    const lib = parseLibrary({ version: 1, envs: { "minefield": [serialiseLearner(l), { plan: {}, genome: ["x"] }, short], nope: [serialiseLearner(l)] } });
+    expect(lib["minefield"]).toHaveLength(1);
+    expect(lib["minefield"]![0]!.genome[0]).toBeCloseTo(l.genome[0]!, 3);
+    expect(Object.keys(lib)).toEqual(["minefield"]); // only built-in env ids, whose world fixes the layout
     expect(Object.keys(parseLibrary({ version: 2, envs: {} }))).toEqual([]);
   });
 
   it("ignores prototype keys, and an env drawing rivals from them falls back to random ones", () => {
     const lib = parseLibrary(JSON.parse('{"version":1,"envs":{"__proto__":[{"plan":{}}],"constructor":[]}}'));
     expect(Object.getPrototypeOf(lib)).toBe(null);
-    const env = checkEnv({ ...envById("rivals")!, seconds: 5, rivals: [{ species: 0, count: 2, source: "library:constructor" }] }, "ecosystem", 0);
-    expect(typeof env).toBe("object");
-    expect(runEpisode(env as EnvSpec, randomLearner(envById("rivals")!, 1), 3, null, lib).seconds).toBeGreaterThan(0);
+    const raw: EnvSpec = { ...envById("rivals")!, seconds: 5, rivals: [{ species: 0, count: 2, source: "library:constructor" }] };
+    expect(checkEnv(raw, "ecosystem", 0)).toMatch(/library/); // the gate refuses it
+    expect(runEpisode(raw, randomLearner(raw, 1), 3, null, lib).seconds).toBeGreaterThan(0); // and an episode given it anyway falls back
   });
 });
 
@@ -138,7 +138,7 @@ describe("creature files", () => {
 });
 
 describe("checkEnv", () => {
-  const custom = { ...envById("forage-box")!, size: [500, 500], rivals: [{ species: 0, count: 3, source: "pool" }] };
+  const custom = { ...envById("minefield")!, size: [500, 500], rivals: [{ species: 0, count: 3, source: "pool" }] };
 
   it("accepts a valid custom env for the learner's world and drops unknown fields", () => {
     const env = checkEnv({ ...custom, extra: 1 }, "ecosystem", 0);
@@ -154,9 +154,17 @@ describe("checkEnv", () => {
     expect(checkEnv({ ...custom, rivals: Array.from({ length: 9 }, () => ({ species: 0, count: 0, source: "random" })) }, "ecosystem", 0)).toMatch(/groups/);
   });
 
+  it("bounds layouts by the world size and keeps rivals out of walled worlds", () => {
+    const fence = { ...custom, rivals: [], layout: { kind: "fence", gap: 60 } };
+    expect(typeof checkEnv(fence, "ecosystem", 0)).toBe("object");
+    expect(checkEnv({ ...fence, layout: { kind: "fence", gap: 300 } }, "ecosystem", 0)).toMatch(/gap/);
+    expect(checkEnv({ ...fence, layout: { kind: "patch", radius: 300 } }, "ecosystem", 0)).toMatch(/radius/);
+    expect(checkEnv({ ...fence, rivals: [{ species: 0, count: 1, source: "random" }] }, "ecosystem", 0)).toMatch(/walls with rivals/);
+  });
+
   it("keeps custom ids apart from the built-in ones", () => {
-    const env = checkEnv({ ...custom, id: "forage-box", name: "\u202eevil" }, "ecosystem", 0);
-    expect(typeof env === "object" && [env.id, env.name]).toEqual(["custom-forage-box", "evil"]);
+    const env = checkEnv({ ...custom, id: "minefield", name: "\u202eevil" }, "ecosystem", 0);
+    expect(typeof env === "object" && [env.id, env.name]).toEqual(["custom-minefield", "evil"]);
   });
 });
 
@@ -184,5 +192,16 @@ describe("cleared boxes", () => {
       if (r.food < env.food) expect(r.reward).toBe(r.food);
       else expect(r.reward).toBeGreaterThan(r.food); // cleared before the end: food plus 0.1 per second left
     }
+  });
+});
+
+describe("library rivals", () => {
+  it("are only drawn from envs of the same world and species, so a layout never mismatches", () => {
+    const hunter = randomLearner(envById("hunt-grazers")!, 2); // a predator in the two-species layout
+    const lib = parseLibrary({ version: 1, envs: { "hunt-grazers": [serialiseLearner(hunter)] } });
+    expect(lib["hunt-grazers"]).toHaveLength(1);
+    const env: EnvSpec = { ...envById("nibble")!, seconds: 5, rivals: [{ species: 0, count: 2, source: "library:hunt-grazers" }] };
+    expect(() => runEpisode(env, randomLearner(env, 1), 3, null, lib)).not.toThrow();
+    expect(checkEnv(env, "ecosystem", 0)).toMatch(/library/);
   });
 });
