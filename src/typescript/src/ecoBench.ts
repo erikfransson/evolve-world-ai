@@ -25,6 +25,7 @@ const { values } = parseArgs({
     aging: { type: "boolean" },
     threads: { type: "string", default: "0" }, // helper threads for sense and think; 0 runs on this thread alone
     shared: { type: "boolean" }, // helpers use shared memory instead of messages
+    wasm: { type: "string" }, // true or false: sense and think on the WebAssembly kernels; default from the config
     agingStart: { type: "string" },
     agingRate: { type: "string" },
     damage: { type: "boolean" }, // collision damage
@@ -43,6 +44,7 @@ const config: EcoConfig = {
     initialPopulation: num(values.pop, d.eco.initialPopulation),
     poolFraction: num(values.poolFraction, d.eco.poolFraction),
     aging: values.aging ?? d.eco.aging,
+    wasm: values.wasm === undefined ? d.eco.wasm : values.wasm === "true",
     agingStart: num(values.agingStart, d.eco.agingStart),
     agingRate: num(values.agingRate, d.eco.agingRate),
     collisionDamage: values.damage ?? d.eco.collisionDamage,
@@ -79,6 +81,7 @@ console.log(JSON.stringify({
   seed: config.seed,
   seconds,
   threads: helpers ? `${threads} ${helpers.shared ? "shared" : "fork-join"}` : "serial",
+  wasm: eco.wasm,
   poolFounders: eco.poolFounders,
   ticks: eco.tick,
   wallSeconds: +wall.toFixed(2),

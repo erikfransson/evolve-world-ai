@@ -59,6 +59,7 @@ export interface EcoSnapshot {
   speed: number; // simulated seconds per real second achieved, 0 until measured
   helpers: number; // helper threads sensing and thinking, 0 when the worker runs alone
   sharedMemory: boolean; // the helpers use shared memory rather than messages
+  wasm: boolean; // sense and think run on the WebAssembly kernels
   count: number; // creatures in the buffer
   itemCount: number;
   creatureCap: number; // array capacities that define the buffer layout

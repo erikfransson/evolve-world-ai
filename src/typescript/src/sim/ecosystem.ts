@@ -16,6 +16,7 @@ import type { PoolEntry } from "./seedPool.ts";
 import { HIT_FOOD, HIT_POISON } from "./types.ts";
 import type { CreatureState, Genome, HitKind, WorldView } from "./types.ts";
 import { World } from "./world.ts";
+import { SenseKernels } from "./wasm/senseKernels.ts";
 
 // One creature of the ecosystem with its family record. Objects are recycled after death, so hold ids, not references.
 export class EcoCreature {
@@ -89,6 +90,7 @@ export class Ecosystem {
   private readonly items: World;
   private readonly crowd: Crowd;
   private readonly batch = new SenseBatch();
+  private readonly kernels: SenseKernels | null; // with eco.wasm when WebAssembly SIMD is available
   private readonly states: CreatureState[] = [];
   private readonly byId = new Map<number, EcoCreature>();
   private readonly spare: EcoCreature[] = [];
@@ -133,6 +135,7 @@ export class Ecosystem {
     this.food = start.food;
     this.poison = start.poison;
     this.crowd = new Crowd(config, Math.min(eco.initialPopulation, eco.maxPopulation));
+    this.kernels = eco.wasm ? SenseKernels.create() : null;
     this.childPlan = planOf(config);
     this.mutation = { mutationRate: config.mutation.rate, mutationStd: config.mutation.std };
 
@@ -173,6 +176,11 @@ export class Ecosystem {
 
   get population(): number {
     return this.members.length;
+  }
+
+  // True when sense and think run on the WebAssembly kernels (eco.wasm, and available here).
+  get wasm(): boolean {
+    return this.kernels !== null;
   }
 
   get extinct(): boolean {
@@ -218,7 +226,7 @@ export class Ecosystem {
 
   // Phase 1a for a batch of members, each at its list index, after prepareTick.
   senseBatch(batch: SenseBatch): void {
-    senseThinkBatch(this.items, this.crowd, batch);
+    senseThinkBatch(this.items, this.crowd, batch, this.kernels);
   }
 
   // Phase 1b and 2, once every creature has its outputs (from sensePhase or helper threads): memory and motion, then sharedPhase.

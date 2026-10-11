@@ -9,7 +9,7 @@ import type { Caps, Packet } from "../sim/ecoShare.ts";
 // gen: the run a message belongs to, echoed in the reply, so a late reply from an earlier run is dropped.
 
 export type HelperIn =
-  | { type: "init"; gen: number; config: EngineConfig; worldCapacity: number; index: number; control?: SharedArrayBuffer } // a new run; control in shared mode
+  | { type: "init"; gen: number; config: EngineConfig; worldCapacity: number; index: number; wasm: boolean; control?: SharedArrayBuffer } // a new run; control in shared mode, wasm as the coordinator
   | { type: "packet"; gen: number; packet: SharedArrayBuffer } // shared mode: the packet buffer, sent again when it grows
   | { type: "tick"; gen: number; buffer: ArrayBuffer }; // fork-join: one tick's packet, transferred both ways
 
@@ -108,7 +108,7 @@ export class ThinkPool {
     this.packets = [];
     const control = this.control?.buffer as SharedArrayBuffer | undefined;
     const done = this.expect(START_MS);
-    this.ports.forEach((port, index) => port.post({ type: "init", gen, config: eco.config, worldCapacity: eco.world.count, index, control }));
+    this.ports.forEach((port, index) => port.post({ type: "init", gen, config: eco.config, worldCapacity: eco.world.count, index, wasm: eco.wasm, control }));
     return done;
   }
 
@@ -251,7 +251,7 @@ export function serveHelper(post: (msg: HelperOut, transfer?: Transferable[]) =>
     gen = msg.gen;
     switch (msg.type) {
       case "init":
-        helper = new ShareHelper(msg.config, msg.worldCapacity, msg.index);
+        helper = new ShareHelper(msg.config, msg.worldCapacity, msg.index, msg.wasm);
         if (msg.control && !control) {
           control = new Int32Array(msg.control);
           void loop(control);

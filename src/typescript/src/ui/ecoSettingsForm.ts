@@ -81,6 +81,7 @@ export const ECO_SECTIONS: readonly Section[] = [
       { kind: "toggle", id: "collisions", label: "Collisions", tip: "When on, creatures bounce off each other. Rays see other creatures either way.", get: (c) => c.eco.collisions, set: (c, v) => { c.eco.collisions = v; } },
       { kind: "toggle", id: "collisionDamage", label: "Collision damage", tip: "When on, a bounce hurts both creatures, the harder the faster they hit. A creature that dies from a bounce gives the energy it had to the other one, so weak neighbours are worth bumping. Only used when Collisions is on.", get: (c) => c.eco.collisionDamage, set: (c, v) => { c.eco.collisionDamage = v; } },
       range({ id: "damagePerSpeed", label: "Damage per speed", tip: "Energy each creature loses per unit of speed at which they hit. The default 0.3 costs about 5 for a gentle touch and about 50 for two creatures colliding head-on at top speed. Only used when Collision damage is on.", min: 0, max: 1, step: 0.05, fmt: "dens", get: (c) => c.eco.damagePerSpeed, set: (c, v) => { c.eco.damagePerSpeed = v; } }),
+      { kind: "toggle", id: "wasm", label: "Use WebAssembly", tip: "When on, creatures look at each other and think with faster WebAssembly code, if the browser supports it. It rounds numbers a little differently, so a run differs in detail from one with this off, but behaves the same on average.", get: (c) => c.eco.wasm, set: (c, v) => { c.eco.wasm = v; } },
     ],
   },
   {

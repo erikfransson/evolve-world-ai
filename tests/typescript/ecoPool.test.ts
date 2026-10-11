@@ -67,12 +67,13 @@ async function runFor(pool: ThinkPool, ticks: number, onTick: (tick: number) => 
 }
 
 describe("ThinkPool", () => {
-  it("matches the single-threaded run for 1 and 3 helpers, with births and deaths between ticks", async () => {
-    const ref = serial(cfg(), 400);
+  it("matches the single-threaded run for 1 and 3 helpers, with births and deaths between ticks, on the JS path", async () => {
+    const js = (): EcoConfig => ({ ...cfg(), eco: { ...cfg().eco, wasm: false } });
+    const ref = serial(js(), 400);
     expect(ref.births).toBeGreaterThan(0);
     expect(ref.deaths).toBeGreaterThan(0);
     for (const n of [1, 3]) {
-      const eco = await pooled(new ThinkPool(fakePorts(n), false), cfg(), 400);
+      const eco = await pooled(new ThinkPool(fakePorts(n), false), js(), 400);
       expect([eco.fingerprint(), eco.births, eco.deaths]).toEqual([ref.fingerprint(), ref.births, ref.deaths]);
     }
   });
@@ -136,6 +137,75 @@ describe("ThinkPool", () => {
       expect(pool.shared).toBe(shared);
       try {
         expect((await pooled(pool, cfg(), 150)).fingerprint()).toBe(ref);
+      } finally {
+        pool.close();
+      }
+    }
+  });
+});
+
+describe("WebAssembly kernels", () => {
+  const wasmCfg = (seed = 5, wasm = true): EcoConfig => {
+    const c = cfg(seed);
+    return { ...c, eco: { ...c.eco, wasm } };
+  };
+
+  it("are deterministic for a seed and close to the JS path at first", () => {
+    const a = serial(wasmCfg(), 300);
+    expect(a.wasm).toBe(true);
+    expect(a.births).toBeGreaterThan(0);
+    expect(a.deaths).toBeGreaterThan(0);
+    expect(serial(wasmCfg(), 300).fingerprint()).toBe(a.fingerprint());
+    const js = serial(wasmCfg(5, false), 300);
+    expect(js.wasm).toBe(false);
+    expect(serial(cfg(), 300).fingerprint()).toBe(a.fingerprint()); // WASM is the default
+    expect(js.fingerprint()).not.toBe(a.fingerprint());
+    // f32 changes trajectories, but one tick from the same start barely moves anyone.
+    const [w1, j1] = [serial(wasmCfg(), 1), serial(wasmCfg(5, false), 1)];
+    let maxMove = 0;
+    for (let i = 0; i < w1.population; i++) {
+      const [p, q] = [w1.members[i]!.creature.state, j1.members[i]!.creature.state];
+      maxMove = Math.max(maxMove, Math.hypot(p.x - q.x, p.y - q.y));
+    }
+    expect(maxMove).toBeLessThan(1e-3);
+  });
+
+  it("keep each creature's brain across births, deaths, recycling and plan mutations", () => {
+    const c = wasmCfg();
+    const eco = new Ecosystem({ ...c, world: { ...c.world, foodDensity: 2 }, eco: { ...c.eco, foodRegrow: 1, foodMaxDensity: 2, birthEnergy: 30, birthCost: 20, childEnergy: 15, birthCooldown: 2 } }); // fast turnover
+    const out = new Float32Array(64);
+    let checked = 0;
+    const recycledShapes = new Set<number>(); // genome lengths of creatures that took over a dead one
+    for (let t = 0; t < 600; t++) {
+      eco.prepareTick();
+      eco.sensePhase(0, eco.population);
+      if (t % 5 === 4) {
+        for (const m of eco.members) {
+          const c = m.creature;
+          if (c.brainVersion > 0) recycledShapes.add(c.brain.genome.length);
+          c.brain.forward(c.brain.layerActivations()[0]!, out.subarray(0, c.outputs.length));
+          for (let i = 0; i < c.outputs.length; i++) expect(Math.abs(c.outputs[i]! - out[i]!)).toBeLessThan(1e-4);
+          checked++;
+        }
+      }
+      eco.finishTick();
+    }
+    expect(eco.deaths).toBeGreaterThan(60);
+    expect(recycledShapes.size).toBeGreaterThan(5);
+    expect(checked).toBeGreaterThan(2000);
+  });
+
+  it("give the same run for any helper count and mode", async () => {
+    const ticks = 300;
+    const ref = serial(wasmCfg(), ticks);
+    for (const n of [1, 3]) {
+      const eco = await pooled(new ThinkPool(fakePorts(n), false), wasmCfg(), ticks);
+      expect([eco.fingerprint(), eco.births, eco.deaths]).toEqual([ref.fingerprint(), ref.births, ref.deaths]);
+    }
+    for (const shared of [false, true]) {
+      const pool = createNodeThinkPool(2, shared);
+      try {
+        expect((await pooled(pool, wasmCfg(), ticks)).fingerprint()).toBe(ref.fingerprint());
       } finally {
         pool.close();
       }

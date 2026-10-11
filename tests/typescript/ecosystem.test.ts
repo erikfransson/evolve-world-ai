@@ -275,7 +275,7 @@ describe("Ecosystem collision damage", () => {
   });
 
   it("with damage off the run is unchanged (fingerprint recorded before the feature)", () => {
-    const eco = new Ecosystem(ecoCfg({ seed: 7, world: { width: 600, height: 600 }, creature: { startEnergy: 100 }, eco: { initialPopulation: 80, birthEnergy: 120, collisions: true } }));
+    const eco = new Ecosystem(ecoCfg({ seed: 7, world: { width: 600, height: 600 }, creature: { startEnergy: 100 }, eco: { initialPopulation: 80, birthEnergy: 120, collisions: true, wasm: false } })); // JS path, as when recorded
     for (let t = 0; t < 300; t++) eco.step();
     expect([eco.fingerprint(), eco.births, eco.deaths]).toEqual([787898088, 0, 1]); // recorded before collision damage existed
   });

@@ -9,6 +9,8 @@ import type { CreatureState, Genome, HitKind, RayHit } from "./types.ts";
 import { RayCache } from "./world.ts";
 import type { World } from "./world.ts";
 import type { Crowd } from "./crowd.ts";
+import type { WasmRayCaster } from "./wasm/rayKernel.ts";
+import type { SenseKernels } from "./wasm/senseKernels.ts";
 
 // One creature's body, brain and senses; the world it lives in is passed to each call.
 // rays, rayOffsets, memory and brain sizes follow the plan, which only reset changes.
@@ -18,6 +20,9 @@ export class Creature {
   readonly brain: Brain;
   readonly heading: Heading = { cos: 0, sin: 0 };
   aging: Aging | null = null; // old-age upkeep, set by the owner
+  brainVersion = 0; // bumped whenever reset changes the genome or plan, so a copy of the brain elsewhere (WASM) knows to refresh
+  kernelSlot = -1; // this creature's brain slot in kernelOwner, the SenseKernels that last ran it
+  kernelOwner: SenseKernels | null = null;
 
   private readonly ownPlan: BodyPlan; // this creature's own copy
   private offsets = new Float32Array(0);
@@ -96,6 +101,7 @@ export class Creature {
     const sizes = layerSizes(this.config, this.ownPlan);
     this.brain.load(sizes, genome);
     this.fitPlan(sizes);
+    this.brainVersion++;
     const s = this.state;
     s.x = x;
     s.y = y;
@@ -119,6 +125,12 @@ export class Creature {
   // Casts the rays from the current pose into this.rays without advancing the simulation.
   // With a crowd, rays also see the other creatures in it; self is this creature's slot there.
   sense(world: World, crowd?: Crowd, self = -1): void {
+    this.senseWorld(world);
+    if (crowd) crowd.castRays(this.state.x, this.state.y, this.rayDirX, this.rayDirY, this.rays, self, this.ownPlan.rayLength);
+  }
+
+  // The part of sense before the crowd: ray directions from the pose, then items and walls.
+  senseWorld(world: World): void {
     const rays = this.rays;
     // Ray directions by angle addition from the heading's cos/sin.
     const hc = this.heading.cos;
@@ -133,7 +145,11 @@ export class Creature {
     }
     const length = this.ownPlan.rayLength;
     world.castRays(this.state.x, this.state.y, dirX, dirY, rays, this.cache, length);
-    if (crowd) crowd.castRays(this.state.x, this.state.y, dirX, dirY, rays, self, length);
+  }
+
+  // Queues the crowd part of sense on a WASM caster, after senseWorld; the caster's apply() finishes the rays.
+  queueCrowd(caster: WasmRayCaster, self: number): void {
+    caster.queue(this.state.x, this.state.y, this.rayDirX, this.rayDirY, this.rays, self, this.ownPlan.rayLength);
   }
 
   // Runs the brain on the last sensed rays, the current body and the memory, then updates the memory from its targets.
@@ -162,10 +178,16 @@ export class Creature {
 
   // The brain on the last sensed rays, the current body and the memory, into outputs.
   private decide(): void {
+    this.brain.forward(this.encode(), this.output);
+  }
+
+  // The brain's input from the last sensed rays, the body and the memory; also what brain.layerActivations()[0] shows.
+  encode(): Float32Array {
     const input = this.input;
     encodeInputs(this.state, this.rays, this.config, input, this.heading.cos, this.heading.sin);
     input.set(this.units, this.memoryAt);
-    this.brain.forward(input, this.output);
+    this.brain.showInput(input);
+    return input;
   }
 
   // Moves each memory unit toward its target from the last decide.
@@ -230,8 +252,10 @@ export class SenseBatch {
 }
 
 // Sense and think for a whole batch; writes only each creature's rays and outputs. The one boundary for the per-tick
-// creature work, used by Ecosystem.sensePhase and the helper threads (ecoShare.ts); faster kernels replace its body.
-export function senseThinkBatch(world: World, crowd: Crowd, batch: SenseBatch): void {
+// creature work, used by Ecosystem.sensePhase and the helper threads (ecoShare.ts). With kernels, the crowd rays and the
+// brains run in WebAssembly (f32); every owner of creatures (an Ecosystem, a helper) has its own kernels.
+export function senseThinkBatch(world: World, crowd: Crowd, batch: SenseBatch, kernels: SenseKernels | null = null): void {
+  if (kernels) return kernels.run(world, crowd, batch);
   const { creatures, selves } = batch;
   for (let k = 0; k < batch.count; k++) creatures[k]!.senseThink(world, crowd, selves[k]!);
 }

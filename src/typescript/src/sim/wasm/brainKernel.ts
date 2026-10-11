@@ -29,6 +29,8 @@ export class WasmBrainBank {
   private outFloat: number[] = [];
   private descPtr = NO_SLOT;
   private descCap = 0;
+  private runPtr = NO_SLOT; // descriptors of one forwardSlots call
+  private runCap = 0;
 
   private constructor(kernel: Kernel<BrainExports>) {
     this.kernel = kernel;
@@ -39,6 +41,11 @@ export class WasmBrainBank {
   // Null when WebAssembly SIMD is unavailable (or disabled); keep using the JS Brain then.
   static async create(): Promise<WasmBrainBank | null> {
     const kernel = await Kernel.create<BrainExports>(BRAIN_BYTES);
+    return kernel ? new WasmBrainBank(kernel) : null;
+  }
+
+  static createSync(): WasmBrainBank | null {
+    const kernel = Kernel.createSync<BrainExports>(BRAIN_BYTES);
     return kernel ? new WasmBrainBank(kernel) : null;
   }
 
@@ -119,11 +126,35 @@ export class WasmBrainBank {
     delete this.blockPtr[slot];
   }
 
-  // Runs slots 0 .. count-1, each of which must have been set.
-  // Slots 0..count-1 must all have been set; an unset descriptor would make the kernel trap or loop on garbage.
+  // True when the slot holds a brain (set and not released since).
+  isSet(slot: number): boolean {
+    return this.blockPtr[slot] !== undefined;
+  }
+
+  // Runs slots 0 .. count-1, each of which must hold a brain; an unset descriptor would make the kernel trap or loop on garbage.
   forward(count: number): void {
     if (count > this.descCap) throw new Error(`forward(${count}) beyond the ${this.descCap} slots set up`);
+    for (let s = 0; s < count; s++) if (this.blockPtr[s] === undefined) throw new Error(`slot ${s} holds no brain`);
     if (count > 0) this.kernel.exports.forward(this.descPtr, count, 0, SCRATCH_B);
+  }
+
+  // Runs the slots slots[0 .. count-1] in that order, each of which must hold a brain; e.g. one thread's share of the creatures.
+  forwardSlots(slots: Int32Array, count: number): void {
+    if (count <= 0) return;
+    if (count > this.runCap) {
+      if (this.runPtr !== NO_SLOT) this.arena.release(this.runPtr, this.runCap * DESC_WORDS * 4);
+      this.runCap = Math.max(64, 2 * this.runCap, count);
+      this.runPtr = this.arena.alloc(this.runCap * DESC_WORDS * 4);
+    }
+    const i32 = this.kernel.i32;
+    const desc = this.descPtr >> 2;
+    let to = this.runPtr >> 2;
+    for (let k = 0; k < count; k++, to += DESC_WORDS) {
+      const slot = slots[k]!;
+      if (this.blockPtr[slot] === undefined) throw new Error(`slot ${slot} holds no brain`);
+      i32.copyWithin(to, desc + slot * DESC_WORDS, desc + (slot + 1) * DESC_WORDS);
+    }
+    this.kernel.exports.forward(this.runPtr, count, 0, SCRATCH_B);
   }
 
   private ensureSlots(n: number): void {

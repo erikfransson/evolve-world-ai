@@ -6,6 +6,7 @@ import type { Ecosystem } from "./ecosystem.ts";
 import type { BodyPlan } from "./sensors.ts";
 import type { HitKind } from "./types.ts";
 import { ITEM_REMOVE, ITEM_SET, World } from "./world.ts";
+import { SenseKernels } from "./wasm/senseKernels.ts";
 
 // Sense and think on helper threads. Each tick the coordinator, which owns the Ecosystem, publishes a packet:
 // every creature's pose, energy and memory, plus the changes since the last packet (item changes, deaths, and births
@@ -255,7 +256,11 @@ export class ShareHelper {
   private genome = new Float32Array(0);
   private readonly plan: BodyPlan = { rayCount: 0, raySpread: 0, rayLength: 0, hiddenLayers: [], memoryShort: 0, memoryLong: 0 };
 
-  constructor(config: EngineConfig, worldCapacity: number, index: number) {
+  private readonly kernels: SenseKernels | null;
+
+  // wasm: sense and think on the WebAssembly kernels when available, as the coordinator does.
+  constructor(config: EngineConfig, worldCapacity: number, index: number, wasm = false) {
+    this.kernels = wasm ? SenseKernels.create() : null;
     this.config = config;
     this.index = index;
     this.world = new World(config, worldCapacity);
@@ -289,7 +294,7 @@ export class ShareHelper {
       c.setMemory(p.memory, p.memoryAt[i]!);
       batch.add(c, i);
     }
-    senseThinkBatch(this.world, this.crowd, batch);
+    senseThinkBatch(this.world, this.crowd, batch, this.kernels);
     for (let k = 0; k < batch.count; k++) {
       const i = batch.selves[k]!;
       const at = p.memoryAt[i]!;

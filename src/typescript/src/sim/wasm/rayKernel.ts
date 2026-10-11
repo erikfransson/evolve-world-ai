@@ -42,6 +42,11 @@ export class WasmRayCaster {
     return kernel ? new WasmRayCaster(kernel) : null;
   }
 
+  static createSync(): WasmRayCaster | null {
+    const kernel = Kernel.createSync<RayExports>(RAYS_BYTES);
+    return kernel ? new WasmRayCaster(kernel) : null;
+  }
+
   get memoryBytes(): number {
     return this.kernel.memory.buffer.byteLength;
   }

@@ -142,6 +142,11 @@ export class Brain {
     return this.activations;
   }
 
+  // Records input as the last forward's input, for a caller that runs this brain elsewhere (WASM); the other layers go stale.
+  showInput(input: Float32Array): void {
+    this.activations[0] = input;
+  }
+
   forward(input: Float32Array, output: Float32Array): void {
     const layers = this.fanIn.length;
     this.activations[0] = input;
