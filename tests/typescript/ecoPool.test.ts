@@ -77,6 +77,21 @@ describe("ThinkPool", () => {
     }
   });
 
+  it("matches with collision damage on, which kills and pays out between ticks", async () => {
+    const damaged = (): EcoConfig => {
+      const c = cfg();
+      c.eco.collisionDamage = true;
+      c.eco.damagePerSpeed = 0.5;
+      return c;
+    };
+    const ref = serial(damaged(), 400);
+    expect(ref.deaths).toBeGreaterThan(serial(cfg(), 400).deaths);
+    for (const n of [1, 3]) {
+      const eco = await pooled(new ThinkPool(fakePorts(n), false), damaged(), 400);
+      expect([eco.fingerprint(), eco.births, eco.deaths]).toEqual([ref.fingerprint(), ref.births, ref.deaths]);
+    }
+  });
+
   it("reuses its helpers for a second run", async () => {
     const pool = new ThinkPool(fakePorts(2), false);
     await pooled(pool, cfg(1), 50);

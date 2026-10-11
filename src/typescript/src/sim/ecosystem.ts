@@ -5,8 +5,8 @@ import { Crowd } from "./crowd.ts";
 import type { EcoConfig } from "./ecoConfig.ts";
 import { mutate } from "./ga.ts";
 import { driftPlan, mutateStructure, randomPlan, remapWeights } from "./planMutation.ts";
-import { collide, keepInside, settle } from "./physics.ts";
-import type { Aging } from "./physics.ts";
+import { collide, hurt, keepInside, settle } from "./physics.ts";
+import type { Aging, Contact } from "./physics.ts";
 import { createRng, deriveSeed } from "./rng.ts";
 import type { StatefulRng } from "./rng.ts";
 import { copyPlan, inputLayout, planOf } from "./sensors.ts";
@@ -69,7 +69,7 @@ export interface Lineage {
 // 1. sensePhase: every creature senses a snapshot (items, and creatures as gridded at the tick start) and thinks; then each
 //    updates its memory and moves. Sensing and thinking write only the creature's own rays and outputs, so creature order
 //    cannot matter and helper threads can run them (ecoShare.ts).
-// 2. sharedPhase: eating, collisions, deaths, births and regrowth, serially. Eating and births walk the creatures
+// 2. sharedPhase: eating, collisions (with optional damage), deaths, births and regrowth, serially. Eating and births walk the creatures
 //    from a random start each tick, so no creature wins contested food or the last free place by its list position.
 export class Ecosystem {
   readonly config: EcoConfig;
@@ -110,6 +110,7 @@ export class Ecosystem {
   private readonly lineageLive: Int32Array;
   private readonly founderHue: Float32Array;
   private readonly aging: Aging | null;
+  private readonly contact: Contact = { speed: 0 };
 
   // pool: trained founders (see seedPool.ts); without one, or at poolFraction 0, every founder is random.
   constructor(config: EcoConfig, pool: readonly PoolEntry[] | null = null, options: { journal?: boolean } = {}) {
@@ -301,7 +302,9 @@ export class Ecosystem {
   }
 
   private bump(a: CreatureState, b: CreatureState, radius: number, e: number, width: number, height: number): void {
-    if (!collide(a, b, radius, e)) return;
+    const eco = this.config.eco;
+    if (!collide(a, b, radius, e, this.contact)) return;
+    if (eco.collisionDamage) hurt(a, b, this.contact.speed, eco.damagePerSpeed);
     keepInside(a, radius, width, height, this.config.creature.wallBounce);
     keepInside(b, radius, width, height, this.config.creature.wallBounce);
   }

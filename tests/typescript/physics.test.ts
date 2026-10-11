@@ -1,5 +1,5 @@
 import { DEFAULT_CONFIG } from "../../src/typescript/src/sim/config.ts";
-import { collide, decaysFor, keepInside, stepBody } from "../../src/typescript/src/sim/physics.ts";
+import { collide, decaysFor, hurt, keepInside, stepBody } from "../../src/typescript/src/sim/physics.ts";
 import type { CreatureState } from "../../src/typescript/src/sim/types.ts";
 
 const body = (x: number, y: number, vx: number, vy: number) => ({ x, y, vx, vy });
@@ -41,6 +41,20 @@ describe("collide", () => {
     const d = body(30, 0, -5, 0);
     expect(collide(c, d, 12, 1)).toBe(false);
     expect([c.x, d.x, c.vx, d.vx]).toEqual([0, 30, 5, -5]);
+  });
+
+  it("reports the normal approach speed, 0 for a separating pair, and once per impact", () => {
+    const contact = { speed: -1 };
+    const a = body(0, 0, 30, 50); // the tangential 50 does not count
+    const b = body(20, 0, -10, 0);
+    collide(a, b, 12, 1, contact);
+    expect(contact.speed).toBeCloseTo(40, 12);
+    collide(a, b, 12, 1, contact); // still overlapping after the push, but now separating
+    expect(contact.speed).toBe(0);
+    const c = body(0, 0, -5, 0);
+    const d = body(20, 0, 5, 0);
+    collide(c, d, 12, 1, contact);
+    expect(contact.speed).toBe(0);
   });
 
   it("separates coincident centres", () => {
@@ -133,5 +147,41 @@ describe("stepBody", () => {
     expect(spin(0, 2)).toBeCloseTo(2 * config.dt, 12);
     expect(spin(0.6, 2)).toBeCloseTo(2.6 * config.dt, 12);
     expect(spin(0, 3)).toBeCloseTo(3 * config.dt, 12);
+  });
+});
+
+describe("hurt", () => {
+  const cr = (energy: number) => ({ energy }) as CreatureState;
+
+  it("takes damagePerSpeed x speed from both", () => {
+    const a = cr(100);
+    const b = cr(80);
+    hurt(a, b, 40, 0.5);
+    expect([a.energy, b.energy]).toEqual([80, 60]);
+    hurt(a, b, 20, 0.5);
+    expect([a.energy, b.energy]).toEqual([70, 50]);
+  });
+
+  it("gives the survivor the dead one's energy from before the hit", () => {
+    const a = cr(10);
+    const b = cr(100);
+    hurt(a, b, 40, 0.5); // damage 20: a dies with 10 before the hit
+    expect([a.energy, b.energy]).toEqual([0, 80 + 10]);
+    const c = cr(100);
+    const d = cr(15);
+    hurt(c, d, 40, 0.5);
+    expect([c.energy, d.energy]).toEqual([80 + 15, 0]);
+  });
+
+  it("gives nothing when both die, and ignores no contact or an already dead creature", () => {
+    const a = cr(10);
+    const b = cr(15);
+    hurt(a, b, 40, 0.5);
+    expect([a.energy, b.energy]).toEqual([0, 0]);
+    const c = cr(50);
+    const d = cr(0);
+    hurt(c, d, 40, 0.5);
+    hurt(c, cr(50), 0, 0.5);
+    expect([c.energy, d.energy]).toEqual([50, 0]);
   });
 });

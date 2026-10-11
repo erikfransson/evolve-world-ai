@@ -1,5 +1,5 @@
 // Ecosystem benchmark: runs a seeded world headless and prints ticks/s, population over time and a fingerprint.
-// Usage: node src/ecoBench.ts [--seconds 120] [--seed 1] [--pop 300] [--food 0.5] [--regrow 0.05] [--every 10] [--pool public/pool.json] [--poolFraction 0.5] [--aging] [--agingStart 120] [--agingRate 0.5] [--threads 0] [--shared]
+// Usage: node src/ecoBench.ts [--seconds 120] [--seed 1] [--pop 300] [--food 0.5] [--regrow 0.05] [--every 10] [--pool public/pool.json] [--poolFraction 0.5] [--aging] [--agingStart 120] [--agingRate 0.5] [--damage] [--damagePerSpeed 0.3] [--threads 0] [--shared]
 // --food sets the starting and maximum food density, --regrow the food regrowth rate, --pool none runs without the seed pool.
 
 import { readFileSync } from "node:fs";
@@ -27,6 +27,8 @@ const { values } = parseArgs({
     shared: { type: "boolean" }, // helpers use shared memory instead of messages
     agingStart: { type: "string" },
     agingRate: { type: "string" },
+    damage: { type: "boolean" }, // collision damage
+    damagePerSpeed: { type: "string" },
   },
 });
 const num = (v: string | undefined, fallback: number): number => (v === undefined ? fallback : Number(v));
@@ -43,6 +45,8 @@ const config: EcoConfig = {
     aging: values.aging ?? d.eco.aging,
     agingStart: num(values.agingStart, d.eco.agingStart),
     agingRate: num(values.agingRate, d.eco.agingRate),
+    collisionDamage: values.damage ?? d.eco.collisionDamage,
+    damagePerSpeed: num(values.damagePerSpeed, d.eco.damagePerSpeed),
     foodMaxDensity: values.food === undefined ? d.eco.foodMaxDensity : food,
     foodRegrow: num(values.regrow, d.eco.foodRegrow),
   },

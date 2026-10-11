@@ -21,6 +21,8 @@ export interface EcoConfig extends EngineConfig {
     agingStart: number; // age in seconds after which the upkeep starts to grow
     agingRate: number; // upkeep grows by this fraction of itself per minute beyond agingStart
     collisions: boolean; // creatures bounce off each other
+    collisionDamage: boolean; // a bounce costs both creatures energy; one that dies gives its energy to the other
+    damagePerSpeed: number; // energy each loses per unit/s of approach speed; 0.3 gives 48 for a head-on hit at top speed (160)
     wasm: boolean; // use the WebAssembly SIMD kernels in src/sim/wasm/ when available (f32, not bit-identical to JS)
     foundersVary: boolean; // founders draw their body plans from the ranges below, otherwise all get the config plan
     planDrift: number; // relative std of the change of a child's ray spread and length
@@ -60,6 +62,8 @@ export const DEFAULT_ECO_CONFIG: EcoConfig = {
     agingStart: 120,
     agingRate: 0.5,
     collisions: true,
+    collisionDamage: false,
+    damagePerSpeed: 0.3,
     wasm: false,
     foundersVary: true,
     planDrift: 0.02,

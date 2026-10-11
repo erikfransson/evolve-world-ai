@@ -112,6 +112,8 @@ describe("Copy and Paste on the Ecosystem page", () => {
     const changed = structuredClone(DEFAULT_ECO_CONFIG);
     changed.world.width = 3300;
     changed.eco.collisions = false;
+    changed.eco.collisionDamage = true;
+    changed.eco.damagePerSpeed = 0.45;
     fillEcoForm(changed);
     document.getElementById("copySettings")!.click();
     fillEcoForm(DEFAULT_ECO_CONFIG);

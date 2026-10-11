@@ -72,6 +72,11 @@ export function stepBody(s: CreatureState, turnOut: number, thrust: number, conf
 
 type Body = Pick<CreatureState, "x" | "y" | "vx" | "vy">;
 
+// Out parameter of collide: how fast the pair approached along the line between centres, units/s.
+export interface Contact {
+  speed: number;
+}
+
 // Clamps a disc into the box and reflects the velocity component pointing into a wall, scaled by restitution
 // (0 absorbs it). Tangential velocity is kept, so kinetic energy never grows.
 export function keepInside(s: Body, radius: number, width: number, height: number, restitution: number): void {
@@ -83,13 +88,17 @@ export function keepInside(s: Body, radius: number, width: number, height: numbe
 
 // Pushes two overlapping equal-mass discs of this radius apart along the line between their centres, half each,
 // and if they approach, reflects their relative normal velocity scaled by restitution (1 swaps the normal components).
-// Momentum is conserved. Returns whether they overlapped.
-export function collide(a: Body, b: Body, radius: number, restitution: number): boolean {
+// Momentum is conserved. Returns whether they overlapped. If contact is given, its speed is set to the normal approach
+// speed before the bounce, 0 for a pair that is separating or apart, so one impact counts once (the bounce ends the approach).
+export function collide(a: Body, b: Body, radius: number, restitution: number, contact?: Contact): boolean {
   let nx = b.x - a.x;
   let ny = b.y - a.y;
   const d2 = nx * nx + ny * ny;
   const reach = 2 * radius;
-  if (d2 >= reach * reach) return false;
+  if (d2 >= reach * reach) {
+    if (contact) contact.speed = 0;
+    return false;
+  }
   const d = Math.sqrt(d2);
   if (d > 0) {
     nx /= d;
@@ -104,6 +113,7 @@ export function collide(a: Body, b: Body, radius: number, restitution: number): 
   b.x += nx * push;
   b.y += ny * push;
   const approach = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
+  if (contact) contact.speed = approach < 0 ? -approach : 0;
   if (approach < 0) {
     const j = (-(1 + restitution) * approach) / 2;
     a.vx -= j * nx;
@@ -128,4 +138,22 @@ export function settle(s: CreatureState): void {
   } else {
     s.ticksAlive++;
   }
+}
+
+// Collision damage: both lose damagePerSpeed x the approach speed. If exactly one would die, the survivor also gains the
+// dead one's energy from just before the hit, and the dead one is left at 0 for settle. If both die nobody gains.
+// Creatures already at 0 energy (dying this tick) are left alone.
+export function hurt(a: CreatureState, b: CreatureState, speed: number, damagePerSpeed: number): void {
+  const beforeA = a.energy;
+  const beforeB = b.energy;
+  if (speed <= 0 || beforeA <= 0 || beforeB <= 0) return;
+  const damage = damagePerSpeed * speed;
+  a.energy -= damage;
+  b.energy -= damage;
+  const aDead = a.energy <= 0;
+  const bDead = b.energy <= 0;
+  if (aDead && !bDead) b.energy += beforeA;
+  else if (bDead && !aDead) a.energy += beforeB;
+  if (aDead) a.energy = 0;
+  if (bDead) b.energy = 0;
 }

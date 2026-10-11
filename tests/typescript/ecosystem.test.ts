@@ -1,5 +1,6 @@
 import { genomeLength, layerSizes, randomGenome } from "../../src/typescript/src/sim/brain.ts";
 import { Creature } from "../../src/typescript/src/sim/creature.ts";
+import type { CreatureState } from "../../src/typescript/src/sim/types.ts";
 import { Crowd } from "../../src/typescript/src/sim/crowd.ts";
 import { createRng } from "../../src/typescript/src/sim/rng.ts";
 import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
@@ -212,6 +213,71 @@ describe("Ecosystem", () => {
       shapes.add(brain.sizes.join());
     }
     expect(shapes.size).toBeGreaterThan(1);
+  });
+});
+
+describe("Ecosystem collision damage", () => {
+  // Two creatures that touch head-on at the given speeds along x; collideAll runs alone, so nothing else moves energy.
+  const pair = (eco: Partial<EcoConfig["eco"]>, ea: number, eb: number, va = 40, vb = -40) => {
+    const e = new Ecosystem(still({ initialPopulation: 2, collisions: true, collisionDamage: true, damagePerSpeed: 0.5, birthEnergy: 1e9, ...eco }, 100), null, { journal: true });
+    const [a, b] = e.members.map((m) => m.creature.state) as [CreatureState, CreatureState];
+    Object.assign(a, { x: 500, y: 500, vx: va, vy: 0, energy: ea });
+    Object.assign(b, { x: 520, y: 500, vx: vb, vy: 0, energy: eb });
+    const bump = () => (e as unknown as { collideAll(): void }).collideAll();
+    return { e, a, b, bump };
+  };
+
+  it("costs both 0.5 x the approach speed, in proportion to it", () => {
+    for (const v of [10, 40]) {
+      const { a, b, bump } = pair({}, 100, 100, v, -v);
+      bump();
+      expect([a.energy, b.energy]).toEqual([100 - v, 100 - v]); // approach speed 2v
+    }
+  });
+
+  it("applies once per contact, not every tick of overlap", () => {
+    const { a, b, bump } = pair({}, 100, 100);
+    bump();
+    expect(a.energy).toBe(60);
+    bump(); // overlapping or touching, now moving apart
+    bump();
+    expect([a.energy, b.energy]).toEqual([60, 60]);
+  });
+
+  it("gives the survivor the dead one's energy from before the hit", () => {
+    const { a, b, bump } = pair({}, 30, 100); // damage 40
+    bump();
+    expect([a.energy, b.energy]).toEqual([0, 60 + 30]);
+  });
+
+  it("gives nothing when both die", () => {
+    const { a, b, bump } = pair({}, 30, 35);
+    bump();
+    expect([a.energy, b.energy]).toEqual([0, 0]);
+  });
+
+  it("is off by default and then changes no energy", () => {
+    expect(DEFAULT_ECO_CONFIG.eco.collisionDamage).toBe(false);
+    const { a, b, bump } = pair({ collisionDamage: false }, 100, 100);
+    bump();
+    expect([a.energy, b.energy]).toEqual([100, 100]);
+  });
+
+  it("removes a creature killed by a bounce through the normal path", () => {
+    const { e, a, b } = pair({}, 30, 100, 45, -45);
+    const [idA, idB] = e.members.map((m) => m.id) as [number, number];
+    e.step();
+    expect([e.population, e.deaths]).toEqual([1, 1]);
+    expect(e.journal!.died).toEqual([idA]);
+    expect([e.lineageSize(idA), e.lineageSize(idB)]).toEqual([0, 1]);
+    expect(b.energy).toBeGreaterThan(30);
+    expect(a).toBeDefined();
+  });
+
+  it("with damage off the run is unchanged (fingerprint recorded before the feature)", () => {
+    const eco = new Ecosystem(ecoCfg({ seed: 7, world: { width: 600, height: 600 }, creature: { startEnergy: 100 }, eco: { initialPopulation: 80, birthEnergy: 120, collisions: true } }));
+    for (let t = 0; t < 300; t++) eco.step();
+    expect([eco.fingerprint(), eco.births, eco.deaths]).toEqual([787898088, 0, 1]); // recorded before collision damage existed
   });
 });
 
