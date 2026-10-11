@@ -4,11 +4,14 @@ import { arenaScene } from "../../src/typescript/src/ui/arenaCardScene.ts";
 
 const TICKS = Math.round(60 / TICK_SECONDS);
 
-// Canvas stub that fails on a non-finite number or negative arc radius passed to a drawing call.
+// Canvas stub that throws on a non-finite number or negative arc radius passed to a drawing call.
+// Plain throws, because one vitest expect per number made the draws the slowest part of the suite.
 function finiteCtx(): CanvasRenderingContext2D {
-  const check = (...args: unknown[]): void => { for (const a of args) if (typeof a === "number") expect(Number.isFinite(a)).toBe(true); };
+  const check = (...args: unknown[]): void => {
+    for (const a of args) if (typeof a === "number" && !Number.isFinite(a)) throw new Error(`non-finite drawing value ${a}`);
+  };
   const canvas = { width: 720, height: 450 };
-  return new Proxy({}, { get: (_, k) => (k === "canvas" ? canvas : k === "createRadialGradient" || k === "createLinearGradient" ? (...a: unknown[]) => { check(...a); return { addColorStop: check }; } : k === "arc" ? (...a: unknown[]) => { check(...a); expect(a[2]).toBeGreaterThanOrEqual(0); } : check), set: (_, _k, v) => { check(v); return true; } }) as unknown as CanvasRenderingContext2D;
+  return new Proxy({}, { get: (_, k) => (k === "canvas" ? canvas : k === "createRadialGradient" || k === "createLinearGradient" ? (...a: unknown[]) => { check(...a); return { addColorStop: check }; } : k === "arc" ? (...a: unknown[]) => { check(...a); if (!((a[2] as number) >= 0)) throw new Error(`negative arc radius ${String(a[2])}`); } : check), set: (_, _k, v) => { check(v); return true; } }) as unknown as CanvasRenderingContext2D;
 }
 
 describe("ecosystemScene births", () => {
