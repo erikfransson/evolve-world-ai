@@ -54,6 +54,19 @@ export class WasmBrainBank {
     return this.kernel.f32;
   }
 
+  get memory(): WebAssembly.Memory {
+    return this.kernel.memory;
+  }
+
+  // Raw bytes in the bank's memory for a caller that shares it (the senser); 16-byte aligned, kept until freed.
+  alloc(bytes: number): number {
+    return this.arena.alloc(bytes);
+  }
+
+  free(ptr: number, bytes: number): void {
+    this.arena.release(ptr, bytes);
+  }
+
   get memoryBytes(): number {
     return this.kernel.memory.buffer.byteLength;
   }

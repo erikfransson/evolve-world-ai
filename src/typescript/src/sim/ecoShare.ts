@@ -335,7 +335,7 @@ export class ShareHelper {
 
   // wasm: sense and think on the WebAssembly kernels when available, as the coordinator does.
   constructor(config: EcoConfig, worldCapacity: number, index: number, wasm = false) {
-    this.kernels = wasm ? SenseKernels.create() : null;
+    this.kernels = wasm ? SenseKernels.create(config) : null;
     this.engines = speciesList(config).map((sp) => speciesEngine(config, sp));
     this.spare = this.engines.map(() => []);
     this.index = index;

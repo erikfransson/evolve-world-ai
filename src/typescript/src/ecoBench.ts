@@ -91,8 +91,9 @@ let creatureTicks = 0;
 const t0 = performance.now();
 const warm = Math.floor(ticks / 4); // steadyMsPerTick leaves out these first ticks (JIT warm-up, helper start)
 let tWarm = t0;
+let cpuWarm = process.cpuUsage();
 while (eco.tick < ticks && !eco.extinct) {
-  if (eco.tick === warm) tWarm = performance.now();
+  if (eco.tick === warm) { tWarm = performance.now(); cpuWarm = process.cpuUsage(); }
   creatureTicks += eco.population;
   if (helpers) await helpers.step(eco);
   else eco.step();
@@ -115,6 +116,7 @@ console.log(JSON.stringify({
   wallSeconds: +wall.toFixed(2),
   ticksPerSecond: +(eco.tick / wall).toFixed(1),
   msPerTick: +((1000 * wall) / Math.max(1, eco.tick)).toFixed(2),
+  cpuMsPerTick: +(process.cpuUsage(cpuWarm).user / 1000 / Math.max(1, eco.tick - warm)).toFixed(2), // user CPU of all threads, steadier than wall under load
   steadyMsPerTick: +((t1 - tWarm) / Math.max(1, eco.tick - warm)).toFixed(2),
   meanPopulation: Math.round(creatureTicks / Math.max(1, eco.tick)),
   creatureTicksPerSecond: Math.round(creatureTicks / wall),

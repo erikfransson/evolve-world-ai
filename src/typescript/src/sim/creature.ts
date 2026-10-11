@@ -2,14 +2,13 @@ import { Brain, layerSizes, refit } from "./brain.ts";
 import type { EngineConfig } from "./config.ts";
 import { agingFactor, consume, decaysFor, settle, stepBody } from "./physics.ts";
 import type { Aging, Decays, Heading } from "./physics.ts";
-import { OUTPUT_SIZE, OUT_THRUST, OUT_TURN, copyPlan, encodeInputs, planOf, planUpkeep, rayAngleOffsets, thrustCommand } from "./sensors.ts";
+import { energySignal, OUTPUT_SIZE, OUT_THRUST, OUT_TURN, copyPlan, encodeInputs, planOf, planUpkeep, rayAngleOffsets, thrustCommand } from "./sensors.ts";
 import type { BodyPlan, PlanView } from "./sensors.ts";
 import { HIT_NONE } from "./types.ts";
 import type { CreatureState, Genome, HitKind, RayHit } from "./types.ts";
 import { RayCache } from "./world.ts";
 import type { World } from "./world.ts";
 import type { Crowd } from "./crowd.ts";
-import type { WasmRayCaster } from "./wasm/rayKernel.ts";
 import type { SenseKernels } from "./wasm/senseKernels.ts";
 
 let created = 0; // objects made so far in this process
@@ -66,6 +65,28 @@ export class Creature {
   // Short units first, then long.
   get memory(): Readonly<Float64Array> {
     return this.units;
+  }
+
+  get offsetCos(): Readonly<Float64Array> {
+    return this.rayOffCos;
+  }
+
+  get offsetSin(): Readonly<Float64Array> {
+    return this.rayOffSin;
+  }
+
+  // Writes the brain input that does not come from rays (extras, then memory units) at f32[at], where at is the first extra's index.
+  writeBodyInputs(f32: Float32Array, at: number): void {
+    const c = this.config.creature;
+    const s = this.state;
+    const cos = this.heading.cos;
+    const sin = this.heading.sin;
+    f32[at] = energySignal(s.energy, c.startEnergy);
+    f32[at + 1] = ((s.vx * cos + s.vy * sin) * c.drag) / c.maxThrust;
+    f32[at + 2] = ((s.vy * cos - s.vx * sin) * c.drag) / c.maxThrust;
+    f32[at + 3] = s.turnRate / c.maxTurnRate;
+    const u = this.units;
+    for (let i = 0; i < u.length; i++) f32[at + 4 + i] = u[i]!;
   }
 
   // Energy per second besides thrust and turning, from the plan.
@@ -151,9 +172,10 @@ export class Creature {
     world.castRays(this.state.x, this.state.y, dirX, dirY, rays, this.cache, length);
   }
 
-  // Queues the crowd part of sense on a WASM caster, after senseWorld; the caster's apply() finishes the rays.
-  queueCrowd(caster: WasmRayCaster, self: number): void {
-    caster.queue(this.state.x, this.state.y, this.rayDirX, this.rayDirY, this.rays, self, this.ownPlan.rayLength);
+  // Takes the brain input a WASM kernel built for this creature (f32[at ..]), so encode()'s view of it (what the brain panel shows) is current.
+  adoptInput(f32: Float32Array, at: number): void {
+    this.input.set(f32.subarray(at, at + this.input.length));
+    this.brain.showInput(this.input);
   }
 
   // Runs the brain on the last sensed rays, the current body and the memory, then updates the memory from its targets.

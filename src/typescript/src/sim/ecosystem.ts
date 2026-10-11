@@ -103,6 +103,8 @@ export class Ecosystem {
   poison = 0;
   // Living creatures in list order; states[i] is members[i].creature.state.
   readonly members: EcoCreature[] = [];
+  // Id of a creature whose rays and brain input must be current after each tick (the selected one); the WASM sense leaves everyone else's stale.
+  detail: number | null = null;
   // With the journal option: changes not yet drained by a helper coordinator (ecoShare.ts). born and died hold ids, items World.log records.
   journal: EcoJournal | null;
 
@@ -171,7 +173,9 @@ export class Ecosystem {
     const counts = founderCounts(this.species, eco.maxPopulation);
     const founders = counts.reduce((a, b) => a + b, 0);
     this.crowd = new Crowd(config, founders);
-    this.kernels = eco.wasm ? SenseKernels.create() : null;
+    // Plans past the kernel's ray limit (a huge ray count setting or pool entry) run on the JS path.
+    const maxRays = Math.max(config.creature.rayCount, ...this.ranges.map((r) => r.rayCountRange[1] ?? 0), ...(pool ?? []).map((e) => e.plan.rayCount));
+    this.kernels = eco.wasm ? SenseKernels.create(config, maxRays) : null;
     this.childPlan = planOf(config);
     this.mutation = { mutationRate: config.mutation.rate, mutationStd: config.mutation.std };
 
@@ -277,8 +281,20 @@ export class Ecosystem {
     this.senseBatch(batch);
   }
 
+  // Brings the detail creature's rays and brain input up to date outside a tick (display only, on the JS path): on selecting it,
+  // or while paused. Rebuilds the crowd grid, which every tick does first anyway, and leaves the simulation state alone.
+  refreshDetail(): void {
+    const i = this.detail === null ? -1 : this.members.findIndex((m) => m.id === this.detail);
+    if (i < 0) return;
+    this.crowd.rebuild(this.states, this.states.length, this.multi ? this.kinds : undefined);
+    const c = this.members[i]!.creature;
+    c.sense(this.items, this.crowd, i);
+    c.encode();
+  }
+
   // Phase 1a for a batch of members, each at its list index, after prepareTick.
   senseBatch(batch: SenseBatch): void {
+    if (this.kernels) this.kernels.detail = this.detail === null ? null : (this.byId.get(this.detail)?.creature ?? null);
     senseThinkBatch(this.items, this.crowd, batch, this.kernels);
   }
 

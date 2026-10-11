@@ -168,6 +168,25 @@ describe("EcoRunner", () => {
     expect(last().selected).toBeNull();
   });
 
+  it("shows current rays and inputs for a creature selected while paused, before any tick ran", () => {
+    const { runner, last } = setup();
+    runner.handle({ type: "start", config: cfg(), run: 1 });
+    runner.handle({ type: "pause" });
+    const v = snapshotViews(last().buffer, 20, 0, last().creatureCap, last().itemCap);
+    let seen = 0;
+    for (let i = 0; i < 20; i++) {
+      runner.handle({ type: "select", id: v.ids[i]! });
+      const a = last().selected!;
+      const stride = 6;
+      for (let k = 0; k < a.rayKinds.length; k++) {
+        expect(a.inputs[k * stride]).toBe(Math.fround(a.rayCloseness[k]!));
+        if (a.rayKinds[k] !== 0) seen++;
+      }
+      expect(a.inputs[a.rayKinds.length * stride]).toBeCloseTo(1 - Math.exp(-a.energy / DEFAULT_ECO_CONFIG.creature.startEnergy), 5);
+    }
+    expect(seen).toBeGreaterThan(5); // walls or items in sight, so the rays were really computed
+  });
+
   it("sends the selected creature's own plan, matching its rays, inputs and genome", () => {
     const { runner, last } = setup();
     runner.handle({ type: "start", config: cfg({ eco: { foundersVary: true } }), run: 1 });

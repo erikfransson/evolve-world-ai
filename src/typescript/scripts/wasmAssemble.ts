@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import wabtInit from "wabt";
 
 const dir = new URL("../src/sim/wasm/", import.meta.url);
-const kernels = { BRAIN: "brain.wat", RAYS: "rays.wat" };
+const kernels = { BRAIN: "brain.wat", SENSE: "sense.wat" };
 
 export async function generatedSource(): Promise<string> {
   const wabt = await wabtInit();

@@ -182,6 +182,7 @@ describe("WebAssembly kernels", () => {
     expect(a.births).toBeGreaterThan(0);
     expect(a.deaths).toBeGreaterThan(0);
     expect(serial(wasmCfg(), 300).fingerprint()).toBe(a.fingerprint());
+    expect(a.fingerprint()).toBe(746480886); // pinned: the same value main gave before the one-call sense kernel (e17cba7); change it only on purpose
     const js = serial(wasmCfg(5, false), 300);
     expect(js.wasm).toBe(false);
     expect(serial(cfg(), 300).fingerprint()).toBe(a.fingerprint()); // WASM is the default
@@ -196,6 +197,16 @@ describe("WebAssembly kernels", () => {
     expect(maxMove).toBeLessThan(1e-3);
   });
 
+  it("falls back to the JS path, exactly and without throwing, when plans may exceed the kernel's ray limit", () => {
+    const c = wasmCfg();
+    const many = { ...c, creature: { ...c.creature, rayCount: 70 }, eco: { ...c.eco, initialPopulation: 8 } };
+    const eco = serial(many, 20);
+    expect(eco.wasm).toBe(false);
+    expect(eco.population).toBeGreaterThan(0);
+    const ok = { ...c, creature: { ...c.creature, rayCount: 40 }, eco: { ...c.eco, initialPopulation: 8 } };
+    expect(serial(ok, 5).wasm).toBe(true);
+  });
+
   it("keep each creature's brain across births, deaths, recycling and plan mutations", () => {
     const c = wasmCfg();
     const eco = new Ecosystem({ ...c, world: { ...c.world, foodDensity: 2 }, eco: { ...c.eco, foodRegrow: 1, foodMaxDensity: 2, birthEnergy: 30, birthCost: 20, childEnergy: 15, birthCooldown: 2 } }); // fast turnover
@@ -203,22 +214,21 @@ describe("WebAssembly kernels", () => {
     let checked = 0;
     const recycledShapes = new Set<number>(); // genome lengths of creatures that took over a dead one
     for (let t = 0; t < 600; t++) {
+      // Only the detail creature keeps its brain input; the next member takes over each tick.
+      const m = eco.members[t % eco.population]!;
+      eco.detail = m.id;
       eco.prepareTick();
       eco.sensePhase(0, eco.population);
-      if (t % 5 === 4) {
-        for (const m of eco.members) {
-          const c = m.creature;
-          if (c.brainVersion > 0) recycledShapes.add(c.brain.genome.length);
-          c.brain.forward(c.brain.layerActivations()[0]!, out.subarray(0, c.outputs.length));
-          for (let i = 0; i < c.outputs.length; i++) expect(Math.abs(c.outputs[i]! - out[i]!)).toBeLessThan(1e-4);
-          checked++;
-        }
-      }
+      const c = m.creature;
+      if (c.brainVersion > 0) recycledShapes.add(c.brain.genome.length);
+      c.brain.forward(c.brain.layerActivations()[0]!, out.subarray(0, c.outputs.length));
+      for (let i = 0; i < c.outputs.length; i++) expect(Math.abs(c.outputs[i]! - out[i]!)).toBeLessThan(1e-4);
+      checked++;
       eco.finishTick();
     }
     expect(eco.deaths).toBeGreaterThan(60);
     expect(recycledShapes.size).toBeGreaterThan(5);
-    expect(checked).toBeGreaterThan(2000);
+    expect(checked).toBe(600);
   });
 
   it("give the same run for any helper count and mode", async () => {
