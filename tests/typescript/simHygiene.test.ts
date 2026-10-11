@@ -6,7 +6,8 @@ import { ShareHelper } from "../../src/typescript/src/sim/ecoShare.ts";
 import { HIT_FOOD } from "../../src/typescript/src/sim/types.ts";
 import { SenseKernels } from "../../src/typescript/src/sim/wasm/senseKernels.ts";
 import { startItems } from "../../src/typescript/src/ui/ecoIdle.ts";
-import { createNodeThinkPool } from "../../src/typescript/src/worker/nodePool.ts";
+import { ThinkPool, serveHelper } from "../../src/typescript/src/worker/ecoPool.ts";
+import type { HelperIn, HelperOut, HelperPort } from "../../src/typescript/src/worker/ecoPool.ts";
 import { testRng } from "./helpers.ts";
 
 // The crowded small world of the ecoPool tests, so creatures are born and die within a few hundred ticks.
@@ -21,6 +22,23 @@ function cfg(wasm: boolean): EcoConfig {
   };
 }
 
+// In-process helpers over cloned messages.
+function fakePorts(n: number): HelperPort[] {
+  return Array.from({ length: n }, () => {
+    let reply: (msg: HelperOut) => void = () => {};
+    const handle = serveHelper((msg, transfer) => queueMicrotask(() => reply(structuredClone(msg, { transfer: transfer as ArrayBuffer[] }))));
+    return {
+      post: (msg: HelperIn, transfer?: Transferable[]) => {
+        const copy = structuredClone(msg, { transfer: (transfer ?? []) as ArrayBuffer[] });
+        queueMicrotask(() => handle(copy));
+      },
+      onMessage: (callback) => { reply = callback; },
+      onError: () => {},
+      terminate: () => {},
+    };
+  });
+}
+
 describe("watched creature with helpers", () => {
   // The watched id changes every tick and refreshDetail runs on some, as the page does while a creature is selected.
   it.each([
@@ -31,7 +49,7 @@ describe("watched creature with helpers", () => {
     for (let t = 0; t < 300; t++) serial.step();
     expect(serial.fingerprint()).toBe(fingerprint);
 
-    const pool = createNodeThinkPool(2, false);
+    const pool = new ThinkPool(fakePorts(2), false);
     try {
       const eco = new Ecosystem(cfg(wasm), null, { journal: true });
       await pool.start(eco);

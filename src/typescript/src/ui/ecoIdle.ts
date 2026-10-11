@@ -1,6 +1,6 @@
 import { itemCounts } from "../sim/config.ts";
+import { startRng } from "../sim/ecoConfig.ts";
 import type { EcoConfig } from "../sim/ecoConfig.ts";
-import { startRng } from "../sim/ecosystem.ts";
 import { HIT_FOOD, HIT_POISON } from "../sim/types.ts";
 import { World } from "../sim/world.ts";
 import { BACKGROUND, FLOOR, FOOD, POISON, WALL } from "./scene.ts";

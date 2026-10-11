@@ -425,7 +425,7 @@ export class ShareHelper {
     for (let g = 0; g < length; g++) genome[g] = d[k++]!;
     let c = this.spare[species]!.pop();
     if (c) c.reset(genome, 0, 0, 0, 0, plan);
-    else c = new Creature(this.engines[species]!, genome.slice(), 0, 0, 0, plan);
+    else c = new Creature(this.engines[species]!, genome, 0, 0, 0, plan);
     c.aging = this.aging;
     this.mine.set(id, c);
     this.speciesOf.set(id, species);

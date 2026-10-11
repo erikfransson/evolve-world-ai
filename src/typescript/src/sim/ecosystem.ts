@@ -3,13 +3,12 @@ import { itemCounts, itemsPerDensity } from "./config.ts";
 import type { EngineConfig } from "./config.ts";
 import { Creature, SenseBatch, senseThinkBatch } from "./creature.ts";
 import { Crowd } from "./crowd.ts";
-import { seasonFactor } from "./ecoConfig.ts";
+import { seasonFactor, startRng } from "./ecoConfig.ts";
 import type { EcoConfig } from "./ecoConfig.ts";
 import { mutate } from "./ga.ts";
 import { driftPlan, mutateStructure, randomPlan, remapWeights } from "./planMutation.ts";
 import { agingOf, collide, hurt, keepInside, settle } from "./physics.ts";
 import type { Aging, Contact } from "./physics.ts";
-import { createRng, deriveSeed } from "./rng.ts";
 import type { StatefulRng } from "./rng.ts";
 import { copyPlan, inputLayout, planOf } from "./sensors.ts";
 import type { BodyPlan, PlanView } from "./sensors.ts";
@@ -25,9 +24,6 @@ import { World } from "./world.ts";
 import { SenseKernels } from "./wasm/senseKernels.ts";
 
 export type { Lineage } from "./lineages.ts";
-
-// The stream a run starts from: the item scatter first, then the founders. The idle preview scatters from the same stream.
-export const startRng = (config: EcoConfig): StatefulRng => createRng(deriveSeed(config.seed, 0xec0));
 
 // One creature of the ecosystem with its family record. Objects are recycled after death, so hold ids, not references.
 export class EcoCreature {

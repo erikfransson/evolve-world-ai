@@ -1,5 +1,7 @@
 import { DEFAULT_CONFIG } from "./config.ts";
 import type { EngineConfig } from "./config.ts";
+import { createRng, deriveSeed } from "./rng.ts";
+import type { StatefulRng } from "./rng.ts";
 import type { SpeciesConfig } from "./species.ts";
 
 // Ecosystem: all creatures share one world, food and poison regrow, creatures reproduce on their own.
@@ -153,3 +155,6 @@ export function seasonName(eco: EcoConfig["eco"], t: number): (typeof SEASONS)[n
   const p = (((t / year) % 1) + 1) % 1;
   return SEASONS[Math.floor(((p + 0.125) % 1) * 4)]!;
 }
+
+// The stream a run starts from: the item scatter first, then the founders. The idle preview scatters from the same stream.
+export const startRng = (config: EcoConfig): StatefulRng => createRng(deriveSeed(config.seed, 0xec0));
