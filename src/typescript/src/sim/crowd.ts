@@ -14,6 +14,7 @@ export class Crowd {
   xs: Float64Array;
   ys: Float64Array;
   energies: Float64Array;
+  species: Int32Array;
   owners: Int32Array;
 
   readonly cell: number;
@@ -22,12 +23,14 @@ export class Crowd {
   private px = new Float64Array(0); // rebuild's copy of the states, in list order
   private py = new Float64Array(0);
   private pe = new Float64Array(0);
+  private ps = new Int32Array(0);
   private readonly cursor: Int32Array;
   // Candidates of one sensing: offset to the creature, squared distance minus squared radius, energy.
   private candFx = new Float64Array(64);
   private candFy = new Float64Array(64);
   private candC = new Float64Array(64);
   private candE = new Float64Array(64);
+  private candS = new Int32Array(64);
 
   constructor(config: EngineConfig, capacity = 64) {
     this.radius = config.creature.radius;
@@ -39,6 +42,7 @@ export class Crowd {
     this.xs = new Float64Array(capacity);
     this.ys = new Float64Array(capacity);
     this.energies = new Float64Array(capacity);
+    this.species = new Int32Array(capacity);
     this.owners = new Int32Array(capacity);
     this.cellOf = new Int32Array(capacity);
   }
@@ -53,25 +57,27 @@ export class Crowd {
     return cy * this.cols + cx;
   }
 
-  // Snapshots positions and energies of states[0 .. n-1].
-  rebuild(states: readonly CreatureState[], n: number): void {
+  // Snapshots positions and energies of states[0 .. n-1], and species[i] of each (all 0 without).
+  rebuild(states: readonly CreatureState[], n: number, species?: ArrayLike<number>): void {
     if (n > this.px.length) {
       const size = Math.max(n, 2 * this.px.length);
       this.px = new Float64Array(size);
       this.py = new Float64Array(size);
       this.pe = new Float64Array(size);
+      this.ps = new Int32Array(size);
     }
     for (let i = 0; i < n; i++) {
       const s = states[i];
       this.px[i] = s.x;
       this.py[i] = s.y;
       this.pe[i] = s.energy;
+      this.ps[i] = species ? species[i]! : 0;
     }
-    this.rebuildFrom(this.px, this.py, this.pe, n);
+    this.rebuildFrom(this.px, this.py, this.pe, n, this.ps);
   }
 
-  // The same from arrays: creature i at (x[i], y[i]) with energy e[i].
-  rebuildFrom(x: Float64Array, y: Float64Array, e: Float64Array, n: number): void {
+  // The same from arrays: creature i at (x[i], y[i]) with energy e[i] and species sp[i] (all 0 without).
+  rebuildFrom(x: Float64Array, y: Float64Array, e: Float64Array, n: number, sp?: ArrayLike<number>): void {
     if (n > this.xs.length) this.grow(n);
     const start = this.cellStart;
     start.fill(0);
@@ -90,6 +96,7 @@ export class Crowd {
       this.xs[k] = x[i];
       this.ys[k] = y[i];
       this.energies[k] = e[i];
+      this.species[k] = sp ? sp[i]! : 0;
       this.owners[k] = i;
     }
     this.count = n;
@@ -100,6 +107,7 @@ export class Crowd {
     this.xs = new Float64Array(size);
     this.ys = new Float64Array(size);
     this.energies = new Float64Array(size);
+    this.species = new Int32Array(size);
     this.owners = new Int32Array(size);
     this.cellOf = new Int32Array(size);
   }
@@ -138,6 +146,7 @@ export class Crowd {
         this.candFx[n] = fx;
         this.candFy[n] = fy;
         this.candC[n] = d2 - r2;
+        this.candS[n] = this.species[k];
         this.candE[n++] = this.energies[k];
       }
     }
@@ -169,6 +178,7 @@ export class Crowd {
         ray.closeness = 1 - best / L;
         ray.kind = HIT_CREATURE;
         ray.energy = this.candE[hit];
+        ray.species = this.candS[hit];
       }
     }
   }
@@ -180,5 +190,8 @@ export class Crowd {
       grown.set(this[key]);
       this[key] = grown;
     }
+    const species = new Int32Array(size);
+    species.set(this.candS);
+    this.candS = species;
   }
 }

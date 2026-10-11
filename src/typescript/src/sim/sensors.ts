@@ -36,6 +36,7 @@ export function copyPlan(from: PlanView, to: BodyPlan): void {
 }
 
 // Brain input layout: per ray these features, then the extras, then the memory units (short first). inputLayout picks the ray features for a config.
+// With creature features, one flag per species follows the wall (a single "creature" flag without a species list), then the seen energy.
 export const RAY_FEATURE_LABELS = ["closeness", "food", "poison", "wall"] as const;
 export const RAY_FEATURES = RAY_FEATURE_LABELS.length; // without creature features, as in Trials
 export const CREATURE_RAY_FEATURE_LABELS = [...RAY_FEATURE_LABELS, "creature", "seen energy"] as const;
@@ -43,8 +44,8 @@ export const FEAT_CLOSENESS = 0;
 export const FEAT_FOOD = 1;
 export const FEAT_POISON = 2;
 export const FEAT_WALL = 3;
-export const FEAT_CREATURE = 4;
-export const FEAT_SEEN_ENERGY = 5;
+export const FEAT_CREATURE = 4; // the first species flag
+export const FEAT_SEEN_ENERGY = 5; // with one species; in general the last ray feature
 export const INPUT_EXTRA_LABELS = ["energy", "speed", "lateral", "turn"] as const; // speed is forward, lateral is sideways
 export const EXTRA_INPUTS = INPUT_EXTRA_LABELS.length;
 
@@ -67,8 +68,19 @@ export interface InputLayout {
   readonly outputs: number; // OUTPUT_SIZE + memory units
 }
 
+// Ray feature labels for creatures that see the given number of species (1 without a species list).
+export const speciesFeatureLabels = (names: readonly string[]): readonly string[] =>
+  names.length > 1 ? [...RAY_FEATURE_LABELS, ...names, "seen energy"] : CREATURE_RAY_FEATURE_LABELS;
+
 const rayFeatureLabels = (config: EngineConfig): readonly string[] =>
-  config.creature.seesCreatures ? CREATURE_RAY_FEATURE_LABELS : RAY_FEATURE_LABELS;
+  !config.creature.seesCreatures ? RAY_FEATURE_LABELS : config.species && config.species.length > 1 ? speciesFeatureLabels(config.species.map((s) => s.name)) : CREATURE_RAY_FEATURE_LABELS;
+
+// rayFeatureLabels(config).length without allocating.
+export function rayFeatureCount(config: EngineConfig): number {
+  if (!config.creature.seesCreatures) return RAY_FEATURES;
+  const species = config.species?.length ?? 1;
+  return RAY_FEATURES + Math.max(1, species) + 1;
+}
 
 export function inputLayout(config: EngineConfig, plan: PlanView = planOf(config)): InputLayout {
   const labels = rayFeatureLabels(config);
@@ -127,7 +139,7 @@ export function energySignal(energy: number, startEnergy: number): number {
 // Extras: squashed energy, forward and sideways speed / top speed, turnRate / maxTurnRate. Allocation-free.
 export function encodeInputs(state: CreatureState, rays: readonly RayHit[], config: EngineConfig, out: Float32Array, cosHeading: number, sinHeading: number): void {
   const c = config.creature;
-  const stride = rayFeatureLabels(config).length;
+  const stride = rayFeatureCount(config);
   for (let i = 0; i < rays.length; i++) {
     const ray = rays[i];
     const k = i * stride;
@@ -137,8 +149,9 @@ export function encodeInputs(state: CreatureState, rays: readonly RayHit[], conf
     out[k + FEAT_WALL] = ray.kind === HIT_WALL ? 1 : 0;
     if (stride > RAY_FEATURES) {
       const seen = ray.kind === HIT_CREATURE;
-      out[k + FEAT_CREATURE] = seen ? 1 : 0;
-      out[k + FEAT_SEEN_ENERGY] = seen ? energySignal(ray.energy, c.startEnergy) : 0;
+      for (let f = FEAT_CREATURE; f < stride - 1; f++) out[k + f] = 0;
+      if (seen) out[k + FEAT_CREATURE + ray.species] = 1;
+      out[k + stride - 1] = seen ? energySignal(ray.energy, config.seenEnergyScale ?? c.startEnergy) : 0;
     }
   }
   const base = rays.length * stride;

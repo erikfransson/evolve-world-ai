@@ -1,8 +1,8 @@
 import type { EcoConfig } from "../sim/ecoConfig.ts";
-import type { Lineage } from "../sim/ecosystem.ts";
+import type { Lineage, SpeciesCount } from "../sim/ecosystem.ts";
 import type { BodyPlan } from "../sim/sensors.ts";
 
-export type BestBy = "age" | "children" | "eaten";
+export type BestBy = "age" | "children" | "eaten" | "kills";
 export type EcoSpeedSetting = number | "max"; // simulated seconds per real second, "max" = as many ticks as fit
 
 export type EcoInMessage =
@@ -28,6 +28,8 @@ export interface SelectedDetails {
   age: number; // seconds
   children: number;
   eaten: number; // food items eaten
+  kills: number; // prey eaten
+  species: number; // index into the config's species
   depth: number;
   parentId: number;
   hue: number;
@@ -67,10 +69,12 @@ export interface EcoSnapshot {
   buffer: ArrayBuffer; // transferred; see snapshotViews
   selected: SelectedDetails | null;
   bestRequest: number; // the last selectBest request handled, so the page ignores selections from before it
-  history?: Float64Array; // [time, population, food] per sample, only when it changed
-  // Lineages, sent about once a second (and with the first and last snapshot of a run).
+  history?: Float64Array; // [time, population, food] per sample, then each species' population with several species; only when it changed
+  species?: SpeciesCount[]; // per species, with several species
+  // Lineages, sent about once a second (and with the first and last snapshot of a run). With several species, each
+  // species has its own: lineages lists each species' in turn, and each history sample holds one block per species.
   lineages?: Lineage[]; // the LINEAGE_TOP largest living lineages, biggest first
-  lineageHistory?: Float64Array; // LINEAGE_STRIDE numbers per sample, at the times of `history`, only when it changed
+  lineageHistory?: Float64Array; // LINEAGE_STRIDE numbers per sample and species, at the times of `history`, only when it changed
 }
 
 export const LINEAGE_TOP = 8;
@@ -94,24 +98,25 @@ export interface SnapshotViews {
   hue: Float32Array;
   age: Float32Array; // seconds
   founder: Int32Array; // founder id
+  species: Int32Array; // index into the config's species, 0 without
   itemCount: number;
   itemX: Float32Array;
   itemY: Float32Array;
   itemKind: Uint8Array;
 }
 
-const CREATURE_BYTES = 8 * 4; // id, x, y, heading, energy, hue, age, founder
+const CREATURE_BYTES = 9 * 4; // id, x, y, heading, energy, hue, age, founder, species
 const ITEM_BYTES = 2 * 4 + 1;
 
 export function snapshotBytes(creatureCap: number, itemCap: number): number {
   return creatureCap * CREATURE_BYTES + itemCap * ITEM_BYTES;
 }
 
-// Typed views over a snapshot buffer: eight per-creature arrays, then item x, y and kind. A buffer may be larger than needed.
+// Typed views over a snapshot buffer: nine per-creature arrays, then item x, y and kind. A buffer may be larger than needed.
 export function snapshotViews(buffer: ArrayBuffer, count: number, itemCount: number, creatureCap: number, itemCap: number): SnapshotViews {
   const f32 = (at: number, n: number): Float32Array => new Float32Array(buffer, at, n);
   const c = creatureCap * 4;
-  const itemsAt = 8 * c;
+  const itemsAt = 9 * c;
   return {
     count,
     ids: new Int32Array(buffer, 0, creatureCap),
@@ -122,6 +127,7 @@ export function snapshotViews(buffer: ArrayBuffer, count: number, itemCount: num
     hue: f32(5 * c, creatureCap),
     age: f32(6 * c, creatureCap),
     founder: new Int32Array(buffer, 7 * c, creatureCap),
+    species: new Int32Array(buffer, 8 * c, creatureCap),
     itemCount,
     itemX: f32(itemsAt, itemCap),
     itemY: f32(itemsAt + itemCap * 4, itemCap),

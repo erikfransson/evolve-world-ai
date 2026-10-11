@@ -1,4 +1,5 @@
 import type { Brain } from "../sim/brain.ts";
+import { SPECIES_COLORS } from "./speciesStyle.ts";
 import { EXTRA_INPUTS, FEAT_CREATURE, FEAT_FOOD, FEAT_POISON, INPUT_EXTRA_LABELS, OUTPUT_LABELS, OUTPUT_SIZE, RAY_FEATURE_LABELS } from "../sim/sensors.ts";
 import type { InputLayout } from "../sim/sensors.ts";
 import { fitCanvas } from "./canvas.ts";
@@ -16,6 +17,22 @@ const POISON_COLOR = "#e040fb";
 const CREATURE_COLOR = "#7dd3fc";
 const FEATURE_LETTERS: Record<string, string> = { closeness: "c", food: "f", poison: "p", wall: "w", creature: "o", "seen energy": "e" };
 const FEATURE_COLORS = [TEXT_COLOR, FOOD_COLOR, POISON_COLOR, LABEL_COLOR, CREATURE_COLOR, CREATURE_COLOR];
+// True when ray feature f of n is one of several species flags (Predators & prey), labelled by a short upright word.
+const isSpeciesFlag = (f: number, n: number): boolean => n > FEATURE_COLORS.length && f >= 4 && f < n - 1;
+// Colour of a ray's row label from its inputs at k (features per ray): what it sees, a seen creature in its species'
+// colour (the strongest flag of any species), otherwise grey.
+export function rayLabelColor(inputs: ArrayLike<number>, k: number, features: number): string {
+  const food = inputs[k + FEAT_FOOD]!;
+  const poison = inputs[k + FEAT_POISON]!;
+  let flag = -1;
+  for (let f = FEAT_CREATURE; f < features - 1; f++) if (inputs[k + f]! > HIT_LEVEL && (flag < 0 || inputs[k + f]! > inputs[k + flag]!)) flag = f;
+  if (flag >= 0) return featureColor(flag, features);
+  if (food > HIT_LEVEL || poison > HIT_LEVEL) return food >= poison ? FOOD_COLOR : POISON_COLOR;
+  return LABEL_COLOR;
+}
+
+// Colour of ray feature f of n: with one flag per species (n > 6), each flag in its species' colour.
+const featureColor = (f: number, n: number): string => (f < 4 || n <= FEATURE_COLORS.length ? FEATURE_COLORS[f]! : f === n - 1 ? CREATURE_COLOR : SPECIES_COLORS[f - 4] ?? CREATURE_COLOR);
 const HIT_LEVEL = 0.5;
 
 const NB = 6; // edge strength buckets per sign, drawn weakest first so strong edges end on top
@@ -29,6 +46,7 @@ const FEAT_DX = 12;
 const IN_RADIUS = 2.6;
 const ROW_MAX = 12;
 const HEADER_H = 15; // feature header band above the first ray row
+const SPECIES_WORD_H = 20; // extra header height for the species columns' upright words ("prey", "pred")
 const EXTRA_BELOW = 14; // E S L T labels and padding under the extras row
 const MARGIN_Y = 6;
 const OUT_RADIUS = 8;
@@ -112,11 +130,12 @@ export function buildLayout(ctx: CanvasRenderingContext2D, sizes: readonly numbe
   const shortRows = Math.ceil(short / perRow);
   const memRows = shortRows + Math.ceil(long / perRow);
   const memBelow = memRows > 0 ? MEM_GAP + IN_RADIUS : 0;
-  const pitch = clamp((h - 2 * MARGIN_Y - HEADER_H - EXTRA_BELOW - 4 - memBelow) / (rays + 1 + Math.max(0, memRows - 1)), 1, ROW_MAX);
+  const headerH = HEADER_H + (features > FEATURE_COLORS.length ? SPECIES_WORD_H : 0);
+  const pitch = clamp((h - 2 * MARGIN_Y - headerH - EXTRA_BELOW - 4 - memBelow) / (rays + 1 + Math.max(0, memRows - 1)), 1, ROW_MAX);
   const extraGap = pitch + 4;
-  const blockH = HEADER_H + (rays - 1) * pitch + extraGap + EXTRA_BELOW + (memRows > 0 ? MEM_GAP + (memRows - 1) * pitch + IN_RADIUS : 0);
+  const blockH = headerH + (rays - 1) * pitch + extraGap + EXTRA_BELOW + (memRows > 0 ? MEM_GAP + (memRows - 1) * pitch + IN_RADIUS : 0);
   const top = (h - blockH) / 2;
-  const row0 = top + HEADER_H;
+  const row0 = top + headerH;
 
   const xs: Float32Array[] = [];
   const ys: Float32Array[] = [];
@@ -188,7 +207,7 @@ export function buildLayout(ctx: CanvasRenderingContext2D, sizes: readonly numbe
   ys.push(yOut);
   radius[cols - 1] = OUT_RADIUS;
   return {
-    sizes: sizes.slice(), features, w, h, xs, ys, radius, pitch, rays, headerY: top + 3, extraLabelY: yExtra + IN_RADIUS + 7, outLabelX,
+    sizes: sizes.slice(), features, w, h, xs, ys, radius, pitch, rays, headerY: top + 3 + headerH - HEADER_H, extraLabelY: yExtra + IN_RADIUS + 7, outLabelX,
     memoryShort: short, memoryAt, memoryRows, memoryOutY: yOut[1] + OUT_RADIUS + GAUGE_GAP + MEM_LETTER_H / 2 - 1,
   };
 }
@@ -396,8 +415,16 @@ export class BrainView {
     ctx.font = SMALL_FONT;
     ctx.textAlign = "center";
     for (let f = 0; f < features; f++) {
-      ctx.fillStyle = FEATURE_COLORS[f]!;
-      ctx.fillText(FEATURE_LETTERS[labels[f]!] ?? labels[f]![0]!, GRID_X + f * FEAT_DX, headerY);
+      ctx.fillStyle = featureColor(f, features);
+      if (isSpeciesFlag(f, features)) {
+        // Species share initials ("Prey", "Predator"), so their columns get a short word, written upward.
+        ctx.save();
+        ctx.translate(GRID_X + f * FEAT_DX, headerY + 4);
+        ctx.rotate(-Math.PI / 2);
+        ctx.textAlign = "left";
+        ctx.fillText(labels[f]!.slice(0, 4).toLowerCase(), 0, 0);
+        ctx.restore();
+      } else ctx.fillText(FEATURE_LETTERS[labels[f]!] ?? labels[f]![0]!, GRID_X + f * FEAT_DX, headerY);
     }
     ctx.fillStyle = LABEL_COLOR;
     for (let k = 0; k < EXTRA_INPUTS; k++) ctx.fillText(EXTRA_SHORT[k]!, xIn[rays * features + k]!, extraLabelY);
@@ -409,11 +436,8 @@ export class BrainView {
     const every = pitch >= 9;
     for (let r = 0; r < rays; r++) {
       const k = r * features;
-      const food = inAct[k + FEAT_FOOD]!;
-      const poison = inAct[k + FEAT_POISON]!;
-      const creature = features > FEAT_CREATURE ? inAct[k + FEAT_CREATURE]! : 0;
-      const hit = food > HIT_LEVEL || poison > HIT_LEVEL || creature > HIT_LEVEL;
-      const color = !hit ? LABEL_COLOR : creature > HIT_LEVEL ? CREATURE_COLOR : food >= poison ? FOOD_COLOR : POISON_COLOR;
+      const color = rayLabelColor(inAct, k, features);
+      const hit = color !== LABEL_COLOR;
       if (every || r % 2 === 0) {
         ctx.fillStyle = color;
         ctx.fillText(`R${r + 1}`, lx, yIn[k]!);

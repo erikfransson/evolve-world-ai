@@ -2,8 +2,11 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { DEFAULT_CONFIG } from "../../src/typescript/src/sim/config.ts";
-import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
-import { buildEcoForm, fillEcoForm, readEcoConfig } from "../../src/typescript/src/ui/ecoSettingsForm.ts";
+import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
+import { buildEcoForm } from "../../src/typescript/src/ui/ecoSettingsForm.ts";
+import type { EcoFormHandle } from "../../src/typescript/src/ui/ecoSettingsForm.ts";
+
+let form: EcoFormHandle;
 import { fillForm, initSettingsForm, readConfig } from "../../src/typescript/src/ui/settingsForm.ts";
 import { initSettingsIO, parseSettings, serialise } from "../../src/typescript/src/ui/settingsIO.ts";
 
@@ -23,6 +26,33 @@ describe("settings JSON", () => {
     eco.eco.yearMinutes = 8;
     eco.eco.winterFood = 0.2;
     expect(parseSettings(serialise("ecosystem", eco), "ecosystem")).toEqual(eco);
+  });
+
+  it("round-trips Predators & prey and merges each pasted species over its default", () => {
+    const c = structuredClone(DEFAULT_PREDATOR_CONFIG);
+    c.species![1]!.speed = 1.6;
+    c.species![1]!.rayLengthRange = [60, 200];
+    const text = serialise("predators", c, "custom");
+    expect(JSON.parse(text)).toMatchObject({ mode: "predators", preset: "custom" });
+    expect(parseSettings(text, "predators")).toEqual(c);
+    const partial = JSON.stringify({ mode: "predators", version: 1, config: { species: [{ founders: 10 }, { eatBaseline: 5 }] } });
+    const merged = parseSettings(partial, "predators");
+    expect(merged.species![0]).toEqual({ ...DEFAULT_PREDATOR_CONFIG.species![0]!, founders: 10 });
+    expect(merged.species![1]).toEqual({ ...DEFAULT_PREDATOR_CONFIG.species![1]!, eatBaseline: 5 });
+    expect(() => parseSettings(serialise("ecosystem", DEFAULT_ECO_CONFIG), "predators")).toThrow(/for Ecosystem, but this is the Predators & prey page/);
+  });
+
+  it("rejects pasted species lists of the wrong length, bad prey indices, unknown keys and wrong types", () => {
+    const paste = (species: unknown) => () => parseSettings(JSON.stringify({ mode: "predators", version: 1, config: { species } }), "predators");
+    expect(paste([{}])).toThrow(/exactly 2 species \(Prey, Predator\), got 1/);
+    expect(paste([{}, {}, {}])).toThrow(/exactly 2 species/);
+    expect(paste({})).toThrow(/must be a list of 2 species/);
+    expect(paste([{}, { prey: [5] }])).toThrow(/species\[1\].prey" must list other species by index, 0 to 1/);
+    expect(paste([{}, { prey: [1] }])).toThrow(/must list other species/);
+    expect(paste([{ fangs: 3 }, {}])).toThrow(/unknown config key "species\[0\].fangs"/);
+    expect(paste([{}, { speed: "fast" }])).toThrow(/species\[1\].speed" must be a number/);
+    expect(paste([{}, { rayLengthRange: [1, 2, 3] }])).toThrow(/must be \[min, max\]/);
+    expect(() => parseSettings(JSON.stringify({ mode: "ecosystem", version: 1, config: { species: [] } }), "ecosystem")).toThrow(/unknown config key "species"/);
   });
 
   it("keeps defaults for missing keys", () => {
@@ -107,22 +137,22 @@ describe("Copy and Paste on the Trials page", () => {
 describe("Copy and Paste on the Ecosystem page", () => {
   it("restores a changed form", () => {
     document.body.innerHTML = page("ecosystem");
-    buildEcoForm(document.getElementById("settings")!);
-    fillEcoForm(DEFAULT_ECO_CONFIG);
+    form = buildEcoForm(document.getElementById("settings")!);
+    form.fill(DEFAULT_ECO_CONFIG);
     let written = "";
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: (t: string) => { written = t; return Promise.resolve(); } } });
-    initSettingsIO({ mode: "ecosystem", form: document.getElementById("setup") as HTMLFormElement, read: readEcoConfig, fill: fillEcoForm });
+    initSettingsIO({ mode: "ecosystem", form: document.getElementById("setup") as HTMLFormElement, read: form.read, fill: form.fill });
     const changed = structuredClone(DEFAULT_ECO_CONFIG);
     changed.world.width = 3300;
     changed.eco.collisions = false;
     changed.eco.collisionDamage = true;
     changed.eco.damagePerSpeed = 0.45;
-    fillEcoForm(changed);
+    form.fill(changed);
     document.getElementById("copySettings")!.click();
-    fillEcoForm(DEFAULT_ECO_CONFIG);
+    form.fill(DEFAULT_ECO_CONFIG);
     document.getElementById("pasteSettings")!.click();
     (document.getElementById("ioText") as HTMLTextAreaElement).value = written;
     document.getElementById("ioApply")!.click();
-    expect(readEcoConfig()).toEqual(changed);
+    expect(form.read()).toEqual(changed);
   });
 });

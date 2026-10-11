@@ -1,11 +1,11 @@
-import { DEFAULT_ECO_CONFIG } from "../sim/ecoConfig.ts";
 import type { EcoConfig } from "../sim/ecoConfig.ts";
-import { CUSTOM, ECO_LOCKED, ECO_PRESETS, withEcoPreset } from "../sim/presets.ts";
+import { CUSTOM, withEcoPreset } from "../sim/presets.ts";
 import type { BodyPlan } from "../sim/sensors.ts";
-import type { Lineage } from "../sim/ecosystem.ts";
+import type { Lineage, SpeciesCount } from "../sim/ecosystem.ts";
 import type { BestBy } from "../worker/ecoProtocol.ts";
 import { BrainView } from "./brainView.ts";
-import { buildEcoForm, fillEcoForm, initEcoSettingsForm, readEcoConfig } from "./ecoSettingsForm.ts";
+import type { ModePage } from "./ecoModes.ts";
+import { buildEcoForm } from "./ecoSettingsForm.ts";
 import { initCard } from "./overlays.ts";
 import type { Card } from "./overlays.ts";
 import { initPresetPanel } from "./presetPanel.ts";
@@ -14,8 +14,9 @@ import { PopulationGraph } from "./populationGraph.ts";
 import type { PopulationSample } from "./populationGraph.ts";
 import { Scoreboard, settingsOf, today } from "./scoreboard.ts";
 import { initSettingsIO } from "./settingsIO.ts";
-import { $, durationText, formatDuration, setTile } from "./page.ts";
+import { $, durationText, setTile } from "./page.ts";
 import { initTooltips } from "./tooltip.ts";
+import { LINEAGE_STRIDE } from "../worker/ecoProtocol.ts";
 
 export type EcoSpeed = number | "max"; // simulated seconds per real second asked for, "max" = as fast as possible
 export type EcoPhase = "idle" | "running" | "paused" | "extinct";
@@ -33,6 +34,7 @@ export interface EcoStats {
   helpers: number; // helper threads sensing and thinking, 0 when the simulation runs on one thread
   sharedMemory: boolean;
   wasm: boolean; // sense and think run on the WebAssembly kernels
+  species?: readonly SpeciesCount[]; // with several species
   season: { name: string; factor: number } | null; // null when seasons are off
 }
 
@@ -49,6 +51,7 @@ export interface EcoSelected {
   founderId: number;
   founderPool: boolean; // the founder came from the seed pool
   founderHue: number;
+  species?: { name: string; index: number; kills: number; hunter: boolean }; // with several species
   died?: boolean; // the values are those of its last moment
 }
 
@@ -85,7 +88,7 @@ export interface EcoView {
   setFollowing(follow: boolean): void;
   setHistory(samples: readonly PopulationSample[]): void;
   setSeasons(eco: EcoConfig["eco"] | null): void; // the graph shades winters; null for none
-  setLineages(lineages: readonly Lineage[], population: number): void;
+  setLineages(lineages: readonly Lineage[], population: number, speciesCounts?: readonly number[]): void; // speciesCounts with several species
   setLineageHistory(history: Float64Array): void;
   clearLineages(): void;
   setNote(text: string | null): void;
@@ -118,7 +121,9 @@ export function formatPlan(plan: BodyPlan, upkeep: number): string {
   return [rays, `${Math.round((plan.raySpread * 180) / Math.PI)}°`, `${Math.round(plan.rayLength)} range`, `${plan.hiddenLayers.join("+")} hidden`, mem, `upkeep ${upkeep.toFixed(2)}/s`].join(" · ");
 }
 
-export function createEcoView(handlers: EcoHandlers): EcoView {
+export function createEcoView(handlers: EcoHandlers, page: ModePage): EcoView {
+  const { mode, speciesColors } = page;
+  const several = speciesColors.length > 1;
   const start = $<HTMLButtonElement>("start");
   const pause = $<HTMLButtonElement>("pause");
   const reset = $<HTMLButtonElement>("reset");
@@ -132,26 +137,28 @@ export function createEcoView(handlers: EcoHandlers): EcoView {
   let returnFocus: HTMLElement | null = null;
   let hasSelection = false;
 
-  buildEcoForm($("settings"));
+  const settingsForm = buildEcoForm($("settings"), page.form);
+  const readEcoConfig = settingsForm.read;
+  const fillEcoForm = settingsForm.fill;
   fillEcoForm(readEcoConfig());
-  initEcoSettingsForm(setup, (c) => { if (phase === "idle") handlers.onConfigChange(c); });
-  const board = new Scoreboard("ecosystem");
+  settingsForm.init(setup, (c) => { if (phase === "idle") handlers.onConfigChange(c); });
+  const board = new Scoreboard(mode);
   const presets = initPresetPanel({
     container: $("settings"),
     form: setup,
-    presets: ECO_PRESETS,
-    locked: ECO_LOCKED,
+    presets: page.presets,
+    locked: page.locked,
     board,
     formatScore: durationText,
     read: readEcoConfig,
     fill: fillEcoForm,
-    withPreset: withEcoPreset,
+    withPreset: (c, id) => withEcoPreset(c, id, page.presets),
     setPreset: () => undefined, // every world field has a form input
   });
-  initSettingsIO({ mode: "ecosystem", form: setup, read: readEcoConfig, fill: fillEcoForm, preset: { get: presets.current, set: presets.select } });
-  // The score is how long the world has lived, so it counts while the run is alive and at its end.
+  initSettingsIO({ mode, form: setup, read: readEcoConfig, fill: fillEcoForm, preset: { get: presets.current, set: presets.select } });
+  // The score is how long the world has lived (page.peak says while it counts), so it counts while the run does and at its end.
   presets.select("normal", false); // the page's first fill is the defaults, which Normal matches
-  const scored = { preset: CUSTOM, key: "", date: "", settings: settingsOf(DEFAULT_ECO_CONFIG), peak: 0 };
+  const scored = { preset: CUSTOM, key: "", date: "", settings: settingsOf(page.form.defaults), peak: 0 };
   const beginScoring = (): void => {
     const c = readEcoConfig();
     Object.assign(scored, { preset: presets.current(), key: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, date: today(), settings: settingsOf(c), peak: 0 });
@@ -159,17 +166,38 @@ export function createEcoView(handlers: EcoHandlers): EcoView {
   const recordScore = (simTime: number, population: number): void => {
     scored.peak = Math.max(scored.peak, population);
     if (scored.preset === CUSTOM) return;
-    const note = `peak ${nf.format(scored.peak)} creatures`;
+    const note = `peak ${nf.format(scored.peak)} ${page.peakLabel}`;
     if (board.submit(scored.preset, { run: scored.key, score: Math.floor(simTime), date: scored.date, settings: scored.settings, note })) presets.refresh();
   };
   initTooltips($("tooltip"));
-  initCard($("legendCard"), "evolve.eco.card.legend", mobile);
-  initCard(selectedCard, "evolve.eco.card.selected", false);
-  const brainPanel = initCard(brainCard, "evolve.eco.card.brain", mobile);
-  initCard($("graphCard"), "evolve.eco.card.graph", mobile);
-  initCard($("lineageCard"), "evolve.eco.card.lineage", mobile);
+  const store = page.store;
+  initCard($("legendCard"), `${store}.legend`, mobile);
+  initCard(selectedCard, `${store}.selected`, false);
+  const brainPanel = initCard(brainCard, `${store}.brain`, mobile);
+  initCard($("graphCard"), `${store}.graph`, mobile);
+  initCard($("lineageCard"), `${store}.lineage`, mobile);
   let selectedFounder = -1;
   const lineages = new LineagePanel($("lineageCard"), (f) => { setFounderButton(); handlers.onHighlight(f); });
+  // With several species the Lineages card shows one species at a time, picked by the switch in its header.
+  let lineageSpecies = 0;
+  let lastLineages: { list: readonly Lineage[]; counts: readonly number[] } | null = null;
+  let lastLineageHistory: Float64Array | null = null;
+  const speciesBlock = (h: Float64Array, s: number, blocks: number): Float64Array => {
+    const out = new Float64Array(h.length / blocks);
+    for (let i = 0, o = 0; i < h.length; i += LINEAGE_STRIDE * blocks, o += LINEAGE_STRIDE) out.set(h.subarray(i + s * LINEAGE_STRIDE, i + (s + 1) * LINEAGE_STRIDE), o);
+    return out;
+  };
+  const showLineages = (): void => {
+    if (lastLineages) lineages.setLineages(lastLineages.list.filter((l) => l.species === lineageSpecies), lastLineages.counts[lineageSpecies] ?? 0);
+    if (lastLineageHistory) lineages.setHistory(speciesBlock(lastLineageHistory, lineageSpecies, speciesColors.length));
+  };
+  document.querySelectorAll<HTMLInputElement>('input[name="linSpecies"]').forEach((input) => {
+    input.addEventListener("change", () => {
+      lineageSpecies = Number(input.value);
+      if (lineages.highlight() !== null) lineages.pick(null);
+      showLineages();
+    });
+  });
   const founderBtn = $("selFounder");
   const setFounderButton = (): void => { founderBtn.classList.toggle("on", selectedFounder >= 0 && lineages.highlight() === selectedFounder); };
 
@@ -200,7 +228,7 @@ export function createEcoView(handlers: EcoHandlers): EcoView {
     canvas: $<HTMLCanvasElement>("view"),
     brain: new BrainView($<HTMLCanvasElement>("brainView")),
     brainPanel,
-    graph: new PopulationGraph($<HTMLCanvasElement>("graphView")),
+    graph: new PopulationGraph($<HTMLCanvasElement>("graphView"), speciesColors),
     readConfig: readEcoConfig,
     fillConfig: fillEcoForm,
     speed,
@@ -211,19 +239,12 @@ export function createEcoView(handlers: EcoHandlers): EcoView {
       timer.hidden = s === null;
       if (s) {
         timer.textContent = durationText(s.simTime);
-        recordScore(s.simTime, s.population);
+        const peak = page.peak(s);
+        if (peak !== null) recordScore(s.simTime, peak);
       }
-      setTile("statPop", s && nf.format(s.population));
-      setTile("statBirths", s && nf.format(s.births));
-      setTile("statDeaths", s && nf.format(s.deaths));
-      setTile("statFood", s && nf.format(s.food));
-      setTile("statPoison", s && nf.format(s.poison));
-      const t = s && formatDuration(s.simTime);
-      setTile("statTime", t && t.text, t?.unit);
+      for (const tile of page.tiles) setTile(tile.id, s && tile.value(s), s ? tile.unit?.(s) : undefined);
       $("statSeasonTile").hidden = !s?.season;
       if (s?.season) setTile("statSeason", s.season.name, ` · ${s.season.factor.toFixed(2)}×`);
-      setTile("statDepth", s && nf.format(s.oldestDepth));
-      setTile("statSpeed", s && s.speed !== null ? s.speed.toFixed(1) : null, " ×");
       if (s) setTip("statSpeed", `${SPEED_TIP} ${threadsText(s.helpers, s.sharedMemory, s.wasm)}`);
     },
     setSelected(sel) {
@@ -243,13 +264,28 @@ export function createEcoView(handlers: EcoHandlers): EcoView {
       $("selEnergy").textContent = sel.died ? "died" : `${Math.round(sel.energy)} / ${Math.round(sel.fullEnergy)}`;
       $("selAge").textContent = durationText(sel.age);
       $("selChildren").textContent = nf.format(sel.children);
-      $("selEaten").textContent = nf.format(sel.eaten);
+      $("selEaten").textContent = nf.format(sel.species?.hunter ? sel.species.kills : sel.eaten);
+      if (sel.species) {
+        const tag = $("selSpecies");
+        tag.textContent = sel.species.name;
+        tag.style.setProperty("--sp", speciesColors[sel.species.index] ?? "currentColor");
+        $("selEatenLabel").textContent = sel.species.hunter ? "Prey eaten" : "Plants eaten";
+      }
       $("selDepth").textContent = nf.format(sel.depth);
       $("selId").textContent = `#${sel.id}`;
       $("selPlan").textContent = formatPlan(sel.plan, sel.upkeep);
       selectedFounder = sel.founderId;
       $("selFounderSw").style.background = lineageColor(sel.founderHue);
       $("selFounderText").textContent = `Founder #${sel.founderId} · ${sel.founderPool ? "trained pool" : "random"}`;
+      if (several && sel.species && sel.species.index !== lineageSpecies) {
+        // The founder button highlights a lineage of the species on show.
+        const radio = document.querySelector<HTMLInputElement>(`input[name="linSpecies"][value="${sel.species.index}"]`);
+        if (radio) {
+          radio.checked = true;
+          lineageSpecies = sel.species.index;
+          showLineages();
+        }
+      }
       setFounderButton();
     },
     setFollowing(on) {
@@ -257,9 +293,21 @@ export function createEcoView(handlers: EcoHandlers): EcoView {
     },
     setHistory: (samples) => view.graph.setData(samples),
     setSeasons: (eco) => view.graph.setSeasons(eco),
-    setLineages: (l, population) => lineages.setLineages(l, population),
-    setLineageHistory: (h) => lineages.setHistory(h),
-    clearLineages: () => lineages.reset(),
+    setLineages(l, population, counts) {
+      if (!counts) return lineages.setLineages(l, population);
+      lastLineages = { list: l, counts };
+      showLineages();
+    },
+    setLineageHistory(h) {
+      if (!several) return lineages.setHistory(h);
+      lastLineageHistory = h;
+      showLineages();
+    },
+    clearLineages() {
+      lastLineages = null;
+      lastLineageHistory = null;
+      lineages.reset();
+    },
     setNote(text) {
       $("note").textContent = text ?? "";
     },
@@ -296,7 +344,7 @@ export function createEcoView(handlers: EcoHandlers): EcoView {
   $("zoomIn").onclick = () => handlers.onZoom("in");
   $("zoomOut").onclick = () => handlers.onZoom("out");
   $("zoomFit").onclick = () => handlers.onZoom("fit");
-  for (const [id, by] of [["pickAge", "age"], ["pickChildren", "children"], ["pickEaten", "eaten"]] as const) $(id).onclick = () => handlers.onPickBest(by);
+  for (const [id, by] of page.picks) $(id).onclick = () => handlers.onPickBest(by);
   follow.onclick = () => {
     const on = follow.getAttribute("aria-pressed") !== "true";
     view.setFollowing(on);

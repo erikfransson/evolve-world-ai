@@ -4,7 +4,10 @@ import { resolve } from "node:path";
 import { DEFAULT_CONFIG } from "../../src/typescript/src/sim/config.ts";
 import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { CUSTOM, ECO_LOCKED, ECO_PRESETS, TRIALS_LOCKED, TRIALS_PRESETS, withEcoPreset, withTrialsPreset } from "../../src/typescript/src/sim/presets.ts";
-import { buildEcoForm, fillEcoForm, readEcoConfig } from "../../src/typescript/src/ui/ecoSettingsForm.ts";
+import { buildEcoForm } from "../../src/typescript/src/ui/ecoSettingsForm.ts";
+import type { EcoFormHandle } from "../../src/typescript/src/ui/ecoSettingsForm.ts";
+
+let form: EcoFormHandle;
 import { initPresetPanel } from "../../src/typescript/src/ui/presetPanel.ts";
 import type { PresetPanel } from "../../src/typescript/src/ui/presetPanel.ts";
 import { Scoreboard, TOP, describeSettings, insertEntry, settingsOf, withSettings } from "../../src/typescript/src/ui/scoreboard.ts";
@@ -274,8 +277,8 @@ describe("Ecosystem preset panel", () => {
 
   beforeAll(() => {
     document.body.innerHTML = page("ecosystem");
-    buildEcoForm(document.getElementById("settings")!);
-    fillEcoForm(DEFAULT_ECO_CONFIG);
+    form = buildEcoForm(document.getElementById("settings")!);
+    form.fill(DEFAULT_ECO_CONFIG);
     panel = initPresetPanel({
       container: document.getElementById("settings")!,
       form: document.getElementById("setup") as HTMLFormElement,
@@ -283,8 +286,8 @@ describe("Ecosystem preset panel", () => {
       locked: ECO_LOCKED,
       board,
       formatScore: (s) => `${s} s`,
-      read: readEcoConfig,
-      fill: fillEcoForm,
+      read: form.read,
+      fill: form.fill,
       withPreset: withEcoPreset,
       setPreset: () => undefined,
     });
@@ -296,7 +299,7 @@ describe("Ecosystem preset panel", () => {
 
   it.each(ECO_PRESETS.map((p) => p.id))("%s applies the world and regrowth, locks them and stays on slider steps", (id) => {
     pick(id);
-    expect(readEcoConfig()).toEqual(withEcoPreset(DEFAULT_ECO_CONFIG, id));
+    expect(form.read()).toEqual(withEcoPreset(DEFAULT_ECO_CONFIG, id));
     for (const f of ECO_LOCKED) expect(disabled(f), f).toBe(true);
     for (const f of ["initialPopulation", "birthEnergy", "rayCount", "neurons", "mutationRate", "collisions", "seed"]) expect(disabled(f), f).toBe(false);
     expectOnSteps();
@@ -306,7 +309,7 @@ describe("Ecosystem preset panel", () => {
     pick("scarcity");
     pick(CUSTOM);
     for (const f of ECO_LOCKED) expect(disabled(f), f).toBe(false);
-    expect(readEcoConfig().eco.foodRegrow).toBe(ECO_PRESETS[2]!.regrowth.foodRegrow);
+    expect(form.read().eco.foodRegrow).toBe(ECO_PRESETS[2]!.regrowth.foodRegrow);
   });
 
   it("lists the best lifetimes with the peak population", () => {

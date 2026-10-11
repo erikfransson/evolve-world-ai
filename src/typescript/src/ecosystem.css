@@ -36,6 +36,7 @@ button.lin-row:hover { background: var(--card-hi); }
 .ov-selected:not(.has-sel) .sel-only, .ov-selected.has-sel .sel-hint { display: none; }
 .sel-pick { display: flex; gap: 0.4rem; }
 .sel-pick button { flex: 1 1 0; min-width: 0; padding: 0.3rem 0.4rem; font-size: 0.8rem; white-space: nowrap; }
+.sel-pick:has(> :nth-child(4)) { display: grid; grid-template-columns: 1fr 1fr; } /* four picks (Predators & prey) sit two by two */
 .sel-energy { display: flex; align-items: center; gap: 0.6rem; }
 .meter { flex: 1; height: 8px; border-radius: 4px; background: var(--border-hi); overflow: hidden; }
 .meter span { display: block; height: 100%; width: 0; border-radius: 4px; background: var(--accent); transition: width 0.15s; }
@@ -77,4 +78,28 @@ button.lin-row:hover { background: var(--card-hi); }
 
 @media (max-width: 700px) {
   .ov-stack > .ov { width: auto; } /* every card in the phone stack spans the full width */
+  .sel-facts { grid-template-columns: repeat(3, auto); row-gap: 0.4rem; } /* five facts would run together at phone width */
 }
+
+/* Predators & prey page */
+.key.prey { color: #60a5fa; }
+.key.pred { color: #f87171; }
+.tile.sp-prey dd { color: #60a5fa; }
+.tile.sp-pred dd { color: #f87171; }
+.sel-species { --sp: var(--muted); display: inline-flex; align-items: center; gap: 0.35rem; margin-right: auto; padding: 0.05rem 0.55rem; border: 1px solid color-mix(in srgb, var(--sp) 55%, transparent); border-radius: 999px; color: var(--sp); font-size: 0.72rem; font-weight: 600; }
+.sel-species::before { content: ""; width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--sp); }
+.sel-species:empty, .ov-selected:not(.has-sel) .sel-species { display: none; }
+.lin-species { margin-right: auto; }
+.seg-mini label span { padding: 0.1rem 0.55rem; font-size: 0.72rem; }
+.card h3 .sw { display: inline-block; width: 0.6rem; height: 0.6rem; margin-right: 0.45rem; border-radius: 50%; vertical-align: -0.02rem; }
+
+/* folded settings cards and "More settings" */
+details.fold > summary, details.more > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 0.4rem; }
+details.fold > summary::-webkit-details-marker, details.more > summary::-webkit-details-marker { display: none; }
+details.fold > summary::after, details.more > summary::after { content: ""; width: 0.4rem; height: 0.4rem; margin-left: auto; border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted); transform: rotate(45deg); transition: transform 0.15s; }
+details[open].fold > summary::after, details[open].more > summary::after { transform: rotate(-135deg); }
+details.fold:not([open]) { gap: 0; }
+details.fold > summary:focus-visible, details.more > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+details.more > summary { color: var(--muted); font-size: 0.78rem; }
+details.more > summary:hover { color: var(--text); }
+.more-body { display: flex; flex-direction: column; gap: 0.85rem; padding-top: 0.85rem; }

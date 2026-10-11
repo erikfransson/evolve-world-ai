@@ -67,6 +67,7 @@ export const FORMATS: Record<string, (v: number) => string> = {
   sec: (v) => `${v} s`,
   min: (v) => `${v} min`,
   speed: (v) => `${v}/s`,
+  mult: (v) => `${v.toFixed(2)}×`,
   poison: (v) => (v >= POISON_LETHAL ? "Lethal" : `${v}`),
 };
 

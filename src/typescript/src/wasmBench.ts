@@ -93,7 +93,7 @@ for (const [name, p] of Object.entries(plans)) {
     const offsets = rayAngleOffsets({ rayCount: p.rayCount, raySpread: p.raySpread });
     const dirX = states.map((s) => Float64Array.from(offsets, (o) => Math.cos(s.heading + o)));
     const dirY = states.map((s) => Float64Array.from(offsets, (o) => Math.sin(s.heading + o)));
-    const fresh = (): RayHit[][] => states.map(() => Array.from({ length: p.rayCount }, () => ({ closeness: 0, kind: HIT_NONE, energy: 0 })));
+    const fresh = (): RayHit[][] => states.map(() => Array.from({ length: p.rayCount }, () => ({ closeness: 0, kind: HIT_NONE, energy: 0, species: 0 })));
     const jsRays = fresh();
     const wasmRays = fresh();
     const jsRayMs = median(() => {

@@ -22,7 +22,7 @@ function episodeView(config: SimConfig, alive = true): EpisodeView {
   const kinds: HitKind[] = [HIT_FOOD, HIT_POISON, HIT_WALL, 0];
   return {
     state: { x: 400, y: 300, heading: 1, vx: 0, vy: 0, turnRate: 0, energy: 80, alive, ticksAlive: 10 },
-    rays: Array.from({ length: n }, (_, i) => ({ closeness: (i % 4) / 4, kind: kinds[i % 4]!, energy: 0 })),
+    rays: Array.from({ length: n }, (_, i) => ({ closeness: (i % 4) / 4, kind: kinds[i % 4]!, energy: 0, species: 0 })),
     rayOffsets: new Float32Array(n),
     world: { count: 3, xs: Float32Array.of(10, 20, 30), ys: Float32Array.of(10, 20, 30), kinds: Uint8Array.of(HIT_FOOD, HIT_POISON, 0) },
   };

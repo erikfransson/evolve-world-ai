@@ -5,7 +5,9 @@ import { Creature } from "../sim/creature.ts";
 import { createRng } from "../sim/rng.ts";
 import { HIT_NONE } from "../sim/types.ts";
 import type { CreatureState, EpisodeView, HitKind, Rng } from "../sim/types.ts";
+import { DEFAULT_PREDATOR_CONFIG } from "../sim/ecoConfig.ts";
 import { World } from "../sim/world.ts";
+import { HUNTER_REACH, hunterPath } from "./speciesStyle.ts";
 import { BACKGROUND, FOOD, OTHER, beginFrame, drawItems, drawScene } from "./scene.ts";
 
 // Small looping worlds for the landing page cards, built from the real simulation pieces.
@@ -266,6 +268,206 @@ function drawColoured(ctx: CanvasRenderingContext2D, px: number, s: CreatureStat
   ctx.lineTo(s.x + cs * r * 1.7, s.y + sn * r * 1.7);
   ctx.lineWidth = 2 * px;
   ctx.strokeStyle = `hsl(${hue}, 85%, 80%)`;
+  ctx.stroke();
+}
+
+// Hues within each species' band of the Predators & prey defaults: calm blue prey, a red hunter.
+const [PREY_SPECIES, HUNTER_SPECIES] = DEFAULT_PREDATOR_CONFIG.species!;
+const PREY_HUES = [-0.3, 0, 0.2, -0.15, 0.4].map((k) => PREY_SPECIES!.hue + k * PREY_SPECIES!.hueSpread);
+const HUNTER_HUE = HUNTER_SPECIES!.hue;
+const PREY_SLOTS = 7; // living prey plus fading ones
+const PREY_LIVE = 5;
+const HUNTER_EDGE = 1.2; // the hunter's top speed over the prey's
+const FLEE_RANGE = 80; // prey bolt when the hunter is this close
+const REST_SECONDS = 4.5; // the hunter cruises after a catch, so each chase reads as one story
+const REPLACE_SECONDS = 2.5; // a surviving prey gives birth this long after a catch
+const CATCH_RING_SECONDS = 0.9;
+
+interface PreyBody {
+  creature: Creature;
+  state: CreatureState;
+  hue: number;
+  skip: number;
+  live: boolean;
+  eatenAt: number; // tick it was caught, -1 while alive
+  bornAt: number;
+}
+
+export interface PredatorScene extends Scene {
+  catches: number;
+  births: number;
+  prey(): number; // living prey, not counting one being eaten
+}
+
+// Predators & prey: blue prey graze regrowing plants, a faster red hunter with a pointed nose chases the nearest and
+// catches it; the prey scatter when it comes close, and a survivor soon gives birth to keep the herd.
+export function predatorScene(seed: number): PredatorScene {
+  const config = sceneConfig(360, 225, 1.3, { radius: 9 });
+  const hunterConfig = withOverrides(config, { creature: { maxThrust: config.creature.maxThrust * HUNTER_EDGE, maxTurnRate: 2.6 } });
+  const W = config.world.width;
+  const H = config.world.height;
+  const world = foodWorld(config, createRng(seed));
+  const respawnRng = createRng(seed + 1);
+  const rng = createRng(seed + 2);
+  const r = config.creature.radius;
+  const genome = new Float32Array(genomeLength(layerSizes(config)));
+  let tick = 0;
+  const prey: PreyBody[] = Array.from({ length: PREY_SLOTS }, (_, i) => {
+    const creature = scriptedCreature(config, 0, 0, 0);
+    const live = i < PREY_LIVE;
+    creature.reset(genome, rng.range(W * 0.35, W - r), rng.range(r, H - r), rng.range(0, 2 * Math.PI), config.creature.startEnergy);
+    return { creature, state: creature.state, hue: PREY_HUES[i % PREY_HUES.length]!, skip: i % 2, live, eatenAt: -1, bornAt: 0 };
+  });
+  const hunter = scriptedCreature(hunterConfig, 40, H / 2, 0);
+  const hs = hunter.state;
+  let restUntil = 0;
+  let replaceAt = -1;
+  let fullness = 0.35; // the hunter's drawn energy level, 0 to 1
+  let ring = { at: -1, x: 0, y: 0 };
+
+  const alive = (): PreyBody[] => prey.filter((p) => p.live && p.eatenAt < 0);
+
+  function giveBirth(): void {
+    const parents = alive();
+    const child = prey.find((p) => !p.live);
+    if (!child || parents.length === 0) return;
+    // The parent farthest from the hunter, so the newborn is not caught at once.
+    let parent = parents[0]!;
+    for (const p of parents) if ((p.state.x - hs.x) ** 2 + (p.state.y - hs.y) ** 2 > (parent.state.x - hs.x) ** 2 + (parent.state.y - hs.y) ** 2) parent = p;
+    const a = rng.range(0, 2 * Math.PI);
+    const x = clamp(parent.state.x + Math.cos(a) * (2 * r + 1), r, W - r);
+    const y = clamp(parent.state.y + Math.sin(a) * (2 * r + 1), r, H - r);
+    child.creature.reset(genome, x, y, a, config.creature.startEnergy);
+    child.state.vx = Math.cos(a) * LAUNCH_SPEED;
+    child.state.vy = Math.sin(a) * LAUNCH_SPEED;
+    child.hue = (parent.hue + rng.range(-10, 10) + 360) % 360;
+    child.live = true;
+    child.eatenAt = -1;
+    child.bornAt = tick;
+    scene.births++;
+  }
+
+  const scene: PredatorScene = {
+    catches: 0,
+    births: 0,
+    prey: () => alive().length,
+    step() {
+      tick++;
+      // Prey: graze, or bolt away from the hunter when it is close.
+      for (const p of prey) {
+        if (!p.live) continue;
+        if (p.eatenAt >= 0) {
+          if (tick - p.eatenAt > ticksOf(CATCH_RING_SECONDS)) p.live = false;
+          continue;
+        }
+        const s = p.state;
+        const dx = s.x - hs.x;
+        const dy = s.y - hs.y;
+        const d = Math.hypot(dx, dy);
+        if (d < FLEE_RANGE && tick >= restUntil) {
+          // Away from the hunter, bent toward the middle so prey do not pin themselves to a wall.
+          const tx = s.x + (dx / d) * 60 + (W / 2 - s.x) * 0.35;
+          const ty = s.y + (dy / d) * 60 + (H / 2 - s.y) * 0.35;
+          const { turn } = steer(s, tx, ty);
+          moveAndEat(p.creature, world, turn, 1, respawnRng);
+        } else {
+          const target = nearestFood(world, s.x, s.y, p.skip);
+          const { turn, thrust } = steer(s, world.xs[target]!, world.ys[target]!);
+          moveAndEat(p.creature, world, turn, 0.6 * thrust, respawnRng);
+        }
+        s.energy = config.creature.startEnergy;
+      }
+      // Hunter: cruise while resting, otherwise chase the nearest prey, aiming a little ahead of it.
+      const targets = alive();
+      let target: PreyBody | null = null;
+      for (const p of targets) if (!target || (p.state.x - hs.x) ** 2 + (p.state.y - hs.y) ** 2 < (target.state.x - hs.x) ** 2 + (target.state.y - hs.y) ** 2) target = p;
+      if (target && tick >= restUntil) {
+        const t = target.state;
+        const { turn } = steer(hs, t.x + t.vx * 0.25, t.y + t.vy * 0.25);
+        hunter.move(world, turn, 1);
+      } else {
+        const { turn } = steer(hs, W / 2 + Math.cos(tick * 0.012) * W * 0.3, H / 2 + Math.sin(tick * 0.017) * H * 0.3);
+        hunter.move(world, turn, 0.35);
+      }
+      hs.energy = config.creature.startEnergy;
+      fullness = Math.max(0.3, fullness - 0.05 * TICK_SECONDS);
+      // A touch is a catch.
+      if (target && tick >= restUntil && Math.hypot(target.state.x - hs.x, target.state.y - hs.y) < 2 * r) {
+        target.eatenAt = tick;
+        ring = { at: tick, x: target.state.x, y: target.state.y };
+        fullness = 1;
+        restUntil = tick + ticksOf(REST_SECONDS);
+        replaceAt = tick + ticksOf(REPLACE_SECONDS);
+        scene.catches++;
+      }
+      if (replaceAt >= 0 && tick >= replaceAt) {
+        replaceAt = -1;
+        giveBirth();
+      }
+      const bodies = [hs, ...alive().map((p) => p.state)];
+      for (let i = 1; i < bodies.length; i++) for (let j = i + 1; j < bodies.length; j++) bump(bodies[i]!, bodies[j]!, 2 * r);
+    },
+    draw(ctx) {
+      const f = beginFrame(ctx, config);
+      drawItems(ctx, f, world);
+      // The hunter's gaze: a faint cone ahead of it.
+      const h = hs.heading;
+      const gaze = ctx.createRadialGradient(hs.x, hs.y, r, hs.x, hs.y, 95);
+      gaze.addColorStop(0, `hsla(${HUNTER_HUE}, 90%, 62%, 0.16)`);
+      gaze.addColorStop(1, `hsla(${HUNTER_HUE}, 90%, 62%, 0)`);
+      ctx.fillStyle = gaze;
+      ctx.beginPath();
+      ctx.moveTo(hs.x, hs.y);
+      ctx.arc(hs.x, hs.y, 95, h - 0.45, h + 0.45);
+      ctx.closePath();
+      ctx.fill();
+      for (const p of prey) {
+        if (!p.live) continue;
+        const grow = p.bornAt === 0 ? 1 : easeOutBack(Math.min(1, ((tick - p.bornAt) * TICK_SECONDS) / POP_SECONDS));
+        const gone = p.eatenAt < 0 ? 0 : Math.min(1, ((tick - p.eatenAt) * TICK_SECONDS) / 0.25);
+        if (gone >= 1) continue;
+        ctx.globalAlpha = 1 - gone;
+        drawColoured(ctx, f.px, p.state, r * grow * (1 - 0.6 * gone), p.hue);
+      }
+      ctx.globalAlpha = 1;
+      drawHunter(ctx, f.px, hs, r, fullness);
+      if (ring.at >= 0) {
+        const t = ((tick - ring.at) * TICK_SECONDS) / CATCH_RING_SECONDS;
+        if (t < 1) {
+          ctx.globalAlpha = 0.95 * (1 - t);
+          ctx.strokeStyle = `hsl(${HUNTER_HUE}, 95%, 70%)`;
+          ctx.lineWidth = (3 - 1.5 * t) * f.px;
+          ctx.beginPath();
+          ctx.arc(ring.x, ring.y, r * (1 + 2.4 * (1 - (1 - t) ** 2)), 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+        } else ring.at = -1;
+      }
+    },
+  };
+  return scene;
+}
+
+// A hunter: dark pointed body filled in red up to its fullness, outlined, nose along its heading.
+function drawHunter(ctx: CanvasRenderingContext2D, px: number, s: CreatureState, r: number, fullness: number): void {
+  const h = s.heading;
+  const path = (): void => {
+    ctx.beginPath();
+    hunterPath(ctx, s.x, s.y, r, h);
+  };
+  path();
+  ctx.fillStyle = "rgba(15, 23, 20, 0.9)";
+  ctx.fill();
+  ctx.save();
+  ctx.clip();
+  const reach = HUNTER_REACH * r;
+  ctx.fillStyle = `hsl(${HUNTER_HUE}, 82%, 60%)`;
+  ctx.fillRect(s.x - reach, s.y + reach - 2 * reach * fullness, 2 * reach, 2 * reach * fullness);
+  ctx.restore();
+  path();
+  ctx.strokeStyle = `hsl(${HUNTER_HUE}, 90%, 74%)`;
+  ctx.lineWidth = 1.6 * px;
+  ctx.lineJoin = "round";
   ctx.stroke();
 }
 

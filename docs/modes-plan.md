@@ -67,3 +67,7 @@ Contract: `EcoConfig` in `src/sim/ecoConfig.ts`, built on `EngineConfig` (the sh
 - Species are fixed: children keep the parent's species. Each species has its own founders, body ranges, speed, costs and energy gain.
 - Rays tell species apart and report the seen creature's energy.
 - Later: a who-eats-whom table for more species (C, D, E).
+- Known follow-ups:
+  - Scoreboard entries keep only seed, creature and brain settings, not the species settings.
+  - A prey eaten this tick is still pushed around in that tick's collisions (it deals no damage).
+  - Lineages tend to collapse to one founder per species after about 10 minutes.

@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Predators &amp; prey · Evolve World</title>
+    <!-- Cross-origin isolation for shared memory: on the first visit this registers a service worker and reloads once; without it the page runs as before.
+         It never reloads during a run (Start disabled); the next visit picks up the service worker then. -->
+    <script>window.coi = { quiet: true, doReload: () => document.getElementById("start")?.disabled || location.reload() };</script>
+    <!-- Vite warns that this script "can't be bundled without type=module"; expected, the worker must stay a classic script served as is from public/. -->
+    <script src="../coi-serviceworker.js"></script>
+    <link rel="icon" type="image/svg+xml" href="../favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" crossorigin />
+  </head>
+  <body data-mode="predators">
+    <header class="banner">
+      <a class="back" href="../">← Evolve World</a>
+      <svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
+        <path d="M3 16 L10 11 A5 5 0 1 1 10 21 Z" />
+        <circle cx="25" cy="16" r="4" />
+      </svg>
+      <h1>Predators &amp; prey</h1>
+      <span class="tagline">grazers, hunters and the plants they live on</span>
+    </header>
+    <main class="layout">
+      <aside class="panel">
+        <section class="run">
+          <div class="buttons">
+            <button id="start" class="primary" type="button">Start</button>
+            <button id="pause" class="secondary" type="button" disabled>Pause</button>
+            <button id="reset" class="secondary" type="button" disabled>Reset</button>
+          </div>
+        </section>
+
+        <dl class="stats">
+          <div class="tile sp-prey"><dt>Prey<span class="tip" tabindex="0" role="img" aria-label="Prey alive now. They graze on plants." data-tip="Prey alive now. They graze on plants.">ⓘ</span></dt><dd id="statPrey">-</dd></div>
+          <div class="tile sp-pred"><dt>Predators<span class="tip" tabindex="0" role="img" aria-label="Predators alive now. They eat prey they touch." data-tip="Predators alive now. They eat prey they touch.">ⓘ</span></dt><dd id="statPred">-</dd></div>
+          <div class="tile"><dt>Plants<span class="tip" tabindex="0" role="img" aria-label="Plants growing in the world now." data-tip="Plants growing in the world now.">ⓘ</span></dt><dd id="statFood">-</dd></div>
+          <div class="tile"><dt>Prey eaten<span class="tip" tabindex="0" role="img" aria-label="Prey caught by predators since the start." data-tip="Prey caught by predators since the start.">ⓘ</span></dt><dd id="statKills">-</dd></div>
+          <div class="tile"><dt>Births<span class="tip" tabindex="0" role="img" aria-label="Creatures of both kinds born since the start." data-tip="Creatures of both kinds born since the start.">ⓘ</span></dt><dd id="statBirths">-</dd></div>
+          <div class="tile"><dt>Deaths<span class="tip" tabindex="0" role="img" aria-label="Creatures that starved, ate poison, were eaten or otherwise died since the start." data-tip="Creatures that starved, ate poison, were eaten or otherwise died since the start.">ⓘ</span></dt><dd id="statDeaths">-</dd></div>
+          <div class="tile"><dt>Simulated time<span class="tip" tabindex="0" role="img" aria-label="How long the world has run, in simulated time." data-tip="How long the world has run, in simulated time.">ⓘ</span></dt><dd id="statTime">-</dd></div>
+          <div class="tile" id="statSeasonTile" hidden><dt>Season<span class="tip" tabindex="0" role="img" aria-label="The season now and the plant regrowth multiplier it gives." data-tip="The season now and the plant regrowth multiplier it gives.">ⓘ</span></dt><dd id="statSeason">-</dd></div>
+          <div class="tile"><dt>Speed<span class="tip" tabindex="0" role="img" aria-label="Simulated seconds per real second the computer is achieving. It can be lower than the speed asked for." data-tip="Simulated seconds per real second the computer is achieving. It can be lower than the speed asked for.">ⓘ</span></dt><dd id="statSpeed">-</dd></div>
+        </dl>
+
+        <section class="card">
+          <h2>View</h2>
+          <div class="toggle"><span class="lbl"><label class="name" for="rays">Show rays</label><span class="tip" tabindex="0" role="img" aria-label="Draw the vision rays of the selected creature, coloured by what they hit." data-tip="Draw the vision rays of the selected creature, coloured by what they hit.">ⓘ</span></span><input id="rays" type="checkbox" role="switch" checked /></div>
+          <div class="field">
+            <div class="row"><span class="lbl"><span class="name">Speed</span><span class="tip" tabindex="0" role="img" aria-label="How fast the world runs compared with real time. 1× is real time. Max simulates as fast as possible and draws only a few frames per second." data-tip="How fast the world runs compared with real time. 1× is real time. Max simulates as fast as possible and draws only a few frames per second.">ⓘ</span></span><span class="hint">× real time</span></div>
+            <div class="seg" role="radiogroup" aria-label="Speed">
+              <label><input type="radio" name="speed" value="1" /><span>1×</span></label>
+              <label><input type="radio" name="speed" value="2" /><span>2×</span></label>
+              <label><input type="radio" name="speed" value="4" checked /><span>4×</span></label>
+              <label><input type="radio" name="speed" value="8" /><span>8×</span></label>
+              <label><input type="radio" name="speed" value="16" /><span>16×</span></label>
+              <label><input type="radio" name="speed" value="32" /><span>32×</span></label>
+              <label><input type="radio" name="speed" value="max" /><span>Max</span></label>
+            </div>
+          </div>
+        </section>
+
+        <form id="setup" autocomplete="off">
+          <div class="group-head">
+            <h2>Settings</h2>
+            <span class="lock-note">Locked while running</span>
+          </div>
+          <fieldset id="settings"></fieldset>
+        </form>
+      </aside>
+      <section class="stage">
+        <canvas id="view" tabindex="0" aria-label="World view. Drag to pan, scroll or pinch to zoom, arrow keys pan, plus and minus zoom, 0 fits the world."></canvas>
+        <div id="note" class="note"></div>
+        <div id="timer" class="timer" title="Simulated time" hidden></div>
+        <div class="zoom" role="group" aria-label="Zoom">
+          <button id="zoomIn" type="button" aria-label="Zoom in" title="Zoom in">+</button>
+          <button id="zoomOut" type="button" aria-label="Zoom out" title="Zoom out">−</button>
+          <button id="zoomFit" type="button" aria-label="Fit world to view" title="Fit world to view">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" /></svg>
+          </button>
+        </div>
+        <div class="ov-stack">
+          <section id="legendCard" class="ov ov-legend">
+            <header class="ov-head">
+              <h2>Legend</h2>
+              <button class="ov-toggle" type="button" aria-expanded="true" aria-label="Minimise legend" title="Minimise">−</button>
+            </header>
+            <ul class="ov-body legend">
+              <li><svg viewBox="0 0 20 20" aria-hidden="true"><clipPath id="swClip"><circle cx="10" cy="10" r="7" /></clipPath><circle cx="10" cy="10" r="7" fill="rgba(15, 23, 20, 0.85)" /><rect x="0" y="9" width="20" height="12" fill="hsl(205, 80%, 62%)" clip-path="url(#swClip)" /><circle cx="10" cy="10" r="7" fill="none" stroke="hsl(205, 80%, 62%)" stroke-width="1.6" /></svg>Prey (fill = energy)</li>
+              <li><svg viewBox="0 0 20 20" aria-hidden="true"><clipPath id="swClipP"><path d="M19 10 L11.4 5.6 A5.4 5.4 0 1 0 11.4 14.4 Z" /></clipPath><path d="M19 10 L11.4 5.6 A5.4 5.4 0 1 0 11.4 14.4 Z" fill="rgba(15, 23, 20, 0.85)" /><rect x="0" y="9" width="20" height="12" fill="hsl(4, 85%, 62%)" clip-path="url(#swClipP)" /><path d="M19 10 L11.4 5.6 A5.4 5.4 0 1 0 11.4 14.4 Z" fill="none" stroke="hsl(4, 85%, 62%)" stroke-width="1.6" stroke-linejoin="round" /></svg>Predator, nose ahead</li>
+              <li><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8" fill="none" stroke="#eef5f1" stroke-width="1.6" /></svg>Selected creature</li>
+              <li><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="5" fill="#4ade80" /></svg>Plant</li>
+              <li><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="5" fill="#e040fb" /></svg>Poison</li>
+            </ul>
+          </section>
+          <section id="selectedCard" class="ov ov-selected" hidden>
+            <header class="ov-head">
+              <h2>Selected creature</h2>
+              <span id="selSpecies" class="sel-species sel-only"></span>
+              <button class="ov-toggle" type="button" aria-expanded="true" aria-label="Minimise selected creature" title="Minimise">−</button>
+            </header>
+            <div class="ov-body sel-body">
+              <div class="sel-only sel-energy">
+                <div class="meter" role="meter" id="selMeter" aria-label="Energy" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="selFill"></span></div>
+                <span id="selEnergy" class="sel-energy-val">-</span>
+              </div>
+              <dl class="sel-only sel-facts">
+                <div><dt>Age</dt><dd id="selAge">-</dd></div>
+                <div><dt>Children</dt><dd id="selChildren">-</dd></div>
+                <div><dt id="selEatenLabel">Plants eaten</dt><dd id="selEaten">-</dd></div>
+                <div><dt>Lineage depth</dt><dd id="selDepth">-</dd></div>
+                <div><dt>Id</dt><dd id="selId">-</dd></div>
+              </dl>
+              <p class="sel-only sel-plan" id="selPlan"></p>
+              <button id="selFounder" class="sel-only sel-founder" type="button" title="Highlight this founder's lineage in the world"><i id="selFounderSw"></i><span id="selFounderText"></span></button>
+              <p class="sel-hint">Click a creature or pick one:</p>
+              <div class="sel-pick" role="group" aria-label="Pick a creature">
+                <button id="pickAge" class="secondary" type="button" title="Select the oldest living creature">Oldest</button>
+                <button id="pickChildren" class="secondary" type="button" title="Select the living creature with the most children">Most children</button>
+                <button id="pickEaten" class="secondary" type="button" title="Select the living prey that has eaten the most plants">Top grazer</button>
+                <button id="pickKills" class="secondary" type="button" title="Select the living predator that has caught the most prey">Top hunter</button>
+              </div>
+              <div class="sel-only sel-actions">
+                <button id="follow" class="secondary" type="button" aria-pressed="false" title="Keep the view centred on this creature">Follow</button>
+                <button id="worldView" class="secondary" type="button" title="Zoom out to the whole world">World view</button>
+              </div>
+            </div>
+          </section>
+          <section id="brainCard" class="ov ov-brain" hidden>
+            <header class="ov-head">
+              <h2>Brain</h2>
+              <button class="ov-toggle" type="button" aria-expanded="true" aria-label="Minimise brain" title="Minimise">−</button>
+            </header>
+            <div class="ov-body"><canvas id="brainView"></canvas></div>
+          </section>
+          <section id="graphCard" class="ov ov-graph">
+            <header class="ov-head">
+              <h2>Population</h2>
+              <button class="ov-toggle" type="button" aria-expanded="true" aria-label="Minimise population" title="Minimise">−</button>
+            </header>
+            <div class="ov-body">
+              <canvas id="graphView"></canvas>
+              <div class="fit-foot"><span class="key prey">prey</span><span class="key pred">predators</span><span class="key food">plants</span><span class="fit-note">simulated time</span></div>
+            </div>
+          </section>
+          <section id="lineageCard" class="ov ov-lineage">
+            <header class="ov-head">
+              <h2>Lineages</h2>
+              <div class="seg seg-mini lin-species" role="radiogroup" aria-label="Lineages of">
+                <label><input type="radio" name="linSpecies" value="0" checked /><span>Prey</span></label>
+                <label><input type="radio" name="linSpecies" value="1" /><span>Predators</span></label>
+              </div>
+              <button class="ov-toggle" type="button" aria-expanded="true" aria-label="Minimise lineages" title="Minimise">−</button>
+            </header>
+            <div class="ov-body">
+              <div class="lin-bar" role="img" aria-label="Share of living creatures of this kind by founder"></div>
+              <ul class="lin-list"></ul>
+              <canvas class="lin-graph" aria-label="Share of each lineage over simulated time"></canvas>
+              <div class="fit-foot"><span class="fit-note">share of creatures · simulated time</span><button class="lin-clear secondary" type="button" hidden>Show all</button></div>
+            </div>
+          </section>
+        </div>
+        <div id="extinct" class="scrim" hidden>
+          <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="extinctTitle">
+            <h2 id="extinctTitle">Extinct</h2>
+            <p>Every prey and every predator has died. Reseed starts again with new founders and a new seed, or edit the settings and try again.</p>
+            <div class="dialog-actions">
+              <button id="reseed" class="primary" type="button">Reseed</button>
+              <button id="editSettings" class="secondary" type="button">Edit settings</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="../src/ecosystem.ts"></script>
+    <div id="tooltip" class="tooltip" role="tooltip" hidden></div>
+  </body>
+</html>
