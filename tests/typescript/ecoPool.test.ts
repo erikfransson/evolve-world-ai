@@ -1,6 +1,7 @@
 import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
+import { ShareCoordinator, fittedCaps, packetBytes, packetViews, publishedBytes } from "../../src/typescript/src/sim/ecoShare.ts";
 import { ThinkPool, defaultHelpers, serveHelper, tickTimeoutMs } from "../../src/typescript/src/worker/ecoPool.ts";
 import type { HelperIn, HelperOut, HelperPort } from "../../src/typescript/src/worker/ecoPool.ts";
 import { EcoRunner } from "../../src/typescript/src/worker/ecoRunner.ts";
@@ -369,6 +370,54 @@ describe("ThinkPool message handling", () => {
       expect(await outcome).toMatch(/stopped answering/);
     } finally {
       vi.useRealTimers();
+    }
+  });
+});
+
+describe("helper packets", () => {
+  it("fittedCaps grows for a bigger genome area, and the delta cap counts every word publish writes", () => {
+    const caps = { creatures: 10, memory: 10, delta: 100, genome: 100 };
+    expect(fittedCaps(caps, { ...caps, genome: 101 })).not.toBeNull();
+    expect(fittedCaps(caps, caps)).toBeNull();
+
+    const eco = new Ecosystem(cfg(), null, { journal: true });
+    for (let t = 0; t < 120; t++) eco.step(); // the journal keeps filling: items, births, deaths
+    expect(eco.journal!.born.length).toBeGreaterThan(0);
+    expect(eco.journal!.died.length).toBeGreaterThan(0);
+    const coordinator = new ShareCoordinator(2);
+    const need = coordinator.need(eco);
+    const fitted = fittedCaps(null, need)!;
+    const home = packetViews(new ArrayBuffer(packetBytes(fitted)), fitted);
+    coordinator.publish(eco, home, [0, 1].map(() => packetViews(new ArrayBuffer(packetBytes(fitted)), fitted)));
+    expect((publishedBytes(home) - home.delta.byteOffset) / 8).toBe(need.delta);
+  });
+
+  it("helpers follow a live change of the ageing rate, as the serial run does", async () => {
+    const aging = (): EcoConfig => {
+      const c = cfg();
+      c.eco.wasm = false;
+      c.eco.aging = true;
+      c.eco.agingStart = 2;
+      c.eco.agingRate = 0.1;
+      return c;
+    };
+    const run = async (retune: boolean, pool: ThinkPool | null): Promise<number> => {
+      const eco = new Ecosystem(aging(), null, { journal: pool !== null });
+      if (pool) await pool.start(eco);
+      for (let t = 0; t < 160; t++) {
+        if (t === 60 && retune) expect(eco.retune({ eco: { agingRate: 2 } }).ok).toBe(true);
+        if (pool) await pool.step(eco);
+        else eco.step();
+      }
+      return eco.fingerprint();
+    };
+    const pool = new ThinkPool(fakePorts(2));
+    try {
+      const serialRetuned = await run(true, null);
+      expect(serialRetuned).not.toBe(await run(false, null)); // the change matters
+      expect(await run(true, pool)).toBe(serialRetuned);
+    } finally {
+      pool.close();
     }
   });
 });
