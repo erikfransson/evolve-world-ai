@@ -7,7 +7,8 @@ import { Evolution } from "../sim/evolution.ts";
 
 let config: SimConfig | null = null;
 let evolution: Evolution | null = null;
-let evaluator: Evaluator | null = null;
+let evaluator: (Evaluator & { setGentle(on: boolean): void }) | null = null;
+let gentle = false;
 let paused = false;
 let looping = false; // true while a loop is running, so resume cannot start a second one
 
@@ -87,11 +88,15 @@ self.onmessage = (e: MessageEvent<InMessage>) => {
     pendingPast = msg;
   } else if (msg.type === "start") {
     config = msg.config;
+    gentle = msg.gentle ?? false;
     paused = false;
     evaluator?.close();
-    evaluator = createBrowserEvaluator(msg.config);
+    evaluator = createBrowserEvaluator(msg.config, gentle);
     evolution = new Evolution(msg.config);
     void loop();
+  } else if (msg.type === "gentle") {
+    gentle = msg.gentle;
+    evaluator?.setGentle(gentle); // the worker count changes at the next start
   } else if (msg.type === "pause") {
     paused = true;
   } else if (paused) {

@@ -22,6 +22,7 @@ import { parsePool } from "./sim/seedPool.ts";
 import { checkRanges, mergeSpeciesList } from "./sim/species.ts";
 import { parseSettings } from "./ui/settingsIO.ts";
 import { createNodeThinkPool } from "./worker/nodePool.ts";
+import { DutyController, idleMs } from "./worker/pacer.ts";
 
 // parameters
 const { values } = parseArgs({
@@ -34,6 +35,7 @@ const { values } = parseArgs({
     series: { type: "string" }, // seconds between rows of the time series
     pool: { type: "string", default: fileURLToPath(new URL("../public/pool.json", import.meta.url)) },
     threads: { type: "string", default: "0" }, // helper threads for sense and think; 0 runs on this thread alone
+    gentle: { type: "boolean" }, // back off in 12 ms slices when other processes compete, as the page does with Gentle on CPU (pick --threads yourself); same results
     predators: { type: "boolean" },
     preset: { type: "string" },
     config: { type: "string" },
@@ -130,6 +132,10 @@ function seriesRow(): Record<string, unknown> {
   return row;
 }
 
+const controller = values.gentle ? new DutyController() : null;
+let sliceUnits = 0;
+const SLICE_MS = 12; // as EcoRunner
+let sliceStart = performance.now();
 let creatureTicks = 0;
 const t0 = performance.now();
 const warm = Math.floor(ticks / 4); // steadyMsPerTick leaves out these first ticks (JIT warm-up, helper start)
@@ -138,6 +144,7 @@ let cpuWarm = process.cpuUsage();
 while (eco.tick < ticks && !eco.extinct) {
   if (eco.tick === warm) { tWarm = performance.now(); cpuWarm = process.cpuUsage(); }
   creatureTicks += eco.population;
+  sliceUnits += eco.population;
   if (helpers) await helpers.step(eco);
   else eco.step();
   if (eco.tick % every === 0) {
@@ -146,6 +153,14 @@ while (eco.tick < ticks && !eco.extinct) {
     if (eco.species.length > 1) console.error(`${Math.round(eco.tick * config.dt)} s ${perSpecies().join(" ")} food ${eco.food}`); // progress
   }
   if (seriesEvery && eco.tick % seriesEvery === 0) series.push(seriesRow());
+  const now = performance.now();
+  if (controller && now - sliceStart >= SLICE_MS) {
+    controller.observe(now - sliceStart, sliceUnits);
+    sliceUnits = 0;
+    const idle = idleMs(now - sliceStart, controller.duty());
+    if (idle > 0) await new Promise((resolve) => setTimeout(resolve, idle));
+    sliceStart = performance.now();
+  }
 }
 const t1 = performance.now();
 const wall = (t1 - t0) / 1000;
@@ -161,6 +176,7 @@ console.log(JSON.stringify({
   ticksPerSecond: +(eco.tick / wall).toFixed(1),
   msPerTick: +((1000 * wall) / Math.max(1, eco.tick)).toFixed(2),
   cpuMsPerTick: +(process.cpuUsage(cpuWarm).user / 1000 / Math.max(1, eco.tick - warm)).toFixed(2), // user CPU of all threads, steadier than wall under load
+  cpuPercent: +((100 * (process.cpuUsage(cpuWarm).user + process.cpuUsage(cpuWarm).system)) / 1000 / (t1 - tWarm)).toFixed(0), // all threads, steady part; 100 = one core
   steadyMsPerTick: +((t1 - tWarm) / Math.max(1, eco.tick - warm)).toFixed(2),
   meanPopulation: Math.round(creatureTicks / Math.max(1, eco.tick)),
   creatureTicksPerSecond: Math.round(creatureTicks / wall),

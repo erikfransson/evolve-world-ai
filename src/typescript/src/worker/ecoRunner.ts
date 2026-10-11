@@ -9,6 +9,8 @@ import { traitStats } from "../sim/popStats.ts";
 import type { EcoInMessage, EcoOutMessage, EcoSnapshot, EcoSpeedSetting, SelectedDetails } from "./ecoProtocol.ts";
 import { LINEAGE_STRIDE, LINEAGE_TOP, snapshotBytes, snapshotViews } from "./ecoProtocol.ts";
 import type { ThinkPool } from "./ecoPool.ts";
+import type { DutyController } from "./pacer.ts";
+import { idleMs } from "./pacer.ts";
 
 const SLICE_MS = 12; // longest stretch of ticks before the worker checks messages and posts
 const POST_MS = 1000 / 30; // snapshot interval
@@ -30,6 +32,8 @@ export class EcoRunner {
   private readonly post: Post;
   private readonly now: () => number;
   private paused = false;
+  gentle: DutyController | null = null; // sets how much of the wall time the pump may compute, see pacer.ts; the helper threads idle with it, as they wait for this thread
+  private units = 0; // creature-ticks run so far, the measure of work for the controller
   private run = 0;
   private speed: EcoSpeedSetting = 1;
   private selectedId: number | null = null;
@@ -111,11 +115,13 @@ export class EcoRunner {
     const eco = this.due();
     if (!eco) return -1;
     const t0 = this.last;
+    const began = this.now();
+    const units = this.units;
     while (this.wantTick(eco)) {
       eco.step();
       if (this.ticked(eco, t0)) break;
     }
-    return this.settle(eco);
+    return this.paced(this.settle(eco), began, units);
   }
 
   // pump with the helper threads when there are any. A pool that fails, at the start or later, is dropped and the run
@@ -134,6 +140,8 @@ export class EcoRunner {
     const eco = this.due();
     if (!eco) return -1;
     const t0 = this.last;
+    const began = this.now();
+    const units = this.units;
     pool.watch = this.selectedId;
     try {
       while (this.wantTick(eco)) {
@@ -143,7 +151,16 @@ export class EcoRunner {
     } catch (error) {
       this.dropHelpers(error);
     }
-    return this.settle(eco);
+    return this.paced(this.settle(eco), began, units);
+  }
+
+  // The delay before the next pump, at least the idle time that keeps the work at the duty share; the ticks themselves are unchanged.
+  private paced(delay: number, began: number, units: number): number {
+    const gentle = this.gentle;
+    if (delay < 0 || !gentle) return delay;
+    const end = this.now();
+    gentle.observe(end - began, this.units - units);
+    return Math.max(delay, idleMs(end - began, gentle.duty()));
   }
 
   // Uses these helper threads from the next start on; null runs on this thread.
@@ -179,6 +196,7 @@ export class EcoRunner {
   // Bookkeeping after one tick; true when the slice that began at t0 is used up.
   private ticked(eco: Ecosystem, t0: number): boolean {
     this.debt--;
+    this.units += eco.population;
     this.sampleIfDue(eco);
     return this.now() - t0 >= SLICE_MS;
   }

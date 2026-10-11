@@ -5,6 +5,7 @@ import { LINEAGE_STRIDE, LINEAGE_TOP, snapshotViews } from "../../src/typescript
 import { genomeLength, layerSizes } from "../../src/typescript/src/sim/brain.ts";
 import { inputLayout, planUpkeep, rayAngleOffsets } from "../../src/typescript/src/sim/sensors.ts";
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
+import { DutyController } from "../../src/typescript/src/worker/pacer.ts";
 import { EcoRunner } from "../../src/typescript/src/worker/ecoRunner.ts";
 
 function cfg(over: { creature?: Partial<EcoConfig["creature"]>; eco?: Partial<EcoConfig["eco"]> } = {}): EcoConfig {
@@ -293,5 +294,28 @@ describe("EcoRunner", () => {
     runner.handle({ type: "selectBest", by: "eaten", request: 3 });
     expect(last().selected).toMatchObject({ id: 12, eaten: 8 });
     expect(last().bestRequest).toBe(3);
+  });
+});
+
+describe("Gentle on CPU pacing", () => {
+  const run = (pressure: "nominal" | "serious") => {
+    const { runner, sent, last } = setup(1); // every clock reading advances 1 ms, so each slice of "max" ticks ends
+    if (pressure === "serious") { runner.gentle = new DutyController(); runner.gentle.setPressure("serious"); }
+    runner.handle({ type: "start", config: cfg(), run: 1 });
+    runner.handle({ type: "speed", speed: "max" });
+    const delays: number[] = [];
+    for (let i = 0; i < 40; i++) delays.push(runner.pump());
+    return { delays, fingerprint: runner.ecosystem!.fingerprint(), tick: runner.ecosystem!.tick, last: last(), sent };
+  };
+
+  it("leaves the simulation and the snapshots unchanged and only lengthens the delays", () => {
+    const full = run("nominal");
+    const gentle = run("serious");
+    expect(gentle.tick).toBe(full.tick);
+    expect(gentle.fingerprint).toBe(full.fingerprint);
+    expect(gentle.sent.length).toBe(full.sent.length);
+    expect(Array.from(new Uint8Array(gentle.last.buffer))).toEqual(Array.from(new Uint8Array(full.last.buffer)));
+    expect(full.delays.every((d) => d === 0)).toBe(true);
+    expect(gentle.delays.every((d) => d > 0)).toBe(true);
   });
 });
