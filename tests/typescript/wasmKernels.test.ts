@@ -355,6 +355,19 @@ describe("sense.wat (SenseKernels)", () => {
     check({ rays: 6, spread: 2, creatures: [[300, 300, 0], [900, 600, 2]], items, species: 2 }, true); // no creature in sight: flags all zero, exact
   });
 
+  it("reads the outputs in place across a kernel memory growth", () => {
+    const { kernel, kernels } = check({ rays: 4, spread: 1, creatures: [[300, 300, 0], [320, 300, 3], [700, 500, 1]], items }, false);
+    const before = kernel.map((c) => Array.from(c.outputs));
+    const bank = (kernels as unknown as { brains: WasmBrainBank }).brains;
+    const old = bank.memory.buffer;
+    bank.alloc(20_000_000); // grows the memory, detaching the old buffer
+    expect(old.byteLength).toBe(0);
+    kernel.forEach((c, k) => {
+      expect(Array.from(c.outputs)).toEqual(before[k]);
+      expect(Number.isFinite(c.drain)).toBe(true);
+    });
+  });
+
   it("keeps the rays of non-detail creatures untouched and needs no detail", () => {
     const { kernel, world, crowd, kernels, batch } = check({ rays: 4, spread: 1, creatures: [[300, 300, 0], [320, 300, 3]], items }, false);
     kernel[1]!.rays[0]!.closeness = 0.123;
