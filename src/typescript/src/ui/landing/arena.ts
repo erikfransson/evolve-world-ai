@@ -1,7 +1,8 @@
-import { createRng } from "../sim/rng.ts";
-import { BACKGROUND, FOOD, OTHER, POISON, WALL, beginFrame } from "./scene.ts";
-import { TICK_SECONDS, clamp, drawBirthRings, drawBursts, drawColoured, sceneConfig, wrapAngle } from "./landingScenes.ts";
-import type { Effect, Scene } from "./landingScenes.ts";
+import { createRng } from "../../sim/rng.ts";
+import { BACKGROUND, FOOD, OTHER, POISON, RAY_NONE, RAY_WALL, WALL } from "../palette.ts";
+import { beginFrame } from "../scene.ts";
+import { TICK_SECONDS, clamp, drawBirthRings, drawBursts, drawColoured, sceneConfig, ticksOf, wrapAngle } from "./kit.ts";
+import type { Effect, Scene } from "./kit.ts";
 
 // RL Arena card: the same gold learner in four small training boxes. It starts clumsy and gets better over a loop,
 // and every good move pays out a "+1", a ring and a pulse.
@@ -26,9 +27,6 @@ const FLICKER_SECONDS = 0.5;
 const GROW_SECONDS = 0.45;
 const RAY_LENGTH = 30;
 const RAY_OFFSETS = [-0.9, -0.45, 0, 0.45, 0.9];
-const RAY_NONE = "#9db3a8";
-const RAY_WALL = "#facc15";
-const ticksOf = (seconds: number): number => Math.round(seconds / TICK_SECONDS);
 
 type Mode = "forage" | "dodge" | "duel" | "chase";
 interface Point { x: number; y: number }
