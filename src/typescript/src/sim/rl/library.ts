@@ -14,7 +14,7 @@ export interface StoredLearner {
 
 export const serialiseLearner = (l: Learner): StoredLearner => ({
   plan: { ...l.plan, hiddenLayers: l.plan.hiddenLayers.slice() },
-  genome: Array.from(l.genome, (v) => Math.round(v * DECIMALS) / DECIMALS),
+  genome: Array.from(l.genome, (v) => Math.round(v * DECIMALS) / DECIMALS || 0),
 });
 
 // The learners of a library file; entries that are not a plan with a numeric genome are skipped.

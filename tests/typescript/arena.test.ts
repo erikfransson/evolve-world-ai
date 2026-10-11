@@ -21,6 +21,8 @@ function recording(): Recording {
     rayLength: 180,
     rayOffsets: Float32Array.from([-0.3, 0.3]),
     rays: Float32Array.from([0.5, 1, 0, 0, 0, 0, 1, 3]),
+    inputSize: 0,
+    inputs: new Float32Array(0),
     result: { reward: 1, food: 1, kills: 0, seconds: 5, energy: 10 },
   };
 }

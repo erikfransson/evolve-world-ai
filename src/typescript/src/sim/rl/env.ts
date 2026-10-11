@@ -90,21 +90,25 @@ export function envConfig(env: EnvSpec, seed: number): EcoConfig {
   return base;
 }
 
-// The pool founder's genome in the env world's layout.
+const converted: Record<EnvWorld, WeakMap<PoolEntry, Learner>> = { ecosystem: new WeakMap(), hunt: new WeakMap() };
+
+// The pool founder's genome in the env world's layout; converted once per entry and world, so treat the result as read only.
 export function poolLearner(env: Pick<EnvSpec, "world">, entry: PoolEntry): Learner {
-  return { plan: entry.plan, genome: trialsToEcoGenome(entry.plan, entry.genome, envConfig({ ...BLANK, world: env.world }, 1)) };
+  let l = converted[env.world].get(entry);
+  if (!l) converted[env.world].set(entry, (l = { plan: entry.plan, genome: trialsToEcoGenome(entry.plan, entry.genome, envConfig({ ...BLANK_ENV, world: env.world }, 1)) }));
+  return l;
 }
 
 // A random plan within the species' ranges and a random genome for it.
 export function randomLearner(env: Pick<EnvSpec, "world" | "role">, seed: number): Learner {
-  const config = envConfig({ ...BLANK, world: env.world }, seed);
+  const config = envConfig({ ...BLANK_ENV, world: env.world }, seed);
   const rng = createRng(deriveSeed(seed, 0x1ea7));
   const plan: BodyPlan = planOf(config);
   randomPlan(speciesRanges(config, speciesList(config)[env.role]!), rng, plan);
   return { plan, genome: randomGenome(layerSizes(config, plan), rng) };
 }
 
-const BLANK: EnvSpec = { id: "", name: "", description: "", world: "ecosystem", role: 0, size: [400, 400], food: 0, poison: 0, foodRegrow: 0, seconds: 1, rivals: [], reward: {}, tags: [] };
+export const BLANK_ENV: EnvSpec = { id: "", name: "", description: "", world: "ecosystem", role: 0, size: [400, 400], food: 0, poison: 0, foodRegrow: 0, seconds: 1, rivals: [], reward: {}, tags: [] };
 
 // The learner (founder id 0) and the rivals of one episode, placed at random from the seed.
 export function castFor(env: EnvSpec, config: EcoConfig, learner: Learner, seed: number, pool: readonly PoolEntry[] | null, library: Library): CastMember[] {
@@ -166,4 +170,54 @@ export function scoreLearner(env: EnvSpec, learner: Learner, seeds: readonly num
     for (const k of Object.keys(sum) as (keyof EpisodeResult)[]) sum[k] += r[k] / seeds.length;
   }
   return sum;
+}
+
+// Bounds a custom env must keep, so a page or a shared file cannot ask for a world that stalls the browser.
+export const ENV_LIMITS = { side: [200, 3000], items: [0, 300], regrow: [0, 10], seconds: [5, 180], rivals: [0, 30], weight: [-10, 10] } as const;
+
+// A custom env rebuilt from checked fields, for the learner's world and species, or a reason it is not valid.
+export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | string {
+  if (typeof e !== "object" || e === null) return "env missing";
+  const v = e as Record<string, unknown>;
+  const L = ENV_LIMITS;
+  const n = (x: unknown, [lo, hi]: readonly [number, number]): x is number => typeof x === "number" && Number.isFinite(x) && x >= lo && x <= hi;
+  const size = v.size as unknown[];
+  if (!Array.isArray(size) || size.length !== 2 || !size.every((s) => n(s, L.side))) return `world sides must be ${L.side[0]} to ${L.side[1]}`;
+  if (!n(v.food, L.items) || !n(v.poison, L.items)) return `food and poison must be ${L.items[0]} to ${L.items[1]}`;
+  if (!n(v.foodRegrow, L.regrow)) return `regrowth must be ${L.regrow[0]} to ${L.regrow[1]} per second`;
+  if (!n(v.seconds, L.seconds)) return `episodes must last ${L.seconds[0]} to ${L.seconds[1]} s`;
+  const species = world === "hunt" ? 2 : 1;
+  const rivals: Rivals[] = [];
+  for (const r of Array.isArray(v.rivals) ? v.rivals : []) {
+    const rv = r as Record<string, unknown>;
+    const src = rv.source;
+    if (!Number.isInteger(rv.species) || (rv.species as number) < 0 || (rv.species as number) >= species) return "rival species does not exist in this world";
+    if (!Number.isInteger(rv.count) || (rv.count as number) < 0) return "rival count must be a whole number";
+    if (src !== "random" && src !== "pool" && !(typeof src === "string" && /^library:[a-z0-9-]{1,40}$/.test(src))) return "rival source must be random, pool or library:<env id>";
+    rivals.push({ species: rv.species as number, count: rv.count as number, source: src as RivalSource });
+  }
+  if (rivals.reduce((a, r) => a + r.count, 0) > L.rivals[1]) return `at most ${L.rivals[1]} rivals`;
+  const w = (v.reward ?? {}) as Record<string, unknown>;
+  const reward: EnvSpec["reward"] = {};
+  for (const k of ["food", "kill", "survive", "energy"] as const) {
+    if (w[k] === undefined) continue;
+    if (!n(w[k], L.weight)) return `reward ${k} must be ${L.weight[0]} to ${L.weight[1]}`;
+    reward[k] = w[k] as number;
+  }
+  const text = (x: unknown, max: number, fallback: string): string => (typeof x === "string" && x.trim() ? x.slice(0, max) : fallback);
+  return {
+    id: text(v.id, 40, "custom").toLowerCase().replace(/[^a-z0-9-]/g, "-"),
+    name: text(v.name, 40, "Custom"),
+    description: text(v.description, 160, "A custom training world."),
+    world,
+    role,
+    size: [size[0] as number, size[1] as number],
+    food: Math.round(v.food),
+    poison: Math.round(v.poison),
+    foodRegrow: v.foodRegrow,
+    seconds: v.seconds,
+    rivals,
+    reward,
+    tags: ["custom"],
+  };
 }

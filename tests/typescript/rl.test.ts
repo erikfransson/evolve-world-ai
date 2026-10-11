@@ -1,6 +1,7 @@
 import { genomeLength, layerSizes } from "../../src/typescript/src/sim/brain.ts";
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
-import { castFor, envConfig, randomLearner, runEpisode } from "../../src/typescript/src/sim/rl/env.ts";
+import { castFor, checkEnv, envConfig, randomLearner, runEpisode } from "../../src/typescript/src/sim/rl/env.ts";
+import { creatureFile, parseCreatureFile } from "../../src/typescript/src/sim/rl/creatureFile.ts";
 import type { EnvSpec } from "../../src/typescript/src/sim/rl/env.ts";
 import { ENVS, envById } from "../../src/typescript/src/sim/rl/envs.ts";
 import { Es, centredRanks } from "../../src/typescript/src/sim/rl/es.ts";
@@ -76,5 +77,49 @@ describe("library", () => {
     expect(lib.a).toHaveLength(1);
     expect(lib.a![0]!.genome[0]).toBeCloseTo(l.genome[0]!, 3);
     expect(parseLibrary({ version: 2, envs: {} })).toEqual({});
+  });
+});
+
+describe("creature files", () => {
+  const learner = randomLearner(envById("hunt-wanderers")!, 3);
+  const file = creatureFile("predator", "Rex", learner, { envs: ["hunt-wanderers"], iterations: 5, from: "random:3", heldStart: 0, heldEnd: 1, date: "2026-10-11" });
+
+  it("round-trip through JSON text", () => {
+    const back = parseCreatureFile(JSON.stringify(file));
+    expect(typeof back).toBe("object");
+    expect(back).toEqual(file);
+  });
+
+  it("reject wrong kinds, layouts, sizes and values with a reason", () => {
+    const bad = (patch: Record<string, unknown>): unknown => parseCreatureFile({ ...file, ...patch });
+    expect(bad({ format: "x" })).toMatch(/not an Evolve World/);
+    expect(bad({ kind: "__proto__" })).toMatch(/kind/);
+    expect(bad({ kind: "forager" })).toMatch(/genome must have/); // a predator's genome does not fit the one-species layout
+    expect(bad({ genome: [...file.genome.slice(1), 1e9] })).toMatch(/finite/);
+    expect(bad({ plan: { ...file.plan, hiddenLayers: [64] } })).toMatch(/hiddenLayers/);
+    expect(parseCreatureFile("{ not json")).toBe("not a JSON file");
+  });
+
+  it("keep names as short plain text", () => {
+    const f = parseCreatureFile({ ...file, name: "<img src=x onerror=alert(1)>\u0000" + "x".repeat(200) });
+    expect(typeof f === "object" && f.name.length).toBeLessThanOrEqual(80);
+    expect(typeof f === "object" && f.name.includes("\u0000")).toBe(false);
+  });
+});
+
+describe("checkEnv", () => {
+  const custom = { ...envById("forage-box")!, size: [500, 500], rivals: [{ species: 0, count: 3, source: "pool" }] };
+
+  it("accepts a valid custom env for the learner's world and drops unknown fields", () => {
+    const env = checkEnv({ ...custom, extra: 1 }, "ecosystem", 0);
+    expect(typeof env === "object" && env.tags).toEqual(["custom"]);
+    expect(env).not.toHaveProperty("extra");
+  });
+
+  it("rejects worlds that would stall the page or name missing species", () => {
+    expect(checkEnv({ ...custom, size: [100000, 500] }, "ecosystem", 0)).toMatch(/sides/);
+    expect(checkEnv({ ...custom, rivals: [{ species: 1, count: 2, source: "random" }] }, "ecosystem", 0)).toMatch(/species/);
+    expect(checkEnv({ ...custom, rivals: [{ species: 0, count: 99, source: "random" }] }, "ecosystem", 0)).toMatch(/at most/);
+    expect(checkEnv({ ...custom, rivals: [{ species: 0, count: 1, source: "library:../x" }] }, "ecosystem", 0)).toMatch(/source/);
   });
 });

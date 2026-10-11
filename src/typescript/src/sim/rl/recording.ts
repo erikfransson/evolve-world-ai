@@ -20,11 +20,13 @@ export interface Recording {
   rayLength: number;
   rayOffsets: Float32Array;
   rays: Float32Array; // zeros after the learner dies
+  inputSize: number; // 0 unless recorded with inputs
+  inputs: Float32Array; // the learner's brain input per frame (inputSize each), to replay its brain; zeros after it dies
   result: EpisodeResult;
 }
 
 // Plays the episode like runEpisode and keeps every `every`-th tick.
-export function recordEpisode(env: EnvSpec, learner: Learner, seed: number, pool: readonly PoolEntry[] | null, library: Library, every = 2): Recording {
+export function recordEpisode(env: EnvSpec, learner: Learner, seed: number, pool: readonly PoolEntry[] | null, library: Library, every = 2, withInputs = false): Recording {
   const items: number[] = [];
   const creatures: number[] = [];
   const rays: number[] = [];
@@ -34,6 +36,8 @@ export function recordEpisode(env: EnvSpec, learner: Learner, seed: number, pool
   let dt = 0;
   let tick = 0;
   let offsets = new Float32Array(rayCount);
+  const inputs: number[] = [];
+  let inputSize = 0;
   const result = runEpisode(env, learner, seed, pool, library, (eco) => {
     if (tick++ % every !== 0) return;
     dt = eco.config.dt * every;
@@ -47,6 +51,11 @@ export function recordEpisode(env: EnvSpec, learner: Learner, seed: number, pool
     creatureStart.push(creatures.length / CREATURE_FIELDS);
     const me = eco.get(0);
     if (me) offsets = Float32Array.from(me.creature.rayOffsets);
+    if (withInputs) {
+      const input = me?.creature.brain.layerActivations()[0];
+      if (input && !inputSize) inputSize = input.length;
+      for (let k = 0; k < inputSize; k++) inputs.push(input?.[k] ?? 0);
+    }
     for (let r = 0; r < rayCount; r++) rays.push(me?.creature.rays[r]?.closeness ?? 0, me?.creature.rays[r]?.kind ?? HIT_NONE);
   });
   return {
@@ -62,9 +71,11 @@ export function recordEpisode(env: EnvSpec, learner: Learner, seed: number, pool
     rayLength: learner.plan.rayLength,
     rayOffsets: offsets,
     rays: Float32Array.from(rays),
+    inputSize,
+    inputs: Float32Array.from(inputs),
     result,
   };
 }
 
 // The buffers of a recording, to transfer it to another thread.
-export const recordingBuffers = (r: Recording): ArrayBuffer[] => [r.itemStart, r.itemData, r.creatureStart, r.creatureData, r.rayOffsets, r.rays].map((a) => a.buffer as ArrayBuffer);
+export const recordingBuffers = (r: Recording): ArrayBuffer[] => [r.itemStart, r.itemData, r.creatureStart, r.creatureData, r.rayOffsets, r.rays, r.inputs].map((a) => a.buffer as ArrayBuffer);
