@@ -2,6 +2,7 @@ import { genomeLength, layerSizes } from "../sim/brain.ts";
 import { DEFAULT_CONFIG, itemCounts, withOverrides } from "../sim/config.ts";
 import type { SimConfig } from "../sim/config.ts";
 import { Creature } from "../sim/creature.ts";
+import { collide } from "../sim/physics.ts";
 import { createRng } from "../sim/rng.ts";
 import { HIT_NONE } from "../sim/types.ts";
 import type { CreatureState, EpisodeView, HitKind, Rng } from "../sim/types.ts";
@@ -200,7 +201,7 @@ export function ecosystemScene(seed: number): EcoScene {
       for (let i = 0; i < bodies.length; i++) {
         const a = bodies[i]!;
         if (!a.live) continue;
-        for (let j = i + 1; j < bodies.length; j++) if (bodies[j]!.live) bump(a.state, bodies[j]!.state, 2 * r);
+        for (let j = i + 1; j < bodies.length; j++) if (bodies[j]!.live) collide(a.state, bodies[j]!.state, r, 1);
       }
       for (const b of bodies) if (b.live && b.fadeAt < 0 && tick >= b.birthAt) birth(b);
     },
@@ -235,23 +236,6 @@ export function ecosystemScene(seed: number): EcoScene {
 
 // Overshooting ease, 0 to 1 with a small bounce past 1.
 const easeOutBack = (t: number): number => Math.max(0, 1 + 2.2 * (t - 1) ** 3 + 1.2 * (t - 1) ** 2);
-
-// Equal-mass collision: separates overlapping bodies and swaps their approach speed along the contact line.
-function bump(a: CreatureState, b: CreatureState, minDist: number): void {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const d = Math.hypot(dx, dy);
-  if (d >= minDist || d === 0) return;
-  const nx = dx / d;
-  const ny = dy / d;
-  const push = (minDist - d) / 2;
-  a.x -= nx * push; a.y -= ny * push;
-  b.x += nx * push; b.y += ny * push;
-  const approach = (a.vx - b.vx) * nx + (a.vy - b.vy) * ny;
-  if (approach <= 0) return;
-  a.vx -= approach * nx; a.vy -= approach * ny;
-  b.vx += approach * nx; b.vy += approach * ny;
-}
 
 function drawColoured(ctx: CanvasRenderingContext2D, px: number, s: CreatureState, r: number, hue: number): void {
   ctx.fillStyle = `hsl(${hue}, 75%, 58%)`;
@@ -405,7 +389,7 @@ export function predatorScene(seed: number): PredatorScene {
         giveBirth();
       }
       const bodies = [hs, ...alive().map((p) => p.state)];
-      for (let i = 1; i < bodies.length; i++) for (let j = i + 1; j < bodies.length; j++) bump(bodies[i]!, bodies[j]!, 2 * r);
+      for (let i = 1; i < bodies.length; i++) for (let j = i + 1; j < bodies.length; j++) collide(bodies[i]!, bodies[j]!, r, 1);
     },
     draw(ctx) {
       const f = beginFrame(ctx, config);

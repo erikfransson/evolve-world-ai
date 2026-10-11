@@ -73,7 +73,7 @@ Threads 4 vs 7 at pop 1000: steady generations equal at about 0.29 s; 4 threads 
 
 ## Ecosystem (serial, one thread)
 
-`node src/ecoBench.ts --seconds 20 --every 5 [--pop N --food D --regrow R]`, world 8000 x 5000, machine load about 5.
+`node src/ecoBench.ts --seconds 20 --every 5 [--pop N --set world.foodDensity=D --set eco.foodRegrow=R]`, world 8000 x 5000, machine load about 5.
 
 | Founders | Food density, regrow | Ticks/s | Creature-ticks/s |
 |----------|----------------------|---------|------------------|
@@ -129,7 +129,7 @@ Browser (headless Chrome, preview, about 1000-1100 creatures, default world): on
 
 ## WebAssembly in Ecosystem sense and think (E5c)
 
-`node src/ecoBench.ts --seconds 10 --pop N [--threads 4 --shared] --wasm true|false`, steady ms per tick, world 12000 x 7500, 2026-10-11, JS and WASM run in alternating pairs.
+`node src/ecoBench.ts --seconds 10 --pop N [--threads 4 --shared] --set eco.wasm=true|false`, steady ms per tick, world 12000 x 7500, 2026-10-11, JS and WASM run in alternating pairs.
 Item and wall rays, encoding and the shared phase stay in JS; crowd rays and brains run in WASM, each thread with its own kernels.
 Several runs per cell, machine load 5-12 from other jobs.
 

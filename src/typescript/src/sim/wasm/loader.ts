@@ -41,17 +41,7 @@ export class Kernel<E extends WebAssembly.Exports> {
     this.memory = exports.mem as WebAssembly.Memory;
   }
 
-  static async create<E extends WebAssembly.Exports>(bytes: Uint8Array<ArrayBuffer>): Promise<Kernel<E> | null> {
-    if (!wasmAvailable()) return null;
-    try {
-      const { instance } = await WebAssembly.instantiate(bytes, {});
-      return new Kernel(instance.exports as E);
-    } catch {
-      return null;
-    }
-  }
-
-  // The same, compiled on this thread; fine in workers and Node, and the kernels are small enough for a page's main thread.
+  // Compiled on this thread; fine in workers and Node, and the kernels are small enough for a page's main thread.
   static createSync<E extends WebAssembly.Exports>(bytes: Uint8Array<ArrayBuffer>): Kernel<E> | null {
     if (!wasmAvailable()) return null;
     try {

@@ -1,8 +1,10 @@
 import { execFile } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { DEFAULT_CONFIG, withOverrides } from "../../src/typescript/src/sim/config.ts";
+import { DEFAULT_CONFIG, overrideConfig, withOverrides } from "../../src/typescript/src/sim/config.ts";
 import { Evolution } from "../../src/typescript/src/sim/evolution.ts";
+import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
+import { serialise } from "../../src/typescript/src/ui/settingsIO.ts";
 import { parsePool } from "../../src/typescript/src/sim/seedPool.ts";
 import { createNodeEvaluator, parseThreads } from "../../src/typescript/src/worker/nodePool.ts";
 
@@ -107,10 +109,31 @@ describe.concurrent("buildPool.ts and ecoBench.ts", () => {
   }, 60_000);
 
   it("ecoBench seeds poolFraction of the founders from --pool, none with --pool none", async () => {
-    const args = ["--seconds", "1", "--pop", "20", "--poolFraction", "0.5"];
+    const args = ["--seconds", "1", "--pop", "20", "--set", "eco.poolFraction=0.5"];
     const [a, b] = await Promise.all([run("ecoBench", ...args), run("ecoBench", ...args, "--pool", "none")]);
     expect([a.code, b.code]).toEqual([0, 0]);
     expect(JSON.parse(a.out).poolFounders).toBe(10);
     expect(JSON.parse(b.out).poolFounders).toBe(0);
+  });
+
+  it("ecoBench reads a Copy-format --config, applies --set over it and adds a --series", async () => {
+    const file = resolve(scratchDir(), "settings.json");
+    writeFileSync(file, serialise("ecosystem", overrideConfig(DEFAULT_ECO_CONFIG, { eco: { initialPopulation: 30, poolFraction: 0 } })));
+    const [a, b] = await Promise.all([
+      run("ecoBench", "--config", file, "--seconds", "2", "--series", "1", "--pool", "none"),
+      run("ecoBench", "--config", file, "--seconds", "1", "--pool", "none", "--set", "eco.initialPopulation=12", "--set", "species.0.speed=2"),
+    ]);
+    expect(a.code).toBe(0);
+    const sa = JSON.parse(a.out);
+    expect(sa.population[0]).toBe(30);
+    expect(sa.series.map((r: { t: number }) => r.t)).toEqual([1, 2]);
+    expect(b.code).not.toBe(0); // the Ecosystem config has no species list
+    expect(b.err).toContain("no species list");
+  });
+
+  it("ecoBench rejects an unknown or mistyped --set", async () => {
+    const [a, b] = await Promise.all([run("ecoBench", "--seconds", "1", "--set", "eco.nope=1"), run("ecoBench", "--seconds", "1", "--set", "eco.foodRegrow=x")]);
+    expect(a.err).toContain('unknown config key "eco.nope"');
+    expect(b.err).toContain("must be a number");
   });
 });

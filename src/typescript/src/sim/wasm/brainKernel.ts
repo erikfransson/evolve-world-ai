@@ -2,7 +2,7 @@ import { Arena, BRAIN_BYTES, Kernel } from "./loader.ts";
 import type { Genome } from "../types.ts";
 
 // Batched Brain.forward on f32x4 SIMD, for creatures with brains of any layer sizes (up to 11 layers).
-// Each slot holds one creature's weights in linear memory, so set() once when a brain is born or changes and forward() every tick.
+// Each slot holds one creature's weights in linear memory, so set() once when a brain is born or changes and forwardSlots() every tick.
 // The creature's input vector is written into f32 at inputAt(slot), the output is read from f32 at outputAt(slot).
 // Results differ from the JS Brain only by f32 rounding of the sums (see docs/perf-notes.md).
 
@@ -39,11 +39,6 @@ export class WasmBrainBank {
   }
 
   // Null when WebAssembly SIMD is unavailable (or disabled); keep using the JS Brain then.
-  static async create(): Promise<WasmBrainBank | null> {
-    const kernel = await Kernel.create<BrainExports>(BRAIN_BYTES);
-    return kernel ? new WasmBrainBank(kernel) : null;
-  }
-
   static createSync(): WasmBrainBank | null {
     const kernel = Kernel.createSync<BrainExports>(BRAIN_BYTES);
     return kernel ? new WasmBrainBank(kernel) : null;
@@ -67,10 +62,6 @@ export class WasmBrainBank {
     this.arena.release(ptr, bytes);
   }
 
-  get memoryBytes(): number {
-    return this.kernel.memory.buffer.byteLength;
-  }
-
   inputAt(slot: number): number {
     return this.inFloat[slot]!;
   }
@@ -79,7 +70,7 @@ export class WasmBrainBank {
     return this.outFloat[slot]!;
   }
 
-  // Stores a brain in a slot (any non-negative index; forward(n) runs slots 0 .. n-1, so keep them dense), replacing what it held.
+  // Stores a brain in a slot (any non-negative index; forwardSlots runs the slots it is given), replacing what it held.
   // genome is in the Brain layout: per layer weights [out][in] then biases.
   set(slot: number, sizes: readonly number[], genome: Genome): void {
     if (sizes.length < 2 || sizes.length > MAX_SIZES) throw new Error(`brain needs 2 to ${MAX_SIZES} layer sizes, got ${sizes.length}`);
@@ -129,26 +120,6 @@ export class WasmBrainBank {
     d[at + 2] = (w + pad4(nIn)) * 4;
     d[at + 3] = sizes.length;
     for (let i = 0; i < sizes.length; i++) d[at + 4 + i] = sizes[i]!;
-  }
-
-  // Frees the slot's memory for reuse by another brain.
-  release(slot: number): void {
-    const ptr = this.blockPtr[slot];
-    if (ptr === undefined) return;
-    this.arena.release(ptr, this.blockBytes[slot]!);
-    delete this.blockPtr[slot];
-  }
-
-  // True when the slot holds a brain (set and not released since).
-  isSet(slot: number): boolean {
-    return this.blockPtr[slot] !== undefined;
-  }
-
-  // Runs slots 0 .. count-1, each of which must hold a brain; an unset descriptor would make the kernel trap or loop on garbage.
-  forward(count: number): void {
-    if (count > this.descCap) throw new Error(`forward(${count}) beyond the ${this.descCap} slots set up`);
-    for (let s = 0; s < count; s++) if (this.blockPtr[s] === undefined) throw new Error(`slot ${s} holds no brain`);
-    if (count > 0) this.kernel.exports.forward(this.descPtr, count, 0, SCRATCH_B);
   }
 
   // Runs the slots slots[0 .. count-1] in that order, each of which must hold a brain; e.g. one thread's share of the creatures.
