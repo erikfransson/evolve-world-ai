@@ -43,4 +43,4 @@ Setup: 60 iterations, pairs 16, 2 episodes per candidate = 3840 training episode
 
 ## Changes
 
-ES_DEFAULTS and rlTrain: sigma 0.04 -> 0.08, shaping rank -> zscore. New rlTrain flags: --decay, --shaping, --lrEnd, --reward, --valid. Arena's sigma default 0.04 -> 0.08 to match.
+ES_DEFAULTS and rlTrain: sigma 0.04 -> 0.08, shaping rank -> zscore (`Es` option `shaping`). Arena sigma default 0.04 -> 0.08 to match. The experiment flags used for the table (--decay, --shaping, --lrEnd, --reward, --valid) stayed on branch rl-perf-algo and are not on main.
