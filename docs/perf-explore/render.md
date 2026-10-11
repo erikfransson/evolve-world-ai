@@ -38,7 +38,7 @@ Zoomed in, culling keeps the draw at 6-20 ms.
 
 ## Promising, untried
 
-- OffscreenCanvas in the worker. Moves all drawing off the page's main thread without changing a pixel. Needs `transferControlToOffscreen`, and the camera input and selection must reach the worker. Likely the largest structural win, unmeasured.
+- OffscreenCanvas in the worker: done and merged, see `offscreen.md`.
 - Creature dots as a pixel layer too, for the zoomed-out case. Same trade as items, and it changes creature size on screen (dots are 2.4 CSS px today). Needs a look before adopting.
 - Fewer colour buckets for dots when zoomed out (for example 12 hues), which cuts fill calls. Changes colours, unmeasured.
 - Item deltas in the worker to skip rebuilding the 180 KB item block each frame. Worker side only, small gain.
