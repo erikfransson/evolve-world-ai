@@ -4,6 +4,7 @@ import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "../ecoConfig.ts";
 import type { EcoConfig } from "../ecoConfig.ts";
 import { Ecosystem } from "../ecosystem.ts";
 import type { CastMember } from "../ecosystem.ts";
+import type { Creature } from "../creature.ts";
 import { randomPlan } from "../planMutation.ts";
 import { createRng, deriveSeed } from "../rng.ts";
 import { trialsToEcoGenome } from "../seedPool.ts";
@@ -175,6 +176,7 @@ export function castFor(env: EnvSpec, config: EcoConfig, learner: Learner, seed:
 const learnerStartEnergy = (env: EnvSpec, config: EcoConfig): number => env.learnerEnergy ?? speciesList(config)[env.role]!.startEnergy;
 
 // Plays one episode and scores the learner. onTick, when given, sees the world after every tick (the Arena draws it).
+// act, when given, may overwrite the learner's outputs after its brain ran and before it moves (a stochastic policy, rlGrad).
 export function runEpisode(
   env: EnvSpec,
   learner: Learner,
@@ -182,6 +184,7 @@ export function runEpisode(
   pool: readonly PoolEntry[] | null = null,
   library: Library = {},
   onTick?: (eco: Ecosystem) => void,
+  act?: (learner: Creature) => void,
 ): EpisodeResult {
   const config = envConfig(env, seed);
   const placed = env.layout ? placeLayout(env.layout, env.size, env.food, env.poison, seed) : null;
@@ -208,7 +211,12 @@ export function runEpisode(
   // Only speed-scored envs without regrowth end early, and only when the learner itself ate every item (not a rival).
   const clearable = env.reward.fast !== undefined && env.food > 0 && env.foodRegrow === 0;
   for (let t = 0; t < ticks; t++) {
-    eco.step();
+    if (act) {
+      eco.prepareTick();
+      eco.sensePhase(0, eco.members.length);
+      act(eco.get(0)!.creature);
+      eco.finishTick();
+    } else eco.step();
     onTick?.(eco);
     const me = eco.get(0);
     if (!me) break;
