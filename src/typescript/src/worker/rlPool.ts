@@ -89,7 +89,7 @@ interface Run {
 // A failure before the first result switches to `fallback` (e.g. the browser cannot start nested workers); a later one, or close(), breaks the pool for good.
 export class RlPool {
   private ports: RlPort[];
-  private readonly setup: RlSetup;
+  private setup: RlSetup;
   private readonly fallback: () => RlPort;
   private load = new Map<RlPort, number>(); // jobs in flight per port
   private run: Run | null = null;
@@ -114,6 +114,16 @@ export class RlPool {
   async recordings(tasks: readonly RlTask[], every: number, withInputs: (k: number) => boolean): Promise<Recording[]> {
     const done = await this.runAll(tasks.map((t, k) => ({ type: "record" as const, every, inputs: withInputs(k), ...t })));
     return done.map((d) => (d as { recording: Recording }).recording);
+  }
+
+  // Other envs for the episodes that follow: the helpers keep running and get the new setup (and the league again).
+  setEnvs(envs: EnvSpec[]): void {
+    if (this.broken) return;
+    this.setup = { ...this.setup, envs };
+    for (const port of this.ports) {
+      port.post({ type: "setup", ...this.setup });
+      if (this.league) port.post({ type: "league", genomes: this.league });
+    }
   }
 
   // Self-play rivals for the episodes that follow (helpers handle messages in order).

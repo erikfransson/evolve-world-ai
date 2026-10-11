@@ -380,7 +380,7 @@ function begin(): void {
   zoom.close();
   grid.clear();
   brainReplay.reset();
-  send({ type: "start", kind: run.kind, envs, learner: serialiseLearner(start.learner), options, tiles: grid.size, seed, poolUrl: POOL_URL, libraryUrl: LIBRARY_URL });
+  send({ type: "start", envs, learner: serialiseLearner(start.learner), options, tiles: grid.size, seed, poolUrl: POOL_URL, libraryUrl: LIBRARY_URL });
   $("note").textContent = "Starting…";
   $("note").hidden = false;
   setState("running");
