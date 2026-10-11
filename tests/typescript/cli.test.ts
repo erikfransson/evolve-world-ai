@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { DEFAULT_CONFIG, withOverrides } from "../../src/typescript/src/sim/config.ts";
 import { Evolution } from "../../src/typescript/src/sim/evolution.ts";
+import { parsePool } from "../../src/typescript/src/sim/seedPool.ts";
 import { createNodeEvaluator, parseThreads } from "../../src/typescript/src/worker/nodePool.ts";
 
 // Vitest runs from src/typescript, where `node src/bench.ts` and `node src/headless.ts` run as the npm scripts do.
@@ -87,5 +88,25 @@ describe.concurrent("headless.ts", () => {
       expect(r.code).toBe(1);
       expect(r.err).toMatch(/^error: /);
     }
+  });
+});
+
+describe.concurrent("buildPool.ts and ecoBench.ts", () => {
+  it("buildPool writes a valid pool file", async () => {
+    const outPath = resolve(scratch, "pool.json");
+    const r = await run("buildPool", "--runs", "2", "--generations", "2", "--pop", "8", "--size", "2", "--threads", "2", "--out", outPath);
+    expect(r.code).toBe(0);
+    expect(r.out).toMatch(/wrote .*pool\.json/);
+    const file = JSON.parse(readFileSync(outPath, "utf8"));
+    expect(file.command).toContain("--runs 2");
+    expect(parsePool(file).rejected).toEqual([]);
+  });
+
+  it("ecoBench seeds poolFraction of the founders from --pool, none with --pool none", async () => {
+    const args = ["--seconds", "1", "--pop", "20", "--poolFraction", "0.5"];
+    const [a, b] = await Promise.all([run("ecoBench", ...args), run("ecoBench", ...args, "--pool", "none")]);
+    expect([a.code, b.code]).toEqual([0, 0]);
+    expect(JSON.parse(a.out).poolFounders).toBe(10);
+    expect(JSON.parse(b.out).poolFounders).toBe(0);
   });
 });

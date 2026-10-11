@@ -9,7 +9,9 @@ import { collide, keepInside, settle } from "./physics.ts";
 import { createRng, deriveSeed } from "./rng.ts";
 import type { StatefulRng } from "./rng.ts";
 import { copyPlan, inputLayout, planOf } from "./sensors.ts";
-import type { BodyPlan } from "./sensors.ts";
+import type { BodyPlan, PlanView } from "./sensors.ts";
+import { trialsToEcoGenome } from "./seedPool.ts";
+import type { PoolEntry } from "./seedPool.ts";
 import { HIT_FOOD, HIT_POISON } from "./types.ts";
 import type { CreatureState, Genome, HitKind, WorldView } from "./types.ts";
 import { World } from "./world.ts";
@@ -57,6 +59,7 @@ export class Ecosystem {
   tick = 0;
   births = 0;
   deaths = 0;
+  readonly poolFounders: number; // founders taken from the seed pool, the first ones in id order
   food = 0;
   poison = 0;
   // Living creatures in list order; states[i] is members[i].creature.state.
@@ -82,7 +85,8 @@ export class Ecosystem {
   private poisonDue = 0;
   private nextId = 0;
 
-  constructor(config: EcoConfig) {
+  // pool: trained founders (see seedPool.ts); without one, or at poolFraction 0, every founder is random.
+  constructor(config: EcoConfig, pool: readonly PoolEntry[] | null = null) {
     this.config = config;
     const { eco, dt } = config;
     const perDensity = itemsPerDensity(config);
@@ -105,10 +109,23 @@ export class Ecosystem {
     const { width, height } = config.world;
     const r = config.creature.radius;
     const founders = Math.max(0, Math.min(eco.initialPopulation, eco.maxPopulation));
-    const plan = this.childPlan;
+    const seeds = pool?.length ? pool.map((e) => (config.creature.seesCreatures ? trialsToEcoGenome(e.plan, e.genome) : e.genome)) : [];
+    this.poolFounders = seeds.length ? Math.round(Math.min(1, Math.max(0, eco.poolFraction)) * founders) : 0;
+    const first = this.poolFounders ? this.rng.int(seeds.length) : 0;
+    const randomPlanScratch = this.childPlan;
     for (let i = 0; i < founders; i++) {
-      if (eco.foundersVary) randomPlan(eco, this.rng, plan);
-      const genome = randomGenome(layerSizes(config, plan), this.rng);
+      let plan: PlanView = randomPlanScratch;
+      let genome: Genome;
+      if (i < this.poolFounders) {
+        // Round-robin over the pool from a random entry, each copy mutated like a child.
+        const k = (first + i) % seeds.length;
+        plan = pool![k]!.plan;
+        genome = seeds[k]!.slice();
+        mutate(genome, this.mutation, this.rng);
+      } else {
+        if (eco.foundersVary) randomPlan(eco, this.rng, randomPlanScratch);
+        genome = randomGenome(layerSizes(config, plan), this.rng);
+      }
       const x = this.rng.range(r, width - r);
       const y = this.rng.range(r, height - r);
       this.items.clearPoison(x, y, r, this.rng);
@@ -262,7 +279,7 @@ export class Ecosystem {
   }
 
   // Adds a creature, reusing a dead one's storage when there is one; genome and plan are copied, except a founder's genome for a new creature.
-  private spawn(genome: Genome, plan: BodyPlan, x: number, y: number, heading: number, energy: number): EcoCreature {
+  private spawn(genome: Genome, plan: PlanView, x: number, y: number, heading: number, energy: number): EcoCreature {
     let m = this.spare.pop();
     if (m) m.creature.reset(genome, x, y, heading, energy, plan);
     else {
