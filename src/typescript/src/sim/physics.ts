@@ -30,6 +30,11 @@ export interface Aging {
   perTick: number;
 }
 
+// The old-age settings of an ecosystem config, or null when ageing is off.
+export function agingOf(eco: { aging: boolean; agingStart: number; agingRate: number }, dt: number): Aging | null {
+  return eco.aging ? { startTicks: Math.round(eco.agingStart / dt), perTick: (eco.agingRate * dt) / 60 } : null;
+}
+
 // Factor on the plan's upkeep for a creature that has lived this many ticks; 1 up to startTicks.
 export function agingFactor(aging: Aging | null, ticksAlive: number): number {
   return aging && ticksAlive > aging.startTicks ? 1 + aging.perTick * (ticksAlive - aging.startTicks) : 1;

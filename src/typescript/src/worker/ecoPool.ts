@@ -116,7 +116,12 @@ export class ThinkPool {
     if (this.broken) throw this.broken;
     const caps = fittedCaps(this.caps, this.coordinator.need(eco));
     if (caps) await this.resize(caps);
-    await this.tick(eco);
+    try {
+      await this.tick(eco);
+    } catch (error) {
+      if (this.home) this.coordinator.undoOwn(eco, this.home);
+      throw error;
+    }
   }
 
   private resize(caps: Caps): Promise<void> {
@@ -174,7 +179,7 @@ export class ThinkPool {
 
   private finish(eco: Ecosystem): void {
     this.coordinator.collect(eco, this.home!, this.packets);
-    eco.finishTick();
+    eco.finishTick(this.home!.touched);
   }
 
   // The coordinator's own share, while the helpers run theirs.
