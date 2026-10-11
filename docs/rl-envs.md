@@ -22,7 +22,7 @@ Self-play envs (Melee, Brawl) score against the learner's own league, so their h
 | Zigzag (maze)       | Avoid and find a way | two stinging walls, gaps at opposite ends, +1 per wall crossed | 0.09 -> 1.41 (200 it) | PPO 60 s from random: 0.09 -> 1.63 |
 | Four rooms (rooms)  | Avoid and find a way | four rooms with a door in each wall                 | 0.00 -> 0.28   | PPO 60 s: 0.00 -> 0.19 |
 | Islands (islands)   | Avoid and find a way | food on three islands, poison in the water          | 0.00 -> 1.81   | PPO 60 s: 0.00 -> 1.56 |
-| Ring road (ring)    | Avoid and find a way | food on a lane between two stinging poison rings    | ES flat        | PPO 60 s from pool: 9.35 |
+| Ring road (ring)    | Avoid and find a way | food on a lane between two stinging poison rings    | ES not recorded | PPO 60 s from pool: 9.35 |
 | Bottleneck          | Avoid and find a way | the fence with two rivals at the gap                | not measured   |              |
 | Flash (flash)       | Memory               | 3 food in a 600 x 600 room, visible 2 s of 12       | memory 1.60 vs none 1.11 (400 it, pop 100, 3 seeds) | |
 | Sprint (sprint)     | Energy               | 600 x 120 strip, food at the far end, 100 energy    | 0.00 -> 4.08   | PPO 0        |
