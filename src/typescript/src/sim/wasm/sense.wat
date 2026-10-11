@@ -3,6 +3,8 @@
 ;; Memory is the brain bank's (imported), so inputs need no copy. Everything is scratch per tick except the per-slot offset tables.
 ;; Param block P (bytes): f64 W@0 H@8 itemR@16 invWorldCell@24; f32 invCrowdCell@32 crowdR@36;
 ;;   i32 wCols@40 wRows@44 itemStart@48 (cols+1 per row, absolute) itemXY@56 (f32 pairs) itemKind@64 (u8), items packed per row in cell order cCols@68 cRows@72 cStart@76 sx@80 sy@84 own@88 sig@92 rec@96 n@100 stride@104 cand@108 scr@112 species@116 (i32 per crowd slot; the ray features are 4 + S + 1 per ray: S species flags, then the energy).
+;; Rock (Terrain, as World.gatherRock): f64 rockMaxR@128 invRockCell@136; i32 rockCols@144 (0 for no rock) rockRows@148 rockStart@152 (cols*rows+1) rockOrder@156 rockXYR@160 (f64 x y r per disc).
+;;   Rock discs join the item candidates as kind 3 (wall), after the items, so a ray reports the nearest of wall, rock, item and creature.
 ;; Creature record, 64 bytes: f64 x y cos sin L; i32 self@40 rays@44 offsets@48 (f64 cos[rays], then sin[rays]) input@52 (byte address)
 ;;   detail@56 (0, or the address where to also write each ray as f64 closeness, i32 kind, i32 crowd slot hit or -1, for the UI).
 ;; Ray scratch (max 64 rays): dx f64@0 dy f64@512 clo f64@1024 kind i32@1536 dxf f32@1792 dyf f32@2048 best f32@2304 hit i32@2560.
@@ -25,6 +27,9 @@
     (local $k i32) (local $e i32) (local $row i32) (local $g i32) (local $ro i32) (local $sstart i32) (local $sx i32) (local $sy i32) (local $own i32)
     (local $dxv v128) (local $dyv v128) (local $bs v128) (local $ix v128) (local $bv v128) (local $cv v128) (local $discv v128) (local $tv v128) (local $inside v128) (local $m v128)
     (local $ps i32) (local $base i32) (local $sigp i32) (local $cStart i32) (local $ccols i32) (local $crows i32)
+    ;; rock
+    (local $rcols i32) (local $rrows i32) (local $rstart i32) (local $rorder i32) (local $rxyr i32) (local $rmax f64) (local $rinv f64)
+    (local $rext f64) (local $rr f64) (local $rfar f64) (local $di i32)
     (local.set $n (i32.load offset=100 (local.get $P)))
     (local.set $stride (i32.load offset=104 (local.get $P)))
     (local.set $cand (i32.load offset=108 (local.get $P)))
@@ -47,6 +52,13 @@
     (local.set $own (i32.load offset=88 (local.get $P)))
     (local.set $sigp (i32.load offset=92 (local.get $P)))
     (local.set $spp (i32.load offset=116 (local.get $P)))
+    (local.set $rmax (f64.load offset=128 (local.get $P)))
+    (local.set $rinv (f64.load offset=136 (local.get $P)))
+    (local.set $rcols (i32.load offset=144 (local.get $P)))
+    (local.set $rrows (i32.load offset=148 (local.get $P)))
+    (local.set $rstart (i32.load offset=152 (local.get $P)))
+    (local.set $rorder (i32.load offset=156 (local.get $P)))
+    (local.set $rxyr (i32.load offset=160 (local.get $P)))
     (block $jd (loop $jl
       (br_if $jd (i32.ge_u (local.get $j) (local.get $n)))
       (block $jn
@@ -130,6 +142,41 @@
           (br $itl)))
         (local.set $cy (i32.add (local.get $cy) (i32.const 1)))
         (br $cyl)))
+      ;; rock discs after the items, as wall candidates in grid order; a disc is far past length + radius
+      (if (i32.gt_s (local.get $rcols) (i32.const 0)) (then
+        (local.set $rext (f64.add (f64.mul (local.get $L) (f64.add (f64.const 1) (f64.const 1e-9))) (local.get $rmax)))
+        (local.set $cx0 (i32.trunc_sat_f64_s (f64.floor (f64.mul (f64.sub (local.get $x) (local.get $rext)) (local.get $rinv)))))
+        (local.set $cx0 (select (i32.const 0) (local.get $cx0) (i32.lt_s (local.get $cx0) (i32.const 0))))
+        (local.set $cx1 (i32.trunc_sat_f64_s (f64.floor (f64.mul (f64.add (local.get $x) (local.get $rext)) (local.get $rinv)))))
+        (local.set $cx1 (select (i32.sub (local.get $rcols) (i32.const 1)) (local.get $cx1) (i32.ge_s (local.get $cx1) (local.get $rcols))))
+        (local.set $cy0 (i32.trunc_sat_f64_s (f64.floor (f64.mul (f64.sub (local.get $y) (local.get $rext)) (local.get $rinv)))))
+        (local.set $cy0 (select (i32.const 0) (local.get $cy0) (i32.lt_s (local.get $cy0) (i32.const 0))))
+        (local.set $cy1 (i32.trunc_sat_f64_s (f64.floor (f64.mul (f64.add (local.get $y) (local.get $rext)) (local.get $rinv)))))
+        (local.set $cy1 (select (i32.sub (local.get $rrows) (i32.const 1)) (local.get $cy1) (i32.ge_s (local.get $cy1) (local.get $rrows))))
+        (local.set $cy (local.get $cy0))
+        (block $rcyd (loop $rcyl
+          (br_if $rcyd (i32.gt_s (local.get $cy) (local.get $cy1)))
+          (local.set $ro (i32.mul (local.get $cy) (local.get $rcols)))
+          (local.set $it (i32.load (i32.add (local.get $rstart) (i32.shl (i32.add (local.get $ro) (local.get $cx0)) (i32.const 2)))))
+          (local.set $ie (i32.load (i32.add (local.get $rstart) (i32.shl (i32.add (i32.add (local.get $ro) (local.get $cx1)) (i32.const 1)) (i32.const 2)))))
+          (block $ritd (loop $ritl
+            (br_if $ritd (i32.ge_s (local.get $it) (local.get $ie)))
+            (local.set $di (i32.add (local.get $rxyr) (i32.mul (i32.load (i32.add (local.get $rorder) (i32.shl (local.get $it) (i32.const 2)))) (i32.const 24))))
+            (local.set $fx (f64.sub (f64.load (local.get $di)) (local.get $x)))
+            (local.set $fy (f64.sub (f64.load offset=8 (local.get $di)) (local.get $y)))
+            (local.set $rr (f64.load offset=16 (local.get $di)))
+            (local.set $d2 (f64.add (f64.mul (local.get $fx) (local.get $fx)) (f64.mul (local.get $fy) (local.get $fy))))
+            (local.set $rfar (f64.add (f64.add (local.get $L) (local.get $rr)) (f64.mul (f64.const 1e-9) (local.get $L))))
+            (if (f64.le (local.get $d2) (f64.mul (local.get $rfar) (local.get $rfar))) (then
+              (f64.store (local.get $cp) (local.get $fx))
+              (f64.store offset=8 (local.get $cp) (local.get $fy))
+              (f64.store offset=16 (local.get $cp) (f64.sub (local.get $d2) (f64.mul (local.get $rr) (local.get $rr))))
+              (i32.store offset=24 (local.get $cp) (i32.const 3))
+              (local.set $cp (i32.add (local.get $cp) (i32.const 32)))))
+            (local.set $it (i32.add (local.get $it) (i32.const 1)))
+            (br $ritl)))
+          (local.set $cy (i32.add (local.get $cy) (i32.const 1)))
+          (br $rcyl)))))
       (local.set $ce (local.get $cp))
       ;; trace each ray: wall, then candidates
       (local.set $i (i32.const 0))

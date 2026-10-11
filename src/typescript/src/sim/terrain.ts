@@ -20,7 +20,7 @@ const RIDGE_STEP = 0.75; // disc spacing in radii; the edge scallops are about 3
 const GAP = 80; // free passage kept between rock and the walls and between pieces of rock, wider than a creature
 const TRIES = 40; // placements tried per piece before giving up on the rest of its kind
 const MAX_ROCK_SHARE = 0.4; // rock never covers more of the world than this, however high the setting
-const ROCK_CELL = 300; // world units per cell of the rock grid
+export const ROCK_CELL = 300; // world units per cell of the rock grid
 
 export interface Body {
   x: number;

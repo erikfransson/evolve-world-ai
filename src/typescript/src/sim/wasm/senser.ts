@@ -1,19 +1,21 @@
 import type { Creature } from "../creature.ts";
 import type { Crowd } from "../crowd.ts";
 import { energySignal } from "../sensors.ts";
+import type { Terrain } from "../terrain.ts";
 import type { World } from "../world.ts";
 import type { WasmBrainBank } from "./brainKernel.ts";
 import { HIT_CREATURE } from "../types.ts";
 import { SENSE_BYTES } from "./loader.ts";
+import { ROCK_CELL } from "../terrain.ts";
 
 // The whole Ecosystem sense in one WebAssembly call per batch (sense.wat): ray directions, item and wall rays in f64 with the
 // JS candidate order, crowd rays in f32 as rays.wat, and the ray features written into the brain's input vector in place.
-// Shares the brain bank's linear memory. Per tick the item grid and the crowd are copied in whole, which costs far less
+// Rock (the world's Terrain, static) is copied once per world into three tables the kernel walks like the item grid. Shares the brain bank's linear memory. Per tick the item grid and the crowd are copied in whole, which costs far less
 // than the per-creature object traffic it replaces. The creature's RayHit objects are not updated, except for the one
 // creature given as detail (the selected one), whose rays are read back for the UI.
 
 export const MAX_RAYS = 64;
-const P_BYTES = 128;
+const P_BYTES = 192;
 const SCRATCH_BYTES = 2816;
 const REC_BYTES = 64;
 
@@ -33,6 +35,7 @@ export class WasmSenser {
   private readonly offBytes: number[] = [];
   private readonly regions = new Map<string, Region>();
   private synced: World | null = null; // the world whose items the packed rows in wasm memory match
+  private rockSynced: Terrain | null = null; // the map whose rock tables are in wasm memory
   private rowCap = 0; // item slots per row run
   private pStart = 0;
   private pXY = 0;
@@ -171,7 +174,11 @@ export class WasmSenser {
     const pSig = this.region("sg", count * 4 + 16);
     const pSpecies = this.region("sp", count * 4 + 16);
     const pRec = this.region("rc", n * REC_BYTES);
-    const pCand = this.region("cd", Math.max(world.count * 32, count * 16) + 64);
+    const rock = world.terrain;
+    const pCand = this.region("cd", Math.max((world.count + rock.rockCount) * 32, count * 16) + 64);
+    const pRockStart = this.region("rs", rock.rockStart.length * 4);
+    const pRockOrder = this.region("ro", rock.rockCount * 4 + 4);
+    const pRockXYR = this.region("rx", rock.rockCount * 24 + 8);
     const pScr = this.region("sr", SCRATCH_BYTES);
     const pDetail = this.region("dt", 16 * MAX_RAYS);
     const pP = this.region("pp", P_BYTES);
@@ -179,6 +186,13 @@ export class WasmSenser {
     const f32 = new Float32Array(buffer);
     const i32 = new Int32Array(buffer);
     i32.set(crowd.cellStart, pCStart >> 2);
+    if (this.rockSynced !== rock) {
+      i32.set(rock.rockStart, pRockStart >> 2);
+      i32.set(rock.rockOrder, pRockOrder >> 2);
+      const xyr = new Float64Array(buffer, pRockXYR, 3 * rock.rockCount);
+      for (let d = 0; d < rock.rockCount; d++) xyr.set([rock.rockX[d]!, rock.rockY[d]!, rock.rockR[d]!], 3 * d);
+      this.rockSynced = rock;
+    }
     const sx = pSx >> 2;
     const sy = pSy >> 2;
     const own = pOwn >> 2;
@@ -242,6 +256,13 @@ export class WasmSenser {
     PI[27] = pCand;
     PI[28] = pScr;
     PI[29] = pSpecies;
+    P[16] = rock.maxRockR;
+    P[17] = 1 / ROCK_CELL;
+    PI[36] = rock.rockCount > 0 ? rock.cols : 0;
+    PI[37] = rock.rows;
+    PI[38] = pRockStart;
+    PI[39] = pRockOrder;
+    PI[40] = pRockXYR;
     this.exports.sense(pP);
   }
 
