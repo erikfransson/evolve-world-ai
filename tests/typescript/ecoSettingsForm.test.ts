@@ -74,7 +74,7 @@ describe("Ecosystem settings form", () => {
 
   it("shows item counts as hints", () => {
     fillEcoForm(DEFAULT_ECO_CONFIG);
-    expect(document.getElementById("foodDensityHint")!.textContent).toBe("≈ 2000 items");
-    expect(document.getElementById("foodRegrowHint")!.textContent).toBe("≈ 200 items/s");
+    expect(document.getElementById("foodDensityHint")!.textContent).toBe("≈ 4500 items");
+    expect(document.getElementById("foodRegrowHint")!.textContent).toBe("≈ 450 items/s");
   });
 });
