@@ -12,7 +12,7 @@ const config = DEFAULT_ECO_CONFIG;
 function details(plan: BodyPlan): SelectedDetails {
   const genome = randomGenome(layerSizes(config, plan), createRng(5));
   return {
-    id: 1, alive: true, x: 0, y: 0, heading: 0, energy: 50, age: 0, children: 0, eaten: 0, kills: 0, species: 0, depth: 0, parentId: -1, hue: 0, founderId: 1, founderPool: false, founderHue: 0, plan, upkeep: planUpkeep(plan, config),
+    id: 1, alive: true, x: 0, y: 0, heading: 0, energy: 50, age: 0, children: 0, eaten: 0, kills: 0, species: 0, depth: 0, parentId: -1, hue: 0, founderId: 1, founderPool: false, founderHue: 0, plan, upkeep: planUpkeep(plan, config), birthEnergy: 150, birthCost: 75, birthCooldown: 10,
     rayKinds: new Uint8Array(plan.rayCount), rayCloseness: new Float32Array(plan.rayCount), rayEnergy: new Float32Array(plan.rayCount), rayOffsets: new Float32Array(plan.rayCount),
     inputs: new Float32Array(inputLayout(config, plan).size), genome,
   };

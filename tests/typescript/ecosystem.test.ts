@@ -33,7 +33,7 @@ const still = (eco: Partial<EcoConfig["eco"]>, startEnergy: number): EcoConfig =
   ecoCfg({
     world: { foodDensity: 0, poisonDensity: 0 },
     creature: { startEnergy, livingCost: 0, thrustCost: 0, turnCost: 0, rayCost: 0, neuronCost: 0 },
-    eco: { foodRegrow: 0, poisonRegrow: 0, collisions: false, ...eco },
+    eco: { foodRegrow: 0, poisonRegrow: 0, collisions: false, birthEnergyRange: [150, 150], birthCostRange: [75, 75], birthCooldownRange: [10, 10], ...eco },
   });
 
 const countKind = (eco: Ecosystem, kind: number) => eco.world.kinds.filter((k) => k === kind).length;
@@ -120,26 +120,73 @@ describe("Ecosystem", () => {
     expect(countKind(eco, HIT_FOOD)).toBe(50);
   });
 
-  it("a birth costs the parent birthCost and gives the child childEnergy, launched clear of the parent", () => {
+  it("a birth moves the parent's birth cost to the child, which leaves its parent at birthSpeed", () => {
     const c = still({ initialPopulation: 1 }, 160);
     const eco = new Ecosystem(c);
     const parent = eco.members[0];
+    const ps = parent.creature.state;
+    ps.vx = 90; // moving, in whatever direction the child is launched
+    ps.vy = -40;
     eco.step();
     expect(eco.population).toBe(2);
     expect(eco.births).toBe(1);
     const child = eco.members[1];
-    expect(parent.creature.state.energy).toBe(160 - c.eco.birthCost);
-    expect(child.creature.state.energy).toBe(c.eco.childEnergy);
-    expect([child.parentId, child.depth, parent.children]).toEqual([parent.id, 1, 1]);
-    const ps = parent.creature.state;
     const cs = child.creature.state;
+    expect(ps.energy).toBe(160 - 75);
+    expect(cs.energy).toBe(75);
+    expect([child.parentId, child.depth, parent.children]).toEqual([parent.id, 1, 1]);
     expect(Math.hypot(cs.x - ps.x, cs.y - ps.y)).toBeGreaterThan(2 * c.creature.radius);
-    expect(Math.hypot(cs.vx, cs.vy)).toBeLessThanOrEqual(c.eco.birthSpeed + 1e-9);
+    // Relative velocity is birthSpeed along the line between them: they part whatever the parent's own motion (#22).
+    const d = Math.hypot(cs.x - ps.x, cs.y - ps.y);
+    const apart = ((cs.vx - ps.vx) * (cs.x - ps.x) + (cs.vy - ps.vy) * (cs.y - ps.y)) / d;
+    expect(apart).toBeCloseTo(c.eco.birthSpeed, 6);
     expect(eco.get(child.id)).toBe(child);
   });
 
+  it("a newborn never touches its parent in the first second, for parents in any motion", () => {
+    let touched = 0;
+    for (let seed = 1; seed <= 6; seed++) {
+      const c = still({ initialPopulation: 1, collisions: true }, 160);
+      c.seed = seed;
+      const eco = new Ecosystem(c);
+      const ps = eco.members[0].creature.state;
+      ps.vx = 80 * Math.cos(seed);
+      ps.vy = 80 * Math.sin(seed);
+      eco.step();
+      const cs = eco.members[1].creature.state;
+      for (let t = 0; t < 30; t++) {
+        eco.step();
+        if (Math.hypot(cs.x - ps.x, cs.y - ps.y) < 2 * c.creature.radius) touched++;
+      }
+    }
+    expect(touched).toBe(0);
+  });
+
+  it("a parent that cannot pay its birth cost gives the child all it has and dies", () => {
+    const eco = new Ecosystem(still({ initialPopulation: 1, birthEnergyRange: [60, 60], birthCostRange: [300, 300] }, 200));
+    eco.step();
+    expect(eco.births).toBe(1);
+    expect(eco.population).toBe(1);
+    expect(eco.deaths).toBe(1);
+    expect(eco.members[0].creature.state.energy).toBe(200);
+    expect(eco.members[0].parentId).toBe(0);
+  });
+
+  it("birth traits are drawn within the ranges and drift within them from parent to child", () => {
+    const c = still({ initialPopulation: 40, birthEnergyRange: [50, 800], birthCostRange: [20, 400], birthCooldownRange: [0, 30], birthDrift: 0.3 }, 100);
+    const eco = new Ecosystem(c);
+    const within = () => eco.members.every((m) => m.birth.energy >= 50 && m.birth.energy <= 800 && m.birth.cost >= 20 && m.birth.cost <= 400 && m.birth.cooldown >= 0 && m.birth.cooldown <= 30);
+    expect(within()).toBe(true);
+    expect(new Set(eco.members.map((m) => m.birth.energy)).size).toBeGreaterThan(30);
+    for (let t = 0; t < 600; t++) eco.step();
+    expect(eco.births).toBeGreaterThan(0);
+    expect(within()).toBe(true);
+    const child = eco.members.find((m) => m.parentId >= 0)!;
+    expect(child.cooldownTicks).toBe(Math.round(child.birth.cooldown / c.dt));
+  });
+
   it("waits birthCooldown between births", () => {
-    const eco = new Ecosystem(still({ initialPopulation: 1, birthCooldown: 1 }, 1000)); // 30 ticks
+    const eco = new Ecosystem(still({ initialPopulation: 1, birthCooldownRange: [1, 1] }, 1000)); // 30 ticks
     for (let t = 0; t < 30; t++) eco.step();
     expect(eco.births).toBe(1);
     eco.step();
@@ -147,18 +194,14 @@ describe("Ecosystem", () => {
   });
 
   it("births wait at maxPopulation", () => {
-    const eco = new Ecosystem(still({ initialPopulation: 2, maxPopulation: 3, birthCooldown: 0 }, 1000));
+    const eco = new Ecosystem(still({ initialPopulation: 2, maxPopulation: 3, birthCooldownRange: [0, 0] }, 1000));
     for (let t = 0; t < 10; t++) eco.step();
     expect(eco.population).toBe(3);
     expect(eco.births).toBe(1);
   });
 
-  it("clamps founders to maxPopulation and never lets a birth cost the parent all its energy", () => {
+  it("clamps founders to maxPopulation", () => {
     expect(new Ecosystem(still({ initialPopulation: 50, maxPopulation: 10 }, 100)).population).toBe(10);
-    const eco = new Ecosystem(still({ initialPopulation: 1, birthEnergy: 60, birthCost: 300 }, 200));
-    for (let t = 0; t < 5; t++) eco.step();
-    expect(eco.births).toBe(0);
-    expect(eco.members[0].creature.state.energy).toBe(200);
   });
 
   it("flags extinction when everyone has died and then stops", () => {
@@ -257,7 +300,7 @@ describe("Ecosystem", () => {
 describe("Ecosystem collision damage", () => {
   // Two creatures that touch head-on at the given speeds along x; collideAll runs alone, so nothing else moves energy.
   const pair = (eco: Partial<EcoConfig["eco"]>, ea: number, eb: number, va = 40, vb = -40) => {
-    const e = new Ecosystem(still({ initialPopulation: 2, collisions: true, collisionDamage: true, damagePerSpeed: 0.5, birthEnergy: 1e9, ...eco }, 100), null, { journal: true });
+    const e = new Ecosystem(still({ initialPopulation: 2, collisions: true, collisionDamage: true, damagePerSpeed: 0.5, birthEnergyRange: [1e9, 1e9], ...eco }, 100), null, { journal: true });
     const [a, b] = e.members.map((m) => m.creature.state) as [CreatureState, CreatureState];
     Object.assign(a, { x: 500, y: 500, vx: va, vy: 0, energy: ea });
     Object.assign(b, { x: 520, y: 500, vx: vb, vy: 0, energy: eb });
@@ -313,9 +356,9 @@ describe("Ecosystem collision damage", () => {
   });
 
   it("with damage off the run is unchanged (fingerprint recorded before the feature)", () => {
-    const eco = new Ecosystem(ecoCfg({ seed: 7, world: { width: 600, height: 600 }, creature: { startEnergy: 100 }, eco: { initialPopulation: 80, birthEnergy: 120, collisions: true, wasm: false } })); // JS path, as when recorded
+    const eco = new Ecosystem(ecoCfg({ seed: 7, world: { width: 600, height: 600 }, creature: { startEnergy: 100 }, eco: { initialPopulation: 80, birthEnergyRange: [120, 120], birthCostRange: [75, 75], birthCooldownRange: [10, 10], collisions: true, wasm: false } })); // JS path, as when recorded
     for (let t = 0; t < 300; t++) eco.step();
-    expect([eco.fingerprint(), eco.births, eco.deaths]).toEqual([787898088, 0, 1]); // recorded before collision damage existed
+    expect([eco.fingerprint(), eco.births, eco.deaths]).toEqual([300709139, 0, 0]); // re-pinned for heritable birth traits (#31), was 787898088, 0, 1 before
   });
 });
 
@@ -494,7 +537,7 @@ describe("Ecosystem lineages and aging", () => {
       new Ecosystem(ecoCfg({
         world: { foodDensity: 0, poisonDensity: 0 },
         creature: { startEnergy: 1e6, livingCost: 2, thrustCost: 0, turnCost: 0, rayCost: 0, neuronCost: 0 },
-        eco: { initialPopulation: 1, foodRegrow: 0, poisonRegrow: 0, collisions: false, birthEnergy: 1e9, ...eco },
+        eco: { initialPopulation: 1, foodRegrow: 0, poisonRegrow: 0, collisions: false, birthEnergyRange: [1e9, 1e9], ...eco },
       }));
     const lossPerTick = (e: Ecosystem) => {
       const s = e.members[0]!.creature.state;

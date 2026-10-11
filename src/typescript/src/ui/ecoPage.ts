@@ -48,6 +48,7 @@ export interface EcoSelected {
   depth: number; // lineage depth, founders are 0
   plan: BodyPlan;
   upkeep: number; // energy per second besides thrust and turning
+  birth: { energy: number; cost: number; cooldown: number }; // its heritable birth traits
   founderId: number;
   founderPool: boolean; // the founder came from the seed pool
   founderHue: number;
@@ -112,6 +113,11 @@ function setTip(tileId: string, text: string): void {
   if (tip.dataset.tip === text) return;
   tip.dataset.tip = text;
   tip.setAttribute("aria-label", text);
+}
+
+// "birth at 150 · cost 75 · every 10 s": the energy that triggers a birth, what it costs the parent (the child starts with that), the cooldown.
+export function formatBirth(b: EcoSelected["birth"]): string {
+  return `birth at ${Math.round(b.energy)} · cost ${Math.round(b.cost)} · every ${b.cooldown < 10 ? b.cooldown.toFixed(1) : Math.round(b.cooldown)} s`;
 }
 
 // "8 rays · 75° · 100 range · 16 hidden · mem 2+2 · upkeep 0.45/s"; layers join with +, no memory reads "no mem".
@@ -272,7 +278,7 @@ export function createEcoView(handlers: EcoHandlers, page: ModePage): EcoView {
       }
       $("selDepth").textContent = nf.format(sel.depth);
       $("selId").textContent = `#${sel.id}`;
-      $("selPlan").textContent = formatPlan(sel.plan, sel.upkeep);
+      $("selPlan").textContent = `${formatPlan(sel.plan, sel.upkeep)} · ${formatBirth(sel.birth)}`;
       selectedFounder = sel.founderId;
       $("selFounderSw").style.background = lineageColor(sel.founderHue);
       $("selFounderText").textContent = `Founder #${sel.founderId} · ${sel.founderPool ? "trained pool" : "random"}`;

@@ -66,7 +66,7 @@ describe("Ecosystem settings form", () => {
     c.world.itemRadius = 5.5;
     c.world.poisonDamage = 25;
     c.eco.foodRegrow = 0.025;
-    c.eco.birthCooldown = 4;
+    c.eco.birthCooldownRange = [4, 9];
     c.eco.collisions = false;
     c.eco.collisionDamage = true;
     c.eco.damagePerSpeed = 0.45;
@@ -120,7 +120,7 @@ describe("Predators & prey settings form", () => {
     c.eco.initialPopulation = 600;
     c.eco.poolFraction = 0.25;
     c.species![1]!.speed = 1.5;
-    c.species![1]!.birthCost = 150;
+    c.species![1]!.birthCostRange = [150, 250];
     c.species![1]!.eatEfficiency = 0.5;
     c.species![1]!.eatBaseline = 25;
     c.species![1]!.rayLengthRange = [120, 320];
@@ -132,7 +132,7 @@ describe("Predators & prey settings form", () => {
   it("folds the shared Ecosystem sections and tucks costs under More settings", () => {
     const folded = [...document.querySelectorAll("details.fold h3")].map((h) => h.textContent);
     expect(folded).toEqual(["Life cycle", "Variation", "Brain", "Mutation"]);
-    expect(document.getElementById("predBirthCost")!.closest("details.more")).not.toBeNull();
+    expect(document.getElementById("predBirthCostMin")!.closest("details.more")).not.toBeNull();
     expect(document.getElementById("predSpeed")!.closest("details")).toBeNull();
   });
 });

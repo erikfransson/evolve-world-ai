@@ -4,7 +4,7 @@ import { SPECIES_OVERRIDES, resolveSpecies } from "../sim/species.ts";
 import type { Species, SpeciesConfig } from "../sim/species.ts";
 import { SPECIES_COLORS } from "./speciesStyle.ts";
 import { ECO_SECTIONS } from "./ecoSettingsForm.ts";
-import { items, perSecond, range } from "./settingsForm.ts";
+import { items, perSecond, range, rangePair } from "./settingsForm.ts";
 import type { Field, FormSpec, Section } from "./settingsForm.ts";
 
 // Predators & prey settings: world and regrowth, one card per species, predation, then the shared Ecosystem cards folded.
@@ -28,10 +28,9 @@ function speciesFields(i: number, p: string, who: string, maxFounders: number): 
     range({ id: `${p}Founders`, label: "Start creatures", tip: `How many ${who} the run starts with.`, min: 0, max: maxFounders, step: maxFounders > 500 ? 10 : 1, get: (c) => value(c, i, "founders"), set: (c, v) => { assign(c, i, "founders", v); } }),
     range({ id: `${p}Pool`, label: "Trained founders", tip: `Share of the starting ${who} copied, with small mutations, from a pool of creatures trained in Trials to find food. They keep their own rays and brain shape and start blind to other creatures. The rest start with random brains.`, min: 0, max: 1, step: 0.05, fmt: "pct", get: (c) => value(c, i, "poolFraction"), set: (c, v) => { assign(c, i, "poolFraction", v); } }),
     range({ id: `${p}Speed`, label: "Top speed", tip: `How fast ${who} can swim, compared with an Ecosystem creature. Faster costs nothing extra per second of thrust, so speed is a pure advantage.`, min: 0.5, max: 2, step: 0.05, fmt: "mult", get: (c) => value(c, i, "speed"), set: (c, v) => { assign(c, i, "speed", v); } }),
-    range({ id: `${p}BirthEnergy`, label: "Birth energy", tip: `One of the ${who} with at least this much energy can have a child. Its body is drawn full at this level.`, min: 40, max: 600, step: 5, get: (c) => value(c, i, "birthEnergy"), set: (c, v) => { assign(c, i, "birthEnergy", v); } }),
-    range({ id: `${p}ChildEnergy`, label: "Child energy", tip: "Energy a newborn starts with. Less than the birth cost means each birth burns energy.", min: 10, max: 300, step: 5, get: (c) => value(c, i, "childEnergy"), set: (c, v) => { assign(c, i, "childEnergy", v); } }),
-    range({ id: `${p}BirthCost`, label: "Birth cost", tip: "Energy the parent pays for a child.", min: 10, max: 400, step: 5, advanced: true, get: (c) => value(c, i, "birthCost"), set: (c, v) => { assign(c, i, "birthCost", v); } }),
-    range({ id: `${p}Cooldown`, label: "Birth cooldown", tip: "Seconds a parent must wait before it can have another child.", min: 0, max: 60, step: 1, fmt: "sec", advanced: true, get: (c) => value(c, i, "birthCooldown"), set: (c, v) => { assign(c, i, "birthCooldown", v); } }),
+    ...rangePair<EcoConfig>({ id: `${p}BirthEnergy`, label: "Birth energy", tip: `One of the ${who} with at least this much energy has a child. Each has its own value between min and max, passed on with small changes. Its body is drawn full at the middle of the range.`, min: 20, max: 10000, step: 5, get: (c) => value(c, i, "birthEnergyRange"), set: (c, v) => { assign(c, i, "birthEnergyRange", v); } }),
+    ...rangePair<EcoConfig>({ id: `${p}BirthCost`, label: "Birth cost", tip: "Energy the parent pays for a child, which is exactly the energy the child starts with. A parent that pays all it has dies. Each has its own value between min and max.", min: 10, max: 10000, step: 5, advanced: true, get: (c) => value(c, i, "birthCostRange"), set: (c, v) => { assign(c, i, "birthCostRange", v); } }),
+    ...rangePair<EcoConfig>({ id: `${p}Cooldown`, label: "Birth cooldown", tip: "Seconds a parent must wait before it can have another child.", min: 0, max: 60, step: 0.5, fmt: "sec", advanced: true, get: (c) => value(c, i, "birthCooldownRange"), set: (c, v) => { assign(c, i, "birthCooldownRange", v); } }),
     range({ id: `${p}StartEnergy`, label: "Founder energy", tip: `Energy each starting creature has. It also sets the scale of how full a creature feels to its own brain.`, min: 10, max: 300, step: 5, advanced: true, get: (c) => value(c, i, "startEnergy"), set: (c, v) => { assign(c, i, "startEnergy", v); } }),
     range({ id: `${p}LivingCost`, label: "Living cost", tip: "Energy per second just for being alive.", min: 0, max: 6, step: 0.1, fmt: "dens", advanced: true, get: (c) => value(c, i, "livingCost"), set: (c, v) => { assign(c, i, "livingCost", v); } }),
     range({ id: `${p}ThrustCost`, label: "Thrust cost", tip: "Energy per second at full thrust.", min: 0, max: 12, step: 0.5, fmt: "dens", advanced: true, get: (c) => value(c, i, "thrustCost"), set: (c, v) => { assign(c, i, "thrustCost", v); } }),
@@ -65,7 +64,7 @@ export const PREDATOR_SECTIONS: readonly Section<EcoConfig>[] = [
       range({ id: "eatBaseline", label: "Energy per catch", tip: "Energy a predator gains from every catch on top of the prey's stored energy, so even a starving prey is a meal.", min: 0, max: 200, step: 5, get: (c) => sp(c, 1).eatBaseline, set: (c, v) => { sp(c, 1).eatBaseline = v; } }),
     ],
   },
-  { title: "Life cycle", folded: true, fields: shared("Life cycle").filter((f) => !["initialPopulation", "poolFraction", "maxPopulation", "birthEnergy", "birthCost", "childEnergy", "birthCooldown"].includes(f.id)) },
+  { title: "Life cycle", folded: true, fields: shared("Life cycle").filter((f) => !["initialPopulation", "poolFraction", "maxPopulation", "birthEnergyMin", "birthEnergyMax", "birthCostMin", "birthCostMax", "birthCooldownMin", "birthCooldownMax"].includes(f.id)) },
   ...ECO_SECTIONS.filter((s) => ["Variation", "Brain", "Mutation"].includes(s.title)).map((s) => ({ ...s, folded: true })),
 ];
 

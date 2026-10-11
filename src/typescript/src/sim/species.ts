@@ -19,10 +19,9 @@ export interface SpeciesConfig {
   livingCost?: number; // creature.livingCost
   thrustCost?: number; // creature.thrustCost
   turnCost?: number; // creature.turnCost
-  birthEnergy?: number; // eco.birthEnergy
-  birthCost?: number; // eco.birthCost
-  childEnergy?: number; // eco.childEnergy
-  birthCooldown?: number; // eco.birthCooldown
+  birthEnergyRange?: number[]; // eco.birthEnergyRange
+  birthCostRange?: number[]; // eco.birthCostRange
+  birthCooldownRange?: number[]; // eco.birthCooldownRange
   rayCountRange?: number[]; // eco.rayCountRange
   raySpreadRange?: number[]; // eco.raySpreadRange, radians
   rayLengthRange?: number[]; // eco.rayLengthRange
@@ -39,10 +38,9 @@ export const SPECIES_OVERRIDES = {
   livingCost: ["creature", "livingCost"],
   thrustCost: ["creature", "thrustCost"],
   turnCost: ["creature", "turnCost"],
-  birthEnergy: ["eco", "birthEnergy"],
-  birthCost: ["eco", "birthCost"],
-  childEnergy: ["eco", "childEnergy"],
-  birthCooldown: ["eco", "birthCooldown"],
+  birthEnergyRange: ["eco", "birthEnergyRange"],
+  birthCostRange: ["eco", "birthCostRange"],
+  birthCooldownRange: ["eco", "birthCooldownRange"],
   rayCountRange: ["eco", "rayCountRange"],
   raySpreadRange: ["eco", "raySpreadRange"],
   rayLengthRange: ["eco", "rayLengthRange"],
@@ -64,6 +62,9 @@ export const speciesList = (config: EcoConfig): Species[] => (config.species?.le
 // All species read a seen creature's energy on one scale, the largest start energy, which for one species is its own.
 export const seenEnergyScale = (species: readonly Species[]): number => Math.max(...species.map((x) => x.startEnergy));
 
+// Where the body of a species is drawn full: the middle of its birth threshold range on a log scale.
+export const fullEnergy = (sp: Pick<Species, "birthEnergyRange">): number => Math.sqrt(sp.birthEnergyRange[0]! * sp.birthEnergyRange[1]!);
+
 // The engine config a creature of species sp runs on: its body, costs and speed. scale is seenEnergyScale of the world's species.
 export function speciesEngine(config: EcoConfig, sp: Species, scale = seenEnergyScale(speciesList(config))): EngineConfig {
   const c = config.creature;
@@ -74,9 +75,10 @@ export function speciesEngine(config: EcoConfig, sp: Species, scale = seenEnergy
   };
 }
 
-// Ranges for randomPlan, driftPlan and mutateStructure: the species' ray ranges with the shared brain ranges.
+// Ranges for randomPlan, driftPlan, mutateStructure and the birth traits: the species' ray and birth ranges with the shared brain ranges.
 export function speciesRanges(config: EcoConfig, sp: Species): EcoConfig["eco"] {
-  return { ...config.eco, rayCountRange: sp.rayCountRange, raySpreadRange: sp.raySpreadRange, rayLengthRange: sp.rayLengthRange };
+  const { rayCountRange, raySpreadRange, rayLengthRange, birthEnergyRange, birthCostRange, birthCooldownRange } = sp;
+  return { ...config.eco, rayCountRange, raySpreadRange, rayLengthRange, birthEnergyRange, birthCostRange, birthCooldownRange };
 }
 
 // Founders per species: each its own count, all scaled down together when they would exceed the population limit.
@@ -94,7 +96,7 @@ export function founderCounts(species: readonly Species[], maxPopulation: number
 }
 
 const IDENTITY_TYPES: Record<string, "string" | "number" | "boolean" | "array"> = { name: "string", hue: "number", hueSpread: "number", plants: "boolean", prey: "array", eatEfficiency: "number", eatBaseline: "number", speed: "number" };
-const RANGE_KEYS = new Set(["rayCountRange", "raySpreadRange", "rayLengthRange"]);
+const RANGE_KEYS = new Set(["rayCountRange", "raySpreadRange", "rayLengthRange", "birthEnergyRange", "birthCostRange", "birthCooldownRange"]);
 
 // A pasted species list merged item by item over the defaults. Throws a readable Error when the list does not have
 // the defaults' length, an item has an unknown key or a wrong type, or a prey index names no other species.

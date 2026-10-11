@@ -38,6 +38,9 @@ export interface SelectedDetails {
   founderHue: number; // that founder's colour
   plan: BodyPlan; // the creature's own senses and brain shape; the genome is sized for it
   upkeep: number; // energy per second besides thrust and turning
+  birthEnergy: number; // energy at which it has a child
+  birthCost: number; // energy the parent pays, and the child starts with
+  birthCooldown: number; // seconds between births
   rayKinds: Uint8Array; // HitKind per ray
   rayCloseness: Float32Array;
   rayEnergy: Float32Array;

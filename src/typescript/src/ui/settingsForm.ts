@@ -49,6 +49,15 @@ export interface FormSpec<C> {
 
 export const range = <C>(f: Omit<Range<C>, "kind">): Range<C> => ({ kind: "range", ...f });
 
+// The two sliders ("<label> min" and "<label> max", ids <id>Min and <id>Max) of a [min, max] setting; moving one past the other pushes it along.
+export function rangePair<C>(o: { id: string; label: string; tip: string; min: number; max: number; step: number; fmt?: string; advanced?: boolean; get: (c: C) => readonly number[]; set: (c: C, v: number[]) => void }): Range<C>[] {
+  const { get, set, ...shared } = o;
+  return [
+    range({ ...shared, id: `${o.id}Min`, label: `${o.label} min`, get: (c) => get(c)[0]!, set: (c, v) => { set(c, [v, Math.max(v, get(c)[1]!)]); } }),
+    range({ ...shared, id: `${o.id}Max`, label: `${o.label} max`, get: (c) => get(c)[1]!, set: (c, v) => { set(c, [Math.min(v, get(c)[0]!), v]); } }),
+  ];
+}
+
 // A density (or density per second) times the world area, in items.
 type Sized = Pick<EngineConfig, "world">;
 export const itemsOf = (c: Sized, density: number): number => itemCounts({ world: { ...c.world, foodDensity: density } }).food;

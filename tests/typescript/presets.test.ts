@@ -307,7 +307,7 @@ describe("Ecosystem preset panel", () => {
     pick(id);
     expect(form.read()).toEqual(withEcoPreset(DEFAULT_ECO_CONFIG, id));
     for (const f of ECO_LOCKED) expect(disabled(f), f).toBe(true);
-    for (const f of ["initialPopulation", "birthEnergy", "rayCount", "neurons", "mutationRate", "collisions", "seed"]) expect(disabled(f), f).toBe(false);
+    for (const f of ["initialPopulation", "birthEnergyMin", "rayCount", "neurons", "mutationRate", "collisions", "seed"]) expect(disabled(f), f).toBe(false);
     expectOnSteps();
   });
 

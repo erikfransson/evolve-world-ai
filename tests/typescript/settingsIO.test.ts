@@ -29,7 +29,7 @@ describe("settings JSON", () => {
     expect(JSON.parse(text)).toMatchObject({ mode: "trials", version: 1, angles: "radians" });
     expect(parseSettings(text, "trials")).toEqual(trials);
     const eco = structuredClone(DEFAULT_ECO_CONFIG);
-    eco.eco.birthCost = 33;
+    eco.eco.birthCostRange = [33, 66];
     eco.eco.seasons = true;
     eco.eco.yearMinutes = 8;
     eco.eco.winterFood = 0.2;

@@ -6,7 +6,8 @@ import { Crowd } from "./crowd.ts";
 import { seasonFactor, startRng } from "./ecoConfig.ts";
 import type { EcoConfig } from "./ecoConfig.ts";
 import { mutate } from "./ga.ts";
-import { driftPlan, mutateStructure, randomPlan, remapWeights } from "./planMutation.ts";
+import { driftBirth, driftPlan, mutateStructure, randomBirth, randomPlan, remapWeights } from "./planMutation.ts";
+import type { BirthTraits } from "./planMutation.ts";
 import { agingOf, collide, hurt, keepInside, settle } from "./physics.ts";
 import type { Aging, Contact } from "./physics.ts";
 import type { StatefulRng } from "./rng.ts";
@@ -38,6 +39,9 @@ export class EcoCreature {
   hue = 0; // degrees
   founderId = 0; // id of the founder this family descends from; a founder is its own
   lastBirthTick = -Infinity;
+  // Heritable birth traits (#31): energy at which it has a child, energy it pays (the child's start energy), seconds between births.
+  birth: BirthTraits = { energy: 0, cost: 0, cooldown: 0 };
+  cooldownTicks = 0;
   readonly creature: Creature; // state, rays, rayOffsets and brain.layerActivations() of the last tick
 
   constructor(creature: Creature) {
@@ -113,7 +117,6 @@ export class Ecosystem {
   private readonly spare: EcoCreature[][]; // per species, since a creature keeps its species' engine config
   private readonly engines: EngineConfig[]; // per species
   private readonly ranges: EcoConfig["eco"][]; // per species, for plan variation
-  private readonly cooldowns: number[]; // per species, in ticks
   private readonly counts: SpeciesCount[];
   private readonly kinds: number[] = []; // kinds[i] is members[i].species
   private readonly multi: boolean; // more than one species, so rays tell species apart
@@ -130,6 +133,9 @@ export class Ecosystem {
   private foodDue = 0; // fractional items accumulated by regrowth
   private poisonDue = 0;
   private nextId = 0;
+  private readonly spot = { x: 0, y: 0, vx: 0, vy: 0 }; // scratch of a newborn's place
+  private spent = false; // a parent gave its last energy to a child this tick
+  private readonly traits: BirthTraits = { energy: 0, cost: 0, cooldown: 0 }; // scratch of one birth
   private readonly lineages: Lineages;
   private readonly aging: Aging | null;
   private readonly contact: Contact = { speed: 0 };
@@ -150,7 +156,6 @@ export class Ecosystem {
     const scale = seenEnergyScale(this.species);
     this.engines = this.species.map((sp) => speciesEngine(config, sp, scale));
     this.ranges = this.species.map((sp) => speciesRanges(config, sp));
-    this.cooldowns = this.species.map((sp) => Math.round(sp.birthCooldown / dt));
     this.counts = this.species.map(() => ({ population: 0, births: 0, deaths: 0, eaten: 0 }));
     this.spare = this.species.map(() => []);
     this.rng = startRng(config);
@@ -196,9 +201,11 @@ export class Ecosystem {
           if (eco.foundersVary) randomPlan(this.ranges[sp]!, this.rng, randomPlanScratch);
           genome = randomGenome(layerSizes(config, plan), this.rng);
         }
+        randomBirth(this.ranges[sp]!, this.rng, this.traits);
         const x = this.rng.range(r, width - r);
         const y = this.rng.range(r, height - r);
         const m = this.spawn(genome, plan, x, y, this.rng.next() * 2 * Math.PI, spec.startEnergy, sp);
+        this.setBirth(m, this.traits);
         const hue = spec.hue < 0 ? this.rng.next() * 360 : bandHue(spec, spec.hue + (this.rng.next() - 0.5) * spec.hueSpread);
         m.hue = hue;
         this.lineages.describe(i, hue, sp, k < fromPool);
@@ -345,10 +352,12 @@ export class Ecosystem {
     const eco = this.config.eco;
     for (let k = 0; k < n && members.length < eco.maxPopulation; k++) {
       const parent = members[(first + k) % n];
-      const energy = parent.creature.state.energy;
-      const sp = this.species[parent.species]!;
-      // Above birthCost too, so a birth never kills the parent whatever the settings.
-      if (energy >= sp.birthEnergy && energy > sp.birthCost && this.tick - parent.lastBirthTick >= this.cooldowns[parent.species]!) this.giveBirth(parent);
+      if (parent.creature.state.energy >= parent.birth.energy && this.tick - parent.lastBirthTick >= parent.cooldownTicks) this.giveBirth(parent);
+    }
+    if (this.spent) {
+      // Parents that gave all they had are gone.
+      for (let i = members.length - 1; i >= 0; i--) if (!this.states[i].alive) this.remove(i);
+      this.spent = false;
     }
 
     this.regrow();
@@ -453,7 +462,14 @@ export class Ecosystem {
     const sp = this.species[parent.species]!;
     const ranges = this.ranges[parent.species]!;
     const ps = parent.creature.state;
-    ps.energy -= sp.birthCost;
+    // Energy is conserved: the child starts with what the parent pays, and a cost of all its energy or more is its end.
+    const paid = Math.min(parent.birth.cost, ps.energy);
+    ps.energy -= paid;
+    if (ps.energy <= 0) {
+      ps.energy = 0;
+      ps.alive = false;
+      this.spent = true;
+    }
     parent.lastBirthTick = this.tick;
     parent.children++;
     const pc = parent.creature;
@@ -472,14 +488,33 @@ export class Ecosystem {
     const genome = (this.childGenome = refit(this.childGenome, source.length));
     genome.set(source);
     mutate(genome, this.config.mutation.rate, this.config.mutation.std, this.rng);
-    const angle = this.rng.next() * 2 * Math.PI;
+    const traits = this.traits;
+    traits.energy = parent.birth.energy;
+    traits.cost = parent.birth.cost;
+    traits.cooldown = parent.birth.cooldown;
+    if (eco.birthDrift > 0) driftBirth(traits, eco.birthDrift, ranges, this.rng);
+    let angle = this.rng.next() * 2 * Math.PI;
+    const gap = 2 * cc.radius + 1; // just clear of the parent
+    // Next to the parent along the launch direction; against a wall that can leave no room, so try the other sides.
+    const spot = this.spot;
+    for (let side = 0; side < 4; side++, angle += Math.PI / 2) {
+      spot.x = ps.x + Math.cos(angle) * gap;
+      spot.y = ps.y + Math.sin(angle) * gap;
+      keepInside(spot, cc.radius, w.width, w.height, cc.wallBounce);
+      if (Math.hypot(spot.x - ps.x, spot.y - ps.y) >= 2 * cc.radius) break;
+    }
+    const child = this.spawn(genome, plan, spot.x, spot.y, angle, paid, parent.species);
+    this.setBirth(child, traits);
+    const s = child.creature.state;
+    // Parent and child part at birthSpeed relative to each other, half each way, so the parent's own motion cannot carry it back
+    // into the child, and the pair's momentum stays what the parent had.
+    const half = eco.birthSpeed / 2;
     const cos = Math.cos(angle);
     const sin = Math.sin(angle);
-    const gap = 2 * cc.radius + 1; // just clear of the parent
-    const child = this.spawn(genome, plan, ps.x + cos * gap, ps.y + sin * gap, angle, sp.childEnergy, parent.species);
-    const s = child.creature.state;
-    s.vx = cos * eco.birthSpeed;
-    s.vy = sin * eco.birthSpeed;
+    s.vx = ps.vx + cos * half;
+    s.vy = ps.vy + sin * half;
+    ps.vx -= cos * half;
+    ps.vy -= sin * half;
     keepInside(s, cc.radius, w.width, w.height, cc.wallBounce);
     child.parentId = parent.id;
     child.founderId = parent.founderId;
@@ -488,6 +523,13 @@ export class Ecosystem {
     child.hue = bandHue(sp, parent.hue + this.rng.normal() * eco.hueDrift);
     this.births++;
     this.counts[parent.species]!.births++;
+  }
+
+  private setBirth(m: EcoCreature, t: BirthTraits): void {
+    m.birth.energy = t.energy;
+    m.birth.cost = t.cost;
+    m.birth.cooldown = t.cooldown;
+    m.cooldownTicks = Math.round(t.cooldown / this.config.dt);
   }
 
   // Adds a creature, reusing a dead one's storage when there is one; genome and plan are copied.
