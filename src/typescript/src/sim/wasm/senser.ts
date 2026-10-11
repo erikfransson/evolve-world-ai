@@ -32,8 +32,11 @@ export class WasmSenser {
   private readonly offPtr: number[] = [];
   private readonly offBytes: number[] = [];
   private readonly regions = new Map<string, Region>();
-  private synced: World | null = null; // the world whose item arrays the wasm copy matches, and where that copy lives
-  private syncedKey = "";
+  private synced: World | null = null; // the world whose items the packed rows in wasm memory match
+  private rowCap = 0; // item slots per row run
+  private pStart = 0;
+  private pXY = 0;
+  private pKinds = 0;
 
   private constructor(bank: WasmBrainBank, exports: SenseExports) {
     this.bank = bank;
@@ -81,49 +84,86 @@ export class WasmSenser {
     return r.ptr;
   }
 
-  // Brings the wasm copy of the item arrays up to date: all of them the first time, then only the slots and cells changed since.
-  private syncItems(world: World, f32: Float32Array, i32: Int32Array, buffer: ArrayBuffer, pX: number, pY: number, pKinds: number, pHead: number, pNext: number): void {
-    const slots = world.dirtySlots;
-    const cells = world.dirtyCells;
-    const key = `${pX},${pY},${pKinds},${pHead},${pNext}`;
-    if (this.synced !== world || this.syncedKey !== key || !slots || !cells || slots.length > world.count >> 3) {
-      f32.set(world.xs, pX >> 2);
-      f32.set(world.ys, pY >> 2);
-      new Uint8Array(buffer, pKinds, world.count).set(world.kinds);
-      i32.set(world.cellHead, pHead >> 2);
-      i32.set(world.nextItem, pNext >> 2);
-      this.synced = world;
-      this.syncedKey = key;
-    } else {
-      const kinds = new Uint8Array(buffer, pKinds, world.count);
-      for (let k = 0; k < slots.length; k++) {
-        const i = slots[k]!;
-        f32[(pX >> 2) + i] = world.xs[i]!;
-        f32[(pY >> 2) + i] = world.ys[i]!;
-        kinds[i] = world.kinds[i]!;
-        i32[(pNext >> 2) + i] = world.nextItem[i]!;
+  // Brings the packed item rows up to date: every row the first time, then each changed cell patched in place.
+  // A row holds its cells' items in cell order, each cell in list order, in its own run of rowCap slots (start offsets are absolute).
+  private syncItems(world: World): void {
+    const { cols, rows, cellHead, nextItem } = world;
+    const dirty = world.dirtyCells;
+    let full = this.synced !== world || !dirty;
+    if (!full) {
+      const buffer = this.bank.memory.buffer;
+      const start = new Int32Array(buffer, this.pStart, rows * (cols + 1));
+      const xy = new Float32Array(buffer, this.pXY, rows * this.rowCap * 2);
+      const kd = new Uint8Array(buffer, this.pKinds, rows * this.rowCap);
+      for (const c of dirty!) full = !this.patchCell(world, c, start, xy, kd) || full;
+    }
+    if (full) {
+      let widest = 0;
+      for (let row = 0; row < rows; row++) {
+        let n = 0;
+        for (let c = row * cols; c < (row + 1) * cols; c++) for (let i = cellHead[c]!; i >= 0; i = nextItem[i]!) n++;
+        widest = Math.max(widest, n);
       }
-      for (let k = 0; k < cells.length; k++) i32[(pHead >> 2) + cells[k]!] = world.cellHead[cells[k]!]!;
+      this.rowCap = Math.max(64, Math.ceil(widest * 1.5) + 16);
+      this.pStart = this.region("is", rows * (cols + 1) * 4);
+      this.pXY = this.region("ixy", rows * this.rowCap * 8);
+      this.pKinds = this.region("ik", rows * this.rowCap);
+      const buffer = this.bank.memory.buffer;
+      const start = new Int32Array(buffer, this.pStart, rows * (cols + 1));
+      const xy = new Float32Array(buffer, this.pXY, rows * this.rowCap * 2);
+      const kd = new Uint8Array(buffer, this.pKinds, rows * this.rowCap);
+      for (let row = 0; row < rows; row++) {
+        const s = row * (cols + 1);
+        let p = row * this.rowCap;
+        for (let cx = 0; cx < cols; cx++) {
+          start[s + cx] = p;
+          p = this.writeCell(world, row * cols + cx, p, xy, kd);
+        }
+        start[s + cols] = p;
+      }
+      this.synced = world;
     }
-    if (slots && cells) {
-      slots.length = 0;
-      cells.length = 0;
-    } else {
-      world.dirtySlots = [];
-      world.dirtyCells = [];
+    if (dirty) dirty.length = 0;
+    else world.dirtyCells = [];
+  }
+
+  // Makes cell c's packed run match its list: the rest of the row shifts by the change in length. False when the row outgrows its run.
+  private patchCell(world: World, c: number, start: Int32Array, xy: Float32Array, kd: Uint8Array): boolean {
+    const { cols, cellHead, nextItem } = world;
+    const row = Math.floor(c / cols);
+    const s = row * (cols + 1) + (c - row * cols);
+    const last = row * (cols + 1) + cols;
+    let n = 0;
+    for (let i = cellHead[c]!; i >= 0; i = nextItem[i]!) n++;
+    const at = start[s]!;
+    const delta = n - (start[s + 1]! - at);
+    if (delta !== 0) {
+      const end = start[last]!;
+      if (end + delta > (row + 1) * this.rowCap) return false;
+      xy.copyWithin(2 * (at + n), 2 * start[s + 1]!, 2 * end);
+      kd.copyWithin(at + n, start[s + 1], end);
+      for (let j = s + 1; j <= last; j++) start[j] += delta;
     }
+    this.writeCell(world, c, at, xy, kd);
+    return true;
+  }
+
+  // Writes cell c's items in list order from packed slot p; returns the slot after them.
+  private writeCell(world: World, c: number, p: number, xy: Float32Array, kd: Uint8Array): number {
+    const { cellHead, nextItem, xs, ys, kinds } = world;
+    for (let i = cellHead[c]!; i >= 0; i = nextItem[i]!) {
+      xy[2 * p] = xs[i]!;
+      xy[2 * p + 1] = ys[i]!;
+      kd[p++] = kinds[i]!;
+    }
+    return p;
   }
 
   // Senses the batch and writes each creature's complete brain input (rays, extras, memory) at its slot.
   run(world: World, crowd: Crowd, creatures: readonly Creature[], slots: Int32Array, selves: Int32Array, n: number, stride: number, startEnergy: number, detail: Creature | null = null): void {
-    const cells = world.cols * world.rows;
+    this.syncItems(world);
     const count = crowd.count;
     const ccells = crowd.cols * crowd.rows;
-    const pItems = this.region("ix", world.count * 4);
-    const pItemsY = this.region("iy", world.count * 4);
-    const pKinds = this.region("ik", world.count + 4);
-    const pHead = this.region("hd", cells * 4);
-    const pNext = this.region("nx", world.count * 4);
     const pCStart = this.region("cs", (ccells + 1) * 4);
     const pSx = this.region("sx", count * 4 + 16);
     const pSy = this.region("sy", count * 4 + 16);
@@ -138,7 +178,6 @@ export class WasmSenser {
     const buffer = this.bank.memory.buffer;
     const f32 = new Float32Array(buffer);
     const i32 = new Int32Array(buffer);
-    this.syncItems(world, f32, i32, buffer, pItems, pItemsY, pKinds, pHead, pNext);
     i32.set(crowd.cellStart, pCStart >> 2);
     const sx = pSx >> 2;
     const sy = pSy >> 2;
@@ -187,11 +226,9 @@ export class WasmSenser {
     PF[9] = crowd.radius;
     PI[10] = world.cols;
     PI[11] = world.rows;
-    PI[12] = pHead;
-    PI[13] = pNext;
-    PI[14] = pItems;
-    PI[15] = pItemsY;
-    PI[16] = pKinds;
+    PI[12] = this.pStart;
+    PI[14] = this.pXY;
+    PI[16] = this.pKinds;
     PI[17] = crowd.cols;
     PI[18] = crowd.rows;
     PI[19] = pCStart;

@@ -337,6 +337,31 @@ describe("sense.wat (SenseKernels)", () => {
     }
   });
 
+  it("keeps matching while items move in and out of crowded cells, and when a row outgrows its packed run", () => {
+    const o: Setup = { rays: 7, spread: 2, creatures: [[300, 250, 0.4], [700, 250, 3]], items };
+    const { world, crowd, kernels, batch, kernel, reference } = check(o, true);
+    const rng = createRng(5);
+    const agree = () => {
+      kernel.forEach((c, k) => {
+        reference[k]!.sense(world, crowd, k);
+        kernels.detail = c;
+        kernels.run(world, crowd, batch);
+        c.rays.forEach((ray, i) => {
+          expect(ray.kind).toBe(reference[k]!.rays[i]!.kind);
+          expect(ray.closeness).toBe(reference[k]!.rays[i]!.closeness);
+        });
+      });
+    };
+    for (let round = 0; round < 30; round++) {
+      for (let k = 0; k < 20; k++) {
+        const i = Math.floor(rng.range(0, 400));
+        if (round < 20 && k % 3 === 0) world.removeItem(i);
+        else world.setItem(i, rng.range(4, 1196), 230 + rng.range(0, 40), (1 + (k % 2)) as 1 | 2); // crowd the row of the creatures
+      }
+      agree();
+    }
+  });
+
   it("sees other creatures with their energy, within f32 rounding of the JS crowd rays", () => {
     const rng = createRng(7);
     const spots: Spot[] = Array.from({ length: 120 }, () => [rng.range(0, 600), rng.range(0, 400), rng.range(0, 7)]);

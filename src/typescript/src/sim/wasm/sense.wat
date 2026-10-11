@@ -2,7 +2,7 @@
 ;; the crowd rays (f32), and the ray features written straight into the brain input vector.
 ;; Memory is the brain bank's (imported), so inputs need no copy. Everything is scratch per tick except the per-slot offset tables.
 ;; Param block P (bytes): f64 W@0 H@8 itemR@16 invWorldCell@24; f32 invCrowdCell@32 crowdR@36;
-;;   i32 wCols@40 wRows@44 cellHead@48 nextItem@52 itemX@56 itemY@60 itemKind@64 cCols@68 cRows@72 cStart@76 sx@80 sy@84 own@88 sig@92 rec@96 n@100 stride@104 cand@108 scr@112 species@116 (i32 per crowd slot; the ray features are 4 + S + 1 per ray: S species flags, then the energy).
+;;   i32 wCols@40 wRows@44 itemStart@48 (cols+1 per row, absolute) itemXY@56 (f32 pairs) itemKind@64 (u8), items packed per row in cell order cCols@68 cRows@72 cStart@76 sx@80 sy@84 own@88 sig@92 rec@96 n@100 stride@104 cand@108 scr@112 species@116 (i32 per crowd slot; the ray features are 4 + S + 1 per ray: S species flags, then the energy).
 ;; Creature record, 64 bytes: f64 x y cos sin L; i32 self@40 rays@44 offsets@48 (f64 cos[rays], then sin[rays]) input@52 (byte address)
 ;;   detail@56 (0, or the address where to also write each ray as f64 closeness, i32 kind, i32 crowd slot hit or -1, for the UI).
 ;; Ray scratch (max 64 rays): dx f64@0 dy f64@512 clo f64@1024 kind i32@1536 dxf f32@1792 dyf f32@2048 best f32@2304 hit i32@2560.
@@ -18,7 +18,7 @@
     (local $cx0 i32) (local $cx1 i32) (local $cy0 i32) (local $cy1 i32) (local $cx i32) (local $cy i32) (local $c i32)
     (local $it i32) (local $fx f64) (local $fy f64) (local $d2 f64) (local $cp i32) (local $ce i32) (local $inv f64) (local $cols i32) (local $rows i32)
     (local $dx f64) (local $dy f64) (local $best f64) (local $kind i32) (local $tw f64) (local $t f64) (local $b f64) (local $cc f64) (local $disc f64)
-    (local $cur i32) (local $sp i32) (local $spp i32) (local $det i32) (local $walls i32) (local $clo f64) (local $oc f64) (local $os f64)
+    (local $ie i32) (local $cur i32) (local $sp i32) (local $spp i32) (local $det i32) (local $walls i32) (local $clo f64) (local $oc f64) (local $os f64)
     ;; crowd phase
     (local $x32 f32) (local $y32 f32) (local $L32 f32) (local $rc f32) (local $invc f32) (local $r2c f32) (local $farc f32) (local $far2c f32) (local $marginc f32)
     (local $d0xf f32) (local $d0yf f32) (local $d1xf f32) (local $d1yf f32) (local $fxf f32) (local $fyf f32) (local $d2f f32)
@@ -103,17 +103,16 @@
       (local.set $cy (local.get $cy0))
       (block $cyd (loop $cyl
         (br_if $cyd (i32.gt_s (local.get $cy) (local.get $cy1)))
-        (local.set $cx (local.get $cx0))
-        (block $cxd (loop $cxl
-          (br_if $cxd (i32.gt_s (local.get $cx) (local.get $cx1)))
-          (local.set $it (i32.load (i32.add (i32.load offset=48 (local.get $P))
-            (i32.shl (i32.add (i32.mul (local.get $cy) (local.get $cols)) (local.get $cx)) (i32.const 2)))))
-          (block $itd (loop $itl
-            (br_if $itd (i32.lt_s (local.get $it) (i32.const 0)))
-            (local.set $fx (f64.sub (f64.promote_f32 (f32.load (i32.add (i32.load offset=56 (local.get $P)) (i32.shl (local.get $it) (i32.const 2))))) (local.get $x)))
-            (local.set $fy (f64.sub (f64.promote_f32 (f32.load (i32.add (i32.load offset=60 (local.get $P)) (i32.shl (local.get $it) (i32.const 2))))) (local.get $y)))
-            (local.set $d2 (f64.add (f64.mul (local.get $fx) (local.get $fx)) (f64.mul (local.get $fy) (local.get $fy))))
-            (if (f64.le (local.get $d2) (local.get $far2)) (then
+        ;; the cells cx0..cx1 of a row are one run of the packed items, in cell order and head-insertion order inside a cell
+        (local.set $ro (i32.mul (local.get $cy) (i32.add (local.get $cols) (i32.const 1))))
+        (local.set $it (i32.load (i32.add (i32.load offset=48 (local.get $P)) (i32.shl (i32.add (local.get $ro) (local.get $cx0)) (i32.const 2)))))
+        (local.set $ie (i32.load (i32.add (i32.load offset=48 (local.get $P)) (i32.shl (i32.add (i32.add (local.get $ro) (local.get $cx1)) (i32.const 1)) (i32.const 2)))))
+        (block $itd (loop $itl
+          (br_if $itd (i32.ge_s (local.get $it) (local.get $ie)))
+          (local.set $fx (f64.sub (f64.promote_f32 (f32.load (i32.add (i32.load offset=56 (local.get $P)) (i32.shl (local.get $it) (i32.const 3))))) (local.get $x)))
+          (local.set $fy (f64.sub (f64.promote_f32 (f32.load offset=4 (i32.add (i32.load offset=56 (local.get $P)) (i32.shl (local.get $it) (i32.const 3))))) (local.get $y)))
+          (local.set $d2 (f64.add (f64.mul (local.get $fx) (local.get $fx)) (f64.mul (local.get $fy) (local.get $fy))))
+          (if (f64.le (local.get $d2) (local.get $far2)) (then
               (if (i32.or (i32.eqz (local.get $wedge))
                     (i32.and
                       (f64.ge (f64.sub (f64.mul (local.get $d0x) (local.get $fy)) (f64.mul (local.get $d0y) (local.get $fx))) (f64.neg (local.get $margin)))
@@ -127,10 +126,8 @@
                     (select (i32.const 1) (i32.const 2)
                       (i32.eq (i32.load8_u (i32.add (i32.load offset=64 (local.get $P)) (local.get $it))) (i32.const 1))))
                   (local.set $cp (i32.add (local.get $cp) (i32.const 32)))))))
-            (local.set $it (i32.load (i32.add (i32.load offset=52 (local.get $P)) (i32.shl (local.get $it) (i32.const 2)))))
-            (br $itl)))
-          (local.set $cx (i32.add (local.get $cx) (i32.const 1)))
-          (br $cxl)))
+          (local.set $it (i32.add (local.get $it) (i32.const 1)))
+          (br $itl)))
         (local.set $cy (i32.add (local.get $cy) (i32.const 1)))
         (br $cyl)))
       (local.set $ce (local.get $cp))
