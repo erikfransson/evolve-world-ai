@@ -453,6 +453,11 @@ function render(): void {
   }
   $("statStart").textContent = fixed(r?.startHeld);
   $("statBest").textContent = fixed(last?.best);
+  const backprop = (r?.method ?? runForm.read().method) === "backprop";
+  $("statBestLabel").textContent = backprop ? "Best episode" : "Best candidate";
+  const tip = backprop ? "Reward of the best training episode in the latest update." : "Reward of the best candidate in the latest iteration.";
+  $("statBestTip").dataset.tip = tip;
+  $("statBestTip").ariaLabel = tip;
   $("statTrain").textContent = fixed(last?.train);
   $("statTime").textContent = last ? durationText(last.seconds) : "-";
   graph.setData(r?.its ?? [], r?.startHeld ?? null);

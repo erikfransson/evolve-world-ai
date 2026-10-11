@@ -158,6 +158,7 @@ interface Batch {
 export interface PpoStep {
   iter: number;
   train: number; // mean episode reward of the update's stochastic episodes
+  best: number; // the best of those episodes
   std: number[]; // policy std per action
 }
 
@@ -205,14 +206,14 @@ export class Ppo {
   }
 
   step(): PpoStep {
-    const { batch, train } = this.collect();
+    const { batch, train, best } = this.collect();
     this.update(batch);
     this.iter++;
-    return { iter: this.iter, train, std: Array.from(this.logStd, Math.exp) };
+    return { iter: this.iter, train, best, std: Array.from(this.logStd, Math.exp) };
   }
 
   // Plays the update's episodes with the stochastic policy and turns them into samples with GAE advantages.
-  private collect(): { batch: Batch; train: number } {
+  private collect(): { batch: Batch; train: number; best: number } {
     const o = this.options;
     const obs: Float32Array[] = [];
     const z: number[] = [];
@@ -222,6 +223,7 @@ export class Ppo {
     const learner = { plan: this.learner.plan, genome: this.theta };
     const g = o.gamma ** o.repeat;
     let train = 0;
+    let best = -Infinity;
     for (let e = 0; e < o.episodes; e++) {
       const env = this.envs[e % this.envs.length]!;
       const ticks = Math.round(env.seconds / DT);
@@ -265,6 +267,7 @@ export class Ppo {
       const sum = rewards.reduce((a, b) => a + b, 0);
       rewards[rewards.length - 1]! += result.reward - sum;
       train += result.reward / o.episodes;
+      best = Math.max(best, result.reward);
       // GAE, the episode ending at its last sample (time is in the critic's input, so the horizon is part of the state).
       const values = obs.slice(first).map((x) => this.criticNet.forward(this.critic, x)[0]!);
       let next = 0;
@@ -281,7 +284,7 @@ export class Ppo {
     const n = obs.length;
     const mean = adv.reduce((a, b) => a + b, 0) / n;
     const sd = Math.sqrt(adv.reduce((a, b) => a + (b - mean) ** 2, 0) / n) || 1;
-    return { batch: { obs, z: Float64Array.from(z), logp: Float64Array.from(logp), adv: Float64Array.from(adv, (a) => (a - mean) / sd), ret: Float64Array.from(ret), n }, train };
+    return { batch: { obs, z: Float64Array.from(z), logp: Float64Array.from(logp), adv: Float64Array.from(adv, (a) => (a - mean) / sd), ret: Float64Array.from(ret), n }, train, best };
   }
 
   private update(b: Batch): void {
@@ -337,7 +340,7 @@ export class Ppo {
 }
 
 // PPO behind the Trainer interface, for the Arena: updates play on this thread, held-out checks on the scorer's helpers.
-// A step is one update; its "best" is the update's mean training reward and its genome the current policy.
+// A step is one update; its "best" is the update's best episode and its genome the current policy.
 export class BackpropTrainer implements RlTrainer {
   readonly ppo: Ppo;
   private scorer: Scorer;
@@ -365,7 +368,7 @@ export class BackpropTrainer implements RlTrainer {
 
   async step(): Promise<StepResult> {
     const s = this.ppo.step();
-    return { iter: s.iter, train: s.train, best: s.train, bestGenome: Float32Array.from(this.ppo.theta) };
+    return { iter: s.iter, train: s.train, best: s.best, bestGenome: Float32Array.from(this.ppo.theta) };
   }
 
   // Self-play rivals are the current policy, as in the updates' episodes (a mirror of the learner).
