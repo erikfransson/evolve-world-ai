@@ -25,20 +25,21 @@ export const ENVS: readonly EnvSpec[] = [
   small({ id: "patch", name: "Patch", description: "All the food lies in one patch across the room. Find it, then clear it.", size: [450, 450], food: 10, poison: 4, seconds: 30, layout: { kind: "patch", radius: 70 }, tags: ["search"] }),
   // Avoiding poison and finding a way round
   small({ id: "minefield", name: "Minefield", description: "Four food hidden among twelve poison. One wrong bite ends it.", size: [300, 300], food: 4, poison: 12, seconds: 25, tags: ["caution"] }),
-  small({ id: "fence", name: "Fence", description: "A wall of stinging poison with one gap. The food is on the other side.", size: [400, 400], food: 5, poison: 0, seconds: 30, layout: { kind: "fence", gap: 110 }, poisonDamage: 25, tags: ["navigate"] }),
-  small({ id: "maze", name: "Zigzag", description: "Two walls of stinging poison with gaps at opposite ends. Weave through to the food.", size: [450, 450], food: 4, poison: 0, seconds: 40, layout: { kind: "maze", gap: 60 }, poisonDamage: 25, tags: ["navigate"] }),
+  small({ id: "fence", name: "Fence", description: "A wall of stinging poison with one gap. The food is on the other side.", size: [400, 400], food: 6, poison: 0, seconds: 30, layout: { kind: "fence", gap: 110, near: 2 }, poisonDamage: 25, reward: { food: 1, fast: 0.1, cross: 1 }, tags: ["navigate"] }),
+  small({ id: "maze", name: "Zigzag", description: "Two walls of stinging poison with gaps at opposite ends. Weave through to the food.", size: [450, 450], food: 5, poison: 0, seconds: 40, layout: { kind: "maze", gap: 60, near: 2 }, poisonDamage: 25, reward: { food: 1, fast: 0.1, cross: 1 }, tags: ["navigate"] }),
   // Energy
   small({
     id: "lean-times",
     name: "Lean times",
     description: "Little energy, slow-growing food. Do not waste effort; end the minute alive with energy to spare.",
     size: [400, 400],
-    food: 5,
+    food: 8,
     poison: 3,
-    foodRegrow: 0.2,
+    foodRegrow: 0.25,
     seconds: 60,
-    learnerEnergy: 30,
-    reward: { survive: 0.05, food: 0.3, energy: 2 },
+    learnerEnergy: 40,
+    poisonDamage: 15, // stings: the lesson is spending energy well, not a single lethal bite
+    reward: { survive: 0.05, food: 0.5, energy: 2 },
     tags: ["energy"],
   }),
   // Fighting
@@ -223,3 +224,18 @@ export const ENVS: readonly EnvSpec[] = [
 ];
 
 export const envById = (id: string): EnvSpec | undefined => ENVS.find((e) => e.id === id);
+
+// Categories for choosing envs, in display order; groupOf files an env under one by its tags.
+export const ENV_GROUPS = ["Find food", "Avoid and find a way", "Energy", "Fight", "Compete", "Advanced", "Custom"] as const;
+export type EnvGroup = (typeof ENV_GROUPS)[number];
+
+export function groupOf(env: Pick<EnvSpec, "tags">): EnvGroup {
+  const t = new Set(env.tags);
+  if (t.has("custom")) return "Custom";
+  if (t.has("advanced")) return "Advanced";
+  if (t.has("compete")) return "Compete";
+  if (t.has("fight")) return "Fight";
+  if (t.has("energy")) return "Energy";
+  if (t.has("caution") || t.has("navigate")) return "Avoid and find a way";
+  return "Find food";
+}

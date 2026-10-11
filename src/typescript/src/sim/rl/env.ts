@@ -56,7 +56,8 @@ export interface EnvSpec {
   // Per item, per kill, per second alive, x energy signal at the end, and per second left when the learner has eaten all the
   // starting food itself (without regrowth the episode then ends early, the learner counting as alive to the end).
   // ram: per rival that dies touching the learner while collision damage is on.
-  reward: { food?: number; kill?: number; survive?: number; energy?: number; fast?: number; ram?: number };
+  // cross: per poison wall of the layout the learner got past (at any moment), a first reward on the way to food beyond it.
+  reward: { food?: number; kill?: number; survive?: number; energy?: number; fast?: number; ram?: number; cross?: number };
   tags: string[];
 }
 
@@ -173,6 +174,9 @@ export function castFor(env: EnvSpec, config: EcoConfig, learner: Learner, seed:
   return cast;
 }
 
+// Walls whose far side the learner reached: its centre a full body above the wall line.
+const crossed = (walls: readonly number[], minY: number, radius: number): number => walls.filter((y) => minY < y - radius).length;
+
 const learnerStartEnergy = (env: EnvSpec, config: EcoConfig): number => env.learnerEnergy ?? speciesList(config)[env.role]!.startEnergy;
 
 // Plays one episode and scores the learner. onTick, when given, sees the world after every tick (the Arena draws it).
@@ -208,6 +212,7 @@ export function runEpisode(
   };
   let cleared = 0; // seconds left when the learner ate the last food
   let lastEnergy = learnerStartEnergy(env, config); // the learner's energy after the previous tick
+  let minY = Infinity; // the learner's highest point (walls run across, the food lies above them)
   // Only speed-scored envs without regrowth end early, and only when the learner itself ate every item (not a rival).
   const clearable = env.reward.fast !== undefined && env.food > 0 && env.foodRegrow === 0;
   for (let t = 0; t < ticks; t++) {
@@ -223,6 +228,7 @@ export function runEpisode(
     out.food = me.eaten;
     out.kills = me.kills;
     out.energy = lastEnergy = me.creature.state.energy;
+    minY = Math.min(minY, me.creature.state.y);
     out.seconds = (t + 1) * config.dt;
     if (clearable && me.eaten === env.food) {
       cleared = env.seconds - out.seconds;
@@ -232,7 +238,7 @@ export function runEpisode(
   }
   const w = env.reward;
   const startEnergy = speciesList(config)[env.role]!.startEnergy;
-  out.reward = (w.food ?? 0) * out.food + (w.kill ?? 0) * out.kills + (w.survive ?? 0) * out.seconds + (w.energy ?? 0) * energySignal(out.energy, startEnergy) + (w.fast ?? 0) * cleared + (w.ram ?? 0) * out.rams;
+  out.reward = (w.food ?? 0) * out.food + (w.kill ?? 0) * out.kills + (w.survive ?? 0) * out.seconds + (w.energy ?? 0) * energySignal(out.energy, startEnergy) + (w.fast ?? 0) * cleared + (w.ram ?? 0) * out.rams + (w.cross ?? 0) * crossed(placed?.walls ?? [], minY, config.creature.radius);
   return out;
 }
 
@@ -278,7 +284,7 @@ export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | s
   if (rivals.reduce((a, r) => a + r.count, 0) > L.rivals[1]) return `at most ${L.rivals[1]} rivals`;
   const w = (v.reward ?? {}) as Record<string, unknown>;
   const reward: EnvSpec["reward"] = {};
-  for (const k of ["food", "kill", "survive", "energy", "fast", "ram"] as const) {
+  for (const k of ["food", "kill", "survive", "energy", "fast", "ram", "cross"] as const) {
     if (w[k] === undefined) continue;
     if (!n(w[k], L.weight)) return `reward ${k} must be ${L.weight[0]} to ${L.weight[1]}`;
     reward[k] = w[k] as number;
@@ -294,7 +300,8 @@ export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | s
     const most = l.kind === "patch" ? Math.min(sw!, sh!) / 2 - 20 : sw! / 4; // the patch must fit, and fence and maze gaps leave wall on both sides
     if (!n(param, [L.layoutSize[0], Math.min(L.layoutSize[1], most)])) return `layout ${l.kind === "patch" ? "radius" : "gap"} must be ${L.layoutSize[0]} to ${Math.floor(Math.min(L.layoutSize[1], most))} for this world size`;
     if (l.kind !== "patch" && rivals.some((r) => r.count > 0)) return "walls with rivals are not supported yet";
-    layout = l.kind === "patch" ? { kind: "patch", radius: param } : { kind: l.kind as "fence" | "maze", gap: param };
+    if (l.near !== undefined && !(Number.isInteger(l.near) && (l.near as number) >= 0 && (l.near as number) <= (v.food as number))) return "near food must be a whole number up to the food count";
+    layout = l.kind === "patch" ? { kind: "patch", radius: param } : { kind: l.kind as "fence" | "maze", gap: param, ...(l.near === undefined ? {} : { near: l.near as number }) };
   }
   return {
     id: `custom-${plainText(v.id, 40).toLowerCase().replace(/^custom-/, "").replace(/[^a-z0-9-]/g, "-") || "env"}`, // never a built-in id
