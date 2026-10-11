@@ -2,6 +2,7 @@ import { genomeLength, layerSizes } from "./brain.ts";
 import { DEFAULT_CONFIG } from "./config.ts";
 import type { EngineConfig } from "./config.ts";
 import { remapWeights } from "./planMutation.ts";
+import { checkPlan } from "./rl/validate.ts";
 import { FEAT_CREATURE, RAY_FEATURES, rayFeatureCount } from "./sensors.ts";
 import type { BodyPlan, PlanView } from "./sensors.ts";
 import type { Genome, Rng } from "./types.ts";
@@ -52,28 +53,15 @@ export function trialsToEcoGenome(plan: PlanView, genome: Genome, target: Engine
   return out;
 }
 
-const isInt = (v: unknown, min: number, max: number): v is number => Number.isInteger(v) && (v as number) >= min && (v as number) <= max;
 const isNum = (v: unknown, min: number, max: number): v is number => typeof v === "number" && Number.isFinite(v) && v >= min && v <= max;
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
 // One JSON entry as a PoolEntry, or a reason it is malformed.
 function parseEntry(e: unknown): PoolEntry | string {
   if (!isObj(e) || !isObj(e.plan) || !isObj(e.world)) return "not an object with plan and world";
-  const p = e.plan;
-  if (!isInt(p.rayCount, 1, 64)) return "bad rayCount";
-  if (!isNum(p.raySpread, 0, 2 * Math.PI + 1e-3)) return "bad raySpread";
-  if (!isNum(p.rayLength, 1, 10000)) return "bad rayLength";
-  if (!Array.isArray(p.hiddenLayers) || p.hiddenLayers.length === 0 || p.hiddenLayers.length > 8 || !p.hiddenLayers.every((n) => isInt(n, 1, 256))) return "bad hiddenLayers";
-  if (!isInt(p.memoryShort, 0, 64) || !isInt(p.memoryLong, 0, 64)) return "bad memory";
+  const plan = checkPlan(e.plan);
+  if (typeof plan === "string") return plan;
   if (!isNum(e.fitness, 0, Infinity) || !isNum(e.world.food, 0, 100) || !isNum(e.world.poison, 0, 100)) return "bad fitness or world";
-  const plan: BodyPlan = {
-    rayCount: p.rayCount,
-    raySpread: Math.min(2 * Math.PI, p.raySpread),
-    rayLength: p.rayLength,
-    hiddenLayers: (p.hiddenLayers as number[]).slice(),
-    memoryShort: p.memoryShort,
-    memoryLong: p.memoryLong,
-  };
   const g = e.genome;
   if (!Array.isArray(g) || g.length !== genomeLength(trialsSizes(plan)) || !g.every((v) => isNum(v, -1e6, 1e6))) return "genome missing, of the wrong length or not finite";
   return { plan, genome: Float32Array.from(g as number[]), fitness: e.fitness, world: { food: e.world.food, poison: e.world.poison } };

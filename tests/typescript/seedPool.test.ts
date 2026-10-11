@@ -68,7 +68,14 @@ describe("parsePool", () => {
     expect(entries[1]!.genome).toEqual(entry(PLANS[1]!, 2).genome);
     expect(rejected).toHaveLength(4);
     expect(rejected[0]).toMatch(/entry 1: genome/);
-    expect(rejected[2]).toMatch(/entry 4: bad rayCount/);
+    expect(rejected[2]).toMatch(/entry 4: rayCount must be/);
+  });
+
+  it("rejects a plan outside the creature-file limits", () => {
+    const e = json(entry(PLANS[0]!, 1));
+    const { entries, rejected } = parsePool({ version: POOL_VERSION, entries: [{ ...e, plan: { ...e.plan, rayCount: 40 } }] });
+    expect(entries).toHaveLength(0);
+    expect(rejected[0]).toMatch(/rayCount must be 1 to 16/);
   });
 
   it("throws on a file that is not a pool of this version", () => {

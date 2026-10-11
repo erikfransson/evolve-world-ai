@@ -1,11 +1,10 @@
-import { memoryUnits } from "../sim/config.ts";
+import { MEMORY_UNITS, memoryUnits } from "../sim/config.ts";
 import { PLAN_LIMITS } from "../sim/rl/creatureFile.ts";
 import type { BodyPlan } from "../sim/sensors.ts";
 import { range } from "./settingsForm.ts";
 import type { FormSpec, Section } from "./settingsForm.ts";
 
 // Arena settings, built by buildForm in settingsForm.ts like the other pages': the creature design and the run.
-const MEMORY_UNITS = 16; // as in sim/config.ts: memory 1 is 8 short and 8 long units
 const toDeg = (rad: number): number => Math.round((rad * 180) / Math.PI);
 
 export interface DesignConfig {
