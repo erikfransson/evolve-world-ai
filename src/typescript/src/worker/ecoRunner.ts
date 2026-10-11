@@ -326,6 +326,8 @@ export class EcoRunner {
       selected: this.selectedDetails(eco),
       bestRequest: this.bestRequest,
     };
+    const events = eco.drainEvents();
+    if (events) msg.events = events;
     if (eco.species.length > 1) msg.species = eco.speciesCounts.map((c) => ({ ...c }));
     if (this.historyChanged) {
       msg.history = Float64Array.from(this.samples);

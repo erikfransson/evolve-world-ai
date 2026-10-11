@@ -16,6 +16,7 @@ import type { SelectedBrain } from "./ui/ecoBrain.ts";
 import { createEcoView } from "./ui/ecoPage.ts";
 import { ECOSYSTEM_PAGE, PREDATORS_PAGE, openingConfig } from "./ui/ecoModes.ts";
 import { BirthRings } from "./ui/ecoBirths.ts";
+import { ImpactEffects } from "./ui/ecoImpacts.ts";
 import { EcoRenderer } from "./ui/ecoScene.ts";
 import type { EcoDrawConfig } from "./ui/ecoScene.ts";
 import type { PopulationSample } from "./ui/populationGraph.ts";
@@ -75,6 +76,7 @@ let lastBrainAt = 0;
 const camera = new Camera(config.world.width, config.world.height, 1, 1);
 const renderer = new EcoRenderer();
 const births = new BirthRings();
+const impacts = new ImpactEffects();
 
 function drawIdle(): void {
   if (active) return;
@@ -154,7 +156,9 @@ function onSnapshot(e: MessageEvent<EcoOutMessage>): void {
   const previous = live;
   live = { msg, views: snapshotViews(msg.buffer, msg.count, msg.itemCount, msg.creatureCap, msg.itemCap) };
   if (previous) send({ type: "recycle", buffer: previous.msg.buffer, run: previous.msg.run }, [previous.msg.buffer]);
-  births.observe(live.views, performance.now());
+  const stamp = performance.now();
+  births.observe(live.views, stamp);
+  if (msg.events) impacts.add(msg.events, stamp);
   if (msg.history) view.setHistory(toSamples(msg.history));
   if (msg.lineageHistory) view.setLineageHistory(msg.lineageHistory);
   if (msg.lineages) view.setLineages(msg.lineages, msg.population, msg.species?.map((c) => c.population));
@@ -207,6 +211,7 @@ function startRun(c: EcoConfig): void {
   worker ??= createWorker();
   releaseLive();
   births.reset();
+  impacts.reset();
   clearSelection();
   syncCanvas();
   camera.setWorld(c.world.width, c.world.height);
@@ -322,7 +327,7 @@ function frame(now: number): void {
   camera.update(now);
   syncFollow();
   const ctx = view.canvas.getContext("2d")!;
-  renderer.draw(ctx, camera, drawConfig(), live.views, selection?.details ?? null, showRays, dpr, highlight, births, now);
+  renderer.draw(ctx, camera, drawConfig(), live.views, selection?.details ?? null, showRays, dpr, highlight, births, now, impacts);
   if (now - lastUiAt >= UI_INTERVAL_MS) {
     lastUiAt = now;
     updateUi();
