@@ -44,7 +44,7 @@ export class ThinkPool {
   private waiting: { count: number; resolve: () => void; reject: (e: unknown) => void } | null = null;
   private broken: unknown = null;
   private fresh = true; // no tick has run since the last start
-  private avgTickMs: number | null = null; // running average of warm tick durations in this run, see tickTimeoutMs
+  private avgTickMs: number | null = null; // running average of tick durations in this run, see tickTimeoutMs
   private gen = 0; // the current run, see HelperIn
   private last: Promise<unknown> = Promise.resolve(); // the latest start or step; a new start waits for it
 
@@ -125,7 +125,7 @@ export class ThinkPool {
     this.coordinator.publish(eco, home, this.packets);
     const state = new Uint8Array(home.buffer, 0, publishedBytes(home));
     for (const p of this.packets) new Uint8Array(p.buffer).set(state);
-    const cold = this.fresh; // the first tick builds every creature's brain and runs cold code, so it is not timed
+    const cold = this.fresh; // the first tick builds every creature's brain and runs cold code; its duration seeds the average, which only loosens the timeout
     const base = cold ? Math.max(START_MS, this.tickMs) : this.tickMs;
     const done = this.expect(tickTimeoutMs(base, this.avgTickMs));
     this.fresh = false;
@@ -137,7 +137,7 @@ export class ThinkPool {
     });
     this.senseOwn(eco);
     await done;
-    if (!cold) this.observe(performance.now() - started);
+    this.observe(performance.now() - started);
     this.finish(eco);
   }
 
