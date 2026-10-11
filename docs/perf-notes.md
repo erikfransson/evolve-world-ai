@@ -104,6 +104,8 @@ Random founders do not reach birthEnergy, so all runs decline; the default goes 
 | rays   | large   | 3000      | 15.47  | 8.55    | 1.8x    | 1.2e-4       |
 | rays   | large   | 10000     | 66.86  | 30.09   | 2.2x    | 1.7 (a)      |
 
+The rays rows are historical: they measure the deleted `rays.wat`, and `wasmBench.ts` now benches brains only, so they cannot be reproduced.
+
 (a) Closeness difference plus 1 per ray whose kind differs. A rare grazing ray hits in f64 and misses in f32 (or the reverse), so a few rays out of 10^5 differ in kind. Otherwise closeness agrees to about 1e-4.
 Ray time includes queueing the rays and applying results into `RayHit` objects, which is about 40% of the WASM time (10000 large: queue 10.4, run 18.8, apply 1.2 ms), so the speedup grows once callers write straight into the batch buffers.
 Trials stays on the JS path. Ecosystem uses them with `eco.wasm` (default true since E5c, below).
