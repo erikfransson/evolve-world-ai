@@ -3,7 +3,7 @@
 Running log of optimisation experiments for large populations (500 to 2000).
 Benchmark: `node src/bench.ts --pop 1000 --gens 2` in `src/typescript` on an 8-core machine, quiet unless noted.
 The fingerprint hashes all fitness values, so an unchanged fingerprint means unchanged results.
-Current fingerprints (since the 2026-10-11 Trials tuning: rays 150 / 125 degrees, start energy 75, hidden 6; before: 95094939 and 833522585): `--pop 1000 --gens 2` 265968394, `--pop 300 --gens 12 --seed 2` 836727452.
+Current fingerprints (since the 2026-10-11 item spacing from poison; before: 265968394 and 836727452): `--pop 1000 --gens 2` 804117055, `--pop 300 --gens 12 --seed 2` 121151891.
 
 | Date       | Idea                                                    | Seconds (pop 1000, 2 gens) | Speedup | Results          | Verdict  |
 |------------|---------------------------------------------------------|----------------------------|---------|------------------|----------|
