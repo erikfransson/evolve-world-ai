@@ -120,7 +120,9 @@ export class WasmBrainBank {
   }
 
   // Runs slots 0 .. count-1, each of which must have been set.
+  // Slots 0..count-1 must all have been set; an unset descriptor would make the kernel trap or loop on garbage.
   forward(count: number): void {
+    if (count > this.descCap) throw new Error(`forward(${count}) beyond the ${this.descCap} slots set up`);
     if (count > 0) this.kernel.exports.forward(this.descPtr, count, 0, SCRATCH_B);
   }
 
