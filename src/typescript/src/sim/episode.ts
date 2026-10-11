@@ -18,6 +18,8 @@ export function poisonClearRadius(config: SimConfig): number {
   return Math.max(touching, Math.min(wanted, CLEAR_MAX_SHARE * Math.min(width, height)));
 }
 
+const DISTANCE_BONUS = 1e-6; // fitness seconds per world unit travelled (1e-3 s per 1000 units), far below one tick; ranks movers above stand-stills with equal lifetimes
+
 // One creature alone in its own world copy.
 export class Episode implements EpisodeView {
   readonly creature: Creature;
@@ -30,6 +32,7 @@ export class Episode implements EpisodeView {
   private readonly config: SimConfig;
   private readonly maxTicks: number;
   private readonly respawnRng: Rng;
+  private travelled = 0;
 
   constructor(config: SimConfig, genome: Genome, layoutSeed: number, creatureIndex: number) {
     this.config = config;
@@ -60,7 +63,9 @@ export class Episode implements EpisodeView {
   step(): void {
     if (this.done) return;
     this.creature.sense(this.world);
+    const { x, y } = this.state;
     const eaten = this.creature.act(this.world);
+    this.travelled += Math.hypot(this.state.x - x, this.state.y - y);
     if (eaten < 0) return;
     // An eaten item respawns elsewhere or is gone for good.
     if (this.config.world.respawn) this.world.placeRandomly(eaten, this.world.kinds[eaten] as HitKind,this.respawnRng);
@@ -69,7 +74,7 @@ export class Episode implements EpisodeView {
 
   fitness(): number {
     const { dt, creature: c } = this.config;
-    return this.state.ticksAlive * dt + energySignal(this.state.energy, c.startEnergy) * dt;
+    return this.state.ticksAlive * dt + energySignal(this.state.energy, c.startEnergy) * dt + this.travelled * DISTANCE_BONUS;
   }
 }
 

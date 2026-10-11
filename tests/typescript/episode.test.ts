@@ -27,6 +27,29 @@ describe("Episode", () => {
     expect(Math.abs(e.state.ticksAlive * cfg.dt - expected)).toBeLessThan(2 * cfg.dt);
   });
 
+  it("adds a tiny distance term to fitness so movers outrank stand-stills", () => {
+    const empty: SimConfig = { ...cfg, world: { ...cfg.world, foodDensity: 0, poisonDensity: 0 } };
+    const base = (e: Episode) => e.state.ticksAlive * empty.dt + (1 - Math.exp(-e.state.energy / empty.creature.startEnergy)) * empty.dt;
+    const still = new Episode(empty, new Float32Array(genomeLength(sizes)), 5, 0);
+    while (!still.done) still.step();
+    expect(still.fitness()).toBe(base(still));
+    // The first random genome that moves at all; some brake for their whole life.
+    let mover = new Episode(empty, rand(1), 5, 0);
+    let path = 0;
+    for (let seed = 1; seed < 40 && path === 0; seed++) {
+      mover = new Episode(empty, rand(seed), 5, 0);
+      path = 0;
+      while (!mover.done) {
+        const { x, y } = mover.state;
+        mover.step();
+        path += Math.hypot(mover.state.x - x, mover.state.y - y);
+      }
+    }
+    expect(path).toBeGreaterThan(0);
+    expect(mover.fitness() - base(mover)).toBeCloseTo(path * 1e-6, 9);
+    expect(mover.fitness() - base(mover)).toBeLessThan(empty.dt);
+  });
+
   it("keeps poison off the start position", () => {
     const dense: SimConfig = { ...cfg, world: { ...cfg.world, width: 400, height: 400, foodDensity: 20, poisonDensity: 20 } };
     const c = dense.creature;

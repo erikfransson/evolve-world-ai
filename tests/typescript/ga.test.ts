@@ -1,6 +1,6 @@
 import { DEFAULT_CONFIG } from "../../src/typescript/src/sim/config.ts";
 import type { SelectionMethod } from "../../src/typescript/src/sim/config.ts";
-import { SELECTION_PICKERS, mutate, nextGeneration } from "../../src/typescript/src/sim/ga.ts";
+import { BIG_MUTATION, SELECTION_PICKERS, STAGNATION_BOOST, bigMutate, isStagnant, mutate, nextGeneration } from "../../src/typescript/src/sim/ga.ts";
 import { Population } from "../../src/typescript/src/sim/population.ts";
 import { createRng } from "../../src/typescript/src/sim/rng.ts";
 import { testRng } from "./helpers.ts";
@@ -16,7 +16,7 @@ function makePop() {
   return { pop, fitness };
 }
 
-const base = { ...DEFAULT_CONFIG.ga, eliteFraction: 0.1, parentFraction: 0.25 };
+const base = { ...DEFAULT_CONFIG.ga, eliteFraction: 0.1, parentFraction: 0.25, immigrantFraction: 0, bigMutationFraction: 0 };
 const same = (a: Float32Array, b: Float32Array) => a.length === b.length && a.every((v, i) => v === b[i]);
 
 describe("nextGeneration", () => {
@@ -106,5 +106,82 @@ describe("mutate", () => {
     expect(same(child, expected)).toBe(true);
     expect(rng.next()).toBe(ref.next());
     expect(same(child, parent)).toBe(mutationRate === 0);
+  });
+});
+
+describe("immigrants and big mutations", () => {
+  const fresh = () => Float32Array.from({ length: L }, () => 100); // marker no mutation of a normal genome reaches
+  const ga = { ...base, eliteFraction: 0.1, immigrantFraction: 0.2, bigMutationFraction: 0.25, mutationRate: 0, crossover: false };
+
+  it("fills the immigrant share with fresh genomes after the children", () => {
+    const { pop, fitness } = makePop();
+    const out = nextGeneration(pop, fitness, ga, createRng(1), fresh);
+    const isFresh = (i: number) => out.genome(i).every((v) => v === 100);
+    expect(Array.from({ length: N }, (_, i) => i).filter(isFresh)).toEqual([16, 17, 18, 19]);
+  });
+
+  it("gives the big-mutation share changed children and leaves others as parents", () => {
+    const { pop, fitness } = makePop();
+    const out = nextGeneration(pop, fitness, ga, createRng(1), fresh);
+    const parents = [...fitness.keys()].sort((a, b) => fitness[b] - fitness[a]).slice(0, 5).map((i) => pop.genome(i));
+    const unchanged = (i: number) => parents.some((p) => same(p, out.genome(i)));
+    const changed = Array.from({ length: 16 }, (_, i) => i).filter((i) => !unchanged(i));
+    expect(changed.length).toBeGreaterThan(0);
+    expect(changed.every((i) => i >= 2 && i < 7)).toBe(true); // 2 elites, then round(0.25 * 20) = 5 big children
+  });
+
+  it("is deterministic and does not touch the input", () => {
+    const { pop, fitness } = makePop();
+    const copy = new Float32Array(pop.data);
+    const a = nextGeneration(pop, fitness, ga, createRng(3), fresh);
+    const b = nextGeneration(pop, fitness, ga, createRng(3), fresh);
+    expect(same(a.data, b.data)).toBe(true);
+    expect(same(pop.data, copy)).toBe(true);
+  });
+
+  it("skips immigrants without a genome factory", () => {
+    const { pop, fitness } = makePop();
+    const out = nextGeneration(pop, fitness, ga, createRng(1));
+    expect(out.data.some((v) => v === 100)).toBe(false);
+  });
+
+  it("bigMutate flips signs and adds noise", () => {
+    const child = new Float32Array(2000).fill(1);
+    bigMutate(child, createRng(4));
+    const flipped = child.filter((v) => v === -1).length;
+    const noised = child.filter((v) => v !== 1 && v !== -1).length;
+    expect(flipped / 2000).toBeCloseTo(BIG_MUTATION.rate * BIG_MUTATION.flipChance, 1);
+    expect(noised / 2000).toBeCloseTo(BIG_MUTATION.rate * (1 - BIG_MUTATION.flipChance), 1);
+  });
+});
+
+describe("stagnation boost", () => {
+  it("detects equal and near-equal fitness only", () => {
+    expect(isStagnant(new Float64Array(10).fill(5))).toBe(true);
+    expect(isStagnant(new Float64Array(10).fill(0))).toBe(true);
+    expect(isStagnant(Float64Array.from({ length: 10 }, (_, i) => 5 + i * 1e-4))).toBe(true);
+    expect(isStagnant(Float64Array.from({ length: 10 }, (_, i) => 5 + i))).toBe(false);
+    expect(isStagnant(new Float64Array(1))).toBe(false);
+  });
+
+  it("mutates harder after a stagnant generation", () => {
+    const { pop } = makePop();
+    const ga = { ...base, mutationRate: 1, mutationStd: 0.1, crossover: false };
+    const drift = (fitness: Float64Array) => {
+      const out = nextGeneration(pop, fitness, ga, createRng(2));
+      let sum = 0; // distance of each child to its nearest parent
+      for (let i = 2; i < N; i++) {
+        let best = Infinity;
+        for (let p = 0; p < N; p++) {
+          let d = 0;
+          for (let g = 0; g < L; g++) d += (out.genome(i)[g] - pop.data[p * L + g]) ** 2;
+          best = Math.min(best, d);
+        }
+        sum += Math.sqrt(best);
+      }
+      return sum;
+    };
+    const ratio = drift(new Float64Array(N).fill(7)) / drift(Float64Array.from({ length: N }, (_, i) => i));
+    expect(ratio).toBeGreaterThan(STAGNATION_BOOST * 0.6);
   });
 });

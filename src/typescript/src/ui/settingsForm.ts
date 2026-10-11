@@ -50,6 +50,8 @@ const buildFields = (): readonly Field[] => [
   num("memory", (c) => c.brain.memory, (c, v) => { c.brain.memory = v; }),
   num("popSize", (c) => c.population.size, (c, v) => { c.population.size = v; }),
   num("mutationRate", (c) => c.ga.mutationRate, (c, v) => { c.ga.mutationRate = v; }),
+  num("immigrants", (c) => c.ga.immigrantFraction, (c, v) => { c.ga.immigrantFraction = v; }),
+  num("bigMutations", (c) => c.ga.bigMutationFraction, (c, v) => { c.ga.bigMutationFraction = v; }),
   choice("selection", SELECTION_OPTIONS, (c) => c.ga.selection, (c, v) => { c.ga.selection = v; }),
 ];
 

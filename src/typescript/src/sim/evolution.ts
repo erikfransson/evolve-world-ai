@@ -20,11 +20,13 @@ export class Evolution {
 
   private readonly config: SimConfig;
   private readonly serial: Evaluator;
+  private readonly sizes: number[];
 
   constructor(config: SimConfig) {
     this.config = config;
     this.serial = new SerialEvaluator(config);
     const sizes = layerSizes(config);
+    this.sizes = sizes;
     const rng = founderRng(config.seed);
     this.population = new Population(config.population.size, genomeLength(sizes));
     for (let i = 0; i < config.population.size; i++) this.population.genome(i).set(randomGenome(sizes, rng));
@@ -63,7 +65,7 @@ export class Evolution {
       meanFitness: n ? sum / n : 0,
     };
     if (bestFitness > this.bestEver) this.bestEver = bestFitness;
-    this.population = nextGeneration(population, fitness, this.config.ga, createRng(deriveSeed(this.config.seed, generation, 7)));
+    this.population = nextGeneration(population, fitness, this.config.ga, createRng(deriveSeed(this.config.seed, generation, 7)), (rng) => randomGenome(this.sizes, rng));
     this.generation = generation + 1;
     return { result, population };
   }

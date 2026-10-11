@@ -54,6 +54,8 @@ export interface SimConfig {
     crossover: boolean; // uniform crossover between two parents
     mutationRate: number; // probability per gene
     mutationStd: number; // std of Gaussian added to a mutated gene
+    immigrantFraction: number; // share of each new generation that is fresh random genomes
+    bigMutationFraction: number; // share of the children that get a large mutation (some genes flip sign)
   };
 }
 
@@ -104,6 +106,8 @@ export const DEFAULT_CONFIG: SimConfig = {
     crossover: true,
     mutationRate: 0.05,
     mutationStd: 0.3,
+    immigrantFraction: 0.05,
+    bigMutationFraction: 0.05,
   },
 };
 
