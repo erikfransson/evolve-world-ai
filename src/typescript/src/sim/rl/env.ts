@@ -12,6 +12,7 @@ import type { PoolEntry } from "../seedPool.ts";
 import { energySignal, planOf } from "../sensors.ts";
 import type { BodyPlan, PlanView } from "../sensors.ts";
 import { speciesList, speciesRanges } from "../species.ts";
+import type { Species } from "../species.ts";
 import type { Genome } from "../types.ts";
 import { plainText } from "./validate.ts";
 import { envById } from "./envs.ts";
@@ -110,6 +111,15 @@ export function envConfig(env: EnvSpec, seed: number): EcoConfig {
   return base;
 }
 
+// The episode config of an env, built once and reused with the seed swapped (the engine only reads it); the key guards an env edited in place.
+const configs = new WeakMap<EnvSpec, { key: string; config: EcoConfig }>();
+function episodeConfig(env: EnvSpec, seed: number): EcoConfig {
+  const key = `${env.world} ${env.size[0]} ${env.size[1]} ${env.food} ${env.poison} ${env.foodRegrow} ${env.collisionDamage} ${env.poisonDamage} ${env.rivals.reduce((a, r) => a + r.count, 1)}`;
+  let c = configs.get(env);
+  if (c?.key !== key) configs.set(env, (c = { key, config: envConfig(env, 0) }));
+  return { ...c.config, seed };
+}
+
 const converted: Record<EnvWorld, WeakMap<PoolEntry, Learner>> = { ecosystem: new WeakMap(), hunt: new WeakMap() };
 const layouts: Partial<Record<EnvWorld, EcoConfig>> = {}; // per world, for plans and genome layouts only; the seed does not matter, so treat as read only
 
@@ -183,7 +193,7 @@ export function castFor(env: EnvSpec, config: EcoConfig, learner: Learner, seed:
 // Walls whose far side the learner reached: its centre a full body above the wall line.
 const crossed = (walls: readonly number[], minY: number, radius: number): number => walls.filter((y) => minY < y - radius).length;
 
-const learnerStartEnergy = (env: EnvSpec, config: EcoConfig): number => env.learnerEnergy ?? speciesList(config)[env.role]!.startEnergy;
+const learnerStartEnergy = (env: EnvSpec, species: readonly Species[]): number => env.learnerEnergy ?? species[env.role]!.startEnergy;
 
 // Plays one episode and scores the learner. onTick, when given, sees the world after every tick (the Arena draws it).
 // act, when given, may overwrite the learner's outputs after its brain ran and before it moves (a stochastic policy, rlGrad).
@@ -196,7 +206,7 @@ export function runEpisode(
   onTick?: (eco: Ecosystem) => void,
   act?: (learner: Creature) => void,
 ): EpisodeResult {
-  const config = envConfig(env, seed);
+  const config = episodeConfig(env, seed);
   const placed = env.layout ? placeLayout(env.layout, env.size, env.food, env.poison, seed) : null;
   const eco = new Ecosystem(config, null, { cast: castFor(env, config, learner, seed, pool, library, placed?.start), items: placed?.items });
   const reach = 2 * config.creature.radius + 2; // bumping distance, for crediting a ram
@@ -217,7 +227,7 @@ export function runEpisode(
     out.energy = 0;
   };
   let cleared = 0; // seconds left when the learner ate the last food
-  let lastEnergy = learnerStartEnergy(env, config); // the learner's energy after the previous tick
+  let lastEnergy = learnerStartEnergy(env, eco.species); // the learner's energy after the previous tick
   let minY = Infinity; // the learner's highest point (walls run across, the food lies above them)
   // Only speed-scored envs without regrowth end early, and only when the learner itself ate every item (not a rival).
   const clearable = env.reward.fast !== undefined && env.food > 0 && env.foodRegrow === 0;
@@ -245,7 +255,7 @@ export function runEpisode(
     }
   }
   const w = env.reward;
-  const startEnergy = speciesList(config)[env.role]!.startEnergy;
+  const startEnergy = eco.species[env.role]!.startEnergy;
   out.reward = (w.food ?? 0) * out.food + (w.kill ?? 0) * out.kills + (w.survive ?? 0) * out.seconds + (w.energy ?? 0) * energySignal(out.energy, startEnergy) + (w.fast ?? 0) * cleared + (w.ram ?? 0) * out.rams + (w.cross ?? 0) * crossed(placed?.walls ?? [], minY, config.creature.radius);
   return out;
 }
