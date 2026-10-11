@@ -59,6 +59,16 @@ export const ITEM_REMOVE = 2;
 const BLOCK = 4; // cells per block side in blockStamp; the shifts by 2 below divide by it
 const MAX_REJECTS = 256; // placement tries that honour reject before giving up on it
 
+export interface WorldSnapshot {
+  xs: Float32Array;
+  ys: Float32Array;
+  kinds: Uint8Array;
+  nextItem: Int32Array;
+  cellHead: Int32Array;
+  freeSlots: Int32Array;
+  freeCount: number;
+}
+
 export class World implements WorldView {
   readonly count: number; // slot capacity
   // Writes must go through setItem or removeItem to keep the grid valid.
@@ -175,6 +185,45 @@ export class World implements WorldView {
       }
     }
     return -1;
+  }
+
+  // The item slots and grid as they stand, copied, so load can make another world of the same capacity identical (cell lists and free stack included).
+  snapshot(): WorldSnapshot {
+    return {
+      xs: this.xs.slice(),
+      ys: this.ys.slice(),
+      kinds: this.kinds.slice(),
+      nextItem: this.nextItem.slice(),
+      cellHead: this.cellHead.slice(),
+      freeSlots: this.freeSlots.slice(),
+      freeCount: this.freeCount,
+    };
+  }
+
+  // Takes over a snapshot of a world with the same size and capacity. With a log, replays the items into it per cell from the tail of each list, so a copy replaying the log gets the same cell lists.
+  load(s: WorldSnapshot): void {
+    if (s.xs.length !== this.count || s.cellHead.length !== this.cellHead.length) throw new Error("item snapshot does not fit this world");
+    this.xs.set(s.xs);
+    this.ys.set(s.ys);
+    this.kinds.set(s.kinds);
+    this.nextItem.set(s.nextItem);
+    this.cellHead.set(s.cellHead);
+    this.freeSlots.set(s.freeSlots);
+    this.freeCount = s.freeCount;
+    this.freePos.fill(-1);
+    for (let k = 0; k < this.freeCount; k++) this.freePos[this.freeSlots[k]!] = k;
+    this.itemCell.fill(-1);
+    for (let c = 0; c < this.cellHead.length; c++) for (let i = this.cellHead[c]!; i >= 0; i = this.nextItem[i]!) this.itemCell[i] = c;
+    this.version++;
+    this.cellStamp.fill(this.version);
+    this.blockStamp.fill(this.version);
+    if (!this.log) return;
+    const chain: number[] = [];
+    for (let c = 0; c < this.cellHead.length; c++) {
+      chain.length = 0;
+      for (let i = this.cellHead[c]!; i >= 0; i = this.nextItem[i]!) chain.push(i);
+      for (let k = chain.length - 1; k >= 0; k--) this.log.push(ITEM_SET, chain[k]!, this.xs[chain[k]!]!, this.ys[chain[k]!]!, this.kinds[chain[k]!]!);
+    }
   }
 
   // Places item i and keeps the grid valid.

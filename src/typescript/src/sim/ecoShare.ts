@@ -32,6 +32,7 @@ const H_MEMORY_CAP = 2;
 const H_DELTA_CAP = 3;
 const H_DELTA_LENGTH = 4;
 const H_GENOME_CAP = 5;
+const AGING_AT = 24; // byte offset in the header after the six int32 fields, 8-aligned
 const HEADER_BYTES = 64;
 
 export interface Caps {
@@ -46,6 +47,7 @@ export interface Packet {
   buffer: ArrayBufferLike;
   caps: Caps;
   header: Int32Array;
+  aging: Float64Array; // old-age rule in force this tick: on (1 or 0), startTicks, perTick; it follows Ecosystem.retune
   ids: Int32Array;
   owner: Int32Array; // helper that thinks for creature i
   species: Int32Array;
@@ -131,6 +133,7 @@ export function packetViews(buffer: ArrayBufferLike, caps?: Caps): Packet {
     buffer,
     caps,
     header,
+    aging: new Float64Array(buffer, AGING_AT, 3),
     ids: new Int32Array(buffer, HEADER_BYTES, C),
     owner: new Int32Array(buffer, HEADER_BYTES + 4 * C, C),
     species: new Int32Array(buffer, HEADER_BYTES + 8 * C, C),
@@ -267,6 +270,10 @@ export class ShareCoordinator {
     }
     eco.drainJournal();
     p.header[H_DELTA_LENGTH] = k;
+    const rule = eco.agingRule;
+    p.aging[0] = rule ? 1 : 0;
+    p.aging[1] = rule?.startTicks ?? 0;
+    p.aging[2] = rule?.perTick ?? 0;
 
     const members = eco.members;
     const n = members.length;
@@ -351,7 +358,7 @@ export class ShareHelper {
   private readonly plan: BodyPlan = { rayCount: 0, raySpread: 0, rayLength: 0, hiddenLayers: [], memoryShort: 0, memoryLong: 0 };
 
   private readonly kernels: SenseKernels | null;
-  private readonly aging: Aging | null;
+  private aging: Aging | null;
 
   // wasm: sense and think on the WebAssembly kernels when available, as the coordinator does.
   constructor(config: EcoConfig, worldCapacity: number, index: number, wasm = false) {
@@ -376,6 +383,7 @@ export class ShareHelper {
   run(p: Packet): void {
     this.genomeAt = 0;
     this.apply(p.delta, p.genomes, p.header[H_DELTA_LENGTH]!);
+    this.followAging(p.aging);
     const n = p.header[H_COUNT]!;
     this.crowd.rebuildFrom(p.x, p.y, p.energy, n, p.species);
     const batch = this.batch;
@@ -401,6 +409,14 @@ export class ShareHelper {
       const at = p.memoryAt[i]!;
       for (let u = 0; u < memory.length; u++) p.memoryOut[at + u] = memory[u]!;
     }
+  }
+
+  // Takes the old-age rule of the packet, for the creatures this helper owns now and later.
+  private followAging(a: Float64Array): void {
+    const now = this.aging;
+    if (a[0] === (now ? 1 : 0) && (!now || (now.startTicks === a[1] && now.perTick === a[2]))) return;
+    this.aging = a[0] === 1 ? { startTicks: a[1]!, perTick: a[2]! } : null;
+    for (const c of this.mine.values()) c.aging = this.aging;
   }
 
   private apply(d: Float64Array, genomes: Float64Array, length: number): void {

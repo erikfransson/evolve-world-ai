@@ -38,6 +38,7 @@
 .mode:hover .go span, .mode:focus-visible .go span { transform: translateX(4px); }
 .badge { padding: 0.15rem 0.55rem; border: 1px solid var(--border-hi); border-radius: 999px; color: var(--muted); font-size: 0.68rem; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase; }
 .soon .go { color: var(--muted); }
+.badge.live { border-color: color-mix(in srgb, var(--accent) 55%, transparent); color: var(--accent); }
 
 .foot { margin-top: auto; padding-top: 3rem; text-align: center; font-size: 0.85rem; }
 .foot a { color: var(--muted); text-decoration: none; }
