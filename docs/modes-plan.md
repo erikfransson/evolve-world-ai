@@ -70,3 +70,17 @@ Contract: `EcoConfig` in `src/sim/ecoConfig.ts`, built on `EngineConfig` (the sh
 - Known follow-ups:
   - Scoreboard entries keep only seed, creature and brain settings, not the species, birth, regrowth, aging or collision settings.
   - Lineages tend to collapse to one founder per species after about 10 minutes.
+
+## RL environments and Arena (issues #27, #32), agreed 2026-10-11
+- Environments are short episodes (30 to 120 s) on the Ecosystem engine, so a creature trained there acts the same in the Ecosystem or The Great Hunt. Index and measured learning: `docs/rl-envs.md`.
+- Learning is evolution strategies on the creature's weights (`src/sim/rl/es.ts`), a nudge from its current weights.
+- Arena page (`arena/`): design a creature (kind, rays, brain, memory) or start from a pool founder or a file, pick or customise environments, train, watch the best candidate in up to 9 environments and its brain, save the creature.
+- Trained rivals live in `public/rl/library.json` by env id; later envs draw on them, so hunters and prey train each other.
+
+## Uploaded creatures and settings (Live World), required before any upload exists
+Visitors will upload creature files and settings that then run on our server. Treat every upload as hostile data.
+- Data only. A creature file is JSON that is parsed, never evaluated or imported as code, and never used as a key path, a file path or HTML. `parseCreatureFile` (`src/sim/rl/creatureFile.ts`) is the one gate: it rebuilds every kept value from checked numbers and short plain strings and drops everything else.
+- Bounded cost. Plans stay within `PLAN_LIMITS`, genomes match their plan's exact length with finite bounded weights, files have a size cap, and worlds and settings have the same limits as the forms (`ENV_LIMITS`, `checkEnv`), so no upload can make the simulation slow or large. The server enforces per-user and global limits on uploads and creature counts.
+- No injection. Store uploads as parsed values through parameterised queries or a document store API, never by string-building queries or shell commands. Names render with `textContent`, never `innerHTML`.
+- Isolation. The server simulation runs without file, network or process access beyond its job, under memory and CPU limits, so a bug in validation still cannot reach the host.
+- Re-validate on the server. The browser's checks are a convenience; the server runs the same parser on every upload and on every value read back from storage.
