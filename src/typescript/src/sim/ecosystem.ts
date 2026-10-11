@@ -2,6 +2,7 @@ import { genomeLength, layerSizes, randomGenome, refit } from "./brain.ts";
 import { itemCounts, itemsPerDensity } from "./config.ts";
 import { Creature, SenseBatch, senseThinkBatch } from "./creature.ts";
 import { Crowd } from "./crowd.ts";
+import { seasonFactor } from "./ecoConfig.ts";
 import type { EcoConfig } from "./ecoConfig.ts";
 import { mutate } from "./ga.ts";
 import { driftPlan, mutateStructure, randomPlan, remapWeights } from "./planMutation.ts";
@@ -397,7 +398,7 @@ export class Ecosystem {
   }
 
   private regrow(): void {
-    this.foodDue += this.foodPerTick;
+    this.foodDue += this.config.eco.seasons ? this.foodPerTick * seasonFactor(this.config.eco, this.tick * this.config.dt) : this.foodPerTick;
     this.poisonDue += this.poisonPerTick;
     for (; this.foodDue >= 1; this.foodDue--) if (this.food < this.foodCap) this.food += this.grow(HIT_FOOD);
     for (; this.poisonDue >= 1; this.poisonDue--) if (this.poison < this.poisonCap) this.poison += this.grow(HIT_POISON);
