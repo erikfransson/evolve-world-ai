@@ -119,3 +119,11 @@ function drawRays(ctx: CanvasRenderingContext2D, rec: Recording, frame: number, 
   }
   ctx.globalAlpha = 1;
 }
+
+// Whether the learner is still alive in frame f (it has no creature row after it dies).
+export function learnerAlive(rec: Recording, f: number): boolean {
+  if (rec.frames <= 0) return false;
+  const frame = Math.min(Math.max(0, f), rec.frames - 1);
+  for (let c = rec.creatureStart[frame]!; c < rec.creatureStart[frame + 1]!; c++) if (rec.creatureData[c * CREATURE_FIELDS + 4]! > 0) return true;
+  return false;
+}

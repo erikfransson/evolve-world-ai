@@ -1,9 +1,14 @@
 // @vitest-environment happy-dom
-import { drawArena, frameAt, loopSeconds } from "../../src/typescript/src/ui/arenaScene.ts";
+import { drawArena, frameAt, learnerAlive, loopSeconds } from "../../src/typescript/src/ui/arenaScene.ts";
 import { drawRewardGraph } from "../../src/typescript/src/ui/rewardGraph.ts";
-import { change, planSummary, roleGroup } from "../../src/typescript/src/ui/arenaPick.ts";
+import { change, customEnv, envsForKind, planSummary } from "../../src/typescript/src/ui/arenaPick.ts";
+import type { CustomEnvForm } from "../../src/typescript/src/ui/arenaPick.ts";
+import { FAVOURITES_KEY, MAX_FAVOURITES, addFavourite, loadFavourites, removeFavourite } from "../../src/typescript/src/ui/arenaStore.ts";
+import { BLANK_ENV, envConfig } from "../../src/typescript/src/sim/rl/env.ts";
 import { ENVS } from "../../src/typescript/src/sim/rl/envs.ts";
+import { creatureFile, genomeLengthFor } from "../../src/typescript/src/sim/rl/creatureFile.ts";
 import type { Recording } from "../../src/typescript/src/sim/rl/recording.ts";
+import { planOf } from "../../src/typescript/src/sim/sensors.ts";
 import { badCoordinateCalls, fakeCtx } from "./helpers.ts";
 
 // Two frames: frame 0 has 2 food and 1 poison, three creatures (learner, prey, predator); frame 1 has one food and the learner.
@@ -59,10 +64,17 @@ describe("drawArena", () => {
     expect(loopSeconds(rec)).toBeCloseTo(0.2);
     expect([0, 0.05, 0.1, 0.19, 0.2, 0.31].map((t) => frameAt(rec, t))).toEqual([0, 0, 1, 1, 0, 1]);
   });
+
+  it("knows whether the learner is alive in a frame", () => {
+    const rec = recording();
+    expect(learnerAlive(rec, 0)).toBe(true);
+    rec.creatureData[4] = 0;
+    expect(learnerAlive(rec, 0)).toBe(false);
+  });
 });
 
 describe("drawRewardGraph", () => {
-  const step = (iter: number, train: number, held: number | null) => ({ iter, train, held, seconds: iter });
+  const step = (iter: number, train: number, held: number | null) => ({ iter, train, best: train + 1, held, perEnv: null, seconds: iter });
 
   it("handles no data, one point and many points", () => {
     for (const [its, start] of [[[], null], [[], 3], [[step(1, 2, null)], null], [[step(1, 2, 4)], 1], [[step(1, 2, null), step(2, 3, null), step(5, 4, 6)], 1]] as const) {
@@ -86,8 +98,12 @@ describe("drawRewardGraph", () => {
 });
 
 describe("arena picker helpers", () => {
-  it("puts every env in a group", () => {
-    expect(new Set(ENVS.map(roleGroup))).toEqual(new Set(["Foragers", "Hunters", "Prey"]));
+  it("offers each kind only its own envs, and every env to some kind", () => {
+    const forager = envsForKind(ENVS, "forager");
+    expect(forager.length).toBeGreaterThan(0);
+    expect(forager.every((e) => e.world === "ecosystem" && e.role === 0)).toBe(true);
+    const all = new Set([...envsForKind(ENVS, "forager"), ...envsForKind(ENVS, "prey"), ...envsForKind(ENVS, "predator")]);
+    expect(all.size).toBe(ENVS.length);
   });
 
   it("summarises a plan", () => {
@@ -99,5 +115,66 @@ describe("arena picker helpers", () => {
     expect(change(5, 2)).toEqual({ text: "+3.0", dir: "up" });
     expect(change(1, 2.5)).toEqual({ text: "−1.5", dir: "down" });
     expect(change(2, 2).dir).toBe("flat");
+  });
+});
+
+describe("customEnv", () => {
+  const form = (over: Partial<CustomEnvForm> = {}): CustomEnvForm => ({
+    name: "",
+    width: 800,
+    height: 600,
+    food: 15,
+    poison: 5,
+    regrow: 0,
+    seconds: 45,
+    rivals: [],
+    reward: { food: 1, kill: null, survive: null, energy: null },
+    ...over,
+  });
+
+  it("builds a checked env of the kind's world with the given id", () => {
+    const e = customEnv(form(), "custom-3", "predator");
+    expect(typeof e).toBe("object");
+    if (typeof e === "string") return;
+    expect(e).toMatchObject({ id: "custom-3", name: "Custom 3", world: "hunt", role: 1, size: [800, 600], reward: { food: 1 } });
+  });
+
+  it("rejects out-of-range values, bad rivals and an empty reward with a reason", () => {
+    expect(customEnv(form({ width: 50 }), "custom-1", "forager")).toMatch(/sides/);
+    expect(customEnv(form({ rivals: [{ species: 1, count: 2, source: "random" }] }), "custom-1", "forager")).toMatch(/species/);
+    expect(customEnv(form({ reward: { food: null, kill: null, survive: 0, energy: null } }), "custom-1", "forager")).toMatch(/reward/);
+  });
+});
+
+describe("favourites", () => {
+  const memory = () => {
+    const data = new Map<string, string>();
+    return { getItem: (k: string) => data.get(k) ?? null, setItem: (k: string, v: string) => void data.set(k, v) };
+  };
+  const learner = () => {
+    const plan = planOf(envConfig({ ...BLANK_ENV, world: "ecosystem" }, 1));
+    return { plan, genome: new Float32Array(genomeLengthFor("forager", plan)) };
+  };
+  const file = (name: string) => creatureFile("forager", name, learner(), { envs: ["forage-box"], iterations: 5, from: "designed", heldStart: 1, heldEnd: 2, date: "2026-01-01" });
+
+  it("round-trips, newest first, and removes by index", () => {
+    const store = memory();
+    expect(addFavourite(file("a"), store)).toBe(true);
+    addFavourite(file("b"), store);
+    expect(loadFavourites(store).map((f) => f.name)).toEqual(["b", "a"]);
+    removeFavourite(0, store);
+    expect(loadFavourites(store).map((f) => f.name)).toEqual(["a"]);
+  });
+
+  it("keeps at most 20 and survives garbage and a refusing store", () => {
+    const store = memory();
+    for (let i = 0; i < MAX_FAVOURITES + 3; i++) addFavourite(file(`c${i}`), store);
+    expect(loadFavourites(store)).toHaveLength(MAX_FAVOURITES);
+    store.setItem(FAVOURITES_KEY, "not json");
+    expect(loadFavourites(store)).toEqual([]);
+    store.setItem(FAVOURITES_KEY, JSON.stringify([{ format: "x" }]));
+    expect(loadFavourites(store)).toEqual([]);
+    expect(addFavourite(file("z"), { getItem: () => null, setItem: () => { throw new Error("full"); } })).toBe(false);
+    expect(loadFavourites(null)).toEqual([]);
   });
 });

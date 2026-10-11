@@ -2,6 +2,7 @@ import type { RlIteration } from "../worker/rlProtocol.ts";
 import { fitCanvas, graphFont } from "./canvas.ts";
 
 export const TRAIN_COLOR = "#7dd3fc";
+export const BEST_COLOR = "#fbbf24";
 export const HELD_COLOR = "#3ddc97";
 const AXIS_COLOR = "rgba(143, 174, 159, 0.5)";
 const GRID_COLOR = "rgba(143, 174, 159, 0.15)";
@@ -20,7 +21,7 @@ export function drawRewardGraph(ctx: CanvasRenderingContext2D, its: readonly RlI
   const held: { iter: number; v: number }[] = [];
   if (start !== null) held.push({ iter: 0, v: start });
   for (const it of its) if (it.held !== null) held.push({ iter: it.iter, v: it.held });
-  const values = [...its.map((it) => it.train), ...held.map((p) => p.v)].filter(Number.isFinite);
+  const values = [...its.map((it) => it.train), ...its.map((it) => it.best), ...held.map((p) => p.v)].filter(Number.isFinite);
   const lo = Math.min(0, ...values);
   let hi = Math.max(1, ...values);
   if (hi - lo < 1e-9) hi = lo + 1;
@@ -74,6 +75,7 @@ export function drawRewardGraph(ctx: CanvasRenderingContext2D, its: readonly RlI
     }
   };
   line(its.map((it) => ({ iter: it.iter, v: it.train })), TRAIN_COLOR, 1, false);
+  line(its.map((it) => ({ iter: it.iter, v: it.best })), BEST_COLOR, 1, false);
   line(held, HELD_COLOR, 2.5, true);
 }
 
