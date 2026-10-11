@@ -237,6 +237,21 @@ describe("WasmRayCaster", () => {
     expect(caster.memoryBytes).toBeGreaterThan(before);
   });
 
+  it("finds nothing for a creature far outside the world, without reading outside the grid", async () => {
+    const caster = (await WasmRayCaster.create())!;
+    const { crowd } = scene(5, 300);
+    caster.loadCrowd(crowd);
+    const offsets = rayAngleOffsets({ rayCount: 8, raySpread: 2 });
+    const dirX = Float64Array.from(offsets, (o) => Math.cos(o));
+    const dirY = Float64Array.from(offsets, (o) => Math.sin(o));
+    const far = [[-5000, 500], [9000, 500], [700, -5000], [700, 9000], [-5000, -5000], [9000, 9000]];
+    const outs = far.map(() => Array.from({ length: 8 }, () => ({ closeness: 0, kind: HIT_NONE, energy: 0 })));
+    far.forEach(([x, y], v) => caster.queue(x!, y!, dirX, dirY, outs[v]!, -1, 150));
+    caster.run();
+    caster.apply();
+    for (const out of outs) for (const ray of out) expect(ray.kind).toBe(HIT_NONE);
+  });
+
   it("needs a crowd first", async () => {
     const caster = (await WasmRayCaster.create())!;
     expect(() => caster.run()).toThrow(/loadCrowd/);
