@@ -116,4 +116,17 @@ describe("Creature", () => {
     expect(creature.state.energy).toBeGreaterThan(before + cfg.world.foodEnergy - 1);
     expect(creature.state.ticksAlive).toBe(1);
   });
+
+  it("pays the plan's upkeep on every move, and reports a drain that grows with age", () => {
+    const config: SimConfig = { ...cfg, creature: { ...cfg.creature, livingCost: 2, rayCost: 0, neuronCost: 0, thrustCost: 0, turnCost: 0 } };
+    const world = new World(config, 1);
+    const creature = new Creature(config, new Float32Array(genomeLength(layerSizes(config))), 150, 150, 0);
+    const before = creature.state.energy;
+    creature.move(world, 0, 0);
+    expect(before - creature.state.energy).toBeCloseTo(2 * config.dt, 9);
+    expect(creature.drain).toBeCloseTo(2, 9);
+    creature.aging = { startTicks: 0, perTick: 0.5 };
+    creature.state.ticksAlive = 10;
+    expect(creature.drain).toBeCloseTo(2 * (1 + 0.5 * 10), 9);
+  });
 });
