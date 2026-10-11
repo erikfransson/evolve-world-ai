@@ -83,6 +83,15 @@ export interface EpisodeResult {
 
 const BIRTHLESS = 1e9; // birth energy no creature reaches
 
+// WebAssembly kernels for an episode's sense and brain phase: "auto" uses them when the episode's brains are big enough to repay the
+// per-episode setup (about 2 ms; measured slower below ~3000 genes in total), false keeps the JS path everywhere.
+// Their f32 arithmetic differs slightly from the JS path, but each creature's result depends only on its own inputs, so
+// rewards stay deterministic per seed whatever the thread count or episode order.
+export const RL_WASM: "auto" | boolean = "auto";
+const WASM_MIN_GENES = 3000;
+const useWasm = (env: EnvSpec, cast: readonly CastMember[]): boolean =>
+  env.foodVisibleFor === undefined && (RL_WASM === "auto" ? cast.reduce((a, c) => a + c.genome.length, 0) >= WASM_MIN_GENES : RL_WASM); // hidden food needs the JS sense path
+
 // The engine config of an env: its world on the base of the Ecosystem or The Great Hunt, no births, no structural change.
 export function envConfig(env: EnvSpec, seed: number): EcoConfig {
   const base = structuredClone(env.world === "hunt" ? DEFAULT_PREDATOR_CONFIG : DEFAULT_ECO_CONFIG);
@@ -228,7 +237,9 @@ export function runEpisode(
 ): EpisodeResult {
   const config = episodeConfig(env, seed);
   const placed = env.layout ? placeLayout(env.layout, env.size, env.food, env.poison, seed) : null;
-  const eco = new Ecosystem(config, null, { cast: castFor(env, config, learner, seed, pool, library, placed?.start), items: placed?.items });
+  const cast = castFor(env, config, learner, seed, pool, library, placed?.start);
+  config.eco.wasm = useWasm(env, cast);
+  const eco = new Ecosystem(config, null, { cast, items: placed?.items });
   const reach = 2 * config.creature.radius + 2; // bumping distance, for crediting a ram
   const ticks = Math.round(env.seconds / config.dt);
   const out: EpisodeResult = { reward: 0, food: 0, kills: 0, rams: 0, seconds: 0, energy: 0 };
