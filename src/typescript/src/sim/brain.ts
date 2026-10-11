@@ -49,12 +49,18 @@ export function fastTanh(x: number): number {
   return r > 1 ? 1 : r < -1 ? -1 : r;
 }
 
+const NO_F32 = new Float32Array(0); // shared, never written: refit makes a new array before any write
+const NO_F64 = new Float64Array(0);
+const NO_I32 = new Int32Array(0);
+
 export class Brain {
   private shape: readonly number[];
   private weightsGenome: Genome; // the brain's own copy; weights and biases view it
+  // Everything below is built on first use (ensure), so a brain only run on the WebAssembly kernels is just its genome.
+  private ready = false;
   // Per layer views into the genome: weights row-major [out][in], biases [out].
-  readonly weights: Float32Array[] = []; // treat as read-only
-  readonly biases: Float32Array[] = [];
+  private readonly weightViews: Float32Array[] = [];
+  private readonly biasViews: Float32Array[] = [];
   private readonly fanIn: number[] = [];
   private readonly fanOut: number[] = [];
   // Hidden activations only; the output layer writes straight into the caller's buffer.
@@ -62,10 +68,10 @@ export class Brain {
   // [input, ...hidden, output] of the last forward call; the ends are the caller's buffers.
   private readonly activations: Float32Array[] = [];
   // Scratch for the nonzero inputs of the first layer.
-  private activeIndex = new Int32Array(0);
-  private activeValue = new Float64Array(0);
+  private activeIndex = NO_I32;
+  private activeValue = NO_F64;
   // First-layer weights stored input-major [in][out] as doubles, so one input's weights are contiguous.
-  private firstLayerByInput = new Float64Array(0);
+  private firstLayerByInput = NO_F64;
 
   constructor(sizes: readonly number[], genome: Genome) {
     if (genome.length !== genomeLength(sizes)) {
@@ -73,6 +79,21 @@ export class Brain {
     }
     this.shape = sizes.slice();
     this.weightsGenome = genome.slice();
+  }
+
+  get weights(): readonly Float32Array[] {
+    this.ensure();
+    return this.weightViews;
+  }
+
+  get biases(): readonly Float32Array[] {
+    this.ensure();
+    return this.biasViews;
+  }
+
+  private ensure(): void {
+    if (this.ready) return;
+    this.ready = true;
     this.build();
   }
 
@@ -89,14 +110,14 @@ export class Brain {
     const sizes = this.shape;
     const genome = this.weightsGenome;
     const layers = sizes.length - 1;
-    this.weights.length = this.biases.length = this.fanIn.length = this.fanOut.length = 0;
+    this.weightViews.length = this.biasViews.length = this.fanIn.length = this.fanOut.length = 0;
     let offset = 0;
     for (let l = 0; l < layers; l++) {
       const inSize = sizes[l];
       const outSize = sizes[l + 1];
-      this.weights.push(genome.subarray(offset, offset + inSize * outSize));
+      this.weightViews.push(genome.subarray(offset, offset + inSize * outSize));
       offset += inSize * outSize;
-      this.biases.push(genome.subarray(offset, offset + outSize));
+      this.biasViews.push(genome.subarray(offset, offset + outSize));
       offset += outSize;
       this.fanIn.push(inSize);
       this.fanOut.push(outSize);
@@ -118,34 +139,37 @@ export class Brain {
     if (genome.length !== length) throw new Error(`genome length ${genome.length} does not match expected ${length}`);
     if (sizes.length === this.shape.length && sizes.every((n, i) => n === this.shape[i])) {
       this.weightsGenome.set(genome);
-      this.transposeFirstLayer();
+      if (this.ready) this.transposeFirstLayer();
       return;
     }
     this.shape = sizes.slice();
     this.weightsGenome = refit(this.weightsGenome, length);
     this.weightsGenome.set(genome);
-    this.build();
+    if (this.ready) this.build();
   }
 
   private transposeFirstLayer(): void {
     const nIn = this.fanIn[0];
     const nOut = this.fanOut[0];
     for (let j = 0; j < nOut; j++) {
-      for (let i = 0; i < nIn; i++) this.firstLayerByInput[i * nOut + j] = this.weights[0][j * nIn + i];
+      for (let i = 0; i < nIn; i++) this.firstLayerByInput[i * nOut + j] = this.weightViews[0][j * nIn + i];
     }
   }
 
   // Valid after forward; before that the input and output are zeros. The array is reused, not a copy.
   layerActivations(): readonly Float32Array[] {
+    this.ensure();
     return this.activations;
   }
 
   // Records input as the last forward's input, for a caller that runs this brain elsewhere (WASM); the other layers go stale.
   showInput(input: Float32Array): void {
+    this.ensure();
     this.activations[0] = input;
   }
 
   forward(input: Float32Array, output: Float32Array): void {
+    this.ensure();
     const layers = this.fanIn.length;
     this.activations[0] = input;
     this.activations[layers] = output;
@@ -161,7 +185,7 @@ export class Brain {
   // First layer: skips zero inputs (mostly one-hot ray flags). Adding w * 0 leaves a finite sum unchanged, so results are identical.
   private sparseLayer(input: Float32Array, dst: Float32Array): void {
     const wt = this.firstLayerByInput;
-    const b = this.biases[0];
+    const b = this.biasViews[0];
     const nIn = this.fanIn[0];
     const nOut = this.fanOut[0];
     const idx = this.activeIndex;
@@ -202,8 +226,8 @@ export class Brain {
   }
 
   private denseLayer(l: number, src: Float32Array, dst: Float32Array): void {
-    const w = this.weights[l];
-    const b = this.biases[l];
+    const w = this.weightViews[l];
+    const b = this.biasViews[l];
     const nIn = this.fanIn[l];
     const nOut = this.fanOut[l];
     // Two outputs at a time overlap their dependent add chains; each sum still adds in input order.

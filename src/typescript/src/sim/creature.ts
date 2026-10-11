@@ -13,12 +13,18 @@ import type { SenseKernels } from "./wasm/senseKernels.ts";
 
 let created = 0; // objects made so far in this process
 
+// Ray directions of the creature being sensed, shared by all creatures since a sense is one synchronous call.
+let dirX = new Float64Array(64);
+let dirY = new Float64Array(64);
+// Never used for lookups, only so touched() has a cache to pass before the creature has sensed on the JS path.
+const IDLE_CACHE = new RayCache();
+
 // One creature's body, brain and senses; the world it lives in is passed to each call.
 // rays, rayOffsets, memory and brain sizes follow the plan, which only reset changes.
 export class Creature {
   readonly state: CreatureState;
   readonly slot = created++; // construction order, which follows heap order; SenseBatch sorts by it
-  readonly rays: RayHit[] = [];
+  private rayList: RayHit[] | null = null; // made on first use, since the WebAssembly sense only fills the detail creature's
   readonly brain: Brain;
   readonly heading: Heading = { cos: 0, sin: 0 };
   aging: Aging | null = null; // old-age upkeep, set by the owner
@@ -37,11 +43,11 @@ export class Creature {
   private outSrc: Float32Array = this.output; // where the last decide left the outputs, from outAt: this.output, or a WASM kernel's memory
   private outAt = 0;
   private memoryAt = 0;
-  private rayOffCos = new Float64Array(0);
+  private rayOffCos = new Float64Array(0); // built by the JS sense path only
   private rayOffSin = new Float64Array(0);
-  private rayDirX = new Float64Array(0);
-  private rayDirY = new Float64Array(0);
-  private readonly cache = new RayCache();
+  private trigFresh = false;
+  private inputLength = 0;
+  private cache: RayCache | null = null; // made by the JS sense path only
 
   // plan defaults to the config's; genome must be sized for it.
   constructor(config: EngineConfig, genome: Genome, x: number, y: number, heading: number, plan: PlanView = planOf(config)) {
@@ -56,6 +62,15 @@ export class Creature {
     this.heading.sin = Math.sin(heading);
   }
 
+  // One hit per ray, as of the last sense on the JS path (or as detail on the WebAssembly path).
+  get rays(): RayHit[] {
+    if (!this.rayList) {
+      this.rayList = [];
+      this.fitRays();
+    }
+    return this.rayList;
+  }
+
   get plan(): PlanView {
     return this.ownPlan;
   }
@@ -67,14 +82,6 @@ export class Creature {
   // Short units first, then long.
   get memory(): Readonly<Float64Array> {
     return this.units;
-  }
-
-  get offsetCos(): Readonly<Float64Array> {
-    return this.rayOffCos;
-  }
-
-  get offsetSin(): Readonly<Float64Array> {
-    return this.rayOffSin;
   }
 
   // Writes the brain input that does not come from rays (extras, then memory units) at f32[at], where at is the first extra's index.
@@ -108,7 +115,8 @@ export class Creature {
     const plan = this.ownPlan;
     const n = plan.rayCount;
     this.memoryAt = sizes[0]! - plan.memoryShort - plan.memoryLong;
-    this.input = refit(this.input, sizes[0]!);
+    this.inputLength = sizes[0]!;
+    this.input = this.input.length === 0 ? this.input : refit(this.input, this.inputLength); // an input buffer exists once encode or adoptInput needs one
     this.output = refit(this.output, sizes[sizes.length - 1]!);
     this.outSrc = this.output;
     this.outAt = 0;
@@ -116,17 +124,16 @@ export class Creature {
     this.units.fill(0);
     this.offsets = refit(this.offsets, n);
     rayAngleOffsets(plan, this.offsets);
-    this.rayOffCos = refit(this.rayOffCos, n);
-    this.rayOffSin = refit(this.rayOffSin, n);
-    for (let i = 0; i < n; i++) {
-      this.rayOffCos[i] = Math.cos(this.offsets[i]!);
-      this.rayOffSin[i] = Math.sin(this.offsets[i]!);
-    }
-    this.rayDirX = refit(this.rayDirX, n);
-    this.rayDirY = refit(this.rayDirY, n);
-    while (this.rays.length < n) this.rays.push({ closeness: 0, kind: HIT_NONE, energy: 0, species: 0 });
-    this.rays.length = n;
+    this.trigFresh = false;
+    if (this.rayList) this.fitRays();
     this.energyUpkeep = planUpkeep(plan, this.config);
+  }
+
+  private fitRays(): void {
+    const list = this.rayList!;
+    const n = this.ownPlan.rayCount;
+    while (list.length < n) list.push({ closeness: 0, kind: HIT_NONE, energy: 0, species: 0 });
+    list.length = n;
   }
 
   // Reuses this creature for a newcomer: copies the genome into its brain and resets body, senses and memory.
@@ -149,8 +156,8 @@ export class Creature {
     s.ticksAlive = 0;
     this.heading.cos = Math.cos(heading);
     this.heading.sin = Math.sin(heading);
-    this.cache.version = -1;
-    for (const ray of this.rays) {
+    if (this.cache) this.cache.version = -1;
+    for (const ray of this.rayList ?? []) {
       ray.closeness = 0;
       ray.kind = HIT_NONE;
       ray.energy = 0;
@@ -162,7 +169,7 @@ export class Creature {
   // With a crowd, rays also see the other creatures in it; self is this creature's slot there.
   sense(world: World, crowd?: Crowd, self = -1): void {
     this.senseWorld(world);
-    if (crowd) crowd.castRays(this.state.x, this.state.y, this.rayDirX, this.rayDirY, this.rays, self, this.ownPlan.rayLength);
+    if (crowd) crowd.castRays(this.state.x, this.state.y, dirX, dirY, this.rays, self, this.ownPlan.rayLength);
   }
 
   // The part of sense before the crowd: ray directions from the pose, then items and walls.
@@ -171,22 +178,26 @@ export class Creature {
     // Ray directions by angle addition from the heading's cos/sin.
     const hc = this.heading.cos;
     const hs = this.heading.sin;
+    if (!this.trigFresh) this.fitTrig();
     const oc = this.rayOffCos;
     const os = this.rayOffSin;
-    const dirX = this.rayDirX;
-    const dirY = this.rayDirY;
+    if (dirX.length < rays.length) {
+      dirX = new Float64Array(rays.length);
+      dirY = new Float64Array(rays.length);
+    }
     for (let i = 0; i < rays.length; i++) {
       dirX[i] = hc * oc[i] - hs * os[i];
       dirY[i] = hs * oc[i] + hc * os[i];
     }
     const length = this.ownPlan.rayLength;
-    world.castRays(this.state.x, this.state.y, dirX, dirY, rays, this.cache, length);
+    world.castRays(this.state.x, this.state.y, dirX, dirY, rays, (this.cache ??= new RayCache()), length);
   }
 
   // Takes the brain input a WASM kernel built for this creature (f32[at ..]), so encode()'s view of it (what the brain panel shows) is current.
   adoptInput(f32: Float32Array, at: number): void {
-    this.input.set(f32.subarray(at, at + this.input.length));
-    this.brain.showInput(this.input);
+    const input = this.inputBuffer();
+    input.set(f32.subarray(at, at + input.length));
+    this.brain.showInput(input);
   }
 
   // Runs the brain on the last sensed rays, the current body and the memory, then updates the memory from its targets.
@@ -226,9 +237,26 @@ export class Creature {
     this.brain.forward(this.encode(), this.output);
   }
 
+  private inputBuffer(): Float32Array {
+    if (this.input.length !== this.inputLength) this.input = refit(this.input, this.inputLength);
+    return this.input;
+  }
+
+  // Cosine and sine of the ray offsets, for the JS sense path.
+  private fitTrig(): void {
+    const n = this.offsets.length;
+    this.rayOffCos = refit(this.rayOffCos, n);
+    this.rayOffSin = refit(this.rayOffSin, n);
+    for (let i = 0; i < n; i++) {
+      this.rayOffCos[i] = Math.cos(this.offsets[i]!);
+      this.rayOffSin[i] = Math.sin(this.offsets[i]!);
+    }
+    this.trigFresh = true;
+  }
+
   // The brain's input from the last sensed rays, the body and the memory; also what brain.layerActivations()[0] shows.
   encode(): Float32Array {
-    const input = this.input;
+    const input = this.inputBuffer();
     encodeInputs(this.state, this.rays, this.config, input, this.heading.cos, this.heading.sin);
     input.set(this.units, this.memoryAt);
     this.brain.showInput(input);
@@ -261,7 +289,7 @@ export class Creature {
   // The first item this creature touches at its position, or -1; changes nothing.
   touched(world: World): number {
     const s = this.state;
-    return world.eatAt(s.x, s.y, this.config.creature.radius, this.cache);
+    return world.eatAt(s.x, s.y, this.config.creature.radius, this.cache ?? IDLE_CACHE);
   }
 
   // Eats item, an index from touched (or -1), if any. Returns it, still in the world for the caller to move or remove.
