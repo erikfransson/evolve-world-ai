@@ -2,6 +2,7 @@ import "./base.css";
 import "./style.css";
 import "./ecosystem.css";
 import { DEFAULT_ECO_CONFIG } from "./sim/ecoConfig.ts";
+import { withEcoPreset } from "./sim/presets.ts";
 import type { EcoConfig } from "./sim/ecoConfig.ts";
 import type { BestBy, EcoInMessage, EcoOutMessage, EcoSnapshot, SelectedDetails, SnapshotViews } from "./worker/ecoProtocol.ts";
 import { snapshotViews } from "./worker/ecoProtocol.ts";
@@ -39,7 +40,8 @@ interface Selection {
   died: boolean;
 }
 
-let config: EcoConfig = DEFAULT_ECO_CONFIG; // the form's while idle, the run's while active
+const NORMAL = withEcoPreset(DEFAULT_ECO_CONFIG, "normal"); // the page opens on the Normal preset
+let config: EcoConfig = NORMAL; // the form's while idle, the run's while active
 let active = false; // a run exists (running, paused or extinct)
 let run = 0; // run number, so snapshots of an earlier run are dropped
 let worker: Worker | null = null;
@@ -336,7 +338,7 @@ const view = createEcoView({
 
 camera.attach(view.canvas);
 showRays = view.showRays();
-view.fillConfig(DEFAULT_ECO_CONFIG);
+view.fillConfig(NORMAL);
 new ResizeObserver(drawIdle).observe(view.canvas);
 drawIdle();
 requestAnimationFrame(frame);

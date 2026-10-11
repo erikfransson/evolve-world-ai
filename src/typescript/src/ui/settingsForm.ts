@@ -1,5 +1,6 @@
 import { DEFAULT_CONFIG, itemCounts } from "../sim/config.ts";
 import type { SelectionMethod, SimConfig } from "../sim/config.ts";
+import { trialsPreset } from "../sim/presets.ts";
 
 interface Field {
   read(c: SimConfig): void; // form element into config
@@ -69,9 +70,15 @@ export const FORMATS: Record<string, (v: number) => string> = {
 let fields: readonly Field[] | null = null;
 const getFields = (): readonly Field[] => (fields ??= buildFields());
 
+// The chosen preset's world also covers values the form has no field for (item size and energy, poison-free start radius).
+let presetId = "";
+export const setFormPreset = (id: string): void => { presetId = id; };
+
 export function readConfig(): SimConfig {
   const c = structuredClone(DEFAULT_CONFIG);
   for (const f of getFields()) f.read(c);
+  const preset = trialsPreset(presetId);
+  if (preset) c.world = { ...preset.world };
   return c;
 }
 

@@ -2,6 +2,7 @@ import { DEFAULT_CONFIG, overrideConfig } from "../sim/config.ts";
 import type { DeepPartial, SimConfig } from "../sim/config.ts";
 import { DEFAULT_ECO_CONFIG } from "../sim/ecoConfig.ts";
 import type { EcoConfig } from "../sim/ecoConfig.ts";
+import { CUSTOM, ECO_PRESETS, TRIALS_PRESETS } from "../sim/presets.ts";
 
 // Copy and paste of the settings as JSON, shared by Trials and Ecosystem.
 export type Mode = "trials" | "ecosystem";
@@ -13,15 +14,24 @@ const DEFAULTS: { [M in Mode]: ConfigOf[M] } = { trials: DEFAULT_CONFIG, ecosyst
 const PAGE: Record<Mode, string> = { trials: "Trials", ecosystem: "Ecosystem" };
 export const VERSION = 1;
 
-// {"mode": ..., "version": 1, "angles": "radians", "config": <full config>}
-export function serialise<M extends Mode>(mode: M, config: ConfigOf[M]): string {
-  return JSON.stringify({ mode, version: VERSION, angles: "radians", config }, null, 2);
+const PRESET_IDS: Record<Mode, readonly string[]> = { trials: TRIALS_PRESETS.map((p) => p.id), ecosystem: ECO_PRESETS.map((p) => p.id) };
+
+// {"mode": ..., "preset": "normal", "version": 1, "angles": "radians", "config": <full config>}; the preset is left out when not given.
+export function serialise<M extends Mode>(mode: M, config: ConfigOf[M], preset?: string): string {
+  return JSON.stringify({ mode, ...(preset === undefined ? {} : { preset }), version: VERSION, angles: "radians", config }, null, 2);
 }
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
+export interface Parsed<M extends Mode> {
+  config: ConfigOf[M];
+  preset: string | null; // a preset id, CUSTOM, or null when the text names none
+}
+
 // Returns the pasted config merged over the defaults. Throws an Error with a readable message on anything wrong.
-export function parseSettings<M extends Mode>(text: string, mode: M): ConfigOf[M] {
+export const parseSettings = <M extends Mode>(text: string, mode: M): ConfigOf[M] => parseWithPreset(text, mode).config;
+
+export function parseWithPreset<M extends Mode>(text: string, mode: M): Parsed<M> {
   let data: unknown;
   try {
     data = JSON.parse(text);
@@ -30,14 +40,19 @@ export function parseSettings<M extends Mode>(text: string, mode: M): ConfigOf[M
   }
   if (!isObject(data)) throw new Error("Expected a JSON object with mode, version and config.");
   for (const key of Object.keys(data)) {
-    if (!["mode", "version", "angles", "config"].includes(key)) throw new Error(`Unknown key "${key}" at the top level.`);
+    if (!["mode", "preset", "version", "angles", "config"].includes(key)) throw new Error(`Unknown key "${key}" at the top level.`);
   }
   if (data.mode !== "trials" && data.mode !== "ecosystem") throw new Error('Missing "mode", expected "trials" or "ecosystem".');
   if (data.mode !== mode) throw new Error(`These settings are for ${PAGE[data.mode]}, but this is the ${PAGE[mode]} page.`);
   if (data.version !== VERSION) throw new Error(`Unsupported version ${JSON.stringify(data.version)}, expected ${VERSION}.`);
   if (data.angles !== undefined && data.angles !== "radians") throw new Error('Angles must be in "radians".');
-  if (data.config === undefined) return structuredClone(DEFAULTS[mode]);
-  return overrideConfig<ConfigOf[M]>(DEFAULTS[mode], data.config as DeepPartial<ConfigOf[M]>);
+  let preset: string | null = null;
+  if (data.preset !== undefined) {
+    if (typeof data.preset !== "string" || (data.preset !== CUSTOM && !PRESET_IDS[mode].includes(data.preset))) throw new Error(`Unknown preset ${JSON.stringify(data.preset)}.`);
+    preset = data.preset;
+  }
+  if (data.config === undefined) return { config: structuredClone(DEFAULTS[mode]), preset };
+  return { config: overrideConfig<ConfigOf[M]>(DEFAULTS[mode], data.config as DeepPartial<ConfigOf[M]>), preset };
 }
 
 // Leaf paths where a and b differ, e.g. "world.width". Angles may differ by the form's whole-degree rounding.
@@ -63,6 +78,7 @@ export interface IOOptions<M extends Mode> {
   form: HTMLFormElement;
   read(): ConfigOf[M];
   fill(config: ConfigOf[M]): void;
+  preset?: { get(): string; set(id: string): void }; // the preset picker; pasted settings select their preset
 }
 
 // The outcome of applying text: an error, or applied with an optional note about adjusted values.
@@ -184,12 +200,17 @@ export function initSettingsIO<M extends Mode>(o: IOOptions<M>): void {
   const applyText = (text: string): Outcome => {
     if (locked()) return { ok: false, message: "Settings are locked while a run is active." };
     let pasted: ConfigOf[M];
+    let preset: string;
     try {
-      pasted = parseSettings(text, o.mode);
+      const parsed = parseWithPreset(text, o.mode);
+      pasted = parsed.config;
+      preset = parsed.preset ?? CUSTOM;
     } catch (e) {
       return { ok: false, message: e instanceof Error ? e.message : String(e) };
     }
+    o.preset?.set(preset);
     o.fill(pasted);
+    if (preset !== CUSTOM) o.preset?.set(preset); // the preset's world wins over pasted world values
     clampRanges();
     const applied = o.read();
     o.fill(applied);
@@ -204,7 +225,7 @@ export function initSettingsIO<M extends Mode>(o: IOOptions<M>): void {
 
   let timer = 0;
   copy.onclick = () => {
-    const text = serialise(o.mode, o.read());
+    const text = serialise(o.mode, o.read(), o.preset?.get());
     const done = (): void => {
       copyLabel.textContent = "Copied";
       clearTimeout(timer);

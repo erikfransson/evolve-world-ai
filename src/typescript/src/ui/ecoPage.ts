@@ -1,4 +1,6 @@
+import { DEFAULT_ECO_CONFIG } from "../sim/ecoConfig.ts";
 import type { EcoConfig } from "../sim/ecoConfig.ts";
+import { CUSTOM, ECO_LOCKED, ECO_PRESETS, withEcoPreset } from "../sim/presets.ts";
 import type { BodyPlan } from "../sim/sensors.ts";
 import type { BestBy } from "../worker/ecoProtocol.ts";
 import { BrainView } from "./brainView.ts";
@@ -6,8 +8,10 @@ import { buildEcoForm, fillEcoForm, initEcoSettingsForm, readEcoConfig } from ".
 import { formatElapsed } from "./elapsed.ts";
 import { initCard } from "./overlays.ts";
 import type { Card } from "./overlays.ts";
+import { initPresetPanel } from "./presetPanel.ts";
 import { PopulationGraph } from "./populationGraph.ts";
 import type { PopulationSample } from "./populationGraph.ts";
+import { Scoreboard, settingsOf, today } from "./scoreboard.ts";
 import { initSettingsIO } from "./settingsIO.ts";
 import { initTooltips } from "./tooltip.ts";
 
@@ -118,7 +122,33 @@ export function createEcoView(handlers: EcoHandlers): EcoView {
   buildEcoForm($("settings"));
   fillEcoForm(readEcoConfig());
   initEcoSettingsForm(setup, (c) => { if (phase === "idle") handlers.onConfigChange(c); });
-  initSettingsIO({ mode: "ecosystem", form: setup, read: readEcoConfig, fill: fillEcoForm });
+  const board = new Scoreboard("ecosystem");
+  const presets = initPresetPanel({
+    container: $("settings"),
+    form: setup,
+    presets: ECO_PRESETS,
+    locked: ECO_LOCKED,
+    board,
+    formatScore: formatElapsed,
+    read: readEcoConfig,
+    fill: fillEcoForm,
+    withPreset: withEcoPreset,
+    setPreset: () => undefined, // every world field has a form input
+  });
+  initSettingsIO({ mode: "ecosystem", form: setup, read: readEcoConfig, fill: fillEcoForm, preset: { get: presets.current, set: presets.select } });
+  // The score is how long the world has lived, so it counts while the run is alive and at its end.
+  presets.select("normal", false); // the page's first fill is the defaults, which Normal matches
+  const scored = { preset: CUSTOM, key: "", date: "", settings: settingsOf(DEFAULT_ECO_CONFIG), peak: 0 };
+  const beginScoring = (): void => {
+    const c = readEcoConfig();
+    Object.assign(scored, { preset: presets.current(), key: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, date: today(), settings: settingsOf(c), peak: 0 });
+  };
+  const recordScore = (simTime: number, population: number): void => {
+    scored.peak = Math.max(scored.peak, population);
+    if (scored.preset === CUSTOM) return;
+    const note = `peak ${nf.format(scored.peak)} creatures`;
+    if (board.submit(scored.preset, { run: scored.key, score: Math.floor(simTime), date: scored.date, settings: scored.settings, note })) presets.refresh();
+  };
   initTooltips($("tooltip"));
   initCard($("legendCard"), "evolve.eco.card.legend", mobile);
   initCard(selectedCard, "evolve.eco.card.selected", false);
@@ -161,7 +191,10 @@ export function createEcoView(handlers: EcoHandlers): EcoView {
     setStats(s) {
       const timer = $("timer");
       timer.hidden = s === null;
-      if (s) timer.textContent = formatElapsed(s.simTime);
+      if (s) {
+        timer.textContent = formatElapsed(s.simTime);
+        recordScore(s.simTime, s.population);
+      }
       setTile("statPop", s && nf.format(s.population));
       setTile("statBirths", s && nf.format(s.births));
       setTile("statDeaths", s && nf.format(s.deaths));
@@ -204,6 +237,7 @@ export function createEcoView(handlers: EcoHandlers): EcoView {
     },
     showExtinct(simSeconds) {
       $("extinctTitle").textContent = `Extinct after ${Math.round(simSeconds)} s`;
+      recordScore(simSeconds, 0);
       if (phase !== "extinct") returnFocus = document.activeElement as HTMLElement | null;
       setPhase("extinct");
       $("reseed").focus();
@@ -213,7 +247,7 @@ export function createEcoView(handlers: EcoHandlers): EcoView {
     },
   };
 
-  start.onclick = () => { setPhase("running"); handlers.onStart(readEcoConfig()); };
+  start.onclick = () => { beginScoring(); setPhase("running"); handlers.onStart(readEcoConfig()); };
   pause.onclick = () => {
     const resume = phase === "paused";
     setPhase(resume ? "running" : "paused");
@@ -221,7 +255,7 @@ export function createEcoView(handlers: EcoHandlers): EcoView {
     else handlers.onPause();
   };
   reset.onclick = () => { setPhase("idle"); handlers.onReset(); };
-  $("reseed").onclick = () => { setPhase("running"); handlers.onReseed(); };
+  $("reseed").onclick = () => { setPhase("running"); handlers.onReseed(); beginScoring(); };
   document.querySelector(".seg")!.addEventListener("change", () => handlers.onSpeed(speed()));
   $<HTMLInputElement>("rays").addEventListener("change", () => handlers.onShowRays(view.showRays()));
   $("zoomIn").onclick = () => handlers.onZoom("in");
