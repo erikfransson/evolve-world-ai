@@ -16,15 +16,42 @@ describe("pacer", () => {
     let t = 100;
     const pacer = new Pacer(() => t);
     expect(pacer.wait()).toBe(0);
-    t = 112;
-    pacer.finished(100, 0.75); // 12 ms of work, 4 ms of idle
-    expect(pacer.wait()).toBeCloseTo(4);
-    t = 114;
-    expect(pacer.wait()).toBeCloseTo(2);
-    t = 120;
+    t = 160;
+    pacer.finished(100, 0.75); // 60 ms of work, 20 ms of idle
+    expect(pacer.wait()).toBeCloseTo(20);
+    t = 170;
+    expect(pacer.wait()).toBeCloseTo(10);
+    t = 190;
     expect(pacer.wait()).toBe(0);
-    pacer.finished(112, 1);
+    pacer.began();
+    pacer.finished(190, 1);
     expect(pacer.wait()).toBe(0);
+  });
+
+  it("owes small idle times until they are worth a sleep, then sleeps the whole debt", () => {
+    let t = 0;
+    const pacer = new Pacer(() => t);
+    const job = (work: number) => { const start = t; t += work; pacer.finished(start, 0.9); };
+    for (let i = 0; i < 11; i++) { job(12); expect(pacer.wait()).toBe(0); } // 12 ms of work owes 1.33 ms: 11 slices stay under 15 ms
+    job(12); // 12th: 16 ms owed
+    expect(pacer.wait()).toBeCloseTo(16, 1);
+  });
+
+  it("books the time really slept, so an overshoot is paid back", () => {
+    let t = 0;
+    const pacer = new Pacer(() => t);
+    const job = (work: number) => { const start = t; t += work; pacer.finished(start, 0.5); };
+    job(20); // owes 20 ms
+    expect(pacer.wait()).toBe(20);
+    t += 24; // the timer overshot by 4 ms
+    pacer.began();
+    job(20); // owes 20 - 4 = 16 ms
+    expect(pacer.wait()).toBeCloseTo(16);
+    t += 16;
+    pacer.began();
+    let total = 0;
+    for (let i = 0; i < 50; i++) { const before = t; job(20); const w = pacer.wait(); t += w; pacer.began(); total += t - before; }
+    expect(50 * 20 / total).toBeCloseTo(0.5, 1); // the work share stays at the duty
   });
 
   it("keeps threads plus the coordinator within cores - 1 when gentle", () => {

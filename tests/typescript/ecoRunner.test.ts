@@ -299,7 +299,11 @@ describe("EcoRunner", () => {
 
 describe("Gentle on CPU pacing", () => {
   const run = (pressure: "nominal" | "serious") => {
-    const { runner, sent, last } = setup(1); // every clock reading advances 1 ms, so each slice of "max" ticks ends
+    // The clock is the tick count (1 ms a tick), so reading it does not change where slices end and both runs tick alike.
+    const sent: EcoSnapshot[] = [];
+    let runner!: EcoRunner;
+    runner = new EcoRunner((msg: EcoOutMessage) => { if (msg.type === "snapshot") sent.push(msg); }, () => runner.ecosystem?.tick ?? 0);
+    const last = () => sent[sent.length - 1]!;
     if (pressure === "serious") { runner.gentle = new DutyController(); runner.gentle.setPressure("serious"); }
     runner.handle({ type: "start", config: cfg(), run: 1 });
     runner.handle({ type: "speed", speed: "max" });
@@ -316,6 +320,6 @@ describe("Gentle on CPU pacing", () => {
     expect(gentle.sent.length).toBe(full.sent.length);
     expect(Array.from(new Uint8Array(gentle.last.buffer))).toEqual(Array.from(new Uint8Array(full.last.buffer)));
     expect(full.delays.every((d) => d === 0)).toBe(true);
-    expect(gentle.delays.every((d) => d > 0)).toBe(true);
+    expect(gentle.delays.some((d) => d > 0)).toBe(true); // idle is owed in slices and slept in larger pieces
   });
 });

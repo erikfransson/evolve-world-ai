@@ -10,7 +10,7 @@ import type { EcoInMessage, EcoOutMessage, EcoSnapshot, EcoSpeedSetting, Selecte
 import { LINEAGE_STRIDE, LINEAGE_TOP, snapshotBytes, snapshotViews } from "./ecoProtocol.ts";
 import type { ThinkPool } from "./ecoPool.ts";
 import type { DutyController } from "./pacer.ts";
-import { idleMs } from "./pacer.ts";
+import { Pacer } from "./pacer.ts";
 
 const SLICE_MS = 12; // longest stretch of ticks before the worker checks messages and posts
 const POST_MS = 1000 / 30; // snapshot interval
@@ -31,6 +31,7 @@ export class EcoRunner {
   private starting: Promise<void> | null = null; // the helpers getting ready for the current run
   private readonly post: Post;
   private readonly now: () => number;
+  private readonly pacer: Pacer;
   private paused = false;
   gentle: DutyController | null = null; // sets how much of the wall time the pump may compute, see pacer.ts; the helper threads idle with it, as they wait for this thread
   private run = 0;
@@ -60,6 +61,7 @@ export class EcoRunner {
   constructor(post: Post, now: () => number = () => performance.now()) {
     this.post = post;
     this.now = now;
+    this.pacer = new Pacer(now);
   }
 
   handle(msg: EcoInMessage): void {
@@ -114,6 +116,7 @@ export class EcoRunner {
     const eco = this.due();
     if (!eco) return -1;
     const t0 = this.last;
+    this.pacer.began();
     const began = this.now();
     while (this.wantTick(eco)) {
       eco.step();
@@ -138,6 +141,7 @@ export class EcoRunner {
     const eco = this.due();
     if (!eco) return -1;
     const t0 = this.last;
+    this.pacer.began();
     const began = this.now();
     pool.watch = this.selectedId;
     try {
@@ -155,8 +159,8 @@ export class EcoRunner {
   private paced(delay: number, began: number): number {
     const gentle = this.gentle;
     if (delay < 0 || !gentle) return delay;
-    const end = this.now();
-    return Math.max(delay, idleMs(end - began, gentle.duty()));
+    this.pacer.finished(began, gentle.duty());
+    return Math.max(delay, this.pacer.wait());
   }
 
   // Uses these helper threads from the next start on; null runs on this thread.

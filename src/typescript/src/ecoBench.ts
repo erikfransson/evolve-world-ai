@@ -22,7 +22,7 @@ import { parsePool } from "./sim/seedPool.ts";
 import { checkRanges, mergeSpeciesList } from "./sim/species.ts";
 import { parseSettings } from "./ui/settingsIO.ts";
 import { createNodeThinkPool } from "./worker/nodePool.ts";
-import { DutyController, FALLBACK_DUTY, idleMs } from "./worker/pacer.ts";
+import { DutyController, FALLBACK_DUTY, Pacer } from "./worker/pacer.ts";
 
 // parameters
 const { values } = parseArgs({
@@ -132,6 +132,7 @@ function seriesRow(): Record<string, unknown> {
   return row;
 }
 
+const pacer = new Pacer();
 const controller = values.gentle ? new DutyController(FALLBACK_DUTY) : null;
 const SLICE_MS = 12; // as EcoRunner
 let sliceStart = performance.now();
@@ -153,8 +154,10 @@ while (eco.tick < ticks && !eco.extinct) {
   if (seriesEvery && eco.tick % seriesEvery === 0) series.push(seriesRow());
   const now = performance.now();
   if (controller && now - sliceStart >= SLICE_MS) {
-    const idle = idleMs(now - sliceStart, controller.duty());
-    if (idle > 0) await new Promise((resolve) => setTimeout(resolve, idle));
+    pacer.finished(sliceStart, controller.duty());
+    const wait = pacer.wait();
+    if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+    pacer.began();
     sliceStart = performance.now();
   }
 }

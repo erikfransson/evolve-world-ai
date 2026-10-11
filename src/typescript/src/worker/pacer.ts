@@ -61,9 +61,16 @@ export function gentleController(): DutyController {
   return controller;
 }
 
-// Delays the start of the next job of one worker until the idle time after the previous job has passed.
+// Delays the start of the next job of one worker until the idle time after the previous jobs has passed.
+// Timers cannot sleep for a millisecond or two (browsers clamp nested timeouts to 4 ms), so idle time is owed until it reaches
+// MIN_SLEEP_MS, then slept in one go, and the real sleep (which overshoots) is paid back from later idle times.
+export const MIN_SLEEP_MS = 15;
+const MAX_CREDIT_MS = 500;
+
 export class Pacer {
+  private debt = 0; // idle time owed, negative after an overshoot
   private resumeAt = 0;
+  private sleptFrom: number | null = null; // when the sleep that is being paid began
   private readonly now: () => number;
 
   constructor(now: () => number = () => performance.now()) {
@@ -73,11 +80,21 @@ export class Pacer {
   // Call when a job that began at startMs has finished, with the duty to idle to.
   finished(startMs: number, duty: number): void {
     const end = this.now();
-    this.resumeAt = end + idleMs(end - startMs, duty);
+    this.debt += idleMs(end - startMs, duty);
+    if (this.debt < MIN_SLEEP_MS) return;
+    this.resumeAt = end + this.debt;
+    this.sleptFrom = end;
   }
 
   // Milliseconds to wait before the next job may start.
   wait(): number {
     return Math.max(0, this.resumeAt - this.now());
+  }
+
+  // Call when the next job starts, after any wait: books the time really slept against the debt.
+  began(): void {
+    if (this.sleptFrom === null) return;
+    this.debt = Math.max(-MAX_CREDIT_MS, this.debt - (this.now() - this.sleptFrom)); // a long pause is not credit for later
+    this.sleptFrom = null;
   }
 }

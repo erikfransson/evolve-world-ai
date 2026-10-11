@@ -13,6 +13,7 @@ self.onmessage = (e: MessageEvent<EvalJob>) => {
   queue = queue.then(async () => {
     const wait = pacer.wait();
     if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+    pacer.began();
     const t0 = performance.now();
     const done = evalJob(job);
     self.postMessage(done, { transfer: transferList(done) });
