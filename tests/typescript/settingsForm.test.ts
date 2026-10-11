@@ -2,8 +2,8 @@
 import { pageBody } from "./pageLoader.ts";
 import { DEFAULT_CONFIG, withOverrides } from "../../src/typescript/src/sim/config.ts";
 import type { DeepPartial, SimConfig } from "../../src/typescript/src/sim/config.ts";
-import { buildForm } from "../../src/typescript/src/ui/settingsForm.ts";
-import type { FormHandle } from "../../src/typescript/src/ui/settingsForm.ts";
+import { buildForm, el, rangePair, range, syncSlider } from "../../src/typescript/src/ui/settingsForm.ts";
+import type { FormHandle, FormSpec } from "../../src/typescript/src/ui/settingsForm.ts";
 import { TRIALS_FORM } from "../../src/typescript/src/ui/trialsForm.ts";
 
 const deg = (d: number): number => (d * Math.PI) / 180;
@@ -61,6 +61,8 @@ describe("settings form", () => {
     expect(readConfig().seed).toBe(0);
     seed.value = "12.6";
     expect(readConfig().seed).toBe(13);
+    seed.value = "99999999999";
+    expect(readConfig().seed).toBe(2 ** 31);
     seed.value = "";
     expect(readConfig().seed).toBe(DEFAULT_CONFIG.seed);
   });
@@ -88,5 +90,62 @@ describe("settings form", () => {
     fillForm(DEFAULT_CONFIG);
     readConfig().brain.hiddenLayers.push(1);
     expect(DEFAULT_CONFIG).toEqual(before);
+  });
+});
+
+describe("settings form pieces", () => {
+  interface Mini { span: number[]; mode: string; on: boolean; level: number }
+  const spec: FormSpec<Mini> = {
+    defaults: { span: [2, 6], mode: "x", on: true, level: 15 },
+    sections: [{
+      title: "Mini",
+      fields: [
+        ...rangePair<Mini>({ id: "span", label: "Span", tip: "t", min: 0, max: 10, step: 1, get: (c) => c.span, set: (c, v) => { c.span = v; } }),
+        { kind: "choice", id: "mode", label: "Mode", tip: "t", options: [["x", "X"], ["y", "Y"]], get: (c) => c.mode, set: (c, v) => { c.mode = v; } },
+        { kind: "toggle", id: "on", label: "On", tip: "t", get: (c) => c.on, set: (c, v) => { c.on = v; } },
+        range<Mini>({ id: "level", label: "Level", tip: "t", min: 10, max: 20, step: 1, enabledWhen: (c) => c.on, get: (c) => c.level, set: (c, v) => { c.level = v; } }),
+      ],
+    }],
+  };
+
+  it("a [min, max] pair pushes the other end along when one slider passes it", () => {
+    const [lo, hi] = rangePair<Mini>({ id: "span", label: "Span", tip: "t", min: 0, max: 10, step: 1, get: (c) => c.span, set: (c, v) => { c.span = v; } });
+    const c = { ...spec.defaults, span: [2, 6] };
+    lo!.set(c, 4);
+    expect(c.span).toEqual([4, 6]);
+    lo!.set(c, 8);
+    expect(c.span).toEqual([8, 8]);
+    hi!.set(c, 9);
+    expect(c.span).toEqual([8, 9]);
+    hi!.set(c, 1);
+    expect(c.span).toEqual([1, 1]);
+    expect([lo!.get(c), hi!.get(c)]).toEqual([1, 1]);
+  });
+
+  it("the slider fill follows the position between min and max, not between 0 and max", () => {
+    document.body.innerHTML = '<input id="s" type="range" min="10" max="20" step="1" value="15" />';
+    const slider = document.getElementById("s") as HTMLInputElement;
+    syncSlider(slider);
+    expect(slider.style.getPropertyValue("--p")).toBe("50%");
+  });
+
+  it("disables a field while its condition is off, keeps a preset-locked one disabled, and ignores an unknown choice", () => {
+    document.body.innerHTML = '<form id="f"><div id="host"></div></form>';
+    const form = buildForm(document.getElementById("host")!, spec);
+    const level = document.getElementById("level") as HTMLInputElement;
+    const box = level.closest(".field")!;
+    form.fill({ ...spec.defaults, on: false });
+    expect([level.disabled, box.classList.contains("dep-off")]).toEqual([true, true]);
+    form.fill({ ...spec.defaults, on: true });
+    expect([level.disabled, box.classList.contains("dep-off")]).toEqual([false, false]);
+    box.classList.add("preset-locked");
+    form.fill({ ...spec.defaults, on: true });
+    expect(level.disabled).toBe(true);
+    const mode = document.getElementById("mode") as HTMLSelectElement;
+    mode.value = "nonsense";
+    expect(form.read().mode).toBe("x");
+    mode.value = "y";
+    expect(form.read().mode).toBe("y");
+    expect(() => el("mode", HTMLInputElement)).toThrow(/not a/);
   });
 });

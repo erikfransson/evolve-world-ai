@@ -1,6 +1,7 @@
 import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
+import { ShareCoordinator, fittedCaps, packetBytes, packetViews, publishedBytes } from "../../src/typescript/src/sim/ecoShare.ts";
 import { ThinkPool, defaultHelpers, serveHelper, tickTimeoutMs } from "../../src/typescript/src/worker/ecoPool.ts";
 import type { HelperIn, HelperOut, HelperPort } from "../../src/typescript/src/worker/ecoPool.ts";
 import { EcoRunner } from "../../src/typescript/src/worker/ecoRunner.ts";
@@ -315,5 +316,127 @@ describe("helper fallbacks", () => {
     expect(failedAt).toBeGreaterThan(0);
     expect(failedAt - killedAt).toBeLessThanOrEqual(3); // noticed within a few ticks, not after the 5 s tick timeout
     expect(eco.fingerprint()).toBe(serial(cfg(), eco.tick).fingerprint());
+  });
+});
+
+describe("ThinkPool message handling", () => {
+  // A helper port driven by hand: it records what the pool posts, answers init with ready when asked, and never answers a tick.
+  function manualPort(autoReady = false) {
+    let reply: (msg: HelperOut) => void = () => {};
+    const posted: HelperIn[] = [];
+    const terminate = vi.fn();
+    const port: HelperPort = {
+      post: (msg) => {
+        posted.push(msg);
+        if (autoReady && msg.type === "init") queueMicrotask(() => reply({ type: "ready", gen: msg.gen }));
+      },
+      onMessage: (callback) => { reply = callback; },
+      onError: () => {},
+      terminate,
+    };
+    return { port, posted, reply: (msg: HelperOut) => reply(msg), terminate };
+  }
+  const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
+  const small = () => new Ecosystem(cfg(), null, { journal: true });
+
+  it("ignores a late reply of an earlier run, clears its timers and stops its helpers once", async () => {
+    vi.useFakeTimers();
+    try {
+      const h = manualPort();
+      const pool = new ThinkPool([h.port]);
+      const first = pool.start(small());
+      await flush();
+      const gen1 = h.posted[0]!.gen;
+      h.reply({ type: "ready", gen: gen1 });
+      await first;
+      expect(vi.getTimerCount()).toBe(0); // the start timeout is cleared once the helpers answered
+
+      let ready = false;
+      const second = pool.start(small()).then(() => { ready = true; }, () => {});
+      await flush();
+      expect(h.posted[1]!.gen).not.toBe(gen1);
+      h.reply({ type: "ready", gen: gen1 }); // the first run's helper answering late
+      await flush();
+      expect(ready).toBe(false);
+      h.reply({ type: "ready", gen: h.posted[1]!.gen });
+      await second;
+      expect(ready).toBe(true);
+
+      const third = pool.start(small()).then(() => "ready", () => "failed");
+      await flush();
+      pool.close();
+      pool.close(); // a second close or failure changes nothing
+      expect(await third).toBe("failed");
+      expect(h.terminate).toHaveBeenCalledTimes(1);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("gives the first, cold tick the long start timeout and later ticks the short one", async () => {
+    vi.useFakeTimers();
+    try {
+      const h = manualPort(true);
+      const pool = new ThinkPool([h.port], 50);
+      const eco = small();
+      await pool.start(eco);
+      const outcome = pool.step(eco).then(() => "ran", (e: Error) => e.message);
+      await vi.advanceTimersByTimeAsync(1_000); // far past the 50 ms tick timeout, within the cold allowance
+      expect(pool.alive).toBe(true);
+      await vi.advanceTimersByTimeAsync(25_000);
+      expect(pool.alive).toBe(false);
+      expect(await outcome).toMatch(/stopped answering/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("helper packets", () => {
+  it("fittedCaps grows for a bigger genome area, and the delta cap counts every word publish writes", () => {
+    const caps = { creatures: 10, memory: 10, delta: 100, genome: 100 };
+    expect(fittedCaps(caps, { ...caps, genome: 101 })).not.toBeNull();
+    expect(fittedCaps(caps, caps)).toBeNull();
+
+    const eco = new Ecosystem(cfg(), null, { journal: true });
+    for (let t = 0; t < 120; t++) eco.step(); // the journal keeps filling: items, births, deaths
+    expect(eco.journal!.born.length).toBeGreaterThan(0);
+    expect(eco.journal!.died.length).toBeGreaterThan(0);
+    const coordinator = new ShareCoordinator(2);
+    const need = coordinator.need(eco);
+    const fitted = fittedCaps(null, need)!;
+    const home = packetViews(new ArrayBuffer(packetBytes(fitted)), fitted);
+    coordinator.publish(eco, home, [0, 1].map(() => packetViews(new ArrayBuffer(packetBytes(fitted)), fitted)));
+    expect((publishedBytes(home) - home.delta.byteOffset) / 8).toBe(need.delta);
+  });
+
+  it("helpers follow a live change of the ageing rate, as the serial run does", async () => {
+    const aging = (): EcoConfig => {
+      const c = cfg();
+      c.eco.wasm = false;
+      c.eco.aging = true;
+      c.eco.agingStart = 2;
+      c.eco.agingRate = 0.1;
+      return c;
+    };
+    const run = async (retune: boolean, pool: ThinkPool | null): Promise<number> => {
+      const eco = new Ecosystem(aging(), null, { journal: pool !== null });
+      if (pool) await pool.start(eco);
+      for (let t = 0; t < 160; t++) {
+        if (t === 60 && retune) expect(eco.retune({ eco: { agingRate: 2 } }).ok).toBe(true);
+        if (pool) await pool.step(eco);
+        else eco.step();
+      }
+      return eco.fingerprint();
+    };
+    const pool = new ThinkPool(fakePorts(2));
+    try {
+      const serialRetuned = await run(true, null);
+      expect(serialRetuned).not.toBe(await run(false, null)); // the change matters
+      expect(await run(true, pool)).toBe(serialRetuned);
+    } finally {
+      pool.close();
+    }
   });
 });

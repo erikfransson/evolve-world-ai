@@ -13,7 +13,7 @@ export interface PastRequest {
   genomes: Float32Array;
 }
 
-export type InMessage = { type: "start"; config: SimConfig } | { type: "pause" } | { type: "resume" } | PastRequest;
+export type InMessage = { type: "start"; config: SimConfig; gentle?: boolean } | { type: "gentle"; gentle: boolean } | { type: "pause" } | { type: "resume" } | PastRequest;
 
 export interface GenerationMessage {
   type: "generation";

@@ -1,0 +1,12 @@
+{
+  "name": "evolve-videos",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "render": "nice -n 15 node src/render.ts"
+  },
+  "devDependencies": {
+    "@napi-rs/canvas": "^1.0.11"
+  }
+}

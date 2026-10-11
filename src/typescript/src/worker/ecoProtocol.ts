@@ -7,8 +7,9 @@ import type { BodyPlan } from "../sim/sensors.ts";
 export type EcoSpeedSetting = number | "max"; // simulated seconds per real second, "max" = as many ticks as fit
 
 export type EcoInMessage =
-  // poolUrl: seed pool JSON, fetched once by the worker. threads: helper threads, 0 for none, default from the core count.
-  | { type: "start"; config: EcoConfig; run: number; poolUrl?: string; threads?: number }
+  // poolUrl: seed pool JSON, fetched once by the worker. threads: helper threads, 0 for none, default from the core count. gentle: see pacer.ts.
+  | { type: "start"; config: EcoConfig; run: number; poolUrl?: string; threads?: number; gentle?: boolean }
+  | { type: "gentle"; gentle: boolean } // "Gentle on CPU" changed: pacing applies at once, the helper count from the next start
   | { type: "pause" }
   | { type: "resume" }
   | { type: "reset" }

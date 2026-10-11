@@ -11,6 +11,7 @@ import { Camera } from "./ui/camera.ts";
 import type { Point } from "./ui/camera.ts";
 import { buildSelectedBrain } from "./ui/ecoBrain.ts";
 import type { SelectedBrain } from "./ui/ecoBrain.ts";
+import { bindGentle, readGentle } from "./ui/gentle.ts";
 import { createEcoView } from "./ui/ecoPage.ts";
 import { syncTerrainLegend } from "./ui/terrainLegend.ts";
 import { ECOSYSTEM_PAGE, PREDATORS_PAGE, openingConfig } from "./ui/ecoModes.ts";
@@ -225,7 +226,7 @@ function startRun(c: EcoConfig): void {
   highlight = -1;
   view.setStats(null);
   view.setNote(null);
-  send({ type: "start", config: c, run, poolUrl: POOL_URL, threads: THREADS });
+  send({ type: "start", config: c, run, poolUrl: POOL_URL, threads: THREADS, gentle: readGentle() });
   send({ type: "speed", speed: view.speed() });
 }
 
@@ -410,6 +411,7 @@ ready = createRenderHost(view.canvas, {
 }).then((h) => { host = h; drawIdle(); });
 camera.attach(view.canvas, () => host?.backing() ?? view.canvas);
 showRays = view.showRays();
+bindGentle(document.getElementById("gentle") as HTMLInputElement, (gentle) => send({ type: "gentle", gentle }));
 view.fillConfig(NORMAL);
 syncTerrainLegend(NORMAL);
 new ResizeObserver(drawIdle).observe(view.canvas);

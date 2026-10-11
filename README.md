@@ -1,24 +1,27 @@
 # Evolve World AI
 
-[![Test and deploy](https://github.com/erikfransson/evolve-world-ai/actions/workflows/deploy.yml/badge.svg)](https://github.com/erikfransson/evolve-world-ai/actions/workflows/deploy.yml)
-[![Coverage](https://img.shields.io/endpoint?url=https://erikfransson.github.io/evolve-world-ai/coverage/badge.json)](https://erikfransson.github.io/evolve-world-ai/coverage/)
-[![Tests](https://img.shields.io/endpoint?url=https://erikfransson.github.io/evolve-world-ai/coverage/tests-badge.json)](https://github.com/erikfransson/evolve-world-ai/actions/workflows/deploy.yml)
-[![Last commit](https://img.shields.io/github/last-commit/erikfransson/evolve-world-ai)](https://github.com/erikfransson/evolve-world-ai/commits/main)
+<p align="center">
+  <a href="https://github.com/erikfransson/evolve-world-ai/actions/workflows/deploy.yml"><img src="https://github.com/erikfransson/evolve-world-ai/actions/workflows/deploy.yml/badge.svg" alt="Test and deploy"></a>
+  <a href="https://erikfransson.github.io/evolve-world-ai/coverage/"><img src="https://erikfransson.github.io/evolve-world-ai/coverage/badge.svg" alt="Coverage"></a>
+  <a href="https://github.com/erikfransson/evolve-world-ai/actions/workflows/deploy.yml"><img src="https://erikfransson.github.io/evolve-world-ai/coverage/tests-badge.svg" alt="Tests"></a>
+</p>
+<p align="center">
+  <a href="https://erikfransson.github.io/evolve-world-ai/"><img src="docs/badges/play.svg" alt="Play in your browser"></a>
+  <img src="docs/badges/evolutionary-simulation.svg" alt="Evolutionary simulation">
+  <img src="docs/badges/neuroevolution.svg" alt="Neuroevolution">
+  <img src="docs/badges/reinforcement-learning.svg" alt="Reinforcement learning">
+  <img src="docs/badges/artificial-life.svg" alt="Artificial life">
+</p>
+<p align="center">
+  <img src="docs/badges/typescript.svg" alt="TypeScript">
+  <img src="docs/badges/webassembly.svg" alt="WebAssembly SIMD">
+  <img src="docs/badges/vite.svg" alt="Vite">
+</p>
 
-[![Runs in your browser](https://img.shields.io/badge/runs_in-your_browser-2ea44f)](https://erikfransson.github.io/evolve-world-ai/)
-![Evolutionary simulation](https://img.shields.io/badge/evolutionary-simulation-3fb950)
-![Neuroevolution](https://img.shields.io/badge/neuro-evolution-8957e5)
-![Reinforcement learning](https://img.shields.io/badge/reinforcement-learning-d29922)
-![Artificial life](https://img.shields.io/badge/artificial-life-db61a2)
-![TypeScript](https://img.shields.io/badge/TypeScript-3178c6?logo=typescript&logoColor=white)
-![WebAssembly](https://img.shields.io/badge/WebAssembly_SIMD-654ff0?logo=webassembly&logoColor=white)
-![Vite](https://img.shields.io/badge/Vite-646cff?logo=vite&logoColor=white)
+<h3 align="center"><a href="https://erikfransson.github.io/evolve-world-ai/">Open Evolve World →</a></h3>
+<p align="center">Creatures with small neural-network brains evolve in your browser: press Start and watch them learn to find food, dodge, hunt and share a world.</p>
 
-**[Open Evolve World →](https://erikfransson.github.io/evolve-world-ai/)**
-
-Creatures with small neural-network brains evolve in your browser: press Start and watch them learn to find food, dodge, hunt and share a world.
-
-<table>
+<table align="center">
   <tr>
     <td align="center" colspan="2"><a href="https://erikfransson.github.io/evolve-world-ai/live/"><img src="docs/media/live.gif" width="320" alt="Live World"></a><br><a href="https://erikfransson.github.io/evolve-world-ai/live/"><b>Live World</b></a></td>
   </tr>

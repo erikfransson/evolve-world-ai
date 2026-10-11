@@ -3,6 +3,7 @@ import type { Port } from "./port.ts";
 import { evaluateRange } from "../sim/evaluator.ts";
 import type { Evaluation, Evaluator } from "../sim/evaluator.ts";
 import type { Population } from "../sim/population.ts";
+import { gentleCount } from "./pacer.ts";
 import { TopFrames } from "../sim/trajectory.ts";
 import type { RecordOptions, Trajectories } from "../sim/trajectory.ts";
 
@@ -19,6 +20,7 @@ export interface EvalJob {
   genomeLength: number;
   genomes: Float32Array;
   record?: RecordOptions; // also return every creature's frames
+  gentle?: boolean; // the worker idles when the machine is busy, see pacer.ts
 }
 
 export interface EvalDone {
@@ -46,8 +48,10 @@ export function transferList(done: EvalDone): ArrayBuffer[] {
 const CHUNKS_PER_WORKER = 8; // small chunks balance the load, since lifetimes differ a lot between creatures
 
 // Default worker count: leave one core for the caller, at most 8.
-export function defaultThreads(cores: number): number {
-  return Math.max(1, Math.min(cores - 1, 8));
+// Gentle on CPU: one fewer, leaving at least 2 cores free.
+export function defaultThreads(cores: number, gentle = false): number {
+  const normal = Math.max(1, Math.min(cores - 1, 8));
+  return gentle ? gentleCount(normal, cores) : normal;
 }
 
 interface Pending {
@@ -72,6 +76,7 @@ export class PoolEvaluator implements Evaluator {
   private pending: Pending | null = null;
   private broken: { error: unknown } | null = null;
   private jobCounter = 0;
+  gentle = false; // stamped on every job, see EvalJob; may change between jobs
 
   constructor(config: SimConfig, workers: EvalPort[]) {
     this.config = config;
@@ -107,7 +112,7 @@ export class PoolEvaluator implements Evaluator {
     p.next = end;
     const { genomeLength, data } = p.population;
     const genomes = data.slice(start * genomeLength, end * genomeLength); // copy, so the caller keeps its buffer
-    worker.post({ type: "eval", job: p.job, config: this.config, start, end, layoutSeed: p.layoutSeed, genomeLength, genomes, record: p.record }, [genomes.buffer as ArrayBuffer]);
+    worker.post({ type: "eval", job: p.job, config: this.config, start, end, layoutSeed: p.layoutSeed, genomeLength, genomes, record: p.record, gentle: this.gentle }, [genomes.buffer as ArrayBuffer]);
   }
 
   private handleDone(worker: EvalPort, msg: EvalDone): void {

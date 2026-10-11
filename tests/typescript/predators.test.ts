@@ -163,6 +163,19 @@ describe("The Great Hunt", () => {
     expect(eco.members.filter((m) => m.species === 0).map((m) => m.id)).toEqual([1]); // id 0 was eaten
   });
 
+  it("a hunter with no energy left catches nothing, and a prey with none left is not caught", () => {
+    const run = (hunterEnergy: number, preyEnergy: number) => {
+      const eco = new Ecosystem(bare(1, 1));
+      place(eco, 0, 500, 500, preyEnergy);
+      place(eco, 1, 512, 500, hunterEnergy);
+      eco.step(); // upkeep takes the last of the tiny energy
+      return eco.speciesCounts.map((c) => c.eaten);
+    };
+    expect(run(90, 37)).toEqual([1, 0]);
+    expect(run(1e-6, 37)).toEqual([0, 0]);
+    expect(run(90, 1e-6)).toEqual([0, 0]);
+  });
+
   it("plant-free hunters pass over food", () => {
     const c = predCfg(0, 30, 6, { foodRegrow: 0, poisonRegrow: 0 });
     const eco = new Ecosystem({ ...c, world: { ...c.world, foodDensity: 3, poisonDensity: 0 } });

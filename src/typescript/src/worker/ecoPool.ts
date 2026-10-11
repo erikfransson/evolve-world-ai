@@ -2,6 +2,7 @@ import type { EcoConfig } from "../sim/ecoConfig.ts";
 import type { Ecosystem } from "../sim/ecosystem.ts";
 import { ShareCoordinator, ShareHelper, fittedCaps, packetBytes, packetViews, publishedBytes } from "../sim/ecoShare.ts";
 import type { Port } from "./port.ts";
+import { gentleCount } from "./pacer.ts";
 import type { Caps, Packet } from "../sim/ecoShare.ts";
 
 // Helper threads for one Ecosystem run (see ecoShare.ts), over message passing.
@@ -29,8 +30,10 @@ export function tickTimeoutMs(base: number, avgTickMs: number | null): number {
 }
 
 // Helper threads when none are asked for: leave one core for the page and one for the coordinator, at most 4; on a 4-core machine 6 were no faster than 4.
-export function defaultHelpers(cores: number): number {
-  return Math.max(1, Math.min(cores - 1, 4));
+// Gentle on CPU: one fewer, leaving at least 2 cores free.
+export function defaultHelpers(cores: number, gentle = false): number {
+  const normal = Math.max(1, Math.min(cores - 1, 4));
+  return gentle ? gentleCount(normal, cores) : normal;
 }
 
 export class ThinkPool {
