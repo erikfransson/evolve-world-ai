@@ -50,7 +50,7 @@ if (!learner) {
   process.exit(1);
 }
 const sizes = layerSizes(layoutConfig(env.world), learner.plan);
-const ppo = new Ppo(env, learner, sizes, {
+const ppo = new Ppo([env], learner, sizes, {
   episodes: num("episodes"), epochs: num("epochs"), minibatch: num("minibatch"), lr: num("lr"), logStd: num("logstd"), entropy: num("entropy"), repeat: num("repeat"), gamma: num("gamma"),
 }, num("seed"), pool);
 const seeds = heldSeeds(num("eval"));
@@ -61,7 +61,7 @@ const curve: { iter: number; episodes: number; seconds: number; train: number; h
 let busy = 0;
 while (ppo.iter < num("iters") && busy < num("seconds") * 1000) {
   const t = performance.now();
-  const step = await ppo.step();
+  const step = ppo.step();
   busy += performance.now() - t;
   const point: (typeof curve)[number] = { iter: step.iter, episodes: ppo.episodesPlayed, seconds: busy / 1000, train: step.train };
   if (step.iter % num("every") === 0) {

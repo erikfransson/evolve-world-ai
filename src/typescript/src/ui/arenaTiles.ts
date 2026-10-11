@@ -9,6 +9,7 @@ export interface Show {
   recordings: Recording[];
   names: string[]; // env name per recording
   envCount: number; // recordings[k] plays env k % envCount
+  policy?: boolean; // the current policy of a backprop run, not an iteration's best candidate
 }
 
 // Tile grid shapes: the desktop column count per tile count (phones use 2 columns in CSS).
@@ -17,8 +18,8 @@ export const DEFAULT_TILES = 12;
 export const tileColumns = (n: number): number => (n <= 1 ? 1 : n === 4 ? 2 : n === 6 ? 3 : 4);
 
 // "Forage box · best of iteration 42 · layout 3": the scenario, which learner, and which of that scenario's layouts (tile index within its env + 1).
-export function tileTitle(name: string, iter: number, k: number, envCount: number): string {
-  const learner = iter === 0 ? "starting creature" : `best of iteration ${iter}`;
+export function tileTitle(name: string, iter: number, k: number, envCount: number, policy = false): string {
+  const learner = iter === 0 ? "starting creature" : policy ? `policy at update ${iter}` : `best of iteration ${iter}`;
   return `${name} · ${learner} · layout ${Math.floor(k / Math.max(1, envCount)) + 1}`;
 }
 
@@ -129,7 +130,7 @@ export class TileGrid {
     const s = this.playing!;
     const put = (k: number, title: HTMLElement, stats: HTMLElement): void => {
       const rec = s.recordings[k]!;
-      title.textContent = tileTitle(s.names[k] ?? "", s.iter, k, s.envCount);
+      title.textContent = tileTitle(s.names[k] ?? "", s.iter, k, s.envCount, s.policy);
       stats.textContent = resultLine(rec.result);
     };
     this.tiles.forEach((t, k) => {

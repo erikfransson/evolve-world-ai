@@ -6,15 +6,16 @@ import { ArenaRun } from "../../src/typescript/src/worker/arenaRun.ts";
 import type { Start } from "../../src/typescript/src/worker/arenaRun.ts";
 import { RlPool, inlineRlPort } from "../../src/typescript/src/worker/rlPool.ts";
 import type { RlPort } from "../../src/typescript/src/worker/rlPool.ts";
-import type { RlOutMessage } from "../../src/typescript/src/worker/rlProtocol.ts";
+import type { RlOutMessage, TrainMethod } from "../../src/typescript/src/worker/rlProtocol.ts";
 
 const short = (id: string): EnvSpec => ({ ...envById(id)!, seconds: 3 });
 const learner = serialiseLearner(randomLearner(short("nibble"), 2));
-const start = (iterations: number, envs = [short("nibble")]): Start => ({
+const startOf = (iterations: number, envs = [short("nibble")], method: TrainMethod = "es"): Start => ({
   type: "start",
   envs,
   learner,
-  options: { pairs: 2, sigma: 0.08, lr: 0.02, decay: 0.005, episodes: 1, iterations },
+  method,
+  options: { pairs: 2, sigma: 0.08, lr: 0.02, decay: 0.005, episodes: 1, iterations, backprop: { episodes: 2 } },
   tiles: 2,
   seed: 1,
   poolUrl: "",
@@ -25,7 +26,9 @@ const inline = (setup: ConstructorParameters<typeof RlPool>[1]) => new RlPool([i
 const types = (out: RlOutMessage[]): string[] => out.map((m) => m.type);
 const tick = (): Promise<void> => new Promise((done) => setTimeout(done, 0));
 
-describe("ArenaRun", () => {
+describe.each(["es", "backprop"] as const)("ArenaRun with %s", (method) => {
+  const start = (iterations: number, envs = [short("nibble")]): Start => startOf(iterations, envs, method);
+
   it("trains to the end: ready, iterations, held-out checks, a last show of the best, done", async () => {
     const out: RlOutMessage[] = [];
     await new ArenaRun(start(6), assets, inline, (m) => out.push(m)).run();
@@ -66,5 +69,15 @@ describe("ArenaRun", () => {
     const broken: RlPort = { post: () => {}, onMessage: () => {}, onError: (cb) => queueMicrotask(() => cb(new Error("boom"))), terminate: () => {} };
     const run = new ArenaRun(start(3), assets, (setup) => new RlPool([broken], setup, () => broken), () => {});
     await expect(run.run()).rejects.toThrow(/boom/);
+  });
+
+  it("shows the genome it reports as the learner at the end", async () => {
+    const out: RlOutMessage[] = [];
+    await new ArenaRun(start(3), assets, inline, (m) => out.push(m)).run();
+    const show = out.filter((m) => m.type === "show").at(-1);
+    const learnt = out.filter((m) => m.type === "learner").at(-1);
+    if (show?.type !== "show" || learnt?.type !== "learner") throw new Error("no show or learner");
+    if (method === "backprop") show.genome.forEach((w, i) => expect(w).toBeCloseTo(learnt.learner.genome[i]!, 2));
+    expect(show.iter).toBe(3);
   });
 });

@@ -1,4 +1,4 @@
-import { genomeLength, randomGenome } from "../brain.ts";
+import { genomeLength, layerSizes, randomGenome } from "../brain.ts";
 import { DEFAULT_CONFIG } from "../config.ts";
 import type { Creature } from "../creature.ts";
 import { createRng, deriveSeed } from "../rng.ts";
@@ -6,9 +6,10 @@ import type { StatefulRng } from "../rng.ts";
 import type { PoolEntry } from "../seedPool.ts";
 import { OUTPUT_SIZE } from "../sensors.ts";
 import type { Rng } from "../types.ts";
-import { runEpisode } from "./env.ts";
+import { layoutConfig, runEpisode } from "./env.ts";
 import type { EnvSpec, Learner, Library } from "./env.ts";
-import { HELD_BASE } from "./trainer.ts";
+import { HELD_BASE, scoreGenomes } from "./trainer.ts";
+import type { RlTrainer, Score, Scorer, StepResult } from "./trainer.ts";
 
 // Backprop RL: PPO (Schulman et al. 2017) on the creature's own brain. The policy samples the pre-tanh turn and thrust of the brain's
 // output layer from a Gaussian with a learned, state-free log-std; the mean action (the brain as it is) is what plays held-out and in the
@@ -173,13 +174,14 @@ export class Ppo {
   private readonly stdAdam: Adam;
   private readonly criticAdam: Adam;
   private readonly rng: StatefulRng;
-  private readonly env: EnvSpec;
+  private envs: readonly EnvSpec[];
   private readonly learner: Learner;
   private readonly pool: readonly PoolEntry[] | null;
   private readonly library: Library;
 
-  constructor(env: EnvSpec, learner: Learner, sizes: readonly number[], options: Partial<PpoOptions>, seed: number, pool: readonly PoolEntry[] | null = null, library: Library = {}) {
-    this.env = env;
+  // Episode k of an update plays envs[k % envs.length].
+  constructor(envs: readonly EnvSpec[], learner: Learner, sizes: readonly number[], options: Partial<PpoOptions>, seed: number, pool: readonly PoolEntry[] | null = null, library: Library = {}) {
+    this.envs = envs;
     this.learner = learner;
     this.pool = pool;
     this.library = library;
@@ -197,7 +199,12 @@ export class Ppo {
     this.criticAdam = new Adam(this.critic.length, this.options.criticLr);
   }
 
-  async step(): Promise<PpoStep> {
+  // Trains on other envs from the next update on (of the same world); the weights carry on.
+  setEnvs(envs: readonly EnvSpec[]): void {
+    this.envs = envs;
+  }
+
+  step(): PpoStep {
     const { batch, train } = this.collect();
     this.update(batch);
     this.iter++;
@@ -212,11 +219,12 @@ export class Ppo {
     const logp: number[] = [];
     const adv: number[] = [];
     const ret: number[] = [];
-    const ticks = Math.round(this.env.seconds / DT);
     const learner = { plan: this.learner.plan, genome: this.theta };
     const g = o.gamma ** o.repeat;
     let train = 0;
     for (let e = 0; e < o.episodes; e++) {
+      const env = this.envs[e % this.envs.length]!;
+      const ticks = Math.round(env.seconds / DT);
       const first = obs.length;
       const rewards: number[] = [];
       let t = 0;
@@ -245,8 +253,8 @@ export class Ppo {
         for (let a = 0; a < ACTIONS; a++) out[a] = Math.tanh(held[a]!);
         t++;
       };
-      const w = this.env.reward;
-      const result = runEpisode(this.env, learner, this.rng.int(HELD_BASE), this.pool, this.library, (eco) => {
+      const w = env.reward;
+      const result = runEpisode(env, learner, this.rng.int(HELD_BASE), this.pool, this.library, (eco) => {
         const me = eco.get(0);
         if (!me) return;
         rewards[rewards.length - 1]! += (w.food ?? 0) * (me.eaten - eaten) + (w.kill ?? 0) * (me.kills - kills) + (w.survive ?? 0) * DT;
@@ -325,6 +333,45 @@ export class Ppo {
         for (let a = 0; a < ACTIONS; a++) this.logStd[a] = Math.min(LOG_STD_RANGE[1], Math.max(LOG_STD_RANGE[0], this.logStd[a]!));
       }
     }
+  }
+}
+
+// PPO behind the Trainer interface, for the Arena: updates play on this thread, held-out checks on the scorer's helpers.
+// A step is one update; its "best" is the update's mean training reward and its genome the current policy.
+export class BackpropTrainer implements RlTrainer {
+  readonly ppo: Ppo;
+  private scorer: Scorer;
+  private envs: number;
+
+  constructor(learner: Learner, envs: readonly EnvSpec[], options: Partial<PpoOptions>, scorer: Scorer, seed: number, pool: readonly PoolEntry[] | null = null, library: Library = {}) {
+    this.ppo = new Ppo(envs, learner, layerSizes(layoutConfig(envs[0]!.world), learner.plan), options, seed, pool, library);
+    this.scorer = scorer;
+    this.envs = envs.length;
+  }
+
+  get iter(): number {
+    return this.ppo.iter;
+  }
+
+  get theta(): Float32Array {
+    return this.ppo.theta;
+  }
+
+  setEnvs(scorer: Scorer, envs: readonly EnvSpec[]): void {
+    this.scorer = scorer;
+    this.envs = envs.length;
+    this.ppo.setEnvs(envs);
+  }
+
+  async step(): Promise<StepResult> {
+    const s = this.ppo.step();
+    return { iter: s.iter, train: s.train, best: s.train, bestGenome: Float32Array.from(this.ppo.theta) };
+  }
+
+  // Self-play rivals are the current policy, as in the updates' episodes (a mirror of the learner).
+  async held(seeds: readonly number[]): Promise<Score> {
+    this.scorer.setLeague?.([this.ppo.theta]);
+    return (await scoreGenomes(this.scorer, this.envs, [this.ppo.theta], seeds))[0]!;
   }
 }
 

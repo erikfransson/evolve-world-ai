@@ -3,11 +3,13 @@ import type { PoolEntry } from "../sim/seedPool.ts";
 import type { EnvSpec, Library } from "../sim/rl/env.ts";
 import { serialiseLearner } from "../sim/rl/library.ts";
 import { recordingBuffers } from "../sim/rl/recording.ts";
+import { BackpropTrainer } from "../sim/rl/ppo.ts";
 import { Trainer, heldSeeds } from "../sim/rl/trainer.ts";
+import type { RlTrainer } from "../sim/rl/trainer.ts";
 import type { RlPool, RlSetup } from "./rlPool.ts";
 import type { RlInMessage, RlOutMessage } from "./rlProtocol.ts";
 
-// One Arena training run: ES steps over the chosen envs, a held-out check every few steps, and a show of the latest best
+// One Arena training run: ES or backprop steps over the chosen envs, a held-out check every few steps, and a show of the latest best
 // candidate whenever the page asks. Pause waits between steps; envs sent while paused apply at the next step.
 // Kept apart from the worker's messaging so it runs and is tested in Node with an in-process pool.
 
@@ -21,6 +23,7 @@ export class ArenaRun {
   private readonly start: Start;
   private readonly post: Post;
   private readonly pool: RlPool;
+  private readonly assets: { pool: PoolEntry[] | null; library: Library };
   private envs: EnvSpec[];
   private gate: { wait: Promise<void>; open: () => void } | null = null; // set while paused
   private nextEnvs: EnvSpec[] | null = null;
@@ -31,6 +34,7 @@ export class ArenaRun {
     this.start = start;
     this.post = post;
     this.envs = start.envs;
+    this.assets = assets;
     this.pool = makePool({ envs: start.envs, plan: start.learner.plan, pool: assets.pool, library: assets.library });
   }
 
@@ -65,13 +69,17 @@ export class ArenaRun {
     const { learner, options } = this.start;
     const plan = learner.plan;
     const tiles = Math.max(1, Math.min(12, this.start.tiles));
-    const trainer = new Trainer(Float32Array.from(learner.genome), options, this.pool, this.envs.length, options.episodes, this.start.seed);
+    const genome = Float32Array.from(learner.genome);
+    const trainer: RlTrainer =
+      this.start.method === "backprop"
+        ? new BackpropTrainer({ plan, genome }, this.envs, options.backprop ?? {}, this.pool, this.start.seed, this.assets.pool, this.assets.library)
+        : new Trainer(genome, options, this.pool, this.envs.length, options.episodes, this.start.seed);
     const t0 = performance.now();
     let lastBest: Float32Array | null = null; // the latest step's best candidate
     const start = await trainer.held(HELD_SEEDS);
     if (this.stopped) return;
     this.post({ type: "ready", held: start.mean, perEnv: start.perEnv });
-    await this.show(tiles, 0, trainer.es.theta);
+    await this.show(tiles, 0, trainer.theta);
     while (!this.stopped && trainer.iter < options.iterations) {
       if (this.gate) await this.gate.wait;
       if (this.stopped) return;
@@ -80,7 +88,7 @@ export class ArenaRun {
         this.envs = this.nextEnvs;
         this.nextEnvs = null;
         this.pool.setEnvs(this.envs);
-        trainer.setEnvs(this.pool, this.envs.length);
+        trainer.setEnvs(this.pool, this.envs);
         const held = await trainer.held(HELD_SEEDS);
         this.post({ type: "rebased", iter: trainer.iter, held: held.mean, perEnv: held.perEnv });
         this.showWanted = true;
@@ -89,7 +97,7 @@ export class ArenaRun {
       lastBest = step.bestGenome;
       const held = step.iter % HELD_EVERY === 0 ? await trainer.held(HELD_SEEDS) : null;
       this.post({ type: "iteration", it: { iter: step.iter, train: step.train, best: step.best, held: held?.mean ?? null, perEnv: held?.perEnv ?? null, seconds: (performance.now() - t0) / 1000 } });
-      if (held) this.post({ type: "learner", iter: step.iter, learner: serialiseLearner({ plan, genome: trainer.es.theta }) });
+      if (held) this.post({ type: "learner", iter: step.iter, learner: serialiseLearner({ plan, genome: trainer.theta }) });
       if (this.showWanted) {
         this.showWanted = false;
         await this.show(tiles, step.iter, step.bestGenome);
@@ -99,7 +107,7 @@ export class ArenaRun {
     if (this.stopped) return;
     if (lastBest) await this.show(tiles, trainer.iter, lastBest); // so the tiles end on the trained creature
     if (this.stopped) return;
-    this.post({ type: "learner", iter: trainer.iter, learner: serialiseLearner({ plan, genome: trainer.es.theta }) });
+    this.post({ type: "learner", iter: trainer.iter, learner: serialiseLearner({ plan, genome: trainer.theta }) });
     this.post({ type: "done", iter: trainer.iter });
     this.stop();
   }

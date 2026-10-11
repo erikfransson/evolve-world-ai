@@ -15,7 +15,7 @@ import { serialiseLearner } from "./sim/rl/library.ts";
 import type { StoredLearner } from "./sim/rl/library.ts";
 import { planOf, planUpkeep } from "./sim/sensors.ts";
 import type { BodyPlan, PlanView } from "./sim/sensors.ts";
-import type { RlInMessage, RlIteration, RlOutMessage } from "./worker/rlProtocol.ts";
+import type { RlInMessage, RlIteration, RlOutMessage, TrainMethod } from "./worker/rlProtocol.ts";
 import { BrainReplay } from "./ui/arenaBrain.ts";
 import { DEFAULT_DESIGN, DEFAULT_RUN, DESIGN_FORM, RUN_FORM, designPlan, planDesign } from "./ui/arenaForm.ts";
 import { ARENA_KIND, bestFounder, change, customEnv, envGroups, envsForKind, kindRejection, planSummary } from "./ui/arenaPick.ts";
@@ -50,6 +50,7 @@ let customCount = 0;
 // The run in progress or just finished.
 interface Run {
   kind: CreatureKind;
+  method: TrainMethod;
   envs: EnvSpec[];
   plan: BodyPlan;
   from: string;
@@ -366,9 +367,9 @@ function begin(): void {
   if (typeof start === "string" || envs.length === 0) return;
   const cfg = runForm.read();
   const tiles = Number(cfg.tiles);
-  const options = { pairs: Math.round(cfg.population / 2), sigma: cfg.sigma, lr: cfg.lr, decay: DECAY, episodes: cfg.episodes, iterations: cfg.iterations };
+  const options = { pairs: Math.round(cfg.population / 2), sigma: cfg.sigma, lr: cfg.lr, decay: DECAY, episodes: cfg.episodes, iterations: cfg.iterations, backprop: { lr: cfg.bpLr, episodes: cfg.bpEpisodes } };
   const seed = Math.floor(Math.random() * 0x7fffffff);
-  run = { kind: kind(), envs, plan: { ...start.learner.plan, hiddenLayers: start.learner.plan.hiddenLayers.slice() }, from: start.from, iterations: options.iterations, its: [], startHeld: null, startPerEnv: null, latest: null, nextEnvs: null };
+  run = { kind: kind(), method: cfg.method, envs, plan: { ...start.learner.plan, hiddenLayers: start.learner.plan.hiddenLayers.slice() }, from: start.from, iterations: options.iterations, its: [], startHeld: null, startPerEnv: null, latest: null, nextEnvs: null };
   worker?.terminate();
   worker = new Worker(new URL("./worker/rlWorker.ts", import.meta.url), { type: "module" });
   worker.onmessage = (ev: MessageEvent<RlOutMessage>) => onMessage(ev.data);
@@ -380,7 +381,7 @@ function begin(): void {
   zoom.close();
   grid.clear();
   brainReplay.reset();
-  send({ type: "start", envs, learner: serialiseLearner(start.learner), options, tiles: grid.size, seed, poolUrl: POOL_URL, libraryUrl: LIBRARY_URL });
+  send({ type: "start", envs, learner: serialiseLearner(start.learner), method: cfg.method, options, tiles: grid.size, seed, poolUrl: POOL_URL, libraryUrl: LIBRARY_URL });
   $("note").textContent = "Starting…";
   $("note").hidden = false;
   setState("running");
@@ -413,7 +414,7 @@ function onMessage(m: RlOutMessage): void {
   } else if (m.type === "iteration") run.its.push(m.it);
   else if (m.type === "learner") run.latest = { iter: m.iter, learner: m.learner };
   else if (m.type === "show") {
-    grid.show({ iter: m.iter, genome: m.genome, recordings: m.recordings, names: m.recordings.map((_, k) => run!.envs[k % run!.envs.length]!.name), envCount: run.envs.length }, performance.now());
+    grid.show({ iter: m.iter, genome: m.genome, recordings: m.recordings, names: m.recordings.map((_, k) => run!.envs[k % run!.envs.length]!.name), envCount: run.envs.length, policy: run.method === "backprop" }, performance.now());
     $("note").hidden = true;
   } else if (m.type === "done") setState("idle");
   else if (m.type === "error") return fail(m.message);

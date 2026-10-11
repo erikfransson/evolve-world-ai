@@ -1,5 +1,6 @@
 import { createRng, deriveSeed } from "../rng.ts";
 import type { StatefulRng } from "../rng.ts";
+import type { EnvSpec } from "./env.ts";
 import { Es } from "./es.ts";
 import type { EsOptions } from "./es.ts";
 
@@ -49,7 +50,16 @@ export interface StepResult {
   bestGenome: Float32Array;
 }
 
-export class Trainer {
+// What ArenaRun drives: evolution strategies (Trainer) or backprop RL (BackpropTrainer in ppo.ts).
+export interface RlTrainer {
+  readonly iter: number;
+  readonly theta: Float32Array; // the current (mean) genome
+  step(): Promise<StepResult>;
+  held(seeds: readonly number[]): Promise<Score>;
+  setEnvs(scorer: Scorer, envs: readonly EnvSpec[]): void;
+}
+
+export class Trainer implements RlTrainer {
   readonly es: Es;
   private readonly rng: StatefulRng;
   private scorer: Scorer;
@@ -67,13 +77,17 @@ export class Trainer {
   }
 
   // Plays the next steps on other envs (paused Arena runs can add or drop envs); the weights carry on.
-  setEnvs(scorer: Scorer, envs: number): void {
+  setEnvs(scorer: Scorer, envs: readonly EnvSpec[]): void {
     this.scorer = scorer;
-    this.envs = envs;
+    this.envs = envs.length;
   }
 
   get iter(): number {
     return this.es.step;
+  }
+
+  get theta(): Float32Array {
+    return this.es.theta;
   }
 
   // Self-play rivals: the current weights and the best candidates of the last few steps.

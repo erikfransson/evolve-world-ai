@@ -1,5 +1,6 @@
 import type { EnvSpec } from "../sim/rl/env.ts";
 import type { EsOptions } from "../sim/rl/es.ts";
+import type { PpoOptions } from "../sim/rl/ppo.ts";
 import type { StoredLearner } from "../sim/rl/library.ts";
 import type { Recording } from "../sim/rl/recording.ts";
 
@@ -8,13 +9,17 @@ import type { Recording } from "../sim/rl/recording.ts";
 export interface RlRunOptions extends Omit<EsOptions, "shaping">, Partial<Pick<EsOptions, "shaping">> {
   episodes: number; // seeds per candidate and env each iteration
   iterations: number; // the run stops after this many
+  backprop?: Partial<Pick<PpoOptions, "lr" | "episodes">>; // with method "backprop"; the ES fields above then do not apply
 }
+
+export type TrainMethod = "es" | "backprop"; // evolution strategies (Trainer) or PPO (BackpropTrainer)
 
 export type RlInMessage =
   | {
       type: "start";
       envs: EnvSpec[]; // checked by the page (checkEnv for custom ones), all of the kind's world and species
       learner: StoredLearner;
+      method: TrainMethod;
       options: RlRunOptions;
       tiles: number; // episodes shown per iteration, 1 to 12; tile k plays envs[k % envs.length]
       seed: number;

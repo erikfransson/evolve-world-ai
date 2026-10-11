@@ -50,8 +50,8 @@ describe("Ppo", () => {
 
   it("updates the genome and std, the same for the same seed", async () => {
     const run = async () => {
-      const ppo = new Ppo(env, learner, sizes, { episodes: 2, epochs: 1 }, 7);
-      const step = await ppo.step();
+      const ppo = new Ppo([env], learner, sizes, { episodes: 2, epochs: 1 }, 7);
+      const step = ppo.step();
       return { theta: Array.from(ppo.theta), step };
     };
     const a = await run();

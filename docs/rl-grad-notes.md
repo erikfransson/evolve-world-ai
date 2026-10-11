@@ -38,3 +38,12 @@ Peak RSS: ES 245-280 MB, PPO 190-200 MB.
 - Cost per episode is ~10 ms for PPO (rollout 5 ms, update 5 ms) against ~4 ms per thread for ES. The first layer skips zero inputs (mostly one-hot ray flags) and only turn and thrust rows of the output layer are computed, which cut the update ~2x.
 - Holding each sampled action for 3 ticks matters: per-tick noise at 30 Hz averages out in the body's inertia and explores little.
 - Not tried: pool:0 starts, the advanced and rival envs, 2-thread rollouts.
+
+## Arena
+
+- Start message `method: "es" | "backprop"`, `options.backprop` (lr, episodes per update). `ArenaRun` drives either trainer through `RlTrainer` (trainer.ts): `Trainer` (ES) or `BackpropTrainer` (ppo.ts).
+- Backprop updates run on the Arena worker thread itself; held-out checks and tile recordings still use the helpers. Self-play rivals are the current policy.
+- Form: "Training method" choice in Run; Population, Episodes per candidate, Mutation size and ES learning rate grey out for backprop; Backprop learning rate and Episodes per update under More settings.
+- Tiles under backprop show the current policy, "policy at update N". The "Best candidate" stat shows the update's mean training reward there.
+- Headless check (1400x1000, nibble, design start): held-out 0.0 -> 3.5 in 20 s of browser time.
+- Next: rollouts on the helpers (trajectory jobs) would use all threads; the "Best candidate" label could read "Train mean" for backprop.

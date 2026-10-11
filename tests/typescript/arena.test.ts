@@ -188,6 +188,7 @@ describe("tile captions and layout", () => {
     expect(tileTitle("Forage box", 42, 2, 1)).toBe("Forage box · best of iteration 42 · layout 3");
     expect(tileTitle("Forage box", 0, 0, 2)).toBe("Forage box · starting creature · layout 1");
     expect(tileTitle("Poison field", 5, 3, 2)).toBe("Poison field · best of iteration 5 · layout 2");
+    expect(tileTitle("Nibble", 7, 0, 1, true)).toBe("Nibble · policy at update 7 · layout 1");
   });
   it("shows kills only when there were any", () => {
     expect(resultLine({ food: 4, kills: 0, seconds: 44.6 })).toBe("food 4, alive 45 s");
