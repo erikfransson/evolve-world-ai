@@ -56,4 +56,5 @@ Contract: `EcoConfig` in `src/sim/ecoConfig.ts`, built on `EngineConfig` (the sh
 ## Presets and lineages (issues #8, #5), draft
 - Trials and Ecosystem get about 4 preset worlds (normal, poison everywhere, starvation with long vision, ...) plus custom; Trials worlds grow to 2300 x 1400.
 - Top 3 per preset kept in this browser (localStorage); a global board needs a backend and comes later.
-- Lineages: every creature remembers its founder; the page shows the share of the population per founder lineage in founder colours. A family tree view comes later.
+- Lineages (#5, done): every creature carries its `founderId` (inherited, a founder is its own). The Lineages card shows the top 8 founders by live count as a stacked bar, a legend (pool or random, share, count) and a stacked share history; clicking a lineage dims everyone else in the world, and the Selected card names the creature's founder. A family tree view comes later.
+- Aging (#6, done): optional `eco.aging` (default off), `agingStart` seconds (120) and `agingRate` per minute (0.5); the upkeep is multiplied by 1 + rate x (age - start) / 60 after the start age.
