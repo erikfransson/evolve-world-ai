@@ -1,5 +1,5 @@
 import type { PoolEntry } from "../sim/seedPool.ts";
-import { runEpisode } from "../sim/rl/env.ts";
+import { SELF, runEpisode } from "../sim/rl/env.ts";
 import type { EnvSpec, Learner, Library } from "../sim/rl/env.ts";
 import { recordEpisode, recordingBuffers } from "../sim/rl/recording.ts";
 import type { Recording } from "../sim/rl/recording.ts";
@@ -22,6 +22,7 @@ export interface RlSetup {
 
 export type RlJob =
   | ({ type: "setup" } & RlSetup)
+  | { type: "league"; genomes: Float32Array[] } // the self-play rivals from now on (see SELF)
   | ({ type: "episode"; id: number } & RlTask)
   | ({ type: "record"; id: number; every: number; inputs: boolean } & RlTask); // inputs: also record the brain input
 
@@ -36,6 +37,11 @@ export function rlHelper(): (job: RlJob) => RlDone | null {
   return (job) => {
     if (job.type === "setup") {
       setup = job;
+      return null;
+    }
+    if (job.type === "league") {
+      const league = job.genomes.map((genome) => ({ plan: setup.plan, genome }));
+      setup = { ...setup, library: Object.assign(Object.create(null) as Library, setup.library, { [SELF]: league }) };
       return null;
     }
     try {
@@ -88,6 +94,7 @@ export class RlPool {
   private run: Run | null = null;
   private broken: { error: unknown } | null = null;
   private started = false;
+  private league: Float32Array[] | null = null; // sent again to a fallback port
 
   constructor(ports: RlPort[], setup: RlSetup, fallback: () => RlPort = inlineRlPort) {
     this.setup = setup;
@@ -108,6 +115,13 @@ export class RlPool {
     return done.map((d) => (d as { recording: Recording }).recording);
   }
 
+  // Self-play rivals for the episodes that follow (helpers handle messages in order).
+  setLeague(genomes: readonly Float32Array[]): void {
+    if (this.broken) return;
+    this.league = genomes.map((g) => Float32Array.from(g));
+    for (const port of this.ports) port.post({ type: "league", genomes: this.league });
+  }
+
   close(): void {
     this.fail(new Error("pool closed"));
   }
@@ -118,6 +132,7 @@ export class RlPool {
       port.onMessage((done) => this.handleDone(port, done));
       port.onError((error) => this.handleError(port, error));
       port.post({ type: "setup", ...this.setup });
+      if (this.league) port.post({ type: "league", genomes: this.league });
     }
   }
 

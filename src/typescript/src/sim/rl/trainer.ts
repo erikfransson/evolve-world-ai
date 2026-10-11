@@ -17,7 +17,10 @@ export interface RlTask {
 // Plays episodes and returns their rewards in task order (an RlPool, or anything that runs episodes).
 export interface Scorer {
   rewards(tasks: readonly RlTask[]): Promise<number[]>;
+  setLeague?(genomes: readonly Float32Array[]): void; // self-play rivals for the episodes that follow
 }
+
+const LEAGUE_BESTS = 4; // recent best candidates kept as self-play rivals besides the current weights
 
 export interface Score {
   mean: number; // over the envs
@@ -51,6 +54,7 @@ export class Trainer {
   private readonly rng: StatefulRng;
   private scorer: Scorer;
   private envs: number;
+  private readonly bests: Float32Array[] = [];
   private readonly episodes: number;
 
   // envs: how many envs each candidate plays; episodes: fresh training seeds per step, shared by all candidates and envs.
@@ -72,18 +76,27 @@ export class Trainer {
     return this.es.step;
   }
 
+  // Self-play rivals: the current weights and the best candidates of the last few steps.
+  private sendLeague(): void {
+    this.scorer.setLeague?.([this.es.theta, ...this.bests]);
+  }
+
   async step(): Promise<StepResult> {
+    this.sendLeague();
     const seeds = Array.from({ length: this.episodes }, () => this.rng.int(HELD_BASE)); // fresh layouts each step, so none is learned by heart
     const candidates = this.es.ask(this.rng);
     const rewards = (await scoreGenomes(this.scorer, this.envs, candidates, seeds)).map((s) => s.mean);
     this.es.tell(rewards);
     let best = 0;
     for (let k = 1; k < rewards.length; k++) if (rewards[k]! > rewards[best]!) best = k;
+    this.bests.unshift(candidates[best]!);
+    this.bests.length = Math.min(this.bests.length, LEAGUE_BESTS);
     return { iter: this.es.step, train: rewards.reduce((a, b) => a + b, 0) / rewards.length, best: rewards[best]!, bestGenome: candidates[best]! };
   }
 
   // The current genome on the held-out seeds.
   async held(seeds: readonly number[]): Promise<Score> {
+    this.sendLeague();
     return (await scoreGenomes(this.scorer, this.envs, [this.es.theta], seeds))[0]!;
   }
 }

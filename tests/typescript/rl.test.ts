@@ -83,7 +83,7 @@ describe("RL envs", () => {
   });
 
   it("scores the reward from the learner's own food", () => {
-    const env: EnvSpec = { ...envById("forage-box")!, food: 200, poison: 0, seconds: 20, size: [300, 300] };
+    const env: EnvSpec = { ...envById("minefield")!, food: 200, poison: 0, seconds: 20, size: [300, 300] };
     const r = runEpisode(env, randomLearner(env, 1), 3);
     expect(r.reward).toBe(r.food);
     expect(r.seconds).toBeGreaterThan(0);
@@ -92,12 +92,12 @@ describe("RL envs", () => {
 
 describe("library", () => {
   it("round-trips a learner at 3 decimals and skips malformed entries", () => {
-    const l = randomLearner(envById("forage-box")!, 1);
+    const l = randomLearner(envById("minefield")!, 1);
     const short = { ...serialiseLearner(l), genome: serialiseLearner(l).genome.slice(1) };
-    const lib = parseLibrary({ version: 1, envs: { "forage-box": [serialiseLearner(l), { plan: {}, genome: ["x"] }, short], nope: [serialiseLearner(l)] } });
-    expect(lib["forage-box"]).toHaveLength(1);
-    expect(lib["forage-box"]![0]!.genome[0]).toBeCloseTo(l.genome[0]!, 3);
-    expect(Object.keys(lib)).toEqual(["forage-box"]); // only built-in env ids, whose world fixes the layout
+    const lib = parseLibrary({ version: 1, envs: { "minefield": [serialiseLearner(l), { plan: {}, genome: ["x"] }, short], nope: [serialiseLearner(l)] } });
+    expect(lib["minefield"]).toHaveLength(1);
+    expect(lib["minefield"]![0]!.genome[0]).toBeCloseTo(l.genome[0]!, 3);
+    expect(Object.keys(lib)).toEqual(["minefield"]); // only built-in env ids, whose world fixes the layout
     expect(Object.keys(parseLibrary({ version: 2, envs: {} }))).toEqual([]);
   });
 
@@ -138,7 +138,7 @@ describe("creature files", () => {
 });
 
 describe("checkEnv", () => {
-  const custom = { ...envById("forage-box")!, size: [500, 500], rivals: [{ species: 0, count: 3, source: "pool" }] };
+  const custom = { ...envById("minefield")!, size: [500, 500], rivals: [{ species: 0, count: 3, source: "pool" }] };
 
   it("accepts a valid custom env for the learner's world and drops unknown fields", () => {
     const env = checkEnv({ ...custom, extra: 1 }, "ecosystem", 0);
@@ -155,8 +155,8 @@ describe("checkEnv", () => {
   });
 
   it("keeps custom ids apart from the built-in ones", () => {
-    const env = checkEnv({ ...custom, id: "forage-box", name: "\u202eevil" }, "ecosystem", 0);
-    expect(typeof env === "object" && [env.id, env.name]).toEqual(["custom-forage-box", "evil"]);
+    const env = checkEnv({ ...custom, id: "minefield", name: "\u202eevil" }, "ecosystem", 0);
+    expect(typeof env === "object" && [env.id, env.name]).toEqual(["custom-minefield", "evil"]);
   });
 });
 

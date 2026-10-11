@@ -42,8 +42,8 @@ function fakePorts(n: number): HelperPort[] {
 describe("watched creature with helpers", () => {
   // The watched id changes every tick and refreshDetail runs on some, as the page does while a creature is selected.
   it.each([
-    [false, 72962322], // re-pinned for heritable birth traits (#31), were 662129205 and 746480886
-    [true, 693541288],
+    [false, 84105801], // re-pinned for item spacing from poison, were 72962322 and 693541288
+    [true, 116543125],
   ])("keeps the run equal to the serial one (wasm %s)", async (wasm, fingerprint) => {
     const serial = new Ecosystem(cfg(wasm));
     for (let t = 0; t < 300; t++) serial.step();

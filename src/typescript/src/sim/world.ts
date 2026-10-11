@@ -58,6 +58,7 @@ export const ITEM_REMOVE = 2;
 // Food and poison items in fixed slots; a slot of kind HIT_NONE is free.
 const BLOCK = 4; // cells per block side in blockStamp; the shifts by 2 below divide by it
 const MAX_REJECTS = 256; // placement tries that honour reject before giving up on it
+const SPACING_ITEM_RADII = 3; // new food keeps this many item radii plus one creature radius from poison, new poison from any item
 
 export class World implements WorldView {
   readonly count: number; // slot capacity
@@ -68,6 +69,7 @@ export class World implements WorldView {
 
   readonly width: number;
   readonly height: number;
+  private readonly spacing: number; // see tooClose
   readonly itemRadius: number;
   // Uniform grid as per-cell linked lists: cellHead[c] -> item -> nextItem[item] -> -1.
   readonly cell: number;
@@ -98,6 +100,7 @@ export class World implements WorldView {
     this.width = w.width;
     this.height = w.height;
     this.itemRadius = w.itemRadius;
+    this.spacing = SPACING_ITEM_RADII * w.itemRadius + config.creature.radius;
     this.count = capacity;
     this.xs = new Float32Array(capacity);
     this.ys = new Float32Array(capacity);
@@ -139,9 +142,24 @@ export class World implements WorldView {
     return [r, this.width - r].every((x) => [r, this.height - r].every((y) => (x - d.x) ** 2 + (y - d.y) ** 2 < d.radius ** 2));
   }
 
-  // Puts item i at a uniform random position inside the walls, outside the clear disc if given and where reject says no.
-  // reject is dropped after MAX_REJECTS tries, so a crowded world cannot loop forever; the clear disc always holds.
+  // Puts item i at a uniform random position inside the walls, outside the clear disc if given, where reject says no and
+  // spaced from poison (see tooClose). reject and the spacing are dropped after MAX_REJECTS tries, so a crowded world cannot
+  // loop forever; the clear disc always holds.
   placeRandomly(i: number, kind: HitKind, rng: Rng, clear?: { x: number; y: number; radius: number }, reject?: (x: number, y: number) => boolean): void {
+    this.randomSpot(kind, rng, clear, reject);
+    this.setItem(i, this.spot.x, this.spot.y, kind);
+  }
+
+  // Adds an item at a random spot chosen as placeRandomly does, in the most recently freed slot; the slot, or -1 when all are taken.
+  addRandomly(kind: HitKind, rng: Rng): number {
+    if (this.freeCount === 0) return -1;
+    this.randomSpot(kind, rng);
+    return this.addItem(this.spot.x, this.spot.y, kind);
+  }
+
+  private readonly spot = { x: 0, y: 0 };
+
+  private randomSpot(kind: HitKind, rng: Rng, clear?: { x: number; y: number; radius: number }, reject?: (x: number, y: number) => boolean): void {
     const r = this.itemRadius;
     let x: number;
     let y: number;
@@ -149,8 +167,28 @@ export class World implements WorldView {
     do {
       x = rng.range(r, this.width - r);
       y = rng.range(r, this.height - r);
-    } while ((clear && (x - clear.x) ** 2 + (y - clear.y) ** 2 < clear.radius ** 2) || (tries++ < MAX_REJECTS && reject?.(x, y)));
-    this.setItem(i, x, y, kind);
+    } while ((clear && (x - clear.x) ** 2 + (y - clear.y) ** 2 < clear.radius ** 2) || (tries++ < MAX_REJECTS && (reject?.(x, y) || this.tooClose(x, y, kind))));
+    this.spot.x = x;
+    this.spot.y = y;
+  }
+
+  // True when a new item of this kind at (x, y) would sit within the spacing of poison, or a new poison within it of any item,
+  // so food and poison never start pressed together. Food may still cluster with food.
+  private tooClose(x: number, y: number, kind: HitKind): boolean {
+    const d = this.spacing;
+    this.clampCellRange(x, y, d, this.eatRange);
+    const { rangeX0: cx0, rangeX1: cx1, rangeY0: cy0, rangeY1: cy1 } = this.eatRange;
+    for (let cy = cy0; cy <= cy1; cy++) {
+      for (let cx = cx0; cx <= cx1; cx++) {
+        for (let i = this.cellHead[cy * this.cols + cx]; i >= 0; i = this.nextItem[i]) {
+          if (kind !== HIT_POISON && this.kinds[i] !== HIT_POISON) continue;
+          const fx = this.xs[i] - x;
+          const fy = this.ys[i] - y;
+          if (fx * fx + fy * fy < d * d) return true;
+        }
+      }
+    }
+    return false;
   }
 
   // Moves every poison item touching a body of this radius at (x, y) to a random spot, repeating until none touches.

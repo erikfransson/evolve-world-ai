@@ -8,7 +8,7 @@ import { RlPool, inlineRlPort, rlHelper } from "../../src/typescript/src/worker/
 import type { RlDone, RlJob, RlPort, RlSetup, RlTask } from "../../src/typescript/src/worker/rlPool.ts";
 
 const short = (id: string): EnvSpec => ({ ...envById(id)!, seconds: 6 });
-const envs = [short("forage-box"), short("rivals")];
+const envs = [short("minefield"), short("rivals")];
 const learner = randomLearner(envs[0]!, 3);
 const library: Library = {};
 const setup: RlSetup = { envs, plan: learner.plan, pool: null, library };
