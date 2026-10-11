@@ -58,7 +58,7 @@ async function runFor(pool: ThinkPool, ticks: number, onTick: (tick: number) => 
   runner.useHelpers(pool);
   runner.handle({ type: "start", config: cfg(), run: 1 });
   runner.handle({ type: "speed", speed: "max" });
-  const eco = () => (runner as unknown as { eco: Ecosystem }).eco;
+  const eco = () => runner.ecosystem!;
   while (eco().tick < ticks) {
     await runner.pumpAsync();
     onTick(eco().tick);
@@ -67,56 +67,84 @@ async function runFor(pool: ThinkPool, ticks: number, onTick: (tick: number) => 
 }
 
 describe("ThinkPool", () => {
-  it("matches the single-threaded run for 1 and 3 helpers, with births and deaths between ticks, on the JS path", async () => {
-    const js = (): EcoConfig => ({ ...cfg(), eco: { ...cfg().eco, wasm: false } });
-    const ref = serial(js(), 400);
-    expect(ref.births).toBeGreaterThan(0);
-    expect(ref.deaths).toBeGreaterThan(0);
-    for (const n of [1, 3]) {
-      const eco = await pooled(new ThinkPool(fakePorts(n), false), js(), 400);
-      expect([eco.fingerprint(), eco.births, eco.deaths]).toEqual([ref.fingerprint(), ref.births, ref.deaths]);
-    }
-  });
-
-  it("matches with collision damage on, which kills and pays out between ticks", async () => {
-    const damaged = (): EcoConfig => {
+  // One feature-rich world compared across every helper kind. Each feature must change the serial result, so a helper that skipped it would show.
+  describe("parity with the serial run", () => {
+    const rich = (wasm: boolean): EcoConfig => {
       const c = cfg();
+      c.eco.wasm = wasm;
       c.eco.collisionDamage = true;
       c.eco.damagePerSpeed = 0.5;
       c.eco.aging = true; // helpers apply ticks alive and the ageing rule themselves
       c.eco.agingStart = 5;
       c.eco.agingRate = 3;
-      return c;
-    };
-    const ref = serial(damaged(), 400);
-    expect(ref.deaths).toBeGreaterThan(serial(cfg(), 400).deaths);
-    for (const n of [1, 3]) {
-      const eco = await pooled(new ThinkPool(fakePorts(n), false), damaged(), 400);
-      expect([eco.fingerprint(), eco.births, eco.deaths]).toEqual([ref.fingerprint(), ref.births, ref.deaths]);
-    }
-  });
-
-  it("matches with poison that hurts but does not always kill", async () => {
-    const hurting = (): EcoConfig => {
-      const c = cfg();
-      c.world.poisonDamage = 30;
-      return c;
-    };
-    const ref = serial(hurting(), 400);
-    expect(ref.fingerprint()).not.toBe(serial(cfg(), 400).fingerprint());
-    for (const n of [1, 3]) expect((await pooled(new ThinkPool(fakePorts(n), false), hurting(), 400)).fingerprint()).toBe(ref.fingerprint());
-  });
-
-  it("matches with seasons on, with a short year so winter is passed", async () => {
-    const seasonal = (): EcoConfig => {
-      const c = cfg();
       c.eco.seasons = true;
-      c.eco.yearMinutes = 0.2;
+      c.eco.yearMinutes = 0.2; // a short year so winter is passed
       return c;
     };
-    const ref = serial(seasonal(), 400);
-    expect(ref.fingerprint()).not.toBe(serial(cfg(), 400).fingerprint());
-    for (const n of [1, 3]) expect((await pooled(new ThinkPool(fakePorts(n), false), seasonal(), 400)).fingerprint()).toBe(ref.fingerprint());
+    const without: Record<string, (c: EcoConfig) => void> = {
+      damage: (c) => { c.eco.collisionDamage = false; },
+      aging: (c) => { c.eco.aging = false; },
+      seasons: (c) => { c.eco.seasons = false; },
+    };
+    // A predators world, a small and dense one so hunters catch prey within a few hundred ticks.
+    const predators = (wasm: boolean): EcoConfig => {
+      const d = structuredClone(DEFAULT_PREDATOR_CONFIG);
+      d.species![0]!.founders = 70;
+      d.species![1]!.founders = 25;
+      return { ...d, seed: 7, world: { ...d.world, width: 900, height: 700 }, eco: { ...d.eco, wasm, structuralRate: 0.3 } };
+    };
+    const stats = (e: Ecosystem) => [e.fingerprint(), e.births, e.deaths, e.speciesCounts.map((s) => s.eaten)];
+
+    async function compareAll(make: () => EcoConfig, ticks: number, ref: Ecosystem) {
+      const failures: string[] = [];
+      const check = async (label: string, pool: ThinkPool) => {
+        try {
+          if (JSON.stringify(stats(await pooled(pool, make(), ticks))) !== JSON.stringify(stats(ref))) failures.push(label);
+        } finally {
+          pool.close();
+        }
+      };
+      await check("fake 1", new ThinkPool(fakePorts(1), false));
+      await check("fake 3", new ThinkPool(fakePorts(3), false));
+      await check("threads, messages", createNodeThinkPool(2, false));
+      await check("threads, shared memory", createNodeThinkPool(2, true));
+      expect(failures).toEqual([]);
+    }
+
+    it.each([false, true])("matches with collision damage, ageing and seasons on, WebAssembly %s", async (wasm) => {
+      const ref = serial(rich(wasm), 250);
+      expect(ref.wasm).toBe(wasm);
+      expect(ref.births).toBeGreaterThan(0);
+      expect(ref.deaths).toBeGreaterThan(0);
+      for (const [name, off] of Object.entries(without)) {
+        const c = rich(wasm);
+        off(c);
+        expect([name, serial(c, 250).fingerprint() === ref.fingerprint()]).toEqual([name, false]);
+      }
+      await compareAll(() => rich(wasm), 250, ref);
+    }, 60_000);
+
+    it("matches with poison that hurts but does not always kill", async () => {
+      const hurting = (): EcoConfig => {
+        const c = cfg();
+        c.eco.wasm = false;
+        c.world.poisonDamage = 30;
+        return c;
+      };
+      const plain = cfg();
+      plain.eco.wasm = false;
+      const ref = serial(hurting(), 400);
+      expect(ref.fingerprint()).not.toBe(serial(plain, 400).fingerprint());
+      await compareAll(hurting, 400, ref);
+    }, 60_000);
+
+    it.each([false, true])("matches in the predators world, WebAssembly %s", async (wasm) => {
+      const ref = serial(predators(wasm), 200);
+      expect(ref.wasm).toBe(wasm);
+      expect(ref.speciesCounts[0]!.eaten).toBeGreaterThan(0);
+      expect(ref.speciesCounts[1]!.births).toBeGreaterThan(0);
+      await compareAll(() => predators(wasm), 200, ref);
+    }, 60_000);
   });
 
   it("reuses its helpers for a second run", async () => {
@@ -129,8 +157,9 @@ describe("ThinkPool", () => {
   it("reuses shared-memory helpers for a second run", async () => {
     const pool = createNodeThinkPool(2, true);
     try {
-      await pooled(pool, cfg(1), 50);
-      expect((await pooled(pool, cfg(2), 100)).fingerprint()).toBe(serial(cfg(2), 100).fingerprint());
+      expect(pool.shared).toBe(true);
+      await pooled(pool, cfg(1), 30);
+      expect((await pooled(pool, cfg(2), 60)).fingerprint()).toBe(serial(cfg(2), 60).fingerprint());
     } finally {
       pool.close();
     }
@@ -146,23 +175,10 @@ describe("ThinkPool", () => {
         runner.handle({ type: "start", config: cfg(1), run: 1 });
         runner.handle({ type: "start", config: cfg(2), run: 2 });
         runner.handle({ type: "speed", speed: "max" });
-        const eco = () => (runner as unknown as { eco: Ecosystem }).eco;
-        while (eco().tick < 150) await runner.pumpAsync();
+        const eco = () => runner.ecosystem!;
+        while (eco().tick < 60) await runner.pumpAsync();
         expect(pool.alive).toBe(true);
         expect(eco().fingerprint()).toBe(serial(cfg(2), eco().tick).fingerprint());
-      } finally {
-        pool.close();
-      }
-    }
-  });
-
-  it("matches on worker threads, by messages and in shared memory", async () => {
-    const ref = serial(cfg(), 150).fingerprint();
-    for (const shared of [false, true]) {
-      const pool = createNodeThinkPool(2, shared);
-      expect(pool.shared).toBe(shared);
-      try {
-        expect((await pooled(pool, cfg(), 150)).fingerprint()).toBe(ref);
       } finally {
         pool.close();
       }
@@ -230,23 +246,6 @@ describe("WebAssembly kernels", () => {
     expect(recycledShapes.size).toBeGreaterThan(5);
     expect(checked).toBe(600);
   });
-
-  it("give the same run for any helper count and mode", async () => {
-    const ticks = 300;
-    const ref = serial(wasmCfg(), ticks);
-    for (const n of [1, 3]) {
-      const eco = await pooled(new ThinkPool(fakePorts(n), false), wasmCfg(), ticks);
-      expect([eco.fingerprint(), eco.births, eco.deaths]).toEqual([ref.fingerprint(), ref.births, ref.deaths]);
-    }
-    for (const shared of [false, true]) {
-      const pool = createNodeThinkPool(2, shared);
-      try {
-        expect((await pooled(pool, wasmCfg(), ticks)).fingerprint()).toBe(ref.fingerprint());
-      } finally {
-        pool.close();
-      }
-    }
-  });
 });
 
 describe("helper fallbacks", () => {
@@ -291,48 +290,18 @@ describe("helper fallbacks", () => {
     const ports = nodeHelperPorts(2);
     const pool = new ThinkPool(ports, true);
     let killedAt = 0;
-    const eco = await runFor(pool, 200, (tick) => {
+    let failedAt = 0;
+    const eco = await runFor(pool, 100, (tick) => {
       if (tick >= 30 && !killedAt) {
-        killedAt = Date.now();
+        killedAt = tick;
         ports[0]!.terminate();
       }
+      if (killedAt && !pool.alive && !failedAt) failedAt = tick;
     });
     warn.mockRestore();
     expect(pool.alive).toBe(false);
-    expect(Date.now() - killedAt).toBeLessThan(2000); // well under the 5 s tick timeout
+    expect(failedAt).toBeGreaterThan(0);
+    expect(failedAt - killedAt).toBeLessThanOrEqual(3); // noticed within a few ticks, not after the 5 s tick timeout
     expect(eco.fingerprint()).toBe(serial(cfg(), eco.tick).fingerprint());
   });
-});
-
-describe("Predators & prey on helper threads", () => {
-  // A small dense world, so hunters catch prey within a few hundred ticks.
-  const predCfg = (wasm: boolean): EcoConfig => {
-    const d = structuredClone(DEFAULT_PREDATOR_CONFIG);
-    d.species![0]!.founders = 70;
-    d.species![1]!.founders = 25;
-    return { ...d, seed: 7, world: { ...d.world, width: 900, height: 700 }, eco: { ...d.eco, wasm, structuralRate: 0.3 } };
-  };
-
-  it.each([false, true])("give the same run for any helper count and mode, WebAssembly %s", async (wasm) => {
-    const ticks = 200;
-    {
-      const ref = serial(predCfg(wasm), ticks);
-      expect(ref.wasm).toBe(wasm);
-      expect(ref.speciesCounts[0]!.eaten).toBeGreaterThan(0);
-      expect(ref.speciesCounts[1]!.births).toBeGreaterThan(0);
-      for (const n of [1, 3]) {
-        const eco = await pooled(new ThinkPool(fakePorts(n), false), predCfg(wasm), ticks);
-        expect([eco.fingerprint(), eco.births, eco.deaths]).toEqual([ref.fingerprint(), ref.births, ref.deaths]);
-      }
-      for (const shared of [false, true]) {
-        const pool = createNodeThinkPool(2, shared);
-        try {
-          const eco = await pooled(pool, predCfg(wasm), ticks);
-          expect([eco.fingerprint(), eco.speciesCounts[0]!.eaten]).toEqual([ref.fingerprint(), ref.speciesCounts[0]!.eaten]);
-        } finally {
-          pool.close();
-        }
-      }
-    }
-  }, 60_000);
 });

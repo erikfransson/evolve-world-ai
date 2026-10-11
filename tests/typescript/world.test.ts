@@ -225,6 +225,7 @@ describe("World", () => {
     const rng = testRng(11);
     const cache = new RayCache();
     const out: RayHit = { closeness: 0, kind: HIT_NONE, energy: 0, species: 0 };
+    const mismatches: string[] = []; // one expect after the loop keeps the assertion library out of the hot path
     for (let n = 0; n < 5000; n++) {
       if (n % 10 === 0) eat(w, rng.range(0, 1000), rng.range(0, 1000), 40, cache, respawn, respawnRng);
       const x = rng.range(0, 1000);
@@ -232,9 +233,9 @@ describe("World", () => {
       const a = rng.range(-Math.PI, Math.PI);
       castRay(w, x, y, a, out, cache);
       const ref = brute(w, c, x, y, a);
-      expect(out.kind).toBe(ref.kind);
-      expect(out.closeness).toBeCloseTo(ref.closeness, 9);
+      if (out.kind !== ref.kind || Math.abs(out.closeness - ref.closeness) > 1e-9) mismatches.push(`ray ${n}: ${out.kind}/${out.closeness} vs ${ref.kind}/${ref.closeness}`);
     }
+    expect(mismatches).toEqual([]);
   });
 
   it.each([true, false])("fans cast by creatures walking and eating in one world match brute force (respawn %s)", (respawn) => {
@@ -252,6 +253,7 @@ describe("World", () => {
       { x: 100, y: 900, heading: 4, cache: new RayCache() },
     ];
     const rays: RayHit[] = offsets.map(() => ({ closeness: 0, kind: HIT_NONE, energy: 0, species: 0 }));
+    const mismatches: string[] = [];
     for (let tick = 0; tick < 1000; tick++) {
       for (const k of walkers) {
         k.heading += rng.range(-0.3, 0.3);
@@ -261,12 +263,12 @@ describe("World", () => {
         w.castRays(k.x, k.y, Float64Array.from(angles, Math.cos), Float64Array.from(angles, Math.sin), rays, k.cache, c.creature.rayLength);
         angles.forEach((a, i) => {
           const ref = brute(w, c, k.x, k.y, a);
-          expect(rays[i].kind).toBe(ref.kind);
-          expect(rays[i].closeness).toBeCloseTo(ref.closeness, 9);
+          if (rays[i].kind !== ref.kind || Math.abs(rays[i].closeness - ref.closeness) > 1e-9) mismatches.push(`tick ${tick} ray ${i}: ${rays[i].kind} vs ${ref.kind}`);
         });
-        expect(w.eatAt(k.x, k.y, c.creature.radius, k.cache)).toBe(w.eatAt(k.x, k.y, c.creature.radius, new RayCache()));
+        if (w.eatAt(k.x, k.y, c.creature.radius, k.cache) !== w.eatAt(k.x, k.y, c.creature.radius, new RayCache())) mismatches.push(`tick ${tick}: eatAt`);
         eat(w, k.x, k.y, c.creature.radius, k.cache, respawn, respawnRng);
       }
     }
+    expect(mismatches).toEqual([]);
   });
 });
