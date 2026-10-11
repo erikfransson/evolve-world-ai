@@ -336,8 +336,8 @@ describe("Ecosystem preset panel", () => {
     io = initSettingsIO({ mode: "ecosystem", form: document.getElementById("setup") as HTMLFormElement, read: form.read, fill: form.fill, preset: { get: panel.current, set: panel.select } });
   });
 
-  it("offers the four presets and Custom", () => {
-    expect([...document.querySelectorAll("#preset option")].map((o) => o.textContent)).toEqual(["Normal", "Poison everywhere", "Scarcity", "Crowded", "Custom"]);
+  it("offers the five presets and Custom", () => {
+    expect([...document.querySelectorAll("#preset option")].map((o) => o.textContent)).toEqual(["Normal", "Poison everywhere", "Scarcity", "Crowded", "Seasons", "Custom"]);
   });
 
   it.each(ECO_PRESETS.map((p) => p.id))("%s applies the world and regrowth, locks them and stays on slider steps", (id) => {
