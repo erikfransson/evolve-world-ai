@@ -1,4 +1,6 @@
-import { TICK_SECONDS, WARMUP_TICKS, arenaScene, ecosystemScene, predatorScene } from "../../src/typescript/src/ui/landingScenes.ts";
+import { TICK_SECONDS, WARMUP_TICKS, ecosystemScene, predatorScene } from "../../src/typescript/src/ui/landingScenes.ts";
+
+import { arenaScene } from "../../src/typescript/src/ui/arenaCardScene.ts";
 
 const TICKS = Math.round(60 / TICK_SECONDS);
 
@@ -69,18 +71,47 @@ describe("predatorScene", () => {
 });
 
 describe("arenaScene", () => {
-  it("stays finite and deterministic through a whole skill loop", () => {
+  const record = (): { ctx: CanvasRenderingContext2D; calls: unknown[][] } => {
+    const calls: unknown[][] = [];
+    const ctx = new Proxy({}, { get: (_, k) => (k === "canvas" ? { width: 720, height: 450 } : (...args: unknown[]) => calls.push([k, ...args])), set: () => true }) as unknown as CanvasRenderingContext2D;
+    return { ctx, calls };
+  };
+
+  it("stays finite and deterministic through a whole learning loop", () => {
     const [a, b] = [arenaScene(7), arenaScene(7)];
-    for (let t = 0; t < 1000; t++) {
+    const ctx = finiteCtx();
+    for (let t = 1; t <= 2200; t++) {
       a.step();
       b.step();
+      if (t % 7 === 0) a.draw(ctx);
     }
-    a.draw(finiteCtx());
-    const draws: unknown[][] = [];
-    const record = new Proxy({}, { get: (_, k) => (k === "canvas" ? { width: 720, height: 450 } : (...args: unknown[]) => draws.push([k, ...args])), set: () => true }) as unknown as CanvasRenderingContext2D;
-    b.draw(record);
-    const again: unknown[][] = [];
-    a.draw(new Proxy({}, { get: (_, k) => (k === "canvas" ? { width: 720, height: 450 } : (...args: unknown[]) => again.push([k, ...args])), set: () => true }) as unknown as CanvasRenderingContext2D);
-    expect(again).toEqual(draws);
+    expect(a.rewards).toBe(b.rewards);
+    expect(a.penalties).toBe(b.penalties);
+    const [ra, rb] = [record(), record()];
+    a.draw(ra.ctx);
+    b.draw(rb.ctx);
+    expect(ra.calls).toEqual(rb.calls);
+  });
+
+  it("pays out a reward every few seconds across the four boxes", () => {
+    const scene = arenaScene(7);
+    for (let t = 0; t < WARMUP_TICKS; t++) scene.step();
+    const before = scene.rewards;
+    for (let t = 0; t < TICKS; t++) scene.step();
+    // 60 simulated seconds are 40 s on the page: a plus about every half second somewhere.
+    expect(scene.rewards - before).toBeGreaterThanOrEqual(60);
+    expect(scene.rewards - before).toBeLessThanOrEqual(170);
+  });
+
+  it("never lets the learner sit on poison without the penalty", () => {
+    for (const seed of [1, 7, 21]) {
+      const scene = arenaScene(seed);
+      for (let t = 0; t < 2200; t++) {
+        scene.step();
+        expect(scene.poisonOverlaps()).toBe(0);
+      }
+      expect(scene.penalties).toBeGreaterThan(0); // the early, clumsy part brushes poison now and then
+      expect(scene.penalties).toBeLessThan(scene.rewards / 3);
+    }
   });
 });
