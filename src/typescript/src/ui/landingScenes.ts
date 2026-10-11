@@ -20,11 +20,11 @@ export interface Scene {
 export const TICK_SECONDS = DEFAULT_CONFIG.dt;
 const VIEW = { showAll: false, showRays: true, pov: false };
 
-const sceneConfig = (width: number, height: number, foodDensity: number, creature: Partial<SimConfig["creature"]> = {}): SimConfig =>
+export const sceneConfig = (width: number, height: number, foodDensity: number, creature: Partial<SimConfig["creature"]> = {}): SimConfig =>
   withOverrides(DEFAULT_CONFIG, { world: { width, height, foodDensity, poisonDensity: 0, respawn: true }, creature });
 
-const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
-const wrapAngle = (a: number): number => Math.atan2(Math.sin(a), Math.cos(a));
+export const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
+export const wrapAngle = (a: number): number => Math.atan2(Math.sin(a), Math.cos(a));
 
 function foodWorld(config: SimConfig, rng: Rng): World {
   const { food } = itemCounts(config);
@@ -237,7 +237,7 @@ export function ecosystemScene(seed: number): EcoScene {
 // Overshooting ease, 0 to 1 with a small bounce past 1.
 const easeOutBack = (t: number): number => Math.max(0, 1 + 2.2 * (t - 1) ** 3 + 1.2 * (t - 1) ** 2);
 
-function drawColoured(ctx: CanvasRenderingContext2D, px: number, s: CreatureState, r: number, hue: number): void {
+export function drawColoured(ctx: CanvasRenderingContext2D, px: number, s: Pick<CreatureState, "x" | "y" | "heading">, r: number, hue: number): void {
   ctx.fillStyle = `hsl(${hue}, 75%, 58%)`;
   ctx.strokeStyle = `hsl(${hue}, 85%, 80%)`;
   ctx.lineWidth = 1.6 * px;
@@ -487,7 +487,7 @@ export function predatorScene(seed: number): PredatorScene {
   return scene;
 }
 
-interface Effect {
+export interface Effect {
   at: number; // tick
   x: number;
   y: number;
@@ -495,7 +495,7 @@ interface Effect {
 }
 
 // The in-game death effect: a thin ring at the body outline and a few specks drifting out, in the prey's colour.
-function drawBursts(ctx: CanvasRenderingContext2D, px: number, list: Effect[], tick: number, r: number): void {
+export function drawBursts(ctx: CanvasRenderingContext2D, px: number, list: Effect[], tick: number, r: number): void {
   while (list.length && (tick - list[0]!.at) * TICK_SECONDS >= BURST_SECONDS) list.shift();
   for (const e of list) {
     const t = ((tick - e.at) * TICK_SECONDS) / BURST_SECONDS;
@@ -522,7 +522,7 @@ function drawBursts(ctx: CanvasRenderingContext2D, px: number, list: Effect[], t
 }
 
 // The ecosystem card's birth ring.
-function drawBirthRings(ctx: CanvasRenderingContext2D, px: number, list: Effect[], tick: number, r: number): void {
+export function drawBirthRings(ctx: CanvasRenderingContext2D, px: number, list: Effect[], tick: number, r: number): void {
   while (list.length && (tick - list[0]!.at) * TICK_SECONDS >= RING_SECONDS) list.shift();
   for (const e of list) {
     const t = ((tick - e.at) * TICK_SECONDS) / RING_SECONDS;
@@ -613,83 +613,6 @@ export function liveScene(seed: number): Scene {
       ctx.globalAlpha = 0.5 + 0.08 * Math.sin(tick * 0.03);
       ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
       ctx.globalAlpha = 1;
-    },
-  };
-}
-
-const ARENA_LEARNER = "#fbbf24"; // as the Arena's learner
-const ARENA_LOOP = 900; // ticks from clumsy to skilled, then a fresh start
-const ARENA_BOX = 104; // side of a training box, world units
-const ARENA_W = 360; // world, as the Live card
-const ARENA_H = 225;
-
-// RL Arena: three small training boxes, each with a gold learner that wanders at first and homes in on food as the loop goes on.
-export function arenaScene(seed: number): Scene {
-  const config = sceneConfig(ARENA_W, ARENA_H, 0, { radius: 6 });
-  const gap = (ARENA_W - 3 * ARENA_BOX) / 4;
-  const rng = createRng(seed);
-  const boxes = [0, 1, 2].map((k) => {
-    const x0 = gap + k * (ARENA_BOX + gap);
-    const y0 = (ARENA_H - ARENA_BOX) / 2;
-    const item = (kind: number) => ({ x: x0 + rng.range(8, ARENA_BOX - 8), y: y0 + rng.range(8, ARENA_BOX - 8), kind });
-    return { x0, y0, x: x0 + ARENA_BOX / 2, y: y0 + ARENA_BOX / 2, a: rng.range(0, 2 * Math.PI), items: [item(1), item(1), item(1), item(2), item(2)], item, lag: k * 120 };
-  });
-  let tick = 0;
-  return {
-    step() {
-      tick++;
-      for (const b of boxes) {
-        const skill = clamp(((tick + b.lag) % ARENA_LOOP) / ARENA_LOOP, 0, 1); // 0 clumsy, 1 skilled
-        let target = -1;
-        let bestD = Infinity;
-        b.items.forEach((it, i) => {
-          const d = (it.x - b.x) ** 2 + (it.y - b.y) ** 2;
-          if (it.kind === 1 && d < bestD) { bestD = d; target = i; }
-        });
-        const t = b.items[target]!;
-        const want = wrapAngle(Math.atan2(t.y - b.y, t.x - b.x) - b.a);
-        b.a += clamp(skill * 3 * want + (1 - skill) * rng.range(-1.5, 1.5), -3, 3) * TICK_SECONDS * 2;
-        const speed = 20 + 25 * skill;
-        b.x = clamp(b.x + Math.cos(b.a) * speed * TICK_SECONDS, b.x0 + 7, b.x0 + ARENA_BOX - 7);
-        b.y = clamp(b.y + Math.sin(b.a) * speed * TICK_SECONDS, b.y0 + 7, b.y0 + ARENA_BOX - 7);
-        b.items.forEach((it, i) => {
-          if ((it.x - b.x) ** 2 + (it.y - b.y) ** 2 < 64) b.items[i] = b.item(it.kind); // eaten, regrows elsewhere in the box
-        });
-      }
-    },
-    draw(ctx) {
-      const f = beginFrame(ctx, config);
-      ctx.lineWidth = 1.2 * f.px;
-      for (const b of boxes) {
-        ctx.strokeStyle = WALL;
-        ctx.globalAlpha = 0.55;
-        ctx.strokeRect(b.x0, b.y0, ARENA_BOX, ARENA_BOX);
-        ctx.globalAlpha = 1;
-        for (const it of b.items) {
-          ctx.fillStyle = it.kind === 1 ? FOOD : POISON;
-          ctx.beginPath();
-          ctx.arc(it.x, it.y, 2.5, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        ctx.strokeStyle = ARENA_LEARNER;
-        ctx.globalAlpha = 0.25;
-        ctx.beginPath();
-        for (let r = -2; r <= 2; r++) {
-          ctx.moveTo(b.x, b.y);
-          ctx.lineTo(b.x + Math.cos(b.a + r * 0.3) * 22, b.y + Math.sin(b.a + r * 0.3) * 22);
-        }
-        ctx.stroke();
-        ctx.globalAlpha = 1;
-        ctx.fillStyle = ARENA_LEARNER;
-        ctx.beginPath();
-        ctx.arc(b.x, b.y, 6, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = BACKGROUND;
-        ctx.beginPath();
-        ctx.moveTo(b.x, b.y);
-        ctx.lineTo(b.x + Math.cos(b.a) * 6, b.y + Math.sin(b.a) * 6);
-        ctx.stroke();
-      }
     },
   };
 }

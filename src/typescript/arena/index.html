@@ -24,12 +24,7 @@
         <form id="setup" autocomplete="off" onsubmit="return false">
           <fieldset id="settings">
             <section class="card">
-              <h2>Creature</h2>
-              <div class="seg" role="radiogroup" aria-label="Kind">
-                <label><input type="radio" name="kind" value="forager" checked /><span>Forager</span></label>
-                <label><input type="radio" name="kind" value="prey" /><span>Prey</span></label>
-                <label><input type="radio" name="kind" value="predator" /><span>Predator</span></label>
-              </div>
+              <h2>Start from</h2>
               <p id="kindDesc" class="preset-desc"></p>
               <div class="seg" role="radiogroup" aria-label="Start from">
                 <label><input type="radio" name="source" value="design" checked /><span>Design</span></label>
@@ -37,23 +32,7 @@
                 <label><input type="radio" name="source" value="import" /><span>Import</span></label>
                 <label><input type="radio" name="source" value="saved" /><span>Saved</span></label>
               </div>
-              <div id="srcDesign" class="src">
-                <div class="pair">
-                  <div class="field"><div class="row"><span class="lbl"><label class="name" for="rays">Rays</label><span class="tip" tabindex="0" role="img" aria-label="How many vision rays the creature casts." data-tip="How many vision rays the creature casts.">ⓘ</span></span></div><input id="rays" type="number" min="1" max="16" step="1" value="5" /></div>
-                  <div class="field"><div class="row"><span class="lbl"><label class="name" for="fan">Fan angle (°)</label><span class="tip" tabindex="0" role="img" aria-label="Total angle the rays are spread over. 360 looks all around." data-tip="Total angle the rays are spread over. 360 looks all around.">ⓘ</span></span></div><input id="fan" type="number" min="0" max="360" step="5" value="120" /></div>
-                </div>
-                <div class="field"><div class="row"><span class="lbl"><label class="name" for="sight">Sight length</label><span class="tip" tabindex="0" role="img" aria-label="How far the rays reach. Longer sight costs more energy per second." data-tip="How far the rays reach. Longer sight costs more energy per second.">ⓘ</span></span></div><input id="sight" type="number" min="10" max="400" step="10" value="180" /></div>
-                <div class="pair">
-                  <div class="field"><div class="row"><span class="lbl"><label class="name" for="layers">Hidden layers</label><span class="tip" tabindex="0" role="img" aria-label="Layers of neurons between the rays and the muscles." data-tip="Layers of neurons between the rays and the muscles.">ⓘ</span></span></div><input id="layers" type="number" min="1" max="4" step="1" value="1" /></div>
-                  <div class="field"><div class="row"><span class="lbl"><span class="name">Neurons</span><span class="tip" tabindex="0" role="img" aria-label="Neurons in each hidden layer, 1 to 32. More neurons can learn more and cost more energy per second." data-tip="Neurons in each hidden layer, 1 to 32. More neurons can learn more and cost more energy per second.">ⓘ</span></span></div><div id="neurons" class="neurons"></div></div>
-                </div>
-                <div class="pair">
-                  <div class="field"><div class="row"><span class="lbl"><label class="name" for="memShort">Short memory</label><span class="tip" tabindex="0" role="img" aria-label="Memory units that fade quickly." data-tip="Memory units that fade quickly.">ⓘ</span></span></div><input id="memShort" type="number" min="0" max="8" step="1" value="2" /></div>
-                  <div class="field"><div class="row"><span class="lbl"><label class="name" for="memLong">Long memory</label><span class="tip" tabindex="0" role="img" aria-label="Memory units that fade slowly." data-tip="Memory units that fade slowly.">ⓘ</span></span></div><input id="memLong" type="number" min="0" max="8" step="1" value="2" /></div>
-                </div>
-                <p class="hint">Starting weights are random.</p>
-              </div>
-              <div id="srcPool" class="src" hidden><select id="founder" aria-label="Seed pool founder"></select></div>
+              <div id="srcPool" class="src"><div class="field"><div class="row"><span class="lbl"><label class="name" for="founder">Seed pool founder</label><span class="tip" tabindex="0" role="img" aria-label="Creatures evolved in the Ecosystem. The strongest is preselected." data-tip="Creatures evolved in the Ecosystem. The strongest is preselected.">ⓘ</span></span></div><select id="founder"></select></div></div>
               <div id="srcImport" class="src" hidden>
                 <input id="importFile" type="file" accept=".json,application/json" aria-label="Creature file" />
                 <p id="importMsg" class="msg" role="status"></p>
@@ -64,10 +43,11 @@
               <p id="planDesc" class="preset-desc"></p>
               <p id="startNote" class="msg error" role="status"></p>
             </section>
+            <div id="designForm" class="built"></div>
 
             <section class="card">
               <h2>Environments</h2>
-              <p class="hint">Pick one or more. Each iteration the creature trains in all of them.</p>
+              <p class="hint">Pick one or more. Each iteration the creature trains in all of them. Small worlds learn within a few dozen iterations, bigger ones take longer.</p>
               <div id="envList" class="env-list"></div>
               <details class="more" id="customBox">
                 <summary>Custom environment</summary>
@@ -90,24 +70,7 @@
               </details>
             </section>
 
-            <section class="card">
-              <h2>Run settings</h2>
-              <div class="field"><div class="row"><span class="lbl"><label class="name" for="pop">Population</label><span class="tip" tabindex="0" role="img" aria-label="Candidate brains tried per iteration, an even number from 4 to 64. More is steadier and slower." data-tip="Candidate brains tried per iteration, an even number from 4 to 64. More is steadier and slower.">ⓘ</span></span></div><input id="pop" type="number" min="4" max="64" step="2" value="16" /></div>
-              <div class="field"><div class="row"><span class="lbl"><label class="name" for="iterations">Iterations</label><span class="tip" tabindex="0" role="img" aria-label="The run stops after this many iterations." data-tip="The run stops after this many iterations.">ⓘ</span></span></div><input id="iterations" type="number" min="1" max="10000" step="10" value="100" /></div>
-              <div class="pair">
-                <div class="field"><div class="row"><span class="lbl"><label class="name" for="sigma">Mutation size</label><span class="tip" tabindex="0" role="img" aria-label="How far each candidate is nudged from the current brain (sigma)." data-tip="How far each candidate is nudged from the current brain (sigma).">ⓘ</span></span></div><input id="sigma" type="number" min="0.001" max="0.5" step="0.005" value="0.08" /></div>
-                <div class="field"><div class="row"><span class="lbl"><label class="name" for="lr">Learning rate</label><span class="tip" tabindex="0" role="img" aria-label="How far the brain moves toward the better-scoring direction each iteration." data-tip="How far the brain moves toward the better-scoring direction each iteration.">ⓘ</span></span></div><input id="lr" type="number" min="0.001" max="1" step="0.005" value="0.02" /></div>
-              </div>
-              <div class="field"><div class="row"><span class="lbl"><label class="name" for="episodes">Episodes per candidate</label><span class="tip" tabindex="0" role="img" aria-label="Worlds each candidate plays per environment and iteration. More is less noisy and slower." data-tip="Worlds each candidate plays per environment and iteration. More is less noisy and slower.">ⓘ</span></span></div><input id="episodes" type="number" min="1" max="8" step="1" value="1" /></div>
-              <div class="field">
-                <div class="row"><span class="lbl"><span class="name">Tiles shown</span><span class="tip" tabindex="0" role="img" aria-label="How many replays of the iteration's best candidate to watch. Tile k plays environment k, repeating if there are fewer environments." data-tip="How many replays of the iteration's best candidate to watch. Tile k plays environment k, repeating if there are fewer environments.">ⓘ</span></span></div>
-                <div class="seg" role="radiogroup" aria-label="Tiles shown">
-                  <label><input type="radio" name="tiles" value="1" /><span>1</span></label>
-                  <label><input type="radio" name="tiles" value="4" /><span>4</span></label>
-                  <label><input type="radio" name="tiles" value="9" checked /><span>9</span></label>
-                </div>
-              </div>
-            </section>
+            <div id="runForm" class="built"></div>
           </fieldset>
         </form>
       </aside>
@@ -134,10 +97,16 @@
         </dl>
         <div class="viewbar">
           <div class="toggle"><span class="lbl"><label class="name" for="brainOn">Brain</label><span class="tip" tabindex="0" role="img" aria-label="Show the brain of the best candidate, replayed on what tile 1 sees. Its connections change as training goes on." data-tip="Show the brain of the best candidate, replayed on what tile 1 sees. Its connections change as training goes on.">ⓘ</span></span><input id="brainOn" type="checkbox" role="switch" /></div>
+          <div class="speed"><span class="lbl"><span class="name">Speed</span></span>
+            <div class="seg" role="radiogroup" aria-label="Playback speed">
+              <label><input type="radio" name="speed" value="1" /><span>1×</span></label>
+              <label><input type="radio" name="speed" value="2" /><span>2×</span></label>
+              <label><input type="radio" name="speed" value="4" checked /><span>4×</span></label>
+              <label><input type="radio" name="speed" value="8" /><span>8×</span></label>
+            </div>
+          </div>
           <ul class="legend arena-legend">
             <li><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7" fill="#fbbf24" /></svg>Learner</li>
-            <li><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7" fill="#60a5fa" /></svg>Prey</li>
-            <li><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M19 10 L11.4 5.6 A5.4 5.4 0 1 0 11.4 14.4 Z" fill="#f87171" /></svg>Predator</li>
             <li><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="5" fill="#4ade80" /></svg>Food</li>
             <li><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="5" fill="#e040fb" /></svg>Poison</li>
           </ul>
@@ -171,6 +140,13 @@
         </section>
       </section>
     </main>
+    <div id="zoom" class="zoom" role="dialog" aria-modal="true" aria-label="Replay, large" hidden>
+      <figure class="zoom-box">
+        <button id="zoomClose" class="secondary zoom-close" type="button" aria-label="Close">Close ✕</button>
+        <canvas id="zoomCanvas"></canvas>
+        <figcaption><b id="zoomTitle"></b><span id="zoomStats"></span></figcaption>
+      </figure>
+    </div>
     <script type="module" src="../src/arena.ts"></script>
     <div id="tooltip" class="tooltip" role="tooltip" hidden></div>
   </body>

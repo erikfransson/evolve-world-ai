@@ -1,9 +1,11 @@
 // @vitest-environment happy-dom
 import { drawArena, frameAt, learnerAlive, loopSeconds } from "../../src/typescript/src/ui/arenaScene.ts";
-import { drawRewardGraph } from "../../src/typescript/src/ui/rewardGraph.ts";
-import { change, customEnv, envsForKind, planSummary } from "../../src/typescript/src/ui/arenaPick.ts";
+import { drawRewardGraph, thin } from "../../src/typescript/src/ui/rewardGraph.ts";
+import { ARENA_KIND, bestFounder, change, customEnv, envGroups, envsForKind, kindRejection, planSummary } from "../../src/typescript/src/ui/arenaPick.ts";
 import type { CustomEnvForm } from "../../src/typescript/src/ui/arenaPick.ts";
-import { FAVOURITES_KEY, MAX_FAVOURITES, addFavourite, loadFavourites, removeFavourite } from "../../src/typescript/src/ui/arenaStore.ts";
+import { DEFAULT_SPEED, FAVOURITES_KEY, MAX_FAVOURITES, SPEED_KEY, addFavourite, loadFavourites, loadSpeed, removeFavourite, saveSpeed } from "../../src/typescript/src/ui/arenaStore.ts";
+import { DEFAULT_DESIGN, designPlan, planDesign } from "../../src/typescript/src/ui/arenaForm.ts";
+import { TILE_COUNTS, resultLine, tileColumns, tileTitle } from "../../src/typescript/src/ui/arenaTiles.ts";
 import { BLANK_ENV, envConfig } from "../../src/typescript/src/sim/rl/env.ts";
 import { ENVS } from "../../src/typescript/src/sim/rl/envs.ts";
 import { creatureFile, genomeLengthFor } from "../../src/typescript/src/sim/rl/creatureFile.ts";
@@ -176,5 +178,90 @@ describe("favourites", () => {
     expect(loadFavourites(store)).toEqual([]);
     expect(addFavourite(file("z"), { getItem: () => null, setItem: () => { throw new Error("full"); } })).toBe(false);
     expect(loadFavourites(null)).toEqual([]);
+  });
+});
+
+describe("tile captions and layout", () => {
+  it("names the scenario, the learner and the layout of the tile within its env", () => {
+    expect(tileTitle("Forage box", 42, 2, 1)).toBe("Forage box · best of iteration 42 · layout 3");
+    expect(tileTitle("Forage box", 0, 0, 2)).toBe("Forage box · starting creature · layout 1");
+    expect(tileTitle("Poison field", 5, 3, 2)).toBe("Poison field · best of iteration 5 · layout 2");
+  });
+  it("shows kills only when there were any", () => {
+    expect(resultLine({ food: 4, kills: 0, seconds: 44.6 })).toBe("food 4, alive 45 s");
+    expect(resultLine({ food: 4, kills: 2, seconds: 10 })).toBe("food 4, kills 2, alive 10 s");
+  });
+  it("lays 12 tiles out 4 x 3", () => {
+    expect(TILE_COUNTS).toEqual([1, 4, 6, 12]);
+    expect(TILE_COUNTS.map(tileColumns)).toEqual([1, 2, 3, 4]);
+  });
+});
+
+describe("forager-only page helpers", () => {
+  it("rejects other kinds with a clear message", () => {
+    expect(ARENA_KIND).toBe("forager");
+    expect(kindRejection("forager")).toBeNull();
+    expect(kindRejection("prey")).toMatch(/only foragers can train here for now/);
+  });
+  it("preselects the fittest founder, the first on ties", () => {
+    expect(bestFounder([{ fitness: 3 }, { fitness: 9 }, { fitness: 9 }, { fitness: 1 }])).toBe(1);
+    expect(bestFounder([])).toBe(0);
+  });
+});
+
+describe("replay speed", () => {
+  const store = (init: string | null) => {
+    const m = new Map<string, string>(init === null ? [] : [[SPEED_KEY, init]]);
+    return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v) };
+  };
+  it("defaults to 4x and remembers a valid choice", () => {
+    expect(loadSpeed(store(null))).toBe(DEFAULT_SPEED);
+    expect(loadSpeed(store("3"))).toBe(DEFAULT_SPEED);
+    const s = store(null);
+    saveSpeed(8, s);
+    expect(loadSpeed(s)).toBe(8);
+  });
+  it("survives storage that throws", () => {
+    const bad = { getItem: () => { throw new Error("no"); }, setItem: () => { throw new Error("no"); } };
+    expect(loadSpeed(bad)).toBe(DEFAULT_SPEED);
+    expect(() => saveSpeed(2, bad)).not.toThrow();
+  });
+});
+
+describe("reward graph at 5000 iterations", () => {
+  it("thin keeps few points near the means and short series whole", () => {
+    const pts = Array.from({ length: 5000 }, (_, i) => ({ iter: i, v: i }));
+    const t = thin(pts, 400);
+    expect(t).toHaveLength(400);
+    expect(t[0]!.v).toBeLessThan(t[399]!.v);
+    expect(t[399]!.iter).toBeGreaterThan(4900);
+    expect(thin(pts.slice(0, 10), 400)).toHaveLength(10);
+  });
+
+  it("draws 5000 iterations in a bounded number of segments", () => {
+    const its = Array.from({ length: 5000 }, (_, i) => ({ iter: i + 1, train: i / 10, best: i / 8, held: i % 5 === 0 ? i / 9 : null, perEnv: null, seconds: i }));
+    const { ctx, calls } = fakeCtx(800, 300);
+    drawRewardGraph(ctx, its, 0, 800, 300);
+    expect(badCoordinateCalls(calls)).toEqual([]);
+    expect(named(calls, "lineTo")).toBeLessThan(3 * 800 + 20);
+  });
+});
+
+describe("envGroups", () => {
+  it("puts the small and custom worlds first and the advanced ones apart", () => {
+    const { quick, advanced } = envGroups(envsForKind(ENVS, "forager"));
+    expect(quick.every((e) => e.tags.includes("small"))).toBe(true);
+    expect(quick.some((e) => e.id === "nibble")).toBe(true);
+    expect(advanced.length).toBeGreaterThan(0);
+    expect(advanced.every((e) => e.tags.includes("advanced"))).toBe(true);
+  });
+});
+
+describe("arena design form", () => {
+  it("maps a design to a plan inside the limits and back", () => {
+    const plan = designPlan(DEFAULT_DESIGN);
+    expect(plan.hiddenLayers).toEqual([12]);
+    expect(plan.memoryShort + plan.memoryLong).toBe(4);
+    expect(designPlan(planDesign(plan))).toEqual(plan);
   });
 });

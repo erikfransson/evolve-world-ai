@@ -1,7 +1,8 @@
 import "./base.css";
 import "./landing.css";
 import { fitCanvas } from "./ui/canvas.ts";
-import { TICK_SECONDS, WARMUP_TICKS, arenaScene, ecosystemScene, liveScene, predatorScene, trialsScene } from "./ui/landingScenes.ts";
+import { TICK_SECONDS, WARMUP_TICKS, ecosystemScene, liveScene, predatorScene, trialsScene } from "./ui/landingScenes.ts";
+import { arenaScene } from "./ui/arenaCardScene.ts";
 import type { Scene } from "./ui/landingScenes.ts";
 import { TickClock } from "./ui/tickClock.ts";
 

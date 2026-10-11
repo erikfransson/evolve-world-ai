@@ -9,7 +9,7 @@ import type { PoolEntry } from "./sim/seedPool.ts";
 import { layoutConfig, poolLearner } from "./sim/rl/env.ts";
 import type { EnvSpec, Learner, Rivals } from "./sim/rl/env.ts";
 import { ENVS } from "./sim/rl/envs.ts";
-import { KINDS, MAX_FILE_BYTES, PLAN_LIMITS, checkPlan, creatureFile, fileLearner, parseCreatureFile } from "./sim/rl/creatureFile.ts";
+import { KINDS, MAX_FILE_BYTES, creatureFile, fileLearner, parseCreatureFile } from "./sim/rl/creatureFile.ts";
 import type { CreatureFile, CreatureKind } from "./sim/rl/creatureFile.ts";
 import { serialiseLearner } from "./sim/rl/library.ts";
 import type { StoredLearner } from "./sim/rl/library.ts";
@@ -17,10 +17,13 @@ import { planOf, planUpkeep } from "./sim/sensors.ts";
 import type { BodyPlan } from "./sim/sensors.ts";
 import type { RlInMessage, RlIteration, RlOutMessage } from "./worker/rlProtocol.ts";
 import { BrainReplay } from "./ui/arenaBrain.ts";
-import { change, customEnv, envsForKind, planSummary } from "./ui/arenaPick.ts";
-import { addFavourite, loadFavourites, removeFavourite } from "./ui/arenaStore.ts";
-import { TILE_COUNTS, TileGrid } from "./ui/arenaTiles.ts";
+import { DEFAULT_DESIGN, DEFAULT_RUN, DESIGN_FORM, RUN_FORM, designPlan, planDesign } from "./ui/arenaForm.ts";
+import { ARENA_KIND, bestFounder, change, customEnv, envGroups, envsForKind, kindRejection, planSummary } from "./ui/arenaPick.ts";
+import { addFavourite, loadFavourites, loadSpeed, removeFavourite, saveSpeed } from "./ui/arenaStore.ts";
+import { DEFAULT_TILES, TILE_COUNTS, TileGrid } from "./ui/arenaTiles.ts";
+import { Zoom } from "./ui/arenaZoom.ts";
 import { $, durationText } from "./ui/page.ts";
+import { buildForm } from "./ui/settingsForm.ts";
 import { RewardGraph } from "./ui/rewardGraph.ts";
 import { initTooltips } from "./ui/tooltip.ts";
 
@@ -38,6 +41,7 @@ let pool: PoolEntry[] = [];
 let imported: CreatureFile | null = null;
 let favourites: CreatureFile[] = [];
 const customs: EnvSpec[] = [];
+const DEFAULT_ENV = "nibble";
 const picked = new Set<string>();
 let customCount = 0;
 
@@ -56,6 +60,7 @@ interface Run {
 let run: Run | null = null;
 
 const grid = new TileGrid($("tiles"));
+const zoom = new Zoom(grid, $("zoom"), { canvas: $<HTMLCanvasElement>("zoomCanvas"), title: $("zoomTitle"), stats: $("zoomStats") }, $("zoomClose"));
 const brainReplay = new BrainReplay($<HTMLCanvasElement>("brainView"));
 const graph = new RewardGraph($<HTMLCanvasElement>("rewardView"));
 const startBtn = $<HTMLButtonElement>("start");
@@ -64,71 +69,17 @@ const resetBtn = $<HTMLButtonElement>("reset");
 const settings = $<HTMLFieldSetElement>("settings");
 
 const radio = (name: string): string => document.querySelector<HTMLInputElement>(`input[name=${name}]:checked`)!.value;
-const kind = (): CreatureKind => radio("kind") as CreatureKind;
+const kind = (): CreatureKind => ARENA_KIND;
 const source = (): Source => radio("source") as Source;
 const input = (id: string): HTMLInputElement => $<HTMLInputElement>(id);
-
-// The number in a field, clamped into its min and max (written back); the fallback when empty or not a number.
-function numberOf(id: string, fallback: number): number {
-  const el = input(id);
-  const v = Number(el.value);
-  const clamped = el.value.trim() !== "" && Number.isFinite(v) ? Math.min(Number(el.max), Math.max(Number(el.min), v)) : fallback;
-  el.value = String(clamped);
-  return clamped;
-}
 
 const worldConfig = (k: CreatureKind) => layoutConfig(KINDS[k].world);
 
 // ---- creature
 
-const neuronInputs: HTMLInputElement[] = [];
-function buildNeuronInputs(): void {
-  for (let i = 0; i < PLAN_LIMITS.layers[1]; i++) {
-    const el = document.createElement("input");
-    el.type = "number";
-    el.min = String(PLAN_LIMITS.neurons[0]);
-    el.max = String(PLAN_LIMITS.neurons[1]);
-    el.step = "1";
-    el.value = i === 0 ? "12" : "8";
-    el.id = `neurons${i + 1}`;
-    el.ariaLabel = `Neurons in hidden layer ${i + 1}`;
-    el.addEventListener("change", showStart);
-    $("neurons").append(el);
-    neuronInputs.push(el);
-  }
-  showLayers();
-}
-
-function showLayers(): void {
-  const n = Math.round(numberOf("layers", 1));
-  neuronInputs.forEach((el, i) => (el.hidden = i >= n));
-}
-
-// The designed plan from the form, with every field clamped into PLAN_LIMITS.
-function designedPlan(): BodyPlan {
-  const L = PLAN_LIMITS;
-  const layers = Math.round(numberOf("layers", 1));
-  const plan = {
-    rayCount: Math.round(numberOf("rays", 5)),
-    raySpread: (numberOf("fan", 120) * Math.PI) / 180,
-    rayLength: numberOf("sight", 180),
-    hiddenLayers: neuronInputs.slice(0, layers).map((el) => Math.round(numberOf(el.id, 12))),
-    memoryShort: Math.round(numberOf("memShort", 2)),
-    memoryLong: Math.round(numberOf("memLong", 2)),
-  };
-  return checkPlan(plan) as BodyPlan; // fields are clamped above, so it always passes
-}
-
-function fillDesign(plan: BodyPlan): void {
-  input("rays").value = String(plan.rayCount);
-  input("fan").value = String(Math.round((plan.raySpread * 180) / Math.PI));
-  input("sight").value = String(Math.round(plan.rayLength));
-  input("layers").value = String(plan.hiddenLayers.length);
-  neuronInputs.forEach((el, i) => (el.value = String(plan.hiddenLayers[i] ?? el.value)));
-  input("memShort").value = String(plan.memoryShort);
-  input("memLong").value = String(plan.memoryLong);
-  showLayers();
-}
+const designForm = buildForm($("designForm"), DESIGN_FORM);
+const runForm = buildForm($("runForm"), RUN_FORM);
+const fillDesign = (plan: BodyPlan): void => designForm.fill(planDesign(plan));
 
 // The creature to start from, or the reason there is none.
 function resolveStart(): { learner: Learner; from: string } | string {
@@ -136,7 +87,7 @@ function resolveStart(): { learner: Learner; from: string } | string {
   const world = KINDS[k].world;
   const src = source();
   if (src === "design") {
-    const plan = designedPlan();
+    const plan = designPlan(designForm.read());
     const rng = createRng((Math.random() * 2 ** 31) | 0);
     return { learner: { plan, genome: randomGenome(layerSizes(worldConfig(k), plan), rng) }, from: "designed" };
   }
@@ -146,14 +97,16 @@ function resolveStart(): { learner: Learner; from: string } | string {
   }
   const file = src === "import" ? imported : favourites[Number(input("saved").value)];
   if (!file) return src === "import" ? "Choose a creature file." : "No creature saved in this browser yet.";
-  if (file.kind !== k) return `This creature is a ${file.kind}. Switch the kind to ${file.kind}.`;
+  const rejected = kindRejection(file.kind);
+  if (rejected) return rejected;
   return { learner: fileLearner(file), from: src === "import" ? `file ${file.name}` : `saved ${file.name}` };
 }
 
 function showStart(): void {
   const k = kind();
   $("kindDesc").textContent = KINDS[k].label;
-  for (const s of ["design", "pool", "import", "saved"]) $(`src${s[0]!.toUpperCase()}${s.slice(1)}`).hidden = source() !== s;
+  for (const s of ["pool", "import", "saved"]) $(`src${s[0]!.toUpperCase()}${s.slice(1)}`).hidden = source() !== s;
+  $("designForm").hidden = source() !== "design";
   const r = resolveStart();
   const note = $("startNote");
   const desc = $("planDesc");
@@ -171,6 +124,7 @@ function showStart(): void {
 function fillFounders(): void {
   const sel = $<HTMLSelectElement>("founder");
   sel.replaceChildren(...pool.map((p, i) => new Option(`#${i + 1} · ${p.plan.rayCount} rays, hidden ${p.plan.hiddenLayers.join("+")} · fitness ${p.fitness.toFixed(0)}`, String(i))));
+  if (pool.length) sel.value = String(bestFounder(pool)); // the strongest founder shows learning soonest
   showStart();
 }
 
@@ -193,15 +147,13 @@ async function importFile(): Promise<void> {
     msg.textContent = "file too large";
   } else {
     const parsed = parseCreatureFile(await file.text());
-    if (typeof parsed === "string") {
+    const bad = typeof parsed === "string" ? parsed : kindRejection(parsed.kind);
+    if (bad || typeof parsed === "string") {
       msg.className = "msg error";
-      msg.textContent = parsed;
+      msg.textContent = bad ?? "";
     } else {
       imported = parsed;
-      msg.textContent = `${parsed.name} (${parsed.kind})`;
-      const radioEl = document.querySelector<HTMLInputElement>(`input[name=kind][value=${parsed.kind}]`)!;
-      radioEl.checked = true;
-      showEnvs();
+      msg.textContent = parsed.name;
     }
   }
   showStart();
@@ -209,51 +161,65 @@ async function importFile(): Promise<void> {
 
 // ---- environments
 
-function showEnvs(): void {
-  const k = kind();
-  const list = envsForKind([...ENVS, ...customs], k);
-  const box = $("envList");
-  box.replaceChildren();
-  if (!list.some((e) => picked.has(e.id)) && list[0]) picked.add(list[0].id);
-  for (const e of list) {
-    const label = document.createElement("label");
-    label.className = "env-opt";
-    const check = document.createElement("input");
-    check.type = "checkbox";
-    check.checked = picked.has(e.id);
-    check.addEventListener("change", () => {
-      if (check.checked) picked.add(e.id);
-      else picked.delete(e.id);
+function envOption(e: EnvSpec): HTMLLabelElement {
+  const label = document.createElement("label");
+  label.className = "env-opt";
+  const check = document.createElement("input");
+  check.type = "checkbox";
+  check.checked = picked.has(e.id);
+  check.addEventListener("change", () => {
+    if (check.checked) picked.add(e.id);
+    else picked.delete(e.id);
+    showStart();
+  });
+  const body = document.createElement("span");
+  body.className = "env-body";
+  const name = document.createElement("b");
+  name.textContent = e.name;
+  const desc = document.createElement("small");
+  desc.textContent = e.description;
+  const chips = document.createElement("span");
+  chips.className = "chips";
+  const facts = [`${e.size[0]}×${e.size[1]}`, `${e.seconds} s`, ...(e.rivals.length ? [`${e.rivals.reduce((n, r) => n + r.count, 0)} rivals`] : []), ...e.tags.filter((t) => t !== "small" && t !== "advanced")];
+  for (const f of facts) chips.append(Object.assign(document.createElement("span"), { textContent: f }));
+  body.append(name, desc, chips);
+  label.append(check, body);
+  if (e.tags.includes("custom")) {
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "env-del";
+    del.textContent = "×";
+    del.title = "Remove this environment";
+    del.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      customs.splice(customs.indexOf(e), 1);
+      picked.delete(e.id);
+      showEnvs();
       showStart();
     });
-    const body = document.createElement("span");
-    body.className = "env-body";
-    const name = document.createElement("b");
-    name.textContent = e.name;
-    const desc = document.createElement("small");
-    desc.textContent = e.description;
-    const chips = document.createElement("span");
-    chips.className = "chips";
-    const facts = [`${e.size[0]}×${e.size[1]}`, `${e.seconds} s`, ...(e.rivals.length ? [`${e.rivals.reduce((n, r) => n + r.count, 0)} rivals`] : []), ...e.tags];
-    for (const f of facts) chips.append(Object.assign(document.createElement("span"), { textContent: f }));
-    body.append(name, desc, chips);
-    label.append(check, body);
-    if (e.tags.includes("custom")) {
-      const del = document.createElement("button");
-      del.type = "button";
-      del.className = "env-del";
-      del.textContent = "×";
-      del.title = "Remove this environment";
-      del.addEventListener("click", (ev) => {
-        ev.preventDefault();
-        customs.splice(customs.indexOf(e), 1);
-        picked.delete(e.id);
-        showEnvs();
-        showStart();
-      });
-      label.append(del);
-    }
-    box.append(label);
+    label.append(del);
+  }
+  return label;
+}
+
+function showEnvs(): void {
+  const list = envsForKind([...ENVS, ...customs], kind());
+  const box = $("envList");
+  box.replaceChildren();
+  if (!list.some((e) => picked.has(e.id))) picked.add((list.find((e) => e.id === DEFAULT_ENV) ?? list[0])?.id ?? "");
+  const { quick, advanced } = envGroups(list); // Quick (and custom) ones in the open, Advanced ones folded
+  box.append(Object.assign(document.createElement("p"), { className: "env-head", textContent: "Quick" }), ...quick.map(envOption));
+  if (advanced.length) {
+    const more = document.createElement("details");
+    more.className = "more";
+    more.open = advanced.some((e) => picked.has(e.id));
+    const sum = document.createElement("summary");
+    sum.textContent = `Advanced (${advanced.length}, bigger and slower)`;
+    const body = document.createElement("div");
+    body.className = "more-body env-list";
+    body.append(...advanced.map(envOption));
+    more.append(sum, body);
+    box.append(more);
   }
   updateStartButton();
 }
@@ -353,17 +319,17 @@ function begin(): void {
   const start = resolveStart();
   const envs = selectedEnvs();
   if (typeof start === "string" || envs.length === 0) return;
-  const pop = Math.min(64, Math.max(4, Math.round(numberOf("pop", 16) / 2) * 2));
-  input("pop").value = String(pop);
-  const tiles = Number(radio("tiles"));
-  const options = { pairs: pop / 2, sigma: numberOf("sigma", 0.08), lr: numberOf("lr", 0.02), decay: DECAY, episodes: Math.round(numberOf("episodes", 1)), iterations: Math.round(numberOf("iterations", 100)) };
+  const cfg = runForm.read();
+  const tiles = Number(cfg.tiles);
+  const options = { pairs: Math.round(cfg.population / 2), sigma: cfg.sigma, lr: cfg.lr, decay: DECAY, episodes: cfg.episodes, iterations: cfg.iterations };
   const seed = Math.floor(Math.random() * 0x7fffffff);
   run = { kind: kind(), envs, plan: { ...start.learner.plan, hiddenLayers: start.learner.plan.hiddenLayers.slice() }, from: start.from, iterations: options.iterations, its: [], startHeld: null, startPerEnv: null, latest: null };
   worker?.terminate();
   worker = new Worker(new URL("./worker/rlWorker.ts", import.meta.url), { type: "module" });
   worker.onmessage = (ev: MessageEvent<RlOutMessage>) => onMessage(ev.data);
   worker.onerror = (ev) => fail(ev.message);
-  grid.setCount(TILE_COUNTS.includes(tiles as 1) ? tiles : 9);
+  grid.setCount(TILE_COUNTS.includes(tiles as 1) ? tiles : DEFAULT_TILES);
+  zoom.close();
   grid.clear();
   brainReplay.reset();
   send({ type: "start", kind: run.kind, envs, learner: serialiseLearner(start.learner), options, tiles: grid.size, seed, poolUrl: POOL_URL, libraryUrl: LIBRARY_URL });
@@ -389,7 +355,7 @@ function onMessage(m: RlOutMessage): void {
   } else if (m.type === "iteration") run.its.push(m.it);
   else if (m.type === "learner") run.latest = { iter: m.iter, learner: m.learner };
   else if (m.type === "show") {
-    grid.show({ iter: m.iter, genome: m.genome, recordings: m.recordings, names: m.recordings.map((_, k) => run!.envs[k % run!.envs.length]!.name) }, performance.now());
+    grid.show({ iter: m.iter, genome: m.genome, recordings: m.recordings, names: m.recordings.map((_, k) => run!.envs[k % run!.envs.length]!.name), envCount: run.envs.length }, performance.now());
     $("note").hidden = true;
   } else if (m.type === "done") setState("idle");
   else if (m.type === "error") return fail(m.message);
@@ -400,6 +366,7 @@ function reset(): void {
   worker?.terminate();
   worker = null;
   run = null;
+  zoom.close();
   grid.clear();
   brainReplay.reset();
   $("note").textContent = "Design or pick a creature, choose environments, then press Start.";
@@ -409,13 +376,16 @@ function reset(): void {
 }
 
 const fixed = (v: number | null | undefined): string => (v === null || v === undefined ? "-" : v.toFixed(1));
-const lastHeld = (r: Run): RlIteration | undefined => [...r.its].reverse().find((i) => i.held !== null);
+function lastHeld(r: Run): RlIteration | undefined {
+  for (let i = r.its.length - 1; i >= 0; i--) if (r.its[i]!.held !== null) return r.its[i];
+  return undefined;
+}
 
 function render(): void {
   const r = run;
   const last = r?.its[r.its.length - 1];
   $("iterNow").textContent = String(last?.iter ?? 0);
-  $("iterTotal").textContent = r ? String(r.iterations) : String(Math.round(Number(input("iterations").value) || 100));
+  $("iterTotal").textContent = r ? String(r.iterations) : String(runForm.read().iterations);
   $("iterFill").style.width = r && r.iterations > 0 ? `${Math.min(100, ((last?.iter ?? 0) / r.iterations) * 100)}%` : "0%";
   const heldIt = r ? lastHeld(r) : undefined;
   const heldNow = heldIt?.held ?? r?.startHeld ?? null;
@@ -525,19 +495,8 @@ $("unsave").addEventListener("click", () => {
 $("importFile").addEventListener("change", () => void importFile());
 $("founder").addEventListener("change", showStart);
 $("saved").addEventListener("change", showStart);
-$("layers").addEventListener("change", () => {
-  showLayers();
-  showStart();
-});
-for (const id of ["rays", "fan", "sight", "memShort", "memLong"]) $(id).addEventListener("change", showStart);
-document.querySelectorAll<HTMLInputElement>("input[name=kind]").forEach((el) =>
-  el.addEventListener("change", () => {
-    showEnvs();
-    $("rivals").replaceChildren();
-    showCustom();
-    showStart();
-  }),
-);
+designForm.init($<HTMLFormElement>("setup"), showStart);
+runForm.init($<HTMLFormElement>("setup"), () => render());
 document.querySelectorAll<HTMLInputElement>("input[name=source]").forEach((el) => el.addEventListener("change", showStart));
 $("customBox").addEventListener("input", showCustom);
 $("customBox").addEventListener("change", showCustom);
@@ -550,12 +509,25 @@ $("brainOn").addEventListener("change", () => {
   $("brainCard").hidden = !input("brainOn").checked;
   brainReplay.reset();
 });
-$("iterations").addEventListener("change", render);
+const speedRadios = document.querySelectorAll<HTMLInputElement>("input[name=speed]");
+const speed = loadSpeed();
+grid.speed = speed;
+speedRadios.forEach((el) => {
+  el.checked = Number(el.value) === speed;
+  el.addEventListener("change", () => {
+    grid.speed = Number(el.value);
+    saveSpeed(grid.speed);
+  });
+});
+grid.onOpen = (k) => zoom.open(k);
+grid.onFinished = () => {
+  if (state !== "idle") send({ type: "show" }); // the tiles played to the end: ask for the next best candidate
+};
 
 initTooltips($("tooltip"));
-buildNeuronInputs();
-fillDesign(planOf(worldConfig("forager")));
-grid.setCount(9);
+designForm.fill(DEFAULT_DESIGN);
+runForm.fill(DEFAULT_RUN);
+grid.setCount(DEFAULT_TILES);
 fillSaved();
 showEnvs();
 showCustom();

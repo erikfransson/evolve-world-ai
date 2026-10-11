@@ -18,11 +18,12 @@ export type RlInMessage =
       envs: EnvSpec[]; // checked by the page (checkEnv for custom ones), all of the kind's world and species
       learner: StoredLearner;
       options: RlRunOptions;
-      tiles: number; // episodes shown per iteration, 1 to 9; tile k plays envs[k % envs.length]
+      tiles: number; // episodes shown per iteration, 1 to 12; tile k plays envs[k % envs.length]
       seed: number;
       poolUrl: string;
       libraryUrl: string;
     }
+  | { type: "show" } // record the latest best candidate at the next step's end (the page asks when its tiles finished playing)
   | { type: "pause" }
   | { type: "resume" }
   | { type: "stop" };

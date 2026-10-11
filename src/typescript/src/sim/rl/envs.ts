@@ -2,8 +2,35 @@ import { PREDATOR, PREY } from "./env.ts";
 import type { EnvSpec } from "./env.ts";
 
 // The environment index. Ids are stable: keep an env's id when tuning it, add a new one for a new task.
-// Measured learning per env is in docs/rl-envs.md.
+
+// Small, quick tasks first: one box, a few items, an episode that ends when the food is gone. Each takes milliseconds, so a
+// population of hundreds can train for thousands of iterations; the bigger "advanced" envs below come after.
+const small = (id: string, name: string, description: string, size: [number, number], food: number, poison: number, seconds: number, tags: string[], rivals: EnvSpec["rivals"] = []): EnvSpec => ({
+  id,
+  name,
+  description,
+  world: "ecosystem",
+  role: PREY,
+  size,
+  food,
+  poison,
+  foodRegrow: 0,
+  seconds,
+  rivals,
+  reward: { food: 1, fast: 0.1 },
+  tags: ["small", ...tags],
+});
+
 export const ENVS: readonly EnvSpec[] = [
+  small("nibble", "Nibble", "Three bites of food in a tiny box. Find them fast.", [200, 200], 3, 0, 15, ["forager", "basic"]),
+  small("nibble-poison", "Nibble and avoid", "A tiny box with three food and two poison. Eat, do not touch the purple.", [200, 200], 3, 2, 20, ["forager", "caution"]),
+  small("box", "Box", "Five food in a small box.", [300, 300], 5, 0, 20, ["forager", "basic"]),
+  small("box-poison", "Box with poison", "Five food and five poison in a small box.", [300, 300], 5, 5, 25, ["forager", "caution"]),
+  small("minefield", "Minefield", "Four food hidden among twelve poison.", [300, 300], 4, 12, 25, ["forager", "caution"]),
+  small("corridor", "Corridor", "A long, narrow room with food at both ends.", [600, 150], 4, 2, 25, ["forager", "search"]),
+  small("far-food", "Far food", "Two pieces of food somewhere in a bigger room. Search.", [450, 450], 2, 0, 30, ["forager", "search"]),
+  small("scatter", "Scatter", "Eight food and four poison spread over a room.", [400, 400], 8, 4, 30, ["forager"]),
+  small("duel", "Duel", "Six food and one trained rival who wants them too.", [300, 300], 6, 0, 25, ["forager", "competition"], [{ species: PREY, count: 1, source: "pool" }]),
   {
     id: "forage-box",
     name: "Forage box",
@@ -17,7 +44,7 @@ export const ENVS: readonly EnvSpec[] = [
     seconds: 40,
     rivals: [],
     reward: { food: 1 },
-    tags: ["forager", "basic"],
+    tags: ["forager", "advanced"],
   },
   {
     id: "forage-sparse",
@@ -32,7 +59,7 @@ export const ENVS: readonly EnvSpec[] = [
     seconds: 60,
     rivals: [],
     reward: { food: 1 },
-    tags: ["forager", "search"],
+    tags: ["forager", "search", "advanced"],
   },
   {
     id: "poison-field",
@@ -47,7 +74,7 @@ export const ENVS: readonly EnvSpec[] = [
     seconds: 45,
     rivals: [],
     reward: { food: 1, survive: 0.05 },
-    tags: ["forager", "caution"],
+    tags: ["forager", "caution", "advanced"],
   },
   {
     id: "rivals",
@@ -62,7 +89,7 @@ export const ENVS: readonly EnvSpec[] = [
     seconds: 60,
     rivals: [{ species: PREY, count: 6, source: "pool" }],
     reward: { food: 1 },
-    tags: ["forager", "competition"],
+    tags: ["forager", "competition", "advanced"],
   },
   {
     id: "endurance",
@@ -77,7 +104,7 @@ export const ENVS: readonly EnvSpec[] = [
     seconds: 120,
     rivals: [],
     reward: { survive: 0.1, energy: 4 },
-    tags: ["forager", "thrift"],
+    tags: ["forager", "thrift", "advanced"],
   },
   {
     id: "hunt-wanderers",
@@ -92,7 +119,7 @@ export const ENVS: readonly EnvSpec[] = [
     seconds: 45,
     rivals: [{ species: PREY, count: 8, source: "random" }],
     reward: { kill: 1 },
-    tags: ["hunter", "basic"],
+    tags: ["hunter", "basic", "advanced"],
   },
   {
     id: "hunt-grazers",
@@ -107,7 +134,7 @@ export const ENVS: readonly EnvSpec[] = [
     seconds: 60,
     rivals: [{ species: PREY, count: 8, source: "pool" }],
     reward: { kill: 1 },
-    tags: ["hunter"],
+    tags: ["hunter", "advanced"],
   },
   {
     id: "hunt-evaders",
@@ -122,7 +149,7 @@ export const ENVS: readonly EnvSpec[] = [
     seconds: 60,
     rivals: [{ species: PREY, count: 8, source: "library:evade" }],
     reward: { kill: 1 },
-    tags: ["hunter", "league"],
+    tags: ["hunter", "league", "advanced"],
   },
   {
     id: "evade",
@@ -137,7 +164,7 @@ export const ENVS: readonly EnvSpec[] = [
     seconds: 60,
     rivals: [{ species: PREDATOR, count: 3, source: "library:hunt-grazers" }],
     reward: { survive: 0.1, food: 0.5 },
-    tags: ["prey", "league"],
+    tags: ["prey", "league", "advanced"],
   },
 ];
 

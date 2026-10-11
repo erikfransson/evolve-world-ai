@@ -134,7 +134,8 @@ export interface FormHandle<C> {
 }
 
 // Fills the container with one card per section of the spec.
-export function buildForm<C extends { seed: number }>(container: HTMLElement, spec: FormSpec<C>): FormHandle<C> {
+// A config with a Seed field also has a numeric seed; pages without one (the Arena's) need no seed.
+export function buildForm<C extends object>(container: HTMLElement, spec: FormSpec<C>): FormHandle<C> {
   container.innerHTML = spec.sections.map(sectionHtml).join("");
   const fields = spec.sections.flatMap((s) => [...s.fields]);
   const syncHints = (c: C): void => {
@@ -159,7 +160,7 @@ export function buildForm<C extends { seed: number }>(container: HTMLElement, sp
       if (f.kind === "toggle") f.set(c, input.checked);
       else if (f.kind === "range") f.set(c, input.valueAsNumber);
       else if (f.kind === "choice") { if (f.options.some(([value]) => value === input.value)) f.set(c, input.value); }
-      else if (Number.isFinite(input.valueAsNumber)) c.seed = Math.min(2 ** 31, Math.max(0, Math.round(input.valueAsNumber)));
+      else if (Number.isFinite(input.valueAsNumber)) (c as { seed: number }).seed = Math.min(2 ** 31, Math.max(0, Math.round(input.valueAsNumber)));
     }
     return c;
   };
@@ -167,7 +168,7 @@ export function buildForm<C extends { seed: number }>(container: HTMLElement, sp
     for (const f of fields) {
       const input = el(f.id, HTMLElement) as HTMLInputElement; // a select shares .value
       if (f.kind === "toggle") input.checked = f.get(c);
-      else if (f.kind === "seed") input.value = String(c.seed);
+      else if (f.kind === "seed") input.value = String((c as { seed: number }).seed);
       else input.value = String(f.get(c));
     }
     container.querySelectorAll<HTMLInputElement>('input[type="range"]').forEach(syncSlider);
@@ -185,7 +186,8 @@ export function buildForm<C extends { seed: number }>(container: HTMLElement, sp
     });
     // Enter in a field would otherwise submit the form and reload the page, losing all settings.
     form.addEventListener("submit", (e) => e.preventDefault());
-    el("dice", HTMLButtonElement).onclick = () => {
+    const dice = document.getElementById("dice");
+    if (dice) dice.onclick = () => {
       el("seed", HTMLInputElement).value = String(Math.floor(Math.random() * 1_000_000));
       onChange(read());
     };

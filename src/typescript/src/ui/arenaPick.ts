@@ -7,6 +7,11 @@ import type { PlanView } from "../sim/sensors.ts";
 // The envs a creature kind can train in: those of its world with its species as the learner.
 export const envsForKind = (envs: readonly EnvSpec[], kind: CreatureKind): EnvSpec[] => envs.filter((e) => e.world === KINDS[kind].world && e.role === KINDS[kind].role);
 
+// The checklist groups: Quick (small worlds and custom ones) and Advanced (the bigger, slower ones).
+export function envGroups(envs: readonly EnvSpec[]): { quick: EnvSpec[]; advanced: EnvSpec[] } {
+  return { quick: envs.filter((e) => !e.tags.includes("advanced")), advanced: envs.filter((e) => e.tags.includes("advanced")) };
+}
+
 // One line on a body plan: rays, sight, brain layers and memory.
 export function planSummary(plan: PlanView): string {
   const layers = plan.hiddenLayers.length ? plan.hiddenLayers.join("+") : "none";
@@ -45,4 +50,19 @@ export function customEnv(form: CustomEnvForm, id: string, kind: CreatureKind): 
     world,
     role,
   );
+}
+
+// Only foragers can train on this page for now; prey and predator code paths stay for later.
+export const ARENA_KIND: CreatureKind = "forager";
+
+// The reason a creature file of this kind cannot be used here, or null.
+export const kindRejection = (kind: CreatureKind): string | null => (kind === ARENA_KIND ? null : `This is a ${kind}: only foragers can train here for now.`);
+
+// Index of the pool entry with the highest fitness (the first on ties), or 0 for an empty pool.
+export function bestFounder(pool: readonly { fitness: number }[]): number {
+  let best = 0;
+  pool.forEach((p, i) => {
+    if (p.fitness > pool[best]!.fitness) best = i;
+  });
+  return best;
 }
