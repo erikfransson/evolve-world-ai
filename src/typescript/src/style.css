@@ -215,3 +215,6 @@ fieldset:disabled .tip { cursor: help; }
 .io-actions { display: flex; gap: 0.6rem; }
 .io-actions > * { flex: 1; grid-column: auto; padding: 0.55rem 1rem; font-size: 1rem; }
 .io-actions .secondary { font-size: 1rem; }
+@media (min-width: 701px) {
+  .fit-foot { font-size: 0.875rem; } /* graph legends 25% larger on desktop, matching the canvas axis labels */
+}

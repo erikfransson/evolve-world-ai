@@ -56,6 +56,8 @@ export const ITEM_SET = 1;
 export const ITEM_REMOVE = 2;
 
 // Food and poison items in fixed slots; a slot of kind HIT_NONE is free.
+const MAX_REJECTS = 256; // placement tries that honour reject before giving up on it
+
 export class World implements WorldView {
   readonly count: number; // slot capacity
   // Writes must go through setItem or removeItem to keep the grid valid.
@@ -129,14 +131,16 @@ export class World implements WorldView {
   }
 
   // Puts item i at a uniform random position inside the walls, outside the clear disc if given and where reject says no.
+  // reject is dropped after MAX_REJECTS tries, so a crowded world cannot loop forever; the clear disc always holds.
   placeRandomly(i: number, kind: HitKind, rng: Rng, clear?: { x: number; y: number; radius: number }, reject?: (x: number, y: number) => boolean): void {
     const r = this.itemRadius;
     let x: number;
     let y: number;
+    let tries = 0;
     do {
       x = rng.range(r, this.width - r);
       y = rng.range(r, this.height - r);
-    } while ((clear && (x - clear.x) ** 2 + (y - clear.y) ** 2 < clear.radius ** 2) || reject?.(x, y));
+    } while ((clear && (x - clear.x) ** 2 + (y - clear.y) ** 2 < clear.radius ** 2) || (tries++ < MAX_REJECTS && reject?.(x, y)));
     this.setItem(i, x, y, kind);
   }
 
@@ -144,7 +148,7 @@ export class World implements WorldView {
   // avoid: spots it must not move poison to, such as other bodies already placed (a body of the same radius at each).
   clearPoison(x: number, y: number, radius: number, rng: Rng, avoid?: (x: number, y: number) => boolean): void {
     for (let p = this.poisonAt(x, y, radius); p >= 0; p = this.poisonAt(x, y, radius)) {
-      this.placeRandomly(p, HIT_POISON, rng, undefined, avoid);
+      this.placeRandomly(p, HIT_POISON, rng, { x, y, radius: radius + this.itemRadius }, avoid);
     }
   }
 

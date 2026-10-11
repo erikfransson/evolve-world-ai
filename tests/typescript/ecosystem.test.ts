@@ -68,6 +68,17 @@ describe("Ecosystem", () => {
     }
   });
 
+  it("places founders and poison promptly when founders crowd a small world", () => {
+    // Guard only: placement drops other-founder rejection after 256 tries, so it cannot loop forever.
+    const eco = new Ecosystem(ecoCfg({ world: { width: 500, height: 500, foodDensity: 0, poisonDensity: 3 }, eco: { initialPopulation: 5000, maxPopulation: 5000, foundersVary: true } }));
+    const reach = eco.config.creature.radius + eco.config.world.itemRadius;
+    const w = eco.world;
+    const last = eco.members.at(-1)!.creature.state; // the last founder cleared its own disc
+    for (let i = 0; i < w.count; i++) {
+      if (w.kinds[i] === HIT_POISON) expect(Math.hypot(w.xs[i] - last.x, w.ys[i] - last.y)).toBeGreaterThanOrEqual(reach);
+    }
+  });
+
   it("regrows fractional items over ticks and stops at the max density", () => {
     // 1000 x 1000 is 100 items per density unit: 0.01 regrows one item per second, cap 0.5 is 50 items.
     const eco = new Ecosystem(still({ initialPopulation: 1, foodRegrow: 0.01, foodMaxDensity: 0.5, poisonRegrow: 1, poisonMaxDensity: 0.05 }, 100));
