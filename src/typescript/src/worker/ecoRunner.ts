@@ -259,7 +259,7 @@ export class EcoRunner {
     const buffer = this.takeBuffer(creatureCap, itemCap);
     const v = snapshotViews(buffer, n, 0, creatureCap, itemCap);
     // The frame's arrays are views into the buffer, so readCreatures writes straight into the message.
-    const frame: CreatureFrame = { count: 0, ids: v.ids, x: v.x, y: v.y, heading: v.heading, energy: v.energy, hue: v.hue, founder: v.founder };
+    const frame: CreatureFrame = { count: 0, ids: v.ids, x: v.x, y: v.y, heading: v.heading, energy: v.energy, hue: v.hue, founder: v.founder, species: v.species };
     eco.readCreatures(frame);
     const dt = eco.config.dt;
     let oldest = 0;
@@ -375,7 +375,7 @@ export class EcoRunner {
     this.sendGenome = false;
     return {
       id: m.id, alive: true, x: s.x, y: s.y, heading: s.heading, energy: s.energy, age: m.ageTicks * eco.config.dt,
-      children: m.children, eaten: m.eaten, depth: m.depth, parentId: m.parentId, hue: m.hue, founderId: m.founderId, founderPool: m.founderId < eco.poolFounders, founderHue: eco.founderColour(m.founderId), plan: { ...c.plan, hiddenLayers: c.plan.hiddenLayers.slice() }, upkeep: c.upkeep, ...sc, genome,
+      children: m.children, eaten: m.eaten, depth: m.depth, parentId: m.parentId, hue: m.hue, founderId: m.founderId, founderPool: eco.fromPool(m.founderId), founderHue: eco.founderColour(m.founderId), plan: { ...c.plan, hiddenLayers: c.plan.hiddenLayers.slice() }, upkeep: c.upkeep, ...sc, genome,
     };
   }
 }

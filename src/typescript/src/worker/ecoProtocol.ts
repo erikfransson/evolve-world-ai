@@ -94,24 +94,25 @@ export interface SnapshotViews {
   hue: Float32Array;
   age: Float32Array; // seconds
   founder: Int32Array; // founder id
+  species: Int32Array; // index into the config's species, 0 without
   itemCount: number;
   itemX: Float32Array;
   itemY: Float32Array;
   itemKind: Uint8Array;
 }
 
-const CREATURE_BYTES = 8 * 4; // id, x, y, heading, energy, hue, age, founder
+const CREATURE_BYTES = 9 * 4; // id, x, y, heading, energy, hue, age, founder, species
 const ITEM_BYTES = 2 * 4 + 1;
 
 export function snapshotBytes(creatureCap: number, itemCap: number): number {
   return creatureCap * CREATURE_BYTES + itemCap * ITEM_BYTES;
 }
 
-// Typed views over a snapshot buffer: eight per-creature arrays, then item x, y and kind. A buffer may be larger than needed.
+// Typed views over a snapshot buffer: nine per-creature arrays, then item x, y and kind. A buffer may be larger than needed.
 export function snapshotViews(buffer: ArrayBuffer, count: number, itemCount: number, creatureCap: number, itemCap: number): SnapshotViews {
   const f32 = (at: number, n: number): Float32Array => new Float32Array(buffer, at, n);
   const c = creatureCap * 4;
-  const itemsAt = 8 * c;
+  const itemsAt = 9 * c;
   return {
     count,
     ids: new Int32Array(buffer, 0, creatureCap),
@@ -122,6 +123,7 @@ export function snapshotViews(buffer: ArrayBuffer, count: number, itemCount: num
     hue: f32(5 * c, creatureCap),
     age: f32(6 * c, creatureCap),
     founder: new Int32Array(buffer, 7 * c, creatureCap),
+    species: new Int32Array(buffer, 8 * c, creatureCap),
     itemCount,
     itemX: f32(itemsAt, itemCap),
     itemY: f32(itemsAt + itemCap * 4, itemCap),

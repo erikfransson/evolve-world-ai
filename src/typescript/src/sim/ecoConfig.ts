@@ -94,7 +94,8 @@ export const DEFAULT_PREDATOR_CONFIG: EcoConfig = {
   species: [
     {
       name: "Prey",
-      hue: 195,
+      hue: 170,
+      hueSpread: 70,
       founders: 400,
       poolFraction: 0.5,
       plants: true,
@@ -116,7 +117,8 @@ export const DEFAULT_PREDATOR_CONFIG: EcoConfig = {
     },
     {
       name: "Predators",
-      hue: 6,
+      hue: 4,
+      hueSpread: 30,
       founders: 40,
       poolFraction: 0.5,
       plants: false,

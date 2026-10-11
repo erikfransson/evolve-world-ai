@@ -76,7 +76,7 @@ const rayFeatureLabels = (config: EngineConfig): readonly string[] =>
   !config.creature.seesCreatures ? RAY_FEATURE_LABELS : config.species && config.species.length > 1 ? speciesFeatureLabels(config.species.map((s) => s.name)) : CREATURE_RAY_FEATURE_LABELS;
 
 // rayFeatureLabels(config).length without allocating.
-function rayFeatureCount(config: EngineConfig): number {
+export function rayFeatureCount(config: EngineConfig): number {
   if (!config.creature.seesCreatures) return RAY_FEATURES;
   const species = config.species?.length ?? 1;
   return RAY_FEATURES + Math.max(1, species) + 1;

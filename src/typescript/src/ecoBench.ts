@@ -1,11 +1,14 @@
 // Ecosystem benchmark: runs a seeded world headless and prints ticks/s, population over time and a fingerprint.
 // Usage: node src/ecoBench.ts [--seconds 120] [--seed 1] [--pop 300] [--food 0.5] [--regrow 0.05] [--every 10] [--pool public/pool.json] [--poolFraction 0.5] [--aging] [--agingStart 120] [--agingRate 0.5] [--damage] [--damagePerSpeed 0.3] [--threads 0] [--shared]
+//   [--predators] [--set path=value ...]
 // --food sets the starting and maximum food density, --regrow the food regrowth rate, --pool none runs without the seed pool.
+// --predators starts from the Predators & prey defaults and prints each species' population too; --set overrides any
+// config value, e.g. --set species.1.speed=1.4 --set eco.foodRegrow=0.04 (applied last).
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { DEFAULT_ECO_CONFIG } from "./sim/ecoConfig.ts";
+import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "./sim/ecoConfig.ts";
 import type { EcoConfig } from "./sim/ecoConfig.ts";
 import { Ecosystem } from "./sim/ecosystem.ts";
 import { parsePool } from "./sim/seedPool.ts";
@@ -30,10 +33,12 @@ const { values } = parseArgs({
     agingRate: { type: "string" },
     damage: { type: "boolean" }, // collision damage
     damagePerSpeed: { type: "string" },
+    predators: { type: "boolean" },
+    set: { type: "string", multiple: true },
   },
 });
 const num = (v: string | undefined, fallback: number): number => (v === undefined ? fallback : Number(v));
-const d = DEFAULT_ECO_CONFIG;
+const d = values.predators ? DEFAULT_PREDATOR_CONFIG : DEFAULT_ECO_CONFIG;
 const food = num(values.food, d.world.foodDensity);
 const config: EcoConfig = {
   ...structuredClone(d),
@@ -53,6 +58,15 @@ const config: EcoConfig = {
     foodRegrow: num(values.regrow, d.eco.foodRegrow),
   },
 };
+for (const assignment of values.set ?? []) {
+  const [path, value] = assignment.split("=") as [string, string];
+  const keys = path.split(".");
+  let at: Record<string, unknown> = config as unknown as Record<string, unknown>;
+  for (const k of keys.slice(0, -1)) at = at[k] as Record<string, unknown>;
+  const last = keys[keys.length - 1]!;
+  if (!(last in at)) throw new Error(`unknown setting ${path}`);
+  at[last] = value === "true" || value === "false" ? value === "true" : value.startsWith("[") ? JSON.parse(value) : Number(value);
+}
 const seconds = num(values.seconds, 120);
 const every = Math.max(1, Math.round(num(values.every, 10) / config.dt));
 const ticks = Math.round(seconds / config.dt);
@@ -63,6 +77,8 @@ const helpers = threads > 0 ? createNodeThinkPool(threads, values.shared ?? fals
 const eco = new Ecosystem(config, pool, { journal: helpers !== null });
 await helpers?.start(eco);
 const population: number[] = [eco.population];
+const perSpecies = (): number[] => eco.speciesCounts.map((c) => c.population);
+const speciesPopulation: number[][] = [perSpecies()];
 let creatureTicks = 0;
 const t0 = performance.now();
 const warm = Math.floor(ticks / 4); // steadyMsPerTick leaves out these first ticks (JIT warm-up, helper start)
@@ -72,7 +88,10 @@ while (eco.tick < ticks && !eco.extinct) {
   creatureTicks += eco.population;
   if (helpers) await helpers.step(eco);
   else eco.step();
-  if (eco.tick % every === 0) population.push(eco.population);
+  if (eco.tick % every === 0) {
+    population.push(eco.population);
+    speciesPopulation.push(perSpecies());
+  }
 }
 const t1 = performance.now();
 const wall = (t1 - t0) / 1000;
@@ -95,5 +114,6 @@ console.log(JSON.stringify({
   food: eco.food,
   poison: eco.poison,
   population,
+  ...(eco.species.length > 1 ? { species: eco.speciesCounts.map((c, s) => ({ name: eco.species[s]!.name, ...c, population: speciesPopulation.map((p) => p[s]!) })) } : {}),
   fingerprint: eco.fingerprint(),
 }));

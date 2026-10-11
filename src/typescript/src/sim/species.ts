@@ -5,7 +5,8 @@ import type { EcoConfig } from "./ecoConfig.ts";
 // diet, speed, costs, births and body plan ranges; everything else (world, brain, mutation) is shared.
 export interface SpeciesConfig {
   name: string;
-  hue: number; // base colour in degrees; founders and children vary around it
+  hue: number; // centre of the species' colour band, degrees; founders and children stay within hueSpread of it
+  hueSpread: number; // width of the colour band, degrees
   founders: number;
   poolFraction: number; // share of founders copied from the seed pool, as eco.poolFraction
   plants: boolean; // eats food items (and dies of poison); a species that does not passes over items
@@ -26,12 +27,13 @@ export interface SpeciesConfig {
   rayLengthRange: number[];
 }
 
-// The one species of a world without a species list: the Ecosystem's own settings. hue -1 means founders take any colour.
+// The one species of a world without a species list: the Ecosystem's own settings. hue -1 means any colour, as before species.
 export function implicitSpecies(config: EcoConfig): SpeciesConfig {
   const { eco, creature: c } = config;
   return {
     name: "creature",
     hue: -1,
+    hueSpread: 360,
     founders: eco.initialPopulation,
     poolFraction: eco.poolFraction,
     plants: true,
@@ -58,7 +60,7 @@ export const speciesList = (config: EcoConfig): readonly SpeciesConfig[] => (con
 
 // The engine config a creature of species s runs on: body, costs and speed of its species. Without a species list,
 // the config itself, so a one-species world computes exactly as before.
-export function speciesEngine(config: EcoConfig, s: number): EngineConfig {
+export function speciesEngine(config: EngineConfig, s: number): EngineConfig {
   if (!config.species?.length) return config;
   const sp = config.species[s]!;
   const c = config.creature;
@@ -71,4 +73,16 @@ export function speciesEngine(config: EcoConfig, s: number): EngineConfig {
 // Ranges for randomPlan, driftPlan and mutateStructure: the species' ray ranges with the shared brain ranges.
 export function speciesRanges(config: EcoConfig, sp: SpeciesConfig): EcoConfig["eco"] {
   return { ...config.eco, rayCountRange: sp.rayCountRange, raySpreadRange: sp.raySpreadRange, rayLengthRange: sp.rayLengthRange };
+}
+
+// A hue kept within the species' band (reflected at its edges); any hue for the implicit species.
+export function bandHue(sp: SpeciesConfig, hue: number): number {
+  if (sp.hue < 0 || sp.hueSpread >= 360) return (((hue % 360) + 360) % 360);
+  const half = sp.hueSpread / 2;
+  let d = hue - sp.hue;
+  d = ((((d + 180) % 360) + 360) % 360) - 180;
+  if (d > half) d = 2 * half - d;
+  if (d < -half) d = -2 * half - d;
+  d = Math.min(half, Math.max(-half, d));
+  return (((sp.hue + d) % 360) + 360) % 360;
 }

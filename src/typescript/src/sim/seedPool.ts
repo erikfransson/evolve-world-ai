@@ -2,7 +2,7 @@ import { genomeLength, layerSizes } from "./brain.ts";
 import { DEFAULT_CONFIG } from "./config.ts";
 import type { EngineConfig } from "./config.ts";
 import { remapWeights } from "./planMutation.ts";
-import { CREATURE_RAY_FEATURE_LABELS, FEAT_CREATURE, RAY_FEATURES } from "./sensors.ts";
+import { FEAT_CREATURE, RAY_FEATURES, rayFeatureCount } from "./sensors.ts";
 import type { BodyPlan, PlanView } from "./sensors.ts";
 import type { Genome, Rng } from "./types.ts";
 
@@ -32,13 +32,14 @@ const NO_RNG: Rng = {
   normal: () => { throw new Error("unexpected draw"); },
 };
 
-// The Ecosystem genome of a Trials creature: zero weights from each ray's creature flag and seen energy, all else kept,
-// so the creature acts exactly as in Trials until evolution makes use of the new inputs.
-export function trialsToEcoGenome(plan: PlanView, genome: Genome): Float32Array {
+// The Ecosystem genome of a Trials creature: zero weights from each ray's creature (or species) flags and seen energy, all
+// else kept, so the creature acts exactly as in Trials until evolution makes use of the new inputs. target: the config
+// whose input layout to map to (the Ecosystem's one creature flag by default, or one flag per species).
+export function trialsToEcoGenome(plan: PlanView, genome: Genome, target: EngineConfig = ECO): Float32Array {
   const from = trialsSizes(plan);
-  const to = ecoSizes(plan);
+  const to = layerSizes(target, plan);
   if (genome.length !== genomeLength(from)) throw new Error(`genome length ${genome.length} does not match the Trials plan (${genomeLength(from)})`);
-  const F = CREATURE_RAY_FEATURE_LABELS.length;
+  const F = rayFeatureCount(target);
   const rayInputs = plan.rayCount * F;
   const inputs = Int32Array.from({ length: to[0]! }, (_, i) => {
     if (i >= rayInputs) return i - plan.rayCount * (F - RAY_FEATURES);

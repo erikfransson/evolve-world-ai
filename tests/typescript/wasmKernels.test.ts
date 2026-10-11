@@ -198,8 +198,8 @@ describe("WasmRayCaster", () => {
   const randomHits = (rays: number, L: number, rng: ReturnType<typeof createRng>): RayHit[] =>
     Array.from({ length: rays }, () => {
       const u = rng.next();
-      if (u < 0.5) return { closeness: 0, kind: HIT_NONE, energy: 0 };
-      return { closeness: rng.next(), kind: u < 0.8 ? HIT_FOOD : HIT_WALL, energy: 0 };
+      if (u < 0.5) return { closeness: 0, kind: HIT_NONE, energy: 0, species: 0 };
+      return { closeness: rng.next(), kind: u < 0.8 ? HIT_FOOD : HIT_WALL, energy: 0, species: 0 };
     });
 
   it("matches Crowd.castRays over varied plans and starting hits", async () => {
@@ -256,7 +256,7 @@ describe("WasmRayCaster", () => {
       for (let v = 0; v < n; v++) {
         const dirX = Float64Array.from(offsets, (o) => Math.cos(states[v]!.heading + o));
         const dirY = Float64Array.from(offsets, (o) => Math.sin(states[v]!.heading + o));
-        js.push(Array.from({ length: 8 }, () => ({ closeness: 0, kind: HIT_NONE, energy: 0 })));
+        js.push(Array.from({ length: 8 }, () => ({ closeness: 0, kind: HIT_NONE, energy: 0, species: 0 })));
         wasm.push(js[v]!.map((h) => ({ ...h })));
         crowd.castRays(states[v]!.x, states[v]!.y, dirX, dirY, js[v]!, v, 100);
         caster.queue(states[v]!.x, states[v]!.y, dirX, dirY, wasm[v]!, v, 100);
@@ -278,7 +278,7 @@ describe("WasmRayCaster", () => {
     const dirX = Float64Array.from(offsets, (o) => Math.cos(o));
     const dirY = Float64Array.from(offsets, (o) => Math.sin(o));
     const far = [[-5000, 500], [9000, 500], [700, -5000], [700, 9000], [-5000, -5000], [9000, 9000]];
-    const outs = far.map((): RayHit[] => Array.from({ length: 8 }, () => ({ closeness: 0, kind: HIT_NONE, energy: 0 })));
+    const outs = far.map((): RayHit[] => Array.from({ length: 8 }, () => ({ closeness: 0, kind: HIT_NONE, energy: 0, species: 0 })));
     far.forEach(([x, y], v) => caster.queue(x!, y!, dirX, dirY, outs[v]!, -1, 150));
     caster.run();
     caster.apply();

@@ -1,5 +1,6 @@
 import { genomeLength, layerSizes, randomGenome, refit } from "./brain.ts";
 import { itemCounts, itemsPerDensity } from "./config.ts";
+import type { EngineConfig } from "./config.ts";
 import { Creature, SenseBatch, senseThinkBatch } from "./creature.ts";
 import { Crowd } from "./crowd.ts";
 import type { EcoConfig } from "./ecoConfig.ts";
@@ -13,6 +14,8 @@ import { copyPlan, inputLayout, planOf } from "./sensors.ts";
 import type { BodyPlan, PlanView } from "./sensors.ts";
 import { trialsToEcoGenome } from "./seedPool.ts";
 import type { PoolEntry } from "./seedPool.ts";
+import { bandHue, speciesEngine, speciesList, speciesRanges } from "./species.ts";
+import type { SpeciesConfig } from "./species.ts";
 import { HIT_FOOD, HIT_POISON } from "./types.ts";
 import type { CreatureState, Genome, HitKind, WorldView } from "./types.ts";
 import { World } from "./world.ts";
@@ -26,6 +29,8 @@ export class EcoCreature {
   birthTick = 0;
   children = 0;
   eaten = 0; // food items eaten, poison not counted
+  kills = 0; // prey eaten
+  species = 0; // index into the config's species; children keep their parent's
   hue = 0; // degrees
   founderId = 0; // id of the founder this family descends from; a founder is its own
   lastBirthTick = -Infinity;
@@ -50,6 +55,15 @@ export interface CreatureFrame {
   energy: Float32Array;
   hue: Float32Array;
   founder: Int32Array;
+  species: Int32Array;
+}
+
+// Counts of one species: living, born and died since the start, and how many of the deaths were eaten by hunters.
+export interface SpeciesCount {
+  population: number;
+  births: number;
+  deaths: number;
+  eaten: number;
 }
 
 export interface EcoJournal {
@@ -64,22 +78,26 @@ export interface Lineage {
   hue: number; // the founder's own colour, degrees
   pool: boolean; // the founder came from the seed pool
   count: number; // living descendants, the founder included
+  species: number; // the founder's species, so all its descendants'
 }
 
 // All creatures in one shared world. Each tick has two phases:
 // 1. sensePhase: every creature senses a snapshot (items, and creatures as gridded at the tick start) and thinks; then each
 //    updates its memory and moves. Sensing and thinking write only the creature's own rays and outputs, so creature order
 //    cannot matter and helper threads can run them (ecoShare.ts).
-// 2. sharedPhase: eating, collisions (with optional damage), deaths, births and regrowth, serially. Eating and births walk the creatures
-//    from a random start each tick, so no creature wins contested food or the last free place by its list position.
+// 2. sharedPhase: eating, hunting, collisions (with optional damage), deaths, births and regrowth, serially. Eating, hunting and births
+//    walk the creatures from a random start each tick, so no creature wins contested food, prey or the last free place by its list position.
+// With a species list (Predators & prey) every creature belongs to one species, with that species' body, costs, births and
+// diet; a hunter eats a touching creature of a species it preys on. Without one there is a single implicit species.
 export class Ecosystem {
   readonly config: EcoConfig;
   readonly world: WorldView;
   tick = 0;
   births = 0;
   deaths = 0;
-  readonly poolFounders: number; // founders taken from the seed pool, the first ones in id order
-  readonly founders: number; // founders are ids 0 .. founders-1
+  readonly poolFounders: number; // founders taken from the seed pool, the first ones of each species in id order
+  readonly founders: number; // founders are ids 0 .. founders-1, species by species
+  readonly species: readonly SpeciesConfig[];
   food = 0;
   poison = 0;
   // Living creatures in list order; states[i] is members[i].creature.state.
@@ -93,14 +111,20 @@ export class Ecosystem {
   private readonly kernels: SenseKernels | null; // with eco.wasm when WebAssembly SIMD is available
   private readonly states: CreatureState[] = [];
   private readonly byId = new Map<number, EcoCreature>();
-  private readonly spare: EcoCreature[] = [];
+  private readonly spare: EcoCreature[][]; // per species, since a creature keeps its species' engine config
+  private readonly engines: EngineConfig[]; // per species
+  private readonly ranges: EcoConfig["eco"][]; // per species, for plan variation
+  private readonly cooldowns: number[]; // per species, in ticks
+  private readonly counts: SpeciesCount[];
+  private readonly kinds: number[] = []; // kinds[i] is members[i].species
+  private readonly multi: boolean; // more than one species, so rays tell species apart
+  private readonly hunters: boolean; // some species eats another
   private readonly rng: StatefulRng;
   // Scratch of one birth, grown as plans need: the child's plan, its genome, and the parent's weights remapped to a new shape.
   private readonly childPlan: BodyPlan;
   private childGenome = new Float32Array(0);
   private remapped = new Float32Array(0);
   private readonly mutation: { mutationRate: number; mutationStd: number };
-  private readonly cooldownTicks: number;
   private readonly foodCap: number;
   private readonly poisonCap: number;
   private readonly foodPerTick: number;
@@ -111,6 +135,8 @@ export class Ecosystem {
   // Living creatures per founder and each founder's colour, indexed by founder id; updated on birth and death only.
   private readonly lineageLive: Int32Array;
   private readonly founderHue: Float32Array;
+  private readonly founderSpecies: Int32Array;
+  private readonly founderPool: Uint8Array;
   private readonly aging: Aging | null;
   private readonly contact: Contact = { speed: 0 };
 
@@ -124,7 +150,14 @@ export class Ecosystem {
     this.poisonCap = Math.round(eco.poisonMaxDensity * perDensity);
     this.foodPerTick = eco.foodRegrow * perDensity * dt;
     this.poisonPerTick = eco.poisonRegrow * perDensity * dt;
-    this.cooldownTicks = Math.round(eco.birthCooldown / dt);
+    this.species = speciesList(config);
+    this.multi = this.species.length > 1;
+    this.hunters = this.species.some((sp) => sp.prey.length > 0);
+    this.engines = this.species.map((_, s) => speciesEngine(config, s));
+    this.ranges = this.species.map((sp) => (config.species?.length ? speciesRanges(config, sp) : eco));
+    this.cooldowns = this.species.map((sp) => Math.round(sp.birthCooldown / dt));
+    this.counts = this.species.map(() => ({ population: 0, births: 0, deaths: 0, eaten: 0 }));
+    this.spare = this.species.map(() => []);
     this.rng = createRng(deriveSeed(config.seed, 0xec0));
     this.aging = eco.aging ? { startTicks: Math.round(eco.agingStart / dt), perTick: (eco.agingRate * dt) / 60 } : null;
     this.items = new World(config, Math.max(start.food, this.foodCap) + Math.max(start.poison, this.poisonCap));
@@ -134,39 +167,53 @@ export class Ecosystem {
     this.items.scatter(start.food, start.poison, this.rng);
     this.food = start.food;
     this.poison = start.poison;
-    this.crowd = new Crowd(config, Math.min(eco.initialPopulation, eco.maxPopulation));
+    const wanted = this.species.reduce((n, sp) => n + Math.max(0, sp.founders), 0);
+    this.crowd = new Crowd(config, Math.min(wanted, eco.maxPopulation));
     this.kernels = eco.wasm ? SenseKernels.create() : null;
     this.childPlan = planOf(config);
     this.mutation = { mutationRate: config.mutation.rate, mutationStd: config.mutation.std };
 
     const { width, height } = config.world;
     const r = config.creature.radius;
-    const founders = Math.max(0, Math.min(eco.initialPopulation, eco.maxPopulation));
-    const seeds = pool?.length ? pool.map((e) => (config.creature.seesCreatures ? trialsToEcoGenome(e.plan, e.genome) : e.genome)) : [];
-    this.poolFounders = seeds.length ? Math.round(Math.min(1, Math.max(0, eco.poolFraction)) * founders) : 0;
-    const first = this.poolFounders ? this.rng.int(seeds.length) : 0;
+    const founders = Math.max(0, Math.min(wanted, eco.maxPopulation));
+    const seeds = pool?.length ? pool.map((e) => (config.creature.seesCreatures ? trialsToEcoGenome(e.plan, e.genome, config) : e.genome)) : [];
     const randomPlanScratch = this.childPlan;
     this.founders = founders;
     this.lineageLive = new Int32Array(founders);
     this.founderHue = new Float32Array(founders);
-    for (let i = 0; i < founders; i++) {
-      let plan: PlanView = randomPlanScratch;
-      let genome: Genome;
-      if (i < this.poolFounders) {
-        // Round-robin over the pool from a random entry, each copy mutated like a child.
-        const k = (first + i) % seeds.length;
-        plan = pool![k]!.plan;
-        genome = seeds[k]!.slice();
-        mutate(genome, this.mutation, this.rng);
-      } else {
-        if (eco.foundersVary) randomPlan(eco, this.rng, randomPlanScratch);
-        genome = randomGenome(layerSizes(config, plan), this.rng);
+    this.founderSpecies = new Int32Array(founders);
+    this.founderPool = new Uint8Array(founders);
+    let poolFounders = 0;
+    let i = 0;
+    for (let sp = 0; sp < this.species.length; sp++) {
+      const spec = this.species[sp]!;
+      const count = Math.min(Math.max(0, spec.founders), founders - i);
+      const fromPool = seeds.length ? Math.round(Math.min(1, Math.max(0, spec.poolFraction)) * count) : 0;
+      const first = fromPool ? this.rng.int(seeds.length) : 0;
+      for (let k = 0; k < count; k++, i++) {
+        let plan: PlanView = randomPlanScratch;
+        let genome: Genome;
+        if (k < fromPool) {
+          // Round-robin over the pool from a random entry, each copy mutated like a child.
+          const e = (first + k) % seeds.length;
+          plan = pool![e]!.plan;
+          genome = seeds[e]!.slice();
+          mutate(genome, this.mutation, this.rng);
+          this.founderPool[i] = 1;
+        } else {
+          if (eco.foundersVary) randomPlan(this.ranges[sp]!, this.rng, randomPlanScratch);
+          genome = randomGenome(layerSizes(config, plan), this.rng);
+        }
+        const x = this.rng.range(r, width - r);
+        const y = this.rng.range(r, height - r);
+        const m = this.spawn(genome, plan, x, y, this.rng.next() * 2 * Math.PI, spec.startEnergy, sp);
+        const hue = spec.hue < 0 ? this.rng.next() * 360 : bandHue(spec, spec.hue + (this.rng.next() - 0.5) * spec.hueSpread);
+        m.hue = this.founderHue[i] = hue;
+        this.founderSpecies[i] = sp;
       }
-      const x = this.rng.range(r, width - r);
-      const y = this.rng.range(r, height - r);
-      const m = this.spawn(genome, plan, x, y, this.rng.next() * 2 * Math.PI, config.creature.startEnergy);
-      m.hue = this.founderHue[i] = this.rng.next() * 360;
+      poolFounders += fromPool;
     }
+    this.poolFounders = poolFounders;
     // Poison moves only once every founder stands, and never onto one, so none ends up on a founder placed earlier.
     const reach = r + config.world.itemRadius;
     const states = this.states;
@@ -185,6 +232,11 @@ export class Ecosystem {
 
   get extinct(): boolean {
     return this.members.length === 0;
+  }
+
+  // Living, born, died and eaten per species, in the config's order; live objects, read only.
+  get speciesCounts(): readonly SpeciesCount[] {
+    return this.counts;
   }
 
   // The living creature with this id, or undefined once it has died.
@@ -213,7 +265,7 @@ export class Ecosystem {
 
   // Grids the creatures as they stand at the tick start, for sensePhase.
   prepareTick(): void {
-    this.crowd.rebuild(this.states, this.states.length);
+    this.crowd.rebuild(this.states, this.states.length, this.multi ? this.kinds : undefined);
   }
 
   // Phase 1a for members start .. end-1, after prepareTick: sense and think into each creature's outputs.
@@ -245,6 +297,7 @@ export class Ecosystem {
     let first = this.rng.int(n);
     for (let k = 0; k < n; k++) {
       const m = members[(first + k) % n];
+      if (!this.species[m.species]!.plants) continue;
       const eaten = m.creature.eat(this.items);
       if (eaten < 0) continue;
       if (this.items.kinds[eaten] === HIT_FOOD) {
@@ -254,6 +307,7 @@ export class Ecosystem {
       this.items.removeItem(eaten); // so no one else eats it this tick
     }
 
+    if (this.hunters) this.hunt();
     if (this.config.eco.collisions) this.collideAll();
 
     for (let i = n - 1; i >= 0; i--) {
@@ -267,12 +321,62 @@ export class Ecosystem {
     for (let k = 0; k < n && members.length < eco.maxPopulation; k++) {
       const parent = members[(first + k) % n];
       const energy = parent.creature.state.energy;
+      const sp = this.species[parent.species]!;
       // Above birthCost too, so a birth never kills the parent whatever the settings.
-      if (energy >= eco.birthEnergy && energy > eco.birthCost && this.tick - parent.lastBirthTick >= this.cooldownTicks) this.giveBirth(parent);
+      if (energy >= sp.birthEnergy && energy > sp.birthCost && this.tick - parent.lastBirthTick >= this.cooldowns[parent.species]!) this.giveBirth(parent);
     }
 
     this.regrow();
     this.tick++;
+  }
+
+  // Each living hunter, from a random start, eats the nearest touching creature of a species it preys on, at most one per
+  // tick, using a grid of the moved positions. The prey dies (removed with the other deaths) and cannot be eaten twice.
+  private hunt(): void {
+    const crowd = this.crowd;
+    const states = this.states;
+    const members = this.members;
+    const n = members.length;
+    crowd.rebuild(states, n, this.kinds);
+    const reach = 2 * this.config.creature.radius;
+    const inv = 1 / crowd.cell;
+    const first = n > 0 ? this.rng.int(n) : 0;
+    for (let k = 0; k < n; k++) {
+      const hunter = members[(first + k) % n]!;
+      const sp = this.species[hunter.species]!;
+      const s = states[(first + k) % n]!;
+      if (sp.prey.length === 0 || s.energy <= 0) continue;
+      const cx0 = Math.max(0, Math.floor((s.x - reach) * inv));
+      const cx1 = Math.min(crowd.cols - 1, Math.floor((s.x + reach) * inv));
+      const cy0 = Math.max(0, Math.floor((s.y - reach) * inv));
+      const cy1 = Math.min(crowd.rows - 1, Math.floor((s.y + reach) * inv));
+      let best = -1;
+      let bestD2 = reach * reach;
+      for (let cy = cy0; cy <= cy1; cy++) {
+        const row = cy * crowd.cols;
+        const end = crowd.cellStart[row + cx1 + 1]!;
+        for (let t = crowd.cellStart[row + cx0]!; t < end; t++) {
+          if (!sp.prey.includes(crowd.species[t]!)) continue;
+          const o = crowd.owners[t]!;
+          const p = states[o]!;
+          if (!p.alive || p.energy <= 0) continue;
+          const dx = p.x - s.x;
+          const dy = p.y - s.y;
+          const d2 = dx * dx + dy * dy;
+          if (d2 < bestD2 || (d2 === bestD2 && best >= 0 && members[o]!.id < members[best]!.id)) {
+            best = o;
+            bestD2 = d2;
+          }
+        }
+      }
+      if (best < 0) continue;
+      const prey = states[best]!;
+      s.energy += sp.eatEfficiency * prey.energy + sp.eatBaseline;
+      prey.energy = 0;
+      prey.alive = false;
+      hunter.kills++;
+      this.counts[members[best]!.species]!.eaten++;
+    }
   }
 
   // Pushes overlapping pairs apart with a bounce, using a grid of the moved positions. Pairs resolve in grid order.
@@ -319,17 +423,19 @@ export class Ecosystem {
 
   private giveBirth(parent: EcoCreature): void {
     const { eco, creature: cc, world: w } = this.config;
+    const sp = this.species[parent.species]!;
+    const ranges = this.ranges[parent.species]!;
     const ps = parent.creature.state;
-    ps.energy -= eco.birthCost;
+    ps.energy -= sp.birthCost;
     parent.lastBirthTick = this.tick;
     parent.children++;
     const pc = parent.creature;
     const plan = this.childPlan;
     copyPlan(pc.plan, plan);
     let source = pc.brain.genome;
-    if (eco.planDrift > 0) driftPlan(plan, eco.planDrift, eco, this.rng);
+    if (eco.planDrift > 0) driftPlan(plan, eco.planDrift, ranges, this.rng);
     if (eco.structuralRate > 0 && this.rng.next() < eco.structuralRate) {
-      const maps = mutateStructure(plan, inputLayout(this.config, pc.plan), pc.brain.sizes, eco, this.rng);
+      const maps = mutateStructure(plan, inputLayout(this.config, pc.plan), pc.brain.sizes, ranges, this.rng);
       if (maps) {
         this.remapped = refit(this.remapped, genomeLength(maps.map((m) => m.length)));
         remapWeights(pc.brain.sizes, source, maps, this.remapped, this.rng);
@@ -343,7 +449,7 @@ export class Ecosystem {
     const cos = Math.cos(angle);
     const sin = Math.sin(angle);
     const gap = 2 * cc.radius + 1; // just clear of the parent
-    const child = this.spawn(genome, plan, ps.x + cos * gap, ps.y + sin * gap, angle, eco.childEnergy);
+    const child = this.spawn(genome, plan, ps.x + cos * gap, ps.y + sin * gap, angle, sp.childEnergy, parent.species);
     const s = child.creature.state;
     s.vx = cos * eco.birthSpeed;
     s.vy = sin * eco.birthSpeed;
@@ -352,18 +458,21 @@ export class Ecosystem {
     child.founderId = parent.founderId;
     this.lineageLive[child.founderId]!++;
     child.depth = parent.depth + 1;
-    child.hue = (((parent.hue + this.rng.normal() * eco.hueDrift) % 360) + 360) % 360;
+    child.hue = bandHue(sp, parent.hue + this.rng.normal() * eco.hueDrift);
     this.births++;
+    this.counts[parent.species]!.births++;
   }
 
   // Adds a creature, reusing a dead one's storage when there is one; genome and plan are copied, except a founder's genome for a new creature.
-  private spawn(genome: Genome, plan: PlanView, x: number, y: number, heading: number, energy: number): EcoCreature {
-    let m = this.spare.pop();
+  private spawn(genome: Genome, plan: PlanView, x: number, y: number, heading: number, energy: number, species: number): EcoCreature {
+    let m = this.spare[species]!.pop();
     if (m) m.creature.reset(genome, x, y, heading, energy, plan);
     else {
-      m = new EcoCreature(new Creature(this.config, genome === this.childGenome ? genome.slice() : genome, x, y, heading, plan));
+      m = new EcoCreature(new Creature(this.engines[species]!, genome === this.childGenome ? genome.slice() : genome, x, y, heading, plan));
       m.creature.state.energy = energy;
     }
+    m.species = species;
+    this.counts[species]!.population++;
     m.id = this.nextId++;
     m.founderId = m.id; // a child overwrites this
     m.creature.aging = this.aging;
@@ -373,9 +482,11 @@ export class Ecosystem {
     m.birthTick = this.tick;
     m.children = 0;
     m.eaten = 0;
+    m.kills = 0;
     m.lastBirthTick = -Infinity;
     this.journal?.born.push(m.id);
     this.members.push(m);
+    this.kinds.push(species);
     this.states.push(m.creature.state);
     this.byId.set(m.id, m);
     return m;
@@ -387,13 +498,18 @@ export class Ecosystem {
     const last = this.members.length - 1;
     this.members[i] = this.members[last];
     this.states[i] = this.states[last];
+    this.kinds[i] = this.kinds[last]!;
     this.members.pop();
     this.states.pop();
+    this.kinds.pop();
     this.byId.delete(m.id);
     this.lineageLive[m.founderId]!--;
     this.journal?.died.push(m.id);
-    this.spare.push(m);
+    this.spare[m.species]!.push(m);
     this.deaths++;
+    const count = this.counts[m.species]!;
+    count.population--;
+    count.deaths++;
   }
 
   private regrow(): void {
@@ -424,6 +540,7 @@ export class Ecosystem {
         energy: new Float32Array(size),
         hue: new Float32Array(size),
         founder: new Int32Array(size),
+        species: new Int32Array(size),
       };
     }
     for (let i = 0; i < n; i++) {
@@ -436,6 +553,7 @@ export class Ecosystem {
       frame.energy[i] = s.energy;
       frame.hue[i] = m.hue;
       frame.founder[i] = m.founderId;
+      frame.species[i] = m.species;
     }
     frame.count = n;
     return frame;
@@ -446,18 +564,23 @@ export class Ecosystem {
     return this.founderHue[founder] ?? 0;
   }
 
+  // True when the founder came from the seed pool.
+  fromPool(founder: number): boolean {
+    return this.founderPool[founder] === 1;
+  }
+
   // Living creatures descended from this founder.
   lineageSize(founder: number): number {
     return this.lineageLive[founder] ?? 0;
   }
 
-  // The k largest living lineages, biggest first, ties to the lowest founder id. Scans the founders, not the creatures.
-  topLineages(k: number): Lineage[] {
+  // The k largest living lineages, of one species or of all (-1), biggest first, ties to the lowest founder id. Scans the founders, not the creatures.
+  topLineages(k: number, species = -1): Lineage[] {
     const top: Lineage[] = [];
     for (let f = 0; f < this.founders; f++) {
       const count = this.lineageLive[f]!;
-      if (count === 0 || (top.length === k && count <= top[k - 1]!.count)) continue;
-      const entry = { founder: f, hue: this.founderHue[f]!, pool: f < this.poolFounders, count };
+      if (count === 0 || (species >= 0 && this.founderSpecies[f] !== species) || (top.length === k && count <= top[k - 1]!.count)) continue;
+      const entry = { founder: f, hue: this.founderHue[f]!, pool: this.founderPool[f] === 1, count, species: this.founderSpecies[f]! };
       let at = top.length;
       while (at > 0 && top[at - 1]!.count < count) at--;
       top.splice(at, 0, entry);
