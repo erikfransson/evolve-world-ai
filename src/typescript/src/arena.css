@@ -1,0 +1,106 @@
+/* RL Arena page, on top of style.css */
+.panel { position: relative; } /* the visually hidden radios of the segmented controls are absolute and must not extend the page */
+.panel #setup { display: block; }
+#settings { gap: 0.8rem; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+.pair .field { min-width: 0; }
+.src[hidden] { display: none; }
+.src { display: flex; flex-direction: column; gap: 0.7rem; }
+input[type="text"] { width: 100%; background: var(--bg); color: inherit; border: 1px solid var(--border-hi); border-radius: 8px; padding: 0.4rem 0.6rem; font: inherit; }
+input[type="text"]:hover { border-color: var(--accent-dim); }
+input[type="file"] { width: 100%; font: inherit; font-size: 0.8rem; color: var(--muted); }
+input[type="file"]::file-selector-button { margin-right: 0.6rem; padding: 0.3rem 0.8rem; background: transparent; color: var(--text); border: 1px solid var(--border-hi); border-radius: 999px; font: inherit; cursor: pointer; }
+input[type="file"]::file-selector-button:hover { background: var(--card-hi); border-color: var(--accent-dim); }
+.card .seg span { padding: 0.3rem 0.2rem; font-size: 0.8rem; }
+.msg { margin: 0; min-height: 0; font-size: 0.78rem; color: var(--accent); overflow-wrap: anywhere; }
+.msg.error { color: #ff8a80; }
+.msg:empty { display: none; }
+.neurons { display: flex; gap: 0.3rem; }
+.neurons input { flex: 1; min-width: 0; padding: 0.4rem 0.2rem; text-align: center; }
+.neurons input[hidden] { display: none; }
+#settings .hint { margin: 0; }
+details.more > summary { color: var(--text); font-weight: 500; font-size: 0.85rem; }
+
+/* environment list */
+.env-list { display: flex; flex-direction: column; gap: 0.4rem; }
+.env-opt { display: flex; align-items: flex-start; gap: 0.6rem; padding: 0.5rem 0.6rem; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+.env-opt:hover { border-color: var(--accent-dim); }
+.env-opt:has(input:checked) { border-color: var(--accent); background: var(--card-hi); }
+.env-opt input { appearance: none; flex: none; width: 1.05rem; height: 1.05rem; margin: 0.1rem 0 0; border: 1.5px solid var(--border-hi); border-radius: 4px; background: var(--bg); cursor: pointer; display: grid; place-items: center; }
+.env-opt input:checked { background: var(--accent); border-color: var(--accent); }
+.env-opt input:checked::after { content: ""; width: 0.3rem; height: 0.55rem; margin-top: -0.1rem; border: solid var(--on-accent); border-width: 0 2px 2px 0; transform: rotate(45deg); }
+.env-body { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; flex: 1; }
+.env-body b { font-weight: 600; font-size: 0.88rem; }
+.env-body small { color: var(--muted); font-size: 0.75rem; line-height: 1.35; }
+.env-del { align-self: flex-start; padding: 0 0.4rem; background: transparent; border: 0; color: var(--muted); font-size: 1.1rem; line-height: 1.2; border-radius: 6px; }
+.env-del:hover { color: var(--text); background: var(--card-hi); }
+.chips { margin: 0; display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.chips span { padding: 0 0.5rem; border: 1px solid var(--border-hi); border-radius: 999px; color: var(--muted); font-size: 0.68rem; }
+.rivals { display: flex; flex-direction: column; gap: 0.4rem; }
+.rival { display: grid; grid-template-columns: 1fr 3.4rem 1fr auto; gap: 0.3rem; align-items: center; }
+.rival select, .rival input { padding: 0.3rem 0.4rem; font-size: 0.8rem; }
+.rival select { padding-right: 1.4rem; background-position: calc(100% - 11px) 55%, calc(100% - 6px) 55%; }
+.mini-field { display: flex; flex-direction: column; gap: 0.15rem; color: var(--muted); font-size: 0.72rem; }
+.pair:has(.mini-field) { grid-template-columns: 1fr 1fr; }
+.mini-field input { padding: 0.3rem 0.5rem; }
+
+/* stage */
+.arena-stage { flex: 1; min-width: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 0.8rem; scrollbar-width: thin; scrollbar-color: var(--border-hi) transparent; padding-right: 0.2rem; }
+.arena-stage > * { flex: none; }
+.stage-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; padding: 0.7rem 0.9rem; background: var(--card); border: 1px solid var(--border); border-radius: 12px; }
+.iter { display: flex; flex-direction: column; gap: 0.2rem; min-width: 11rem; flex: 1; }
+.iter-label { color: var(--muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; }
+.iter-num { font-size: 2.2rem; font-weight: 700; line-height: 1; color: var(--accent); font-variant-numeric: tabular-nums; }
+.iter-of { font-size: 1rem; font-weight: 500; color: var(--muted); }
+.stage-head .buttons { display: flex; gap: 0.5rem; }
+.stage-head .primary { grid-column: auto; padding: 0.55rem 1.6rem; }
+.stage-head .secondary { padding: 0.5rem 1rem; }
+.stats { grid-template-columns: repeat(5, 1fr); }
+.tile dd .delta { margin-left: 0.35rem; font-size: 0.8rem; font-weight: 600; color: var(--muted); }
+.tile dd .delta.up { color: var(--accent); }
+.tile dd .delta.down { color: #f87171; }
+.viewbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.viewbar .toggle { gap: 0.7rem; }
+.arena-legend { padding: 0; flex-direction: row; flex-wrap: wrap; gap: 0.3rem 0.9rem; color: var(--muted); font-size: 0.75rem; }
+.viewrow { display: flex; flex-wrap: wrap; gap: 0.8rem; align-items: flex-start; }
+.tiles-wrap { position: relative; flex: 1 1 28rem; min-width: 0; }
+.tiles { --cols: 3; display: grid; grid-template-columns: repeat(var(--cols), 1fr); gap: 0.5rem; max-width: calc(var(--cols) * 15rem); }
+.tile-box { margin: 0; min-width: 0; display: flex; flex-direction: column; gap: 0.25rem; }
+.tile-box[hidden] { display: none; }
+.tile-box canvas { width: 100%; aspect-ratio: 1 / 1; display: block; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); }
+.tile-box figcaption { display: flex; flex-direction: column; font-size: 0.7rem; color: var(--muted); line-height: 1.25; font-variant-numeric: tabular-nums; }
+.tile-box figcaption b { color: var(--text); font-weight: 600; font-size: 0.75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.empty-note { position: absolute; inset: 0; margin: 0; display: grid; place-items: center; padding: 1rem; text-align: center; color: var(--muted); background: color-mix(in srgb, var(--bg) 70%, transparent); border-radius: 10px; pointer-events: none; }
+.empty-note[hidden] { display: none; }
+.brain-card { flex: 0 0 min(100%, 26rem); gap: 0.5rem; padding: 0.7rem 0.8rem; }
+.brain-card[hidden] { display: none; }
+#brainView { display: block; width: 100%; height: 230px; }
+
+/* graph */
+.graph-card { gap: 0.4rem; padding-bottom: 0.6rem; }
+.graph-head { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; flex-wrap: wrap; }
+.graph-head .fit-foot { padding: 0; }
+.key.train { color: #7dd3fc; }
+.key.best { color: #fbbf24; }
+.key.held { color: #3ddc97; }
+.key.held::before { height: 4px; border-radius: 2px; }
+#rewardView { display: block; width: 100%; height: 190px; }
+.env-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; font-variant-numeric: tabular-nums; }
+.env-table[hidden] { display: none; }
+.env-table th { padding: 0.2rem 0.4rem; color: var(--muted); font-weight: 500; text-align: right; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; }
+.env-table td { padding: 0.2rem 0.4rem; text-align: right; border-top: 1px solid var(--border); }
+.env-table th:first-child, .env-table td:first-child { text-align: left; }
+.env-table .up { color: var(--accent); }
+.env-table .down { color: #f87171; }
+.save-card .buttons { margin-top: 0.1rem; }
+
+@media (max-width: 700px) {
+  .arena-stage { order: -1; overflow: visible; padding-right: 0; }
+  .stats { grid-template-columns: 1fr 1fr; }
+  .stats .tile:last-child { grid-column: 1 / -1; }
+  .stage-head .buttons { width: 100%; }
+  .stage-head .buttons > * { flex: 1; }
+  .tiles { --cols: 2 !important; max-width: none; }
+  .brain-card { flex-basis: 100%; }
+  .iter-num { font-size: 1.8rem; }
+}

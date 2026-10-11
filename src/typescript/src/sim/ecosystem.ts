@@ -26,6 +26,18 @@ import { SenseKernels } from "./wasm/senseKernels.ts";
 
 export type { Lineage } from "./lineages.ts";
 
+// A founder placed as given; genome in the config's input layout for its species.
+export interface CastMember {
+  species: number;
+  plan: PlanView;
+  genome: Genome;
+  x: number;
+  y: number;
+  heading: number;
+  hue: number;
+  energy?: number; // the species' start energy when left out
+}
+
 // Collision events for the page's effects, collected since the last drain and bounded: a Float32Array of EVENT_STRIDE numbers each, kind, x, y, value.
 // An impact (kind 0, value = energy each lost) is reported at BIG_IMPACT or more; a death (kind 1, value = hue) from a bump or a hunt. Reporting changes no results.
 export const EVENT_IMPACT = 0;
@@ -154,7 +166,8 @@ export class Ecosystem {
   onDeath: ((m: EcoCreature) => void) | null = null; // called with each creature as it leaves, before its object is recycled
 
   // pool: trained founders (see seedPool.ts); without one, or at poolFraction 0, every founder is random.
-  constructor(config: EcoConfig, pool: readonly PoolEntry[] | null = null, options: { journal?: boolean } = {}) {
+  // cast: exactly these founders instead of the species' founder counts (RL environments, see rl/env.ts).
+  constructor(config: EcoConfig, pool: readonly PoolEntry[] | null = null, options: { journal?: boolean; cast?: readonly CastMember[] } = {}) {
     this.config = config;
     const { eco, dt } = config;
     const perDensity = itemsPerDensity(config);
@@ -180,11 +193,12 @@ export class Ecosystem {
     this.items.scatter(start.food, start.poison, this.rng);
     this.food = start.food;
     this.poison = start.poison;
-    const counts = founderCounts(this.species, eco.maxPopulation);
-    const founders = counts.reduce((a, b) => a + b, 0);
+    const cast = options.cast;
+    const counts = cast ? this.species.map(() => 0) : founderCounts(this.species, eco.maxPopulation);
+    const founders = cast ? cast.length : counts.reduce((a, b) => a + b, 0);
     this.crowd = new Crowd(config, founders);
     // Plans past the kernel's ray limit (a huge ray count setting or pool entry) run on the JS path.
-    const maxRays = Math.max(config.creature.rayCount, ...this.ranges.map((r) => r.rayCountRange[1] ?? 0), ...(pool ?? []).map((e) => e.plan.rayCount));
+    const maxRays = Math.max(config.creature.rayCount, ...this.ranges.map((r) => r.rayCountRange[1] ?? 0), ...(pool ?? []).map((e) => e.plan.rayCount), ...(cast ?? []).map((c) => c.plan.rayCount));
     this.kernels = eco.wasm ? SenseKernels.create(config, maxRays) : null;
     this.childPlan = planOf(config);
 
@@ -217,13 +231,15 @@ export class Ecosystem {
         randomBirth(this.ranges[sp]!, this.rng, this.traits);
         const x = this.rng.range(r, width - r);
         const y = this.rng.range(r, height - r);
-        const m = this.spawn(genome, plan, x, y, this.rng.next() * 2 * Math.PI, spec.startEnergy, sp);
-        this.setBirth(m, this.traits);
+        const heading = this.rng.next() * 2 * Math.PI;
         const hue = spec.hue < 0 ? this.rng.next() * 360 : bandHue(spec, spec.hue + (this.rng.next() - 0.5) * spec.hueSpread);
-        m.hue = hue;
-        this.lineages.describe(i, hue, sp, k < fromPool);
+        this.found(i, { species: sp, plan, genome, x, y, heading, hue, energy: spec.startEnergy }, k < fromPool);
       }
       poolFounders += fromPool;
+    }
+    for (const c of cast ?? []) {
+      randomBirth(this.ranges[c.species]!, this.rng, this.traits);
+      this.found(i++, c, false);
     }
     this.poolFounders = poolFounders;
     // Poison moves only once every founder stands, and never onto one, so none ends up on a founder placed earlier.
@@ -277,6 +293,7 @@ export class Ecosystem {
 
   // Grids the creatures as they stand at the tick start, for sensePhase.
   prepareTick(): void {
+    if (this.states.length < 2 && this.crowd.count < 2) return; // a lone creature, or none, only sees itself in a grid of at most itself
     this.crowd.rebuild(this.states, this.states.length, this.multi ? this.kinds : undefined);
   }
 
@@ -437,6 +454,7 @@ export class Ecosystem {
   private collideAll(gridded = false): void {
     const crowd = this.crowd;
     const states = this.states;
+    if (states.length < 2) return; // no pairs
     if (!gridded) crowd.rebuild(states, states.length);
     const { cols, rows, cellStart, owners } = crowd;
     const { radius } = this.config.creature;
@@ -570,6 +588,14 @@ export class Ecosystem {
     m.birth.cost = t.cost;
     m.birth.cooldown = t.cooldown;
     m.cooldownTicks = Math.round(t.cooldown / this.config.dt);
+  }
+
+  // Places founder i with the birth traits in this.traits; the one path for drawn and cast founders.
+  private found(i: number, c: CastMember, fromPool: boolean): void {
+    const m = this.spawn(c.genome, c.plan, c.x, c.y, c.heading, c.energy ?? this.species[c.species]!.startEnergy, c.species);
+    this.setBirth(m, this.traits);
+    m.hue = c.hue;
+    this.lineages.describe(i, c.hue, c.species, fromPool);
   }
 
   // Adds a creature, reusing a dead one's storage when there is one; genome and plan are copied.

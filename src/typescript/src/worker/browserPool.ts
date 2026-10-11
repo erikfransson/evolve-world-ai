@@ -8,6 +8,8 @@ import { PoolEvaluator, defaultThreads } from "./evalPool.ts";
 import { ThinkPool } from "./ecoPool.ts";
 import type { HelperIn, HelperOut } from "./ecoPool.ts";
 import type { Port } from "./port.ts";
+import { RlPool, inlineRlPort } from "./rlPool.ts";
+import type { RlDone, RlJob, RlSetup } from "./rlPool.ts";
 
 // n new web workers as ports; on a failed spawn the ones already started are terminated and the error rethrown.
 function browserPorts<In, Out>(n: number, spawn: () => Worker, what: string): Port<In, Out>[] {
@@ -84,4 +86,17 @@ export function createBrowserEvaluator(config: SimConfig, threads = defaultThrea
     return new SerialEvaluator(config);
   }
   return new BrowserEvaluator(config, new PoolEvaluator(config, workers));
+}
+
+// Pool of nested RL helper workers, or the worker's own thread when one is wanted or nested workers cannot be spawned or loaded.
+export function createBrowserRlPool(setup: RlSetup, threads = defaultThreads(navigator.hardwareConcurrency || 2)): RlPool {
+  let ports = [inlineRlPort()];
+  if (threads > 1 && typeof Worker !== "undefined") {
+    try {
+      ports = browserPorts<RlJob, RlDone>(threads, () => new Worker(new URL("./rlHelperWorker.ts", import.meta.url), { type: "module" }), "RL helper");
+    } catch (error) {
+      console.warn("Nested workers unavailable, running serially:", error);
+    }
+  }
+  return new RlPool(ports, setup);
 }
