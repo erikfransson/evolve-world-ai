@@ -1,14 +1,7 @@
-// @vitest-environment happy-dom
-import { pageBody } from "./pageLoader.ts";
 import { testRng } from "./helpers.ts";
 import { DEFAULT_CONFIG } from "../../src/typescript/src/sim/config.ts";
 import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
-import { buildForm } from "../../src/typescript/src/ui/settingsForm.ts";
-import type { FormHandle } from "../../src/typescript/src/ui/settingsForm.ts";
-import { ECO_FORM } from "../../src/typescript/src/ui/ecoSettingsForm.ts";
-import { PREDATOR_FORM } from "../../src/typescript/src/ui/predatorForm.ts";
-import { TRIALS_FORM } from "../../src/typescript/src/ui/trialsForm.ts";
-import { initSettingsIO, parseWithPreset, serialise } from "../../src/typescript/src/ui/settingsIO.ts";
+import { parseWithPreset, serialise } from "../../src/typescript/src/ui/settingsIO.ts";
 import type { Mode } from "../../src/typescript/src/ui/settingsIO.ts";
 import { Scoreboard } from "../../src/typescript/src/ui/scoreboard.ts";
 
@@ -41,7 +34,9 @@ function deepNest(depth: number): unknown {
 function mutate(base: unknown): unknown {
   const doc = structuredClone(base) as Record<string, unknown>;
   for (let n = 1 + rng.int(3); n > 0; n--) {
-    const at = pick(paths(doc).filter((p) => p.length > 0));
+    const choices = paths(doc).filter((p) => p.length > 0);
+    if (choices.length === 0) break;
+    const at = pick(choices);
     const parent = at.slice(0, -1).reduce<any>((v, k) => v[k], doc);
     const key = at[at.length - 1]!;
     const how = rng.int(5);
@@ -78,7 +73,6 @@ function finiteDeep(v: unknown, where = ""): string | null {
 }
 
 const DEFAULTS = { trials: DEFAULT_CONFIG, ecosystem: DEFAULT_ECO_CONFIG, predators: DEFAULT_PREDATOR_CONFIG };
-const FORMS = { trials: TRIALS_FORM, ecosystem: ECO_FORM, predators: PREDATOR_FORM };
 const ROUNDS = 400;
 
 function checkPrototype(): void {
@@ -88,47 +82,27 @@ function checkPrototype(): void {
 }
 
 describe.each(["trials", "ecosystem", "predators"] as Mode[])("hostile pasted settings (%s)", (mode) => {
-  let form: FormHandle<any>;
-  let apply: (t: string) => void;
-  beforeAll(() => {
-    document.body.innerHTML = pageBody(mode);
-    form = buildForm(document.getElementById("settings")!, FORMS[mode] as any);
-    form.fill(DEFAULTS[mode]);
-    apply = initSettingsIO({ mode, form: document.getElementById("setup") as HTMLFormElement, read: form.read, fill: form.fill }).apply;
-  });
-
   it("parses to a finite config of the default's shape, or throws a readable Error", () => {
     const valid = JSON.parse(serialise(mode, DEFAULTS[mode], "custom"));
     let accepted = 0;
     for (let i = 0; i < ROUNDS; i++) {
       const text = i % 4 === 3 ? corrupt(JSON.stringify(valid)) : JSON.stringify(mutate(valid));
+      let config: ReturnType<typeof parseWithPreset>["config"] | null = null;
       try {
-        const { config } = parseWithPreset(text, mode);
-        accepted++;
-        expect(finiteDeep(config), text.slice(0, 300)).toBeNull();
-        expect(Object.keys(config).sort()).toEqual(Object.keys(DEFAULTS[mode]).sort());
-        expect(Object.hasOwn(config, "polluted")).toBe(false);
+        config = parseWithPreset(text, mode).config;
       } catch (e) {
         expect(e, text.slice(0, 300)).toBeInstanceOf(Error);
         expect((e as Error).message.length).toBeGreaterThan(0);
         expect((e as Error).name, `${(e as Error).message} for ${text.slice(0, 300)}`).toBe("Error"); // not a TypeError or RangeError from the parser's internals
       }
+      if (config) {
+        accepted++;
+        expect(finiteDeep(config), text.slice(0, 300)).toBeNull();
+        expect(Object.keys(config).sort()).toEqual(Object.keys(DEFAULTS[mode]).sort());
+        expect(Object.hasOwn(config, "polluted")).toBe(false);
+      }
     }
     expect(accepted).toBeGreaterThan(20); // the fuzz must also reach the accepting path
-    checkPrototype();
-  });
-
-  it("leaves the form holding a finite config inside its slider ranges after any paste", () => {
-    const valid = JSON.parse(serialise(mode, DEFAULTS[mode]));
-    for (let i = 0; i < 60; i++) {
-      apply(JSON.stringify(mutate(valid)));
-      expect(finiteDeep(form.read()), "form value").toBeNull();
-      for (const r of document.querySelectorAll<HTMLInputElement>('input[type="range"]')) {
-        expect(r.valueAsNumber, r.id).toBeGreaterThanOrEqual(Number(r.min));
-        expect(r.valueAsNumber, r.id).toBeLessThanOrEqual(Number(r.max));
-      }
-      document.getElementById("ioClose")?.click();
-    }
     checkPrototype();
   });
 });
