@@ -73,7 +73,7 @@ fieldset:disabled * { cursor: not-allowed; }
 .name { color: var(--text); font-weight: 500; }
 .hint { color: var(--muted); font-size: 0.75rem; }
 output { min-width: 3rem; padding: 0.05rem 0.5rem; text-align: center; background: var(--bg); border: 1px solid var(--border-hi); border-radius: 999px; color: var(--accent); font-size: 0.8rem; font-weight: 600; font-variant-numeric: tabular-nums; }
-.field:has(input:disabled) { opacity: 0.4; }
+.field:has(input:disabled), .toggle.dep-off { opacity: 0.4; }
 
 input[type="number"], select {
   width: 100%;

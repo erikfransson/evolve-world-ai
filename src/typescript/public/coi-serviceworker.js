@@ -1,6 +1,6 @@
 /* Vendored from https://github.com/gzuidhof/coi-serviceworker (npm coi-serviceworker 0.1.7), locally modified:
    navigations outside /ecosystem/ and /predators/ pass through untouched (marked "Local change" below), so only those pages are isolated.
-   Registered by the Ecosystem and Predators & prey pages. Gives it COOP/COEP headers on hosts that cannot set them (GitHub Pages), so it can use SharedArrayBuffer.
+   Registered by the Ecosystem and The Great Hunt pages. Gives it COOP/COEP headers on hosts that cannot set them (GitHub Pages), so it can use SharedArrayBuffer.
 
    MIT License
 

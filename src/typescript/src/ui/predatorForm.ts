@@ -7,7 +7,7 @@ import { ECO_SECTIONS } from "./ecoSettingsForm.ts";
 import { items, perSecond, range } from "./settingsForm.ts";
 import type { Field, FormSpec, Section } from "./settingsForm.ts";
 
-// Predators & prey settings: world and regrowth, one card per species, predation, then the shared Ecosystem cards folded.
+// The Great Hunt settings: world and regrowth, one card per species, predation, then the shared Ecosystem cards folded.
 
 
 const sp = (c: EcoConfig, i: number): SpeciesConfig => c.species![i]!;

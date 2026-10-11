@@ -60,7 +60,7 @@ Contract: `EcoConfig` in `src/sim/ecoConfig.ts`, built on `EngineConfig` (the sh
 - Aging (#6, done): optional `eco.aging` (default off), `agingStart` seconds (120) and `agingRate` per minute (0.5); the upkeep is multiplied by 1 + rate x (age - start) / 60 after the start age.
 - Collision damage (#13, done): optional `eco.collisionDamage` (default off) and `damagePerSpeed` (0.3). Each bounce costs both creatures `damagePerSpeed` x the normal approach speed, once per impact (head-on at top speed, 160 units/s, costs 48). If exactly one dies, the survivor gains the dead one's energy from just before the hit; if both die, nobody does.
 
-## Predators & prey (issue #12), agreed 2026-10-11
+## The Great Hunt (issue #12), agreed 2026-10-11
 - Its own mode and landing card, third after Trials and Ecosystem; Live World moves to fourth.
 - Built on the Ecosystem engine: plants (food) regrow, species A grazes plants, species B hunts A.
 - Touching a prey eats it: the predator gains the prey's stored energy times an efficiency, plus a baseline (both settings).

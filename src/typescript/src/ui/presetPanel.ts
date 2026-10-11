@@ -31,8 +31,9 @@ const TIP = "Fixes the world and how it renews. Creatures, brain and evolution s
 function setLocked(id: string, on: boolean): void {
   const input = document.getElementById(id) as HTMLInputElement | null;
   if (!input) return;
-  input.disabled = on;
-  input.closest(".field, .toggle")?.classList.toggle("preset-locked", on);
+  const box = input.closest(".field, .toggle");
+  box?.classList.toggle("preset-locked", on);
+  input.disabled = on || (box?.classList.contains("dep-off") ?? false); // a setting switched off by its toggle stays disabled
 }
 
 export function initPresetPanel<C extends Creature>(o: PresetPanelOptions<C>): PresetPanel {

@@ -2,7 +2,7 @@
 // Usage: node src/ecoBench.ts [--seconds 120] [--seed 1] [--pop 300] [--food 0.5] [--regrow 0.05] [--every 10] [--pool public/pool.json] [--poolFraction 0.5] [--aging] [--agingStart 120] [--agingRate 0.5] [--damage] [--damagePerSpeed 0.3] [--threads 0] [--shared] [--width 12000] [--poisonDamage 30] [--seasons]
 //   [--predators] [--set path=value ...]
 // --food sets the starting and maximum food density, --regrow the food regrowth rate, --pool none runs without the seed pool.
-// --predators starts from the Predators & prey defaults and prints each species' population too; --set overrides any
+// --predators starts from the Great Hunt defaults and prints each species' population too; --set overrides any
 // config value, e.g. --set species.1.speed=1.4 --set eco.foodRegrow=0.04 (applied last).
 
 import { readFileSync } from "node:fs";

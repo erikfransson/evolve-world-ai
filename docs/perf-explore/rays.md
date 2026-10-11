@@ -17,7 +17,7 @@ Branch `worktree-agent-a37a13906432bc563`. Bench: `node src/ecoBench.ts --width 
 
 Per-creature work does not grow with world size. Density is held constant, so 20k costs the same per creature as 12k. What grows is the working set (one RayCache per creature, 25k grid cells) and the number of creatures.
 Profile at width 20000, 2600 creatures, JS path: sparse first layer 18%, item rays (World.castRays plus listValid and rebuildList) about 21%, forward 10%, encode 8%, crowd rays 7%, the rest below 5% each. With WASM on, item rays are the largest single piece (about 22% of the tick) because brains and crowd rays moved to WASM.
-At pop 8000 on the same world (3x density, a Predators & prey proxy): item rays 26%, crowd rays 17% of sense time.
+At pop 8000 on the same world (3x density, a Great Hunt proxy): item rays 26%, crowd rays 17% of sense time.
 
 Counts from an instrumented run (20000 world, 600 ticks):
 - The ray cache is valid on 95% of casts. Rebuilds are 5.3% of casts, 4.5% of them from invalidation, the rest from moving past the slack. Average 30 cells per rebuild.
@@ -45,4 +45,4 @@ Counts from an instrumented run (20000 world, 600 ticks):
 
 ## Cost
 
-Wall skip 8 lines, block stamps 20 lines (both in sim/world.ts), `--width` flag in ecoBench 4 lines. The Predators & prey branch has the same World code, so both changes transplant unchanged.
+Wall skip 8 lines, block stamps 20 lines (both in sim/world.ts), `--width` flag in ecoBench 4 lines. The The Great Hunt branch has the same World code, so both changes transplant unchanged.

@@ -82,7 +82,7 @@ export interface EcoJournal {
 //    cannot matter and helper threads can run them (ecoShare.ts).
 // 2. sharedPhase: eating, hunting, collisions (with optional damage), deaths, births and regrowth, serially. Eating, hunting and births
 //    walk the creatures from a random start each tick, so no creature wins contested food, prey or the last free place by its list position.
-// With a species list (Predators & prey) every creature belongs to one species, with that species' body, costs, births and
+// With a species list (The Great Hunt) every creature belongs to one species, with that species' body, costs, births and
 // diet; a hunter eats a touching creature of a species it preys on. Without one there is a single species with the shared settings.
 export class Ecosystem {
   readonly config: EcoConfig;

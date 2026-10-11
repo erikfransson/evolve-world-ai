@@ -4,13 +4,14 @@ import { escapeAttr } from "./page.ts";
 
 // Settings forms: one table drives the markup, the config read and the fill, so a field is declared once.
 // C is the config a page edits (Trials' SimConfig, the Ecosystem's EcoConfig).
-interface Base {
+interface Base<C> {
   id: string;
   label: string;
   tip: string;
   advanced?: boolean; // shown under the section's "More settings"
+  enabledWhen?: (c: C) => boolean; // greyed out and disabled while false, e.g. season settings with Seasons off
 }
-export interface Range<C> extends Base {
+export interface Range<C> extends Base<C> {
   kind: "range";
   min: number;
   max: number;
@@ -20,21 +21,21 @@ export interface Range<C> extends Base {
   get: (c: C) => number;
   set: (c: C, v: number) => void;
 }
-export interface Toggle<C> extends Base {
+export interface Toggle<C> extends Base<C> {
   kind: "toggle";
   get: (c: C) => boolean;
   set: (c: C, v: boolean) => void;
 }
-export interface Choice<C> extends Base {
+export interface Choice<C> extends Base<C> {
   kind: "choice";
   options: readonly (readonly [value: string, label: string])[];
   get: (c: C) => string;
   set: (c: C, v: string) => void;
 }
-interface Seed extends Base {
+interface Seed<C> extends Base<C> {
   kind: "seed";
 }
-export type Field<C> = Range<C> | Toggle<C> | Choice<C> | Seed;
+export type Field<C> = Range<C> | Toggle<C> | Choice<C> | Seed<C>;
 export interface Section<C> {
   title: string;
   fields: readonly Field<C>[];
@@ -84,7 +85,7 @@ export function syncSlider(input: HTMLInputElement): void {
   if (out) out.textContent = (FORMATS[out.dataset.fmt ?? ""] ?? String)(input.valueAsNumber);
 }
 
-const label = (f: Base): string =>
+const label = <C>(f: Base<C>): string =>
   `<span class="lbl"><label class="name" for="${f.id}">${f.label}</label><span class="tip" tabindex="0" role="img" aria-label="${escapeAttr(f.tip)}" data-tip="${escapeAttr(f.tip)}">ⓘ</span></span>`;
 
 function fieldHtml<C>(f: Field<C>): string {
@@ -125,6 +126,17 @@ export function buildForm<C extends { seed: number }>(container: HTMLElement, sp
   const syncHints = (c: C): void => {
     for (const f of fields) if (f.kind === "range" && f.hint) el(`${f.id}Hint`, HTMLElement).textContent = f.hint(c);
   };
+  // A field whose enabledWhen is false is disabled; a preset-locked field stays disabled either way (see presetPanel).
+  const syncEnabled = (c: C): void => {
+    for (const f of fields) {
+      if (!f.enabledWhen) continue;
+      const input = el(f.id, HTMLElement) as HTMLInputElement;
+      const off = !f.enabledWhen(c);
+      const box = input.closest(".field, .toggle");
+      box?.classList.toggle("dep-off", off);
+      input.disabled = off || (box?.classList.contains("preset-locked") ?? false);
+    }
+  };
   const read = (): C => {
     const c = structuredClone(spec.defaults);
     for (const f of fields) {
@@ -145,6 +157,7 @@ export function buildForm<C extends { seed: number }>(container: HTMLElement, sp
     }
     container.querySelectorAll<HTMLInputElement>('input[type="range"]').forEach(syncSlider);
     syncHints(c);
+    syncEnabled(c);
   };
   const init = (form: HTMLFormElement, onChange: (c: C) => void): void => {
     form.addEventListener("input", (e) => {
@@ -152,6 +165,7 @@ export function buildForm<C extends { seed: number }>(container: HTMLElement, sp
       if (target.type === "range") syncSlider(target);
       const c = read();
       syncHints(c);
+      syncEnabled(c);
       onChange(c);
     });
     // Enter in a field would otherwise submit the form and reload the page, losing all settings.

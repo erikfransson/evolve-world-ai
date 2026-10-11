@@ -271,7 +271,7 @@ function drawColoured(ctx: CanvasRenderingContext2D, px: number, s: CreatureStat
   ctx.stroke();
 }
 
-// Hues within each species' band of the Predators & prey defaults: calm blue prey, a red hunter.
+// Hues within each species' band of the Great Hunt defaults: calm blue prey, a red hunter.
 const [PREY_SPECIES, HUNTER_SPECIES] = DEFAULT_PREDATOR_CONFIG.species!;
 const PREY_HUES = [-0.3, 0, 0.2, -0.15, 0.4].map((k) => PREY_SPECIES!.hue + k * PREY_SPECIES!.hueSpread);
 const HUNTER_HUE = HUNTER_SPECIES!.hue;
@@ -299,7 +299,7 @@ export interface PredatorScene extends Scene {
   prey(): number; // living prey, not counting one being eaten
 }
 
-// Predators & prey: blue prey graze regrowing plants, a faster red hunter with a pointed nose chases the nearest and
+// The Great Hunt: blue prey graze regrowing plants, a faster red hunter with a pointed nose chases the nearest and
 // catches it; the prey scatter when it comes close, and a survivor soon gives birth to keep the herd.
 export function predatorScene(seed: number): PredatorScene {
   const config = sceneConfig(360, 225, 1.3, { radius: 9 });

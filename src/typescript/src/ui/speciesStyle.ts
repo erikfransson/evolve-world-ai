@@ -1,4 +1,4 @@
-// How the Predators & prey species look, shared by the page, the brain view and the landing card.
+// How the Great Hunt species look, shared by the page, the brain view and the landing card.
 
 // Line, swatch and label colour per species index: prey blue, predators red.
 export const SPECIES_COLORS: readonly string[] = ["#60a5fa", "#f87171"];
