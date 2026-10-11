@@ -3,8 +3,7 @@
 Running log of optimisation experiments for large populations (500 to 2000).
 Benchmark: `node src/bench.ts --pop 1000 --gens 2` in `src/typescript` on an 8-core machine, quiet unless noted.
 The fingerprint hashes all fitness values, so an unchanged fingerprint means unchanged results.
-Current fingerprints (since memory 0.5 and the turn, ray and neuron costs): `--pop 1000 --gens 2` 853982342, `--pop 300 --gens 12 --seed 2` 270577671 (before: 166337991, 613119086, which memory 0 and zero costs still reproduce).
-Current fingerprints (since immigrants, big mutations, stagnation boost and the distance tie-break): `--pop 1000 --gens 2` 852772345, `--pop 300 --gens 12 --seed 2` 132566485 (before: 166337991, 171490408).
+Current fingerprints (since body plans with memory 0.25 and energy costs, plus immigrants, wild children, stagnation boost and the distance tie-break): `--pop 1000 --gens 2` 95094939, `--pop 300 --gens 12 --seed 2` 833522585.
 
 | Date       | Idea                                                    | Seconds (pop 1000, 2 gens) | Speedup | Results          | Verdict  |
 |------------|---------------------------------------------------------|----------------------------|---------|------------------|----------|
