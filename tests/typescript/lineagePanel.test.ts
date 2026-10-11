@@ -9,14 +9,14 @@ const sample = (time: number, others: number, entries: [number, number, number][
 
 describe("lineageRows", () => {
   it("gives each lineage its share and one row for the rest", () => {
-    const rows = lineageRows([{ founder: 4, hue: 10, pool: true, count: 30 }, { founder: 9, hue: 200, pool: false, count: 10 }], 80);
+    const rows = lineageRows([{ founder: 4, hue: 10, pool: true, count: 30, species: 0 }, { founder: 9, hue: 200, pool: false, count: 10, species: 0 }], 80);
     expect(rows.map((r) => [r.label, r.origin, r.count])).toEqual([["#4", "pool", 30], ["#9", "random", 10], ["others", "", 40]]);
     expect(rows.map((r) => r.share)).toEqual([0.375, 0.125, 0.5]);
     expect(rows.reduce((n, r) => n + r.share, 0)).toBeCloseTo(1, 12);
   });
 
   it("has no others row when the lineages cover everyone, and survives an empty world", () => {
-    expect(lineageRows([{ founder: 1, hue: 0, pool: false, count: 5 }], 5).map((r) => r.founder)).toEqual([1]);
+    expect(lineageRows([{ founder: 1, hue: 0, pool: false, count: 5, species: 0 }], 5).map((r) => r.founder)).toEqual([1]);
     expect(lineageRows([], 0)).toEqual([]);
   });
 });

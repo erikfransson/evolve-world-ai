@@ -1,8 +1,8 @@
 ;; Whole Ecosystem sense in one call: per creature the ray directions, item and wall rays (f64, same arithmetic and candidate order as World.castRays),
-;; the crowd rays (f32, as rays.wat), and the ray features written straight into the brain input vector.
+;; the crowd rays (f32), and the ray features written straight into the brain input vector.
 ;; Memory is the brain bank's (imported), so inputs need no copy. Everything is scratch per tick except the per-slot offset tables.
 ;; Param block P (bytes): f64 W@0 H@8 itemR@16 invWorldCell@24; f32 invCrowdCell@32 crowdR@36;
-;;   i32 wCols@40 wRows@44 cellHead@48 nextItem@52 itemX@56 itemY@60 itemKind@64 cCols@68 cRows@72 cStart@76 sx@80 sy@84 own@88 sig@92 rec@96 n@100 stride@104 cand@108 scr@112.
+;;   i32 wCols@40 wRows@44 cellHead@48 nextItem@52 itemX@56 itemY@60 itemKind@64 cCols@68 cRows@72 cStart@76 sx@80 sy@84 own@88 sig@92 rec@96 n@100 stride@104 cand@108 scr@112 species@116 (i32 per crowd slot; the ray features are 4 + S + 1 per ray: S species flags, then the energy).
 ;; Creature record, 64 bytes: f64 x y cos sin L; i32 self@40 rays@44 offsets@48 (f64 cos[rays], then sin[rays]) input@52 (byte address)
 ;;   detail@56 (0, or the address where to also write each ray as f64 closeness, i32 kind, i32 crowd slot hit or -1, for the UI).
 ;; Ray scratch (max 64 rays): dx f64@0 dy f64@512 clo f64@1024 kind i32@1536 dxf f32@1792 dyf f32@2048 best f32@2304 hit i32@2560.
@@ -18,7 +18,7 @@
     (local $cx0 i32) (local $cx1 i32) (local $cy0 i32) (local $cy1 i32) (local $cx i32) (local $cy i32) (local $c i32)
     (local $it i32) (local $fx f64) (local $fy f64) (local $d2 f64) (local $cp i32) (local $ce i32) (local $inv f64) (local $cols i32) (local $rows i32)
     (local $dx f64) (local $dy f64) (local $best f64) (local $kind i32) (local $tw f64) (local $t f64) (local $b f64) (local $cc f64) (local $disc f64)
-    (local $cur i32) (local $det i32) (local $walls i32) (local $clo f64) (local $oc f64) (local $os f64)
+    (local $cur i32) (local $sp i32) (local $spp i32) (local $det i32) (local $walls i32) (local $clo f64) (local $oc f64) (local $os f64)
     ;; crowd phase
     (local $x32 f32) (local $y32 f32) (local $L32 f32) (local $rc f32) (local $invc f32) (local $r2c f32) (local $farc f32) (local $far2c f32) (local $marginc f32)
     (local $d0xf f32) (local $d0yf f32) (local $d1xf f32) (local $d1yf f32) (local $fxf f32) (local $fyf f32) (local $d2f f32)
@@ -46,6 +46,7 @@
     (local.set $sy (i32.load offset=84 (local.get $P)))
     (local.set $own (i32.load offset=88 (local.get $P)))
     (local.set $sigp (i32.load offset=92 (local.get $P)))
+    (local.set $spp (i32.load offset=116 (local.get $P)))
     (block $jd (loop $jl
       (br_if $jd (i32.ge_u (local.get $j) (local.get $n)))
       (block $jn
@@ -294,9 +295,19 @@
         (f32.store offset=4 (local.get $base) (select (f32.const 1) (f32.const 0) (i32.eq (local.get $kind) (i32.const 1))))
         (f32.store offset=8 (local.get $base) (select (f32.const 1) (f32.const 0) (i32.eq (local.get $kind) (i32.const 2))))
         (f32.store offset=12 (local.get $base) (select (f32.const 1) (f32.const 0) (i32.eq (local.get $kind) (i32.const 3))))
+        ;; creature features: one flag per species at offset 16 (S = stride - 5), then the squashed seen energy
         (if (i32.gt_s (local.get $stride) (i32.const 4)) (then
-          (f32.store offset=16 (local.get $base) (select (f32.const 1) (f32.const 0) (i32.eq (local.get $kind) (i32.const 4))))
-          (f32.store offset=20 (local.get $base) (f32.demote_f64 (local.get $cc)))))
+          (local.set $sp (i32.const -1))
+          (if (i32.eq (local.get $kind) (i32.const 4)) (then
+            (local.set $sp (i32.load (i32.add (local.get $spp) (i32.shl (local.get $k) (i32.const 2)))))))
+          (local.set $g (i32.const 0))
+          (block $sd (loop $sl
+            (br_if $sd (i32.ge_s (local.get $g) (i32.sub (local.get $stride) (i32.const 5))))
+            (f32.store offset=16 (i32.add (local.get $base) (i32.shl (local.get $g) (i32.const 2)))
+              (select (f32.const 1) (f32.const 0) (i32.eq (local.get $sp) (local.get $g))))
+            (local.set $g (i32.add (local.get $g) (i32.const 1)))
+            (br $sl)))
+          (f32.store offset=16 (i32.add (local.get $base) (i32.shl (i32.sub (local.get $stride) (i32.const 5)) (i32.const 2))) (f32.demote_f64 (local.get $cc)))))
         (local.set $i (i32.add (local.get $i) (i32.const 1)))
         (br $wl)))
       )

@@ -1,3 +1,5 @@
+import type { SpeciesConfig } from "./species.ts";
+
 // All tunable values of a run. Units: world units, seconds, energy points.
 
 export type SelectionMethod = "truncation" | "proportional";
@@ -63,8 +65,10 @@ export interface SimConfig {
   };
 }
 
-// The parts every mode shares; population and ga belong to Trials.
-export type EngineConfig = Pick<SimConfig, "seed" | "dt" | "world" | "creature" | "brain">;
+// The parts every mode shares; population and ga belong to Trials. species: the species of a Predators & prey world, whose
+// rays tell them apart (see sensors.ts); absent elsewhere. seenEnergyScale: the energy that scales every species' seen-energy
+// input alike (set by speciesEngine); without it, the creature's own start energy.
+export type EngineConfig = Pick<SimConfig, "seed" | "dt" | "world" | "creature" | "brain"> & { species?: readonly SpeciesConfig[]; seenEnergyScale?: number };
 
 export const DEFAULT_CONFIG: SimConfig = {
   seed: 1,
@@ -82,7 +86,7 @@ export const DEFAULT_CONFIG: SimConfig = {
   },
   creature: {
     radius: 12,
-    startEnergy: 50,
+    startEnergy: 75,
     livingCost: 2,
     thrustCost: 4,
     turnCost: 0.5,
@@ -97,12 +101,12 @@ export const DEFAULT_CONFIG: SimConfig = {
     maxTurnRate: 3,
     turnDamping: 6,
     rayCount: 8,
-    raySpread: (75 * Math.PI) / 180,
-    rayLength: 100,
+    raySpread: (125 * Math.PI) / 180,
+    rayLength: 150,
     seesCreatures: false,
     maxLifeSeconds: 3600,
   },
-  brain: { hiddenLayers: [16], memory: 0.25, shortRate: 0.3, longRate: 0.01 },
+  brain: { hiddenLayers: [6], memory: 0.25, shortRate: 0.3, longRate: 0.01 },
   population: { size: 150 },
   ga: {
     selection: "truncation",

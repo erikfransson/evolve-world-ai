@@ -7,6 +7,7 @@ import { inputLayout, planOf } from "../../src/typescript/src/sim/sensors.ts";
 import { HIT_CREATURE, HIT_FOOD, HIT_NONE, HIT_POISON, HIT_WALL } from "../../src/typescript/src/sim/types.ts";
 import { WasmBrainBank } from "../../src/typescript/src/sim/wasm/brainKernel.ts";
 import { setWasmDisabled, wasmAvailable } from "../../src/typescript/src/sim/wasm/loader.ts";
+import { speciesEngine, speciesList } from "../../src/typescript/src/sim/species.ts";
 import { SenseKernels } from "../../src/typescript/src/sim/wasm/senseKernels.ts";
 import { Creature, SenseBatch } from "../../src/typescript/src/sim/creature.ts";
 import { World } from "../../src/typescript/src/sim/world.ts";
@@ -184,37 +185,41 @@ describe("sense.wat (SenseKernels)", () => {
     length?: number;
     creatures: Spot[];
     items?: [number, number, number][]; // x, y, kind
+    species?: number; // species count; creature k is of species k % species, and rays carry one flag per species
   }
 
   function build(o: Setup) {
     const base = DEFAULT_ECO_CONFIG;
+    const names = Array.from({ length: o.species ?? 0 }, (_, i) => `s${i}`);
     const cfg = {
       ...base,
+      species: names.map((name) => ({ name, hue: -1, hueSpread: 360, plants: true, prey: [], eatEfficiency: 0, eatBaseline: 0 })),
       world: { ...base.world, width: o.width ?? 1200, height: o.height ?? 800 },
       creature: { ...base.creature, rayCount: o.rays, raySpread: o.spread, rayLength: o.length ?? 100 },
     };
+    const eng = o.species ? speciesEngine(cfg, speciesList(cfg)[0]!) : cfg; // what a creature of the ecosystem runs on
     const world = new World(cfg, 400);
     (o.items ?? []).forEach(([x, y, kind], i) => world.setItem(i, x, y, kind as 1 | 2));
     const rng = createRng(3);
     const make = () => o.creatures.map(([x, y, h]) => {
       const g = randomGenome(layerSizes(cfg, planOf(cfg)), rng);
-      return new Creature(cfg, g, x, y, h);
+      return new Creature(eng, g, x, y, h);
     });
     const genomes = make();
     const kernel = genomes; // creatures for the kernel
-    const reference = o.creatures.map(([x, y, h], k) => new Creature(cfg, kernel[k]!.brain.genome.slice(), x, y, h));
+    const reference = o.creatures.map(([x, y, h], k) => new Creature(eng, kernel[k]!.brain.genome.slice(), x, y, h));
     const states = kernel.map((c) => c.state);
     states.forEach((s, k) => (s.energy = 10 + 37 * k));
     reference.forEach((c, k) => (c.state.energy = states[k]!.energy));
-    return { cfg, world, kernel, reference };
+    return { cfg, world, kernel, reference, speciesOf: Int32Array.from(kernel, (_, k) => (o.species ? k % o.species : 0)) };
   }
 
   // Runs the kernel with each creature in turn as the detail one and compares rays and brain input with the JS sense.
   // exact: no creature is in sight of another, so the f32 crowd path does not enter and every bit must agree.
   function check(o: Setup, exact: boolean) {
-    const { cfg, world, kernel, reference } = build(o);
+    const { cfg, world, kernel, reference, speciesOf } = build(o);
     const crowd = new Crowd(cfg);
-    crowd.rebuild(kernel.map((c) => c.state), kernel.length);
+    crowd.rebuild(kernel.map((c) => c.state), kernel.length, speciesOf);
     const kernels = SenseKernels.create(cfg)!;
     const batch = new SenseBatch();
     kernel.forEach((c, k) => batch.add(c, k));
@@ -224,17 +229,19 @@ describe("sense.wat (SenseKernels)", () => {
     });
     let bad = 0;
     const seen = new Set<number>();
+    const species = new Set<number>();
     kernel.forEach((c, k) => {
       kernels.detail = c;
       kernels.run(world, crowd, batch);
       const ref = reference[k]!;
       c.rays.forEach((ray, i) => {
         seen.add(ray.kind);
+        if (ray.kind === HIT_CREATURE) species.add(ray.species);
         const want = ref.rays[i]!;
         if (exact) {
           expect(ray.kind).toBe(want.kind);
           expect(ray.closeness).toBe(want.closeness);
-        } else if (ray.kind !== want.kind || Math.abs(ray.closeness - want.closeness) > 1e-4 || (ray.kind === HIT_CREATURE && ray.energy !== want.energy)) bad++;
+        } else if (ray.kind !== want.kind || Math.abs(ray.closeness - want.closeness) > 1e-4 || (ray.kind === HIT_CREATURE && (ray.energy !== want.energy || ray.species !== want.species))) bad++;
       });
       const got = c.brain.layerActivations()[0]!;
       const want = ref.encode();
@@ -243,7 +250,7 @@ describe("sense.wat (SenseKernels)", () => {
       else for (let i = 0; i < got.length; i++) if (Math.abs(got[i]! - want[i]!) > 1e-4) bad++;
       expect(Array.from(c.outputs).every(Number.isFinite)).toBe(true);
     });
-    return { bad, seen, world, crowd, kernels, batch, kernel, reference, rays: kernel.length * o.rays };
+    return { bad, seen, species, world, crowd, kernels, batch, kernel, reference, rays: kernel.length * o.rays };
   }
 
   const items: [number, number, number][] = [];
@@ -314,6 +321,16 @@ describe("sense.wat (SenseKernels)", () => {
     const { bad, rays } = check({ width: 600, height: 400, rays: 8, spread: 2, length: 120, creatures: spots, items: items.filter(([x, y]) => x < 600 && y < 400) }, false);
     expect(rays).toBe(960);
     expect(bad).toBeLessThanOrEqual(2);
+  });
+
+  it("writes one flag per species and the energy after them, as the JS encoding does", () => {
+    const rng = createRng(21);
+    const spots: Spot[] = Array.from({ length: 120 }, () => [rng.range(0, 600), rng.range(0, 400), rng.range(0, 7)]);
+    const { bad, species, kernel } = check({ width: 600, height: 400, rays: 8, spread: 2, length: 120, creatures: spots, items: items.filter(([x, y]) => x < 600 && y < 400), species: 3 }, false);
+    expect([...species].sort()).toEqual([0, 1, 2]);
+    expect(kernel[0]!.brain.layerActivations()[0]!.length).toBe(8 * (5 + 3) + 4 + 4);
+    expect(bad).toBeLessThanOrEqual(2);
+    check({ rays: 6, spread: 2, creatures: [[300, 300, 0], [900, 600, 2]], items, species: 2 }, true); // no creature in sight: flags all zero, exact
   });
 
   it("keeps the rays of non-detail creatures untouched and needs no detail", () => {

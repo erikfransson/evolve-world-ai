@@ -20,6 +20,7 @@ export interface RayHit {
   closeness: number; // 0 nothing within range, 1 touching
   kind: HitKind;
   energy: number; // the seen creature's energy when kind is HIT_CREATURE, otherwise stale
+  species: number; // the seen creature's species when kind is HIT_CREATURE, otherwise stale
 }
 
 export interface CreatureState {

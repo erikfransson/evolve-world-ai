@@ -42,7 +42,7 @@ describe("sensors", () => {
     expect(at(100)).toBeCloseTo(4 * 0.1, 12);
     expect(at(300)).toBeCloseTo(3 * at(100), 12);
     const brainy = { ...cfg, brain: { ...cfg.brain, memory: 0.5 }, creature: { ...cfg.creature, rayCost: 0, neuronCost: 0.01 } };
-    expect(planUpkeep(planOf(brainy), brainy) - c.livingCost).toBeCloseTo(0.01 * (16 + 8), 12);
+    expect(planUpkeep(planOf(brainy), brainy) - c.livingCost).toBeCloseTo(0.01 * (6 + 8), 12);
   });
 
   it("energySignal squashes into [0, 1)", () => {
@@ -54,7 +54,7 @@ describe("sensors", () => {
   it("encodeInputs one-hot encodes ray kinds and appends the extras", () => {
     const state: CreatureState = { x: 0, y: 0, heading: 0, vx: 30, vy: 7, turnRate: 1.5, energy: 25, alive: true, ticksAlive: 0 };
     const kinds = [HIT_NONE, HIT_FOOD, HIT_POISON, HIT_WALL] as const;
-    const rays: RayHit[] = kinds.map((kind, i) => ({ closeness: kind === HIT_NONE ? 0 : 0.25 * i, kind, energy: 0 }));
+    const rays: RayHit[] = kinds.map((kind, i) => ({ closeness: kind === HIT_NONE ? 0 : 0.25 * i, kind, energy: 0, species: 0 }));
     const out = new Float32Array(inputSize(cfg));
     encodeInputs(state, rays, cfg, out, Math.cos(state.heading), Math.sin(state.heading));
     expect(Array.from(out.subarray(0, 16))).toEqual([0, 0, 0, 0, 0.25, 1, 0, 0, 0.5, 0, 1, 0, 0.75, 0, 0, 1]);

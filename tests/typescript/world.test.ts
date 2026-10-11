@@ -66,7 +66,7 @@ function brute(w: World, config: SimConfig, x: number, y: number, a: number): Ra
       kind = w.kinds[i];
     }
   }
-  return { closeness: kind === HIT_NONE ? 0 : 1 - best / L, kind: kind as RayHit["kind"], energy: 0 };
+  return { closeness: kind === HIT_NONE ? 0 : 1 - best / L, kind: kind as RayHit["kind"], energy: 0, species: 0 };
 }
 
 describe("World", () => {
@@ -144,7 +144,7 @@ describe("World", () => {
     const w = emptyWorld(c);
     w.setItem(0, 150, 500, HIT_FOOD);
     w.setItem(1, 500, 150, HIT_POISON);
-    const out: RayHit = { closeness: 0, kind: HIT_NONE, energy: 0 };
+    const out: RayHit = { closeness: 0, kind: HIT_NONE, energy: 0, species: 0 };
     castRay(w, 100, 500, 0, out);
     expect(out.kind).toBe(HIT_FOOD);
     expect(out.closeness).toBeCloseTo(1 - (50 - c.world.itemRadius) / c.creature.rayLength, 5);
@@ -154,15 +154,15 @@ describe("World", () => {
 
   it("ray towards a nearby wall reports HIT_WALL", () => {
     const w = emptyWorld(cfg());
-    const out: RayHit = { closeness: 0, kind: HIT_NONE, energy: 0 };
+    const out: RayHit = { closeness: 0, kind: HIT_NONE, energy: 0, species: 0 };
     castRay(w, DEFAULT_CONFIG.world.width - 20, 500, 0, out);
     expect(out.kind).toBe(HIT_WALL);
-    expect(out.closeness).toBeCloseTo(1 - 20 / 100, 5);
+    expect(out.closeness).toBeCloseTo(1 - 20 / DEFAULT_CONFIG.creature.rayLength, 5);
   });
 
   it("ray into empty space reports nothing", () => {
     const w = emptyWorld(cfg());
-    const out: RayHit = { closeness: 1, kind: HIT_WALL, energy: 0 };
+    const out: RayHit = { closeness: 1, kind: HIT_WALL, energy: 0, species: 0 };
     castRay(w, 500, 500, 1, out);
     expect(out.closeness).toBe(0);
     expect(out.kind).toBe(HIT_NONE);
@@ -179,7 +179,7 @@ describe("World", () => {
     expect(w.kinds[3]).toBe(HIT_FOOD);
     expect(w.eatAt(600, 600, c.creature.radius, cache)).toBe(7);
     // Through the anchored list too.
-    castRay(w, 300, 300, 0, { closeness: 0, kind: HIT_NONE, energy: 0 }, cache);
+    castRay(w, 300, 300, 0, { closeness: 0, kind: HIT_NONE, energy: 0, species: 0 }, cache);
     expect(w.eatAt(302, 300, c.creature.radius, cache)).toBe(3);
   });
 
@@ -204,7 +204,7 @@ describe("World", () => {
     expect(w.addItem(300, 300, HIT_FOOD)).toBe(0);
     expect(w.addItem(700, 700, HIT_POISON)).toBe(1);
     expect(w.addItem(500, 500, HIT_FOOD)).toBe(-1);
-    const out: RayHit = { closeness: 0, kind: HIT_NONE, energy: 0 };
+    const out: RayHit = { closeness: 0, kind: HIT_NONE, energy: 0, species: 0 };
     castRay(w, 250, 300, 0, out, cache);
     expect(out.kind).toBe(HIT_FOOD);
     w.removeItem(0);
@@ -224,7 +224,7 @@ describe("World", () => {
     const respawnRng = testRng(8);
     const rng = testRng(11);
     const cache = new RayCache();
-    const out: RayHit = { closeness: 0, kind: HIT_NONE, energy: 0 };
+    const out: RayHit = { closeness: 0, kind: HIT_NONE, energy: 0, species: 0 };
     for (let n = 0; n < 5000; n++) {
       if (n % 10 === 0) eat(w, rng.range(0, 1000), rng.range(0, 1000), 40, cache, respawn, respawnRng);
       const x = rng.range(0, 1000);
@@ -251,7 +251,7 @@ describe("World", () => {
       { x: 560, y: 420, heading: 2, cache: new RayCache() },
       { x: 100, y: 900, heading: 4, cache: new RayCache() },
     ];
-    const rays: RayHit[] = offsets.map(() => ({ closeness: 0, kind: HIT_NONE, energy: 0 }));
+    const rays: RayHit[] = offsets.map(() => ({ closeness: 0, kind: HIT_NONE, energy: 0, species: 0 }));
     for (let tick = 0; tick < 1000; tick++) {
       for (const k of walkers) {
         k.heading += rng.range(-0.3, 0.3);

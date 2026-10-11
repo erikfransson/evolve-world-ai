@@ -2,7 +2,8 @@ import { Brain, layerSizes, randomGenome } from "../../src/typescript/src/sim/br
 import { DEFAULT_CONFIG } from "../../src/typescript/src/sim/config.ts";
 import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { inputLayout } from "../../src/typescript/src/sim/sensors.ts";
-import { BrainView, buildLayout } from "../../src/typescript/src/ui/brainView.ts";
+import { BrainView, buildLayout, rayLabelColor } from "../../src/typescript/src/ui/brainView.ts";
+import { SPECIES_COLORS } from "../../src/typescript/src/ui/speciesStyle.ts";
 import { badCoordinateCalls, fakeCanvas, fakeCtx, testRng } from "./helpers.ts";
 
 beforeEach(() => {
@@ -83,5 +84,17 @@ describe("BrainView layout", () => {
     expect(badCoordinateCalls(calls)).toEqual([]);
     const texts = calls.filter((c) => c.name === "fillText").map((c) => c.args[0]);
     expect(texts).toEqual(expect.arrayContaining(["S", "L", "memory", "turn", "thrust"]));
+  });
+});
+
+describe("rayLabelColor", () => {
+  // Ray inputs of one ray: closeness, food, poison, wall, then the creature flags and the seen energy.
+  const ray = (...v: number[]) => Float32Array.from(v);
+  it("lights a ray seeing any species in that species' colour, not only the first", () => {
+    expect(rayLabelColor(ray(0.5, 0, 0, 0, 0, 1, 0.4), 0, 7)).toBe(SPECIES_COLORS[1]);
+    expect(rayLabelColor(ray(0.5, 0, 0, 0, 1, 0, 0.4), 0, 7)).toBe(SPECIES_COLORS[0]);
+    expect(rayLabelColor(ray(0.5, 1, 0, 0, 0, 0, 0), 0, 7)).toBe(rayLabelColor(ray(0.5, 1, 0, 0), 0, 4)); // food, as in Trials
+    expect(rayLabelColor(ray(0, 0, 0, 0, 0, 0, 0), 0, 7)).toBe(rayLabelColor(ray(0, 0, 0, 0), 0, 4)); // nothing seen
+    expect(rayLabelColor(ray(0.5, 0, 0, 0, 1, 0.3), 0, 6)).not.toBe(rayLabelColor(ray(0, 0, 0, 0, 0, 0), 0, 6)); // one-species flag
   });
 });

@@ -113,7 +113,7 @@ export class Creature {
     }
     this.rayDirX = refit(this.rayDirX, n);
     this.rayDirY = refit(this.rayDirY, n);
-    while (this.rays.length < n) this.rays.push({ closeness: 0, kind: HIT_NONE, energy: 0 });
+    while (this.rays.length < n) this.rays.push({ closeness: 0, kind: HIT_NONE, energy: 0, species: 0 });
     this.rays.length = n;
     this.energyUpkeep = planUpkeep(plan, this.config);
   }
@@ -143,6 +143,7 @@ export class Creature {
       ray.closeness = 0;
       ray.kind = HIT_NONE;
       ray.energy = 0;
+      ray.species = 0;
     }
   }
 

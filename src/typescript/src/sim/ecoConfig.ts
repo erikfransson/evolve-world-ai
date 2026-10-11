@@ -1,5 +1,6 @@
 import { DEFAULT_CONFIG } from "./config.ts";
 import type { EngineConfig } from "./config.ts";
+import type { SpeciesConfig } from "./species.ts";
 
 // Ecosystem: all creatures share one world, food and poison regrow, creatures reproduce on their own.
 export interface EcoConfig extends EngineConfig {
@@ -38,6 +39,9 @@ export interface EcoConfig extends EngineConfig {
     memoryRange: number[]; // short and long units each
   };
   mutation: { rate: number; std: number }; // per gene, as in Trials' ga
+  // Predators & prey: the species, which replace eco.initialPopulation, poolFraction, the birth settings and the ray
+  // ranges, and the creature's start energy, speed and costs (see species.ts). Absent for the Ecosystem's one species.
+  species?: SpeciesConfig[];
 }
 
 // world.foodDensity and world.poisonDensity are the starting densities.
@@ -45,8 +49,8 @@ export const DEFAULT_ECO_CONFIG: EcoConfig = {
   seed: 1,
   dt: DEFAULT_CONFIG.dt,
   world: { ...DEFAULT_CONFIG.world, width: 12000, height: 7500, foodDensity: 0.5, poisonDensity: 0.05, respawn: false },
-  creature: { ...DEFAULT_CONFIG.creature, startEnergy: 50, seesCreatures: true },
-  brain: { ...DEFAULT_CONFIG.brain, hiddenLayers: [...DEFAULT_CONFIG.brain.hiddenLayers] },
+  creature: { ...DEFAULT_CONFIG.creature, startEnergy: 50, rayLength: 100, raySpread: (75 * Math.PI) / 180, seesCreatures: true },
+  brain: { ...DEFAULT_CONFIG.brain, hiddenLayers: [16] },
   eco: {
     initialPopulation: 1000,
     poolFraction: 0.5,
@@ -83,6 +87,59 @@ export const DEFAULT_ECO_CONFIG: EcoConfig = {
   mutation: { rate: DEFAULT_CONFIG.ga.mutationRate, std: DEFAULT_CONFIG.ga.mutationStd },
 };
 
+const deg = (d: number): number => (d * Math.PI) / 180;
+
+// Predators & prey (#12): species A grazes the plants, species B hunts A. The prey take the shared creature and eco
+// settings; the predators override theirs. Tuned in docs/tuning-notes.md.
+export const DEFAULT_PREDATOR_CONFIG: EcoConfig = {
+  ...DEFAULT_ECO_CONFIG,
+  world: { ...DEFAULT_ECO_CONFIG.world, width: 6000, height: 4000, foodDensity: 0.5, poisonDensity: 0.02, foodEnergy: 40 },
+  creature: { ...DEFAULT_ECO_CONFIG.creature, startEnergy: 50, livingCost: 2, thrustCost: 4, turnCost: 0.5 },
+  brain: { ...DEFAULT_ECO_CONFIG.brain, hiddenLayers: [...DEFAULT_ECO_CONFIG.brain.hiddenLayers] },
+  eco: {
+    ...DEFAULT_ECO_CONFIG.eco,
+    initialPopulation: 400,
+    poolFraction: 0.5,
+    foodRegrow: 0.05,
+    foodMaxDensity: 0.7,
+    poisonRegrow: 0.002,
+    poisonMaxDensity: 0.04,
+    birthEnergy: 120,
+    birthCost: 60,
+    childEnergy: 45,
+    birthCooldown: 8,
+    rayCountRange: [2, 16],
+    raySpreadRange: [deg(20), deg(360)],
+    rayLengthRange: [50, 250],
+  },
+  mutation: { ...DEFAULT_ECO_CONFIG.mutation },
+  species: [
+    { name: "Prey", hue: 205, hueSpread: 50, plants: true, prey: [], eatEfficiency: 0, eatBaseline: 0, speed: 1 },
+    {
+      name: "Predator",
+      hue: 4,
+      hueSpread: 30,
+      plants: false,
+      prey: [0],
+      eatEfficiency: 0.7,
+      eatBaseline: 30,
+      speed: 1.3,
+      founders: 40,
+      poolFraction: 0.5,
+      startEnergy: 120,
+      livingCost: 2,
+      thrustCost: 4,
+      turnCost: 0.2,
+      birthEnergy: 260,
+      birthCost: 140,
+      childEnergy: 110,
+      birthCooldown: 10,
+      rayCountRange: [4, 12],
+      raySpreadRange: [deg(30), deg(180)],
+      rayLengthRange: [150, 300],
+    },
+  ],
+};
 // Food regrowth multiplier at simulated time t seconds: 1 at mid-summer (t = 0), winterFood at mid-winter, a cosine in between.
 export const seasonFactor = (eco: EcoConfig["eco"], t: number): number => eco.winterFood + (1 - eco.winterFood) * (1 - winterness(eco, t));
 

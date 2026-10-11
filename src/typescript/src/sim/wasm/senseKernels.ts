@@ -1,6 +1,7 @@
 import type { Creature, SenseBatch } from "../creature.ts";
-import type { EngineConfig } from "../config.ts";
+import type { EcoConfig } from "../ecoConfig.ts";
 import { inputLayout } from "../sensors.ts";
+import { speciesList } from "../species.ts";
 import type { Crowd } from "../crowd.ts";
 import type { World } from "../world.ts";
 import { WasmBrainBank } from "./brainKernel.ts";
@@ -18,21 +19,21 @@ export class SenseKernels {
   private readonly brains: WasmBrainBank;
   private readonly senser: WasmSenser;
   private readonly stride: number; // ray features per ray in the brain input
-  private readonly energyScale: number; // seen energies are squashed against this (creature.startEnergy)
+  private readonly energyScale: number; // seen energies are squashed against this, the largest species start energy (speciesEngine's seenEnergyScale)
   private readonly versions: number[] = []; // brainVersion of the creature each slot was set from
   private nextSlot = 0;
   private slots = new Int32Array(64);
 
-  private constructor(brains: WasmBrainBank, senser: WasmSenser, config: EngineConfig) {
+  private constructor(brains: WasmBrainBank, senser: WasmSenser, config: EcoConfig) {
     this.brains = brains;
     this.senser = senser;
     this.stride = inputLayout(config).rayFeatures;
-    this.energyScale = config.creature.startEnergy;
+    this.energyScale = Math.max(...speciesList(config).map((sp) => sp.startEnergy));
   }
 
   // Null when WebAssembly SIMD is unavailable or disabled, or when creatures may have more than MAX_RAYS rays (maxRays);
   // use the JS path then.
-  static create(config: EngineConfig, maxRays = 0): SenseKernels | null {
+  static create(config: EcoConfig, maxRays = 0): SenseKernels | null {
     if (maxRays > MAX_RAYS) return null;
     const brains = WasmBrainBank.createSync();
     const senser = brains && WasmSenser.create(brains);

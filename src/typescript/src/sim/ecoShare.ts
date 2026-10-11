@@ -7,12 +7,13 @@ import { agingOf } from "./physics.ts";
 import type { Aging } from "./physics.ts";
 import type { Ecosystem } from "./ecosystem.ts";
 import type { BodyPlan } from "./sensors.ts";
+import { speciesEngine, speciesList } from "./species.ts";
 import type { HitKind } from "./types.ts";
 import { ITEM_REMOVE, ITEM_SET, World } from "./world.ts";
 import { SenseKernels } from "./wasm/senseKernels.ts";
 
 // Sense and think on helper threads. Each tick the coordinator, which owns the Ecosystem, publishes a packet:
-// every creature's pose, energy and memory, plus the changes since the last packet (item changes, deaths, and births
+// every creature's pose, energy, species and memory, plus the changes since the last packet (item changes, deaths, and births
 // with their plan and genome). Each helper keeps a copy of the item world and the brains of the creatures it owns,
 // runs senseThinkBatch for those and writes their outputs into the packet. The coordinator owns a share too and senses
 // it on its own creatures meanwhile; then it copies the helpers' outputs into its creatures and finishes the tick.
@@ -22,7 +23,7 @@ import { SenseKernels } from "./wasm/senseKernels.ts";
 // The packet is a plain buffer, so it travels by postMessage (one copy per helper) or lives in a SharedArrayBuffer.
 
 const DIED = 3; // delta record: DIED, id
-const BORN = 4; // delta record: BORN, id, owner, rayCount, raySpread, rayLength, memoryShort, memoryLong, hidden layers, ...sizes, genome length, ...genome
+const BORN = 4; // delta record: BORN, id, owner, species, rayCount, raySpread, rayLength, memoryShort, memoryLong, hidden layers, ...sizes, genome length, ...genome
 
 // Header slots (Int32).
 const H_COUNT = 0;
@@ -45,6 +46,7 @@ export interface Packet {
   header: Int32Array;
   ids: Int32Array;
   owner: Int32Array; // helper that thinks for creature i
+  species: Int32Array;
   memoryAt: Int32Array; // creature i's memory units are memory[memoryAt[i] .. memoryAt[i + 1] - 1]
   x: Float64Array;
   y: Float64Array;
@@ -95,7 +97,7 @@ function writeState(c: Creature, a: StateColumns, i: number): void {
 }
 
 function layout(caps: Caps): { f64At: number; outputAt: number; bytes: number } {
-  const ints = HEADER_BYTES + 4 * (3 * caps.creatures + 1);
+  const ints = HEADER_BYTES + 4 * (4 * caps.creatures + 1);
   const f64At = Math.ceil(ints / 8) * 8;
   const outputAt = f64At + 8 * (10 * caps.creatures + caps.memory + caps.delta);
   return { f64At, outputAt, bytes: outputAt + 8 * (9 * caps.creatures + caps.memory) + 4 * caps.creatures };
@@ -127,7 +129,8 @@ export function packetViews(buffer: ArrayBufferLike, caps?: Caps): Packet {
     header,
     ids: new Int32Array(buffer, HEADER_BYTES, C),
     owner: new Int32Array(buffer, HEADER_BYTES + 4 * C, C),
-    memoryAt: new Int32Array(buffer, HEADER_BYTES + 8 * C, C + 1),
+    species: new Int32Array(buffer, HEADER_BYTES + 8 * C, C),
+    memoryAt: new Int32Array(buffer, HEADER_BYTES + 12 * C, C + 1),
     x: f64(C),
     y: f64(C),
     cos: f64(C),
@@ -195,7 +198,7 @@ export class ShareCoordinator {
     let delta = j.items.length + 2 * j.died.length;
     for (const id of j.born) {
       const c = eco.get(id)?.creature;
-      if (c) delta += 10 + c.plan.hiddenLayers.length + c.brain.genome.length;
+      if (c) delta += 11 + c.plan.hiddenLayers.length + c.brain.genome.length;
     }
     return { creatures: eco.population, memory, delta };
   }
@@ -218,8 +221,9 @@ export class ShareCoordinator {
       this.costOf.delete(id);
     }
     for (const id of j.born) {
-      const c = eco.get(id)?.creature;
-      if (!c) continue; // born and died since the last packet
+      const m = eco.get(id);
+      if (!m) continue; // born and died since the last packet
+      const c = m.creature;
       const genome = c.brain.genome;
       const plan = c.plan;
       let owner = 0;
@@ -231,6 +235,7 @@ export class ShareCoordinator {
       d[k++] = BORN;
       d[k++] = id;
       d[k++] = owner;
+      d[k++] = m.species;
       d[k++] = plan.rayCount;
       d[k++] = plan.raySpread;
       d[k++] = plan.rayLength;
@@ -254,6 +259,7 @@ export class ShareCoordinator {
       const s = c.state;
       p.ids[i] = m.id;
       p.owner[i] = this.ownerOf.get(m.id)!;
+      p.species[i] = m.species;
       p.memoryAt[i] = at;
       writeState(c, p, i);
       p.ticks[i] = s.ticksAlive;
@@ -314,12 +320,13 @@ export class ShareCoordinator {
 // Helper side: a copy of the item world and the creatures this helper owns, kept in step by the packets.
 export class ShareHelper {
   readonly index: number;
-  private readonly config: EngineConfig;
+  private readonly engines: EngineConfig[]; // per species
   private readonly world: World;
   private readonly crowd: Crowd;
   private readonly mine = new Map<number, Creature>();
+  private readonly speciesOf = new Map<number, number>();
   private readonly batch = new SenseBatch();
-  private readonly spare: Creature[] = [];
+  private readonly spare: Creature[][]; // per species
   private genome = new Float32Array(0);
   private readonly plan: BodyPlan = { rayCount: 0, raySpread: 0, rayLength: 0, hiddenLayers: [], memoryShort: 0, memoryLong: 0 };
 
@@ -328,8 +335,9 @@ export class ShareHelper {
 
   // wasm: sense and think on the WebAssembly kernels when available, as the coordinator does.
   constructor(config: EcoConfig, worldCapacity: number, index: number, wasm = false) {
-    this.kernels = wasm ? SenseKernels.create(config) : null; // the coordinator already checked the ray limit
-    this.config = config;
+    this.kernels = wasm ? SenseKernels.create(config) : null;
+    this.engines = speciesList(config).map((sp) => speciesEngine(config, sp));
+    this.spare = this.engines.map(() => []);
     this.index = index;
     this.aging = agingOf(config.eco, config.dt);
     this.world = new World(config, worldCapacity);
@@ -345,7 +353,7 @@ export class ShareHelper {
   run(p: Packet): void {
     this.apply(p.delta, p.header[H_DELTA_LENGTH]!);
     const n = p.header[H_COUNT]!;
-    this.crowd.rebuildFrom(p.x, p.y, p.energy, n);
+    this.crowd.rebuildFrom(p.x, p.y, p.energy, n, p.species);
     const batch = this.batch;
     batch.clear();
     for (let i = 0; i < n; i++) {
@@ -385,7 +393,8 @@ export class ShareHelper {
         const c = this.mine.get(id);
         if (c) {
           this.mine.delete(id);
-          this.spare.push(c);
+          this.spare[this.speciesOf.get(id)!]!.push(c);
+          this.speciesOf.delete(id);
         }
       } else if (code === BORN) {
         k = this.born(d, k);
@@ -397,6 +406,7 @@ export class ShareHelper {
   private born(d: Float64Array, k: number): number {
     const id = d[k++]!;
     const owner = d[k++]!;
+    const species = d[k++]!;
     const plan = this.plan;
     plan.rayCount = d[k++]!;
     plan.raySpread = d[k++]!;
@@ -410,11 +420,12 @@ export class ShareHelper {
     this.genome = refit(this.genome, length);
     const genome = this.genome;
     for (let g = 0; g < length; g++) genome[g] = d[k++]!;
-    let c = this.spare.pop();
+    let c = this.spare[species]!.pop();
     if (c) c.reset(genome, 0, 0, 0, 0, plan);
-    else c = new Creature(this.config, genome.slice(), 0, 0, 0, plan);
+    else c = new Creature(this.engines[species]!, genome.slice(), 0, 0, 0, plan);
     c.aging = this.aging;
     this.mine.set(id, c);
+    this.speciesOf.set(id, species);
     return k;
   }
 }

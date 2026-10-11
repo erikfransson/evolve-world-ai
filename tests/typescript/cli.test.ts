@@ -94,13 +94,13 @@ describe.concurrent("headless.ts", () => {
 describe.concurrent("buildPool.ts and ecoBench.ts", () => {
   it("buildPool writes a valid pool file", async () => {
     const outPath = resolve(scratch, "pool.json");
-    const r = await run("buildPool", "--runs", "2", "--generations", "2", "--pop", "8", "--size", "2", "--threads", "2", "--out", outPath);
+    const r = await run("buildPool", "--runs", "2", "--generations", "20", "--pop", "40", "--size", "2", "--threads", "2", "--out", outPath);
     expect(r.code).toBe(0);
     expect(r.out).toMatch(/wrote .*pool\.json/);
     const file = JSON.parse(readFileSync(outPath, "utf8"));
     expect(file.command).toContain("--runs 2");
     expect(parsePool(file).rejected).toEqual([]);
-  });
+  }, 60_000);
 
   it("ecoBench seeds poolFraction of the founders from --pool, none with --pool none", async () => {
     const args = ["--seconds", "1", "--pop", "20", "--poolFraction", "0.5"];

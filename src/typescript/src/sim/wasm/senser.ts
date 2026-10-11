@@ -91,6 +91,7 @@ export class WasmSenser {
     const pSy = this.region("sy", count * 4 + 16);
     const pOwn = this.region("ow", count * 4 + 16);
     const pSig = this.region("sg", count * 4 + 16);
+    const pSpecies = this.region("sp", count * 4 + 16);
     const pRec = this.region("rc", n * REC_BYTES);
     const pCand = this.region("cd", Math.max(world.count * 32, count * 16) + 64);
     const pScr = this.region("sr", SCRATCH_BYTES);
@@ -109,11 +110,14 @@ export class WasmSenser {
     const sy = pSy >> 2;
     const own = pOwn >> 2;
     const sig = pSig >> 2;
+    const species = pSpecies >> 2;
     const { xs, ys, owners, energies } = crowd;
+    const crowdSpecies = crowd.species;
     for (let k = 0; k < count; k++) {
       f32[sx + k] = xs[k]!;
       f32[sy + k] = ys[k]!;
       i32[own + k] = owners[k]!;
+      i32[species + k] = crowdSpecies[k]!;
       f32[sig + k] = energySignal(energies[k]!, startEnergy);
     }
     const rec = new Float64Array(buffer, pRec, n * (REC_BYTES / 8));
@@ -166,6 +170,7 @@ export class WasmSenser {
     PI[26] = stride;
     PI[27] = pCand;
     PI[28] = pScr;
+    PI[29] = pSpecies;
     this.exports.sense(pP);
   }
 
@@ -179,7 +184,10 @@ export class WasmSenser {
       const ray = c.rays[i]!;
       ray.closeness = f64[2 * i]!;
       ray.kind = i32[4 * i + 2] as typeof ray.kind;
-      if (ray.kind === HIT_CREATURE) ray.energy = crowd.energies[i32[4 * i + 3]!]!;
+      if (ray.kind === HIT_CREATURE) {
+        ray.energy = crowd.energies[i32[4 * i + 3]!]!;
+        ray.species = crowd.species[i32[4 * i + 3]!]!;
+      }
     }
   }
 }
