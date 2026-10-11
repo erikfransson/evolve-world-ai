@@ -2,7 +2,7 @@ import "./base.css";
 import "./style.css";
 import "./ecosystem.css";
 import "./arena.css";
-import { layerSizes, randomGenome } from "./sim/brain.ts";
+import { Brain, layerSizes, randomGenome } from "./sim/brain.ts";
 import { createRng } from "./sim/rng.ts";
 import { loadPool } from "./sim/seedPool.ts";
 import type { PoolEntry } from "./sim/seedPool.ts";
@@ -13,14 +13,15 @@ import { KINDS, MAX_FILE_BYTES, creatureFile, fileLearner, parseCreatureFile } f
 import type { CreatureFile, CreatureKind } from "./sim/rl/creatureFile.ts";
 import { serialiseLearner } from "./sim/rl/library.ts";
 import type { StoredLearner } from "./sim/rl/library.ts";
-import { planOf, planUpkeep } from "./sim/sensors.ts";
-import type { BodyPlan, PlanView } from "./sim/sensors.ts";
+import { inputLayout, planOf, planUpkeep } from "./sim/sensors.ts";
+import type { BodyPlan, InputLayout, PlanView } from "./sim/sensors.ts";
+import { BrainView } from "./ui/brainView.ts";
 import type { RlInMessage, RlIteration, RlOutMessage, TrainMethod } from "./worker/rlProtocol.ts";
 import { BrainReplay } from "./ui/arenaBrain.ts";
 import { DEFAULT_DESIGN, DEFAULT_RUN, DESIGN_FORM, RUN_FORM, designPlan, planDesign } from "./ui/arenaForm.ts";
 import { ARENA_KIND, bestFounder, change, customEnv, envsForKind, kindRejection, planSummary } from "./ui/arenaPick.ts";
 import { addFavourite, loadFavourites, loadSpeed, removeFavourite, saveSpeed } from "./ui/arenaStore.ts";
-import { drawBrainSketch, drawCreaturePreview } from "./ui/creaturePreview.ts";
+import { drawCreaturePreview, previewSight } from "./ui/creaturePreview.ts";
 import { fitCanvas } from "./ui/canvas.ts";
 import { DEFAULT_TILES, TILE_COUNTS, TileGrid } from "./ui/arenaTiles.ts";
 import { Zoom } from "./ui/arenaZoom.ts";
@@ -92,13 +93,15 @@ const runForm = buildForm($("runForm"), RUN_FORM);
 const fillDesign = (plan: BodyPlan): void => designForm.fill(planDesign(plan));
 
 // The creature to start from, or the reason there is none.
+const DESIGN_SEED = (Math.random() * 2 ** 31) | 0;
+
 function resolveStart(): { learner: Learner; from: string } | string {
   const k = kind();
   const world = KINDS[k].world;
   const src = source();
   if (src === "design") {
     const plan = designPlan(designForm.read());
-    const rng = createRng((Math.random() * 2 ** 31) | 0);
+    const rng = createRng(DESIGN_SEED); // one random brain per page load, so the preview holds still while sliders move and Start trains it
     return { learner: { plan, genome: randomGenome(layerSizes(worldConfig(k), plan), rng) }, from: "designed" };
   }
   if (src === "pool") {
@@ -127,7 +130,7 @@ function showStart(): void {
   } else {
     note.textContent = selectedEnvs().length === 0 ? "Pick at least one environment." : "";
     const plan = r.learner.plan;
-    preview = plan;
+    preview = r.learner;
     desc.textContent = `${planSummary(plan)}. Upkeep ${planUpkeep(plan, worldConfig(k)).toFixed(2)} energy per second: a bigger body and brain cost more to keep alive.`;
   }
   updateStartButton();
@@ -135,12 +138,13 @@ function showStart(): void {
 }
 
 // The creature preview shows the plan about to start, only while no run is on screen.
-let preview: PlanView | null = null;
+let preview: Learner | null = null;
+const previewBrainView = new BrainView($<HTMLCanvasElement>("previewBrain"));
 function drawPreview(): void {
   const card = $("previewCard");
   card.hidden = run !== null || preview === null;
   if (card.hidden || !preview) return;
-  const plan = preview;
+  const { plan, genome } = preview;
   const paint = (id: string, draw: (ctx: CanvasRenderingContext2D, w: number, h: number) => void): void => {
     const canvas = $<HTMLCanvasElement>(id);
     const w = canvas.clientWidth;
@@ -153,10 +157,15 @@ function drawPreview(): void {
   };
   const sizes = layerSizes(worldConfig(kind()), plan);
   paint("previewView", (ctx, w, h) => drawCreaturePreview(ctx, plan, w, h));
-  paint("previewBrain", (ctx, w, h) => drawBrainSketch(ctx, sizes, w, h));
+  // The creature's own brain, as the Ecosystem shows a selected creature's, thinking about the example scene on the left.
+  const config = worldConfig(kind());
+  const layout = inputLayout(config, plan);
+  const brain = new Brain(sizes, genome);
+  brain.forward(previewInput(plan, layout), new Float32Array(layout.outputs));
+  previewBrainView.draw(brain, true, layout);
   const deg = Math.round((plan.raySpread * 180) / Math.PI);
-  $("previewStats").textContent = `${plan.rayCount} ray${plan.rayCount === 1 ? "" : "s"} over ${deg}°, sight ${Math.round(plan.rayLength)} (room 200 x 200, creature radius 12). Upkeep ${planUpkeep(plan, worldConfig(kind())).toFixed(2)} energy per second.`;
-  $("previewBrainText").textContent = `Brain: ${sizes[0]} inputs, hidden ${plan.hiddenLayers.join(" + ") || "none"}, ${sizes[sizes.length - 1]} outputs (turn, thrust, ${plan.memoryShort + plan.memoryLong} memory).`;
+  $("previewStats").textContent = `${plan.rayCount} ray${plan.rayCount === 1 ? "" : "s"} over ${deg}°, sight ${Math.round(plan.rayLength)}, body 24 wide. Each ray shows what it sees: green food, purple poison. Upkeep ${planUpkeep(plan, worldConfig(kind())).toFixed(2)} energy per second.`;
+  $("previewBrainText").textContent = `Brain: ${sizes[0]} inputs (${layout.rayFeatures} per ray, energy, speed, turn, memory), hidden ${plan.hiddenLayers.join(" + ") || "none"}, ${sizes[sizes.length - 1]} outputs (turn, thrust, ${plan.memoryShort + plan.memoryLong} memory). Shown thinking about the scene on the left; colours show what drives each connection.`;
 }
 window.addEventListener("resize", drawPreview);
 
@@ -606,3 +615,17 @@ void loadPool(POOL_URL).then((p) => {
   pool = p ?? [];
   fillFounders();
 });
+
+// The brain input for the preview scene: each ray's view from previewSight, a fairly full body at rest, empty memory.
+function previewInput(plan: PlanView, layout: InputLayout): Float32Array {
+  const input = new Float32Array(layout.size);
+  const at = (label: string): number => layout.rayFeatureLabels.indexOf(label);
+  previewSight(plan).forEach((hit, k) => {
+    const base = k * layout.rayFeatures;
+    if (!hit.kind) return;
+    input[base + at("closeness")] = 1 - hit.distance / plan.rayLength;
+    input[base + at(hit.kind)] = 1;
+  });
+  input[layout.rays * layout.rayFeatures] = 0.6; // energy
+  return input;
+}

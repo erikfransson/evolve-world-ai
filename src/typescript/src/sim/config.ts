@@ -170,10 +170,12 @@ function applyOverrides(target: Record<string, unknown>, over: Record<string, un
         if (current.length > 0 && typeof item !== itemType) {
           throw new Error(`config "${where}[${i}]" must be a ${itemType}, got ${describe(item)}`);
         }
+        if (typeof item === "number" && !Number.isFinite(item)) throw new Error(`config "${where}[${i}]" must be finite, got ${item}`);
       });
       target[key] = value.slice();
     } else {
       if (typeof value !== typeof current) throw new Error(`config "${where}" must be a ${typeof current}, got ${describe(value)}`);
+      if (typeof value === "number" && !Number.isFinite(value)) throw new Error(`config "${where}" must be finite, got ${value}`);
       target[key] = value;
     }
   }
