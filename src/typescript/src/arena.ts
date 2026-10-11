@@ -16,6 +16,7 @@ import type { StoredLearner } from "./sim/rl/library.ts";
 import { planUpkeep } from "./sim/sensors.ts";
 import type { BodyPlan } from "./sim/sensors.ts";
 import { BrainView } from "./ui/brainView.ts";
+import { energyBudget, renderEnergy } from "./ui/energyCard.ts";
 import type { RlInMessage, RlIteration, RlOutMessage, TrainMethod } from "./worker/rlProtocol.ts";
 import { BrainReplay } from "./ui/arenaBrain.ts";
 import { DEFAULT_DESIGN, DEFAULT_RUN, DESIGN_FORM, RUN_FORM, designPlan, planDesign } from "./ui/arenaForm.ts";
@@ -200,6 +201,7 @@ function drawPreview(): void {
   card.hidden = run !== null || preview === null;
   if (card.hidden || !preview) return;
   const { plan, genome } = preview;
+  renderEnergy($("energyCard"), energyBudget(plan, worldConfig(kind())));
   const k = kind();
   if (!previewScene || previewKind !== k) {
     previewScene = new PreviewScene(worldConfig(k), plan, genome);

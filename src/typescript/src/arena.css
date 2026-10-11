@@ -124,7 +124,23 @@ details.more > summary { color: var(--text); font-weight: 500; font-size: 0.85re
 .preview-fig { margin: 0; display: flex; flex-direction: column; gap: 0.4rem; min-width: 0; }
 .preview-fig canvas { display: block; width: 100%; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); }
 #previewView { aspect-ratio: 3 / 2; } /* the room the creature moves through: the wide box */
-#previewBrain { aspect-ratio: 10 / 9; } /* the network: a narrow box */
+#previewBrain { aspect-ratio: 4 / 3; } /* the network: a narrow box, with the energy readout below it */
+.energy { margin-top: 0.3rem; padding: 0.7rem 0.8rem; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); display: flex; flex-direction: column; gap: 0.55rem; font-variant-numeric: tabular-nums; }
+.energy-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 0.2rem; }
+.energy-big { font-size: 1.7rem; font-weight: 700; color: #fbbf24; line-height: 1; }
+.energy-unit { font-size: 0.85rem; color: var(--text); }
+.energy-full { font-size: 0.8rem; color: var(--muted); }
+.energy-rows { display: grid; gap: 0.3rem; }
+.energy-row { display: grid; grid-template-columns: 9.5rem minmax(0, 1fr) 2.6rem; align-items: center; gap: 0.5rem; font-size: 0.78rem; color: var(--muted); }
+.energy-val { text-align: right; color: var(--text); }
+.energy-bar { height: 0.45rem; border-radius: 999px; background: color-mix(in srgb, var(--border) 70%, transparent); overflow: hidden; }
+.energy-fill { display: block; height: 100%; border-radius: 999px; }
+.energy-fill.living { background: #9fb8ad; }
+.energy-fill.eyes { background: #7dd3fc; }
+.energy-fill.brain { background: #c084fc; }
+.energy-fill.moving { background: #fbbf24; }
+.energy-foot { font-size: 0.78rem; color: var(--muted); line-height: 1.4; }
+.energy-foot b { color: var(--text); font-weight: 600; }
 @media (max-width: 900px) {
   .preview-body { grid-template-columns: minmax(0, 1fr); justify-items: center; }
   .preview-fig { width: 100%; max-width: 30rem; }
