@@ -17,7 +17,6 @@ export interface Range<C> extends Base {
   step: number;
   fmt?: string; // key of FORMATS
   hint?: (c: C) => string; // live text next to the value
-  hintId?: string; // id of the hint element, default `${id}Hint`
   get: (c: C) => number;
   set: (c: C, v: number) => void;
 }
@@ -35,15 +34,7 @@ export interface Choice<C> extends Base {
 interface Seed extends Base {
   kind: "seed";
 }
-// A number the config keeps and the page shows no control for; the value rides in a hidden input so presets and pasted configs carry it.
-export interface Hidden<C> {
-  kind: "hidden";
-  id: string;
-  advanced?: boolean;
-  get: (c: C) => number;
-  set: (c: C, v: number) => void;
-}
-export type Field<C> = Range<C> | Toggle<C> | Choice<C> | Seed | Hidden<C>;
+export type Field<C> = Range<C> | Toggle<C> | Choice<C> | Seed;
 export interface Section<C> {
   title: string;
   fields: readonly Field<C>[];
@@ -97,7 +88,6 @@ const label = (f: Base): string =>
   `<span class="lbl"><label class="name" for="${f.id}">${f.label}</label><span class="tip" tabindex="0" role="img" aria-label="${escapeAttr(f.tip)}" data-tip="${escapeAttr(f.tip)}">ⓘ</span></span>`;
 
 function fieldHtml<C>(f: Field<C>): string {
-  if (f.kind === "hidden") return `<input id="${f.id}" type="hidden" />`;
   if (f.kind === "toggle") return `<div class="toggle">${label(f)}<input id="${f.id}" type="checkbox" role="switch" /></div>`;
   if (f.kind === "seed") {
     return `<div class="field"><div class="row">${label(f)}</div><div class="seed-row"><input id="seed" type="number" step="1" min="0" /><button id="dice" class="icon" type="button" title="Random seed" aria-label="Random seed">🎲</button></div></div>`;
@@ -107,7 +97,7 @@ function fieldHtml<C>(f: Field<C>): string {
     return `<div class="field"><div class="row">${label(f)}</div><select id="${f.id}">${options}</select></div>`;
   }
   const fmt = f.fmt ? ` data-fmt="${f.fmt}"` : "";
-  const hint = f.hint ? `<span class="hint" id="${f.hintId ?? `${f.id}Hint`}"></span>` : "";
+  const hint = f.hint ? `<span class="hint" id="${f.id}Hint"></span>` : "";
   return `<div class="field"><div class="row">${label(f)}<span class="vals">${hint}<output for="${f.id}"${fmt}></output></span></div><input id="${f.id}" type="range" min="${f.min}" max="${f.max}" step="${f.step}" /></div>`;
 }
 
@@ -133,7 +123,7 @@ export function buildForm<C extends { seed: number }>(container: HTMLElement, sp
   container.innerHTML = spec.sections.map(sectionHtml).join("");
   const fields = spec.sections.flatMap((s) => [...s.fields]);
   const syncHints = (c: C): void => {
-    for (const f of fields) if (f.kind === "range" && f.hint) el(f.hintId ?? `${f.id}Hint`, HTMLElement).textContent = f.hint(c);
+    for (const f of fields) if (f.kind === "range" && f.hint) el(`${f.id}Hint`, HTMLElement).textContent = f.hint(c);
   };
   const read = (): C => {
     const c = structuredClone(spec.defaults);
@@ -141,7 +131,6 @@ export function buildForm<C extends { seed: number }>(container: HTMLElement, sp
       const input = el(f.id, HTMLElement) as HTMLInputElement; // a select shares .value
       if (f.kind === "toggle") f.set(c, input.checked);
       else if (f.kind === "range") f.set(c, input.valueAsNumber);
-      else if (f.kind === "hidden") f.set(c, Number(input.value));
       else if (f.kind === "choice") { if (f.options.some(([value]) => value === input.value)) f.set(c, input.value); }
       else if (Number.isFinite(input.valueAsNumber)) c.seed = Math.min(2 ** 31, Math.max(0, Math.round(input.valueAsNumber)));
     }

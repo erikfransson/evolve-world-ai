@@ -182,7 +182,7 @@ describe("Trials preset panel", () => {
     expectOnSteps();
   });
 
-  it("Custom after a preset keeps that preset's hidden world values", () => {
+  it("Custom after a preset keeps that preset's world values", () => {
     pick("giants");
     pick(CUSTOM);
     const c = readConfig();
@@ -190,7 +190,7 @@ describe("Trials preset panel", () => {
     expect([c.world.itemRadius, c.world.foodEnergy, c.world.foodDensity]).toEqual([giants.itemRadius, giants.foodEnergy, giants.foodDensity]);
   });
 
-  it("keeps world values the form has no field for", () => {
+  it("carries item size and energy per food", () => {
     pick("giants");
     expect(readConfig().world).toEqual(TRIALS_PRESETS[3]!.world);
     expect(readConfig().world.itemRadius).toBe(9);

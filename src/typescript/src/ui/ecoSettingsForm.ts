@@ -1,18 +1,13 @@
 import { POISON_LETHAL } from "../sim/config.ts";
 import { DEFAULT_ECO_CONFIG } from "../sim/ecoConfig.ts";
 import type { EcoConfig } from "../sim/ecoConfig.ts";
-import { items, perSecond, range as rangeOf } from "./settingsForm.ts";
-import type { Field as FieldOf, FormSpec, Section as SectionOf } from "./settingsForm.ts";
+import { items, perSecond, range } from "./settingsForm.ts";
+import type { FormSpec, Section } from "./settingsForm.ts";
 
 // Ecosystem settings, built by buildForm in settingsForm.ts.
-export type Field = FieldOf<EcoConfig>;
-export type Section = SectionOf<EcoConfig>;
-export type EcoForm = FormSpec<EcoConfig>;
-
 const defaultNeurons = DEFAULT_ECO_CONFIG.brain.hiddenLayers[0]!;
-export const range = rangeOf<EcoConfig>;
 
-export const ECO_SECTIONS: readonly Section[] = [
+export const ECO_SECTIONS: readonly Section<EcoConfig>[] = [
   {
     title: "World",
     fields: [
@@ -92,4 +87,4 @@ export const ECO_SECTIONS: readonly Section[] = [
   },
 ];
 
-export const ECO_FORM: EcoForm = { sections: ECO_SECTIONS, defaults: DEFAULT_ECO_CONFIG };
+export const ECO_FORM: FormSpec<EcoConfig> = { sections: ECO_SECTIONS, defaults: DEFAULT_ECO_CONFIG };

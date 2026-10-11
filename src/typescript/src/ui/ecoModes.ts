@@ -3,7 +3,7 @@ import { ECO_LOCKED, ECO_PRESETS, PREDATOR_PRESETS, withEcoPreset } from "../sim
 import type { EcoPreset } from "../sim/presets.ts";
 import type { BestBy } from "../worker/ecoProtocol.ts";
 import { ECO_FORM } from "./ecoSettingsForm.ts";
-import type { EcoForm } from "./ecoSettingsForm.ts";
+import type { FormSpec } from "./settingsForm.ts";
 import type { EcoStats } from "./ecoPage.ts";
 import { formatDuration } from "./page.ts";
 import { PREDATOR_FORM, PREDATOR_LOCKED } from "./predatorForm.ts";
@@ -12,7 +12,7 @@ import { SPECIES_COLORS } from "./speciesStyle.ts";
 // What differs between the pages the Ecosystem page script runs: the Ecosystem and Predators & prey.
 export interface ModePage {
   mode: "ecosystem" | "predators"; // also the copy/paste mode and the scoreboard name
-  form: EcoForm;
+  form: FormSpec<EcoConfig>;
   presets: readonly EcoPreset[];
   locked: readonly string[]; // form fields a preset fixes
   store: string; // localStorage prefix for the cards' open state

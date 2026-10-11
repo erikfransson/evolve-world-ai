@@ -48,8 +48,8 @@ describe("settings form", () => {
 
   it("shows value badges and item counts", () => {
     fillForm(withOverrides(DEFAULT_CONFIG, { world: { width: 1000, height: 1000, foodDensity: 0.5, poisonDensity: 0 } }));
-    expect(document.getElementById("foodItems")!.textContent).toBe("≈ 50 items");
-    expect(document.getElementById("poisonItems")!.textContent).toBe("≈ 0 items");
+    expect(document.getElementById("foodDensityHint")!.textContent).toBe("≈ 50 items");
+    expect(document.getElementById("poisonDensityHint")!.textContent).toBe("≈ 0 items");
     expect(document.querySelector('output[for="rayCount"]')!.textContent).toBe("8");
     expect(document.querySelector('output[for="raySpread"]')!.textContent).toBe("125°");
     expect(document.querySelector('output[for="mutationRate"]')!.textContent).toBe("5%");

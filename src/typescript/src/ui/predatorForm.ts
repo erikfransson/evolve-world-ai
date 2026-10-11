@@ -3,9 +3,9 @@ import type { EcoConfig } from "../sim/ecoConfig.ts";
 import { SPECIES_OVERRIDES, resolveSpecies } from "../sim/species.ts";
 import type { Species, SpeciesConfig } from "../sim/species.ts";
 import { SPECIES_COLORS } from "./speciesStyle.ts";
-import { ECO_SECTIONS, range } from "./ecoSettingsForm.ts";
-import { items, perSecond } from "./settingsForm.ts";
-import type { EcoForm, Field, Section } from "./ecoSettingsForm.ts";
+import { ECO_SECTIONS } from "./ecoSettingsForm.ts";
+import { items, perSecond, range } from "./settingsForm.ts";
+import type { Field, FormSpec, Section } from "./settingsForm.ts";
 
 // Predators & prey settings: world and regrowth, one card per species, predation, then the shared Ecosystem cards folded.
 
@@ -18,12 +18,12 @@ function assign<K extends keyof Species>(c: EcoConfig, i: number, key: K, v: Spe
   if (i === 0 && shared) (c[shared[0]] as Record<string, unknown>)[shared[1]] = v;
   else sp(c, i)[key] = v;
 }
-const shared = (title: string): readonly Field[] => ECO_SECTIONS.find((s) => s.title === title)!.fields;
-const pick = (title: string, ids: readonly string[]): Field[] => shared(title).filter((f) => ids.includes(f.id));
-const advanced = (fields: readonly Field[]): Field[] => fields.map((f) => ({ ...f, advanced: true }));
+const shared = (title: string): readonly Field<EcoConfig>[] => ECO_SECTIONS.find((s) => s.title === title)!.fields;
+const pick = (title: string, ids: readonly string[]): Field<EcoConfig>[] => shared(title).filter((f) => ids.includes(f.id));
+const advanced = (fields: readonly Field<EcoConfig>[]): Field<EcoConfig>[] => fields.map((f) => ({ ...f, advanced: true }));
 
 // One species' card: founders, speed and births up front, costs and vision under More settings.
-function speciesFields(i: number, p: string, who: string, maxFounders: number): Field[] {
+function speciesFields(i: number, p: string, who: string, maxFounders: number): Field<EcoConfig>[] {
   return [
     range({ id: `${p}Founders`, label: "Start creatures", tip: `How many ${who} the run starts with.`, min: 0, max: maxFounders, step: maxFounders > 500 ? 10 : 1, get: (c) => value(c, i, "founders"), set: (c, v) => { assign(c, i, "founders", v); } }),
     range({ id: `${p}Pool`, label: "Trained founders", tip: `Share of the starting ${who} copied, with small mutations, from a pool of creatures trained in Trials to find food. They keep their own rays and brain shape and start blind to other creatures. The rest start with random brains.`, min: 0, max: 1, step: 0.05, fmt: "pct", get: (c) => value(c, i, "poolFraction"), set: (c, v) => { assign(c, i, "poolFraction", v); } }),
@@ -40,7 +40,7 @@ function speciesFields(i: number, p: string, who: string, maxFounders: number): 
   ];
 }
 
-export const PREDATOR_SECTIONS: readonly Section[] = [
+export const PREDATOR_SECTIONS: readonly Section<EcoConfig>[] = [
   {
     title: "World and regrowth",
     fields: [
@@ -69,7 +69,7 @@ export const PREDATOR_SECTIONS: readonly Section[] = [
   ...ECO_SECTIONS.filter((s) => ["Variation", "Brain", "Mutation"].includes(s.title)).map((s) => ({ ...s, folded: true })),
 ];
 
-export const PREDATOR_FORM: EcoForm = { sections: PREDATOR_SECTIONS, defaults: DEFAULT_PREDATOR_CONFIG };
+export const PREDATOR_FORM: FormSpec<EcoConfig> = { sections: PREDATOR_SECTIONS, defaults: DEFAULT_PREDATOR_CONFIG };
 
 // Form fields a preset fixes on this page.
 export const PREDATOR_LOCKED: readonly string[] = ["worldWidth", "worldHeight", "foodDensity", "poisonDensity", "itemRadius", "foodEnergy", "poisonDamage", "foodRegrow", "foodMaxDensity", "poisonRegrow", "poisonMaxDensity"];

@@ -2,7 +2,7 @@ import { formatElapsed } from "./elapsed.ts";
 
 export const escapeAttr = (s: string): string => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 
-export const $ =<T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
+export const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 
 // Tile value with its unit; "-" and no unit when the value is null. The unit is drawn by CSS.
 export function setTile(id: string, value: string | null, unit = ""): void {

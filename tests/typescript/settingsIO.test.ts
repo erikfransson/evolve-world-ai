@@ -120,7 +120,7 @@ describe("Copy and Paste on the Trials page", () => {
 
   it("keeps item size, food energy and poison-free radius from a pasted config without calling them adjusted", () => {
     const custom = structuredClone(DEFAULT_CONFIG);
-    Object.assign(custom.world, { itemRadius: 9, foodEnergy: 60, poisonClearRadius: 77 });
+    Object.assign(custom.world, { itemRadius: 9, foodEnergy: 60, poisonClearRadius: 70 });
     click("pasteSettings");
     box().value = serialise("trials", custom);
     click("ioApply");
