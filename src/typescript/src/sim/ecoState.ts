@@ -1,3 +1,4 @@
+import { genomeLength, layerSizes, upgradeGenome } from "./brain.ts";
 import { overrideConfig } from "./config.ts";
 import type { DeepPartial } from "./config.ts";
 import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "./ecoConfig.ts";
@@ -15,7 +16,10 @@ import type { World, WorldSnapshot } from "./world.ts";
 // Not saved: the display-only collision events, the detail selection, the onDeath callback and the spare creature pool.
 // A state saved on a machine with WebAssembly SIMD restores only where it is available too (the two paths are not bit-identical).
 
-export const STATE_VERSION = 1;
+// Version 2 genomes have the terrain input (#34). A version 1 state is still read: restoreState inserts that input's zero weight column
+// into every genome, and a config without the map fields comes back with no rock or ground (their defaults are 0).
+export const STATE_VERSION = 2;
+const OLDEST_VERSION = 1;
 
 export interface EcoState {
   version: number;
@@ -140,6 +144,31 @@ function checkLineages(raw: unknown, species: number, nextId: number): void {
   }
 }
 
+// The genomes in the current layout, each checked against the layout of its plan: a version 1 genome first gets the terrain input's
+// column, so its length is judged in the new layout. plans[i][5] is genome i's length as saved. Returns the plans with the lengths
+// that now hold, and the genomes one after the other; a state already current is returned as it is.
+function currentGenomes(version: number, config: EcoConfig, plans: readonly number[][], genomes: Float32Array): { plans: number[][]; genomes: Float32Array } {
+  const out: Float32Array[] = [];
+  let at = 0;
+  const fitted = plans.map((p) => {
+    const plan = { rayCount: p[0]!, raySpread: p[1]!, rayLength: p[2]!, memoryShort: p[3]!, memoryLong: p[4]!, hiddenLayers: p.slice(6) };
+    const saved = genomes.subarray(at, at + p[5]!);
+    at += p[5]!;
+    const genome = version === OLDEST_VERSION ? upgradeGenome(saved, config, plan) : saved;
+    if (!genome || genome.length !== genomeLength(layerSizes(config, plan)) || (version === OLDEST_VERSION && genome === saved)) return invalid("a genome does not fit the layout of its plan");
+    out.push(genome);
+    return [...p.slice(0, 5), genome.length, ...plan.hiddenLayers];
+  });
+  if (version !== OLDEST_VERSION) return { plans: plans as number[][], genomes };
+  const joined = new Float32Array(out.reduce((n, g) => n + g.length, 0));
+  at = 0;
+  for (const g of out) {
+    joined.set(g, at);
+    at += g.length;
+  }
+  return { plans: fitted, genomes: joined };
+}
+
 // The saved config merged over the defaults (unknown keys and wrong types throw), with sizes held to sane bounds.
 function checkedConfig(raw: unknown): EcoConfig {
   if (!isObject(raw)) return invalid("config is missing");
@@ -203,7 +232,7 @@ function unpack<T extends Typed>(make: { new (buffer: ArrayBuffer): T; BYTES_PER
 // journal: build it for helper threads, which then receive every creature and item in their first packet.
 // The state is checked first (config, limits, ranges, links of the items, ids, lineages) and any violation throws an Error saying which.
 export function restoreState(state: EcoState, pool: readonly PoolEntry[] | null = null, options: { journal?: boolean } = {}): Ecosystem {
-  if (!isObject(state) || state.version !== STATE_VERSION) throw new Error(`saved state has version ${isObject(state) ? String(state.version) : "none"}, this build reads version ${STATE_VERSION}`);
+  if (!isObject(state) || (state.version !== STATE_VERSION && state.version !== OLDEST_VERSION)) throw new Error(`saved state has version ${isObject(state) ? String(state.version) : "none"}, this build reads versions ${OLDEST_VERSION} and ${STATE_VERSION}`);
   const { core, creatures: cr } = state;
   if (!isObject(core) || !isObject(cr) || !isObject(state.items)) return invalid("core, items or creatures are missing");
   const config = checkedConfig(state.config);
@@ -249,9 +278,11 @@ export function restoreState(state: EcoState, pool: readonly PoolEntry[] | null 
     if (genomeTotal > MAX_GENOME_FLOATS) invalid("the genomes are too big");
   }
   const scalars = unpack(Float64Array, cr.scalars, n * K, "creatures.scalars");
-  const genomes = unpack(Float32Array, cr.genomes, genomeTotal, "creatures.genomes");
+  const saved = unpack(Float32Array, cr.genomes, genomeTotal, "creatures.genomes");
+  if (!saved.every(Number.isFinite)) invalid("a genome or memory holds a number that is not finite");
+  const { plans, genomes } = currentGenomes(state.version, config, cr.plans as number[][], saved);
   const memory = unpack(Float64Array, cr.memory, memoryTotal, "creatures.memory");
-  if (!genomes.every(Number.isFinite) || !memory.every(Number.isFinite)) invalid("a genome or memory holds a number that is not finite");
+  if (!memory.every(Number.isFinite)) invalid("a genome or memory holds a number that is not finite");
   const at = (name: (typeof SCALARS)[number]): number => SCALARS.indexOf(name);
   const ids = new Set<number>();
   const perFounder = new Map<number, number>();
@@ -292,7 +323,7 @@ export function restoreState(state: EcoState, pool: readonly PoolEntry[] | null 
   let g = 0;
   let u = 0;
   for (let i = 0; i < n; i++) {
-    const p = cr.plans[i]!;
+    const p = plans[i]!;
     const v = (name: (typeof SCALARS)[number]): number => scalars[i * K + at(name)]!;
     const units = p[3]! + p[4]!;
     const record: MemberRecord = {

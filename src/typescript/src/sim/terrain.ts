@@ -51,7 +51,7 @@ export class Terrain {
   readonly rows: number;
   readonly rockStart: Int32Array;
   readonly rockOrder: Int32Array;
-  // Patch discs, slow ones first; a point on both a slow and a fast disc is slow.
+  // Patch discs of both kinds; patches of different kinds never overlap.
   readonly patchX: Float64Array;
   readonly patchY: Float64Array;
   readonly patchR: Float64Array;
