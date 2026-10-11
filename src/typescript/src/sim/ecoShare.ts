@@ -20,7 +20,7 @@ import { SenseKernels } from "./wasm/senseKernels.ts";
 // Each thread also does memory and motion of its own creatures and looks up what each touches (the part of the tick that
 // touches only one creature), so the coordinator is left with the order-dependent shared phase and the copies.
 // Helpers see exactly what Ecosystem.sensePhase sees, so results are identical.
-// The packet is a plain buffer, so it travels by postMessage (one copy per helper) or lives in a SharedArrayBuffer.
+// The packet is a plain buffer, so it travels by postMessage (one copy per helper).
 
 const DIED = 3; // delta record: DIED, id
 const BORN = 4; // delta record: BORN, id, owner, species, rayCount, raySpread, rayLength, memoryShort, memoryLong, hidden layers, ...sizes, genome length, ...genome
@@ -302,7 +302,7 @@ export class ShareCoordinator {
   }
 
   // Copies the results for creatures a helper owns from that helper's packet; home is the published one, packets[h] is
-  // helper h's (all home when shared). Leaves what every creature touches in home.touched.
+  // helper h's. Leaves what every creature touches in home.touched.
   collect(eco: Ecosystem, home: Packet, packets: readonly Packet[]): void {
     const members = eco.members;
     for (let i = 0; i < members.length; i++) {
