@@ -1,6 +1,7 @@
 import type { SelectedDetails, SnapshotViews } from "../worker/ecoProtocol.ts";
 import { HIT_NONE } from "../sim/types.ts";
 import type { Camera } from "./camera.ts";
+import type { BirthRings } from "./ecoBirths.ts";
 import { BACKGROUND, FLOOR, FOOD, POISON, RAY_COLORS, WALL } from "./scene.ts";
 
 export interface EcoDrawConfig {
@@ -9,8 +10,10 @@ export interface EcoDrawConfig {
   radius: number;
   itemRadius: number;
   fullEnergy: number; // energy at which the body fill is full
+  winter?: number; // 0 (summer) to 1 (mid-winter): how far the floor is tinted cold
 }
 
+const WINTER_TINT = 0.16; // floor overlay opacity at mid-winter
 const HUE_BUCKETS = 72;
 const AGE_LEVELS = 8;
 const AGE_SATURATE_S = 180; // age at which a creature has reached its most muted look
@@ -53,7 +56,7 @@ export class EcoRenderer {
   private readonly counts = new Int32Array(DIM_BUCKET + 2);
 
   // highlight: a founder id whose descendants stay bright while everyone else is dimmed, or -1 for none.
-  draw(ctx: CanvasRenderingContext2D, cam: Camera, cfg: EcoDrawConfig, v: SnapshotViews, selected: SelectedDetails | null, showRays: boolean, dpr: number, highlight = -1): void {
+  draw(ctx: CanvasRenderingContext2D, cam: Camera, cfg: EcoDrawConfig, v: SnapshotViews, selected: SelectedDetails | null, showRays: boolean, dpr: number, highlight = -1, births: BirthRings | null = null, now = 0): void {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = 1;
     ctx.fillStyle = BACKGROUND;
@@ -72,12 +75,17 @@ export class EcoRenderer {
 
     ctx.fillStyle = FLOOR;
     ctx.fillRect(0, 0, cfg.worldW, cfg.worldH);
+    if (cfg.winter) {
+      ctx.fillStyle = `rgba(150, 190, 235, ${WINTER_TINT * cfg.winter})`;
+      ctx.fillRect(0, 0, cfg.worldW, cfg.worldH);
+    }
     ctx.strokeStyle = WALL;
     ctx.lineWidth = Math.max(2, 1.5 * dpr) * dev;
     ctx.strokeRect(0, 0, cfg.worldW, cfg.worldH);
 
     this.drawItems(ctx, cfg, v, x0, x1, y0, y1, dev, z);
     this.drawCreatures(ctx, cfg, v, x0, x1, y0, y1, css, z / dpr, highlight);
+    births?.draw(ctx, now, cfg.radius, css, z / dpr);
     if (selected?.alive) this.drawSelected(ctx, cfg, selected, showRays, css);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
   }

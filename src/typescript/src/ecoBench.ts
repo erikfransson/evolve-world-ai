@@ -1,5 +1,5 @@
 // Ecosystem benchmark: runs a seeded world headless and prints ticks/s, population over time and a fingerprint.
-// Usage: node src/ecoBench.ts [--seconds 120] [--seed 1] [--pop 300] [--food 0.5] [--regrow 0.05] [--every 10] [--pool public/pool.json] [--poolFraction 0.5] [--aging] [--agingStart 120] [--agingRate 0.5] [--damage] [--damagePerSpeed 0.3] [--threads 0] [--shared] [--width 12000] [--height 7500]
+// Usage: node src/ecoBench.ts [--seconds 120] [--seed 1] [--pop 300] [--food 0.5] [--regrow 0.05] [--every 10] [--pool public/pool.json] [--poolFraction 0.5] [--aging] [--agingStart 120] [--agingRate 0.5] [--damage] [--damagePerSpeed 0.3] [--threads 0] [--shared] [--width 12000] [--height 7500] [--poisonDamage 30] [--seasons]
 // --food sets the starting and maximum food density, --regrow the food regrowth rate, --pool none runs without the seed pool.
 
 import { readFileSync } from "node:fs";
@@ -28,6 +28,8 @@ const { values } = parseArgs({
     wasm: { type: "string" }, // true or false: sense and think on the WebAssembly kernels; default from the config
     agingStart: { type: "string" },
     agingRate: { type: "string" },
+    poisonDamage: { type: "string" }, // energy lost per poison item; 100 or more kills
+    seasons: { type: "boolean" },
     width: { type: "string" }, // world size in px; scale --pop with the area to keep densities
     height: { type: "string" },
     damage: { type: "boolean" }, // collision damage
@@ -40,12 +42,13 @@ const food = num(values.food, d.world.foodDensity);
 const config: EcoConfig = {
   ...structuredClone(d),
   seed: num(values.seed, d.seed),
-  world: { ...d.world, width: num(values.width, d.world.width), height: num(values.height, d.world.height), foodDensity: food },
+  world: { ...d.world, width: num(values.width, d.world.width), height: num(values.height, d.world.height), poisonDamage: num(values.poisonDamage, d.world.poisonDamage), foodDensity: food },
   eco: {
     ...d.eco,
     initialPopulation: num(values.pop, d.eco.initialPopulation),
     poolFraction: num(values.poolFraction, d.eco.poolFraction),
     aging: values.aging ?? d.eco.aging,
+    seasons: values.seasons ?? d.eco.seasons,
     wasm: values.wasm === undefined ? d.eco.wasm : values.wasm === "true",
     agingStart: num(values.agingStart, d.eco.agingStart),
     agingRate: num(values.agingRate, d.eco.agingRate),

@@ -9,6 +9,9 @@ export interface EcoConfig extends EngineConfig {
     maxPopulation: number; // births wait while the world is full
     foodRegrow: number; // density units per second, same scale as world.foodDensity
     foodMaxDensity: number; // regrowth stops here
+    seasons: boolean; // food regrowth swings between full (summer) and winterFood over each year
+    yearMinutes: number; // length of a year in simulated minutes
+    winterFood: number; // food regrowth multiplier at mid-winter, 0 to 1
     poisonRegrow: number;
     poisonMaxDensity: number; // keeps poison from filling the board
     birthEnergy: number; // a creature at or above this energy gives birth; also where the energy fill is full
@@ -50,6 +53,9 @@ export const DEFAULT_ECO_CONFIG: EcoConfig = {
     maxPopulation: 10000,
     foodRegrow: 0.05, // 200 items/s on the default world, about 4000 energy/s, so roughly 1200 creatures at equilibrium
     foodMaxDensity: 0.7,
+    seasons: false,
+    yearMinutes: 40,
+    winterFood: 0.3,
     poisonRegrow: 0.005,
     poisonMaxDensity: 0.1,
     birthEnergy: 150,
@@ -76,3 +82,17 @@ export const DEFAULT_ECO_CONFIG: EcoConfig = {
   },
   mutation: { rate: DEFAULT_CONFIG.ga.mutationRate, std: DEFAULT_CONFIG.ga.mutationStd },
 };
+
+// Food regrowth multiplier at simulated time t seconds: 1 at mid-summer (t = 0), winterFood at mid-winter, a cosine in between.
+export const seasonFactor = (eco: EcoConfig["eco"], t: number): number => eco.winterFood + (1 - eco.winterFood) * (1 - winterness(eco, t));
+
+// 0 at mid-summer, 1 at mid-winter.
+export const winterness = (eco: EcoConfig["eco"], t: number): number => (1 - Math.cos((2 * Math.PI * t) / (eco.yearMinutes * 60))) / 2;
+
+const SEASONS = ["Summer", "Autumn", "Winter", "Spring"] as const;
+// Name of the quarter of the year that t falls in, centred on the solstices.
+export function seasonName(eco: EcoConfig["eco"], t: number): (typeof SEASONS)[number] {
+  const year = eco.yearMinutes * 60;
+  const p = (((t / year) % 1) + 1) % 1;
+  return SEASONS[Math.floor(((p + 0.125) % 1) * 4)]!;
+}

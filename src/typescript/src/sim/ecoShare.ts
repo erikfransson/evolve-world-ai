@@ -66,6 +66,34 @@ export interface Packet {
   outputAt: number; // byte offset of the outputs
 }
 
+type StateColumns = Packet["after"]; // the nine state columns, also those of a published Packet
+
+function readState(c: Creature, a: StateColumns, i: number): void {
+  const s = c.state;
+  s.x = a.x[i]!;
+  s.y = a.y[i]!;
+  s.vx = a.vx[i]!;
+  s.vy = a.vy[i]!;
+  s.turnRate = a.turnRate[i]!;
+  s.energy = a.energy[i]!;
+  s.heading = a.angle[i]!;
+  c.heading.cos = a.cos[i]!;
+  c.heading.sin = a.sin[i]!;
+}
+
+function writeState(c: Creature, a: StateColumns, i: number): void {
+  const s = c.state;
+  a.x[i] = s.x;
+  a.y[i] = s.y;
+  a.vx[i] = s.vx;
+  a.vy[i] = s.vy;
+  a.turnRate[i] = s.turnRate;
+  a.energy[i] = s.energy;
+  a.angle[i] = s.heading;
+  a.cos[i] = c.heading.cos;
+  a.sin[i] = c.heading.sin;
+}
+
 function layout(caps: Caps): { f64At: number; outputAt: number; bytes: number } {
   const ints = HEADER_BYTES + 4 * (3 * caps.creatures + 1);
   const f64At = Math.ceil(ints / 8) * 8;
@@ -152,6 +180,7 @@ export class ShareCoordinator {
   private readonly costOf = new Map<number, number>();
   private readonly load: Float64Array;
   private readonly batch = new SenseBatch();
+  private advanced = false; // senseOwn has moved the own creatures since the last publish
 
   constructor(helpers: number) {
     this.helpers = helpers;
@@ -173,6 +202,7 @@ export class ShareCoordinator {
 
   // Writes the tick-start state and drains the journal into p, whose caps must cover need(eco).
   publish(eco: Ecosystem, p: Packet): void {
+    this.advanced = false;
     const j = eco.journal!;
     const d = p.delta;
     let k = 0;
@@ -225,15 +255,7 @@ export class ShareCoordinator {
       p.ids[i] = m.id;
       p.owner[i] = this.ownerOf.get(m.id)!;
       p.memoryAt[i] = at;
-      p.x[i] = s.x;
-      p.y[i] = s.y;
-      p.cos[i] = c.heading.cos;
-      p.sin[i] = c.heading.sin;
-      p.vx[i] = s.vx;
-      p.vy[i] = s.vy;
-      p.turnRate[i] = s.turnRate;
-      p.energy[i] = s.energy;
-      p.angle[i] = s.heading;
+      writeState(c, p, i);
       p.ticks[i] = s.ticksAlive;
       const memory = c.memory;
       for (let u = 0; u < memory.length; u++) p.memory[at + u] = memory[u]!;
@@ -250,31 +272,25 @@ export class ShareCoordinator {
     batch.clear();
     for (let i = 0; i < n; i++) if (p.owner[i] === this.helpers || p.ids[i] === watch) batch.add(eco.members[i]!.creature, i);
     eco.senseBatch(batch);
-    // Memory and motion of the own creatures; a watched creature of a helper gets its from that helper.
+    // Memory and motion of the own creatures; a watched creature of a helper gets them from that helper.
     for (let k = 0; k < batch.count; k++) {
       const i = batch.selves[k]!;
       if (p.owner[i] === this.helpers) p.touched[i] = eco.advance(batch.creatures[k]!);
     }
+    this.advanced = true;
   }
 
   // Puts the coordinator's own creatures back to the tick start from the published packet, after a tick that failed before
   // finishing (senseOwn has already moved them), so the ecosystem can run that tick again on this thread.
   undoOwn(eco: Ecosystem, p: Packet): void {
+    if (!this.advanced) return; // senseOwn did not run, so nothing moved
+    this.advanced = false;
     const members = eco.members;
     const n = Math.min(p.header[H_COUNT]!, members.length);
     for (let i = 0; i < n; i++) {
       if (p.owner[i] !== this.helpers) continue;
       const c = members[i]!.creature;
-      const s = c.state;
-      s.x = p.x[i]!;
-      s.y = p.y[i]!;
-      s.vx = p.vx[i]!;
-      s.vy = p.vy[i]!;
-      s.turnRate = p.turnRate[i]!;
-      s.energy = p.energy[i]!;
-      s.heading = p.angle[i]!;
-      c.heading.cos = p.cos[i]!;
-      c.heading.sin = p.sin[i]!;
+      readState(c, p, i);
       c.setMemory(p.memory, p.memoryAt[i]!);
     }
   }
@@ -288,17 +304,7 @@ export class ShareCoordinator {
       if (owner === this.helpers) continue;
       const p = packets[owner]!;
       const c = members[i]!.creature;
-      const s = c.state;
-      const a = p.after;
-      s.x = a.x[i]!;
-      s.y = a.y[i]!;
-      s.vx = a.vx[i]!;
-      s.vy = a.vy[i]!;
-      s.turnRate = a.turnRate[i]!;
-      s.energy = a.energy[i]!;
-      s.heading = a.angle[i]!;
-      c.heading.cos = a.cos[i]!;
-      c.heading.sin = a.sin[i]!;
+      readState(c, p.after, i);
       c.setMemory(p.memoryOut, home.memoryAt[i]!);
       home.touched[i] = p.touched[i]!;
     }
@@ -321,11 +327,11 @@ export class ShareHelper {
   private readonly aging: Aging | null;
 
   // wasm: sense and think on the WebAssembly kernels when available, as the coordinator does.
-  constructor(config: EngineConfig, worldCapacity: number, index: number, wasm = false) {
+  constructor(config: EcoConfig, worldCapacity: number, index: number, wasm = false) {
     this.kernels = wasm ? SenseKernels.create() : null;
     this.config = config;
     this.index = index;
-    this.aging = agingOf((config as EcoConfig).eco, config.dt);
+    this.aging = agingOf(config.eco, config.dt);
     this.world = new World(config, worldCapacity);
     this.crowd = new Crowd(config);
   }
@@ -345,17 +351,8 @@ export class ShareHelper {
     for (let i = 0; i < n; i++) {
       if (p.owner[i] !== this.index) continue;
       const c = this.mine.get(p.ids[i]!)!;
-      const s = c.state;
-      s.x = p.x[i]!;
-      s.y = p.y[i]!;
-      s.vx = p.vx[i]!;
-      s.vy = p.vy[i]!;
-      s.turnRate = p.turnRate[i]!;
-      s.energy = p.energy[i]!;
-      s.heading = p.angle[i]!;
-      s.ticksAlive = p.ticks[i]!;
-      c.heading.cos = p.cos[i]!;
-      c.heading.sin = p.sin[i]!;
+      readState(c, p, i);
+      c.state.ticksAlive = p.ticks[i]!;
       c.setMemory(p.memory, p.memoryAt[i]!);
       batch.add(c, i);
     }
@@ -367,16 +364,7 @@ export class ShareHelper {
       c.remember();
       c.steer();
       p.touched[i] = c.touched(this.world);
-      const s = c.state;
-      a.x[i] = s.x;
-      a.y[i] = s.y;
-      a.vx[i] = s.vx;
-      a.vy[i] = s.vy;
-      a.turnRate[i] = s.turnRate;
-      a.energy[i] = s.energy;
-      a.angle[i] = s.heading;
-      a.cos[i] = c.heading.cos;
-      a.sin[i] = c.heading.sin;
+      writeState(c, a, i);
       const memory = c.memory;
       const at = p.memoryAt[i]!;
       for (let u = 0; u < memory.length; u++) p.memoryOut[at + u] = memory[u]!;

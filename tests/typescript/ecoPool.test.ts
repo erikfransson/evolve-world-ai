@@ -83,6 +83,9 @@ describe("ThinkPool", () => {
       const c = cfg();
       c.eco.collisionDamage = true;
       c.eco.damagePerSpeed = 0.5;
+      c.eco.aging = true; // helpers apply ticks alive and the ageing rule themselves
+      c.eco.agingStart = 5;
+      c.eco.agingRate = 3;
       return c;
     };
     const ref = serial(damaged(), 400);
@@ -91,6 +94,29 @@ describe("ThinkPool", () => {
       const eco = await pooled(new ThinkPool(fakePorts(n), false), damaged(), 400);
       expect([eco.fingerprint(), eco.births, eco.deaths]).toEqual([ref.fingerprint(), ref.births, ref.deaths]);
     }
+  });
+
+  it("matches with poison that hurts but does not always kill", async () => {
+    const hurting = (): EcoConfig => {
+      const c = cfg();
+      c.world.poisonDamage = 30;
+      return c;
+    };
+    const ref = serial(hurting(), 400);
+    expect(ref.fingerprint()).not.toBe(serial(cfg(), 400).fingerprint());
+    for (const n of [1, 3]) expect((await pooled(new ThinkPool(fakePorts(n), false), hurting(), 400)).fingerprint()).toBe(ref.fingerprint());
+  });
+
+  it("matches with seasons on, with a short year so winter is passed", async () => {
+    const seasonal = (): EcoConfig => {
+      const c = cfg();
+      c.eco.seasons = true;
+      c.eco.yearMinutes = 0.2;
+      return c;
+    };
+    const ref = serial(seasonal(), 400);
+    expect(ref.fingerprint()).not.toBe(serial(cfg(), 400).fingerprint());
+    for (const n of [1, 3]) expect((await pooled(new ThinkPool(fakePorts(n), false), seasonal(), 400)).fingerprint()).toBe(ref.fingerprint());
   });
 
   it("reuses its helpers for a second run", async () => {

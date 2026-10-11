@@ -1,4 +1,4 @@
-import type { EngineConfig } from "../sim/config.ts";
+import type { EcoConfig } from "../sim/ecoConfig.ts";
 import type { Ecosystem } from "../sim/ecosystem.ts";
 import { ShareCoordinator, ShareHelper, fittedCaps, packetBytes, packetViews, publishedBytes } from "../sim/ecoShare.ts";
 import type { Caps, Packet } from "../sim/ecoShare.ts";
@@ -9,7 +9,7 @@ import type { Caps, Packet } from "../sim/ecoShare.ts";
 // gen: the run a message belongs to, echoed in the reply, so a late reply from an earlier run is dropped.
 
 export type HelperIn =
-  | { type: "init"; gen: number; config: EngineConfig; worldCapacity: number; index: number; wasm: boolean; control?: SharedArrayBuffer } // a new run; control in shared mode, wasm as the coordinator
+  | { type: "init"; gen: number; config: EcoConfig; worldCapacity: number; index: number; wasm: boolean; control?: SharedArrayBuffer } // a new run; control in shared mode, wasm as the coordinator
   | { type: "packet"; gen: number; packet: SharedArrayBuffer } // shared mode: the packet buffer, sent again when it grows
   | { type: "tick"; gen: number; buffer: ArrayBuffer }; // fork-join: one tick's packet, transferred both ways
 
