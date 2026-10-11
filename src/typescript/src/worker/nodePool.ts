@@ -8,6 +8,8 @@ import { PoolEvaluator, defaultThreads } from "./evalPool.ts";
 import { ThinkPool, canShare } from "./ecoPool.ts";
 import type { HelperIn, HelperOut, HelperPort } from "./ecoPool.ts";
 import type { Port } from "./port.ts";
+import { RlPool, inlineRlPort } from "./rlPool.ts";
+import type { RlDone, RlJob, RlSetup } from "./rlPool.ts";
 
 // n new worker_threads as ports; with unref a blocked worker never keeps the process alive.
 function nodePorts<In, Out>(n: number, spawn: () => Worker, what: string, unref = false): Port<In, Out>[] {
@@ -51,4 +53,10 @@ export function createNodeEvaluator(config: SimConfig, threads: number): Evaluat
   if (threads <= 1) return new SerialEvaluator(config);
   const workers = nodePorts<EvalJob, EvalDone>(threads, () => new Worker(new URL("./evalWorkerNode.ts", import.meta.url)), "evaluation worker");
   return new PoolEvaluator(config, workers);
+}
+
+// Pool of RL helper threads, or the caller's own thread for one. Call close() so the process can exit.
+export function createNodeRlPool(setup: RlSetup, threads: number): RlPool {
+  const ports = threads <= 1 ? [inlineRlPort()] : nodePorts<RlJob, RlDone>(threads, () => new Worker(new URL("./rlHelperNode.ts", import.meta.url)), "RL helper");
+  return new RlPool(ports, setup);
 }
