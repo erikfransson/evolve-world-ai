@@ -9,7 +9,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "coverage": "vitest run --coverage && node scripts/coverageBadge.ts",
+    "coverage": "vitest run --coverage --reporter=default --reporter=json --outputFile.json=coverage/tests.json && node scripts/coverageBadge.ts",
     "headless": "node src/headless.ts",
     "bench": "node src/bench.ts",
     "wasm": "node scripts/buildWasm.ts"
