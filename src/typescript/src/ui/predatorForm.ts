@@ -3,7 +3,8 @@ import type { EcoConfig } from "../sim/ecoConfig.ts";
 import { SPECIES_OVERRIDES, resolveSpecies } from "../sim/species.ts";
 import type { Species, SpeciesConfig } from "../sim/species.ts";
 import { SPECIES_COLORS } from "./speciesStyle.ts";
-import { ECO_SECTIONS, items, perSecond, range } from "./ecoSettingsForm.ts";
+import { ECO_SECTIONS, range } from "./ecoSettingsForm.ts";
+import { items, perSecond } from "./settingsForm.ts";
 import type { EcoForm, Field, Section } from "./ecoSettingsForm.ts";
 
 // Predators & prey settings: world and regrowth, one card per species, predation, then the shared Ecosystem cards folded.

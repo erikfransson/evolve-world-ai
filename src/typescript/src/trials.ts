@@ -18,7 +18,8 @@ import type { ViewOptions } from "./ui/scene.ts";
 import { TRIALS_LOCKED, TRIALS_PRESETS, CUSTOM, withTrialsPreset } from "./sim/presets.ts";
 import { initPresetPanel } from "./ui/presetPanel.ts";
 import { Scoreboard, settingsOf, today } from "./ui/scoreboard.ts";
-import { fillForm, initSettingsForm, readConfig, setFormPreset } from "./ui/settingsForm.ts";
+import { buildForm } from "./ui/settingsForm.ts";
+import { TRIALS_FORM } from "./ui/trialsForm.ts";
 import { initSettingsIO } from "./ui/settingsIO.ts";
 import { TickClock } from "./ui/tickClock.ts";
 import { $, durationText, formatDuration, setTile } from "./ui/page.ts";
@@ -33,6 +34,8 @@ const pauseBtn = $<HTMLButtonElement>("pause");
 const resetBtn = $<HTMLButtonElement>("reset");
 const skipBtn = $<HTMLButtonElement>("skip");
 const setupForm = $<HTMLFormElement>("setup");
+const form = buildForm(settings, TRIALS_FORM);
+const { read: readConfig, fill: fillForm } = form;
 const legendCard = $("legendCard");
 const brainCard = $("brainCard");
 const legendRest = $("legendRest");
@@ -286,7 +289,7 @@ watchLatestBtn.onclick = watchLatest;
 pauseBtn.onclick = togglePause;
 for (const id of ["showAll", "rays", "pov"]) $(id).addEventListener("change", readView);
 document.querySelector(".seg")!.addEventListener("change", readView);
-initSettingsForm(setupForm, (c) => {
+form.init(setupForm, (c) => {
   if (run.phase !== "idle") return;
   run.config = c;
   rebuildPreview();
@@ -302,7 +305,6 @@ const presets = initPresetPanel({
   read: readConfig,
   fill: fillForm,
   withPreset: withTrialsPreset,
-  setPreset: setFormPreset,
 });
 initSettingsIO({ mode: "trials", form: setupForm, read: readConfig, fill: fillForm, preset: { get: presets.current, set: presets.select } });
 initTooltips($("tooltip"));

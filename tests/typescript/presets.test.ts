@@ -2,17 +2,25 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { DEFAULT_CONFIG } from "../../src/typescript/src/sim/config.ts";
+import type { SimConfig } from "../../src/typescript/src/sim/config.ts";
 import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
+import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { CUSTOM, ECO_LOCKED, ECO_PRESETS, TRIALS_LOCKED, TRIALS_PRESETS, withEcoPreset, withTrialsPreset } from "../../src/typescript/src/sim/presets.ts";
-import { buildEcoForm } from "../../src/typescript/src/ui/ecoSettingsForm.ts";
-import type { EcoFormHandle } from "../../src/typescript/src/ui/ecoSettingsForm.ts";
+import { buildForm } from "../../src/typescript/src/ui/settingsForm.ts";
+import type { FormHandle } from "../../src/typescript/src/ui/settingsForm.ts";
+import { ECO_FORM } from "../../src/typescript/src/ui/ecoSettingsForm.ts";
+import { TRIALS_FORM } from "../../src/typescript/src/ui/trialsForm.ts";
 
-let form: EcoFormHandle;
+let form: FormHandle<EcoConfig>;
+// Trials form under test, rebuilt by each describe.
+let trials: FormHandle<SimConfig>;
+const readConfig = (): SimConfig => trials.read();
+const fillForm = (c: SimConfig): void => trials.fill(c);
+const buildTrials = (): FormHandle<SimConfig> => (trials = buildForm(document.getElementById("settings")!, TRIALS_FORM));
 import { initPresetPanel } from "../../src/typescript/src/ui/presetPanel.ts";
 import type { PresetPanel } from "../../src/typescript/src/ui/presetPanel.ts";
 import { Scoreboard, TOP, describeSettings, insertEntry, settingsOf, withSettings } from "../../src/typescript/src/ui/scoreboard.ts";
 import type { Entry } from "../../src/typescript/src/ui/scoreboard.ts";
-import { fillForm, initSettingsForm, readConfig, setFormPreset } from "../../src/typescript/src/ui/settingsForm.ts";
 import { initSettingsIO, parseWithPreset, serialise } from "../../src/typescript/src/ui/settingsIO.ts";
 
 const page = (name: string): string => readFileSync(resolve(import.meta.dirname, `../../src/typescript/${name}/index.html`), "utf8").replace(/^[\s\S]*<body>|<\/body>[\s\S]*$/g, "").replace(/<script[\s\S]*?<\/script>/g, "");
@@ -138,8 +146,8 @@ describe("Trials preset panel", () => {
   beforeAll(() => {
     document.body.innerHTML = page("trials");
     const form = document.getElementById("setup") as HTMLFormElement;
-    fillForm(DEFAULT_CONFIG);
-    initSettingsForm(form, () => { inputs++; });
+    buildTrials().fill(DEFAULT_CONFIG);
+    trials.init(form, () => { inputs++; });
     panel = initPresetPanel({
       container: document.getElementById("settings")!,
       form,
@@ -150,7 +158,6 @@ describe("Trials preset panel", () => {
       read: readConfig,
       fill: fillForm,
       withPreset: withTrialsPreset,
-      setPreset: setFormPreset,
     });
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: (t: string) => { written = t; return Promise.resolve(); }, readText: () => Promise.reject(new Error("denied")) } });
     initSettingsIO({ mode: "trials", form, read: readConfig, fill: fillForm, preset: { get: panel.current, set: panel.select } });
@@ -277,7 +284,7 @@ describe("Ecosystem preset panel", () => {
 
   beforeAll(() => {
     document.body.innerHTML = page("ecosystem");
-    form = buildEcoForm(document.getElementById("settings")!);
+    form = buildForm(document.getElementById("settings")!, ECO_FORM);
     form.fill(DEFAULT_ECO_CONFIG);
     panel = initPresetPanel({
       container: document.getElementById("settings")!,
@@ -289,7 +296,6 @@ describe("Ecosystem preset panel", () => {
       read: form.read,
       fill: form.fill,
       withPreset: withEcoPreset,
-      setPreset: () => undefined,
     });
   });
 

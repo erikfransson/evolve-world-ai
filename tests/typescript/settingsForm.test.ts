@@ -3,14 +3,20 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { DEFAULT_CONFIG, withOverrides } from "../../src/typescript/src/sim/config.ts";
 import type { DeepPartial, SimConfig } from "../../src/typescript/src/sim/config.ts";
-import { fillForm, initSettingsForm, readConfig } from "../../src/typescript/src/ui/settingsForm.ts";
+import { buildForm } from "../../src/typescript/src/ui/settingsForm.ts";
+import type { FormHandle } from "../../src/typescript/src/ui/settingsForm.ts";
+import { TRIALS_FORM } from "../../src/typescript/src/ui/trialsForm.ts";
 
 const html = readFileSync(resolve(process.cwd(), "trials/index.html"), "utf8");
 const deg = (d: number): number => (d * Math.PI) / 180;
 
-// Once per file, since the form module keeps references to the elements it first finds.
+let form: FormHandle<SimConfig>;
+const readConfig = (): SimConfig => form.read();
+const fillForm = (c: SimConfig): void => form.fill(c);
+
 beforeAll(() => {
   document.body.innerHTML = /<body[^>]*>([\s\S]*)<\/body>/.exec(html)![1]!.replace(/<script[\s\S]*?<\/script>/g, ""); // page scripts must not load
+  form = buildForm(document.getElementById("settings")!, TRIALS_FORM);
 });
 
 const configs: Record<string, DeepPartial<SimConfig>> = {
@@ -63,9 +69,9 @@ describe("settings form", () => {
 
   it("reports the new config on every edit and on the dice button, and blocks form submission", () => {
     fillForm(DEFAULT_CONFIG);
-    const form = document.getElementById("setup") as HTMLFormElement;
+    const page = document.getElementById("setup") as HTMLFormElement;
     const seen: SimConfig[] = [];
-    initSettingsForm(form, (c) => seen.push(c));
+    form.init(page, (c) => seen.push(c));
     const rays = document.getElementById("rayCount") as HTMLInputElement;
     rays.value = "5";
     rays.dispatchEvent(new Event("input", { bubbles: true }));
@@ -75,7 +81,7 @@ describe("settings form", () => {
     expect(seen).toHaveLength(2);
     expect(Number.isInteger(seen[1]!.seed)).toBe(true);
     const submit = new Event("submit", { cancelable: true });
-    form.dispatchEvent(submit);
+    page.dispatchEvent(submit);
     expect(submit.defaultPrevented).toBe(true);
   });
 

@@ -3,6 +3,7 @@ import { CUSTOM } from "../sim/presets.ts";
 import type { PresetInfo } from "../sim/presets.ts";
 import { describeSettings, withSettings } from "./scoreboard.ts";
 import type { EntrySettings, Scoreboard } from "./scoreboard.ts";
+import { escapeAttr } from "./page.ts";
 
 type Creature = Pick<EngineConfig, "seed" | "creature" | "brain">;
 
@@ -16,7 +17,6 @@ export interface PresetPanelOptions<C extends Creature> {
   read(): C;
   fill(c: C): void;
   withPreset(c: C, id: string): C;
-  setPreset(id: string): void; // tells the form which preset is active (Trials keeps world values the form has no field for)
 }
 
 export interface PresetPanel {
@@ -27,8 +27,6 @@ export interface PresetPanel {
 
 const CUSTOM_INFO: PresetInfo = { id: CUSTOM, name: "Custom", description: "Every setting is free. No scores are kept." };
 const TIP = "Fixes the world and how it renews. Creatures, brain and evolution stay yours to design. Each preset keeps its own Top 3 in this browser.";
-
-const escapeAttr = (s: string): string => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 
 function setLocked(id: string, on: boolean): void {
   const input = document.getElementById(id) as HTMLInputElement | null;
@@ -106,7 +104,6 @@ export function initPresetPanel<C extends Creature>(o: PresetPanelOptions<C>): P
       const info = all.find((p) => p.id === id) ?? CUSTOM_INFO;
       current = info.id;
       select.value = current;
-      o.setPreset(current);
       if (current !== CUSTOM) o.fill(o.withPreset(o.read(), current));
       for (const f of o.locked) setLocked(f, current !== CUSTOM);
       desc.textContent = info.description;

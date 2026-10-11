@@ -2,13 +2,15 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { DEFAULT_CONFIG } from "../../src/typescript/src/sim/config.ts";
+import type { SimConfig } from "../../src/typescript/src/sim/config.ts";
 import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
-import { buildEcoForm } from "../../src/typescript/src/ui/ecoSettingsForm.ts";
-import type { EcoFormHandle } from "../../src/typescript/src/ui/ecoSettingsForm.ts";
+import { buildForm } from "../../src/typescript/src/ui/settingsForm.ts";
+import type { FormHandle } from "../../src/typescript/src/ui/settingsForm.ts";
+import { ECO_FORM } from "../../src/typescript/src/ui/ecoSettingsForm.ts";
+import { TRIALS_FORM } from "../../src/typescript/src/ui/trialsForm.ts";
 
-let form: EcoFormHandle;
-import { fillForm, readConfig } from "../../src/typescript/src/ui/settingsForm.ts";
+let form: FormHandle<EcoConfig>;
 import { PREDATOR_FORM } from "../../src/typescript/src/ui/predatorForm.ts";
 
 const page = (name: string): string => readFileSync(resolve(import.meta.dirname, `../../src/typescript/${name}/index.html`), "utf8").replace(/^[\s\S]*<body[^>]*>|<\/body>[\s\S]*$/g, "").replace(/<script[\s\S]*?<\/script>/g, "");
@@ -23,8 +25,10 @@ function expectRangesOnStep(): void {
 }
 
 describe("Trials settings form", () => {
+  let trials: FormHandle<SimConfig>;
   beforeEach(() => {
     document.body.innerHTML = page("trials");
+    trials = buildForm(document.getElementById("settings")!, TRIALS_FORM);
   });
 
   it("reads back what it was filled with", () => {
@@ -35,10 +39,10 @@ describe("Trials settings form", () => {
     c.world.poisonDamage = 25;
     c.brain.hiddenLayers = [8, 8];
     c.ga.selection = "proportional";
-    fillForm(c);
-    expect(readConfig()).toEqual(c);
-    fillForm(DEFAULT_CONFIG);
-    expect(readConfig()).toEqual(DEFAULT_CONFIG);
+    trials.fill(c);
+    expect(trials.read()).toEqual(c);
+    trials.fill(DEFAULT_CONFIG);
+    expect(trials.read()).toEqual(DEFAULT_CONFIG);
     expectRangesOnStep();
   });
 });
@@ -46,7 +50,7 @@ describe("Trials settings form", () => {
 describe("Ecosystem settings form", () => {
   beforeEach(() => {
     document.body.innerHTML = page("ecosystem");
-    form = buildEcoForm(document.getElementById("settings")!);
+    form = buildForm(document.getElementById("settings")!, ECO_FORM);
   });
 
   it("reads back the defaults", () => {
@@ -103,7 +107,7 @@ describe("Ecosystem settings form", () => {
 describe("Predators & prey settings form", () => {
   beforeEach(() => {
     document.body.innerHTML = page("predators");
-    form = buildEcoForm(document.getElementById("settings")!, PREDATOR_FORM);
+    form = buildForm(document.getElementById("settings")!, PREDATOR_FORM);
   });
 
   it("reads back the defaults and a changed config, species included", () => {

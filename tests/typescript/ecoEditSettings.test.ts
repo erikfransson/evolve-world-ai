@@ -5,14 +5,15 @@ import { createEcoView } from "../../src/typescript/src/ui/ecoPage.ts";
 import type { EcoHandlers } from "../../src/typescript/src/ui/ecoPage.ts";
 import { ECOSYSTEM_PAGE } from "../../src/typescript/src/ui/ecoModes.ts";
 import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
+import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 
 // happy-dom leaves range inputs empty until filled, so fill the freshly built form with the defaults a browser shows.
-vi.mock("../../src/typescript/src/ui/ecoSettingsForm.ts", async (importActual) => {
-  const actual = await importActual<typeof import("../../src/typescript/src/ui/ecoSettingsForm.ts")>();
+vi.mock("../../src/typescript/src/ui/settingsForm.ts", async (importActual) => {
+  const actual = await importActual<typeof import("../../src/typescript/src/ui/settingsForm.ts")>();
   return {
     ...actual,
-    buildEcoForm: (el: HTMLElement, spec: Parameters<typeof actual.buildEcoForm>[1]) => {
-      const form = actual.buildEcoForm(el, spec);
+    buildForm: (el: HTMLElement, spec: Parameters<typeof actual.buildForm<EcoConfig>>[1]) => {
+      const form = actual.buildForm(el, spec);
       form.fill(DEFAULT_ECO_CONFIG);
       return form;
     },

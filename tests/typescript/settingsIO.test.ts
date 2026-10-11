@@ -2,12 +2,20 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { DEFAULT_CONFIG } from "../../src/typescript/src/sim/config.ts";
+import type { SimConfig } from "../../src/typescript/src/sim/config.ts";
 import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
-import { buildEcoForm } from "../../src/typescript/src/ui/ecoSettingsForm.ts";
-import type { EcoFormHandle } from "../../src/typescript/src/ui/ecoSettingsForm.ts";
+import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
+import { buildForm } from "../../src/typescript/src/ui/settingsForm.ts";
+import type { FormHandle } from "../../src/typescript/src/ui/settingsForm.ts";
+import { ECO_FORM } from "../../src/typescript/src/ui/ecoSettingsForm.ts";
+import { TRIALS_FORM } from "../../src/typescript/src/ui/trialsForm.ts";
 
-let form: EcoFormHandle;
-import { fillForm, initSettingsForm, readConfig } from "../../src/typescript/src/ui/settingsForm.ts";
+let form: FormHandle<EcoConfig>;
+// Trials form under test, rebuilt by each describe.
+let trials: FormHandle<SimConfig>;
+const readConfig = (): SimConfig => trials.read();
+const fillForm = (c: SimConfig): void => trials.fill(c);
+const buildTrials = (): FormHandle<SimConfig> => (trials = buildForm(document.getElementById("settings")!, TRIALS_FORM));
 import { initSettingsIO, parseSettings, serialise } from "../../src/typescript/src/ui/settingsIO.ts";
 
 const page = (name: string): string => readFileSync(resolve(import.meta.dirname, `../../src/typescript/${name}/index.html`), "utf8").replace(/^[\s\S]*<body>|<\/body>[\s\S]*$/g, "").replace(/<script[\s\S]*?<\/script>/g, "");
@@ -79,9 +87,9 @@ describe("Copy and Paste on the Trials page", () => {
   let written = "";
   beforeEach(() => {
     document.body.innerHTML = page("trials");
-    fillForm(DEFAULT_CONFIG);
+    buildTrials().fill(DEFAULT_CONFIG);
     const form = document.getElementById("setup") as HTMLFormElement;
-    initSettingsForm(form, () => undefined);
+    trials.init(form, () => undefined);
     initSettingsIO({ mode: "trials", form, read: readConfig, fill: fillForm });
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
@@ -108,6 +116,16 @@ describe("Copy and Paste on the Trials page", () => {
     click("ioApply");
     expect(readConfig()).toEqual(changed);
     expect((document.querySelector(".io-scrim") as HTMLElement).hidden).toBe(true);
+  });
+
+  it("keeps item size, food energy and poison-free radius from a pasted config without calling them adjusted", () => {
+    const custom = structuredClone(DEFAULT_CONFIG);
+    Object.assign(custom.world, { itemRadius: 9, foodEnergy: 60, poisonClearRadius: 77 });
+    click("pasteSettings");
+    box().value = serialise("trials", custom);
+    click("ioApply");
+    expect(readConfig()).toEqual(custom);
+    expect(document.getElementById("ioMsg")!.textContent).not.toMatch(/adjusted/);
   });
 
   it("clamps out-of-range values and lists them", () => {
@@ -137,7 +155,7 @@ describe("Copy and Paste on the Trials page", () => {
 describe("Copy and Paste on the Ecosystem page", () => {
   it("restores a changed form", () => {
     document.body.innerHTML = page("ecosystem");
-    form = buildEcoForm(document.getElementById("settings")!);
+    form = buildForm(document.getElementById("settings")!, ECO_FORM);
     form.fill(DEFAULT_ECO_CONFIG);
     let written = "";
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: (t: string) => { written = t; return Promise.resolve(); } } });
