@@ -106,7 +106,7 @@ Random founders do not reach birthEnergy, so all runs decline; the default goes 
 
 (a) Closeness difference plus 1 per ray whose kind differs. A rare grazing ray hits in f64 and misses in f32 (or the reverse), so a few rays out of 10^5 differ in kind. Otherwise closeness agrees to about 1e-4.
 Ray time includes queueing the rays and applying results into `RayHit` objects, which is about 40% of the WASM time (10000 large: queue 10.4, run 18.8, apply 1.2 ms), so the speedup grows once callers write straight into the batch buffers.
-Trials stays on the JS path. Ecosystem opts in with `eco.wasm` (default false).
+Trials stays on the JS path. Ecosystem uses them with `eco.wasm` (default true since E5c, below).
 
 ## Ecosystem helper threads (E5a)
 
@@ -124,3 +124,34 @@ FJ is fork-join by messages. H helpers plus the coordinator make H + 1 sensing t
 At 5000 the serial rest (memory, motion, shared phase, publish and collect) is about 13 ms, so sensing scales about 2x on 5 threads; the same slices run on one thread take 12 ms per 1000 creatures, on helper threads about 20 ms, which points at core sharing and clock drop rather than overhead.
 Fixed on the way: the first packet carries every founder genome, and a delta area kept at that size made fork-join slower than serial (17-50 MB moved per helper per tick); it now shrinks after the founders.
 Browser (headless Chrome, preview, about 1000-1100 creatures, default world): one thread 2.5-3.0x real time at both 16x and Max; 6 helpers 3.7-4.5x shared, 4.3-4.9x by messages.
+
+## WebAssembly in Ecosystem sense and think (E5c)
+
+`node src/ecoBench.ts --seconds 10 --pop N [--threads 4 --shared] --wasm true|false`, steady ms per tick, world 12000 x 7500, 2026-10-11, JS and WASM run in alternating pairs.
+Item and wall rays, encoding and the shared phase stay in JS; crowd rays and brains run in WASM, each thread with its own kernels.
+Several runs per cell, machine load 5-12 from other jobs.
+
+| Creatures | Serial JS         | Serial WASM       | 4 shared JS             | 4 shared WASM           |
+|-----------|-------------------|-------------------|-------------------------|-------------------------|
+| 1000      | 8.1, 12.6, 9.0    | 8.1, 8.1, 7.5     | 5.2, 5.3                | 4.8, 4.8                |
+| 3000      | 26.9, 27.1, 27.4  | 23.8, 24.1, 24.9  | 18.8, 14.9, 15.8, 15.6  | 30.5 (a), 13.4, 14.4, 14.4 |
+| 5000      | 58.1, 47.0, 48.0  | 40.5, 40.2, 40.7  | 26.5, 25.7, 26.2, 25.9  | 49.4 (a), 23.0, 23.8, 23.3 |
+
+(a) First pass, load swinging around 10; the later passes agree with each other.
+WASM is 8-17% faster per tick in every repeated pair. Profile at 3000 serial: the JS sparse first layer (19%) and crowd rays (17%) become about 16% WASM plus 3% queueing; JS item rays, encoding and the shared phase are most of the rest.
+Fingerprints are equal for serial, fork-join and shared with any helper count (tests in ecoPool.test.ts).
+
+Population over 600 s, default world and seed pool, 4 shared helpers, samples every 60 s:
+
+| Seed | Path | Births | Deaths | Population at 0, 60, ... 600 s                          |
+|------|------|--------|--------|---------------------------------------------------------|
+| 1    | JS   | 8656   | 8096   | 1000 342 329 428 653 1234 1663 1510 1570 1586 1560      |
+| 1    | WASM | 9066   | 8393   | 1000 347 412 569 841 1487 1607 1631 1674 1694 1673      |
+| 2    | JS   | 8369   | 7758   | 1000 336 341 419 643 1061 1661 1629 1649 1640 1611      |
+| 2    | WASM | 9008   | 8439   | 1000 325 361 502 795 1264 1580 1506 1561 1565 1569      |
+| 3    | JS   | 9043   | 8445   | 1000 336 371 535 807 1443 1545 1528 1529 1542 1598      |
+| 3    | WASM | 8706   | 8036   | 1000 329 362 484 748 1206 1721 1573 1623 1632 1670      |
+
+Same shape and plateau (1500-1700); seed-to-seed spread is as large as the JS-WASM difference.
+Browser (headless Chrome, preview, default world at Max, median of the last 20 s of 40 s, 3200-3700 creatures): one thread 1.1x JS and 1.1x WASM; 4 helpers in shared memory 1.4, 1.4x JS and 1.5, 1.4x WASM. The tile's 0.1 resolution hides a 10% gain.
+Default set to WASM (`eco.wasm` true, "Use WebAssembly" under Life cycle); runtimes without SIMD fall back to JS.

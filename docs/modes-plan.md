@@ -42,7 +42,7 @@ Contract: `EcoConfig` in `src/sim/ecoConfig.ts`, built on `EngineConfig` (the sh
 | E2   | Camera: zoom at cursor, drag and pinch pan, fit world, smooth follow                              | -          |
 | E3   | Page shell: settings form, controls, stat tiles, cards, extinction overlay                        | contract   |
 | E4   | Worker, snapshot protocol, rendering with camera, selection and follow, brain panel, graph        | E1 to E3   |
-| E5   | Performance: worker pool (postMessage), shared memory when cross-origin isolated (coi-serviceworker), WebAssembly SIMD brain and creature rays. E5a done: Ecosystem helper threads (`sim/ecoShare.ts`, `worker/ecoPool.ts`) | E4 |
+| E5   | Performance: worker pool (postMessage), shared memory when cross-origin isolated (coi-serviceworker), WebAssembly SIMD brain and creature rays. E5a done: Ecosystem helper threads (`sim/ecoShare.ts`, `worker/ecoPool.ts`). E5b/E5c done: WASM kernels in Ecosystem sense and think (`sim/wasm/senseKernels.ts`, on by default) | E4 |
 
 ## Body plans, memory, seed pool (issues #4, #10, #11), draft
 - Each creature carries a body plan: ray count, ray angle, vision length, hidden layers, memory size. Its genome is the plan plus weights sized by it.
