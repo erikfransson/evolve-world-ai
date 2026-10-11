@@ -72,13 +72,55 @@ export class Mlp {
       const src = acts[l]!;
       const dst = acts[l + 1]!;
       const bias = at + nIn * nOut;
-      const count = l + 2 < sizes.length ? nOut : this.used;
-      for (let j = 0; j < count; j++) {
+      const hidden = l + 2 < sizes.length;
+      const count = hidden ? nOut : this.used;
+      // Four outputs at a time keep the running sums in registers; each sum still adds in input order, so results are unchanged.
+      let j = 0;
+      for (; j + 4 <= count; j += 4) {
+        let s0 = params[bias + j]!;
+        let s1 = params[bias + j + 1]!;
+        let s2 = params[bias + j + 2]!;
+        let s3 = params[bias + j + 3]!;
+        const r0 = at + j * nIn;
+        const r1 = r0 + nIn;
+        const r2 = r1 + nIn;
+        const r3 = r2 + nIn;
+        if (l === 0) {
+          for (let k = 0; k < n; k++) {
+            const i = active[k]!;
+            const v = src[i]!;
+            s0 += params[r0 + i]! * v;
+            s1 += params[r1 + i]! * v;
+            s2 += params[r2 + i]! * v;
+            s3 += params[r3 + i]! * v;
+          }
+        } else {
+          for (let i = 0; i < nIn; i++) {
+            const v = src[i]!;
+            s0 += params[r0 + i]! * v;
+            s1 += params[r1 + i]! * v;
+            s2 += params[r2 + i]! * v;
+            s3 += params[r3 + i]! * v;
+          }
+        }
+        if (hidden) {
+          dst[j] = Math.tanh(s0);
+          dst[j + 1] = Math.tanh(s1);
+          dst[j + 2] = Math.tanh(s2);
+          dst[j + 3] = Math.tanh(s3);
+        } else {
+          dst[j] = s0;
+          dst[j + 1] = s1;
+          dst[j + 2] = s2;
+          dst[j + 3] = s3;
+        }
+      }
+      for (; j < count; j++) {
         let s = params[bias + j]!;
         const row = at + j * nIn;
         if (l === 0) for (let k = 0; k < n; k++) s += params[row + active[k]!]! * src[active[k]!]!;
         else for (let i = 0; i < nIn; i++) s += params[row + i]! * src[i]!;
-        dst[j] = l + 2 < sizes.length ? Math.tanh(s) : s;
+        dst[j] = hidden ? Math.tanh(s) : s;
       }
       at = bias + nOut;
     }
@@ -107,6 +149,20 @@ export class Mlp {
         const row = at + j * nIn;
         if (l === 0) {
           for (let k = 0; k < this.nActive; k++) grad[row + active[k]!] += dj * src[active[k]!]!;
+          continue;
+        }
+        // Two rows at a time halve the passes over back; each back[i] still adds in row order.
+        const dn = j + 1 < nOut ? d[j + 1]! : 0;
+        if (dn !== 0) {
+          grad[bias + j + 1] += dn;
+          const row2 = row + nIn;
+          for (let i = 0; i < nIn; i++) {
+            const v = src[i]!;
+            grad[row + i] += dj * v;
+            grad[row2 + i] += dn * v;
+            back[i] = back[i]! + dj * params[row + i]! + dn * params[row2 + i]!;
+          }
+          j++;
           continue;
         }
         for (let i = 0; i < nIn; i++) {
