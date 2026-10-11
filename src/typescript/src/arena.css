@@ -1,0 +1,35 @@
+/* RL Arena page, on top of style.css */
+.arena-stage { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.8rem; }
+.arena-view { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 0.4rem; }
+.arena-view canvas { flex: 1; min-height: 0; width: 100%; display: block; border-radius: 12px; border: 1px solid var(--border); background: var(--bg); }
+.note { z-index: 1; }
+.caption { position: absolute; left: 10px; top: 10px; padding: 0.3rem 0.7rem; background: color-mix(in srgb, var(--card) 82%, transparent); border: 1px solid color-mix(in srgb, var(--muted) 35%, transparent); border-radius: 999px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); font-size: 0.8rem; font-variant-numeric: tabular-nums; pointer-events: none; }
+.caption[hidden] { display: none; }
+.arena-legend { padding: 0 0.3rem; flex-direction: row; flex-wrap: wrap; gap: 0.3rem 0.9rem; color: var(--muted); font-size: 0.75rem; }
+.tile.wide { grid-column: 1 / -1; }
+.tile dd .delta { margin-left: 0.35rem; font-size: 0.8rem; font-weight: 600; color: var(--muted); }
+.tile dd .delta.up { color: var(--accent); }
+.tile dd .delta.down { color: #f87171; }
+.chips { margin: 0; display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.chips span { padding: 0.05rem 0.55rem; border: 1px solid var(--border-hi); border-radius: 999px; color: var(--muted); font-size: 0.72rem; }
+.chips span.role { border-color: var(--accent-dim); color: var(--accent); }
+.graph-card { gap: 0.4rem; padding-bottom: 0.5rem; }
+.graph-head { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; flex-wrap: wrap; }
+.graph-head .fit-foot { padding: 0; }
+.key.train { color: #7dd3fc; }
+.key.held { color: #3ddc97; }
+#graphView { display: block; width: 100%; height: 170px; }
+#setup .card { margin-bottom: 0.8rem; }
+#setup fieldset { gap: 0; }
+details.fold > summary h2 { flex: 1; }
+.card .seg span { padding: 0.3rem 0.2rem; font-size: 0.8rem; }
+#poolField[hidden] { display: none; }
+.field + .preset-desc { margin-top: 0; }
+
+@media (max-width: 700px) {
+  .arena-view canvas { flex: none; aspect-ratio: 1 / 1; max-height: 70vh; }
+  .note { top: 40%; padding: 0 1rem; }
+  .arena-legend { order: 2; }
+  .arena-stage { order: -1; }
+  #graphView { height: 150px; }
+}
