@@ -18,7 +18,6 @@ self.onmessage = (e: MessageEvent<EvalJob>) => {
     self.postMessage(done, { transfer: transferList(done) });
     if (!job.gentle) return;
     controller ??= gentleController();
-    controller.maybeProbe(performance.now());
     pacer.finished(t0, controller.duty());
   });
 };

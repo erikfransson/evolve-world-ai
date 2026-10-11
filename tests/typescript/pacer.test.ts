@@ -1,4 +1,4 @@
-import { DutyController, MIN_DUTY, Pacer, gentleCount, idleMs, runProbe } from "../../src/typescript/src/worker/pacer.ts";
+import { DutyController, FALLBACK_DUTY, MIN_DUTY, Pacer, gentleCount, gentleController, idleMs } from "../../src/typescript/src/worker/pacer.ts";
 import { defaultHelpers } from "../../src/typescript/src/worker/ecoPool.ts";
 import { defaultThreads } from "../../src/typescript/src/worker/evalPool.ts";
 
@@ -42,8 +42,6 @@ describe("pacer", () => {
 });
 
 describe("DutyController", () => {
-  const feed = (c: DutyController, ms: number, n: number) => { for (let i = 0; i < n; i++) c.probe(ms); };
-
   it("runs flat out when nominal or fair and steps down for serious and critical", () => {
     const c = new DutyController();
     expect(c.duty()).toBe(1);
@@ -57,43 +55,8 @@ describe("DutyController", () => {
     expect(c.duty()).toBe(1);
   });
 
-  it("stays at 1 while probes keep their usual time, also with small noise", () => {
-    const c = new DutyController();
-    for (let i = 0; i < 100; i++) c.probe(1 + (i % 3) * 0.05);
-    expect(c.duty()).toBe(1);
-  });
-
-  it("backs off in steps when probes get slower, never below the minimum, and ramps back", () => {
-    const c = new DutyController();
-    feed(c, 1, 5);
-    feed(c, 4, 1); // smoothed 1.9 times the best
-    expect(c.duty()).toBeCloseTo(0.9);
-    feed(c, 4, 30);
-    expect(c.duty()).toBe(MIN_DUTY);
-    feed(c, 1, 60);
-    expect(c.duty()).toBe(1);
-  });
-
-  it("holds the duty between the back-off and recovery thresholds", () => {
-    const c = new DutyController();
-    feed(c, 1, 5);
-    feed(c, 4, 30);
-    expect(c.duty()).toBe(MIN_DUTY);
-    feed(c, 1.35, 60); // ratio about 1.3, in the hysteresis band
-    expect(c.duty()).toBe(MIN_DUTY);
-  });
-
-  it("takes the lower of pressure and contention and ignores empty probes", () => {
-    const c = new DutyController();
-    c.probe(0);
-    expect(c.duty()).toBe(1);
-    c.setPressure("serious");
-    feed(c, 1, 5);
-    feed(c, 3, 20);
-    expect(c.duty()).toBe(MIN_DUTY);
-  });
-
-  it("times a fixed probe that runs", () => {
-    expect(runProbe()).toBeGreaterThan(0);
+  it("starts from a fixed duty where there is no pressure API", () => {
+    expect(new DutyController(FALLBACK_DUTY).duty()).toBe(0.9);
+    expect(gentleController().duty()).toBe(FALLBACK_DUTY); // Node has no PressureObserver
   });
 });

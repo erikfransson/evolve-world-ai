@@ -22,7 +22,7 @@ import { parsePool } from "./sim/seedPool.ts";
 import { checkRanges, mergeSpeciesList } from "./sim/species.ts";
 import { parseSettings } from "./ui/settingsIO.ts";
 import { createNodeThinkPool } from "./worker/nodePool.ts";
-import { DutyController, idleMs } from "./worker/pacer.ts";
+import { DutyController, FALLBACK_DUTY, idleMs } from "./worker/pacer.ts";
 
 // parameters
 const { values } = parseArgs({
@@ -35,7 +35,7 @@ const { values } = parseArgs({
     series: { type: "string" }, // seconds between rows of the time series
     pool: { type: "string", default: fileURLToPath(new URL("../public/pool.json", import.meta.url)) },
     threads: { type: "string", default: "0" }, // helper threads for sense and think; 0 runs on this thread alone
-    gentle: { type: "boolean" }, // back off in 12 ms slices when other processes compete, as the page does with Gentle on CPU (pick --threads yourself); same results
+    gentle: { type: "boolean" }, // idle in 12 ms slices at the fallback duty, as the page does without the Compute Pressure API (pick --threads yourself); same results
     predators: { type: "boolean" },
     preset: { type: "string" },
     config: { type: "string" },
@@ -132,7 +132,7 @@ function seriesRow(): Record<string, unknown> {
   return row;
 }
 
-const controller = values.gentle ? new DutyController() : null;
+const controller = values.gentle ? new DutyController(FALLBACK_DUTY) : null;
 const SLICE_MS = 12; // as EcoRunner
 let sliceStart = performance.now();
 let creatureTicks = 0;
@@ -153,7 +153,6 @@ while (eco.tick < ticks && !eco.extinct) {
   if (seriesEvery && eco.tick % seriesEvery === 0) series.push(seriesRow());
   const now = performance.now();
   if (controller && now - sliceStart >= SLICE_MS) {
-    controller.maybeProbe(now);
     const idle = idleMs(now - sliceStart, controller.duty());
     if (idle > 0) await new Promise((resolve) => setTimeout(resolve, idle));
     sliceStart = performance.now();

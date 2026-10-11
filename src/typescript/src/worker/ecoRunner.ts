@@ -155,7 +155,6 @@ export class EcoRunner {
   private paced(delay: number, began: number): number {
     const gentle = this.gentle;
     if (delay < 0 || !gentle) return delay;
-    gentle.maybeProbe(this.now());
     const end = this.now();
     return Math.max(delay, idleMs(end - began, gentle.duty()));
   }

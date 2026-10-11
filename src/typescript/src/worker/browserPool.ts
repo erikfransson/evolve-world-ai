@@ -60,7 +60,6 @@ class BrowserEvaluator implements Evaluator {
   private async evaluateSerial(population: Population, layoutSeed: number, record?: RecordOptions): Promise<Evaluation> {
     const t0 = performance.now();
     const evaluation = await this.serial!.evaluate(population, layoutSeed, record);
-    this.gentle?.maybeProbe(performance.now());
     const work = performance.now() - t0;
     const idle = this.gentle ? idleMs(work, this.gentle.duty()) : 0;
     if (idle > 0) await new Promise((resolve) => setTimeout(resolve, idle));

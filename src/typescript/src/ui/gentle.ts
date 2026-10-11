@@ -1,7 +1,7 @@
 // The "Gentle on CPU" toggle: on by default, remembered per browser. Workers get the value in their messages (see worker/pacer.ts).
 const KEY = "gentleCpu";
 
-export const GENTLE_TIP = "Runs at full speed when your computer is idle and backs off when other programs need the CPU. Turn off for maximum speed.";
+export const GENTLE_TIP = "Leaves room for your other programs: one core stays free and the simulation backs off when your computer is busy. Turn off for maximum speed.";
 
 export function readGentle(): boolean {
   try {
