@@ -276,6 +276,13 @@ export function createEcoView(handlers: EcoHandlers): EcoView {
     else handlers.onPause();
   };
   reset.onclick = () => { setPhase("idle"); handlers.onReset(); };
+  $("editSettings").onclick = () => {
+    setPhase("idle");
+    handlers.onReset();
+    const settings = $("setup");
+    settings.scrollIntoView({ block: "start", behavior: "smooth" });
+    settings.querySelector<HTMLElement>("input, select, button")?.focus({ preventScroll: true });
+  };
   $("reseed").onclick = () => { setPhase("running"); handlers.onReseed(); beginScoring(); };
   document.querySelector(".seg")!.addEventListener("change", () => handlers.onSpeed(speed()));
   $<HTMLInputElement>("rays").addEventListener("change", () => handlers.onShowRays(view.showRays()));

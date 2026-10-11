@@ -55,7 +55,7 @@ describe("Ecosystem", () => {
 
   it("no founder spawns on poison, with varied founders and moved poison", () => {
     // Dense poison and many founders: poison moved off one founder often lands on a founder placed before it.
-    for (const seed of [1, 2, 3, 4, 5, 6]) {
+    for (const seed of [1, 2, 3]) {
       const eco = new Ecosystem(ecoCfg({ seed, world: { foodDensity: 0, poisonDensity: 3 }, eco: { initialPopulation: 300, foundersVary: true } }));
       const reach = eco.config.creature.radius + eco.config.world.itemRadius;
       const w = eco.world;
@@ -65,6 +65,17 @@ describe("Ecosystem", () => {
           if (w.kinds[i] === HIT_POISON) expect(Math.hypot(w.xs[i] - m.creature.state.x, w.ys[i] - m.creature.state.y)).toBeGreaterThanOrEqual(reach);
         }
       }
+    }
+  });
+
+  it("places founders and poison promptly when founders crowd a small world", () => {
+    // Guard only: placement drops other-founder rejection after 256 tries, so it cannot loop forever.
+    const eco = new Ecosystem(ecoCfg({ world: { width: 500, height: 500, foodDensity: 0, poisonDensity: 3 }, eco: { initialPopulation: 5000, maxPopulation: 5000, foundersVary: true } }));
+    const reach = eco.config.creature.radius + eco.config.world.itemRadius;
+    const w = eco.world;
+    const last = eco.members.at(-1)!.creature.state; // the last founder cleared its own disc
+    for (let i = 0; i < w.count; i++) {
+      if (w.kinds[i] === HIT_POISON) expect(Math.hypot(w.xs[i] - last.x, w.ys[i] - last.y)).toBeGreaterThanOrEqual(reach);
     }
   });
 

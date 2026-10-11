@@ -9,3 +9,9 @@ export function fitCanvas(canvas: HTMLCanvasElement): number {
   }
   return dpr;
 }
+
+// Axis label font for the graph cards, 25% larger on desktop than on phones. Read at draw time so a resize picks it up.
+export function graphFont(): string {
+  const desktop = typeof window.matchMedia === "function" && window.matchMedia("(min-width: 701px)").matches;
+  return `${desktop ? 12.5 : 10}px system-ui, -apple-system, "Segoe UI", sans-serif`;
+}

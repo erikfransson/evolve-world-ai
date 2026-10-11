@@ -1,11 +1,10 @@
-import { fitCanvas } from "./canvas.ts";
+import { fitCanvas, graphFont } from "./canvas.ts";
 
-const POP_COLOR = "#7dd3fc";
+const POP_COLOR = "#fbbf24";
 const FOOD_COLOR = "#4ade80";
 const AXIS_COLOR = "rgba(143, 174, 159, 0.5)";
 const TEXT_COLOR = "#8fae9f";
-const PAD = { left: 34, right: 34, top: 14, bottom: 16 }; // CSS px
-const FONT = '10px system-ui, -apple-system, "Segoe UI", sans-serif';
+const PAD = { left: 40, right: 40, top: 16, bottom: 19 }; // CSS px
 
 export interface PopulationSample {
   time: number; // simulated seconds
@@ -61,7 +60,7 @@ export class PopulationGraph {
     const px = (t: number): number => PAD.left + (t / end) * w;
     const py = (v: number, top: number): number => PAD.top + h - (v / top) * h;
 
-    ctx.font = FONT;
+    ctx.font = graphFont();
     ctx.lineWidth = 1;
     ctx.strokeStyle = AXIS_COLOR;
     ctx.beginPath();

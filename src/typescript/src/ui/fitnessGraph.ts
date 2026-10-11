@@ -1,13 +1,12 @@
 import type { GenerationStat } from "../sim/history.ts";
-import { fitCanvas } from "./canvas.ts";
+import { fitCanvas, graphFont } from "./canvas.ts";
 
 const BEST_COLOR = "#3ddc97";
 const MEAN_COLOR = "#7dd3fc";
 const AXIS_COLOR = "rgba(143, 174, 159, 0.5)";
 const TEXT_COLOR = "#8fae9f";
 const WATCH_COLOR = "#e6f4ea";
-const PAD = { left: 34, right: 8, top: 14, bottom: 16 }; // CSS px
-const FONT = '10px system-ui, -apple-system, "Segoe UI", sans-serif';
+const PAD = { left: 40, right: 8, top: 16, bottom: 19 }; // CSS px
 
 // Best and mean fitness against generation. Clicking picks a generation; it redraws only when the data or the marker changes.
 export class FitnessGraph {
@@ -79,7 +78,7 @@ export class FitnessGraph {
     const px = (g: number): number => plot.x + (g / last) * plot.w;
     const py = (v: number): number => plot.y + plot.h - (v / top) * plot.h;
 
-    ctx.font = FONT;
+    ctx.font = graphFont();
     ctx.fillStyle = TEXT_COLOR;
     ctx.strokeStyle = AXIS_COLOR;
     ctx.lineWidth = 1;

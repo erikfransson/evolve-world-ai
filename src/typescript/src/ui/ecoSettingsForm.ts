@@ -46,8 +46,8 @@ export const ECO_SECTIONS: readonly Section[] = [
     title: "World",
     fields: [
       { kind: "seed", id: "seed", label: "Seed", tip: "Number that fixes all randomness. The same seed and settings give the same run." },
-      range({ id: "worldWidth", label: "World width", tip: "Size of the box the creatures live in. For scale, the default vision range is 100 units.", min: 500, max: 16000, step: 100, fmt: "size", get: (c) => c.world.width, set: (c, v) => { c.world.width = v; } }),
-      range({ id: "worldHeight", label: "World height", tip: "Size of the box the creatures live in. For scale, the default vision range is 100 units.", min: 500, max: 10000, step: 100, fmt: "size", get: (c) => c.world.height, set: (c, v) => { c.world.height = v; } }),
+      range({ id: "worldWidth", label: "World width", tip: "Size of the box the creatures live in. For scale, the default vision range is 100 units.", min: 500, max: 30000, step: 100, fmt: "size", get: (c) => c.world.width, set: (c, v) => { c.world.width = v; } }),
+      range({ id: "worldHeight", label: "World height", tip: "Size of the box the creatures live in. For scale, the default vision range is 100 units.", min: 500, max: 20000, step: 100, fmt: "size", get: (c) => c.world.height, set: (c, v) => { c.world.height = v; } }),
       range({ id: "foodDensity", label: "Start food", tip: "How much food lies around at the start. 1 means roughly one piece in every 100 × 100 area.", min: 0, max: 1, step: 0.01, fmt: "dens", hint: (c) => items(c, c.world.foodDensity), get: (c) => c.world.foodDensity, set: (c, v) => { c.world.foodDensity = v; } }),
       range({ id: "poisonDensity", label: "Start poison", tip: "How much poison lies around at the start, on the same scale as food. 0 turns poison off.", min: 0, max: 1, step: 0.01, fmt: "dens", hint: (c) => items(c, c.world.poisonDensity), get: (c) => c.world.poisonDensity, set: (c, v) => { c.world.poisonDensity = v; } }),
       range({ id: "itemRadius", label: "Item size", tip: "Radius of food and poison pieces. Bigger pieces are easier to hit and to see.", min: 2, max: 10, step: 0.5, fmt: "size", get: (c) => c.world.itemRadius, set: (c, v) => { c.world.itemRadius = v; } }),
@@ -66,7 +66,7 @@ export const ECO_SECTIONS: readonly Section[] = [
   {
     title: "Life cycle",
     fields: [
-      range({ id: "initialPopulation", label: "Start creatures", tip: "How many creatures the run starts with, each with a random colour.", min: 10, max: 5000, step: 10, get: (c) => c.eco.initialPopulation, set: (c, v) => { c.eco.initialPopulation = v; } }),
+      range({ id: "initialPopulation", label: "Start creatures", tip: "How many creatures the run starts with, each with a random colour.", min: 10, max: 10000, step: 10, get: (c) => c.eco.initialPopulation, set: (c, v) => { c.eco.initialPopulation = v; } }),
       range({ id: "poolFraction", label: "Trained founders", tip: "Share of the start creatures copied, with small mutations, from a pool of creatures trained in Trials with many different eyes and brains. They keep their own rays and brain shape. The rest start with random brains.", min: 0, max: 1, step: 0.05, fmt: "pct", get: (c) => c.eco.poolFraction, set: (c, v) => { c.eco.poolFraction = v; } }),
       range({ id: "maxPopulation", label: "Population limit", tip: "Most creatures alive at once. Births wait while the world is full.", min: 100, max: 10000, step: 100, get: (c) => c.eco.maxPopulation, set: (c, v) => { c.eco.maxPopulation = v; } }),
       range({ id: "birthEnergy", label: "Birth energy", tip: "A creature with at least this much energy can have a child. A creature's body is drawn full at this level.", min: 60, max: 400, step: 5, get: (c) => c.eco.birthEnergy, set: (c, v) => { c.eco.birthEnergy = v; } }),

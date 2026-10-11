@@ -1,13 +1,12 @@
 import type { Lineage } from "../sim/ecosystem.ts";
 import { LINEAGE_STRIDE, LINEAGE_TOP } from "../worker/ecoProtocol.ts";
-import { fitCanvas } from "./canvas.ts";
+import { fitCanvas, graphFont } from "./canvas.ts";
 import { creatureStyle } from "./ecoScene.ts";
 
 const OTHERS_COLOR = "#5f7a6c";
 const AXIS_COLOR = "rgba(143, 174, 159, 0.5)";
 const TEXT_COLOR = "#8fae9f";
-const PAD = { left: 34, right: 8, top: 6, bottom: 16 }; // CSS px
-const FONT = '10px system-ui, -apple-system, "Segoe UI", sans-serif';
+const PAD = { left: 40, right: 8, top: 7, bottom: 19 }; // CSS px
 
 export const lineageColor = (hue: number): string => creatureStyle(hue, 0);
 
@@ -231,7 +230,7 @@ export class LineagePanel {
     const end = times.length > 0 ? Math.max(1, times[times.length - 1]!) : 1;
     const px = (t: number): number => PAD.left + (t / end) * w;
     const py = (share: number): number => PAD.top + h - share * h;
-    ctx.font = FONT;
+    ctx.font = graphFont();
     if (times.length > 0) {
       for (const band of bands) {
         if (band.upper.every((u, i) => u === band.lower[i])) continue;

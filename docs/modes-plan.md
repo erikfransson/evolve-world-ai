@@ -58,3 +58,11 @@ Contract: `EcoConfig` in `src/sim/ecoConfig.ts`, built on `EngineConfig` (the sh
 - Top 3 per preset kept in this browser (localStorage); a global board needs a backend and comes later.
 - Lineages (#5, done): every creature carries its `founderId` (inherited, a founder is its own). The Lineages card shows the top 8 founders by live count as a stacked bar, a legend (pool or random, share, count) and a stacked share history; clicking a lineage dims everyone else in the world, and the Selected card names the creature's founder. A family tree view comes later.
 - Aging (#6, done): optional `eco.aging` (default off), `agingStart` seconds (120) and `agingRate` per minute (0.5); the upkeep is multiplied by 1 + rate x (age - start) / 60 after the start age.
+
+## Predators & prey (issue #12), agreed 2026-10-11
+- Its own mode and landing card, third after Trials and Ecosystem; Live World moves to fourth.
+- Built on the Ecosystem engine: plants (food) regrow, species A grazes plants, species B hunts A.
+- Touching a prey eats it: the predator gains the prey's stored energy times an efficiency, plus a baseline (both settings).
+- Species are fixed: children keep the parent's species. Each species has its own founders, body ranges, speed, costs and energy gain.
+- Rays tell species apart and report the seen creature's energy.
+- Later: a who-eats-whom table for more species (C, D, E).
