@@ -50,7 +50,18 @@ describe("RL envs", () => {
     const eco = new Ecosystem(config, null, { cast: castFor(env, config, learner, 5, null, {}) });
     expect([eco.food, eco.poison, eco.population]).toEqual([env.food, env.poison, 7]);
     expect(Array.from(eco.get(0)!.creature.brain.genome)).toEqual(Array.from(learner.genome));
+    for (const m of eco.members) expect(m.birth.energy).toBeGreaterThanOrEqual(1e9);
     for (let t = 0; t < 300; t++) eco.step();
+    expect(eco.births).toBe(0);
+  });
+
+  it("stay birthless through deaths", () => {
+    const env = envById("hunt-grazers")!;
+    const config = envConfig(env, 2);
+    const eco = new Ecosystem(config, null, { cast: castFor(env, config, randomLearner(env, 2), 2, null, {}) });
+    for (let t = 0; t < 1800 && eco.deaths === 0; t++) eco.step();
+    expect(eco.deaths).toBeGreaterThan(0);
+    for (let t = 0; t < 30; t++) eco.step();
     expect(eco.births).toBe(0);
   });
 
@@ -73,10 +84,20 @@ describe("RL envs", () => {
 describe("library", () => {
   it("round-trips a learner at 3 decimals and skips malformed entries", () => {
     const l = randomLearner(envById("forage-box")!, 1);
-    const lib = parseLibrary({ version: 1, envs: { a: [serialiseLearner(l), { plan: {}, genome: ["x"] }] } });
-    expect(lib.a).toHaveLength(1);
-    expect(lib.a![0]!.genome[0]).toBeCloseTo(l.genome[0]!, 3);
-    expect(parseLibrary({ version: 2, envs: {} })).toEqual({});
+    const short = { ...serialiseLearner(l), genome: serialiseLearner(l).genome.slice(1) };
+    const lib = parseLibrary({ version: 1, envs: { "forage-box": [serialiseLearner(l), { plan: {}, genome: ["x"] }, short], nope: [serialiseLearner(l)] } });
+    expect(lib["forage-box"]).toHaveLength(1);
+    expect(lib["forage-box"]![0]!.genome[0]).toBeCloseTo(l.genome[0]!, 3);
+    expect(Object.keys(lib)).toEqual(["forage-box"]); // only built-in env ids, whose world fixes the layout
+    expect(Object.keys(parseLibrary({ version: 2, envs: {} }))).toEqual([]);
+  });
+
+  it("ignores prototype keys, and an env drawing rivals from them falls back to random ones", () => {
+    const lib = parseLibrary(JSON.parse('{"version":1,"envs":{"__proto__":[{"plan":{}}],"constructor":[]}}'));
+    expect(Object.getPrototypeOf(lib)).toBe(null);
+    const env = checkEnv({ ...envById("rivals")!, seconds: 5, rivals: [{ species: 0, count: 2, source: "library:constructor" }] }, "ecosystem", 0);
+    expect(typeof env).toBe("object");
+    expect(runEpisode(env as EnvSpec, randomLearner(envById("rivals")!, 1), 3, null, lib).seconds).toBeGreaterThan(0);
   });
 });
 
@@ -121,5 +142,21 @@ describe("checkEnv", () => {
     expect(checkEnv({ ...custom, rivals: [{ species: 1, count: 2, source: "random" }] }, "ecosystem", 0)).toMatch(/species/);
     expect(checkEnv({ ...custom, rivals: [{ species: 0, count: 99, source: "random" }] }, "ecosystem", 0)).toMatch(/at most/);
     expect(checkEnv({ ...custom, rivals: [{ species: 0, count: 1, source: "library:../x" }] }, "ecosystem", 0)).toMatch(/source/);
+    expect(checkEnv({ ...custom, rivals: Array.from({ length: 9 }, () => ({ species: 0, count: 0, source: "random" })) }, "ecosystem", 0)).toMatch(/groups/);
+  });
+
+  it("keeps custom ids apart from the built-in ones", () => {
+    const env = checkEnv({ ...custom, id: "forage-box", name: "\u202eevil" }, "ecosystem", 0);
+    expect(typeof env === "object" && [env.id, env.name]).toEqual(["custom-forage-box", "evil"]);
+  });
+});
+
+describe("episode reward", () => {
+  it("gives a learner that dies no end energy", () => {
+    const env: EnvSpec = { ...envById("endurance")!, food: 0, seconds: 60 }; // nothing to eat, so it starves well before the end
+    const r = runEpisode(env, randomLearner(env, 1), 1);
+    expect(r.seconds).toBeLessThan(60);
+    expect(r.energy).toBe(0);
+    expect(r.reward).toBeCloseTo(0.1 * r.seconds, 9);
   });
 });

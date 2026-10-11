@@ -6,7 +6,7 @@ import { layerSizes, randomGenome } from "./sim/brain.ts";
 import { createRng } from "./sim/rng.ts";
 import { loadPool } from "./sim/seedPool.ts";
 import type { PoolEntry } from "./sim/seedPool.ts";
-import { BLANK_ENV, envConfig, poolLearner } from "./sim/rl/env.ts";
+import { layoutConfig, poolLearner } from "./sim/rl/env.ts";
 import type { EnvSpec, Learner, Rivals } from "./sim/rl/env.ts";
 import { ENVS } from "./sim/rl/envs.ts";
 import { KINDS, MAX_FILE_BYTES, PLAN_LIMITS, checkPlan, creatureFile, fileLearner, parseCreatureFile } from "./sim/rl/creatureFile.ts";
@@ -77,7 +77,7 @@ function numberOf(id: string, fallback: number): number {
   return clamped;
 }
 
-const worldConfig = (k: CreatureKind) => envConfig({ ...BLANK_ENV, world: KINDS[k].world }, 1);
+const worldConfig = (k: CreatureKind) => layoutConfig(KINDS[k].world);
 
 // ---- creature
 
@@ -479,7 +479,7 @@ function saveFile(): void {
   a.href = URL.createObjectURL(new Blob([JSON.stringify(f)], { type: "application/json" }));
   a.download = `${f.name.replace(/[^a-z0-9-]+/gi, "-").toLowerCase() || "creature"}.json`;
   a.click();
-  URL.revokeObjectURL(a.href);
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000); // revoking at once can cancel the download in some browsers
   $("saveMsg").textContent = `Saved ${f.name} at iteration ${f.training.iterations}.`;
 }
 

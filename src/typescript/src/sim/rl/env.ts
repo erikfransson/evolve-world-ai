@@ -1,4 +1,4 @@
-import { layerSizes, randomGenome } from "../brain.ts";
+import { genomeLength, layerSizes, randomGenome } from "../brain.ts";
 import { itemsPerDensity } from "../config.ts";
 import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "../ecoConfig.ts";
 import type { EcoConfig } from "../ecoConfig.ts";
@@ -12,6 +12,7 @@ import { energySignal, planOf } from "../sensors.ts";
 import type { BodyPlan, PlanView } from "../sensors.ts";
 import { speciesList, speciesRanges } from "../species.ts";
 import type { Genome } from "../types.ts";
+import { plainText } from "./validate.ts";
 
 // RL environments (#27): short episodes on the Ecosystem engine, so a creature trained here acts exactly as it would in the
 // Ecosystem or The Great Hunt. An environment is plain data: a small world, the learner's species, rivals, and reward weights.
@@ -94,9 +95,13 @@ export function envConfig(env: EnvSpec, seed: number): EcoConfig {
 const converted: Record<EnvWorld, WeakMap<PoolEntry, Learner>> = { ecosystem: new WeakMap(), hunt: new WeakMap() };
 const layouts: Partial<Record<EnvWorld, EcoConfig>> = {}; // per world, for plans and genome layouts only; the seed does not matter, so treat as read only
 
-function layoutConfig(world: EnvWorld): EcoConfig {
+// The config that fixes a world's input layout, for plan and genome sizes only.
+export function layoutConfig(world: EnvWorld): EcoConfig {
   return (layouts[world] ??= envConfig({ ...BLANK_ENV, world }, 1));
 }
+
+// The genome length a creature of this plan needs in the world's input layout.
+export const genomeLengthIn = (world: EnvWorld, plan: PlanView): number => genomeLength(layerSizes(layoutConfig(world), plan));
 
 // The pool founder's genome in the env world's layout; converted once per entry and world, so treat the result as read only.
 export function poolLearner(env: Pick<EnvSpec, "world">, entry: PoolEntry): Learner {
@@ -129,7 +134,7 @@ export function castFor(env: EnvSpec, config: EcoConfig, learner: Learner, seed:
     for (let k = 0; k < rv.count; k++) {
       let rival: Learner;
       if (rv.source === "pool" && pool?.length) rival = poolLearner(env, pool[rng.int(pool.length)]!);
-      else if (rv.source.startsWith("library:") && library[rv.source.slice(8)]?.length) {
+      else if (rv.source.startsWith("library:") && Object.hasOwn(library, rv.source.slice(8)) && library[rv.source.slice(8)]!.length) {
         const list = library[rv.source.slice(8)]!;
         rival = list[rng.int(list.length)]!;
       } else rival = randomLearner({ world: env.world, role: rv.species }, rng.int(2 ** 31));
@@ -152,6 +157,13 @@ export function runEpisode(
   const eco = new Ecosystem(config, null, { cast: castFor(env, config, learner, seed, pool, library) });
   const ticks = Math.round(env.seconds / config.dt);
   const out: EpisodeResult = { reward: 0, food: 0, kills: 0, seconds: 0, energy: 0 };
+  // The learner's last tick counts too: what it ate before it died; a dead learner ends with no energy.
+  eco.onDeath = (m) => {
+    if (m.id !== 0) return;
+    out.food = m.eaten;
+    out.kills = m.kills;
+    out.energy = 0;
+  };
   for (let t = 0; t < ticks; t++) {
     eco.step();
     onTick?.(eco);
@@ -179,6 +191,7 @@ export function scoreLearner(env: EnvSpec, learner: Learner, seeds: readonly num
 }
 
 // Bounds a custom env must keep, so a page or a shared file cannot ask for a world that stalls the browser.
+const MAX_RIVAL_GROUPS = 8;
 export const ENV_LIMITS = { side: [200, 3000], items: [0, 300], regrow: [0, 10], seconds: [5, 180], rivals: [0, 30], weight: [-10, 10] } as const;
 
 // A custom env rebuilt from checked fields, for the learner's world and species, or a reason it is not valid.
@@ -194,6 +207,7 @@ export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | s
   if (!n(v.seconds, L.seconds)) return `episodes must last ${L.seconds[0]} to ${L.seconds[1]} s`;
   const species = world === "hunt" ? 2 : 1;
   const rivals: Rivals[] = [];
+  if (Array.isArray(v.rivals) && v.rivals.length > MAX_RIVAL_GROUPS) return `at most ${MAX_RIVAL_GROUPS} rival groups`;
   for (const r of Array.isArray(v.rivals) ? v.rivals : []) {
     const rv = r as Record<string, unknown>;
     const src = rv.source;
@@ -210,11 +224,10 @@ export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | s
     if (!n(w[k], L.weight)) return `reward ${k} must be ${L.weight[0]} to ${L.weight[1]}`;
     reward[k] = w[k] as number;
   }
-  const text = (x: unknown, max: number, fallback: string): string => (typeof x === "string" && x.trim() ? x.slice(0, max) : fallback);
   return {
-    id: text(v.id, 40, "custom").toLowerCase().replace(/[^a-z0-9-]/g, "-"),
-    name: text(v.name, 40, "Custom"),
-    description: text(v.description, 160, "A custom training world."),
+    id: `custom-${plainText(v.id, 40).toLowerCase().replace(/^custom-/, "").replace(/[^a-z0-9-]/g, "-") || "env"}`, // never a built-in id
+    name: plainText(v.name, 40) || "Custom",
+    description: plainText(v.description, 160) || "A custom training world.",
     world,
     role,
     size: [size[0] as number, size[1] as number],

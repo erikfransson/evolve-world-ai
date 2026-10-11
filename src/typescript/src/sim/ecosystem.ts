@@ -230,18 +230,15 @@ export class Ecosystem {
         randomBirth(this.ranges[sp]!, this.rng, this.traits);
         const x = this.rng.range(r, width - r);
         const y = this.rng.range(r, height - r);
-        const m = this.spawn(genome, plan, x, y, this.rng.next() * 2 * Math.PI, spec.startEnergy, sp);
-        this.setBirth(m, this.traits);
+        const heading = this.rng.next() * 2 * Math.PI;
         const hue = spec.hue < 0 ? this.rng.next() * 360 : bandHue(spec, spec.hue + (this.rng.next() - 0.5) * spec.hueSpread);
-        m.hue = hue;
-        this.lineages.describe(i, hue, sp, k < fromPool);
+        this.found(i, { species: sp, plan, genome, x, y, heading, hue, energy: spec.startEnergy }, k < fromPool);
       }
       poolFounders += fromPool;
     }
     for (const c of cast ?? []) {
-      const m = this.spawn(c.genome, c.plan, c.x, c.y, c.heading, c.energy ?? this.species[c.species]!.startEnergy, c.species);
-      m.hue = c.hue;
-      this.lineages.describe(i++, c.hue, c.species, false);
+      randomBirth(this.ranges[c.species]!, this.rng, this.traits);
+      this.found(i++, c, false);
     }
     this.poolFounders = poolFounders;
     // Poison moves only once every founder stands, and never onto one, so none ends up on a founder placed earlier.
@@ -589,6 +586,14 @@ export class Ecosystem {
     m.birth.cost = t.cost;
     m.birth.cooldown = t.cooldown;
     m.cooldownTicks = Math.round(t.cooldown / this.config.dt);
+  }
+
+  // Places founder i with the birth traits in this.traits; the one path for drawn and cast founders.
+  private found(i: number, c: CastMember, fromPool: boolean): void {
+    const m = this.spawn(c.genome, c.plan, c.x, c.y, c.heading, c.energy ?? this.species[c.species]!.startEnergy, c.species);
+    this.setBirth(m, this.traits);
+    m.hue = c.hue;
+    this.lineages.describe(i, c.hue, c.species, fromPool);
   }
 
   // Adds a creature, reusing a dead one's storage when there is one; genome and plan are copied.

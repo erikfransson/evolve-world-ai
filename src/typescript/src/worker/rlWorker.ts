@@ -1,35 +1,23 @@
-import { createRng, deriveSeed } from "../sim/rng.ts";
-import type { StatefulRng } from "../sim/rng.ts";
+import { deriveSeed } from "../sim/rng.ts";
 import { loadPool } from "../sim/seedPool.ts";
 import type { PoolEntry } from "../sim/seedPool.ts";
-import type { EnvSpec, Learner, Library } from "../sim/rl/env.ts";
-import { Es } from "../sim/rl/es.ts";
+import type { EnvSpec, Library } from "../sim/rl/env.ts";
 import { parseLibrary, serialiseLearner } from "../sim/rl/library.ts";
 import { recordingBuffers } from "../sim/rl/recording.ts";
+import { Trainer, heldSeeds } from "../sim/rl/trainer.ts";
 import { createBrowserRlPool } from "./browserPool.ts";
 import type { RlPool } from "./rlPool.ts";
-import type { RlInMessage, RlOutMessage, RlRunOptions } from "./rlProtocol.ts";
+import type { RlInMessage, RlOutMessage } from "./rlProtocol.ts";
 
-// The Arena's training loop: one ES step per pump over all chosen envs, then the step's best candidate is shown on fresh layouts.
-const HELD_SEEDS = Array.from({ length: 4 }, (_, k) => 0x5eed0000 + k); // per env; as rlTrain.ts's first four
+// The Arena's training loop: one ES step at a time over all chosen envs, then the step's best candidate is shown on fresh layouts.
+const HELD_SEEDS = heldSeeds(4); // per env
 const HELD_EVERY = 5;
 
 const post = (msg: RlOutMessage, transfer: Transferable[] = []): void => self.postMessage(msg, { transfer });
 
-interface Run {
-  envs: EnvSpec[];
-  plan: Learner["plan"];
-  es: Es;
-  options: RlRunOptions;
-  tiles: number;
-  rng: StatefulRng;
-  helpers: RlPool; // plays the episodes on nested workers, or here when there are none
-  t0: number;
-  token: number;
-}
-let run: Run | null = null;
-let paused = false;
-let token = 0;
+let token = 0; // the current run's; a newer start or a stop ends the older loop at its next check
+let helpers: RlPool | null = null;
+let resumeGate: { wait: Promise<void>; open: () => void } | null = null; // set while paused
 let assets: Promise<{ pool: PoolEntry[] | null; library: Library }> | undefined;
 
 // Fetched once per page from the URLs of the first start; a missing library leaves the league rivals random.
@@ -39,99 +27,70 @@ const loadAssets = (poolUrl: string, libraryUrl: string): Promise<{ pool: PoolEn
     fetch(libraryUrl)
       .then((r) => (r.ok ? r.json() : null))
       .then(parseLibrary)
-      .catch((): Library => ({})),
+      .catch((): Library => parseLibrary(null)),
   ]).then(([pool, library]) => ({ pool, library })));
 
-// Mean reward over the envs of each genome, each env on the same seeds (so candidates meet the same layouts), and the per-env rewards.
-// Sums seed by seed as scoreLearner does, so the numbers do not depend on the thread count.
-async function score(r: Run, genomes: readonly Float32Array[], seeds: readonly number[]): Promise<{ mean: number; perEnv: number[] }[]> {
-  const tasks = genomes.flatMap((genome) => r.envs.flatMap((_, env) => seeds.map((seed) => ({ env, genome, seed }))));
-  const rewards = await r.helpers.rewards(tasks);
-  return genomes.map((_, g) => {
-    const perEnv = r.envs.map((_, e) => {
-      let sum = 0;
-      for (let s = 0; s < seeds.length; s++) sum += rewards[(g * r.envs.length + e) * seeds.length + s]! / seeds.length;
-      return sum;
-    });
-    return { mean: perEnv.reduce((a, b) => a + b, 0) / perEnv.length, perEnv };
-  });
-}
-
-async function show(r: Run, iter: number, genome: Float32Array): Promise<void> {
-  const tasks = Array.from({ length: r.tiles }, (_, k) => ({ env: k % r.envs.length, genome, seed: deriveSeed(iter, k, 0x5404) }));
-  const recordings = await r.helpers.recordings(tasks, 2, (k) => k === 0);
+async function show(pool: RlPool, envs: readonly EnvSpec[], tiles: number, iter: number, genome: Float32Array): Promise<void> {
+  const tasks = Array.from({ length: tiles }, (_, k) => ({ env: k % envs.length, genome, seed: deriveSeed(iter, k, 0x5404) }));
+  const recordings = await pool.recordings(tasks, 2, (k) => k === 0);
   post({ type: "show", iter, genome, recordings }, recordings.flatMap(recordingBuffers));
 }
 
-let pumping = -1; // token of the pump that is running, so a resume during an iteration does not start a second one
-
-async function pump(mine: number): Promise<void> {
-  if (pumping === mine) return;
-  pumping = mine;
-  try {
-    while (run && run.token === mine && !paused) {
-      const r = run;
-      if (r.es.step >= r.options.iterations) {
-        post({ type: "learner", iter: r.es.step, learner: serialiseLearner({ plan: r.plan, genome: r.es.theta }) });
-        post({ type: "done", iter: r.es.step });
-        endRun();
-        return;
-      }
-      const seeds = Array.from({ length: r.options.episodes }, () => r.rng.int(0x5eed0000));
-      const candidates = r.es.ask(r.rng);
-      const rewards = (await score(r, candidates, seeds)).map((s) => s.mean);
-      r.es.tell(rewards);
-      const iter = r.es.step;
-      let best = 0;
-      for (let k = 1; k < rewards.length; k++) if (rewards[k]! > rewards[best]!) best = k;
-      const held = iter % HELD_EVERY === 0 ? (await score(r, [r.es.theta], HELD_SEEDS))[0]! : null;
-      post({ type: "iteration", it: { iter, train: rewards.reduce((a, b) => a + b, 0) / rewards.length, best: rewards[best]!, held: held?.mean ?? null, perEnv: held?.perEnv ?? null, seconds: (performance.now() - r.t0) / 1000 } });
-      if (held) post({ type: "learner", iter, learner: serialiseLearner({ plan: r.plan, genome: r.es.theta }) });
-      await show(r, iter, candidates[best]!);
-      await new Promise((done) => setTimeout(done, 0)); // let pause and stop messages in
-    }
-  } finally {
-    if (pumping === mine) pumping = -1;
+// One run from start to done; a pause waits at the gate between steps, and any error ends here and reaches the page.
+async function train(msg: Extract<RlInMessage, { type: "start" }>, mine: number): Promise<void> {
+  const { pool, library } = await loadAssets(msg.poolUrl, msg.libraryUrl);
+  if (token !== mine) return;
+  const helpersHere = (helpers = createBrowserRlPool({ envs: msg.envs, plan: msg.learner.plan, pool, library }));
+  const plan = msg.learner.plan;
+  const tiles = Math.max(1, Math.min(9, msg.tiles));
+  const trainer = new Trainer(Float32Array.from(msg.learner.genome), msg.options, helpersHere, msg.envs.length, msg.options.episodes, msg.seed);
+  const t0 = performance.now();
+  const start = await trainer.held(HELD_SEEDS);
+  post({ type: "ready", held: start.mean, perEnv: start.perEnv });
+  await show(helpersHere, msg.envs, tiles, 0, trainer.es.theta);
+  while (token === mine && trainer.iter < msg.options.iterations) {
+    if (resumeGate) await resumeGate.wait;
+    if (token !== mine) return;
+    const step = await trainer.step();
+    const held = step.iter % HELD_EVERY === 0 ? await trainer.held(HELD_SEEDS) : null;
+    post({ type: "iteration", it: { iter: step.iter, train: step.train, best: step.best, held: held?.mean ?? null, perEnv: held?.perEnv ?? null, seconds: (performance.now() - t0) / 1000 } });
+    if (held) post({ type: "learner", iter: step.iter, learner: serialiseLearner({ plan, genome: trainer.es.theta }) });
+    await show(helpersHere, msg.envs, tiles, step.iter, step.bestGenome);
+    await new Promise((done) => setTimeout(done, 0)); // let pause and stop messages in
   }
+  if (token !== mine) return;
+  post({ type: "learner", iter: trainer.iter, learner: serialiseLearner({ plan, genome: trainer.es.theta }) });
+  post({ type: "done", iter: trainer.iter });
+  endRun();
 }
 
 function endRun(): void {
-  run?.helpers.close();
-  run = null;
+  helpers?.close();
+  helpers = null;
+  resumeGate?.open();
+  resumeGate = null;
 }
 
 self.onmessage = (e: MessageEvent<RlInMessage>) => {
   const msg = e.data;
-  try {
-    if (msg.type === "start") {
-      if (!msg.envs.length) throw new Error("choose at least one environment");
+  if (msg.type === "start") {
+    endRun();
+    const mine = ++token;
+    if (!msg.envs.length) return post({ type: "error", message: "choose at least one environment" });
+    train(msg, mine).catch((error) => {
+      if (token !== mine) return;
+      post({ type: "error", message: error instanceof Error ? error.message : String(error) });
       endRun();
-      const mine = ++token;
-      paused = false;
-      void loadAssets(msg.poolUrl, msg.libraryUrl)
-        .then(async ({ pool, library }) => {
-          if (token !== mine) return;
-          const es = new Es(Float32Array.from(msg.learner.genome), msg.options);
-          const helpers = createBrowserRlPool({ envs: msg.envs, plan: msg.learner.plan, pool, library });
-          const r: Run = { envs: msg.envs, plan: msg.learner.plan, es, options: msg.options, tiles: Math.max(1, Math.min(9, msg.tiles)), rng: createRng(deriveSeed(msg.seed, 0xa7e)), helpers, t0: performance.now(), token: mine };
-          run = r;
-          const held = (await score(r, [es.theta], HELD_SEEDS))[0]!;
-          post({ type: "ready", held: held.mean, perEnv: held.perEnv });
-          await show(r, 0, es.theta);
-          return pump(mine);
-        })
-        .catch((error) => {
-          if (token === mine) post({ type: "error", message: String(error) });
-        });
-    } else if (msg.type === "pause") paused = true;
-    else if (msg.type === "resume" && run && paused) {
-      paused = false;
-      void pump(run.token);
-    } else if (msg.type === "stop") {
-      endRun();
-      token++;
-    }
-  } catch (error) {
-    post({ type: "error", message: error instanceof Error ? error.message : String(error) });
+    });
+  } else if (msg.type === "pause" && !resumeGate) {
+    let open = (): void => {};
+    const wait = new Promise<void>((done) => (open = done));
+    resumeGate = { wait, open };
+  } else if (msg.type === "resume" && resumeGate) {
+    resumeGate.open();
+    resumeGate = null;
+  } else if (msg.type === "stop") {
+    token++;
+    endRun();
   }
 };

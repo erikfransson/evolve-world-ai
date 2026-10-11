@@ -35,6 +35,13 @@ function scrambledPort(): RlPort {
 }
 
 describe("RlPool", () => {
+  it("rejects, instead of hanging, when an episode throws, on this thread or a helper", async () => {
+    for (const pool of [new RlPool([inlineRlPort()], setup), new RlPool([scrambledPort(), scrambledPort()], setup)]) {
+      await expect(pool.rewards([{ env: 99, genome: genomes[0]!, seed: 1 }])).rejects.toThrow(/episode failed/);
+      await expect(pool.rewards(tasks)).rejects.toThrow(/episode failed/); // the pool stays broken
+    }
+  });
+
   it("gives the serial rewards from one inline helper", async () => {
     const pool = new RlPool([inlineRlPort()], setup);
     expect(await pool.rewards(tasks)).toEqual(serialRewards);

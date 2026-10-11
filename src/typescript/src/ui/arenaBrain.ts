@@ -1,5 +1,5 @@
 import { Brain, layerSizes } from "../sim/brain.ts";
-import { envConfig } from "../sim/rl/env.ts";
+import { layoutConfig } from "../sim/rl/env.ts";
 import type { EnvSpec } from "../sim/rl/env.ts";
 import { inputLayout } from "../sim/sensors.ts";
 import type { InputLayout, PlanView } from "../sim/sensors.ts";
@@ -25,7 +25,7 @@ export class BrainReplay {
   // env only supplies the world's input layout; plan is the creature's.
   setGenome(env: EnvSpec, plan: PlanView, genome: Float32Array): void {
     if (genome === this.genome) return;
-    const config = envConfig(env, 1);
+    const config = layoutConfig(env.world);
     this.genome = genome;
     this.brain = new Brain(layerSizes(config, plan), genome);
     this.layout = inputLayout(config, plan);

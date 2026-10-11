@@ -3,7 +3,10 @@ import { runEpisode } from "../sim/rl/env.ts";
 import type { EnvSpec, Learner, Library } from "../sim/rl/env.ts";
 import { recordEpisode, recordingBuffers } from "../sim/rl/recording.ts";
 import type { Recording } from "../sim/rl/recording.ts";
+import type { RlTask } from "../sim/rl/trainer.ts";
 import type { Port } from "./port.ts";
+
+export type { RlTask } from "../sim/rl/trainer.ts";
 
 // Episodes of the RL trainer spread over helper threads. A reward is a pure function of genome, env and seed,
 // so results come back by task index and do not depend on the thread count.
@@ -16,22 +19,18 @@ export interface RlSetup {
   library: Library;
 }
 
-export interface RlTask {
-  env: number; // index into the setup's envs
-  genome: Float32Array;
-  seed: number;
-}
 
 export type RlJob =
   | ({ type: "setup" } & RlSetup)
   | ({ type: "episode"; id: number } & RlTask)
   | ({ type: "record"; id: number; every: number; inputs: boolean } & RlTask); // inputs: also record the brain input
 
-export type RlDone = { id: number; reward: number } | { id: number; recording: Recording };
+export type RlDone = { id: number; reward: number } | { id: number; recording: Recording } | { id: number; error: string }; // error: the episode threw
 
 export type RlPort = Port<RlJob, RlDone>;
 
-// Body of a helper, shared by the browser and Node entries and the in-process port: a setup replies nothing.
+// Body of a helper, shared by the browser and Node entries and the in-process port: a setup replies nothing, and an episode
+// that throws replies with the error, so the pool can tell a bad episode from a helper that never started.
 export function rlHelper(): (job: RlJob) => RlDone | null {
   let setup: RlSetup;
   return (job) => {
@@ -39,10 +38,14 @@ export function rlHelper(): (job: RlJob) => RlDone | null {
       setup = job;
       return null;
     }
-    const learner = { plan: setup.plan, genome: job.genome };
-    const env = setup.envs[job.env]!;
-    if (job.type === "episode") return { id: job.id, reward: runEpisode(env, learner, job.seed, setup.pool, setup.library).reward };
-    return { id: job.id, recording: recordEpisode(env, learner, job.seed, setup.pool, setup.library, job.every, job.inputs) };
+    try {
+      const learner = { plan: setup.plan, genome: job.genome };
+      const env = setup.envs[job.env]!;
+      if (job.type === "episode") return { id: job.id, reward: runEpisode(env, learner, job.seed, setup.pool, setup.library).reward };
+      return { id: job.id, recording: recordEpisode(env, learner, job.seed, setup.pool, setup.library, job.every, job.inputs) };
+    } catch (error) {
+      return { id: job.id, error: error instanceof Error ? error.message : String(error) };
+    }
   };
 }
 
@@ -144,6 +147,7 @@ export class RlPool {
     const r = this.run;
     if (!r || r.results[done.id]) return;
     this.started = true;
+    if ("error" in done) return this.fail(new Error(`episode failed: ${done.error}`));
     this.load.set(port, this.load.get(port)! - 1);
     r.results[done.id] = done;
     if (--r.remaining === 0) {
