@@ -3,9 +3,10 @@ import { planOf } from "../sim/sensors.ts";
 import { Ecosystem } from "../sim/ecosystem.ts";
 import type { CreatureFrame, EcoCreature } from "../sim/ecosystem.ts";
 import type { PoolEntry } from "../sim/seedPool.ts";
-import { Leaderboard } from "../sim/leaderboard.ts";
+import { BOARDS, Leaderboard, boardValue } from "../sim/leaderboard.ts";
+import type { Board } from "../sim/leaderboard.ts";
 import { traitStats } from "../sim/popStats.ts";
-import type { BestBy, EcoInMessage, EcoOutMessage, EcoSnapshot, EcoSpeedSetting, SelectedDetails } from "./ecoProtocol.ts";
+import type { EcoInMessage, EcoOutMessage, EcoSnapshot, EcoSpeedSetting, SelectedDetails } from "./ecoProtocol.ts";
 import { LINEAGE_STRIDE, LINEAGE_TOP, snapshotBytes, snapshotViews } from "./ecoProtocol.ts";
 import type { ThinkPool } from "./ecoPool.ts";
 
@@ -251,7 +252,7 @@ export class EcoRunner {
 
   // One lineage block: of one species, or of all creatures (-1).
   private pushLineageSample(eco: Ecosystem, time: number, species: number): void {
-    const top = eco.topLineages(LINEAGE_TOP, species);
+    const top = eco.lineages.top(LINEAGE_TOP, species);
     let inTop = 0;
     for (const l of top) inTop += l.count;
     const out = this.lineageSamples;
@@ -342,7 +343,7 @@ export class EcoRunner {
     }
     if (now - this.lineagePostedAt >= LINEAGE_MS || eco.extinct) {
       this.lineagePostedAt = now;
-      msg.lineages = this.blocks > 1 ? eco.species.flatMap((_, s) => eco.topLineages(LINEAGE_TOP, s)) : eco.topLineages(LINEAGE_TOP);
+      msg.lineages = this.blocks > 1 ? eco.species.flatMap((_, s) => eco.lineages.top(LINEAGE_TOP, s)) : eco.lineages.top(LINEAGE_TOP);
       msg.lineageHistory = Float64Array.from(this.lineageSamples);
       for (const m of eco.members) this.offerRecord(eco, m, true);
       msg.leaders = this.board.snapshot();
@@ -361,18 +362,18 @@ export class EcoRunner {
     const sp = eco.species[m.species]!;
     const now = eco.tick * dt;
     const build = () => ({ id: m.id, species: m.species, hue: m.hue, from: m.birthTick * dt, plan: { ...m.creature.plan, hiddenLayers: m.creature.plan.hiddenLayers.slice() } });
-    this.board.offer("age", m.species, m.id, m.ageTicks * dt, now, alive, build);
-    this.board.offer("children", m.species, m.id, m.children, now, alive, build);
-    if (sp.plants) this.board.offer("eaten", m.species, m.id, m.eaten, now, alive, build);
-    if (sp.prey.length > 0) this.board.offer("kills", m.species, m.id, m.kills, now, alive, build);
+    for (const board of BOARDS) {
+      if ((board === "eaten" && !sp.plants) || (board === "kills" && sp.prey.length === 0)) continue;
+      this.board.offer(board, m.species, m.id, boardValue(m, board, dt), now, alive, build);
+    }
   }
 
   // Scans on demand only. Ties go to the lowest id so the pick does not depend on list order.
-  private best(eco: Ecosystem, by: BestBy): EcoCreature | null {
+  private best(eco: Ecosystem, by: Board): EcoCreature | null {
     let best: EcoCreature | null = null;
     let bestValue = -1;
     for (const m of eco.members) {
-      const v = by === "age" ? m.ageTicks : by === "children" ? m.children : by === "kills" ? m.kills : m.eaten;
+      const v = boardValue(m, by);
       if (v > bestValue || (v === bestValue && m.id < best!.id)) {
         best = m;
         bestValue = v;
@@ -425,7 +426,7 @@ export class EcoRunner {
     this.sendGenome = false;
     return {
       id: m.id, alive: true, x: s.x, y: s.y, heading: s.heading, energy: s.energy, age: m.ageTicks * eco.config.dt,
-      children: m.children, eaten: m.eaten, kills: m.kills, species: m.species, depth: m.depth, parentId: m.parentId, hue: m.hue, founderId: m.founderId, founderPool: eco.fromPool(m.founderId), founderHue: eco.founderColour(m.founderId), plan: { ...c.plan, hiddenLayers: c.plan.hiddenLayers.slice() }, upkeep: c.upkeep, drain: c.drain, birthEnergy: m.birth.energy, birthCost: m.birth.cost, birthCooldown: m.birth.cooldown, ...sc, genome,
+      children: m.children, eaten: m.eaten, kills: m.kills, species: m.species, depth: m.depth, parentId: m.parentId, hue: m.hue, founderId: m.founderId, founderPool: eco.lineages.fromPool(m.founderId), founderHue: eco.lineages.colour(m.founderId), plan: { ...c.plan, hiddenLayers: c.plan.hiddenLayers.slice() }, upkeep: c.upkeep, drain: c.drain, birthEnergy: m.birth.energy, birthCost: m.birth.cost, birthCooldown: m.birth.cooldown, ...sc, genome,
     };
   }
 }

@@ -1,10 +1,9 @@
 import type { EcoConfig } from "../sim/ecoConfig.ts";
 import type { Lineage, SpeciesCount } from "../sim/ecosystem.ts";
-import type { Leaders } from "../sim/leaderboard.ts";
+import type { Board, Leaders } from "../sim/leaderboard.ts";
 import type { TraitHistogram } from "../sim/popStats.ts";
 import type { BodyPlan } from "../sim/sensors.ts";
 
-export type BestBy = "age" | "children" | "eaten" | "kills";
 export type EcoSpeedSetting = number | "max"; // simulated seconds per real second, "max" = as many ticks as fit
 
 export type EcoInMessage =
@@ -15,7 +14,7 @@ export type EcoInMessage =
   | { type: "reset" }
   | { type: "speed"; speed: EcoSpeedSetting }
   | { type: "select"; id: number | null }
-  | { type: "selectBest"; by: BestBy; request: number } // selects the living creature with the highest value, ties to the lowest id
+  | { type: "selectBest"; by: Board; request: number } // selects the living creature with the highest value, ties to the lowest id
   | { type: "refill"; buffer: ArrayBuffer } // a render worker hands a buffer back for reuse; only the page's acknowledgement counts as keeping up
   | { type: "recycle"; buffer?: ArrayBuffer; run?: number }; // the page acknowledges a consumed snapshot of run, handing its buffer back unless a render worker holds it; only current-run acks count
 

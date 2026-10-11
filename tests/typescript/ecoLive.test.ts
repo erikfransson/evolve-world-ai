@@ -129,13 +129,13 @@ describe("insertCreature", () => {
       expect(w.eco.population).toBe(before + 1);
       expect(w.eco.get(r.id)!.founderId).toBe(r.id);
       expect(w.eco.get(r.id)!.hue).toBe(300);
-      expect(w.eco.lineageSize(r.id)).toBe(1);
+      expect(w.eco.lineages.size(r.id)).toBe(1);
       expect(w.eco.lineageName(r.id)).toBe("Alpha");
       await w.step(1);
       w.eco.insertCreature(spec(config, { name: "Beta", x: 700, y: 650, species: 0, birth: { energy: 90, cost: 70, cooldown: 4 } }));
       await w.step(250);
       prints.push(w.eco.fingerprint());
-      expect(w.eco.topLineages(200).some((l) => l.founder === r.id) || w.eco.lineageSize(r.id) === 0).toBe(true);
+      expect(w.eco.lineages.top(200).some((l) => l.founder === r.id) || w.eco.lineages.size(r.id) === 0).toBe(true);
       w.pool?.close();
     }
     expect(prints[1]).toBe(prints[0]);

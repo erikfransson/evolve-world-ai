@@ -1,7 +1,7 @@
 import type { EcoConfig } from "../sim/ecoConfig.ts";
 import { ECO_LOCKED, ECO_PRESETS, PREDATOR_PRESETS, withEcoPreset } from "../sim/presets.ts";
 import type { EcoPreset } from "../sim/presets.ts";
-import type { BestBy } from "../worker/ecoProtocol.ts";
+import type { Board } from "../sim/leaderboard.ts";
 import { ECO_FORM } from "./ecoSettingsForm.ts";
 import type { FormSpec } from "./settingsForm.ts";
 import type { EcoStats } from "./ecoPage.ts";
@@ -17,7 +17,7 @@ export interface ModePage {
   locked: readonly string[]; // form fields a preset fixes
   store: string; // localStorage prefix for the cards' open state
   speciesColors: readonly string[]; // one per species with several: graph lines, the lineage switch, the Selected chip; empty otherwise
-  picks: readonly (readonly [id: string, by: BestBy])[]; // quick-select buttons
+  picks: readonly (readonly [id: string, by: Board])[]; // quick-select buttons
   tiles: readonly Tile[]; // stat tiles besides the season tile
   // While the run counts for the scoreboard, the number whose peak the entry notes; null when it does not count.
   peak(s: EcoStats): number | null;

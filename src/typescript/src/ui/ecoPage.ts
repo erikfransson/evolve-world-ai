@@ -4,7 +4,8 @@ import type { BodyPlan } from "../sim/sensors.ts";
 import type { Lineage, SpeciesCount } from "../sim/ecosystem.ts";
 import type { Leaders } from "../sim/leaderboard.ts";
 import type { TraitHistogram } from "../sim/popStats.ts";
-import type { BestBy } from "../worker/ecoProtocol.ts";
+import type { EcoSpeedSetting } from "../worker/ecoProtocol.ts";
+import type { Board } from "../sim/leaderboard.ts";
 import { BrainView } from "./brainView.ts";
 import type { ModePage } from "./ecoModes.ts";
 import { buildForm } from "./settingsForm.ts";
@@ -20,7 +21,6 @@ import { $, durationText, setTile } from "./page.ts";
 import { initTooltips } from "./tooltip.ts";
 import { LINEAGE_STRIDE } from "../worker/ecoProtocol.ts";
 
-export type EcoSpeed = number | "max"; // simulated seconds per real second asked for, "max" = as fast as possible
 export type EcoPhase = "idle" | "running" | "paused" | "extinct";
 export type ZoomAction = "in" | "out" | "fit";
 
@@ -65,9 +65,9 @@ export interface EcoHandlers {
   onResume(): void;
   onReset(): void;
   onReseed(): void; // after extinction; the page is running again, the caller picks the new seed and calls fillConfig
-  onSpeed(speed: EcoSpeed): void;
+  onSpeed(speed: EcoSpeedSetting): void;
   onZoom(action: ZoomAction): void;
-  onPickBest(by: BestBy): void; // select and follow the best living creature
+  onPickBest(by: Board): void; // select and follow the best living creature
   onFollow(follow: boolean): void; // the Follow toggle
   onWorldView(): void; // the World view button; the page has already cleared the Follow toggle
   onShowRays(show: boolean): void;
@@ -83,7 +83,7 @@ export interface EcoView {
   readonly graph: PopulationGraph;
   readConfig(): EcoConfig;
   fillConfig(config: EcoConfig): void;
-  speed(): EcoSpeed;
+  speed(): EcoSpeedSetting;
   showRays(): boolean;
   setPhase(phase: EcoPhase): void;
   setStats(stats: EcoStats | null): void; // null clears the tiles
@@ -110,7 +110,7 @@ const SPEED_TIP = "Simulated seconds per real second the computer is achieving. 
 export function threadsText(helpers: number, wasm = false): string {
   const kernels = wasm ? ", with WebAssembly" : "";
   if (helpers === 0) return `Runs on one thread${kernels}.`;
-  return `Runs on ${helpers + 1} threads (${helpers} ${helpers === 1 ? "helper" : "helpers"}), by messages${kernels}.`;
+  return `Runs on ${helpers + 1} threads (${helpers} ${helpers === 1 ? "helper" : "helpers"}), ${kernels}.`;
 }
 
 function setTip(tileId: string, text: string): void {
@@ -217,7 +217,7 @@ export function createEcoView(handlers: EcoHandlers, page: ModePage): EcoView {
   const founderBtn = $("selFounder");
   const setFounderButton = (): void => { founderBtn.classList.toggle("on", selectedFounder >= 0 && lineages.highlight() === selectedFounder); };
 
-  const speed = (): EcoSpeed => {
+  const speed = (): EcoSpeedSetting => {
     const v = document.querySelector<HTMLInputElement>('input[name="speed"]:checked')!.value;
     return v === "max" ? "max" : Number(v);
   };

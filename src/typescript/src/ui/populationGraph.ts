@@ -1,11 +1,9 @@
 import type { EcoConfig } from "../sim/ecoConfig.ts";
 import { seasonFactor } from "../sim/ecoConfig.ts";
 import { fitCanvas, graphFont } from "./canvas.ts";
+import { AXIS, FOOD, LABEL } from "./palette.ts";
 
 const POP_COLOR = "#fbbf24";
-const FOOD_COLOR = "#4ade80";
-const AXIS_COLOR = "rgba(143, 174, 159, 0.5)";
-const TEXT_COLOR = "#8fae9f";
 const WINTER_BAND = "rgba(150, 190, 235, 0.22)";
 const SEASON_CURVE = "rgba(150, 190, 235, 0.75)"; // food multiplier, 0 to 1 over the full graph height
 const PAD = { left: 40, right: 40, top: 16, bottom: 19 }; // CSS px
@@ -105,14 +103,14 @@ export class PopulationGraph {
 
     ctx.font = graphFont();
     if (s.length === 0) {
-      ctx.fillStyle = TEXT_COLOR;
+      ctx.fillStyle = LABEL;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText("Waiting for data", PAD.left + w / 2, PAD.top + h / 2);
       return;
     }
     ctx.lineWidth = 1;
-    ctx.strokeStyle = AXIS_COLOR;
+    ctx.strokeStyle = AXIS;
     ctx.beginPath();
     ctx.moveTo(PAD.left, PAD.top);
     ctx.lineTo(PAD.left, PAD.top + h);
@@ -131,9 +129,9 @@ export class PopulationGraph {
       ctx.fillText(compact(popTop), PAD.left - 4, PAD.top - 4);
     }
     ctx.textAlign = "left";
-    ctx.fillStyle = FOOD_COLOR;
+    ctx.fillStyle = FOOD;
     ctx.fillText(compact(foodTop), PAD.left + w + 4, PAD.top - 4);
-    ctx.fillStyle = TEXT_COLOR;
+    ctx.fillStyle = LABEL;
     ctx.fillText("0 s", PAD.left, PAD.top + h + 3);
     ctx.textAlign = "right";
     ctx.fillText(formatDuration(end), PAD.left + w, PAD.top + h + 3);
@@ -147,7 +145,7 @@ export class PopulationGraph {
       if (s.length === 1) ctx.lineTo(px(s[0]!.time) + 1, py(value(s[0]!), top));
       ctx.stroke();
     };
-    line(FOOD_COLOR, foodTop, (p) => p.food);
+    line(FOOD, foodTop, (p) => p.food);
     if (perSpecies) this.speciesColors.forEach((color, k) => line(color, speciesTop[k]!, (p) => p.species?.[k] ?? 0));
     else line(POP_COLOR, popTop, (p) => p.population);
   }
