@@ -52,7 +52,7 @@ export class WasmSenser {
 
   // Stores the creature's ray offset cos and sin tables for its slot; call when the slot's brain is set.
   setOffsets(slot: number, c: Creature): void {
-    const n = c.rays.length;
+    const n = c.plan.rayCount;
     if (n > MAX_RAYS) throw new Error(`${n} rays exceed ${MAX_RAYS}`);
     const bytes = 16 * n;
     let ptr = this.offPtr[slot];
@@ -63,8 +63,11 @@ export class WasmSenser {
       this.offBytes[slot] = bytes;
     }
     const f64 = new Float64Array(this.bank.memory.buffer, ptr, 2 * n);
-    f64.set(c.offsetCos, 0);
-    f64.set(c.offsetSin, n);
+    const offsets = c.rayOffsets;
+    for (let i = 0; i < n; i++) {
+      f64[i] = Math.cos(offsets[i]!);
+      f64[n + i] = Math.sin(offsets[i]!);
+    }
   }
 
   private region(name: string, bytes: number): number {
@@ -158,7 +161,7 @@ export class WasmSenser {
       const s = c.state;
       const o = k * 8;
       const slot = slots[k]!;
-      const rays = c.rays.length;
+      const rays = c.plan.rayCount;
       rec[o] = s.x;
       rec[o + 1] = s.y;
       rec[o + 2] = c.heading.cos;

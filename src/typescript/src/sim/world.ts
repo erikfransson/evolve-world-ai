@@ -16,25 +16,25 @@ export class RayCache implements CellRange {
   anchorY = 0;
   reach = 0; // radius the list was gathered with, set by the creature's ray length
   count = 0;
-  listX = new Float64Array(32);
-  listY = new Float64Array(32);
-  listKind = new Uint8Array(32);
-  listId = new Int32Array(32);
+  listX = new Float64Array(0);
+  listY = new Float64Array(0);
+  listKind = new Uint8Array(0);
+  listId = new Int32Array(0);
   // Cells the list was gathered from.
   rangeX0 = 0;
   rangeX1 = -1;
   rangeY0 = 0;
   rangeY1 = -1;
   // Items near the ray origin, gathered once per sensing; ray-independent terms are precomputed.
-  candFx = new Float64Array(32);
-  candFy = new Float64Array(32);
-  candC = new Float64Array(32); // squared distance minus squared item radius
-  candKind = new Uint8Array(32);
+  candFx = new Float64Array(0);
+  candFy = new Float64Array(0);
+  candC = new Float64Array(0); // squared distance minus squared item radius
+  candKind = new Uint8Array(0);
   candCount = 0;
 
   // Doubles every list and candidate array so a candidate never overflows.
   grow(): void {
-    const size = this.listX.length * 2;
+    const size = Math.max(32, this.listX.length * 2); // the arrays start empty, so a creature that never gathers items on the JS path holds none
     for (const key of ["listX", "listY", "candFx", "candFy", "candC"] as const) {
       const grown = new Float64Array(size);
       grown.set(this[key]);
