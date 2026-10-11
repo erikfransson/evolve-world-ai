@@ -247,10 +247,12 @@ describe("Ecosystem", () => {
     const food = place(HIT_FOOD);
     expect(food.eco.food).toBe(0);
     expect(food.m.eaten).toBe(1);
+    expect(food.eco.foodEaten).toBe(1);
     const poison = place(HIT_POISON);
     expect(poison.eco.poison).toBe(0);
     expect(poison.eco.deaths).toBe(1);
     expect(poison.m.eaten).toBe(0);
+    expect(poison.eco.poisonEaten).toBe(1);
   });
 
   it("non-lethal poison drains energy and is removed like food", () => {
@@ -337,6 +339,75 @@ describe("Ecosystem collision damage", () => {
     expect([a.energy, b.energy]).toEqual([0, 0]);
   });
 
+  // Runs the shared phase alone (collisions, settle, births) on the creatures as placed: nothing is steered, sensed or eaten.
+  const shared = (e: Ecosystem) => e.finishTick(new Int32Array(e.population).fill(-1));
+
+  it("reports an impact that costs exactly BIG_IMPACT, and a creature left at exactly 0 as a death", () => {
+    const edge = pair({}, 100, 100, 15, -15); // 0.5 x speed 30 = 15
+    edge.bump();
+    expect(Array.from(edge.e.drainEvents()!)).toEqual([EVENT_IMPACT, 510, 500, 15]);
+    const exact = pair({}, 40, 100, 40, -40); // damage exactly 40
+    shared(exact.e);
+    expect(exact.e.population).toBe(1);
+    expect(Array.from(exact.e.drainEvents()!).filter((v, i) => i % EVENT_STRIDE === 0)).toEqual([EVENT_IMPACT, EVENT_DEATH]);
+  });
+
+  it("leaves an eaten creature and a creature already at 0 energy out of the bump", () => {
+    const eaten = pair({}, 100, 100);
+    eaten.b.alive = false;
+    eaten.bump();
+    expect([eaten.a.energy, eaten.a.x, eaten.b.x]).toEqual([100, 500, 520]);
+    const empty = pair({}, 0, 100);
+    empty.bump();
+    expect(empty.e.drainEvents()).toBeNull();
+  });
+
+  it("finds every overlapping pair across a grid cell border: right, below, below-right and below-left", () => {
+    const probe = pair({}, 100, 100).e as unknown as { crowd: { cell: number } };
+    const B = probe.crowd.cell;
+    const r = DEFAULT_ECO_CONFIG.creature.radius;
+    const cases: Record<string, [number, number, number, number]> = {
+      right: [B - 0.5, 75, B + 0.5, 75],
+      below: [75, B - 0.5, 75, B + 0.5],
+      "below-right": [B - 0.5, B - 0.5, B + 0.5, B + 0.5],
+      "below-left": [B + 0.5, B - 0.5, B - 0.5, B + 0.5],
+    };
+    const gaps: Record<string, number> = {};
+    for (const [name, [ax, ay, bx, by]] of Object.entries(cases)) {
+      const { e, a, b, bump } = pair({ collisionDamage: false }, 100, 100, 0, 0);
+      Object.assign(a, { x: ax, y: ay });
+      Object.assign(b, { x: bx, y: by });
+      bump();
+      gaps[name] = Math.hypot(a.x - b.x, a.y - b.y) >= 2 * r - 1e-9 ? 0 : 2 * r - Math.hypot(a.x - b.x, a.y - b.y);
+      expect(e.population).toBe(2);
+    }
+    expect(gaps).toEqual({ right: 0, below: 0, "below-right": 0, "below-left": 0 });
+  });
+
+  it("a lone survivor does not see a creature that has just died", () => {
+    const c = still({ initialPopulation: 2, collisions: false, wasm: false, birthEnergyRange: [1e9, 1e9] }, 100);
+    const e = new Ecosystem(c);
+    Object.assign(e.members[0]!.creature.state, { x: 500, y: 500, heading: 0 });
+    Object.assign(e.members[1]!.creature.state, { x: 520, y: 500 });
+    e.members[0]!.creature.heading.cos = 1;
+    e.members[0]!.creature.heading.sin = 0;
+    e.prepareTick(); // both stand in the grid
+    e.members[1]!.creature.state.energy = 0;
+    shared(e); // the second one dies and is removed
+    expect(e.population).toBe(1);
+    e.prepareTick();
+    e.sensePhase(0, 1);
+    expect(e.members[0]!.creature.rays.some((ray) => ray.kind === HIT_CREATURE)).toBe(false);
+  });
+
+  it("a creature gives birth at exactly its birth energy and not a hair below", () => {
+    for (const [energy, births] of [[150, 1], [150 - 1e-9, 0]] as const) {
+      const e = new Ecosystem(still({ initialPopulation: 1 }, energy));
+      shared(e);
+      expect([energy, e.births]).toEqual([energy, births]);
+    }
+  });
+
   it("is off by default and then changes no energy", () => {
     expect(DEFAULT_ECO_CONFIG.eco.collisionDamage).toBe(false);
     const { a, b, bump } = pair({ collisionDamage: false }, 100, 100);
@@ -351,6 +422,7 @@ describe("Ecosystem collision damage", () => {
     expect([e.population, e.deaths]).toEqual([1, 1]);
     expect(e.journal!.died).toEqual([idA]);
     expect([e.lineages.size(idA), e.lineages.size(idB)]).toEqual([0, 1]);
+    expect(e.get(idA)).toBeUndefined(); // a dead id is no longer found
     expect(b.energy).toBeGreaterThan(30);
     expect(a).toBeDefined();
   });

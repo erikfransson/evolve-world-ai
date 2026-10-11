@@ -298,3 +298,77 @@ describe("helper fallbacks", () => {
     expect(eco.fingerprint()).toBe(serial(cfg(), eco.tick).fingerprint());
   });
 });
+
+describe("ThinkPool message handling", () => {
+  // A helper port driven by hand: it records what the pool posts, answers init with ready when asked, and never answers a tick.
+  function manualPort(autoReady = false) {
+    let reply: (msg: HelperOut) => void = () => {};
+    const posted: HelperIn[] = [];
+    const terminate = vi.fn();
+    const port: HelperPort = {
+      post: (msg) => {
+        posted.push(msg);
+        if (autoReady && msg.type === "init") queueMicrotask(() => reply({ type: "ready", gen: msg.gen }));
+      },
+      onMessage: (callback) => { reply = callback; },
+      onError: () => {},
+      terminate,
+    };
+    return { port, posted, reply: (msg: HelperOut) => reply(msg), terminate };
+  }
+  const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
+  const small = () => new Ecosystem(cfg(), null, { journal: true });
+
+  it("ignores a late reply of an earlier run, clears its timers and stops its helpers once", async () => {
+    vi.useFakeTimers();
+    try {
+      const h = manualPort();
+      const pool = new ThinkPool([h.port]);
+      const first = pool.start(small());
+      await flush();
+      const gen1 = h.posted[0]!.gen;
+      h.reply({ type: "ready", gen: gen1 });
+      await first;
+      expect(vi.getTimerCount()).toBe(0); // the start timeout is cleared once the helpers answered
+
+      let ready = false;
+      const second = pool.start(small()).then(() => { ready = true; }, () => {});
+      await flush();
+      expect(h.posted[1]!.gen).not.toBe(gen1);
+      h.reply({ type: "ready", gen: gen1 }); // the first run's helper answering late
+      await flush();
+      expect(ready).toBe(false);
+      h.reply({ type: "ready", gen: h.posted[1]!.gen });
+      await second;
+      expect(ready).toBe(true);
+
+      const third = pool.start(small()).then(() => "ready", () => "failed");
+      await flush();
+      pool.close();
+      pool.close(); // a second close or failure changes nothing
+      expect(await third).toBe("failed");
+      expect(h.terminate).toHaveBeenCalledTimes(1);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("gives the first, cold tick the long start timeout and later ticks the short one", async () => {
+    vi.useFakeTimers();
+    try {
+      const h = manualPort(true);
+      const pool = new ThinkPool([h.port], 50);
+      const eco = small();
+      await pool.start(eco);
+      const outcome = pool.step(eco).then(() => "ran", (e: Error) => e.message);
+      await vi.advanceTimersByTimeAsync(1_000); // far past the 50 ms tick timeout, within the cold allowance
+      expect(pool.alive).toBe(true);
+      await vi.advanceTimersByTimeAsync(25_000);
+      expect(pool.alive).toBe(false);
+      expect(await outcome).toMatch(/stopped answering/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

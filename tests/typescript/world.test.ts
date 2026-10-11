@@ -225,6 +225,55 @@ describe("World", () => {
     expect(w.eatAt(305, 300, c.creature.radius, cache)).toBe(0);
   });
 
+  it("addRandomly on a full world adds nothing and reports -1", () => {
+    const w = new World(cfg(), 3);
+    w.scatter(3, 0, testRng(1));
+    expect(w.addRandomly(HIT_FOOD, testRng(2))).toBe(-1);
+    expect(w.used).toBe(3);
+  });
+
+  it("a ray cache built before load() sees the loaded items, not the old ones", () => {
+    const c = cfg();
+    const a = emptyWorld(c);
+    const b = emptyWorld(c);
+    a.setItem(0, 150, 500, HIT_FOOD);
+    b.setItem(0, 150, 500, HIT_POISON);
+    const cache = new RayCache();
+    const out: RayHit = { closeness: 0, kind: HIT_NONE, energy: 0, species: 0 };
+    castRay(a, 100, 500, 0, out, cache);
+    expect(out.kind).toBe(HIT_FOOD);
+    a.load(b.snapshot());
+    castRay(a, 100, 500, 0, out, cache);
+    expect(out.kind).toBe(HIT_POISON);
+    expect(a.eatAt(150, 500, c.creature.radius, cache)).toBe(0);
+  });
+
+  it("a ray cache reused with a different ray length still finds items in the longer reach", () => {
+    const c = cfg();
+    const w = emptyWorld(c);
+    w.setItem(0, 400, 500, HIT_FOOD);
+    const cache = new RayCache();
+    const out: RayHit = { closeness: 0, kind: HIT_NONE, energy: 0, species: 0 };
+    const cast = (length: number) => w.castRays(100, 500, Float64Array.of(1), Float64Array.of(0), [out], cache, length);
+    cast(100);
+    expect(out.kind).toBe(HIT_NONE);
+    cast(400);
+    expect(out.kind).toBe(HIT_FOOD);
+  });
+
+  it("eatAt from a cache anchored elsewhere still finds an item touching at the edge of the cached reach", () => {
+    const c = cfg();
+    const w = emptyWorld(c);
+    const cache = new RayCache();
+    const touch = c.creature.radius + c.world.itemRadius;
+    const listReach = c.creature.rayLength * 1.3 + c.world.itemRadius + 2e-9 * c.creature.rayLength; // the reach the cast below gathers
+    const x = 300 + listReach - touch / 2; // inside the cached reach, but the item below lies outside it
+    w.setItem(0, x + 0.9 * touch, 500, HIT_FOOD);
+    castRay(w, 300, 500, 0, { closeness: 0, kind: HIT_NONE, energy: 0, species: 0 }, cache);
+    expect(cache.count).toBe(0);
+    expect(w.eatAt(x, 500, c.creature.radius, cache)).toBe(0);
+  });
+
   it.each([true, false])("grid results match brute force over random rays and after eating (respawn %s)", (respawn) => {
     const c = cfg();
     const w = scattered(c, testRng(7));
