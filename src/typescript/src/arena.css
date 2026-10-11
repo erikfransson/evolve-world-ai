@@ -125,3 +125,14 @@ details.more > summary { color: var(--text); font-weight: 500; font-size: 0.85re
 #envList { display: flex; flex-direction: column; gap: 0.4rem; }
 
 .rival-dot { fill: #60a5fa; } /* SPECIES_COLORS[0], how arenaScene draws rivals of the learner's species */
+
+/* creature preview */
+.preview-card { gap: 0.5rem; padding: 0.7rem 0.8rem; }
+.preview-card[hidden] { display: none; }
+.preview-body { display: flex; flex-wrap: wrap; gap: 0.8rem; }
+.preview-fig { margin: 0; display: flex; flex-direction: column; gap: 0.3rem; min-width: 0; }
+.preview-fig { flex: 1 1 15rem; max-width: 22rem; }
+.preview-fig canvas { width: 100%; display: block; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); }
+#previewView { aspect-ratio: 1 / 1; }
+#previewBrain { aspect-ratio: 1 / 1; }
+.preview-fig figcaption { font-size: 0.75rem; color: var(--muted); line-height: 1.35; font-variant-numeric: tabular-nums; }
