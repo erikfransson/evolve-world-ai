@@ -16,8 +16,8 @@ export class Crowd {
   energies: Float64Array;
   owners: Int32Array;
 
-  private readonly cell: number;
-  private readonly radius: number;
+  readonly cell: number;
+  readonly radius: number;
   private cellOf: Int32Array;
   private readonly cursor: Int32Array;
   // Candidates of one sensing: offset to the creature, squared distance minus squared radius, energy.
