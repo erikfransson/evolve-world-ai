@@ -4,8 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Ecosystem · Evolve World</title>
-    <!-- Cross-origin isolation for shared memory: on the first visit this registers a service worker and reloads once; without it the page runs as before. -->
-    <script>window.coi = { quiet: true };</script>
+    <!-- Cross-origin isolation for shared memory: on the first visit this registers a service worker and reloads once; without it the page runs as before.
+         It never reloads during a run (Start disabled); the next visit picks up the service worker then. -->
+    <script>window.coi = { quiet: true, doReload: () => document.getElementById("start")?.disabled || location.reload() };</script>
     <script src="../coi-serviceworker.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

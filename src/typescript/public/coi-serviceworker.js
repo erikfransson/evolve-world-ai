@@ -1,5 +1,6 @@
-/* Vendored unchanged from https://github.com/gzuidhof/coi-serviceworker (npm coi-serviceworker 0.1.7).
-   Registered by the Ecosystem page. Gives the site COOP/COEP headers on hosts that cannot set them (GitHub Pages), so it can use SharedArrayBuffer.
+/* Vendored from https://github.com/gzuidhof/coi-serviceworker (npm coi-serviceworker 0.1.7), locally modified:
+   navigations outside /ecosystem/ pass through untouched (marked "Local change" below), so only Ecosystem pages are isolated.
+   Registered by the Ecosystem page. Gives it COOP/COEP headers on hosts that cannot set them (GitHub Pages), so it can use SharedArrayBuffer.
 
    MIT License
 
@@ -49,6 +50,10 @@ if (typeof window === 'undefined') {
     self.addEventListener("fetch", function (event) {
         const r = event.request;
         if (r.cache === "only-if-cached" && r.mode !== "same-origin") {
+            return;
+        }
+        // Local change: other pages stay non-isolated. Other requests keep the headers, which the Ecosystem page's workers need.
+        if (r.mode === "navigate" && !new URL(r.url).pathname.includes("/ecosystem/")) {
             return;
         }
 
