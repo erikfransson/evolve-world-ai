@@ -1,7 +1,7 @@
 import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
-import { ThinkPool, canShare, defaultHelpers, serveHelper } from "../../src/typescript/src/worker/ecoPool.ts";
+import { ThinkPool, defaultHelpers, serveHelper } from "../../src/typescript/src/worker/ecoPool.ts";
 import type { HelperIn, HelperOut, HelperPort } from "../../src/typescript/src/worker/ecoPool.ts";
 import { EcoRunner } from "../../src/typescript/src/worker/ecoRunner.ts";
 import { createNodeThinkPool, nodeHelperPorts } from "../../src/typescript/src/worker/nodePool.ts";
@@ -104,10 +104,9 @@ describe("ThinkPool", () => {
           pool.close();
         }
       };
-      await check("fake 1", new ThinkPool(fakePorts(1), false));
-      await check("fake 3", new ThinkPool(fakePorts(3), false));
-      await check("threads, messages", createNodeThinkPool(2, false));
-      await check("threads, shared memory", createNodeThinkPool(2, true));
+      await check("fake 1", new ThinkPool(fakePorts(1)));
+      await check("fake 3", new ThinkPool(fakePorts(3)));
+      await check("threads", createNodeThinkPool(2));
       expect(failures).toEqual([]);
     }
 
@@ -148,25 +147,14 @@ describe("ThinkPool", () => {
   });
 
   it("reuses its helpers for a second run", async () => {
-    const pool = new ThinkPool(fakePorts(2), false);
+    const pool = new ThinkPool(fakePorts(2));
     await pooled(pool, cfg(1), 50);
     const eco = await pooled(pool, cfg(2), 100);
     expect(eco.fingerprint()).toBe(serial(cfg(2), 100).fingerprint());
   });
 
-  it("reuses shared-memory helpers for a second run", async () => {
-    const pool = createNodeThinkPool(2, true);
-    try {
-      expect(pool.shared).toBe(true);
-      await pooled(pool, cfg(1), 30);
-      expect((await pooled(pool, cfg(2), 60)).fingerprint()).toBe(serial(cfg(2), 60).fingerprint());
-    } finally {
-      pool.close();
-    }
-  });
-
   it("a second start before the first one is ready keeps the helpers in step", async () => {
-    const pools = [new ThinkPool(fakePorts(2), false), createNodeThinkPool(2, false), createNodeThinkPool(2, true)];
+    const pools = [new ThinkPool(fakePorts(2)), createNodeThinkPool(2)];
     for (const pool of pools) {
       try {
         const clock = { t: 0 };
@@ -249,17 +237,7 @@ describe("WebAssembly kernels", () => {
 });
 
 describe("helper fallbacks", () => {
-  it("uses shared memory only when isolated and SharedArrayBuffer exists", () => {
-    expect(canShare({ crossOriginIsolated: true })).toBe(true);
-    expect(canShare({ crossOriginIsolated: false })).toBe(false);
-    expect(canShare({})).toBe(false);
-    vi.stubGlobal("SharedArrayBuffer", undefined);
-    try {
-      expect(canShare({ crossOriginIsolated: true })).toBe(false);
-      expect(createNodeThinkPool(1, true).shared).toBe(false);
-    } finally {
-      vi.unstubAllGlobals();
-    }
+  it("leaves a core for the page and one for the coordinator, at most 4 helpers", () => {
     expect(defaultHelpers(8)).toBe(4);
     expect(defaultHelpers(4)).toBe(3);
     expect(defaultHelpers(1)).toBe(1);
@@ -267,7 +245,7 @@ describe("helper fallbacks", () => {
 
   it("a runner whose helpers fail mid-run continues on one thread with the same result", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const pool = new ThinkPool(fakePorts(2, 30), false);
+    const pool = new ThinkPool(fakePorts(2, 30));
     const eco = await runFor(pool, 200);
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
@@ -278,17 +256,17 @@ describe("helper fallbacks", () => {
 
   it("a helper that never answers a tick fails the pool after the timeout", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const pool = new ThinkPool(fakePorts(2, 30, true), false, 50);
+    const pool = new ThinkPool(fakePorts(2, 30, true), 50);
     const eco = await runFor(pool, 100);
     warn.mockRestore();
     expect(pool.alive).toBe(false);
     expect(eco.fingerprint()).toBe(serial(cfg(), eco.tick).fingerprint());
   });
 
-  it("a shared-memory helper that exits mid-run fails the pool at once", async () => {
+  it("a helper that exits mid-run fails the pool at once", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const ports = nodeHelperPorts(2);
-    const pool = new ThinkPool(ports, true);
+    const pool = new ThinkPool(ports);
     let killedAt = 0;
     let failedAt = 0;
     const eco = await runFor(pool, 100, (tick) => {

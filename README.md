@@ -11,8 +11,7 @@
   * `src/trials.ts`, `src/ecosystem.ts` (also the Predators & prey page), `src/landing.ts` one entry script per page
   * `src/sim/wasm/` optional WebAssembly SIMD kernels (brain forward, one-call sense); `.wat` sources are assembled into `kernels.generated.ts` with `npm run wasm` (wabt), and a test fails if they drift
   * `public/pool.json` Ecosystem seed pool of Trials-trained creatures, rebuilt with `node src/buildPool.ts` (about 30 min on 4 threads)
-  * `public/coi-serviceworker.js` vendored (MIT, locally modified) service worker, registered by the Ecosystem and Predators & prey pages, that cross-origin isolates Ecosystem pages, so their helper threads can share memory
-    * to retire it, serve a self-unregistering service worker at the same path, since installed copies keep running otherwise
+  * `public/coi-serviceworker.js` self-unregistering stub, kept at the old URL because visitors may still have the retired shared-memory service worker installed; on its next update check it removes itself and reloads their pages once. Nothing registers it any more, so it can be deleted once old installs are unlikely
 * `src/python/` planned analysis of headless run output (empty so far)
 * `docs/` for e.g. adr documents, and planning etc
 * `tests/` tests for all code

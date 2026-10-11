@@ -1,7 +1,7 @@
 import type { EcoInMessage } from "./ecoProtocol.ts";
 import { EcoRunner } from "./ecoRunner.ts";
 import { createBrowserThinkPool } from "./browserPool.ts";
-import { ThinkPool, canShare, defaultHelpers } from "./ecoPool.ts";
+import { ThinkPool, defaultHelpers } from "./ecoPool.ts";
 import { loadPool } from "../sim/seedPool.ts";
 import type { PoolEntry } from "../sim/seedPool.ts";
 
@@ -31,16 +31,15 @@ function schedule(wait: number): void {
   }, wait);
 }
 
-// The helper threads for a run: reused while the count and mode stay, otherwise replaced; none for 0 or without nested workers.
+// The helper threads for a run: reused while the count stays, otherwise replaced; none for 0 or without nested workers.
 function helpersFor(msg: Extract<EcoInMessage, { type: "start" }>): ThinkPool | null {
   const count = msg.threads ?? defaultHelpers(navigator.hardwareConcurrency || 2);
-  const shared = msg.shared !== false && canShare(self);
-  if (helpers && helpers.alive && helpers.helpers === count && helpers.shared === shared) return helpers;
+  if (helpers && helpers.alive && helpers.helpers === count) return helpers;
   helpers?.close();
   helpers = null;
   if (count <= 0 || typeof Worker === "undefined") return null;
   try {
-    helpers = createBrowserThinkPool(count, shared);
+    helpers = createBrowserThinkPool(count);
   } catch (error) {
     console.warn("Helper threads unavailable, running on one thread:", error);
   }

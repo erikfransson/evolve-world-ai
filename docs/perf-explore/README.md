@@ -10,3 +10,4 @@ One write-up per exploration, with the tables of tried ideas and their verdicts.
 - `render.md`: pixel-layer items about 14x faster to draw but change pixels; prototype only. OffscreenCanvas is untried.
 - `trig.md`: WASM sin and cos gain nothing; not worth porting.
 - `profile2.md`: per-phase profile at 12k to 30k; PhaseTimer kept. Helper gains measured under load, so pessimistic.
+- Shared-memory helper mode was removed on 2026-10-11 (see `docs/perf-notes.md`), so notes here that mention shared helpers or `--shared` describe a retired mode.

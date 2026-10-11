@@ -1,12 +1,12 @@
 // Ecosystem benchmark: runs a seeded world headless and prints ticks/s, population over time and a fingerprint.
 // Usage: node src/ecoBench.ts [--seconds 120] [--seed 1] [--pop 300] [--width 12000] [--every 10] [--series 30]
-//   [--pool public/pool.json] [--threads 0] [--shared] [--predators] [--preset ID] [--config file.json] [--set path=value ...]
+//   [--pool public/pool.json] [--threads 0] [--predators] [--preset ID] [--config file.json] [--set path=value ...]
 // --config reads settings in the page's Copy format (Ecosystem or Predators & prey) as the base; --preset applies a preset's world
 // and regrowth to the defaults (not with --config); --predators starts from the Predators & prey defaults.
 // --set overrides any config value after that, checked like a pasted config: --set eco.foodRegrow=0.04 --set species.1.speed=1.4
 // (--set eco.wasm=false runs the JS path, --set eco.aging=true turns on old-age upkeep). --pool none runs without the seed pool.
 // --pop and --width scale the founders and the area (height and the default population scale with --width).
-// --threads N runs N helper threads for sense and think, --shared lets them use shared memory.
+// --threads N runs N helper threads for sense and think.
 // --series S adds a row every S seconds to the output: births, deaths and items eaten since the last row, food, lineages, trait means.
 
 import { readFileSync } from "node:fs";
@@ -34,7 +34,6 @@ const { values } = parseArgs({
     series: { type: "string" }, // seconds between rows of the time series
     pool: { type: "string", default: fileURLToPath(new URL("../public/pool.json", import.meta.url)) },
     threads: { type: "string", default: "0" }, // helper threads for sense and think; 0 runs on this thread alone
-    shared: { type: "boolean" },
     predators: { type: "boolean" },
     preset: { type: "string" },
     config: { type: "string" },
@@ -97,7 +96,7 @@ const ticks = Math.round(seconds / config.dt);
 
 const pool = values.pool === "none" ? null : parsePool(JSON.parse(readFileSync(values.pool!, "utf8"))).entries;
 const threads = num(values.threads, 0);
-const helpers = threads > 0 ? createNodeThinkPool(threads, values.shared ?? false) : null;
+const helpers = threads > 0 ? createNodeThinkPool(threads) : null;
 const eco = new Ecosystem(config, pool, { journal: helpers !== null });
 await helpers?.start(eco);
 const population: number[] = [eco.population];
@@ -153,7 +152,7 @@ helpers?.close();
 console.log(JSON.stringify({
   seed: config.seed,
   seconds,
-  threads: helpers ? `${threads} ${helpers.shared ? "shared" : "fork-join"}` : "serial",
+  threads: helpers ? `${threads} helpers` : "serial",
   wasm: eco.wasm,
   poolFounders: eco.poolFounders,
   ticks: eco.tick,
