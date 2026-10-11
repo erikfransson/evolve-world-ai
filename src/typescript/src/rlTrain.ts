@@ -1,5 +1,5 @@
 // Fine-tunes one creature in an RL environment (#27) with evolution strategies, on worker threads.
-// Usage: node src/rlTrain.ts --env forage-box [--from pool:39 | random:1 | file:creature.json] [--iters 60] [--pairs 16] [--sigma 0.04]
+// Usage: node src/rlTrain.ts --env forage-box [--from pool:39 | random:1 | file:creature.json] [--iters 60] [--pairs 16] [--sigma 0.08]
 //        [--lr 0.02] [--episodes 2] [--eval 16] [--every 10] [--threads 6] [--seed 1] [--out learner.json] [--library public/rl/library.json] [--save]
 // Each iteration scores 2 x pairs perturbed genomes on `episodes` fresh seeds; every `every` iterations the current genome is scored
 // on `eval` held-out seeds no iteration trains on. --save appends the result to the library under the env id, as a rival for later envs.
@@ -24,7 +24,7 @@ const { values } = parseArgs({
     from: { type: "string", default: "pool:0" },
     iters: { type: "string", default: "60" },
     pairs: { type: "string", default: "16" },
-    sigma: { type: "string", default: "0.04" },
+    sigma: { type: "string", default: "0.08" },
     lr: { type: "string", default: "0.02" },
     episodes: { type: "string", default: "2" },
     eval: { type: "string", default: "16" },

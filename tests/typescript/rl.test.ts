@@ -4,7 +4,7 @@ import { castFor, checkEnv, envConfig, randomLearner, runEpisode } from "../../s
 import { creatureFile, parseCreatureFile } from "../../src/typescript/src/sim/rl/creatureFile.ts";
 import type { EnvSpec } from "../../src/typescript/src/sim/rl/env.ts";
 import { ENVS, envById } from "../../src/typescript/src/sim/rl/envs.ts";
-import { Es, centredRanks } from "../../src/typescript/src/sim/rl/es.ts";
+import { Es, centredRanks, standardise } from "../../src/typescript/src/sim/rl/es.ts";
 import { parseLibrary, serialiseLearner } from "../../src/typescript/src/sim/rl/library.ts";
 import { testRng } from "./helpers.ts";
 
@@ -12,6 +12,15 @@ describe("centredRanks", () => {
   it("maps ranks to [-0.5, 0.5] and shares ties", () => {
     expect(centredRanks([10, -3, 7])).toEqual([0.5, -0.5, 0]);
     expect(centredRanks([1, 1, 2, 0])).toEqual([0, 0, 0.5, -0.5]);
+  });
+});
+
+describe("standardise", () => {
+  it("gives mean 0 and std 1, and zeros for equal rewards", () => {
+    const z = standardise([1, 2, 3, 6]);
+    expect(z.reduce((a, b) => a + b, 0)).toBeCloseTo(0, 12);
+    expect(Math.sqrt(z.reduce((a, b) => a + b * b, 0) / z.length)).toBeCloseTo(1, 12);
+    expect(standardise([4, 4, 4])).toEqual([0, 0, 0]);
   });
 });
 
