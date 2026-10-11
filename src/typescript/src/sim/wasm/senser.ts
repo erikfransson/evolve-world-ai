@@ -53,6 +53,18 @@ export class WasmSenser {
     }
   }
 
+  // Back to the state of a new senser (the bank must be reset too, its regions are gone).
+  reset(): void {
+    this.offPtr.length = 0;
+    this.offBytes.length = 0;
+    this.regions.clear();
+    this.synced = null;
+    this.rowCap = 0;
+    this.pStart = 0;
+    this.pXY = 0;
+    this.pKinds = 0;
+  }
+
   // Stores the creature's ray offset cos and sin tables for its slot; call when the slot's brain is set.
   setOffsets(slot: number, c: Creature): void {
     const n = c.plan.rayCount;

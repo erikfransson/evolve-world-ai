@@ -5,6 +5,7 @@ import type { EcoConfig } from "../ecoConfig.ts";
 import { Ecosystem } from "../ecosystem.ts";
 import type { CastMember } from "../ecosystem.ts";
 import type { Creature } from "../creature.ts";
+import { SenseKernels } from "../wasm/senseKernels.ts";
 import { randomPlan } from "../planMutation.ts";
 import { createRng, deriveSeed } from "../rng.ts";
 import { trialsToEcoGenome } from "../seedPool.ts";
@@ -221,6 +222,10 @@ const crossed = (walls: readonly number[], minY: number, radius: number): number
 
 const learnerStartEnergy = (env: EnvSpec, species: readonly Species[]): number => env.learnerEnergy ?? species[env.role]!.startEnergy;
 
+// One kernel set per thread, reused by successive episodes (building one costs about 9% of a small episode).
+let spareKernels: SenseKernels | null = null;
+export const dropSpareKernels = (): void => { spareKernels = null; }; // the next episode builds fresh ones (tests)
+
 // Plays one episode and scores the learner. onTick, when given, sees the world after every tick (the Arena draws it).
 // act, when given, may overwrite the learner's outputs after its brain ran and before it moves (a stochastic policy, rlGrad).
 export function runEpisode(
@@ -235,7 +240,9 @@ export function runEpisode(
   const config = episodeConfig(env, seed);
   const placed = env.layout ? placeLayout(env.layout, env.size, env.food, env.poison, seed) : null;
   const cast = castFor(env, config, learner, seed, pool, library, placed?.start);
-  const eco = new Ecosystem(config, null, { cast, items: placed?.items });
+  const kernels = config.eco.wasm ? (spareKernels ?? SenseKernels.create(config)) : null;
+  spareKernels = null; // taken, so an episode started inside this one's onTick builds its own
+  const eco = new Ecosystem(config, null, { cast, items: placed?.items, kernels: kernels ?? undefined });
   const reach = 2 * config.creature.radius + 2; // bumping distance, for crediting a ram
   const ticks = Math.round(env.seconds / config.dt);
   const out: EpisodeResult = { reward: 0, food: 0, kills: 0, rams: 0, seconds: 0, energy: 0 };
@@ -284,6 +291,7 @@ export function runEpisode(
   const w = env.reward;
   const startEnergy = eco.species[env.role]!.startEnergy;
   out.reward = (w.food ?? 0) * out.food + (w.kill ?? 0) * out.kills + (w.survive ?? 0) * out.seconds + (w.energy ?? 0) * energySignal(out.energy, startEnergy) + (w.fast ?? 0) * cleared + (w.ram ?? 0) * out.rams + (w.cross ?? 0) * crossed(placed?.walls ?? [], minY, config.creature.radius);
+  if (kernels) spareKernels = kernels; // an episode that throws just drops them
   return out;
 }
 

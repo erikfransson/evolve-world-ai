@@ -18,8 +18,8 @@ export class SenseKernels {
   detail: Creature | null = null;
   private readonly brains: WasmBrainBank;
   private readonly senser: WasmSenser;
-  private readonly stride: number; // ray features per ray in the brain input
-  private readonly energyScale: number; // seen energies are squashed against this, the largest species start energy (speciesEngine's seenEnergyScale)
+  private stride: number; // ray features per ray in the brain input
+  private energyScale: number; // seen energies are squashed against this, the largest species start energy (speciesEngine's seenEnergyScale)
   private readonly versions: number[] = []; // brainVersion of the creature each slot was set from
   private nextSlot = 0;
   private slots = new Int32Array(64);
@@ -38,6 +38,19 @@ export class SenseKernels {
     const brains = WasmBrainBank.createSync();
     const senser = brains && WasmSenser.create(brains);
     return brains && senser ? new SenseKernels(brains, senser, config) : null;
+  }
+
+  // Back to the state of a new SenseKernels for this config, so successive Ecosystems on one thread can share the instances
+  // (RL builds one per episode). Results are bit-identical to fresh kernels. One owner at a time; creatures of the previous owner must be gone.
+  reset(config: EcoConfig): this {
+    this.brains.reset();
+    this.senser.reset();
+    this.versions.length = 0;
+    this.nextSlot = 0;
+    this.detail = null;
+    this.stride = inputLayout(config).rayFeatures;
+    this.energyScale = seenEnergyScale(speciesList(config));
+    return this;
   }
 
   run(world: World, crowd: Crowd, batch: SenseBatch): void {

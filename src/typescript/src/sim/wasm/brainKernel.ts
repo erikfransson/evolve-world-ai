@@ -24,7 +24,7 @@ const pad4 = (n: number): number => (n + 3) & ~3;
 
 export class WasmBrainBank {
   private readonly kernel: Kernel<BrainExports>;
-  private readonly arena: Arena;
+  private arena: Arena;
   private blockPtr: number[] = [];
   private blockBytes: number[] = [];
   private inFloat: number[] = [];
@@ -38,7 +38,8 @@ export class WasmBrainBank {
     this.kernel = kernel;
     this.arena = new Arena(kernel, ARENA_START);
     kernel.ensure(ARENA_START);
-    for (let i = 0; i < SCRATCH_FLOATS; i++) kernel.i32[IOTA_AT / 4 + i] = i;
+    const i32 = kernel.i32;
+    for (let i = 0; i < SCRATCH_FLOATS; i++) i32[IOTA_AT / 4 + i] = i;
     // For each lane mask m, the byte shuffle that moves the index of its k-th set lane to lane k, and the number of set lanes.
     const bytes = new Uint8Array(kernel.memory.buffer, TAB_AT, 272);
     for (let m = 0; m < 16; m++) {
@@ -56,6 +57,23 @@ export class WasmBrainBank {
   static createSync(): WasmBrainBank | null {
     const kernel = Kernel.createSync<BrainExports>(BRAIN_BYTES);
     return kernel ? new WasmBrainBank(kernel) : null;
+  }
+
+  // Back to the state of a new bank, so a successive owner can reuse the instance: no slots, a fresh arena, zeroed scratch and arena memory.
+  reset(): void {
+    this.blockPtr = [];
+    this.blockBytes = [];
+    this.inFloat = [];
+    this.outFloat = [];
+    this.descPtr = NO_SLOT;
+    this.descCap = 0;
+    this.runPtr = NO_SLOT;
+    this.runCap = 0;
+    this.arena = new Arena(this.kernel, ARENA_START);
+    const f32 = this.kernel.f32;
+    f32.fill(0, 0, IOTA_AT / 4);
+    f32.fill(0, NZ_AT / 4, TAB_AT / 4);
+    f32.fill(0, ARENA_START / 4);
   }
 
   // The whole linear memory as floats; indices from inputAt and outputAt. Read it fresh after set(), as growth replaces it.

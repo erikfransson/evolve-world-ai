@@ -25,6 +25,7 @@ import { HIT_FOOD, HIT_NONE, HIT_POISON } from "./types.ts";
 import type { CreatureState, Genome, HitKind, WorldView } from "./types.ts";
 import { World } from "./world.ts";
 import { SenseKernels } from "./wasm/senseKernels.ts";
+import { MAX_RAYS } from "./wasm/senser.ts";
 import { PLAN_LIMITS } from "./rl/validate.ts";
 
 export type { Lineage } from "./lineages.ts";
@@ -221,7 +222,7 @@ export class Ecosystem {
   constructor(
     config: EcoConfig,
     pool: readonly PoolEntry[] | null = null,
-    options: { journal?: boolean; cast?: readonly CastMember[]; items?: readonly ItemSpot[]; restore?: { founders: number; poolFounders: number; itemCapacity: number } } = {},
+    options: { journal?: boolean; cast?: readonly CastMember[]; items?: readonly ItemSpot[]; restore?: { founders: number; poolFounders: number; itemCapacity: number }; kernels?: SenseKernels } = {},
   ) {
     const restore = options.restore;
     this.config = config;
@@ -257,7 +258,8 @@ export class Ecosystem {
     this.crowd = new Crowd(config, founders);
     // Plans past the kernel's ray limit (a huge ray count setting or pool entry) run on the JS path.
     const maxRays = Math.max(config.creature.rayCount, ...this.ranges.map((r) => r.rayCountRange[1] ?? 0), ...(pool ?? []).map((e) => e.plan.rayCount), ...(cast ?? []).map((c) => c.plan.rayCount));
-    this.kernels = eco.wasm ? SenseKernels.create(config, maxRays) : null;
+    // options.kernels: instances to reuse (RL), reset here; the caller owns them and runs one Ecosystem on them at a time.
+    this.kernels = !eco.wasm ? null : options.kernels && maxRays <= MAX_RAYS ? options.kernels.reset(config) : SenseKernels.create(config, maxRays);
     this.childPlan = planOf(config);
 
     const { width, height } = config.world;
