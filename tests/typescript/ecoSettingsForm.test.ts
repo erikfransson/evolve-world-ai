@@ -61,8 +61,15 @@ describe("Ecosystem settings form", () => {
     c.brain.hiddenLayers = [12, 12, 12];
     c.brain.memory = 0.75;
     c.mutation.std = 0.45;
+    c.eco.foundersVary = false;
+    c.eco.planDrift = 0.05;
+    c.eco.structuralRate = 0.1;
     fillEcoForm(c);
     expect(readEcoConfig()).toEqual(c);
+  });
+
+  it("has the variation fields on by default", () => {
+    expect(DEFAULT_ECO_CONFIG.eco).toMatchObject({ foundersVary: true, planDrift: 0.02, structuralRate: 0.02 });
   });
 
   it("shows item counts as hints", () => {

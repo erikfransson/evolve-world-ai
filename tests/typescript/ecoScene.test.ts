@@ -2,11 +2,13 @@ import { HIT_FOOD, HIT_WALL } from "../../src/typescript/src/sim/types.ts";
 import { Camera } from "../../src/typescript/src/ui/camera.ts";
 import { EcoRenderer, creatureBucket, creatureStyle } from "../../src/typescript/src/ui/ecoScene.ts";
 import type { EcoDrawConfig } from "../../src/typescript/src/ui/ecoScene.ts";
+import { planOf } from "../../src/typescript/src/sim/sensors.ts";
+import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { SelectedDetails } from "../../src/typescript/src/worker/ecoProtocol.ts";
 import { snapshotBytes, snapshotViews } from "../../src/typescript/src/worker/ecoProtocol.ts";
 import { badCoordinateCalls, fakeCtx } from "./helpers.ts";
 
-const cfg: EcoDrawConfig = { worldW: 4000, worldH: 2500, radius: 12, itemRadius: 4, rayLength: 100, fullEnergy: 150 };
+const cfg: EcoDrawConfig = { worldW: 4000, worldH: 2500, radius: 12, itemRadius: 4, fullEnergy: 150 };
 
 function views(n: number, items = 50) {
   const buffer = new ArrayBuffer(snapshotBytes(n, items));
@@ -29,7 +31,7 @@ function views(n: number, items = 50) {
 }
 
 const selected: SelectedDetails = {
-  id: 3, alive: true, x: 211, y: 373, heading: 1, energy: 80, age: 20, children: 0, eaten: 0, depth: 0, parentId: -1, hue: 10,
+  id: 3, alive: true, x: 211, y: 373, heading: 1, energy: 80, age: 20, children: 0, eaten: 0, depth: 0, parentId: -1, hue: 10, plan: { ...planOf(DEFAULT_ECO_CONFIG), rayCount: 3, rayLength: 100 }, upkeep: 0.3,
   rayKinds: Uint8Array.of(HIT_FOOD, 0, HIT_WALL), rayCloseness: Float32Array.of(0.5, 0, 0.2), rayEnergy: new Float32Array(3),
   rayOffsets: Float32Array.of(-0.3, 0, 0.3), inputs: new Float32Array(0), genome: null,
 };

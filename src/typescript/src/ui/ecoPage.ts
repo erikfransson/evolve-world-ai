@@ -1,4 +1,5 @@
 import type { EcoConfig } from "../sim/ecoConfig.ts";
+import type { BodyPlan } from "../sim/sensors.ts";
 import type { BestBy } from "../worker/ecoProtocol.ts";
 import { BrainView } from "./brainView.ts";
 import { buildEcoForm, fillEcoForm, initEcoSettingsForm, readEcoConfig } from "./ecoSettingsForm.ts";
@@ -33,6 +34,8 @@ export interface EcoSelected {
   children: number;
   eaten: number; // food items eaten
   depth: number; // lineage depth, founders are 0
+  plan: BodyPlan;
+  upkeep: number; // energy per second besides thrust and turning
   died?: boolean; // the values are those of its last moment
 }
 
@@ -89,6 +92,13 @@ function setTile(id: string, value: string | null, unit = ""): void {
   const e = $(id);
   e.textContent = value ?? "-";
   e.dataset.unit = value === null ? "" : unit; // unit is drawn by CSS
+}
+
+// "8 rays · 75° · 100 range · 16 hidden · mem 2+2 · upkeep 0.45/s"; layers join with +, no memory reads "no mem".
+export function formatPlan(plan: BodyPlan, upkeep: number): string {
+  const rays = `${plan.rayCount} ${plan.rayCount === 1 ? "ray" : "rays"}`;
+  const mem = plan.memoryShort + plan.memoryLong === 0 ? "no mem" : `mem ${plan.memoryShort}+${plan.memoryLong}`;
+  return [rays, `${Math.round((plan.raySpread * 180) / Math.PI)}°`, `${Math.round(plan.rayLength)} range`, `${plan.hiddenLayers.join("+")} hidden`, mem, `upkeep ${upkeep.toFixed(2)}/s`].join(" · ");
 }
 
 export function createEcoView(handlers: EcoHandlers): EcoView {
@@ -183,6 +193,7 @@ export function createEcoView(handlers: EcoHandlers): EcoView {
       $("selEaten").textContent = nf.format(sel.eaten);
       $("selDepth").textContent = nf.format(sel.depth);
       $("selId").textContent = `#${sel.id}`;
+      $("selPlan").textContent = formatPlan(sel.plan, sel.upkeep);
     },
     setFollowing(on) {
       follow.setAttribute("aria-pressed", String(on));

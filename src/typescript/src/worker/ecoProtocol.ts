@@ -1,4 +1,5 @@
 import type { EcoConfig } from "../sim/ecoConfig.ts";
+import type { BodyPlan } from "../sim/sensors.ts";
 
 export type BestBy = "age" | "children" | "eaten";
 export type EcoSpeedSetting = number | "max"; // simulated seconds per real second, "max" = as many ticks as fit
@@ -27,6 +28,8 @@ export interface SelectedDetails {
   depth: number;
   parentId: number;
   hue: number;
+  plan: BodyPlan; // the creature's own senses and brain shape; the genome is sized for it
+  upkeep: number; // energy per second besides thrust and turning
   rayKinds: Uint8Array; // HitKind per ray
   rayCloseness: Float32Array;
   rayEnergy: Float32Array;

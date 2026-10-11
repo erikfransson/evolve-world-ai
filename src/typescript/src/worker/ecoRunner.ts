@@ -1,4 +1,5 @@
 import type { EcoConfig } from "../sim/ecoConfig.ts";
+import { planOf } from "../sim/sensors.ts";
 import { Ecosystem } from "../sim/ecosystem.ts";
 import type { CreatureFrame, EcoCreature } from "../sim/ecosystem.ts";
 import type { BestBy, EcoInMessage, EcoOutMessage, EcoSnapshot, EcoSpeedSetting, SelectedDetails } from "./ecoProtocol.ts";
@@ -244,7 +245,7 @@ export class EcoRunner {
     if (!m) {
       const s = this.rayScratch;
       return {
-        id: this.selectedId, alive: false, x: 0, y: 0, heading: 0, energy: 0, age: 0, children: 0, eaten: 0, depth: 0, parentId: -1, hue: 0,
+        id: this.selectedId, alive: false, x: 0, y: 0, heading: 0, energy: 0, age: 0, children: 0, eaten: 0, depth: 0, parentId: -1, hue: 0, plan: planOf(eco.config), upkeep: 0,
         rayKinds: s?.rayKinds ?? new Uint8Array(0), rayCloseness: s?.rayCloseness ?? new Float32Array(0), rayEnergy: s?.rayEnergy ?? new Float32Array(0),
         rayOffsets: s?.rayOffsets ?? new Float32Array(0), inputs: s?.inputs ?? new Float32Array(0), genome: null,
       };
@@ -253,7 +254,7 @@ export class EcoRunner {
     const s = c.state;
     const rays = c.rays;
     const input = c.brain.layerActivations()[0]!;
-    if (!this.rayScratch || this.rayScratch.inputs.length !== input.length) {
+    if (!this.rayScratch || this.rayScratch.inputs.length !== input.length || this.rayScratch.rayKinds.length !== rays.length) {
       this.rayScratch = {
         rayKinds: new Uint8Array(rays.length),
         rayCloseness: new Float32Array(rays.length),
@@ -268,12 +269,13 @@ export class EcoRunner {
       sc.rayCloseness[i] = rays[i]!.closeness;
       sc.rayEnergy[i] = rays[i]!.energy;
     }
+    sc.rayOffsets.set(c.rayOffsets);
     sc.inputs.set(input);
     const genome = this.sendGenome ? c.brain.genome.slice() : null;
     this.sendGenome = false;
     return {
       id: m.id, alive: true, x: s.x, y: s.y, heading: s.heading, energy: s.energy, age: m.ageTicks * eco.config.dt,
-      children: m.children, eaten: m.eaten, depth: m.depth, parentId: m.parentId, hue: m.hue, ...sc, genome,
+      children: m.children, eaten: m.eaten, depth: m.depth, parentId: m.parentId, hue: m.hue, plan: { ...c.plan, hiddenLayers: c.plan.hiddenLayers.slice() }, upkeep: c.upkeep, ...sc, genome,
     };
   }
 }

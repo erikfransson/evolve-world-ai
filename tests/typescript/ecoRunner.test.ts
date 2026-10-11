@@ -2,6 +2,8 @@ import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoOutMessage, EcoSnapshot } from "../../src/typescript/src/worker/ecoProtocol.ts";
 import { snapshotViews } from "../../src/typescript/src/worker/ecoProtocol.ts";
+import { genomeLength, layerSizes } from "../../src/typescript/src/sim/brain.ts";
+import { inputLayout, planUpkeep, rayAngleOffsets } from "../../src/typescript/src/sim/sensors.ts";
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
 import { EcoRunner } from "../../src/typescript/src/worker/ecoRunner.ts";
 
@@ -11,7 +13,7 @@ function cfg(over: { creature?: Partial<EcoConfig["creature"]>; eco?: Partial<Ec
     ...d,
     world: { ...d.world, width: 600, height: 600 },
     creature: { ...d.creature, ...over.creature },
-    eco: { ...d.eco, initialPopulation: 20, ...over.eco },
+    eco: { ...d.eco, initialPopulation: 20, foundersVary: false, planDrift: 0, structuralRate: 0, ...over.eco },
   };
 }
 
@@ -133,6 +135,25 @@ describe("EcoRunner", () => {
     expect(last().selected).toMatchObject({ id: 123456, alive: false });
     runner.handle({ type: "select", id: null });
     expect(last().selected).toBeNull();
+  });
+
+  it("sends the selected creature's own plan, matching its rays, inputs and genome", () => {
+    const { runner, last } = setup();
+    runner.handle({ type: "start", config: cfg({ eco: { foundersVary: true } }), run: 1 });
+    const shapes = new Set<string>();
+    const v = snapshotViews(last().buffer, 20, 0, last().creatureCap, last().itemCap);
+    for (let i = 0; i < 20; i++) {
+      runner.handle({ type: "select", id: v.ids[i]! });
+      const a = last().selected!;
+      const layout = inputLayout(DEFAULT_ECO_CONFIG, a.plan);
+      expect(a.rayKinds.length).toBe(a.plan.rayCount);
+      expect(Array.from(a.rayOffsets)).toEqual(Array.from(rayAngleOffsets(a.plan)));
+      expect(a.inputs.length).toBe(layout.size);
+      expect(a.genome!.length).toBe(genomeLength(layerSizes(DEFAULT_ECO_CONFIG, a.plan)));
+      expect(a.upkeep).toBeCloseTo(planUpkeep(a.plan, DEFAULT_ECO_CONFIG));
+      shapes.add(`${a.plan.rayCount}/${layout.size}`);
+    }
+    expect(shapes.size).toBeGreaterThan(3); // the scratch arrays follow the selected creature's shape
   });
 
   it("sends the genome only in the first snapshot after selecting", () => {

@@ -1,10 +1,8 @@
 import "./base.css";
 import "./style.css";
 import "./ecosystem.css";
-import { Brain, layerSizes } from "./sim/brain.ts";
 import { DEFAULT_ECO_CONFIG } from "./sim/ecoConfig.ts";
 import type { EcoConfig } from "./sim/ecoConfig.ts";
-import { inputLayout } from "./sim/sensors.ts";
 import type { BestBy, EcoInMessage, EcoOutMessage, EcoSnapshot, SelectedDetails, SnapshotViews } from "./worker/ecoProtocol.ts";
 import { snapshotViews } from "./worker/ecoProtocol.ts";
 import { Camera } from "./ui/camera.ts";
@@ -12,6 +10,8 @@ import type { Point } from "./ui/camera.ts";
 import { fitCanvas } from "./ui/canvas.ts";
 import { pickCreature } from "./ui/ecoPick.ts";
 import { drawIdleWorld } from "./ui/ecoIdle.ts";
+import { buildSelectedBrain } from "./ui/ecoBrain.ts";
+import type { SelectedBrain } from "./ui/ecoBrain.ts";
 import { createEcoView } from "./ui/ecoPage.ts";
 import { EcoRenderer } from "./ui/ecoScene.ts";
 import type { EcoDrawConfig } from "./ui/ecoScene.ts";
@@ -35,7 +35,7 @@ interface Selection {
   id: number;
   details: SelectedDetails | null;
   last: SelectedDetails | null;
-  brain: Brain | null;
+  brain: SelectedBrain | null;
   died: boolean;
 }
 
@@ -56,7 +56,6 @@ let canvasW = 0;
 let canvasH = 0;
 let lastUiAt = 0;
 let lastBrainAt = 0;
-const brainOut = new Float32Array(2);
 
 const camera = new Camera(config.world.width, config.world.height, 1, 1);
 const renderer = new EcoRenderer();
@@ -73,7 +72,7 @@ function send(msg: EcoInMessage, transfer: Transferable[] = []): void {
 
 function drawConfig(): EcoDrawConfig {
   const { world, creature, eco } = config;
-  return { worldW: world.width, worldH: world.height, radius: creature.radius, itemRadius: world.itemRadius, rayLength: creature.rayLength, fullEnergy: eco.birthEnergy };
+  return { worldW: world.width, worldH: world.height, radius: creature.radius, itemRadius: world.itemRadius, fullEnergy: eco.birthEnergy };
 }
 
 // Matches the canvas and camera to the layout; returns the device pixel ratio.
@@ -134,10 +133,10 @@ function onSnapshot(e: MessageEvent<EcoOutMessage>): void {
   const d = msg.selected;
   if (pendingBest && msg.bestRequest === pendingBest) {
     pendingBest = 0;
-    if (d?.alive && d.genome) beginSelection(d.id, d.x, d.y);
+    if (d?.alive && d.genome) beginSelection(d.id, d.x, d.y, d.plan.rayLength);
   }
   if (selection && d && d.id === selection.id) {
-    if (d.genome) selection.brain = new Brain(layerSizes(config), d.genome);
+    if (d.genome) selection.brain = buildSelectedBrain(config, d);
     selection.details = d;
     selection.died = !d.alive;
     if (d.alive) selection.last = d;
@@ -194,7 +193,7 @@ function select(index: number): void {
   const v = live!.views;
   clearSelection();
   send({ type: "select", id: v.ids[index]! });
-  beginSelection(v.ids[index]!, v.x[index]!, v.y[index]!);
+  beginSelection(v.ids[index]!, v.x[index]!, v.y[index]!, config.creature.rayLength);
 }
 
 // Asks the worker for the best creature; the zoom-in starts when it answers.
@@ -205,10 +204,10 @@ function selectBest(by: BestBy): void {
   send({ type: "selectBest", by, request: pendingBest });
 }
 
-function beginSelection(id: number, x: number, y: number): void {
+function beginSelection(id: number, x: number, y: number, rayLength: number): void {
   selection = { id, details: null, last: null, brain: null, died: false };
   const shift = overlayShift();
-  const zoom = Math.min(canvasW - 2 * shift, canvasH) / (SELECT_RAY_LENGTHS * config.creature.rayLength);
+  const zoom = Math.min(canvasW - 2 * shift, canvasH) / (SELECT_RAY_LENGTHS * rayLength);
   camera.cancel();
   camera.setFocusOffset(shift, 0);
   camera.animateTo(x, y, zoom);
@@ -251,7 +250,7 @@ function updateUi(): void {
   view.setStats({ population: m.population, births: m.births, deaths: m.deaths, food: m.food, poison: m.poison, simTime: m.simTime, oldestDepth: m.oldestDepth, speed: m.speed > 0 ? m.speed : null });
   const d = selection?.last;
   if (selection && d) {
-    view.setSelected({ id: d.id, energy: d.energy, fullEnergy: config.eco.birthEnergy, age: d.age, children: d.children, eaten: d.eaten, depth: d.depth, died: selection.died });
+    view.setSelected({ id: d.id, energy: d.energy, fullEnergy: config.eco.birthEnergy, age: d.age, children: d.children, eaten: d.eaten, depth: d.depth, plan: d.plan, upkeep: d.upkeep, died: selection.died });
     view.setFollowing(following);
   }
 }
@@ -260,8 +259,8 @@ function drawBrain(now: number): void {
   const s = selection;
   if (!s?.brain || !s.last || !view.brainPanel.isExpanded() || now - lastBrainAt < BRAIN_INTERVAL_MS) return;
   lastBrainAt = now;
-  s.brain.forward(s.last.inputs, brainOut);
-  view.brain.draw(s.brain, !s.died, inputLayout(config));
+  s.brain.brain.forward(s.last.inputs, s.brain.out);
+  view.brain.draw(s.brain.brain, !s.died, s.brain.layout);
 }
 
 function frame(now: number): void {
