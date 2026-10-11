@@ -1,7 +1,7 @@
 # WASM exploration: move the rest of sense into WebAssembly
 
 Branch `perf-explore-wasm` (worktree agent-a73a8a653fad3999a), prototype commit "Prototype: one-call WASM sense".
-World 20000 x 12500 (`--scale 1.6667`), founders scaled by area. Normal-preset density gives about 4000 creatures (`--pop 1500`) and 9600 (`--pop 3500`).
+World 20000 x 12500 (prototype flags `--scale 1.6667`, now `--width 20000` on main), founders scaled by area. Normal-preset density gives about 4000 creatures (`--pop 1500`) and 9600 (`--pop 3500`). Tables below are from the prototype stage, the merge-ready numbers are at the end.
 Machine load was 25-60 throughout, so wall time is unusable. Numbers below are user CPU ms per steady tick (`cpuMsPerTick`, new in ecoBench), A and B in alternating pairs, spread under 3%.
 
 | Idea | Before | After | Speedup | Exact? | Verdict |
@@ -51,25 +51,25 @@ The `RayCache` anchored list is not used by sense any more. WASM walks the grid 
 
 1. `creature.rays` (RayHit objects) and `brain.activations[0]` are no longer filled in the batch path. The UI draws the selected creature's rays and brain input from them. Fix: for the selected creature only, run the old JS `sense` and `encode` after the tick (display only, small).
 2. Tests for edge cases: creature outside the grid, plans with 1 ray, odd ray counts, ray count over 62 (now throws), Trials config (stride 4).
-3. `SenseKernels.full` is a static prototype switch read from `SENSE_FULL=1` (so Node workers inherit it). On merge it should simply replace `run`.
+3. (Done) the `SenseKernels.full` / `SENSE_FULL` prototype switch is gone, `run` is the one-call path.
 4. `World` cell/cols/rows/width/height/itemRadius/cellHead/nextItem went from private to public readonly.
 5. The old `rays.wat` and `rayKernel.ts` become unused by the Ecosystem (about 280 lines could go), except `cast` is duplicated into `sense.wat` now.
 
 ## Code cost
 
-New: `sense.wat` 288 lines, `senser.ts` 167 lines, about 60 lines of glue (Creature getters and `writeBodyInputs`, bank `alloc/free/memory`, `runFull`), ecoBench flags, one test. After deleting the old ray kernel path net growth would be roughly +250 lines for 1.36x at 4000-10000 creatures.
+Prototype stage: `sense.wat` 288 lines, `senser.ts` 167 lines, about 60 lines of glue, one test. See the merge-ready section for the final count.
 
 ## Promising but untried
 
 - Predators and prey: rays that see creatures with energy and contacts get more expensive with density. This kernel already does the crowd part in WASM with the energy signal table, so the extra per-ray fields (species) would be one more table lookup. Gain should hold or grow with density (9600 creatures gave the same 1.36x).
 - Item grid candidates for rays are about 4 ms of the 34 (measured by skipping the trace loop). f64x2 over rays gave nothing.
-- Next biggest JS parts after this change (profile): `finishTick` remember+steer 9% (needs sin/cos port, about 150 lines of fdlibm in WAT, must be tested bit for bit against `Math.sin/cos` over millions of inputs), crowd rebuild twice per tick 3.4% (counting sort, easy in WAT), collisions 4% (f64 + sqrt only, grid order, portable and exact), eating 3.5%, `runFull` outputs copy 3.6% (could read outputs in place if `Creature.output` became a view into WASM memory).
+- Next biggest JS parts after this change (profile): `finishTick` remember+steer 9% (needs sin/cos port, about 150 lines of fdlibm in WAT, must be tested bit for bit against `Math.sin/cos` over millions of inputs), crowd rebuild twice per tick 3.4% (counting sort, easy in WAT), collisions 4% (f64 + sqrt only, grid order, portable and exact), eating 3.5%, `SenseKernels.run` outputs copy 3.6% (could read outputs in place if `Creature.output` became a view into WASM memory).
 - Putting creature state in WASM-resident SoA (so no per-tick record fill, 5% `senser.run`) is a large refactor of `CreatureState` users and was not tried.
 - Collision, motion and the rest together would bring the JS share from about 55% to maybe 25% but is mostly gated on the sin/cos port.
 
 ## Files
 
-Prototype: `src/typescript/src/sim/wasm/sense.wat`, `senser.ts`, `senseKernels.ts` (`runFull`), `src/typescript/src/ecoBench.ts` (`--scale S`, `--full`, `cpuMsPerTick`). Reproduce: `cd src/typescript && SENSE_FULL=1 nice -n 15 node src/ecoBench.ts --seconds 12 --scale 1.6667 --pop 1500` vs the same without `SENSE_FULL`; fingerprints must match (543106933).
+Prototype (merged since): `src/typescript/src/sim/wasm/sense.wat`, `senser.ts`, `senseKernels.ts` (`run`), `src/typescript/src/ecoBench.ts` (`cpuMsPerTick`). Reproduce against main: `cd src/typescript && nice -n 15 node src/ecoBench.ts --seconds 12 --width 20000` on both and compare `cpuMsPerTick`; fingerprints must match (52683040).
 
 ## Merge-ready update (after merging main e17cba7)
 
@@ -79,3 +79,4 @@ Prototype: `src/typescript/src/sim/wasm/sense.wat`, `senser.ts`, `senseKernels.t
 - Extension point for Predators and prey: the crowd feature path is the merge loop at the end of `sense.wat` (hit crowd slot `$k`, per-slot f32 table `sig` filled in `senser.ts`). A species flag or other per-creature feature is one more per-slot table indexed by `$k`, plus its stride in the feature write.
 - Tests: `wasmKernels.test.ts` compares the kernel with `Creature.sense` for corners and walls, 360 degree fan, one ray, zero rays, an item at the ray length and a hair either side, item removal and placement between runs, and crowds (within f32 rounding). Helper counts 1 and 3 by fake ports, message and shared workers are in `ecoPool.test.ts` ("give the same run for any helper count and mode").
 - Measured at width 20000 against main: see `docs/perf-notes.md` E5d.
+- Review fixes: `Ecosystem.refreshDetail()` runs a display-only JS sense and encode for the selected creature on select (also while paused). Configs with more than 64 rays (setting, range or pool entry) make `SenseKernels.create` return null, so those runs use the JS path (exact, no throw). The seen-energy scale and ray feature count come from the config passed to `create`, not from a creature. Tie-order tests (different cells, same cell) and a pinned 300-tick WASM fingerprint (746480886, equal to main e17cba7) guard "same as main".

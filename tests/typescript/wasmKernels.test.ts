@@ -4,7 +4,7 @@ import { Crowd } from "../../src/typescript/src/sim/crowd.ts";
 import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { createRng } from "../../src/typescript/src/sim/rng.ts";
 import { inputLayout, planOf } from "../../src/typescript/src/sim/sensors.ts";
-import { HIT_CREATURE, HIT_FOOD, HIT_NONE, HIT_WALL } from "../../src/typescript/src/sim/types.ts";
+import { HIT_CREATURE, HIT_FOOD, HIT_NONE, HIT_POISON, HIT_WALL } from "../../src/typescript/src/sim/types.ts";
 import { WasmBrainBank } from "../../src/typescript/src/sim/wasm/brainKernel.ts";
 import { setWasmDisabled, wasmAvailable } from "../../src/typescript/src/sim/wasm/loader.ts";
 import { SenseKernels } from "../../src/typescript/src/sim/wasm/senseKernels.ts";
@@ -31,7 +31,7 @@ describe("fallback", () => {
     setWasmDisabled(true);
     expect(wasmAvailable()).toBe(false);
     expect(await WasmBrainBank.create()).toBeNull();
-    expect(SenseKernels.create()).toBeNull();
+    expect(SenseKernels.create(DEFAULT_ECO_CONFIG)).toBeNull();
     setWasmDisabled(false);
     expect(await WasmBrainBank.create()).not.toBeNull();
   });
@@ -215,7 +215,7 @@ describe("sense.wat (SenseKernels)", () => {
     const { cfg, world, kernel, reference } = build(o);
     const crowd = new Crowd(cfg);
     crowd.rebuild(kernel.map((c) => c.state), kernel.length);
-    const kernels = SenseKernels.create()!;
+    const kernels = SenseKernels.create(cfg)!;
     const batch = new SenseBatch();
     kernel.forEach((c, k) => batch.add(c, k));
     reference.forEach((c, k) => {
@@ -276,6 +276,21 @@ describe("sense.wat (SenseKernels)", () => {
       expect(rays).toBe(1);
     }
     check({ rays: 3, spread: 0.2, length: 100, creatures: [[200, 300, 0]], items: [[200 + 100 + r, 300, 2], [200 + 100, 300 + r, 1], [250, 300, 2]] }, true);
+  });
+
+  it("breaks exact ties between items in different cells and in one cell by grid order, as World.castRays does", () => {
+    const r = DEFAULT_ECO_CONFIG.world.itemRadius;
+    expect(r).toBe(4);
+    // One ray along +x (dy is exactly 0), so items mirrored about its line have identical hit distances.
+    // Ray length 100 makes the grid cell 100, so y = 300 is a row boundary: y 298 is the row before y 302.
+    const across = (foodY: number, poisonY: number) =>
+      check({ rays: 1, spread: 0, length: 100, creatures: [[200, 300, 0]], items: [[250, foodY, 1], [250, poisonY, 2]] }, true).kernel[0]!.rays[0]!.kind;
+    expect(across(298, 302)).toBe(HIT_FOOD); // the earlier row's item wins
+    expect(across(302, 298)).toBe(HIT_POISON);
+    // Same cell (y 250 in row 2, rows are 100 tall): the last placed item heads the cell's list.
+    const within = (items: [number, number, number][]) => check({ rays: 1, spread: 0, length: 100, creatures: [[200, 250, 0]], items }, true).kernel[0]!.rays[0]!.kind;
+    expect(within([[250, 248, 1], [250, 252, 2]])).toBe(HIT_POISON);
+    expect(within([[250, 248, 2], [250, 252, 1]])).toBe(HIT_FOOD);
   });
 
   it("sees item changes between runs, such as an item eaten or placed mid-tick", () => {

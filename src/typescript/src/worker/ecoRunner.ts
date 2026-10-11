@@ -76,6 +76,7 @@ export class EcoRunner {
       case "select":
         this.selectedId = msg.id;
         this.sendGenome = msg.id !== null;
+        this.refreshDetail();
         if (this.eco) this.postSnapshot();
         break;
       case "selectBest": {
@@ -83,6 +84,7 @@ export class EcoRunner {
         this.bestRequest = msg.request;
         this.selectedId = best ? best.id : null;
         this.sendGenome = best !== null;
+        this.refreshDetail();
         if (this.eco) this.postSnapshot();
         break;
       }
@@ -338,6 +340,14 @@ export class EcoRunner {
       }
     }
     return best;
+  }
+
+  // Makes the selected creature's rays and inputs current for the snapshot about to be posted (the WASM sense only keeps them
+  // for the creature that was selected during the tick).
+  private refreshDetail(): void {
+    if (!this.eco) return;
+    this.eco.detail = this.selectedId;
+    this.eco.refreshDetail();
   }
 
   private selectedDetails(eco: Ecosystem): SelectedDetails | null {

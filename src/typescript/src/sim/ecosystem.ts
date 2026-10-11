@@ -138,7 +138,9 @@ export class Ecosystem {
     this.food = start.food;
     this.poison = start.poison;
     this.crowd = new Crowd(config, Math.min(eco.initialPopulation, eco.maxPopulation));
-    this.kernels = eco.wasm ? SenseKernels.create() : null;
+    // Plans past the kernel's ray limit (a huge ray count setting or pool entry) run on the JS path.
+    const maxRays = Math.max(config.creature.rayCount, eco.rayCountRange[1] ?? 0, ...(pool ?? []).map((e) => e.plan.rayCount));
+    this.kernels = eco.wasm ? SenseKernels.create(config, maxRays) : null;
     this.childPlan = planOf(config);
     this.mutation = { mutationRate: config.mutation.rate, mutationStd: config.mutation.std };
 
@@ -225,6 +227,17 @@ export class Ecosystem {
     batch.clear();
     for (let i = start; i < end; i++) batch.add(this.members[i].creature, i);
     this.senseBatch(batch);
+  }
+
+  // Brings the detail creature's rays and brain input up to date outside a tick (display only, on the JS path): on selecting it,
+  // or while paused. Rebuilds the crowd grid, which every tick does first anyway, and leaves the simulation state alone.
+  refreshDetail(): void {
+    const i = this.detail === null ? -1 : this.members.findIndex((m) => m.id === this.detail);
+    if (i < 0) return;
+    this.crowd.rebuild(this.states, this.states.length);
+    const c = this.members[i]!.creature;
+    c.sense(this.items, this.crowd, i);
+    c.encode();
   }
 
   // Phase 1a for a batch of members, each at its list index, after prepareTick.

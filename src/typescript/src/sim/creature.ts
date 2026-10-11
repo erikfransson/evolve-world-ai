@@ -67,14 +67,6 @@ export class Creature {
     return this.units;
   }
 
-  get rayStride(): number {
-    return this.config.creature.seesCreatures ? 6 : 4;
-  }
-
-  get startEnergy(): number {
-    return this.config.creature.startEnergy;
-  }
-
   get offsetCos(): Readonly<Float64Array> {
     return this.rayOffCos;
   }

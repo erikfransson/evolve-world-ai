@@ -182,6 +182,7 @@ describe("WebAssembly kernels", () => {
     expect(a.births).toBeGreaterThan(0);
     expect(a.deaths).toBeGreaterThan(0);
     expect(serial(wasmCfg(), 300).fingerprint()).toBe(a.fingerprint());
+    expect(a.fingerprint()).toBe(746480886); // pinned: the same value main gave before the one-call sense kernel (e17cba7); change it only on purpose
     const js = serial(wasmCfg(5, false), 300);
     expect(js.wasm).toBe(false);
     expect(serial(cfg(), 300).fingerprint()).toBe(a.fingerprint()); // WASM is the default
@@ -194,6 +195,16 @@ describe("WebAssembly kernels", () => {
       maxMove = Math.max(maxMove, Math.hypot(p.x - q.x, p.y - q.y));
     }
     expect(maxMove).toBeLessThan(1e-3);
+  });
+
+  it("falls back to the JS path, exactly and without throwing, when plans may exceed the kernel's ray limit", () => {
+    const c = wasmCfg();
+    const many = { ...c, creature: { ...c.creature, rayCount: 70 }, eco: { ...c.eco, initialPopulation: 8 } };
+    const eco = serial(many, 20);
+    expect(eco.wasm).toBe(false);
+    expect(eco.population).toBeGreaterThan(0);
+    const ok = { ...c, creature: { ...c.creature, rayCount: 40 }, eco: { ...c.eco, initialPopulation: 8 } };
+    expect(serial(ok, 5).wasm).toBe(true);
   });
 
   it("keep each creature's brain across births, deaths, recycling and plan mutations", () => {

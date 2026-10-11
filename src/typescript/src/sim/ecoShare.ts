@@ -328,7 +328,7 @@ export class ShareHelper {
 
   // wasm: sense and think on the WebAssembly kernels when available, as the coordinator does.
   constructor(config: EcoConfig, worldCapacity: number, index: number, wasm = false) {
-    this.kernels = wasm ? SenseKernels.create() : null;
+    this.kernels = wasm ? SenseKernels.create(config) : null; // the coordinator already checked the ray limit
     this.config = config;
     this.index = index;
     this.aging = agingOf(config.eco, config.dt);

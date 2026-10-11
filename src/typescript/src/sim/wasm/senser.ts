@@ -12,7 +12,7 @@ import { SENSE_BYTES } from "./loader.ts";
 // than the per-creature object traffic it replaces. The creature's RayHit objects are not updated, except for the one
 // creature given as detail (the selected one), whose rays are read back for the UI.
 
-const MAX_RAYS = 64;
+export const MAX_RAYS = 64;
 const P_BYTES = 128;
 const SCRATCH_BYTES = 2816;
 const REC_BYTES = 64;
