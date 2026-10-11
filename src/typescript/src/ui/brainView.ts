@@ -340,7 +340,7 @@ export class BrainView {
       const x = xs[c]!;
       const firstMemory = c === 0 ? memoryAt : c === last ? OUTPUT_SIZE : y.length;
       for (let i = 0; i < y.length; i++) {
-        const v = act[i] ?? 0; // a caller's output buffer may hold only turn and thrust
+        const v = act[i]!;
         const a = v < -1 ? -1 : v > 1 ? 1 : v;
         const mag = a < 0 ? -a : a;
         const sign = a < 0 ? 0 : 1;

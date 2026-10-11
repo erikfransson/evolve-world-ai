@@ -89,6 +89,7 @@ export function mutateStructure(plan: BodyPlan, layout: InputLayout, sizes: read
 
 // Writes the genome of the network maps describes into out: kept connections keep their weights, removed ones drop out.
 // A new unit gets random incoming weights at the initial scale and zero outgoing weights and bias, so the network computes as before.
+// Adding or removing a ray re-spaces all ray angles, so the network computes the same but sees differently.
 export function remapWeights(oldSizes: readonly number[], old: Genome, maps: UnitMaps, out: Genome, rng: Rng): void {
   let oldOffset = 0;
   let offset = 0;

@@ -32,6 +32,7 @@ describe("buildSelectedBrain", () => {
     expect(b.brain.genome.length).toBe(genomeLength(b.brain.sizes));
     expect(b.layout).toEqual(layout);
     expect(b.out.length).toBe(2 + plan.memoryShort + plan.memoryLong);
+    expect(b.out.length).toBe(b.brain.sizes.at(-1)); // memory targets included, the panel draws them
     b.brain.forward(d.inputs, b.out); // must not throw or write out of range
     expect(Array.from(b.out).every(Number.isFinite)).toBe(true);
   });

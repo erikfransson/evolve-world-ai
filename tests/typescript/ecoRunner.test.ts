@@ -3,7 +3,7 @@ import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoOutMessage, EcoSnapshot } from "../../src/typescript/src/worker/ecoProtocol.ts";
 import { snapshotViews } from "../../src/typescript/src/worker/ecoProtocol.ts";
 import { genomeLength, layerSizes } from "../../src/typescript/src/sim/brain.ts";
-import { inputLayout, planUpkeep } from "../../src/typescript/src/sim/sensors.ts";
+import { inputLayout, planUpkeep, rayAngleOffsets } from "../../src/typescript/src/sim/sensors.ts";
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
 import { EcoRunner } from "../../src/typescript/src/worker/ecoRunner.ts";
 
@@ -147,7 +147,7 @@ describe("EcoRunner", () => {
       const a = last().selected!;
       const layout = inputLayout(DEFAULT_ECO_CONFIG, a.plan);
       expect(a.rayKinds.length).toBe(a.plan.rayCount);
-      expect(a.rayOffsets.length).toBe(a.plan.rayCount);
+      expect(Array.from(a.rayOffsets)).toEqual(Array.from(rayAngleOffsets(a.plan)));
       expect(a.inputs.length).toBe(layout.size);
       expect(a.genome!.length).toBe(genomeLength(layerSizes(DEFAULT_ECO_CONFIG, a.plan)));
       expect(a.upkeep).toBeCloseTo(planUpkeep(a.plan, DEFAULT_ECO_CONFIG));
