@@ -25,9 +25,11 @@ export type RlInMessage =
       seed: number;
       poolUrl: string;
       libraryUrl: string;
+      gentle?: boolean; // Gentle on CPU: fewer helpers and idle time after each step (pacing only, same results)
     }
   | { type: "envs"; envs: EnvSpec[] } // while paused: train on these from the next step on (checked like start's)
   | { type: "show" } // record the latest best candidate at the next step's end (the page asks when its tiles finished playing)
+  | { type: "gentle"; on: boolean }
   | { type: "pause" }
   | { type: "resume" };
 
