@@ -51,7 +51,7 @@ export class TileGrid {
   private clock = 0; // playback seconds into the playing show, advanced by real time times speed
   private last = 0;
   private zoom: { k: number; target: ZoomTarget } | null = null;
-  speed = 4; // playback seconds per real second
+  speed = 4; // playback seconds per real second; 0 is Max: the tiles hold their frame and a new show replaces the playing one
   paused = false; // holds every tile, and the large view, on its current frame
   onOpen: (k: number) => void = () => {};
   onFinished: () => void = () => {}; // once per show, when every tile has played to the end and no newer show waits
@@ -113,7 +113,7 @@ export class TileGrid {
   }
 
   show(s: Show, now: number): void {
-    if (this.playing) this.queued = s;
+    if (this.playing && this.speed > 0) this.queued = s;
     else this.start(s, now);
   }
 

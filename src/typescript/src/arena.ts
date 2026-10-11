@@ -438,7 +438,7 @@ function begin(): void {
   zoom.close();
   grid.clear();
   brainReplay.reset();
-  send({ type: "start", envs, learner: serialiseLearner(start.learner), method: cfg.method, options, tiles: grid.size, seed, poolUrl: POOL_URL, libraryUrl: LIBRARY_URL, gentle: $<HTMLInputElement>("gentle").checked });
+  send({ type: "start", envs, learner: serialiseLearner(start.learner), method: cfg.method, options, tiles: grid.size, seed, poolUrl: POOL_URL, libraryUrl: LIBRARY_URL, gentle: $<HTMLInputElement>("gentle").checked, playback: grid.speed > 0 });
   $("note").textContent = "Starting…";
   $("note").hidden = false;
   setState("running");
@@ -468,7 +468,10 @@ function onMessage(m: RlOutMessage): void {
     run.startPerEnv = m.perEnv;
     const last = run.its[run.its.length - 1];
     run.its.push({ iter: m.iter, train: last?.train ?? m.held, best: last?.best ?? m.held, held: m.held, perEnv: m.perEnv, seconds: last?.seconds ?? 0 });
-  } else if (m.type === "iteration") run.its.push(m.it);
+  } else if (m.type === "iteration") {
+    run.its.push(m.it);
+    if (grid.speed === 0) $("note").hidden = true; // Max: no show arrives to clear "Starting…"
+  }
   else if (m.type === "learner") run.latest = { iter: m.iter, learner: m.learner };
   else if (m.type === "show") {
     grid.show({ iter: m.iter, genome: m.genome, recordings: m.recordings, names: m.recordings.map((_, k) => run!.envs[k % run!.envs.length]!.name), envCount: run.envs.length, policy: run.method === "backprop" }, performance.now());
@@ -641,18 +644,27 @@ $("brainOn").addEventListener("change", () => {
   brainReplay.reset();
 });
 const speedRadios = document.querySelectorAll<HTMLInputElement>("input[name=speed]");
+const maxNote = $("maxNote");
+const tilesBox = $("tiles");
+function applySpeed(v: number, wasMax: boolean): void {
+  grid.speed = v;
+  const max = v === 0;
+  maxNote.hidden = !max;
+  tilesBox.classList.toggle("dim", max);
+  if (max !== wasMax && state !== "idle") send({ type: "playback", on: !max }); // leaving Max also asks for a show at once
+}
 const speed = loadSpeed();
-grid.speed = speed;
+applySpeed(speed, false);
 speedRadios.forEach((el) => {
   el.checked = Number(el.value) === speed;
   el.addEventListener("change", () => {
-    grid.speed = Number(el.value);
+    applySpeed(Number(el.value), grid.speed === 0);
     saveSpeed(grid.speed);
   });
 });
 grid.onOpen = (k) => zoom.open(k);
 grid.onFinished = () => {
-  if (state !== "idle") send({ type: "show" }); // the tiles played to the end: ask for the next best candidate
+  if (state !== "idle" && grid.speed > 0) send({ type: "show" }); // the tiles played to the end: ask for the next best candidate
 };
 
 initTooltips($("tooltip"));

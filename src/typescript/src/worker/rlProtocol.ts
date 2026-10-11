@@ -25,11 +25,13 @@ export type RlInMessage =
       seed: number;
       poolUrl: string;
       libraryUrl: string;
+      playback?: boolean; // false (Max speed): no shows except the last one, see the "playback" message; default true
       gentle?: boolean; // Gentle on CPU: fewer helpers and idle time after each step (pacing only, same results)
     }
   | { type: "envs"; envs: EnvSpec[] } // while paused: train on these from the next step on (checked like start's)
   | { type: "show" } // record the latest best candidate at the next step's end (the page asks when its tiles finished playing)
   | { type: "gentle"; on: boolean }
+  | { type: "playback"; on: boolean } // off: the page plays no replays (Max speed), so no shows are recorded; on: record one at the next step's end
   | { type: "pause" }
   | { type: "resume" };
 

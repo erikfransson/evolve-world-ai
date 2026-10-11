@@ -223,6 +223,9 @@ describe("replay speed", () => {
     const s = store(null);
     saveSpeed(8, s);
     expect(loadSpeed(s)).toBe(8);
+    saveSpeed(0, s);
+    expect(loadSpeed(s)).toBe(0); // Max
+    expect(loadSpeed(store("1"))).toBe(1); // old stored values still load
   });
   it("survives storage that throws", () => {
     const bad = { getItem: () => { throw new Error("no"); }, setItem: () => { throw new Error("no"); } };

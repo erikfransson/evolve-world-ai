@@ -64,4 +64,5 @@ function apply(msg: RlInMessage): void {
   else if (msg.type === "envs") run?.setEnvs(msg.envs);
   else if (msg.type === "gentle") run?.setGentle(msg.on);
   else if (msg.type === "show") run?.wantShow();
+  else if (msg.type === "playback") run?.setPlayback(msg.on);
 }
