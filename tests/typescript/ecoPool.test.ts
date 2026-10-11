@@ -3,6 +3,7 @@ import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
 import { ThinkPool, canShare, defaultHelpers, serveHelper } from "../../src/typescript/src/worker/ecoPool.ts";
 import type { HelperIn, HelperOut, HelperPort } from "../../src/typescript/src/worker/ecoPool.ts";
+import { SenseKernels } from "../../src/typescript/src/sim/wasm/senseKernels.ts";
 import { EcoRunner } from "../../src/typescript/src/worker/ecoRunner.ts";
 import { createNodeThinkPool, nodeHelperPorts } from "../../src/typescript/src/worker/nodePool.ts";
 
@@ -168,6 +169,17 @@ describe("WebAssembly kernels", () => {
       maxMove = Math.max(maxMove, Math.hypot(p.x - q.x, p.y - q.y));
     }
     expect(maxMove).toBeLessThan(1e-3);
+  });
+
+  it("one-call sense (sense.wat) matches the separate kernels bit for bit", () => {
+    const base = serial(wasmCfg(), 300).fingerprint();
+    SenseKernels.full = true;
+    try {
+      expect(serial(wasmCfg(), 300).fingerprint()).toBe(base);
+      expect(serial(wasmCfg(9), 300).fingerprint()).not.toBe(base);
+    } finally {
+      SenseKernels.full = false;
+    }
   });
 
   it("keep each creature's brain across births, deaths, recycling and plan mutations", () => {
