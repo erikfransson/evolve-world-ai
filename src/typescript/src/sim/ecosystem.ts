@@ -441,21 +441,22 @@ export class Ecosystem {
     const { radius } = this.config.creature;
     const { width, height } = this.config.world;
     const e = 1; // restitution
-    for (let cy = 0; cy < rows; cy++) {
-      for (let cx = 0; cx < cols; cx++) {
-        const c = cy * cols + cx;
-        const end = cellStart[c + 1];
-        for (let s = cellStart[c]; s < end; s++) {
-          const a = states[owners[s]];
-          // Later creatures of this cell, then the cells right, below-left, below and below-right, so each pair is seen once.
-          for (let t = s + 1; t < end; t++) this.bump(a, states[owners[t]], radius, e, width, height);
-          if (cx + 1 < cols) this.bumpCell(a, c + 1, radius, e, width, height);
-          if (cy + 1 < rows) {
-            const below = c + cols;
-            if (cx > 0) this.bumpCell(a, below - 1, radius, e, width, height);
-            this.bumpCell(a, below, radius, e, width, height);
-            if (cx + 1 < cols) this.bumpCell(a, below + 1, radius, e, width, height);
-          }
+    // Occupied cells in row-major order, the same order as sweeping every cell.
+    for (let o = 0; o < crowd.occupiedCount; o++) {
+      const c = crowd.occupied[o]!;
+      const cy = Math.floor(c / cols);
+      const cx = c - cy * cols;
+      const end = cellStart[c + 1];
+      for (let s = cellStart[c]; s < end; s++) {
+        const a = states[owners[s]];
+        // Later creatures of this cell, then the cells right, below-left, below and below-right, so each pair is seen once.
+        for (let t = s + 1; t < end; t++) this.bump(a, states[owners[t]], radius, e, width, height);
+        if (cx + 1 < cols) this.bumpCell(a, c + 1, radius, e, width, height);
+        if (cy + 1 < rows) {
+          const below = c + cols;
+          if (cx > 0) this.bumpCell(a, below - 1, radius, e, width, height);
+          this.bumpCell(a, below, radius, e, width, height);
+          if (cx + 1 < cols) this.bumpCell(a, below + 1, radius, e, width, height);
         }
       }
     }
