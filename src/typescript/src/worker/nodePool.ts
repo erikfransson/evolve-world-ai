@@ -5,16 +5,15 @@ import { SerialEvaluator } from "../sim/evaluator.ts";
 import type { Evaluator } from "../sim/evaluator.ts";
 import type { EvalDone, EvalJob } from "./evalPool.ts";
 import { PoolEvaluator, defaultThreads } from "./evalPool.ts";
-import { ThinkPool, canShare } from "./ecoPool.ts";
+import { ThinkPool } from "./ecoPool.ts";
 import type { HelperIn, HelperOut, HelperPort } from "./ecoPool.ts";
 import type { Port } from "./port.ts";
 
-// n new worker_threads as ports; with unref a blocked worker never keeps the process alive.
-function nodePorts<In, Out>(n: number, spawn: () => Worker, what: string, unref = false): Port<In, Out>[] {
+// n new worker_threads as ports.
+function nodePorts<In, Out>(n: number, spawn: () => Worker, what: string): Port<In, Out>[] {
   const ports: Port<In, Out>[] = [];
   for (let i = 0; i < n; i++) {
     const worker = spawn();
-    if (unref) worker.unref();
     ports.push({
       post: (msg, transfer) => worker.postMessage(msg, (transfer ?? []) as ArrayBuffer[]),
       onMessage: (callback) => { worker.on("message", callback); },
@@ -36,14 +35,14 @@ export function parseThreads(value: string | undefined): number {
   return threads;
 }
 
-// Ecosystem helper threads; shared uses shared memory. Call close() so the process can exit.
-export function createNodeThinkPool(helpers: number, shared: boolean): ThinkPool {
-  return new ThinkPool(nodeHelperPorts(helpers), shared && canShare(globalThis, true));
+// Ecosystem helper threads. Call close() so the process can exit.
+export function createNodeThinkPool(helpers: number): ThinkPool {
+  return new ThinkPool(nodeHelperPorts(helpers));
 }
 
 // Ports to n new helper worker_threads.
 export function nodeHelperPorts(helpers: number): HelperPort[] {
-  return nodePorts<HelperIn, HelperOut>(helpers, () => new Worker(new URL("./ecoHelperNode.ts", import.meta.url)), "helper thread", true);
+  return nodePorts<HelperIn, HelperOut>(helpers, () => new Worker(new URL("./ecoHelperNode.ts", import.meta.url)), "helper thread");
 }
 
 // Pool of worker_threads, or the serial evaluator for one thread. Call close() so the process can exit.

@@ -34,7 +34,6 @@ export interface EcoStats {
   oldestDepth: number; // longest lineage among living creatures
   speed: number | null; // simulated seconds per real second achieved, null until measured
   helpers: number; // helper threads sensing and thinking, 0 when the simulation runs on one thread
-  sharedMemory: boolean;
   wasm: boolean; // sense and think run on the WebAssembly kernels
   species?: readonly SpeciesCount[]; // with several species
   season: { name: string; factor: number } | null; // null when seasons are off
@@ -107,10 +106,10 @@ const nf = new Intl.NumberFormat("en-US");
 const SPEED_TIP = "Simulated seconds per real second the computer is achieving. It can be lower than the speed asked for.";
 
 // How the run uses the cores, for the speed tooltip.
-export function threadsText(helpers: number, shared: boolean, wasm = false): string {
+export function threadsText(helpers: number, wasm = false): string {
   const kernels = wasm ? ", with WebAssembly" : "";
   if (helpers === 0) return `Runs on one thread${kernels}.`;
-  return `Runs on ${helpers + 1} threads (${helpers} ${helpers === 1 ? "helper" : "helpers"}), ${shared ? "in shared memory" : "by messages"}${kernels}.`;
+  return `Runs on ${helpers + 1} threads (${helpers} ${helpers === 1 ? "helper" : "helpers"}), by messages${kernels}.`;
 }
 
 function setTip(tileId: string, text: string): void {
@@ -251,7 +250,7 @@ export function createEcoView(handlers: EcoHandlers, page: ModePage): EcoView {
       for (const tile of page.tiles) setTile(tile.id, s && tile.value(s), s ? tile.unit?.(s) : undefined);
       $("statSeasonTile").hidden = !s?.season;
       if (s?.season) setTile("statSeason", s.season.name, ` · ${s.season.factor.toFixed(2)}×`);
-      if (s) setTip("statSpeed", `${SPEED_TIP} ${threadsText(s.helpers, s.sharedMemory, s.wasm)}`);
+      if (s) setTip("statSpeed", `${SPEED_TIP} ${threadsText(s.helpers, s.wasm)}`);
     },
     setSelected(sel) {
       hasSelection = sel !== null;

@@ -9,8 +9,7 @@ export type EcoSpeedSetting = number | "max"; // simulated seconds per real seco
 
 export type EcoInMessage =
   // poolUrl: seed pool JSON, fetched once by the worker. threads: helper threads, 0 for none, default from the core count.
-  // shared: false keeps the helpers on messages even when shared memory is available.
-  | { type: "start"; config: EcoConfig; run: number; poolUrl?: string; threads?: number; shared?: boolean }
+  | { type: "start"; config: EcoConfig; run: number; poolUrl?: string; threads?: number }
   | { type: "pause" }
   | { type: "resume" }
   | { type: "reset" }
@@ -63,7 +62,6 @@ export interface EcoSnapshot {
   extinct: boolean;
   speed: number; // simulated seconds per real second achieved, 0 until measured
   helpers: number; // helper threads sensing and thinking, 0 when the worker runs alone
-  sharedMemory: boolean; // the helpers use shared memory rather than messages
   wasm: boolean; // sense and think run on the WebAssembly kernels
   count: number; // creatures in the buffer
   itemCount: number;
