@@ -83,14 +83,11 @@ export interface EpisodeResult {
 
 const BIRTHLESS = 1e9; // birth energy no creature reaches
 
-// WebAssembly kernels for an episode's sense and brain phase: "auto" uses them when the episode's brains are big enough to repay the
-// per-episode setup (about 2 ms; measured slower below ~3000 genes in total), false keeps the JS path everywhere.
-// Their f32 arithmetic differs slightly from the JS path, but each creature's result depends only on its own inputs, so
-// rewards stay deterministic per seed whatever the thread count or episode order.
-export const RL_WASM: "auto" | boolean = "auto";
-const WASM_MIN_GENES = 3000;
-const useWasm = (env: EnvSpec, cast: readonly CastMember[]): boolean =>
-  env.foodVisibleFor === undefined && (RL_WASM === "auto" ? cast.reduce((a, c) => a + c.genome.length, 0) >= WASM_MIN_GENES : RL_WASM); // hidden food needs the JS sense path
+// WebAssembly kernels for an episode's sense and brain phase (false keeps the JS path). With compiled modules cached they are
+// faster for every brain size. Their f32 arithmetic differs slightly from the JS path, but each creature's result depends only
+// on its own inputs, so rewards stay deterministic per seed whatever the thread count or episode order.
+export const RL_WASM = true;
+const useWasm = (env: EnvSpec): boolean => RL_WASM && env.foodVisibleFor === undefined; // hidden food needs the JS sense path
 
 // The engine config of an env: its world on the base of the Ecosystem or The Great Hunt, no births, no structural change.
 export function envConfig(env: EnvSpec, seed: number): EcoConfig {
@@ -104,7 +101,7 @@ export function envConfig(env: EnvSpec, seed: number): EcoConfig {
   const total = env.rivals.reduce((a, r) => a + r.count, 1);
   base.eco = {
     ...base.eco,
-    wasm: false, // small worlds, and the same numbers in Node and every browser
+    wasm: useWasm(env), // f32 kernels give the same numbers in Node and every browser
     maxPopulation: total,
     foodRegrow: env.foodRegrow / per,
     foodMaxDensity: env.food / per,
@@ -238,7 +235,6 @@ export function runEpisode(
   const config = episodeConfig(env, seed);
   const placed = env.layout ? placeLayout(env.layout, env.size, env.food, env.poison, seed) : null;
   const cast = castFor(env, config, learner, seed, pool, library, placed?.start);
-  config.eco.wasm = useWasm(env, cast);
   const eco = new Ecosystem(config, null, { cast, items: placed?.items });
   const reach = 2 * config.creature.radius + 2; // bumping distance, for crediting a ram
   const ticks = Math.round(env.seconds / config.dt);
