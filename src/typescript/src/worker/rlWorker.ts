@@ -18,6 +18,7 @@ const post = (msg: RlOutMessage, transfer: Transferable[] = []): void => self.po
 let token = 0; // the current run's; a newer start or a stop ends the older loop at its next check
 let helpers: RlPool | null = null;
 let resumeGate: { wait: Promise<void>; open: () => void } | null = null; // set while paused
+let showWanted = false; // the page asked for a new show; steps run much faster than the page plays them
 let assets: Promise<{ pool: PoolEntry[] | null; library: Library }> | undefined;
 
 // Fetched once per page from the URLs of the first start; a missing library leaves the league rivals random.
@@ -55,7 +56,10 @@ async function train(msg: Extract<RlInMessage, { type: "start" }>, mine: number)
     const held = step.iter % HELD_EVERY === 0 ? await trainer.held(HELD_SEEDS) : null;
     post({ type: "iteration", it: { iter: step.iter, train: step.train, best: step.best, held: held?.mean ?? null, perEnv: held?.perEnv ?? null, seconds: (performance.now() - t0) / 1000 } });
     if (held) post({ type: "learner", iter: step.iter, learner: serialiseLearner({ plan, genome: trainer.es.theta }) });
-    await show(helpersHere, msg.envs, tiles, step.iter, step.bestGenome);
+    if (showWanted) {
+      showWanted = false;
+      await show(helpersHere, msg.envs, tiles, step.iter, step.bestGenome);
+    }
     await new Promise((done) => setTimeout(done, 0)); // let pause and stop messages in
   }
   if (token !== mine) return;
@@ -76,13 +80,15 @@ self.onmessage = (e: MessageEvent<RlInMessage>) => {
   if (msg.type === "start") {
     endRun();
     const mine = ++token;
+    showWanted = false;
     if (!msg.envs.length) return post({ type: "error", message: "choose at least one environment" });
     train(msg, mine).catch((error) => {
       if (token !== mine) return;
       post({ type: "error", message: error instanceof Error ? error.message : String(error) });
       endRun();
     });
-  } else if (msg.type === "pause" && !resumeGate) {
+  } else if (msg.type === "show") showWanted = true;
+  else if (msg.type === "pause" && !resumeGate) {
     let open = (): void => {};
     const wait = new Promise<void>((done) => (open = done));
     resumeGate = { wait, open };

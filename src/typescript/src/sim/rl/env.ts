@@ -42,7 +42,9 @@ export interface EnvSpec {
   foodRegrow: number; // items per second, up to food
   seconds: number; // episode length; it ends early when the learner dies
   rivals: Rivals[];
-  reward: { food?: number; kill?: number; survive?: number; energy?: number }; // per item, per kill, per second alive, x energy signal at the end
+  // Per item, per kill, per second alive, x energy signal at the end, and per second left when the learner clears the food
+  // (without regrowth the episode then ends early, the learner counting as alive to the end).
+  reward: { food?: number; kill?: number; survive?: number; energy?: number; fast?: number };
   tags: string[];
 }
 
@@ -164,6 +166,7 @@ export function runEpisode(
     out.kills = m.kills;
     out.energy = 0;
   };
+  let cleared = 0; // seconds left when the food ran out
   for (let t = 0; t < ticks; t++) {
     eco.step();
     onTick?.(eco);
@@ -173,10 +176,15 @@ export function runEpisode(
     out.kills = me.kills;
     out.energy = me.creature.state.energy;
     out.seconds = (t + 1) * config.dt;
+    if (eco.food === 0 && env.foodRegrow === 0) {
+      cleared = env.seconds - out.seconds;
+      out.seconds = env.seconds;
+      break;
+    }
   }
   const w = env.reward;
   const startEnergy = speciesList(config)[env.role]!.startEnergy;
-  out.reward = (w.food ?? 0) * out.food + (w.kill ?? 0) * out.kills + (w.survive ?? 0) * out.seconds + (w.energy ?? 0) * energySignal(out.energy, startEnergy);
+  out.reward = (w.food ?? 0) * out.food + (w.kill ?? 0) * out.kills + (w.survive ?? 0) * out.seconds + (w.energy ?? 0) * energySignal(out.energy, startEnergy) + (w.fast ?? 0) * cleared;
   return out;
 }
 
@@ -219,7 +227,7 @@ export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | s
   if (rivals.reduce((a, r) => a + r.count, 0) > L.rivals[1]) return `at most ${L.rivals[1]} rivals`;
   const w = (v.reward ?? {}) as Record<string, unknown>;
   const reward: EnvSpec["reward"] = {};
-  for (const k of ["food", "kill", "survive", "energy"] as const) {
+  for (const k of ["food", "kill", "survive", "energy", "fast"] as const) {
     if (w[k] === undefined) continue;
     if (!n(w[k], L.weight)) return `reward ${k} must be ${L.weight[0]} to ${L.weight[1]}`;
     reward[k] = w[k] as number;

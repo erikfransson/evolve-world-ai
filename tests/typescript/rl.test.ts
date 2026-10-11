@@ -169,3 +169,12 @@ describe("episode reward", () => {
     expect(r.reward).toBeCloseTo(0.1 * r.seconds, 9);
   });
 });
+
+describe("cleared boxes", () => {
+  it("end the episode once the food is gone and pay the seconds left", () => {
+    const env: EnvSpec = { ...envById("nibble")!, food: 0, poison: 2 }; // nothing to find, so cleared after the first tick
+    const r = runEpisode(env, randomLearner(env, 1), 4);
+    expect(r.seconds).toBe(env.seconds);
+    expect(r.reward).toBeCloseTo(0.1 * (env.seconds - 1 / 30), 9);
+  });
+});

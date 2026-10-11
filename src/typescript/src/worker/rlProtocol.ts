@@ -23,6 +23,7 @@ export type RlInMessage =
       poolUrl: string;
       libraryUrl: string;
     }
+  | { type: "show" } // record the latest best candidate at the next step's end (the page asks when its tiles finished playing)
   | { type: "pause" }
   | { type: "resume" }
   | { type: "stop" };
