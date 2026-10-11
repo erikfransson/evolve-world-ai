@@ -25,9 +25,9 @@ export interface EcoPreset extends PresetInfo {
 const TRIALS_BASE: World = { width: 2300, height: 1400, foodDensity: 0.7, poisonDensity: 0.1, respawn: false, itemRadius: 4, foodEnergy: 20, poisonDamage: POISON_LETHAL, poisonClearRadius: 150 };
 
 export const TRIALS_PRESETS: readonly TrialsPreset[] = [
-  { id: "normal", name: "Normal", description: "A wide world with plenty of food and a little poison.", world: TRIALS_BASE },
-  { id: "poison", name: "Poison everywhere", description: "Three times the usual poison. Every careless bite is the last.", world: { ...TRIALS_BASE, poisonDensity: 0.3 } },
-  { id: "starvation", name: "Starvation", description: "Little food, spread thin. Brutal with short sight, so give your creatures long vision.", world: { ...TRIALS_BASE, foodDensity: 0.25, foodEnergy: 35 } },
+  { id: "normal", name: "Normal", description: "A wide world with plenty of food and a little poison.", world: { ...TRIALS_BASE, foodDensity: 0.8, poisonDensity: 0.15 } },
+  { id: "poison", name: "Poison everywhere", description: "More than twice the usual poison and extra food to cross it. Every careless bite is the last.", world: { ...TRIALS_BASE, foodDensity: 1, poisonDensity: 0.35 } },
+  { id: "starvation", name: "Starvation", description: "Little food, spread thin. Brutal with short sight, so give your creatures long vision.", world: { ...TRIALS_BASE, foodDensity: 0.25, foodEnergy: 50 } },
   { id: "giants", name: "Sparse giants", description: "Few, huge pieces of food and poison. Easy to see, costly to miss.", world: { ...TRIALS_BASE, foodDensity: 0.22, poisonDensity: 0.07, itemRadius: 9, foodEnergy: 60 } },
 ];
 

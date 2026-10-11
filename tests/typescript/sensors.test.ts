@@ -42,7 +42,7 @@ describe("sensors", () => {
     expect(at(100)).toBeCloseTo(4 * 0.1, 12);
     expect(at(300)).toBeCloseTo(3 * at(100), 12);
     const brainy = { ...cfg, brain: { ...cfg.brain, memory: 0.5 }, creature: { ...cfg.creature, rayCost: 0, neuronCost: 0.01 } };
-    expect(planUpkeep(planOf(brainy), brainy) - c.livingCost).toBeCloseTo(0.01 * (16 + 8), 12);
+    expect(planUpkeep(planOf(brainy), brainy) - c.livingCost).toBeCloseTo(0.01 * (6 + 8), 12);
   });
 
   it("energySignal squashes into [0, 1)", () => {

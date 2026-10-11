@@ -157,7 +157,7 @@ describe("World", () => {
     const out: RayHit = { closeness: 0, kind: HIT_NONE, energy: 0 };
     castRay(w, DEFAULT_CONFIG.world.width - 20, 500, 0, out);
     expect(out.kind).toBe(HIT_WALL);
-    expect(out.closeness).toBeCloseTo(1 - 20 / 100, 5);
+    expect(out.closeness).toBeCloseTo(1 - 20 / DEFAULT_CONFIG.creature.rayLength, 5);
   });
 
   it("ray into empty space reports nothing", () => {
