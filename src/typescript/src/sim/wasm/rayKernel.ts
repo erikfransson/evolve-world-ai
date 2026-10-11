@@ -147,6 +147,7 @@ export class WasmRayCaster {
         ray.closeness = 1 - this.resBest[at + i]! / L;
         ray.kind = HIT_CREATURE;
         ray.energy = crowd.energies[k]!;
+        ray.species = crowd.species[k]!;
       }
     }
   }
