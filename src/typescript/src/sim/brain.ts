@@ -1,11 +1,11 @@
 import type { EngineConfig } from "./config.ts";
 import { inputLayout, planOf } from "./sensors.ts";
-import type { BodyPlan } from "./sensors.ts";
+import type { PlanView } from "./sensors.ts";
 import type { Genome, Rng } from "./types.ts";
 
 // Genome layout, per layer in order: weights row-major [out][in], then biases [out].
 
-export function layerSizes(config: EngineConfig, plan: BodyPlan = planOf(config)): number[] {
+export function layerSizes(config: EngineConfig, plan: PlanView = planOf(config)): number[] {
   const layout = inputLayout(config, plan);
   return [layout.size, ...plan.hiddenLayers, layout.outputs];
 }
@@ -50,9 +50,8 @@ export function fastTanh(x: number): number {
 }
 
 export class Brain {
-  // Both change only through reshape; treat as read-only.
-  sizes: readonly number[];
-  genome: Genome; // the constructor's buffer until reshape gives the brain its own; weights and biases view it
+  private shape: readonly number[];
+  private weightsGenome: Genome; // the constructor's buffer until a reshape gives the brain its own; weights and biases view it
   // Per layer views into the genome: weights row-major [out][in], biases [out].
   readonly weights: Float32Array[] = []; // treat as read-only
   readonly biases: Float32Array[] = [];
@@ -73,25 +72,23 @@ export class Brain {
     if (genome.length !== genomeLength(sizes)) {
       throw new Error(`genome length ${genome.length} does not match expected ${genomeLength(sizes)}`);
     }
-    this.sizes = sizes.slice();
-    this.genome = genome;
+    this.shape = sizes.slice();
+    this.weightsGenome = genome;
     this.build();
   }
 
-  // Changes the layer sizes and loads genome, reusing the buffers this brain owns when they are large enough.
-  reshape(sizes: readonly number[], genome: Genome): void {
-    const length = genomeLength(sizes);
-    if (genome.length !== length) throw new Error(`genome length ${genome.length} does not match expected ${length}`);
-    this.sizes = sizes.slice();
-    this.genome = this.ownsGenome ? refit(this.genome, length) : new Float32Array(length);
-    this.ownsGenome = true;
-    this.genome.set(genome);
-    this.build();
+  get sizes(): readonly number[] {
+    return this.shape;
+  }
+
+  get genome(): Readonly<Genome> {
+    return this.weightsGenome;
   }
 
   // Lays out views and scratch for this.sizes over this.genome.
   private build(): void {
-    const { sizes, genome } = this;
+    const sizes = this.shape;
+    const genome = this.weightsGenome;
     const layers = sizes.length - 1;
     this.weights.length = this.biases.length = this.fanIn.length = this.fanOut.length = 0;
     let offset = 0;
@@ -116,10 +113,20 @@ export class Brain {
   }
 
   // Copies genome into this brain's buffer, so a brain can be reused for another creature.
-  load(genome: Genome): void {
-    if (genome.length !== this.genome.length) throw new Error(`genome length ${genome.length} does not match expected ${this.genome.length}`);
-    this.genome.set(genome);
-    this.transposeFirstLayer();
+  // When sizes differ from the current ones, the brain takes the new layout first, reusing the buffers it owns when they are large enough.
+  load(sizes: readonly number[], genome: Genome): void {
+    const length = genomeLength(sizes);
+    if (genome.length !== length) throw new Error(`genome length ${genome.length} does not match expected ${length}`);
+    if (sizes.length === this.shape.length && sizes.every((n, i) => n === this.shape[i])) {
+      this.weightsGenome.set(genome);
+      this.transposeFirstLayer();
+      return;
+    }
+    this.shape = sizes.slice();
+    this.weightsGenome = this.ownsGenome ? refit(this.weightsGenome, length) : new Float32Array(length);
+    this.ownsGenome = true;
+    this.weightsGenome.set(genome);
+    this.build();
   }
 
   private transposeFirstLayer(): void {

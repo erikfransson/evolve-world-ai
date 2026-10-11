@@ -69,7 +69,7 @@ export function nextGeneration(
   fitness: ArrayLike<number>,
   ga: GaConfig,
   rng: StatefulRng,
-  randomGenome?: (rng: StatefulRng) => Genome,
+  randomGenome: (rng: StatefulRng) => Genome,
 ): Population {
   const n = population.size;
   const next = new Population(n, population.genomeLength);
@@ -81,7 +81,7 @@ export function nextGeneration(
 
   for (let i = 0; i < eliteCount; i++) next.genome(i).set(population.genome(order[i]));
 
-  const immigrants = randomGenome ? Math.min(n - eliteCount, Math.round(ga.immigrantFraction * n)) : 0;
+  const immigrants = Math.min(n - eliteCount, Math.round(ga.immigrantFraction * n));
   const childEnd = n - immigrants;
   const bigEnd = Math.min(childEnd, eliteCount + Math.round(ga.bigMutationFraction * n));
   const std = ga.mutationStd * (isStagnant(fitness) ? STAGNATION_BOOST : 1);
@@ -106,7 +106,7 @@ export function nextGeneration(
     if (i < bigEnd) bigMutate(child, rng);
     else mutate(child, mutation, rng);
   }
-  for (let i = childEnd; i < n; i++) next.genome(i).set(randomGenome!(rng));
+  for (let i = childEnd; i < n; i++) next.genome(i).set(randomGenome(rng));
   return next;
 }
 

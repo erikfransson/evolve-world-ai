@@ -17,17 +17,18 @@ function makePop() {
 }
 
 const base = { ...DEFAULT_CONFIG.ga, eliteFraction: 0.1, parentFraction: 0.25, immigrantFraction: 0, bigMutationFraction: 0 };
+const fresh = () => Float32Array.from({ length: L }, () => 100); // marker no mutation of a normal genome reaches
 const same = (a: Float32Array, b: Float32Array) => a.length === b.length && a.every((v, i) => v === b[i]);
 
 describe("nextGeneration", () => {
   it("keeps population length", () => {
     const { pop, fitness } = makePop();
-    expect(nextGeneration(pop, fitness, base, createRng(1)).size).toBe(N);
+    expect(nextGeneration(pop, fitness, base, createRng(1), fresh).size).toBe(N);
   });
 
   it("copies the best genomes as elites", () => {
     const { pop, fitness } = makePop();
-    const out = nextGeneration(pop, fitness, base, createRng(1));
+    const out = nextGeneration(pop, fitness, base, createRng(1), fresh);
     const order = [...fitness.keys()].sort((a, b) => fitness[b] - fitness[a]);
     for (let i = 0; i < 2; i++) {
       expect(same(out.genome(i), pop.genome(order[i]))).toBe(true);
@@ -38,7 +39,7 @@ describe("nextGeneration", () => {
   it("gives non-elite children only top parents without mutation or crossover", () => {
     const { pop, fitness } = makePop();
     const ga = { ...base, selection: "truncation" as const, mutationRate: 0, crossover: false };
-    const out = nextGeneration(pop, fitness, ga, createRng(1));
+    const out = nextGeneration(pop, fitness, ga, createRng(1), fresh);
     const order = [...fitness.keys()].sort((a, b) => fitness[b] - fitness[a]);
     const top = order.slice(0, 5).map((i) => pop.genome(i));
     for (let i = 2; i < N; i++) expect(top.some((p) => same(p, out.genome(i)))).toBe(true);
@@ -48,28 +49,28 @@ describe("nextGeneration", () => {
     const { pop, fitness } = makePop();
     const popCopy = new Float32Array(pop.data);
     const fitCopy = new Float64Array(fitness);
-    nextGeneration(pop, fitness, { ...base, mutationRate: 1 }, createRng(1));
+    nextGeneration(pop, fitness, { ...base, mutationRate: 1 }, createRng(1), fresh);
     expect(same(pop.data, popCopy)).toBe(true);
     expect(Array.from(fitness)).toEqual(Array.from(fitCopy));
   });
 
   it("handles proportional selection with equal fitness", () => {
     const { pop } = makePop();
-    const out = nextGeneration(pop, new Float64Array(N).fill(3), { ...base, selection: "proportional" }, createRng(1));
+    const out = nextGeneration(pop, new Float64Array(N).fill(3), { ...base, selection: "proportional" }, createRng(1), fresh);
     expect(out.size).toBe(N);
     expect(out.data.every(Number.isFinite)).toBe(true);
   });
 
   it.each<SelectionMethod>(["truncation", "proportional"])("runs %s", (selection) => {
     const { pop, fitness } = makePop();
-    const out = nextGeneration(pop, fitness, { ...base, selection }, createRng(1));
+    const out = nextGeneration(pop, fitness, { ...base, selection }, createRng(1), fresh);
     expect(out.size).toBe(N);
     expect(out.genomeLength).toBe(L);
     expect(out.data.length).toBe(N * L);
   });
 
   it("returns an empty population for an empty one", () => {
-    expect(nextGeneration(new Population(0, L), new Float64Array(0), base, createRng(1)).size).toBe(0);
+    expect(nextGeneration(new Population(0, L), new Float64Array(0), base, createRng(1), fresh).size).toBe(0);
   });
 
   it.each<SelectionMethod>(["truncation", "proportional"])("matches the plain Rng-call breeding for %s", (selection) => {
@@ -88,7 +89,7 @@ describe("nextGeneration", () => {
       for (let g = 0; g < L; g++) if (rng.next() < 0.5) child[g] = b[g];
       for (let g = 0; g < L; g++) if (rng.next() < ga.mutationRate) child[g] += rng.normal() * ga.mutationStd;
     }
-    const out = nextGeneration(pop, fitness, ga, createRng(5));
+    const out = nextGeneration(pop, fitness, ga, createRng(5), fresh);
     expect(same(out.data, expected.data)).toBe(true);
   });
 });
@@ -110,7 +111,6 @@ describe("mutate", () => {
 });
 
 describe("immigrants and big mutations", () => {
-  const fresh = () => Float32Array.from({ length: L }, () => 100); // marker no mutation of a normal genome reaches
   const ga = { ...base, eliteFraction: 0.1, immigrantFraction: 0.2, bigMutationFraction: 0.25, mutationRate: 0, crossover: false };
 
   it("fills the immigrant share with fresh genomes after the children", () => {
@@ -139,12 +139,6 @@ describe("immigrants and big mutations", () => {
     expect(same(pop.data, copy)).toBe(true);
   });
 
-  it("skips immigrants without a genome factory", () => {
-    const { pop, fitness } = makePop();
-    const out = nextGeneration(pop, fitness, ga, createRng(1));
-    expect(out.data.some((v) => v === 100)).toBe(false);
-  });
-
   it("bigMutate flips signs and adds noise", () => {
     const child = new Float32Array(2000).fill(1);
     bigMutate(child, createRng(4));
@@ -168,7 +162,7 @@ describe("stagnation boost", () => {
     const { pop } = makePop();
     const ga = { ...base, mutationRate: 1, mutationStd: 0.1, crossover: false };
     const drift = (fitness: Float64Array) => {
-      const out = nextGeneration(pop, fitness, ga, createRng(2));
+      const out = nextGeneration(pop, fitness, ga, createRng(2), fresh);
       let sum = 0; // distance of each child to its nearest parent
       for (let i = 2; i < N; i++) {
         let best = Infinity;

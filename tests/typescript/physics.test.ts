@@ -89,7 +89,7 @@ describe("stepBody", () => {
   const config = { ...DEFAULT_CONFIG, world: { ...DEFAULT_CONFIG.world, width: 4000, height: 4000 } };
   const k = decaysFor(config);
   const state = (vx: number): CreatureState => ({ x: 2000, y: 2000, heading: 0, vx, vy: 0, turnRate: 0, energy: 50, alive: true, ticksAlive: 0 });
-  const step = (s: CreatureState, thrust: number) => stepBody(s, 0, thrust, config, k, { cos: 1, sin: 0 });
+  const step = (s: CreatureState, thrust: number) => stepBody(s, 0, thrust, config, k, { cos: 1, sin: 0 }, config.creature.livingCost);
 
   it("negative thrust brakes harder than coasting", () => {
     const coast = state(80);

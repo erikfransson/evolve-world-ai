@@ -14,6 +14,9 @@ export interface BodyPlan {
   memoryLong: number; // at brain.longRate
 }
 
+// A plan that callers may read but not change.
+export type PlanView = Readonly<Omit<BodyPlan, "hiddenLayers">> & { readonly hiddenLayers: readonly number[] };
+
 // The plan a config describes; Trials uses it for every creature.
 export function planOf(config: EngineConfig): BodyPlan {
   const { rayCount, raySpread, rayLength } = config.creature;
@@ -22,7 +25,7 @@ export function planOf(config: EngineConfig): BodyPlan {
 }
 
 // Copies from into to without allocating.
-export function copyPlan(from: BodyPlan, to: BodyPlan): void {
+export function copyPlan(from: PlanView, to: BodyPlan): void {
   to.rayCount = from.rayCount;
   to.raySpread = from.raySpread;
   to.rayLength = from.rayLength;
@@ -30,14 +33,6 @@ export function copyPlan(from: BodyPlan, to: BodyPlan): void {
   for (let i = 0; i < from.hiddenLayers.length; i++) to.hiddenLayers[i] = from.hiddenLayers[i]!;
   to.memoryShort = from.memoryShort;
   to.memoryLong = from.memoryLong;
-}
-
-// True when both plans give the same brain layer sizes.
-export function sameShape(a: BodyPlan, b: BodyPlan): boolean {
-  if (a.rayCount !== b.rayCount || a.memoryShort !== b.memoryShort || a.memoryLong !== b.memoryLong) return false;
-  if (a.hiddenLayers.length !== b.hiddenLayers.length) return false;
-  for (let i = 0; i < a.hiddenLayers.length; i++) if (a.hiddenLayers[i] !== b.hiddenLayers[i]) return false;
-  return true;
 }
 
 // Brain input layout: per ray these features, then the extras, then the memory units (short first). inputLayout picks the ray features for a config.
@@ -75,7 +70,7 @@ export interface InputLayout {
 const rayFeatureLabels = (config: EngineConfig): readonly string[] =>
   config.creature.seesCreatures ? CREATURE_RAY_FEATURE_LABELS : RAY_FEATURE_LABELS;
 
-export function inputLayout(config: EngineConfig, plan: BodyPlan = planOf(config)): InputLayout {
+export function inputLayout(config: EngineConfig, plan: PlanView = planOf(config)): InputLayout {
   const labels = rayFeatureLabels(config);
   const rays = plan.rayCount;
   const { memoryShort, memoryLong } = plan;
@@ -106,7 +101,7 @@ export function thrustCommand(out: number, brakeThreshold: number): number {
 }
 
 // Energy per second a creature of this plan pays besides thrust and turning: living, sensing and neurons.
-export function planUpkeep(plan: BodyPlan, config: EngineConfig): number {
+export function planUpkeep(plan: PlanView, config: EngineConfig): number {
   const c = config.creature;
   let neurons = plan.memoryShort + plan.memoryLong;
   for (const n of plan.hiddenLayers) neurons += n;
