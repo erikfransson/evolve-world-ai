@@ -3,6 +3,24 @@
 [![Test and deploy](https://github.com/erikfransson/evolve-world-ai/actions/workflows/deploy.yml/badge.svg)](https://github.com/erikfransson/evolve-world-ai/actions/workflows/deploy.yml)
 [![Coverage](https://img.shields.io/endpoint?url=https://erikfransson.github.io/evolve-world-ai/coverage/badge.json)](https://erikfransson.github.io/evolve-world-ai/coverage/)
 
+**[Open Evolve World →](https://erikfransson.github.io/evolve-world-ai/)**
+
+Creatures with small neural-network brains evolve in your browser: press Start and watch them learn to find food, dodge, hunt and share a world.
+
+<table>
+  <tr>
+    <td align="center" colspan="2"><a href="https://erikfransson.github.io/evolve-world-ai/live/"><img src="docs/media/live.gif" width="320" alt="Live World"></a><br><a href="https://erikfransson.github.io/evolve-world-ai/live/"><b>Live World</b></a></td>
+  </tr>
+  <tr>
+    <td align="center"><a href="https://erikfransson.github.io/evolve-world-ai/trials/"><img src="docs/media/trials.gif" width="300" alt="Trials"></a><br><a href="https://erikfransson.github.io/evolve-world-ai/trials/"><b>Trials</b></a></td>
+    <td align="center"><a href="https://erikfransson.github.io/evolve-world-ai/arena/"><img src="docs/media/arena.gif" width="300" alt="RL Arena"></a><br><a href="https://erikfransson.github.io/evolve-world-ai/arena/"><b>RL Arena</b></a></td>
+  </tr>
+  <tr>
+    <td align="center"><a href="https://erikfransson.github.io/evolve-world-ai/ecosystem/"><img src="docs/media/ecosystem.gif" width="300" alt="Ecosystem"></a><br><a href="https://erikfransson.github.io/evolve-world-ai/ecosystem/"><b>Ecosystem</b></a></td>
+    <td align="center"><a href="https://erikfransson.github.io/evolve-world-ai/predators/"><img src="docs/media/predators.gif" width="300" alt="The Great Hunt"></a><br><a href="https://erikfransson.github.io/evolve-world-ai/predators/"><b>The Great Hunt</b></a></td>
+  </tr>
+</table>
+
 ## Repo structure
 * `src/typescript/` web app and simulation (Vite + TypeScript), one HTML page per mode
   * `index.html` landing page, `trials/`, `ecosystem/` and `predators/` (The Great Hunt, the Ecosystem page script in predators mode), `arena/` (RL Arena: design, train and watch creatures), `live/` placeholder
@@ -22,4 +40,3 @@
 A live evolution simulation that runs in the browser: press Start and watch creatures evolve.
 The same TypeScript simulation also runs headless (Node) for batch runs, to be analysed in Python (planned).
 
-Live page: https://erikfransson.github.io/evolve-world-ai/ (GitHub Pages, rebuilt on every push to `main`).
