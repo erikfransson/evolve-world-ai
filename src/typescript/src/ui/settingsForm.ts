@@ -72,13 +72,22 @@ const getFields = (): readonly Field[] => (fields ??= buildFields());
 
 // The chosen preset's world also covers values the form has no field for (item size and energy, poison-free start radius).
 let presetId = "";
-export const setFormPreset = (id: string): void => { presetId = id; };
+// World values without a form field; Custom keeps those of the last preset so its world stays consistent.
+let hiddenWorld = pickHidden(DEFAULT_CONFIG.world);
+function pickHidden(w: SimConfig["world"]): Pick<SimConfig["world"], "itemRadius" | "foodEnergy" | "poisonClearRadius"> {
+  return { itemRadius: w.itemRadius, foodEnergy: w.foodEnergy, poisonClearRadius: w.poisonClearRadius };
+}
+export const setFormPreset = (id: string): void => {
+  presetId = id;
+  const preset = trialsPreset(id);
+  if (preset) hiddenWorld = pickHidden(preset.world);
+};
 
 export function readConfig(): SimConfig {
   const c = structuredClone(DEFAULT_CONFIG);
   for (const f of getFields()) f.read(c);
   const preset = trialsPreset(presetId);
-  if (preset) c.world = { ...preset.world };
+  c.world = preset ? { ...preset.world } : { ...c.world, ...hiddenWorld };
   return c;
 }
 

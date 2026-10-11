@@ -172,6 +172,14 @@ describe("Trials preset panel", () => {
     expectOnSteps();
   });
 
+  it("Custom after a preset keeps that preset's hidden world values", () => {
+    pick("giants");
+    pick(CUSTOM);
+    const c = readConfig();
+    const giants = TRIALS_PRESETS[3]!.world;
+    expect([c.world.itemRadius, c.world.foodEnergy, c.world.foodDensity]).toEqual([giants.itemRadius, giants.foodEnergy, giants.foodDensity]);
+  });
+
   it("keeps world values the form has no field for", () => {
     pick("giants");
     expect(readConfig().world).toEqual(TRIALS_PRESETS[3]!.world);

@@ -203,7 +203,7 @@ function onMessage(e: MessageEvent<OutMessage>): void {
 
 // The run's best survival time so far goes on the preset's Top 3 as it improves.
 function recordScore(seconds: number): void {
-  if (runPreset === CUSTOM) return;
+  if (runPreset === CUSTOM || seconds <= 0) return;
   if (board.submit(runPreset, { run: runKey, score: seconds, date: runDate, settings: settingsOf(run.config) })) presets.refresh();
 }
 
