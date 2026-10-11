@@ -143,7 +143,7 @@ export class Creature {
   }
 
   // Senses, then runs the brain on the result, without changing body or memory: writes rays and outputs only.
-  // The per-creature work helper threads run (see ecoShare.ts); keep it behind this one call.
+  // Ecosystem ticks reach it only through senseThinkBatch.
   senseThink(world: World, crowd: Crowd, self: number): void {
     this.sense(world, crowd, self);
     this.decide();
@@ -205,4 +205,33 @@ export class Creature {
     settle(this.state);
     return eaten;
   }
+}
+
+// Creatures to sense and think for in one tick: creatures[k] sits at crowd index selves[k], k < count. Reused across ticks.
+export class SenseBatch {
+  readonly creatures: Creature[] = [];
+  selves = new Int32Array(64);
+  count = 0;
+
+  clear(): void {
+    this.count = 0;
+  }
+
+  add(creature: Creature, self: number): void {
+    const k = this.count++;
+    if (k === this.selves.length) {
+      const grown = new Int32Array(2 * k);
+      grown.set(this.selves);
+      this.selves = grown;
+    }
+    this.creatures[k] = creature;
+    this.selves[k] = self;
+  }
+}
+
+// Sense and think for a whole batch; writes only each creature's rays and outputs. The one boundary for the per-tick
+// creature work, used by Ecosystem.sensePhase and the helper threads (ecoShare.ts); faster kernels replace its body.
+export function senseThinkBatch(world: World, crowd: Crowd, batch: SenseBatch): void {
+  const { creatures, selves } = batch;
+  for (let k = 0; k < batch.count; k++) creatures[k]!.senseThink(world, crowd, selves[k]!);
 }

@@ -1,6 +1,6 @@
 import { genomeLength, layerSizes, randomGenome, refit } from "./brain.ts";
 import { itemCounts, itemsPerDensity } from "./config.ts";
-import { Creature } from "./creature.ts";
+import { Creature, SenseBatch, senseThinkBatch } from "./creature.ts";
 import { Crowd } from "./crowd.ts";
 import type { EcoConfig } from "./ecoConfig.ts";
 import { mutate } from "./ga.ts";
@@ -88,6 +88,7 @@ export class Ecosystem {
 
   private readonly items: World;
   private readonly crowd: Crowd;
+  private readonly batch = new SenseBatch();
   private readonly states: CreatureState[] = [];
   private readonly byId = new Map<number, EcoCreature>();
   private readonly spare: EcoCreature[] = [];
@@ -202,7 +203,15 @@ export class Ecosystem {
 
   // Phase 1a for members start .. end-1, after prepareTick: sense and think into each creature's outputs.
   sensePhase(start: number, end: number): void {
-    for (let i = start; i < end; i++) this.members[i].creature.senseThink(this.items, this.crowd, i);
+    const batch = this.batch;
+    batch.clear();
+    for (let i = start; i < end; i++) batch.add(this.members[i].creature, i);
+    this.senseBatch(batch);
+  }
+
+  // Phase 1a for a batch of members, each at its list index, after prepareTick.
+  senseBatch(batch: SenseBatch): void {
+    senseThinkBatch(this.items, this.crowd, batch);
   }
 
   // Phase 1b and 2, once every creature has its outputs (from sensePhase or helper threads): memory and motion, then sharedPhase.

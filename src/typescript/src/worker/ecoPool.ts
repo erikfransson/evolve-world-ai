@@ -1,10 +1,10 @@
 import type { EngineConfig } from "../sim/config.ts";
 import type { Ecosystem } from "../sim/ecosystem.ts";
-import { ShareCoordinator, ShareHelper, grownCaps, packetBytes, packetViews } from "../sim/ecoShare.ts";
+import { ShareCoordinator, ShareHelper, fittedCaps, packetBytes, packetViews, publishedBytes } from "../sim/ecoShare.ts";
 import type { Caps, Packet } from "../sim/ecoShare.ts";
 
 // Helper threads for one Ecosystem run (see ecoShare.ts), over message passing or shared memory.
-// Fork-join: each tick every helper gets its own copy of the packet by transfer and hands it back with its outputs.
+// Fork-join: each tick every helper gets a copy of the coordinator's packet by transfer and hands it back with its outputs.
 // Shared: one SharedArrayBuffer packet, and an epoch counter and a done counter as barriers (Atomics); no messages per tick.
 
 export type HelperIn =
@@ -43,11 +43,12 @@ export function canShare(scope: { crossOriginIsolated?: boolean } = globalThis, 
 
 export class ThinkPool {
   readonly shared: boolean;
-  watch: number | null = null; // id of a creature the coordinator also senses itself, so its rays and inputs are fresh for the page
+  watch: number | null = null; // id of a creature the coordinator senses even when a helper owns it, so its rays and inputs are fresh for the page
   private readonly ports: HelperPort[];
   private coordinator: ShareCoordinator;
   private caps: Caps | null = null;
-  private packets: Packet[] = [];
+  private home: Packet | null = null; // the coordinator's packet: published here, read by senseOwn and collect
+  private packets: Packet[] = []; // helper h's packet; all home when shared
   private readonly control: Int32Array | null;
   private waiting: { count: number; resolve: () => void; reject: (e: unknown) => void } | null = null;
   private broken: unknown = null;
@@ -78,6 +79,7 @@ export class ThinkPool {
     if (this.broken) return Promise.reject(this.broken);
     this.coordinator = new ShareCoordinator(this.ports.length);
     this.caps = null;
+    this.home = null;
     this.packets = [];
     const control = this.control?.buffer as SharedArrayBuffer | undefined;
     const done = this.expect();
@@ -89,7 +91,7 @@ export class ThinkPool {
   // Returns a promise when the tick waits for messages (always in fork-join, when the packet grows in shared mode).
   step(eco: Ecosystem): void | Promise<void> {
     if (this.broken) throw this.broken;
-    const caps = grownCaps(this.caps, this.coordinator.need(eco));
+    const caps = fittedCaps(this.caps, this.coordinator.need(eco));
     if (caps) return this.resize(caps).then(() => this.tick(eco));
     return this.tick(eco);
   }
@@ -102,11 +104,13 @@ export class ThinkPool {
     this.caps = caps;
     const bytes = packetBytes(caps);
     if (!this.shared) {
+      this.home = packetViews(new ArrayBuffer(bytes), caps);
       this.packets = this.ports.map(() => packetViews(new ArrayBuffer(bytes), caps));
       return Promise.resolve();
     }
     const packet = new SharedArrayBuffer(bytes);
     const views = packetViews(packet, caps);
+    this.home = views;
     this.packets = this.ports.map(() => views);
     const done = this.expect();
     for (const port of this.ports) port.post({ type: "packet", packet });
@@ -114,14 +118,14 @@ export class ThinkPool {
   }
 
   private tick(eco: Ecosystem): void | Promise<void> {
-    const first = this.packets[0]!;
-    this.coordinator.publish(eco, first);
+    const home = this.home!;
+    this.coordinator.publish(eco, home);
     if (this.shared) {
       const control = this.control!;
       Atomics.store(control, C_DONE, 0);
       Atomics.add(control, C_EPOCH, 1);
       Atomics.notify(control, C_EPOCH);
-      this.senseWatched(eco);
+      this.senseOwn(eco);
       const n = this.ports.length;
       for (let done = Atomics.load(control, C_DONE); done < n; done = Atomics.load(control, C_DONE)) {
         if (Atomics.wait(control, C_DONE, done, WAIT_MS) === "timed-out") this.fail(new Error("helper threads stopped answering"));
@@ -134,32 +138,26 @@ export class ThinkPool {
       this.finish(eco);
       return;
     }
-    const state = new Uint8Array(first.buffer, 0, first.outputAt);
-    for (let h = 1; h < this.packets.length; h++) new Uint8Array(this.packets[h]!.buffer, 0, first.outputAt).set(state);
+    const state = new Uint8Array(home.buffer, 0, publishedBytes(home));
+    for (const p of this.packets) new Uint8Array(p.buffer).set(state);
     const done = this.expect();
     this.ports.forEach((port, h) => {
       const buffer = this.packets[h]!.buffer as ArrayBuffer;
       port.post({ type: "tick", buffer }, [buffer]);
     });
-    this.senseWatched(eco);
+    this.senseOwn(eco);
     return done.then(() => this.finish(eco));
   }
 
   private finish(eco: Ecosystem): void {
-    this.coordinator.collect(eco, this.packets);
+    this.coordinator.collect(eco, this.home!, this.packets);
     eco.finishTick();
   }
 
-  // Runs the watched creature on this thread as well (same outputs), so its rays and brain inputs are current.
-  private senseWatched(eco: Ecosystem): void {
-    if (this.watch === null) return;
-    const members = eco.members;
-    for (let i = 0; i < members.length; i++) {
-      if (members[i]!.id !== this.watch) continue;
-      eco.prepareTick();
-      eco.sensePhase(i, i + 1);
-      return;
-    }
+  // The coordinator's own share, while the helpers run theirs.
+  private senseOwn(eco: Ecosystem): void {
+    eco.prepareTick();
+    this.coordinator.senseOwn(eco, this.home!, this.watch);
   }
 
   // A promise for one reply from every helper.

@@ -27,6 +27,10 @@ const BRAIN_INTERVAL_MS = 25;
 const ZOOM_STEP = 1.6;
 // public/pool.json sits at the site root, one level above this page; resolved here since the worker's own URL differs in dev and build.
 const POOL_URL = new URL("../pool.json", document.baseURI).href;
+// Overrides for testing: ?threads=N helper threads (0 runs on one thread), ?shared=0 keeps helpers on messages.
+const params = new URLSearchParams(location.search);
+const THREADS = params.has("threads") ? Math.max(0, Math.floor(Number(params.get("threads"))) || 0) : undefined;
+const SHARED = params.get("shared") !== "0";
 
 interface Live {
   msg: EcoSnapshot;
@@ -175,7 +179,7 @@ function startRun(c: EcoConfig): void {
   highlight = -1;
   view.setStats(null);
   view.setNote(null);
-  send({ type: "start", config: c, run, poolUrl: POOL_URL });
+  send({ type: "start", config: c, run, poolUrl: POOL_URL, threads: THREADS, shared: SHARED });
   send({ type: "speed", speed: view.speed() });
 }
 
