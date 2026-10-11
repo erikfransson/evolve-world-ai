@@ -151,6 +151,7 @@ async function startRenderWorker(): Promise<void> {
   const offscreen = view.canvas.transferControlToOffscreen();
   const channel = new MessageChannel();
   w.postMessage({ type: "init", canvas: offscreen, port: channel.port1 } satisfies RenderInMessage, [offscreen, channel.port1]);
+  // Any uncaught error stops worker drawing for good, even though the worker might survive it; a page note is safer than a half-drawn world.
   w.onerror = (e) => {
     renderDead = true;
     view.setNote(`Drawing stopped: ${e.message}`);
@@ -338,7 +339,7 @@ function startRun(c: EcoConfig): void {
 function createWorker(): Worker {
   const w = new Worker(new URL("./worker/ecoWorker.ts", import.meta.url), { type: "module" });
   w.onmessage = onSnapshot;
-  if (pendingPort) {
+  if (pendingPort && !renderDead) {
     w.postMessage({ type: "renderPort", port: pendingPort }, [pendingPort]);
     pendingPort = null;
   }
