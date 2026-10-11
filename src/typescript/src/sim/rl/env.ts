@@ -91,17 +91,22 @@ export function envConfig(env: EnvSpec, seed: number): EcoConfig {
 }
 
 const converted: Record<EnvWorld, WeakMap<PoolEntry, Learner>> = { ecosystem: new WeakMap(), hunt: new WeakMap() };
+const layouts: Partial<Record<EnvWorld, EcoConfig>> = {}; // per world, for plans and genome layouts only; the seed does not matter, so treat as read only
+
+function layoutConfig(world: EnvWorld): EcoConfig {
+  return (layouts[world] ??= envConfig({ ...BLANK_ENV, world }, 1));
+}
 
 // The pool founder's genome in the env world's layout; converted once per entry and world, so treat the result as read only.
 export function poolLearner(env: Pick<EnvSpec, "world">, entry: PoolEntry): Learner {
   let l = converted[env.world].get(entry);
-  if (!l) converted[env.world].set(entry, (l = { plan: entry.plan, genome: trialsToEcoGenome(entry.plan, entry.genome, envConfig({ ...BLANK_ENV, world: env.world }, 1)) }));
+  if (!l) converted[env.world].set(entry, (l = { plan: entry.plan, genome: trialsToEcoGenome(entry.plan, entry.genome, layoutConfig(env.world)) }));
   return l;
 }
 
 // A random plan within the species' ranges and a random genome for it.
 export function randomLearner(env: Pick<EnvSpec, "world" | "role">, seed: number): Learner {
-  const config = envConfig({ ...BLANK_ENV, world: env.world }, seed);
+  const config = layoutConfig(env.world);
   const rng = createRng(deriveSeed(seed, 0x1ea7));
   const plan: BodyPlan = planOf(config);
   randomPlan(speciesRanges(config, speciesList(config)[env.role]!), rng, plan);
