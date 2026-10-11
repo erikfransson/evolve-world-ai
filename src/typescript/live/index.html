@@ -8,7 +8,6 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" crossorigin />
-    <link rel="stylesheet" href="../src/base.css" />
   </head>
   <body>
     <header class="banner">
@@ -19,10 +18,45 @@
       </svg>
       <h1>Live World</h1>
     </header>
-    <main class="stub">
-      <h2>Live World is coming soon</h2>
-      <p>A persistent world that keeps evolving, whether or not you are watching.</p>
-      <a class="btn" href="../">Back to the start page</a>
+    <main class="layout live">
+      <section class="stage">
+        <canvas id="view" tabindex="0" aria-label="The live world. Drag to pan, scroll or pinch to zoom, click a creature to follow it, arrow keys pan, plus and minus zoom, 0 fits the world."></canvas>
+        <div id="chip" class="chip" data-state="connecting" role="status" aria-live="polite"><i></i><span id="chipText">Connecting</span></div>
+        <div class="zoom" role="group" aria-label="Zoom">
+          <button id="zoomIn" type="button" aria-label="Zoom in" title="Zoom in">+</button>
+          <button id="zoomOut" type="button" aria-label="Zoom out" title="Zoom out">−</button>
+          <button id="zoomFit" type="button" aria-label="Fit world to view" title="Fit world to view">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" /></svg>
+          </button>
+        </div>
+        <section id="selectedCard" class="ov ov-pick" hidden>
+          <header class="ov-head"><h2>Following</h2></header>
+          <div class="pick-body">
+            <div class="sel-energy"><div class="meter" role="meter" id="selMeter" aria-label="Energy" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="selFill"></span></div><span id="selEnergy" class="sel-energy-val">-</span></div>
+            <p class="pick-facts"><span>Age <b id="selAge">-</b></span><span>Id <b id="selId">-</b></span></p>
+            <div class="sel-actions">
+              <button id="family" class="secondary" type="button" aria-pressed="false" title="Highlight this creature's family in the world">Highlight family</button>
+              <button id="release" class="secondary" type="button">Release</button>
+            </div>
+          </div>
+        </section>
+        <dl class="strip" aria-label="World statistics">
+          <div><dt>Creatures</dt><dd id="stPop">-</dd></div>
+          <div><dt>Births</dt><dd id="stBirths">-</dd></div>
+          <div><dt>Deaths</dt><dd id="stDeaths">-</dd></div>
+          <div><dt>Watching</dt><dd id="stViewers">-</dd></div>
+          <div><dt>Speed</dt><dd id="stSpeed">-</dd></div>
+          <div><dt>Uptime</dt><dd id="stUptime">-</dd></div>
+        </dl>
+        <div id="offline" class="scrim" hidden>
+          <div class="dialog" role="alertdialog" aria-labelledby="offlineTitle">
+            <h2 id="offlineTitle">World offline</h2>
+            <p id="offlineText">The world server is offline right now. The world pauses with it and picks up again when it is back.</p>
+            <p id="offlineRetry" class="retry"></p>
+          </div>
+        </div>
+      </section>
     </main>
+    <script type="module" src="../src/live.ts"></script>
   </body>
 </html>

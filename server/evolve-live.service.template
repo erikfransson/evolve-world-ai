@@ -1,0 +1,55 @@
+# Template systemd user unit. Replace @REPO@ (the checkout), @STATE@ (the state dir, best outside the checkout) and @NODE@ (a node >= 22.18 install dir),
+# keep the filled copy out of this repo. @STATE@ must exist before start (mkdir -m 700): BindPaths needs it before the sandbox starts.
+# Put only the public port behind a tunnel; the admin port stays on loopback.
+[Unit]
+Description=Evolve World live server
+After=network-online.target
+# Stop restarting after 5 failures in 5 minutes, so a bad save or build cannot crash-loop.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+WorkingDirectory=@REPO@/server
+Environment=LIVE_STATE_DIR=@STATE@
+ExecStart=@NODE@/bin/node --max-old-space-size=768 src/main.ts
+Nice=19
+CPUSchedulingPolicy=idle
+IOSchedulingClass=idle
+MemoryMax=1G
+MemorySwapMax=0
+LimitNOFILE=4096
+TimeoutStopSec=60
+# Only applies if the cpu controller is delegated to the user manager; Nice and idle scheduling are the real limit.
+CPUQuota=50%
+TasksMax=64
+Restart=on-failure
+RestartSec=5
+
+# Sandbox. Home is hidden except the repo (read-only), node, and the state dir.
+# Checked under systemd 249 --user: no X11, D-Bus or ibus sockets (no AF_UNIX), empty /dev/shm, no SysV shared memory, home and checkout unwritable.
+PrivateUsers=yes
+ProtectHome=tmpfs
+BindReadOnlyPaths=@REPO@ @NODE@
+BindPaths=@STATE@
+ProtectSystem=strict
+PrivateTmp=yes
+NoNewPrivileges=yes
+RestrictAddressFamilies=AF_INET AF_INET6
+# IPAddressDeny= would block outbound internet, but a user manager cannot load the BPF filter and ignores it ("not running as root"),
+# so it is left out; outbound connections are possible from the service.
+# No access to the desktop session's shared memory or IPC.
+PrivateIPC=yes
+TemporaryFileSystem=/dev/shm
+RestrictRealtime=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+ProcSubset=pid
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+SystemCallArchitectures=native
+LockPersonality=yes
+RestrictNamespaces=yes
+UMask=0077
+
+[Install]
+WantedBy=default.target

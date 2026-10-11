@@ -14,6 +14,8 @@ import type { StatefulRng } from "./rng.ts";
 import { copyPlan, inputLayout, planOf } from "./sensors.ts";
 import type { BodyPlan, PlanView } from "./sensors.ts";
 import { Lineages } from "./lineages.ts";
+import { checkRetune } from "./retune.ts";
+import type { RetunePatch, RetuneResult } from "./retune.ts";
 import type { Lineage } from "./lineages.ts";
 import { trialsToEcoGenome } from "./seedPool.ts";
 import type { PoolEntry } from "./seedPool.ts";
@@ -23,6 +25,7 @@ import { HIT_FOOD, HIT_NONE, HIT_POISON } from "./types.ts";
 import type { CreatureState, Genome, HitKind, WorldView } from "./types.ts";
 import { World } from "./world.ts";
 import { SenseKernels } from "./wasm/senseKernels.ts";
+import { PLAN_LIMITS } from "./rl/validate.ts";
 
 export type { Lineage } from "./lineages.ts";
 
@@ -95,6 +98,46 @@ export interface SpeciesCount {
   eaten: number;
 }
 
+// Limits of a runtime insert (insertCreature): the plan limits of a creature file (rl/validate.ts), so an uploaded creature is never bigger than one the Arena makes.
+export const MAX_INSERT_RAYS = PLAN_LIMITS.rayCount[1];
+export const MAX_INSERT_RAY_LENGTH = 2000;
+export const MAX_INSERT_MEMORY = PLAN_LIMITS.memory[1];
+export const MAX_INSERT_LAYERS = PLAN_LIMITS.layers[1];
+export const MAX_INSERT_NEURONS = PLAN_LIMITS.neurons[1];
+export const MAX_INSERT_ENERGY = 100000;
+export const MAX_NAME_LENGTH = 24;
+
+export interface InsertSpec {
+  genome: ArrayLike<number>; // sized for plan
+  plan: PlanView;
+  species?: number; // default 0
+  x: number;
+  y: number;
+  hue: number; // degrees
+  name: string; // short tag of the new lineage
+  heading?: number; // default 0
+  energy?: number; // default the species' start energy
+  birth?: Partial<BirthTraits>; // a missing trait takes the middle of the species' range (log scale, linear for a range from 0); all are clamped into the range
+}
+export type InsertResult = { ok: true; id: number } | { ok: false; reason: string };
+
+// Scalars of a run for saveState (ecoState.ts).
+export interface EcoCore {
+  tick: number; births: number; deaths: number; foodEaten: number; poisonEaten: number; food: number; poison: number;
+  rngState: number; foodDue: number; poisonDue: number; nextId: number; founders: number; poolFounders: number; itemCapacity: number;
+  counts: SpeciesCount[];
+}
+
+// Everything restoreMember needs of one creature.
+export interface MemberRecord {
+  id: number; parentId: number; depth: number; birthTick: number; children: number; eaten: number; kills: number; species: number; hue: number;
+  founderId: number; lastBirthTick: number; birthEnergy: number; birthCost: number; birthCooldown: number; cooldownTicks: number;
+  x: number; y: number; heading: number; vx: number; vy: number; turnRate: number; energy: number; ticksAlive: number; cos: number; sin: number;
+  plan: PlanView; genome: Float32Array; memory: ArrayLike<number>;
+}
+
+const middle = (r: readonly number[]): number => (r[0]! > 0 ? Math.sqrt(r[0]! * r[1]!) : (r[0]! + r[1]!) / 2);
+
 export interface EcoJournal {
   born: number[];
   died: number[];
@@ -150,10 +193,10 @@ export class Ecosystem {
   private readonly childPlan: BodyPlan;
   private childGenome = new Float32Array(0);
   private remapped = new Float32Array(0);
-  private readonly foodCap: number;
-  private readonly poisonCap: number;
-  private readonly foodPerTick: number;
-  private readonly poisonPerTick: number;
+  private foodCap: number;
+  private poisonCap: number;
+  private foodPerTick: number;
+  private poisonPerTick: number;
   private foodDue = 0; // fractional items accumulated by regrowth
   private poisonDue = 0;
   private nextId = 0;
@@ -161,13 +204,15 @@ export class Ecosystem {
   private spent = false; // a parent gave its last energy to a child this tick
   private readonly traits: BirthTraits = { energy: 0, cost: 0, cooldown: 0 }; // scratch of one birth
   private readonly lineages: Lineages;
-  private readonly aging: Aging | null;
+  private aging: Aging | null;
   private readonly contact: Contact = { speed: 0 };
   onDeath: ((m: EcoCreature) => void) | null = null; // called with each creature as it leaves, before its object is recycled
 
   // pool: trained founders (see seedPool.ts); without one, or at poolFraction 0, every founder is random.
   // cast: exactly these founders instead of the species' founder counts (RL environments, see rl/env.ts).
-  constructor(config: EcoConfig, pool: readonly PoolEntry[] | null = null, options: { journal?: boolean; cast?: readonly CastMember[] } = {}) {
+  // restore: builds the world empty, for restoreState (ecoState.ts) to fill: no founders and no items, the founder count and item capacity of the saved run.
+  constructor(config: EcoConfig, pool: readonly PoolEntry[] | null = null, options: { journal?: boolean; cast?: readonly CastMember[]; restore?: { founders: number; poolFounders: number; itemCapacity: number } } = {}) {
+    const restore = options.restore;
     this.config = config;
     const { eco, dt } = config;
     const perDensity = itemsPerDensity(config);
@@ -186,15 +231,15 @@ export class Ecosystem {
     this.spare = this.species.map(() => []);
     this.rng = startRng(config);
     this.aging = agingOf(eco, dt);
-    this.items = new World(config, Math.max(start.food, this.foodCap) + Math.max(start.poison, this.poisonCap));
+    this.items = new World(config, restore?.itemCapacity ?? Math.max(start.food, this.foodCap) + Math.max(start.poison, this.poisonCap));
     this.world = this.items;
     this.journal = options.journal ? { born: [], died: [], items: [] } : null;
     this.items.log = this.journal?.items ?? null;
-    this.items.scatter(start.food, start.poison, this.rng);
+    this.items.scatter(restore ? 0 : start.food, restore ? 0 : start.poison, this.rng);
     this.food = start.food;
     this.poison = start.poison;
     const cast = options.cast;
-    const counts = cast ? this.species.map(() => 0) : founderCounts(this.species, eco.maxPopulation);
+    const counts = cast || restore ? this.species.map(() => 0) : founderCounts(this.species, eco.maxPopulation);
     const founders = cast ? cast.length : counts.reduce((a, b) => a + b, 0);
     this.crowd = new Crowd(config, founders);
     // Plans past the kernel's ray limit (a huge ray count setting or pool entry) run on the JS path.
@@ -206,8 +251,8 @@ export class Ecosystem {
     const r = config.creature.radius;
     const seeds = pool?.length ? pool.map((e) => (config.creature.seesCreatures ? trialsToEcoGenome(e.plan, e.genome, config) : e.genome)) : [];
     const randomPlanScratch = this.childPlan;
-    this.founders = founders;
-    this.lineages = new Lineages(founders);
+    this.founders = restore?.founders ?? founders;
+    this.lineages = new Lineages(this.founders);
     let poolFounders = 0;
     let i = 0;
     for (let sp = 0; sp < this.species.length; sp++) {
@@ -241,7 +286,7 @@ export class Ecosystem {
       randomBirth(this.ranges[c.species]!, this.rng, this.traits);
       this.found(i++, c, false);
     }
-    this.poolFounders = poolFounders;
+    this.poolFounders = restore?.poolFounders ?? poolFounders;
     // Poison moves only once every founder stands, and never onto one, so none ends up on a founder placed earlier.
     const reach = r + config.world.itemRadius;
     this.crowd.rebuild(this.states, this.states.length);
@@ -651,8 +696,21 @@ export class Ecosystem {
   private regrow(): void {
     this.foodDue += this.config.eco.seasons ? this.foodPerTick * seasonFactor(this.config.eco, this.tick * this.config.dt) : this.foodPerTick;
     this.poisonDue += this.poisonPerTick;
-    for (; this.foodDue >= 1; this.foodDue--) if (this.food < this.foodCap) this.food += this.grow(HIT_FOOD);
-    for (; this.poisonDue >= 1; this.poisonDue--) if (this.poison < this.poisonCap) this.poison += this.grow(HIT_POISON);
+    // At the cap the rest of the due items is dropped at once, so a huge rate cannot loop; below 2^53 the leftover fraction is what counting down leaves.
+    while (this.foodDue >= 1 && this.food < this.foodCap) {
+      this.foodDue--;
+      const grown = this.grow(HIT_FOOD);
+      this.food += grown;
+      if (grown === 0) break; // no free slot
+    }
+    this.foodDue -= Math.floor(this.foodDue);
+    while (this.poisonDue >= 1 && this.poison < this.poisonCap) {
+      this.poisonDue--;
+      const grown = this.grow(HIT_POISON);
+      this.poison += grown;
+      if (grown === 0) break;
+    }
+    this.poisonDue -= Math.floor(this.poisonDue);
   }
 
   // Places one item at a uniform random position; returns 1, or 0 if no slot was free.
@@ -713,6 +771,139 @@ export class Ecosystem {
   // The k largest living lineages, of one species or of all (-1), biggest first.
   topLineages(k: number, species = -1): Lineage[] {
     return this.lineages.top(k, species);
+  }
+
+  // --- Live world hooks (insert, save and restore, retune); step does not use them ---
+
+  // Adds a creature of the visitor's own design at runtime, as the founder of a new lineage (its id is its founder id; name tags live on the lineage).
+  // Goes through spawn like a birth, so the journal and helper threads see it; uses no random numbers, so it can be called between any two ticks.
+  // Rejects, without changing anything, bad numbers, a genome that does not fit the plan, a position outside the walls and a full world.
+  insertCreature(spec: InsertSpec): InsertResult {
+    const bad = (reason: string): InsertResult => ({ ok: false, reason });
+    const eco = this.config.eco;
+    const { radius } = this.config.creature;
+    const { width, height } = this.config.world;
+    const sp = spec.species ?? 0;
+    if (!Number.isInteger(sp) || sp < 0 || sp >= this.species.length) return bad(`species must be 0 to ${this.species.length - 1}`);
+    if (this.members.length >= eco.maxPopulation) return bad("the world is full");
+    const p = spec.plan;
+    const finite = (...v: number[]): boolean => v.every((x) => typeof x === "number" && Number.isFinite(x));
+    const whole = (x: unknown, min: number, max: number): boolean => typeof x === "number" && Number.isInteger(x) && x >= min && x <= max;
+    if (!p || !whole(p.rayCount, 1, MAX_INSERT_RAYS) || !finite(p.raySpread, p.rayLength) || !(p.raySpread > 0 && p.raySpread <= 2 * Math.PI) || !(p.rayLength > 0 && p.rayLength <= MAX_INSERT_RAY_LENGTH)) return bad(`plan needs 1 to ${MAX_INSERT_RAYS} rays, a spread up to a full turn and a ray length up to ${MAX_INSERT_RAY_LENGTH}`);
+    if (!whole(p.memoryShort, 0, MAX_INSERT_MEMORY) || !whole(p.memoryLong, 0, MAX_INSERT_MEMORY)) return bad(`memory units must be whole numbers 0 to ${MAX_INSERT_MEMORY}`);
+    if (!Array.isArray(p.hiddenLayers) || !whole(p.hiddenLayers.length, 1, MAX_INSERT_LAYERS) || !p.hiddenLayers.every((n) => whole(n, 1, MAX_INSERT_NEURONS))) return bad(`plan needs 1 to ${MAX_INSERT_LAYERS} hidden layers of 1 to ${MAX_INSERT_NEURONS} neurons`);
+    if (!finite(spec.x, spec.y) || spec.x < radius || spec.x > width - radius || spec.y < radius || spec.y > height - radius) return bad("position must be inside the walls");
+    if (!finite(spec.hue)) return bad("hue must be a finite number");
+    const heading = spec.heading ?? 0;
+    if (!finite(heading)) return bad("heading must be a finite number");
+    const energy = spec.energy ?? this.species[sp]!.startEnergy;
+    if (!finite(energy) || energy <= 0 || energy > MAX_INSERT_ENERGY) return bad(`energy must be above 0 and at most ${MAX_INSERT_ENERGY}`);
+    if (typeof spec.name !== "string" || spec.name.length > MAX_NAME_LENGTH || /[\u0000-\u001f\u007f]/.test(spec.name)) return bad(`name must be text of at most ${MAX_NAME_LENGTH} characters without control characters`);
+    const ranges = this.ranges[sp]!;
+    const traits = this.traits;
+    traits.energy = spec.birth?.energy ?? middle(ranges.birthEnergyRange);
+    traits.cost = spec.birth?.cost ?? middle(ranges.birthCostRange);
+    traits.cooldown = spec.birth?.cooldown ?? middle(ranges.birthCooldownRange);
+    if (!finite(traits.energy, traits.cost, traits.cooldown) || traits.energy <= 0 || traits.cost <= 0 || traits.cooldown < 0) return bad("birth energy and cost must be above 0 and the cooldown 0 or more");
+    traits.energy = Math.min(ranges.birthEnergyRange[1]!, Math.max(ranges.birthEnergyRange[0]!, traits.energy));
+    traits.cost = Math.min(ranges.birthCostRange[1]!, Math.max(ranges.birthCostRange[0]!, traits.cost));
+    traits.cooldown = Math.min(ranges.birthCooldownRange[1]!, Math.max(ranges.birthCooldownRange[0]!, traits.cooldown));
+    const need = genomeLength(layerSizes(this.engines[sp]!, p));
+    const given = spec.genome?.length;
+    if (given !== need) return bad(`genome has ${String(given)} numbers, the plan needs ${need}`);
+    const genome = Float32Array.from(spec.genome);
+    if (!genome.every(Number.isFinite)) return bad("genome must hold finite numbers");
+    const m = this.spawn(genome, p, spec.x, spec.y, heading, energy, sp);
+    this.setBirth(m, traits);
+    m.hue = ((spec.hue % 360) + 360) % 360;
+    this.lineages.describe(m.id, m.hue, sp, false, spec.name);
+    this.lineages.found(m.id);
+    return { ok: true, id: m.id };
+  }
+
+  // The old-age rule in force, or null; helper threads take it from the packet header.
+  get agingRule(): Aging | null {
+    return this.aging;
+  }
+
+  // The name tag the founder was inserted with, "" for none.
+  lineageName(founder: number): string {
+    return this.lineages.name(founder);
+  }
+
+  // The family table, for saveState and restoreState.
+  get lineageTable(): Lineages {
+    return this.lineages;
+  }
+
+  // The scalars of the run, for saveState.
+  exportCore(): EcoCore {
+    return {
+      tick: this.tick, births: this.births, deaths: this.deaths, foodEaten: this.foodEaten, poisonEaten: this.poisonEaten,
+      food: this.food, poison: this.poison, rngState: this.rng.state, foodDue: this.foodDue, poisonDue: this.poisonDue, nextId: this.nextId,
+      founders: this.founders, poolFounders: this.poolFounders, itemCapacity: this.items.count, counts: this.counts.map((c) => ({ ...c })),
+    };
+  }
+
+  // Sets the scalars of a saved run, for restoreState on a world built with the restore option.
+  importCore(c: EcoCore): void {
+    this.tick = c.tick; this.births = c.births; this.deaths = c.deaths; this.foodEaten = c.foodEaten; this.poisonEaten = c.poisonEaten;
+    this.food = c.food; this.poison = c.poison; this.rng.state = c.rngState; this.foodDue = c.foodDue; this.poisonDue = c.poisonDue; this.nextId = c.nextId;
+    if (c.counts.length !== this.counts.length) throw new Error("saved species counts do not fit this world");
+    c.counts.forEach((x, i) => {
+      const to = this.counts[i]!;
+      to.population = x.population; to.births = x.births; to.deaths = x.deaths; to.eaten = x.eaten;
+    });
+  }
+
+  // Appends a saved creature to the end of the member list (call in saved order), with its id and every field; the journal sees it as born.
+  restoreMember(r: MemberRecord): EcoCreature {
+    const m = new EcoCreature(new Creature(this.engines[r.species]!, r.genome, r.x, r.y, r.heading, r.plan));
+    const c = m.creature;
+    const s = c.state;
+    s.vx = r.vx; s.vy = r.vy; s.turnRate = r.turnRate; s.energy = r.energy; s.ticksAlive = r.ticksAlive;
+    c.heading.cos = r.cos; c.heading.sin = r.sin;
+    c.setMemory(r.memory, 0);
+    c.aging = this.aging;
+    m.id = r.id; m.parentId = r.parentId; m.depth = r.depth; m.birthTick = r.birthTick; m.children = r.children; m.eaten = r.eaten; m.kills = r.kills;
+    m.species = r.species; m.hue = r.hue; m.founderId = r.founderId; m.lastBirthTick = r.lastBirthTick;
+    m.birth.energy = r.birthEnergy; m.birth.cost = r.birthCost; m.birth.cooldown = r.birthCooldown; m.cooldownTicks = r.cooldownTicks;
+    this.journal?.born.push(m.id);
+    this.members.push(m);
+    this.kinds.push(r.species);
+    this.states.push(s);
+    this.byId.set(m.id, m);
+    return m;
+  }
+
+  // Changes settings of the running world, all or none; LIVE_FIELDS lists what is allowed. Takes effect from the next tick.
+  // Changes the config object this world was built with. Helper threads follow it through the packet header.
+  retune(patch: RetunePatch): RetuneResult {
+    const checked = checkRetune(patch, this.config);
+    if ("reason" in checked) return { ok: false, reason: checked.reason };
+    const config = this.config;
+    const sections = config as unknown as Record<string, Record<string, unknown>>;
+    const eco = { ...config.eco } as Record<string, unknown>;
+    for (const [section, key, v] of checked.fields) if (section === "eco") eco[key] = v;
+    const perDensity = itemsPerDensity(config);
+    const foodCap = Math.round((eco.foodMaxDensity as number) * perDensity);
+    const poisonCap = Math.round((eco.poisonMaxDensity as number) * perDensity);
+    if (foodCap + poisonCap > this.items.count) return { ok: false, reason: `food and poison caps need ${foodCap + poisonCap} item slots, this world has ${this.items.count}` };
+    for (const [section, key, v] of checked.fields) sections[section]![key] = Array.isArray(v) ? v.slice() : v;
+    this.foodCap = foodCap;
+    this.poisonCap = poisonCap;
+    this.foodPerTick = config.eco.foodRegrow * perDensity * config.dt;
+    this.poisonPerTick = config.eco.poisonRegrow * perDensity * config.dt;
+    this.aging = agingOf(config.eco, config.dt);
+    for (const m of this.members) m.creature.aging = this.aging;
+    if (checked.fields.some(([, key]) => key.startsWith("birth") && key.endsWith("Range"))) {
+      const sp = this.species[0]!;
+      sp.birthEnergyRange = config.eco.birthEnergyRange;
+      sp.birthCostRange = config.eco.birthCostRange;
+      sp.birthCooldownRange = config.eco.birthCooldownRange;
+      this.ranges[0] = speciesRanges(config, sp);
+    }
+    return { ok: true, changed: checked.fields.map(([section, key]) => `${section}.${key}`) };
   }
 
   // Hash of the counts and every creature's id, position and energy; equal runs give equal fingerprints.

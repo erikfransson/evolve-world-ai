@@ -1,0 +1,66 @@
+import { LIMITS } from "./config.ts";
+import type { LiveWorld } from "./liveWorld.ts";
+import type { StateStore } from "./state.ts";
+
+const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+
+// Saving and restoring the live world. Jobs run one at a time. Only saveState and JSON.stringify block the tick loop, the gzip runs on a worker thread.
+export class Saves {
+  private queue: Promise<unknown> = Promise.resolve();
+  private readonly live: LiveWorld;
+  private readonly store: StateStore;
+
+  constructor(live: LiveWorld, store: StateStore) {
+    this.live = live;
+    this.store = store;
+  }
+
+  private exclusive<T>(job: () => Promise<T>): Promise<T> {
+    const run = this.queue.then(job, job);
+    this.queue = run.catch(() => undefined);
+    return run;
+  }
+
+  // A short line saying what was saved; rejects with the reason when nothing was.
+  save(): Promise<string> {
+    return this.exclusive(async () => {
+      const t0 = performance.now();
+      const json = JSON.stringify(this.live.saveState());
+      const bytes = Buffer.byteLength(json);
+      if (bytes > LIMITS.maxSaveJsonBytes) {
+        const why = `the world is ${Math.round(bytes / 1e6)} MB of JSON, over the ${LIMITS.maxSaveJsonBytes / 1e6} MB a save may hold (it could not be read back)`;
+        console.error(`SAVE REFUSED: ${why}`);
+        throw new Error(why);
+      }
+      const stallMs = Math.round(performance.now() - t0);
+      const name = await this.store.write(json, { population: this.live.eco.population, tick: this.live.eco.tick });
+      return `saved ${name} (${Math.round(json.length / 1e6)} MB json, ${stallMs} ms tick stall)`;
+    }).catch((e: unknown) => {
+      throw new Error(`not saved: ${errText(e)}`);
+    });
+  }
+
+  private async restore(name: string): Promise<string> {
+    this.live.restoreState(await this.store.read(name)); // throws, and keeps the running world, when the save is unusable
+    return `${name}: tick ${this.live.eco.tick}, ${this.live.eco.population} creatures`;
+  }
+
+  // At startup: the newest save that restores, else the world as built.
+  async restoreNewest(log: (line: string) => void = console.log): Promise<void> {
+    for (const { name } of this.store.list()) {
+      try {
+        return log(`restored ${await this.restore(name)}`);
+      } catch (e) {
+        log(`cannot restore ${name}: ${errText(e)}`);
+      }
+    }
+    log("no usable save, starting a fresh world");
+  }
+
+  // Saves the running world, then replaces it with the named save. Only a name from the listing is accepted, and a failure at any step keeps the running world.
+  async load(name: unknown): Promise<string> {
+    if (typeof name !== "string" || !this.store.list().some((s) => s.name === name)) throw new Error("no such save");
+    await this.save();
+    return this.exclusive(async () => `loaded ${await this.restore(name)}`);
+  }
+}
