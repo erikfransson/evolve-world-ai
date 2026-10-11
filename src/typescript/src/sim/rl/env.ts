@@ -306,19 +306,17 @@ export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | s
     if (!l || !(LAYOUT_KINDS as readonly unknown[]).includes(l.kind)) return `layout must be one of ${LAYOUT_KINDS.join(", ")}`;
     const [sw, sh] = size as number[];
     const fixed = l.kind === "sprint" || l.kind === "cuedoor" || l.kind === "flash"; // no size parameter
-    const round = l.kind === "patch" || l.kind === "islands"; // sized by a radius; ring by its lane; arms by their count; the walled ones by a gap
-    const param = round ? l.radius : l.kind === "ring" ? l.lane : l.kind === "arms" ? l.arms : l.gap;
-    if (l.kind === "arms" && !(Number.isInteger(param) && (param as number) >= 2 && (param as number) <= 4)) return "arms must be 2 to 4";
+    const round = l.kind === "patch" || l.kind === "islands"; // sized by a radius; ring by its lane; the walled ones by a gap
+    const param = round ? l.radius : l.kind === "ring" ? l.lane : l.gap;
     // A patch must fit and three islands must fit apart; wall gaps leave wall on both sides of a door.
     const most = l.kind === "patch" ? Math.min(sw!, sh!) / 2 - 20 : l.kind === "islands" ? Math.min(sw!, sh!) / 6 - 10 : l.kind === "rooms" ? Math.min(sw!, sh!) / 4 - 20 : l.kind === "ring" ? Math.min(sw!, sh!) / 4 : sw! / 4;
-    if (!fixed && l.kind !== "arms" && !n(param, [L.layoutSize[0], Math.min(L.layoutSize[1], most)])) return `layout ${round ? "radius" : l.kind === "ring" ? "lane" : "gap"} must be ${L.layoutSize[0]} to ${Math.floor(Math.min(L.layoutSize[1], most))} for this world size`;
+    if (!fixed && !n(param, [L.layoutSize[0], Math.min(L.layoutSize[1], most)])) return `layout ${round ? "radius" : l.kind === "ring" ? "lane" : "gap"} must be ${L.layoutSize[0]} to ${Math.floor(Math.min(L.layoutSize[1], most))} for this world size`;
     if (l.kind !== "patch" && l.kind !== "islands" && l.kind !== "sprint" && rivals.some((r) => r.count > 0)) return "this layout does not take rivals yet";
     if (l.near !== undefined && !(Number.isInteger(l.near) && (l.near as number) >= 0 && (l.near as number) <= (v.food as number))) return "near food must be a whole number up to the food count";
     const nearOf = l.near === undefined ? {} : { near: l.near as number };
     layout =
       l.kind === "sprint" ? { kind: "sprint", ...nearOf }
       : l.kind === "cuedoor" || l.kind === "flash" ? { kind: l.kind }
-      : l.kind === "arms" ? { kind: "arms", arms: param as number }
       : l.kind === "patch" || l.kind === "islands" ? { kind: l.kind, radius: param as number }
       : l.kind === "rooms" ? { kind: "rooms", gap: param as number, ...nearOf }
       : l.kind === "ring" ? { kind: "ring", lane: param as number }

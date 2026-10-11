@@ -45,9 +45,8 @@ export const ENVS: readonly EnvSpec[] = [
     tags: ["navigate"],
   }),
   // Memory: what it saw a moment ago decides where to go now
-  small({ id: "signal-door", name: "Signal door", description: "A marker right ahead says which door hides the food: food means left, poison means right. By the doors it is out of sight. Remember it.", size: [300, 450], food: 4, poison: 0, seconds: 25, layout: { kind: "cuedoor" }, poisonDamage: 10, tags: ["memory"] }),
-  small({ id: "three-arms", name: "Three arms", description: "Three corridors, one bite at the end of each. Once you have emptied one, do not go back into it.", size: [360, 320], food: 3, poison: 0, seconds: 30, layout: { kind: "arms", arms: 3 }, poisonDamage: 25, reward: { food: 1, fast: 0.15 }, tags: ["memory"] }),
-  small({ id: "flash", name: "Flash", description: "The food shows for a second and a half, then goes dark but stays there. Remember where it was.", size: [400, 400], food: 3, poison: 0, seconds: 20, foodVisibleFor: 1.5, layout: { kind: "flash" }, tags: ["memory"] }),
+  small({ id: "signal-door", name: "Signal door", description: "A first bite lies left or right of the start: that side's room holds the food. Up the corridor it is gone from sight, and there is only time for one room. Remember the side.", size: [300, 520], food: 4, poison: 0, seconds: 10, layout: { kind: "cuedoor" }, poisonDamage: 10, tags: ["memory"] }),
+  small({ id: "flash", name: "Flash", description: "Three bites show for two seconds, then go dark but stay there. A creature can head for one; finding the others means remembering where they were.", size: [600, 600], food: 3, poison: 0, seconds: 12, foodVisibleFor: 2, layout: { kind: "flash" }, tags: ["memory"] }),
   // Energy
   small({
     id: "lean-times",
