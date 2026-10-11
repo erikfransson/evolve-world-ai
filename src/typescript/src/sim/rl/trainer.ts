@@ -49,8 +49,8 @@ export interface StepResult {
 export class Trainer {
   readonly es: Es;
   private readonly rng: StatefulRng;
-  private readonly scorer: Scorer;
-  private readonly envs: number;
+  private scorer: Scorer;
+  private envs: number;
   private readonly episodes: number;
 
   // envs: how many envs each candidate plays; episodes: fresh training seeds per step, shared by all candidates and envs.
@@ -60,6 +60,12 @@ export class Trainer {
     this.scorer = scorer;
     this.envs = envs;
     this.episodes = episodes;
+  }
+
+  // Plays the next steps on other envs (paused Arena runs can add or drop envs); the weights carry on.
+  setEnvs(scorer: Scorer, envs: number): void {
+    this.scorer = scorer;
+    this.envs = envs;
   }
 
   get iter(): number {

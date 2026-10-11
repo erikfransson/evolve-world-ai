@@ -123,3 +123,5 @@ details.more > summary { color: var(--text); font-weight: 500; font-size: 0.85re
 .built[hidden] { display: none; }
 .env-head { margin: 0; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.09em; color: var(--muted); }
 #envList { display: flex; flex-direction: column; gap: 0.4rem; }
+
+.rival-dot { fill: #60a5fa; } /* SPECIES_COLORS[0], how arenaScene draws rivals of the learner's species */
