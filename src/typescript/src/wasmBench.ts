@@ -29,7 +29,7 @@ const median = (f: () => void): number => {
   return t.sort((x, y) => x - y)[t.length >> 1]!;
 };
 
-const bank = (await WasmBrainBank.create())!;
+const bank = WasmBrainBank.createSync()!;
 if (!bank) throw new Error("WebAssembly SIMD is not available");
 const rng = createRng(1);
 console.log("kernel   plan     creatures  JS ms   wasm ms  speedup  max abs diff");
@@ -42,7 +42,7 @@ for (const [name, p] of Object.entries(plans)) {
   };
   const sizes = layerSizes(cfg, planOf(cfg));
   for (const n of counts) {
-    // Brain
+    const slots = Int32Array.from({ length: n }, (_, i) => i);
     const brains: Brain[] = [];
     const ins: Float32Array[] = [];
     const outs: Float32Array[] = [];
@@ -60,7 +60,7 @@ for (const [name, p] of Object.entries(plans)) {
     const jsMs = median(() => {
       for (let c = 0; c < n; c++) brains[c]!.forward(ins[c]!, outs[c]!);
     });
-    const wasmMs = median(() => bank.forward(n));
+    const wasmMs = median(() => bank.forwardSlots(slots, n));
     let diff = 0;
     for (let c = 0; c < n; c++) {
       const got = bank.f32.subarray(bank.outputAt(c), bank.outputAt(c) + outs[c]!.length);
