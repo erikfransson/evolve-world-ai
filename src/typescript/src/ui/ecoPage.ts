@@ -110,7 +110,7 @@ const SPEED_TIP = "Simulated seconds per real second the computer is achieving. 
 export function threadsText(helpers: number, wasm = false): string {
   const kernels = wasm ? ", with WebAssembly" : "";
   if (helpers === 0) return `Runs on one thread${kernels}.`;
-  return `Runs on ${helpers + 1} threads (${helpers} ${helpers === 1 ? "helper" : "helpers"}), ${kernels}.`;
+  return `Runs on ${helpers + 1} threads (${helpers} ${helpers === 1 ? "helper" : "helpers"})${kernels}.`;
 }
 
 function setTip(tileId: string, text: string): void {

@@ -22,6 +22,7 @@ import { TRIALS_FORM } from "./ui/trialsForm.ts";
 import { TickClock } from "./ui/tickClock.ts";
 import { $, durationText, formatDuration, setTile } from "./ui/page.ts";
 import { initTooltips } from "./ui/tooltip.ts";
+import { bindGentle, readGentle } from "./ui/gentle.ts";
 
 const canvas = $<HTMLCanvasElement>("view");
 const ctx = canvas.getContext("2d")!;
@@ -214,7 +215,7 @@ function start(): void {
   run.worker = new Worker(new URL("./worker/simWorker.ts", import.meta.url), { type: "module" });
   run.worker.onmessage = onMessage;
   run.lastMessageAt = performance.now();
-  send({ type: "start", config: run.config });
+  send({ type: "start", config: run.config, gentle: readGentle() });
   refresh();
 }
 
@@ -269,6 +270,7 @@ resetBtn.onclick = reset;
 skipBtn.onclick = watchLatest;
 watchLatestBtn.onclick = watchLatest;
 pauseBtn.onclick = togglePause;
+bindGentle($<HTMLInputElement>("gentle"), (gentle) => send({ type: "gentle", gentle }));
 for (const id of ["showAll", "rays", "pov"]) $(id).addEventListener("change", readView);
 document.querySelector(".seg")!.addEventListener("change", readView);
 form.init(setupForm, (c) => {
