@@ -79,7 +79,7 @@ export class ArenaRun {
     const trainer: RlTrainer =
       this.start.method === "backprop"
         ? new BackpropTrainer({ plan, genome }, this.envs, backpropOptions(options.backprop), this.pool, this.start.seed, this.assets.pool, this.assets.library)
-        : new Trainer(genome, options, this.pool, this.envs.length, options.episodes, this.start.seed);
+        : Object.assign(new Trainer(genome, options, this.pool, this.envs.length, options.episodes, this.start.seed), { envsPerStep: Math.round(clamp(options.envsPerStep, 1, 64, 64)) });
     const t0 = performance.now();
     let lastBest: Float32Array | null = null; // the latest step's best candidate
     const start = await trainer.held(HELD_SEEDS);

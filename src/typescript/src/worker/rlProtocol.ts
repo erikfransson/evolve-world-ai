@@ -9,6 +9,7 @@ import type { Recording } from "../sim/rl/recording.ts";
 export interface RlRunOptions extends Omit<EsOptions, "shaping">, Partial<Pick<EsOptions, "shaping">> {
   episodes: number; // seeds per candidate and env each iteration
   iterations: number; // the run stops after this many
+  envsPerStep?: number; // ES: envs each iteration trains on, taking turns (all when left out)
   backprop?: Partial<Pick<PpoOptions, "lr" | "episodes">>; // with method "backprop"; the ES fields above then do not apply
 }
 

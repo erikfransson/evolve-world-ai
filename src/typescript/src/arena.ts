@@ -374,7 +374,7 @@ function begin(): void {
   if (typeof start === "string" || envs.length === 0) return;
   const cfg = runForm.read();
   const tiles = Number(cfg.tiles);
-  const options = { pairs: Math.round(cfg.population / 2), sigma: cfg.sigma, lr: cfg.lr, decay: DECAY, episodes: cfg.episodes, iterations: cfg.iterations, backprop: { lr: cfg.bpLr, episodes: cfg.bpEpisodes } };
+  const options = { pairs: Math.round(cfg.population / 2), sigma: cfg.sigma, lr: cfg.lr, decay: DECAY, episodes: cfg.episodes, envsPerStep: cfg.envsPerStep, iterations: cfg.iterations, backprop: { lr: cfg.bpLr, episodes: cfg.bpEpisodes } };
   const seed = Math.floor(Math.random() * 0x7fffffff);
   run = { kind: kind(), method: cfg.method, envs, plan: { ...start.learner.plan, hiddenLayers: start.learner.plan.hiddenLayers.slice() }, from: start.from, iterations: options.iterations, its: [], startHeld: null, startPerEnv: null, latest: null, nextEnvs: null };
   worker?.terminate();
@@ -472,7 +472,7 @@ function render(): void {
   $("statBestTip").dataset.tip = tip;
   $("statBestTip").ariaLabel = tip;
   $("statTrain").textContent = fixed(last?.train);
-  $("statTime").textContent = last ? durationText(last.seconds) : EMPTY;
+  $("statTime").textContent = last ? `${durationText(last.seconds)} · ${(last.seconds / Math.max(1, last.iter)).toFixed(1)} s/it` : EMPTY;
   for (const dd of document.querySelectorAll<HTMLElement>(".stats dd")) dd.classList.toggle("empty", dd.textContent === EMPTY);
   graph.setData(r?.its ?? [], r?.startHeld ?? null);
   renderTable(r, heldIt);
