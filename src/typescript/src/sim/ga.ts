@@ -85,7 +85,6 @@ export function nextGeneration(
   const childEnd = n - immigrants;
   const bigEnd = Math.min(childEnd, eliteCount + Math.round(ga.bigMutationFraction * n));
   const std = ga.mutationStd * (isStagnant(fitness) ? STAGNATION_BOOST : 1);
-  const mutation = { mutationRate: ga.mutationRate, mutationStd: std };
 
   const pick = SELECTION_PICKERS[ga.selection](fitness, order, ga, rng);
   const length = population.genomeLength;
@@ -104,7 +103,7 @@ export function nextGeneration(
       rng.state = s;
     }
     if (i < bigEnd) bigMutate(child, rng);
-    else mutate(child, mutation, rng);
+    else mutate(child, ga.mutationRate, std, rng);
   }
   for (let i = childEnd; i < n; i++) next.genome(i).set(randomGenome(rng));
   return next;
@@ -120,8 +119,8 @@ export function bigMutate(child: Genome, rng: StatefulRng): void {
 }
 
 // Adds mutationStd normal noise to each gene with probability mutationRate, drawing from rng exactly as rng.next() calls would.
-export function mutate(child: Genome, ga: Pick<GaConfig, "mutationRate" | "mutationStd">, rng: StatefulRng): void {
-  const mutateBelow = ga.mutationRate * 4294967296; // next() < rate is next32 < rate * 2^32, exactly
+export function mutate(child: Genome, rate: number, std: number, rng: StatefulRng): void {
+  const mutateBelow = rate * 4294967296; // next() < rate is next32 < rate * 2^32, exactly
   let s = rng.state; // rng's mulberry32 stream, run inline for speed; synced around normal()
   for (let g = 0; g < child.length; g++) {
     s = (s + 0x6d2b79f5) | 0;
@@ -129,7 +128,7 @@ export function mutate(child: Genome, ga: Pick<GaConfig, "mutationRate" | "mutat
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     if (((t ^ (t >>> 14)) >>> 0) < mutateBelow) {
       rng.state = s;
-      child[g] += rng.normal() * ga.mutationStd;
+      child[g] += rng.normal() * std;
       s = rng.state;
     }
   }

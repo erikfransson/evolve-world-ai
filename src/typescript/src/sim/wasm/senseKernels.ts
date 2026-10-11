@@ -1,7 +1,7 @@
 import type { Creature, SenseBatch } from "../creature.ts";
 import type { EcoConfig } from "../ecoConfig.ts";
 import { inputLayout } from "../sensors.ts";
-import { speciesList } from "../species.ts";
+import { seenEnergyScale, speciesList } from "../species.ts";
 import type { Crowd } from "../crowd.ts";
 import type { World } from "../world.ts";
 import { WasmBrainBank } from "./brainKernel.ts";
@@ -28,7 +28,7 @@ export class SenseKernels {
     this.brains = brains;
     this.senser = senser;
     this.stride = inputLayout(config).rayFeatures;
-    this.energyScale = Math.max(...speciesList(config).map((sp) => sp.startEnergy));
+    this.energyScale = seenEnergyScale(speciesList(config));
   }
 
   // Null when WebAssembly SIMD is unavailable or disabled, or when creatures may have more than MAX_RAYS rays (maxRays);

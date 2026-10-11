@@ -100,7 +100,7 @@ describe("mutate", () => {
     const parent = Float32Array.from({ length: 50 }, (_, g) => g / 10);
     const child = parent.slice();
     const rng = createRng(9);
-    mutate(child, ga, rng);
+    mutate(child, ga.mutationRate, ga.mutationStd, rng);
     const expected = parent.slice();
     const ref = createRng(9);
     for (let g = 0; g < expected.length; g++) if (ref.next() < mutationRate) expected[g] += ref.normal() * ga.mutationStd;

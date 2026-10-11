@@ -51,7 +51,7 @@ export function fastTanh(x: number): number {
 
 export class Brain {
   private shape: readonly number[];
-  private weightsGenome: Genome; // the constructor's buffer until a reshape gives the brain its own; weights and biases view it
+  private weightsGenome: Genome; // the brain's own copy; weights and biases view it
   // Per layer views into the genome: weights row-major [out][in], biases [out].
   readonly weights: Float32Array[] = []; // treat as read-only
   readonly biases: Float32Array[] = [];
@@ -66,14 +66,13 @@ export class Brain {
   private activeValue = new Float64Array(0);
   // First-layer weights stored input-major [in][out] as doubles, so one input's weights are contiguous.
   private firstLayerByInput = new Float64Array(0);
-  private ownsGenome = false;
 
   constructor(sizes: readonly number[], genome: Genome) {
     if (genome.length !== genomeLength(sizes)) {
       throw new Error(`genome length ${genome.length} does not match expected ${genomeLength(sizes)}`);
     }
     this.shape = sizes.slice();
-    this.weightsGenome = genome;
+    this.weightsGenome = genome.slice();
     this.build();
   }
 
@@ -113,7 +112,7 @@ export class Brain {
   }
 
   // Copies genome into this brain's buffer, so a brain can be reused for another creature.
-  // When sizes differ from the current ones, the brain takes the new layout first, reusing the buffers it owns when they are large enough.
+  // When sizes differ from the current ones, the brain takes the new layout first, reusing its buffers when they are large enough.
   load(sizes: readonly number[], genome: Genome): void {
     const length = genomeLength(sizes);
     if (genome.length !== length) throw new Error(`genome length ${genome.length} does not match expected ${length}`);
@@ -123,8 +122,7 @@ export class Brain {
       return;
     }
     this.shape = sizes.slice();
-    this.weightsGenome = this.ownsGenome ? refit(this.weightsGenome, length) : new Float32Array(length);
-    this.ownsGenome = true;
+    this.weightsGenome = refit(this.weightsGenome, length);
     this.weightsGenome.set(genome);
     this.build();
   }

@@ -7,7 +7,7 @@ import { agingOf } from "./physics.ts";
 import type { Aging } from "./physics.ts";
 import type { Ecosystem } from "./ecosystem.ts";
 import type { BodyPlan } from "./sensors.ts";
-import { speciesEngine, speciesList } from "./species.ts";
+import { seenEnergyScale, speciesEngine, speciesList } from "./species.ts";
 import type { HitKind } from "./types.ts";
 import { ITEM_REMOVE, ITEM_SET, World } from "./world.ts";
 import { SenseKernels } from "./wasm/senseKernels.ts";
@@ -336,7 +336,10 @@ export class ShareHelper {
   // wasm: sense and think on the WebAssembly kernels when available, as the coordinator does.
   constructor(config: EcoConfig, worldCapacity: number, index: number, wasm = false) {
     this.kernels = wasm ? SenseKernels.create(config) : null;
-    this.engines = speciesList(config).map((sp) => speciesEngine(config, sp));
+    if (wasm && !this.kernels) throw new Error("helper has no WebAssembly kernels although the coordinator does"); // the run falls back to one thread
+    const species = speciesList(config);
+    const scale = seenEnergyScale(species);
+    this.engines = species.map((sp) => speciesEngine(config, sp, scale));
     this.spare = this.engines.map(() => []);
     this.index = index;
     this.aging = agingOf(config.eco, config.dt);
@@ -422,7 +425,7 @@ export class ShareHelper {
     for (let g = 0; g < length; g++) genome[g] = d[k++]!;
     let c = this.spare[species]!.pop();
     if (c) c.reset(genome, 0, 0, 0, 0, plan);
-    else c = new Creature(this.engines[species]!, genome.slice(), 0, 0, 0, plan);
+    else c = new Creature(this.engines[species]!, genome, 0, 0, 0, plan);
     c.aging = this.aging;
     this.mine.set(id, c);
     this.speciesOf.set(id, species);

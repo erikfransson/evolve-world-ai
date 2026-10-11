@@ -76,6 +76,23 @@ export class Crowd {
     this.rebuildFrom(this.px, this.py, this.pe, n, this.ps);
   }
 
+  // True when a snapshotted creature is closer than reach to (x, y).
+  anyWithin(x: number, y: number, reach: number): boolean {
+    const inv = 1 / this.cell;
+    const cx0 = Math.max(0, Math.floor((x - reach) * inv));
+    const cx1 = Math.min(this.cols - 1, Math.floor((x + reach) * inv));
+    const cy0 = Math.max(0, Math.floor((y - reach) * inv));
+    const cy1 = Math.min(this.rows - 1, Math.floor((y + reach) * inv));
+    for (let cy = cy0; cy <= cy1; cy++) {
+      const row = cy * this.cols;
+      const end = this.cellStart[row + cx1 + 1]!;
+      for (let t = this.cellStart[row + cx0]!; t < end; t++) {
+        if ((this.xs[t]! - x) ** 2 + (this.ys[t]! - y) ** 2 < reach * reach) return true;
+      }
+    }
+    return false;
+  }
+
   // The same from arrays: creature i at (x[i], y[i]) with energy e[i] and species sp[i] (all 0 without).
   rebuildFrom(x: Float64Array, y: Float64Array, e: Float64Array, n: number, sp?: ArrayLike<number>): void {
     if (n > this.xs.length) this.grow(n);

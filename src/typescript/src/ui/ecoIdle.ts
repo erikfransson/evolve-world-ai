@@ -1,6 +1,6 @@
 import { itemCounts } from "../sim/config.ts";
+import { startRng } from "../sim/ecoConfig.ts";
 import type { EcoConfig } from "../sim/ecoConfig.ts";
-import { createRng, deriveSeed } from "../sim/rng.ts";
 import { HIT_FOOD, HIT_POISON } from "../sim/types.ts";
 import { World } from "../sim/world.ts";
 import { BACKGROUND, FLOOR, FOOD, POISON, WALL } from "./scene.ts";
@@ -10,14 +10,14 @@ const FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
 
 // The starting items as the run will scatter them (same seed and stream), rebuilt only when the settings that shape them change.
 let cached: { key: string; world: World | null } = { key: "", world: null };
-function startItems(config: EcoConfig): World | null {
+export function startItems(config: EcoConfig): World | null {
   const { food, poison } = itemCounts(config);
   const key = [config.seed, config.world.width, config.world.height, config.world.itemRadius, config.creature.rayLength, food, poison].join();
   if (cached.key === key) return cached.world;
   let world: World | null = null;
   try {
     world = new World(config, food + poison);
-    world.scatter(food, poison, createRng(deriveSeed(config.seed, 0xec0)));
+    world.scatter(food, poison, startRng(config));
   } catch (error) {
     console.warn("No preview for these settings:", error);
   }
