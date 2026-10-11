@@ -5,6 +5,7 @@ import { seasonFactor, seasonName, winterness } from "./sim/ecoConfig.ts";
 import { fullEnergy, speciesList } from "./sim/species.ts";
 import type { EcoConfig } from "./sim/ecoConfig.ts";
 import type { BestBy, EcoInMessage, EcoOutMessage, EcoSnapshot, SelectedDetails, SnapshotViews } from "./worker/ecoProtocol.ts";
+import type { RenderInMessage, RenderOutMessage } from "./worker/renderProtocol.ts";
 import { snapshotViews } from "./worker/ecoProtocol.ts";
 import { Camera } from "./ui/camera.ts";
 import type { Point } from "./ui/camera.ts";
@@ -36,7 +37,7 @@ const THREADS = params.has("threads") ? Math.max(0, Math.floor(Number(params.get
 
 interface Live {
   msg: EcoSnapshot;
-  views: SnapshotViews;
+  views: SnapshotViews | null; // null when a render worker holds the buffer
 }
 
 // The followed creature: the latest details, the last ones while alive (for the card), and a brain rebuilt from its genome.
@@ -72,6 +73,12 @@ let canvasH = 0;
 let lastUiAt = 0;
 let lastBrainAt = 0;
 
+// ?offscreen=1: a render worker draws on the canvas (OffscreenCanvas) and the page keeps UI, camera and input.
+let renderWorker: Worker | null = null;
+let backW = 0; // backing-store size, tracked here since the canvas can no longer be resized from the page
+let backH = 0;
+let pickRequests = 0;
+let pendingPort: MessagePort | null = null; // the simulation worker's end of the snapshot channel, handed over when it exists
 const camera = new Camera(config.world.width, config.world.height, 1, 1);
 const renderer = new EcoRenderer();
 const births = new BirthRings();
@@ -79,8 +86,72 @@ const impacts = new ImpactEffects();
 
 function drawIdle(): void {
   if (active) return;
+  if (renderWorker) {
+    renderWorker.postMessage({ type: "idle", config, dpr: fitBacking() } satisfies RenderInMessage);
+    return;
+  }
   const dpr = fitCanvas(view.canvas);
   drawIdleWorld(view.canvas.getContext("2d")!, config, view.canvas.width, view.canvas.height, dpr);
+}
+
+// Moves the canvas to a render worker, once per page. It needs the OffscreenCanvas 2D API (Chrome, Firefox, Safari 16.4+).
+function startRenderWorker(): void {
+  if (!params.has("offscreen") || typeof view.canvas.transferControlToOffscreen !== "function") return;
+  fitCanvas(view.canvas);
+  backW = view.canvas.width;
+  backH = view.canvas.height;
+  const offscreen = view.canvas.transferControlToOffscreen();
+  const w = new Worker(new URL("./worker/renderWorker.ts", import.meta.url), { type: "module" });
+  const channel = new MessageChannel();
+  w.postMessage({ type: "init", canvas: offscreen, port: channel.port1 } satisfies RenderInMessage, [offscreen, channel.port1]);
+  w.onmessage = (e: MessageEvent<RenderOutMessage>) => {
+    const m = e.data;
+    if (m.type === "grabbed") void compareGrab(m);
+    else if (m.type === "drew") ((globalThis as { __draws?: number[] }).__draws ??= []).push(m.ms);
+    else if (m.request === pickRequests) {
+      if (m.id >= 0) select(m.id, m.x, m.y);
+      else if (selection) clearSelection();
+    }
+  };
+  renderWorker = w;
+  (globalThis as { __grab?: () => void }).__grab = () => w.postMessage({ type: "grab" } satisfies RenderInMessage);
+  pendingPort = channel.port2;
+}
+
+// Debug (?offscreen=1): compares the worker's canvas with a main-thread draw of a copy of the same snapshot, same camera.
+async function compareGrab(m: Extract<RenderOutMessage, { type: "grabbed" }>): Promise<void> {
+  const w = canvasW;
+  const h = canvasH;
+  const a = new OffscreenCanvas(w, h).getContext("2d")!;
+  a.drawImage(await createImageBitmap(m.png), 0, 0);
+  const b = new OffscreenCanvas(w, h).getContext("2d")!;
+  const s = m.snapshot;
+  new EcoRenderer().draw(b as unknown as CanvasRenderingContext2D, camera, drawConfig(), snapshotViews(m.buffer, s.count, s.itemCount, s.creatureCap, s.itemCap), null, showRays, window.devicePixelRatio || 1, highlight);
+  const da = a.getImageData(0, 0, w, h).data;
+  const db = b.getImageData(0, 0, w, h).data;
+  let diff = 0;
+  let maxd = 0;
+  for (let i = 0; i < da.length; i++) if (da[i] !== db[i]) { diff++; maxd = Math.max(maxd, Math.abs(da[i]! - db[i]!)); }
+  (globalThis as { __grabResult?: unknown }).__grabResult = { w, h, zoom: camera.zoom, bytes: da.length, diff, maxd, count: s.count, items: s.itemCount };
+}
+
+// Matches the backing size to the layout and tells the render worker; returns the device pixel ratio.
+function fitBacking(): number {
+  const dpr = window.devicePixelRatio || 1;
+  const w = Math.max(1, Math.round(view.canvas.clientWidth * dpr));
+  const h = Math.max(1, Math.round(view.canvas.clientHeight * dpr));
+  if (w !== backW || h !== backH) {
+    backW = w;
+    backH = h;
+    renderWorker!.postMessage({ type: "size", width: w, height: h } satisfies RenderInMessage);
+  }
+  return dpr;
+}
+
+const backing = (): { width: number; height: number } => (renderWorker ? { width: backW, height: backH } : view.canvas);
+
+function recycle(m: EcoSnapshot): void {
+  if (m.buffer.byteLength) send({ type: "recycle", buffer: m.buffer, run: m.run }, [m.buffer]);
 }
 
 function send(msg: EcoInMessage, transfer: Transferable[] = []): void {
@@ -103,10 +174,11 @@ function drawConfig(): EcoDrawConfig {
 
 // Matches the canvas and camera to the layout; returns the device pixel ratio.
 function syncCanvas(): number {
-  const dpr = fitCanvas(view.canvas);
-  if (view.canvas.width !== canvasW || view.canvas.height !== canvasH) {
-    canvasW = view.canvas.width;
-    canvasH = view.canvas.height;
+  const dpr = renderWorker ? fitBacking() : fitCanvas(view.canvas);
+  const { width, height } = backing();
+  if (width !== canvasW || height !== canvasH) {
+    canvasW = width;
+    canvasH = height;
     camera.resize(canvasW, canvasH);
   }
   camera.maxZoom = (MAX_CREATURE_PX * dpr) / config.creature.radius;
@@ -121,11 +193,11 @@ function overlayShift(): number {
   const r = stack.getBoundingClientRect();
   const free = c.right - r.right;
   if (free < 0.4 * c.width) return 0; // too narrow to be worth it
-  return ((r.right - c.left) / 2) * (view.canvas.width / c.width);
+  return ((r.right - c.left) / 2) * (backing().width / c.width);
 }
 
 function releaseLive(): void {
-  if (live) send({ type: "recycle", buffer: live.msg.buffer, run: live.msg.run }, [live.msg.buffer]);
+  if (live) recycle(live.msg);
   live = null;
 }
 
@@ -149,15 +221,17 @@ function onSnapshot(e: MessageEvent<EcoOutMessage>): void {
     return;
   }
   if (!active || msg.run !== run) {
-    send({ type: "recycle", buffer: msg.buffer, run: msg.run }, [msg.buffer]);
+    recycle(msg);
     return;
   }
   const previous = live;
-  live = { msg, views: snapshotViews(msg.buffer, msg.count, msg.itemCount, msg.creatureCap, msg.itemCap) };
-  if (previous) send({ type: "recycle", buffer: previous.msg.buffer, run: previous.msg.run }, [previous.msg.buffer]);
-  const stamp = performance.now();
-  births.observe(live.views, stamp);
-  if (msg.events) impacts.add(msg.events, stamp);
+  live = { msg, views: msg.buffer.byteLength ? snapshotViews(msg.buffer, msg.count, msg.itemCount, msg.creatureCap, msg.itemCap) : null };
+  if (previous) recycle(previous.msg);
+  if (live.views) {
+    const stamp = performance.now();
+    births.observe(live.views, stamp);
+    if (msg.events) impacts.add(msg.events, stamp);
+  }
   if (msg.history) view.setHistory(toSamples(msg.history));
   if (msg.lineageHistory) view.setLineageHistory(msg.lineageHistory);
   if (msg.traits) view.setTraits(msg.traits);
@@ -230,6 +304,10 @@ function startRun(c: EcoConfig): void {
 function createWorker(): Worker {
   const w = new Worker(new URL("./worker/ecoWorker.ts", import.meta.url), { type: "module" });
   w.onmessage = onSnapshot;
+  if (pendingPort) {
+    w.postMessage({ type: "renderPort", port: pendingPort }, [pendingPort]);
+    pendingPort = null;
+  }
   w.onerror = (e) => {
     active = false;
     view.setPhase("idle");
@@ -246,11 +324,10 @@ function startFollow(): void {
 }
 
 // Zooms in on a clicked creature, then follows it.
-function select(index: number): void {
-  const v = live!.views;
+function select(id: number, x: number, y: number): void {
   clearSelection();
-  send({ type: "select", id: v.ids[index]! });
-  beginSelection(v.ids[index]!, v.x[index]!, v.y[index]!, config.creature.rayLength);
+  send({ type: "select", id });
+  beginSelection(id, x, y, config.creature.rayLength);
 }
 
 // Asks the worker for the best creature; the zoom-in starts when it answers.
@@ -278,8 +355,13 @@ camera.onClick = (wx, wy) => {
   if (!live) return;
   const dpr = window.devicePixelRatio || 1;
   const reach = Math.max(PICK_RADII * config.creature.radius, (PICK_MIN_PX * dpr) / camera.zoom);
-  const index = pickCreature(live.views.x, live.views.y, live.views.count, wx, wy, reach);
-  if (index >= 0) select(index);
+  if (renderWorker) {
+    renderWorker.postMessage({ type: "pick", request: ++pickRequests, x: wx, y: wy, reach } satisfies RenderInMessage);
+    return;
+  }
+  const v = live.views!;
+  const index = pickCreature(v.x, v.y, v.count, wx, wy, reach);
+  if (index >= 0) select(v.ids[index]!, v.x[index]!, v.y[index]!);
   else if (selection) clearSelection();
 };
 
@@ -328,8 +410,14 @@ function frame(now: number): void {
   const dpr = syncCanvas();
   camera.update(now);
   syncFollow();
-  const ctx = view.canvas.getContext("2d")!;
-  renderer.draw(ctx, camera, drawConfig(), live.views, selection?.details ?? null, showRays, dpr, highlight, births, now, impacts);
+  if (renderWorker) {
+    const { cx, cy, zoom, focusX, focusY } = camera;
+    renderWorker.postMessage({ type: "frame", run, view: { cx, cy, zoom, focusX, focusY }, cfg: drawConfig(), selectedId: selection?.details?.id ?? null, showRays, dpr, highlight } satisfies RenderInMessage);
+  } else {
+    const t0 = performance.now();
+    renderer.draw(view.canvas.getContext("2d")!, camera, drawConfig(), live.views!, selection?.details ?? null, showRays, dpr, highlight, births, now, impacts);
+    ((globalThis as { __draws?: number[] }).__draws ??= []).push(performance.now() - t0);
+  }
   if (now - lastUiAt >= UI_INTERVAL_MS) {
     lastUiAt = now;
     updateUi();
@@ -397,7 +485,8 @@ const view = createEcoView({
   },
 }, PAGE);
 
-camera.attach(view.canvas);
+startRenderWorker();
+camera.attach(view.canvas, backing);
 showRays = view.showRays();
 view.fillConfig(NORMAL);
 new ResizeObserver(drawIdle).observe(view.canvas);

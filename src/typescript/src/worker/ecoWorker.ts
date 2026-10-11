@@ -1,11 +1,23 @@
 import type { EcoInMessage } from "./ecoProtocol.ts";
+import type { RenderSnapshot } from "./renderProtocol.ts";
 import { EcoRunner } from "./ecoRunner.ts";
 import { createBrowserThinkPool } from "./browserPool.ts";
 import { ThinkPool, defaultHelpers } from "./ecoPool.ts";
 import { loadPool } from "../sim/seedPool.ts";
 import type { PoolEntry } from "../sim/seedPool.ts";
 
-const runner = new EcoRunner((msg, transfer) => self.postMessage(msg, { transfer }));
+let renderPort: MessagePort | null = null; // set when a render worker draws: snapshot buffers go to it, the page gets the rest
+const NO_BUFFER = new ArrayBuffer(0);
+const runner = new EcoRunner((msg, transfer) => {
+  if (renderPort && msg.type === "snapshot") {
+    const { buffer, selected, events } = msg;
+    const toRender: RenderSnapshot = { type: "snapshot", run: msg.run, count: msg.count, itemCount: msg.itemCount, creatureCap: msg.creatureCap, itemCap: msg.itemCap, buffer, events, selected: selected && { ...selected, genome: null } };
+    renderPort.postMessage(toRender, { transfer: [buffer] });
+    self.postMessage({ ...msg, buffer: NO_BUFFER });
+    return;
+  }
+  self.postMessage(msg, { transfer });
+});
 let busy = false; // a pump is scheduled or running
 let seedPool: Promise<PoolEntry[] | null> | undefined; // fetched on the first start, then reused
 let queue = Promise.resolve(); // messages and pumps run in order, also while the first start waits for the pool
@@ -60,6 +72,12 @@ async function receive(msg: EcoInMessage): Promise<void> {
   if (!busy) schedule(0);
 }
 
-self.onmessage = (e: MessageEvent<EcoInMessage>) => {
-  queue = queue.then(() => receive(e.data));
+self.onmessage = (e: MessageEvent<EcoInMessage | { type: "renderPort"; port: MessagePort }>) => {
+  if (e.data.type === "renderPort") {
+    renderPort = e.data.port;
+    renderPort.onmessage = (p: MessageEvent<EcoInMessage>) => { queue = queue.then(() => receive(p.data)); };
+    return;
+  }
+  const data = e.data;
+  queue = queue.then(() => receive(data));
 };
