@@ -3,6 +3,7 @@ import { SPECIES_COLORS } from "./speciesStyle.ts";
 import { EXTRA_INPUTS, FEAT_CREATURE, FEAT_FOOD, FEAT_POISON, INPUT_EXTRA_LABELS, OUTPUT_LABELS, OUTPUT_SIZE, RAY_FEATURE_LABELS } from "../sim/sensors.ts";
 import type { InputLayout } from "../sim/sensors.ts";
 import { fitCanvas } from "./canvas.ts";
+import { FOOD, LABEL, OTHER, POISON } from "./palette.ts";
 
 const POS_RGB = [255, 107, 107]; // red, positive
 const NEG_RGB = [78, 168, 255]; // blue, negative
@@ -10,13 +11,9 @@ const NODE_BASE = "#153427";
 const NODE_EMPTY = "#0f241b"; // inputs at exactly 0 read as hollow
 const RING = "#2c5744";
 const TRACK = "rgba(44, 87, 68, 0.5)";
-const LABEL_COLOR = "#8fae9f";
 const TEXT_COLOR = "#d6e4dc";
-const FOOD_COLOR = "#4ade80";
-const POISON_COLOR = "#e040fb";
-const CREATURE_COLOR = "#7dd3fc";
 const FEATURE_LETTERS: Record<string, string> = { closeness: "c", food: "f", poison: "p", wall: "w", creature: "o", "seen energy": "e" };
-const FEATURE_COLORS = [TEXT_COLOR, FOOD_COLOR, POISON_COLOR, LABEL_COLOR, CREATURE_COLOR, CREATURE_COLOR];
+const FEATURE_COLORS = [TEXT_COLOR, FOOD, POISON, LABEL, OTHER, OTHER];
 // True when ray feature f of n is one of several species flags (The Great Hunt), labelled by a short upright word.
 const isSpeciesFlag = (f: number, n: number): boolean => n > FEATURE_COLORS.length && f >= 4 && f < n - 1;
 // Colour of a ray's row label from its inputs at k (features per ray): what it sees, a seen creature in its species'
@@ -27,12 +24,12 @@ export function rayLabelColor(inputs: ArrayLike<number>, k: number, features: nu
   let flag = -1;
   for (let f = FEAT_CREATURE; f < features - 1; f++) if (inputs[k + f]! > HIT_LEVEL && (flag < 0 || inputs[k + f]! > inputs[k + flag]!)) flag = f;
   if (flag >= 0) return featureColor(flag, features);
-  if (food > HIT_LEVEL || poison > HIT_LEVEL) return food >= poison ? FOOD_COLOR : POISON_COLOR;
-  return LABEL_COLOR;
+  if (food > HIT_LEVEL || poison > HIT_LEVEL) return food >= poison ? FOOD : POISON;
+  return LABEL;
 }
 
 // Colour of ray feature f of n: with one flag per species (n > 6), each flag in its species' colour.
-const featureColor = (f: number, n: number): string => (f < 4 || n <= FEATURE_COLORS.length ? FEATURE_COLORS[f]! : f === n - 1 ? CREATURE_COLOR : SPECIES_COLORS[f - 4] ?? CREATURE_COLOR);
+const featureColor = (f: number, n: number): string => (f < 4 || n <= FEATURE_COLORS.length ? FEATURE_COLORS[f]! : f === n - 1 ? OTHER : SPECIES_COLORS[f - 4] ?? OTHER);
 const HIT_LEVEL = 0.5;
 
 const NB = 6; // edge strength buckets per sign, drawn weakest first so strong edges end on top
@@ -426,7 +423,7 @@ export class BrainView {
         ctx.restore();
       } else ctx.fillText(FEATURE_LETTERS[labels[f]!] ?? labels[f]![0]!, GRID_X + f * FEAT_DX, headerY);
     }
-    ctx.fillStyle = LABEL_COLOR;
+    ctx.fillStyle = LABEL;
     for (let k = 0; k < EXTRA_INPUTS; k++) ctx.fillText(EXTRA_SHORT[k]!, xIn[rays * features + k]!, extraLabelY);
 
     // Ray rows light up green for food and magenta for poison, read from the input features.
@@ -437,7 +434,7 @@ export class BrainView {
     for (let r = 0; r < rays; r++) {
       const k = r * features;
       const color = rayLabelColor(inAct, k, features);
-      const hit = color !== LABEL_COLOR;
+      const hit = color !== LABEL;
       if (every || r % 2 === 0) {
         ctx.fillStyle = color;
         ctx.fillText(`R${r + 1}`, lx, yIn[k]!);
@@ -476,7 +473,7 @@ export class BrainView {
         ctx.fillText("L", outX + MEM_OUT_DX, memoryOutY);
       }
       ctx.textAlign = "left";
-      ctx.fillStyle = LABEL_COLOR;
+      ctx.fillStyle = LABEL;
       ctx.font = ROW_FONT;
       let deepest = 0;
       for (let k = OUTPUT_SIZE; k < yOut.length; k++) deepest = Math.max(deepest, yOut[k]!);
@@ -497,7 +494,7 @@ export class BrainView {
     ctx.lineCap = "round";
     let x = this.canvas.clientWidth - 8;
     for (const [text, rgb] of items) {
-      ctx.fillStyle = LABEL_COLOR;
+      ctx.fillStyle = LABEL;
       ctx.fillText(text, x, y);
       const sx = x - ctx.measureText(text).width - 3;
       ctx.strokeStyle = rgba(rgb, 1);

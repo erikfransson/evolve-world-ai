@@ -119,11 +119,11 @@ function seriesRow(): Record<string, unknown> {
     if (m.founderId < eco.poolFounders) pooled++;
   }
   let lineages = 0;
-  for (let f = 0; f < eco.founders; f++) if (eco.lineageSize(f) > 0) lineages++;
+  for (let f = 0; f < eco.founders; f++) if (eco.lineages.size(f) > 0) lineages++;
   const row = {
     t: Math.round(eco.tick * config.dt), pop: eco.population, births: eco.births - last.births, deaths: eco.deaths - last.deaths,
     foodEaten: eco.foodEaten - last.foodEaten, poisonEaten: eco.poisonEaten - last.poisonEaten, food: eco.food, poison: eco.poison, lineages,
-    top: eco.topLineages(3).map((l) => [l.founder, l.count]), speed: +(speed / n).toFixed(1), energy: +(energy / n).toFixed(1),
+    top: eco.lineages.top(3).map((l) => [l.founder, l.count]), speed: +(speed / n).toFixed(1), energy: +(energy / n).toFixed(1),
     rays: +(rays / n).toFixed(2), depth: +(depth / n).toFixed(1), poolShare: +(pooled / n).toFixed(2),
   };
   last = { births: eco.births, deaths: eco.deaths, foodEaten: eco.foodEaten, poisonEaten: eco.poisonEaten };

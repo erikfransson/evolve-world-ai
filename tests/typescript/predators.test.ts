@@ -74,7 +74,7 @@ describe("The Great Hunt", () => {
 
   it("children keep their parent's species and stay in the species' colour band", () => {
     const eco = new Ecosystem(predCfg(80, 20, 2, { birthEnergyRange: [70, 70], birthCostRange: [35, 35] })); // prey breed readily
-    const founderSpecies = new Map(eco.topLineages(eco.founders).map((l) => [l.founder, l.species]));
+    const founderSpecies = new Map(eco.lineages.top(eco.founders).map((l) => [l.founder, l.species]));
     for (let t = 0; t < 900; t++) eco.step();
     const counts = eco.speciesCounts;
     expect(counts[0]!.births).toBeGreaterThan(0);
@@ -228,6 +228,6 @@ describe("Species ray features", () => {
     const entry: PoolEntry = { plan, genome, fitness: 60, world: { food: 0.7, poison: 0.1 } };
     const eco = new Ecosystem(predCfg(10, 4), [entry]);
     expect(eco.poolFounders).toBe(5 + 2);
-    expect(eco.fromPool(0) && eco.fromPool(10) && !eco.fromPool(9)).toBe(true);
+    expect(eco.lineages.fromPool(0) && eco.lineages.fromPool(10) && !eco.lineages.fromPool(9)).toBe(true);
   });
 });

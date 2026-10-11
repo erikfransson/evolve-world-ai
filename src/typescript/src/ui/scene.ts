@@ -1,6 +1,7 @@
 import type { CreatureState, EpisodeView, PlaybackState, WorldView } from "../sim/types.ts";
 import { HIT_FOOD, HIT_NONE, HIT_POISON } from "../sim/types.ts";
 import type { SimConfig } from "../sim/config.ts";
+import { FOOD, OTHER, POISON } from "./palette.ts";
 
 export interface ViewOptions {
   showAll: boolean;
@@ -27,9 +28,7 @@ const MARGIN = 12; // canvas pixels around the world
 export const BACKGROUND = "#0b1d16";
 export const FLOOR = "#10291f";
 export const WALL = "#9fb8ad";
-export const FOOD = "#4ade80";
-export const POISON = "#e040fb";
-export const OTHER = "#7dd3fc"; // the rest of a generation
+export { FOOD, OTHER, POISON };
 export const RAY_COLORS = ["#9db3a8", FOOD, POISON, "#facc15", OTHER]; // indexed by HIT_NONE, HIT_FOOD, HIT_POISON, HIT_WALL, HIT_CREATURE
 // Trials: the body is full at this many times the starting energy, so a newborn is one third full.
 export const TRIALS_FULL_AT = 3;

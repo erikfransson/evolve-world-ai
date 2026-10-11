@@ -210,7 +210,7 @@ export class Ecosystem {
   private readonly spot = { x: 0, y: 0, vx: 0, vy: 0 }; // scratch of a newborn's place
   private spent = false; // a parent gave its last energy to a child this tick
   private readonly traits: BirthTraits = { energy: 0, cost: 0, cooldown: 0 }; // scratch of one birth
-  private readonly lineages: Lineages;
+  readonly lineages: Lineages;
   private aging: Aging | null;
   private readonly contact: Contact = { speed: 0 };
   onDeath: ((m: EcoCreature) => void) | null = null; // called with each creature as it leaves, before its object is recycled
@@ -762,26 +762,6 @@ export class Ecosystem {
     }
     frame.count = n;
     return frame;
-  }
-
-  // The founder's own colour, degrees.
-  founderColour(founder: number): number {
-    return this.lineages.colour(founder);
-  }
-
-  // True when the founder came from the seed pool.
-  fromPool(founder: number): boolean {
-    return this.lineages.fromPool(founder);
-  }
-
-  // Living creatures descended from this founder.
-  lineageSize(founder: number): number {
-    return this.lineages.size(founder);
-  }
-
-  // The k largest living lineages, of one species or of all (-1), biggest first.
-  topLineages(k: number, species = -1): Lineage[] {
-    return this.lineages.top(k, species);
   }
 
   // --- Live world hooks (insert, save and restore, retune); step does not use them ---
