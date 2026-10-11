@@ -15,6 +15,9 @@ const HUE_BUCKETS = 72;
 const AGE_LEVELS = 8;
 const AGE_SATURATE_S = 180; // age at which a creature has reached its most muted look
 const BUCKETS = HUE_BUCKETS * AGE_LEVELS;
+const DIM_BUCKET = BUCKETS; // creatures outside the highlighted lineage
+const DIM_STYLE = "hsl(150, 12%, 55%)";
+const DIM_ALPHA = 0.3;
 const BODY = "rgba(15, 23, 20, 0.85)";
 const SELECT_RING = "#eef5f1";
 const DETAIL_MIN_RADIUS = 3; // CSS px; smaller creatures are drawn as flat dots
@@ -47,9 +50,10 @@ export class EcoRenderer {
   private vis = new Int32Array(1024); // snapshot indices of the creatures in view
   private visBucket = new Int32Array(1024);
   private order = new Int32Array(1024);
-  private readonly counts = new Int32Array(BUCKETS + 1);
+  private readonly counts = new Int32Array(DIM_BUCKET + 2);
 
-  draw(ctx: CanvasRenderingContext2D, cam: Camera, cfg: EcoDrawConfig, v: SnapshotViews, selected: SelectedDetails | null, showRays: boolean, dpr: number): void {
+  // highlight: a founder id whose descendants stay bright while everyone else is dimmed, or -1 for none.
+  draw(ctx: CanvasRenderingContext2D, cam: Camera, cfg: EcoDrawConfig, v: SnapshotViews, selected: SelectedDetails | null, showRays: boolean, dpr: number, highlight = -1): void {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = 1;
     ctx.fillStyle = BACKGROUND;
@@ -73,7 +77,7 @@ export class EcoRenderer {
     ctx.strokeRect(0, 0, cfg.worldW, cfg.worldH);
 
     this.drawItems(ctx, cfg, v, x0, x1, y0, y1, dev, z);
-    this.drawCreatures(ctx, cfg, v, x0, x1, y0, y1, css, z / dpr);
+    this.drawCreatures(ctx, cfg, v, x0, x1, y0, y1, css, z / dpr, highlight);
     if (selected?.alive) this.drawSelected(ctx, cfg, selected, showRays, css);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
   }
@@ -106,7 +110,7 @@ export class EcoRenderer {
     ctx.globalAlpha = 1;
   }
 
-  private drawCreatures(ctx: CanvasRenderingContext2D, cfg: EcoDrawConfig, v: SnapshotViews, x0: number, x1: number, y0: number, y1: number, css: number, cssZoom: number): void {
+  private drawCreatures(ctx: CanvasRenderingContext2D, cfg: EcoDrawConfig, v: SnapshotViews, x0: number, x1: number, y0: number, y1: number, css: number, cssZoom: number, highlight: number): void {
     if (this.vis.length < v.count) {
       const size = Math.max(v.count, 2 * this.vis.length);
       this.vis = new Int32Array(size);
@@ -120,28 +124,43 @@ export class EcoRenderer {
       const x = v.x[i]!;
       const y = v.y[i]!;
       if (x < x0 || x > x1 || y < y0 || y > y1) continue;
-      const b = creatureBucket(v.hue[i]!, v.age[i]!);
+      const b = highlight >= 0 && v.founder[i] !== highlight ? DIM_BUCKET : creatureBucket(v.hue[i]!, v.age[i]!);
       vis[n] = i;
       visBucket[n++] = b;
       counts[b + 1]!++;
     }
     const R = cfg.radius;
     if (R * cssZoom >= DETAIL_MIN_RADIUS && n <= DETAIL_MAX_COUNT) {
-      for (let k = 0; k < n; k++) this.drawDetailed(ctx, cfg, v, vis[k]!, STYLES[visBucket[k]!]!, css);
+      for (let k = 0; k < n; k++) this.drawDetailed(ctx, cfg, v, vis[k]!, visBucket[k] === DIM_BUCKET ? DIM_STYLE : STYLES[visBucket[k]!]!, css, visBucket[k] === DIM_BUCKET ? DIM_ALPHA : 1);
       return;
     }
     // Flat dots grouped by colour, one path and fill per colour.
-    for (let b = 0; b < BUCKETS; b++) counts[b + 1]! += counts[b]!;
+    for (let b = 0; b <= DIM_BUCKET; b++) counts[b + 1]! += counts[b]!;
     const order = this.order;
     for (let k = 0; k < n; k++) order[counts[visBucket[k]!]!++] = vis[k]!;
     // counts[b] is now the end of bucket b, which is the start of bucket b + 1.
     // Round dots at least DOT_RADIUS big, over a dark outline pass, so creatures stand out from the small dim items.
     const dotR = Math.max(R, DOT_RADIUS * css);
     const outline = dotR + 0.9 * css;
+    // Creatures outside the highlighted lineage come first, faint and without outline, so the lineage is drawn over them.
+    const dimAt = counts[DIM_BUCKET - 1]!;
+    const dimEnd = counts[DIM_BUCKET]!;
+    if (dimEnd > dimAt) {
+      ctx.globalAlpha = DIM_ALPHA;
+      ctx.fillStyle = DIM_STYLE;
+      ctx.beginPath();
+      for (let at = dimAt; at < dimEnd; at++) {
+        const i = order[at]!;
+        ctx.moveTo(v.x[i]! + dotR, v.y[i]!);
+        ctx.arc(v.x[i]!, v.y[i]!, dotR, 0, Math.PI * 2);
+      }
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
     ctx.fillStyle = DOT_OUTLINE;
     ctx.beginPath();
-    for (let k = 0; k < n; k++) {
-      const i = vis[k]!;
+    for (let k = 0; k < dimAt; k++) {
+      const i = order[k]!;
       const x = v.x[i]!;
       const y = v.y[i]!;
       ctx.moveTo(x + outline, y);
@@ -166,11 +185,12 @@ export class EcoRenderer {
   }
 
   // Dark body, level fill in the creature's colour, ring and heading tick.
-  private drawDetailed(ctx: CanvasRenderingContext2D, cfg: EcoDrawConfig, v: SnapshotViews, i: number, style: string, css: number): void {
+  private drawDetailed(ctx: CanvasRenderingContext2D, cfg: EcoDrawConfig, v: SnapshotViews, i: number, style: string, css: number, alpha: number): void {
     const x = v.x[i]!;
     const y = v.y[i]!;
     const R = cfg.radius;
     const e = Math.min(1, Math.max(0, v.energy[i]! / cfg.fullEnergy));
+    ctx.globalAlpha = alpha;
     ctx.fillStyle = BODY;
     ctx.beginPath();
     ctx.arc(x, y, R, 0, Math.PI * 2);
@@ -196,6 +216,7 @@ export class EcoRenderer {
     ctx.moveTo(x + cs * R, y + sn * R);
     ctx.lineTo(x + cs * R * 1.6, y + sn * R * 1.6);
     ctx.stroke();
+    ctx.globalAlpha = 1;
   }
 
   private drawSelected(ctx: CanvasRenderingContext2D, cfg: EcoDrawConfig, s: SelectedDetails, showRays: boolean, css: number): void {

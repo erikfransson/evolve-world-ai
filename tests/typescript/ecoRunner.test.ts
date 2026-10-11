@@ -1,7 +1,7 @@
 import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoOutMessage, EcoSnapshot } from "../../src/typescript/src/worker/ecoProtocol.ts";
-import { snapshotViews } from "../../src/typescript/src/worker/ecoProtocol.ts";
+import { LINEAGE_STRIDE, LINEAGE_TOP, snapshotViews } from "../../src/typescript/src/worker/ecoProtocol.ts";
 import { genomeLength, layerSizes } from "../../src/typescript/src/sim/brain.ts";
 import { inputLayout, planUpkeep, rayAngleOffsets } from "../../src/typescript/src/sim/sensors.ts";
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
@@ -44,6 +44,37 @@ describe("EcoRunner", () => {
     expect(v.age[0]).toBe(0);
     expect(m.itemCount).toBe(m.food + m.poison);
     expect(v.itemKind[0]).toBeGreaterThan(0);
+  });
+
+  it("sends the top lineages about once a second, with the founder of every creature", () => {
+    const { runner, clock, sent, last } = setup();
+    runner.handle({ type: "start", config: cfg({ eco: { initialPopulation: 20 } }), run: 1 });
+    const first = last();
+    expect(first.lineages!.length).toBe(LINEAGE_TOP);
+    expect(first.lineages!.map((l) => l.count)).toEqual(new Array(LINEAGE_TOP).fill(1));
+    expect(first.lineageHistory!.length).toBe(LINEAGE_STRIDE);
+    expect(Array.from(first.lineageHistory!.subarray(0, 3))).toEqual([0, 20 - LINEAGE_TOP, 0]);
+    const v = snapshotViews(first.buffer, first.count, first.itemCount, first.creatureCap, first.itemCap);
+    expect(Array.from(v.founder.subarray(0, 20))).toEqual(Array.from(v.ids.subarray(0, 20)));
+    runner.handle({ type: "speed", speed: 4 });
+    clock.t = 400;
+    runner.pump();
+    runner.handle({ type: "select", id: null }); // another snapshot inside the second
+    expect(sent.length).toBeGreaterThan(2);
+    expect(last().lineages).toBeUndefined();
+    clock.t = 1100;
+    runner.pump();
+    runner.handle({ type: "select", id: null });
+    expect(last().lineages!.length).toBeGreaterThan(0);
+    expect(last().lineageHistory!.length % LINEAGE_STRIDE).toBe(0);
+    expect(last().lineageHistory!.length).toBeGreaterThan(LINEAGE_STRIDE);
+  });
+
+  it("reports the selected creature's founder", () => {
+    const { runner, last } = setup();
+    runner.handle({ type: "start", config: cfg({ eco: { initialPopulation: 20, poolFraction: 0 } }), run: 1 });
+    runner.handle({ type: "select", id: 5 });
+    expect(last().selected).toMatchObject({ id: 5, founderId: 5, founderPool: false });
   });
 
   it("paces ticks to real time times speed", () => {

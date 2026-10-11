@@ -21,6 +21,7 @@ function views(n: number, items = 50) {
     v.energy[i] = (i * 13) % 200;
     v.hue[i] = (i * 7) % 360;
     v.age[i] = i % 400;
+    v.founder[i] = i % 5;
   }
   for (let i = 0; i < items; i++) {
     v.itemX[i] = 50 + i * 70;
@@ -31,7 +32,7 @@ function views(n: number, items = 50) {
 }
 
 const selected: SelectedDetails = {
-  id: 3, alive: true, x: 211, y: 373, heading: 1, energy: 80, age: 20, children: 0, eaten: 0, depth: 0, parentId: -1, hue: 10, plan: { ...planOf(DEFAULT_ECO_CONFIG), rayCount: 3, rayLength: 100 }, upkeep: 0.3,
+  id: 3, alive: true, x: 211, y: 373, heading: 1, energy: 80, age: 20, children: 0, eaten: 0, depth: 0, parentId: -1, hue: 10, founderId: 3, founderPool: false, founderHue: 10, plan: { ...planOf(DEFAULT_ECO_CONFIG), rayCount: 3, rayLength: 100 }, upkeep: 0.3,
   rayKinds: Uint8Array.of(HIT_FOOD, 0, HIT_WALL), rayCloseness: Float32Array.of(0.5, 0, 0.2), rayEnergy: new Float32Array(3),
   rayOffsets: Float32Array.of(-0.3, 0, 0.3), inputs: new Float32Array(0), genome: null,
 };
@@ -66,6 +67,20 @@ describe("EcoRenderer", () => {
     const calls = draw(5, 3000);
     expect(badCoordinateCalls(calls)).toEqual([]);
     expect(calls.filter((c) => c.name === "arc").length).toBeGreaterThan(3);
+  });
+
+  it("dims everyone outside the highlighted lineage", () => {
+    const run = (zoom: number | null, highlight: number) => {
+      const { ctx, calls } = fakeCtx(1000, 700);
+      const cam = new Camera(cfg.worldW, cfg.worldH, 1000, 700, 20);
+      if (zoom !== null) cam.setView(200, 350, zoom);
+      new EcoRenderer().draw(ctx, cam, cfg, views(3000), selected, true, 1, highlight);
+      expect(badCoordinateCalls(calls)).toEqual([]);
+      return calls.filter((c) => c.name === "arc").length;
+    };
+    // Flat dots: dimmed creatures get no outline pass, so fewer arcs than with no highlight.
+    expect(run(null, 2)).toBeLessThan(run(null, -1));
+    run(5, 2);
   });
 
   it("culls creatures and items outside the view", () => {

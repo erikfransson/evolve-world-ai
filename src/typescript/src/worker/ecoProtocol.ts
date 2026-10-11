@@ -1,4 +1,5 @@
 import type { EcoConfig } from "../sim/ecoConfig.ts";
+import type { Lineage } from "../sim/ecosystem.ts";
 import type { BodyPlan } from "../sim/sensors.ts";
 
 export type BestBy = "age" | "children" | "eaten";
@@ -28,6 +29,9 @@ export interface SelectedDetails {
   depth: number;
   parentId: number;
   hue: number;
+  founderId: number; // the founder it descends from
+  founderPool: boolean; // that founder came from the seed pool
+  founderHue: number; // that founder's colour
   plan: BodyPlan; // the creature's own senses and brain shape; the genome is sized for it
   upkeep: number; // energy per second besides thrust and turning
   rayKinds: Uint8Array; // HitKind per ray
@@ -59,7 +63,14 @@ export interface EcoSnapshot {
   selected: SelectedDetails | null;
   bestRequest: number; // the last selectBest request handled, so the page ignores selections from before it
   history?: Float64Array; // [time, population, food] per sample, only when it changed
+  // Lineages, sent about once a second (and with the first and last snapshot of a run).
+  lineages?: Lineage[]; // the LINEAGE_TOP largest living lineages, biggest first
+  lineageHistory?: Float64Array; // LINEAGE_STRIDE numbers per sample, at the times of `history`, only when it changed
 }
+
+export const LINEAGE_TOP = 8;
+// One lineage history sample: time, creatures outside the top lineages, then LINEAGE_TOP times (founder id, count, hue); unused slots have id -1.
+export const LINEAGE_STRIDE = 2 + 3 * LINEAGE_TOP;
 
 export interface EcoErrorMessage {
   type: "error";
@@ -77,24 +88,25 @@ export interface SnapshotViews {
   energy: Float32Array;
   hue: Float32Array;
   age: Float32Array; // seconds
+  founder: Int32Array; // founder id
   itemCount: number;
   itemX: Float32Array;
   itemY: Float32Array;
   itemKind: Uint8Array;
 }
 
-const CREATURE_BYTES = 7 * 4; // id, x, y, heading, energy, hue, age
+const CREATURE_BYTES = 8 * 4; // id, x, y, heading, energy, hue, age, founder
 const ITEM_BYTES = 2 * 4 + 1;
 
 export function snapshotBytes(creatureCap: number, itemCap: number): number {
   return creatureCap * CREATURE_BYTES + itemCap * ITEM_BYTES;
 }
 
-// Typed views over a snapshot buffer: seven per-creature arrays, then item x, y and kind. A buffer may be larger than needed.
+// Typed views over a snapshot buffer: eight per-creature arrays, then item x, y and kind. A buffer may be larger than needed.
 export function snapshotViews(buffer: ArrayBuffer, count: number, itemCount: number, creatureCap: number, itemCap: number): SnapshotViews {
   const f32 = (at: number, n: number): Float32Array => new Float32Array(buffer, at, n);
   const c = creatureCap * 4;
-  const itemsAt = 7 * c;
+  const itemsAt = 8 * c;
   return {
     count,
     ids: new Int32Array(buffer, 0, creatureCap),
@@ -104,6 +116,7 @@ export function snapshotViews(buffer: ArrayBuffer, count: number, itemCount: num
     energy: f32(4 * c, creatureCap),
     hue: f32(5 * c, creatureCap),
     age: f32(6 * c, creatureCap),
+    founder: new Int32Array(buffer, 7 * c, creatureCap),
     itemCount,
     itemX: f32(itemsAt, itemCap),
     itemY: f32(itemsAt + itemCap * 4, itemCap),

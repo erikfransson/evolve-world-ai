@@ -4,7 +4,7 @@ import { Ecosystem } from "../sim/ecosystem.ts";
 import type { CreatureFrame, EcoCreature } from "../sim/ecosystem.ts";
 import type { PoolEntry } from "../sim/seedPool.ts";
 import type { BestBy, EcoInMessage, EcoOutMessage, EcoSnapshot, EcoSpeedSetting, SelectedDetails } from "./ecoProtocol.ts";
-import { snapshotBytes, snapshotViews } from "./ecoProtocol.ts";
+import { LINEAGE_STRIDE, LINEAGE_TOP, snapshotBytes, snapshotViews } from "./ecoProtocol.ts";
 
 const SLICE_MS = 12; // longest stretch of ticks before the worker checks messages and posts
 const POST_MS = 1000 / 30; // snapshot interval
@@ -12,6 +12,7 @@ const MAX_IN_FLIGHT = 3; // snapshots posted but not yet recycled, so a slow pag
 const MAX_CATCH_UP = 0.25; // real seconds of ticks that can be owed after a stall
 const SAMPLE_CAP = 600; // graph samples kept; at the cap every other one is dropped and sampling slows to half
 const MIN_CREATURE_CAP = 256;
+const LINEAGE_MS = 1000; // lineages ride along with a snapshot at most this often
 
 export type Post = (msg: EcoOutMessage, transfer: Transferable[]) => void;
 
@@ -39,6 +40,8 @@ export class EcoRunner {
   private sampleStride = 1; // sim seconds between samples
   private nextSample = 0;
   private historyChanged = false;
+  private lineageSamples: number[] = []; // LINEAGE_STRIDE numbers per entry of samples
+  private lineagePostedAt = -Infinity;
   private rayScratch: Pick<SelectedDetails, "rayKinds" | "rayCloseness" | "rayEnergy" | "rayOffsets" | "inputs"> | null = null;
 
   constructor(post: Post, now: () => number = () => performance.now()) {
@@ -126,6 +129,8 @@ export class EcoRunner {
     this.debt = 0;
     this.achieved = 0;
     this.samples = [];
+    this.lineageSamples = [];
+    this.lineagePostedAt = -Infinity;
     this.sampleStride = 1;
     this.nextSample = 0;
     this.rayScratch = null;
@@ -140,13 +145,29 @@ export class EcoRunner {
     const time = eco.tick * eco.config.dt;
     if (!force && time < this.nextSample) return;
     this.samples.push(time, eco.population, eco.food);
+    this.pushLineageSample(eco, time);
     this.nextSample = time + this.sampleStride;
     this.historyChanged = true;
     if (this.samples.length >= 3 * SAMPLE_CAP) {
       const kept: number[] = [];
       for (let i = 0; i < this.samples.length; i += 6) kept.push(this.samples[i]!, this.samples[i + 1]!, this.samples[i + 2]!);
       this.samples = kept;
+      const keptLineage: number[] = [];
+      for (let i = 0; i < this.lineageSamples.length; i += 2 * LINEAGE_STRIDE) for (let k = 0; k < LINEAGE_STRIDE; k++) keptLineage.push(this.lineageSamples[i + k]!);
+      this.lineageSamples = keptLineage;
       this.sampleStride *= 2;
+    }
+  }
+
+  private pushLineageSample(eco: Ecosystem, time: number): void {
+    const top = eco.topLineages(LINEAGE_TOP);
+    let inTop = 0;
+    for (const l of top) inTop += l.count;
+    const out = this.lineageSamples;
+    out.push(time, eco.population - inTop);
+    for (let k = 0; k < LINEAGE_TOP; k++) {
+      const l = top[k];
+      out.push(l ? l.founder : -1, l ? l.count : 0, l ? l.hue : 0);
     }
   }
 
@@ -169,7 +190,7 @@ export class EcoRunner {
     const buffer = this.takeBuffer(creatureCap, itemCap);
     const v = snapshotViews(buffer, n, 0, creatureCap, itemCap);
     // The frame's arrays are views into the buffer, so readCreatures writes straight into the message.
-    const frame: CreatureFrame = { count: 0, ids: v.ids, x: v.x, y: v.y, heading: v.heading, energy: v.energy, hue: v.hue };
+    const frame: CreatureFrame = { count: 0, ids: v.ids, x: v.x, y: v.y, heading: v.heading, energy: v.energy, hue: v.hue, founder: v.founder };
     eco.readCreatures(frame);
     const dt = eco.config.dt;
     let oldest = 0;
@@ -223,6 +244,11 @@ export class EcoRunner {
       msg.history = Float64Array.from(this.samples);
       this.historyChanged = false;
     }
+    if (now - this.lineagePostedAt >= LINEAGE_MS || eco.extinct) {
+      this.lineagePostedAt = now;
+      msg.lineages = eco.topLineages(LINEAGE_TOP);
+      msg.lineageHistory = Float64Array.from(this.lineageSamples);
+    }
     this.inFlight++;
     this.post(msg, [buffer]);
   }
@@ -247,7 +273,7 @@ export class EcoRunner {
     if (!m) {
       const s = this.rayScratch;
       return {
-        id: this.selectedId, alive: false, x: 0, y: 0, heading: 0, energy: 0, age: 0, children: 0, eaten: 0, depth: 0, parentId: -1, hue: 0, plan: planOf(eco.config), upkeep: 0,
+        id: this.selectedId, alive: false, x: 0, y: 0, heading: 0, energy: 0, age: 0, children: 0, eaten: 0, depth: 0, parentId: -1, hue: 0, founderId: -1, founderPool: false, founderHue: 0, plan: planOf(eco.config), upkeep: 0,
         rayKinds: s?.rayKinds ?? new Uint8Array(0), rayCloseness: s?.rayCloseness ?? new Float32Array(0), rayEnergy: s?.rayEnergy ?? new Float32Array(0),
         rayOffsets: s?.rayOffsets ?? new Float32Array(0), inputs: s?.inputs ?? new Float32Array(0), genome: null,
       };
@@ -277,7 +303,7 @@ export class EcoRunner {
     this.sendGenome = false;
     return {
       id: m.id, alive: true, x: s.x, y: s.y, heading: s.heading, energy: s.energy, age: m.ageTicks * eco.config.dt,
-      children: m.children, eaten: m.eaten, depth: m.depth, parentId: m.parentId, hue: m.hue, plan: { ...c.plan, hiddenLayers: c.plan.hiddenLayers.slice() }, upkeep: c.upkeep, ...sc, genome,
+      children: m.children, eaten: m.eaten, depth: m.depth, parentId: m.parentId, hue: m.hue, founderId: m.founderId, founderPool: m.founderId < eco.poolFounders, founderHue: eco.founderColour(m.founderId), plan: { ...c.plan, hiddenLayers: c.plan.hiddenLayers.slice() }, upkeep: c.upkeep, ...sc, genome,
     };
   }
 }

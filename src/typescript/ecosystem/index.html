@@ -106,6 +106,7 @@
                 <div><dt>Id</dt><dd id="selId">-</dd></div>
               </dl>
               <p class="sel-only sel-plan" id="selPlan"></p>
+              <button id="selFounder" class="sel-only sel-founder" type="button" title="Highlight this founder's lineage in the world"><i id="selFounderSw"></i><span id="selFounderText"></span></button>
               <p class="sel-hint">Click a creature or pick one:</p>
               <div class="sel-pick" role="group" aria-label="Pick a creature">
                 <button id="pickAge" class="secondary" type="button" title="Select the oldest living creature">Oldest</button>
@@ -133,6 +134,18 @@
             <div class="ov-body">
               <canvas id="graphView"></canvas>
               <div class="fit-foot"><span class="key pop">creatures</span><span class="key food">food</span><span class="fit-note">simulated time</span></div>
+            </div>
+          </section>
+          <section id="lineageCard" class="ov ov-lineage">
+            <header class="ov-head">
+              <h2>Lineages</h2>
+              <button class="ov-toggle" type="button" aria-expanded="true" aria-label="Minimise lineages" title="Minimise">−</button>
+            </header>
+            <div class="ov-body">
+              <div class="lin-bar" role="img" aria-label="Share of living creatures by founder"></div>
+              <ul class="lin-list"></ul>
+              <canvas class="lin-graph" aria-label="Share of each lineage over simulated time"></canvas>
+              <div class="fit-foot"><span class="fit-note">share of creatures · simulated time</span><button class="lin-clear secondary" type="button" hidden>Show all</button></div>
             </div>
           </section>
         </div>

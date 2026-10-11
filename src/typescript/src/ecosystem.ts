@@ -55,6 +55,7 @@ let bestRequests = 0; // selectBest requests sent
 let pendingBest = 0; // the selectBest request whose answer starts the next selection, 0 for none
 let followAfter = 0; // camera.animationsCompleted that means the zoom-in finished
 let showRays = true;
+let highlight = -1; // founder whose lineage is highlighted in the world, -1 for none
 let extinctShown = false;
 let canvasW = 0;
 let canvasH = 0;
@@ -134,6 +135,8 @@ function onSnapshot(e: MessageEvent<EcoOutMessage>): void {
   live = { msg, views: snapshotViews(msg.buffer, msg.count, msg.itemCount, msg.creatureCap, msg.itemCap) };
   if (previous) send({ type: "recycle", buffer: previous.msg.buffer, run: previous.msg.run }, [previous.msg.buffer]);
   if (msg.history) view.setHistory(toSamples(msg.history));
+  if (msg.lineageHistory) view.setLineageHistory(msg.lineageHistory);
+  if (msg.lineages) view.setLineages(msg.lineages, msg.population);
   const d = msg.selected;
   if (pendingBest && msg.bestRequest === pendingBest) {
     pendingBest = 0;
@@ -168,6 +171,8 @@ function startRun(c: EcoConfig): void {
   syncCanvas();
   camera.setWorld(c.world.width, c.world.height);
   view.setHistory([]);
+  view.clearLineages();
+  highlight = -1;
   view.setStats(null);
   view.setNote(null);
   send({ type: "start", config: c, run, poolUrl: POOL_URL });
@@ -254,7 +259,7 @@ function updateUi(): void {
   view.setStats({ population: m.population, births: m.births, deaths: m.deaths, food: m.food, poison: m.poison, simTime: m.simTime, oldestDepth: m.oldestDepth, speed: m.speed > 0 ? m.speed : null });
   const d = selection?.last;
   if (selection && d) {
-    view.setSelected({ id: d.id, energy: d.energy, fullEnergy: config.eco.birthEnergy, age: d.age, children: d.children, eaten: d.eaten, depth: d.depth, plan: d.plan, upkeep: d.upkeep, died: selection.died });
+    view.setSelected({ id: d.id, energy: d.energy, fullEnergy: config.eco.birthEnergy, age: d.age, children: d.children, eaten: d.eaten, depth: d.depth, plan: d.plan, upkeep: d.upkeep, founderId: d.founderId, founderPool: d.founderPool, founderHue: d.founderHue, died: selection.died });
     view.setFollowing(following);
   }
 }
@@ -274,7 +279,7 @@ function frame(now: number): void {
   camera.update(now);
   syncFollow();
   const ctx = view.canvas.getContext("2d")!;
-  renderer.draw(ctx, camera, drawConfig(), live.views, selection?.details ?? null, showRays, dpr);
+  renderer.draw(ctx, camera, drawConfig(), live.views, selection?.details ?? null, showRays, dpr, highlight);
   if (now - lastUiAt >= UI_INTERVAL_MS) {
     lastUiAt = now;
     updateUi();
@@ -293,6 +298,8 @@ const view = createEcoView({
     clearSelection();
     view.setStats(null);
     view.setHistory([]);
+    view.clearLineages();
+    highlight = -1;
     view.setNote(null);
     config = view.readConfig();
     camera.setWorld(config.world.width, config.world.height);
@@ -332,6 +339,7 @@ const view = createEcoView({
     camera.animateToFit();
   },
   onShowRays: (show) => { showRays = show; },
+  onHighlight: (founder) => { highlight = founder ?? -1; },
   onConfigChange(c) {
     config = c;
     drawIdle();

@@ -2,6 +2,7 @@ import { DEFAULT_ECO_CONFIG } from "../sim/ecoConfig.ts";
 import type { EcoConfig } from "../sim/ecoConfig.ts";
 import { CUSTOM, ECO_LOCKED, ECO_PRESETS, withEcoPreset } from "../sim/presets.ts";
 import type { BodyPlan } from "../sim/sensors.ts";
+import type { Lineage } from "../sim/ecosystem.ts";
 import type { BestBy } from "../worker/ecoProtocol.ts";
 import { BrainView } from "./brainView.ts";
 import { buildEcoForm, fillEcoForm, initEcoSettingsForm, readEcoConfig } from "./ecoSettingsForm.ts";
@@ -9,6 +10,7 @@ import { formatElapsed } from "./elapsed.ts";
 import { initCard } from "./overlays.ts";
 import type { Card } from "./overlays.ts";
 import { initPresetPanel } from "./presetPanel.ts";
+import { LineagePanel, lineageColor } from "./lineagePanel.ts";
 import { PopulationGraph } from "./populationGraph.ts";
 import type { PopulationSample } from "./populationGraph.ts";
 import { Scoreboard, settingsOf, today } from "./scoreboard.ts";
@@ -40,6 +42,9 @@ export interface EcoSelected {
   depth: number; // lineage depth, founders are 0
   plan: BodyPlan;
   upkeep: number; // energy per second besides thrust and turning
+  founderId: number;
+  founderPool: boolean; // the founder came from the seed pool
+  founderHue: number;
   died?: boolean; // the values are those of its last moment
 }
 
@@ -56,6 +61,7 @@ export interface EcoHandlers {
   onFollow(follow: boolean): void; // the Follow toggle
   onWorldView(): void; // the World view button; the page has already cleared the Follow toggle
   onShowRays(show: boolean): void;
+  onHighlight(founder: number | null): void; // the Lineages card picked a lineage to highlight in the world, or cleared it
   onConfigChange(config: EcoConfig): void; // idle edits of the settings form
 }
 
@@ -74,6 +80,9 @@ export interface EcoView {
   setSelected(selected: EcoSelected | null): void; // null shows only the pick buttons and hides the brain card
   setFollowing(follow: boolean): void;
   setHistory(samples: readonly PopulationSample[]): void;
+  setLineages(lineages: readonly Lineage[], population: number): void;
+  setLineageHistory(history: Float64Array): void;
+  clearLineages(): void;
   setNote(text: string | null): void;
   showExtinct(simSeconds: number): void;
   hideExtinct(): void;
@@ -154,6 +163,11 @@ export function createEcoView(handlers: EcoHandlers): EcoView {
   initCard(selectedCard, "evolve.eco.card.selected", false);
   const brainPanel = initCard(brainCard, "evolve.eco.card.brain", mobile);
   initCard($("graphCard"), "evolve.eco.card.graph", mobile);
+  initCard($("lineageCard"), "evolve.eco.card.lineage", mobile);
+  let selectedFounder = -1;
+  const lineages = new LineagePanel($("lineageCard"), (f) => { setFounderButton(); handlers.onHighlight(f); });
+  const founderBtn = $("selFounder");
+  const setFounderButton = (): void => { founderBtn.classList.toggle("on", selectedFounder >= 0 && lineages.highlight() === selectedFounder); };
 
   const speed = (): EcoSpeed => {
     const v = document.querySelector<HTMLInputElement>('input[name="speed"]:checked')!.value;
@@ -227,11 +241,18 @@ export function createEcoView(handlers: EcoHandlers): EcoView {
       $("selDepth").textContent = nf.format(sel.depth);
       $("selId").textContent = `#${sel.id}`;
       $("selPlan").textContent = formatPlan(sel.plan, sel.upkeep);
+      selectedFounder = sel.founderId;
+      $("selFounderSw").style.background = lineageColor(sel.founderHue);
+      $("selFounderText").textContent = `Founder #${sel.founderId} · ${sel.founderPool ? "trained pool" : "random"}`;
+      setFounderButton();
     },
     setFollowing(on) {
       follow.setAttribute("aria-pressed", String(on));
     },
     setHistory: (samples) => view.graph.setData(samples),
+    setLineages: (l, population) => lineages.setLineages(l, population),
+    setLineageHistory: (h) => lineages.setHistory(h),
+    clearLineages: () => lineages.reset(),
     setNote(text) {
       $("note").textContent = text ?? "";
     },
@@ -267,6 +288,7 @@ export function createEcoView(handlers: EcoHandlers): EcoView {
     view.setFollowing(on);
     handlers.onFollow(on);
   };
+  founderBtn.onclick = () => { if (selectedFounder >= 0) lineages.pick(selectedFounder); };
   $("worldView").onclick = () => {
     view.setFollowing(false);
     handlers.onWorldView();
