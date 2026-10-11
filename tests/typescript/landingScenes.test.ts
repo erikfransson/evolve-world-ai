@@ -1,4 +1,4 @@
-import { TICK_SECONDS, WARMUP_TICKS, ecosystemScene, predatorScene } from "../../src/typescript/src/ui/landingScenes.ts";
+import { TICK_SECONDS, WARMUP_TICKS, arenaScene, ecosystemScene, predatorScene } from "../../src/typescript/src/ui/landingScenes.ts";
 
 const TICKS = Math.round(60 / TICK_SECONDS);
 
@@ -65,5 +65,22 @@ describe("predatorScene", () => {
         expect(scene.overlaps()).toBe(0);
       }
     }
+  });
+});
+
+describe("arenaScene", () => {
+  it("stays finite and deterministic through a whole skill loop", () => {
+    const [a, b] = [arenaScene(7), arenaScene(7)];
+    for (let t = 0; t < 1000; t++) {
+      a.step();
+      b.step();
+    }
+    a.draw(finiteCtx());
+    const draws: unknown[][] = [];
+    const record = new Proxy({}, { get: (_, k) => (k === "canvas" ? { width: 720, height: 450 } : (...args: unknown[]) => draws.push([k, ...args])), set: () => true }) as unknown as CanvasRenderingContext2D;
+    b.draw(record);
+    const again: unknown[][] = [];
+    a.draw(new Proxy({}, { get: (_, k) => (k === "canvas" ? { width: 720, height: 450 } : (...args: unknown[]) => again.push([k, ...args])), set: () => true }) as unknown as CanvasRenderingContext2D);
+    expect(again).toEqual(draws);
   });
 });

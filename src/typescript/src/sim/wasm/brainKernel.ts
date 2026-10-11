@@ -8,16 +8,18 @@ import type { Genome } from "../types.ts";
 
 const SCRATCH_FLOATS = 1024; // per ping-pong buffer, so every layer has at most 1024 neurons
 const SCRATCH_B = SCRATCH_FLOATS * 4;
-const ARENA_START = 2 * SCRATCH_B;
+const IOTA_AT = 2 * SCRATCH_B; // 0, 1, 2, ... for the dense layers
+const NZ_AT = IOTA_AT + SCRATCH_B; // index list of the non-zero inputs of the first layer, room for a 4-wide store past the end
+const TAB_AT = NZ_AT + SCRATCH_B + 64; // shuffle and count tables of the index packing
+const ARENA_START = TAB_AT + 512;
 const DESC_WORDS = 16;
 const MAX_SIZES = DESC_WORDS - 4;
 const NO_SLOT = -1;
 
 interface BrainExports extends WebAssembly.Exports {
-  forward(desc: number, n: number, scratchA: number, scratchB: number): void;
+  forward(desc: number, slots: number, n: number, scratchA: number, scratchB: number, nz: number, iota: number, tab: number): void;
 }
 
-const pad8 = (n: number): number => (n + 7) & ~7;
 const pad4 = (n: number): number => (n + 3) & ~3;
 
 export class WasmBrainBank {
@@ -29,13 +31,25 @@ export class WasmBrainBank {
   private outFloat: number[] = [];
   private descPtr = NO_SLOT;
   private descCap = 0;
-  private runPtr = NO_SLOT; // descriptors of one forwardSlots call
+  private runPtr = NO_SLOT; // slot numbers of one forwardSlots call
   private runCap = 0;
 
   private constructor(kernel: Kernel<BrainExports>) {
     this.kernel = kernel;
     this.arena = new Arena(kernel, ARENA_START);
     kernel.ensure(ARENA_START);
+    for (let i = 0; i < SCRATCH_FLOATS; i++) kernel.i32[IOTA_AT / 4 + i] = i;
+    // For each lane mask m, the byte shuffle that moves the index of its k-th set lane to lane k, and the number of set lanes.
+    const bytes = new Uint8Array(kernel.memory.buffer, TAB_AT, 272);
+    for (let m = 0; m < 16; m++) {
+      let k = 0;
+      for (let lane = 0; lane < 4; lane++) {
+        if (!(m & (1 << lane))) continue;
+        for (let b = 0; b < 4; b++) bytes[m * 16 + k * 4 + b] = lane * 4 + b;
+        k++;
+      }
+      bytes[256 + m] = k;
+    }
   }
 
   // Null when WebAssembly SIMD is unavailable (or disabled); keep using the JS Brain then.
@@ -73,12 +87,13 @@ export class WasmBrainBank {
   // Stores a brain in a slot (any non-negative index; forwardSlots runs the slots it is given), replacing what it held.
   // genome is in the Brain layout: per layer weights [out][in] then biases.
   set(slot: number, sizes: readonly number[], genome: Genome): void {
+    if (sizes[0]! > SCRATCH_FLOATS) throw new Error(`input of ${sizes[0]} values exceeds ${SCRATCH_FLOATS}`);
     if (sizes.length < 2 || sizes.length > MAX_SIZES) throw new Error(`brain needs 2 to ${MAX_SIZES} layer sizes, got ${sizes.length}`);
     let weightFloats = 0;
     let genes = 0;
     for (let l = 0; l + 1 < sizes.length; l++) {
-      if (pad8(sizes[l + 1]!) > SCRATCH_FLOATS) throw new Error(`layer of ${sizes[l + 1]} neurons exceeds ${SCRATCH_FLOATS}`);
-      weightFloats += (sizes[l]! + 1) * pad8(sizes[l + 1]!);
+      if (pad4(sizes[l + 1]!) > SCRATCH_FLOATS) throw new Error(`layer of ${sizes[l + 1]} neurons exceeds ${SCRATCH_FLOATS}`);
+      weightFloats += (sizes[l]! + 1) * pad4(sizes[l + 1]!);
       genes += sizes[l]! * sizes[l + 1]! + sizes[l + 1]!;
     }
     if (genome.length !== genes) throw new Error(`genome length ${genome.length} does not match expected ${genes}`);
@@ -101,7 +116,7 @@ export class WasmBrainBank {
     for (let l = 0; l + 1 < sizes.length; l++) {
       const inN = sizes[l]!;
       const outN = sizes[l + 1]!;
-      const nPad = pad8(outN);
+      const nPad = pad4(outN);
       for (let j = 0; j < outN; j++) {
         for (let i = 0; i < inN; i++) f32[w + i * nPad + j] = genome[g + j * inN + i]!;
       }
@@ -126,19 +141,13 @@ export class WasmBrainBank {
   forwardSlots(slots: Int32Array, count: number): void {
     if (count <= 0) return;
     if (count > this.runCap) {
-      if (this.runPtr !== NO_SLOT) this.arena.release(this.runPtr, this.runCap * DESC_WORDS * 4);
+      if (this.runPtr !== NO_SLOT) this.arena.release(this.runPtr, this.runCap * 4);
       this.runCap = Math.max(64, 2 * this.runCap, count);
-      this.runPtr = this.arena.alloc(this.runCap * DESC_WORDS * 4);
+      this.runPtr = this.arena.alloc(this.runCap * 4);
     }
-    const i32 = this.kernel.i32;
-    const desc = this.descPtr >> 2;
-    let to = this.runPtr >> 2;
-    for (let k = 0; k < count; k++, to += DESC_WORDS) {
-      const slot = slots[k]!;
-      if (this.blockPtr[slot] === undefined) throw new Error(`slot ${slot} holds no brain`);
-      i32.copyWithin(to, desc + slot * DESC_WORDS, desc + (slot + 1) * DESC_WORDS);
-    }
-    this.kernel.exports.forward(this.runPtr, count, 0, SCRATCH_B);
+    for (let k = 0; k < count; k++) if (this.blockPtr[slots[k]!] === undefined) throw new Error(`slot ${slots[k]} holds no brain`);
+    this.kernel.i32.set(slots.subarray(0, count), this.runPtr >> 2);
+    this.kernel.exports.forward(this.descPtr, this.runPtr, count, 0, SCRATCH_B, NZ_AT, IOTA_AT, TAB_AT);
   }
 
   private ensureSlots(n: number): void {

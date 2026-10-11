@@ -1,7 +1,7 @@
 import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
-import { ThinkPool, defaultHelpers, serveHelper } from "../../src/typescript/src/worker/ecoPool.ts";
+import { ThinkPool, defaultHelpers, serveHelper, tickTimeoutMs } from "../../src/typescript/src/worker/ecoPool.ts";
 import type { HelperIn, HelperOut, HelperPort } from "../../src/typescript/src/worker/ecoPool.ts";
 import { EcoRunner } from "../../src/typescript/src/worker/ecoRunner.ts";
 import { createNodeThinkPool, nodeHelperPorts } from "../../src/typescript/src/worker/nodePool.ts";
@@ -233,6 +233,21 @@ describe("WebAssembly kernels", () => {
     expect(eco.deaths).toBeGreaterThan(60);
     expect(recycledShapes.size).toBeGreaterThan(5);
     expect(checked).toBe(600);
+  });
+});
+
+describe("tick timeout", () => {
+  it("is the base until a tick has been timed, then 20 times the average tick", () => {
+    expect(tickTimeoutMs(5_000, null)).toBe(5_000);
+    expect(tickTimeoutMs(5_000, 100)).toBe(5_000); // 2 s is below the base
+    expect(tickTimeoutMs(5_000, 400)).toBe(8_000); // a 50000-wide world on a loaded machine
+    expect(tickTimeoutMs(50, 1)).toBe(50); // a short base stays short when ticks are fast
+  });
+
+  it("is capped at 120 s, so a dead helper is still noticed", () => {
+    expect(tickTimeoutMs(5_000, 10_000)).toBe(120_000);
+    expect(tickTimeoutMs(5_000, 6_000)).toBe(120_000); // 20 x 6 s = 120 s exactly
+    expect(tickTimeoutMs(5_000, 5_999)).toBe(119_980);
   });
 });
 

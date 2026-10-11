@@ -32,6 +32,8 @@ export class WasmSenser {
   private readonly offPtr: number[] = [];
   private readonly offBytes: number[] = [];
   private readonly regions = new Map<string, Region>();
+  private synced: World | null = null; // the world whose item arrays the wasm copy matches, and where that copy lives
+  private syncedKey = "";
 
   private constructor(bank: WasmBrainBank, exports: SenseExports) {
     this.bank = bank;
@@ -79,6 +81,39 @@ export class WasmSenser {
     return r.ptr;
   }
 
+  // Brings the wasm copy of the item arrays up to date: all of them the first time, then only the slots and cells changed since.
+  private syncItems(world: World, f32: Float32Array, i32: Int32Array, buffer: ArrayBuffer, pX: number, pY: number, pKinds: number, pHead: number, pNext: number): void {
+    const slots = world.dirtySlots;
+    const cells = world.dirtyCells;
+    const key = `${pX},${pY},${pKinds},${pHead},${pNext}`;
+    if (this.synced !== world || this.syncedKey !== key || !slots || !cells || slots.length > world.count >> 3) {
+      f32.set(world.xs, pX >> 2);
+      f32.set(world.ys, pY >> 2);
+      new Uint8Array(buffer, pKinds, world.count).set(world.kinds);
+      i32.set(world.cellHead, pHead >> 2);
+      i32.set(world.nextItem, pNext >> 2);
+      this.synced = world;
+      this.syncedKey = key;
+    } else {
+      const kinds = new Uint8Array(buffer, pKinds, world.count);
+      for (let k = 0; k < slots.length; k++) {
+        const i = slots[k]!;
+        f32[(pX >> 2) + i] = world.xs[i]!;
+        f32[(pY >> 2) + i] = world.ys[i]!;
+        kinds[i] = world.kinds[i]!;
+        i32[(pNext >> 2) + i] = world.nextItem[i]!;
+      }
+      for (let k = 0; k < cells.length; k++) i32[(pHead >> 2) + cells[k]!] = world.cellHead[cells[k]!]!;
+    }
+    if (slots && cells) {
+      slots.length = 0;
+      cells.length = 0;
+    } else {
+      world.dirtySlots = [];
+      world.dirtyCells = [];
+    }
+  }
+
   // Senses the batch and writes each creature's complete brain input (rays, extras, memory) at its slot.
   run(world: World, crowd: Crowd, creatures: readonly Creature[], slots: Int32Array, selves: Int32Array, n: number, stride: number, startEnergy: number, detail: Creature | null = null): void {
     const cells = world.cols * world.rows;
@@ -103,11 +138,7 @@ export class WasmSenser {
     const buffer = this.bank.memory.buffer;
     const f32 = new Float32Array(buffer);
     const i32 = new Int32Array(buffer);
-    f32.set(world.xs, pItems >> 2);
-    f32.set(world.ys, pItemsY >> 2);
-    new Uint8Array(buffer, pKinds, world.count).set(world.kinds);
-    i32.set(world.cellHead, pHead >> 2);
-    i32.set(world.nextItem, pNext >> 2);
+    this.syncItems(world, f32, i32, buffer, pItems, pItemsY, pKinds, pHead, pNext);
     i32.set(crowd.cellStart, pCStart >> 2);
     const sx = pSx >> 2;
     const sy = pSy >> 2;

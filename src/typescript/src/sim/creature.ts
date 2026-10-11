@@ -40,6 +40,8 @@ export class Creature {
   private readonly decays: Decays;
   private input = new Float32Array(0);
   private output = new Float32Array(0);
+  private outBank: { readonly f32: Float32Array } | null = null; // a WASM kernel's memory holding the outputs at outAt, else this.output; looked up at each read, as memory growth replaces the array
+  private outAt = 0;
   private memoryAt = 0;
   private rayOffCos = new Float64Array(0); // built by the JS sense path only
   private rayOffSin = new Float64Array(0);
@@ -104,7 +106,7 @@ export class Creature {
   // Energy per second right now: upkeep with old age, plus thrust and turning as of the last tick.
   get drain(): number {
     const c = this.config.creature;
-    const thrust = Math.max(0, thrustCommand(this.output[OUT_THRUST] ?? 0, c.brakeThreshold));
+    const thrust = Math.max(0, thrustCommand(this.outView()[this.outAt + OUT_THRUST] ?? 0, c.brakeThreshold));
     return this.energyUpkeep * agingFactor(this.aging, this.state.ticksAlive) + c.thrustCost * thrust + (c.turnCost * Math.abs(this.state.turnRate)) / c.maxTurnRate;
   }
 
@@ -116,6 +118,8 @@ export class Creature {
     this.inputLength = sizes[0]!;
     this.input = this.input.length === 0 ? this.input : refit(this.input, this.inputLength); // an input buffer exists once encode or adoptInput needs one
     this.output = refit(this.output, sizes[sizes.length - 1]!);
+    this.outBank = null;
+    this.outAt = 0;
     this.units = refit(this.units, plan.memoryShort + plan.memoryLong);
     this.units.fill(0);
     this.offsets = refit(this.offsets, n);
@@ -211,7 +215,17 @@ export class Creature {
 
   // Brain outputs of the last decide: turn, thrust, then one target per memory unit. Writable, so a coordinator can put in a helper's result.
   get outputs(): Float32Array {
-    return this.output;
+    return this.outBank === null ? this.output : this.outBank.f32.subarray(this.outAt, this.outAt + this.output.length);
+  }
+
+  private outView(): Float32Array {
+    return this.outBank === null ? this.output : this.outBank.f32;
+  }
+
+  // Reads the outputs of a WASM kernel in place (f32[at ..]) instead of copying them, until the next decide or adoptOutput.
+  adoptOutput(bank: { readonly f32: Float32Array }, at: number): void {
+    this.outBank = bank;
+    this.outAt = at;
   }
 
   // Overwrites the memory units with from[at ..], e.g. with a coordinator's published values.
@@ -222,6 +236,8 @@ export class Creature {
 
   // The brain on the last sensed rays, the current body and the memory, into outputs.
   private decide(): void {
+    this.outBank = null;
+    this.outAt = 0;
     this.brain.forward(this.encode(), this.output);
   }
 
@@ -253,24 +269,25 @@ export class Creature {
 
   // Moves each memory unit toward its target from the last decide.
   remember(): void {
-    const output = this.output;
+    const output = this.outView();
+    const at = this.outAt + OUTPUT_SIZE;
     const memory = this.units;
     // Outputs are already tanh-squashed, so each unit relaxes toward tanh of its target's pre-activation.
     const { shortRate, longRate } = this.config.brain;
     const short = this.ownPlan.memoryShort;
-    for (let i = 0; i < memory.length; i++) memory[i] += (i < short ? shortRate : longRate) * (output[OUTPUT_SIZE + i] - memory[i]);
+    for (let i = 0; i < memory.length; i++) memory[i] += (i < short ? shortRate : longRate) * (output[at + i] - memory[i]);
   }
 
   // One tick driven by the brain from the last sensed rays; returns what move returns.
   act(world: World): number {
     this.think();
-    return this.move(world, this.output[OUT_TURN], thrustCommand(this.output[OUT_THRUST], this.config.creature.brakeThreshold));
+    return this.move(world, this.outView()[this.outAt + OUT_TURN], thrustCommand(this.outView()[this.outAt + OUT_THRUST], this.config.creature.brakeThreshold));
   }
 
   // Motion and energy costs from the last think, without eating or death; touches only this creature.
   steer(): void {
     const upkeep = this.energyUpkeep * agingFactor(this.aging, this.state.ticksAlive);
-    stepBody(this.state, this.output[OUT_TURN], thrustCommand(this.output[OUT_THRUST], this.config.creature.brakeThreshold), this.config, this.decays, this.heading, upkeep);
+    stepBody(this.state, this.outView()[this.outAt + OUT_TURN], thrustCommand(this.outView()[this.outAt + OUT_THRUST], this.config.creature.brakeThreshold), this.config, this.decays, this.heading, upkeep);
   }
 
   // The first item this creature touches at its position, or -1; changes nothing.

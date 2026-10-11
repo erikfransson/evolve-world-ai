@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RL Arena · Evolve World</title>
+    <link rel="icon" type="image/svg+xml" href="../favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" crossorigin />
+  </head>
+  <body data-mode="arena">
+    <header class="banner">
+      <a class="back" href="../">← Evolve World</a>
+      <svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
+        <path d="M3 16 L10 11 A5 5 0 1 1 10 21 Z" />
+        <circle cx="25" cy="16" r="4" />
+      </svg>
+      <h1>RL Arena</h1>
+      <span class="tagline">a creature workshop: design a brain, train it, watch it improve</span>
+    </header>
+    <main class="layout">
+      <aside class="panel">
+        <form id="setup" autocomplete="off" onsubmit="return false">
+          <fieldset id="settings">
+            <section class="card">
+              <h2>Creature</h2>
+              <div class="seg" role="radiogroup" aria-label="Kind">
+                <label><input type="radio" name="kind" value="forager" checked /><span>Forager</span></label>
+                <label><input type="radio" name="kind" value="prey" /><span>Prey</span></label>
+                <label><input type="radio" name="kind" value="predator" /><span>Predator</span></label>
+              </div>
+              <p id="kindDesc" class="preset-desc"></p>
+              <div class="seg" role="radiogroup" aria-label="Start from">
+                <label><input type="radio" name="source" value="design" checked /><span>Design</span></label>
+                <label><input type="radio" name="source" value="pool" /><span>Seed pool</span></label>
+                <label><input type="radio" name="source" value="import" /><span>Import</span></label>
+                <label><input type="radio" name="source" value="saved" /><span>Saved</span></label>
+              </div>
+              <div id="srcDesign" class="src">
+                <div class="pair">
+                  <div class="field"><div class="row"><span class="lbl"><label class="name" for="rays">Rays</label><span class="tip" tabindex="0" role="img" aria-label="How many vision rays the creature casts." data-tip="How many vision rays the creature casts.">ⓘ</span></span></div><input id="rays" type="number" min="1" max="16" step="1" value="5" /></div>
+                  <div class="field"><div class="row"><span class="lbl"><label class="name" for="fan">Fan angle (°)</label><span class="tip" tabindex="0" role="img" aria-label="Total angle the rays are spread over. 360 looks all around." data-tip="Total angle the rays are spread over. 360 looks all around.">ⓘ</span></span></div><input id="fan" type="number" min="0" max="360" step="5" value="120" /></div>
+                </div>
+                <div class="field"><div class="row"><span class="lbl"><label class="name" for="sight">Sight length</label><span class="tip" tabindex="0" role="img" aria-label="How far the rays reach. Longer sight costs more energy per second." data-tip="How far the rays reach. Longer sight costs more energy per second.">ⓘ</span></span></div><input id="sight" type="number" min="10" max="400" step="10" value="180" /></div>
+                <div class="pair">
+                  <div class="field"><div class="row"><span class="lbl"><label class="name" for="layers">Hidden layers</label><span class="tip" tabindex="0" role="img" aria-label="Layers of neurons between the rays and the muscles." data-tip="Layers of neurons between the rays and the muscles.">ⓘ</span></span></div><input id="layers" type="number" min="1" max="4" step="1" value="1" /></div>
+                  <div class="field"><div class="row"><span class="lbl"><span class="name">Neurons</span><span class="tip" tabindex="0" role="img" aria-label="Neurons in each hidden layer, 1 to 32. More neurons can learn more and cost more energy per second." data-tip="Neurons in each hidden layer, 1 to 32. More neurons can learn more and cost more energy per second.">ⓘ</span></span></div><div id="neurons" class="neurons"></div></div>
+                </div>
+                <div class="pair">
+                  <div class="field"><div class="row"><span class="lbl"><label class="name" for="memShort">Short memory</label><span class="tip" tabindex="0" role="img" aria-label="Memory units that fade quickly." data-tip="Memory units that fade quickly.">ⓘ</span></span></div><input id="memShort" type="number" min="0" max="8" step="1" value="2" /></div>
+                  <div class="field"><div class="row"><span class="lbl"><label class="name" for="memLong">Long memory</label><span class="tip" tabindex="0" role="img" aria-label="Memory units that fade slowly." data-tip="Memory units that fade slowly.">ⓘ</span></span></div><input id="memLong" type="number" min="0" max="8" step="1" value="2" /></div>
+                </div>
+                <p class="hint">Starting weights are random.</p>
+              </div>
+              <div id="srcPool" class="src" hidden><select id="founder" aria-label="Seed pool founder"></select></div>
+              <div id="srcImport" class="src" hidden>
+                <input id="importFile" type="file" accept=".json,application/json" aria-label="Creature file" />
+                <p id="importMsg" class="msg" role="status"></p>
+              </div>
+              <div id="srcSaved" class="src" hidden>
+                <div class="seed-row"><select id="saved" aria-label="Saved creature"></select><button id="unsave" class="secondary mini" type="button" title="Remove this creature from the browser">Remove</button></div>
+              </div>
+              <p id="planDesc" class="preset-desc"></p>
+              <p id="startNote" class="msg error" role="status"></p>
+            </section>
+
+            <section class="card">
+              <h2>Environments</h2>
+              <p class="hint">Pick one or more. Each iteration the creature trains in all of them.</p>
+              <div id="envList" class="env-list"></div>
+              <details class="more" id="customBox">
+                <summary>Custom environment</summary>
+                <div class="more-body">
+                  <div class="field"><div class="row"><span class="lbl"><label class="name" for="cName">Name</label></span></div><input id="cName" type="text" maxlength="40" placeholder="Custom" /></div>
+                  <div class="pair"><div class="field"><div class="row"><span class="lbl"><label class="name" for="cWidth">World width</label><span class="tip" tabindex="0" role="img" aria-label="World width, 200 to 3000." data-tip="World width, 200 to 3000.">ⓘ</span></span></div><input id="cWidth" type="number" min="200" max="3000" step="50" value="800" /></div><div class="field"><div class="row"><span class="lbl"><label class="name" for="cHeight">World height</label><span class="tip" tabindex="0" role="img" aria-label="World height, 200 to 3000." data-tip="World height, 200 to 3000.">ⓘ</span></span></div><input id="cHeight" type="number" min="200" max="3000" step="50" value="800" /></div></div>
+                  <div class="pair"><div class="field"><div class="row"><span class="lbl"><label class="name" for="cFood">Food</label><span class="tip" tabindex="0" role="img" aria-label="Food items at the start, 0 to 300." data-tip="Food items at the start, 0 to 300.">ⓘ</span></span></div><input id="cFood" type="number" min="0" max="300" step="1" value="15" /></div><div class="field"><div class="row"><span class="lbl"><label class="name" for="cPoison">Poison</label><span class="tip" tabindex="0" role="img" aria-label="Poison items, 0 to 300." data-tip="Poison items, 0 to 300.">ⓘ</span></span></div><input id="cPoison" type="number" min="0" max="300" step="1" value="6" /></div></div>
+                  <div class="pair"><div class="field"><div class="row"><span class="lbl"><label class="name" for="cRegrow">Regrowth /s</label><span class="tip" tabindex="0" role="img" aria-label="Food items that grow back per second, 0 to 10." data-tip="Food items that grow back per second, 0 to 10.">ⓘ</span></span></div><input id="cRegrow" type="number" min="0" max="10" step="0.05" value="0" /></div><div class="field"><div class="row"><span class="lbl"><label class="name" for="cSeconds">Episode (s)</label><span class="tip" tabindex="0" role="img" aria-label="Episode length in seconds, 5 to 180." data-tip="Episode length in seconds, 5 to 180.">ⓘ</span></span></div><input id="cSeconds" type="number" min="5" max="180" step="5" value="45" /></div></div>
+                  <div class="field"><div class="row"><span class="lbl"><span class="name">Rivals</span><span class="tip" tabindex="0" role="img" aria-label="Other creatures in the world. Their brains are random, from the seed pool, or trained ones from the library." data-tip="Other creatures in the world. Their brains are random, from the seed pool, or trained ones from the library.">ⓘ</span></span><button id="addRival" class="mini" type="button">+ Add</button></div><div id="rivals" class="rivals"></div></div>
+                  <div class="field"><div class="row"><span class="lbl"><span class="name">Reward</span><span class="tip" tabindex="0" role="img" aria-label="Score per food eaten, per kill, per second alive, and for energy left at the end. Weights from -10 to 10." data-tip="Score per food eaten, per kill, per second alive, and for energy left at the end. Weights from -10 to 10.">ⓘ</span></span></div>
+                    <div class="pair">
+                      <label class="mini-field">food<input id="rFood" type="number" step="0.1" min="-10" max="10" value="1" /></label>
+                      <label class="mini-field">kill<input id="rKill" type="number" step="0.1" min="-10" max="10" /></label>
+                      <label class="mini-field">alive /s<input id="rSurvive" type="number" step="0.01" min="-10" max="10" /></label>
+                      <label class="mini-field">energy<input id="rEnergy" type="number" step="0.1" min="-10" max="10" /></label>
+                    </div></div>
+                  <p id="customMsg" class="msg error" role="status"></p>
+                  <button id="addCustom" class="secondary" type="button">Add environment</button>
+                </div>
+              </details>
+            </section>
+
+            <section class="card">
+              <h2>Run settings</h2>
+              <div class="field"><div class="row"><span class="lbl"><label class="name" for="pop">Population</label><span class="tip" tabindex="0" role="img" aria-label="Candidate brains tried per iteration, an even number from 4 to 64. More is steadier and slower." data-tip="Candidate brains tried per iteration, an even number from 4 to 64. More is steadier and slower.">ⓘ</span></span></div><input id="pop" type="number" min="4" max="64" step="2" value="16" /></div>
+              <div class="field"><div class="row"><span class="lbl"><label class="name" for="iterations">Iterations</label><span class="tip" tabindex="0" role="img" aria-label="The run stops after this many iterations." data-tip="The run stops after this many iterations.">ⓘ</span></span></div><input id="iterations" type="number" min="1" max="10000" step="10" value="100" /></div>
+              <div class="pair">
+                <div class="field"><div class="row"><span class="lbl"><label class="name" for="sigma">Mutation size</label><span class="tip" tabindex="0" role="img" aria-label="How far each candidate is nudged from the current brain (sigma)." data-tip="How far each candidate is nudged from the current brain (sigma).">ⓘ</span></span></div><input id="sigma" type="number" min="0.001" max="0.5" step="0.005" value="0.04" /></div>
+                <div class="field"><div class="row"><span class="lbl"><label class="name" for="lr">Learning rate</label><span class="tip" tabindex="0" role="img" aria-label="How far the brain moves toward the better-scoring direction each iteration." data-tip="How far the brain moves toward the better-scoring direction each iteration.">ⓘ</span></span></div><input id="lr" type="number" min="0.001" max="1" step="0.005" value="0.02" /></div>
+              </div>
+              <div class="field"><div class="row"><span class="lbl"><label class="name" for="episodes">Episodes per candidate</label><span class="tip" tabindex="0" role="img" aria-label="Worlds each candidate plays per environment and iteration. More is less noisy and slower." data-tip="Worlds each candidate plays per environment and iteration. More is less noisy and slower.">ⓘ</span></span></div><input id="episodes" type="number" min="1" max="8" step="1" value="1" /></div>
+              <div class="field">
+                <div class="row"><span class="lbl"><span class="name">Tiles shown</span><span class="tip" tabindex="0" role="img" aria-label="How many replays of the iteration's best candidate to watch. Tile k plays environment k, repeating if there are fewer environments." data-tip="How many replays of the iteration's best candidate to watch. Tile k plays environment k, repeating if there are fewer environments.">ⓘ</span></span></div>
+                <div class="seg" role="radiogroup" aria-label="Tiles shown">
+                  <label><input type="radio" name="tiles" value="1" /><span>1</span></label>
+                  <label><input type="radio" name="tiles" value="4" /><span>4</span></label>
+                  <label><input type="radio" name="tiles" value="9" checked /><span>9</span></label>
+                </div>
+              </div>
+            </section>
+          </fieldset>
+        </form>
+      </aside>
+
+      <section class="arena-stage">
+        <div class="stage-head">
+          <div class="iter">
+            <span class="iter-label">Iteration</span>
+            <span class="iter-num"><span id="iterNow">0</span><span class="iter-of"> / <span id="iterTotal">-</span></span></span>
+            <div class="meter" aria-hidden="true"><span id="iterFill"></span></div>
+          </div>
+          <div class="buttons">
+            <button id="start" class="primary" type="button">Start</button>
+            <button id="pause" class="secondary" type="button" disabled>Pause</button>
+            <button id="reset" class="secondary" type="button" disabled>Reset</button>
+          </div>
+        </div>
+        <dl class="stats">
+          <div class="tile accent"><dt>Held-out reward<span class="tip" tabindex="0" role="img" aria-label="Mean reward of the current brain over the chosen environments on worlds it never trains on, checked every 5 iterations. The change is against the starting brain." data-tip="Mean reward of the current brain over the chosen environments on worlds it never trains on, checked every 5 iterations. The change is against the starting brain.">ⓘ</span></dt><dd id="statHeld">-</dd></div>
+          <div class="tile "><dt>Start reward<span class="tip" tabindex="0" role="img" aria-label="Held-out reward of the brain before any training." data-tip="Held-out reward of the brain before any training.">ⓘ</span></dt><dd id="statStart">-</dd></div>
+          <div class="tile "><dt>Best candidate<span class="tip" tabindex="0" role="img" aria-label="Reward of the best candidate in the latest iteration." data-tip="Reward of the best candidate in the latest iteration.">ⓘ</span></dt><dd id="statBest">-</dd></div>
+          <div class="tile "><dt>Train mean<span class="tip" tabindex="0" role="img" aria-label="Mean reward of the candidates in the latest iteration." data-tip="Mean reward of the candidates in the latest iteration.">ⓘ</span></dt><dd id="statTrain">-</dd></div>
+          <div class="tile "><dt>Elapsed<span class="tip" tabindex="0" role="img" aria-label="Real time since training started." data-tip="Real time since training started.">ⓘ</span></dt><dd id="statTime">-</dd></div>
+        </dl>
+        <div class="viewbar">
+          <div class="toggle"><span class="lbl"><label class="name" for="brainOn">Brain</label><span class="tip" tabindex="0" role="img" aria-label="Show the brain of the best candidate, replayed on what tile 1 sees. Its connections change as training goes on." data-tip="Show the brain of the best candidate, replayed on what tile 1 sees. Its connections change as training goes on.">ⓘ</span></span><input id="brainOn" type="checkbox" role="switch" /></div>
+          <ul class="legend arena-legend">
+            <li><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7" fill="#fbbf24" /></svg>Learner</li>
+            <li><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7" fill="#60a5fa" /></svg>Prey</li>
+            <li><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M19 10 L11.4 5.6 A5.4 5.4 0 1 0 11.4 14.4 Z" fill="#f87171" /></svg>Predator</li>
+            <li><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="5" fill="#4ade80" /></svg>Food</li>
+            <li><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="5" fill="#e040fb" /></svg>Poison</li>
+          </ul>
+        </div>
+        <div class="viewrow">
+          <div class="tiles-wrap">
+            <div id="tiles" class="tiles"></div>
+            <p id="note" class="empty-note">Design or pick a creature, choose environments, then press Start.</p>
+          </div>
+          <section id="brainCard" class="card brain-card" hidden>
+            <h2>Brain of the best candidate</h2>
+            <canvas id="brainView" aria-label="The shown candidate's brain, live"></canvas>
+          </section>
+        </div>
+        <section class="card graph-card">
+          <header class="graph-head">
+            <h2>Reward per iteration</h2>
+            <span class="fit-foot"><span class="key train">train mean</span><span class="key best">best candidate</span><span class="key held">held-out</span></span>
+          </header>
+          <canvas id="rewardView" aria-label="Train mean, best candidate and held-out reward against iteration"></canvas>
+          <table id="envTable" class="env-table" hidden><thead><tr><th>Environment</th><th>Start</th><th>Now</th><th>Change</th></tr></thead><tbody></tbody></table>
+        </section>
+        <section class="card save-card">
+          <h2>Save</h2>
+          <div class="field"><div class="row"><span class="lbl"><label class="name" for="saveName">Name</label></span></div><input id="saveName" type="text" maxlength="60" value="My creature" /></div>
+          <div class="buttons">
+            <button id="saveFile" class="secondary" type="button" disabled>Save creature</button>
+            <button id="saveBrowser" class="secondary" type="button" disabled>Save to browser</button>
+          </div>
+          <p id="saveMsg" class="preset-desc">Saved after the first held-out check, every 5 iterations. Files can be imported again here.</p>
+        </section>
+      </section>
+    </main>
+    <script type="module" src="../src/arena.ts"></script>
+    <div id="tooltip" class="tooltip" role="tooltip" hidden></div>
+  </body>
+</html>

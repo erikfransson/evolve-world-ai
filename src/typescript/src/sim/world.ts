@@ -89,6 +89,10 @@ export class World implements WorldView {
   private readonly eatRange: CellRange = { rangeX0: 0, rangeX1: 0, rangeY0: 0, rangeY1: 0 };
   // When set, every item change is appended (ITEM_SET, slot, x, y, kind or ITEM_REMOVE, slot), so a copy of this world replaying them stays identical.
   log: number[] | null = null;
+  // When set, the slots and cells whose arrays changed since the consumer last cleared them (repeats allowed), so a copy of
+  // xs, ys, kinds, nextItem and cellHead elsewhere can be patched instead of rewritten.
+  dirtySlots: number[] | null = null;
+  dirtyCells: number[] | null = null;
 
   constructor(config: EngineConfig, capacity: number) {
     const w = config.world;
@@ -188,6 +192,8 @@ export class World implements WorldView {
     this.nextItem[i] = this.cellHead[c];
     this.cellHead[c] = i;
     this.stampCell(c);
+    this.dirtySlots?.push(i);
+    this.dirtyCells?.push(c);
   }
 
   // Frees slot i; its item leaves the grid.
@@ -196,6 +202,7 @@ export class World implements WorldView {
     this.version++;
     this.unlink(i);
     this.kinds[i] = HIT_NONE;
+    this.dirtySlots?.push(i);
     if (this.freePos[i] < 0) {
       this.freePos[i] = this.freeCount;
       this.freeSlots[this.freeCount++] = i;
@@ -238,8 +245,12 @@ export class World implements WorldView {
       this.cellHead[c] = this.nextItem[i];
     } else {
       while (j >= 0 && this.nextItem[j] !== i) j = this.nextItem[j];
-      if (j >= 0) this.nextItem[j] = this.nextItem[i];
+      if (j >= 0) {
+        this.nextItem[j] = this.nextItem[i];
+        this.dirtySlots?.push(j);
+      }
     }
+    this.dirtyCells?.push(c);
     this.itemCell[i] = -1;
     this.stampCell(c);
   }

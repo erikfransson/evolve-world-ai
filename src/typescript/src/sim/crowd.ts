@@ -2,9 +2,9 @@ import type { EngineConfig } from "./config.ts";
 import { HIT_CREATURE, HIT_NONE } from "./types.ts";
 import type { CreatureState, RayHit } from "./types.ts";
 
-// Creatures in a uniform grid of cell size config.creature.rayLength, rebuilt by counting sort each tick.
-// Each cell's creatures are contiguous in the sorted arrays: slots cellStart[c] .. cellStart[c + 1] - 1.
-// A perf study measured the rebuild under 1% of a tick and queries 20-25% faster than per-cell linked lists.
+// Creatures in a uniform grid of cell size config.creature.rayLength, rebuilt each tick by a stable radix sort of the cell keys,
+// so the work follows the creature count, not the world area. Each cell's creatures are contiguous in the sorted arrays, in
+// creature order: slots cellStart[c] .. cellStart[c + 1] - 1. Queries were measured 20-25% faster than per-cell linked lists.
 export class Crowd {
   count = 0;
   readonly cols: number;
@@ -24,7 +24,14 @@ export class Crowd {
   private py = new Float64Array(0);
   private pe = new Float64Array(0);
   private ps = new Int32Array(0);
-  private readonly cursor: Int32Array;
+  // Occupied cells in ascending order, occupiedCount of them, so sweeps skip the empty cells.
+  occupied: Int32Array;
+  occupiedCount = 0;
+  private perm: Int32Array; // creature indices in cell order, and the radix sort's second buffer
+  private permB: Int32Array;
+  private readonly radixPasses: number;
+  private readonly radixBits: number;
+  private readonly radixCount: Int32Array;
   // Candidates of one sensing: offset to the creature, squared distance minus squared radius, energy.
   private candFx = new Float64Array(64);
   private candFy = new Float64Array(64);
@@ -38,7 +45,13 @@ export class Crowd {
     this.cols = Math.max(1, Math.ceil(config.world.width / this.cell));
     this.rows = Math.max(1, Math.ceil(config.world.height / this.cell));
     this.cellStart = new Int32Array(this.cols * this.rows + 1);
-    this.cursor = new Int32Array(this.cols * this.rows);
+    const keyBits = Math.max(1, Math.ceil(Math.log2(this.cols * this.rows)));
+    this.radixPasses = Math.ceil(keyBits / 11);
+    this.radixBits = Math.ceil(keyBits / this.radixPasses);
+    this.radixCount = new Int32Array(1 << this.radixBits);
+    this.perm = new Int32Array(capacity);
+    this.permB = new Int32Array(capacity);
+    this.occupied = new Int32Array(capacity);
     this.xs = new Float64Array(capacity);
     this.ys = new Float64Array(capacity);
     this.energies = new Float64Array(capacity);
@@ -96,26 +109,58 @@ export class Crowd {
   // The same from arrays: creature i at (x[i], y[i]) with energy e[i] and species sp[i] (all 0 without).
   rebuildFrom(x: Float64Array, y: Float64Array, e: Float64Array, n: number, sp?: ArrayLike<number>): void {
     if (n > this.xs.length) this.grow(n);
-    const start = this.cellStart;
-    start.fill(0);
     const cellOf = this.cellOf;
-    for (let i = 0; i < n; i++) {
-      const c = this.cellIndex(x[i], y[i]);
-      cellOf[i] = c;
-      start[c + 1]++;
+    for (let i = 0; i < n; i++) cellOf[i] = this.cellIndex(x[i], y[i]);
+    // Stable LSD radix sort of the creature indices by cell, so equal cells keep creature order.
+    const bits = this.radixBits;
+    const mask = (1 << bits) - 1;
+    const count = this.radixCount;
+    let from = this.permB;
+    let to = this.perm;
+    for (let i = 0; i < n; i++) to[i] = i;
+    for (let pass = 0; pass < this.radixPasses; pass++) {
+      const shift = pass * bits;
+      const swap = from;
+      from = to;
+      to = swap;
+      count.fill(0);
+      for (let i = 0; i < n; i++) count[(cellOf[from[i]] >> shift) & mask]++;
+      let sum = 0;
+      for (let b = 0; b <= mask; b++) {
+        const c = count[b];
+        count[b] = sum;
+        sum += c;
+      }
+      for (let i = 0; i < n; i++) {
+        const j = from[i];
+        to[count[(cellOf[j] >> shift) & mask]++] = j;
+      }
     }
-    for (let c = 0; c < this.cursor.length; c++) {
-      start[c + 1] += start[c];
-      this.cursor[c] = start[c];
+    this.perm = to;
+    this.permB = from;
+    // Sorted arrays, and cellStart[c] = creatures in cells below c, written by the gaps between occupied cells.
+    const start = this.cellStart;
+    const occupied = this.occupied;
+    const { xs, ys, energies, species, owners } = this;
+    let prev = -1;
+    let m = 0;
+    for (let k = 0; k < n; k++) {
+      const i = to[k];
+      xs[k] = x[i];
+      ys[k] = y[i];
+      energies[k] = e[i];
+      species[k] = sp ? sp[i]! : 0;
+      owners[k] = i;
+      const c = cellOf[i];
+      if (c !== prev) {
+        if (c - prev > 32) start.fill(k, prev + 1, c + 1);
+        else for (let g = prev + 1; g <= c; g++) start[g] = k;
+        occupied[m++] = c;
+        prev = c;
+      }
     }
-    for (let i = 0; i < n; i++) {
-      const k = this.cursor[cellOf[i]]++;
-      this.xs[k] = x[i];
-      this.ys[k] = y[i];
-      this.energies[k] = e[i];
-      this.species[k] = sp ? sp[i]! : 0;
-      this.owners[k] = i;
-    }
+    start.fill(n, prev + 1);
+    this.occupiedCount = m;
     this.count = n;
   }
 
@@ -127,6 +172,9 @@ export class Crowd {
     this.species = new Int32Array(size);
     this.owners = new Int32Array(size);
     this.cellOf = new Int32Array(size);
+    this.perm = new Int32Array(size);
+    this.permB = new Int32Array(size);
+    this.occupied = new Int32Array(size);
   }
 
   // Overwrites each ray of length L in out whose nearest creature, other than owner self, is nearer than what it already holds.
