@@ -237,7 +237,7 @@ describe("WebAssembly kernels", () => {
 });
 
 describe("tick timeout", () => {
-  it("is the base until a warm tick has been timed, then 20 times the average tick", () => {
+  it("is the base until a tick has been timed, then 20 times the average tick", () => {
     expect(tickTimeoutMs(5_000, null)).toBe(5_000);
     expect(tickTimeoutMs(5_000, 100)).toBe(5_000); // 2 s is below the base
     expect(tickTimeoutMs(5_000, 400)).toBe(8_000); // a 50000-wide world on a loaded machine
