@@ -7,6 +7,7 @@ import { initCard } from "./overlays.ts";
 import type { Card } from "./overlays.ts";
 import { PopulationGraph } from "./populationGraph.ts";
 import type { PopulationSample } from "./populationGraph.ts";
+import { initSettingsIO } from "./settingsIO.ts";
 import { initTooltips } from "./tooltip.ts";
 
 export type EcoSpeed = number | "max"; // simulated seconds per real second asked for, "max" = as fast as possible
@@ -107,6 +108,7 @@ export function createEcoView(handlers: EcoHandlers): EcoView {
   buildEcoForm($("settings"));
   fillEcoForm(readEcoConfig());
   initEcoSettingsForm(setup, (c) => { if (phase === "idle") handlers.onConfigChange(c); });
+  initSettingsIO({ mode: "ecosystem", form: setup, read: readEcoConfig, fill: fillEcoForm });
   initTooltips($("tooltip"));
   initCard($("legendCard"), "evolve.eco.card.legend", mobile);
   initCard(selectedCard, "evolve.eco.card.selected", false);
