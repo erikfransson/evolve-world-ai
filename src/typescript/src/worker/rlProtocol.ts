@@ -6,7 +6,7 @@ import type { Recording } from "../sim/rl/recording.ts";
 
 // Messages between the Arena page (#32) and its worker (rlWorker.ts).
 
-export interface RlRunOptions extends EsOptions {
+export interface RlRunOptions extends Omit<EsOptions, "shaping">, Partial<Pick<EsOptions, "shaping">> {
   episodes: number; // seeds per candidate and env each iteration
   iterations: number; // the run stops after this many
 }

@@ -1,6 +1,6 @@
 import type { Rng } from "../types.ts";
 
-// Evolution strategies (Salimans et al. 2017): antithetic Gaussian perturbations of the weights, centred-rank fitness
+// Evolution strategies (Salimans et al. 2017): antithetic Gaussian perturbations of the weights, standardised (or centred-rank) fitness
 // shaping, and an Adam step along the estimated reward gradient. Small steps from a trained creature, so it is nudged, not replaced.
 
 export interface EsOptions {
@@ -8,9 +8,10 @@ export interface EsOptions {
   sigma: number; // perturbation std per weight
   lr: number; // Adam step size
   decay: number; // L2 pull on the weights per step, x lr
+  shaping: "rank" | "zscore"; // fitness shaping: centred ranks (outlier proof) or standardised rewards (optimises the mean)
 }
 
-export const ES_DEFAULTS: EsOptions = { pairs: 16, sigma: 0.04, lr: 0.02, decay: 0.005 };
+export const ES_DEFAULTS: EsOptions = { pairs: 16, sigma: 0.08, lr: 0.02, decay: 0.005, shaping: "zscore" };
 
 const BETA1 = 0.9;
 const BETA2 = 0.999;
@@ -57,7 +58,7 @@ export class Es {
   tell(rewards: readonly number[]): void {
     const { pairs, sigma, lr, decay } = this.options;
     if (rewards.length !== 2 * pairs) throw new Error(`expected ${2 * pairs} rewards, got ${rewards.length}`);
-    const shaped = centredRanks(rewards);
+    const shaped = this.options.shaping === "zscore" ? standardise(rewards) : centredRanks(rewards);
     const n = this.theta.length;
     const g = new Float32Array(n);
     for (let k = 0; k < pairs; k++) {
@@ -92,4 +93,11 @@ export function centredRanks(x: readonly number[]): number[] {
     i = j + 1;
   }
   return ranks.map((r) => r / (n - 1) - 0.5);
+}
+
+// Mean 0, std 1 (all zeros when the rewards do not differ).
+export function standardise(x: readonly number[]): number[] {
+  const mean = x.reduce((a, b) => a + b, 0) / x.length;
+  const sd = Math.sqrt(x.reduce((a, b) => a + (b - mean) ** 2, 0) / x.length);
+  return x.map((v) => (sd > 0 ? (v - mean) / sd : 0));
 }

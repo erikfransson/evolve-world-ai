@@ -356,7 +356,7 @@ function begin(): void {
   const pop = Math.min(64, Math.max(4, Math.round(numberOf("pop", 16) / 2) * 2));
   input("pop").value = String(pop);
   const tiles = Number(radio("tiles"));
-  const options = { pairs: pop / 2, sigma: numberOf("sigma", 0.04), lr: numberOf("lr", 0.02), decay: DECAY, episodes: Math.round(numberOf("episodes", 1)), iterations: Math.round(numberOf("iterations", 100)) };
+  const options = { pairs: pop / 2, sigma: numberOf("sigma", 0.08), lr: numberOf("lr", 0.02), decay: DECAY, episodes: Math.round(numberOf("episodes", 1)), iterations: Math.round(numberOf("iterations", 100)) };
   const seed = Math.floor(Math.random() * 0x7fffffff);
   run = { kind: kind(), envs, plan: { ...start.learner.plan, hiddenLayers: start.learner.plan.hiddenLayers.slice() }, from: start.from, iterations: options.iterations, its: [], startHeld: null, startPerEnv: null, latest: null };
   worker?.terminate();
