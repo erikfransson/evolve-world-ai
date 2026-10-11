@@ -1,4 +1,4 @@
-import { Brain, genomeLength, randomGenome } from "../../src/typescript/src/sim/brain.ts";
+import { Brain, fastTanh, genomeLength, randomGenome } from "../../src/typescript/src/sim/brain.ts";
 import { testRng } from "./helpers.ts";
 
 describe("brain", () => {
@@ -66,5 +66,40 @@ describe("brain activations", () => {
     expect(acts[2]).toBe(out);
     expect(acts[1][0]).toBeCloseTo(Math.tanh(0.25), 6);
     expect(brain.layerActivations()).toBe(acts); // no per-call allocation
+  });
+});
+
+describe("brain robustness", () => {
+  test("fastTanh stays within 2e-4 of tanh and inside [-1, 1] across and beyond its clamp", () => {
+    let worst = 0;
+    for (let x = -8; x <= 8; x += 0.01) {
+      const v = fastTanh(x);
+      expect(Math.abs(v)).toBeLessThanOrEqual(1);
+      worst = Math.max(worst, Math.abs(v - Math.tanh(x)));
+    }
+    expect(worst).toBeLessThan(2e-4);
+  });
+
+  test("a brain owns a copy of the genome it was built from", () => {
+    const genome = new Float32Array([0.5, -1, 0.25, 2, -0.5, 0, 0.1]);
+    const brain = new Brain([2, 1, 2], genome);
+    genome.fill(9); // the caller reuses its scratch buffer
+    expect(brain.genome[0]).toBe(0.5);
+  });
+
+  test("load into a brain that already ran gives the outputs of a fresh brain, for the same and for a new shape", () => {
+    const rng = testRng(3);
+    const input = Float32Array.from({ length: 6 }, () => rng.range(-1, 1));
+    for (const [first, second] of [[[6, 5, 3], [6, 5, 3]], [[6, 5, 3], [6, 7, 4, 3]]]) {
+      const brain = new Brain(first!, randomGenome(first!, rng));
+      brain.forward(input, new Float32Array(3)); // builds the views and the first-layer table
+      const genome = randomGenome(second!, rng);
+      brain.load(second!, genome);
+      const got = new Float32Array(3);
+      const want = new Float32Array(3);
+      brain.forward(input, got);
+      new Brain(second!, genome).forward(input, want);
+      expect(Array.from(got)).toEqual(Array.from(want));
+    }
   });
 });
