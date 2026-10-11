@@ -47,7 +47,7 @@ export function placeLayout(layout: Layout, size: readonly [number, number], foo
     for (let k = 0; k < food; k++) items.push({ ...spot(rng, MARGIN, w - MARGIN, MARGIN, h / 3 - 2 * MARGIN), kind: HIT_FOOD });
     start = spot(rng, MARGIN, w - MARGIN, (2 * h) / 3 + 2 * MARGIN, h - MARGIN);
   } else {
-    // The patch sits in a random corner region, the learner starts across the world from it.
+    // The patch sits in a random corner region.
     const right = rng.next() < 0.5;
     const down = rng.next() < 0.5;
     const r = layout.radius;
@@ -58,7 +58,7 @@ export function placeLayout(layout: Layout, size: readonly [number, number], foo
       const d = r * Math.sqrt(rng.next());
       items.push({ x: cx + d * Math.cos(a), y: cy + d * Math.sin(a), kind: HIT_FOOD });
     }
-    start = { x: right ? w / 4 : (3 * w) / 4, y: down ? h / 4 : (3 * h) / 4 };
+    start = { x: w / 2, y: h / 2 }; // the middle: the patch is a short search away in an unknown direction
   }
   // Extra poison scattered over the world, kept off the start and the food.
   for (let k = 0, tries = 0; k < poison && tries < 1000; tries++) {

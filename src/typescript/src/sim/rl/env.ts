@@ -51,6 +51,7 @@ export interface EnvSpec {
   layout?: Layout; // items placed by a pattern (walls, patches) instead of scattered
   collisionDamage?: boolean; // bumps cost energy and a creature killed by one gives its energy to the other
   learnerEnergy?: number; // the learner's start energy, the species' when left out
+  poisonDamage?: number; // energy one poison item drains; lethal when left out (POISON_LETHAL)
   // Per item, per kill, per second alive, x energy signal at the end, and per second left when the learner has eaten all the
   // starting food itself (without regrowth the episode then ends early, the learner counting as alive to the end).
   // ram: per rival that dies touching the learner while collision damage is on.
@@ -83,7 +84,7 @@ export function envConfig(env: EnvSpec, seed: number): EcoConfig {
   const base = structuredClone(env.world === "hunt" ? DEFAULT_PREDATOR_CONFIG : DEFAULT_ECO_CONFIG);
   const [width, height] = env.size;
   base.seed = seed;
-  base.world = { ...base.world, width, height };
+  base.world = { ...base.world, width, height, ...(env.poisonDamage === undefined ? {} : { poisonDamage: env.poisonDamage }) };
   const per = itemsPerDensity(base);
   base.world.foodDensity = env.food / per;
   base.world.poisonDensity = env.poison / per;
@@ -229,7 +230,7 @@ export function scoreLearner(env: EnvSpec, learner: Learner, seeds: readonly num
 
 // Bounds a custom env must keep, so a page or a shared file cannot ask for a world that stalls the browser.
 const MAX_RIVAL_GROUPS = 8;
-export const ENV_LIMITS = { side: [200, 3000], items: [0, 300], regrow: [0, 10], seconds: [5, 180], rivals: [0, 30], weight: [-10, 10], energy: [1, 500], layoutSize: [20, 400] } as const;
+export const ENV_LIMITS = { side: [200, 3000], items: [0, 300], regrow: [0, 10], seconds: [5, 180], rivals: [0, 30], weight: [-10, 10], energy: [1, 500], layoutSize: [20, 400], poisonDamage: [1, 100] } as const;
 
 // A custom env rebuilt from checked fields, for the learner's world and species, or a reason it is not valid.
 export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | string {
@@ -263,6 +264,7 @@ export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | s
     reward[k] = w[k] as number;
   }
   if (v.learnerEnergy !== undefined && !n(v.learnerEnergy, L.energy)) return `start energy must be ${L.energy[0]} to ${L.energy[1]}`;
+  if (v.poisonDamage !== undefined && !n(v.poisonDamage, L.poisonDamage)) return `poison damage must be ${L.poisonDamage[0]} to ${L.poisonDamage[1]}`;
   let layout: Layout | undefined;
   if (v.layout !== undefined) {
     const l = v.layout as Record<string, unknown> | null;
@@ -286,6 +288,7 @@ export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | s
     ...(layout ? { layout } : {}),
     ...(v.collisionDamage === true ? { collisionDamage: true } : {}),
     ...(v.learnerEnergy === undefined ? {} : { learnerEnergy: v.learnerEnergy as number }),
+    ...(v.poisonDamage === undefined ? {} : { poisonDamage: v.poisonDamage as number }),
     reward,
     tags: ["custom"],
   };

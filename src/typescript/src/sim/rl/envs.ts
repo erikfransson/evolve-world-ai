@@ -19,24 +19,24 @@ export const ENVS: readonly EnvSpec[] = [
   // Finding food
   small({ id: "nibble", name: "Nibble", description: "Three bites of food in a tiny box. Find them fast.", size: [200, 200], food: 3, poison: 0, seconds: 15, tags: ["seek"] }),
   small({ id: "corridor", name: "Corridor", description: "A long, narrow room with food along it. Turn around at the ends.", size: [600, 150], food: 4, poison: 2, seconds: 25, tags: ["seek", "shape"] }),
-  small({ id: "far-food", name: "Far food", description: "Two pieces of food somewhere in a bigger room. Search.", size: [450, 450], food: 2, poison: 0, seconds: 30, tags: ["search"] }),
-  small({ id: "patch", name: "Patch", description: "All the food lies in one patch across the room. Find it, then clear it.", size: [500, 500], food: 8, poison: 6, seconds: 30, layout: { kind: "patch", radius: 55 }, tags: ["search"] }),
+  small({ id: "far-food", name: "Far food", description: "Three pieces of food somewhere in a bigger room. Search.", size: [400, 400], food: 3, poison: 0, seconds: 30, tags: ["search"] }),
+  small({ id: "patch", name: "Patch", description: "All the food lies in one patch across the room. Find it, then clear it.", size: [450, 450], food: 10, poison: 4, seconds: 30, layout: { kind: "patch", radius: 70 }, tags: ["search"] }),
   // Avoiding poison and finding a way round
   small({ id: "minefield", name: "Minefield", description: "Four food hidden among twelve poison. One wrong bite ends it.", size: [300, 300], food: 4, poison: 12, seconds: 25, tags: ["caution"] }),
-  small({ id: "fence", name: "Fence", description: "A wall of poison with one gap. The food is on the other side.", size: [400, 400], food: 4, poison: 0, seconds: 30, layout: { kind: "fence", gap: 70 }, tags: ["navigate"] }),
-  small({ id: "maze", name: "Zigzag", description: "Two poison walls with gaps at opposite ends. Weave through to the food.", size: [450, 450], food: 3, poison: 0, seconds: 40, layout: { kind: "maze", gap: 60 }, tags: ["navigate"] }),
+  small({ id: "fence", name: "Fence", description: "A wall of stinging poison with one gap. The food is on the other side.", size: [400, 400], food: 5, poison: 0, seconds: 30, layout: { kind: "fence", gap: 110 }, poisonDamage: 25, tags: ["navigate"] }),
+  small({ id: "maze", name: "Zigzag", description: "Two walls of stinging poison with gaps at opposite ends. Weave through to the food.", size: [450, 450], food: 4, poison: 0, seconds: 40, layout: { kind: "maze", gap: 60 }, poisonDamage: 25, tags: ["navigate"] }),
   // Energy
   small({
     id: "lean-times",
     name: "Lean times",
     description: "Little energy, slow-growing food. Do not waste effort; end the minute alive with energy to spare.",
-    size: [500, 500],
-    food: 4,
+    size: [400, 400],
+    food: 5,
     poison: 3,
-    foodRegrow: 0.12,
+    foodRegrow: 0.2,
     seconds: 60,
-    learnerEnergy: 25,
-    reward: { survive: 0.05, energy: 3 },
+    learnerEnergy: 30,
+    reward: { survive: 0.05, food: 0.3, energy: 2 },
     tags: ["energy"],
   }),
   // Fighting
