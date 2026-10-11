@@ -57,6 +57,15 @@ describe("EcoRenderer", () => {
     return calls;
   };
 
+  it("starts each frame with butt caps and miter joins, whatever an earlier frame left on the context", () => {
+    const { ctx, props } = fakeCtx(1000, 700);
+    props.lineCap = "round";
+    props.lineJoin = "round";
+    new EcoRenderer().draw(ctx, new Camera(cfg.worldW, cfg.worldH, 1000, 700, 20), cfg, views(50), null, false, 1);
+    expect(props.lineCap).toBe("butt");
+    expect(props.lineJoin).toBe("miter");
+  });
+
   it("draws the whole world as flat dots without bad coordinates", () => {
     const calls = draw(null, 3000);
     expect(badCoordinateCalls(calls)).toEqual([]);

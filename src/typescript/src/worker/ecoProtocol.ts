@@ -16,7 +16,8 @@ export type EcoInMessage =
   | { type: "speed"; speed: EcoSpeedSetting }
   | { type: "select"; id: number | null }
   | { type: "selectBest"; by: BestBy; request: number } // selects the living creature with the highest value, ties to the lowest id
-  | { type: "recycle"; buffer: ArrayBuffer; run?: number }; // run: the snapshot's run, only current-run buffers count as returned; hands a consumed snapshot buffer back for reuse
+  | { type: "refill"; buffer: ArrayBuffer } // a render worker hands a buffer back for reuse; only the page's acknowledgement counts as keeping up
+  | { type: "recycle"; buffer?: ArrayBuffer; run?: number }; // no buffer when a render worker holds it: // run: the snapshot's run, only current-run buffers count as returned; hands a consumed snapshot buffer back for reuse
 
 // The selected creature. alive is false once it has died, then only id is meaningful.
 export interface SelectedDetails {

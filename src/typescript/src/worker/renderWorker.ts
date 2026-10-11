@@ -23,7 +23,7 @@ const impacts = new ImpactEffects();
 const out = (m: RenderOutMessage): void => self.postMessage(m);
 
 function giveBack(msg: RenderSnapshot): void {
-  port.postMessage({ type: "recycle", buffer: msg.buffer, run: msg.run }, [msg.buffer]);
+  port.postMessage({ buffer: msg.buffer }, [msg.buffer]);
 }
 
 function onSnapshot(msg: RenderSnapshot): void {
@@ -55,7 +55,7 @@ function draw(): void {
   if (!f || !snap || snap.msg.run !== f.run) return;
   if (!camera) camera = new Camera(f.cfg.worldW, f.cfg.worldH, canvas.width, canvas.height);
   if (camera.width !== canvas.width || camera.height !== canvas.height) camera.resize(canvas.width, canvas.height);
-  camera.setState(f.view);
+  camera.setState(f.view); // the camera's own world size and limits are unused: setState overrides the view
   const sel = snap.msg.selected;
   renderer.draw(ctx, camera, f.cfg, snap.views, sel && sel.id === f.selectedId ? sel : null, f.showRays, f.dpr, f.highlight, births, performance.now(), impacts);
 }
@@ -78,9 +78,9 @@ self.onmessage = (e: MessageEvent<RenderInMessage>) => {
       schedule();
       break;
     case "pick": {
-      const v = snap?.views;
+      const v = snap?.msg.run === m.run ? snap.views : null; // a pick from an earlier run finds nothing
       const i = v ? pickCreature(v.x, v.y, v.count, m.x, m.y, m.reach) : -1;
-      out({ type: "picked", request: m.request, id: i >= 0 ? v!.ids[i]! : -1, x: i >= 0 ? v!.x[i]! : 0, y: i >= 0 ? v!.y[i]! : 0 });
+      out({ type: "picked", request: m.request, run: m.run, id: i >= 0 ? v!.ids[i]! : -1, x: i >= 0 ? v!.x[i]! : 0, y: i >= 0 ? v!.y[i]! : 0 });
       break;
     }
     case "idle":
@@ -89,3 +89,4 @@ self.onmessage = (e: MessageEvent<RenderInMessage>) => {
       break;
   }
 };
+out({ type: "ready" }); // the page moves its canvas here only after this arrives, so a failed load can fall back

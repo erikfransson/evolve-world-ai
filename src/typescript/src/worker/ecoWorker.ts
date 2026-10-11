@@ -13,7 +13,7 @@ const runner = new EcoRunner((msg, transfer) => {
     const { buffer, selected, events } = msg;
     const toRender: RenderSnapshot = { type: "snapshot", run: msg.run, count: msg.count, itemCount: msg.itemCount, creatureCap: msg.creatureCap, itemCap: msg.itemCap, buffer, events, selected: selected && { ...selected, genome: null } };
     renderPort.postMessage(toRender, { transfer: [buffer] });
-    self.postMessage({ ...msg, buffer: NO_BUFFER });
+    self.postMessage({ ...msg, buffer: NO_BUFFER, events: undefined }); // the page needs neither the buffer nor the events
     return;
   }
   self.postMessage(msg, { transfer });
@@ -72,10 +72,15 @@ async function receive(msg: EcoInMessage): Promise<void> {
   if (!busy) schedule(0);
 }
 
-self.onmessage = (e: MessageEvent<EcoInMessage | { type: "renderPort"; port: MessagePort }>) => {
+self.onmessage = (e: MessageEvent<EcoInMessage | { type: "renderPort"; port: MessagePort } | { type: "renderGone" }>) => {
   if (e.data.type === "renderPort") {
     renderPort = e.data.port;
-    renderPort.onmessage = (p: MessageEvent<EcoInMessage>) => { queue = queue.then(() => receive(p.data)); };
+    renderPort.onmessage = (p: MessageEvent<{ buffer: ArrayBuffer }>) => { queue = queue.then(() => receive({ type: "refill", buffer: p.data.buffer })); };
+    return;
+  }
+  if (e.data.type === "renderGone") {
+    renderPort?.close(); // the render worker died: later snapshots go to the page with their buffers
+    renderPort = null;
     return;
   }
   const data = e.data;

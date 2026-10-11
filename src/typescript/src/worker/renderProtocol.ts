@@ -20,7 +20,7 @@ export type RenderInMessage =
   | { type: "init"; canvas: OffscreenCanvas; port: MessagePort }
   | { type: "size"; width: number; height: number }
   | { type: "frame"; run: number; view: { cx: number; cy: number; zoom: number; focusX: number; focusY: number }; cfg: EcoDrawConfig; selectedId: number | null; showRays: boolean; dpr: number; highlight: number }
-  | { type: "pick"; request: number; x: number; y: number; reach: number }
+  | { type: "pick"; request: number; run: number; x: number; y: number; reach: number }
   | { type: "idle"; config: EcoConfig; dpr: number };
 
-export type RenderOutMessage = { type: "picked"; request: number; id: number; x: number; y: number };
+export type RenderOutMessage = { type: "ready" } | { type: "picked"; request: number; run: number; id: number; x: number; y: number };

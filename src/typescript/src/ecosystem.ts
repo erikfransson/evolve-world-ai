@@ -29,6 +29,7 @@ const PICK_MIN_PX = 14; // click reach never below this many CSS px
 const UI_INTERVAL_MS = 100; // stat tiles and selected card
 const BRAIN_INTERVAL_MS = 25;
 const ZOOM_STEP = 1.6;
+const RENDER_READY_MS = 5000; // a render worker that has not said ready by then is dropped and the page draws
 // public/pool.json sits at the site root, one level above this page; resolved here since the worker's own URL differs in dev and build.
 const POOL_URL = new URL("../pool.json", document.baseURI).href;
 // Overrides for testing: ?threads=N helper threads (0 runs on one thread).
@@ -79,13 +80,22 @@ let backW = 0; // backing-store size, tracked here since the canvas can no longe
 let backH = 0;
 let pickRequests = 0;
 let pendingPort: MessagePort | null = null; // the simulation worker's end of the snapshot channel, handed over when it exists
+let probing = false; // a render worker is loading; the canvas stays untouched until it says ready
+let renderDead = false; // the render worker failed after taking the canvas
+let probe: Promise<void> = Promise.resolve(); // settles when it is known who draws
 const camera = new Camera(config.world.width, config.world.height, 1, 1);
-const renderer = new EcoRenderer();
-const births = new BirthRings();
-const impacts = new ImpactEffects();
+// Only the page-thread path draws with these.
+let renderer: EcoRenderer | null = null;
+let births: BirthRings | null = null;
+let impacts: ImpactEffects | null = null;
+function drawOnPage(): void {
+  renderer = new EcoRenderer();
+  births = new BirthRings();
+  impacts = new ImpactEffects();
+}
 
 function drawIdle(): void {
-  if (active) return;
+  if (active || probing) return;
   if (renderWorker) {
     renderWorker.postMessage({ type: "idle", config, dpr: fitBacking() } satisfies RenderInMessage);
     return;
@@ -106,13 +116,34 @@ function offscreenSupported(): boolean {
   }
 }
 
-function startRenderWorker(): void {
-  if (!offscreenSupported()) return;
+// Resolves true once the worker has loaded and said ready; a load failure or silence falls back to drawing on the page.
+function workerReady(w: Worker): Promise<boolean> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(false), RENDER_READY_MS);
+    const done = (ok: boolean): void => {
+      clearTimeout(timer);
+      resolve(ok);
+    };
+    w.onmessage = (e: MessageEvent<RenderOutMessage>) => done(e.data.type === "ready");
+    w.onerror = () => done(false);
+    w.onmessageerror = () => done(false);
+  });
+}
+
+async function startRenderWorker(): Promise<void> {
+  if (!offscreenSupported()) return drawOnPage();
   let w: Worker;
   try {
     w = new Worker(new URL("./worker/renderWorker.ts", import.meta.url), { type: "module" });
   } catch {
-    return;
+    return drawOnPage();
+  }
+  probing = true;
+  const ok = await workerReady(w);
+  probing = false;
+  if (!ok) {
+    w.terminate();
+    return drawOnPage();
   }
   fitCanvas(view.canvas);
   backW = view.canvas.width;
@@ -120,10 +151,14 @@ function startRenderWorker(): void {
   const offscreen = view.canvas.transferControlToOffscreen();
   const channel = new MessageChannel();
   w.postMessage({ type: "init", canvas: offscreen, port: channel.port1 } satisfies RenderInMessage, [offscreen, channel.port1]);
-  w.onerror = (e) => view.setNote(`Drawing stopped: ${e.message}`);
+  w.onerror = (e) => {
+    renderDead = true;
+    view.setNote(`Drawing stopped: ${e.message}`);
+    worker?.postMessage({ type: "renderGone" }); // snapshots go to the page with their buffers again
+  };
   w.onmessage = (e: MessageEvent<RenderOutMessage>) => {
     const m = e.data;
-    if (m.request === pickRequests) {
+    if (m.type === "picked" && active && m.run === run && m.request === pickRequests) {
       if (m.id >= 0) select(m.id, m.x, m.y);
       else if (selection) clearSelection();
     }
@@ -147,8 +182,10 @@ function fitBacking(): number {
 
 const backing = (): { width: number; height: number } => (renderWorker ? { width: backW, height: backH } : view.canvas);
 
+// Acknowledges a snapshot: gives its buffer back, or with a render worker (which holds the buffer) only says it was handled.
 function recycle(m: EcoSnapshot): void {
   if (m.buffer.byteLength) send({ type: "recycle", buffer: m.buffer, run: m.run }, [m.buffer]);
+  else send({ type: "recycle", run: m.run });
 }
 
 function send(msg: EcoInMessage, transfer: Transferable[] = []): void {
@@ -226,8 +263,8 @@ function onSnapshot(e: MessageEvent<EcoOutMessage>): void {
   if (previous) recycle(previous.msg);
   if (live.views) {
     const stamp = performance.now();
-    births.observe(live.views, stamp);
-    if (msg.events) impacts.add(msg.events, stamp);
+    births?.observe(live.views, stamp);
+    if (msg.events) impacts?.add(msg.events, stamp);
   }
   if (msg.history) view.setHistory(toSamples(msg.history));
   if (msg.lineageHistory) view.setLineageHistory(msg.lineageHistory);
@@ -282,8 +319,8 @@ function startRun(c: EcoConfig): void {
   goneNoted = 0;
   worker ??= createWorker();
   releaseLive();
-  births.reset();
-  impacts.reset();
+  births?.reset();
+  impacts?.reset();
   clearSelection();
   syncCanvas();
   camera.setWorld(c.world.width, c.world.height);
@@ -353,7 +390,7 @@ camera.onClick = (wx, wy) => {
   const dpr = window.devicePixelRatio || 1;
   const reach = Math.max(PICK_RADII * config.creature.radius, (PICK_MIN_PX * dpr) / camera.zoom);
   if (renderWorker) {
-    renderWorker.postMessage({ type: "pick", request: ++pickRequests, x: wx, y: wy, reach } satisfies RenderInMessage);
+    if (!renderDead) renderWorker.postMessage({ type: "pick", request: ++pickRequests, run, x: wx, y: wy, reach } satisfies RenderInMessage);
     return;
   }
   const v = live.views!;
@@ -408,10 +445,11 @@ function frame(now: number): void {
   camera.update(now);
   syncFollow();
   if (renderWorker) {
+    if (renderDead) return;
     const { cx, cy, zoom, focusX, focusY } = camera;
     renderWorker.postMessage({ type: "frame", run, view: { cx, cy, zoom, focusX, focusY }, cfg: drawConfig(), selectedId: selection?.details?.id ?? null, showRays, dpr, highlight } satisfies RenderInMessage);
   } else {
-    renderer.draw(view.canvas.getContext("2d")!, camera, drawConfig(), live.views!, selection?.details ?? null, showRays, dpr, highlight, births, now, impacts);
+    renderer!.draw(view.canvas.getContext("2d")!, camera, drawConfig(), live.views!, selection?.details ?? null, showRays, dpr, highlight, births, now, impacts);
   }
   if (now - lastUiAt >= UI_INTERVAL_MS) {
     lastUiAt = now;
@@ -421,7 +459,7 @@ function frame(now: number): void {
 }
 
 const view = createEcoView({
-  onStart: startRun,
+  onStart: (c) => void probe.then(() => startRun(c)), // not before it is known who draws
   onPause: () => send({ type: "pause" }),
   onResume: () => send({ type: "resume" }),
   onReset() {
@@ -480,7 +518,7 @@ const view = createEcoView({
   },
 }, PAGE);
 
-startRenderWorker();
+probe = startRenderWorker().then(drawIdle);
 camera.attach(view.canvas, backing);
 showRays = view.showRays();
 view.fillConfig(NORMAL);
