@@ -191,7 +191,7 @@ describe("WasmRayCaster", () => {
       ticksAlive: 0,
     }));
     const crowd = new Crowd(cfg);
-    crowd.rebuild(states, n);
+    crowd.rebuild(states, n, Int32Array.from(states, (_, i) => i % 3)); // three species, as Predators & prey could have
     return { rng, states, crowd };
   }
 
@@ -226,6 +226,7 @@ describe("WasmRayCaster", () => {
     let creatureHits = 0;
     let rays = 0;
     let maxDiff = 0;
+    const speciesSeen = new Set<number>();
     for (const j of jobs) {
       for (let i = 0; i < j.js.length; i++) {
         rays++;
@@ -236,11 +237,14 @@ describe("WasmRayCaster", () => {
         if (a.kind === HIT_CREATURE) {
           creatureHits++;
           expect(b.energy).toBe(a.energy);
+          expect(b.species).toBe(a.species);
+          speciesSeen.add(a.species);
         }
       }
     }
     expect(rays).toBeGreaterThan(2000);
     expect(creatureHits).toBeGreaterThan(100);
+    expect([...speciesSeen].sort()).toEqual([0, 1, 2]);
     expect(maxDiff).toBeLessThan(1e-4);
   });
 

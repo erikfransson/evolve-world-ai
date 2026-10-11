@@ -1,4 +1,4 @@
-import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
+import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
 import { ThinkPool, canShare, defaultHelpers, serveHelper } from "../../src/typescript/src/worker/ecoPool.ts";
@@ -266,4 +266,37 @@ describe("helper fallbacks", () => {
     expect(Date.now() - killedAt).toBeLessThan(2000); // well under the 5 s tick timeout
     expect(eco.fingerprint()).toBe(serial(cfg(), eco.tick).fingerprint());
   });
+});
+
+describe("Predators & prey on helper threads", () => {
+  // A small dense world, so hunters catch prey within a few hundred ticks.
+  const predCfg = (wasm: boolean): EcoConfig => {
+    const d = structuredClone(DEFAULT_PREDATOR_CONFIG);
+    d.species![0]!.founders = 70;
+    d.species![1]!.founders = 25;
+    return { ...d, seed: 7, world: { ...d.world, width: 900, height: 700 }, eco: { ...d.eco, wasm, structuralRate: 0.3 } };
+  };
+
+  it.each([false, true])("give the same run for any helper count and mode, WebAssembly %s", async (wasm) => {
+    const ticks = 200;
+    {
+      const ref = serial(predCfg(wasm), ticks);
+      expect(ref.wasm).toBe(wasm);
+      expect(ref.speciesCounts[0]!.eaten).toBeGreaterThan(0);
+      expect(ref.speciesCounts[1]!.births).toBeGreaterThan(0);
+      for (const n of [1, 3]) {
+        const eco = await pooled(new ThinkPool(fakePorts(n), false), predCfg(wasm), ticks);
+        expect([eco.fingerprint(), eco.births, eco.deaths]).toEqual([ref.fingerprint(), ref.births, ref.deaths]);
+      }
+      for (const shared of [false, true]) {
+        const pool = createNodeThinkPool(2, shared);
+        try {
+          const eco = await pooled(pool, predCfg(wasm), ticks);
+          expect([eco.fingerprint(), eco.speciesCounts[0]!.eaten]).toEqual([ref.fingerprint(), ref.speciesCounts[0]!.eaten]);
+        } finally {
+          pool.close();
+        }
+      }
+    }
+  }, 60_000);
 });
