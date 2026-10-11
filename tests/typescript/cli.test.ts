@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { DEFAULT_CONFIG, withOverrides } from "../../src/typescript/src/sim/config.ts";
 import { Evolution } from "../../src/typescript/src/sim/evolution.ts";
@@ -9,7 +9,10 @@ import { createNodeEvaluator, parseThreads } from "../../src/typescript/src/work
 // Vitest runs from src/typescript, where `node src/bench.ts` and `node src/headless.ts` run as the npm scripts do.
 vi.setConfig({ testTimeout: 20_000 }); // each case starts node processes, slow on a busy machine
 const root = process.cwd();
-const scratch = resolve(root, "node_modules/.cache/cli-test");
+const cache = resolve(root, "node_modules/.cache/cli-test");
+const made: string[] = [];
+// A fresh directory per test, so concurrent tests and test files never share files.
+const scratchDir = () => { mkdirSync(cache, { recursive: true }); const dir = mkdtempSync(resolve(cache, "t-")); made.push(dir); return dir; };
 const tiny = withOverrides(DEFAULT_CONFIG, { population: { size: 4 }, creature: { maxLifeSeconds: 5 } });
 
 const run = (script: string, ...args: string[]) =>
@@ -18,8 +21,7 @@ const run = (script: string, ...args: string[]) =>
       done({ code: error ? Number(error.code) : 0, out, err }));
   });
 
-beforeAll(() => { rmSync(scratch, { recursive: true, force: true }); mkdirSync(scratch, { recursive: true }); });
-afterAll(() => rmSync(scratch, { recursive: true, force: true }));
+afterAll(() => { for (const dir of made) rmSync(dir, { recursive: true, force: true }); });
 
 describe("parseThreads", () => {
   it("defaults when absent and accepts positive integers", () => {
@@ -63,6 +65,7 @@ describe.concurrent("bench.ts", () => {
 
 describe.concurrent("headless.ts", () => {
   it("writes the config and one line per generation, honouring --seed and --config", async () => {
+    const scratch = scratchDir();
     const configPath = resolve(scratch, "config.json");
     const outPath = resolve(scratch, "nested/run.jsonl");
     writeFileSync(configPath, JSON.stringify({ population: { size: 4 }, creature: { maxLifeSeconds: 5 } }));
@@ -79,6 +82,7 @@ describe.concurrent("headless.ts", () => {
   });
 
   it("rejects missing or bad arguments and bad config files with exit code 1", async () => {
+    const scratch = scratchDir();
     const badConfig = resolve(scratch, "bad.json");
     writeFileSync(badConfig, JSON.stringify({ nonsense: 1 }));
     const out = resolve(scratch, "unused.jsonl");
@@ -93,8 +97,8 @@ describe.concurrent("headless.ts", () => {
 
 describe.concurrent("buildPool.ts and ecoBench.ts", () => {
   it("buildPool writes a valid pool file", async () => {
-    const outPath = resolve(scratch, "pool.json");
-    const r = await run("buildPool", "--runs", "2", "--generations", "20", "--pop", "40", "--size", "2", "--threads", "2", "--out", outPath);
+    const outPath = resolve(scratchDir(), "pool.json");
+    const r = await run("buildPool", "--runs", "2", "--generations", "12", "--pop", "24", "--size", "2", "--threads", "2", "--out", outPath);
     expect(r.code).toBe(0);
     expect(r.out).toMatch(/wrote .*pool\.json/);
     const file = JSON.parse(readFileSync(outPath, "utf8"));

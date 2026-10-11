@@ -255,7 +255,7 @@ describe("EcoRunner", () => {
   it("selectBest picks the highest age, children or eaten, ties to the lowest id, and sends the genome", () => {
     const { runner, last, sent } = setup();
     runner.handle({ type: "start", config: cfg(), run: 1 });
-    const members = (runner as unknown as { eco: Ecosystem }).eco.members;
+    const members = runner.ecosystem!.members;
     const set = (id: number, over: { children?: number; eaten?: number; ticks?: number }) => {
       const m = members.find((c) => c.id === id)!;
       if (over.children !== undefined) m.children = over.children;

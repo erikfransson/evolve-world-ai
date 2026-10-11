@@ -21,6 +21,7 @@ export type Post = (msg: EcoOutMessage, transfer: Transferable[]) => void;
 export class EcoRunner {
   seedPool: readonly PoolEntry[] | null = null; // trained founders for the next start; null gives all-random founders
   private eco: Ecosystem | null = null;
+  get ecosystem(): Ecosystem | null { return this.eco; } // read-only, for tests
   private helpers: ThinkPool | null = null;
   private starting: Promise<void> | null = null; // the helpers getting ready for the current run
   private readonly post: Post;

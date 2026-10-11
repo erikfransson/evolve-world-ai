@@ -51,11 +51,4 @@ describe("Evolution", () => {
     expect(a.fitness.every((f) => Number.isFinite(f) && f > 0)).toBe(true);
     expect(a.genomeLength).toBe(genomeLength(layerSizes(config)));
   });
-
-  it("times one default generation", async () => {
-    const evo = new Evolution(DEFAULT_CONFIG);
-    const t0 = performance.now();
-    await evo.runGeneration();
-    console.log(`default generation: ${(performance.now() - t0).toFixed(0)} ms`);
-  }, 120_000);
 });

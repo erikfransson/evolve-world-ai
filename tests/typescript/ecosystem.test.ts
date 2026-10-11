@@ -61,11 +61,13 @@ describe("Ecosystem", () => {
       const reach = eco.config.creature.radius + eco.config.world.itemRadius;
       const w = eco.world;
       expect(countKind(eco, HIT_POISON)).toBe(300);
+      let tooClose = 0; // one expect after the loops: 10^5 expects cost seconds
       for (const m of eco.members) {
         for (let i = 0; i < w.count; i++) {
-          if (w.kinds[i] === HIT_POISON) expect(Math.hypot(w.xs[i] - m.creature.state.x, w.ys[i] - m.creature.state.y)).toBeGreaterThanOrEqual(reach);
+          if (w.kinds[i] === HIT_POISON && Math.hypot(w.xs[i] - m.creature.state.x, w.ys[i] - m.creature.state.y) < reach) tooClose++;
         }
       }
+      expect(tooClose).toBe(0);
     }
   });
 

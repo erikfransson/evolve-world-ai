@@ -13,15 +13,13 @@ describe("createRng", () => {
 
   it("keeps next() in [0, 1) and int() in bounds", () => {
     const rng = createRng(7);
+    let bad = 0;
     for (let i = 0; i < 10000; i++) {
       const u = rng.next();
-      expect(u).toBeGreaterThanOrEqual(0);
-      expect(u).toBeLessThan(1);
       const k = rng.int(5);
-      expect(Number.isInteger(k)).toBe(true);
-      expect(k).toBeGreaterThanOrEqual(0);
-      expect(k).toBeLessThan(5);
+      if (!(u >= 0 && u < 1) || !Number.isInteger(k) || k < 0 || k >= 5) bad++;
     }
+    expect(bad).toBe(0);
   });
 
   it("draws standard normals with mean near 0 and std near 1", () => {
