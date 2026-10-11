@@ -212,12 +212,21 @@ export class Creature {
     stepBody(this.state, this.output[OUT_TURN], thrustCommand(this.output[OUT_THRUST], this.config.creature.brakeThreshold), this.config, this.decays, this.heading, upkeep);
   }
 
+  // The first item this creature touches at its position, or -1; changes nothing.
+  touched(world: World): number {
+    const s = this.state;
+    return world.eatAt(s.x, s.y, this.config.creature.radius, this.cache);
+  }
+
+  // Eats item, an index from touched (or -1), if any. Returns it, still in the world for the caller to move or remove.
+  eatItem(world: World, item: number): number {
+    consume(this.state, item < 0 ? HIT_NONE : (world.kinds[item] as HitKind), this.config.world.foodEnergy, this.config.world.poisonDamage);
+    return item;
+  }
+
   // Eats the first item touched, if any. Returns its index, still in the world for the caller to move or remove, or -1.
   eat(world: World): number {
-    const s = this.state;
-    const eaten = world.eatAt(s.x, s.y, this.config.creature.radius, this.cache);
-    consume(s, eaten < 0 ? HIT_NONE : (world.kinds[eaten] as HitKind), this.config.world.foodEnergy, this.config.world.poisonDamage);
-    return eaten;
+    return this.eatItem(world, this.touched(world));
   }
 
   // One tick of motion, eating and energy. Returns what eat returns.

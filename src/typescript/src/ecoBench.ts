@@ -1,5 +1,5 @@
 // Ecosystem benchmark: runs a seeded world headless and prints ticks/s, population over time and a fingerprint.
-// Usage: node src/ecoBench.ts [--seconds 120] [--seed 1] [--pop 300] [--food 0.5] [--regrow 0.05] [--every 10] [--pool public/pool.json] [--poolFraction 0.5] [--aging] [--agingStart 120] [--agingRate 0.5] [--damage] [--damagePerSpeed 0.3] [--threads 0] [--shared]
+// Usage: node src/ecoBench.ts [--seconds 120] [--seed 1] [--pop 300] [--food 0.5] [--regrow 0.05] [--every 10] [--pool public/pool.json] [--poolFraction 0.5] [--aging] [--agingStart 120] [--agingRate 0.5] [--damage] [--damagePerSpeed 0.3] [--threads 0] [--shared] [--width 12000] [--poisonDamage 30] [--seasons]
 // --food sets the starting and maximum food density, --regrow the food regrowth rate, --pool none runs without the seed pool.
 
 import { readFileSync } from "node:fs";
@@ -29,6 +29,8 @@ const { values } = parseArgs({
     agingStart: { type: "string" },
     agingRate: { type: "string" },
     width: { type: "string" }, // world width; height and the default population scale with it (area) so densities stay
+    poisonDamage: { type: "string" }, // energy lost per poison item; 100 or more kills
+    seasons: { type: "boolean" },
     damage: { type: "boolean" }, // collision damage
     damagePerSpeed: { type: "string" },
   },
@@ -40,12 +42,13 @@ const food = num(values.food, d.world.foodDensity);
 const config: EcoConfig = {
   ...structuredClone(d),
   seed: num(values.seed, d.seed),
-  world: { ...d.world, width: d.world.width * scale, height: d.world.height * scale, foodDensity: food },
+  world: { ...d.world, width: d.world.width * scale, height: d.world.height * scale, poisonDamage: num(values.poisonDamage, d.world.poisonDamage), foodDensity: food },
   eco: {
     ...d.eco,
     initialPopulation: num(values.pop, Math.round(d.eco.initialPopulation * scale * scale)),
     poolFraction: num(values.poolFraction, d.eco.poolFraction),
     aging: values.aging ?? d.eco.aging,
+    seasons: values.seasons ?? d.eco.seasons,
     wasm: values.wasm === undefined ? d.eco.wasm : values.wasm === "true",
     agingStart: num(values.agingStart, d.eco.agingStart),
     agingRate: num(values.agingRate, d.eco.agingRate),
