@@ -44,6 +44,6 @@ Peak RSS: ES 245-280 MB, PPO 190-200 MB.
 - Start message `method: "es" | "backprop"`, `options.backprop` (lr, episodes per update). `ArenaRun` drives either trainer through `RlTrainer` (trainer.ts): `Trainer` (ES) or `BackpropTrainer` (ppo.ts).
 - Backprop updates run on the Arena worker thread itself; held-out checks and tile recordings still use the helpers. Self-play rivals are the current policy.
 - Form: "Training method" choice in Run; Population, Episodes per candidate, Mutation size and ES learning rate grey out for backprop; Backprop learning rate and Episodes per update under More settings.
-- Tiles under backprop show the current policy, "policy at update N". The "Best candidate" stat shows the update's mean training reward there.
+- Tiles under backprop show the current policy, "policy at update N". The stat card and graph line read "Best episode": the update's best training episode.
 - Headless check (1400x1000, nibble, design start): held-out 0.0 -> 3.5 in 20 s of browser time.
-- Next: rollouts on the helpers (trajectory jobs) would use all threads; the "Best candidate" label could read "Train mean" for backprop.
+- Next: rollouts on the helpers (trajectory jobs) would use all threads.

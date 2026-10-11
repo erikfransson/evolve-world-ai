@@ -327,9 +327,8 @@ export class Ppo {
           this.criticNet.backward(this.critic, dV, gCrit);
         }
         const m = end - start;
-        clipNorm(gPol, m);
-        clipNorm(gStd, m);
-        clipNorm(gCrit, m);
+        // A non-finite gradient (a numeric blow-up) would poison the weights for good through Adam, so that minibatch is skipped.
+        if (!clipNorm(gPol, m) || !clipNorm(gStd, m) || !clipNorm(gCrit, m)) continue;
         this.policyAdam.step(this.theta, gPol);
         this.stdAdam.step(this.logStd, gStd);
         this.criticAdam.step(this.critic, gCrit);
@@ -378,12 +377,14 @@ export class BackpropTrainer implements RlTrainer {
   }
 }
 
-// Averages the summed gradient over m samples and caps its norm.
-function clipNorm(g: Float64Array, m: number): void {
+// Averages the summed gradient over m samples and caps its norm; false when it is not finite.
+function clipNorm(g: Float64Array, m: number): boolean {
   let sq = 0;
   for (let i = 0; i < g.length; i++) sq += (g[i]! / m) ** 2;
+  if (!Number.isFinite(sq)) return false;
   const scale = Math.min(1, MAX_GRAD_NORM / (Math.sqrt(sq) + 1e-12)) / m;
   for (let i = 0; i < g.length; i++) g[i] *= scale;
+  return true;
 }
 
 function shuffle(a: number[], rng: Rng): void {

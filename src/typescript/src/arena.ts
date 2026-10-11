@@ -455,6 +455,7 @@ function render(): void {
   $("statBest").textContent = fixed(last?.best);
   const backprop = (r?.method ?? runForm.read().method) === "backprop";
   $("statBestLabel").textContent = backprop ? "Best episode" : "Best candidate";
+  $("keyBest").textContent = backprop ? "best episode" : "best candidate";
   const tip = backprop ? "Reward of the best training episode in the latest update." : "Reward of the best candidate in the latest iteration.";
   $("statBestTip").dataset.tip = tip;
   $("statBestTip").ariaLabel = tip;

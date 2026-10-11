@@ -101,7 +101,7 @@
           <div class="tile "><dt>Elapsed<span class="tip" tabindex="0" role="img" aria-label="Real time since training started." data-tip="Real time since training started.">ⓘ</span></dt><dd id="statTime">-</dd></div>
         </dl>
         <div class="viewbar">
-          <div class="toggle"><span class="lbl"><label class="name" for="brainOn">Brain</label><span class="tip" tabindex="0" role="img" aria-label="Show the brain of the best candidate, replayed on what tile 1 sees. Its connections change as training goes on." data-tip="Show the brain of the best candidate, replayed on what tile 1 sees. Its connections change as training goes on.">ⓘ</span></span><input id="brainOn" type="checkbox" role="switch" /></div>
+          <div class="toggle"><span class="lbl"><label class="name" for="brainOn">Brain</label><span class="tip" tabindex="0" role="img" aria-label="Show the brain of the creature in the tiles, replayed on what tile 1 sees. Its connections change as training goes on." data-tip="Show the brain of the creature in the tiles, replayed on what tile 1 sees. Its connections change as training goes on.">ⓘ</span></span><input id="brainOn" type="checkbox" role="switch" /></div>
           <div class="speed"><span class="lbl"><span class="name">Speed</span></span>
             <div class="seg" role="radiogroup" aria-label="Playback speed">
               <label><input type="radio" name="speed" value="1" /><span>1×</span></label>
@@ -137,16 +137,16 @@
             <p id="note" class="empty-note">Design or pick a creature, choose environments, then press Start.</p>
           </div>
           <section id="brainCard" class="card brain-card" hidden>
-            <h2>Brain of the best candidate</h2>
+            <h2>Brain of the creature shown</h2>
             <canvas id="brainView" aria-label="The shown candidate's brain, live"></canvas>
           </section>
         </div>
         <section class="card graph-card">
           <header class="graph-head">
             <h2>Reward per iteration</h2>
-            <span class="fit-foot"><span class="key train">train mean</span><span class="key best">best candidate</span><span class="key held">held-out</span></span>
+            <span class="fit-foot"><span class="key train">train mean</span><span class="key best" id="keyBest">best candidate</span><span class="key held">held-out</span></span>
           </header>
-          <canvas id="rewardView" aria-label="Train mean, best candidate and held-out reward against iteration"></canvas>
+          <canvas id="rewardView" aria-label="Train mean, best and held-out reward against iteration"></canvas>
           <table id="envTable" class="env-table" hidden><thead><tr><th>Environment</th><th>Start</th><th>Now</th><th>Change</th></tr></thead><tbody></tbody></table>
         </section>
         <section class="card save-card">
