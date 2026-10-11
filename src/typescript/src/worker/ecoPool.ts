@@ -18,6 +18,15 @@ export type HelperPort = Port<HelperIn, HelperOut>;
 
 const START_MS = 20_000; // helpers not ready for a run after this long are lost (the first start loads their scripts)
 const TICK_MS = 5_000; // default for a tick or packet waiting so long that a helper is lost
+const TICK_CAP_MS = 120_000; // the adaptive timeout never grows past this, so a dead helper is still noticed
+const TICK_SLACK = 20; // the timeout is this many times the average tick, so a slow machine is not mistaken for a dead helper
+const TICK_SMOOTHING = 0.2; // weight of the newest tick in the running average
+
+// Timeout for one tick: base, or TICK_SLACK times the average tick duration when that is longer, capped at TICK_CAP_MS.
+export function tickTimeoutMs(base: number, avgTickMs: number | null): number {
+  if (avgTickMs === null) return base;
+  return Math.max(base, Math.min(TICK_CAP_MS, TICK_SLACK * avgTickMs));
+}
 
 // Helper threads when none are asked for: leave one core for the page and one for the coordinator, at most 4; on a 4-core machine 6 were no faster than 4.
 export function defaultHelpers(cores: number): number {
@@ -35,6 +44,7 @@ export class ThinkPool {
   private waiting: { count: number; resolve: () => void; reject: (e: unknown) => void } | null = null;
   private broken: unknown = null;
   private fresh = true; // no tick has run since the last start
+  private avgTickMs: number | null = null; // running average of warm tick durations in this run, see tickTimeoutMs
   private gen = 0; // the current run, see HelperIn
   private last: Promise<unknown> = Promise.resolve(); // the latest start or step; a new start waits for it
 
@@ -85,6 +95,7 @@ export class ThinkPool {
     this.home = null;
     this.packets = [];
     this.fresh = true;
+    this.avgTickMs = null;
     const done = this.expect(START_MS);
     this.ports.forEach((port, index) => port.post({ type: "init", gen, config: eco.config, worldCapacity: eco.world.count, index, wasm: eco.wasm }));
     return done;
@@ -114,16 +125,24 @@ export class ThinkPool {
     this.coordinator.publish(eco, home, this.packets);
     const state = new Uint8Array(home.buffer, 0, publishedBytes(home));
     for (const p of this.packets) new Uint8Array(p.buffer).set(state);
-    const done = this.expect(this.fresh ? Math.max(START_MS, this.tickMs) : this.tickMs); // the first tick builds every creature's brain and runs cold code
+    const cold = this.fresh; // the first tick builds every creature's brain and runs cold code, so it is not timed
+    const base = cold ? Math.max(START_MS, this.tickMs) : this.tickMs;
+    const done = this.expect(tickTimeoutMs(base, this.avgTickMs));
     this.fresh = false;
     const gen = this.gen;
+    const started = performance.now();
     this.ports.forEach((port, h) => {
       const buffer = this.packets[h]!.buffer as ArrayBuffer;
       port.post({ type: "tick", gen, buffer }, [buffer]);
     });
     this.senseOwn(eco);
     await done;
+    if (!cold) this.observe(performance.now() - started);
     this.finish(eco);
+  }
+
+  private observe(ms: number): void {
+    this.avgTickMs = this.avgTickMs === null ? ms : (1 - TICK_SMOOTHING) * this.avgTickMs + TICK_SMOOTHING * ms;
   }
 
   private finish(eco: Ecosystem): void {
