@@ -187,7 +187,7 @@ export class ShareCoordinator {
       d[k++] = genome.length;
       for (let g = 0; g < genome.length; g++) d[k++] = genome[g]!;
     }
-    items.length = j.died.length = j.born.length = 0;
+    eco.drainJournal();
     p.header[H_DELTA_LENGTH] = k;
 
     const members = eco.members;

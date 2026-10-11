@@ -190,6 +190,12 @@ export class Ecosystem {
     this.finishTick();
   }
 
+  // Empties the journal, once a helper coordinator has published it.
+  drainJournal(): void {
+    const j = this.journal;
+    if (j) j.born.length = j.died.length = j.items.length = 0;
+  }
+
   // Stops recording the journal, once no helper threads read it.
   dropJournal(): void {
     this.journal = null;
