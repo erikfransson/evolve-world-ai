@@ -15,7 +15,7 @@ export const FAST_FACTOR = 1.75;
 const FACTORS = [SLOW_FACTOR, 1, FAST_FACTOR] as const;
 
 export const STONE_RADIUS = [250, 380] as const; // world units; capped at 20% of the shorter world side
-const RIDGE_HALF_WIDTH = 48; // mean; the crest swells and narrows along its length
+const RIDGE_HALF_WIDTH = 56; // mean; the crest swells and narrows along its length
 const RIDGE_STEP = 0.75; // disc spacing in radii; the edge scallops are about 3% of the width
 const GAP = 80; // free passage kept between rock and the walls and between pieces of rock, wider than a creature
 const TRIES = 40; // placements tried per piece before giving up on the rest of its kind
@@ -36,7 +36,7 @@ interface Circle {
 }
 
 // The settings that make the map, which key the cache.
-type TerrainSettings = Pick<EngineConfig, "seed"> & { world: Pick<EngineConfig["world"], "width" | "height" | "stoneDensity" | "ridgeDensity" | "slowDensity" | "fastDensity"> };
+export type TerrainSettings = Pick<EngineConfig, "seed"> & { world: Pick<EngineConfig["world"], "width" | "height" | "stoneDensity" | "ridgeDensity" | "slowDensity" | "fastDensity"> };
 
 export class Terrain {
   readonly width: number;

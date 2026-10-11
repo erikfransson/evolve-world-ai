@@ -14,6 +14,7 @@ import { buildPreview } from "./ui/preview.ts";
 import { Replay, sourceOfLive, sourceOfPast } from "./ui/replay.ts";
 import type { ReplaySource } from "./ui/replay.ts";
 import { drawScene } from "./ui/scene.ts";
+import { syncTerrainLegend, terrainLegendHtml } from "./ui/terrainLegend.ts";
 import type { ViewOptions } from "./ui/scene.ts";
 import { TRIALS_LOCKED, TRIALS_PRESETS, CUSTOM, withTrialsPreset } from "./sim/presets.ts";
 import { initRunSession, renderRunControls } from "./ui/runSession.ts";
@@ -39,6 +40,7 @@ const brainCard = $("brainCard");
 const legendRest = $("legendRest");
 const legendRestText = $("legendRestText");
 const legendPoison = $("legendPoison");
+legendCard.querySelector("ul")!.insertAdjacentHTML("beforeend", terrainLegendHtml());
 initCard(legendCard, "evolve.card.legend", false);
 const brainPanel = initCard(brainCard, "evolve.card.brain", window.matchMedia("(max-width: 700px)").matches);
 const brainView = new BrainView($<HTMLCanvasElement>("brainView"));
@@ -87,6 +89,7 @@ function renderOverlays(): void {
   legendRest.hidden = !view.showAll;
   legendRestText.textContent = run.config.population.size > MAX_TRAJECTORIES + 1 ? `Top ${MAX_TRAJECTORIES} of the rest` : "Rest of generation";
   legendPoison.hidden = itemCounts(run.config).poison <= 0;
+  syncTerrainLegend(run.config);
   legendCard.hidden = brainCard.hidden = fitnessCard.hidden = replay.best === null;
 }
 

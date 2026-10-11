@@ -1,7 +1,9 @@
 import type { CreatureState, EpisodeView, PlaybackState, WorldView } from "../sim/types.ts";
 import { HIT_FOOD, HIT_NONE, HIT_POISON } from "../sim/types.ts";
 import type { SimConfig } from "../sim/config.ts";
+import { terrainOf } from "../sim/terrain.ts";
 import { BACKGROUND, FOOD, OTHER, POISON, RAY_NONE, RAY_WALL, WALL } from "./palette.ts";
+import { drawTerrain } from "./terrainScene.ts";
 
 export interface ViewOptions {
   showAll: boolean;
@@ -232,6 +234,7 @@ export function beginFrame(ctx: CanvasRenderingContext2D, config: SimConfig, ful
   ctx.setTransform(f.scale, 0, 0, f.scale, f.offsetX, f.offsetY);
   ctx.fillStyle = FLOOR;
   ctx.fillRect(0, 0, ww, wh);
+  drawTerrain(ctx, terrainOf(config), f.scale);
   ctx.strokeStyle = WALL;
   ctx.lineWidth = Math.max(2, 3 / f.scale);
   ctx.strokeRect(0, 0, ww, wh);

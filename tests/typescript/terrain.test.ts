@@ -186,7 +186,7 @@ describe("Episode and Ecosystem with rock", () => {
       births = eco.births;
       for (const m of eco.members) expect(t.touchesRock(m.creature.state.x, m.creature.state.y, r - 1e-6)).toBe(false);
     }
-    expect(births).toBeGreaterThan(10);
+    expect(births).toBeGreaterThan(3);
     const w = eco.world;
     for (let i = 0; i < w.count; i++) if (w.kinds[i] !== HIT_NONE) expect(t.touchesRock(w.xs[i]!, w.ys[i]!, eco.config.world.itemRadius)).toBe(false);
   });

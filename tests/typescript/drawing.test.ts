@@ -45,6 +45,17 @@ describe("drawScene", () => {
     expect(badCoordinateCalls(calls)).toEqual([]);
   });
 
+  it("draws rock and ground of the map, and nothing extra without one", () => {
+    const map: SimConfig = { ...DEFAULT_CONFIG, world: { ...DEFAULT_CONFIG.world, stoneDensity: 0.05, ridgeDensity: 0.04, slowDensity: 0.08, fastDensity: 0.08 } };
+    const plain = fakeCtx(1000, 700);
+    drawScene(plain.ctx, DEFAULT_CONFIG, null, [], { showAll: false, showRays: false, pov: false });
+    const mapped = fakeCtx(1000, 700);
+    drawScene(mapped.ctx, map, null, [], { showAll: false, showRays: false, pov: false });
+    expect(plain.calls.some((c) => c.name === "arc")).toBe(false);
+    expect(mapped.calls.filter((c) => c.name === "arc").length).toBeGreaterThan(20); // the rock discs, over several fills
+    expect(badCoordinateCalls(mapped.calls)).toEqual([]);
+  });
+
   it("draws only the label and background without a best creature", () => {
     const { ctx, calls } = fakeCtx();
     drawScene(ctx, DEFAULT_CONFIG, null, others, { showAll: true, showRays: true, pov: true }, "Waiting");

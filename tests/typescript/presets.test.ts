@@ -167,7 +167,7 @@ describe("Trials preset panel", () => {
 
   it("lists every preset and Custom with a description", () => {
     const names = [...document.querySelectorAll("#preset option")].map((o) => o.textContent);
-    expect(names).toEqual(["Normal", "Poison everywhere", "Starvation", "Sparse giants", "Custom"]);
+    expect(names).toEqual(["Normal", "Poison everywhere", "Starvation", "Sparse giants", "Highlands", "Custom"]);
     panel.select("starvation");
     expect(document.getElementById("presetDesc")!.textContent).toBe(TRIALS_PRESETS[2]!.description);
   });
@@ -335,8 +335,8 @@ describe("Ecosystem preset panel", () => {
     io = initSettingsIO({ mode: "ecosystem", form: document.getElementById("setup") as HTMLFormElement, read: form.read, fill: form.fill, preset: { get: panel.current, set: panel.select } });
   });
 
-  it("offers the five presets and Custom", () => {
-    expect([...document.querySelectorAll("#preset option")].map((o) => o.textContent)).toEqual(["Normal", "Poison everywhere", "Scarcity", "Crowded", "Seasons", "Custom"]);
+  it("offers the six presets and Custom", () => {
+    expect([...document.querySelectorAll("#preset option")].map((o) => o.textContent)).toEqual(["Normal", "Poison everywhere", "Scarcity", "Crowded", "Seasons", "Highlands", "Custom"]);
   });
 
   it.each(ECO_PRESETS.map((p) => p.id))("%s applies the world and regrowth, locks them and stays on slider steps", (id) => {
