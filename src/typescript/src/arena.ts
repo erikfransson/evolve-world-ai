@@ -33,7 +33,7 @@ import type { PreviewIn, PreviewOut } from "./worker/envPreviewWorker.ts";
 import { $, durationText } from "./ui/page.ts";
 import { buildForm } from "./ui/settingsForm.ts";
 import { RewardGraph } from "./ui/rewardGraph.ts";
-import { bindGentle, readGentle } from "./ui/gentle.ts";
+import { bindGentle } from "./ui/gentle.ts";
 import { initTooltips } from "./ui/tooltip.ts";
 
 // public/pool.json and rl/library.json sit at the site root, one level above this page.
@@ -438,7 +438,7 @@ function begin(): void {
   zoom.close();
   grid.clear();
   brainReplay.reset();
-  send({ type: "start", envs, learner: serialiseLearner(start.learner), method: cfg.method, options, tiles: grid.size, seed, poolUrl: POOL_URL, libraryUrl: LIBRARY_URL, gentle: readGentle() });
+  send({ type: "start", envs, learner: serialiseLearner(start.learner), method: cfg.method, options, tiles: grid.size, seed, poolUrl: POOL_URL, libraryUrl: LIBRARY_URL, gentle: $<HTMLInputElement>("gentle").checked });
   $("note").textContent = "Starting…";
   $("note").hidden = false;
   setState("running");
