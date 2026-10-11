@@ -36,9 +36,36 @@
 .go { margin-top: auto; padding-top: 0.5rem; color: var(--accent); font-size: 0.9rem; font-weight: 600; }
 .go span { display: inline-block; transition: transform 0.15s; }
 .mode:hover .go span, .mode:focus-visible .go span { transform: translateX(4px); }
-.badge { padding: 0.15rem 0.55rem; border: 1px solid var(--border-hi); border-radius: 999px; color: var(--muted); font-size: 0.68rem; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase; }
-.soon .go { color: var(--muted); }
-.badge.live { border-color: color-mix(in srgb, var(--accent) 55%, transparent); color: var(--accent); }
+
+/* featured Live World card */
+.featured { width: 100%; max-width: 60rem; margin: 0 auto 1.75rem; }
+.live-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+  align-items: center;
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  box-shadow: 0 0 34px rgba(61, 220, 151, 0.14), 0 8px 28px rgba(0, 0, 0, 0.35);
+}
+.live-card::after { /* soft light sweeping along the border */
+  content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1px; pointer-events: none;
+  background: linear-gradient(110deg, transparent 35%, rgba(61, 220, 151, 0.9) 50%, transparent 65%) 200% 0 / 250% 100% no-repeat;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+  animation: sweep 6s ease-in-out infinite;
+}
+.live-card canvas { border-bottom: 0; border-right: 1px solid var(--border); }
+.live-card .mode-body { padding: 1.6rem 1.8rem; gap: 0.7rem; }
+.live-card h2 { font-size: 1.9rem; }
+.live-card p { font-size: 1.05rem; }
+.live-pill { align-self: flex-start; display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.22rem 0.7rem 0.22rem 0.55rem; border: 1px solid color-mix(in srgb, #ff5a5f 55%, transparent); border-radius: 999px; background: rgba(255, 90, 95, 0.1); color: #ff8a8e; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; }
+.live-dot { width: 0.55rem; height: 0.55rem; border-radius: 50%; background: #ff5a5f; animation: pulse 2s ease-out infinite; }
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(255, 90, 95, 0.65); opacity: 1; }
+  70% { box-shadow: 0 0 0 0.55rem rgba(255, 90, 95, 0); opacity: 0.75; }
+  100% { box-shadow: 0 0 0 0 rgba(255, 90, 95, 0); opacity: 1; }
+}
+@keyframes sweep { 0%, 15% { background-position: 200% 0; } 70%, 100% { background-position: -100% 0; } }
 
 .foot { margin-top: auto; padding-top: 3rem; text-align: center; font-size: 0.85rem; }
 .foot a { color: var(--muted); text-decoration: none; }
@@ -46,14 +73,20 @@
 .foot a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
 
 @media (max-width: 1180px) {
-  .modes { grid-template-columns: repeat(2, 1fr); max-width: 52rem; margin: 0 auto; width: 100%; }
+  .modes { grid-template-columns: repeat(2, 1fr); max-width: 60rem; margin: 0 auto; width: 100%; }
 }
 @media (max-width: 700px) {
+  .live-card { grid-template-columns: minmax(0, 1fr); }
+  .live-card canvas { border-right: 0; border-bottom: 1px solid var(--border); }
+  .live-card .mode-body { padding: 1.1rem 1.2rem 1.2rem; }
+  .live-card h2 { font-size: 1.5rem; }
   .landing { padding-top: 2.5rem; }
   .hero { margin-bottom: 2rem; }
   .modes { grid-template-columns: 1fr; max-width: 30rem; }
 }
 @media (prefers-reduced-motion: reduce) {
   .mode, .go span { transition: none; }
+  .live-dot { animation: none; }
+  .live-card::after { display: none; }
   .mode:hover, .mode:focus-visible { transform: none; }
 }
