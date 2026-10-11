@@ -168,7 +168,7 @@ function paintPreview(): void {
   };
   paint("previewView", (ctx, w, h) => drawCreaturePreview(ctx, scene, w, h));
   const box = $<HTMLCanvasElement>("previewBrain");
-  previewBrainView.zoom = Math.min(2.2, Math.max(0.6, Math.min(box.clientWidth / 440, box.clientHeight / 300))); // the network follows the size of its box
+  previewBrainView.zoom = Math.min(2.2, Math.max(0.6, Math.min(box.clientWidth / 340, box.clientHeight / 220))); // the network follows the size of its box
   previewBrainView.draw(scene.creature.brain, true, scene.layout);
 }
 
@@ -199,6 +199,7 @@ reducedMotion?.addEventListener?.("change", () => drawPreview());
 function drawPreview(): void {
   const card = $("previewCard");
   card.hidden = run !== null || preview === null;
+  document.querySelector<HTMLElement>(".stats")!.hidden = !card.hidden; // empty until a run, so the preview takes their place
   if (card.hidden || !preview) return;
   const { plan, genome } = preview;
   renderEnergy($("energyCard"), energyBudget(plan, worldConfig(kind())));
@@ -215,8 +216,8 @@ function drawPreview(): void {
   paintPreview();
   previewKick();
   const deg = Math.round((plan.raySpread * 180) / Math.PI);
-  $("previewStats").textContent = `It moves through a room and its eyes (${plan.rayCount} ray${plan.rayCount === 1 ? "" : "s"} over ${deg}°, seeing ${Math.round(plan.rayLength)} units far, the dashed ring) show what it sees: a ray turns green on food, purple on poison, yellow on a wall. Living costs it ${planUpkeep(plan, worldConfig(k)).toFixed(2)} energy a second.`;
-  $("previewBrainText").textContent = `Its brain reacts live: what each ray sees (left), ${plan.hiddenLayers.length === 1 ? `a layer of ${plan.hiddenLayers[0]} neurons` : `${plan.hiddenLayers.length} layers of neurons`} (middle), and turn and thrust (right). Lit lines show how it reacts to the scene beside it.`;
+  $("previewStats").textContent = `${plan.rayCount} ray${plan.rayCount === 1 ? "" : "s"} over ${deg}°, ${Math.round(plan.rayLength)} units far (dashed ring). A ray turns green on food, purple on poison, yellow on a wall.`;
+  $("previewBrainText").textContent = `Live: what the rays see (left), ${plan.hiddenLayers.length === 1 ? `${plan.hiddenLayers[0]} neurons` : `${plan.hiddenLayers.length} layers of neurons`} (middle), turn and thrust (right).`;
 }
 window.addEventListener("resize", drawPreview);
 

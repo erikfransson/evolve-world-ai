@@ -48,6 +48,7 @@ details.more > summary { color: var(--text); font-weight: 500; font-size: 0.85re
 .stage-head .primary { grid-column: auto; padding: 0.55rem 1.6rem; }
 .stage-head .secondary { padding: 0.5rem 1rem; }
 .arena-stage .stats { grid-template-columns: repeat(5, 1fr); } /* more specific than style.css, whose order in the bundle may change */
+.arena-stage .stats[hidden] { display: none; } /* idle: the preview stands in for the empty tiles */
 .tile dd .delta { margin-left: 0.35rem; font-size: 0.8rem; font-weight: 600; color: var(--muted); }
 .tile dd .delta.up { color: var(--accent); }
 .tile dd .delta.down { color: #f87171; }
@@ -120,11 +121,11 @@ details.more > summary { color: var(--text); font-weight: 500; font-size: 0.85re
 /* creature preview */
 .preview-card { gap: 0.5rem; padding: 0.7rem 0.8rem; }
 .preview-card[hidden] { display: none; }
-.preview-body { display: grid; grid-template-columns: minmax(0, 63fr) minmax(0, 37fr); gap: 1rem; align-items: start; width: 100%; max-width: 84rem; margin: 0 auto; } /* fills the card, capped so very wide screens keep the pair balanced */
+.preview-body { display: grid; grid-template-columns: minmax(0, 63fr) minmax(0, 37fr); gap: 1rem; align-items: start; width: 100%; }
 .preview-fig { margin: 0; display: flex; flex-direction: column; gap: 0.4rem; min-width: 0; }
 .preview-fig canvas { display: block; width: 100%; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); }
-#previewView { aspect-ratio: 3 / 2; } /* the room the creature moves through: the wide box */
-#previewBrain { aspect-ratio: 4 / 3; } /* the network: a narrow box, with the energy readout below it */
+#previewView { aspect-ratio: 16 / 10; } /* the room the creature moves through: the wide box */
+#previewBrain { aspect-ratio: 3 / 2; } /* the network: a narrow box, with the energy readout below it */
 .energy { margin-top: 0.3rem; padding: 0.7rem 0.8rem; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); display: flex; flex-direction: column; gap: 0.55rem; font-variant-numeric: tabular-nums; }
 .energy-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 0.2rem; }
 .energy-big { font-size: 1.7rem; font-weight: 700; color: #fbbf24; line-height: 1; }
