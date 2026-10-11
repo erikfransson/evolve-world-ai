@@ -17,11 +17,13 @@ export interface EcoConfig extends EngineConfig {
     winterFood: number; // food regrowth multiplier at mid-winter, 0 to 1
     poisonRegrow: number;
     poisonMaxDensity: number; // keeps poison from filling the board
-    birthEnergy: number; // a creature at or above this energy gives birth; also where the energy fill is full
-    birthCost: number; // energy the parent pays
-    childEnergy: number; // energy the child starts with
-    birthCooldown: number; // seconds before a parent can give birth again
-    birthSpeed: number; // units/s the child is launched at, in a random direction
+    // Each creature carries its own birth threshold, cost and cooldown, drawn from these ranges for founders and drifting for
+    // children. The child starts with exactly the energy the parent pays; a cost at or above the parent's energy costs it its life.
+    birthEnergyRange: number[]; // a creature at or above this energy gives birth; the energy fill is full at the range's log-middle
+    birthCostRange: number[]; // energy the parent pays, which is the energy the child starts with
+    birthCooldownRange: number[]; // seconds before a parent can give birth again
+    birthDrift: number; // relative std (log scale) of the change of a child's birth traits
+    birthSpeed: number; // units/s the child leaves its parent at (relative), in a random direction
     hueDrift: number; // std of the child's colour change, degrees
     aging: boolean; // old creatures pay more upkeep
     agingStart: number; // age in seconds after which the upkeep starts to grow
@@ -41,7 +43,7 @@ export interface EcoConfig extends EngineConfig {
     memoryRange: number[]; // short and long units each
   };
   mutation: { rate: number; std: number }; // per gene, as in Trials' ga
-  // Predators & prey: the species, which replace eco.initialPopulation, poolFraction, the birth settings and the ray
+  // The Great Hunt: the species, which replace eco.initialPopulation, poolFraction, the birth settings and the ray
   // ranges, and the creature's start energy, speed and costs (see species.ts). Absent for the Ecosystem's one species.
   species?: SpeciesConfig[];
 }
@@ -64,10 +66,10 @@ export const DEFAULT_ECO_CONFIG: EcoConfig = {
     winterFood: 0.3,
     poisonRegrow: 0.005,
     poisonMaxDensity: 0.1,
-    birthEnergy: 150,
-    birthCost: 75,
-    childEnergy: 50,
-    birthCooldown: 10,
+    birthEnergyRange: [100, 225],
+    birthCostRange: [50, 110],
+    birthCooldownRange: [5, 20],
+    birthDrift: 0.1,
     birthSpeed: 60,
     hueDrift: 8,
     aging: false,
@@ -91,7 +93,7 @@ export const DEFAULT_ECO_CONFIG: EcoConfig = {
 
 const deg = (d: number): number => (d * Math.PI) / 180;
 
-// Predators & prey (#12): species A grazes the plants, species B hunts A. Both species carry all their own values; the
+// The Great Hunt (#12): species A grazes the plants, species B hunts A. Both species carry all their own values; the
 // shared creature and eco settings hold the same numbers for the prey. Tuned in docs/tuning-notes.md.
 export const DEFAULT_PREDATOR_CONFIG: EcoConfig = {
   ...DEFAULT_ECO_CONFIG,
@@ -106,10 +108,9 @@ export const DEFAULT_PREDATOR_CONFIG: EcoConfig = {
     foodMaxDensity: 0.7,
     poisonRegrow: 0.002,
     poisonMaxDensity: 0.04,
-    birthEnergy: 120,
-    birthCost: 60,
-    childEnergy: 45,
-    birthCooldown: 8,
+    birthEnergyRange: [85, 170],
+    birthCostRange: [40, 90],
+    birthCooldownRange: [5.5, 11.5],
     rayCountRange: [2, 16],
     raySpreadRange: [deg(20), deg(360)],
     rayLengthRange: [50, 250],
@@ -131,10 +132,9 @@ export const DEFAULT_PREDATOR_CONFIG: EcoConfig = {
       livingCost: 2,
       thrustCost: 4,
       turnCost: 0.5,
-      birthEnergy: 120,
-      birthCost: 60,
-      childEnergy: 45,
-      birthCooldown: 8,
+      birthEnergyRange: [85, 170],
+      birthCostRange: [40, 90],
+      birthCooldownRange: [5.5, 11.5],
       rayCountRange: [2, 16],
       raySpreadRange: [deg(20), deg(360)],
       rayLengthRange: [50, 250],
@@ -154,10 +154,9 @@ export const DEFAULT_PREDATOR_CONFIG: EcoConfig = {
       livingCost: 2,
       thrustCost: 4,
       turnCost: 0.2,
-      birthEnergy: 260,
-      birthCost: 140,
-      childEnergy: 110,
-      birthCooldown: 10,
+      birthEnergyRange: [185, 365],
+      birthCostRange: [100, 200],
+      birthCooldownRange: [7, 14],
       rayCountRange: [4, 12],
       raySpreadRange: [deg(30), deg(180)],
       rayLengthRange: [150, 300],

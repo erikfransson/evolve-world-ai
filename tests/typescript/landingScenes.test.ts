@@ -6,7 +6,7 @@ const TICKS = Math.round(60 / TICK_SECONDS);
 function finiteCtx(): CanvasRenderingContext2D {
   const check = (...args: unknown[]): void => { for (const a of args) if (typeof a === "number") expect(Number.isFinite(a)).toBe(true); };
   const canvas = { width: 720, height: 450 };
-  return new Proxy({}, { get: (_, k) => (k === "canvas" ? canvas : k === "createRadialGradient" ? (...a: unknown[]) => { check(...a); return { addColorStop: check }; } : k === "arc" ? (...a: unknown[]) => { check(...a); expect(a[2]).toBeGreaterThanOrEqual(0); } : check), set: (_, _k, v) => { check(v); return true; } }) as unknown as CanvasRenderingContext2D;
+  return new Proxy({}, { get: (_, k) => (k === "canvas" ? canvas : k === "createRadialGradient" || k === "createLinearGradient" ? (...a: unknown[]) => { check(...a); return { addColorStop: check }; } : k === "arc" ? (...a: unknown[]) => { check(...a); expect(a[2]).toBeGreaterThanOrEqual(0); } : check), set: (_, _k, v) => { check(v); return true; } }) as unknown as CanvasRenderingContext2D;
 }
 
 describe("ecosystemScene births", () => {
@@ -55,5 +55,15 @@ describe("predatorScene", () => {
     const again = predatorScene(7);
     for (let t = 0; t < WARMUP_TICKS + TICKS; t++) again.step();
     expect(again.catches).toBe(scene.catches);
+  });
+
+  it("catches a prey whenever it visibly touches the hunter, never overlapping otherwise", () => {
+    for (const seed of [1, 7, 21]) {
+      const scene = predatorScene(seed);
+      for (let t = 0; t < WARMUP_TICKS + TICKS; t++) {
+        scene.step();
+        expect(scene.overlaps()).toBe(0);
+      }
+    }
   });
 });

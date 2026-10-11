@@ -82,11 +82,12 @@ export function envConfig(env: EnvSpec, seed: number): EcoConfig {
     foodMaxDensity: env.food / per,
     poisonRegrow: 0,
     poisonMaxDensity: env.poison / per,
-    birthEnergy: BIRTHLESS,
+    birthEnergyRange: [BIRTHLESS, BIRTHLESS],
+    birthDrift: 0,
     planDrift: 0,
     structuralRate: 0,
   };
-  if (base.species) base.species = base.species.map((sp) => ({ ...sp, birthEnergy: BIRTHLESS }));
+  if (base.species) base.species = base.species.map((sp) => ({ ...sp, birthEnergyRange: [BIRTHLESS, BIRTHLESS] }));
   return base;
 }
 

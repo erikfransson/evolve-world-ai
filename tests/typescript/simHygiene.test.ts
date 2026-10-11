@@ -18,7 +18,7 @@ function cfg(wasm: boolean): EcoConfig {
     seed: 5,
     world: { ...d.world, width: 900, height: 900 },
     creature: { ...d.creature, startEnergy: 60 },
-    eco: { ...d.eco, wasm, initialPopulation: 60, foundersVary: true, structuralRate: 0.3, birthEnergy: 40 },
+    eco: { ...d.eco, wasm, initialPopulation: 60, foundersVary: true, structuralRate: 0.3, birthEnergyRange: [76, 76], birthCostRange: [75, 75], birthCooldownRange: [10, 10] },
   };
 }
 
@@ -42,14 +42,14 @@ function fakePorts(n: number): HelperPort[] {
 describe("watched creature with helpers", () => {
   // The watched id changes every tick and refreshDetail runs on some, as the page does while a creature is selected.
   it.each([
-    [false, 662129205],
-    [true, 746480886],
+    [false, 72962322], // re-pinned for heritable birth traits (#31), were 662129205 and 746480886
+    [true, 693541288],
   ])("keeps the run equal to the serial one (wasm %s)", async (wasm, fingerprint) => {
     const serial = new Ecosystem(cfg(wasm));
     for (let t = 0; t < 300; t++) serial.step();
     expect(serial.fingerprint()).toBe(fingerprint);
 
-    const pool = new ThinkPool(fakePorts(2), false);
+    const pool = new ThinkPool(fakePorts(2));
     try {
       const eco = new Ecosystem(cfg(wasm), null, { journal: true });
       await pool.start(eco);

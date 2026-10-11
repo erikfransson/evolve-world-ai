@@ -1,5 +1,7 @@
 import type { EcoConfig } from "../sim/ecoConfig.ts";
 import type { Lineage, SpeciesCount } from "../sim/ecosystem.ts";
+import type { Leaders } from "../sim/leaderboard.ts";
+import type { TraitHistogram } from "../sim/popStats.ts";
 import type { BodyPlan } from "../sim/sensors.ts";
 
 export type BestBy = "age" | "children" | "eaten" | "kills";
@@ -7,8 +9,7 @@ export type EcoSpeedSetting = number | "max"; // simulated seconds per real seco
 
 export type EcoInMessage =
   // poolUrl: seed pool JSON, fetched once by the worker. threads: helper threads, 0 for none, default from the core count.
-  // shared: false keeps the helpers on messages even when shared memory is available.
-  | { type: "start"; config: EcoConfig; run: number; poolUrl?: string; threads?: number; shared?: boolean }
+  | { type: "start"; config: EcoConfig; run: number; poolUrl?: string; threads?: number }
   | { type: "pause" }
   | { type: "resume" }
   | { type: "reset" }
@@ -38,6 +39,10 @@ export interface SelectedDetails {
   founderHue: number; // that founder's colour
   plan: BodyPlan; // the creature's own senses and brain shape; the genome is sized for it
   upkeep: number; // energy per second besides thrust and turning
+  birthEnergy: number; // energy at which it has a child
+  birthCost: number; // energy the parent pays, and the child starts with
+  birthCooldown: number; // seconds between births
+  drain: number; // energy per second now, with old age, thrust and turning
   rayKinds: Uint8Array; // HitKind per ray
   rayCloseness: Float32Array;
   rayEnergy: Float32Array;
@@ -60,7 +65,6 @@ export interface EcoSnapshot {
   extinct: boolean;
   speed: number; // simulated seconds per real second achieved, 0 until measured
   helpers: number; // helper threads sensing and thinking, 0 when the worker runs alone
-  sharedMemory: boolean; // the helpers use shared memory rather than messages
   wasm: boolean; // sense and think run on the WebAssembly kernels
   count: number; // creatures in the buffer
   itemCount: number;
@@ -69,11 +73,14 @@ export interface EcoSnapshot {
   buffer: ArrayBuffer; // transferred; see snapshotViews
   selected: SelectedDetails | null;
   bestRequest: number; // the last selectBest request handled, so the page ignores selections from before it
+  events?: Float32Array; // big impacts and deaths from collisions and hunts since the last snapshot, see EVENT_STRIDE in sim/ecosystem.ts; only when there are some
   history?: Float64Array; // [time, population, food] per sample, then each species' population with several species; only when it changed
   species?: SpeciesCount[]; // per species, with several species
   // Lineages, sent about once a second (and with the first and last snapshot of a run). With several species, each
   // species has its own: lineages lists each species' in turn, and each history sample holds one block per species.
   lineages?: Lineage[]; // the LINEAGE_TOP largest living lineages, biggest first
+  leaders?: Leaders[]; // the run's records per species, with the lineages
+  traits?: (TraitHistogram[] | null)[]; // body plan histograms of each species' living creatures (TRAITS order), null for none alive, with the lineages
   lineageHistory?: Float64Array; // LINEAGE_STRIDE numbers per sample and species, at the times of `history`, only when it changed
 }
 

@@ -1,7 +1,7 @@
 import type { EngineConfig } from "./config.ts";
 import type { EcoConfig } from "./ecoConfig.ts";
 
-// Species of a Predators & prey world (#12). Children keep their parent's species. A species is its identity and diet
+// Species of a Great Hunt world (#12). Children keep their parent's species. A species is its identity and diet
 // plus overrides of the shared settings: whatever it leaves out it takes from eco and creature, so the Ecosystem is
 // the case of one species that overrides nothing.
 export interface SpeciesConfig {
@@ -19,10 +19,9 @@ export interface SpeciesConfig {
   livingCost?: number; // creature.livingCost
   thrustCost?: number; // creature.thrustCost
   turnCost?: number; // creature.turnCost
-  birthEnergy?: number; // eco.birthEnergy
-  birthCost?: number; // eco.birthCost
-  childEnergy?: number; // eco.childEnergy
-  birthCooldown?: number; // eco.birthCooldown
+  birthEnergyRange?: number[]; // eco.birthEnergyRange
+  birthCostRange?: number[]; // eco.birthCostRange
+  birthCooldownRange?: number[]; // eco.birthCooldownRange
   rayCountRange?: number[]; // eco.rayCountRange
   raySpreadRange?: number[]; // eco.raySpreadRange, radians
   rayLengthRange?: number[]; // eco.rayLengthRange
@@ -39,10 +38,9 @@ export const SPECIES_OVERRIDES = {
   livingCost: ["creature", "livingCost"],
   thrustCost: ["creature", "thrustCost"],
   turnCost: ["creature", "turnCost"],
-  birthEnergy: ["eco", "birthEnergy"],
-  birthCost: ["eco", "birthCost"],
-  childEnergy: ["eco", "childEnergy"],
-  birthCooldown: ["eco", "birthCooldown"],
+  birthEnergyRange: ["eco", "birthEnergyRange"],
+  birthCostRange: ["eco", "birthCostRange"],
+  birthCooldownRange: ["eco", "birthCooldownRange"],
   rayCountRange: ["eco", "rayCountRange"],
   raySpreadRange: ["eco", "raySpreadRange"],
   rayLengthRange: ["eco", "rayLengthRange"],
@@ -64,6 +62,9 @@ export const speciesList = (config: EcoConfig): Species[] => (config.species?.le
 // All species read a seen creature's energy on one scale, the largest start energy, which for one species is its own.
 export const seenEnergyScale = (species: readonly Species[]): number => Math.max(...species.map((x) => x.startEnergy));
 
+// Where the body of a species is drawn full: the middle of its birth threshold range on a log scale.
+export const fullEnergy = (sp: Pick<Species, "birthEnergyRange">): number => Math.sqrt(sp.birthEnergyRange[0]! * sp.birthEnergyRange[1]!);
+
 // The engine config a creature of species sp runs on: its body, costs and speed. scale is seenEnergyScale of the world's species.
 export function speciesEngine(config: EcoConfig, sp: Species, scale = seenEnergyScale(speciesList(config))): EngineConfig {
   const c = config.creature;
@@ -74,9 +75,10 @@ export function speciesEngine(config: EcoConfig, sp: Species, scale = seenEnergy
   };
 }
 
-// Ranges for randomPlan, driftPlan and mutateStructure: the species' ray ranges with the shared brain ranges.
+// Ranges for randomPlan, driftPlan, mutateStructure and the birth traits: the species' ray and birth ranges with the shared brain ranges.
 export function speciesRanges(config: EcoConfig, sp: Species): EcoConfig["eco"] {
-  return { ...config.eco, rayCountRange: sp.rayCountRange, raySpreadRange: sp.raySpreadRange, rayLengthRange: sp.rayLengthRange };
+  const { rayCountRange, raySpreadRange, rayLengthRange, birthEnergyRange, birthCostRange, birthCooldownRange } = sp;
+  return { ...config.eco, rayCountRange, raySpreadRange, rayLengthRange, birthEnergyRange, birthCostRange, birthCooldownRange };
 }
 
 // Founders per species: each its own count, all scaled down together when they would exceed the population limit.
@@ -94,17 +96,44 @@ export function founderCounts(species: readonly Species[], maxPopulation: number
 }
 
 const IDENTITY_TYPES: Record<string, "string" | "number" | "boolean" | "array"> = { name: "string", hue: "number", hueSpread: "number", plants: "boolean", prey: "array", eatEfficiency: "number", eatBaseline: "number", speed: "number" };
-const RANGE_KEYS = new Set(["rayCountRange", "raySpreadRange", "rayLengthRange"]);
+const RANGE_KEYS = new Set(["rayCountRange", "raySpreadRange", "rayLengthRange", "birthEnergyRange", "birthCostRange", "birthCooldownRange"]);
+
+// Settings saved before birth traits were heritable held single birthEnergy, birthCost and birthCooldown values and a childEnergy.
+// Returns a copy of obj (a pasted eco block or species item) with those turned into [v, v] ranges, childEnergy dropped, and a note per change.
+export function migrateBirthKeys(obj: Record<string, unknown>, where: string, notes: string[]): Record<string, unknown> {
+  const out = { ...obj };
+  for (const key of ["birthEnergy", "birthCost", "birthCooldown"]) {
+    if (!(key in out)) continue;
+    const v = out[key];
+    delete out[key];
+    if (typeof v !== "number") continue; // left to the range keys' own checks
+    out[`${key}Range`] ??= [v, v];
+    notes.push(`${where}.${key} ${v} → ${key}Range [${v}, ${v}]`);
+  }
+  if ("childEnergy" in out) {
+    delete out.childEnergy;
+    notes.push(`${where}.childEnergy dropped (a child now starts with the birth cost)`);
+  }
+  return out;
+}
+
+// Throws when a [min, max] setting of obj (an eco block or species item) has min above max.
+export function checkRanges(obj: Record<string, unknown>, where: string): void {
+  for (const [key, v] of Object.entries(obj)) {
+    if (key.endsWith("Range") && Array.isArray(v) && v.length === 2 && (v[0] as number) > (v[1] as number)) throw new Error(`config "${where}.${key}" must have min at most max, got [${v.join(", ")}].`);
+  }
+}
 
 // A pasted species list merged item by item over the defaults. Throws a readable Error when the list does not have
 // the defaults' length, an item has an unknown key or a wrong type, or a prey index names no other species.
-export function mergeSpeciesList(value: unknown, defaults: readonly SpeciesConfig[]): SpeciesConfig[] {
+export function mergeSpeciesList(value: unknown, defaults: readonly SpeciesConfig[], notes: string[] = []): SpeciesConfig[] {
   const n = defaults.length;
   if (!Array.isArray(value)) throw new Error(`config "species" must be a list of ${n} species.`);
   if (value.length !== n) throw new Error(`config "species" must list exactly ${n} species (${defaults.map((d) => d.name).join(", ")}), got ${value.length}.`);
   return value.map((item, i) => {
     const where = `species[${i}]`;
     if (typeof item !== "object" || item === null || Array.isArray(item)) throw new Error(`config "${where}" must be an object.`);
+    item = migrateBirthKeys(item as Record<string, unknown>, where, notes);
     const out = structuredClone(defaults[i]!) as unknown as Record<string, unknown>;
     for (const [key, v] of Object.entries(item as Record<string, unknown>)) {
       const type = IDENTITY_TYPES[key] ?? (RANGE_KEYS.has(key) ? "array" : key in SPECIES_OVERRIDES ? "number" : undefined);
@@ -115,6 +144,7 @@ export function mergeSpeciesList(value: unknown, defaults: readonly SpeciesConfi
       if (key === "prey" && !(v as number[]).every((p) => Number.isInteger(p) && p >= 0 && p < n && p !== i)) throw new Error(`config "${where}.prey" must list other species by index, 0 to ${n - 1}.`);
       out[key] = Array.isArray(v) ? v.slice() : v;
     }
+    checkRanges(out, where);
     return out as unknown as SpeciesConfig;
   });
 }

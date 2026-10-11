@@ -83,7 +83,7 @@ Threads 4 vs 7 at pop 1000: steady generations equal at about 0.29 s; 4 threads 
 
 Profile at 2000 (4000 x 2500 world): first brain layer 19%, creature rays 17%, item gather 13%, item ray tracing about 12%, eatAt 5%, collisions and crowd rebuild under 4%.
 Body plans and memory (2026-10-10, load about 20): 765 -> 640 ticks/s, 169k -> 133k creature-ticks/s at the defaults (memory 4 + 4, costs on); memory 0 with zero costs is unchanged, fingerprint included.
-Random founders do not reach birthEnergy, so all runs decline; the default goes extinct after about 75 s without a birth.
+Random founders do not reach their birth energy, so all runs decline; the default goes extinct after about 75 s without a birth.
 
 ## WebAssembly SIMD kernels (E5b)
 
@@ -112,7 +112,7 @@ Trials stays on the JS path. Ecosystem uses them with `eco.wasm` (default true s
 
 ## Ecosystem helper threads (E5a)
 
-`node src/ecoBench.ts --seconds 10 --pop N --threads H [--shared]`, steady ms per tick (last three quarters), world 12000 x 7500, 2026-10-11.
+`node src/ecoBench.ts --seconds 10 --pop N --threads H [--shared]` (`--shared` since removed, see the shared-memory decision below), steady ms per tick (last three quarters), world 12000 x 7500, 2026-10-11.
 The machine has 4 physical cores (8 logical) and a browser tab used 1.3-2 cores throughout, so scaling past 2-3 threads is understated.
 Fingerprints are equal for every helper count and mode.
 
@@ -170,3 +170,18 @@ Details and rejected f64x2 variant in `docs/perf-explore/wasm.md`.
 Profile: brain forward/first layer about 30%, sensing and input encoding 15-20%; episode setup 5-10% (random rival genomes dominate in hunt envs); crowd grid, collisions and prepare about 20% for single-creature envs.
 Kept (bit-identical): no collision pass and no grid rebuild for a lone creature, one cached layout config for random learners. Single-creature envs 1.3-2.5x faster (forage-sparse pool 9.7 to 3.8 ms, endurance random 8.7 to 3.3), multi-creature envs unchanged within noise.
 Not done: wasm kernels (f32, changes results, brain-bound at 1-9 creatures anyway).
+
+## Shared-memory helper mode removed (WP3, WP4)
+
+Decision: helper threads use message passing (fork-join) only. The shared-memory transport, the `?shared` flag, `ecoBench --shared` and the coi-serviceworker are gone.
+Browser comparison on current main (headless Chrome, preview, 1440x900, 4 helpers, WebAssembly, Max speed, median of the last 60 s after 30 s warm-up, x real time, 3 alternating pairs, machine load 12-40 from other jobs):
+
+| Case                  | Messages      | Shared memory |
+|-----------------------|---------------|---------------|
+| Ecosystem default     | 2.5, 3.3, 2.8 | 3.1, 2.9, 2.5 |
+| Ecosystem width 20000 | 2.7, 3.6, 3.9 | 2.8, 3.1, 3.5 |
+| Predators & prey      | 1.8, 4.0, 4.1 | 3.2, 3.4, 4.4 |
+
+Means 2.9 vs 2.8, 3.4 vs 3.1, 3.3 vs 3.7. No case is clearly better by 10%, and run-to-run spread (load 12 vs 40) is larger than the difference, so the extra barrier code, second resize path and installed service worker are not paid back.
+Fingerprints are unchanged: `ecoBench --seconds 30 --pop 600` 417250420 and `--predators --seconds 40` 657843665 for 0 and 3 helpers, Trials `bench --pop 300 --gens 12 --seed 2` 836727452.
+The `unref` on node helper workers was only needed for shared-mode waits; without it a closed pool still lets the process exit, so it was dropped.

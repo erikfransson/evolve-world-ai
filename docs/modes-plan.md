@@ -17,11 +17,10 @@ Vite multi-page build, so each mode has its own `index.html` and entry script.
 - Food regrows at `foodRegrowRate` items per second per density cell, up to `foodMaxDensity`.
 - Poison regrows at `poisonRegrowRate` up to `poisonMaxDensity`, so the board cannot fill with poison.
 - Start energy 50, one food gives 20.
-- Birth when energy reaches 150: the parent pays 75, the child starts with 50 next to the parent.
-- After a birth the parent waits `birthCooldown` seconds (default 10) before the next one.
-- The child is launched in a random direction at `birthSpeed` instead of sitting still next to the parent.
+- Each creature carries its own birth energy, birth cost and birth cooldown, drawn for founders from run-setting ranges (defaults 100-225, 50-110, 5-20 s) and nudged by `birthDrift` in each child. The child starts with exactly the energy the parent pays, and a parent that pays all it has dies.
+- The child appears next to the parent and leaves at `birthSpeed` relative to it, split between them so momentum is kept and they do not collide at once.
 - The child gets the parent's genome with mutation and the parent's colour with a small hue drift; every founder gets a random colour.
-- A creature's energy fill is full at the birth threshold.
+- A creature's energy fill is full at the middle of the birth energy range.
 - Creatures collide and bounce off each other.
 - Rays also see creatures: a creature hit flag, plus the seen creature's energy (squashed like the own energy input).
 - Trials keeps its current ray inputs.
@@ -60,7 +59,7 @@ Contract: `EcoConfig` in `src/sim/ecoConfig.ts`, built on `EngineConfig` (the sh
 - Aging (#6, done): optional `eco.aging` (default off), `agingStart` seconds (120) and `agingRate` per minute (0.5); the upkeep is multiplied by 1 + rate x (age - start) / 60 after the start age.
 - Collision damage (#13, done): optional `eco.collisionDamage` (default off) and `damagePerSpeed` (0.3). Each bounce costs both creatures `damagePerSpeed` x the normal approach speed, once per impact (head-on at top speed, 160 units/s, costs 48). If exactly one dies, the survivor gains the dead one's energy from just before the hit; if both die, nobody does.
 
-## Predators & prey (issue #12), agreed 2026-10-11
+## The Great Hunt (issue #12), agreed 2026-10-11
 - Its own mode and landing card, third after Trials and Ecosystem; Live World moves to fourth.
 - Built on the Ecosystem engine: plants (food) regrow, species A grazes plants, species B hunts A.
 - Touching a prey eats it: the predator gains the prey's stored energy times an efficiency, plus a baseline (both settings).

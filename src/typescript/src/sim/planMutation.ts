@@ -114,3 +114,33 @@ export function remapWeights(oldSizes: readonly number[], old: Genome, maps: Uni
     oldOffset = oldBias + oldSizes[l + 1]!;
   }
 }
+
+// Heritable birth traits (#31): the energy at which a creature has a child, what the birth costs the parent (the child starts
+// with that much), and the seconds before its next birth. They are drawn and drift on a log scale, so a range of 50 to 10000 is
+// as likely to give 100 as 5000. A range with a zero minimum (a cooldown) is drawn and scaled linearly.
+export interface BirthTraits {
+  energy: number;
+  cost: number;
+  cooldown: number;
+}
+
+type BirthRanges = Pick<EcoConfig["eco"], "birthEnergyRange" | "birthCostRange" | "birthCooldownRange">;
+
+const drawIn = (range: readonly number[], rng: Rng): number => {
+  const u = rng.next();
+  return range[0]! > 0 ? range[0]! * Math.exp(u * Math.log(range[1]! / range[0]!)) : range[0]! + u * (range[1]! - range[0]!);
+};
+
+// Founder traits from the ranges, into out.
+export function randomBirth(eco: BirthRanges, rng: Rng, out: BirthTraits): void {
+  out.energy = drawIn(eco.birthEnergyRange, rng);
+  out.cost = drawIn(eco.birthCostRange, rng);
+  out.cooldown = drawIn(eco.birthCooldownRange, rng);
+}
+
+// Scales each trait by exp(drift x a standard normal), kept within the ranges.
+export function driftBirth(t: BirthTraits, drift: number, eco: BirthRanges, rng: Rng): void {
+  t.energy = clamp(t.energy * Math.exp(drift * rng.normal()), eco.birthEnergyRange);
+  t.cost = clamp(t.cost * Math.exp(drift * rng.normal()), eco.birthCostRange);
+  t.cooldown = clamp(t.cooldown * Math.exp(drift * rng.normal()), eco.birthCooldownRange);
+}

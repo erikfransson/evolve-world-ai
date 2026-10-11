@@ -6,8 +6,8 @@ const POP_COLOR = "#fbbf24";
 const FOOD_COLOR = "#4ade80";
 const AXIS_COLOR = "rgba(143, 174, 159, 0.5)";
 const TEXT_COLOR = "#8fae9f";
-const WINTER_BAND = "rgba(150, 190, 235, 0.12)";
-const SEASON_CURVE = "rgba(150, 190, 235, 0.4)"; // food multiplier, 0 to 1 over the full graph height
+const WINTER_BAND = "rgba(150, 190, 235, 0.22)";
+const SEASON_CURVE = "rgba(150, 190, 235, 0.75)"; // food multiplier, 0 to 1 over the full graph height
 const PAD = { left: 40, right: 40, top: 16, bottom: 19 }; // CSS px
 
 export interface PopulationSample {
@@ -18,6 +18,15 @@ export interface PopulationSample {
 }
 
 const compact = (v: number): string => (v >= 10000 ? `${Math.round(v / 1000)}k` : v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(Math.round(v)));
+
+// Simulated seconds as s, m:ss, hours or days, whichever reads best.
+export function formatDuration(t: number): string {
+  const s = Math.round(t);
+  if (s < 120) return `${s} s`;
+  if (s < 3600) return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  if (s < 86400) return `${+(s / 3600).toFixed(1)} h`;
+  return `${+(s / 86400).toFixed(1)} d`;
+}
 
 // Population on the left scale and food count on the right scale, against simulated time. Redraws only when the data or the size changes.
 // With speciesColors, one line per species instead of the total, each on its own scale, whose top is labelled in its
@@ -66,7 +75,7 @@ export class PopulationGraph {
     ctx.fillStyle = WINTER_BAND;
     for (let i = 0; i < steps; i++) if (f(i + 0.5) < mid) ctx.fillRect(x(i), PAD.top, x(i + 1) - x(i), h);
     ctx.strokeStyle = SEASON_CURVE;
-    ctx.lineWidth = 1;
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
     for (let i = 0; i <= steps; i++) ctx.lineTo(x(i), PAD.top + h - f(i) * h);
     ctx.stroke();
@@ -127,7 +136,7 @@ export class PopulationGraph {
     ctx.fillStyle = TEXT_COLOR;
     ctx.fillText("0 s", PAD.left, PAD.top + h + 3);
     ctx.textAlign = "right";
-    ctx.fillText(`${Math.round(end)} s`, PAD.left + w, PAD.top + h + 3);
+    ctx.fillText(formatDuration(end), PAD.left + w, PAD.top + h + 3);
 
     if (this.eco) this.drawSeasons(this.eco, end, w, h);
     const line = (color: string, top: number, value: (p: PopulationSample) => number): void => {

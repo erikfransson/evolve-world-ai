@@ -16,7 +16,7 @@ let trials: FormHandle<SimConfig>;
 const readConfig = (): SimConfig => trials.read();
 const fillForm = (c: SimConfig): void => trials.fill(c);
 const buildTrials = (): FormHandle<SimConfig> => (trials = buildForm(document.getElementById("settings")!, TRIALS_FORM));
-import { initSettingsIO, parseSettings, serialise } from "../../src/typescript/src/ui/settingsIO.ts";
+import { initSettingsIO, parseSettings, parseWithPreset, serialise } from "../../src/typescript/src/ui/settingsIO.ts";
 
 const page = (name: string): string => readFileSync(resolve(import.meta.dirname, `../../src/typescript/${name}/index.html`), "utf8").replace(/^[\s\S]*<body>|<\/body>[\s\S]*$/g, "").replace(/<script[\s\S]*?<\/script>/g, "");
 
@@ -29,14 +29,14 @@ describe("settings JSON", () => {
     expect(JSON.parse(text)).toMatchObject({ mode: "trials", version: 1, angles: "radians" });
     expect(parseSettings(text, "trials")).toEqual(trials);
     const eco = structuredClone(DEFAULT_ECO_CONFIG);
-    eco.eco.birthCost = 33;
+    eco.eco.birthCostRange = [33, 66];
     eco.eco.seasons = true;
     eco.eco.yearMinutes = 8;
     eco.eco.winterFood = 0.2;
     expect(parseSettings(serialise("ecosystem", eco), "ecosystem")).toEqual(eco);
   });
 
-  it("round-trips Predators & prey and merges each pasted species over its default", () => {
+  it("round-trips The Great Hunt and merges each pasted species over its default", () => {
     const c = structuredClone(DEFAULT_PREDATOR_CONFIG);
     c.species![1]!.speed = 1.6;
     c.species![1]!.rayLengthRange = [60, 200];
@@ -47,7 +47,7 @@ describe("settings JSON", () => {
     const merged = parseSettings(partial, "predators");
     expect(merged.species![0]).toEqual({ ...DEFAULT_PREDATOR_CONFIG.species![0]!, founders: 10 });
     expect(merged.species![1]).toEqual({ ...DEFAULT_PREDATOR_CONFIG.species![1]!, eatBaseline: 5 });
-    expect(() => parseSettings(serialise("ecosystem", DEFAULT_ECO_CONFIG), "predators")).toThrow(/for Ecosystem, but this is the Predators & prey page/);
+    expect(() => parseSettings(serialise("ecosystem", DEFAULT_ECO_CONFIG), "predators")).toThrow(/for Ecosystem, but this page is The Great Hunt/);
   });
 
   it("rejects pasted species lists of the wrong length, bad prey indices, unknown keys and wrong types", () => {
@@ -63,6 +63,22 @@ describe("settings JSON", () => {
     expect(() => parseSettings(JSON.stringify({ mode: "ecosystem", version: 1, config: { species: [] } }), "ecosystem")).toThrow(/unknown config key "species"/);
   });
 
+  it("converts settings saved before heritable birth traits, in eco and in species items, and checks range order", () => {
+    const old = (config: object) => JSON.stringify({ mode: "predators", version: 1, config });
+    const notes: string[] = [];
+    const parsed = parseWithPreset(old({ eco: { birthEnergy: 90, birthCost: 40, childEnergy: 30, birthCooldown: 6 }, species: [{ birthEnergy: 100 }, { birthCost: 150, childEnergy: 80 }] }), "predators");
+    expect(parsed.config.eco.birthEnergyRange).toEqual([90, 90]);
+    expect(parsed.config.eco.birthCostRange).toEqual([40, 40]);
+    expect(parsed.config.eco.birthCooldownRange).toEqual([6, 6]);
+    expect(parsed.config.species![0]!.birthEnergyRange).toEqual([100, 100]);
+    expect(parsed.config.species![1]!.birthCostRange).toEqual([150, 150]);
+    expect(parsed.migrated.join(" ")).toMatch(/eco\.birthEnergy 90.*eco\.childEnergy dropped.*species\[1\]\.birthCost 150/);
+    notes.push(...parsed.migrated);
+    expect(parseSettings(JSON.stringify({ mode: "ecosystem", version: 1, config: { eco: { birthEnergy: 80 } } }), "ecosystem").eco.birthEnergyRange).toEqual([80, 80]);
+    expect(() => parseSettings(JSON.stringify({ mode: "ecosystem", version: 1, config: { eco: { birthCostRange: [90, 20] } } }), "ecosystem")).toThrow(/eco.birthCostRange" must have min at most max/);
+    expect(() => parseSettings(old({ species: [{ birthEnergyRange: [200, 100] }, {}] }), "predators")).toThrow(/species\[0\].birthEnergyRange" must have min at most max/);
+  });
+
   it("keeps defaults for missing keys", () => {
     const text = JSON.stringify({ mode: "trials", version: 1, config: { world: { width: 900 } } });
     const c = parseSettings(text, "trials");
@@ -72,7 +88,7 @@ describe("settings JSON", () => {
 
   it("rejects a wrong mode, unknown keys, wrong types and bad headers", () => {
     const trialsText = serialise("trials", DEFAULT_CONFIG);
-    expect(() => parseSettings(trialsText, "ecosystem")).toThrow(/for Trials, but this is the Ecosystem page/);
+    expect(() => parseSettings(trialsText, "ecosystem")).toThrow(/for Trials, but this page is Ecosystem/);
     const head = { mode: "trials", version: 1 };
     expect(() => parseSettings(JSON.stringify({ ...head, config: { world: { nope: 1 } } }), "trials")).toThrow(/unknown config key "world.nope"/);
     expect(() => parseSettings(JSON.stringify({ ...head, config: { world: { width: "wide" } } }), "trials")).toThrow(/"world.width" must be a number/);

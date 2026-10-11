@@ -36,7 +36,7 @@ button.lin-row:hover { background: var(--card-hi); }
 .ov-selected:not(.has-sel) .sel-only, .ov-selected.has-sel .sel-hint { display: none; }
 .sel-pick { display: flex; gap: 0.4rem; }
 .sel-pick button { flex: 1 1 0; min-width: 0; padding: 0.3rem 0.4rem; font-size: 0.8rem; white-space: nowrap; }
-.sel-pick:has(> :nth-child(4)) { display: grid; grid-template-columns: 1fr 1fr; } /* four picks (Predators & prey) sit two by two */
+.sel-pick:has(> :nth-child(4)) { display: grid; grid-template-columns: 1fr 1fr; } /* four picks (The Great Hunt) sit two by two */
 .sel-energy { display: flex; align-items: center; gap: 0.6rem; }
 .meter { flex: 1; height: 8px; border-radius: 4px; background: var(--border-hi); overflow: hidden; }
 .meter span { display: block; height: 100%; width: 0; border-radius: 4px; background: var(--accent); transition: width 0.15s; }
@@ -81,7 +81,7 @@ button.lin-row:hover { background: var(--card-hi); }
   .sel-facts { grid-template-columns: repeat(3, auto); row-gap: 0.4rem; } /* five facts would run together at phone width */
 }
 
-/* Predators & prey page */
+/* The Great Hunt page */
 .key.prey { color: #60a5fa; }
 .key.pred { color: #f87171; }
 .tile.sp-prey dd { color: #60a5fa; }
@@ -103,3 +103,28 @@ details.fold > summary:focus-visible, details.more > summary:focus-visible { out
 details.more > summary { color: var(--muted); font-size: 0.78rem; }
 details.more > summary:hover { color: var(--text); }
 .more-body { display: flex; flex-direction: column; gap: 0.85rem; padding-top: 0.85rem; }
+
+/* Traits and Records cards */
+.ov-traits, .ov-leaders { background: color-mix(in srgb, var(--card) 95%, transparent); width: min(calc(375px + 0.8rem + 2px), calc(100cqw - 20px)); }
+.ov-traits .ov-body, .ov-leaders .ov-body { padding: 0 0.8rem 0.5rem; }
+.stat-species { width: max-content; margin-bottom: 0.4rem; }
+.stat-note { margin: 0.35rem 0 0; color: var(--muted); font-size: 0.7rem; }
+.sel-burn { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.2rem 0.6rem; margin: 0; color: var(--muted); font-size: 0.75rem; font-variant-numeric: tabular-nums; }
+.sel-burn b { color: var(--text); font-size: 0.9rem; font-weight: 600; }
+.trait-list, .lead-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.trait-list { gap: 0.3rem; }
+.trait-row { display: grid; grid-template-columns: 5.6rem 1fr 4.6rem; align-items: center; gap: 0.6rem; font-size: 0.75rem; }
+.trait-name { color: var(--muted); }
+.trait-bars { display: flex; align-items: flex-end; gap: 2px; height: 1.6rem; border-bottom: 1px solid var(--border-hi); }
+.trait-bars i { flex: 1 1 0; min-width: 2px; background: var(--accent); border-radius: 2px 2px 0 0; opacity: 0.85; }
+.trait-value { display: flex; flex-direction: column; text-align: right; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.trait-value b { font-size: 0.85rem; font-weight: 600; }
+.trait-value small { color: var(--muted); font-size: 0.65rem; }
+.lead-list { gap: 0.5rem; }
+.lead-board h3 { margin: 0 0 0.15rem; color: var(--muted); font-size: 0.65rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; }
+.lead-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.3rem; }
+.lead-cell { display: flex; align-items: center; gap: 0.3rem; min-width: 0; padding: 0.15rem; border: 1px solid var(--border); border-radius: 8px; background: color-mix(in srgb, var(--bg) 60%, transparent); }
+.lead-cell svg { flex: none; }
+.lead-cell > span { display: flex; flex-direction: column; min-width: 0; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.lead-cell b { font-size: 0.85rem; font-weight: 600; white-space: nowrap; }
+.lead-cell small { color: var(--muted); font-size: 0.62rem; overflow-wrap: anywhere; }

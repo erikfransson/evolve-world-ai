@@ -3,7 +3,7 @@ import type { SimConfig } from "./config.ts";
 import { DEFAULT_PREDATOR_CONFIG } from "./ecoConfig.ts";
 import type { EcoConfig } from "./ecoConfig.ts";
 
-// Preset worlds for Trials, Ecosystem and Predators & prey. A preset fixes the world (and in Ecosystem the regrowth), never the creature, brain or evolution.
+// Preset worlds for Trials, Ecosystem and The Great Hunt. A preset fixes the world (and in Ecosystem the regrowth), never the creature, brain or evolution.
 export const CUSTOM = "custom";
 
 export interface PresetInfo {
@@ -42,7 +42,7 @@ export const ECO_PRESETS: readonly EcoPreset[] = [
   { id: "crowded", name: "Crowded", description: "A small world with rich regrowth. Creatures fill it and bump into each other.", world: { ...ECO_BASE, width: 2400, height: 1500 }, regrowth: { ...ECO_REGROWTH, foodRegrow: 0.25 } },
 ];
 
-// Predators & prey: one preset, the tuned defaults (docs/tuning-notes.md).
+// The Great Hunt: one preset, the tuned defaults (docs/tuning-notes.md).
 const { width, height, foodDensity, poisonDensity, itemRadius, foodEnergy, poisonDamage } = DEFAULT_PREDATOR_CONFIG.world;
 const { foodRegrow, foodMaxDensity, poisonRegrow, poisonMaxDensity } = DEFAULT_PREDATOR_CONFIG.eco;
 export const PREDATOR_PRESETS: readonly EcoPreset[] = [
