@@ -2,7 +2,7 @@
 .ov-graph { background: color-mix(in srgb, var(--card) 95%, transparent); }
 .ov-graph .ov-body { padding: 0 0.4rem 0.4rem; }
 #graphView { display: block; width: min(375px, calc(100cqw - 2.5rem)); aspect-ratio: 375 / 150; }
-.key.pop { color: #7dd3fc; }
+.key.pop { color: #fbbf24; }
 .key.food { color: #4ade80; }
 
 /* lineages */

@@ -142,8 +142,8 @@ describe("BrainView", () => {
 
 describe("FitnessGraph", () => {
   const stats = Array.from({ length: 11 }, (_, g) => ({ generation: g, best: 10 + g * 5, mean: 5 + g }));
-  // Plot spans x = 34 .. 292 on a 300 px canvas, so generation g sits at 34 + 25.8 g.
-  const xOf = (g: number) => 34 + (258 * g) / 10;
+  // Plot spans x = 40 .. 292 on a 300 px canvas, so generation g sits at 40 + 25.2 g.
+  const xOf = (g: number) => 40 + (252 * g) / 10;
 
   function setup(onPick = vi.fn()) {
     const f = fakeCanvas(300, 100);
