@@ -2,6 +2,7 @@ import { createRng, deriveSeed } from "../rng.ts";
 import type { StatefulRng } from "../rng.ts";
 import type { EnvSpec } from "./env.ts";
 import { Es } from "./es.ts";
+import type { Rollout, RolloutTask } from "./ppo.ts";
 import type { EsOptions } from "./es.ts";
 
 // One ES training loop for the rlTrain CLI and the Arena worker: score candidates over the envs on shared seeds, step, check on held-out seeds.
@@ -19,6 +20,7 @@ export interface RlTask {
 export interface Scorer {
   rewards(tasks: readonly RlTask[]): Promise<number[]>;
   setLeague?(genomes: readonly Float32Array[]): void; // self-play rivals for the episodes that follow
+  rollouts?(tasks: readonly RolloutTask[]): Promise<Rollout[]>; // backprop's stochastic episodes, in task order
 }
 
 const LEAGUE_BESTS = 4; // recent best candidates kept as self-play rivals besides the current weights

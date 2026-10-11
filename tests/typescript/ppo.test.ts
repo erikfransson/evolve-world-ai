@@ -1,6 +1,7 @@
 import { Brain, layerSizes, randomGenome } from "../../src/typescript/src/sim/brain.ts";
 import { layoutConfig, randomLearner, runEpisode } from "../../src/typescript/src/sim/rl/env.ts";
 import { envById } from "../../src/typescript/src/sim/rl/envs.ts";
+import { createNodeRlPool } from "../../src/typescript/src/worker/nodePool.ts";
 import { Mlp, Ppo } from "../../src/typescript/src/sim/rl/ppo.ts";
 import { testRng } from "./helpers.ts";
 
@@ -59,5 +60,18 @@ describe("Ppo", () => {
     expect(a.theta.every(Number.isFinite)).toBe(true);
     expect(a.step.std.every((s) => s > 0 && Number.isFinite(s))).toBe(true);
     expect(await run()).toEqual(a);
+  });
+
+  it("gives the same update whether the episodes play on this thread, one helper or several", async () => {
+    const options = { episodes: 3, epochs: 1 };
+    const serial = new Ppo([env], learner, sizes, options, 7);
+    serial.step();
+    for (const threads of [1, 2]) {
+      const pool = createNodeRlPool({ envs: [env], plan: learner.plan, pool: null, library: {} }, threads);
+      const ppo = new Ppo([env], learner, sizes, options, 7);
+      await ppo.stepWith(pool);
+      pool.close();
+      expect(Array.from(ppo.theta)).toEqual(Array.from(serial.theta));
+    }
   });
 });

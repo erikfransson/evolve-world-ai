@@ -1,6 +1,8 @@
 import type { PoolEntry } from "../sim/seedPool.ts";
 import { SELF, runEpisode } from "../sim/rl/env.ts";
 import type { EnvSpec, Learner, Library } from "../sim/rl/env.ts";
+import { playRollout } from "../sim/rl/ppo.ts";
+import type { Rollout, RolloutTask } from "../sim/rl/ppo.ts";
 import { recordEpisode, recordingBuffers } from "../sim/rl/recording.ts";
 import type { Recording } from "../sim/rl/recording.ts";
 import type { RlTask } from "../sim/rl/trainer.ts";
@@ -24,9 +26,10 @@ export type RlJob =
   | ({ type: "setup" } & RlSetup)
   | { type: "league"; genomes: Float32Array[] } // the self-play rivals from now on (see SELF)
   | ({ type: "episode"; id: number } & RlTask)
+  | ({ type: "rollout"; id: number } & RolloutTask) // a stochastic episode of backprop RL, played against a mirror of the learner
   | ({ type: "record"; id: number; every: number; inputs: boolean } & RlTask); // inputs: also record the brain input
 
-export type RlDone = { id: number; reward: number } | { id: number; recording: Recording } | { id: number; error: string }; // error: the episode threw
+export type RlDone = { id: number; reward: number } | { id: number; recording: Recording } | { id: number; rollout: Rollout } | { id: number; error: string }; // error: the episode threw
 
 export type RlPort = Port<RlJob, RlDone>;
 
@@ -34,9 +37,11 @@ export type RlPort = Port<RlJob, RlDone>;
 // that throws replies with the error, so the pool can tell a bad episode from a helper that never started.
 export function rlHelper(): (job: RlJob) => RlDone | null {
   let setup: RlSetup;
+  let base: Library; // without the league, which rollouts do not use
   return (job) => {
     if (job.type === "setup") {
       setup = job;
+      base = job.library;
       return null;
     }
     if (job.type === "league") {
@@ -45,8 +50,9 @@ export function rlHelper(): (job: RlJob) => RlDone | null {
       return null;
     }
     try {
-      const learner = { plan: setup.plan, genome: job.genome };
       const env = setup.envs[job.env]!;
+      if (job.type === "rollout") return { id: job.id, rollout: playRollout(env, setup.plan, job, setup.pool, base) };
+      const learner = { plan: setup.plan, genome: job.genome };
       if (job.type === "episode") return { id: job.id, reward: runEpisode(env, learner, job.seed, setup.pool, setup.library).reward };
       return { id: job.id, recording: recordEpisode(env, learner, job.seed, setup.pool, setup.library, job.every, job.inputs) };
     } catch (error) {
@@ -56,7 +62,14 @@ export function rlHelper(): (job: RlJob) => RlDone | null {
 }
 
 // The buffers of a reply to hand over instead of copy.
-export const rlTransferList = (done: RlDone): ArrayBuffer[] => ("recording" in done ? recordingBuffers(done.recording) : []);
+export const rlTransferList = (done: RlDone): ArrayBuffer[] => {
+  if ("recording" in done) return recordingBuffers(done.recording);
+  if ("rollout" in done) {
+    const r = done.rollout;
+    return [r.obs.buffer, r.z.buffer, r.logp.buffer, r.adv.buffer, r.ret.buffer] as ArrayBuffer[];
+  }
+  return [];
+};
 
 // A helper that runs on the caller's thread, for one thread and for tests.
 export function inlineRlPort(): RlPort {
@@ -108,6 +121,12 @@ export class RlPool {
   async rewards(tasks: readonly RlTask[]): Promise<number[]> {
     const done = await this.runAll(tasks.map((t) => ({ type: "episode" as const, ...t })));
     return done.map((d) => (d as { reward: number }).reward);
+  }
+
+  // Backprop RL's stochastic episodes, in task order.
+  async rollouts(tasks: readonly RolloutTask[]): Promise<Rollout[]> {
+    const done = await this.runAll(tasks.map((t) => ({ type: "rollout" as const, ...t })));
+    return done.map((d) => (d as { rollout: Rollout }).rollout);
   }
 
   // The tasks played and recorded (see recordEpisode), in task order; withInputs says which also keep the brain input.

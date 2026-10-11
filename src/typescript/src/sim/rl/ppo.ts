@@ -57,12 +57,14 @@ export class Mlp {
     this.active = new Int32Array(sizes[0]!);
   }
 
-  forward(params: Float32Array | Float64Array, input: Float32Array | Float64Array): Float64Array {
+  // The input is read from input[offset ...], so samples can sit side by side in one array.
+  forward(params: Float32Array | Float64Array, input: Float32Array | Float64Array, offset = 0): Float64Array {
     const { sizes, acts, active } = this;
     let n = 0;
     for (let i = 0; i < sizes[0]!; i++) {
-      acts[0]![i] = input[i]!;
-      if (input[i] !== 0) active[n++] = i;
+      const v = input[offset + i]!;
+      acts[0]![i] = v;
+      if (v !== 0) active[n++] = i;
     }
     this.nActive = n;
     let at = 0;
@@ -203,12 +205,108 @@ export class Adam {
 
 // One update's samples: a decision every `repeat` ticks.
 interface Batch {
-  obs: Float32Array[]; // brain input, then the time left as a fraction
+  obs: Float32Array; // n samples of `stride` values: the brain input, then the time left as a fraction
+  stride: number;
   z: Float64Array; // sampled pre-tanh actions, ACTIONS per sample
   logp: Float64Array;
   adv: Float64Array;
   ret: Float64Array;
   n: number;
+}
+
+// One stochastic episode to play: everything it needs is in the task, so it runs on any thread and gives the same samples.
+export interface RolloutTask {
+  env: number; // index into the run's envs
+  seed: number; // the episode's world
+  noiseSeed: number; // the policy's exploration noise
+  theta: Float32Array;
+  critic: Float32Array;
+  logStd: Float64Array;
+  repeat: number;
+  gamma: number;
+  lambda: number;
+  criticHidden: number;
+}
+
+// The episode's samples (n = logp.length) with GAE advantages, not yet normalised, and the episode reward.
+export interface Rollout {
+  obs: Float32Array;
+  z: Float64Array;
+  logp: Float64Array;
+  adv: Float64Array;
+  ret: Float64Array;
+  reward: number;
+}
+
+// Plays one episode with the stochastic policy and turns it into samples with GAE advantages.
+export function playRollout(env: EnvSpec, plan: Learner["plan"], task: RolloutTask, pool: readonly PoolEntry[] | null, library: Library): Rollout {
+  const { theta, critic, logStd, repeat } = task;
+  const sizes = layerSizes(layoutConfig(env.world), plan);
+  const d = sizes[0]!;
+  const stride = d + 1;
+  const policyNet = new Mlp(sizes, ACTIONS);
+  const criticNet = new Mlp([stride, task.criticHidden, 1]);
+  const rng = createRng(task.noiseSeed);
+  const ticks = Math.round(env.seconds / DT);
+  const cap = Math.ceil(ticks / repeat);
+  const obs = new Float32Array(cap * stride);
+  const z = new Float64Array(cap * ACTIONS);
+  const logp = new Float64Array(cap);
+  const rewards = new Float64Array(cap);
+  const held = new Float64Array(ACTIONS);
+  const std = Float64Array.from(logStd, Math.exp);
+  let n = 0;
+  let t = 0;
+  let eaten = 0;
+  let kills = 0;
+  const act = (c: Creature): void => {
+    const out = c.outputs;
+    if (t % repeat === 0) {
+      const input = c.brain.layerActivations()[0]!;
+      const at = n * stride;
+      obs.set(input, at);
+      obs[at + d] = 1 - t / ticks;
+      const u = policyNet.forward(theta, input);
+      let lp = 0;
+      for (let a = 0; a < ACTIONS; a++) {
+        const eps = rng.normal();
+        held[a] = u[a]! + std[a]! * eps;
+        lp += -0.5 * eps * eps - logStd[a]! - 0.5 * LOG_2PI;
+        z[n * ACTIONS + a] = held[a]!;
+      }
+      logp[n++] = lp;
+    }
+    for (let a = 0; a < ACTIONS; a++) out[a] = Math.tanh(held[a]!);
+    t++;
+  };
+  const w = env.reward;
+  const result = runEpisode(env, { plan, genome: theta }, task.seed, pool, library, (eco) => {
+    const me = eco.get(0);
+    if (!me) return;
+    rewards[n - 1]! += (w.food ?? 0) * (me.eaten - eaten) + (w.kill ?? 0) * (me.kills - kills) + (w.survive ?? 0) * DT;
+    eaten = me.eaten;
+    kills = me.kills;
+  }, act);
+  // The rest of the reward (food on the dying tick, end energy, time left, rams) comes at the end, so the steps sum to the episode's.
+  let sum = 0;
+  for (let k = 0; k < n; k++) sum += rewards[k]!;
+  rewards[n - 1]! += result.reward - sum;
+  // GAE, the episode ending at its last sample (time is in the critic's input, so the horizon is part of the state).
+  const values = new Float64Array(n);
+  for (let k = 0; k < n; k++) values[k] = criticNet.forward(critic, obs, k * stride)[0]!;
+  const g = task.gamma ** repeat;
+  const adv = new Float64Array(n);
+  const ret = new Float64Array(n);
+  let next = 0;
+  let gae = 0;
+  for (let k = n - 1; k >= 0; k--) {
+    gae = rewards[k]! + g * next - values[k]! + g * task.lambda * gae;
+    next = values[k]!;
+    adv[k] = gae;
+    ret[k] = gae + values[k]!;
+  }
+  // Exact-size copies, so a helper hands over buffers with no slack.
+  return { obs: obs.slice(0, n * stride), z: z.slice(0, n * ACTIONS), logp: logp.slice(0, n), adv, ret, reward: result.reward };
 }
 
 export interface PpoStep {
@@ -261,86 +359,69 @@ export class Ppo {
     this.envs = envs;
   }
 
+  // One update with the episodes played on this thread.
   step(): PpoStep {
-    const { batch, train, best } = this.collect();
+    return this.finish(this.tasks().map((task) => this.play(task)));
+  }
+
+  // One update with the episodes played by the scorer's helpers when it has any (the results do not depend on how many).
+  async stepWith(player: Pick<Scorer, "rollouts">): Promise<PpoStep> {
+    const tasks = this.tasks();
+    return this.finish(player.rollouts ? await player.rollouts(tasks) : tasks.map((task) => this.play(task)));
+  }
+
+  private play(task: RolloutTask): Rollout {
+    return playRollout(this.envs[task.env]!, this.learner.plan, task, this.pool, this.library);
+  }
+
+  private tasks(): RolloutTask[] {
+    const o = this.options;
+    return Array.from({ length: o.episodes }, (_, e) => ({
+      env: e % this.envs.length,
+      seed: this.rng.int(HELD_BASE),
+      noiseSeed: this.rng.int(HELD_BASE),
+      theta: this.theta,
+      critic: this.critic,
+      logStd: this.logStd,
+      repeat: o.repeat,
+      gamma: o.gamma,
+      lambda: o.lambda,
+      criticHidden: o.criticHidden,
+    }));
+  }
+
+  // Joins the episodes into one batch with normalised advantages, then updates.
+  private finish(rollouts: readonly Rollout[]): PpoStep {
+    let train = 0;
+    let best = -Infinity;
+    let n = 0;
+    for (const r of rollouts) {
+      train += r.reward / rollouts.length;
+      best = Math.max(best, r.reward);
+      n += r.logp.length;
+    }
+    const stride = this.policyNet.sizes[0]! + 1;
+    const batch: Batch = { obs: new Float32Array(n * stride), stride, z: new Float64Array(n * ACTIONS), logp: new Float64Array(n), adv: new Float64Array(n), ret: new Float64Array(n), n };
+    let at = 0;
+    for (const r of rollouts) {
+      batch.obs.set(r.obs, at * stride);
+      batch.z.set(r.z, at * ACTIONS);
+      batch.logp.set(r.logp, at);
+      batch.adv.set(r.adv, at);
+      batch.ret.set(r.ret, at);
+      at += r.logp.length;
+    }
+    this.episodesPlayed += rollouts.length;
+    let mean = 0;
+    for (let i = 0; i < n; i++) mean += batch.adv[i]!;
+    mean /= n;
+    let sq = 0;
+    for (let i = 0; i < n; i++) sq += (batch.adv[i]! - mean) ** 2;
+    const sd = Math.sqrt(sq / n) || 1;
+    for (let i = 0; i < n; i++) batch.adv[i] = (batch.adv[i]! - mean) / sd;
     this.update(batch);
     this.iter++;
     return { iter: this.iter, train, best, std: Array.from(this.logStd, Math.exp) };
-  }
-
-  // Plays the update's episodes with the stochastic policy and turns them into samples with GAE advantages.
-  private collect(): { batch: Batch; train: number; best: number } {
-    const o = this.options;
-    const obs: Float32Array[] = [];
-    const z: number[] = [];
-    const logp: number[] = [];
-    const adv: number[] = [];
-    const ret: number[] = [];
-    const learner = { plan: this.learner.plan, genome: this.theta };
-    const g = o.gamma ** o.repeat;
-    let train = 0;
-    let best = -Infinity;
-    for (let e = 0; e < o.episodes; e++) {
-      const env = this.envs[e % this.envs.length]!;
-      const ticks = Math.round(env.seconds / DT);
-      const first = obs.length;
-      const rewards: number[] = [];
-      let t = 0;
-      let eaten = 0;
-      let kills = 0;
-      const held = new Float64Array(ACTIONS);
-      const act = (c: Creature): void => {
-        const out = c.outputs;
-        if (t % o.repeat === 0) {
-          const input = c.brain.layerActivations()[0]!;
-          const x = new Float32Array(input.length + 1);
-          x.set(input);
-          x[input.length] = 1 - t / ticks;
-          const u = this.policyNet.forward(this.theta, input);
-          let lp = 0;
-          for (let a = 0; a < ACTIONS; a++) {
-            const eps = this.rng.normal();
-            held[a] = u[a]! + Math.exp(this.logStd[a]!) * eps;
-            lp += -0.5 * eps * eps - this.logStd[a]! - 0.5 * LOG_2PI;
-            z.push(held[a]!);
-          }
-          obs.push(x);
-          logp.push(lp);
-          rewards.push(0);
-        }
-        for (let a = 0; a < ACTIONS; a++) out[a] = Math.tanh(held[a]!);
-        t++;
-      };
-      const w = env.reward;
-      const result = runEpisode(env, learner, this.rng.int(HELD_BASE), this.pool, this.library, (eco) => {
-        const me = eco.get(0);
-        if (!me) return;
-        rewards[rewards.length - 1]! += (w.food ?? 0) * (me.eaten - eaten) + (w.kill ?? 0) * (me.kills - kills) + (w.survive ?? 0) * DT;
-        eaten = me.eaten;
-        kills = me.kills;
-      }, act);
-      // The rest of the reward (food on the dying tick, end energy, time left, rams) comes at the end, so the steps sum to the episode's.
-      const sum = rewards.reduce((a, b) => a + b, 0);
-      rewards[rewards.length - 1]! += result.reward - sum;
-      train += result.reward / o.episodes;
-      best = Math.max(best, result.reward);
-      // GAE, the episode ending at its last sample (time is in the critic's input, so the horizon is part of the state).
-      const values = obs.slice(first).map((x) => this.criticNet.forward(this.critic, x)[0]!);
-      let next = 0;
-      let gae = 0;
-      const a0 = adv.length;
-      for (let k = values.length - 1; k >= 0; k--) {
-        gae = rewards[k]! + g * next - values[k]! + g * o.lambda * gae;
-        next = values[k]!;
-        adv[a0 + k] = gae;
-        ret[a0 + k] = gae + values[k]!;
-      }
-    }
-    this.episodesPlayed += o.episodes;
-    const n = obs.length;
-    const mean = adv.reduce((a, b) => a + b, 0) / n;
-    const sd = Math.sqrt(adv.reduce((a, b) => a + (b - mean) ** 2, 0) / n) || 1;
-    return { batch: { obs, z: Float64Array.from(z), logp: Float64Array.from(logp), adv: Float64Array.from(adv, (a) => (a - mean) / sd), ret: Float64Array.from(ret), n }, train, best };
   }
 
   private update(b: Batch): void {
@@ -360,8 +441,8 @@ export class Ppo {
         gCrit.fill(0);
         for (let s = start; s < end; s++) {
           const i = order[s]!;
-          const x = b.obs[i]!;
-          const u = this.policyNet.forward(this.theta, x);
+          const at = i * b.stride;
+          const u = this.policyNet.forward(this.theta, b.obs, at);
           let lp = 0;
           for (let a = 0; a < ACTIONS; a++) {
             const eps = (b.z[i * ACTIONS + a]! - u[a]!) / Math.exp(this.logStd[a]!);
@@ -379,7 +460,7 @@ export class Ppo {
             gStd[a] += dLp * (eps * eps - 1) - o.entropy;
           }
           if (dLp !== 0) this.policyNet.backward(this.theta, dOut, gPol);
-          dV[0] = this.criticNet.forward(this.critic, x)[0]! - b.ret[i]!;
+          dV[0] = this.criticNet.forward(this.critic, b.obs, at)[0]! - b.ret[i]!;
           this.criticNet.backward(this.critic, dV, gCrit);
         }
         const m = end - start;
@@ -394,7 +475,7 @@ export class Ppo {
   }
 }
 
-// PPO behind the Trainer interface, for the Arena: updates play on this thread, held-out checks on the scorer's helpers.
+// PPO behind the Trainer interface, for the Arena: updates run on this thread, the episodes and held-out checks on the scorer's helpers.
 // A step is one update; its "best" is the update's best episode and its genome the current policy.
 export class BackpropTrainer implements RlTrainer {
   readonly ppo: Ppo;
@@ -422,7 +503,7 @@ export class BackpropTrainer implements RlTrainer {
   }
 
   async step(): Promise<StepResult> {
-    const s = this.ppo.step();
+    const s = await this.ppo.stepWith(this.scorer);
     return { iter: s.iter, train: s.train, best: s.best, bestGenome: Float32Array.from(this.ppo.theta) };
   }
 
