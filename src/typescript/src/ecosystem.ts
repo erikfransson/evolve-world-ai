@@ -14,6 +14,7 @@ import { drawIdleWorld } from "./ui/ecoIdle.ts";
 import { buildSelectedBrain } from "./ui/ecoBrain.ts";
 import type { SelectedBrain } from "./ui/ecoBrain.ts";
 import { createEcoView } from "./ui/ecoPage.ts";
+import { BirthRings } from "./ui/ecoBirths.ts";
 import { EcoRenderer } from "./ui/ecoScene.ts";
 import type { EcoDrawConfig } from "./ui/ecoScene.ts";
 import type { PopulationSample } from "./ui/populationGraph.ts";
@@ -68,6 +69,7 @@ let lastBrainAt = 0;
 
 const camera = new Camera(config.world.width, config.world.height, 1, 1);
 const renderer = new EcoRenderer();
+const births = new BirthRings();
 
 function drawIdle(): void {
   if (active) return;
@@ -138,6 +140,7 @@ function onSnapshot(e: MessageEvent<EcoOutMessage>): void {
   const previous = live;
   live = { msg, views: snapshotViews(msg.buffer, msg.count, msg.itemCount, msg.creatureCap, msg.itemCap) };
   if (previous) send({ type: "recycle", buffer: previous.msg.buffer, run: previous.msg.run }, [previous.msg.buffer]);
+  births.observe(live.views, performance.now());
   if (msg.history) view.setHistory(toSamples(msg.history));
   if (msg.lineageHistory) view.setLineageHistory(msg.lineageHistory);
   if (msg.lineages) view.setLineages(msg.lineages, msg.population);
@@ -171,6 +174,7 @@ function startRun(c: EcoConfig): void {
   extinctShown = false;
   worker ??= createWorker();
   releaseLive();
+  births.reset();
   clearSelection();
   syncCanvas();
   camera.setWorld(c.world.width, c.world.height);
@@ -283,7 +287,7 @@ function frame(now: number): void {
   camera.update(now);
   syncFollow();
   const ctx = view.canvas.getContext("2d")!;
-  renderer.draw(ctx, camera, drawConfig(), live.views, selection?.details ?? null, showRays, dpr, highlight);
+  renderer.draw(ctx, camera, drawConfig(), live.views, selection?.details ?? null, showRays, dpr, highlight, births, now);
   if (now - lastUiAt >= UI_INTERVAL_MS) {
     lastUiAt = now;
     updateUi();

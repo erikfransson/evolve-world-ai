@@ -1,6 +1,7 @@
 import type { SelectedDetails, SnapshotViews } from "../worker/ecoProtocol.ts";
 import { HIT_NONE } from "../sim/types.ts";
 import type { Camera } from "./camera.ts";
+import type { BirthRings } from "./ecoBirths.ts";
 import { BACKGROUND, FLOOR, FOOD, POISON, RAY_COLORS, WALL } from "./scene.ts";
 
 export interface EcoDrawConfig {
@@ -53,7 +54,7 @@ export class EcoRenderer {
   private readonly counts = new Int32Array(DIM_BUCKET + 2);
 
   // highlight: a founder id whose descendants stay bright while everyone else is dimmed, or -1 for none.
-  draw(ctx: CanvasRenderingContext2D, cam: Camera, cfg: EcoDrawConfig, v: SnapshotViews, selected: SelectedDetails | null, showRays: boolean, dpr: number, highlight = -1): void {
+  draw(ctx: CanvasRenderingContext2D, cam: Camera, cfg: EcoDrawConfig, v: SnapshotViews, selected: SelectedDetails | null, showRays: boolean, dpr: number, highlight = -1, births: BirthRings | null = null, now = 0): void {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = 1;
     ctx.fillStyle = BACKGROUND;
@@ -78,6 +79,7 @@ export class EcoRenderer {
 
     this.drawItems(ctx, cfg, v, x0, x1, y0, y1, dev, z);
     this.drawCreatures(ctx, cfg, v, x0, x1, y0, y1, css, z / dpr, highlight);
+    births?.draw(ctx, now, cfg.radius, css, z / dpr);
     if (selected?.alive) this.drawSelected(ctx, cfg, selected, showRays, css);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
   }
