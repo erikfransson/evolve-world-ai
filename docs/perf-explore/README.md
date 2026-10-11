@@ -24,3 +24,4 @@ One write-up per exploration, with the tables of tried ideas and their verdicts.
 - `snapshot.md`: item deltas cut snapshot bytes 60-70% but only 1.5-2% of sim time; rejected for now.
 - `startup.md`: start-up at 50k is mostly founder genome draws; nothing worth changing.
 - `profile50.md`: reference profile at 20k to 50k after round 2; at 50k serial: sense 41%, brain 17%, memory and steer 11%, collisions 9%, eat 8%.
+- `cells.md`: items packed per grid row in exact list order so the WASM sense streams memory, kernel 1.2x and tick 4-7%, bit-identical; merged. The WASM kernel never uses the ray cache; a kernel-side candidate cache would save at most about 7%.
