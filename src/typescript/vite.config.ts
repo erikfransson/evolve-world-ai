@@ -22,7 +22,7 @@ export default defineConfig({
       provider: "v8",
       include: ["src/**/*.ts"],
       // CLI scripts and worker entry stubs run as their own processes, so tests cover them by spawning (cli.test.ts), which v8 cannot see.
-      exclude: ["src/headless.ts", "src/bench.ts", "src/buildPool.ts", "src/ecoBench.ts", "src/wasmBench.ts", "src/worker/evalWorker.ts", "src/worker/evalWorkerNode.ts"],
+      exclude: ["src/headless.ts", "src/bench.ts", "src/buildPool.ts", "src/ecoBench.ts", "src/wasmBench.ts", "src/rlTrain.ts", "src/rlBench.ts", "src/worker/evalWorker.ts", "src/worker/evalWorkerNode.ts", "src/worker/rlHelperNode.ts", "src/worker/rlHelperWorker.ts", "src/worker/ecoHelperNode.ts", "src/worker/ecoHelperWorker.ts"],
       reporter: ["text-summary", "html", "json-summary"],
     },
   },

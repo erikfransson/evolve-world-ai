@@ -1,6 +1,5 @@
 // @vitest-environment happy-dom
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { pageBody } from "./pageLoader.ts";
 import { DEFAULT_CONFIG } from "../../src/typescript/src/sim/config.ts";
 import type { SimConfig } from "../../src/typescript/src/sim/config.ts";
 import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
@@ -18,7 +17,6 @@ const fillForm = (c: SimConfig): void => trials.fill(c);
 const buildTrials = (): FormHandle<SimConfig> => (trials = buildForm(document.getElementById("settings")!, TRIALS_FORM));
 import { initSettingsIO, parseSettings, parseWithPreset, serialise } from "../../src/typescript/src/ui/settingsIO.ts";
 
-const page = (name: string): string => readFileSync(resolve(import.meta.dirname, `../../src/typescript/${name}/index.html`), "utf8").replace(/^[\s\S]*<body>|<\/body>[\s\S]*$/g, "").replace(/<script[\s\S]*?<\/script>/g, "");
 
 describe("settings JSON", () => {
   it("round-trips both modes with the header", () => {
@@ -102,7 +100,7 @@ describe("settings JSON", () => {
 describe("Copy and Paste on the Trials page", () => {
   let written = "";
   beforeEach(() => {
-    document.body.innerHTML = page("trials");
+    document.body.innerHTML = pageBody("trials");
     buildTrials().fill(DEFAULT_CONFIG);
     const form = document.getElementById("setup") as HTMLFormElement;
     trials.init(form, () => undefined);
@@ -170,7 +168,7 @@ describe("Copy and Paste on the Trials page", () => {
 
 describe("Copy and Paste on the Ecosystem page", () => {
   it("restores a changed form", () => {
-    document.body.innerHTML = page("ecosystem");
+    document.body.innerHTML = pageBody("ecosystem");
     form = buildForm(document.getElementById("settings")!, ECO_FORM);
     form.fill(DEFAULT_ECO_CONFIG);
     let written = "";
