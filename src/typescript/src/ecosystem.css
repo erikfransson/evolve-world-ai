@@ -20,6 +20,7 @@
 .sel-facts div { display: flex; flex-direction: column-reverse; min-width: 0; }
 .sel-facts dt { color: var(--muted); font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.06em; white-space: nowrap; }
 .sel-facts dd { margin: 0; font-size: 1rem; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sel-plan { margin: 0; color: var(--muted); font-size: 0.75rem; }
 .sel-actions { display: flex; gap: 0.5rem; }
 .sel-actions button { flex: 1; padding: 0.3rem 0.6rem; font-size: 0.85rem; }
 .sel-actions button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }

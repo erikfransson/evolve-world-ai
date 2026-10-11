@@ -78,6 +78,14 @@ export const ECO_SECTIONS: readonly Section[] = [
     ],
   },
   {
+    title: "Variation",
+    fields: [
+      { kind: "toggle", id: "foundersVary", label: "Varied founders", tip: "When on, every starting creature gets its own number of rays, vision angle and range, hidden neurons and memory. When off, all use the Creature and Brain settings below.", get: (c) => c.eco.foundersVary, set: (c, v) => { c.eco.foundersVary = v; } },
+      range({ id: "planDrift", label: "Plan drift", tip: "How much a child's vision angle and range may differ from its parent's, as a fraction of the parent's value. 0 copies them exactly.", min: 0, max: 0.1, step: 0.005, fmt: "dens3", get: (c) => c.eco.planDrift, set: (c, v) => { c.eco.planDrift = v; } }),
+      range({ id: "structuralRate", label: "Structural mutation rate", tip: "Chance that a newborn gains or loses one ray, hidden neuron or memory unit compared with its parent. A new part starts out doing nothing, so the child behaves like its parent at first.", min: 0, max: 0.2, step: 0.005, fmt: "pct", get: (c) => c.eco.structuralRate, set: (c, v) => { c.eco.structuralRate = v; } }),
+    ],
+  },
+  {
     title: "Creature",
     fields: [
       range({ id: "rayCount", label: "Vision rays", tip: "How many laser rays each creature sees with. More rays give a finer view and more inputs to the brain.", min: 1, max: 16, step: 1, get: (c) => c.creature.rayCount, set: (c, v) => { c.creature.rayCount = v; } }),

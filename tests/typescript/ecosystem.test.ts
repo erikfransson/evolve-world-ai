@@ -20,7 +20,7 @@ function ecoCfg(over: Over = {}): EcoConfig {
     world: { ...d.world, width: 1000, height: 1000, ...over.world },
     creature: { ...d.creature, ...over.creature },
     brain: { ...d.brain, ...over.brain },
-    eco: { ...d.eco, initialPopulation: 40, ...over.eco },
+    eco: { ...d.eco, initialPopulation: 40, foundersVary: false, planDrift: 0, structuralRate: 0, ...over.eco },
     mutation: { ...d.mutation, ...over.mutation },
   };
 }

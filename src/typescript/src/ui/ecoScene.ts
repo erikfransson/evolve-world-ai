@@ -8,7 +8,6 @@ export interface EcoDrawConfig {
   worldH: number;
   radius: number;
   itemRadius: number;
-  rayLength: number;
   fullEnergy: number; // energy at which the body fill is full
 }
 
@@ -202,9 +201,10 @@ export class EcoRenderer {
   private drawSelected(ctx: CanvasRenderingContext2D, cfg: EcoDrawConfig, s: SelectedDetails, showRays: boolean, css: number): void {
     if (showRays) {
       ctx.lineWidth = css;
+      const rayLength = s.plan.rayLength;
       for (let i = 0; i < s.rayKinds.length; i++) {
         const kind = s.rayKinds[i]!;
-        const d = kind === HIT_NONE ? cfg.rayLength : cfg.rayLength * (1 - s.rayCloseness[i]!);
+        const d = kind === HIT_NONE ? rayLength : rayLength * (1 - s.rayCloseness[i]!);
         const a = s.heading + s.rayOffsets[i]!;
         ctx.strokeStyle = RAY_COLORS[kind]!;
         ctx.globalAlpha = kind === HIT_NONE ? 0.4 : 0.9;
