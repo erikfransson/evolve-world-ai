@@ -92,6 +92,17 @@ function endRun(): void {
   resumeGate = null;
 }
 
+// Anything that escapes the run's own error handling still reaches the page with its message.
+const report = (error: unknown): void => post({ type: "error", message: error instanceof Error ? error.message : String(error) });
+self.addEventListener("error", (e) => {
+  e.preventDefault();
+  report(e.error ?? e.message);
+});
+self.addEventListener("unhandledrejection", (e) => {
+  e.preventDefault();
+  report(e.reason);
+});
+
 self.onmessage = (e: MessageEvent<RlInMessage>) => {
   const msg = e.data;
   if (msg.type === "start") {

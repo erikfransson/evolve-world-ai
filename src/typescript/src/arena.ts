@@ -334,7 +334,10 @@ function begin(): void {
   worker?.terminate();
   worker = new Worker(new URL("./worker/rlWorker.ts", import.meta.url), { type: "module" });
   worker.onmessage = (ev: MessageEvent<RlOutMessage>) => onMessage(ev.data);
-  worker.onerror = (ev) => fail(ev.message);
+  worker.onerror = (ev) => {
+    console.error("RL Arena worker error", ev.error ?? ev);
+    fail(ev.message || "the training worker crashed (details in the browser console)");
+  };
   grid.setCount(TILE_COUNTS.includes(tiles as 1) ? tiles : DEFAULT_TILES);
   zoom.close();
   grid.clear();

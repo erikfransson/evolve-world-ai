@@ -20,7 +20,13 @@ function browserPorts<In, Out>(n: number, spawn: () => Worker, what: string): Po
       ports.push({
         post: (msg, transfer) => worker.postMessage(msg, transfer ?? []),
         onMessage: (callback) => { worker.onmessage = (e) => callback(e.data); },
-        onError: (callback) => { worker.onerror = (e) => callback(e.error ?? new Error(e.message || `${what} failed to load`)); },
+        onError: (callback) => {
+          worker.onerror = (e) => {
+            e.preventDefault(); // the pool handles it; unhandled, it would also surface as an error without text in the worker that owns the pool
+            callback(e.error ?? new Error(e.message || `${what} failed to load`));
+          };
+          worker.onmessageerror = () => callback(new Error(`${what} could not read a message`));
+        },
         terminate: () => worker.terminate(),
       });
     }
