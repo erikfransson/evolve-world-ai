@@ -9,8 +9,10 @@ export interface EcoDrawConfig {
   radius: number;
   itemRadius: number;
   fullEnergy: number; // energy at which the body fill is full
+  winter?: number; // 0 (summer) to 1 (mid-winter): how far the floor is tinted cold
 }
 
+const WINTER_TINT = 0.16; // floor overlay opacity at mid-winter
 const HUE_BUCKETS = 72;
 const AGE_LEVELS = 8;
 const AGE_SATURATE_S = 180; // age at which a creature has reached its most muted look
@@ -72,6 +74,10 @@ export class EcoRenderer {
 
     ctx.fillStyle = FLOOR;
     ctx.fillRect(0, 0, cfg.worldW, cfg.worldH);
+    if (cfg.winter) {
+      ctx.fillStyle = `rgba(150, 190, 235, ${WINTER_TINT * cfg.winter})`;
+      ctx.fillRect(0, 0, cfg.worldW, cfg.worldH);
+    }
     ctx.strokeStyle = WALL;
     ctx.lineWidth = Math.max(2, 1.5 * dpr) * dev;
     ctx.strokeRect(0, 0, cfg.worldW, cfg.worldH);

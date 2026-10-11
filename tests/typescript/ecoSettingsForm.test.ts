@@ -67,6 +67,9 @@ describe("Ecosystem settings form", () => {
     c.eco.foundersVary = false;
     c.eco.planDrift = 0.05;
     c.eco.structuralRate = 0.1;
+    c.eco.seasons = true;
+    c.eco.yearMinutes = 12;
+    c.eco.winterFood = 0.45;
     fillEcoForm(c);
     expect(readEcoConfig()).toEqual(c);
   });

@@ -3,7 +3,7 @@ import { Creature } from "../../src/typescript/src/sim/creature.ts";
 import type { CreatureState } from "../../src/typescript/src/sim/types.ts";
 import { Crowd } from "../../src/typescript/src/sim/crowd.ts";
 import { createRng } from "../../src/typescript/src/sim/rng.ts";
-import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
+import { DEFAULT_ECO_CONFIG, seasonFactor, seasonName } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
 import { trialsSizes } from "../../src/typescript/src/sim/seedPool.ts";
@@ -89,6 +89,26 @@ describe("Ecosystem", () => {
     expect(eco.food).toBe(1);
     expect(eco.poison).toBe(5);
     expect(countKind(eco, HIT_FOOD)).toBe(eco.food);
+  });
+
+  it("scales food regrowth by the season multiplier, summer at the start and winter half a year later", () => {
+    const eco = DEFAULT_ECO_CONFIG.eco;
+    const year = eco.yearMinutes * 60;
+    expect(seasonFactor(eco, 0)).toBe(1);
+    expect(seasonFactor(eco, year / 2)).toBeCloseTo(eco.winterFood, 12);
+    expect(seasonFactor(eco, year)).toBeCloseTo(1, 12);
+    expect(seasonFactor(eco, year / 4)).toBeCloseTo((1 + eco.winterFood) / 2, 12);
+    expect(["Summer", "Autumn", "Winter", "Spring"].map((_, i) => seasonName(eco, (i * year) / 4))).toEqual(["Summer", "Autumn", "Winter", "Spring"]);
+    // 5 s of ticks; 0.01 regrow is 1 item/s on this world, so summer gives about 5 items and a 0.3 winter about 1.5.
+    const grown = (seasons: boolean, startMinutes: number) => {
+      const e = new Ecosystem(still({ initialPopulation: 1, foodRegrow: 0.01, foodMaxDensity: 0.5, seasons, yearMinutes: 2 }, 100));
+      e.tick = Math.round((startMinutes * 60) / e.config.dt);
+      for (let t = 0; t < 5 / e.config.dt; t++) e.step();
+      return e.food;
+    };
+    expect(grown(false, 1)).toBeGreaterThanOrEqual(4);
+    expect(grown(true, 0)).toBeGreaterThanOrEqual(4);
+    expect(grown(true, 1)).toBeLessThanOrEqual(2);
   });
 
   it("caps food regrowth at foodMaxDensity", () => {

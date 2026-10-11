@@ -1,7 +1,7 @@
 import "./base.css";
 import "./style.css";
 import "./ecosystem.css";
-import { DEFAULT_ECO_CONFIG } from "./sim/ecoConfig.ts";
+import { DEFAULT_ECO_CONFIG, seasonFactor, seasonName, winterness } from "./sim/ecoConfig.ts";
 import { withEcoPreset } from "./sim/presets.ts";
 import type { EcoConfig } from "./sim/ecoConfig.ts";
 import type { BestBy, EcoInMessage, EcoOutMessage, EcoSnapshot, SelectedDetails, SnapshotViews } from "./worker/ecoProtocol.ts";
@@ -81,7 +81,8 @@ function send(msg: EcoInMessage, transfer: Transferable[] = []): void {
 
 function drawConfig(): EcoDrawConfig {
   const { world, creature, eco } = config;
-  return { worldW: world.width, worldH: world.height, radius: creature.radius, itemRadius: world.itemRadius, fullEnergy: eco.birthEnergy };
+  const winter = eco.seasons && live ? winterness(eco, live.msg.simTime) : 0;
+  return { worldW: world.width, worldH: world.height, radius: creature.radius, itemRadius: world.itemRadius, fullEnergy: eco.birthEnergy, winter };
 }
 
 // Matches the canvas and camera to the layout; returns the device pixel ratio.
@@ -175,6 +176,7 @@ function startRun(c: EcoConfig): void {
   syncCanvas();
   camera.setWorld(c.world.width, c.world.height);
   view.setHistory([]);
+  view.setSeasons(c.eco);
   view.clearLineages();
   highlight = -1;
   view.setStats(null);
@@ -260,7 +262,7 @@ function syncFollow(): void {
 function updateUi(): void {
   if (!live) return;
   const m = live.msg;
-  view.setStats({ population: m.population, births: m.births, deaths: m.deaths, food: m.food, poison: m.poison, simTime: m.simTime, oldestDepth: m.oldestDepth, speed: m.speed > 0 ? m.speed : null, helpers: m.helpers, sharedMemory: m.sharedMemory, wasm: m.wasm });
+  view.setStats({ population: m.population, births: m.births, deaths: m.deaths, food: m.food, poison: m.poison, simTime: m.simTime, oldestDepth: m.oldestDepth, speed: m.speed > 0 ? m.speed : null, helpers: m.helpers, sharedMemory: m.sharedMemory, wasm: m.wasm, season: config.eco.seasons ? { name: seasonName(config.eco, m.simTime), factor: seasonFactor(config.eco, m.simTime) } : null });
   const d = selection?.last;
   if (selection && d) {
     view.setSelected({ id: d.id, energy: d.energy, fullEnergy: config.eco.birthEnergy, age: d.age, children: d.children, eaten: d.eaten, depth: d.depth, plan: d.plan, upkeep: d.upkeep, founderId: d.founderId, founderPool: d.founderPool, founderHue: d.founderHue, died: selection.died });

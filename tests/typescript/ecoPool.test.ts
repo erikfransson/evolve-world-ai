@@ -93,6 +93,18 @@ describe("ThinkPool", () => {
     }
   });
 
+  it("matches with seasons on, with a short year so winter is passed", async () => {
+    const seasonal = (): EcoConfig => {
+      const c = cfg();
+      c.eco.seasons = true;
+      c.eco.yearMinutes = 0.2;
+      return c;
+    };
+    const ref = serial(seasonal(), 400);
+    expect(ref.fingerprint()).not.toBe(serial(cfg(), 400).fingerprint());
+    for (const n of [1, 3]) expect((await pooled(new ThinkPool(fakePorts(n), false), seasonal(), 400)).fingerprint()).toBe(ref.fingerprint());
+  });
+
   it("reuses its helpers for a second run", async () => {
     const pool = new ThinkPool(fakePorts(2), false);
     await pooled(pool, cfg(1), 50);

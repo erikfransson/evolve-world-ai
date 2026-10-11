@@ -33,6 +33,7 @@ export interface EcoStats {
   helpers: number; // helper threads sensing and thinking, 0 when the simulation runs on one thread
   sharedMemory: boolean;
   wasm: boolean; // sense and think run on the WebAssembly kernels
+  season: { name: string; factor: number } | null; // null when seasons are off
 }
 
 export interface EcoSelected {
@@ -83,6 +84,7 @@ export interface EcoView {
   setSelected(selected: EcoSelected | null): void; // null shows only the pick buttons and hides the brain card
   setFollowing(follow: boolean): void;
   setHistory(samples: readonly PopulationSample[]): void;
+  setSeasons(eco: EcoConfig["eco"] | null): void; // the graph shades winters; null for none
   setLineages(lineages: readonly Lineage[], population: number): void;
   setLineageHistory(history: Float64Array): void;
   clearLineages(): void;
@@ -235,6 +237,8 @@ export function createEcoView(handlers: EcoHandlers): EcoView {
       setTile("statPoison", s && nf.format(s.poison));
       const t = s && formatSimTime(s.simTime);
       setTile("statTime", t && t.text, t?.unit);
+      $("statSeasonTile").hidden = !s?.season;
+      if (s?.season) setTile("statSeason", s.season.name, ` · ${s.season.factor.toFixed(2)}×`);
       setTile("statDepth", s && nf.format(s.oldestDepth));
       setTile("statSpeed", s && s.speed !== null ? s.speed.toFixed(1) : null, " ×");
       if (s) setTip("statSpeed", `${SPEED_TIP} ${threadsText(s.helpers, s.sharedMemory, s.wasm)}`);
@@ -270,6 +274,7 @@ export function createEcoView(handlers: EcoHandlers): EcoView {
       follow.setAttribute("aria-pressed", String(on));
     },
     setHistory: (samples) => view.graph.setData(samples),
+    setSeasons: (eco) => view.graph.setSeasons(eco),
     setLineages: (l, population) => lineages.setLineages(l, population),
     setLineageHistory: (h) => lineages.setHistory(h),
     clearLineages: () => lineages.reset(),

@@ -64,6 +64,7 @@ export const FORMATS: Record<string, (v: number) => string> = {
   dens: (v) => v.toFixed(2),
   dens3: (v) => v.toFixed(3),
   sec: (v) => `${v} s`,
+  min: (v) => `${v} min`,
   speed: (v) => `${v}/s`,
 };
 
