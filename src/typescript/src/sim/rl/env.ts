@@ -155,6 +155,26 @@ export function randomLearner(env: Pick<EnvSpec, "world" | "role">, seed: number
 
 export const BLANK_ENV: EnvSpec = { id: "", name: "", description: "", world: "ecosystem", role: 0, size: [400, 400], food: 0, poison: 0, foodRegrow: 0, seconds: 1, rivals: [], reward: {}, tags: [] };
 
+// Random rivals depend only on the env, the episode seed and their own seed, and a candidate is scored on the same seeds
+// every time, so their learners are kept for the last few episodes. Brains copy genomes and creatures copy plans, so
+// the cached learners are never changed.
+const RIVAL_CACHE_SIZE = 64;
+const rivalCache: { env: EnvSpec; seed: number; learners: Map<number, Learner> }[] = [];
+
+function randomRival(env: EnvSpec, seed: number, role: number, rivalSeed: number): Learner {
+  let entry = rivalCache.find((e) => e.env === env && e.seed === seed);
+  if (entry) rivalCache.splice(rivalCache.indexOf(entry), 1);
+  else {
+    entry = { env, seed, learners: new Map() };
+    if (rivalCache.length >= RIVAL_CACHE_SIZE) rivalCache.shift();
+  }
+  rivalCache.push(entry);
+  const key = role * 2 ** 31 + rivalSeed;
+  let l = entry.learners.get(key);
+  if (!l) entry.learners.set(key, (l = randomLearner({ world: env.world, role }, rivalSeed)));
+  return l;
+}
+
 // The learner (founder id 0) and the rivals of one episode, placed at random from the seed.
 export function castFor(env: EnvSpec, config: EcoConfig, learner: Learner, seed: number, pool: readonly PoolEntry[] | null, library: Library, start?: { x: number; y: number; heading?: number }): CastMember[] {
   const rng = createRng(deriveSeed(seed, 0xca57));
@@ -180,7 +200,7 @@ export function castFor(env: EnvSpec, config: EcoConfig, learner: Learner, seed:
         const list = library[listId]!;
         rival = list[rng.int(list.length)]!;
       } else if (rv.source === "self" && rv.species === env.role) rival = learner; // no league yet: a mirror of the learner
-      else rival = randomLearner({ world: env.world, role: rv.species }, rng.int(2 ** 31));
+      else rival = randomRival(env, seed, rv.species, rng.int(2 ** 31));
       const m = place(rv.species, rival.plan, rival.genome, hue);
       if (start) m.y = Math.min(h - r, Math.max(r, start.y + rng.range(-20, 20))); // with a layout, rivals start at the learner's height, off the walls
       if (rv.energy !== undefined) m.energy = rv.energy;

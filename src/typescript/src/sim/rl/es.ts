@@ -23,31 +23,31 @@ export class Es {
   step = 0;
   private readonly m: Float32Array;
   private readonly v: Float32Array;
-  private noise: Float32Array[] = [];
+  private readonly noise: Float32Array; // pair k's e_k at k * n, kept for tell
 
   constructor(theta: Float32Array, options: Partial<EsOptions> = {}) {
     this.theta = Float32Array.from(theta);
     this.options = { ...ES_DEFAULTS, ...options };
     this.m = new Float32Array(theta.length);
     this.v = new Float32Array(theta.length);
+    this.noise = new Float32Array(this.options.pairs * theta.length);
   }
 
   // The genomes to score this step: theta + sigma e_k, then theta - sigma e_k, for each pair k.
+  // Each genome has its own buffer, since the pool sends them to helpers as they are.
   ask(rng: Rng): Float32Array[] {
     const { pairs, sigma } = this.options;
     const n = this.theta.length;
-    this.noise = Array.from({ length: pairs }, () => {
-      const e = new Float32Array(n);
-      for (let i = 0; i < n; i++) e[i] = rng.normal();
-      return e;
-    });
+    const noise = this.noise;
+    for (let j = 0; j < pairs * n; j++) noise[j] = rng.normal();
     const out: Float32Array[] = [];
-    for (const e of this.noise) {
+    for (let k = 0; k < pairs; k++) {
       const plus = new Float32Array(n);
       const minus = new Float32Array(n);
+      const base = k * n;
       for (let i = 0; i < n; i++) {
-        plus[i] = this.theta[i]! + sigma * e[i]!;
-        minus[i] = this.theta[i]! - sigma * e[i]!;
+        plus[i] = this.theta[i]! + sigma * noise[base + i]!;
+        minus[i] = this.theta[i]! - sigma * noise[base + i]!;
       }
       out.push(plus, minus);
     }
@@ -64,8 +64,8 @@ export class Es {
     for (let k = 0; k < pairs; k++) {
       const w = shaped[2 * k]! - shaped[2 * k + 1]!;
       if (w === 0) continue;
-      const e = this.noise[k]!;
-      for (let i = 0; i < n; i++) g[i] += w * e[i]!;
+      const base = k * n;
+      for (let i = 0; i < n; i++) g[i] += w * this.noise[base + i]!;
     }
     this.step++;
     const b1 = 1 - BETA1 ** this.step;
