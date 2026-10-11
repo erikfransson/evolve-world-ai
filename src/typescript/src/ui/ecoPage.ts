@@ -2,6 +2,8 @@ import type { EcoConfig } from "../sim/ecoConfig.ts";
 import { withEcoPreset } from "../sim/presets.ts";
 import type { BodyPlan } from "../sim/sensors.ts";
 import type { Lineage, SpeciesCount } from "../sim/ecosystem.ts";
+import type { Leaders } from "../sim/leaderboard.ts";
+import type { TraitHistogram } from "../sim/popStats.ts";
 import type { BestBy } from "../worker/ecoProtocol.ts";
 import { BrainView } from "./brainView.ts";
 import type { ModePage } from "./ecoModes.ts";
@@ -9,7 +11,9 @@ import { buildForm } from "./settingsForm.ts";
 import { initCard } from "./overlays.ts";
 import type { Card } from "./overlays.ts";
 import { initRunSession, renderRunControls } from "./runSession.ts";
+import { LeaderPanel } from "./leaderPanel.ts";
 import { LineagePanel, lineageColor } from "./lineagePanel.ts";
+import { TraitPanel } from "./traitPanel.ts";
 import { PopulationGraph } from "./populationGraph.ts";
 import type { PopulationSample } from "./populationGraph.ts";
 import { $, durationText, setTile } from "./page.ts";
@@ -46,6 +50,7 @@ export interface EcoSelected {
   depth: number; // lineage depth, founders are 0
   plan: BodyPlan;
   upkeep: number; // energy per second besides thrust and turning
+  drain: number; // energy per second now, thrust and turning included
   founderId: number;
   founderPool: boolean; // the founder came from the seed pool
   founderHue: number;
@@ -89,6 +94,9 @@ export interface EcoView {
   setLineages(lineages: readonly Lineage[], population: number, speciesCounts?: readonly number[]): void; // speciesCounts with several species
   setLineageHistory(history: Float64Array): void;
   clearLineages(): void;
+  setTraits(traits: readonly (readonly TraitHistogram[] | null)[]): void; // body plan histograms per species
+  setLeaders(leaders: readonly Leaders[]): void; // the run's records
+  clearStatistics(): void; // traits and records, at a new run
   setNote(text: string | null): void;
   showExtinct(simSeconds: number): void;
   hideExtinct(): void;
@@ -112,11 +120,11 @@ function setTip(tileId: string, text: string): void {
   tip.setAttribute("aria-label", text);
 }
 
-// "8 rays · 75° · 100 range · 16 hidden · mem 2+2 · upkeep 0.45/s"; layers join with +, no memory reads "no mem".
-export function formatPlan(plan: BodyPlan, upkeep: number): string {
+// "8 rays · 75° · 100 range · 16 hidden · mem 2+2"; layers join with +, no memory reads "no mem".
+export function formatPlan(plan: BodyPlan): string {
   const rays = `${plan.rayCount} ${plan.rayCount === 1 ? "ray" : "rays"}`;
   const mem = plan.memoryShort + plan.memoryLong === 0 ? "no mem" : `mem ${plan.memoryShort}+${plan.memoryLong}`;
-  return [rays, `${Math.round((plan.raySpread * 180) / Math.PI)}°`, `${Math.round(plan.rayLength)} range`, `${plan.hiddenLayers.join("+")} hidden`, mem, `upkeep ${upkeep.toFixed(2)}/s`].join(" · ");
+  return [rays, `${Math.round((plan.raySpread * 180) / Math.PI)}°`, `${Math.round(plan.rayLength)} range`, `${plan.hiddenLayers.join("+")} hidden`, mem].join(" · ");
 }
 
 export function createEcoView(handlers: EcoHandlers, page: ModePage): EcoView {
@@ -173,6 +181,12 @@ export function createEcoView(handlers: EcoHandlers, page: ModePage): EcoView {
   const brainPanel = initCard(brainCard, `${store}.brain`, mobile);
   initCard($("graphCard"), `${store}.graph`, mobile);
   initCard($("lineageCard"), `${store}.lineage`, mobile);
+  initCard($("traitCard"), `${store}.traits`, true);
+  initCard($("leaderCard"), `${store}.leaders`, true);
+  const speciesNames = page.form.defaults.species?.map((sp) => sp.name) ?? [];
+  const traitPanel = new TraitPanel($("traitCard"), speciesNames);
+  const leaderPanel = new LeaderPanel($("leaderCard"), speciesNames, page.form.defaults.creature.radius);
+  let drain: { id: number; value: number } | null = null; // smoothed, since thrust flickers from tick to tick
   let selectedFounder = -1;
   const lineages = new LineagePanel($("lineageCard"), (f) => { setFounderButton(); handlers.onHighlight(f); });
   // With several species the Lineages card shows one species at a time, picked by the switch in its header.
@@ -265,7 +279,10 @@ export function createEcoView(handlers: EcoHandlers, page: ModePage): EcoView {
       }
       $("selDepth").textContent = nf.format(sel.depth);
       $("selId").textContent = `#${sel.id}`;
-      $("selPlan").textContent = formatPlan(sel.plan, sel.upkeep);
+      $("selPlan").textContent = formatPlan(sel.plan);
+      drain = drain?.id === sel.id ? { id: sel.id, value: drain.value + 0.25 * (sel.drain - drain.value) } : { id: sel.id, value: sel.drain };
+      $("selBase").textContent = sel.upkeep.toFixed(2);
+      $("selDrain").textContent = sel.died ? "-" : drain.value.toFixed(2);
       selectedFounder = sel.founderId;
       $("selFounderSw").style.background = lineageColor(sel.founderHue);
       $("selFounderText").textContent = `Founder #${sel.founderId} · ${sel.founderPool ? "trained pool" : "random"}`;
@@ -299,6 +316,12 @@ export function createEcoView(handlers: EcoHandlers, page: ModePage): EcoView {
       lastLineages = null;
       lastLineageHistory = null;
       lineages.reset();
+    },
+    setTraits: (traits) => traitPanel.set(traits),
+    setLeaders: (leaders) => leaderPanel.set(leaders),
+    clearStatistics() {
+      traitPanel.clear();
+      leaderPanel.clear();
     },
     setNote(text) {
       $("note").textContent = text ?? "";

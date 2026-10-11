@@ -1,5 +1,7 @@
 import type { EcoConfig } from "../sim/ecoConfig.ts";
 import type { Lineage, SpeciesCount } from "../sim/ecosystem.ts";
+import type { Leaders } from "../sim/leaderboard.ts";
+import type { TraitHistogram } from "../sim/popStats.ts";
 import type { BodyPlan } from "../sim/sensors.ts";
 
 export type BestBy = "age" | "children" | "eaten" | "kills";
@@ -38,6 +40,7 @@ export interface SelectedDetails {
   founderHue: number; // that founder's colour
   plan: BodyPlan; // the creature's own senses and brain shape; the genome is sized for it
   upkeep: number; // energy per second besides thrust and turning
+  drain: number; // energy per second now, with old age, thrust and turning
   rayKinds: Uint8Array; // HitKind per ray
   rayCloseness: Float32Array;
   rayEnergy: Float32Array;
@@ -74,6 +77,8 @@ export interface EcoSnapshot {
   // Lineages, sent about once a second (and with the first and last snapshot of a run). With several species, each
   // species has its own: lineages lists each species' in turn, and each history sample holds one block per species.
   lineages?: Lineage[]; // the LINEAGE_TOP largest living lineages, biggest first
+  leaders?: Leaders[]; // the run's records per species, with the lineages
+  traits?: (TraitHistogram[] | null)[]; // body plan histograms of each species' living creatures (TRAITS order), null for none alive, with the lineages
   lineageHistory?: Float64Array; // LINEAGE_STRIDE numbers per sample and species, at the times of `history`, only when it changed
 }
 

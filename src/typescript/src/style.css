@@ -220,3 +220,5 @@ fieldset:disabled .tip { cursor: help; }
 @media (min-width: 701px) {
   .fit-foot { font-size: 0.875rem; } /* graph legends 25% larger on desktop, matching the canvas axis labels */
 }
+
+.sec-note { margin: 0; color: var(--muted); font-size: 0.75rem; line-height: 1.35; }

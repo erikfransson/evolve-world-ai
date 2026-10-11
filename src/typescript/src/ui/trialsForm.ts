@@ -1,4 +1,5 @@
 import { DEFAULT_CONFIG, POISON_LETHAL } from "../sim/config.ts";
+import { planOf, planUpkeep } from "../sim/sensors.ts";
 import type { SelectionMethod, SimConfig } from "../sim/config.ts";
 import { items, range } from "./settingsForm.ts";
 import type { FormSpec, Section } from "./settingsForm.ts";
@@ -35,6 +36,7 @@ export const TRIALS_SECTIONS: readonly Section<SimConfig>[] = [
   },
   {
     title: "Brain",
+    note: (c) => `Base energy use ${planUpkeep(planOf(c), c).toFixed(2)} per second: living, vision and neurons. Thrust and turning cost extra.`,
     fields: [
       r({ id: "layers", label: "Hidden layers", tip: "How many layers of neurons sit between the creature's eyes and its muscles.", min: 1, max: 4, step: 1, get: (c) => c.brain.hiddenLayers.length, set: (c, v) => { c.brain.hiddenLayers = new Array<number>(v).fill(c.brain.hiddenLayers[0] ?? defaultNeurons); } }),
       r({ id: "neurons", label: "Neurons per layer", tip: "Neurons in each hidden layer. More can learn richer behaviour but evolve more slowly.", min: 4, max: 32, step: 1, get: (c) => c.brain.hiddenLayers[0] ?? defaultNeurons, set: (c, v) => { c.brain.hiddenLayers.fill(v); } }),

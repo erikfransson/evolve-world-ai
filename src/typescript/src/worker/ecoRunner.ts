@@ -3,6 +3,8 @@ import { planOf } from "../sim/sensors.ts";
 import { Ecosystem } from "../sim/ecosystem.ts";
 import type { CreatureFrame, EcoCreature } from "../sim/ecosystem.ts";
 import type { PoolEntry } from "../sim/seedPool.ts";
+import { Leaderboard } from "../sim/leaderboard.ts";
+import { traitStats } from "../sim/popStats.ts";
 import type { BestBy, EcoInMessage, EcoOutMessage, EcoSnapshot, EcoSpeedSetting, SelectedDetails } from "./ecoProtocol.ts";
 import { LINEAGE_STRIDE, LINEAGE_TOP, snapshotBytes, snapshotViews } from "./ecoProtocol.ts";
 import type { ThinkPool } from "./ecoPool.ts";
@@ -48,6 +50,7 @@ export class EcoRunner {
   private historyChanged = false;
   private lineageSamples: number[] = []; // LINEAGE_STRIDE numbers per entry of samples
   private lineagePostedAt = -Infinity;
+  private board = new Leaderboard();
   private rayScratch: Pick<SelectedDetails, "rayKinds" | "rayCloseness" | "rayEnergy" | "rayOffsets" | "inputs"> | null = null;
 
   constructor(post: Post, now: () => number = () => performance.now()) {
@@ -212,6 +215,8 @@ export class EcoRunner {
     this.sampleStride = 1;
     this.nextSample = 0;
     this.rayScratch = null;
+    this.board = new Leaderboard();
+    this.eco.onDeath = (m) => this.offerRecord(this.eco!, m, false);
     this.last = this.lastPost = this.now();
     this.lastPostSim = 0;
     this.sampleIfDue(this.eco);
@@ -335,9 +340,24 @@ export class EcoRunner {
       this.lineagePostedAt = now;
       msg.lineages = this.blocks > 1 ? eco.species.flatMap((_, s) => eco.topLineages(LINEAGE_TOP, s)) : eco.topLineages(LINEAGE_TOP);
       msg.lineageHistory = Float64Array.from(this.lineageSamples);
+      for (const m of eco.members) this.offerRecord(eco, m, true);
+      msg.leaders = this.board.snapshot();
+      msg.traits = eco.species.map((_, s) => traitStats(eco.members.filter((m) => m.species === s).map((m) => m.creature.plan)));
     }
     this.inFlight++;
     this.post(msg, [buffer]);
+  }
+
+  // Offers a creature's records to the leaderboard: while alive each second, and once more when it dies.
+  private offerRecord(eco: Ecosystem, m: EcoCreature, alive: boolean): void {
+    const dt = eco.config.dt;
+    const sp = eco.species[m.species]!;
+    const now = eco.tick * dt;
+    const build = () => ({ id: m.id, species: m.species, hue: m.hue, from: m.birthTick * dt, plan: { ...m.creature.plan, hiddenLayers: m.creature.plan.hiddenLayers.slice() } });
+    this.board.offer("age", m.species, m.id, m.ageTicks * dt, now, alive, build);
+    this.board.offer("children", m.species, m.id, m.children, now, alive, build);
+    if (sp.plants) this.board.offer("eaten", m.species, m.id, m.eaten, now, alive, build);
+    if (sp.prey.length > 0) this.board.offer("kills", m.species, m.id, m.kills, now, alive, build);
   }
 
   // Scans on demand only. Ties go to the lowest id so the pick does not depend on list order.
@@ -368,7 +388,7 @@ export class EcoRunner {
     if (!m) {
       const s = this.rayScratch;
       return {
-        id: this.selectedId, alive: false, x: 0, y: 0, heading: 0, energy: 0, age: 0, children: 0, eaten: 0, kills: 0, species: 0, depth: 0, parentId: -1, hue: 0, founderId: -1, founderPool: false, founderHue: 0, plan: planOf(eco.config), upkeep: 0,
+        id: this.selectedId, alive: false, x: 0, y: 0, heading: 0, energy: 0, age: 0, children: 0, eaten: 0, kills: 0, species: 0, depth: 0, parentId: -1, hue: 0, founderId: -1, founderPool: false, founderHue: 0, plan: planOf(eco.config), upkeep: 0, drain: 0,
         rayKinds: s?.rayKinds ?? new Uint8Array(0), rayCloseness: s?.rayCloseness ?? new Float32Array(0), rayEnergy: s?.rayEnergy ?? new Float32Array(0),
         rayOffsets: s?.rayOffsets ?? new Float32Array(0), inputs: s?.inputs ?? new Float32Array(0), genome: null,
       };
@@ -398,7 +418,7 @@ export class EcoRunner {
     this.sendGenome = false;
     return {
       id: m.id, alive: true, x: s.x, y: s.y, heading: s.heading, energy: s.energy, age: m.ageTicks * eco.config.dt,
-      children: m.children, eaten: m.eaten, kills: m.kills, species: m.species, depth: m.depth, parentId: m.parentId, hue: m.hue, founderId: m.founderId, founderPool: eco.fromPool(m.founderId), founderHue: eco.founderColour(m.founderId), plan: { ...c.plan, hiddenLayers: c.plan.hiddenLayers.slice() }, upkeep: c.upkeep, ...sc, genome,
+      children: m.children, eaten: m.eaten, kills: m.kills, species: m.species, depth: m.depth, parentId: m.parentId, hue: m.hue, founderId: m.founderId, founderPool: eco.fromPool(m.founderId), founderHue: eco.founderColour(m.founderId), plan: { ...c.plan, hiddenLayers: c.plan.hiddenLayers.slice() }, upkeep: c.upkeep, drain: c.drain, ...sc, genome,
     };
   }
 }
