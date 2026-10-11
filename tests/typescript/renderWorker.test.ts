@@ -1,4 +1,6 @@
 import { snapshotBytes, snapshotViews } from "../../src/typescript/src/worker/ecoProtocol.ts";
+import type { EcoDrawConfig } from "../../src/typescript/src/ui/ecoScene.ts";
+import { fakeCtx } from "./helpers.ts";
 import type { RenderSnapshot } from "../../src/typescript/src/worker/renderProtocol.ts";
 
 // The render worker module talks through `self`, so a stand-in is installed before it is imported.
@@ -48,5 +50,19 @@ describe("render worker", () => {
     port.onmessage({ data: late });
     expect(given.length).toBe(2); // returned at once, never shown
     expect(given[1].buffer).toBeInstanceOf(ArrayBuffer);
+  });
+
+  it("draws a frame only for the run of the snapshot it holds", async () => {
+    const { ctx, calls } = fakeCtx(100, 100);
+    scope.onmessage({ data: { type: "init", canvas: { width: 100, height: 100, getContext: () => ctx }, port } });
+    port.onmessage({ data: snapshot(5) });
+    const cfg: EcoDrawConfig = { worldW: 400, worldH: 400, radius: 12, itemRadius: 4, species: [{ fullEnergy: 150, hunter: false }] };
+    const frame = (run: number) => ({ type: "frame", run, view: { cx: 200, cy: 200, zoom: 1, focusX: 200, focusY: 200 }, cfg, selectedId: null, showRays: false, dpr: 1, highlight: -1 });
+    scope.onmessage({ data: frame(4) }); // a frame requested before the new run started
+    await new Promise((r) => setTimeout(r, 50));
+    expect(calls.length).toBe(0);
+    scope.onmessage({ data: frame(5) });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(calls.length).toBeGreaterThan(0);
   });
 });
