@@ -1,6 +1,6 @@
 import { DEFAULT_PREDATOR_CONFIG } from "../sim/ecoConfig.ts";
 import type { EcoConfig } from "../sim/ecoConfig.ts";
-import { SPECIES_OVERRIDES, resolveSpecies } from "../sim/species.ts";
+import { resolveSpecies } from "../sim/species.ts";
 import type { Species, SpeciesConfig } from "../sim/species.ts";
 import { SPECIES_COLORS } from "./speciesStyle.ts";
 import { ECO_SECTIONS } from "./ecoSettingsForm.ts";
@@ -12,12 +12,7 @@ import type { Field, FormSpec, Section } from "./settingsForm.ts";
 
 const sp = (c: EcoConfig, i: number): SpeciesConfig => c.species![i]!;
 const value = <K extends keyof Species>(c: EcoConfig, i: number, key: K): Species[K] => resolveSpecies(c, sp(c, i))[key];
-// The prey take the shared settings, so their fields write those; the predators' fields write their overrides.
-function assign<K extends keyof Species>(c: EcoConfig, i: number, key: K, v: Species[K]): void {
-  const shared = SPECIES_OVERRIDES[key as keyof typeof SPECIES_OVERRIDES];
-  if (i === 0 && shared) (c[shared[0]] as Record<string, unknown>)[shared[1]] = v;
-  else sp(c, i)[key] = v;
-}
+const assign = <K extends keyof Species>(c: EcoConfig, i: number, key: K, v: Species[K]): void => { sp(c, i)[key] = v; };
 const shared = (title: string): readonly Field<EcoConfig>[] => ECO_SECTIONS.find((s) => s.title === title)!.fields;
 const pick = (title: string, ids: readonly string[]): Field<EcoConfig>[] => shared(title).filter((f) => ids.includes(f.id));
 const advanced = (fields: readonly Field<EcoConfig>[]): Field<EcoConfig>[] => fields.map((f) => ({ ...f, advanced: true }));

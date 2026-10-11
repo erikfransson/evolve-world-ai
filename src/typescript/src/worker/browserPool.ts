@@ -3,18 +3,30 @@ import { SerialEvaluator } from "../sim/evaluator.ts";
 import type { Evaluation, Evaluator } from "../sim/evaluator.ts";
 import type { Population } from "../sim/population.ts";
 import type { RecordOptions } from "../sim/trajectory.ts";
-import type { PoolWorker } from "./evalPool.ts";
+import type { EvalDone, EvalJob, EvalPort } from "./evalPool.ts";
 import { PoolEvaluator, defaultThreads } from "./evalPool.ts";
 import { ThinkPool, canShare } from "./ecoPool.ts";
-import type { HelperPort } from "./ecoPool.ts";
+import type { HelperIn, HelperOut } from "./ecoPool.ts";
+import type { Port } from "./port.ts";
 
-function wrap(worker: Worker): PoolWorker {
-  return {
-    post: (msg, transfer) => worker.postMessage(msg, transfer),
-    onMessage: (callback) => { worker.onmessage = (e) => callback(e.data); },
-    onError: (callback) => { worker.onerror = (e) => callback(e.error ?? new Error(e.message)); },
-    terminate: () => worker.terminate(),
-  };
+// n new web workers as ports; on a failed spawn the ones already started are terminated and the error rethrown.
+function browserPorts<In, Out>(n: number, spawn: () => Worker, what: string): Port<In, Out>[] {
+  const ports: Port<In, Out>[] = [];
+  try {
+    for (let i = 0; i < n; i++) {
+      const worker = spawn();
+      ports.push({
+        post: (msg, transfer) => worker.postMessage(msg, transfer ?? []),
+        onMessage: (callback) => { worker.onmessage = (e) => callback(e.data); },
+        onError: (callback) => { worker.onerror = (e) => callback(e.error ?? new Error(e.message || `${what} failed to load`)); },
+        terminate: () => worker.terminate(),
+      });
+    }
+  } catch (error) {
+    for (const port of ports) port.terminate();
+    throw error;
+  }
+  return ports;
 }
 
 // A pool of nested workers that switches itself to serial if it fails before completing its first generation,
@@ -57,35 +69,18 @@ class BrowserEvaluator implements Evaluator {
 // Ecosystem helper threads as nested workers, with shared memory when the page is cross-origin isolated.
 // Throws when workers cannot be created; a helper that fails to load shows up as a rejected ThinkPool.start.
 export function createBrowserThinkPool(helpers: number, shared: boolean): ThinkPool {
-  const ports: HelperPort[] = [];
-  try {
-    for (let i = 0; i < helpers; i++) {
-      const worker = new Worker(new URL("./ecoHelperWorker.ts", import.meta.url), { type: "module" });
-      ports.push({
-        post: (msg, transfer) => worker.postMessage(msg, transfer ?? []),
-        onMessage: (callback) => { worker.onmessage = (e) => callback(e.data); },
-        onError: (callback) => { worker.onerror = (e) => callback(e.error ?? new Error(e.message || "helper thread failed to load")); },
-        terminate: () => worker.terminate(),
-      });
-    }
-  } catch (error) {
-    for (const port of ports) port.terminate();
-    throw error;
-  }
+  const ports = browserPorts<HelperIn, HelperOut>(helpers, () => new Worker(new URL("./ecoHelperWorker.ts", import.meta.url), { type: "module" }), "helper thread");
   return new ThinkPool(ports, shared && canShare(self));
 }
 
 // Pool of nested dedicated workers, or the serial evaluator when one thread is wanted or workers cannot be spawned.
 export function createBrowserEvaluator(config: SimConfig, threads = defaultThreads(navigator.hardwareConcurrency || 2)): Evaluator {
   if (threads <= 1 || typeof Worker === "undefined") return new SerialEvaluator(config);
-  const workers: PoolWorker[] = [];
+  let workers: EvalPort[];
   try {
-    for (let i = 0; i < threads; i++) {
-      workers.push(wrap(new Worker(new URL("./evalWorker.ts", import.meta.url), { type: "module" })));
-    }
+    workers = browserPorts<EvalJob, EvalDone>(threads, () => new Worker(new URL("./evalWorker.ts", import.meta.url), { type: "module" }), "evaluation worker");
   } catch (error) {
     console.warn("Nested workers unavailable, evaluating serially:", error);
-    for (const worker of workers) worker.terminate();
     return new SerialEvaluator(config);
   }
   return new BrowserEvaluator(config, new PoolEvaluator(config, workers));

@@ -7,7 +7,7 @@ import { CUSTOM, ECO_PRESETS, PREDATOR_PRESETS, TRIALS_PRESETS } from "../sim/pr
 
 // Copy and paste of the settings as JSON, shared by Trials, Ecosystem and Predators & prey.
 export type Mode = "trials" | "ecosystem" | "predators";
-interface ConfigOf {
+export interface ConfigOf {
   trials: SimConfig;
   ecosystem: EcoConfig;
   predators: EcoConfig;
@@ -90,6 +90,10 @@ export interface IOOptions<M extends Mode> {
   read(): ConfigOf[M];
   fill(config: ConfigOf[M]): void;
   preset?: { get(): string; set(id: string): void }; // the preset picker; pasted settings select their preset
+}
+
+export interface SettingsIO {
+  apply(text: string): void; // as a paste: applies the settings, and a failure or a note opens the dialog
 }
 
 // The outcome of applying text: an error, or applied with an optional note about adjusted values.
@@ -196,7 +200,7 @@ function buildDialog(applyText: (text: string) => Outcome): Dialog {
 }
 
 // Adds the Copy and Paste buttons to the settings header and the paste shortcut. Paste is off while the form is locked.
-export function initSettingsIO<M extends Mode>(o: IOOptions<M>): void {
+export function initSettingsIO<M extends Mode>(o: IOOptions<M>): SettingsIO {
   const io = document.createElement("div");
   io.className = "io";
   io.innerHTML =
@@ -256,14 +260,19 @@ export function initSettingsIO<M extends Mode>(o: IOOptions<M>): void {
     }, () => undefined);
   };
 
-  // Shortcut: pasting JSON anywhere outside a field applies it, and a failure or a note opens the dialog.
+  const apply = (text: string): void => {
+    const outcome = applyText(text);
+    if (!outcome.ok || outcome.message !== null) dialog.paste(text, outcome);
+  };
+
+  // Shortcut: pasting JSON anywhere outside a field applies it.
   document.addEventListener("paste", (e) => {
     const t = e.target;
     if (t instanceof HTMLElement && (t.closest("input, textarea, select") || t.isContentEditable)) return;
     const text = e.clipboardData?.getData("text") ?? "";
     if (!text.trimStart().startsWith("{") || locked()) return;
     e.preventDefault();
-    const outcome = applyText(text);
-    if (!outcome.ok || outcome.message !== null) dialog.paste(text, outcome);
+    apply(text);
   });
+  return { apply };
 }

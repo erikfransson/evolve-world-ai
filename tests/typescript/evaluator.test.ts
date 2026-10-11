@@ -4,7 +4,7 @@ import { SerialEvaluator } from "../../src/typescript/src/sim/evaluator.ts";
 import { Evolution } from "../../src/typescript/src/sim/evolution.ts";
 import { createBrowserEvaluator } from "../../src/typescript/src/worker/browserPool.ts";
 import { PoolEvaluator, defaultThreads, evalJob } from "../../src/typescript/src/worker/evalPool.ts";
-import type { EvalDone, EvalJob, PoolWorker } from "../../src/typescript/src/worker/evalPool.ts";
+import type { EvalDone, EvalJob, EvalPort } from "../../src/typescript/src/worker/evalPool.ts";
 import { createNodeEvaluator } from "../../src/typescript/src/worker/nodePool.ts";
 
 const cfg: SimConfig = {
@@ -39,7 +39,7 @@ describe("parallel evaluation", () => {
   }, 60_000);
 });
 
-class FakeWorker implements PoolWorker {
+class FakeWorker implements EvalPort {
   posted: EvalJob[] = [];
   terminated = false;
   private messageCallback: (msg: EvalDone) => void = () => {};

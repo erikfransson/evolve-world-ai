@@ -1,9 +1,12 @@
 import type { SimConfig } from "../sim/config.ts";
+import type { Port } from "./port.ts";
 import { evaluateRange } from "../sim/evaluator.ts";
 import type { Evaluation, Evaluator } from "../sim/evaluator.ts";
 import type { Population } from "../sim/population.ts";
 import { TopFrames } from "../sim/trajectory.ts";
 import type { RecordOptions, Trajectories } from "../sim/trajectory.ts";
+
+export type EvalPort = Port<EvalJob, EvalDone>;
 
 // Creatures [start, end) of one generation; genomes holds only those creatures (transferred).
 export interface EvalJob {
@@ -40,14 +43,6 @@ export function transferList(done: EvalDone): ArrayBuffer[] {
   return buffers;
 }
 
-// What the pool needs from a worker, implemented for web workers and for node worker_threads.
-export interface PoolWorker {
-  post(msg: EvalJob, transfer: ArrayBuffer[]): void;
-  onMessage(callback: (msg: EvalDone) => void): void;
-  onError(callback: (error: unknown) => void): void; // any error or unexpected exit
-  terminate(): void;
-}
-
 const CHUNKS_PER_WORKER = 8; // small chunks balance the load, since lifetimes differ a lot between creatures
 
 // Default worker count: leave one core for the caller, at most 8.
@@ -73,12 +68,12 @@ interface Pending {
 // After any worker error or close() the pool is broken for good: workers are terminated and every evaluate rejects.
 export class PoolEvaluator implements Evaluator {
   private readonly config: SimConfig;
-  private readonly workers: PoolWorker[];
+  private readonly workers: EvalPort[];
   private pending: Pending | null = null;
   private broken: { error: unknown } | null = null;
   private jobCounter = 0;
 
-  constructor(config: SimConfig, workers: PoolWorker[]) {
+  constructor(config: SimConfig, workers: EvalPort[]) {
     this.config = config;
     this.workers = workers;
     for (const worker of workers) {
@@ -104,7 +99,7 @@ export class PoolEvaluator implements Evaluator {
     this.fail(new Error("evaluator closed"));
   }
 
-  private dispatch(worker: PoolWorker): void {
+  private dispatch(worker: EvalPort): void {
     const p = this.pending;
     if (!p || p.next >= p.population.size) return;
     const start = p.next;
@@ -115,7 +110,7 @@ export class PoolEvaluator implements Evaluator {
     worker.post({ type: "eval", job: p.job, config: this.config, start, end, layoutSeed: p.layoutSeed, genomeLength, genomes, record: p.record }, [genomes.buffer as ArrayBuffer]);
   }
 
-  private handleDone(worker: PoolWorker, msg: EvalDone): void {
+  private handleDone(worker: EvalPort, msg: EvalDone): void {
     const p = this.pending;
     if (!p || msg.job !== p.job) return;
     p.fitness.set(msg.fitness, msg.start);

@@ -31,12 +31,15 @@ describe("fallback", () => {
   it("create returns null when WebAssembly is disabled", async () => {
     setWasmDisabled(true);
     expect(wasmAvailable()).toBe(false);
-    expect(await WasmBrainBank.create()).toBeNull();
+    expect(WasmBrainBank.createSync()).toBeNull();
     expect(SenseKernels.create(DEFAULT_ECO_CONFIG)).toBeNull();
     setWasmDisabled(false);
-    expect(await WasmBrainBank.create()).not.toBeNull();
+    expect(WasmBrainBank.createSync()).not.toBeNull();
   });
 });
+
+// Runs slots 0 .. n-1.
+const runFirst = (bank: WasmBrainBank, n: number): void => bank.forwardSlots(Int32Array.from({ length: n }, (_, i) => i), n);
 
 const ecoPlanSizes = (rayCount: number, hidden: number[], memory: number): number[] => {
   const c = { ...DEFAULT_ECO_CONFIG, creature: { ...DEFAULT_ECO_CONFIG.creature, rayCount }, brain: { ...DEFAULT_ECO_CONFIG.brain, hiddenLayers: hidden, memory } };
@@ -60,7 +63,7 @@ const SIZE_SETS: number[][] = [
 
 describe("WasmBrainBank", () => {
   it("matches Brain.forward within f32 rounding over varied plans", async () => {
-    const bank = (await WasmBrainBank.create())!;
+    const bank = WasmBrainBank.createSync()!;
     const rng = testRng(5);
     const brains: Brain[] = [];
     const ins: Float32Array[] = [];
@@ -80,7 +83,7 @@ describe("WasmBrainBank", () => {
         bank.f32.set(ins[slot]!, bank.inputAt(slot));
         brains[slot]!.forward(ins[slot]!, outs[slot]!);
       }
-      bank.forward(brains.length);
+      runFirst(bank, brains.length);
       for (let slot = 0; slot < brains.length; slot++) {
         const got = bank.f32.subarray(bank.outputAt(slot), bank.outputAt(slot) + outs[slot]!.length);
         for (let k = 0; k < got.length; k++) maxAbs = Math.max(maxAbs, Math.abs(got[k]! - outs[slot]![k]!));
@@ -90,72 +93,67 @@ describe("WasmBrainBank", () => {
   });
 
   it("saturates large sums to exactly +-1 like the JS tanh", async () => {
-    const bank = (await WasmBrainBank.create())!;
+    const bank = WasmBrainBank.createSync()!;
     const sizes = [2, 2];
     const g = Float32Array.of(100, 0, 0, -100, 0, 0);
     bank.set(0, sizes, g);
     bank.f32.set([1, 1], bank.inputAt(0));
-    bank.forward(1);
+    runFirst(bank, 1);
     expect(Array.from(bank.f32.subarray(bank.outputAt(0), bank.outputAt(0) + 2))).toEqual([1, -1]);
   });
 
-  it("keeps results correct while linear memory grows, and reuses released slots", async () => {
-    const bank = (await WasmBrainBank.create())!;
+  it("keeps results correct while linear memory grows, and reuses a slot of the same size", async () => {
+    const bank = WasmBrainBank.createSync()!;
     const sizes = SIZE_SETS[0]!;
     const rng = testRng(8);
-    const startBytes = bank.memoryBytes;
+    const startBytes = bank.memory.buffer.byteLength;
     const genomes: Float32Array[] = [];
     const n = 3000;
     for (let slot = 0; slot < n; slot++) {
       genomes.push(randomGenome(sizes, rng));
       bank.set(slot, sizes, genomes[slot]!);
     }
-    expect(bank.memoryBytes).toBeGreaterThan(startBytes + 5_000_000);
+    expect(bank.memory.buffer.byteLength).toBeGreaterThan(startBytes + 5_000_000);
     const input = new Float32Array(sizes[0]!);
     fillInput(input, rng);
     for (let slot = 0; slot < n; slot++) bank.f32.set(input, bank.inputAt(slot));
-    bank.forward(n);
+    runFirst(bank, n);
     const want = new Float32Array(sizes[sizes.length - 1]!);
     for (const slot of [0, 1, 1500, n - 1]) {
       new Brain(sizes, genomes[slot]!).forward(input, want);
       const got = bank.f32.subarray(bank.outputAt(slot), bank.outputAt(slot) + want.length);
       for (let k = 0; k < want.length; k++) expect(got[k]).toBeCloseTo(want[k]!, 5);
     }
-    const grown = bank.memoryBytes;
-    bank.release(5);
+    const grown = bank.memory.buffer.byteLength;
     bank.set(5, sizes, genomes[7]!);
-    expect(bank.memoryBytes).toBe(grown);
+    expect(bank.memory.buffer.byteLength).toBe(grown);
     bank.set(5, SIZE_SETS[3]!, randomGenome(SIZE_SETS[3]!, rng)); // another shape moves the slot
     bank.f32.set(new Float32Array(SIZE_SETS[3]![0]!), bank.inputAt(5));
-    bank.forward(6);
+    runFirst(bank, 6);
     expect(Array.from(bank.f32.subarray(bank.outputAt(5), bank.outputAt(5) + 2)).every(Number.isFinite)).toBe(true);
   });
 
   it("rejects bad shapes", async () => {
-    const bank = (await WasmBrainBank.create())!;
+    const bank = WasmBrainBank.createSync()!;
     expect(() => bank.set(0, [3], new Float32Array(0))).toThrow(/layer sizes/);
     expect(() => bank.set(0, [3, 2], new Float32Array(3))).toThrow(/genome length/);
     expect(() => bank.set(0, [3, 2000], new Float32Array(genomeLength([3, 2000])))).toThrow(/exceeds/);
     expect(inputLayout(DEFAULT_ECO_CONFIG).size).toBeGreaterThan(0);
-    bank.release(99); // never set: nothing to free
-    bank.forward(0);
+    runFirst(bank, 0);
   });
 
   it("never runs an unset or released slot", async () => {
-    const bank = (await WasmBrainBank.create())!;
+    const bank = WasmBrainBank.createSync()!;
     const sizes = SIZE_SETS[4]!;
     const rng = testRng(9);
     bank.set(0, sizes, randomGenome(sizes, rng));
     bank.set(2, sizes, randomGenome(sizes, rng));
-    expect(() => bank.forward(3)).toThrow(/slot 1 holds no brain/);
+    expect(() => runFirst(bank, 3)).toThrow(/slot 1 holds no brain/);
     expect(() => bank.forwardSlots(Int32Array.of(2, 1), 2)).toThrow(/slot 1 holds no brain/);
-    bank.release(2);
-    expect(bank.isSet(2)).toBe(false);
-    expect(() => bank.forwardSlots(Int32Array.of(0, 2), 2)).toThrow(/slot 2 holds no brain/);
   });
 
-  it("forwardSlots runs the listed slots in any order, as forward does", async () => {
-    const bank = (await WasmBrainBank.create())!;
+  it("forwardSlots runs the listed slots in any order, as running the first n in order does", async () => {
+    const bank = WasmBrainBank.createSync()!;
     const rng = testRng(10);
     const n = 200;
     const sizes = (s: number) => SIZE_SETS[s % 4]!;
@@ -170,7 +168,7 @@ describe("WasmBrainBank", () => {
     bank.forwardSlots(list, list.length);
     const viaList = Array.from(list, (s) => bank.f32.slice(bank.outputAt(s), bank.outputAt(s) + 2));
     list.forEach((s, k) => bank.f32.set(inputs[k]!, bank.inputAt(s)));
-    bank.forward(n);
+    runFirst(bank, n);
     list.forEach((s, k) => expect(Array.from(bank.f32.slice(bank.outputAt(s), bank.outputAt(s) + 2))).toEqual(Array.from(viaList[k]!)));
   });
 });
