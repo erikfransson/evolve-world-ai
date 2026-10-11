@@ -44,8 +44,8 @@ export class ImpactEffects {
     for (const e of this.list) {
       const t = (now - e.at) / (e.death ? DEATH_MS : SPARK_MS);
       if (t >= 1) continue; // an old spark queued behind a longer-lived death
-      ctx.globalAlpha = (1 - t) ** 1.5 * visible;
-      if (e.death) this.dissolve(ctx, e, t, radius);
+      ctx.globalAlpha = (e.death ? (1 - t) ** 2 : 0.75 * (1 - t) ** 1.5) * visible;
+      if (e.death) this.dissolve(ctx, e, t, radius, css);
       else this.spark(ctx, e, t, radius, css);
     }
     ctx.globalAlpha = 1;
@@ -67,17 +67,23 @@ export class ImpactEffects {
     ctx.stroke();
   }
 
-  // Small dots in the creature's colour drifting apart and shrinking.
-  private dissolve(ctx: CanvasRenderingContext2D, e: Effect, t: number, radius: number): void {
-    ctx.fillStyle = `hsl(${e.value}, 90%, 68%)`;
-    const spread = radius * (0.5 + 2.4 * (1 - (1 - t) ** 2));
-    const dot = radius * 0.4 * (1 - 0.6 * t);
+  // A thin ring at the body outline with a few tiny specks drifting out, in the creature's colour; fades faster than it grows.
+  private dissolve(ctx: CanvasRenderingContext2D, e: Effect, t: number, radius: number, css: number): void {
+    const color = `hsl(${e.value}, 90%, 68%)`;
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = (1.6 - 0.8 * t) * css;
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, radius * (1 + 0.5 * t), 0, 2 * Math.PI);
+    ctx.stroke();
+    const spread = radius * (0.8 + 2 * t);
+    const speck = Math.max(0.6 * css, radius * 0.12 * (1 - t));
     ctx.beginPath();
     for (let k = 0; k < MOTES; k++) {
       const a = (k + 0.37 * (k % 3)) * ((2 * Math.PI) / MOTES) + e.y;
-      const d = spread * (0.6 + 0.4 * ((k * 5) % 3) / 2);
-      ctx.moveTo(e.x + Math.cos(a) * d + dot, e.y + Math.sin(a) * d);
-      ctx.arc(e.x + Math.cos(a) * d, e.y + Math.sin(a) * d, dot, 0, 2 * Math.PI);
+      const d = spread * (0.7 + 0.3 * ((k * 5) % 3) / 2);
+      ctx.moveTo(e.x + Math.cos(a) * d + speck, e.y + Math.sin(a) * d);
+      ctx.arc(e.x + Math.cos(a) * d, e.y + Math.sin(a) * d, speck, 0, 2 * Math.PI);
     }
     ctx.fill();
   }

@@ -17,10 +17,10 @@ describe("ImpactEffects", () => {
     f.add(events([EVENT_DEATH, 5, 5, 120], [EVENT_IMPACT, 9, 9, 20]), 0);
     const { ctx, calls } = fakeCtx();
     f.draw(ctx, 200, 12, 1, 2);
-    expect(painted(calls)).toBe(2);
+    expect(painted(calls)).toBe(3); // ring and specks, then rays
     calls.length = 0;
     f.draw(ctx, 500, 12, 1, 2); // spark over, death still fading
-    expect(painted(calls)).toBe(1);
+    expect(painted(calls)).toBe(2);
     f.draw(ctx, 900, 12, 1, 2);
     expect(f.size).toBe(0);
     f.add(events([EVENT_IMPACT, 0, 0, 20]), 900);
