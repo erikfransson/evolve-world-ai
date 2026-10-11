@@ -116,13 +116,13 @@ describe("public server: upload budget", () => {
     const port = 50415;
     const world = new LiveWorld(smallConfig(), null);
     for (let i = 0; i < 20; i++) world.eco.step();
-    const frame = world.creatureFrame().length + world.itemsFrame().length / 10; // per frame, items every 10th
+    const frame = world.creatureFrame().length; // per frame; item changes in this small world are a few bytes
     // Budget for frames: room for 6 viewers at the slowest rate (every 5th frame), and a small connect allowance.
     const connect = 2 * frame;
     const text = 10;
     const maxViewers = 100;
     const budget = Math.floor(6.5 * frame);
-    const limits = { maxViewers, maxSendBytesPerSecond: budget + connect + maxViewers * text, connectBytesPerSecond: connect, textBytesPerViewer: text, acceptBurst: 100 };
+    const limits = { maxViewers, maxSendBytesPerSecond: budget + connect + maxViewers * text, connectBytesPerSecond: connect, textBytesPerViewer: text, detailBytesPerViewer: 0, acceptBurst: 100 };
     const { pub } = await serve(port, limits, world);
     await wait(300); // the first frame sets the per-viewer size
     const vs: Viewer[] = [];

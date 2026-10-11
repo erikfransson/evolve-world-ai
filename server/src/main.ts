@@ -2,8 +2,9 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parsePool } from "../../src/typescript/src/sim/seedPool.ts";
 import { loadAdminToken, loadOverrides, startAdmin } from "./admin.ts";
-import { HOST, LIMITS, PORTS, liveConfig } from "./config.ts";
-import { LiveWorld } from "./liveWorld.ts";
+import { HELPER_THREADS, HOST, LIMITS, PORTS, liveConfig } from "./config.ts";
+import { createNodeThinkPool } from "../../src/typescript/src/worker/nodePool.ts";
+import { LiveWorld, runTicks } from "./liveWorld.ts";
 import { startPublic } from "./public.ts";
 import { Saves } from "./saves.ts";
 import { StateStore } from "./state.ts";
@@ -13,12 +14,14 @@ const publicPort = Number(process.env.LIVE_PORT ?? PORTS.public);
 const adminPort = Number(process.env.LIVE_ADMIN_PORT ?? PORTS.admin);
 const stateDir = process.env.LIVE_STATE_DIR ?? fileURLToPath(new URL("../state", import.meta.url));
 const poolFile = fileURLToPath(new URL("../../src/typescript/public/pool.json", import.meta.url));
+const threads = Number(process.env.LIVE_THREADS ?? HELPER_THREADS);
 const webRoot = process.env.LIVE_WEB_ROOT ?? fileURLToPath(new URL("../../src/typescript/dist", import.meta.url)); // npm run build in src/typescript
 
 const store = new StateStore(stateDir);
 const token = loadAdminToken(stateDir);
 const pool = parsePool(JSON.parse(readFileSync(poolFile, "utf8"))).entries;
-const live = new LiveWorld(liveConfig, pool);
+if (!Number.isInteger(threads) || threads < 0 || threads > 16) throw new Error("LIVE_THREADS must be an integer from 0 to 16");
+const live = new LiveWorld(liveConfig, pool, threads > 0 ? createNodeThinkPool(threads) : null);
 
 const saves = new Saves(live, store);
 await saves.restoreNewest();
@@ -59,16 +62,23 @@ const admin = startAdmin(HOST, adminPort, token, live, stateDir, webRoot, savedO
   stop,
 });
 
-function loop(): void {
-  setTimeout(loop, live.advance());
-}
-loop();
+runTicks(live, LIMITS.maxTickFailures, (why) => {
+  console.error(`${why}, exiting without a save`);
+  process.exit(1);
+});
+console.log(`${live.threads} helper threads`);
 console.log(`live world on ws://${HOST}:${publicPort}, admin on ws://${HOST}:${adminPort} (token in ${stateDir}/admin-token)`);
 
 function shutdown(): void {
+  live.close();
   pub.close();
   admin.close();
   process.exit(0);
 }
+// A promise nobody handled is a bug: log it and exit, systemd restarts from the last good save.
+process.on("unhandledRejection", (e) => {
+  console.error(`unhandled rejection: ${errText(e)}`);
+  process.exit(1);
+});
 process.on("SIGTERM", () => void stop());
 process.on("SIGINT", () => void stop());
