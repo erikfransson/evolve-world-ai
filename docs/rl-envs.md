@@ -18,9 +18,9 @@ Self-play envs (Melee, Brawl) score against the learner's own league, so their h
 | Far food (far-food) | Find food            | 3 food in a 400 x 400 room, search                  | 0.03 -> 0.61   | 0.53 -> 0.89 |
 | Patch (patch)       | Find food            | all food in one patch, start in the middle          | 0.00 -> 2.27   | 1.41 -> 1.63 |
 | Minefield           | Avoid and find a way | 4 food among 12 lethal poison                       | 0.16 -> 0.94   | 0.47 -> 0.47 |
-| Fence (fence)       | Avoid and find a way | stinging poison wall with a gap, 2 food this side   | see notes      |              |
-| Zigzag (maze)       | Avoid and find a way | two stinging walls, gaps at opposite ends           | see notes      |              |
-| Lean times          | Energy               | low energy, slow regrowth, survive and keep energy  | see notes      |              |
+| Fence (fence)       | Avoid and find a way | stinging wall with a gap, 2 food this side, +1 per wall crossed | 0.06 -> 1.84 (200 it) | PPO 60 s: 0.63 -> 1.94 |
+| Zigzag (maze)       | Avoid and find a way | two stinging walls, gaps at opposite ends, +1 per wall crossed | 0.09 -> 1.41 (200 it) | PPO 60 s from random: 0.09 -> 1.63 |
+| Lean times          | Energy               | low energy, slow regrowth, stinging poison          | 0.91 -> 0.92 (200 it) | 0.94 -> 2.05 (200 it); PPO 60 s: 0.94 -> 5.99 |
 | Aggressor           | Fight                | 200 energy among weak grazers, collision damage     | 1.37 -> 1.62   | 1.21 -> 1.80 |
 | Escape              | Fight                | graze while 2 trained aggressors hunt you           | 0.79 -> 1.24   | 0.66 -> 1.04 |
 | Duel (duel)         | Compete              | one seed-pool rival                                 | 0.09 -> 2.20   | 1.81 -> 3.08 |
@@ -33,3 +33,5 @@ Advanced (bigger, slower): forage-sparse, poison-field, rivals, endurance; Great
 
 - 2026-10-11: dropped near-duplicates (forage-box, box, box-poison, nibble-poison, scatter). Fence and Zigzag with lethal walls never learned (no candidate got through); walls now sting (25 energy) and 2 food lie on the learner's side as a first step. Lean times showed no signal at 25-30 energy; raised to 40 energy, 8 food, food reward 0.5.
 - The library (`public/rl/library.json`) holds rivals by env id: one aggressor trained 200 iterations from pool:0 (held-out 1.21 -> 1.75), used by Escape. Rivals only come from envs of the same world and species.
+- Fence and Zigzag learned the near food but not the gap (200 iterations: 1.47 and 1.0, under the 2 near items); with +1 per wall crossed they reach 1.84 and 1.41. Lean times stayed flat from random even with stinging poison: one lethal bite or quick starvation made rewards all-or-nothing; a pool founder learns it.
+- Backprop RL (PPO, `docs/rl-grad-notes.md`) learns faster than ES in wall time on every env tried, by far on Lean times (random 0.91 -> 2.91, pool 0.94 -> 5.99 in 60 s on one thread).
