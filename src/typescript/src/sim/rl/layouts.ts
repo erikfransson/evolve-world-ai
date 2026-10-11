@@ -16,6 +16,7 @@ export const LAYOUT_KINDS = ["fence", "maze", "patch"] as const;
 export interface Placed {
   items: ItemSpot[];
   start: { x: number; y: number }; // the learner's start
+  walls: number[]; // heights of the poison walls between the start and the food, nearest first
 }
 
 const WALL_STEP = 18; // centre distance of wall items: a creature (radius 12) touches poison (radius 4) within 16, so any gap of 18 blocks it
@@ -34,9 +35,11 @@ export function placeLayout(layout: Layout, size: readonly [number, number], foo
   const [w, h] = size;
   const items: ItemSpot[] = [];
   let start: { x: number; y: number };
+  const walls: number[] = [];
   if (layout.kind === "fence") {
     const gx = rng.range(layout.gap, w - layout.gap);
     wall(items, w, h / 2, gx, layout.gap);
+    walls.push(h / 2);
     const near = Math.min(food, layout.near ?? 0);
     for (let k = 0; k < food - near; k++) items.push({ ...spot(rng, MARGIN, w - MARGIN, MARGIN, h / 2 - 3 * MARGIN), kind: HIT_FOOD });
     for (let k = 0; k < near; k++) items.push({ ...spot(rng, MARGIN, w - MARGIN, h / 2 + 2 * MARGIN, h - MARGIN), kind: HIT_FOOD });
@@ -46,6 +49,7 @@ export function placeLayout(layout: Layout, size: readonly [number, number], foo
     const end = (atLeft: boolean): number => (atLeft ? layout.gap : w - layout.gap);
     wall(items, w, h / 3, end(left), layout.gap * 2);
     wall(items, w, (2 * h) / 3, end(!left), layout.gap * 2);
+    walls.push((2 * h) / 3, h / 3);
     const near = Math.min(food, layout.near ?? 0);
     for (let k = 0; k < food - near; k++) items.push({ ...spot(rng, MARGIN, w - MARGIN, MARGIN, h / 3 - 2 * MARGIN), kind: HIT_FOOD });
     for (let k = 0; k < near; k++) items.push({ ...spot(rng, MARGIN, w - MARGIN, (2 * h) / 3 + MARGIN, h - MARGIN), kind: HIT_FOOD });
@@ -71,5 +75,5 @@ export function placeLayout(layout: Layout, size: readonly [number, number], foo
     items.push({ ...p, kind: HIT_POISON });
     k++;
   }
-  return { items, start };
+  return { items, start, walls };
 }
