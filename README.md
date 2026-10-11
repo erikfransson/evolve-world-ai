@@ -2,21 +2,20 @@
 
 <p align="center">
   <a href="https://github.com/erikfransson/evolve-world-ai/actions/workflows/deploy.yml"><img src="https://github.com/erikfransson/evolve-world-ai/actions/workflows/deploy.yml/badge.svg" alt="Test and deploy"></a>
-  <a href="https://erikfransson.github.io/evolve-world-ai/coverage/"><img src="https://img.shields.io/endpoint?url=https://erikfransson.github.io/evolve-world-ai/coverage/badge.json" alt="Coverage"></a>
-  <a href="https://github.com/erikfransson/evolve-world-ai/actions/workflows/deploy.yml"><img src="https://img.shields.io/endpoint?url=https://erikfransson.github.io/evolve-world-ai/coverage/tests-badge.json" alt="Tests"></a>
-  <a href="https://github.com/erikfransson/evolve-world-ai/commits/main"><img src="https://img.shields.io/github/last-commit/erikfransson/evolve-world-ai" alt="Last commit"></a>
+  <a href="https://erikfransson.github.io/evolve-world-ai/coverage/"><img src="https://erikfransson.github.io/evolve-world-ai/coverage/badge.svg" alt="Coverage"></a>
+  <a href="https://github.com/erikfransson/evolve-world-ai/actions/workflows/deploy.yml"><img src="https://erikfransson.github.io/evolve-world-ai/coverage/tests-badge.svg" alt="Tests"></a>
 </p>
 <p align="center">
-  <a href="https://erikfransson.github.io/evolve-world-ai/"><img src="https://img.shields.io/badge/Play_in_your_browser-2ea44f?logo=googlechrome&logoColor=white" alt="Play in your browser"></a>
-  <img src="https://img.shields.io/badge/Evolutionary_simulation-3fb950" alt="Evolutionary simulation">
-  <img src="https://img.shields.io/badge/Neuroevolution-8957e5" alt="Neuroevolution">
-  <img src="https://img.shields.io/badge/Reinforcement_learning-d29922" alt="Reinforcement learning">
-  <img src="https://img.shields.io/badge/Artificial_life-db61a2" alt="Artificial life">
+  <a href="https://erikfransson.github.io/evolve-world-ai/"><img src="docs/badges/play.svg" alt="Play in your browser"></a>
+  <img src="docs/badges/evolutionary-simulation.svg" alt="Evolutionary simulation">
+  <img src="docs/badges/neuroevolution.svg" alt="Neuroevolution">
+  <img src="docs/badges/reinforcement-learning.svg" alt="Reinforcement learning">
+  <img src="docs/badges/artificial-life.svg" alt="Artificial life">
 </p>
 <p align="center">
-  <img src="https://img.shields.io/badge/TypeScript-3178c6?logo=typescript&logoColor=white" alt="TypeScript">
-  <img src="https://img.shields.io/badge/WebAssembly_SIMD-654ff0?logo=webassembly&logoColor=white" alt="WebAssembly SIMD">
-  <img src="https://img.shields.io/badge/Vite-646cff?logo=vite&logoColor=white" alt="Vite">
+  <img src="docs/badges/typescript.svg" alt="TypeScript">
+  <img src="docs/badges/webassembly.svg" alt="WebAssembly SIMD">
+  <img src="docs/badges/vite.svg" alt="Vite">
 </p>
 
 <h3 align="center"><a href="https://erikfransson.github.io/evolve-world-ai/">Open Evolve World →</a></h3>
