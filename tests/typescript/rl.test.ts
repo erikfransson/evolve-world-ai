@@ -3,7 +3,7 @@ import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
 import { castFor, checkEnv, envConfig, randomLearner, runEpisode } from "../../src/typescript/src/sim/rl/env.ts";
 import { creatureFile, parseCreatureFile } from "../../src/typescript/src/sim/rl/creatureFile.ts";
 import type { EnvSpec } from "../../src/typescript/src/sim/rl/env.ts";
-import { ENVS, envById } from "../../src/typescript/src/sim/rl/envs.ts";
+import { ENVS, ENV_GROUPS, envById, groupOf } from "../../src/typescript/src/sim/rl/envs.ts";
 import { Es, centredRanks, standardise } from "../../src/typescript/src/sim/rl/es.ts";
 import { parseLibrary, serialiseLearner } from "../../src/typescript/src/sim/rl/library.ts";
 import { testRng } from "./helpers.ts";
@@ -203,5 +203,15 @@ describe("library rivals", () => {
     const env: EnvSpec = { ...envById("nibble")!, seconds: 5, rivals: [{ species: 0, count: 2, source: "library:hunt-grazers" }] };
     expect(() => runEpisode(env, randomLearner(env, 1), 3, null, lib)).not.toThrow();
     expect(checkEnv(env, "ecosystem", 0)).toMatch(/library/);
+  });
+});
+
+describe("env groups", () => {
+  it("file every built-in env under a group, the small ones outside Advanced", () => {
+    for (const e of ENVS) expect(ENV_GROUPS).toContain(groupOf(e));
+    expect(groupOf(envById("fence")!)).toBe("Avoid and find a way");
+    expect(groupOf(envById("brawl")!)).toBe("Compete");
+    expect(groupOf(envById("aggressor")!)).toBe("Fight");
+    expect(groupOf(envById("poison-field")!)).toBe("Advanced");
   });
 });

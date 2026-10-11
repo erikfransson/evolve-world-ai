@@ -223,3 +223,18 @@ export const ENVS: readonly EnvSpec[] = [
 ];
 
 export const envById = (id: string): EnvSpec | undefined => ENVS.find((e) => e.id === id);
+
+// Categories for choosing envs, in display order; groupOf files an env under one by its tags.
+export const ENV_GROUPS = ["Find food", "Avoid and find a way", "Energy", "Fight", "Compete", "Advanced", "Custom"] as const;
+export type EnvGroup = (typeof ENV_GROUPS)[number];
+
+export function groupOf(env: Pick<EnvSpec, "tags">): EnvGroup {
+  const t = new Set(env.tags);
+  if (t.has("custom")) return "Custom";
+  if (t.has("advanced")) return "Advanced";
+  if (t.has("compete")) return "Compete";
+  if (t.has("fight")) return "Fight";
+  if (t.has("energy")) return "Energy";
+  if (t.has("caution") || t.has("navigate")) return "Avoid and find a way";
+  return "Find food";
+}
