@@ -1,5 +1,5 @@
 // Ecosystem benchmark: runs a seeded world headless and prints ticks/s, population over time and a fingerprint.
-// Usage: node src/ecoBench.ts [--seconds 120] [--seed 1] [--pop 300] [--food 0.5] [--regrow 0.05] [--every 10] [--pool public/pool.json] [--poolFraction 0.5] [--aging] [--agingStart 120] [--agingRate 0.5] [--threads 0] [--shared]
+// Usage: node src/ecoBench.ts [--seconds 120] [--seed 1] [--pop 300] [--food 0.5] [--regrow 0.05] [--every 10] [--pool public/pool.json] [--poolFraction 0.5] [--aging] [--agingStart 120] [--agingRate 0.5] [--threads 0] [--shared] [--wasm true|false]
 // --food sets the starting and maximum food density, --regrow the food regrowth rate, --pool none runs without the seed pool.
 
 import { readFileSync } from "node:fs";
@@ -25,6 +25,7 @@ const { values } = parseArgs({
     aging: { type: "boolean" },
     threads: { type: "string", default: "0" }, // helper threads for sense and think; 0 runs on this thread alone
     shared: { type: "boolean" }, // helpers use shared memory instead of messages
+    wasm: { type: "string" }, // true or false: sense and think on the WebAssembly kernels; default from the config
     agingStart: { type: "string" },
     agingRate: { type: "string" },
   },
@@ -41,6 +42,7 @@ const config: EcoConfig = {
     initialPopulation: num(values.pop, d.eco.initialPopulation),
     poolFraction: num(values.poolFraction, d.eco.poolFraction),
     aging: values.aging ?? d.eco.aging,
+    wasm: values.wasm === undefined ? d.eco.wasm : values.wasm === "true",
     agingStart: num(values.agingStart, d.eco.agingStart),
     agingRate: num(values.agingRate, d.eco.agingRate),
     foodMaxDensity: values.food === undefined ? d.eco.foodMaxDensity : food,
@@ -75,6 +77,7 @@ console.log(JSON.stringify({
   seed: config.seed,
   seconds,
   threads: helpers ? `${threads} ${helpers.shared ? "shared" : "fork-join"}` : "serial",
+  wasm: eco.wasm,
   poolFounders: eco.poolFounders,
   ticks: eco.tick,
   wallSeconds: +wall.toFixed(2),

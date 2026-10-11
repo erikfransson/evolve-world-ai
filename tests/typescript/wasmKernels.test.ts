@@ -138,6 +138,39 @@ describe("WasmBrainBank", () => {
     bank.release(99); // never set: nothing to free
     bank.forward(0);
   });
+
+  it("never runs an unset or released slot", async () => {
+    const bank = (await WasmBrainBank.create())!;
+    const sizes = SIZE_SETS[4]!;
+    const rng = testRng(9);
+    bank.set(0, sizes, randomGenome(sizes, rng));
+    bank.set(2, sizes, randomGenome(sizes, rng));
+    expect(() => bank.forward(3)).toThrow(/slot 1 holds no brain/);
+    expect(() => bank.forwardSlots(Int32Array.of(2, 1), 2)).toThrow(/slot 1 holds no brain/);
+    bank.release(2);
+    expect(bank.isSet(2)).toBe(false);
+    expect(() => bank.forwardSlots(Int32Array.of(0, 2), 2)).toThrow(/slot 2 holds no brain/);
+  });
+
+  it("forwardSlots runs the listed slots in any order, as forward does", async () => {
+    const bank = (await WasmBrainBank.create())!;
+    const rng = testRng(10);
+    const n = 200;
+    const sizes = (s: number) => SIZE_SETS[s % 4]!;
+    for (let s = 0; s < n; s++) bank.set(s, sizes(s), randomGenome(sizes(s), rng));
+    const list = Int32Array.from({ length: 150 }, (_, k) => (k * 37) % n);
+    const inputs = Array.from(list, (s) => {
+      const a = new Float32Array(sizes(s)[0]!);
+      fillInput(a, rng);
+      bank.f32.set(a, bank.inputAt(s));
+      return a;
+    });
+    bank.forwardSlots(list, list.length);
+    const viaList = Array.from(list, (s) => bank.f32.slice(bank.outputAt(s), bank.outputAt(s) + 2));
+    list.forEach((s, k) => bank.f32.set(inputs[k]!, bank.inputAt(s)));
+    bank.forward(n);
+    list.forEach((s, k) => expect(Array.from(bank.f32.slice(bank.outputAt(s), bank.outputAt(s) + 2))).toEqual(Array.from(viaList[k]!)));
+  });
 });
 
 describe("WasmRayCaster", () => {
@@ -245,7 +278,7 @@ describe("WasmRayCaster", () => {
     const dirX = Float64Array.from(offsets, (o) => Math.cos(o));
     const dirY = Float64Array.from(offsets, (o) => Math.sin(o));
     const far = [[-5000, 500], [9000, 500], [700, -5000], [700, 9000], [-5000, -5000], [9000, 9000]];
-    const outs = far.map(() => Array.from({ length: 8 }, () => ({ closeness: 0, kind: HIT_NONE, energy: 0 })));
+    const outs = far.map((): RayHit[] => Array.from({ length: 8 }, () => ({ closeness: 0, kind: HIT_NONE, energy: 0 })));
     far.forEach(([x, y], v) => caster.queue(x!, y!, dirX, dirY, outs[v]!, -1, 150));
     caster.run();
     caster.apply();

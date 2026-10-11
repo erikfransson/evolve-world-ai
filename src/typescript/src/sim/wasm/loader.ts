@@ -51,6 +51,16 @@ export class Kernel<E extends WebAssembly.Exports> {
     }
   }
 
+  // The same, compiled on this thread; fine in workers and Node, and the kernels are small enough for a page's main thread.
+  static createSync<E extends WebAssembly.Exports>(bytes: Uint8Array<ArrayBuffer>): Kernel<E> | null {
+    if (!wasmAvailable()) return null;
+    try {
+      return new Kernel(new WebAssembly.Instance(new WebAssembly.Module(bytes), {}).exports as E);
+    } catch {
+      return null;
+    }
+  }
+
   get f32(): Float32Array {
     if (this.f32Cache.buffer !== this.memory.buffer) this.f32Cache = new Float32Array(this.memory.buffer);
     return this.f32Cache;
