@@ -44,6 +44,10 @@ export const ENVS: readonly EnvSpec[] = [
     reward: { food: 1, cross: 1, survive: 0.02 },
     tags: ["navigate"],
   }),
+  // Memory: what it saw a moment ago decides where to go now
+  small({ id: "signal-door", name: "Signal door", description: "A marker right ahead says which door hides the food: food means left, poison means right. By the doors it is out of sight. Remember it.", size: [300, 450], food: 4, poison: 0, seconds: 25, layout: { kind: "cuedoor" }, poisonDamage: 10, tags: ["memory"] }),
+  small({ id: "three-arms", name: "Three arms", description: "Three corridors, one bite at the end of each. Once you have emptied one, do not go back into it.", size: [360, 320], food: 3, poison: 0, seconds: 30, layout: { kind: "arms", arms: 3 }, poisonDamage: 25, reward: { food: 1, fast: 0.15 }, tags: ["memory"] }),
+  small({ id: "flash", name: "Flash", description: "The food shows for a second and a half, then goes dark but stays there. Remember where it was.", size: [400, 400], food: 3, poison: 0, seconds: 20, foodVisibleFor: 1.5, layout: { kind: "flash" }, tags: ["memory"] }),
   // Energy
   small({
     id: "lean-times",
@@ -285,7 +289,7 @@ export const ENVS: readonly EnvSpec[] = [
 export const envById = (id: string): EnvSpec | undefined => ENVS.find((e) => e.id === id);
 
 // Categories for choosing envs, in display order; groupOf files an env under one by its tags.
-export const ENV_GROUPS = ["Find food", "Avoid and find a way", "Energy", "Fight", "Compete", "Advanced", "Custom"] as const;
+export const ENV_GROUPS = ["Find food", "Avoid and find a way", "Memory", "Energy", "Fight", "Compete", "Advanced", "Custom"] as const;
 export type EnvGroup = (typeof ENV_GROUPS)[number];
 
 export function groupOf(env: Pick<EnvSpec, "tags">): EnvGroup {
@@ -295,6 +299,7 @@ export function groupOf(env: Pick<EnvSpec, "tags">): EnvGroup {
   if (t.has("compete")) return "Compete";
   if (t.has("fight")) return "Fight";
   if (t.has("energy")) return "Energy";
+  if (t.has("memory")) return "Memory";
   if (t.has("caution") || t.has("navigate")) return "Avoid and find a way";
   return "Find food";
 }

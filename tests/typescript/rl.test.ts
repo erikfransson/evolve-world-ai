@@ -159,7 +159,7 @@ describe("checkEnv", () => {
     expect(typeof checkEnv(fence, "ecosystem", 0)).toBe("object");
     expect(checkEnv({ ...fence, layout: { kind: "fence", gap: 300 } }, "ecosystem", 0)).toMatch(/gap/);
     expect(checkEnv({ ...fence, layout: { kind: "patch", radius: 300 } }, "ecosystem", 0)).toMatch(/radius/);
-    expect(checkEnv({ ...fence, rivals: [{ species: 0, count: 1, source: "random" }] }, "ecosystem", 0)).toMatch(/walls with rivals/);
+    expect(checkEnv({ ...fence, rivals: [{ species: 0, count: 1, source: "random" }] }, "ecosystem", 0)).toMatch(/does not take rivals/);
   });
 
   it("keeps custom ids apart from the built-in ones", () => {

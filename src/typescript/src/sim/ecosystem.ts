@@ -307,6 +307,11 @@ export class Ecosystem {
     for (const s of this.states) this.items.clearPoison(s.x, s.y, r, this.rng, onFounder);
   }
 
+  // Makes food invisible to every creature's rays, or visible again; eating is unchanged (RL memory envs).
+  setFoodHidden(hidden: boolean): void {
+    this.items.foodHidden = hidden;
+  }
+
   get population(): number {
     return this.members.length;
   }
