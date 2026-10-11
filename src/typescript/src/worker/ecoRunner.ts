@@ -2,6 +2,7 @@ import type { EcoConfig } from "../sim/ecoConfig.ts";
 import { planOf } from "../sim/sensors.ts";
 import { Ecosystem } from "../sim/ecosystem.ts";
 import type { CreatureFrame, EcoCreature } from "../sim/ecosystem.ts";
+import type { PoolEntry } from "../sim/seedPool.ts";
 import type { BestBy, EcoInMessage, EcoOutMessage, EcoSnapshot, EcoSpeedSetting, SelectedDetails } from "./ecoProtocol.ts";
 import { snapshotBytes, snapshotViews } from "./ecoProtocol.ts";
 
@@ -16,6 +17,7 @@ export type Post = (msg: EcoOutMessage, transfer: Transferable[]) => void;
 
 // Owns one Ecosystem and paces it against the clock. The Worker wrapper calls handle for each message and pump in a timer loop.
 export class EcoRunner {
+  seedPool: readonly PoolEntry[] | null = null; // trained founders for the next start; null gives all-random founders
   private eco: Ecosystem | null = null;
   private readonly post: Post;
   private readonly now: () => number;
@@ -116,7 +118,7 @@ export class EcoRunner {
   }
 
   private begin(config: EcoConfig, run: number): void {
-    this.eco = new Ecosystem(config);
+    this.eco = new Ecosystem(config, this.seedPool);
     this.run = run;
     this.inFlight = 0;
     this.paused = false;

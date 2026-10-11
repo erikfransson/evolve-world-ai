@@ -5,7 +5,7 @@ export type BestBy = "age" | "children" | "eaten";
 export type EcoSpeedSetting = number | "max"; // simulated seconds per real second, "max" = as many ticks as fit
 
 export type EcoInMessage =
-  | { type: "start"; config: EcoConfig; run: number }
+  | { type: "start"; config: EcoConfig; run: number; poolUrl?: string } // poolUrl: seed pool JSON, fetched once by the worker
   | { type: "pause" }
   | { type: "resume" }
   | { type: "reset" }

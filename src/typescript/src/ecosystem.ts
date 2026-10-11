@@ -24,6 +24,8 @@ const PICK_MIN_PX = 14; // click reach never below this many CSS px
 const UI_INTERVAL_MS = 100; // stat tiles and selected card
 const BRAIN_INTERVAL_MS = 25;
 const ZOOM_STEP = 1.6;
+// public/pool.json sits at the site root, one level above this page; resolved here since the worker's own URL differs in dev and build.
+const POOL_URL = new URL("../pool.json", document.baseURI).href;
 
 interface Live {
   msg: EcoSnapshot;
@@ -166,7 +168,7 @@ function startRun(c: EcoConfig): void {
   view.setHistory([]);
   view.setStats(null);
   view.setNote(null);
-  send({ type: "start", config: c, run });
+  send({ type: "start", config: c, run, poolUrl: POOL_URL });
   send({ type: "speed", speed: view.speed() });
 }
 

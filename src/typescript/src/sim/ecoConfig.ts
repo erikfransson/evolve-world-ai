@@ -4,7 +4,8 @@ import type { EngineConfig } from "./config.ts";
 // Ecosystem: all creatures share one world, food and poison regrow, creatures reproduce on their own.
 export interface EcoConfig extends EngineConfig {
   eco: {
-    initialPopulation: number; // founders with random genomes and colours
+    initialPopulation: number; // founders, each with a random colour
+    poolFraction: number; // 0 to 1: share of founders copied with mutation from the seed pool (when one is given), the rest random
     maxPopulation: number; // births wait while the world is full
     foodRegrow: number; // density units per second, same scale as world.foodDensity
     foodMaxDensity: number; // regrowth stops here
@@ -39,6 +40,7 @@ export const DEFAULT_ECO_CONFIG: EcoConfig = {
   brain: { ...DEFAULT_CONFIG.brain, hiddenLayers: [...DEFAULT_CONFIG.brain.hiddenLayers] },
   eco: {
     initialPopulation: 500,
+    poolFraction: 0.5,
     maxPopulation: 10000,
     foodRegrow: 0.05, // 200 items/s on the default world, about 4000 energy/s, so roughly 1200 creatures at equilibrium
     foodMaxDensity: 0.7,

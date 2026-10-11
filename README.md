@@ -8,6 +8,7 @@
   * `index.html` landing page, `trials/` the current app, `ecosystem/` and `live/` placeholders
   * `src/sim/` simulation; `creature.ts` (body, brain, senses) and `world.ts` (items, rays) are shared by modes
   * `src/trials.ts`, `src/landing.ts` one entry script per page
+  * `public/pool.json` Ecosystem seed pool of Trials-trained creatures, rebuilt with `node src/buildPool.ts` (about 30 min on 4 threads)
 * `src/python/` analysis of headless run output
 * `docs/` for e.g. adr documents, and planning etc
 * `tests/` tests for all code

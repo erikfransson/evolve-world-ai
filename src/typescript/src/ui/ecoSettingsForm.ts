@@ -66,7 +66,8 @@ export const ECO_SECTIONS: readonly Section[] = [
   {
     title: "Life cycle",
     fields: [
-      range({ id: "initialPopulation", label: "Start creatures", tip: "How many creatures with random brains and colours the run starts with.", min: 10, max: 5000, step: 10, get: (c) => c.eco.initialPopulation, set: (c, v) => { c.eco.initialPopulation = v; } }),
+      range({ id: "initialPopulation", label: "Start creatures", tip: "How many creatures the run starts with, each with a random colour.", min: 10, max: 5000, step: 10, get: (c) => c.eco.initialPopulation, set: (c, v) => { c.eco.initialPopulation = v; } }),
+      range({ id: "poolFraction", label: "Trained founders", tip: "Share of the start creatures copied, with small mutations, from a pool of creatures trained in Trials with many different eyes and brains. They keep their own rays and brain shape. The rest start with random brains.", min: 0, max: 1, step: 0.05, fmt: "pct", get: (c) => c.eco.poolFraction, set: (c, v) => { c.eco.poolFraction = v; } }),
       range({ id: "maxPopulation", label: "Population limit", tip: "Most creatures alive at once. Births wait while the world is full.", min: 100, max: 10000, step: 100, get: (c) => c.eco.maxPopulation, set: (c, v) => { c.eco.maxPopulation = v; } }),
       range({ id: "birthEnergy", label: "Birth energy", tip: "A creature with at least this much energy can have a child. A creature's body is drawn full at this level.", min: 60, max: 400, step: 5, get: (c) => c.eco.birthEnergy, set: (c, v) => { c.eco.birthEnergy = v; } }),
       range({ id: "birthCost", label: "Birth cost", tip: "Energy the parent pays for a child.", min: 10, max: 300, step: 5, get: (c) => c.eco.birthCost, set: (c, v) => { c.eco.birthCost = v; } }),
