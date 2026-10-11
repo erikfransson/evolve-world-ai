@@ -25,6 +25,14 @@ import { SenseKernels } from "./wasm/senseKernels.ts";
 
 export type { Lineage } from "./lineages.ts";
 
+// Collision events for the page's effects, collected since the last drain and bounded: a Float32Array of EVENT_STRIDE numbers each, kind, x, y, value.
+// An impact (kind 0, value = energy each lost) is reported at BIG_IMPACT or more; a death (kind 1, value = hue) from a bump or a hunt. Reporting changes no results.
+export const EVENT_IMPACT = 0;
+export const EVENT_DEATH = 1;
+export const EVENT_STRIDE = 4;
+export const EVENT_CAP = 32;
+export const BIG_IMPACT = 15;
+
 // One creature of the ecosystem with its family record. Objects are recycled after death, so hold ids, not references.
 export class EcoCreature {
   id = 0;
@@ -118,6 +126,9 @@ export class Ecosystem {
   private readonly kinds: number[] = []; // kinds[i] is members[i].species
   private readonly multi: boolean; // more than one species, so rays tell species apart
   private readonly hunters: boolean; // some species eats another
+  private readonly slain = new Set<CreatureState>(); // killed by a bump or a hunt this tick
+  private readonly events = new Float32Array(EVENT_CAP * EVENT_STRIDE);
+  private eventCount = 0;
   private readonly rng: StatefulRng;
   // Scratch of one birth, grown as plans need: the child's plan, its genome, and the parent's weights remapped to a new shape.
   private readonly childPlan: BodyPlan;
@@ -336,9 +347,14 @@ export class Ecosystem {
     if (this.config.eco.collisions) this.collideAll(this.hunters);
 
     for (let i = n - 1; i >= 0; i--) {
-      settle(this.states[i]);
-      if (!this.states[i].alive) this.remove(i);
+      const state = this.states[i];
+      settle(state);
+      if (!state.alive) {
+        if (this.slain.size > 0 && this.slain.delete(state)) this.report(EVENT_DEATH, state.x, state.y, this.members[i].hue);
+        this.remove(i);
+      }
     }
+    this.slain.clear();
 
     n = members.length;
     first = n > 0 ? this.rng.int(n) : 0;
@@ -399,6 +415,7 @@ export class Ecosystem {
       s.energy += sp.eatEfficiency * prey.energy + sp.eatBaseline;
       prey.energy = 0;
       prey.alive = false;
+      this.slain.add(prey);
       hunter.kills++;
       this.counts[members[best]!.species]!.eaten++;
     }
@@ -443,9 +460,32 @@ export class Ecosystem {
     const eco = this.config.eco;
     if (!a.alive || !b.alive) return; // an eaten prey; everyone else is alive until settle
     if (!collide(a, b, radius, e, this.contact)) return;
-    if (eco.collisionDamage) hurt(a, b, this.contact.speed, eco.damagePerSpeed);
+    if (eco.collisionDamage) {
+      const fresh = a.energy > 0 && b.energy > 0 && this.contact.speed > 0; // else hurt does nothing
+      hurt(a, b, this.contact.speed, eco.damagePerSpeed);
+      if (fresh) this.noteHurt(a, b, eco.damagePerSpeed * this.contact.speed);
+    }
     keepInside(a, radius, width, height, this.config.creature.wallBounce);
     keepInside(b, radius, width, height, this.config.creature.wallBounce);
+  }
+
+  private noteHurt(a: CreatureState, b: CreatureState, loss: number): void {
+    if (loss >= BIG_IMPACT) this.report(EVENT_IMPACT, (a.x + b.x) / 2, (a.y + b.y) / 2, loss);
+    if (a.energy <= 0) this.slain.add(a);
+    if (b.energy <= 0) this.slain.add(b);
+  }
+
+  private report(kind: number, x: number, y: number, value: number): void {
+    if (this.eventCount >= EVENT_CAP) return;
+    this.events.set([kind, x, y, value], this.eventCount++ * EVENT_STRIDE);
+  }
+
+  // The events since the last call, or null for none.
+  drainEvents(): Float32Array | null {
+    if (this.eventCount === 0) return null;
+    const out = this.events.slice(0, this.eventCount * EVENT_STRIDE);
+    this.eventCount = 0;
+    return out;
   }
 
   private giveBirth(parent: EcoCreature): void {

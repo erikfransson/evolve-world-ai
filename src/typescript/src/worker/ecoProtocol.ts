@@ -67,6 +67,7 @@ export interface EcoSnapshot {
   buffer: ArrayBuffer; // transferred; see snapshotViews
   selected: SelectedDetails | null;
   bestRequest: number; // the last selectBest request handled, so the page ignores selections from before it
+  events?: Float32Array; // big impacts and deaths from collisions and hunts since the last snapshot, see EVENT_STRIDE in sim/ecosystem.ts; only when there are some
   history?: Float64Array; // [time, population, food] per sample, then each species' population with several species; only when it changed
   species?: SpeciesCount[]; // per species, with several species
   // Lineages, sent about once a second (and with the first and last snapshot of a run). With several species, each
