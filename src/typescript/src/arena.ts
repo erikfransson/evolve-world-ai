@@ -17,9 +17,10 @@ import { planOf, planUpkeep } from "./sim/sensors.ts";
 import type { BodyPlan } from "./sim/sensors.ts";
 import type { RlInMessage, RlIteration, RlOutMessage } from "./worker/rlProtocol.ts";
 import { BrainReplay } from "./ui/arenaBrain.ts";
-import { change, customEnv, envsForKind, planSummary } from "./ui/arenaPick.ts";
-import { addFavourite, loadFavourites, removeFavourite } from "./ui/arenaStore.ts";
-import { TILE_COUNTS, TileGrid } from "./ui/arenaTiles.ts";
+import { ARENA_KIND, bestFounder, change, customEnv, envsForKind, kindRejection, planSummary } from "./ui/arenaPick.ts";
+import { addFavourite, loadFavourites, loadSpeed, removeFavourite, saveSpeed } from "./ui/arenaStore.ts";
+import { DEFAULT_TILES, TILE_COUNTS, TileGrid } from "./ui/arenaTiles.ts";
+import { Zoom } from "./ui/arenaZoom.ts";
 import { $, durationText } from "./ui/page.ts";
 import { RewardGraph } from "./ui/rewardGraph.ts";
 import { initTooltips } from "./ui/tooltip.ts";
@@ -56,6 +57,7 @@ interface Run {
 let run: Run | null = null;
 
 const grid = new TileGrid($("tiles"));
+const zoom = new Zoom(grid, $("zoom"), { canvas: $<HTMLCanvasElement>("zoomCanvas"), title: $("zoomTitle"), stats: $("zoomStats") }, $("zoomClose"));
 const brainReplay = new BrainReplay($<HTMLCanvasElement>("brainView"));
 const graph = new RewardGraph($<HTMLCanvasElement>("rewardView"));
 const startBtn = $<HTMLButtonElement>("start");
@@ -64,7 +66,7 @@ const resetBtn = $<HTMLButtonElement>("reset");
 const settings = $<HTMLFieldSetElement>("settings");
 
 const radio = (name: string): string => document.querySelector<HTMLInputElement>(`input[name=${name}]:checked`)!.value;
-const kind = (): CreatureKind => radio("kind") as CreatureKind;
+const kind = (): CreatureKind => ARENA_KIND;
 const source = (): Source => radio("source") as Source;
 const input = (id: string): HTMLInputElement => $<HTMLInputElement>(id);
 
@@ -146,7 +148,8 @@ function resolveStart(): { learner: Learner; from: string } | string {
   }
   const file = src === "import" ? imported : favourites[Number(input("saved").value)];
   if (!file) return src === "import" ? "Choose a creature file." : "No creature saved in this browser yet.";
-  if (file.kind !== k) return `This creature is a ${file.kind}. Switch the kind to ${file.kind}.`;
+  const rejected = kindRejection(file.kind);
+  if (rejected) return rejected;
   return { learner: fileLearner(file), from: src === "import" ? `file ${file.name}` : `saved ${file.name}` };
 }
 
@@ -171,6 +174,7 @@ function showStart(): void {
 function fillFounders(): void {
   const sel = $<HTMLSelectElement>("founder");
   sel.replaceChildren(...pool.map((p, i) => new Option(`#${i + 1} · ${p.plan.rayCount} rays, hidden ${p.plan.hiddenLayers.join("+")} · fitness ${p.fitness.toFixed(0)}`, String(i))));
+  if (pool.length) sel.value = String(bestFounder(pool)); // the strongest founder shows learning soonest
   showStart();
 }
 
@@ -193,15 +197,13 @@ async function importFile(): Promise<void> {
     msg.textContent = "file too large";
   } else {
     const parsed = parseCreatureFile(await file.text());
-    if (typeof parsed === "string") {
+    const bad = typeof parsed === "string" ? parsed : kindRejection(parsed.kind);
+    if (bad || typeof parsed === "string") {
       msg.className = "msg error";
-      msg.textContent = parsed;
+      msg.textContent = bad ?? "";
     } else {
       imported = parsed;
-      msg.textContent = `${parsed.name} (${parsed.kind})`;
-      const radioEl = document.querySelector<HTMLInputElement>(`input[name=kind][value=${parsed.kind}]`)!;
-      radioEl.checked = true;
-      showEnvs();
+      msg.textContent = parsed.name;
     }
   }
   showStart();
@@ -353,17 +355,18 @@ function begin(): void {
   const start = resolveStart();
   const envs = selectedEnvs();
   if (typeof start === "string" || envs.length === 0) return;
-  const pop = Math.min(64, Math.max(4, Math.round(numberOf("pop", 16) / 2) * 2));
+  const pop = Math.min(64, Math.max(4, Math.round(numberOf("pop", 32) / 2) * 2));
   input("pop").value = String(pop);
   const tiles = Number(radio("tiles"));
-  const options = { pairs: pop / 2, sigma: numberOf("sigma", 0.08), lr: numberOf("lr", 0.02), decay: DECAY, episodes: Math.round(numberOf("episodes", 1)), iterations: Math.round(numberOf("iterations", 100)) };
+  const options = { pairs: pop / 2, sigma: numberOf("sigma", 0.08), lr: numberOf("lr", 0.02), decay: DECAY, episodes: Math.round(numberOf("episodes", 2)), iterations: Math.round(numberOf("iterations", 100)) };
   const seed = Math.floor(Math.random() * 0x7fffffff);
   run = { kind: kind(), envs, plan: { ...start.learner.plan, hiddenLayers: start.learner.plan.hiddenLayers.slice() }, from: start.from, iterations: options.iterations, its: [], startHeld: null, startPerEnv: null, latest: null };
   worker?.terminate();
   worker = new Worker(new URL("./worker/rlWorker.ts", import.meta.url), { type: "module" });
   worker.onmessage = (ev: MessageEvent<RlOutMessage>) => onMessage(ev.data);
   worker.onerror = (ev) => fail(ev.message);
-  grid.setCount(TILE_COUNTS.includes(tiles as 1) ? tiles : 9);
+  grid.setCount(TILE_COUNTS.includes(tiles as 1) ? tiles : DEFAULT_TILES);
+  zoom.close();
   grid.clear();
   brainReplay.reset();
   send({ type: "start", kind: run.kind, envs, learner: serialiseLearner(start.learner), options, tiles: grid.size, seed, poolUrl: POOL_URL, libraryUrl: LIBRARY_URL });
@@ -389,7 +392,7 @@ function onMessage(m: RlOutMessage): void {
   } else if (m.type === "iteration") run.its.push(m.it);
   else if (m.type === "learner") run.latest = { iter: m.iter, learner: m.learner };
   else if (m.type === "show") {
-    grid.show({ iter: m.iter, genome: m.genome, recordings: m.recordings, names: m.recordings.map((_, k) => run!.envs[k % run!.envs.length]!.name) }, performance.now());
+    grid.show({ iter: m.iter, genome: m.genome, recordings: m.recordings, names: m.recordings.map((_, k) => run!.envs[k % run!.envs.length]!.name), envCount: run.envs.length }, performance.now());
     $("note").hidden = true;
   } else if (m.type === "done") setState("idle");
   else if (m.type === "error") return fail(m.message);
@@ -400,6 +403,7 @@ function reset(): void {
   worker?.terminate();
   worker = null;
   run = null;
+  zoom.close();
   grid.clear();
   brainReplay.reset();
   $("note").textContent = "Design or pick a creature, choose environments, then press Start.";
@@ -530,14 +534,6 @@ $("layers").addEventListener("change", () => {
   showStart();
 });
 for (const id of ["rays", "fan", "sight", "memShort", "memLong"]) $(id).addEventListener("change", showStart);
-document.querySelectorAll<HTMLInputElement>("input[name=kind]").forEach((el) =>
-  el.addEventListener("change", () => {
-    showEnvs();
-    $("rivals").replaceChildren();
-    showCustom();
-    showStart();
-  }),
-);
 document.querySelectorAll<HTMLInputElement>("input[name=source]").forEach((el) => el.addEventListener("change", showStart));
 $("customBox").addEventListener("input", showCustom);
 $("customBox").addEventListener("change", showCustom);
@@ -551,11 +547,22 @@ $("brainOn").addEventListener("change", () => {
   brainReplay.reset();
 });
 $("iterations").addEventListener("change", render);
+const speedRadios = document.querySelectorAll<HTMLInputElement>("input[name=speed]");
+const speed = loadSpeed();
+grid.speed = speed;
+speedRadios.forEach((el) => {
+  el.checked = Number(el.value) === speed;
+  el.addEventListener("change", () => {
+    grid.speed = Number(el.value);
+    saveSpeed(grid.speed);
+  });
+});
+grid.onOpen = (k) => zoom.open(k);
 
 initTooltips($("tooltip"));
 buildNeuronInputs();
 fillDesign(planOf(worldConfig("forager")));
-grid.setCount(9);
+grid.setCount(DEFAULT_TILES);
 fillSaved();
 showEnvs();
 showCustom();

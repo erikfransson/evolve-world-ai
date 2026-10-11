@@ -8,17 +8,36 @@ export interface Show {
   genome: Float32Array;
   recordings: Recording[];
   names: string[]; // env name per recording
+  envCount: number; // recordings[k] plays env k % envCount
+}
+
+// Tile grid shapes: the desktop column count per tile count (phones use 2 columns in CSS).
+export const TILE_COUNTS = [1, 4, 6, 12] as const;
+export const DEFAULT_TILES = 12;
+export const tileColumns = (n: number): number => (n <= 1 ? 1 : n === 4 ? 2 : n === 6 ? 3 : 4);
+
+// "Forage box · best of iteration 42 · layout 3": the scenario, which learner, and which of that scenario's layouts (tile index within its env + 1).
+export function tileTitle(name: string, iter: number, k: number, envCount: number): string {
+  const learner = iter === 0 ? "starting creature" : `best of iteration ${iter}`;
+  return `${name} · ${learner} · layout ${Math.floor(k / Math.max(1, envCount)) + 1}`;
+}
+
+// The live result line of a recording; kills only when there were any.
+export const resultLine = (r: { food: number; kills: number; seconds: number }): string => `food ${r.food}${r.kills > 0 ? `, kills ${r.kills}` : ""}, alive ${r.seconds.toFixed(0)} s`;
+
+// Where the opened-large view draws: its canvas and caption lines.
+export interface ZoomTarget {
+  canvas: HTMLCanvasElement;
+  title: HTMLElement;
+  stats: HTMLElement;
 }
 
 interface Tile {
   box: HTMLElement;
   canvas: HTMLCanvasElement;
-  ctx: CanvasRenderingContext2D;
   title: HTMLElement;
   stats: HTMLElement;
 }
-
-export const TILE_COUNTS = [1, 4, 9] as const;
 
 // A grid of small canvases that replay the latest show. Each tile loops its own episode; a newer show waits until the longest one has played.
 export class TileGrid {
@@ -28,6 +47,11 @@ export class TileGrid {
   private t0 = 0;
   private readonly root: HTMLElement;
   private loop = 0; // seconds of the longest recording of the playing show
+  private clock = 0; // playback seconds into the playing show, advanced by real time times speed
+  private last = 0;
+  private zoom: { k: number; target: ZoomTarget } | null = null;
+  speed = 4; // playback seconds per real second
+  onOpen: (k: number) => void = () => {};
 
   constructor(root: HTMLElement) {
     this.root = root;
@@ -41,14 +65,22 @@ export class TileGrid {
     return this.playing;
   }
 
-  // Rebuilds the grid for n tiles (1, 4 or 9).
+  // Rebuilds the grid for n tiles (one of TILE_COUNTS).
   setCount(n: number): void {
-    const cols = Math.round(Math.sqrt(n));
-    this.root.style.setProperty("--cols", String(cols));
+    this.root.style.setProperty("--cols", String(tileColumns(n)));
     this.root.replaceChildren();
-    this.tiles = Array.from({ length: n }, () => {
+    this.tiles = Array.from({ length: n }, (_, k) => {
       const box = document.createElement("figure");
       box.className = "tile-box";
+      box.tabIndex = 0;
+      box.setAttribute("role", "button");
+      box.title = "Open large";
+      box.addEventListener("click", () => this.onOpen(k));
+      box.addEventListener("keydown", (ev) => {
+        if (ev.key !== "Enter" && ev.key !== " ") return;
+        ev.preventDefault();
+        this.onOpen(k);
+      });
       const canvas = document.createElement("canvas");
       const cap = document.createElement("figcaption");
       const title = document.createElement("b");
@@ -56,7 +88,7 @@ export class TileGrid {
       cap.append(title, stats);
       box.append(canvas, cap);
       this.root.append(box);
-      return { box, canvas, ctx: canvas.getContext("2d")!, title, stats };
+      return { box, canvas, title, stats };
     });
     if (this.playing) this.label();
   }
@@ -64,9 +96,16 @@ export class TileGrid {
   clear(): void {
     this.playing = this.queued = null;
     for (const t of this.tiles) {
+      t.box.hidden = false;
       t.title.textContent = "";
       t.stats.textContent = "";
     }
+  }
+
+  // Shows tile k's recording large in `target` (null closes it); it keeps following tile k when a new show arrives.
+  setZoom(k: number | null, target?: ZoomTarget): void {
+    this.zoom = k === null || !target ? null : { k, target };
+    if (this.playing) this.label();
   }
 
   show(s: Show, now: number): void {
@@ -76,41 +115,52 @@ export class TileGrid {
 
   private start(s: Show, now: number): void {
     this.playing = s;
-    this.t0 = now;
+    this.clock = 0;
+    this.last = now;
     this.loop = Math.max(0.1, ...s.recordings.map(loopSeconds));
     this.label();
   }
 
   private label(): void {
     const s = this.playing!;
+    const put = (k: number, title: HTMLElement, stats: HTMLElement): void => {
+      const rec = s.recordings[k]!;
+      title.textContent = tileTitle(s.names[k] ?? "", s.iter, k, s.envCount);
+      stats.textContent = resultLine(rec.result);
+    };
     this.tiles.forEach((t, k) => {
-      const rec = s.recordings[k];
-      t.box.hidden = !rec;
-      if (!rec) return;
-      t.title.textContent = s.names[k] ?? "";
-      const r = rec.result;
-      t.stats.textContent = `food ${r.food}, kills ${r.kills}, alive ${r.seconds.toFixed(0)} s`;
+      t.box.hidden = !s.recordings[k];
+      if (s.recordings[k]) put(k, t.title, t.stats);
     });
+    if (this.zoom && s.recordings[this.zoom.k]) put(this.zoom.k, this.zoom.target.title, this.zoom.target.stats);
   }
 
-  // Draws every tile; returns tile 0's recording and frame for the brain view.
+  // Draws every tile and the opened one; returns tile 0's recording and frame for the brain view.
   draw(now: number): { rec: Recording; frame: number } | null {
-    if (this.queued && (now - this.t0) / 1000 >= this.loop) {
+    this.clock += Math.min(0.25, Math.max(0, (now - this.last) / 1000)) * this.speed; // the cap keeps a background tab from jumping ahead
+    this.last = now;
+    if (this.queued && this.clock >= this.loop) {
       this.start(this.queued, now);
       this.queued = null;
     }
     const s = this.playing;
-    const elapsed = (now - this.t0) / 1000;
     let first: { rec: Recording; frame: number } | null = null;
+    const paint = (rec: Recording, canvas: HTMLCanvasElement): number => {
+      const dpr = fitCanvas(canvas);
+      const ctx = canvas.getContext("2d")!;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const f = frameAt(rec, this.clock); // each tile loops its own episode; a new show starts when the longest has played
+      drawArena(ctx, rec, f, canvas.clientWidth, canvas.clientHeight);
+      return f;
+    };
     this.tiles.forEach((tile, k) => {
       const rec = s?.recordings[k];
       if (!rec) return;
-      const dpr = fitCanvas(tile.canvas);
-      tile.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      const f = frameAt(rec, elapsed); // each tile loops its own episode; a new show starts when the longest has played
-      drawArena(tile.ctx, rec, f, tile.canvas.clientWidth, tile.canvas.clientHeight);
+      const f = paint(rec, tile.canvas);
       if (k === 0) first = { rec, frame: f };
     });
+    const zoomRec = this.zoom && s?.recordings[this.zoom.k];
+    if (this.zoom && zoomRec) paint(zoomRec, this.zoom.target.canvas);
     return first;
   }
 }

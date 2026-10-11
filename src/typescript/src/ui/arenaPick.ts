@@ -46,3 +46,18 @@ export function customEnv(form: CustomEnvForm, id: string, kind: CreatureKind): 
     role,
   );
 }
+
+// Only foragers can train on this page for now; prey and predator code paths stay for later.
+export const ARENA_KIND: CreatureKind = "forager";
+
+// The reason a creature file of this kind cannot be used here, or null.
+export const kindRejection = (kind: CreatureKind): string | null => (kind === ARENA_KIND ? null : `This is a ${kind}: only foragers can train here for now.`);
+
+// Index of the pool entry with the highest fitness (the first on ties), or 0 for an empty pool.
+export function bestFounder(pool: readonly { fitness: number }[]): number {
+  let best = 0;
+  pool.forEach((p, i) => {
+    if (p.fitness > pool[best]!.fitness) best = i;
+  });
+  return best;
+}

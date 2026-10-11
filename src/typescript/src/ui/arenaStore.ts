@@ -43,3 +43,25 @@ export function addFavourite(file: CreatureFile, store: Store | null = defaultSt
 export function removeFavourite(index: number, store: Store | null = defaultStore()): boolean {
   return write(loadFavourites(store).filter((_, i) => i !== index), store);
 }
+
+// Replay speed choice, kept per browser.
+export const SPEED_KEY = "evolve-arena-speed";
+export const SPEEDS = [1, 2, 4, 8] as const;
+export const DEFAULT_SPEED = 4;
+
+export function loadSpeed(store: Pick<Storage, "getItem"> | null = defaultStore()): number {
+  try {
+    const v = Number(store?.getItem(SPEED_KEY));
+    return (SPEEDS as readonly number[]).includes(v) ? v : DEFAULT_SPEED;
+  } catch {
+    return DEFAULT_SPEED;
+  }
+}
+
+export function saveSpeed(speed: number, store: Pick<Storage, "setItem"> | null = defaultStore()): void {
+  try {
+    store?.setItem(SPEED_KEY, String(speed));
+  } catch {
+    /* storage unavailable: the choice just is not remembered */
+  }
+}

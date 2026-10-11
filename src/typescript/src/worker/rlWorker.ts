@@ -42,7 +42,7 @@ async function train(msg: Extract<RlInMessage, { type: "start" }>, mine: number)
   if (token !== mine) return;
   const helpersHere = (helpers = createBrowserRlPool({ envs: msg.envs, plan: msg.learner.plan, pool, library }));
   const plan = msg.learner.plan;
-  const tiles = Math.max(1, Math.min(9, msg.tiles));
+  const tiles = Math.max(1, Math.min(12, msg.tiles));
   const trainer = new Trainer(Float32Array.from(msg.learner.genome), msg.options, helpersHere, msg.envs.length, msg.options.episodes, msg.seed);
   const t0 = performance.now();
   const start = await trainer.held(HELD_SEEDS);
