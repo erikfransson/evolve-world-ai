@@ -1,59 +1,49 @@
 // @vitest-environment happy-dom
-import { drawCreaturePreview, previewSight } from "../../src/typescript/src/ui/creaturePreview.ts";
+import { drawCreaturePreview } from "../../src/typescript/src/ui/creaturePreview.ts";
+import { PreviewScene } from "../../src/typescript/src/ui/previewScene.ts";
+import { layerSizes, randomGenome } from "../../src/typescript/src/sim/brain.ts";
+import { layoutConfig } from "../../src/typescript/src/sim/rl/env.ts";
+import { createRng } from "../../src/typescript/src/sim/rng.ts";
 import type { BodyPlan } from "../../src/typescript/src/sim/sensors.ts";
 import { badCoordinateCalls, fakeCtx } from "./helpers.ts";
 
+const config = layoutConfig("ecosystem");
 const plan = (over: Partial<BodyPlan> = {}): BodyPlan => ({ rayCount: 5, raySpread: (120 * Math.PI) / 180, rayLength: 180, hiddenLayers: [12], memoryShort: 2, memoryLong: 2, ...over });
-// Each ray line starts at the edge of the body (radius 12 around the origin).
-const rayMoves = (calls: { name: string; args: unknown[] }[]) => calls.filter((c) => c.name === "moveTo" && Math.abs(Math.hypot(c.args[0] as number, c.args[1] as number) - 12) < 1e-6);
+const scene = (p: BodyPlan) => new PreviewScene(config, p, randomGenome(layerSizes(config, p), createRng(5)));
+// Ray lines start at the edge of the body, so they are the strokes whose moveTo is one radius from the creature centre.
+const rayMoves = (s: PreviewScene, calls: { name: string; args: unknown[] }[]) => {
+  const { x, y } = s.creature.state;
+  return calls.filter((c) => c.name === "moveTo" && Math.abs(Math.hypot((c.args[0] as number) - x, (c.args[1] as number) - y) - 12) < 1e-6);
+};
 
 describe("drawCreaturePreview", () => {
-  it("draws every ray once from the body", () => {
+  it("draws every ray once from the body, to finite coordinates", () => {
     for (const n of [1, 5, 32]) {
-      const { ctx, calls } = fakeCtx();
-      drawCreaturePreview(ctx, plan({ rayCount: n }), 300, 300);
-      expect(rayMoves(calls)).toHaveLength(n);
-      expect(badCoordinateCalls(calls)).toEqual([]);
+      const s = scene(plan({ rayCount: n }));
+      for (const t of [0, 3.3, 9]) {
+        s.t = 0;
+        s.step(t);
+        const { ctx, calls } = fakeCtx();
+        drawCreaturePreview(ctx, s, 480, 330);
+        expect(rayMoves(s, calls)).toHaveLength(n);
+        expect(badCoordinateCalls(calls)).toEqual([]);
+      }
     }
   });
 
-  it("handles a full 360 degree spread and a single ray without bad coordinates", () => {
-    for (const p of [plan({ raySpread: 2 * Math.PI, rayCount: 8 }), plan({ rayCount: 1, raySpread: 0.1 })]) {
-      const { ctx, calls } = fakeCtx();
-      drawCreaturePreview(ctx, p, 300, 300);
-      expect(badCoordinateCalls(calls)).toEqual([]);
-    }
-  });
-
-  it("labels the sight length and ends the rays at that length", () => {
+  it("handles a full 360 degree spread and labels the sight length", () => {
+    const s = scene(plan({ raySpread: 2 * Math.PI, rayCount: 8, rayLength: 140 }));
+    s.step(1);
     const { ctx, calls } = fakeCtx();
-    drawCreaturePreview(ctx, plan({ rayCount: 1, rayLength: 140 }), 300, 300);
+    drawCreaturePreview(ctx, s, 300, 200);
+    expect(badCoordinateCalls(calls)).toEqual([]);
     expect(calls.some((c) => c.name === "fillText" && String(c.args[0]).includes("140"))).toBe(true);
-    expect(calls.some((c) => c.name === "lineTo" && Math.abs((c.args[0] as number) - 140) < 1e-6 && Math.abs(c.args[1] as number) < 1e-6)).toBe(true);
   });
 
   it("draws nothing on a zero-size canvas", () => {
     const { ctx, calls } = fakeCtx();
-    drawCreaturePreview(ctx, plan(), 0, 0);
+    drawCreaturePreview(ctx, scene(plan()), 0, 0);
     expect(calls.some((c) => c.name === "arc")).toBe(false);
     expect(badCoordinateCalls(calls)).toEqual([]);
-  });
-});
-
-
-describe("previewSight", () => {
-  const plan = (rayCount: number, spreadDeg: number) => ({ rayCount, raySpread: (spreadDeg * Math.PI) / 180, rayLength: 180, hiddenLayers: [8], memoryShort: 0, memoryLong: 0 });
-
-  it("puts the food on the ray nearest straight ahead and the poison on another ray", () => {
-    const hits = previewSight(plan(5, 120));
-    expect(hits.filter((h) => h.kind === "food")).toHaveLength(1);
-    expect(hits.filter((h) => h.kind === "poison")).toHaveLength(1);
-    expect(hits[2]!.kind).toBe("food"); // the middle ray points straight ahead
-    for (const h of hits) expect(h.distance).toBeLessThanOrEqual(180);
-  });
-
-  it("leaves an item unseen when no ray points near it", () => {
-    const hits = previewSight(plan(1, 0));
-    expect(hits.map((h) => h.kind)).toEqual(["food"]);
   });
 });

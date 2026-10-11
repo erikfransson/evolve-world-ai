@@ -65,6 +65,17 @@ describe.each(["es", "backprop"] as const)("ArenaRun with %s", (method) => {
     expect(lastHeld?.type === "iteration" && lastHeld.it.perEnv).toHaveLength(2);
   });
 
+  it("gives the same results with Gentle on CPU, which only paces the steps", async () => {
+    const scores = async (gentle: boolean): Promise<number[]> => {
+      const out: RlOutMessage[] = [];
+      const run = new ArenaRun({ ...start(3), gentle }, assets, inline, (m) => out.push(m));
+      run.setGentle(gentle);
+      await run.run();
+      return out.flatMap((m) => (m.type === "iteration" ? [m.it.train, m.it.best] : []));
+    };
+    expect(await scores(true)).toEqual(await scores(false));
+  });
+
   it("rejects when the helpers fail, so the worker can report it", async () => {
     const broken: RlPort = { post: () => {}, onMessage: () => {}, onError: (cb) => queueMicrotask(() => cb(new Error("boom"))), terminate: () => {} };
     const run = new ArenaRun(start(3), assets, (setup) => new RlPool([broken], setup, () => broken), () => {});

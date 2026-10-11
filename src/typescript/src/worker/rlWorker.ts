@@ -4,6 +4,7 @@ import type { Library } from "../sim/rl/env.ts";
 import { parseLibrary } from "../sim/rl/library.ts";
 import { ArenaRun } from "./arenaRun.ts";
 import { createBrowserRlPool } from "./browserPool.ts";
+import { defaultThreads } from "./evalPool.ts";
 import type { RlInMessage, RlOutMessage } from "./rlProtocol.ts";
 
 // The Arena's worker: loads the seed pool and the library once, and runs one ArenaRun at a time (the page makes a new
@@ -26,6 +27,8 @@ const loadAssets = (poolUrl: string, libraryUrl: string): Promise<{ pool: PoolEn
       .catch((): Library => parseLibrary(null)),
   ]).then(([pool, library]) => ({ pool, library })));
 
+const gentleThreads = (gentle: boolean): number => defaultThreads(navigator.hardwareConcurrency || 2, gentle);
+
 // Anything that escapes a run's own error handling still reaches the page with its message.
 self.addEventListener("error", (e) => {
   e.preventDefault();
@@ -42,7 +45,7 @@ self.onmessage = (e: MessageEvent<RlInMessage>) => {
     if (!msg.envs.length) return report("choose at least one environment");
     void loadAssets(msg.poolUrl, msg.libraryUrl)
       .then((loaded) => {
-        const r = (run = new ArenaRun(msg, loaded, createBrowserRlPool, post));
+        const r = (run = new ArenaRun(msg, loaded, (setup) => createBrowserRlPool(setup, gentleThreads(msg.gentle ?? false)), post));
         for (const m of early) apply(m);
         early = [];
         return r.run().catch((error) => {
@@ -59,5 +62,6 @@ function apply(msg: RlInMessage): void {
   if (msg.type === "pause") run?.pause();
   else if (msg.type === "resume") run?.resume();
   else if (msg.type === "envs") run?.setEnvs(msg.envs);
+  else if (msg.type === "gentle") run?.setGentle(msg.on);
   else if (msg.type === "show") run?.wantShow();
 }

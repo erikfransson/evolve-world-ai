@@ -159,7 +159,7 @@ describe("checkEnv", () => {
     expect(typeof checkEnv(fence, "ecosystem", 0)).toBe("object");
     expect(checkEnv({ ...fence, layout: { kind: "fence", gap: 300 } }, "ecosystem", 0)).toMatch(/gap/);
     expect(checkEnv({ ...fence, layout: { kind: "patch", radius: 300 } }, "ecosystem", 0)).toMatch(/radius/);
-    expect(checkEnv({ ...fence, rivals: [{ species: 0, count: 1, source: "random" }] }, "ecosystem", 0)).toMatch(/walls with rivals/);
+    expect(checkEnv({ ...fence, rivals: [{ species: 0, count: 1, source: "random" }] }, "ecosystem", 0)).toMatch(/does not take rivals/);
   });
 
   it("keeps custom ids apart from the built-in ones", () => {
@@ -213,5 +213,17 @@ describe("env groups", () => {
     expect(groupOf(envById("brawl")!)).toBe("Compete");
     expect(groupOf(envById("aggressor")!)).toBe("Fight");
     expect(groupOf(envById("poison-field")!)).toBe("Advanced");
+  });
+});
+
+describe("hidden food in envs", () => {
+  it("hides food only on the JS sense path, which RL envs use", () => {
+    const env = envById("flash")!;
+    const config = envConfig(env, 1);
+    expect(config.eco.wasm).toBe(false);
+    const eco = new Ecosystem({ ...config, eco: { ...config.eco, wasm: true } }, null, { cast: castFor(env, config, randomLearner(env, 1), 1, null, {}) });
+    if (eco.wasm) expect(() => eco.setFoodHidden(true)).toThrow(/JS sense path/);
+    const r = runEpisode(env, randomLearner(env, 2), 3);
+    expect(r.seconds).toBeGreaterThan(0);
   });
 });

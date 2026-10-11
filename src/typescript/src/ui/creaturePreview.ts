@@ -1,96 +1,72 @@
-import { rayAngleOffsets } from "../sim/sensors.ts";
-import type { PlanView } from "../sim/sensors.ts";
+import { HIT_FOOD, HIT_POISON, HIT_WALL } from "../sim/types.ts";
 import { BACKGROUND, FLOOR, FOOD, POISON, WALL } from "./scene.ts";
+import { RAY_NONE, RAY_WALL } from "./palette.ts";
+import { ROOM_H, ROOM_W } from "./previewScene.ts";
+import type { PreviewScene } from "./previewScene.ts";
 
-// Live design preview of the Arena: the creature and its ray fan to scale with an example of what it sees, and a dot sketch of its brain.
-export const PREVIEW_ROOM = 200; // the Nibble environment, world units
-export const PREVIEW_RADIUS = 12; // creature radius, as in the ecosystem config
-const ITEM_R = 4;
+// Live design preview of the Arena: the creature moving through a small room with its ray fan to scale. The brain beside it is drawn by the page.
 const LEARNER = "#fbbf24";
 const OUTLINE = "rgba(5, 15, 10, 0.85)";
-const RAY = "#7dd3fc";
 const TEXT = "#9fb8ad";
+const STRIP = 24; // bottom band for the scale cue
 
-// What the preview's example scene shows each ray: food on the ray nearest straight ahead, poison on one to the side.
-export interface PreviewHit {
-  kind: "food" | "poison" | null;
-  distance: number; // world units from the body centre to the item, the ray's length when it sees nothing
-}
-
-const ITEM_SPOTS = [
-  { kind: "food" as const, angle: 0, at: 0.55 },
-  { kind: "poison" as const, angle: 0.6, at: 0.8 },
-];
-
-// The example items placed on the rays nearest to their angles (each ray sees at most one), and what every ray sees.
-export function previewSight(plan: PlanView): PreviewHit[] {
-  const offsets = rayAngleOffsets(plan);
-  const hits: PreviewHit[] = Array.from(offsets, () => ({ kind: null, distance: plan.rayLength }));
-  const taken = new Set<number>();
-  for (const spot of ITEM_SPOTS) {
-    let best = -1;
-    for (let k = 0; k < offsets.length; k++) if (!taken.has(k) && (best < 0 || Math.abs(offsets[k]! - spot.angle) < Math.abs(offsets[best]! - spot.angle))) best = k;
-    if (best < 0 || Math.abs(offsets[best]! - spot.angle) > 0.9) continue; // no ray points anywhere near: the item stays unseen
-    taken.add(best);
-    hits[best] = { kind: spot.kind, distance: spot.at * plan.rayLength };
-  }
-  return hits;
-}
-
-const HIT_COLOR = { food: FOOD, poison: POISON };
-
-// Draws the creature (centre, facing right) with its whole ray fan to scale, the sight range as a dashed ring, and the
-// example food and poison from previewSight, each ray coloured by what it sees, as in the game.
-export function drawCreaturePreview(ctx: CanvasRenderingContext2D, plan: PlanView, cssW: number, cssH: number): void {
+// Draws the room with its items, the creature and its rays, each ray coloured by what it hits and drawn to the real hit distance.
+export function drawCreaturePreview(ctx: CanvasRenderingContext2D, scene: PreviewScene, cssW: number, cssH: number): void {
   ctx.fillStyle = BACKGROUND;
   ctx.fillRect(0, 0, cssW, cssH);
-  const reach = plan.rayLength + PREVIEW_RADIUS;
-  const pad = 26; // room for the labels
-  const scale = (Math.min(cssW, cssH) / 2 - pad) / reach;
+  const scale = Math.min((cssW - 8) / ROOM_W, (cssH - STRIP - 8) / ROOM_H);
   if (!(scale > 0)) return;
-  const offsets = rayAngleOffsets(plan);
-  const hits = previewSight(plan);
+  const { creature, world } = scene;
+  const plan = creature.plan;
+  const r = scene.config.creature.radius;
+  const x0 = (cssW - ROOM_W * scale) / 2;
+  const y0 = 4;
   ctx.save();
-  ctx.translate(cssW / 2, cssH / 2);
+  ctx.translate(x0, y0);
   ctx.scale(scale, scale);
   ctx.fillStyle = FLOOR;
+  ctx.fillRect(0, 0, ROOM_W, ROOM_H);
+  ctx.strokeStyle = WALL;
+  ctx.lineWidth = Math.max(2, 3 / scale);
+  ctx.strokeRect(0, 0, ROOM_W, ROOM_H);
+  for (let i = 0; i < world.count; i++) {
+    const kind = world.kinds[i];
+    if (kind !== HIT_FOOD && kind !== HIT_POISON) continue;
+    ctx.fillStyle = kind === HIT_FOOD ? FOOD : POISON;
+    ctx.beginPath();
+    ctx.arc(world.xs[i]!, world.ys[i]!, Math.max(world.itemRadius, 2 / scale), 0, 2 * Math.PI);
+    ctx.fill();
+  }
   ctx.beginPath();
-  ctx.arc(0, 0, plan.rayLength, 0, 2 * Math.PI);
-  ctx.fill();
+  ctx.rect(0, 0, ROOM_W, ROOM_H);
+  ctx.clip(); // the sight ring stops at the walls
+  const { x, y, heading } = creature.state;
   ctx.setLineDash([4 / scale, 4 / scale]);
   ctx.strokeStyle = WALL;
-  ctx.globalAlpha = 0.35;
+  ctx.globalAlpha = 0.3;
   ctx.lineWidth = 1 / scale;
+  ctx.beginPath();
+  ctx.arc(x, y, plan.rayLength, 0, 2 * Math.PI);
   ctx.stroke();
   ctx.setLineDash([]);
-  offsets.forEach((a, k) => {
-    const hit = hits[k]!;
+  const offsets = creature.rayOffsets;
+  creature.rays.forEach((ray, k) => {
+    const a = heading + offsets[k]!;
     const cos = Math.cos(a);
     const sin = Math.sin(a);
-    ctx.lineWidth = 1.4 / scale;
-    ctx.strokeStyle = hit.kind ? HIT_COLOR[hit.kind] : RAY;
-    ctx.globalAlpha = hit.kind ? 0.95 : 0.55;
+    const hit = ray.kind === HIT_FOOD || ray.kind === HIT_POISON || ray.kind === HIT_WALL;
+    const len = hit ? (1 - ray.closeness) * plan.rayLength : plan.rayLength;
+    ctx.strokeStyle = ray.kind === HIT_FOOD ? FOOD : ray.kind === HIT_POISON ? POISON : ray.kind === HIT_WALL ? RAY_WALL : RAY_NONE;
+    ctx.globalAlpha = ray.kind === HIT_FOOD || ray.kind === HIT_POISON ? 0.95 : hit ? 0.7 : 0.3;
+    ctx.lineWidth = 1.3 / scale;
     ctx.beginPath();
-    ctx.moveTo(cos * PREVIEW_RADIUS, sin * PREVIEW_RADIUS);
-    ctx.lineTo(cos * hit.distance, sin * hit.distance);
+    ctx.moveTo(x + cos * r, y + sin * r);
+    ctx.lineTo(x + cos * Math.max(r, len), y + sin * Math.max(r, len));
     ctx.stroke();
-    if (hit.kind) {
-      ctx.globalAlpha = 0.15; // the ray goes on unseen past what it hit
-      ctx.strokeStyle = RAY;
-      ctx.beginPath();
-      ctx.moveTo(cos * hit.distance, sin * hit.distance);
-      ctx.lineTo(cos * plan.rayLength, sin * plan.rayLength);
-      ctx.stroke();
-      ctx.globalAlpha = 1;
-      ctx.fillStyle = HIT_COLOR[hit.kind];
-      ctx.beginPath();
-      ctx.arc(cos * hit.distance, sin * hit.distance, Math.max(ITEM_R, 3 / scale), 0, 2 * Math.PI);
-      ctx.fill();
-    }
   });
   ctx.globalAlpha = 1;
   ctx.beginPath();
-  ctx.arc(0, 0, PREVIEW_RADIUS, 0, 2 * Math.PI);
+  ctx.arc(x, y, r, 0, 2 * Math.PI);
   ctx.fillStyle = LEARNER;
   ctx.fill();
   ctx.strokeStyle = "#fff7d6";
@@ -98,29 +74,29 @@ export function drawCreaturePreview(ctx: CanvasRenderingContext2D, plan: PlanVie
   ctx.stroke();
   ctx.strokeStyle = OUTLINE; // heading line
   ctx.beginPath();
-  ctx.moveTo(0, 0);
-  ctx.lineTo(PREVIEW_RADIUS * 1.5, 0);
+  ctx.moveTo(x, y);
+  ctx.lineTo(x + Math.cos(heading) * r * 1.5, y + Math.sin(heading) * r * 1.5);
   ctx.stroke();
   ctx.restore();
-  // Scale bar for the sight length, along the bottom edge, and the body size for reference.
-  const y = cssH - 20;
-  const x0 = (cssW - plan.rayLength * scale) / 2;
-  const x1 = x0 + plan.rayLength * scale;
+  // Scale cue under the room: the body's width and the sight length as a bar.
+  const by = cssH - STRIP / 2;
+  const bx0 = x0;
+  const bx1 = bx0 + plan.rayLength * scale;
   ctx.strokeStyle = TEXT;
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(x0, y - 3);
-  ctx.lineTo(x0, y + 3);
-  ctx.moveTo(x0, y);
-  ctx.lineTo(x1, y);
-  ctx.moveTo(x1, y - 3);
-  ctx.lineTo(x1, y + 3);
+  ctx.moveTo(bx0, by - 3);
+  ctx.lineTo(bx0, by + 3);
+  ctx.moveTo(bx0, by);
+  ctx.lineTo(bx1, by);
+  ctx.moveTo(bx1, by - 3);
+  ctx.lineTo(bx1, by + 3);
   ctx.stroke();
   ctx.fillStyle = TEXT;
   ctx.font = "11px system-ui, sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "top";
-  ctx.fillText(`sight ${Math.round(plan.rayLength)}`, (x0 + x1) / 2, y + 4);
+  ctx.textBaseline = "middle";
   ctx.textAlign = "left";
-  ctx.fillText(`body ${2 * PREVIEW_RADIUS} wide`, 10, 10);
+  ctx.fillText(`sight ${Math.round(plan.rayLength)}`, bx1 + 6, by);
+  ctx.textAlign = "right";
+  ctx.fillText(`body ${2 * r} wide`, x0 + ROOM_W * scale, by);
 }

@@ -74,7 +74,7 @@ export interface RunConfig {
   bpEpisodes: number; // backprop episodes per update
 }
 
-export const DEFAULT_RUN: RunConfig = { method: "es", population: 500, iterations: 5000, episodes: 1, sigma: 0.08, lr: 0.02, tiles: "12", bpLr: 0.003, bpEpisodes: 16 };
+export const DEFAULT_RUN: RunConfig = { method: "es", population: 100, iterations: 5000, episodes: 1, sigma: 0.08, lr: 0.02, tiles: "12", bpLr: 0.003, bpEpisodes: 16 };
 
 const rr = range<RunConfig>;
 const es = (c: RunConfig): boolean => c.method === "es";

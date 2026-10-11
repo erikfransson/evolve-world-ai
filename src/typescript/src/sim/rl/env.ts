@@ -53,6 +53,7 @@ export interface EnvSpec {
   collisionDamage?: boolean; // bumps cost energy and a creature killed by one gives its energy to the other
   learnerEnergy?: number; // the learner's start energy, the species' when left out
   poisonDamage?: number; // energy one poison item drains; lethal when left out (POISON_LETHAL)
+  foodVisibleFor?: number; // seconds: after this, rays pass through food (it stays edible), so finding it takes memory
   // Per item, per kill, per second alive, x energy signal at the end, and per second left when the learner has eaten all the
   // starting food itself (without regrowth the episode then ends early, the learner counting as alive to the end).
   // ram: per rival that dies touching the learner while collision damage is on.
@@ -145,14 +146,18 @@ export function randomLearner(env: Pick<EnvSpec, "world" | "role">, seed: number
 export const BLANK_ENV: EnvSpec = { id: "", name: "", description: "", world: "ecosystem", role: 0, size: [400, 400], food: 0, poison: 0, foodRegrow: 0, seconds: 1, rivals: [], reward: {}, tags: [] };
 
 // The learner (founder id 0) and the rivals of one episode, placed at random from the seed.
-export function castFor(env: EnvSpec, config: EcoConfig, learner: Learner, seed: number, pool: readonly PoolEntry[] | null, library: Library, start?: { x: number; y: number }): CastMember[] {
+export function castFor(env: EnvSpec, config: EcoConfig, learner: Learner, seed: number, pool: readonly PoolEntry[] | null, library: Library, start?: { x: number; y: number; heading?: number }): CastMember[] {
   const rng = createRng(deriveSeed(seed, 0xca57));
   const r = config.creature.radius;
   const [w, h] = env.size;
   const species = speciesList(config);
   const place = (sp: number, plan: PlanView, genome: Genome, hue: number): CastMember => ({ species: sp, plan, genome, x: rng.range(r, w - r), y: rng.range(r, h - r), heading: rng.next() * 2 * Math.PI, hue });
   const me = place(env.role, learner.plan, learner.genome, 48);
-  if (start) Object.assign(me, start);
+  if (start) {
+    me.x = start.x;
+    me.y = start.y;
+    if (start.heading !== undefined) me.heading = start.heading;
+  }
   if (env.learnerEnergy !== undefined) me.energy = env.learnerEnergy;
   const cast = [me];
   for (const rv of env.rivals) {
@@ -216,7 +221,9 @@ export function runEpisode(
   let minY = Infinity; // the learner's highest point (walls run across, the food lies above them)
   // Only speed-scored envs without regrowth end early, and only when the learner itself ate every item (not a rival).
   const clearable = env.reward.fast !== undefined && env.food > 0 && env.foodRegrow === 0;
+  const hideAt = env.foodVisibleFor === undefined ? Infinity : Math.round(env.foodVisibleFor / config.dt);
   for (let t = 0; t < ticks; t++) {
+    if (t === hideAt) eco.setFoodHidden(true);
     if (act) {
       eco.prepareTick();
       eco.sensePhase(0, eco.members.length);
@@ -292,21 +299,24 @@ export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | s
   }
   if (v.learnerEnergy !== undefined && !n(v.learnerEnergy, L.energy)) return `start energy must be ${L.energy[0]} to ${L.energy[1]}`;
   if (v.poisonDamage !== undefined && !n(v.poisonDamage, L.poisonDamage)) return `poison damage must be ${L.poisonDamage[0]} to ${L.poisonDamage[1]}`;
+  if (v.foodVisibleFor !== undefined && !n(v.foodVisibleFor, [0, 60])) return "food may stay visible 0 to 60 s";
   let layout: Layout | undefined;
   if (v.layout !== undefined) {
     const l = v.layout as Record<string, unknown> | null;
     if (!l || !(LAYOUT_KINDS as readonly unknown[]).includes(l.kind)) return `layout must be one of ${LAYOUT_KINDS.join(", ")}`;
     const [sw, sh] = size as number[];
-    const round = l.kind === "patch" || l.kind === "islands"; // sized by a radius; ring by its lane; the walled ones by a gap; sprint by nothing
+    const fixed = l.kind === "sprint" || l.kind === "cuedoor" || l.kind === "flash"; // no size parameter
+    const round = l.kind === "patch" || l.kind === "islands"; // sized by a radius; ring by its lane; the walled ones by a gap
     const param = round ? l.radius : l.kind === "ring" ? l.lane : l.gap;
     // A patch must fit and three islands must fit apart; wall gaps leave wall on both sides of a door.
     const most = l.kind === "patch" ? Math.min(sw!, sh!) / 2 - 20 : l.kind === "islands" ? Math.min(sw!, sh!) / 6 - 10 : l.kind === "rooms" ? Math.min(sw!, sh!) / 4 - 20 : l.kind === "ring" ? Math.min(sw!, sh!) / 4 : sw! / 4;
-    if (l.kind !== "sprint" && !n(param, [L.layoutSize[0], Math.min(L.layoutSize[1], most)])) return `layout ${round ? "radius" : l.kind === "ring" ? "lane" : "gap"} must be ${L.layoutSize[0]} to ${Math.floor(Math.min(L.layoutSize[1], most))} for this world size`;
-    if ((l.kind === "fence" || l.kind === "maze" || l.kind === "rooms" || l.kind === "ring") && rivals.some((r) => r.count > 0)) return "walls with rivals are not supported yet";
+    if (!fixed && !n(param, [L.layoutSize[0], Math.min(L.layoutSize[1], most)])) return `layout ${round ? "radius" : l.kind === "ring" ? "lane" : "gap"} must be ${L.layoutSize[0]} to ${Math.floor(Math.min(L.layoutSize[1], most))} for this world size`;
+    if (l.kind !== "patch" && l.kind !== "islands" && l.kind !== "sprint" && rivals.some((r) => r.count > 0)) return "this layout does not take rivals yet";
     if (l.near !== undefined && !(Number.isInteger(l.near) && (l.near as number) >= 0 && (l.near as number) <= (v.food as number))) return "near food must be a whole number up to the food count";
     const nearOf = l.near === undefined ? {} : { near: l.near as number };
     layout =
       l.kind === "sprint" ? { kind: "sprint", ...nearOf }
+      : l.kind === "cuedoor" || l.kind === "flash" ? { kind: l.kind }
       : l.kind === "patch" || l.kind === "islands" ? { kind: l.kind, radius: param as number }
       : l.kind === "rooms" ? { kind: "rooms", gap: param as number, ...nearOf }
       : l.kind === "ring" ? { kind: "ring", lane: param as number }
@@ -328,6 +338,7 @@ export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | s
     ...(v.collisionDamage === true ? { collisionDamage: true } : {}),
     ...(v.learnerEnergy === undefined ? {} : { learnerEnergy: v.learnerEnergy as number }),
     ...(v.poisonDamage === undefined ? {} : { poisonDamage: v.poisonDamage as number }),
+    ...(v.foodVisibleFor === undefined ? {} : { foodVisibleFor: v.foodVisibleFor as number }),
     reward,
     tags: ["custom"],
   };
