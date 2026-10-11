@@ -56,6 +56,7 @@ interface Run {
   startHeld: number | null;
   startPerEnv: number[] | null;
   latest: { iter: number; learner: StoredLearner } | null;
+  nextEnvs: EnvSpec[] | null; // sent while paused; they become envs when the worker confirms with "rebased", so earlier shows keep their names
 }
 let run: Run | null = null;
 
@@ -329,7 +330,7 @@ function begin(): void {
   const tiles = Number(cfg.tiles);
   const options = { pairs: Math.round(cfg.population / 2), sigma: cfg.sigma, lr: cfg.lr, decay: DECAY, episodes: cfg.episodes, iterations: cfg.iterations };
   const seed = Math.floor(Math.random() * 0x7fffffff);
-  run = { kind: kind(), envs, plan: { ...start.learner.plan, hiddenLayers: start.learner.plan.hiddenLayers.slice() }, from: start.from, iterations: options.iterations, its: [], startHeld: null, startPerEnv: null, latest: null };
+  run = { kind: kind(), envs, plan: { ...start.learner.plan, hiddenLayers: start.learner.plan.hiddenLayers.slice() }, from: start.from, iterations: options.iterations, its: [], startHeld: null, startPerEnv: null, latest: null, nextEnvs: null };
   worker?.terminate();
   worker = new Worker(new URL("./worker/rlWorker.ts", import.meta.url), { type: "module" });
   worker.onmessage = (ev: MessageEvent<RlOutMessage>) => onMessage(ev.data);
@@ -359,9 +360,14 @@ function onMessage(m: RlOutMessage): void {
     run.startHeld = m.held;
     run.startPerEnv = m.perEnv;
   } else if (m.type === "rebased") {
-    // The envs changed: held-out values now refer to the new set, so its start is the reference from here on.
+    // The envs changed: held-out values now refer to the new set, so its start is the reference from here on, and the
+    // re-measured value is the latest held-out point (so the stats and table never compare across env sets).
+    run.envs = run.nextEnvs ?? run.envs;
+    run.nextEnvs = null;
     run.startHeld = m.held;
     run.startPerEnv = m.perEnv;
+    const last = run.its[run.its.length - 1];
+    run.its.push({ iter: m.iter, train: last?.train ?? m.held, best: last?.best ?? m.held, held: m.held, perEnv: m.perEnv, seconds: last?.seconds ?? 0 });
   } else if (m.type === "iteration") run.its.push(m.it);
   else if (m.type === "learner") run.latest = { iter: m.iter, learner: m.learner };
   else if (m.type === "show") {
@@ -492,8 +498,8 @@ pauseBtn.addEventListener("click", () => {
   } else if (state === "paused") {
     const envs = selectedEnvs();
     if (!envs.length) return;
-    if (run && envs.map((e) => e.id).join() !== run.envs.map((e) => e.id).join()) {
-      run.envs = envs;
+    if (run && envs.map((e) => e.id).join() !== (run.nextEnvs ?? run.envs).map((e) => e.id).join()) {
+      run.nextEnvs = envs;
       send({ type: "envs", envs });
     }
     send({ type: "resume" });
