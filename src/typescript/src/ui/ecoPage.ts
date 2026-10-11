@@ -30,6 +30,8 @@ export interface EcoStats {
   simTime: number; // simulated seconds
   oldestDepth: number; // longest lineage among living creatures
   speed: number | null; // simulated seconds per real second achieved, null until measured
+  helpers: number; // helper threads sensing and thinking, 0 when the simulation runs on one thread
+  sharedMemory: boolean;
 }
 
 export interface EcoSelected {
@@ -105,6 +107,21 @@ function setTile(id: string, value: string | null, unit = ""): void {
   const e = $(id);
   e.textContent = value ?? "-";
   e.dataset.unit = value === null ? "" : unit; // unit is drawn by CSS
+}
+
+const SPEED_TIP = "Simulated seconds per real second the computer is achieving. It can be lower than the speed asked for.";
+
+// How the run uses the cores, for the speed tooltip.
+export function threadsText(helpers: number, shared: boolean): string {
+  if (helpers === 0) return "Runs on one thread.";
+  return `Runs on ${helpers + 1} threads (${helpers} ${helpers === 1 ? "helper" : "helpers"}), ${shared ? "in shared memory" : "by messages"}.`;
+}
+
+function setTip(tileId: string, text: string): void {
+  const tip = $(tileId).parentElement!.querySelector<HTMLElement>(".tip")!;
+  if (tip.dataset.tip === text) return;
+  tip.dataset.tip = text;
+  tip.setAttribute("aria-label", text);
 }
 
 // "8 rays · 75° · 100 range · 16 hidden · mem 2+2 · upkeep 0.45/s"; layers join with +, no memory reads "no mem".
@@ -218,6 +235,7 @@ export function createEcoView(handlers: EcoHandlers): EcoView {
       setTile("statTime", t && t.text, t?.unit);
       setTile("statDepth", s && nf.format(s.oldestDepth));
       setTile("statSpeed", s && s.speed !== null ? s.speed.toFixed(1) : null, " ×");
+      if (s) setTip("statSpeed", `${SPEED_TIP} ${threadsText(s.helpers, s.sharedMemory)}`);
     },
     setSelected(sel) {
       hasSelection = sel !== null;
