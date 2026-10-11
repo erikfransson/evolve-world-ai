@@ -133,7 +133,6 @@ function seriesRow(): Record<string, unknown> {
 }
 
 const controller = values.gentle ? new DutyController() : null;
-let sliceUnits = 0;
 const SLICE_MS = 12; // as EcoRunner
 let sliceStart = performance.now();
 let creatureTicks = 0;
@@ -144,7 +143,6 @@ let cpuWarm = process.cpuUsage();
 while (eco.tick < ticks && !eco.extinct) {
   if (eco.tick === warm) { tWarm = performance.now(); cpuWarm = process.cpuUsage(); }
   creatureTicks += eco.population;
-  sliceUnits += eco.population;
   if (helpers) await helpers.step(eco);
   else eco.step();
   if (eco.tick % every === 0) {
@@ -155,8 +153,7 @@ while (eco.tick < ticks && !eco.extinct) {
   if (seriesEvery && eco.tick % seriesEvery === 0) series.push(seriesRow());
   const now = performance.now();
   if (controller && now - sliceStart >= SLICE_MS) {
-    controller.observe(now - sliceStart, sliceUnits);
-    sliceUnits = 0;
+    controller.maybeProbe(now);
     const idle = idleMs(now - sliceStart, controller.duty());
     if (idle > 0) await new Promise((resolve) => setTimeout(resolve, idle));
     sliceStart = performance.now();

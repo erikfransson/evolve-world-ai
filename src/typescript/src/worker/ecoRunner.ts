@@ -33,7 +33,6 @@ export class EcoRunner {
   private readonly now: () => number;
   private paused = false;
   gentle: DutyController | null = null; // sets how much of the wall time the pump may compute, see pacer.ts; the helper threads idle with it, as they wait for this thread
-  private units = 0; // creature-ticks run so far, the measure of work for the controller
   private run = 0;
   private speed: EcoSpeedSetting = 1;
   private selectedId: number | null = null;
@@ -116,12 +115,11 @@ export class EcoRunner {
     if (!eco) return -1;
     const t0 = this.last;
     const began = this.now();
-    const units = this.units;
     while (this.wantTick(eco)) {
       eco.step();
       if (this.ticked(eco, t0)) break;
     }
-    return this.paced(this.settle(eco), began, units);
+    return this.paced(this.settle(eco), began);
   }
 
   // pump with the helper threads when there are any. A pool that fails, at the start or later, is dropped and the run
@@ -141,7 +139,6 @@ export class EcoRunner {
     if (!eco) return -1;
     const t0 = this.last;
     const began = this.now();
-    const units = this.units;
     pool.watch = this.selectedId;
     try {
       while (this.wantTick(eco)) {
@@ -151,15 +148,15 @@ export class EcoRunner {
     } catch (error) {
       this.dropHelpers(error);
     }
-    return this.paced(this.settle(eco), began, units);
+    return this.paced(this.settle(eco), began);
   }
 
   // The delay before the next pump, at least the idle time that keeps the work at the duty share; the ticks themselves are unchanged.
-  private paced(delay: number, began: number, units: number): number {
+  private paced(delay: number, began: number): number {
     const gentle = this.gentle;
     if (delay < 0 || !gentle) return delay;
+    gentle.maybeProbe(this.now());
     const end = this.now();
-    gentle.observe(end - began, this.units - units);
     return Math.max(delay, idleMs(end - began, gentle.duty()));
   }
 
@@ -196,7 +193,6 @@ export class EcoRunner {
   // Bookkeeping after one tick; true when the slice that began at t0 is used up.
   private ticked(eco: Ecosystem, t0: number): boolean {
     this.debt--;
-    this.units += eco.population;
     this.sampleIfDue(eco);
     return this.now() - t0 >= SLICE_MS;
   }

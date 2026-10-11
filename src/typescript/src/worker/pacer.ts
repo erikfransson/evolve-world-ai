@@ -5,12 +5,15 @@ export type Pressure = "nominal" | "fair" | "serious" | "critical"; // the Compu
 
 export const MIN_DUTY = 0.3; // gentle never works less than this share of the time
 const PRESSURE_DUTY: Record<Pressure, number> = { nominal: 1, fair: 1, serious: 0.6, critical: MIN_DUTY };
-const SMOOTHING = 0.2; // weight of the newest slice in the running cost
-const BASELINE_DRIFT = 0.001; // per slice, how fast the baseline follows a cost that stays above it (a changed workload, not contention)
-const BACK_OFF_RATIO = 1.4; // slices this much slower than the baseline mean another process is competing
-const RECOVER_RATIO = 1.15; // below this the competition is gone; between the two the duty is held (hysteresis)
+const PROBE_DRIFT = 0.001; // per probe, how fast the best time follows a time that stays above it (a slower clock, not contention)
+const PROBE_SMOOTHING = 0.3; // weight of the newest probe, which a context switch makes several times longer for a moment
+const BACK_OFF_RATIO = 1.5; // smoothed probe time this much above its best means another process is taking our core
+const RECOVER_RATIO = 1.2; // below this the competition is gone; between the two the duty is held (hysteresis)
 const BACK_OFF_STEP = 0.1;
 const RAMP_STEP = 0.05;
+const PROBE_GAP_MS = 100; // time between probes
+const PROBE_RUNS = 15; // about 3 ms of fixed work: long enough that a competing process gets the core during it, as it does while we compute
+const PROBE_ITERATIONS = 5_000; // about 0.2 ms per run
 
 // Idle time that follows a slice of workMs so that work is a share duty of the total: w * (1 - d) / d.
 export function idleMs(workMs: number, duty: number): number {
@@ -26,24 +29,33 @@ export function gentleCount(normal: number, cores: number): number {
 }
 
 // Decides the duty (share of wall time to compute) from the machine's CPU pressure, when the browser reports it,
-// and from our own slices: a unit of work taking clearly longer than its usual best means others share our core.
+// and from a fixed calibration probe: it does the same work every time, so if it takes clearly longer than its best,
+// other processes are sharing our core. The size of the simulation never enters, only the CPU we get.
 export class DutyController {
   private pressureDuty = 1;
   private contentionDuty = 1;
-  private cost = 0; // smoothed ms per unit of work
-  private baseline = 0; // the lowest smoothed cost, creeping up slowly
+  private smoothed = 0; // recent probe times
+  private best = 0; // the lowest smoothed time, creeping up slowly
+  private probedAt = -Infinity;
 
   setPressure(state: Pressure): void {
     this.pressureDuty = PRESSURE_DUTY[state];
   }
 
-  // A slice of workMs that did `units` of work (ticks times creatures, creatures evaluated, ...).
-  observe(workMs: number, units: number): void {
-    if (!(workMs > 0) || !(units > 0)) return;
-    const c = workMs / units;
-    this.cost = this.cost === 0 ? c : this.cost + SMOOTHING * (c - this.cost);
-    this.baseline = this.baseline === 0 || this.cost < this.baseline ? this.cost : this.baseline + BASELINE_DRIFT * (this.cost - this.baseline);
-    const ratio = this.cost / this.baseline;
+  // Runs a probe if the last one was PROBE_GAP_MS ago. Call right after a stretch of work: a thread that has slept gets the core
+  // at once, so a probe after sleeping would not notice a competitor; one that was just computing has to share it.
+  maybeProbe(nowMs: number): void {
+    if (nowMs - this.probedAt < PROBE_GAP_MS) return;
+    this.probedAt = nowMs;
+    this.probe(runProbe());
+  }
+
+  // One probe took wallMs, see runProbe.
+  probe(wallMs: number): void {
+    if (!(wallMs > 0)) return;
+    this.smoothed = this.smoothed === 0 ? wallMs : this.smoothed + PROBE_SMOOTHING * (wallMs - this.smoothed);
+    this.best = this.best === 0 || this.smoothed < this.best ? this.smoothed : this.best + PROBE_DRIFT * (this.smoothed - this.best);
+    const ratio = this.smoothed / this.best;
     if (ratio > BACK_OFF_RATIO) this.contentionDuty = Math.max(MIN_DUTY, this.contentionDuty - BACK_OFF_STEP);
     else if (ratio < RECOVER_RATIO) this.contentionDuty = Math.min(1, this.contentionDuty + RAMP_STEP);
   }
@@ -51,6 +63,19 @@ export class DutyController {
   duty(): number {
     return Math.min(this.pressureDuty, this.contentionDuty);
   }
+}
+
+let sink = 0; // keeps the probe loop from being optimised away
+
+// The calibration probe: a fixed amount of arithmetic, timed on this thread, in ms.
+export function runProbe(): number {
+  const t0 = performance.now();
+  for (let r = 0; r < PROBE_RUNS; r++) {
+    let x = 1;
+    for (let i = 0; i < PROBE_ITERATIONS; i++) x = (x * 1.0000001 + i) % 1000003;
+    sink += x;
+  }
+  return performance.now() - t0;
 }
 
 // Reports the CPU pressure state through the Compute Pressure API where the browser has it (Chrome 125+); does nothing elsewhere.
@@ -72,6 +97,7 @@ export function observePressure(onState: (state: Pressure) => void): void {
 export function gentleController(): DutyController {
   const controller = new DutyController();
   observePressure((state) => controller.setPressure(state));
+  runProbe(); // warm-up, so the JIT's first slow run is not the best
   return controller;
 }
 
