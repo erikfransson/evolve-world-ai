@@ -35,7 +35,7 @@ describe.each([1, 2, 3, 4, 5, 6])("EcoRunner under random messages (seed %i)", (
       expect(msg.count).toBe(msg.population);
       expect(msg.tick).toBeGreaterThanOrEqual(lastTick);
       lastTick = msg.tick;
-      const moved = msg.buffer.transfer(); // the page's copy
+      const moved: ArrayBuffer = structuredClone(msg.buffer, { transfer: [msg.buffer] }); // the page's copy; detaches the worker's
       expect(transfer).toContain(msg.buffer);
       held.push({ buffer: moved, run: msg.run });
       posted.push(msg);
@@ -59,7 +59,7 @@ describe.each([1, 2, 3, 4, 5, 6])("EcoRunner under random messages (seed %i)", (
     for (let i = 0; i < 300; i++) {
       const kind = rng.int(14);
       const stale = rng.int(3) === 0;
-      const run = current === null ? 1 : stale ? current + pick([-2, -1, 1, 5]) : current;
+      const run: number = current === null ? 1 : stale ? current + pick([-2, -1, 1, 5]) : current;
       const before = posted.length;
       let what: string = String(kind);
       switch (kind) {
@@ -81,7 +81,7 @@ describe.each([1, 2, 3, 4, 5, 6])("EcoRunner under random messages (seed %i)", (
           what = "recycle";
           const h = held.length ? held.splice(rng.int(held.length), 1)[0]! : null;
           const withRun = rng.int(3);
-          const ackRun = h ? (withRun === 0 ? undefined : stale ? h.run - 1 : h.run) : run;
+          const ackRun: number | undefined = h ? (withRun === 0 ? undefined : stale ? h.run - 1 : h.run) : run;
           if (h) give({ type: "recycle", buffer: h.buffer, ...(ackRun === undefined ? {} : { run: ackRun }) });
           else give({ type: "recycle", run });
           if (ackRun === undefined || ackRun === current) model = Math.max(0, model - 1);
