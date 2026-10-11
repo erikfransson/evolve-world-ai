@@ -1,5 +1,7 @@
-import { PREDATOR, PREY } from "./env.ts";
-import type { EnvSpec } from "./env.ts";
+import type { EnvSpec } from "./env.ts"; // types only, so env.ts can import this module without a cycle at load time
+
+export const PREY = 0; // species index of the forager / prey
+export const PREDATOR = 1;
 
 // The environment index. Ids are stable: keep an env's id when tuning it, add a new one for a new task.
 

@@ -6,7 +6,7 @@ import { layerSizes, randomGenome } from "./sim/brain.ts";
 import { createRng } from "./sim/rng.ts";
 import { loadPool } from "./sim/seedPool.ts";
 import type { PoolEntry } from "./sim/seedPool.ts";
-import { layoutConfig, poolLearner } from "./sim/rl/env.ts";
+import { layoutConfig, libraryFits, poolLearner } from "./sim/rl/env.ts";
 import type { EnvSpec, Learner, Rivals } from "./sim/rl/env.ts";
 import { ENVS } from "./sim/rl/envs.ts";
 import { KINDS, MAX_FILE_BYTES, creatureFile, fileLearner, parseCreatureFile } from "./sim/rl/creatureFile.ts";
@@ -277,7 +277,14 @@ function addRivalRow(r: Rivals = { species: 0, count: 2, source: "random" }): vo
   count.ariaLabel = "Rival count";
   const src = document.createElement("select");
   src.ariaLabel = "Rival brains";
-  src.append(new Option("random brains", "random"), new Option("seed pool", "pool"), ...ENVS.map((e) => new Option(`trained in ${e.name}`, `library:${e.id}`)));
+  // Only creatures trained as this world's foragers fit a forager rival slot (same input layout and species).
+  const { world, role } = KINDS[kind()];
+  src.append(
+    new Option("random brains", "random"),
+    new Option("seed pool", "pool"),
+    new Option("copies of itself", "self"),
+    ...ENVS.filter((e) => libraryFits(e.id, world, role)).map((e) => new Option(`trained in ${e.name}`, `library:${e.id}`)),
+  );
   src.value = r.source;
   const del = document.createElement("button");
   del.type = "button";

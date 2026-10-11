@@ -73,6 +73,7 @@ export function inlineRlPort(): RlPort {
   };
 }
 
+const STALL_MS = 120_000; // no result at all for this long fails the run: an episode takes well under a second
 const IN_FLIGHT = 2; // jobs queued per helper, so it never waits for the next one
 
 interface Run {
@@ -142,6 +143,7 @@ export class RlPool {
     if (!jobs.length) return Promise.resolve([]);
     return new Promise((resolve, reject) => {
       this.run = { jobs, results: new Array(jobs.length), next: 0, remaining: jobs.length, resolve, reject };
+      this.arm();
       this.dispatch();
     });
   }
@@ -166,9 +168,13 @@ export class RlPool {
     this.load.set(port, this.load.get(port)! - 1);
     r.results[done.id] = done;
     if (--r.remaining === 0) {
+      this.disarm();
       this.run = null;
       r.resolve(r.results);
-    } else this.dispatch();
+    } else {
+      this.arm();
+      this.dispatch();
+    }
   }
 
   private handleError(port: RlPort, error: unknown): void {
@@ -184,7 +190,21 @@ export class RlPool {
     this.dispatch();
   }
 
+  private watchdog: ReturnType<typeof setTimeout> | null = null;
+
+  // (Re)starts the no-progress timer of the running batch.
+  private arm(): void {
+    this.disarm();
+    this.watchdog = setTimeout(() => this.fail(new Error(`no episode result for ${STALL_MS / 1000} s, the helper threads seem stuck`)), STALL_MS);
+  }
+
+  private disarm(): void {
+    if (this.watchdog !== null) clearTimeout(this.watchdog);
+    this.watchdog = null;
+  }
+
   private fail(error: unknown): void {
+    this.disarm();
     if (this.broken) return;
     this.broken = { error };
     for (const port of this.ports) port.terminate();

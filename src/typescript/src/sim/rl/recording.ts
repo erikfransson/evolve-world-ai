@@ -10,6 +10,8 @@ export const CREATURE_FIELDS = 6; // x, y, heading, species, learner (1 or 0), e
 export interface Recording {
   width: number;
   height: number;
+  creatureRadius: number; // world units, from the env's config
+  itemRadius: number;
   dt: number; // simulated seconds per frame
   frames: number;
   itemStart: Int32Array; // frames + 1
@@ -34,6 +36,8 @@ export function recordEpisode(env: EnvSpec, learner: Learner, seed: number, pool
   const creatureStart = [0];
   const rayCount = learner.plan.rayCount;
   let dt = 0;
+  let creatureRadius = 0;
+  let itemRadius = 0;
   let tick = 0;
   let offsets = new Float32Array(rayCount);
   const inputs: number[] = [];
@@ -41,6 +45,8 @@ export function recordEpisode(env: EnvSpec, learner: Learner, seed: number, pool
   const result = runEpisode(env, learner, seed, pool, library, (eco) => {
     if (tick++ % every !== 0) return;
     dt = eco.config.dt * every;
+    creatureRadius = eco.config.creature.radius;
+    itemRadius = eco.config.world.itemRadius;
     const w = eco.world;
     for (let i = 0; i < w.count; i++) if (w.kinds[i] !== HIT_NONE) items.push(w.xs[i]!, w.ys[i]!, w.kinds[i]!);
     itemStart.push(items.length / 3);
@@ -61,6 +67,8 @@ export function recordEpisode(env: EnvSpec, learner: Learner, seed: number, pool
   return {
     width: env.size[0],
     height: env.size[1],
+    creatureRadius,
+    itemRadius,
     dt,
     frames: itemStart.length - 1,
     itemStart: Int32Array.from(itemStart),

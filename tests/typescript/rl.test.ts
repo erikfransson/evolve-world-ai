@@ -104,9 +104,9 @@ describe("library", () => {
   it("ignores prototype keys, and an env drawing rivals from them falls back to random ones", () => {
     const lib = parseLibrary(JSON.parse('{"version":1,"envs":{"__proto__":[{"plan":{}}],"constructor":[]}}'));
     expect(Object.getPrototypeOf(lib)).toBe(null);
-    const env = checkEnv({ ...envById("rivals")!, seconds: 5, rivals: [{ species: 0, count: 2, source: "library:constructor" }] }, "ecosystem", 0);
-    expect(typeof env).toBe("object");
-    expect(runEpisode(env as EnvSpec, randomLearner(envById("rivals")!, 1), 3, null, lib).seconds).toBeGreaterThan(0);
+    const raw: EnvSpec = { ...envById("rivals")!, seconds: 5, rivals: [{ species: 0, count: 2, source: "library:constructor" }] };
+    expect(checkEnv(raw, "ecosystem", 0)).toMatch(/library/); // the gate refuses it
+    expect(runEpisode(raw, randomLearner(raw, 1), 3, null, lib).seconds).toBeGreaterThan(0); // and an episode given it anyway falls back
   });
 });
 
@@ -184,5 +184,16 @@ describe("cleared boxes", () => {
       if (r.food < env.food) expect(r.reward).toBe(r.food);
       else expect(r.reward).toBeGreaterThan(r.food); // cleared before the end: food plus 0.1 per second left
     }
+  });
+});
+
+describe("library rivals", () => {
+  it("are only drawn from envs of the same world and species, so a layout never mismatches", () => {
+    const hunter = randomLearner(envById("hunt-grazers")!, 2); // a predator in the two-species layout
+    const lib = parseLibrary({ version: 1, envs: { "hunt-grazers": [serialiseLearner(hunter)] } });
+    expect(lib["hunt-grazers"]).toHaveLength(1);
+    const env: EnvSpec = { ...envById("nibble")!, seconds: 5, rivals: [{ species: 0, count: 2, source: "library:hunt-grazers" }] };
+    expect(() => runEpisode(env, randomLearner(env, 1), 3, null, lib)).not.toThrow();
+    expect(checkEnv(env, "ecosystem", 0)).toMatch(/library/);
   });
 });

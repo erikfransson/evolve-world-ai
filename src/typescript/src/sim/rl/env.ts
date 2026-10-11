@@ -13,6 +13,7 @@ import type { BodyPlan, PlanView } from "../sensors.ts";
 import { speciesList, speciesRanges } from "../species.ts";
 import type { Genome } from "../types.ts";
 import { plainText } from "./validate.ts";
+import { envById } from "./envs.ts";
 import { LAYOUT_KINDS, placeLayout } from "./layouts.ts";
 import type { Layout } from "./layouts.ts";
 
@@ -20,8 +21,7 @@ import type { Layout } from "./layouts.ts";
 // Ecosystem or The Great Hunt. An environment is plain data: a small world, the learner's species, rivals, and reward weights.
 
 export type EnvWorld = "ecosystem" | "hunt"; // the input layout: one species, or prey (0) and predators (1)
-export const PREY = 0;
-export const PREDATOR = 1;
+export { PREDATOR, PREY } from "./envs.ts";
 
 // Who the other creatures are: random genomes, seed-pool founders, or trained creatures from the library (by env id).
 // "self": copies of the learner's own current weights and its recent best candidates (self-play; the trainer keeps the
@@ -118,6 +118,12 @@ export function layoutConfig(world: EnvWorld): EcoConfig {
 // The genome length a creature of this plan needs in the world's input layout.
 export const genomeLengthIn = (world: EnvWorld, plan: PlanView): number => genomeLength(layerSizes(layoutConfig(world), plan));
 
+// True when creatures trained in env `id` fit a rival slot of this species in this world (same input layout and species).
+export const libraryFits = (id: string, world: EnvWorld, species: number): boolean => {
+  const from = envById(id);
+  return from !== undefined && from.world === world && from.role === species;
+};
+
 // The pool founder's genome in the env world's layout; converted once per entry and world, so treat the result as read only.
 export function poolLearner(env: Pick<EnvSpec, "world">, entry: PoolEntry): Learner {
   let l = converted[env.world].get(entry);
@@ -151,7 +157,7 @@ export function castFor(env: EnvSpec, config: EcoConfig, learner: Learner, seed:
     const hue = species[rv.species]!.hue < 0 ? 205 : species[rv.species]!.hue;
     for (let k = 0; k < rv.count; k++) {
       let rival: Learner;
-      const listId = rv.source === "self" ? SELF : rv.source.startsWith("library:") ? rv.source.slice(8) : null;
+      const listId = rv.source === "self" ? (rv.species === env.role ? SELF : null) : rv.source.startsWith("library:") && libraryFits(rv.source.slice(8), env.world, rv.species) ? rv.source.slice(8) : null;
       if (rv.source === "pool" && pool?.length) rival = poolLearner(env, pool[rng.int(pool.length)]!);
       else if (listId !== null && Object.hasOwn(library, listId) && library[listId]!.length) {
         const list = library[listId]!;
@@ -252,6 +258,8 @@ export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | s
     if (!Number.isInteger(rv.species) || (rv.species as number) < 0 || (rv.species as number) >= species) return "rival species does not exist in this world";
     if (!Number.isInteger(rv.count) || (rv.count as number) < 0) return "rival count must be a whole number";
     if (src !== "random" && src !== "pool" && src !== "self" && !(typeof src === "string" && /^library:[a-z0-9-]{1,40}$/.test(src))) return "rival source must be random, pool, self or library:<env id>";
+    if (typeof src === "string" && src.startsWith("library:") && !libraryFits(src.slice(8), world, rv.species as number)) return "library rivals must come from an env of this world whose learner is of the rival's species";
+    if (src === "self" && rv.species !== role) return "self rivals must be of the learner's species";
     if (rv.energy !== undefined && !n(rv.energy, L.energy)) return `rival energy must be ${L.energy[0]} to ${L.energy[1]}`;
     rivals.push({ species: rv.species as number, count: rv.count as number, source: src as RivalSource, ...(rv.energy === undefined ? {} : { energy: rv.energy as number }) });
   }

@@ -17,6 +17,8 @@ import { badCoordinateCalls, fakeCtx } from "./helpers.ts";
 function recording(): Recording {
   return {
     width: 600,
+    creatureRadius: 12,
+    itemRadius: 4,
     height: 400,
     dt: 0.1,
     frames: 2,

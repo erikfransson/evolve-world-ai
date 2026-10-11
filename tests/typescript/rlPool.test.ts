@@ -114,3 +114,19 @@ describe("RlPool", () => {
     await expect(closed.rewards(tasks)).rejects.toThrow("closed");
   });
 });
+
+describe("RlPool watchdog", () => {
+  it("fails a batch whose helpers never answer", async () => {
+    vi.useFakeTimers();
+    try {
+      const silent: RlPort = { post: () => {}, onMessage: () => {}, onError: () => {}, terminate: () => {} };
+      const pool = new RlPool([silent], setup);
+      const run = pool.rewards(tasks.slice(0, 1));
+      const caught = run.catch((e: Error) => e.message);
+      await vi.advanceTimersByTimeAsync(121_000);
+      expect(await caught).toMatch(/no episode result/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
