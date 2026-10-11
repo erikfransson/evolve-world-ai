@@ -1,5 +1,5 @@
 import type { EcoConfig } from "../sim/ecoConfig.ts";
-import { CUSTOM, withEcoPreset } from "../sim/presets.ts";
+import { withEcoPreset } from "../sim/presets.ts";
 import type { BodyPlan } from "../sim/sensors.ts";
 import type { Lineage, SpeciesCount } from "../sim/ecosystem.ts";
 import type { BestBy } from "../worker/ecoProtocol.ts";
@@ -8,12 +8,10 @@ import type { ModePage } from "./ecoModes.ts";
 import { buildForm } from "./settingsForm.ts";
 import { initCard } from "./overlays.ts";
 import type { Card } from "./overlays.ts";
-import { initPresetPanel } from "./presetPanel.ts";
+import { initRunSession, renderRunControls } from "./runSession.ts";
 import { LineagePanel, lineageColor } from "./lineagePanel.ts";
 import { PopulationGraph } from "./populationGraph.ts";
 import type { PopulationSample } from "./populationGraph.ts";
-import { Scoreboard, settingsOf, today } from "./scoreboard.ts";
-import { initSettingsIO } from "./settingsIO.ts";
 import { $, durationText, setTile } from "./page.ts";
 import { initTooltips } from "./tooltip.ts";
 import { LINEAGE_STRIDE } from "../worker/ecoProtocol.ts";
@@ -142,31 +140,31 @@ export function createEcoView(handlers: EcoHandlers, page: ModePage): EcoView {
   const fillEcoForm = settingsForm.fill;
   fillEcoForm(readEcoConfig());
   settingsForm.init(setup, (c) => { if (phase === "idle") handlers.onConfigChange(c); });
-  const board = new Scoreboard(mode);
-  const presets = initPresetPanel({
+  const session = initRunSession({
+    mode,
     container: $("settings"),
     form: setup,
     presets: page.presets,
     locked: page.locked,
-    board,
     formatScore: durationText,
     read: readEcoConfig,
     fill: fillEcoForm,
     withPreset: (c, id) => withEcoPreset(c, id, page.presets),
   });
-  initSettingsIO({ mode, form: setup, read: readEcoConfig, fill: fillEcoForm, preset: { get: presets.current, set: presets.select } });
+  const presets = session.presets;
   // The score is how long the world has lived (page.peak says while it counts), so it counts while the run does and at its end.
   presets.select("normal", false); // the page's first fill is the defaults, which Normal matches
-  const scored = { preset: CUSTOM, key: "", date: "", settings: settingsOf(page.form.defaults), peak: 0 };
+  let founders = ""; // "40 founders" or "2 species", shown with the score
+  let peak = 0;
   const beginScoring = (): void => {
     const c = readEcoConfig();
-    Object.assign(scored, { preset: presets.current(), key: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, date: today(), settings: settingsOf(c), peak: 0 });
+    founders = c.species ? `${c.species.length} species` : `${c.eco.initialPopulation} founders`;
+    peak = 0;
+    session.begin(c);
   };
   const recordScore = (simTime: number, population: number): void => {
-    scored.peak = Math.max(scored.peak, population);
-    if (scored.preset === CUSTOM) return;
-    const note = `peak ${nf.format(scored.peak)} ${page.peakLabel}`;
-    if (board.submit(scored.preset, { run: scored.key, score: Math.floor(simTime), date: scored.date, settings: scored.settings, note })) presets.refresh();
+    peak = Math.max(peak, population);
+    session.record(Math.floor(simTime), `${founders} · peak ${nf.format(peak)} ${page.peakLabel}`);
   };
   initTooltips($("tooltip"));
   const store = page.store;
@@ -208,12 +206,7 @@ export function createEcoView(handlers: EcoHandlers, page: ModePage): EcoView {
   const setPhase = (p: EcoPhase): void => {
     phase = p;
     const idle = p === "idle";
-    start.disabled = !idle;
-    pause.disabled = idle || p === "extinct";
-    pause.textContent = p === "paused" ? "Resume" : "Pause";
-    reset.disabled = idle;
-    $<HTMLFieldSetElement>("settings").disabled = !idle;
-    setup.classList.toggle("locked", !idle);
+    renderRunControls({ start, pause, reset, settings: $<HTMLFieldSetElement>("settings"), form: setup }, p === "extinct" ? "running" : p, p !== "extinct");
     selectedCard.hidden = idle;
     brainCard.hidden = idle || !hasSelection;
     extinct.hidden = p !== "extinct";

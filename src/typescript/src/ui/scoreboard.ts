@@ -17,7 +17,8 @@ export interface Entry {
   run: string; // one entry per run: later scores of the same run replace it
   score: number; // seconds
   date: string; // YYYY-MM-DD
-  settings: EntrySettings;
+  settings: EntrySettings; // short summary of the creature and brain, and all that entries saved before `config` existed have
+  config?: string; // the run's full settings as the Copy button writes them, loaded through the Paste path
   note?: string; // extra context shown with the score, e.g. peak population
 }
 
@@ -65,7 +66,7 @@ function validSettings(s: unknown): s is EntrySettings {
 function validEntry(e: unknown): e is Entry {
   if (typeof e !== "object" || e === null) return false;
   const o = e as Record<string, unknown>;
-  return typeof o.run === "string" && isNum(o.score) && typeof o.date === "string" && validSettings(o.settings) && (o.note === undefined || typeof o.note === "string");
+  return typeof o.run === "string" && isNum(o.score) && typeof o.date === "string" && validSettings(o.settings) && (o.config === undefined || typeof o.config === "string") && (o.note === undefined || typeof o.note === "string");
 }
 
 type Store = Pick<Storage, "getItem" | "setItem">;
