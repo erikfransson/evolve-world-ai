@@ -68,7 +68,8 @@
 @keyframes sweep { 0%, 15% { background-position: 200% 0; } 70%, 100% { background-position: -100% 0; } }
 
 .foot { margin-top: auto; padding-top: 3rem; text-align: center; font-size: 0.85rem; }
-.foot a { color: var(--muted); text-decoration: none; }
+.foot a, .foot .ver { color: var(--muted); text-decoration: none; }
+.foot .ver::after { content: "·"; margin: 0 0.6em; }
 .foot a:hover { color: var(--accent); }
 .foot a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
 

@@ -10,10 +10,21 @@ Work in parallel when can be done
 
 ## Where things are
 Layout is in `README.md`. Follow `docs/coding-guidelines.md` for tests and reviews.
-Pushing to `main` deploys the site via `.github/workflows/deploy.yml`, so keep `main` building (`npm run build` in `src/typescript/`).
+`main` deploys the site via `.github/workflows/deploy.yml`; keep `development` building (`npm run build` in `src/typescript/`).
 
 ## Git
-You may commit and push to `main` after an independent review passes. Each push redeploys the live page.
+- `main` is the released version that runs on the site. Never commit or push to `main` directly.
+- All work goes to `development`: branch from it, and commit or push to it after an independent review passes. Pushes to `development` run the tests but do not deploy.
+- A release is a pull request from `development` into `main`, merged only when Erik asks for a release and the release review below has passed.
+
+### Versions
+- Versions are `MAJOR.MINOR.PATCH`, starting at 0.1.0. Bug fixes and small changes bump the patch (0.1.1, 0.1.2), bigger features bump the minor (0.2.0).
+- The version lives in `src/typescript/src/version.ts` and `src/typescript/package.json` (a test keeps them equal), and the pages show it.
+- Note each change that lands on `development` under "Unreleased" in `docs/releases.md`.
+- To release: set the new version in both files, rename "Unreleased" to the version with the date, open the pull request from `development` to `main`, and after the merge tag `main` as `vX.Y.Z` and make a GitHub release with the same notes.
+
+### Review development to master merge
+
 
 ## Live world
 Safety of the server and of this laptop is the top priority for Live World, above features, looks and speed.
