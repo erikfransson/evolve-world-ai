@@ -190,16 +190,22 @@ describe("restoring at a new world", () => {
     old.world.width = 2100;
     const a = new LiveWorld(old, null);
     for (let i = 0; i < 5; i++) a.step();
+    const same = freshSmall();
+    same.step();
     const dir = tmp();
     const store = new StateStore(dir);
-    await store.write(JSON.stringify(a.saveState()), { population: a.eco.population, tick: a.eco.tick });
+    const now = Date.now();
+    await store.write(JSON.stringify(same.saveState()), { population: 0, tick: 1 }, new Date(now - 60_000)); // older, of this world
+    await store.write(JSON.stringify(a.saveState()), { population: a.eco.population, tick: a.eco.tick }, new Date(now));
     const live = freshSmall();
     expect(() => live.restoreState(a.saveState())).toThrow(/2100 x 1300 world without a map, this server runs 2000 x 1300 without a map/);
     const lines: string[] = [];
     expect(await new Saves(live, store).restoreNewest((l) => lines.push(l))).toBe(false);
+    expect(lines).toHaveLength(3); // the older save is not tried: past a save of another world all are taken to be older worlds
     expect(lines[0]).toMatch(/cannot restore world-.*this server runs 2000 x 1300/);
-    expect(lines.at(-1)).toBe("no usable save, starting a fresh world");
-    expect(store.list()).toHaveLength(1);
+    expect(lines[1]).toMatch(/not tried; all are kept/);
+    expect(lines[2]).toBe("no usable save, starting a fresh world");
+    expect(store.list()).toHaveLength(2);
     expect(live.eco.tick).toBe(0);
   });
 });

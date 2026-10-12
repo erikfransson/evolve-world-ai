@@ -29,6 +29,9 @@ interface Capture {
   inputs: Float32Array;
 }
 
+// A save of another world (size or map) than the one this server runs, e.g. after the server moved to a new map.
+export class OtherWorld extends Error {}
+
 // The shared world: one Ecosystem stepped against the clock, on this thread or with helper threads that sense and think.
 // With helpers a tick awaits them, so everything else that reads or changes the world goes through whenIdle, between ticks.
 export class LiveWorld {
@@ -523,7 +526,7 @@ export class LiveWorld {
   restoreState(state: EcoState): void {
     const w = state.config?.world;
     const h = this.home;
-    if (!w || w.width !== h.width || w.height !== h.height || (w.map ?? "") !== h.map) throw new Error(`it is a ${w?.width} x ${w?.height} world${w?.map ? ` (${w.map})` : " without a map"}, this server runs ${h.width} x ${h.height}${h.map ? ` (${h.map})` : " without a map"}; the save is kept`);
+    if (!w || w.width !== h.width || w.height !== h.height || (w.map ?? "") !== h.map) throw new OtherWorld(`it is a ${w?.width} x ${w?.height} world${w?.map ? ` (${w.map})` : " without a map"}, this server runs ${h.width} x ${h.height}${h.map ? ` (${h.map})` : " without a map"}; the save is kept`);
     const eco = restoreState(state, this.pool, { journal: this.helpers !== null });
     const r = eco.retune({ eco: { maxPopulation: Math.min(eco.config.eco.maxPopulation, MAX_POPULATION) } }); // older saves allowed more
     if (!r.ok) throw new Error(`cannot cap the population: ${r.reason}`);

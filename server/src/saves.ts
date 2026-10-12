@@ -1,5 +1,6 @@
 import { LIMITS } from "./config.ts";
 import { parseSave } from "./saveParse.ts";
+import { OtherWorld } from "./liveWorld.ts";
 import type { LiveWorld } from "./liveWorld.ts";
 import type { StateStore } from "./state.ts";
 
@@ -63,6 +64,8 @@ export class Saves {
 
   // At startup: the newest save that restores, else the world as built. True when a save was restored. Saves that do not restore
   // (another world's, or broken) stay on disk; rotation (state.ts) deletes them only once older than keepStateMs and not among the newest six.
+  // The first save of another world ends the search: older ones are taken to be of earlier worlds too, so a move to a new map
+  // parses one old save (about 5 s), not all of them.
   async restoreNewest(log: (line: string) => void = console.log): Promise<boolean> {
     for (const { name } of this.store.list()) {
       try {
@@ -70,6 +73,10 @@ export class Saves {
         return true;
       } catch (e) {
         log(`cannot restore ${name}: ${errText(e)}`);
+        if (e instanceof OtherWorld) {
+          log("older saves are taken to be of earlier worlds and are not tried; all are kept on disk");
+          break;
+        }
       }
     }
     log("no usable save, starting a fresh world");
