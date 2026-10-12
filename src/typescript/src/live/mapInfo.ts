@@ -1,5 +1,6 @@
 import { SWATCHES } from "../ui/terrainLegend.ts";
 import { MAX_REGIONS } from "./protocol.ts";
+import { mapSpec } from "../sim/maps/index.ts";
 import type { Hello, WireMap, WireRegion } from "./protocol.ts";
 
 // The information section below the world: legend, ground shares, regions (once a map has them) and the world's facts.
@@ -10,12 +11,13 @@ const share = (v: unknown): number => (typeof v === "number" && Number.isFinite(
 const rel = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? Math.min(100, Math.max(0, v)) : 0);
 const text = (v: unknown, max: number): string => (typeof v === "string" ? v.replace(/[^\x20-\x7e]/g, "").slice(0, max) : "");
 
-// A map from the wire with every share 0 to 1 and at most MAX_REGIONS short regions; all-normal ground when missing.
+// A map from the wire with every share 0 to 1, at most MAX_REGIONS short regions and a name only when it is a known map; all-normal ground when missing.
 export function cleanMap(m: unknown): WireMap {
   const g = isObj(m) && isObj(m.ground) ? m.ground : null;
   const ground = g ? { normal: share(g.normal), mud: share(g.mud), firm: share(g.firm), rock: share(g.rock) } : { normal: 1, mud: 0, firm: 0, rock: 0 };
   const regions = isObj(m) && Array.isArray(m.regions) ? m.regions.slice(0, MAX_REGIONS).filter(isObj).map((r): WireRegion => ({ name: text(r.name, 40), food: rel(r.food), poison: rel(r.poison), ground: text(r.ground, 60), role: text(r.role, 60) })).filter((r) => r.name) : [];
-  return { ground, regions };
+  const name = isObj(m) && typeof m.name === "string" && mapSpec(m.name) ? m.name : undefined;
+  return { ...(name ? { name } : {}), ground, regions };
 }
 
 const CREATURE = `<clipPath id="infoSwClip"><circle cx="10" cy="10" r="8" /></clipPath><circle cx="10" cy="10" r="8" fill="rgba(15, 23, 20, 0.85)" /><rect x="0" y="8.4" width="20" height="12" fill="hsl(200, 75%, 58%)" clip-path="url(#infoSwClip)" /><circle cx="10" cy="10" r="8" fill="none" stroke="hsl(200, 75%, 58%)" stroke-width="1.6" />`;
@@ -37,6 +39,7 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", content = "
 };
 const pct = (v: number): string => (v > 0 && v < 0.01 ? "<1%" : `${Math.round(v * 100)}%`);
 const nf = new Intl.NumberFormat("en-US");
+const weight = (v: number): string => (v >= 1 ? v.toFixed(1) : String(Math.round(v * 100) / 100)); // 1.6, 0.65, 0.15
 
 export function renderMapInfo(root: HTMLElement, hello: Hello): void {
   const map = hello.map;
@@ -88,16 +91,18 @@ export function renderMapInfo(root: HTMLElement, hello: Hello): void {
     table.tHead!.append(head);
     for (const r of map.regions) {
       const tr = el("tr");
-      tr.append(el("td", "", r.name), el("td", "num", r.food.toFixed(1)), el("td", "num", r.poison > 0 ? r.poison.toFixed(1) : "no poison"), el("td", "", r.ground), el("td", "", r.role));
+      tr.append(el("td", "", r.name), el("td", "num", weight(r.food)), el("td", "num", r.poison > 0 ? weight(r.poison) : "no poison"), el("td", "", r.ground), el("td", "", r.role));
       table.tBodies[0]!.append(tr);
     }
-    regions.replaceChildren(table);
+    const wrap = el("div", "info-table-wrap");
+    wrap.append(table);
+    regions.replaceChildren(wrap, el("p", "info-note", "Food and poison: how much grows there and how much it holds, against 1.0 for plain food."));
   }
 
   const s = hello.summary;
   const facts: [string, string][] = [
     ["Size", `${nf.format(hello.world.width)} × ${nf.format(hello.world.height)} units`],
-    ["Started with", `${nf.format(s.initialPopulation)} creatures`],
+    ["Started with", s.initialPopulation === 0 && s.seedCopies ? `${s.seedCopies} of each starter founder` : `${nf.format(s.initialPopulation)} creatures`],
     ["Room for", `${nf.format(s.maxPopulation)} creatures`],
     ["Bumps", s.collisionDamage ? "cost energy, and a kill takes the loser's energy" : "harmless"],
     ["Seasons", s.seasons ? "on: lean winters with less food" : "off"],

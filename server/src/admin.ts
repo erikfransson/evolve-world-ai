@@ -20,7 +20,7 @@ export function loadAdminToken(stateDir: string): string {
   return readFileSync(file, "utf8").trim();
 }
 
-const OVERRIDES = "admin-overrides.json";
+export const OVERRIDES = "admin-overrides.json";
 
 // Re-applies the settings the admin changed before the last restart and returns them, so later changes are merged into them.
 export function loadOverrides(stateDir: string, world: { eco: Ecosystem }): Record<string, Value> {

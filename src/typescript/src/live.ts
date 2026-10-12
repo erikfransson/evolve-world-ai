@@ -34,6 +34,8 @@ import { HISTORY_FIELDS, LINEAGE_FIELDS, MAX_HISTORY, MAX_LINEAGE_HISTORY } from
 import type { Hello, Season, Stats } from "./live/protocol.ts";
 import { AddPanel, parseFounders } from "./live/addPanel.ts";
 import { renderMapInfo } from "./live/mapInfo.ts";
+import { loadMapTerrain } from "./live/mapTerrain.ts";
+import type { Terrain } from "./sim/terrain.ts";
 
 // TODO(L6): admin panel. `?admin` opens a second socket to the owner's loopback admin port (ws://127.0.0.1:8788), sends {t:"auth", token}
 // with a token the owner pastes in, then {t:"get-config"} and {t:"set-config", changes}. See server/src/admin.ts.
@@ -195,6 +197,7 @@ function onHello(h: Hello): void {
   scene.fullEnergy = h.fullEnergy;
   scene.dt = h.dt;
   draw = { worldW: h.world.width, worldH: h.world.height, radius: h.radius, itemRadius: h.itemRadius, species: [{ fullEnergy: h.fullEnergy, hunter: false }], winter: 0 };
+  showMap(h);
   camera.setWorld(h.world.width, h.world.height);
   births.reset();
   impacts.reset();
@@ -209,6 +212,23 @@ function onHello(h: Hello): void {
   names = new Map();
   addPanel.setRules(h.add);
   renderMapInfo($("info"), h);
+}
+
+// The ground and rock of a hand-designed map, built from its name on a worker (once per map and size); plain ground meanwhile.
+let mapKey = "";
+let mapTerrain: Promise<Terrain | null> | null = null;
+function showMap(h: Hello): void {
+  const name = h.map.name;
+  if (!name) return;
+  const key = `${name}|${h.world.width}|${h.world.height}`;
+  if (key !== mapKey) {
+    mapKey = key;
+    mapTerrain = loadMapTerrain(name, h.world.width, h.world.height);
+  }
+  const d = draw;
+  void mapTerrain!.then((t) => {
+    if (t && draw === d) d!.map = t; // a newer hello has its own
+  });
 }
 
 // Population samples for the graph, shifted to start near time 0 (historyAxis).

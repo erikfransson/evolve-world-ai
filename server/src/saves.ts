@@ -61,16 +61,19 @@ export class Saves {
     return `${name}: tick ${this.live.eco.tick}, ${this.live.eco.population} creatures`;
   }
 
-  // At startup: the newest save that restores, else the world as built.
-  async restoreNewest(log: (line: string) => void = console.log): Promise<void> {
+  // At startup: the newest save that restores, else the world as built. True when a save was restored. Saves that do not restore
+  // (another world's, or broken) stay on disk; rotation (state.ts) deletes them only once older than keepStateMs and not among the newest six.
+  async restoreNewest(log: (line: string) => void = console.log): Promise<boolean> {
     for (const { name } of this.store.list()) {
       try {
-        return log(`restored ${await this.restore(name)}`);
+        log(`restored ${await this.restore(name)}`);
+        return true;
       } catch (e) {
         log(`cannot restore ${name}: ${errText(e)}`);
       }
     }
     log("no usable save, starting a fresh world");
+    return false;
   }
 
   // Saves the running world, then replaces it with the named save. Only a name from the listing is accepted, and a failure at any step keeps the running world.

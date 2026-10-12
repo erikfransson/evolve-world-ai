@@ -182,6 +182,7 @@ body:has(.layout.live) { height: auto; min-height: 100%; }
 .info-table td { padding: 0.35rem 0.5rem 0.35rem 0; border-bottom: 1px solid var(--border); }
 .info-table td:first-child { font-weight: 600; }
 .info-table .num { font-variant-numeric: tabular-nums; }
+.info-table-wrap { overflow-x: auto; margin-bottom: 0.5rem; }
 .info-facts { margin: 0; display: flex; flex-direction: column; gap: 0.55rem; font-size: 0.85rem; }
 .info-facts div { display: grid; grid-template-columns: 6.5rem 1fr; gap: 0.6rem; }
 .info-facts dt { color: var(--muted); }

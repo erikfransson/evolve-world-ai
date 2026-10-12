@@ -2,7 +2,7 @@ import type { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
 import { LIVE_FIELDS, LIVE_MAX } from "../../src/typescript/src/sim/retune.ts";
 import type { RetunePatch } from "../../src/typescript/src/sim/retune.ts";
 import { MAX_COPIES } from "../../src/typescript/src/live/add.ts";
-import { LIVE, MAX_POPULATION } from "./config.ts";
+import { CAP_LIMITS, LIVE, MAX_POPULATION } from "./config.ts";
 
 // The admin settings are the engine's own list (LIVE_FIELDS, LIVE_MAX) applied through Ecosystem.retune, which checks every value and
 // changes all or nothing, plus the server's own settings in LIVE (`speed`, `add.*`). Keys are "section.field", e.g. "eco.foodRegrow".
@@ -12,8 +12,9 @@ export interface Limit {
   max: number | null; // null: no upper bound beyond the kind of value
 }
 
-// Tighter than the engine's LIVE_MAX where the server needs it: the population bounds the frame size and so the viewer budget.
-const SERVER_MAX: Record<string, number> = { "eco.maxPopulation": MAX_POPULATION };
+// Tighter than the engine's LIVE_MAX where the server needs it: the population bounds the frame size and so the viewer budget,
+// and the item caps the item slots a world is built with (each alone; retune refuses a pair that needs more slots than the world has).
+const SERVER_MAX: Record<string, number> = { "eco.maxPopulation": MAX_POPULATION, "eco.foodMaxDensity": CAP_LIMITS.foodMaxDensity, "eco.poisonMaxDensity": CAP_LIMITS.poisonMaxDensity };
 // Server settings: limits, and whole numbers only where marked.
 type AddKey = keyof typeof LIVE.add;
 const OWN: Record<string, Limit & { whole?: boolean }> = {

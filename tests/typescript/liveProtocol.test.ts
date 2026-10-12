@@ -7,7 +7,7 @@ import { gets, sendStride } from "../../server/src/budget.ts";
 import { LiveWorld } from "../../server/src/liveWorld.ts";
 import { smallConfig } from "./liveHelpers.ts";
 import { applyTunables } from "../../server/src/tunables.ts";
-import { ITEM_HEADROOM, LIVE } from "../../server/src/config.ts";
+import { LIVE } from "../../server/src/config.ts";
 
 const world = { width: 17000, height: 10600 };
 
@@ -169,13 +169,6 @@ describe("live server helpers", () => {
     expect(applyTunables(eco, { "eco.seasons": 1 })).toMatch(/seasons/);
     expect(applyTunables(eco, JSON.parse('{"__proto__":1}'))).toMatch(/not a live setting/);
     expect(applyTunables(eco, [])).toMatch(/object/);
-  });
-
-  it("lets admin raise the item caps up to the headroom and no further", () => {
-    const eco = new LiveWorld(smallConfig(), null).eco;
-    expect(applyTunables(eco, { "eco.foodMaxDensity": ITEM_HEADROOM.foodMaxDensity, "eco.poisonMaxDensity": ITEM_HEADROOM.poisonMaxDensity })).toBeNull();
-    expect(applyTunables(eco, { "eco.foodMaxDensity": ITEM_HEADROOM.foodMaxDensity + 1 })).toMatch(/item slots/);
-    expect(eco.config.eco.foodMaxDensity).toBe(ITEM_HEADROOM.foodMaxDensity);
   });
 });
 

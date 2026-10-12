@@ -69,22 +69,23 @@ export interface Hello {
   frameHz: number;
   dt: number; // simulated seconds per tick
   itemSlots: number; // item slot capacity, at most MAX_ITEM_SLOTS
-  summary: { initialPopulation: number; maxPopulation: number; collisionDamage: boolean; seasons: boolean };
+  summary: { initialPopulation: number; maxPopulation: number; collisionDamage: boolean; seasons: boolean; seedCopies?: number }; // seedCopies: a fresh world starts with this many of each starter founder
   maxViewers: number;
   add: AddRules | null; // what an add may ask for, null while adding is off
   map: WireMap; // what the page's info section says about the ground
   serverVersion?: string; // the server's release (src/typescript/src/version.ts), may differ from the page's during a deploy
 }
 
-// The map for the info section below the world: ground shares, and named regions once a map has them (none yet).
+// The map: its name, which the page builds the ground and rock from (sim/maps), and for the info section the ground shares and named regions.
 export interface WireRegion {
   name: string;
-  food: number; // relative to plain ground, 1
-  poison: number; // relative, 0 for none
+  food: number; // the map's weight, plain food is 1
+  poison: number; // the map's weight, 0 for none
   ground: string;
   role: string;
 }
 export interface WireMap {
+  name?: string; // a hand-designed map (sim/maps/index.ts MAPS) of the world's size, absent for the random map
   ground: { normal: number; mud: number; firm: number; rock: number }; // shares of the area, 0 to 1
   regions: WireRegion[];
 }

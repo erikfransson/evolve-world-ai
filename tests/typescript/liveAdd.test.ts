@@ -290,6 +290,7 @@ describe("adding to the world (LiveWorld)", () => {
     const config = smallConfig();
     config.eco.initialPopulation = 3; // so the three named lineages are among the top 8 the stats list
     const a = new LiveWorld(config, null);
+    a.step(); // the server runs its first tick before it reads any message; founders born at tick 0 are the seeded ones
     const r = a.addCreatures(request({ copies: 3, name: "Kiwi" }), seq(1));
     if (!("ids" in r)) throw new Error(r.reason);
     expect(r.ids).toHaveLength(3);

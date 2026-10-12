@@ -13,7 +13,9 @@ import { TokenBucket } from "./budget.ts";
 import { Chronicle } from "./chronicle.ts";
 import { restoreState, saveState } from "../../src/typescript/src/sim/ecoState.ts";
 import type { EcoState } from "../../src/typescript/src/sim/ecoState.ts";
-import { ITEM_HEADROOM, LIMITS, LIVE, MAX_POPULATION } from "./config.ts";
+import { LIMITS, LIVE, MAX_POPULATION, MAX_SEED_FOUNDERS, SEED_COPIES, itemHeadroom } from "./config.ts";
+import type { SeedFounder } from "./founders.ts";
+import { mapRegions } from "../../src/typescript/src/live/mapRegions.ts";
 import type { AddRequest, AddRules } from "../../src/typescript/src/live/add.ts";
 import { fullEnergy } from "../../src/typescript/src/sim/species.ts";
 import type { ThinkPool } from "../../src/typescript/src/worker/ecoPool.ts";
@@ -61,11 +63,13 @@ export class LiveWorld {
   readonly chronicle = new Chronicle();
   private added = new Set<number>(); // ids of visitor-added creatures that may still live (pruned in aliveAdded)
   private map: WireMap = { ground: { normal: 1, mud: 0, firm: 0, rock: 0 }, regions: [] };
+  private readonly home: { width: number; height: number; map: string }; // the world this server runs; a save of another is not restored
 
   // helpers: a pool of helper threads, owned from here on (close() closes it), or null to run on this thread.
   constructor(config: EcoConfig, pool: readonly PoolEntry[] | null, helpers: ThinkPool | null = null) {
     this.pool = pool;
     this.helpers = helpers;
+    this.home = { width: config.world.width, height: config.world.height, map: config.world.map ?? "" };
     this.eco = this.build(config);
     this.refreshes = new TokenBucket(LIMITS.detailRefreshesPerSecond, LIMITS.detailRefreshesPerSecond);
     this.attach();
@@ -83,9 +87,13 @@ export class LiveWorld {
     this.captures.clear();
     this.chronicle.reset(this.eco);
     this.eco.drainEvents();
-    this.map = { ground: groundShares(this.eco), regions: [] };
+    const name = this.config.world.map || undefined;
+    this.map = { ...(name ? { name } : {}), ground: groundShares(this.eco), regions: mapRegions(name) };
     // Added creatures found named lineages (late rows of the lineage table, kept in saves); the living founders among them count.
-    this.added = new Set(this.eco.lineageTable.toState().late.filter((r) => r[5] !== "" && this.eco.get(r[0])).map((r) => r[0]));
+    // The founders seeded into a fresh world (seedFounders, before its first tick) are no visitor adds: born at tick 0, among its first ids.
+    const seedIds = this.eco.founders + MAX_SEED_FOUNDERS * SEED_COPIES;
+    const seeded = (id: number): boolean => id < seedIds && this.eco.get(id)!.birthTick === 0;
+    this.added = new Set(this.eco.lineageTable.toState().late.filter((r) => r[5] !== "" && this.eco.get(r[0]) && !seeded(r[0])).map((r) => r[0]));
     if (this.helpers) {
       const starting = this.helpers.start(this.eco);
       this.starting = starting;
@@ -247,11 +255,12 @@ export class LiveWorld {
     return this.eco.config;
   }
 
-  // Item slots are sized from the caps at construction, so build with room (ITEM_HEADROOM) and then retune to the caps in force.
+  // Item slots are sized from the caps at construction, so build with room (itemHeadroom) and then retune to the caps in force.
   private build(config: EcoConfig): Ecosystem {
     const caps = { foodMaxDensity: config.eco.foodMaxDensity, poisonMaxDensity: config.eco.poisonMaxDensity };
-    config.eco.foodMaxDensity = Math.max(caps.foodMaxDensity, ITEM_HEADROOM.foodMaxDensity);
-    config.eco.poisonMaxDensity = Math.max(caps.poisonMaxDensity, ITEM_HEADROOM.poisonMaxDensity);
+    const room = itemHeadroom(config.world, caps);
+    config.eco.foodMaxDensity = room.foodMaxDensity;
+    config.eco.poisonMaxDensity = room.poisonMaxDensity;
     const eco = new Ecosystem(config, this.pool, { journal: this.helpers !== null });
     const r = eco.retune({ eco: caps });
     if (!r.ok) throw new Error(`cannot set the item caps: ${r.reason}`);
@@ -367,7 +376,7 @@ export class LiveWorld {
       frameHz: 5,
       dt: this.config.dt,
       itemSlots: this.eco.world.count,
-      summary: { initialPopulation: eco.initialPopulation, maxPopulation: eco.maxPopulation, collisionDamage: eco.collisionDamage, seasons: eco.seasons },
+      summary: { initialPopulation: eco.initialPopulation, maxPopulation: eco.maxPopulation, collisionDamage: eco.collisionDamage, seasons: eco.seasons, ...(eco.initialPopulation === 0 ? { seedCopies: SEED_COPIES } : {}) },
       maxViewers,
       add: this.currentAddRules(),
       map: this.map,
@@ -437,13 +446,9 @@ export class LiveWorld {
     return LIVE.add.perWindow > 0 && LIVE.add.aliveShare > 0 ? this.addRules() : null;
   }
 
-  // Inserts a checked add request (live/add.ts parseAdd) as `copies` founders of new named lineages at random free spots, through the
-  // engine's insertCreature, so a save keeps them. Call between ticks (whenIdle). random: the server's own draws, never the engine's.
-  // Returns the ids, or a reason and nothing inserted.
-  addCreatures(req: AddRequest, random: () => number = Math.random): { ids: number[] } | { reason: string } {
+  // Up to n random spots inside the walls, clear of rock and of creatures, from the given draws (at most 40 tries a spot).
+  private freeSpots(n: number, random: () => number): { x: number; y: number; heading: number }[] {
     const e = this.eco;
-    if (e.population + req.copies > e.config.eco.maxPopulation) return { reason: "the world is full, try again later" };
-    if (e.lineageTable.toState().late.length + req.copies > LIMITS.maxLateLineages) return { reason: "the world is full of families, adding is paused until old ones are cleared" };
     const { width, height } = this.config.world;
     const r = this.config.creature.radius;
     const margin = 4 * r;
@@ -453,11 +458,45 @@ export class LiveWorld {
       return false;
     };
     const spots: { x: number; y: number; heading: number }[] = [];
-    for (let tries = 0; spots.length < req.copies && tries < 40 * req.copies; tries++) {
+    for (let tries = 0; spots.length < n && tries < 40 * n; tries++) {
       const x = margin + random() * (width - 2 * margin);
       const y = margin + random() * (height - 2 * margin);
       if (!(e.world as World).terrain.touchesRock(x, y, 2 * r) && !crowded(x, y, spots)) spots.push({ x, y, heading: random() * 2 * Math.PI });
     }
+    return spots;
+  }
+
+  // Seeds a fresh world (no tick run, nobody in it) with SEED_COPIES of each founder at random open spots, each copy the founder of a
+  // lineage with the founder's name, each founder its own hue. Not visitor adds: they count toward no add cap (see attach).
+  // random: the server's own draws. Throws when the world is not fresh or a founder does not go in.
+  seedFounders(founders: readonly SeedFounder[], random: () => number = Math.random): number {
+    const e = this.eco;
+    if (e.tick !== 0 || e.population !== 0 || e.lineageTable.toState().late.length !== 0) throw new Error("only a fresh, empty world is seeded");
+    if (founders.length < 1 || founders.length > MAX_SEED_FOUNDERS) throw new Error(`1 to ${MAX_SEED_FOUNDERS} founders are seeded`);
+    const n = founders.length * SEED_COPIES;
+    if (n > e.config.eco.maxPopulation) throw new Error("more founders than the world has room for");
+    const spots = this.freeSpots(n, random);
+    if (spots.length < n) throw new Error("no room to seed the founders");
+    const hue0 = random() * 360;
+    const energy = Math.min(1000, Math.max(10, LIVE.add.startEnergy)); // what a visitor's copies start with
+    for (let i = 0; i < n; i++) {
+      const k = Math.floor(i / SEED_COPIES);
+      const f = founders[k]!;
+      const p = spots[i]!;
+      const res = e.insertCreature({ genome: f.genome, plan: f.plan, x: p.x, y: p.y, heading: p.heading, hue: (hue0 + (360 * k) / founders.length) % 360, name: f.name, energy });
+      if (!res.ok) throw new Error(`founder ${f.name} could not be seeded: ${res.reason}`);
+    }
+    return n;
+  }
+
+  // Inserts a checked add request (live/add.ts parseAdd) as `copies` founders of new named lineages at random free spots, through the
+  // engine's insertCreature, so a save keeps them. Call between ticks (whenIdle). random: the server's own draws, never the engine's.
+  // Returns the ids, or a reason and nothing inserted.
+  addCreatures(req: AddRequest, random: () => number = Math.random): { ids: number[] } | { reason: string } {
+    const e = this.eco;
+    if (e.population + req.copies > e.config.eco.maxPopulation) return { reason: "the world is full, try again later" };
+    if (e.lineageTable.toState().late.length + req.copies > LIMITS.maxLateLineages) return { reason: "the world is full of families, adding is paused until old ones are cleared" };
+    const spots = this.freeSpots(req.copies, random);
     if (spots.length < req.copies) return { reason: "no free spot found, try again" };
     const ids: number[] = [];
     for (const p of spots) {
@@ -482,6 +521,9 @@ export class LiveWorld {
   // Replaces the world with the saved one. Throws, and leaves the running world alone, if the state is invalid
   // or needs WebAssembly kernels this machine lacks. Viewers then need a fresh hello.
   restoreState(state: EcoState): void {
+    const w = state.config?.world;
+    const h = this.home;
+    if (!w || w.width !== h.width || w.height !== h.height || (w.map ?? "") !== h.map) throw new Error(`it is a ${w?.width} x ${w?.height} world${w?.map ? ` (${w.map})` : " without a map"}, this server runs ${h.width} x ${h.height}${h.map ? ` (${h.map})` : " without a map"}; the save is kept`);
     const eco = restoreState(state, this.pool, { journal: this.helpers !== null });
     const r = eco.retune({ eco: { maxPopulation: Math.min(eco.config.eco.maxPopulation, MAX_POPULATION) } }); // older saves allowed more
     if (!r.ok) throw new Error(`cannot cap the population: ${r.reason}`);

@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { LIMITS, LIVE } from "../../server/src/config.ts";
+import { LIMITS, LIVE, liveConfig } from "../../server/src/config.ts";
 import { TokenBucket } from "../../server/src/budget.ts";
 import { ItemFeed } from "../../server/src/itemFeed.ts";
 import { LiveWorld } from "../../server/src/liveWorld.ts";
@@ -420,7 +420,7 @@ describe("history and records", () => {
       const kids = s.records!.find((r) => r.board === "children")?.entries ?? [];
       expect(kids[0]?.value ?? 0).toBeGreaterThanOrEqual(parent.children);
       expect(s.lineages!.length).toBeLessThanOrEqual(8);
-      expect(s.season).toEqual({ yearMinutes: 40, winterFood: 0.4 });
+      expect(s.season).toEqual({ yearMinutes: liveConfig.eco.yearMinutes, winterFood: liveConfig.eco.winterFood });
     });
   }
 });

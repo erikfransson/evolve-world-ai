@@ -1,31 +1,66 @@
 import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
+import { itemsPerDensity } from "../../src/typescript/src/sim/config.ts";
+import { MAX_ITEM_SLOTS } from "../../src/typescript/src/live/protocol.ts";
 
 export const MAX_POPULATION = 2500; // also the admin's upper limit (tunables.ts)
 
-// The one world this server runs: the Ecosystem Normal preset on a world twice the area, collision damage on.
+// The one world this server runs: The Inland Sea map (src/sim/maps/inlandSea.ts) with the Ecosystem rules, collision damage on.
 // The admin channel (admin.ts) edits this object in place for the settings the engine reads every tick.
-// Tuned for roughly 1000 to 2000 creatures, see docs/tuning-notes.md.
+// Food values from the launch plan (docs/status.md A5): food worth 50, slow regrowth, a fairly high cap, scarce poison.
 export const liveConfig: EcoConfig = structuredClone(DEFAULT_ECO_CONFIG);
 liveConfig.seed = 1;
-liveConfig.world.width = 17000;
-liveConfig.world.height = 10600;
-liveConfig.eco.initialPopulation = 1000;
-liveConfig.eco.foodRegrow = 0.02; // population settles near 1100 after 10 min (0.03 gives about 1650)
+liveConfig.world.map = "inland-sea";
+liveConfig.world.width = 40000;
+liveConfig.world.height = 25000;
+liveConfig.world.foodEnergy = 50;
+liveConfig.world.poisonDensity = 0.01; // start counts stay at or below the caps (foodDensity 0.5 is 50 000 items)
+liveConfig.eco.initialPopulation = 0; // a fresh world is seeded with the founders file instead (founders.ts)
+liveConfig.eco.foodRegrow = 0.003;
+liveConfig.eco.foodMaxDensity = 1.5;
+liveConfig.eco.poisonRegrow = 0.0003;
+liveConfig.eco.poisonMaxDensity = 0.01;
 liveConfig.eco.collisionDamage = true;
 liveConfig.eco.maxPopulation = MAX_POPULATION; // bounds the frame size, so the viewer budget holds
-liveConfig.eco.seasons = true; // a 40 min year is 10 min at 4x; population swings about 530 to 1220 (docs/tuning-notes.md)
-liveConfig.eco.yearMinutes = 40;
+liveConfig.eco.seasons = true;
+liveConfig.eco.yearMinutes = 60;
 liveConfig.eco.winterFood = 0.4;
 liveConfig.eco.hueDrift = 3; // degrees (Ecosystem 8): families keep their colour longer, so the view reads as lineages
 
-// Item slots are fixed when a world is built, so it is built with room for admin to raise the food and poison caps (densities, LIVE_MAX allows 10 each).
-// Measured at about 1000 creatures: caps 3 and 1 cost 20 MB more RSS at a save and 0.1 s more saveState than 0.7 and 0.1, caps 10 and 10 cost 90 MB and 0.5 s.
+// A fresh world gets this many copies of each founder in the founders file, at random open spots.
+export const SEED_COPIES = 10;
+export const MAX_SEED_FOUNDERS = 8; // the page offers at most 8 founders too (addPanel.ts parseFounders)
+export const MAX_FOUNDERS_FILE_BYTES = 512 * 1024; // 4 founders are 25 kB; 8 of the largest genomes (about 3800 weights) fit
+
+// Item slots are fixed when a world is built, so it is built with room for admin to raise the food and poison caps (densities).
+// Up to ITEM_HEADROOM where that fits (small worlds); else the slots are held to ITEM_SLOT_SHARE of the wire's MAX_ITEM_SLOTS:
+// poison gets POISON_ROOM times its cap (at most its ITEM_HEADROOM), food the rest, never below the caps in force.
+// The Inland Sea (100 000 items per density unit, caps 1.5 and 0.01) gets food 2.3 and poison 0.05: 235 000 slots.
+// Measured at about 1000 creatures on the old 17000 x 10600 world: caps 3 and 1 cost 20 MB more RSS at a save than 0.7 and 0.1.
 export const ITEM_HEADROOM = { foodMaxDensity: 3, poisonMaxDensity: 1 };
+export const ITEM_SLOT_SHARE = 0.9;
+export const POISON_ROOM = 5;
+type Caps = { foodMaxDensity: number; poisonMaxDensity: number };
+
+// The caps a world is built with (its item slots), for its size and the caps in force. Throws when the caps alone pass the slot budget.
+export function itemHeadroom(world: { width: number; height: number }, caps: Caps): Caps {
+  const perDensity = itemsPerDensity({ world } as Parameters<typeof itemsPerDensity>[0]);
+  const room = (ITEM_SLOT_SHARE * MAX_ITEM_SLOTS) / perDensity; // density units of slots in all
+  const fixed = { foodMaxDensity: Math.max(caps.foodMaxDensity, ITEM_HEADROOM.foodMaxDensity), poisonMaxDensity: Math.max(caps.poisonMaxDensity, ITEM_HEADROOM.poisonMaxDensity) };
+  if (fixed.foodMaxDensity + fixed.poisonMaxDensity <= room) return fixed;
+  if (caps.foodMaxDensity + caps.poisonMaxDensity > room) throw new Error(`food and poison caps ${caps.foodMaxDensity} and ${caps.poisonMaxDensity} need more item slots than the wire carries (${Math.floor(room * 100) / 100} density units at ${size(world)})`);
+  const poison = Math.max(caps.poisonMaxDensity, Math.min(ITEM_HEADROOM.poisonMaxDensity, POISON_ROOM * caps.poisonMaxDensity, room - caps.foodMaxDensity));
+  const food = Math.max(caps.foodMaxDensity, Math.min(ITEM_HEADROOM.foodMaxDensity, Math.floor((room - poison) * 20) / 20));
+  return { foodMaxDensity: food, poisonMaxDensity: poison };
+}
+const size = (w: { width: number; height: number }): string => `${w.width} x ${w.height}`;
+
+// The admin's upper limits for the caps of the configured world (tunables.ts); retune also refuses caps past the slots a world has.
+export const CAP_LIMITS = itemHeadroom(liveConfig.world, liveConfig.eco);
 
 // Settings of the server rather than the engine, changed from the admin page (tunables.ts).
 export const LIVE = {
-  speed: 4, // target simulated seconds per real second
+  speed: 3, // target simulated seconds per real second; a tick costs about 7-16 ms at 1500-2200 creatures, so 4x would not keep up on one idle core
   reseed: 0, // 1: an extinct world starts over with a new seed; 0 (Erik's choice): it stays empty until visitors add creatures
   // Visitor adds ("Add your creature"), all admin-tunable as "add.<field>" (tunables.ts); adds.ts enforces them.
   add: {
