@@ -419,7 +419,7 @@ export class LiveWorld {
   addRules(): AddRules {
     const { eco, creature } = this.config;
     const pair = (r: number[]): [number, number] => [r[0]!, r[1]!];
-    return { maxCopies: LIVE.add.maxCopies, birth: { energy: pair(eco.birthEnergyRange), cost: pair(eco.birthCostRange), cooldown: pair(eco.birthCooldownRange) }, costs: { living: creature.livingCost, ray: creature.rayCost, neuron: creature.neuronCost } };
+    return { maxCopies: LIVE.add.maxCopies, everyS: LIVE.add.socketEveryS, birth: { energy: pair(eco.birthEnergyRange), cost: pair(eco.birthCostRange), cooldown: pair(eco.birthCooldownRange) }, costs: { living: creature.livingCost, ray: creature.rayCost, neuron: creature.neuronCost } };
   }
 
   // Inserts a checked add request (live/add.ts parseAdd) as `copies` founders of new named lineages at random free spots, through the
@@ -445,7 +445,7 @@ export class LiveWorld {
     if (spots.length < req.copies) return { reason: "no free spot found, try again" };
     const ids: number[] = [];
     for (const p of spots) {
-      const res = e.insertCreature({ genome: req.genome, plan: req.plan, x: p.x, y: p.y, heading: p.heading, hue: req.hue, name: req.name, birth: req.birth });
+      const res = e.insertCreature({ genome: req.genome, plan: req.plan, x: p.x, y: p.y, heading: p.heading, hue: req.hue, name: req.name, birth: req.birth, energy: req.birth.cost }); // starts like a child of its own traits
       if (!res.ok) return ids.length ? { ids } : { reason: res.reason }; // checked up front, so a refusal after the first is not expected
       ids.push(res.id);
       this.added.add(res.id);

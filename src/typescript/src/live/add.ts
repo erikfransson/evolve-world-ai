@@ -36,6 +36,7 @@ export interface AddRequest {
 // What the server allows, sent in the hello (null while adding is off): copies, birth trait ranges and the costs behind energy per second.
 export interface AddRules {
   maxCopies: number;
+  everyS: number; // a connection may add once per this many seconds (after a burst of 2); faster gets it cut off
   birth: { energy: [number, number]; cost: [number, number]; cooldown: [number, number] };
   costs: { living: number; ray: number; neuron: number }; // planUpkeep's livingCost, rayCost (per 100 units of ray), neuronCost
 }
@@ -156,6 +157,6 @@ export function cleanAddRules(r: unknown): AddRules | null {
   const cooldown = pair(r.birth.cooldown);
   const { living, ray, neuron } = r.costs;
   if (!energy || !cost || !cooldown || !inRange(living, [0, 1e4]) || !inRange(ray, [0, 1e4]) || !inRange(neuron, [0, 1e4])) return null;
-  if (!Number.isInteger(r.maxCopies) || !inRange(r.maxCopies, [1, MAX_COPIES])) return null;
-  return { maxCopies: r.maxCopies, birth: { energy, cost, cooldown }, costs: { living, ray, neuron } };
+  if (!Number.isInteger(r.maxCopies) || !inRange(r.maxCopies, [1, MAX_COPIES]) || !inRange(r.everyS, [0, 86400])) return null;
+  return { maxCopies: r.maxCopies, everyS: r.everyS, birth: { energy, cost, cooldown }, costs: { living, ray, neuron } };
 }
