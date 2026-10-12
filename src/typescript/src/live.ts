@@ -6,6 +6,7 @@ import { DEFAULT_ECO_CONFIG, seasonFactor, seasonName, winterness } from "./sim/
 import type { EcoConfig } from "./sim/ecoConfig.ts";
 import type { Lineage } from "./sim/ecosystem.ts";
 import type { Leaders } from "./sim/leaderboard.ts";
+import { versionLabel } from "./live/versionLabel.ts";
 import { Camera } from "./ui/camera.ts";
 import { fitCanvas } from "./ui/canvas.ts";
 import { pickCreature } from "./ui/ecoPick.ts";
@@ -49,6 +50,8 @@ const SEASON_COLORS: Record<string, string> = { Summer: "#fbbf24", Autumn: "#fb9
 
 const canvas = $<HTMLCanvasElement>("view");
 const chip = $("chip");
+const versionEl = $("version");
+versionEl.textContent = versionLabel(null); // the page's own version until the server says hello
 const mobile = window.matchMedia("(max-width: 700px)").matches;
 const camera = new Camera(1, 1, 1, 1);
 const renderer = new EcoRenderer();
@@ -184,6 +187,7 @@ function showSeason(name: string, food: string): void {
 
 function onHello(h: Hello): void {
   hello = h;
+  versionEl.textContent = versionLabel(h.serverVersion);
   scene.reset();
   scene.fullEnergy = h.fullEnergy;
   scene.dt = h.dt;

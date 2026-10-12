@@ -8,6 +8,10 @@ Try to minimize usage.
 Let Opus (5.5+) be orchestrator and manager of subagents.
 Work in parallel when can be done
 
+## Iteration and notes
+Work here is iterative: plans, maps, looks and numbers change often, and nothing is written in stone.
+Keep `docs/status.md` current with what is being done, what was decided and what is open. Add new information from Erik or other sessions as it arrives, and update or delete stale lines there, in this file and in other docs.
+
 ## Where things are
 Layout is in `README.md`. Follow `docs/coding-guidelines.md` for tests and reviews.
 `main` deploys the site via `.github/workflows/deploy.yml`; keep `development` building (`npm run build` in `src/typescript/`).
@@ -20,7 +24,7 @@ Layout is in `README.md`. Follow `docs/coding-guidelines.md` for tests and revie
 ### Versions
 - Versions are `MAJOR.MINOR.PATCH`, starting at 0.1.0. Bug fixes and small changes bump the patch (0.1.1, 0.1.2), bigger features bump the minor (0.2.0).
 - The version lives in `src/typescript/src/version.ts` and `src/typescript/package.json` (a test keeps them equal), and the pages show it.
-- Note each change that lands on `development` under "Unreleased" in `docs/releases.md`.
+- Note each change that lands on `development` under "Unreleased" in `docs/changes.md`.
 - To release: set the new version in both files, rename "Unreleased" to the version with the date, open the pull request from `development` to `main`, and after the merge tag `main` as `vX.Y.Z` and make a GitHub release with the same notes.
 
 ### Review development to master merge

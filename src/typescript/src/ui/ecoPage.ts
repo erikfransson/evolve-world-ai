@@ -1,7 +1,7 @@
 import type { EcoConfig } from "../sim/ecoConfig.ts";
 import { withEcoPreset } from "../sim/presets.ts";
 import type { BodyPlan } from "../sim/sensors.ts";
-import type { Lineage, SpeciesCount } from "../sim/ecosystem.ts";
+import type { Lineage } from "../sim/ecosystem.ts";
 import type { Leaders } from "../sim/leaderboard.ts";
 import type { TraitHistogram } from "../sim/popStats.ts";
 import type { EcoSpeedSetting } from "../worker/ecoProtocol.ts";
@@ -19,7 +19,6 @@ import { PopulationGraph } from "./populationGraph.ts";
 import type { PopulationSample } from "./populationGraph.ts";
 import { $, durationText, setTile } from "./page.ts";
 import { initTooltips } from "./tooltip.ts";
-import { LINEAGE_STRIDE } from "../worker/ecoProtocol.ts";
 
 export type EcoPhase = "idle" | "running" | "paused" | "extinct";
 export type ZoomAction = "in" | "out" | "fit";
@@ -35,7 +34,6 @@ export interface EcoStats {
   speed: number | null; // simulated seconds per real second achieved, null until measured
   helpers: number; // helper threads sensing and thinking, 0 when the simulation runs on one thread
   wasm: boolean; // sense and think run on the WebAssembly kernels
-  species?: readonly SpeciesCount[]; // with several species
   season: { name: string; factor: number } | null; // null when seasons are off
 }
 
@@ -54,7 +52,6 @@ export interface EcoSelected {
   founderId: number;
   founderPool: boolean; // the founder came from the seed pool
   founderHue: number;
-  species?: { name: string; index: number; kills: number; hunter: boolean }; // with several species
   died?: boolean; // the values are those of its last moment
 }
 
@@ -91,7 +88,7 @@ export interface EcoView {
   setFollowing(follow: boolean): void;
   setHistory(samples: readonly PopulationSample[]): void;
   setSeasons(eco: EcoConfig["eco"] | null): void; // the graph shades winters; null for none
-  setLineages(lineages: readonly Lineage[], population: number, speciesCounts?: readonly number[]): void; // speciesCounts with several species
+  setLineages(lineages: readonly Lineage[], population: number): void;
   setLineageHistory(history: Float64Array): void;
   clearLineages(): void;
   setTraits(traits: readonly (readonly TraitHistogram[] | null)[]): void; // body plan histograms per species
@@ -133,8 +130,7 @@ export function formatPlan(plan: BodyPlan): string {
 }
 
 export function createEcoView(handlers: EcoHandlers, page: ModePage): EcoView {
-  const { mode, speciesColors } = page;
-  const several = speciesColors.length > 1;
+  const { mode } = page;
   const start = $<HTMLButtonElement>("start");
   const pause = $<HTMLButtonElement>("pause");
   const reset = $<HTMLButtonElement>("reset");
@@ -194,26 +190,6 @@ export function createEcoView(handlers: EcoHandlers, page: ModePage): EcoView {
   let drain: { id: number; value: number } | null = null; // smoothed, since thrust flickers from tick to tick
   let selectedFounder = -1;
   const lineages = new LineagePanel($("lineageCard"), (f) => { setFounderButton(); handlers.onHighlight(f); });
-  // With several species the Lineages card shows one species at a time, picked by the switch in its header.
-  let lineageSpecies = 0;
-  let lastLineages: { list: readonly Lineage[]; counts: readonly number[] } | null = null;
-  let lastLineageHistory: Float64Array | null = null;
-  const speciesBlock = (h: Float64Array, s: number, blocks: number): Float64Array => {
-    const out = new Float64Array(h.length / blocks);
-    for (let i = 0, o = 0; i < h.length; i += LINEAGE_STRIDE * blocks, o += LINEAGE_STRIDE) out.set(h.subarray(i + s * LINEAGE_STRIDE, i + (s + 1) * LINEAGE_STRIDE), o);
-    return out;
-  };
-  const showLineages = (): void => {
-    if (lastLineages) lineages.setLineages(lastLineages.list.filter((l) => l.species === lineageSpecies), lastLineages.counts[lineageSpecies] ?? 0);
-    if (lastLineageHistory) lineages.setHistory(speciesBlock(lastLineageHistory, lineageSpecies, speciesColors.length));
-  };
-  document.querySelectorAll<HTMLInputElement>('input[name="linSpecies"]').forEach((input) => {
-    input.addEventListener("change", () => {
-      lineageSpecies = Number(input.value);
-      if (lineages.highlight() !== null) lineages.pick(null);
-      showLineages();
-    });
-  });
   const founderBtn = $("selFounder");
   const setFounderButton = (): void => { founderBtn.classList.toggle("on", selectedFounder >= 0 && lineages.highlight() === selectedFounder); };
 
@@ -239,7 +215,7 @@ export function createEcoView(handlers: EcoHandlers, page: ModePage): EcoView {
     canvas: $<HTMLCanvasElement>("view"),
     brain: new BrainView($<HTMLCanvasElement>("brainView")),
     brainPanel,
-    graph: new PopulationGraph($<HTMLCanvasElement>("graphView"), speciesColors),
+    graph: new PopulationGraph($<HTMLCanvasElement>("graphView")),
     readConfig: readEcoConfig,
     fillConfig: fillEcoForm,
     speed,
@@ -275,13 +251,7 @@ export function createEcoView(handlers: EcoHandlers, page: ModePage): EcoView {
       $("selEnergy").textContent = sel.died ? "died" : `${Math.round(sel.energy)} / ${Math.round(sel.fullEnergy)}`;
       $("selAge").textContent = durationText(sel.age);
       $("selChildren").textContent = nf.format(sel.children);
-      $("selEaten").textContent = nf.format(sel.species?.hunter ? sel.species.kills : sel.eaten);
-      if (sel.species) {
-        const tag = $("selSpecies");
-        tag.textContent = sel.species.name;
-        tag.style.setProperty("--sp", speciesColors[sel.species.index] ?? "currentColor");
-        $("selEatenLabel").textContent = sel.species.hunter ? "Prey eaten" : "Plants eaten";
-      }
+      $("selEaten").textContent = nf.format(sel.eaten);
       $("selDepth").textContent = nf.format(sel.depth);
       $("selId").textContent = `#${sel.id}`;
       $("selPlan").textContent = `${formatPlan(sel.plan)} · ${formatBirth(sel.birth)}`;
@@ -291,15 +261,6 @@ export function createEcoView(handlers: EcoHandlers, page: ModePage): EcoView {
       selectedFounder = sel.founderId;
       $("selFounderSw").style.background = lineageColor(sel.founderHue);
       $("selFounderText").textContent = `Founder #${sel.founderId} · ${sel.founderPool ? "trained pool" : "random"}`;
-      if (several && sel.species && sel.species.index !== lineageSpecies) {
-        // The founder button highlights a lineage of the species on show.
-        const radio = document.querySelector<HTMLInputElement>(`input[name="linSpecies"][value="${sel.species.index}"]`);
-        if (radio) {
-          radio.checked = true;
-          lineageSpecies = sel.species.index;
-          showLineages();
-        }
-      }
       setFounderButton();
     },
     setFollowing(on) {
@@ -307,21 +268,9 @@ export function createEcoView(handlers: EcoHandlers, page: ModePage): EcoView {
     },
     setHistory: (samples) => view.graph.setData(samples),
     setSeasons: (eco) => view.graph.setSeasons(eco),
-    setLineages(l, population, counts) {
-      if (!counts) return lineages.setLineages(l, population);
-      lastLineages = { list: l, counts };
-      showLineages();
-    },
-    setLineageHistory(h) {
-      if (!several) return lineages.setHistory(h);
-      lastLineageHistory = h;
-      showLineages();
-    },
-    clearLineages() {
-      lastLineages = null;
-      lastLineageHistory = null;
-      lineages.reset();
-    },
+    setLineages: (l, population) => lineages.setLineages(l, population),
+    setLineageHistory: (h) => lineages.setHistory(h),
+    clearLineages: () => lineages.reset(),
     setTraits: (traits) => traitPanel.set(traits),
     setLeaders: (leaders) => leaderPanel.set(leaders),
     clearStatistics() {

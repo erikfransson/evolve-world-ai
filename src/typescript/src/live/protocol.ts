@@ -72,6 +72,7 @@ export interface Hello {
   summary: { initialPopulation: number; maxPopulation: number; collisionDamage: boolean; seasons: boolean };
   maxViewers: number;
   add: AddRules | null; // what an add may ask for, null while adding is off
+  serverVersion?: string; // the server's release (src/typescript/src/version.ts), may differ from the page's during a deploy
 }
 
 export interface Season {

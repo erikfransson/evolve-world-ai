@@ -146,3 +146,6 @@ input.hue::-moz-range-progress { background: transparent; }
   .add-peek { position: fixed; z-index: 30; top: auto; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); }
 }
 @media (prefers-reduced-motion: reduce) { .entry-card, .addp, .entry-live i { animation: none !important; } }
+
+/* release version under the side panel */
+.panel .ver { margin: 0.4rem 2px 0; font-size: 0.78rem; color: var(--muted); }

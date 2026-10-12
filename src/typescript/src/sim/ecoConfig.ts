@@ -43,7 +43,7 @@ export interface EcoConfig extends EngineConfig {
     memoryRange: number[]; // short and long units each
   };
   mutation: { rate: number; std: number }; // per gene, as in Trials' ga
-  // The Great Hunt: the species, which replace eco.initialPopulation, poolFraction, the birth settings and the ray
+  // Multi-species worlds: the species, which replace eco.initialPopulation, poolFraction, the birth settings and the ray
   // ranges, and the creature's start energy, speed and costs (see species.ts). Absent for the Ecosystem's one species.
   species?: SpeciesConfig[];
 }
@@ -93,7 +93,7 @@ export const DEFAULT_ECO_CONFIG: EcoConfig = {
 
 const deg = (d: number): number => (d * Math.PI) / 180;
 
-// The Great Hunt (#12): species A grazes the plants, species B hunts A. Both species carry all their own values; the
+// The two-species world (#12): species A grazes the plants, species B hunts A. Both species carry all their own values; the
 // shared creature and eco settings hold the same numbers for the prey. Tuned in docs/tuning-notes.md.
 export const DEFAULT_PREDATOR_CONFIG: EcoConfig = {
   ...DEFAULT_ECO_CONFIG,
