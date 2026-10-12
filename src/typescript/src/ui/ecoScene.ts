@@ -66,6 +66,7 @@ export class EcoRenderer {
   private vis = new Int32Array(1024); // snapshot indices of the creatures in view
   private visBucket = new Int32Array(1024);
   private order = new Int32Array(1024);
+  private seen = new Int32Array(1024); // snapshot indices of the visible items
   private readonly counts = new Int32Array(DIM_BUCKET + 2);
 
   // highlight: a founder id whose descendants stay bright while everyone else is dimmed, or -1 for none.
@@ -114,15 +115,31 @@ export class EcoRenderer {
     const side = 2 * TINY_ITEM * dev * 0.55; // about 1.6 device px
     // Dim while small, opaque once large, so mid zoom blends into the full-size items.
     const solid = Math.min(1, Math.max(0, (px - TINY_ITEM) / (SOLID_ITEM - TINY_ITEM)));
+    // One pass over all items collects the visible ones per kind, in snapshot order: food from the front of the scratch array, poison from the back.
+    const n = v.itemCount;
+    if (this.seen.length < n) this.seen = new Int32Array(Math.max(n, 2 * this.seen.length));
+    const seen = this.seen;
+    const cap = seen.length;
+    let nFood = 0;
+    let nPoison = 0;
+    for (let i = 0; i < n; i++) {
+      const kind = v.itemKind[i]!;
+      if (kind !== 1 && kind !== 2) continue;
+      const x = v.itemX[i]!;
+      const y = v.itemY[i]!;
+      if (x < x0 || x > x1 || y < y0 || y > y1) continue;
+      if (kind === 1) seen[nFood++] = i;
+      else seen[cap - 1 - nPoison++] = i;
+    }
     for (const [kind, color, boost] of [[1, FOOD, 0], [2, POISON, 0.15]] as const) {
       ctx.fillStyle = color;
       ctx.globalAlpha = Math.min(1, ITEM_DIM + boost + (1 - ITEM_DIM - boost) * solid);
       ctx.beginPath();
-      for (let i = 0; i < v.itemCount; i++) {
-        if (v.itemKind[i] !== kind) continue;
+      const count = kind === 1 ? nFood : nPoison;
+      for (let k = 0; k < count; k++) {
+        const i = kind === 1 ? seen[k]! : seen[cap - 1 - k]!;
         const x = v.itemX[i]!;
         const y = v.itemY[i]!;
-        if (x < x0 || x > x1 || y < y0 || y > y1) continue;
         if (tiny) {
           ctx.rect(x - side / 2, y - side / 2, side, side);
         } else {

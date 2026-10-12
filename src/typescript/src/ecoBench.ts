@@ -17,6 +17,7 @@ import type { DeepPartial } from "./sim/config.ts";
 import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "./sim/ecoConfig.ts";
 import type { EcoConfig } from "./sim/ecoConfig.ts";
 import { Ecosystem } from "./sim/ecosystem.ts";
+import { PhaseTimer } from "./sim/profile.ts";
 import { ECO_PRESETS, PREDATOR_PRESETS, withEcoPreset } from "./sim/presets.ts";
 import { parsePool } from "./sim/seedPool.ts";
 import { checkRanges, mergeSpeciesList } from "./sim/species.ts";
@@ -40,9 +41,24 @@ const { values } = parseArgs({
     preset: { type: "string" },
     config: { type: "string" },
     set: { type: "string", multiple: true },
+    profile: { type: "boolean" }, // CPU ms per phase per steady tick; serial only, with --threads the first lap also holds the wait for the helpers
   },
 });
 const num = (v: string | undefined, fallback: number): number => (v === undefined ? fallback : Number(v));
+
+// Per-phase CPU ms per steady tick (after the first quarter), and per 1000 creatures of the steady mean population.
+function profileOutput(prof: PhaseTimer, steadyTicks: number, steadyCreatureTicks: number): object {
+  const perTick = [...prof.ms].map(([k, v]) => [k, +(v / steadyTicks).toFixed(3)] as const);
+  const meanPop = steadyCreatureTicks / Math.max(1, steadyTicks);
+  const perKilo = perTick.map(([k, v]) => [k, +((v * 1000) / meanPop).toFixed(4)] as const);
+  const total = perTick.reduce((a, [, v]) => a + v, 0);
+  return {
+    steadyPopulation: Math.round(meanPop),
+    phasesTotalMs: +total.toFixed(3),
+    phases: Object.fromEntries(perTick),
+    phasesPerKilo: Object.fromEntries(perKilo),
+  };
+}
 
 // "path=value" assignments as one nested override.
 function overridesOf(assignments: readonly string[]): Record<string, unknown> {
@@ -101,6 +117,8 @@ const pool = values.pool === "none" ? null : parsePool(JSON.parse(readFileSync(v
 const threads = num(values.threads, 0);
 const helpers = threads > 0 ? createNodeThinkPool(threads) : null;
 const eco = new Ecosystem(config, pool, { journal: helpers !== null });
+const prof = values.profile ? new PhaseTimer() : null;
+eco.profile = prof;
 await helpers?.start(eco);
 const population: number[] = [eco.population];
 const perSpecies = (): number[] => eco.speciesCounts.map((c) => c.population);
@@ -141,9 +159,11 @@ const t0 = performance.now();
 const warm = Math.floor(ticks / 4); // steadyMsPerTick leaves out these first ticks (JIT warm-up, helper start)
 let tWarm = t0;
 let cpuWarm = process.cpuUsage();
+let steadyCreatureTicks = 0;
 while (eco.tick < ticks && !eco.extinct) {
-  if (eco.tick === warm) { tWarm = performance.now(); cpuWarm = process.cpuUsage(); }
+  if (eco.tick === warm) { tWarm = performance.now(); cpuWarm = process.cpuUsage(); prof?.reset(); }
   creatureTicks += eco.population;
+  if (eco.tick >= warm) steadyCreatureTicks += eco.population;
   if (helpers) await helpers.step(eco);
   else eco.step();
   if (eco.tick % every === 0) {
@@ -187,4 +207,5 @@ console.log(JSON.stringify({
   ...(eco.species.length > 1 ? { species: eco.speciesCounts.map((c, s) => ({ name: eco.species[s]!.name, ...c, population: speciesPopulation.map((p) => p[s]!) })) } : {}),
   ...(seriesEvery ? { series } : {}),
   fingerprint: eco.fingerprint(),
+  ...(prof ? profileOutput(prof, eco.tick - warm, steadyCreatureTicks) : {}),
 }));
