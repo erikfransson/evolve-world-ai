@@ -2,11 +2,13 @@ import type { EngineConfig } from "./config.ts";
 import { createRng, deriveSeed } from "./rng.ts";
 import type { StatefulRng } from "./rng.ts";
 import type { Body } from "./physics.ts";
+import { buildGroundField } from "./groundField.ts";
+import type { GroundField } from "./groundField.ts";
 
 // Static map features (#34), generated deterministically from the run seed and the world settings, so every thread that builds
 // the world gets the same ones. Rock (stones and ridges) is a set of discs that creatures bounce off like walls and rays report
-// as walls. Slow and fast patches are unions of discs under the creatures: they move at SLOW_FACTOR or FAST_FACTOR of their
-// speed, and the brain senses which one it stands on. A density is the share of the world area covered, 0 for none.
+// as walls. Slow and fast patches are a smooth field on a coarse raster (groundField.ts) under the creatures: they move at SLOW_FACTOR or
+// FAST_FACTOR of their speed, and the brain senses which one it stands on. A density is the share of the world area covered, 0 for none.
 
 export const TERRAIN_SLOW = -1;
 export const TERRAIN_NORMAL = 0;
@@ -72,17 +74,11 @@ export class Terrain {
   readonly rows: number;
   readonly rockStart: Int32Array;
   readonly rockOrder: Int32Array;
-  // Patch discs of both kinds; patches of different kinds never overlap.
-  readonly patchX: Float64Array;
-  readonly patchY: Float64Array;
-  readonly patchR: Float64Array;
-  readonly patchKind: Int8Array;
-  // Grid of the patch discs, cells as for rock: cell c lists the discs touching it, in index order, as patchOrder[patchStart[c] .. patchStart[c + 1] - 1].
-  readonly patchStart: Int32Array;
-  readonly patchOrder: Int32Array;
+  // Mud and firm ground as a raster field; null when the map has none.
+  readonly ground: GroundField | null;
   readonly empty: boolean; // no rock and no patches
 
-  constructor(rock: readonly Circle[], patches: readonly (Circle & { kind: number })[], width: number, height: number) {
+  constructor(rock: readonly Circle[], ground: GroundField | null, width: number, height: number) {
     this.width = width;
     this.height = height;
     this.rockCount = rock.length;
@@ -99,25 +95,8 @@ export class Terrain {
     const fill = this.rockStart.slice(0, -1);
     this.rockOrder = new Int32Array(rock.length);
     cellOf.forEach((c, i) => (this.rockOrder[fill[c]!++] = i));
-    this.patchX = Float64Array.from(patches, (d) => d.x);
-    this.patchY = Float64Array.from(patches, (d) => d.y);
-    this.patchR = Float64Array.from(patches, (d) => d.r);
-    this.patchKind = Int8Array.from(patches, (d) => d.kind);
-    this.empty = rock.length === 0 && patches.length === 0;
-    const cells = this.cols * this.rows;
-    const span = (d: Circle): number[] => [Math.max(0, Math.floor((d.x - d.r) / ROCK_CELL)), Math.min(this.cols - 1, Math.floor((d.x + d.r) / ROCK_CELL)), Math.max(0, Math.floor((d.y - d.r) / ROCK_CELL)), Math.min(this.rows - 1, Math.floor((d.y + d.r) / ROCK_CELL))];
-    const each = (visit: (c: number, i: number) => void): void => {
-      patches.forEach((d, i) => {
-        const [x0, x1, y0, y1] = span(d) as [number, number, number, number];
-        for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) visit(cy * this.cols + cx, i);
-      });
-    };
-    this.patchStart = new Int32Array(cells + 1);
-    each((c) => this.patchStart[c + 1]!++);
-    for (let c = 0; c < cells; c++) this.patchStart[c + 1]! += this.patchStart[c]!;
-    const next = this.patchStart.slice(0, -1);
-    this.patchOrder = new Int32Array(this.patchStart[cells]!);
-    each((c, i) => (this.patchOrder[next[c]!++] = i));
+    this.ground = ground;
+    this.empty = rock.length === 0 && ground === null;
   }
 
   private cellOf(x: number, y: number): number {
@@ -140,14 +119,7 @@ export class Terrain {
 
   // -1 on slow ground, 1 on fast ground, 0 elsewhere.
   valueAt(x: number, y: number): number {
-    const c = this.cellOf(x, y);
-    for (let k = this.patchStart[c]!, end = this.patchStart[c + 1]!; k < end; k++) {
-      const i = this.patchOrder[k]!;
-      const dx = x - this.patchX[i]!;
-      const dy = y - this.patchY[i]!;
-      if (dx * dx + dy * dy < this.patchR[i]! ** 2) return this.patchKind[i]!;
-    }
-    return 0;
+    return this.ground === null ? 0 : this.ground.valueAt(x, y);
   }
 
   // Speed multiplier of a terrain value from valueAt.
@@ -225,7 +197,7 @@ export class Terrain {
   }
 }
 
-export const NO_TERRAIN = new Terrain([], [], 1, 1);
+export const NO_TERRAIN = new Terrain([], null, 1, 1);
 
 // Places pieces of one kind, each given by make and accepted by ok, until their area reaches the target, at least one, and appends
 // their discs to placed (one array per piece). Stops early when a piece finds no room. Returns the area covered.
@@ -352,32 +324,6 @@ function ridge(rng: StatefulRng, w: number, h: number): { discs: Circle[]; area:
   return { discs, area: 2.8 * rho * covered };
 }
 
-export const MAX_DISCS_PER_PATCH = 11; // the centre disc, up to four lobes and up to six shore bumps
-const PATCH_BUMPS = [4, 3] as const; // shore bumps on a patch: 4 + one of 0 .. 2
-// A patch: a blob of three to five discs around a larger centre one, with a few small bumps on its shore; size scales it.
-function patch(rng: StatefulRng, w: number, h: number, size: number): { discs: Circle[]; area: number } {
-  const r0 = Math.min(550, Math.max(150, 0.08 * Math.min(w, h))) * rng.range(0.8, 1.2) * size;
-  const cx = rng.range(0, w);
-  const cy = rng.range(0, h);
-  const discs: Circle[] = [{ x: cx, y: cy, r: r0 }];
-  const extra = 2 + rng.int(3);
-  for (let k = 0; k < extra; k++) {
-    const a = rng.range(0, 2 * Math.PI);
-    const d = r0 * rng.range(0.5, 0.9);
-    discs.push({ x: cx + d * Math.cos(a), y: cy + d * Math.sin(a), r: r0 * rng.range(0.5, 0.85) });
-  }
-  const area = 0.7 * discs.reduce((s, d) => s + Math.PI * d.r * d.r, 0);
-  // Small bumps on the shore of the lobes, so an edge is lumpy and irregular rather than a clover of circles.
-  for (let k = 0, n = PATCH_BUMPS[0] + rng.int(PATCH_BUMPS[1]); k < n; k++) {
-    const base = discs[rng.int(discs.length)]!;
-    const a = rng.range(0, 2 * Math.PI);
-    const r = base.r * rng.range(0.16, 0.32);
-    const d = base.r + r * rng.range(-0.3, 0.45);
-    discs.push({ x: base.x + d * Math.cos(a), y: base.y + d * Math.sin(a), r });
-  }
-  return { discs, area };
-}
-
 const insideWorld = (discs: readonly Circle[], w: number, h: number): boolean => discs.every((d) => d.x >= d.r + GAP && d.x <= w - d.r - GAP && d.y >= d.r + GAP && d.y <= h - d.r - GAP);
 
 function generate(config: TerrainSettings): Terrain {
@@ -398,16 +344,8 @@ function generate(config: TerrainSettings): Terrain {
   };
   addRock(stoneDensity, 0, stone);
   addRock(ridgeDensity, 1, ridge);
-  const patches: (Circle & { kind: number })[] = [];
-  const patchPieces: Circle[][] = [];
-  for (const [density, kind, id, size] of [[slowDensity, TERRAIN_SLOW, 2, slowSize], [fastDensity, TERRAIN_FAST, 3, fastSize]] as const) {
-    if (!(density > 0)) continue;
-    const rng = stream(id);
-    const before = patchPieces.length;
-    place(density * area, () => patch(rng, w, h, size), (discs) => patchPieces.every((p) => apart(discs, p, 0)), patchPieces);
-    for (const p of patchPieces.slice(before)) for (const d of p) patches.push({ ...d, kind });
-  }
-  return new Terrain(rock, patches, w, h);
+  const ground = buildGroundField(w, h, [{ density: slowDensity, size: slowSize, rng: stream(2) }, { density: fastDensity, size: fastSize, rng: stream(3) }], config.seed); // mud layer, then firm
+  return new Terrain(rock, ground, w, h);
 }
 
 const cache = new Map<string, Terrain>();

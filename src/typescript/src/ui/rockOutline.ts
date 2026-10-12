@@ -292,7 +292,7 @@ function snap(t: Discs, members: readonly number[], pts: number[]): number[] {
   return out;
 }
 
-function body(t: Discs, members: number[], seed: number, smooth = false): RockBody | null {
+function body(t: Discs, members: number[], seed: number): RockBody | null {
   let x0 = Infinity;
   let y0 = Infinity;
   let x1 = -Infinity;
@@ -330,7 +330,7 @@ function body(t: Discs, members: number[], seed: number, smooth = false): RockBo
       }
     }
   }
-  const loops = contours(f, w, h, ox, oy).map((l) => (smooth ? snap(t, members, l) : simplifyLoop(snap(t, members, l)))).filter((l) => l.length >= 6);
+  const loops = contours(f, w, h, ox, oy).map((l) => simplifyLoop(snap(t, members, l))).filter((l) => l.length >= 6);
   if (loops.length === 0) return null;
   const box = [x0 - 2 * CELL, y0 - 2 * CELL, x1 + 2 * CELL, y1 + 2 * CELL];
   let shaded: { facets: number[][][]; cracks: number[][] } | null = null;
@@ -389,15 +389,6 @@ export function rockBodies(t: Terrain): RockBody[] {
   return bodies;
 }
 
-export interface PatchBody {
-  kind: number;
-  x0: number;
-  y0: number;
-  x1: number;
-  y1: number;
-  loops: number[][]; // closed outlines on the exact union edge, dense, for traceSmooth
-}
-
 // A closed curve through the midpoints of a dense outline, so ground edges are smooth where rock edges are angular.
 export function traceSmooth(path: PathSink, pts: readonly number[]): void {
   const n = pts.length / 2;
@@ -405,45 +396,4 @@ export function traceSmooth(path: PathSink, pts: readonly number[]): void {
   path.moveTo((at(0, 0) + at(1, 0)) / 2, (at(0, 1) + at(1, 1)) / 2);
   for (let i = 1; i <= n; i++) path.quadraticCurveTo(at(i, 0), at(i, 1), (at(i, 0) + at(i + 1, 0)) / 2, (at(i, 1) + at(i + 1, 1)) / 2);
   path.closePath();
-}
-
-const builtPatches = new WeakMap<Terrain, PatchBody[]>();
-
-// The slow and fast ground of a map as one outline set per lump of overlapping discs of one kind, built once per map.
-export function patchBodies(t: Terrain): PatchBody[] {
-  let bodies = builtPatches.get(t);
-  if (!bodies) {
-    bodies = [];
-    const n = t.patchX.length;
-    const d: Discs = { x: t.patchX, y: t.patchY, r: t.patchR };
-    const parent = Int32Array.from({ length: n }, (_, i) => i);
-    const find = (i: number): number => {
-      while (parent[i] !== i) i = parent[i] = parent[parent[i]!]!;
-      return i;
-    };
-    let maxR = 0;
-    for (let i = 0; i < n; i++) maxR = Math.max(maxR, t.patchR[i]!);
-    const byX = Array.from({ length: n }, (_, i) => i).sort((a, b) => t.patchX[a]! - t.patchX[b]!);
-    for (let a = 0; a < n; a++) {
-      const i = byX[a]!;
-      for (let b = a + 1; b < n; b++) {
-        const j = byX[b]!;
-        if (t.patchX[j]! - t.patchX[i]! > t.patchR[i]! + maxR) break;
-        if (t.patchKind[i] === t.patchKind[j] && (t.patchX[i]! - t.patchX[j]!) ** 2 + (t.patchY[i]! - t.patchY[j]!) ** 2 < (t.patchR[i]! + t.patchR[j]!) ** 2) parent[find(j)] = find(i);
-      }
-    }
-    const groups = new Map<number, number[]>();
-    for (let i = 0; i < n; i++) {
-      const root = find(i);
-      const g = groups.get(root);
-      if (g) g.push(i);
-      else groups.set(root, [i]);
-    }
-    for (const members of groups.values()) {
-      const b = body(d, members, 0x7a11 + members[0]!, true);
-      if (b) bodies.push({ kind: t.patchKind[members[0]!]!, x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1, loops: b.loops });
-    }
-    builtPatches.set(t, bodies);
-  }
-  return bodies;
 }

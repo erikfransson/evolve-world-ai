@@ -5,7 +5,7 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
-- Terrain polish: mud is a wet-earth texture with a lighter shallow rim and a feathered edge, firm ground is desaturated sage with fine streaks, both with smooth contoured outlines that are exactly where creatures sense the ground (the feather stays within 8 units inside the edge). Rock gets a shadowed south cliff face. Mud and firm patches now have a few small shore bumps, so maps with mud or firm ground generate differently than before (rock and map-off runs are unchanged).
+- Terrain polish: mud and firm ground are a smooth field on a coarse raster instead of unions of circles, so patches have organic, ragged outlines at the same coverage and patch size settings. The edge is the exact 0.5 contour of that field, which is where creatures sense the ground (the field is also cheaper to build). Mud is a wet-earth texture with a lighter shallow rim, firm ground is desaturated sage with fine streaks and a crisp edge. Rock gets a shadowed south cliff face. Maps with mud or firm ground generate differently than before (rock and map-off runs are unchanged).
 
 ## 0.1.0 (2026-10-12)
 

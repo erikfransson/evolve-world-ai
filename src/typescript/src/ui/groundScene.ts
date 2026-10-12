@@ -1,25 +1,37 @@
 import { createRng } from "../sim/rng.ts";
 import { TERRAIN_FAST, TERRAIN_SLOW } from "../sim/terrain.ts";
 import type { Terrain } from "../sim/terrain.ts";
-import { patchBodies, traceSmooth } from "./rockOutline.ts";
-import type { PatchBody } from "./rockOutline.ts";
+import { fineOf, groundBodies } from "./groundOutline.ts";
+import type { GroundBody } from "./groundOutline.ts";
+import { traceSmooth } from "./rockOutline.ts";
 import type { View } from "./terrainScene.ts";
 
 // Draws the slow ground (mud) and fast ground (firm) of a Terrain, in world coordinates under the current transform.
-// The edge of a patch is the exact edge of the union of its discs, which is where creatures start to sense and feel the ground (Terrain.valueAt).
+// The edge of a patch is the 0.5 contour of the ground field, which is where creatures start to sense and feel the ground (Terrain.valueAt).
 // Everything softer than that is cosmetic and stays inside the edge: a feather of at most FEATHER_UNITS fades the colour into the floor,
 // and a lighter shallow rim of mud (or firm ground) fades into the deeper colour further in.
 
-export const FEATHER_UNITS = 8; // widest the fade into the floor reaches inside the edge, world units
+export const FEATHER_UNITS = 4; // widest the fade into the floor reaches inside the edge, world units: a slight softening, the edge stays crisp
 const FLOOR = "#10291f";
-const RIM_BANDS = [64, 44, 28, 16, 8].map((width) => ({ width, alpha: 0.045 })); // lighter rim, from the edge inwards, as stacked bands for a smooth gradient
+const bands = (widths: number[], alpha: number): { width: number; alpha: number }[] => widths.map((width) => ({ width, alpha })); // stacked, from the edge inwards: a smooth gradient
 export const FEATHER_BANDS = [1, 0.7, 0.45, 0.22].map((k, i) => ({ width: FEATHER_UNITS * k, alpha: 0.2 + 0.07 * i })); // floor-coloured bands from the edge inwards
-const RIM_COARSE = [{ width: 56, alpha: 0.07 }, { width: 20, alpha: 0.07 }];
 const FEATHER_COARSE = [{ width: FEATHER_UNITS, alpha: 0.5 }];
 const COARSE_BELOW = 0.1; // scale (device px per world unit)
-const STYLE: Record<number, { flat: string; rim: string; seed: number }> = {
-  [TERRAIN_SLOW]: { flat: "#453c2a", rim: "rgb(166, 150, 104)", seed: 21 },
-  [TERRAIN_FAST]: { flat: "#2e4838", rim: "rgb(130, 168, 142)", seed: 22 },
+const FINE_FROM = 0.05; // scale from which the outline is the fine one; coarser views use the cheap coarse one
+const EDGE_PX = 1.1; // device px of the dark line inside the contour
+const SHOULDER_PX = 1.6; // device px of the pale line just inside that
+interface Style {
+  flat: string;
+  seed: number;
+  rimColor: string; // the lighter shallow rim, fading into the deeper ground further in
+  rim: { width: number; alpha: number }[];
+  rimCoarse: { width: number; alpha: number }[];
+  edge: string;
+  shoulder: string;
+}
+const STYLE: Record<number, Style> = {
+  [TERRAIN_SLOW]: { flat: "#453c2a", seed: 21, rimColor: "rgb(166, 150, 104)", rim: bands([84, 60, 40, 24, 12], 0.05), rimCoarse: bands([56, 20], 0.07), edge: "rgba(10, 8, 4, 0.5)", shoulder: "rgba(0, 0, 0, 0)" },
+  [TERRAIN_FAST]: { flat: "#38574a", seed: 22, rimColor: "rgb(150, 186, 168)", rim: bands([26, 12], 0.035), rimCoarse: bands([20], 0.05), edge: "rgba(6, 18, 12, 0.5)", shoulder: "rgba(176, 208, 182, 0.2)" },
 };
 const TILE_UNITS = 720; // world units one texture tile covers
 const TILE_PX = 256;
@@ -102,9 +114,9 @@ const mudTile: Painter = (g, wrapped, rng) => {
 
 // Firm ground: fine flat streaks at low contrast on desaturated sage.
 const firmTile: Painter = (g, wrapped, rng) => {
-  blotches(g, wrapped, rng, 30, "rgba(190, 220, 190, 0.05)", "rgba(4, 14, 10, 0.1)");
-  dashes(g, wrapped, rng, 150, [14, 60], 1, "rgba(200, 228, 200, 0.06)", 0.03);
-  dashes(g, wrapped, rng, 110, [10, 40], 1, "rgba(6, 18, 12, 0.09)", 0.03);
+  blotches(g, wrapped, rng, 16, "rgba(190, 220, 190, 0.025)", "rgba(4, 14, 10, 0.07)");
+  dashes(g, wrapped, rng, 170, [14, 70], 1, "rgba(206, 232, 206, 0.075)", 0.02);
+  dashes(g, wrapped, rng, 130, [10, 50], 1, "rgba(6, 18, 12, 0.1)", 0.02);
 };
 
 const patterns = new WeakMap<CanvasRenderingContext2D, Map<number, CanvasPattern | null>>();
@@ -123,45 +135,35 @@ function patternFor(ctx: CanvasRenderingContext2D, kind: number): CanvasPattern 
 }
 
 interface Patch {
-  body: PatchBody;
+  body: GroundBody;
   path: Path2D;
 }
-const cached = new WeakMap<Terrain, Patch[]>();
+const cached = new WeakMap<Terrain, Map<number, Patch[]>>();
 
-function patchesOf(t: Terrain): Patch[] {
-  let p = cached.get(t);
+// The drawable patches of a map at one outline refinement (see groundBodies), built once per map and refinement.
+function patchesOf(t: Terrain, level: number): Patch[] {
+  let byLevel = cached.get(t);
+  if (!byLevel) cached.set(t, (byLevel = new Map()));
+  let p = byLevel.get(level);
   if (!p) {
-    p = patchBodies(t).map((body) => {
+    p = groundBodies(t, level).map((body) => {
       const path = new Path2D();
       for (const loop of body.loops) traceSmooth(path, loop);
       return { body, path };
     });
-    cached.set(t, p);
+    byLevel.set(level, p);
   }
   return p;
 }
 
-// quick: plain unions of the discs without building outlines, for the settings preview that redraws while sliders move.
+// quick: the coarse outline with flat fills, for the settings preview that redraws while sliders move.
 export function drawGround(ctx: CanvasRenderingContext2D, t: Terrain, scale: number, view: View, quick: boolean): void {
-  if (t.patchX.length === 0) return;
-  if (quick || typeof Path2D === "undefined") {
-    for (const kind of [TERRAIN_SLOW, TERRAIN_FAST]) {
-      ctx.fillStyle = STYLE[kind]!.flat;
-      ctx.beginPath();
-      for (let i = 0; i < t.patchX.length; i++) {
-        if (t.patchKind[i] !== kind) continue;
-        ctx.moveTo(t.patchX[i]! + t.patchR[i]!, t.patchY[i]!);
-        ctx.arc(t.patchX[i]!, t.patchY[i]!, t.patchR[i]!, 0, Math.PI * 2);
-      }
-      ctx.fill();
-    }
-    return;
-  }
-  const shown = patchesOf(t).filter(({ body: b }) => b.x1 + VIEW_PAD >= view.x0 && b.x0 - VIEW_PAD <= view.x1 && b.y1 + VIEW_PAD >= view.y0 && b.y0 - VIEW_PAD <= view.y1);
-  const textured = scale >= TEXTURE_FROM;
+  if (t.ground === null || typeof Path2D === "undefined") return;
+  const fine = !quick && scale >= FINE_FROM;
+  const shown = patchesOf(t, fine ? fineOf(t) : 1).filter(({ body: b }) => b.x1 + VIEW_PAD >= view.x0 && b.x0 - VIEW_PAD <= view.x1 && b.y1 + VIEW_PAD >= view.y0 && b.y0 - VIEW_PAD <= view.y1);
+  const textured = !quick && scale >= TEXTURE_FROM;
   const coarse = scale < COARSE_BELOW; // a few px per band at best, so fewer bands do
-  const rim = coarse ? RIM_COARSE : RIM_BANDS;
-  const feather = coarse ? FEATHER_COARSE : FEATHER_BANDS;
+  const px = 1 / scale;
   ctx.save();
   ctx.beginPath();
   ctx.rect(0, 0, t.width, t.height);
@@ -169,6 +171,8 @@ export function drawGround(ctx: CanvasRenderingContext2D, t: Terrain, scale: num
   ctx.lineJoin = "round";
   for (const kind of [TERRAIN_SLOW, TERRAIN_FAST]) {
     const style = STYLE[kind]!;
+    const rim = coarse ? style.rimCoarse : style.rim;
+    const feather = coarse ? FEATHER_COARSE : FEATHER_BANDS;
     ctx.fillStyle = (textured ? patternFor(ctx, kind) : null) ?? style.flat;
     for (const { body, path } of shown) {
       if (body.kind !== kind) continue;
@@ -176,7 +180,7 @@ export function drawGround(ctx: CanvasRenderingContext2D, t: Terrain, scale: num
       ctx.clip(path, "evenodd");
       ctx.fill(path, "evenodd");
       if (textured) {
-        ctx.strokeStyle = style.rim;
+        ctx.strokeStyle = style.rimColor;
         for (const { width, alpha } of rim) {
           ctx.globalAlpha = alpha;
           ctx.lineWidth = 2 * width;
@@ -187,6 +191,15 @@ export function drawGround(ctx: CanvasRenderingContext2D, t: Terrain, scale: num
       for (const { width, alpha } of feather) {
         ctx.globalAlpha = alpha;
         ctx.lineWidth = 2 * width;
+        ctx.stroke(path);
+      }
+      if (textured) {
+        ctx.globalAlpha = 1; // a crisp edge: a thin dark line on the contour and a pale one just inside it
+        ctx.strokeStyle = style.shoulder;
+        ctx.lineWidth = 2 * (EDGE_PX + SHOULDER_PX) * px;
+        ctx.stroke(path);
+        ctx.strokeStyle = style.edge;
+        ctx.lineWidth = 2 * EDGE_PX * px;
         ctx.stroke(path);
       }
       ctx.restore();
