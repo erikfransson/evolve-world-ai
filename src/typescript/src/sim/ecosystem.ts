@@ -162,6 +162,8 @@ export interface EcoJournal {
 //    walk the creatures from a random start each tick, so no creature wins contested food, prey or the last free place by its list position.
 // With a species list (The Great Hunt) every creature belongs to one species, with that species' body, costs, births and
 // diet; a hunter eats a touching creature of a species it preys on. Without one there is a single species with the shared settings.
+const MAX_ROCK_TRIES = 200; // random founder spots tried before taking the nearest free one
+
 export class Ecosystem {
   readonly config: EcoConfig;
   readonly world: WorldView;
@@ -295,7 +297,11 @@ export class Ecosystem {
         randomBirth(this.ranges[sp]!, this.rng, this.traits);
         let x = this.rng.range(r, width - r);
         let y = this.rng.range(r, height - r);
-        while (this.items.terrain.touchesRock(x, y, r)) {
+        for (let tries = 0; this.items.terrain.touchesRock(x, y, r); tries++) {
+          if (tries >= MAX_ROCK_TRIES) {
+            ({ x, y } = this.items.terrain.nearestFree(x, y, r)); // a map that leaves no room is not allowed to hang the build
+            break;
+          }
           x = this.rng.range(r, width - r);
           y = this.rng.range(r, height - r);
         }

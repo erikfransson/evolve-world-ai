@@ -59,6 +59,7 @@ export const ITEM_REMOVE = 2;
 
 // Food and poison items in fixed slots; a slot of kind HIT_NONE is free.
 const BLOCK = 4; // cells per block side in blockStamp; the shifts by 2 below divide by it
+const MAX_SPOT_TRIES = 5000; // tries of any kind (rock, clear zone, spacing) before taking the last spot, moved off rock
 const MAX_REJECTS = 256; // placement tries that honour reject before giving up on it
 const SPACING_ITEM_RADII = 3; // new food keeps this many item radii plus one creature radius from poison, new poison from any item
 
@@ -180,7 +181,12 @@ export class World implements WorldView {
     let x: number;
     let y: number;
     let tries = 0;
+    let all = 0;
     do {
+      if (all++ >= MAX_SPOT_TRIES) {
+        ({ x, y } = this.terrain.nearestFree(x!, y!, r)); // bounded: the last try, moved clear of rock
+        break;
+      }
       x = rng.range(r, this.width - r);
       y = rng.range(r, this.height - r);
     } while ((clear && (x - clear.x) ** 2 + (y - clear.y) ** 2 < clear.radius ** 2) || this.terrain.touchesRock(x, y, r) || (tries++ < MAX_REJECTS && (reject?.(x, y) || this.tooClose(x, y, kind))));

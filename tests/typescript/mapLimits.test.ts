@@ -33,6 +33,22 @@ describe("map densities from outside", () => {
     }
   });
 
+  it("a save whose creatures are too big to place among rock is refused, and a build at the largest body size finishes", () => {
+    const state = saved();
+    state.creatures.count = 0;
+    state.config.world.stoneDensity = 0.2;
+    state.config.creature.radius = 440; // the repro of a founder placement loop that never ended
+    const t = performance.now();
+    expect(() => restoreState(state)).toThrow(/radius/);
+    expect(performance.now() - t).toBeLessThan(500);
+    const c = small();
+    Object.assign(c.world, { stoneDensity: 0.2, ridgeDensity: 0.15 });
+    c.creature.radius = 40;
+    const t2 = performance.now();
+    expect(new Ecosystem({ ...c, eco: { ...c.eco, initialPopulation: 30 } }).population).toBe(30);
+    expect(performance.now() - t2).toBeLessThan(5000);
+  });
+
   it("the form maxima themselves are accepted", () => {
     const state = saved();
     Object.assign(state.config.world, MAP_DENSITY_MAX);

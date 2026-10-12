@@ -8,6 +8,5 @@ export function smallConfig(): EcoConfig {
   c.world.height = 1300;
   c.eco.initialPopulation = 40;
   c.eco.wasm = false;
-  c.seed = 3; // a seed whose founders survive 2000 ticks, which the records test needs (most seeds die out and restart)
   return c;
 }

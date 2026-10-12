@@ -102,6 +102,7 @@ const MAX_ITEM_SLOTS = 2_000_000;
 const MAX_CREATURES = 20_000;
 const MAX_GENOME_FLOATS = 30_000_000; // all creatures together, 120 MB
 const MAX_WORLD_SIZE = 50_000;
+const MAX_BODY_RADIUS = 40; // half the gap terrain keeps between rock pieces, so a body always has room somewhere
 const MAX_DUE = 1e6; // food or poison due, items
 const MAX_VELOCITY = 10_000; // units per second, each component
 const MAX_NAME = 24; // characters of an inserted lineage's name
@@ -166,6 +167,7 @@ function currentGenomes(version: number, config: EcoConfig, plans: readonly numb
     joined.set(g, at);
     at += g.length;
   }
+  if (joined.length > MAX_GENOME_FLOATS) return invalid("the genomes are too big");
   return { plans: fitted, genomes: joined };
 }
 
@@ -183,7 +185,7 @@ function checkedConfig(raw: unknown): EcoConfig {
   if (!(world.width > 0 && world.width <= MAX_WORLD_SIZE && world.height > 0 && world.height <= MAX_WORLD_SIZE)) invalid("world size is out of bounds");
   if (!(world.itemRadius >= ITEM_RADIUS_RANGE[0] && world.itemRadius <= ITEM_RADIUS_RANGE[1])) invalid("world.itemRadius is out of bounds");
   if (!(config.dt > 0 && config.dt <= 1)) invalid("dt is out of bounds");
-  if (!(creature.radius > 0 && creature.rayLength > 0 && creature.rayLength <= 5000)) invalid("creature radius or ray length is out of bounds");
+  if (!(creature.radius > 0 && creature.radius <= MAX_BODY_RADIUS && creature.rayLength > 0 && creature.rayLength <= 5000)) invalid("creature radius or ray length is out of bounds");
   whole(eco.maxPopulation, 0, MAX_CREATURES, "eco.maxPopulation");
   whole(eco.initialPopulation, 0, MAX_CREATURES, "eco.initialPopulation");
   return config;
