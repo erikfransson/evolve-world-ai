@@ -5,6 +5,7 @@ Each release is a pull request from `development` into `main`, tagged `vX.Y.Z` o
 Add notes under "Unreleased" as work lands on `development`, and turn that heading into the version number at release time.
 
 ## Unreleased
+- Live World saves no longer keep a lineage row for every visitor-inserted founder: a runtime lineage is dropped when its last member dies, and older saves drop such rows on load.
 
 ## 0.1.1 (2026-10-12)
 - Removed The Great Hunt page. The site focuses on Live World and Ecosystem, with Trials and RL Arena as places to train creatures. The two-species engine stays for the RL Arena, and old `predators/` links redirect to the landing page.
