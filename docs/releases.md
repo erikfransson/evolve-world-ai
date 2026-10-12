@@ -4,7 +4,7 @@ Newest first. Each release is a pull request from `development` into `main`, tag
 Add notes under "Unreleased" as work lands on `development`, and turn that heading into the version number at release time.
 
 ## Unreleased
-- Obstacles redrawn: stones are lumpy boulders and ridges are rocky outcrops, lit from the upper left, with the drawn edge exactly where creatures bounce. Mud and firm ground lose their ripple and chevron marks (the legend names them), and Trials, Ecosystem and The Great Hunt get a size setting for each (Mud patch size, Firm patch size).
+- Obstacles redrawn: stones are faceted boulders and ridges as ranges of separate outcrops with loose stones, lit from the upper left with a smooth outline, with the drawn edge exactly where creatures bounce. Mud and firm ground lose their ripple and chevron marks (the legend names them), and Trials, Ecosystem and The Great Hunt get a size setting for each (Mud patch size, Firm patch size).
 
 ## 0.1.0 (2026-10-12)
 

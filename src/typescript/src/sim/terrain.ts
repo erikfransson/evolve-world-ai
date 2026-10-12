@@ -16,8 +16,8 @@ export const FAST_FACTOR = 1.75;
 const FACTORS = [SLOW_FACTOR, 1, FAST_FACTOR] as const;
 
 export const STONE_RADIUS = [250, 380] as const; // world units; capped at 20% of the shorter world side
-const RIDGE_HALF_WIDTH = 56; // mean; a ridge tapers towards both ends and is lumpy along its length
-const RIDGE_STEP = 0.62; // disc spacing in radii of the smaller neighbour, so every stone of the chain overlaps the next deeply
+const RIDGE_HALF_WIDTH = 64; // mean half width of a ridge stone, which tapers towards the ends of an outcrop
+const RIDGE_STEP = 1.15; // stone spacing in radii of the smaller neighbour, so stones overlap with a visible neck between them
 const STONE_LOBES = 36; // discs round the rim of a boulder; the rim scallops are under 1% of its radius
 export const MAX_DISCS_PER_PIECE = 160; // however long a ridge, so a map stays cheap to build, to look up and to draw
 const GAP = 80; // free passage kept between rock and the walls and between pieces of rock, wider than a creature
@@ -271,37 +271,62 @@ function stone(rng: StatefulRng, w: number, h: number): { discs: Circle[]; area:
   return { discs, area: 0.99 * Math.PI * radius * radius };
 }
 
-// A ridge: a rocky outcrop, a chain of overlapping stones of uneven size along a gently bent spine, tapering at both ends,
-// with a few small boulders lying against its flanks.
+// A ridge: a rocky range along a gently bent spine, two or three outcrops with passable gaps between them. Each outcrop is a chain of
+// distinct irregular stones of mixed size that tapers at both ends, with a few loose stones lying beside it.
 function ridge(rng: StatefulRng, w: number, h: number): { discs: Circle[]; area: number } {
-  const length = Math.min(2400, Math.max(500, 0.45 * Math.min(w, h))) * rng.range(0.7, 1.3);
+  const grow = Math.min(1.8, Math.max(1, Math.sqrt(Math.min(w, h) / 1500))); // bigger worlds get broader, longer ranges
+  const hw = RIDGE_HALF_WIDTH * grow;
+  const length = Math.min(2400 * grow, Math.max(500, 0.45 * Math.min(w, h))) * rng.range(0.7, 1.3);
   let x = rng.range(GAP, w - GAP);
   let y = rng.range(GAP, h - GAP);
   let heading = rng.range(0, 2 * Math.PI);
   const bend = (rng.range(0.35, 0.9) * (rng.next() < 0.5 ? -1 : 1)) / length; // radians per unit length, a total turn of about half a radian
+  const outcrops = length > 900 ? 2 + rng.int(2) : 1;
+  const gap = 130; // wider than a creature, between outcrops
+  const run = (length - gap * (outcrops - 1)) / outcrops;
   const discs: Circle[] = [];
+  const loose: Circle[] = [];
+  let covered = 0;
   let side = 0; // sideways offset of a stone in its radii, a slow random walk so the crest zigzags a little
-  let prev = 0;
-  for (let s = 0; s < length && discs.length < MAX_DISCS_PER_PIECE - 2; ) {
-    const along = Math.max(0.02, Math.min(0.98, s / length));
-    const r = RIDGE_HALF_WIDTH * 1.1 * (0.45 + 0.55 * Math.sqrt(Math.sin(Math.PI * along))) * rng.range(0.7, 1.3);
-    side = Math.max(-0.35, Math.min(0.35, side * 0.7 + rng.range(-0.25, 0.25)));
-    const nx = -Math.sin(heading);
-    const ny = Math.cos(heading);
-    discs.push({ x: x + nx * side * r, y: y + ny * side * r, r });
-    if (rng.next() < 0.06) {
-      const sr = RIDGE_HALF_WIDTH * rng.range(0.35, 0.6);
-      const off = (rng.next() < 0.5 ? -1 : 1) * (r * 0.95 + sr * 0.3);
-      discs.push({ x: x + nx * off, y: y + ny * off, r: sr });
+  const stone = (cx: number, cy: number, r: number): void => {
+    discs.push({ x: cx, y: cy, r }); // a stone is its core and two lumps
+    for (let k = 0; k < 2; k++) {
+      const a = rng.range(0, 2 * Math.PI);
+      discs.push({ x: cx + 0.6 * r * Math.cos(a), y: cy + 0.6 * r * Math.sin(a), r: r * rng.range(0.45, 0.6) });
     }
-    const step = RIDGE_STEP * Math.min(r, prev || r);
-    prev = r;
-    x += step * Math.cos(heading);
-    y += step * Math.sin(heading);
-    heading += bend * step;
-    s += step;
+  };
+  for (let o = 0; o < outcrops; o++) {
+    let prev = 0;
+    for (let s = 0; s < run && discs.length < MAX_DISCS_PER_PIECE - 12; ) {
+      const along = Math.max(0.03, Math.min(0.97, s / run));
+      const r = hw * (0.5 + 0.7 * Math.sin(Math.PI * along) ** 0.7) * rng.range(0.7, 1.4);
+      side = Math.max(-0.45, Math.min(0.45, side * 0.6 + rng.range(-0.35, 0.35)));
+      const nx = -Math.sin(heading);
+      const ny = Math.cos(heading);
+      stone(x + nx * side * r, y + ny * side * r, r);
+      if (rng.next() < 0.15 && loose.length < 8) {
+        const sr = hw * rng.range(0.3, 0.5);
+        const off = (rng.next() < 0.5 ? -1 : 1) * (r * 1.5 + sr + rng.range(50, 100));
+        loose.push({ x: x + nx * off, y: y + ny * off, r: sr });
+      }
+      const step = RIDGE_STEP * Math.min(r, prev || r);
+      prev = r;
+      x += step * Math.cos(heading);
+      y += step * Math.sin(heading);
+      heading += bend * step;
+      s += step;
+      covered += step;
+    }
+    const skip = o < outcrops - 1 ? gap : 0;
+    x += skip * Math.cos(heading);
+    y += skip * Math.sin(heading);
+    heading += bend * skip;
   }
-  return { discs, area: 1.8 * RIDGE_HALF_WIDTH * length };
+  // Loose stones stay clear of the chain by more than a creature's width, or are dropped.
+  for (const l of loose) {
+    if (discs.length < MAX_DISCS_PER_PIECE - 3 && discs.every((d) => Math.hypot(d.x - l.x, d.y - l.y) >= d.r + l.r * 1.2 + 45)) stone(l.x, l.y, l.r);
+  }
+  return { discs, area: 1.8 * hw * covered };
 }
 
 // A patch: a blob of three to five discs around a larger centre one; size scales it.

@@ -1,6 +1,8 @@
 import { createRng } from "../sim/rng.ts";
 import { TERRAIN_FAST, TERRAIN_SLOW } from "../sim/terrain.ts";
 import type { Terrain } from "../sim/terrain.ts";
+import { rockBodies } from "./rockOutline.ts";
+import type { RockBody } from "./rockOutline.ts";
 
 // Draws a Terrain (rock and slow and fast ground) for the Trials scene and the Ecosystem renderer, in world coordinates under the
 // current transform. Ground is a soft tint baked once per map into a small image (the legend names the kinds, no symbols on it).
@@ -18,10 +20,10 @@ const GROUND = [{ kind: TERRAIN_SLOW, tint: "rgba(86, 116, 178, 0.46)" }, { kind
 const GROUND_IMAGE_PX = 1600; // longest side of the baked ground image
 const EDGE_SOFT = 70; // world units of blur on a patch edge
 
-const HALO = "rgba(2, 8, 6, 0.17)";
+const HALO = "rgba(2, 8, 6, 0.2)";
 const EDGE_DARK = "#141b19";
 const EDGE_LIT = "#7b8982";
-const CORE_FROM = 0.3; // scale (device px per world unit) from which the lighter core is drawn
+const CRACKS_FROM = 0.25; // scale (device px per world unit) from which cracks are drawn
 const ROCK_TILE_UNITS = 300; // world units one grain tile covers
 const ROCK_TILE_PX = 192;
 
@@ -47,11 +49,12 @@ function rockTile(base: string, seed: number): OffscreenCanvas | HTMLCanvasEleme
   const wrapped = (draw: (dx: number, dy: number) => void): void => {
     for (const dx of [-ROCK_TILE_PX, 0, ROCK_TILE_PX]) for (const dy of [-ROCK_TILE_PX, 0, ROCK_TILE_PX]) draw(dx, dy);
   };
-  for (let i = 0; i < 140; i++) {
+  for (let i = 0; i < 520; i++) {
     const x = rng.range(0, ROCK_TILE_PX);
     const y = rng.range(0, ROCK_TILE_PX);
-    const r = rng.range(3, 12);
-    g.fillStyle = rng.next() < 0.5 ? "rgba(255, 255, 255, 0.03)" : "rgba(0, 0, 0, 0.08)";
+    const big = i < 60; // a few broad soft mottles, then fine grain
+    const r = big ? rng.range(8, 20) : rng.range(0.5, 1.4);
+    g.fillStyle = big ? (rng.next() < 0.5 ? "rgba(255, 255, 255, 0.012)" : "rgba(0, 0, 0, 0.035)") : rng.next() < 0.5 ? "rgba(255, 255, 255, 0.07)" : "rgba(0, 0, 0, 0.16)";
     wrapped((dx, dy) => {
       g.beginPath();
       g.arc(x + dx, y + dy, r, 0, Math.PI * 2);
@@ -147,51 +150,109 @@ function discPath(ctx: CanvasRenderingContext2D, x: number, y: number, r: number
   ctx.arc(x, y, r, 0, Math.PI * 2);
 }
 
-// Adds the rock discs in view to the current path, each shrunk by inset world units (at most a third of its radius) and moved by (dx, dy).
-function addRock(ctx: CanvasRenderingContext2D, t: Terrain, view: View, inset: number, dx = 0, dy = 0): void {
-  for (let i = 0; i < t.rockCount; i++) {
-    const r = t.rockR[i]!;
-    const x = t.rockX[i]!;
-    const y = t.rockY[i]!;
-    if (x + r + dx < view.x0 || x - r + dx > view.x1 || y + r + dy < view.y0 || y - r + dy > view.y1) continue;
-    discPath(ctx, x + dx, y + dy, r - Math.min(inset, r / 3));
-  }
+interface Drawable {
+  body: RockBody;
+  outline: Path2D;
+  tones: Path2D[];
+  cracks: Path2D;
+}
+const drawables = new WeakMap<Terrain, Drawable[]>();
+
+// A smooth closed curve through the midpoints of the polygon's sides, with its corners as control points.
+function smooth(path: Path2D, pts: readonly number[]): void {
+  const n = pts.length / 2;
+  const mid = (i: number, k: 0 | 1): number => (pts[2 * (i % n) + k]! + pts[2 * ((i + 1) % n) + k]!) / 2;
+  path.moveTo(mid(n - 1, 0), mid(n - 1, 1));
+  for (let i = 0; i < n; i++) path.quadraticCurveTo(pts[2 * i]!, pts[2 * i + 1]!, mid(i, 0), mid(i, 1));
+  path.closePath();
 }
 
-function fillRock(ctx: CanvasRenderingContext2D, t: Terrain, view: View, inset: number, dx = 0, dy = 0): void {
-  ctx.beginPath();
-  addRock(ctx, t, view, inset, dx, dy);
-  ctx.fill();
+function drawablesOf(t: Terrain): Drawable[] {
+  let d = drawables.get(t);
+  if (!d) {
+    d = rockBodies(t).map((body) => {
+      const outline = new Path2D();
+      for (const loop of body.loops) smooth(outline, loop);
+      const tones = body.facets.map((polys) => {
+        const path = new Path2D();
+        for (const poly of polys) {
+          path.moveTo(poly[0]!, poly[1]!);
+          for (let i = 2; i < poly.length; i += 2) path.lineTo(poly[i]!, poly[i + 1]!);
+          path.closePath();
+        }
+        return path;
+      });
+      const cracks = new Path2D();
+      for (const line of body.cracks) {
+        cracks.moveTo(line[0]!, line[1]!);
+        for (let i = 2; i < line.length; i += 2) cracks.lineTo(line[i]!, line[i + 1]!);
+      }
+      return { body, outline, tones, cracks };
+    });
+    drawables.set(t, d);
+  }
+  return d;
 }
+
+const FACET_FILL = ["rgba(4, 10, 8, 0.17)", "rgba(4, 10, 8, 0.09)", "rgba(215, 235, 225, 0.06)", "rgba(215, 235, 225, 0.12)"] as const; // dark 2, dark 1, light 1, light 2, as the tone classes of rockOutline.ts
 
 function drawRock(ctx: CanvasRenderingContext2D, t: Terrain, scale: number, view: View): void {
   if (t.rockCount === 0) return;
+  if (typeof Path2D === "undefined") {
+    ctx.fillStyle = "#2b3633";
+    ctx.beginPath();
+    for (let i = 0; i < t.rockCount; i++) discPath(ctx, t.rockX[i]!, t.rockY[i]!, t.rockR[i]!);
+    ctx.fill();
+    return;
+  }
   const px = 1 / scale;
   const edge = Math.min(1, Math.max(0.5, scale / 0.25)); // thinner rim and shade from afar
+  const pad = 12 * px;
+  const shown = drawablesOf(t).filter(({ body: b }) => b.x1 + pad >= view.x0 && b.x0 - pad <= view.x1 && b.y1 + pad >= view.y0 && b.y0 - pad <= view.y1);
   const patterns = rockPatterns(ctx);
-  // The shadow reaches past the edge, softer the further out, and falls down and right.
+  ctx.lineJoin = "round";
+  // Shadows first, so a body never lies under the shadow of a neighbour: soft, down and right.
   ctx.fillStyle = HALO;
-  fillRock(ctx, t, view, -7 * edge * px, 3 * edge * px, 4.5 * edge * px);
-  fillRock(ctx, t, view, -3.5 * edge * px, 2 * edge * px, 3 * edge * px);
-  // Everything else stays inside the exact union of the discs, so the outline is where creatures bounce.
+  ctx.strokeStyle = HALO;
   ctx.save();
-  ctx.beginPath();
-  addRock(ctx, t, view, 0);
-  ctx.clip();
-  ctx.fillStyle = EDGE_DARK;
-  ctx.fillRect(view.x0, view.y0, view.x1 - view.x0, view.y1 - view.y0);
-  ctx.fillStyle = EDGE_LIT; // a thin lit rim on the upper left edges, left dark on the lower right
-  fillRock(ctx, t, view, 0, -1.2 * edge * px, -1.2 * edge * px);
-  ctx.fillStyle = patterns.body ?? "#2b3633";
-  fillRock(ctx, t, view, 2.4 * edge * px);
-  if (scale >= CORE_FROM) {
-    // a lighter core off to the upper left, where the light falls; too small to read from afar
-    ctx.globalAlpha = 0.7;
-    ctx.fillStyle = patterns.core ?? "#3a4742";
-    fillRock(ctx, t, view, 6 * px, -2.2 * px, -3 * px);
-    ctx.globalAlpha = 1;
+  ctx.translate(3 * edge * px, 4.5 * edge * px);
+  for (const [grow, alpha] of [[14, 0.5], [6, 0.8]] as const) {
+    ctx.globalAlpha = alpha;
+    ctx.lineWidth = grow * edge * px;
+    for (const { outline } of shown) {
+      ctx.fill(outline, "evenodd");
+      ctx.stroke(outline);
+    }
   }
   ctx.restore();
+  ctx.globalAlpha = 1;
+  const band = 2.2 * edge * px;
+  for (const { outline, tones, cracks } of shown) {
+    ctx.save();
+    ctx.clip(outline, "evenodd");
+    ctx.fillStyle = patterns.body ?? "#2b3633";
+    ctx.fill(outline, "evenodd");
+    for (let k = 0; k < tones.length; k++) {
+      ctx.fillStyle = FACET_FILL[k]!;
+      ctx.fill(tones[k]!);
+    }
+    if (scale >= CRACKS_FROM) {
+      ctx.strokeStyle = "rgba(6, 12, 10, 0.45)";
+      ctx.lineWidth = 1.1 * px;
+      ctx.stroke(cracks);
+    }
+    ctx.strokeStyle = EDGE_DARK; // a dark band inside the whole edge, a lit one on the upper left ones
+    ctx.lineWidth = 2 * band;
+    ctx.stroke(outline);
+    ctx.save();
+    ctx.translate(0.7 * band, 0.7 * band);
+    ctx.strokeStyle = EDGE_LIT;
+    ctx.lineWidth = 1.1 * band;
+    ctx.stroke(outline);
+    ctx.restore();
+    ctx.restore();
+  }
+  ctx.lineJoin = "miter";
 }
 
 // Draws the ground, then the rock, in world coordinates. scale: device pixels per world unit. view: the visible world rectangle.
