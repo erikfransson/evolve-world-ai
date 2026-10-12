@@ -35,6 +35,24 @@ describe("Es", () => {
     expect(dist(es.theta)).toBeLessThan(0.3 * before);
   });
 
+  it("prepare draws the next step's noise ahead with identical candidates", () => {
+    const a = new Es(new Float32Array(6), { pairs: 3 });
+    const b = new Es(new Float32Array(6), { pairs: 3 });
+    const ra = testRng(5);
+    const rb = testRng(5);
+    for (let k = 0; k < 3; k++) {
+      const ca = a.ask(ra);
+      const cb = b.ask(rb);
+      b.prepare(rb); // while the episodes would run
+      const r = ca.map((_, i) => Math.sin(i + k));
+      a.tell(r);
+      b.tell(r);
+      expect(cb).toEqual(ca);
+      expect(b.theta).toEqual(a.theta);
+    }
+    expect(b.ask(rb)).toEqual(a.ask(ra)); // consumes the prepared noise
+  });
+
   it("rejects a reward list of the wrong length", () => {
     const es = new Es(new Float32Array(4), { pairs: 2 });
     es.ask(testRng(1));

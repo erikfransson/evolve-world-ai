@@ -32,9 +32,11 @@ export interface Score {
 
 // Each genome on every env and seed (the same seeds for all, so candidates meet the same layouts). Sums seed by seed in a fixed
 // order, so scores do not depend on how many threads played the episodes.
-export async function scoreGenomes(scorer: Scorer, envs: number, genomes: readonly Float32Array[], seeds: readonly number[]): Promise<Score[]> {
+export async function scoreGenomes(scorer: Scorer, envs: number, genomes: readonly Float32Array[], seeds: readonly number[], whileRunning?: () => void): Promise<Score[]> {
   const tasks = genomes.flatMap((genome) => Array.from({ length: envs }, (_, env) => seeds.map((seed) => ({ env, genome, seed }))).flat());
-  const rewards = await scorer.rewards(tasks);
+  const running = scorer.rewards(tasks);
+  whileRunning?.(); // the helpers are busy now, so the caller's own work overlaps
+  const rewards = await running;
   return genomes.map((_, g) => {
     const perEnv = Array.from({ length: envs }, (_, e) => {
       let sum = 0;
@@ -68,6 +70,7 @@ export class Trainer implements RlTrainer {
   private envs: number;
   private readonly bests: Float32Array[] = [];
   private readonly episodes: number;
+  private nextSeeds: number[] | null = null;
 
   // envs: how many envs each candidate plays; episodes: fresh training seeds per step, shared by all candidates and envs.
   constructor(genome: Float32Array, options: Partial<EsOptions>, scorer: Scorer, envs: number, episodes: number, seed: number) {
@@ -97,11 +100,22 @@ export class Trainer implements RlTrainer {
     this.scorer.setLeague?.([this.es.theta, ...this.bests]);
   }
 
+  private drawSeeds(): number[] {
+    return Array.from({ length: this.episodes }, () => this.rng.int(HELD_BASE)); // fresh layouts each step, so none is learned by heart
+  }
+
+  // Only step draws from rng: seeds, then noise, per step. The next step's are drawn during this step's episodes, in the same order.
   async step(): Promise<StepResult> {
     this.sendLeague();
-    const seeds = Array.from({ length: this.episodes }, () => this.rng.int(HELD_BASE)); // fresh layouts each step, so none is learned by heart
+    const seeds = this.nextSeeds ?? this.drawSeeds();
+    this.nextSeeds = null;
     const candidates = this.es.ask(this.rng);
-    const rewards = (await scoreGenomes(this.scorer, this.envs, candidates, seeds)).map((s) => s.mean);
+    const rewards = (
+      await scoreGenomes(this.scorer, this.envs, candidates, seeds, () => {
+        this.nextSeeds = this.drawSeeds();
+        this.es.prepare(this.rng);
+      })
+    ).map((s) => s.mean);
     this.es.tell(rewards);
     let best = 0;
     for (let k = 1; k < rewards.length; k++) if (rewards[k]! > rewards[best]!) best = k;

@@ -23,7 +23,9 @@ export class Es {
   step = 0;
   private readonly m: Float32Array;
   private readonly v: Float32Array;
-  private readonly noise: Float32Array; // pair k's e_k at k * n, kept for tell
+  private noise: Float32Array; // pair k's e_k at k * n, kept for tell
+  private spare: Float32Array | null = null; // next step's noise, drawn by prepare while this step's episodes run
+  private prepared = false;
 
   constructor(theta: Float32Array, options: Partial<EsOptions> = {}) {
     this.theta = Float32Array.from(theta);
@@ -33,13 +35,26 @@ export class Es {
     this.noise = new Float32Array(this.options.pairs * theta.length);
   }
 
+  // Draws the noise the next ask would, ahead of time and from the same rng calls in the same order (it does not need theta).
+  // Call it after dispatching this step's episodes, before awaiting them; the noise of this step stays for tell.
+  prepare(rng: Rng): void {
+    if (this.prepared) return;
+    const len = this.options.pairs * this.theta.length;
+    const buf = (this.spare ??= new Float32Array(len));
+    for (let j = 0; j < len; j++) buf[j] = rng.normal();
+    this.prepared = true;
+  }
+
   // The genomes to score this step: theta + sigma e_k, then theta - sigma e_k, for each pair k.
   // Each genome has its own buffer, since the pool sends them to helpers as they are.
   ask(rng: Rng): Float32Array[] {
     const { pairs, sigma } = this.options;
     const n = this.theta.length;
+    if (this.prepared) {
+      [this.noise, this.spare] = [this.spare!, this.noise];
+      this.prepared = false;
+    } else for (let j = 0; j < pairs * n; j++) this.noise[j] = rng.normal();
     const noise = this.noise;
-    for (let j = 0; j < pairs * n; j++) noise[j] = rng.normal();
     const out: Float32Array[] = [];
     for (let k = 0; k < pairs; k++) {
       const plus = new Float32Array(n);
