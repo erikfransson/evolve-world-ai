@@ -53,13 +53,17 @@ describe("public server: connections", () => {
   it("a reconnect loop gets at most the burst plus 10 new viewers a second, the rest refused before the upgrade", async () => {
     const port = 50411;
     const { pub } = await serve(port, { maxViewers: 1000, maxSendBytesPerSecond: 1e9 });
-    const seconds = 3;
+    // A fixed number of attempts rather than a fixed time, so a loaded machine that connects slowly still makes far more attempts
+    // than the bucket lets in (the allowance below grows with the time they took).
+    const attempts = 150;
+    let started = 0;
     let welcomed = 0;
     let refused = 0;
     const t0 = Date.now();
     // 20 clients in a loop: connect, wait for the first answer, cut the socket, again.
     const loop = async (): Promise<void> => {
-      while (Date.now() - t0 < seconds * 1000) {
+      while (started < attempts) {
+        started++;
         const v = viewer(port);
         const s = await v.status;
         if (s === "hello") welcomed++;
@@ -70,10 +74,13 @@ describe("public server: connections", () => {
     };
     await Promise.all(Array.from({ length: 20 }, loop));
     const elapsed = (Date.now() - t0) / 1000;
-    expect(welcomed).toBeLessThanOrEqual(LIMITS.acceptBurst + Math.ceil(LIMITS.acceptsPerSecond * elapsed) + 1);
-    expect(refused).toBeGreaterThan(welcomed);
+    const allowance = LIMITS.acceptBurst + Math.ceil(LIMITS.acceptsPerSecond * elapsed) + 1;
+    expect(welcomed + refused).toBe(attempts); // every attempt got a hello or a 503, nothing else
+    expect(welcomed).toBeLessThanOrEqual(allowance);
+    expect(attempts).toBeGreaterThan(allowance); // the loop outpaced the accept rate, so the refusals below are the bucket's
+    expect(refused).toBeGreaterThanOrEqual(attempts - allowance);
     await vi.waitFor(() => expect(pub.viewers()).toBe(0));
-  });
+  }, 60_000);
 
   it("tells a viewer past the cap it is busy and cuts it off, and counts only registered viewers", async () => {
     const port = 50412;

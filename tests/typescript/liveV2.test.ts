@@ -146,7 +146,7 @@ describe("item deltas", () => {
         expectSame(scene.items, live);
       }
       expect(fulls).toBe(2 + reseeds); // the first frame, the resync after the stall, and one per new world
-    });
+    }, 90_000); // deterministic, but about 5 s of simulation and checks at stride 1 that a loaded machine stretches past the default
   }
 
   // Across seeds, so it does not hang on one random stream. A frame in which the world died out and started over is skipped.
