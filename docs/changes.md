@@ -5,6 +5,7 @@ Each release is a pull request from `development` into `main`, tagged `vX.Y.Z` o
 Add notes under "Unreleased" as work lands on `development`, and turn that heading into the version number at release time.
 
 ## Unreleased
+- Live World moves to The Inland Sea (40000 x 25000) with the launch food values (food worth 50, slower regrowth, cap 1.5, scarce poison), a one hour year and 3x speed. A fresh world starts with 10 of each starter founder; saves of the old world are kept but not restored. The page draws the map (built on a worker from its name), and the info section lists its regions with their food and poison.
 - The Inland Sea look: cliff and massif edges read as broken rock (no round bumps), stones and Drowned Town outcrops are angular, and the Ashfall poison shore has a subtle tint.
 - RL Arena: "Start from" has a Founders choice with the four Live World starter founders (#39), so a founder can be trained further and saved or added to Live from its file.
 - Hand-designed maps: `world.map` names a map (`src/sim/maps/`) that replaces the random stones, mud and firm ground. A map brings its own ground raster, rock, and food and poison weights: items spawn and regrow in proportion to the weights, with local caps per 1000 unit cell, and founders favour rich places. Saves store only the name. The first map is The Inland Sea (40000 x 25000), an Ecosystem preset with the launch food values. Worlds without a map are unchanged bit for bit. The ground outline no longer breaks where the field is exactly one half between two raster cells.

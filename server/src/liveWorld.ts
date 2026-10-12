@@ -481,12 +481,11 @@ export class LiveWorld {
     const spots = this.freeSpots(n, random);
     if (spots.length < n) throw new Error("no room to seed the founders");
     const hue0 = random() * 360;
-    const energy = Math.min(1000, Math.max(10, LIVE.add.startEnergy)); // what a visitor's copies start with
     for (let i = 0; i < n; i++) {
       const k = Math.floor(i / SEED_COPIES);
       const f = founders[k]!;
       const p = spots[i]!;
-      const res = e.insertCreature({ genome: f.genome, plan: f.plan, x: p.x, y: p.y, heading: p.heading, hue: (hue0 + (360 * k) / founders.length) % 360, name: f.name, energy });
+      const res = e.insertCreature({ genome: f.genome, plan: f.plan, x: p.x, y: p.y, heading: p.heading, hue: (hue0 + (360 * k) / founders.length) % 360, name: f.name }); // the start energy of a pool founder
       if (!res.ok) throw new Error(`founder ${f.name} could not be seeded: ${res.reason}`);
     }
     return n;

@@ -104,7 +104,7 @@ export const LIMITS = {
   stateEveryMs: 4 * 60 * 60 * 1000,
   keepStateMs: 4 * 24 * 60 * 60 * 1000, // saves older than this are deleted, except the newest six (state.ts)
   maxStateDirBytes: 2e9, // no save is written while the state directory holds more than this
-  maxSaveJsonBytes: 50e6, // a save may be at most this much JSON (real saves ~15 MB at 2300 creatures); parsing runs in a worker with its own heap cap (saveParse.ts)
+  maxSaveJsonBytes: 50e6, // a save may be at most this much JSON (24 MB at 2500 creatures on the Inland Sea, food at its cap or not); parsing runs in a worker with its own heap cap (saveParse.ts)
   maxCatchUpS: 1, // after a stall longer than this the clock resyncs instead of racing to catch up
   sliceMs: 15, // simulation work per event-loop turn, so sockets stay served
   maxBufferedBytes: 1_000_000, // a viewer with more queued than this is skipped for frames (slow link)
