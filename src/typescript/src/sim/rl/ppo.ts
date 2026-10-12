@@ -59,6 +59,76 @@ export class Mlp {
 
   // The input is read from input[offset ...], so samples can sit side by side in one array.
   forward(params: Float32Array | Float64Array, input: Float32Array | Float64Array, offset = 0): Float64Array {
+    this.load(input, offset);
+    let at = 0;
+    for (let l = 0; l + 1 < this.sizes.length; l++) at = this.layer(l, at, params);
+    return this.acts[this.sizes.length - 1]!;
+  }
+
+  // Forward of two samples through the same params: the dense layers read each weight once for both. Each Mlp ends as after its own forward.
+  static forward2(a: Mlp, b: Mlp, params: Float32Array | Float64Array, input: Float32Array | Float64Array, offA: number, offB: number): void {
+    a.load(input, offA);
+    b.load(input, offB);
+    const sizes = a.sizes;
+    let at = a.layer(0, 0, params);
+    b.layer(0, 0, params);
+    for (let l = 1; l + 1 < sizes.length; l++) {
+      const nIn = sizes[l]!;
+      const nOut = sizes[l + 1]!;
+      const sa = a.acts[l]!;
+      const sb = b.acts[l]!;
+      const da = a.acts[l + 1]!;
+      const db = b.acts[l + 1]!;
+      const bias = at + nIn * nOut;
+      const hidden = l + 2 < sizes.length;
+      const count = hidden ? nOut : a.used;
+      let j = 0;
+      for (; j + 2 <= count; j += 2) {
+        let a0 = params[bias + j]!;
+        let a1 = params[bias + j + 1]!;
+        let b0 = a0;
+        let b1 = a1;
+        const r0 = at + j * nIn;
+        const r1 = r0 + nIn;
+        for (let i = 0; i < nIn; i++) {
+          const p0 = params[r0 + i]!;
+          const p1 = params[r1 + i]!;
+          const x = sa[i]!;
+          const y = sb[i]!;
+          a0 += p0 * x;
+          a1 += p1 * x;
+          b0 += p0 * y;
+          b1 += p1 * y;
+        }
+        if (hidden) {
+          da[j] = Math.tanh(a0);
+          da[j + 1] = Math.tanh(a1);
+          db[j] = Math.tanh(b0);
+          db[j + 1] = Math.tanh(b1);
+        } else {
+          da[j] = a0;
+          da[j + 1] = a1;
+          db[j] = b0;
+          db[j + 1] = b1;
+        }
+      }
+      for (; j < count; j++) {
+        let x = params[bias + j]!;
+        let y = x;
+        const row = at + j * nIn;
+        for (let i = 0; i < nIn; i++) {
+          const p = params[row + i]!;
+          x += p * sa[i]!;
+          y += p * sb[i]!;
+        }
+        da[j] = hidden ? Math.tanh(x) : x;
+        db[j] = hidden ? Math.tanh(y) : y;
+      }
+      at = bias + nOut;
+    }
+  }
+
+  private load(input: Float32Array | Float64Array, offset: number): void {
     const { sizes, acts, active } = this;
     let n = 0;
     for (let i = 0; i < sizes[0]!; i++) {
@@ -67,114 +137,229 @@ export class Mlp {
       if (v !== 0) active[n++] = i;
     }
     this.nActive = n;
-    let at = 0;
-    for (let l = 0; l + 1 < sizes.length; l++) {
-      const nIn = sizes[l]!;
-      const nOut = sizes[l + 1]!;
-      const src = acts[l]!;
-      const dst = acts[l + 1]!;
-      const bias = at + nIn * nOut;
-      const hidden = l + 2 < sizes.length;
-      const count = hidden ? nOut : this.used;
-      // Four outputs at a time keep the running sums in registers; each sum still adds in input order, so results are unchanged.
-      let j = 0;
-      for (; j + 4 <= count; j += 4) {
-        let s0 = params[bias + j]!;
-        let s1 = params[bias + j + 1]!;
-        let s2 = params[bias + j + 2]!;
-        let s3 = params[bias + j + 3]!;
-        const r0 = at + j * nIn;
-        const r1 = r0 + nIn;
-        const r2 = r1 + nIn;
-        const r3 = r2 + nIn;
-        if (l === 0) {
-          for (let k = 0; k < n; k++) {
-            const i = active[k]!;
-            const v = src[i]!;
-            s0 += params[r0 + i]! * v;
-            s1 += params[r1 + i]! * v;
-            s2 += params[r2 + i]! * v;
-            s3 += params[r3 + i]! * v;
-          }
-        } else {
-          for (let i = 0; i < nIn; i++) {
-            const v = src[i]!;
-            s0 += params[r0 + i]! * v;
-            s1 += params[r1 + i]! * v;
-            s2 += params[r2 + i]! * v;
-            s3 += params[r3 + i]! * v;
-          }
+  }
+
+  // Layer l of the forward, the weights starting at `at`; returns where the next layer's start.
+  private layer(l: number, at: number, params: Float32Array | Float64Array): number {
+    const { sizes, acts, active } = this;
+    const n = this.nActive;
+    const nIn = sizes[l]!;
+    const nOut = sizes[l + 1]!;
+    const src = acts[l]!;
+    const dst = acts[l + 1]!;
+    const bias = at + nIn * nOut;
+    const hidden = l + 2 < sizes.length;
+    const count = hidden ? nOut : this.used;
+    // Four outputs at a time keep the running sums in registers; each sum still adds in input order, so results are unchanged.
+    let j = 0;
+    for (; j + 4 <= count; j += 4) {
+      let s0 = params[bias + j]!;
+      let s1 = params[bias + j + 1]!;
+      let s2 = params[bias + j + 2]!;
+      let s3 = params[bias + j + 3]!;
+      const r0 = at + j * nIn;
+      const r1 = r0 + nIn;
+      const r2 = r1 + nIn;
+      const r3 = r2 + nIn;
+      if (l === 0) {
+        for (let k = 0; k < n; k++) {
+          const i = active[k]!;
+          const v = src[i]!;
+          s0 += params[r0 + i]! * v;
+          s1 += params[r1 + i]! * v;
+          s2 += params[r2 + i]! * v;
+          s3 += params[r3 + i]! * v;
         }
-        if (hidden) {
-          dst[j] = Math.tanh(s0);
-          dst[j + 1] = Math.tanh(s1);
-          dst[j + 2] = Math.tanh(s2);
-          dst[j + 3] = Math.tanh(s3);
-        } else {
-          dst[j] = s0;
-          dst[j + 1] = s1;
-          dst[j + 2] = s2;
-          dst[j + 3] = s3;
+      } else {
+        for (let i = 0; i < nIn; i++) {
+          const v = src[i]!;
+          s0 += params[r0 + i]! * v;
+          s1 += params[r1 + i]! * v;
+          s2 += params[r2 + i]! * v;
+          s3 += params[r3 + i]! * v;
         }
       }
-      for (; j < count; j++) {
-        let s = params[bias + j]!;
-        const row = at + j * nIn;
-        if (l === 0) for (let k = 0; k < n; k++) s += params[row + active[k]!]! * src[active[k]!]!;
-        else for (let i = 0; i < nIn; i++) s += params[row + i]! * src[i]!;
-        dst[j] = hidden ? Math.tanh(s) : s;
+      if (hidden) {
+        dst[j] = Math.tanh(s0);
+        dst[j + 1] = Math.tanh(s1);
+        dst[j + 2] = Math.tanh(s2);
+        dst[j + 3] = Math.tanh(s3);
+      } else {
+        dst[j] = s0;
+        dst[j + 1] = s1;
+        dst[j + 2] = s2;
+        dst[j + 3] = s3;
       }
-      at = bias + nOut;
     }
-    return acts[sizes.length - 1]!;
+    for (; j < count; j++) {
+      let s = params[bias + j]!;
+      const row = at + j * nIn;
+      if (l === 0) for (let k = 0; k < n; k++) s += params[row + active[k]!]! * src[active[k]!]!;
+      else for (let i = 0; i < nIn; i++) s += params[row + i]! * src[i]!;
+      dst[j] = hidden ? Math.tanh(s) : s;
+    }
+    return bias + nOut;
   }
 
   // Adds d(loss)/d(params) to grad, given d(loss)/d(outputs) of the last forward.
   backward(params: Float32Array | Float64Array, dOut: Float64Array, grad: Float64Array): void {
-    const { sizes, acts, deltas, active } = this;
+    const { sizes, deltas } = this;
     const L = sizes.length - 1;
     for (let j = 0; j < sizes[L]!; j++) deltas[L]![j] = dOut[j]!;
+    let end = grad.length;
+    for (let l = L - 1; l >= 0; l--) {
+      const bias = end - sizes[l + 1]!;
+      end = bias - sizes[l]! * sizes[l + 1]!;
+      this.backLayer(l, end, bias, params, grad);
+    }
+  }
+
+  // Backward of two samples (a's gradient first, then b's, so every grad entry adds in the order of two separate backwards).
+  static backward2(a: Mlp, b: Mlp, params: Float32Array | Float64Array, dOutA: Float64Array, dOutB: Float64Array, grad: Float64Array): void {
+    const sizes = a.sizes;
+    const L = sizes.length - 1;
+    for (let j = 0; j < sizes[L]!; j++) {
+      a.deltas[L]![j] = dOutA[j]!;
+      b.deltas[L]![j] = dOutB[j]!;
+    }
     let end = grad.length;
     for (let l = L - 1; l >= 0; l--) {
       const nIn = sizes[l]!;
       const nOut = sizes[l + 1]!;
       const bias = end - nOut;
       const at = bias - nIn * nOut;
-      const d = deltas[l + 1]!;
-      const src = acts[l]!;
-      const back = deltas[l]!;
-      if (l > 0) back.fill(0);
-      for (let j = 0; j < nOut; j++) {
-        const dj = d[j]!;
-        if (dj === 0) continue;
-        grad[bias + j] += dj;
-        const row = at + j * nIn;
-        if (l === 0) {
-          for (let k = 0; k < this.nActive; k++) grad[row + active[k]!] += dj * src[active[k]!]!;
-          continue;
-        }
-        // Two rows at a time halve the passes over back; each back[i] still adds in row order.
-        const dn = j + 1 < nOut ? d[j + 1]! : 0;
-        if (dn !== 0) {
-          grad[bias + j + 1] += dn;
-          const row2 = row + nIn;
-          for (let i = 0; i < nIn; i++) {
-            const v = src[i]!;
-            grad[row + i] += dj * v;
-            grad[row2 + i] += dn * v;
-            back[i] = back[i]! + dj * params[row + i]! + dn * params[row2 + i]!;
-          }
-          j++;
-          continue;
-        }
+      end = at;
+      if (l === 0) {
+        a.backLayer(0, at, bias, params, grad);
+        b.backLayer(0, at, bias, params, grad);
+        continue;
+      }
+      const da = a.deltas[l + 1]!;
+      const db = b.deltas[l + 1]!;
+      const sa = a.acts[l]!;
+      const sb = b.acts[l]!;
+      const ba = a.deltas[l]!;
+      const bb = b.deltas[l]!;
+      ba.fill(0);
+      bb.fill(0);
+      // Two rows of weights at a time. A zero delta adds +-0, which changes no sum that starts at +0, so no row is skipped.
+      let j = 0;
+      for (; j + 4 <= nOut; j += 4) {
+        const a0 = da[j]!;
+        const a1 = da[j + 1]!;
+        const a2 = da[j + 2]!;
+        const a3 = da[j + 3]!;
+        const b0 = db[j]!;
+        const b1 = db[j + 1]!;
+        const b2 = db[j + 2]!;
+        const b3 = db[j + 3]!;
+        grad[bias + j] += a0;
+        grad[bias + j] += b0;
+        grad[bias + j + 1] += a1;
+        grad[bias + j + 1] += b1;
+        grad[bias + j + 2] += a2;
+        grad[bias + j + 2] += b2;
+        grad[bias + j + 3] += a3;
+        grad[bias + j + 3] += b3;
+        const r0 = at + j * nIn;
+        const r1 = r0 + nIn;
+        const r2 = r1 + nIn;
+        const r3 = r2 + nIn;
         for (let i = 0; i < nIn; i++) {
-          grad[row + i] += dj * src[i]!;
-          back[i] += dj * params[row + i]!;
+          const x = sa[i]!;
+          const y = sb[i]!;
+          const p0 = params[r0 + i]!;
+          const p1 = params[r1 + i]!;
+          const p2 = params[r2 + i]!;
+          const p3 = params[r3 + i]!;
+          grad[r0 + i] = grad[r0 + i]! + a0 * x + b0 * y;
+          grad[r1 + i] = grad[r1 + i]! + a1 * x + b1 * y;
+          grad[r2 + i] = grad[r2 + i]! + a2 * x + b2 * y;
+          grad[r3 + i] = grad[r3 + i]! + a3 * x + b3 * y;
+          ba[i] = ba[i]! + a0 * p0 + a1 * p1 + a2 * p2 + a3 * p3;
+          bb[i] = bb[i]! + b0 * p0 + b1 * p1 + b2 * p2 + b3 * p3;
         }
       }
-      if (l > 0) for (let i = 0; i < nIn; i++) back[i] *= 1 - src[i]! * src[i]!; // tanh'
-      end = at;
+      for (; j + 2 <= nOut; j += 2) {
+        const a0 = da[j]!;
+        const a1 = da[j + 1]!;
+        const b0 = db[j]!;
+        const b1 = db[j + 1]!;
+        grad[bias + j] += a0;
+        grad[bias + j] += b0;
+        grad[bias + j + 1] += a1;
+        grad[bias + j + 1] += b1;
+        const r0 = at + j * nIn;
+        const r1 = r0 + nIn;
+        for (let i = 0; i < nIn; i++) {
+          const x = sa[i]!;
+          const y = sb[i]!;
+          const p0 = params[r0 + i]!;
+          const p1 = params[r1 + i]!;
+          grad[r0 + i] = grad[r0 + i]! + a0 * x + b0 * y;
+          grad[r1 + i] = grad[r1 + i]! + a1 * x + b1 * y;
+          ba[i] = ba[i]! + a0 * p0 + a1 * p1;
+          bb[i] = bb[i]! + b0 * p0 + b1 * p1;
+        }
+      }
+      for (; j < nOut; j++) {
+        const a0 = da[j]!;
+        const b0 = db[j]!;
+        grad[bias + j] += a0;
+        grad[bias + j] += b0;
+        const r0 = at + j * nIn;
+        for (let i = 0; i < nIn; i++) {
+          const p0 = params[r0 + i]!;
+          grad[r0 + i] = grad[r0 + i]! + a0 * sa[i]! + b0 * sb[i]!;
+          ba[i] = ba[i]! + a0 * p0;
+          bb[i] = bb[i]! + b0 * p0;
+        }
+      }
+      for (let i = 0; i < nIn; i++) {
+        ba[i] *= 1 - sa[i]! * sa[i]!; // tanh'
+        bb[i] *= 1 - sb[i]! * sb[i]!;
+      }
     }
+  }
+
+  // Layer l of the backward: its weights start at `at`, its biases at `bias`; fills deltas[l] for the layer below.
+  private backLayer(l: number, at: number, bias: number, params: Float32Array | Float64Array, grad: Float64Array): void {
+    const { sizes, acts, deltas, active } = this;
+    const nIn = sizes[l]!;
+    const nOut = sizes[l + 1]!;
+    const d = deltas[l + 1]!;
+    const src = acts[l]!;
+    const back = deltas[l]!;
+    if (l > 0) back.fill(0);
+    for (let j = 0; j < nOut; j++) {
+      const dj = d[j]!;
+      if (dj === 0) continue;
+      grad[bias + j] += dj;
+      const row = at + j * nIn;
+      if (l === 0) {
+        for (let k = 0; k < this.nActive; k++) grad[row + active[k]!] += dj * src[active[k]!]!;
+        continue;
+      }
+      // Two rows at a time halve the passes over back; each back[i] still adds in row order.
+      const dn = j + 1 < nOut ? d[j + 1]! : 0;
+      if (dn !== 0) {
+        grad[bias + j + 1] += dn;
+        const row2 = row + nIn;
+        for (let i = 0; i < nIn; i++) {
+          const v = src[i]!;
+          grad[row + i] += dj * v;
+          grad[row2 + i] += dn * v;
+          back[i] = back[i]! + dj * params[row + i]! + dn * params[row2 + i]!;
+        }
+        j++;
+        continue;
+      }
+      for (let i = 0; i < nIn; i++) {
+        grad[row + i] += dj * src[i]!;
+        back[i] += dj * params[row + i]!;
+      }
+    }
+    if (l > 0) for (let i = 0; i < nIn; i++) back[i] *= 1 - src[i]! * src[i]!; // tanh'
   }
 }
 
@@ -325,6 +510,8 @@ export class Ppo {
   private readonly critic: Float32Array; // Float32 like the genome, so the Mlp loops see one array type
   private readonly policyNet: Mlp;
   private readonly criticNet: Mlp;
+  private readonly policyNet2: Mlp; // second nets for the pairs of samples
+  private readonly criticNet2: Mlp;
   private readonly policyAdam: Adam;
   private readonly stdAdam: Adam;
   private readonly criticAdam: Adam;
@@ -349,6 +536,8 @@ export class Ppo {
     this.critic = randomGenome(criticSizes, this.rng);
     this.policyNet = new Mlp(sizes, ACTIONS);
     this.criticNet = new Mlp(criticSizes);
+    this.policyNet2 = new Mlp(sizes, ACTIONS);
+    this.criticNet2 = new Mlp(criticSizes);
     this.policyAdam = new Adam(this.theta.length, this.options.lr);
     this.stdAdam = new Adam(ACTIONS, this.options.lr);
     this.criticAdam = new Adam(this.critic.length, this.options.criticLr);
@@ -424,13 +613,38 @@ export class Ppo {
     return { iter: this.iter, train, best, std: Array.from(this.logStd, Math.exp) };
   }
 
+  // Policy loss of sample i after a forward of `net`: writes d(loss)/d(outputs) to dOut, adds the std gradient; false when the sample is clipped (no gradient).
+  private policyLoss(b: Batch, i: number, net: Mlp, dOut: Float64Array, gStd: Float64Array): boolean {
+    const o = this.options;
+    const u = net.acts[net.sizes.length - 1]!;
+    let lp = 0;
+    for (let a = 0; a < ACTIONS; a++) {
+      const eps = (b.z[i * ACTIONS + a]! - u[a]!) / Math.exp(this.logStd[a]!);
+      lp += -0.5 * eps * eps - this.logStd[a]! - 0.5 * LOG_2PI;
+    }
+    const ratio = Math.exp(lp - b.logp[i]!);
+    const A = b.adv[i]!;
+    const clipped = (A > 0 && ratio > 1 + o.clip) || (A < 0 && ratio < 1 - o.clip);
+    const dLp = clipped ? 0 : -ratio * A; // d(loss)/d(log prob), loss = -min(r A, clip(r) A)
+    dOut.fill(0);
+    for (let a = 0; a < ACTIONS; a++) {
+      const sd = Math.exp(this.logStd[a]!);
+      const eps = (b.z[i * ACTIONS + a]! - u[a]!) / sd;
+      dOut[a] = (dLp * eps) / sd;
+      gStd[a] += dLp * (eps * eps - 1) - o.entropy;
+    }
+    return dLp !== 0;
+  }
+
   private update(b: Batch): void {
     const o = this.options;
     const gPol = new Float64Array(this.theta.length);
     const gStd = new Float64Array(ACTIONS);
     const gCrit = new Float64Array(this.critic.length);
     const dOut = new Float64Array(this.policyNet.sizes[this.policyNet.sizes.length - 1]!);
+    const dOut2 = new Float64Array(dOut.length);
     const dV = new Float64Array(1);
+    const dV2 = new Float64Array(1);
     const order = Array.from({ length: b.n }, (_, i) => i);
     for (let epoch = 0; epoch < o.epochs; epoch++) {
       shuffle(order, this.rng);
@@ -439,29 +653,27 @@ export class Ppo {
         gPol.fill(0);
         gStd.fill(0);
         gCrit.fill(0);
-        for (let s = start; s < end; s++) {
-          const i = order[s]!;
-          const at = i * b.stride;
-          const u = this.policyNet.forward(this.theta, b.obs, at);
-          let lp = 0;
-          for (let a = 0; a < ACTIONS; a++) {
-            const eps = (b.z[i * ACTIONS + a]! - u[a]!) / Math.exp(this.logStd[a]!);
-            lp += -0.5 * eps * eps - this.logStd[a]! - 0.5 * LOG_2PI;
+        // Samples go through the nets in pairs; the gradient still adds in sample order.
+        for (let s = start; s < end; s += 2) {
+          const pair = s + 1 < end;
+          const i0 = order[s]!;
+          const i1 = pair ? order[s + 1]! : i0;
+          if (pair) Mlp.forward2(this.policyNet, this.policyNet2, this.theta, b.obs, i0 * b.stride, i1 * b.stride);
+          else this.policyNet.forward(this.theta, b.obs, i0 * b.stride);
+          const hit0 = this.policyLoss(b, i0, this.policyNet, dOut, gStd);
+          const hit1 = pair && this.policyLoss(b, i1, this.policyNet2, dOut2, gStd);
+          if (hit0 && hit1) Mlp.backward2(this.policyNet, this.policyNet2, this.theta, dOut, dOut2, gPol);
+          else if (hit0) this.policyNet.backward(this.theta, dOut, gPol);
+          else if (hit1) this.policyNet2.backward(this.theta, dOut2, gPol);
+          if (pair) {
+            Mlp.forward2(this.criticNet, this.criticNet2, this.critic, b.obs, i0 * b.stride, i1 * b.stride);
+            dV[0] = this.criticNet.acts[2]![0]! - b.ret[i0]!;
+            dV2[0] = this.criticNet2.acts[2]![0]! - b.ret[i1]!;
+            Mlp.backward2(this.criticNet, this.criticNet2, this.critic, dV, dV2, gCrit);
+          } else {
+            dV[0] = this.criticNet.forward(this.critic, b.obs, i0 * b.stride)[0]! - b.ret[i0]!;
+            this.criticNet.backward(this.critic, dV, gCrit);
           }
-          const ratio = Math.exp(lp - b.logp[i]!);
-          const A = b.adv[i]!;
-          const clipped = (A > 0 && ratio > 1 + o.clip) || (A < 0 && ratio < 1 - o.clip);
-          const dLp = clipped ? 0 : -ratio * A; // d(loss)/d(log prob), loss = -min(r A, clip(r) A)
-          dOut.fill(0);
-          for (let a = 0; a < ACTIONS; a++) {
-            const sd = Math.exp(this.logStd[a]!);
-            const eps = (b.z[i * ACTIONS + a]! - u[a]!) / sd;
-            dOut[a] = (dLp * eps) / sd;
-            gStd[a] += dLp * (eps * eps - 1) - o.entropy;
-          }
-          if (dLp !== 0) this.policyNet.backward(this.theta, dOut, gPol);
-          dV[0] = this.criticNet.forward(this.critic, b.obs, at)[0]! - b.ret[i]!;
-          this.criticNet.backward(this.critic, dV, gCrit);
         }
         const m = end - start;
         // A non-finite gradient (a numeric blow-up) would poison the weights for good through Adam, so that minibatch is skipped.
