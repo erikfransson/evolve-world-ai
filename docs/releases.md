@@ -5,6 +5,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- RL Arena: a page left open across a redeploy says to reload instead of "the training worker crashed" (pushed straight to `main` as d4cdcc6 just before the development workflow started).
+
 ## 0.1.0 (2026-10-12)
 
 First numbered release, covering everything built so far.
