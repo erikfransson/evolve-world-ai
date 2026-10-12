@@ -24,7 +24,7 @@ Layout is in `README.md`. Follow `docs/coding-guidelines.md` for tests and revie
 ### Versions
 - Versions are `MAJOR.MINOR.PATCH`, starting at 0.1.0. Bug fixes and small changes bump the patch (0.1.1, 0.1.2), bigger features bump the minor (0.2.0).
 - The version lives in `src/typescript/src/version.ts` and `src/typescript/package.json` (a test keeps them equal), and the pages show it.
-- Note each change that lands on `development` under "Unreleased" in `docs/releases.md`.
+- Note each change that lands on `development` under "Unreleased" in `docs/changes.md`.
 - To release: set the new version in both files, rename "Unreleased" to the version with the date, open the pull request from `development` to `main`, and after the merge tag `main` as `vX.Y.Z` and make a GitHub release with the same notes.
 
 ### Review development to master merge
