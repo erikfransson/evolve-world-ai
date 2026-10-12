@@ -10,6 +10,7 @@ import type { PathSink } from "./rockOutline.ts";
 // is exact, and only the short chord between two crossings in one fine cell strays from the true curve, by about step^2 / (8 * radius of curvature):
 // under 1 unit for a step of 12.5 units on the field the builder makes, even at saddles where the contour is least certain (groundScene.test.ts measures it against the exact blend).
 
+const SNAP = 1e6;
 export const FINE_STEP = 12.5; // world units of a fine grid step, at most
 export interface GroundBody {
   kind: number;
@@ -64,7 +65,7 @@ function traceLayer(f: GroundField, layer: number, subdivide: number): number[][
         for (let fx = 0; fx <= S; fx++) {
           const tx = fx / S;
           const ty = fy / S;
-          vals[fy * (S + 1) + fx] = a + (b - a) * tx + (c - a) * ty + (a - b - c + d) * tx * ty;
+          vals[fy * (S + 1) + fx] = Math.round((a + (b - a) * tx + (c - a) * ty + (a - b - c + d) * tx * ty) * SNAP) / SNAP; // snapped, so a node shared by two raster cells classifies alike in both even where the blend is exactly one half (127 next to 128)
         }
       }
       for (let sy = 0; sy < S; sy++) {

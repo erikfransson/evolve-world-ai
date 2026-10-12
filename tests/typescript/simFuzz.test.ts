@@ -43,6 +43,7 @@ function draw<C extends object>(form: FormSpec<C>, rng: R, shrink: (c: C) => voi
 function smallWorld(c: EcoConfig, rng: R): void {
   c.world.width = 500 + 50 * rng.int(19);
   c.world.height = 500 + 50 * rng.int(19);
+  c.world.map = ""; // a named map fixes the world size
   c.eco.maxPopulation = 100 + 10 * rng.int(7);
   c.eco.initialPopulation = 10 + rng.int(80);
   if (c.eco.aging) c.eco.agingStart = 1 + rng.int(4); // below the slider's 30 s, so ageing acts within a short run

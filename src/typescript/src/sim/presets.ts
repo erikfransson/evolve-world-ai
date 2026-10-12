@@ -17,10 +17,10 @@ type Regrowth = Pick<EcoConfig["eco"], "foodRegrow" | "foodMaxDensity" | "poison
 type SeasonFields = Pick<EcoConfig["eco"], "seasons" | "yearMinutes" | "winterFood">;
 
 // Share of the world area covered by stones, ridges, slow and fast ground (terrain.ts): none, a few of each leaving most of the map open, and many.
-type MapShare = Pick<World, "stoneDensity" | "ridgeDensity" | "slowDensity" | "fastDensity" | "slowSize" | "fastSize">;
-const OPEN: MapShare = { stoneDensity: 0, ridgeDensity: 0, slowDensity: 0, fastDensity: 0, slowSize: 1, fastSize: 1 };
-const SOME: MapShare = { stoneDensity: 0.04, ridgeDensity: 0.03, slowDensity: 0.06, fastDensity: 0.05, slowSize: 1, fastSize: 1 };
-const MANY: MapShare = { stoneDensity: 0.08, ridgeDensity: 0.06, slowDensity: 0.1, fastDensity: 0.08, slowSize: 1, fastSize: 1 };
+type MapShare = Pick<World, "stoneDensity" | "ridgeDensity" | "slowDensity" | "fastDensity" | "slowSize" | "fastSize" | "map">;
+const OPEN: MapShare = { stoneDensity: 0, ridgeDensity: 0, slowDensity: 0, fastDensity: 0, slowSize: 1, fastSize: 1, map: "" };
+const SOME: MapShare = { stoneDensity: 0.04, ridgeDensity: 0.03, slowDensity: 0.06, fastDensity: 0.05, slowSize: 1, fastSize: 1, map: "" };
+const MANY: MapShare = { stoneDensity: 0.08, ridgeDensity: 0.06, slowDensity: 0.1, fastDensity: 0.08, slowSize: 1, fastSize: 1, map: "" };
 
 export interface TrialsPreset extends PresetInfo {
   world: World;
@@ -50,6 +50,7 @@ export const ECO_PRESETS: readonly EcoPreset[] = [
   { id: "crowded", name: "Crowded", description: "A small world with rich regrowth. Creatures fill it and bump into each other.", world: { ...ECO_BASE, width: 2400, height: 1500 }, regrowth: { ...ECO_REGROWTH, foodRegrow: 0.25 } },
   { id: "seasons", name: "Seasons", description: "A wide, sparsely settled world where food regrowth swings over a 40 minute year. Winter thins the population and spring refills it.", world: { ...ECO_BASE, width: 16500, height: 9300, poisonDensity: 0.14, foodEnergy: 41, poisonDamage: 85 }, regrowth: { ...ECO_REGROWTH, foodRegrow: 0.005, poisonRegrow: 0.003, seasons: true } },
   { id: "highlands", name: "Highlands", description: "Mountain ranges and large stones split the world into valleys. Mud and firm ground change how fast creatures cross it.", world: { ...ECO_BASE, ...MANY }, regrowth: ECO_REGROWTH },
+  { id: "inland-sea", name: "The Inland Sea", description: "A hand-designed world of 40000 by 25000 units: a shallow mud sea with islands, a poisoned north shore, dune fields, a drowned town and a cliff coast. Food and poison differ by region. A one hour year.", world: { ...ECO_BASE, ...OPEN, width: 40000, height: 25000, foodDensity: 0.1, poisonDensity: 0.005, foodEnergy: 50, map: "inland-sea" }, regrowth: { ...ECO_REGROWTH, foodRegrow: 0.003, foodMaxDensity: 1.5, poisonRegrow: 0.0003, poisonMaxDensity: 0.01, seasons: true, yearMinutes: 60 } },
 ];
 
 // The two-species world of the benchmark (ecoBench --predators): one preset, the tuned defaults (docs/tuning-notes.md).
@@ -67,7 +68,7 @@ export const PREDATOR_PRESETS: readonly EcoPreset[] = [
 
 // Form field ids a preset fixes; the forms disable them while a preset is chosen.
 export const TRIALS_LOCKED: readonly string[] = ["worldWidth", "worldHeight", "foodDensity", "poisonDensity", "poisonDamage", "respawn", "itemRadius", "foodEnergy", "poisonClearRadius", "stoneDensity", "ridgeDensity", "slowDensity", "slowSize", "fastDensity", "fastSize"];
-export const ECO_LOCKED: readonly string[] = ["worldWidth", "worldHeight", "foodDensity", "poisonDensity", "itemRadius", "foodEnergy", "poisonDamage", "foodRegrow", "foodMaxDensity", "poisonRegrow", "poisonMaxDensity", "seasons", "yearMinutes", "winterFood", "stoneDensity", "ridgeDensity", "slowDensity", "slowSize", "fastDensity", "fastSize"];
+export const ECO_LOCKED: readonly string[] = ["worldWidth", "worldHeight", "foodDensity", "poisonDensity", "itemRadius", "foodEnergy", "poisonDamage", "foodRegrow", "foodMaxDensity", "poisonRegrow", "poisonMaxDensity", "seasons", "yearMinutes", "winterFood", "worldMap", "stoneDensity", "ridgeDensity", "slowDensity", "slowSize", "fastDensity", "fastSize"];
 
 export const trialsPreset = (id: string): TrialsPreset | undefined => TRIALS_PRESETS.find((p) => p.id === id);
 export const ecoPreset = (id: string, presets: readonly EcoPreset[] = ECO_PRESETS): EcoPreset | undefined => presets.find((p) => p.id === id);

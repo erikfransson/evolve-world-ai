@@ -9,6 +9,7 @@ import { mutate } from "./ga.ts";
 import { driftBirth, driftPlan, mutateStructure, randomBirth, randomPlan, remapWeights } from "./planMutation.ts";
 import type { BirthTraits } from "./planMutation.ts";
 import { agingOf, collide, hurt, keepInside, settle } from "./physics.ts";
+import { terrainOf } from "./terrain.ts";
 import type { Body } from "./physics.ts";
 import type { Aging, Contact } from "./physics.ts";
 import type { StatefulRng } from "./rng.ts";
@@ -147,6 +148,17 @@ export interface MemberRecord {
   plan: PlanView; genome: Float32Array; memory: ArrayLike<number>;
 }
 
+// The most food and poison items a world holds. On a map with weights each cap cell has its own limit (the density times the cell's area and
+// mean weight, see MapWeights.limits), so a rich region keeps more and a bare one less; the totals are the sums of the cells.
+function capsOf(config: EcoConfig, eco: Pick<EcoConfig["eco"], "foodMaxDensity" | "poisonMaxDensity">): { food: number; poison: number; limits: [Int32Array, Int32Array] | null } {
+  const perDensity = itemsPerDensity(config);
+  const weights = terrainOf(config).weights;
+  if (!weights) return { food: Math.round(eco.foodMaxDensity * perDensity), poison: Math.round(eco.poisonMaxDensity * perDensity), limits: null };
+  const food = weights.limits(0, eco.foodMaxDensity, perDensity);
+  const poison = weights.limits(1, eco.poisonMaxDensity, perDensity);
+  return { food: food.reduce((a, b) => a + b, 0), poison: poison.reduce((a, b) => a + b, 0), limits: [food, poison] };
+}
+
 const middle = (r: readonly number[]): number => (r[0]! > 0 ? Math.sqrt(r[0]! * r[1]!) : (r[0]! + r[1]!) / 2);
 
 export interface EcoJournal {
@@ -238,8 +250,14 @@ export class Ecosystem {
     const perDensity = itemsPerDensity(config);
     const layout = options.items;
     const start = layout ? { food: layout.filter((it) => it.kind === HIT_FOOD).length, poison: layout.filter((it) => it.kind === HIT_POISON).length } : itemCounts(config);
-    this.foodCap = Math.round(eco.foodMaxDensity * perDensity);
-    this.poisonCap = Math.round(eco.poisonMaxDensity * perDensity);
+    const weights = terrainOf(config).weights;
+    if (weights && !layout) {
+      if (!weights.usable(0)) start.food = 0; // a kind with no weight anywhere on the map starts and grows nowhere
+      if (!weights.usable(1)) start.poison = 0;
+    }
+    const caps = capsOf(config, eco);
+    this.foodCap = caps.food;
+    this.poisonCap = caps.poison;
     this.foodPerTick = eco.foodRegrow * perDensity * dt;
     this.poisonPerTick = eco.poisonRegrow * perDensity * dt;
     this.species = speciesList(config);
@@ -254,6 +272,7 @@ export class Ecosystem {
     this.aging = agingOf(eco, dt);
     this.items = new World(config, restore?.itemCapacity ?? Math.max(start.food, this.foodCap) + Math.max(start.poison, this.poisonCap));
     this.world = this.items;
+    if (caps.limits) this.items.setCapLimits(caps.limits[0], caps.limits[1]);
     this.journal = options.journal ? { born: [], died: [], items: [] } : null;
     this.items.log = this.journal?.items ?? null;
     if (layout && !restore) layout.forEach((it, i) => this.items.setItem(i, it.x, it.y, it.kind));
@@ -299,7 +318,7 @@ export class Ecosystem {
         randomBirth(this.ranges[sp]!, this.rng, this.traits);
         let x = this.rng.range(r, width - r);
         let y = this.rng.range(r, height - r);
-        for (let tries = 0; this.items.terrain.touchesRock(x, y, r); tries++) {
+        for (let tries = 0; !this.startOk(x, y, r); tries++) {
           if (tries >= MAX_ROCK_TRIES) {
             ({ x, y } = this.items.terrain.nearestFree(x, y, r)); // a map that leaves no room is not allowed to hang the build
             break;
@@ -806,22 +825,29 @@ export class Ecosystem {
     while (this.foodDue >= 1 && this.food < this.foodCap) {
       this.foodDue--;
       const grown = this.grow(HIT_FOOD);
+      if (grown < 0) break; // no free slot
       this.food += grown;
-      if (grown === 0) break; // no free slot
     }
     this.foodDue -= Math.floor(this.foodDue);
     while (this.poisonDue >= 1 && this.poison < this.poisonCap) {
       this.poisonDue--;
       const grown = this.grow(HIT_POISON);
+      if (grown < 0) break;
       this.poison += grown;
-      if (grown === 0) break;
     }
     this.poisonDue -= Math.floor(this.poisonDue);
   }
 
-  // Places one item at a random spot, spaced from poison like every placement; returns 1, or 0 if no slot was free.
+  // Places one item at a random spot, spaced from poison like every placement; returns 1, 0 when the spot's cap cell was full, or -1 if no slot was free.
   private grow(kind: HitKind): number {
-    return this.items.addRandomly(kind, this.rng) >= 0 ? 1 : 0;
+    const slot = this.items.addRandomly(kind, this.rng);
+    return slot >= 0 ? 1 : slot === -1 ? -1 : 0;
+  }
+
+  // Whether a founder may start at (x, y): clear of rock, and on a map with weights accepted by the food weight, so founders favour the rich places.
+  private startOk(x: number, y: number, r: number): boolean {
+    const t = this.items.terrain;
+    return !t.touchesRock(x, y, r) && (t.weights === null || t.weights.accepts(0, x, y, this.rng.next()));
   }
 
   // Copies every living creature into frame, growing its arrays when needed.
@@ -970,13 +996,15 @@ export class Ecosystem {
     const sections = config as unknown as Record<string, Record<string, unknown>>;
     const eco = { ...config.eco } as Record<string, unknown>;
     for (const [section, key, v] of checked.fields) if (section === "eco") eco[key] = v;
-    const perDensity = itemsPerDensity(config);
-    const foodCap = Math.round((eco.foodMaxDensity as number) * perDensity);
-    const poisonCap = Math.round((eco.poisonMaxDensity as number) * perDensity);
+    const caps = capsOf(config, eco as unknown as EcoConfig["eco"]);
+    const foodCap = caps.food;
+    const poisonCap = caps.poison;
     if (foodCap + poisonCap > this.items.count) return { ok: false, reason: `food and poison caps need ${foodCap + poisonCap} item slots, this world has ${this.items.count}` };
     for (const [section, key, v] of checked.fields) sections[section]![key] = Array.isArray(v) ? v.slice() : v;
     this.foodCap = foodCap;
     this.poisonCap = poisonCap;
+    if (caps.limits) this.items.setCapLimits(caps.limits[0], caps.limits[1]);
+    const perDensity = itemsPerDensity(config);
     this.foodPerTick = config.eco.foodRegrow * perDensity * config.dt;
     this.poisonPerTick = config.eco.poisonRegrow * perDensity * config.dt;
     this.aging = agingOf(config.eco, config.dt);

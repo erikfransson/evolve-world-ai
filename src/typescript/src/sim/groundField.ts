@@ -92,7 +92,7 @@ export class GroundField {
 }
 
 // Value noise on an integer lattice: smooth, in 0 .. 1, deterministic from the salt with integer arithmetic and no trigonometry.
-function hash(i: number, j: number, s: number): number {
+export function hash(i: number, j: number, s: number): number {
   let h = (Math.imul(i, 374761393) + Math.imul(j, 668265263) + Math.imul(s, 2147483647)) | 0;
   h = Math.imul(h ^ (h >>> 13), 1274126177);
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;

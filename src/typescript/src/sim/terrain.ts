@@ -4,6 +4,8 @@ import type { StatefulRng } from "./rng.ts";
 import type { Body } from "./physics.ts";
 import { buildGroundField } from "./groundField.ts";
 import type { GroundField } from "./groundField.ts";
+import { builtMap, mapSpec } from "./maps/index.ts";
+import type { MapWeights } from "./maps/mapBuild.ts";
 
 // Static map features (#34), generated deterministically from the run seed and the world settings, so every thread that builds
 // the world gets the same ones. Rock (stones and ridges) is a set of discs that creatures bounce off like walls and rays report
@@ -46,6 +48,12 @@ export function checkMapDensities(world: object): void {
 // Throws when a world's map densities or patch sizes are outside the form's range. Used by every path that reads settings from outside.
 export function checkMapSettings(world: object): void {
   checkMapDensities(world);
+  const { map, width, height } = world as { map?: unknown; width?: unknown; height?: unknown };
+  if (map !== undefined && map !== "") {
+    const spec = typeof map === "string" ? mapSpec(map) : undefined;
+    if (!spec) throw new Error(`config "world.map" must be "" or the name of a map`);
+    if (width !== spec.width || height !== spec.height) throw new Error(`config "world.map" ${spec.name} needs a world of ${spec.width} x ${spec.height}`);
+  }
   for (const key of ["slowSize", "fastSize"]) {
     const v = (world as Record<string, unknown>)[key];
     if (v !== undefined && !(typeof v === "number" && v >= PATCH_SIZE_RANGE[0] && v <= PATCH_SIZE_RANGE[1])) throw new Error(`config "world.${key}" must be a number from ${PATCH_SIZE_RANGE[0]} to ${PATCH_SIZE_RANGE[1]}`);
@@ -59,7 +67,7 @@ interface Circle {
 }
 
 // The settings that make the map, which key the cache.
-export type TerrainSettings = Pick<EngineConfig, "seed"> & { world: Pick<EngineConfig["world"], "width" | "height" | "stoneDensity" | "ridgeDensity" | "slowDensity" | "fastDensity"> & Partial<Pick<EngineConfig["world"], "slowSize" | "fastSize">> };
+export type TerrainSettings = Pick<EngineConfig, "seed"> & { world: Pick<EngineConfig["world"], "width" | "height" | "stoneDensity" | "ridgeDensity" | "slowDensity" | "fastDensity"> & Partial<Pick<EngineConfig["world"], "slowSize" | "fastSize" | "map">> };
 
 export class Terrain {
   readonly width: number;
@@ -76,9 +84,11 @@ export class Terrain {
   readonly rockOrder: Int32Array;
   // Mud and firm ground as a raster field; null when the map has none.
   readonly ground: GroundField | null;
+  // Food and poison weights of a hand-designed map (see maps/mapBuild.ts); null for the random map, where items spread evenly.
+  readonly weights: MapWeights | null;
   readonly empty: boolean; // no rock and no patches
 
-  constructor(rock: readonly Circle[], ground: GroundField | null, width: number, height: number) {
+  constructor(rock: readonly Circle[], ground: GroundField | null, width: number, height: number, weights: MapWeights | null = null) {
     this.width = width;
     this.height = height;
     this.rockCount = rock.length;
@@ -96,6 +106,7 @@ export class Terrain {
     this.rockOrder = new Int32Array(rock.length);
     cellOf.forEach((c, i) => (this.rockOrder[fill[c]!++] = i));
     this.ground = ground;
+    this.weights = weights;
     this.empty = rock.length === 0 && ground === null;
   }
 
@@ -349,10 +360,25 @@ function generate(config: TerrainSettings): Terrain {
 }
 
 const cache = new Map<string, Terrain>();
+const mapTerrains = new Map<string, Terrain>(); // by map name; few and large, so never evicted
+
+// The Terrain of a named map, which does not depend on the seed. Throws for an unknown name or a world of the wrong size.
+function mapTerrain(name: string, width: number, height: number): Terrain {
+  const spec = mapSpec(name);
+  if (!spec) throw new Error(`unknown map "${name}"`);
+  if (width !== spec.width || height !== spec.height) throw new Error(`map ${name} needs a world of ${spec.width} x ${spec.height}`);
+  let t = mapTerrains.get(name);
+  if (!t) {
+    const b = builtMap(name);
+    mapTerrains.set(name, (t = new Terrain(b.rock, b.ground, width, height, b.weights)));
+  }
+  return t;
+}
 
 // The map of a config, built once per process and shared by every world and creature that uses it.
 export function terrainOf(config: TerrainSettings): Terrain {
   const { width, height } = config.world;
+  if (config.world.map) return mapTerrain(config.world.map, width, height);
   const limit = (key: keyof typeof MAP_DENSITY_MAX): number => Math.min(MAP_DENSITY_MAX[key], Math.max(0, config.world[key]) || 0); // defence in depth: callers that skip checkMapDensities get the form's range
   const [stoneDensity, ridgeDensity, slowDensity, fastDensity] = [limit("stoneDensity"), limit("ridgeDensity"), limit("slowDensity"), limit("fastDensity")] as const;
   if (!(stoneDensity > 0 || ridgeDensity > 0 || slowDensity > 0 || fastDensity > 0)) return NO_TERRAIN;

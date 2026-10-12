@@ -112,7 +112,8 @@ export class EcoRenderer {
     const r = cfg.itemRadius;
     const px = r * z; // device px radius
     const tiny = px < TINY_ITEM;
-    const side = 2 * TINY_ITEM * dev * 0.55; // about 1.6 device px
+    const dense = cfg.terrain !== undefined && terrainOf(cfg.terrain).weights !== null; // a map with tens of thousands of items: food dots stay light from afar
+    const side = 2 * TINY_ITEM * dev * (dense ? 0.4 : 0.55); // about 1.6 device px
     // Dim while small, opaque once large, so mid zoom blends into the full-size items.
     const solid = Math.min(1, Math.max(0, (px - TINY_ITEM) / (SOLID_ITEM - TINY_ITEM)));
     // One pass over all items collects the visible ones per kind, in snapshot order: food from the front of the scratch array, poison from the back.
@@ -133,7 +134,7 @@ export class EcoRenderer {
     }
     for (const [kind, color, boost] of [[1, FOOD, 0], [2, POISON, 0.15]] as const) {
       ctx.fillStyle = color;
-      ctx.globalAlpha = Math.min(1, ITEM_DIM + boost + (1 - ITEM_DIM - boost) * solid);
+      ctx.globalAlpha = Math.min(1, ITEM_DIM + boost + (1 - ITEM_DIM - boost) * solid) * (dense && kind === 1 ? 0.5 + 0.5 * solid : 1);
       ctx.beginPath();
       const count = kind === 1 ? nFood : nPoison;
       for (let k = 0; k < count; k++) {

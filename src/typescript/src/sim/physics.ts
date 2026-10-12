@@ -46,7 +46,7 @@ export function agingFactor(aging: Aging | null, ticksAlive: number): number {
 // The ground scales the distance moved, not the velocity or the energy costs: the same effort covers less (slow) or more (fast) ground.
 // turnOut and thrust in [-1, 1]; negative thrust brakes at maxBrake x its size (free, never reverses). Eating and death are separate (consume, settle).
 // upkeep is the plan's energy per second besides thrust and turning (planUpkeep).
-export function stepBody(s: CreatureState, turnOut: number, thrust: number, config: EngineConfig, k: Decays, heading: Heading, upkeep: number, terrain: Terrain = NO_TERRAIN): void {
+export function stepBody(s: CreatureState, turnOut: number, thrust: number, config: EngineConfig, k: Decays, heading: Heading, upkeep: number, terrain: Terrain = NO_TERRAIN, groundValue?: number): void {
   const { dt, creature: c, world: w } = config;
   // Exact exponential relaxation each tick keeps motion smooth and independent of dt.
   const targetTurn = turnOut * c.maxTurnRate;
@@ -71,7 +71,7 @@ export function stepBody(s: CreatureState, turnOut: number, thrust: number, conf
   s.vx = fwd * cos - side * sin;
   s.vy = fwd * sin + side * cos;
 
-  const ground = terrain.empty ? 1 : Terrain.factor(terrain.valueAt(s.x, s.y));
+  const ground = terrain.empty ? 1 : Terrain.factor(groundValue ?? terrain.valueAt(s.x, s.y));
   s.x += s.vx * dt * ground;
   s.y += s.vy * dt * ground;
   keepInside(s, c.radius, w.width, w.height, c.wallBounce);

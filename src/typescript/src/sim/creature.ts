@@ -41,6 +41,9 @@ export class Creature {
   private energyUpkeep = 0;
   private readonly config: EngineConfig;
   private readonly terrain: Terrain;
+  private groundX = NaN; // the ground value last read and where, so sensing and moving from one spot read it once
+  private groundY = NaN;
+  private groundValue = 0;
   private readonly decays: Decays;
   private input = new Float32Array(0);
   private output = new Float32Array(0);
@@ -89,6 +92,17 @@ export class Creature {
     return this.units;
   }
 
+  // The terrain value under the creature (0 on a map without ground), read again only after it moved.
+  private ground(): number {
+    const s = this.state;
+    if (s.x !== this.groundX || s.y !== this.groundY) {
+      this.groundX = s.x;
+      this.groundY = s.y;
+      this.groundValue = this.terrain.empty ? 0 : this.terrain.valueAt(s.x, s.y);
+    }
+    return this.groundValue;
+  }
+
   // Writes the brain input that does not come from rays (extras, then memory units) at f32[at], where at is the first extra's index.
   writeBodyInputs(f32: Float32Array, at: number): void {
     const c = this.config.creature;
@@ -99,7 +113,7 @@ export class Creature {
     f32[at + 1] = ((s.vx * cos + s.vy * sin) * c.drag) / c.maxThrust;
     f32[at + 2] = ((s.vy * cos - s.vx * sin) * c.drag) / c.maxThrust;
     f32[at + 3] = s.turnRate / c.maxTurnRate;
-    f32[at + EXTRA_TERRAIN] = this.terrain.empty ? 0 : this.terrain.valueAt(s.x, s.y);
+    f32[at + EXTRA_TERRAIN] = this.ground();
     const u = this.units;
     for (let i = 0; i < u.length; i++) f32[at + EXTRA_TERRAIN + 1 + i] = u[i]!;
   }
@@ -272,7 +286,7 @@ export class Creature {
   // The brain's input from the last sensed rays, the body and the memory; also what brain.layerActivations()[0] shows.
   encode(): Float32Array {
     const input = this.inputBuffer();
-    encodeInputs(this.state, this.rays, this.config, input, this.heading.cos, this.heading.sin, this.terrain.empty ? 0 : this.terrain.valueAt(this.state.x, this.state.y));
+    encodeInputs(this.state, this.rays, this.config, input, this.heading.cos, this.heading.sin, this.ground());
     input.set(this.units, this.memoryAt);
     this.brain.showInput(input);
     return input;
@@ -298,7 +312,7 @@ export class Creature {
   // Motion and energy costs from the last think, without eating or death; touches only this creature.
   steer(output: Float32Array = this.outView()): void {
     const upkeep = this.energyUpkeep * agingFactor(this.aging, this.state.ticksAlive);
-    stepBody(this.state, output[this.outAt + OUT_TURN], thrustCommand(output[this.outAt + OUT_THRUST], this.config.creature.brakeThreshold), this.config, this.decays, this.heading, upkeep, this.terrain);
+    stepBody(this.state, output[this.outAt + OUT_TURN], thrustCommand(output[this.outAt + OUT_THRUST], this.config.creature.brakeThreshold), this.config, this.decays, this.heading, upkeep, this.terrain, this.ground());
   }
 
   // The first item this creature touches at its position, or -1; changes nothing.
@@ -320,7 +334,7 @@ export class Creature {
 
   // One tick of motion, eating and energy. Returns what eat returns.
   move(world: World, turn: number, thrust: number): number {
-    stepBody(this.state, turn, thrust, this.config, this.decays, this.heading, this.energyUpkeep, this.terrain);
+    stepBody(this.state, turn, thrust, this.config, this.decays, this.heading, this.energyUpkeep, this.terrain, this.ground());
     const eaten = this.eat(world);
     settle(this.state);
     return eaten;
