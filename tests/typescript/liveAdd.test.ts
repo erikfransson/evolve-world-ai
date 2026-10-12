@@ -226,6 +226,26 @@ describe("add caps (adds.ts)", () => {
     expect(applyTunables(v.eco, { "add.aliveFloor": 5000 })).toMatch(/add.aliveFloor/);
   });
 
+  it("an extinct world does not step, still runs queued work, and its graph gets a 0 sample at once", async () => {
+    const config = smallConfig();
+    config.eco.initialPopulation = 2;
+    const w = new LiveWorld(config, null);
+    expect(w.stats(0).sample?.[1]).toBe(2);
+    for (let i = 0; i < 100 && !w.eco.extinct; i++) {
+      for (const m of w.eco.members) m.creature.state.energy = 0.001; // they starve within a few ticks
+      w.step();
+    }
+    expect(w.eco.extinct).toBe(true);
+    const tick = w.eco.tick;
+    expect(w.stats(0).sample?.[1]).toBe(0); // well before the next 20 s sample is due
+    expect(w.stats(0).sample).toBeUndefined(); // once
+    let ran = false;
+    const done = w.whenIdle(() => (ran = true));
+    await w.tick();
+    await done;
+    expect([ran, w.eco.tick, w.failedTicks]).toEqual([true, tick, 0]);
+  });
+
   it("the caps are admin settings with limits", () => {
     const eco = new LiveWorld(smallConfig(), null).eco;
     expect(applyTunables(eco, { "add.perWindow": 5, "add.aliveShare": 0.2 })).toBeNull();

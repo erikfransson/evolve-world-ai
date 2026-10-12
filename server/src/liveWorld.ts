@@ -294,6 +294,7 @@ export class LiveWorld {
   step(): void {
     if (this.helpers) throw new Error("step runs without helpers only");
     if (this.eco.extinct && LIVE.reseed) this.reseed();
+    if (this.eco.extinct) return; // stays as it is until an add, the same with and without helpers
     this.eco.detail = null; // with a detail creature the WebAssembly sense costs several times more
     this.eco.step();
     this.collectOps();
@@ -303,6 +304,10 @@ export class LiveWorld {
   async tick(): Promise<void> {
     try {
       if (this.eco.extinct && LIVE.reseed) this.reseed();
+      if (this.eco.extinct) {
+        this.failedTicks = 0; // nothing to step, so nothing failed: the helpers never see an empty world, and finally still runs outside work
+        return;
+      }
       this.eco.detail = null;
       const eco = this.eco;
       if (this.helpers && this.starting) {

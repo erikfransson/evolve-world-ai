@@ -41,7 +41,9 @@ export class Chronicle {
     if (this.watched !== eco) this.reset(eco);
     const t = eco.tick * eco.config.dt;
     const top = eco.lineages.top(LINEAGE_TOP);
-    if (t >= this.nextSample) {
+    // An extinct world's clock stops (no ticks), so its 0 is sampled at once, or the graph would end on the last living count.
+    const diedOut = eco.extinct && this.samples.length > 0 && this.samples[this.samples.length - 2] !== 0;
+    if (t >= this.nextSample || diedOut) {
       this.nextSample = t + SAMPLE_EVERY_S;
       stats.sample = [Math.round(t), eco.population, eco.food];
       this.samples.push(...stats.sample);

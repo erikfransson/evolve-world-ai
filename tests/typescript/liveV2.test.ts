@@ -511,4 +511,20 @@ describe("helper threads", () => {
     expect(prints[1]![1]).toBe(prints[0]![1]);
     expect(prints[1]![2]).toBe(2);
   });
+
+  it("leave an extinct world still, as one thread does, when reseed is off", async () => {
+    const { createNodeThinkPool } = await import("../../src/typescript/src/worker/nodePool.ts");
+    LIVE.reseed = 0;
+    const config = smallConfig();
+    config.eco.initialPopulation = 0;
+    const live = new LiveWorld(config, null, createNodeThinkPool(1));
+    try {
+      const tick = live.eco.tick;
+      for (let t = 0; t < 5; t++) await live.tick();
+      expect([live.eco.tick, live.threads, live.failedTicks]).toEqual([tick, 1, 0]);
+    } finally {
+      LIVE.reseed = 1;
+      live.close();
+    }
+  });
 });

@@ -128,6 +128,7 @@ function onState(state: LinkState, retryInS: number): void {
   $("offline").hidden = state !== "offline";
   if (state !== "live") {
     addPanel.disconnected();
+    $("emptyNote").hidden = true;
     $("entryLive").textContent = state === "connecting" ? "Connecting to the world" : state === "full" ? "Full of viewers right now" : state === "outdated" ? "This page is out of date, reload it" : "The world is offline right now";
   }
   if (state === "connecting") setChip(state, "Connecting");
@@ -167,7 +168,8 @@ function renderStats(): void {
     if (s.season) showSeason(seasonName(seasonEco(s.season), s.simSeconds), `food\u00a0${seasonFactor(seasonEco(s.season), s.simSeconds).toFixed(2)}×`);
   }
   if (chip.dataset.state === "live") setChip("live", "Live", s ? ` · ${nf.format(s.viewers)} watching` : "");
-  if (s && chip.dataset.state === "live") $("entryLive").textContent = `${nf.format(s.population)} creatures alive · ${nf.format(s.viewers)} watching`;
+  if (s && chip.dataset.state === "live") $("entryLive").textContent = s.population > 0 ? `${nf.format(s.population)} creatures alive · ${nf.format(s.viewers)} watching` : `No creatures right now, add one to start the world again · ${nf.format(s.viewers)} watching`;
+  $("emptyNote").hidden = !(s && chip.dataset.state === "live" && s.population === 0);
 }
 
 // The season and its food factor; the separator between them is CSS, so a wrapped factor starts its line clean.
@@ -621,6 +623,7 @@ $("entryWatch").addEventListener("click", () => {
 });
 $("entryAdd").addEventListener("click", openAdd);
 $("openAdd").addEventListener("click", openAdd);
+$("emptyAdd").addEventListener("click", openAdd);
 $("addPeek").addEventListener("click", () => addPanel.open());
 let answered = false;
 try {
