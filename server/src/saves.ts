@@ -69,7 +69,8 @@ export class Saves {
   async restoreNewest(log: (line: string) => void = console.log): Promise<boolean> {
     for (const { name } of this.store.list()) {
       try {
-        log(`restored ${await this.restore(name)}`);
+        const t0 = performance.now();
+        log(`restored ${await this.restore(name)} (${Math.round(performance.now() - t0)} ms)`);
         return true;
       } catch (e) {
         log(`cannot restore ${name}: ${errText(e)}`);
