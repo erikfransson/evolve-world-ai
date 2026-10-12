@@ -1,17 +1,21 @@
 // @vitest-environment node
-import { LIMITS } from "../../server/src/config.ts";
+import { LIMITS, LIVE } from "../../server/src/config.ts";
+import { TokenBucket } from "../../server/src/budget.ts";
 import { ItemFeed } from "../../server/src/itemFeed.ts";
 import { LiveWorld } from "../../server/src/liveWorld.ts";
 import { Chronicle } from "../../server/src/chronicle.ts";
 import { ItemMirror } from "../../src/typescript/src/live/items.ts";
 import { LiveScene } from "../../src/typescript/src/live/scene.ts";
-import { MAX_DETAIL_BYTES, MAX_GENOME, decodeDetail, decodeGenome, encodeDetail, encodeGenome, genomeBytes } from "../../src/typescript/src/live/detail.ts";
+import { MAX_DETAIL_BYTES, MAX_GENOME, MAX_INPUTS, RAY_FEATURES, decodeDetail, decodeGenome, encodeDetail, encodeGenome, genomeBytes } from "../../src/typescript/src/live/detail.ts";
 import type { DetailSource } from "../../src/typescript/src/live/detail.ts";
 import {
   HISTORY_FIELDS, LINEAGE_FIELDS, MAX_DELTAS, MAX_DELTA_OPS, MAX_HISTORY, MAX_ID, MAX_LINEAGE_HISTORY, MSG_DELTA, decodeCreatures, decodeDelta, decodeItems, deltaMessage, encodeDeltaChunk, parseClientMessage,
 } from "../../src/typescript/src/live/protocol.ts";
 import type { ItemOp, Stats } from "../../src/typescript/src/live/protocol.ts";
 import { cleanStats } from "../../src/typescript/src/live/connection.ts";
+import { EXTRA_INPUTS, inputLayout } from "../../src/typescript/src/sim/sensors.ts";
+import { genomeLength, layerSizes } from "../../src/typescript/src/sim/brain.ts";
+import { PLAN_LIMITS } from "../../src/typescript/src/sim/rl/validate.ts";
 import { smallConfig } from "./liveHelpers.ts";
 
 const world = { width: 2000, height: 1300 };
@@ -144,64 +148,80 @@ describe("item deltas", () => {
     });
   }
 
-  it("on the page's timeline, food disappears in the frame where its eater reaches it", () => {
-    const live = new LiveWorld(smallConfig(), null);
-    const R = live.config.creature.radius + live.config.world.itemRadius;
-    const TICKS = 24; // per frame at 4x: 30 ticks a simulated second, 5 frames a real second
-    live.creatureFrame();
-    live.takeDelta();
-    let checked = 0;
-    for (let frame = 0; frame < 300 && checked < 10; frame++) {
-      const before = decodeCreatures(live.creatureFrame(), world);
+  // Across seeds, so it does not hang on one random stream. A frame in which the world died out and started over is skipped.
+  for (const seed of [1, 2, 3, 4, 5]) {
+    it(`on the page's timeline, food disappears in the frame where its eater reaches it, seed ${seed}`, () => {
+      const c = smallConfig();
+      c.seed = seed;
+      const live = new LiveWorld(c, null);
+      let reseeded = false;
+      live.onReseed = () => (reseeded = true);
+      const R = live.config.creature.radius + live.config.world.itemRadius;
+      const TICKS = 24; // per frame at 4x: 30 ticks a simulated second, 5 frames a real second
+      live.creatureFrame();
       live.takeDelta();
-      const items = itemsOf(live);
-      // Step tick by tick, noting who ate at which tick and where everyone truly was.
-      const truth = new Map<number, Map<number, [number, number]>>(); // tick -> id -> position
-      const eatersAt = new Map<number, number[]>(); // tick -> ids that ate food
-      for (let t = 0; t < TICKS; t++) {
-        const eaten = new Map(live.eco.members.map((m) => [m.id, m.eaten]));
-        live.step();
-        truth.set(live.eco.tick, new Map(live.eco.members.map((m) => [m.id, [m.creature.state.x, m.creature.state.y]])));
-        eatersAt.set(live.eco.tick, live.eco.members.filter((m) => m.eaten > (eaten.get(m.id) ?? Infinity)).map((m) => m.id));
-      }
-      const after = decodeCreatures(live.creatureFrame(), world);
-      const deltas = decodeDelta(deltaMessage([live.takeDelta()!]), world, live.eco.world.count);
-      for (const op of deltas[0]!.ops) {
-        const eaters = eatersAt.get(op.tick) ?? [];
-        const item = items.get(op.slot);
-        if (op.kind !== 0 || item?.[0] !== 1 || eaters.length !== 1) continue; // one food eaten by one creature at that tick
-        const id = eaters[0]!;
-        if (before.ids.indexOf(id) < 0 || after.ids.indexOf(id) < 0) continue;
-        const scene = new LiveScene();
-        scene.dt = live.config.dt;
-        const slots = live.eco.world.count;
-        scene.setItems({ tick: before.tick, slots, kinds: Uint8Array.from({ length: slots }, (_, i) => items.get(i)?.[0] ?? 0), x: Float32Array.from({ length: slots }, (_, i) => items.get(i)?.[1] ?? 0), y: Float32Array.from({ length: slots }, (_, i) => items.get(i)?.[2] ?? 0) });
-        scene.push(before, 0);
-        scene.addDeltas(deltas);
-        scene.push(after, 2400); // span 2400 ms, 100 ms a tick
-        let goneAt = -1;
-        for (let ms = 2400; ms <= 4800; ms += 5) {
-          scene.sample(ms);
-          if (scene.items.kindAt(op.slot) === 0) {
-            goneAt = ms;
-            break;
-          }
+      let checked = 0;
+      for (let frame = 0; frame < 300 && checked < 10; frame++) {
+        reseeded = false;
+        const before = decodeCreatures(live.creatureFrame(), world);
+        live.takeDelta();
+        const items = itemsOf(live);
+        // Step tick by tick, noting who ate at which tick and where everyone truly was.
+        const truth = new Map<number, Map<number, [number, number]>>(); // tick -> id -> position
+        const eatersAt = new Map<number, number[]>(); // tick -> ids that ate food
+        for (let t = 0; t < TICKS; t++) {
+          const eaten = new Map(live.eco.members.map((m) => [m.id, m.eaten]));
+          live.step();
+          truth.set(live.eco.tick, new Map(live.eco.members.map((m) => [m.id, [m.creature.state.x, m.creature.state.y]])));
+          eatersAt.set(live.eco.tick, live.eco.members.filter((m) => m.eaten > (eaten.get(m.id) ?? Infinity)).map((m) => m.id));
         }
-        // It goes when the timeline reaches the tick it was eaten at, not before and not at the frame's end.
-        expect(scene.displayTick).toBeGreaterThanOrEqual(op.tick);
-        expect(scene.displayTick).toBeLessThan(op.tick + 5 / 100);
-        // And there the eater, as drawn, touches it, up to how far its straight path between frames strays from its true one.
-        const v = scene.views;
-        const i = scene.slotOf(id);
-        const [tx, ty] = truth.get(op.tick)!.get(id)!;
-        const stray = Math.hypot(v.x[i]! - tx, v.y[i]! - ty);
-        expect(Math.hypot(v.x[i]! - item[1], v.y[i]! - item[2])).toBeLessThanOrEqual(R + stray + 2 * QX);
-        expect(goneAt).toBeGreaterThan(2400);
-        checked++;
+        const after = decodeCreatures(live.creatureFrame(), world);
+        const chunk = live.takeDelta();
+        if (reseeded || !chunk) continue;
+        const deltas = decodeDelta(deltaMessage([chunk]), world, live.eco.world.count);
+        const touched = new Set<number>();
+        for (const op of deltas[0]!.ops) {
+          // Only a slot's first change in the frame removes the item it held at the frame's start (a slot can be eaten, refilled and eaten again).
+          if (touched.has(op.slot)) continue;
+          touched.add(op.slot);
+          const eaters = eatersAt.get(op.tick) ?? [];
+          const item = items.get(op.slot);
+          if (op.kind !== 0 || item?.[0] !== 1 || eaters.length !== 1) continue; // one food eaten by one creature at that tick
+          const id = eaters[0]!;
+          if (before.ids.indexOf(id) < 0 || after.ids.indexOf(id) < 0) continue;
+          const scene = new LiveScene();
+          scene.dt = live.config.dt;
+          const slots = live.eco.world.count;
+          scene.setItems({ tick: before.tick, slots, kinds: Uint8Array.from({ length: slots }, (_, i) => items.get(i)?.[0] ?? 0), x: Float32Array.from({ length: slots }, (_, i) => items.get(i)?.[1] ?? 0), y: Float32Array.from({ length: slots }, (_, i) => items.get(i)?.[2] ?? 0) });
+          scene.push(before, 0);
+          scene.addDeltas(deltas);
+          scene.push(after, 2400); // span 2400 ms, 100 ms a tick
+          let goneAt = -1;
+          for (let ms = 2400; ms <= 4800; ms += 5) {
+            scene.sample(ms);
+            // Gone: the slot is empty, or holds a new item elsewhere (eaten and refilled in the same tick).
+            const at = scene.items.kindAt(op.slot) === 1 ? scene.items.indexOf(op.slot) : -1;
+            if (at < 0 || Math.hypot(scene.items.x[at]! - item[1], scene.items.y[at]! - item[2]) > 2 * QX) {
+              goneAt = ms;
+              break;
+            }
+          }
+          // It goes when the timeline reaches the tick it was eaten at, not before and not at the frame's end.
+          expect(scene.displayTick).toBeGreaterThanOrEqual(op.tick);
+          expect(scene.displayTick).toBeLessThan(op.tick + 5 / 100);
+          // And there the eater, as drawn, touches it, up to how far its straight path between frames strays from its true one.
+          const v = scene.views;
+          const i = scene.slotOf(id);
+          const [tx, ty] = truth.get(op.tick)!.get(id)!;
+          const stray = Math.hypot(v.x[i]! - tx, v.y[i]! - ty);
+          expect(Math.hypot(v.x[i]! - item[1], v.y[i]! - item[2])).toBeLessThanOrEqual(R + stray + 2 * QX);
+          expect(goneAt).toBeGreaterThan(2400);
+          checked++;
+        }
       }
-    }
-    expect(checked).toBeGreaterThan(3);
-  });
+      expect(checked).toBeGreaterThan(3);
+    });
+  }
 });
 
 describe("timeline", () => {
@@ -263,7 +283,7 @@ describe("selected creature on the wire", () => {
   });
 
   it("round-trips the largest detail within its bound and decodes into SelectedDetails", () => {
-    const bytes = encodeDetail(55, 1234, source(16, 16 * 6 + 4 + 16));
+    const bytes = encodeDetail(55, 1234, source(16, 16 * RAY_FEATURES + EXTRA_INPUTS + 16));
     expect(bytes.length).toBe(MAX_DETAIL_BYTES);
     const { tick, id, details: d } = decodeDetail(bytes);
     expect([tick, id, d.alive, d.children, d.depth, d.parentId, d.founderId, d.founderPool]).toEqual([55, 1234, true, 3, 4, 77, 9, true]);
@@ -276,8 +296,34 @@ describe("selected creature on the wire", () => {
     expect(d.genome).toBeNull();
   });
 
+  // The codec's input count must follow the engine's input layout, or a real creature's detail fails to decode.
+  it("follows the engine's input layout: the largest plan fits the bounds, and a real creature of that plan round-trips", () => {
+    const L = PLAN_LIMITS;
+    const c = smallConfig();
+    c.creature.rayCount = L.rayCount[1];
+    c.brain.hiddenLayers = Array<number>(L.layers[1]).fill(L.neurons[1]);
+    c.brain.memory = 1; // memoryShort and memoryLong at their limit
+    c.eco.foundersVary = false; // every founder gets this plan
+    const live = new LiveWorld(c, null);
+    const m = live.eco.members[0]!;
+    const plan = m.creature.plan;
+    expect([plan.rayCount, plan.hiddenLayers.length, plan.memoryShort, plan.memoryLong]).toEqual([L.rayCount[1], L.layers[1], L.memory[1], L.memory[1]]);
+    expect(inputLayout(live.eco.config, plan).size).toBe(MAX_INPUTS);
+    expect(genomeLength(layerSizes(live.eco.config, plan))).toBe(MAX_GENOME);
+    live.watch(m.id);
+    live.step();
+    live.refreshWatched();
+    const bytes = live.detail(m.id)!;
+    expect(bytes.length).toBe(MAX_DETAIL_BYTES);
+    const d = decodeDetail(bytes).details;
+    const engineInputs = m.creature.brain.layerActivations()[0]!;
+    expect(d.inputs.length).toBe(engineInputs.length);
+    for (let i = 0; i < engineInputs.length; i++) expect(d.inputs[i]).toBeCloseTo(Math.max(-8, Math.min(8, engineInputs[i]!)), 3);
+    expect(decodeGenome(live.genome(m.id)!).genome.length).toBe(m.creature.brain.genome.length);
+  });
+
   it("rejects malformed details: bad counts, truncation, oversize, NaN", () => {
-    const good = encodeDetail(1, 1, source(4, 4 * 6 + 4 + 16));
+    const good = encodeDetail(1, 1, source(4, 4 * RAY_FEATURES + EXTRA_INPUTS + 16));
     expect(() => decodeDetail(good.slice(0, -1))).toThrow();
     expect(() => decodeDetail(new Uint8Array(MAX_DETAIL_BYTES + 1).fill(3))).toThrow();
     expect(() => decodeDetail(encodeDetail(1, 1, source(4, 5)))).toThrow(/inputs/); // input count does not fit the plan
@@ -337,29 +383,39 @@ describe("history and records", () => {
     expect(ch.history().length).toBeLessThan(80_000);
   });
 
-  it("finds the oldest and most-children creatures and keeps the top records, dead ones included", () => {
-    const live = new LiveWorld(smallConfig(), null);
-    let s: Stats | null = null;
-    const deadAges: number[] = [];
-    live.eco.onDeath = ((prev) => (m) => { deadAges.push(m.ageTicks * live.config.dt); prev?.(m); })(live.eco.onDeath);
-    for (let t = 0; t < 2000; t++) {
-      live.step();
-      if (t % 30 === 0) s = live.stats(1, true);
-    }
-    s = live.stats(1, true);
-    const members = live.eco.members;
-    const oldest = members.reduce((a, b) => (b.ageTicks > a.ageTicks || (b.ageTicks === a.ageTicks && b.id < a.id) ? b : a));
-    const parent = members.reduce((a, b) => (b.children > a.children || (b.children === a.children && b.id < a.id) ? b : a));
-    expect(s.best).toEqual({ age: oldest.id, children: parent.id });
-    const age = s.records!.find((r) => r.board === "age")!.entries;
-    expect(age.length).toBe(3);
-    expect(age[0]!.value).toBeGreaterThanOrEqual(Math.round(Math.max(oldest.ageTicks * live.config.dt, ...deadAges)) - 1);
-    expect(age.map((e) => e.value)).toEqual([...age.map((e) => e.value)].sort((a, b) => b - a));
-    const kids = s.records!.find((r) => r.board === "children")?.entries ?? [];
-    expect(kids[0]?.value ?? 0).toBeGreaterThanOrEqual(parent.children);
-    expect(s.lineages!.length).toBeLessThanOrEqual(8);
-    expect(s.season).toEqual({ yearMinutes: 40, winterFood: 0.4 });
-  });
+  // Across seeds, so it does not hang on one random stream. A world that dies out starts over with fresh records, so the dead counted restart too.
+  for (const seed of [1, 2, 3, 4, 5]) {
+    it(`finds the oldest and most-children creatures and keeps the top records, dead ones included, seed ${seed}`, () => {
+      const c = smallConfig();
+      c.seed = seed;
+      const live = new LiveWorld(c, null);
+      let s: Stats | null = null;
+      const deadAges: number[] = [];
+      const countDeaths = (): void => {
+        deadAges.length = 0;
+        live.eco.onDeath = ((prev) => (m) => { deadAges.push(m.ageTicks * live.config.dt); prev?.(m); })(live.eco.onDeath);
+      };
+      countDeaths();
+      live.onReseed = countDeaths;
+      for (let t = 0; t < 2000; t++) {
+        live.step();
+        if (t % 30 === 0) s = live.stats(1, true);
+      }
+      s = live.stats(1, true);
+      const members = live.eco.members;
+      const oldest = members.reduce((a, b) => (b.ageTicks > a.ageTicks || (b.ageTicks === a.ageTicks && b.id < a.id) ? b : a));
+      const parent = members.reduce((a, b) => (b.children > a.children || (b.children === a.children && b.id < a.id) ? b : a));
+      expect(s.best).toEqual({ age: oldest.id, children: parent.id });
+      const age = s.records!.find((r) => r.board === "age")!.entries;
+      expect(age.length).toBe(3);
+      expect(age[0]!.value).toBeGreaterThanOrEqual(Math.round(Math.max(oldest.ageTicks * live.config.dt, ...deadAges)) - 1);
+      expect(age.map((e) => e.value)).toEqual([...age.map((e) => e.value)].sort((a, b) => b - a));
+      const kids = s.records!.find((r) => r.board === "children")?.entries ?? [];
+      expect(kids[0]?.value ?? 0).toBeGreaterThanOrEqual(parent.children);
+      expect(s.lineages!.length).toBeLessThanOrEqual(8);
+      expect(s.season).toEqual({ yearMinutes: 40, winterFood: 0.4 });
+    });
+  }
 });
 
 describe("selection cost", () => {
@@ -374,21 +430,38 @@ describe("selection cost", () => {
     c.eco.wasm = true;
     const live = new LiveWorld(c, null);
     for (let t = 0; t < 60; t++) live.step();
+    // Warm up the selection code on other creatures, so its one-off compile time does not count as per-frame cost.
+    const warm = live.eco.members.slice(100, 200).map((m) => m.id);
+    for (const id of warm) live.watch(id);
+    live.refreshWatched();
+    for (const id of warm) {
+      live.detail(id);
+      live.genome(id);
+      live.unwatch(id);
+    }
     const ids = live.eco.members.slice(0, 100).map((m) => m.id);
     for (const id of ids) live.watch(id);
+    // The refresh allowance runs on the server's real clock, which ticks LIVE.speed simulated seconds a second. Run it on the
+    // simulated clock at that pace, so a slow machine does not hand out more refreshes per tick than the server would.
+    let ticks = 0;
+    expect(Reflect.has(live, "refreshes")).toBe(true); // the bucket replaced below must be the one the server reads
+    (live as unknown as { refreshes: TokenBucket }).refreshes = new TokenBucket(LIMITS.detailRefreshesPerSecond, LIMITS.detailRefreshesPerSecond, () => (ticks * live.config.dt) / LIVE.speed);
+    // CPU time of this process, not wall time, so time the scheduler gives other processes counts for neither side.
+    const cpuMs = (): number => {
+      const u = process.cpuUsage();
+      return (u.user + u.system) / 1000;
+    };
     const sent = new Set<number>();
     let ticking = 0;
     let selecting = 0;
-    const t1 = performance.now() + 2000;
-    let ticks = 0;
-    while (performance.now() < t1) {
-      let t0 = performance.now();
-      live.step();
-      ticking += performance.now() - t0;
-      if (++ticks % 24 !== 0) continue; // a frame every 24 ticks, as at 4x
+    // A fixed number of ticks, not a fixed time: the same world each run (it thins out from about 600 ticks on and later starts over).
+    for (let frame = 0; frame < 20; frame++) {
+      let t0 = cpuMs();
+      for (let t = 0; t < 24; t++, ticks++) live.step(); // a frame every 24 ticks, as at 4x
+      ticking += cpuMs() - t0;
       live.creatureFrame();
       live.takeDelta();
-      t0 = performance.now();
+      t0 = cpuMs();
       live.refreshWatched();
       for (const id of ids) {
         live.detail(id);
@@ -397,7 +470,7 @@ describe("selection cost", () => {
           live.genome(id);
         }
       }
-      selecting += performance.now() - t0;
+      selecting += cpuMs() - t0;
     }
     const share = selecting / ticking;
     console.log(`${ticks} ticks at ${(ticking / ticks).toFixed(3)} ms, following 100 adds ${(selecting / ticks).toFixed(4)} ms a tick, ${(100 * share).toFixed(2)}%, population ${live.eco.population}`);
