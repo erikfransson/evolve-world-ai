@@ -489,13 +489,13 @@ function frame(now: number): void {
   const dpr = syncCanvas();
   const ctx = canvas.getContext("2d")!;
   camera.update(now);
-  if (!draw || !scene.views.count) {
+  if (!draw) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = "#0b1d16";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    if (scene.views.count === 0) scene.sample(now);
     return;
   }
+  // An empty world is still drawn: its ground and food stay in view until creatures are added again.
   if (scene.sample(now)) births.observe(scene.views, now);
   zoomToSelection();
   syncFollow();
