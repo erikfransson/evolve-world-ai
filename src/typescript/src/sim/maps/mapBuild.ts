@@ -426,11 +426,39 @@ const ROUGH_WAVE_FINE = 260;
 const WIDTH_WAVE = 1700;
 const WIDTH_WAVE_FINE = 600;
 const PASS_WAVE = 500;
+const ANGULAR_EDGE = 0.4; // radius of the discs along an angular stone's edge, in stone radii: the union edge scallops by about a tenth of it
+const ANGULAR_CORNERS = [7, 9] as const;
+const MASS_EDGE_R = 45; // radius of the discs placed on every edge cell of a massif, so its edge follows the raster's steps instead of a few big circles
 const MASS_CELL = 50; // world units of the massif mask grid
 const MASS_MAX_R = 300; // largest disc of a massif
 const MASS_MIN_R = 30;
 const TALUS = { g: 170, r: [60, 150], ex: [0, 2], gap: 70 } as const;
 const OUTCROP = { g: 420, r: [170, 380], ex: [2, 5], gap: 140 } as const;
+
+// An irregular polygon of seven to nine corners in place of a round stone of radius d.r: its edges are rows of discs and a ring and a centre
+// disc fill the inside, so the union has straight edges and corners like the boulders of the random map, from a few dozen discs.
+function angularStone(rng: () => number, d: Disc): Disc[] {
+  const n = ANGULAR_CORNERS[0] + Math.floor(rng() * (ANGULAR_CORNERS[1] - ANGULAR_CORNERS[0] + 1));
+  const rho = ANGULAR_EDGE * d.r;
+  const corners: { x: number; y: number }[] = [];
+  let nearest = Infinity;
+  for (let k = 0; k < n; k++) {
+    const a = (TAU * (k + (rng() - 0.5) * 0.6)) / n;
+    const reach = d.r * (0.72 + 0.38 * rng()) - rho;
+    corners.push({ x: d.x + reach * Math.cos(a), y: d.y + reach * Math.sin(a) });
+  }
+  const out: Disc[] = [];
+  for (let k = 0; k < n; k++) {
+    const p = corners[k]!;
+    const q = corners[(k + 1) % n]!;
+    const steps = Math.max(1, Math.ceil(Math.hypot(q.x - p.x, q.y - p.y) / rho));
+    for (let j = 0; j < steps; j++) out.push({ x: p.x + ((q.x - p.x) * j) / steps, y: p.y + ((q.y - p.y) * j) / steps, r: rho });
+    nearest = Math.min(nearest, Math.hypot((p.x + q.x) / 2 - d.x, (p.y + q.y) / 2 - d.y));
+  }
+  for (const p of corners) out.push({ x: d.x + 0.45 * (p.x - d.x), y: d.y + 0.45 * (p.y - d.y), r: 1.5 * rho });
+  out.push({ x: d.x, y: d.y, r: Math.max(rho, 0.55 * nearest) });
+  return out;
+}
 
 function check(spec: MapSpec): void {
   const bad = (what: string): never => {
@@ -589,12 +617,13 @@ export function buildMap(spec: MapSpec): BuiltMap {
           discs.push({ x: px + off * Math.cos(ang) - side * Math.sin(ang), y: py + off * Math.sin(ang) + side * Math.cos(ang), r: r * (0.5 + 0.35 * rng()) });
         }
         const bound = r * 1.5 + (nEx ? r * 0.8 : 0);
+        const angular = rockLayer.kind === "outcrop" ? discs.flatMap((d) => angularStone(rng, d)) : discs;
         if (hit(px, py, bound, Kd.gap)) continue;
         if (!rockLayer.onMud && discs.some((q) => ground.valueAt(q.x, q.y) < 0)) continue;
         const key = keyOf(Math.floor(px / 400), Math.floor(py / 400));
         if (!taken.has(key)) taken.set(key, []);
         taken.get(key)!.push({ x: px, y: py, r: bound });
-        for (const q of discs) rock.push({ x: Math.round(q.x), y: Math.round(q.y), r: Math.round(q.r) });
+        for (const q of angular) rock.push({ x: Math.round(q.x), y: Math.round(q.y), r: Math.round(q.r) });
         stones++;
       }
     }
@@ -637,6 +666,22 @@ function massDiscs(mask: Uint8Array, cols: number, rows: number): Disc[] {
   order.sort((a, b) => dist[b]! - dist[a]! || a - b);
   const covered = new Uint8Array(cols * rows);
   const discs: Disc[] = [];
+  const cover = (cx: number, cy: number, r: number): void => {
+    const reach = Math.ceil(r / MASS_CELL);
+    for (let j = Math.max(0, cy - reach); j <= Math.min(rows - 1, cy + reach); j++) {
+      for (let i = Math.max(0, cx - reach); i <= Math.min(cols - 1, cx + reach); i++) if (((i - cx) * MASS_CELL) ** 2 + ((j - cy) * MASS_CELL) ** 2 <= r * r) covered[j * cols + i] = 1;
+    }
+  };
+  // Every cell next to the outside gets a small disc, which makes the edge a jagged line of short arcs that follows the mask.
+  for (let cy = 0; cy < rows; cy++) {
+    for (let cx = 0; cx < cols; cx++) {
+      const n = cy * cols + cx;
+      if (dist[n]! !== 1) continue;
+      const r = MASS_EDGE_R * (0.85 + 0.3 * hash(cx, cy, 7));
+      discs.push({ x: Math.round((cx + 0.5) * MASS_CELL), y: Math.round((cy + 0.5) * MASS_CELL), r: Math.round(r) });
+      cover(cx, cy, r);
+    }
+  }
   for (const n of order) {
     if (covered[n]) continue;
     const cx = n % cols;
@@ -645,10 +690,7 @@ function massDiscs(mask: Uint8Array, cols: number, rows: number): Disc[] {
     const x = (cx + 0.5) * MASS_CELL;
     const y = (cy + 0.5) * MASS_CELL;
     discs.push({ x: Math.round(x), y: Math.round(y), r: Math.round(r) });
-    const reach = Math.ceil(r / MASS_CELL);
-    for (let j = Math.max(0, cy - reach); j <= Math.min(rows - 1, cy + reach); j++) {
-      for (let i = Math.max(0, cx - reach); i <= Math.min(cols - 1, cx + reach); i++) if (((i - cx) * MASS_CELL) ** 2 + ((j - cy) * MASS_CELL) ** 2 <= r * r) covered[j * cols + i] = 1;
-    }
+    cover(cx, cy, r);
   }
   return discs;
 }
