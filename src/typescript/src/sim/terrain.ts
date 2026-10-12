@@ -352,7 +352,9 @@ function ridge(rng: StatefulRng, w: number, h: number): { discs: Circle[]; area:
   return { discs, area: 2.8 * rho * covered };
 }
 
-// A patch: a blob of three to five discs around a larger centre one; size scales it.
+export const MAX_DISCS_PER_PATCH = 11; // the centre disc, up to four lobes and up to six shore bumps
+const PATCH_BUMPS = [4, 3] as const; // shore bumps on a patch: 4 + one of 0 .. 2
+// A patch: a blob of three to five discs around a larger centre one, with a few small bumps on its shore; size scales it.
 function patch(rng: StatefulRng, w: number, h: number, size: number): { discs: Circle[]; area: number } {
   const r0 = Math.min(550, Math.max(150, 0.08 * Math.min(w, h))) * rng.range(0.8, 1.2) * size;
   const cx = rng.range(0, w);
@@ -364,7 +366,16 @@ function patch(rng: StatefulRng, w: number, h: number, size: number): { discs: C
     const d = r0 * rng.range(0.5, 0.9);
     discs.push({ x: cx + d * Math.cos(a), y: cy + d * Math.sin(a), r: r0 * rng.range(0.5, 0.85) });
   }
-  return { discs, area: 0.7 * discs.reduce((s, d) => s + Math.PI * d.r * d.r, 0) };
+  const area = 0.7 * discs.reduce((s, d) => s + Math.PI * d.r * d.r, 0);
+  // Small bumps on the shore of the lobes, so an edge is lumpy and irregular rather than a clover of circles.
+  for (let k = 0, n = PATCH_BUMPS[0] + rng.int(PATCH_BUMPS[1]); k < n; k++) {
+    const base = discs[rng.int(discs.length)]!;
+    const a = rng.range(0, 2 * Math.PI);
+    const r = base.r * rng.range(0.16, 0.32);
+    const d = base.r + r * rng.range(-0.3, 0.45);
+    discs.push({ x: base.x + d * Math.cos(a), y: base.y + d * Math.sin(a), r });
+  }
+  return { discs, area };
 }
 
 const insideWorld = (discs: readonly Circle[], w: number, h: number): boolean => discs.every((d) => d.x >= d.r + GAP && d.x <= w - d.r - GAP && d.y >= d.r + GAP && d.y <= h - d.r - GAP);

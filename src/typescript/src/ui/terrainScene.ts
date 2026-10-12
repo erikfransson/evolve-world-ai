@@ -1,11 +1,11 @@
 import { createRng } from "../sim/rng.ts";
-import { TERRAIN_FAST, TERRAIN_SLOW } from "../sim/terrain.ts";
 import type { Terrain } from "../sim/terrain.ts";
+import { context2d, drawGround, makeCanvas } from "./groundScene.ts";
 import { rockBodies, traceLoop } from "./rockOutline.ts";
 import type { RockBody } from "./rockOutline.ts";
 
 // Draws a Terrain (rock and slow and fast ground) for the Trials scene and the Ecosystem renderer, in world coordinates under the
-// current transform. Ground is a soft tint baked once per map into a small image (the legend names the kinds, no symbols on it).
+// current transform. Ground is in groundScene.ts (the legend names the kinds, no symbols on it).
 // Rock is drawn live as stacked fills of the union of its discs, lit from the top left, so its edge is exactly where creatures bounce.
 
 export interface View {
@@ -15,28 +15,12 @@ export interface View {
   y1: number;
 }
 
-// Slow ground reads as damp blue-grey mud, fast ground as pale dry gold.
-const GROUND = [{ kind: TERRAIN_SLOW, tint: "rgba(86, 116, 178, 0.46)" }, { kind: TERRAIN_FAST, tint: "rgba(222, 204, 80, 0.3)" }] as const;
-const GROUND_IMAGE_PX = 1600; // longest side of the baked ground image
-const EDGE_SOFT = 70; // world units of blur on a patch edge
-
 const HALO = "rgba(2, 8, 6, 0.2)";
 const EDGE_DARK = "#141b19";
 const EDGE_LIT = "#7b8982";
 const CRACKS_FROM = 0.25; // scale (device px per world unit) from which cracks are drawn
 const ROCK_TILE_UNITS = 300; // world units one grain tile covers
 const ROCK_TILE_PX = 192;
-
-function makeCanvas(w: number, h: number): OffscreenCanvas | HTMLCanvasElement | null {
-  if (typeof OffscreenCanvas !== "undefined") return new OffscreenCanvas(w, h);
-  if (typeof document === "undefined") return null;
-  const c = document.createElement("canvas");
-  c.width = w;
-  c.height = h;
-  return c;
-}
-
-const context2d = (c: OffscreenCanvas | HTMLCanvasElement | null): CanvasRenderingContext2D | null => (c ? (c.getContext("2d") as CanvasRenderingContext2D | null) : null);
 
 // A seamless tile of mottled rock: flat base colour with soft light and dark blotches and a few hairline cracks.
 function rockTile(base: string, seed: number): OffscreenCanvas | HTMLCanvasElement | null {
@@ -79,34 +63,6 @@ function rockTile(base: string, seed: number): OffscreenCanvas | HTMLCanvasEleme
   return c;
 }
 
-interface Baked {
-  ground: OffscreenCanvas | HTMLCanvasElement | null; // padded by EDGE_SOFT * 2 on every side
-}
-const baked = new WeakMap<Terrain, Baked>();
-
-function bakeGround(t: Terrain): OffscreenCanvas | HTMLCanvasElement | null {
-  if (t.patchX.length === 0) return null;
-  const pad = 2 * EDGE_SOFT;
-  const s = Math.min(1, GROUND_IMAGE_PX / Math.max(t.width, t.height));
-  const canvas = makeCanvas(Math.ceil((t.width + 2 * pad) * s), Math.ceil((t.height + 2 * pad) * s));
-  const g = context2d(canvas);
-  if (!canvas || !g) return null;
-  g.scale(s, s);
-  g.translate(pad, pad);
-  if ("filter" in g) g.filter = `blur(${EDGE_SOFT * 0.5 * s}px)`;
-  for (const { kind, tint } of GROUND) {
-    g.fillStyle = tint;
-    g.beginPath();
-    for (let i = 0; i < t.patchX.length; i++) {
-      if (t.patchKind[i] !== kind) continue;
-      g.moveTo(t.patchX[i]! + t.patchR[i]!, t.patchY[i]!);
-      g.arc(t.patchX[i]!, t.patchY[i]!, t.patchR[i]!, 0, Math.PI * 2);
-    }
-    g.fill();
-  }
-  return canvas;
-}
-
 const tiles = new WeakMap<CanvasRenderingContext2D, { body: CanvasPattern | null; core: CanvasPattern | null }>();
 
 function rockPatterns(ctx: CanvasRenderingContext2D) {
@@ -121,28 +77,6 @@ function rockPatterns(ctx: CanvasRenderingContext2D) {
     tiles.set(ctx, (p = { body: make("#2b3633", 11), core: make("#3a4742", 12) }));
   }
   return p;
-}
-
-function drawGround(ctx: CanvasRenderingContext2D, t: Terrain): void {
-  let b = baked.get(t);
-  if (!b) baked.set(t, (b = { ground: bakeGround(t) }));
-  if (b.ground) {
-    const pad = 2 * EDGE_SOFT;
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(0, 0, t.width, t.height);
-    ctx.clip();
-    ctx.drawImage(b.ground as CanvasImageSource, -pad, -pad, t.width + 2 * pad, t.height + 2 * pad);
-    ctx.restore();
-  } else if (t.patchX.length > 0) {
-    // No canvas to bake on: plain hard-edged tint.
-    for (const { kind, tint } of GROUND) {
-      ctx.fillStyle = tint;
-      ctx.beginPath();
-      for (let i = 0; i < t.patchX.length; i++) if (t.patchKind[i] === kind) discPath(ctx, t.patchX[i]!, t.patchY[i]!, t.patchR[i]!);
-      ctx.fill();
-    }
-  }
 }
 
 function discPath(ctx: CanvasRenderingContext2D, x: number, y: number, r: number): void {
@@ -196,6 +130,8 @@ function detailOf(d: Drawable): { tones: Path2D[]; cracks: Path2D } {
 const FACET_FILL = ["rgba(2, 8, 6, 0.3)", "rgba(2, 8, 6, 0.15)", "rgba(215, 235, 225, 0.1)", "rgba(215, 235, 225, 0.22)"] as const;
 const FLAT_BODY = "#2b3633"; // a body seen from afar, and where patterns are unavailable
 const CRACK = "rgba(6, 12, 10, 0.5)";
+const CLIFF = "rgba(3, 9, 7, 0.5)"; // the shadowed south face, over the body texture
+const LIFT = { units: 14, px: 7 }; // how far the top face stands above the ground: at most this many world units and this many screen px
 const EDGE_FADE_SCALE = 0.25; // below this scale (device px per world unit) rims and shadows thin out, to half at half of it
 const VIEW_PAD_PX = 12; // screen px past a body that still draw, for its shadow
 const SHADOW_NEAR = { grow: 6, alpha: 0.8 }; // two shadow layers (px): a tight dark one and a wide faint one
@@ -240,6 +176,7 @@ function drawRock(ctx: CanvasRenderingContext2D, t: Terrain, scale: number, view
   ctx.restore();
   ctx.globalAlpha = 1;
   const band = RIM_PX * edge * px;
+  const lift = Math.min(LIFT.units, LIFT.px * px) * edge;
   if (!detailed) {
     // From afar: one fill and one rim per body.
     ctx.fillStyle = FLAT_BODY;
@@ -258,6 +195,16 @@ function drawRock(ctx: CanvasRenderingContext2D, t: Terrain, scale: number, view
     ctx.clip(outline, "evenodd");
     ctx.fillStyle = patterns?.body ?? FLAT_BODY;
     ctx.fill(outline, "evenodd");
+    // The south cliff: the whole body darkened, then the top face is the outline lifted by `lift` and clipped to the true one, so the cliff
+    // shows only inside the edge, thickest where the edge faces south.
+    ctx.fillStyle = CLIFF;
+    ctx.fill(outline, "evenodd");
+    ctx.save();
+    ctx.translate(0, -lift);
+    ctx.clip(outline, "evenodd");
+    ctx.translate(0, lift);
+    ctx.fillStyle = patterns?.body ?? FLAT_BODY;
+    ctx.fill(outline, "evenodd");
     const { tones, cracks } = detailOf(d);
     for (let k = 0; k < tones.length; k++) {
       ctx.fillStyle = FACET_FILL[k]!;
@@ -268,6 +215,7 @@ function drawRock(ctx: CanvasRenderingContext2D, t: Terrain, scale: number, view
       ctx.lineWidth = CRACK_PX * px;
       ctx.stroke(cracks);
     }
+    ctx.restore();
     ctx.strokeStyle = EDGE_DARK; // a dark band inside the whole edge, a lit one on the upper left ones
     ctx.lineWidth = 2 * band;
     ctx.stroke(outline);
@@ -286,6 +234,6 @@ function drawRock(ctx: CanvasRenderingContext2D, t: Terrain, scale: number, view
 // quick: rock as plain discs without building outlines, for previews that redraw while settings change.
 export function drawTerrain(ctx: CanvasRenderingContext2D, t: Terrain, scale: number, view: View = { x0: 0, x1: t.width, y0: 0, y1: t.height }, quick = false): void {
   if (t.empty) return;
-  drawGround(ctx, t);
+  drawGround(ctx, t, scale, view, quick);
   drawRock(ctx, t, scale, view, quick);
 }

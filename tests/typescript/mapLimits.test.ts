@@ -4,7 +4,7 @@ import { overrideConfig } from "../../src/typescript/src/sim/config.ts";
 import { restoreState, saveState } from "../../src/typescript/src/sim/ecoState.ts";
 import type { EcoState } from "../../src/typescript/src/sim/ecoState.ts";
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
-import { MAP_DENSITY_MAX, MAX_DISCS_PER_PIECE, MAX_PIECES, PATCH_SIZE_RANGE, terrainOf } from "../../src/typescript/src/sim/terrain.ts";
+import { MAP_DENSITY_MAX, MAX_DISCS_PER_PATCH, MAX_DISCS_PER_PIECE, MAX_PIECES, PATCH_SIZE_RANGE, terrainOf } from "../../src/typescript/src/sim/terrain.ts";
 
 const small = (): EcoConfig => {
   const c = structuredClone(DEFAULT_ECO_CONFIG);
@@ -97,7 +97,7 @@ describe("map densities from outside", () => {
     const t = performance.now();
     const map = terrainOf({ seed: 77, world: { width: 50_000, height: 50_000, stoneDensity: 1e9, ridgeDensity: 1e9, slowDensity: 1e9, fastDensity: 1e9, slowSize: 1e9, fastSize: -5 } });
     expect(performance.now() - t).toBeLessThan(20_000);
-    expect(map.patchX.length).toBeLessThanOrEqual(2 * MAX_PIECES * 6);
+    expect(map.patchX.length).toBeLessThanOrEqual(2 * MAX_PIECES * MAX_DISCS_PER_PATCH);
     expect(map.rockCount).toBeLessThanOrEqual(2 * MAX_PIECES * MAX_DISCS_PER_PIECE);
   });
 });
