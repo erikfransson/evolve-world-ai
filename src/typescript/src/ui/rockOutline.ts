@@ -451,9 +451,9 @@ function lumpField(t: RockInput, lump: Lump): { f: Float32Array; w: number; h: n
         for (let k = b + 1; k <= i1; k++) {
           const v = r - Math.sqrt((ox + k * CELL - x) ** 2 + dy * dy);
           if (v > f[j * w + k]!) {
-          f[j * w + k] = v;
-          if (v > 0) maybe[(j >> BLOCK) * bw + (k >> BLOCK)] = 1;
-        }
+            f[j * w + k] = v;
+            if (v > 0) maybe[(j >> BLOCK) * bw + (k >> BLOCK)] = 1;
+          }
         }
       }
     }
