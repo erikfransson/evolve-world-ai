@@ -21,3 +21,20 @@ Branch `worktree-agent-a07783fcea3af73cf`. Measured under load 25-45 (user CPU i
 - Safe WASM features: base SIMD128 only (i8x16.swizzle, i32x4.bitmask, f32x4.ne; Chrome 91, Firefox 89, Safari 16.4). Relaxed SIMD (fma) is not used and would change results.
 - Microbenchmark and A/B scripts are in the scratchpad `opt2/brain/` (brainBench.ts, brainKernelOld.ts, ab.sh, pairs.sh), not committed.
 - Checked: ecoBench `--pop 600 --seconds 30` = 494818766, `--predators --seconds 40` = 792910110; vitest wasmKernels, creature, ecosystem, ecoPool pass (new test for sparse inputs of any length).
+
+## Round 3: tanh without clamps
+
+Branch `worktree-agent-a5d840fceb89320c9`, on top of origin/main e955f09 / df8873b. Real 50000-wide data (9971 creatures, 4311 distinct shapes, avg 5.5 KB weights, 12.7 non-zero inputs of 62): kernel 14.3 ms per tick, 1.4 us per creature, under load 20 to 25 (absolute numbers inflated about 3x, ratios hold).
+
+| Idea | Before | After | Speedup | Exact? | Peak RSS change | Lines added | Verdict |
+|------|--------|-------|---------|--------|-----------------|-------------|---------|
+| Drop the two clamps in tanh (x to +-4.97, quotient to +-1) | kernel 14.3-16.0 ms | 11.9-13.5 ms | 1.19-1.21x kernel (3 pairs) | Same bits on all 2^32 inputs except NaN payloads (which stay NaN) | none | -1 (net) | Recommended |
+| Same, ecoBench `--width 50000 --threads 0`, 3 pairs | 68.4 ms CPU per tick median | 63.7 | 1.07x tick | fingerprint 864497126 both | 343 vs 334 MB | | Recommended |
+| Layer-major kernel, tanh of all creatures in one packed loop | 13.8 ms | 15.8 | 0.87x | yes | +16 B per creature | +60 wat, +15 ts | Rejected, tanh stays costly per vector |
+| Scalar branch-free compaction (idea from the Rust study) | | | 0.95-1.01x | yes | | | Rejected, the table swizzle is already branch-free |
+| Two inputs per MAC loop turn (same add order) | 12.31 | 12.24 | 1.00x | yes | | | Rejected |
+
+## Findings
+- The earlier microbenchmark in this folder drove the old kernel ABI and measured nothing; trust only runs with the real class. Real inputs, shapes and genomes were dumped from a 50000-wide run.
+- V8 compiles f32x4.min and f32x4.max to long NaN-safe sequences. Of about 55 (inflated) ns per tanh vector, the 4 min/max took more than half. The clamp of x is dead code (|x| >= 4.97 is overwritten by the final select), and the clamp of the quotient never changes a bit (exhaustive check over all 2^32 inputs, `scratchpad/opt3/brain/tanhall.ts`).
+- Share of the kernel now (inflated): control and bias 16%, input compaction 17%, tanh 23%, MACs 30%, rest memory. MAC unrolling gave nothing, so the loop is not issue bound.
