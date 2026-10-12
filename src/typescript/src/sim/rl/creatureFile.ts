@@ -1,7 +1,7 @@
 import type { BodyPlan } from "../sensors.ts";
 import { genomeLengthIn } from "./env.ts";
-import { checkGenome, checkPlan, num, plainText } from "./validate.ts";
-import { serialiseLearner } from "./library.ts";
+import { checkPlan, num, plainText } from "./validate.ts";
+import { checkGenomeIn, serialiseLearner } from "./library.ts";
 export { PLAN_LIMITS, checkPlan } from "./validate.ts";
 import type { EnvWorld, Learner } from "./env.ts";
 import { PREDATOR, PREY } from "./env.ts";
@@ -57,7 +57,7 @@ export function parseCreatureFile(input: unknown): CreatureFile | string {
   const kind = data.kind as CreatureKind;
   const plan = checkPlan(data.plan);
   if (typeof plan === "string") return plan;
-  const genome = checkGenome(data.genome, genomeLengthFor(kind, plan));
+  const genome = checkGenomeIn(data.genome, KINDS[kind].world, plan);
   if (typeof genome === "string") return genome;
   const t = isObj(data.training) ? data.training : {};
   const envs = Array.isArray(t.envs) ? t.envs.slice(0, 32).map((e) => text(e, 40)).filter(Boolean) : [];

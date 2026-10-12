@@ -1,5 +1,5 @@
 import { genomeLength, layerSizes, upgradeGenome } from "./brain.ts";
-import { overrideConfig } from "./config.ts";
+import { ITEM_RADIUS_RANGE, overrideConfig } from "./config.ts";
 import type { DeepPartial } from "./config.ts";
 import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "./ecoConfig.ts";
 import type { EcoConfig } from "./ecoConfig.ts";
@@ -181,6 +181,7 @@ function checkedConfig(raw: unknown): EcoConfig {
   checkRanges(config.eco as unknown as Record<string, unknown>, "eco");
   const { world, creature, eco } = config;
   if (!(world.width > 0 && world.width <= MAX_WORLD_SIZE && world.height > 0 && world.height <= MAX_WORLD_SIZE)) invalid("world size is out of bounds");
+  if (!(world.itemRadius >= ITEM_RADIUS_RANGE[0] && world.itemRadius <= ITEM_RADIUS_RANGE[1])) invalid("world.itemRadius is out of bounds");
   if (!(config.dt > 0 && config.dt <= 1)) invalid("dt is out of bounds");
   if (!(creature.radius > 0 && creature.rayLength > 0 && creature.rayLength <= 5000)) invalid("creature radius or ray length is out of bounds");
   whole(eco.maxPopulation, 0, MAX_CREATURES, "eco.maxPopulation");

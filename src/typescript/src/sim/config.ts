@@ -3,6 +3,8 @@ import type { SpeciesConfig } from "./species.ts";
 
 // All tunable values of a run. Units: world units, seconds, energy points.
 
+export const ITEM_RADIUS_RANGE = [2, 10] as const; // the settings forms' range for world.itemRadius; a saved config outside it is refused
+
 export type SelectionMethod = "truncation" | "proportional";
 
 // Poison damage at or above this kills outright; below it poison drains that much energy.

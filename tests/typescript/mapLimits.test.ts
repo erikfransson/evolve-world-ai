@@ -25,6 +25,14 @@ describe("map densities from outside", () => {
     }
   });
 
+  it("a save with an item radius outside the form range is refused", () => {
+    for (const bad of [0, 1.9, 10.1, 1e9]) {
+      const state = saved();
+      state.config.world.itemRadius = bad;
+      expect(() => restoreState(state)).toThrow(/itemRadius/);
+    }
+  });
+
   it("the form maxima themselves are accepted", () => {
     const state = saved();
     Object.assign(state.config.world, MAP_DENSITY_MAX);

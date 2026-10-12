@@ -24,7 +24,7 @@
 
 import { HIT_FOOD, HIT_POISON } from "../sim/types.ts";
 
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 export const MSG_CREATURES = 1;
 export const MSG_ITEMS = 2;
 export const MSG_DETAIL = 3;
