@@ -14,6 +14,7 @@ import type { SelectedBrain } from "./ui/ecoBrain.ts";
 import { bindGentle, readGentle } from "./ui/gentle.ts";
 import { createEcoView } from "./ui/ecoPage.ts";
 import { syncTerrainLegend } from "./ui/terrainLegend.ts";
+import { prefetchRock } from "./ui/rockPrefetch.ts";
 import { ECOSYSTEM_PAGE, openingConfig } from "./ui/ecoModes.ts";
 import { ecoBody } from "./ui/ecoMarkup.ts";
 import { createRenderHost } from "./ui/renderHost.ts";
@@ -103,6 +104,7 @@ function setConfig(c: EcoConfig): void {
   config = c;
   species = speciesList(c);
   syncTerrainLegend(c);
+  prefetchRock({ seed: c.seed, world: c.world });
 }
 
 function drawConfig(): EcoDrawConfig {

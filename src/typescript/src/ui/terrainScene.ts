@@ -87,7 +87,7 @@ function discPath(ctx: CanvasRenderingContext2D, x: number, y: number, r: number
 
 interface Drawable {
   body: RockBody;
-  outline: Path2D;
+  readonly outline: Path2D; // traced on first use
   detail: { tones: Path2D[]; cracks: Path2D } | null; // the facets and cracks as paths, made when first drawn
 }
 const drawables = new WeakMap<Terrain, Drawable[]>();
@@ -96,9 +96,18 @@ function drawablesOf(t: Terrain): Drawable[] {
   let d = drawables.get(t);
   if (!d) {
     d = rockBodies(t).map((body) => {
-      const outline = new Path2D();
-      for (const loop of body.loops) traceLoop(outline, loop);
-      return { body, outline, detail: null };
+      let outline: Path2D | null = null;
+      return {
+        body,
+        get outline() {
+          if (!outline) {
+            outline = new Path2D();
+            for (const loop of body.loops) traceLoop(outline, loop);
+          }
+          return outline;
+        },
+        detail: null,
+      };
     });
     drawables.set(t, d);
   }
