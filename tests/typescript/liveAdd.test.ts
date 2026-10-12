@@ -1,0 +1,351 @@
+// @vitest-environment node
+// @ts-expect-error the web tsconfig finds no types for the server's ws
+import { WebSocket } from "../../server/node_modules/ws/wrapper.mjs";
+import { AddGate, visitorKey } from "../../server/src/adds.ts";
+import { LIMITS, LIVE } from "../../server/src/config.ts";
+import { LiveWorld } from "../../server/src/liveWorld.ts";
+import { startPublic } from "../../server/src/public.ts";
+import type { PublicServer } from "../../server/src/public.ts";
+import { applyTunables, readTunables } from "../../server/src/tunables.ts";
+import { MAX_ADD_BYTES, MAX_ADD_GENOME, cleanAddReply, cleanAddRules, encodeAdd, parseAdd, upkeepOf } from "../../src/typescript/src/live/add.ts";
+import type { AddRequest, AddRules } from "../../src/typescript/src/live/add.ts";
+import { genomeLengthFor } from "../../src/typescript/src/sim/rl/creatureFile.ts";
+import { planUpkeep } from "../../src/typescript/src/sim/sensors.ts";
+import { smallConfig } from "./liveHelpers.ts";
+
+const ADD_DEFAULTS = structuredClone(LIVE.add);
+afterEach(() => Object.assign(LIVE.add, ADD_DEFAULTS));
+
+const plan = { rayCount: 3, raySpread: 1.2, rayLength: 120, hiddenLayers: [6], memoryShort: 1, memoryLong: 0 };
+const genomeFor = (p: typeof plan): Float32Array => Float32Array.from({ length: genomeLengthFor("forager", p) }, (_, i) => Math.sin(i) * 0.7);
+const request = (over: Partial<AddRequest> = {}): AddRequest => ({ plan, genome: genomeFor(plan), birth: { energy: 150, cost: 70, cooldown: 10 }, name: "Zed42", hue: 200, copies: 2, ...over });
+const rules = (): AddRules => new LiveWorld(smallConfig(), null).addRules();
+// The add message as an object, to break one field at a time.
+const asObject = (r = request()): Record<string, unknown> => JSON.parse(encodeAdd(r));
+const send = (o: unknown): string => JSON.stringify(o);
+
+describe("add message: encode and parse", () => {
+  it("round-trips a request exactly, weights as float32", () => {
+    const r = request();
+    const back = parseAdd(encodeAdd(r), rules());
+    if (typeof back === "string") throw new Error(back);
+    expect(back.plan).toEqual(plan);
+    expect(Array.from(back.genome)).toEqual(Array.from(Float32Array.from(r.genome)));
+    expect([back.name, back.hue, back.copies, back.birth]).toEqual(["Zed42", 200, 2, { energy: 150, cost: 70, cooldown: 10 }]);
+  });
+
+  it("bounds the message by the largest genome PLAN_LIMITS allow, and that one fits", () => {
+    const big = { rayCount: 16, raySpread: 6.28, rayLength: 400, hiddenLayers: [32, 32, 32, 32], memoryShort: 8, memoryLong: 8 };
+    expect(genomeLengthFor("forager", big)).toBe(MAX_ADD_GENOME);
+    const text = encodeAdd(request({ plan: big, genome: genomeFor(big), name: "Abcdefgh12345678" }));
+    expect(text.length).toBeLessThanOrEqual(MAX_ADD_BYTES);
+    expect(typeof parseAdd(text, rules())).not.toBe("string");
+    expect(parseAdd(text + " ".repeat(MAX_ADD_BYTES), rules())).toBe("message too large");
+  });
+
+  it("refuses wrong, missing and extra keys at every level, and other key orders", () => {
+    const r = rules();
+    const o = asObject();
+    expect(parseAdd(send({ ...o, extra: 1 }), r)).toBe("wrong fields");
+    const { copies: _c, ...missing } = o;
+    expect(parseAdd(send(missing), r)).toBe("wrong fields");
+    expect(parseAdd(send({ ...o, plan: { ...(o.plan as object), extra: 1 } }), r)).toBe("wrong plan fields");
+    expect(parseAdd(send({ ...o, birth: { energy: 150, cost: 70 } }), r)).toBe("wrong birth fields");
+    expect(parseAdd(send({ name: o.name, ...o }), r)).toBe("not an add message"); // t must come first
+    expect(parseAdd(encodeAdd(request()).replace('"copies":2', '"__proto__":{"x":1},"copies":2'), r)).toBe("wrong fields");
+    expect(parseAdd('{"t":"add",', r)).toBe("not JSON");
+    expect(parseAdd(send({ ...o, t: "select" }), r)).toBe("not an add message");
+  });
+
+  it("refuses NaN and out-of-range weights, a genome of the wrong length or alphabet, and huge arrays", () => {
+    const r = rules();
+    const n = genomeLengthFor("forager", plan);
+    const bad = genomeFor(plan);
+    bad[5] = NaN;
+    expect(parseAdd(encodeAdd(request({ genome: bad })), r)).toMatch(/finite/);
+    bad[5] = 5000;
+    expect(parseAdd(encodeAdd(request({ genome: bad })), r)).toMatch(/finite/);
+    expect(parseAdd(encodeAdd(request({ genome: new Float32Array(n + 1) })), r)).toMatch(/float32 weights/);
+    const o = asObject();
+    const g = o.genome as string;
+    expect(parseAdd(send({ ...o, genome: "!" + g.slice(1) }), r)).toMatch(/float32 weights/);
+    expect(parseAdd(send({ ...o, genome: Array.from(genomeFor(plan)) }), r)).toMatch(/float32 weights/); // a JSON array, not base64
+    expect(parseAdd(send({ ...o, plan: { ...plan, hiddenLayers: Array(1e4).fill(4) } }), r)).toMatch(/hiddenLayers/);
+    expect(parseAdd(send({ ...o, plan: { ...plan, rayCount: 17 } }), r)).toMatch(/rayCount/);
+    expect(parseAdd(send({ ...o, plan: { ...plan, rayLength: 1e9 } }), r)).toMatch(/rayLength/);
+  });
+
+  it("refuses bad names: unicode, spaces, 17 characters, control characters, empty, not text", () => {
+    const r = rules();
+    for (const name of ["Zoë", "Big Bob", "A".repeat(17), "Bob\u0007", "Bob‮", "", "<b>x</b>", 42, null]) {
+      expect(parseAdd(send({ ...asObject(), name }), r)).toMatch(/letters or digits/);
+    }
+    expect(typeof parseAdd(send({ ...asObject(), name: "A".repeat(16) }), r)).toBe("object");
+  });
+
+  it("refuses copies, hue and birth traits out of range", () => {
+    const r = rules();
+    for (const copies of [0, 4, 1.5, "2"]) expect(parseAdd(send({ ...asObject(), copies }), r)).toMatch(/copies/);
+    expect(parseAdd(send({ ...asObject(), copies: 3 }), { ...r, maxCopies: 2 })).toMatch(/copies must be 1 to 2/);
+    for (const hue of [-1, 361, "red"]) expect(parseAdd(send({ ...asObject(), hue }), r)).toMatch(/hue/);
+    expect(parseAdd(send({ ...asObject(), birth: { energy: r.birth.energy[1] + 1, cost: 70, cooldown: 10 } }), r)).toMatch(/birth/);
+    expect(parseAdd(send({ ...asObject(), birth: { energy: 150, cost: 70, cooldown: -1 } }), r)).toMatch(/birth/);
+  });
+
+  it("cleans replies and rules from the wire", () => {
+    expect(cleanAddReply({ t: "added", ids: [3, 4], name: "Zed" })).toEqual({ t: "added", ids: [3, 4], name: "Zed" });
+    expect(cleanAddReply({ t: "added", ids: [3], name: "Z d" })).toBeNull();
+    expect(cleanAddReply({ t: "added", ids: [1, 2, 3, 4], name: "Z" })).toBeNull();
+    expect(cleanAddReply({ t: "refused", reason: "busy‮<b>", retryS: 12.2 })).toEqual({ t: "refused", reason: "busy<b>", retryS: 13 });
+    expect(cleanAddReply({ t: "refused", reason: 5, retryS: NaN })).toEqual({ t: "refused", reason: "refused" });
+    expect(cleanAddRules(rules())).toEqual(rules());
+    expect(cleanAddRules({ ...rules(), maxCopies: 9 })).toBeNull();
+  });
+
+  it("computes energy per second like the engine", () => {
+    const c = smallConfig();
+    expect(upkeepOf(plan, rules().costs)).toBeCloseTo(planUpkeep(plan, c), 10);
+  });
+});
+
+describe("add caps (adds.ts)", () => {
+  const fresh = { aliveAdded: 0, population: 1000, speed: 4, paused: false };
+  const clock = (): { now: () => number; t: number } => {
+    const c = { t: 1_000_000, now: () => c.t };
+    return c;
+  };
+
+  it("global window: 20 creatures per 5 minutes for everyone, then a wait until the oldest leaves the window", () => {
+    const c = clock();
+    const gate = new AddGate(c.now);
+    for (let i = 0; i < 6; i++) {
+      expect(gate.check(`v${i}`, 3, fresh)).toBeNull();
+      gate.record(`v${i}`, 3);
+      c.t += 1000;
+    }
+    expect(gate.check("v9", 2, fresh)).toBeNull(); // 18 + 2 = 20
+    gate.record("v9", 2);
+    const no = gate.check("v10", 1, fresh);
+    expect(no?.reason).toMatch(/busy with new creatures/);
+    expect(no?.retryS).toBe(300 - 7 + 1); // the first add, 7 s ago, leaves the window then
+    c.t += (300 - 6) * 1000; // past the first add's window
+    expect(gate.check("v10", 3, fresh)).toBeNull();
+  });
+
+  it("per visitor: 3 creatures per window per address, other addresses unaffected, unknown address not limited per visitor", () => {
+    const c = clock();
+    const gate = new AddGate(c.now);
+    gate.record("1.2.3.4", 3);
+    expect(gate.check("1.2.3.4", 1, fresh)?.reason).toMatch(/a moment ago/);
+    expect(gate.check("5.6.7.8", 3, fresh)).toBeNull();
+    expect(gate.check(null, 3, fresh)).toBeNull();
+    c.t += 301_000;
+    expect(gate.check("1.2.3.4", 3, fresh)).toBeNull();
+  });
+
+  it("alive share: added creatures alive stay at most 10% of the population", () => {
+    const gate = new AddGate();
+    expect(gate.check(null, 3, { ...fresh, aliveAdded: 97 })).toBeNull();
+    expect(gate.check(null, 3, { ...fresh, aliveAdded: 98 })?.reason).toMatch(/enough added creatures/);
+    expect(gate.check(null, 1, { ...fresh, population: 9 })?.reason).toMatch(/enough added creatures/); // floor(0.9) = 0
+  });
+
+  it("copies past the admin's max, a busy world and a paused world are refused", () => {
+    const gate = new AddGate();
+    LIVE.add.maxCopies = 2;
+    expect(gate.check(null, 3, fresh)?.reason).toMatch(/at most 2 copies/);
+    expect(gate.check(null, 1, { ...fresh, speed: 0.2 })?.reason).toMatch(/busy, try again in 30 s/);
+    expect(gate.check(null, 1, { ...fresh, paused: true })?.reason).toMatch(/paused/);
+  });
+
+  it("the caps are admin settings with limits", () => {
+    const eco = new LiveWorld(smallConfig(), null).eco;
+    expect(applyTunables(eco, { "add.perWindow": 5, "add.aliveShare": 0.2 })).toBeNull();
+    expect([LIVE.add.perWindow, LIVE.add.aliveShare]).toEqual([5, 0.2]);
+    expect(readTunables(eco)["add.perWindow"]).toBe(5);
+    expect(applyTunables(eco, { "add.maxCopies": 4 })).toMatch(/add.maxCopies/);
+    expect(applyTunables(eco, { "add.perWindow": 2.5 })).toMatch(/whole/);
+    expect(applyTunables(eco, { "add.socketEveryS": 0 })).toMatch(/add.socketEveryS/);
+    expect(LIVE.add.maxCopies).toBe(3);
+  });
+
+  it("keys visitors on the tunnel's address only when trusted; IPv6 on its /64", () => {
+    expect(visitorKey("203.0.113.9", true)).toBe("203.0.113.9");
+    expect(visitorKey("203.0.113.9", false)).toBeNull();
+    expect(visitorKey(undefined, true)).toBeNull();
+    expect(visitorKey("1.2.3.4, 5.6.7.8", true)).toBeNull(); // Funnel sets one address; a list is not from it
+    expect(visitorKey(["1.2.3.4"], true)).toBeNull();
+    expect(visitorKey("2001:db8:1:2:aaaa::1", true)).toBe("2001:db8:1:2::/64");
+    expect(visitorKey("2001:db8:1:2:ffff:1:2:3", true)).toBe("2001:db8:1:2::/64");
+    expect(visitorKey("2001:db8::1", true)).toBe("2001:db8:0:0::/64");
+  });
+});
+
+describe("adding to the world (LiveWorld)", () => {
+  const seq = (seed: number): (() => number) => {
+    let s = seed;
+    return () => ((s = (s * 1103515245 + 12345) % 2 ** 31) / 2 ** 31);
+  };
+
+  it("is deterministic: the same add at the same tick gives the same world", () => {
+    const a = new LiveWorld(smallConfig(), null);
+    const b = new LiveWorld(smallConfig(), null);
+    for (let i = 0; i < 20; i++) [a, b].forEach((w) => w.step());
+    const ra = a.addCreatures(request({ copies: 3 }), seq(5));
+    const rb = b.addCreatures(request({ copies: 3 }), seq(5));
+    expect(ra).toEqual(rb);
+    for (let i = 0; i < 200; i++) [a, b].forEach((w) => w.step());
+    expect(JSON.stringify(a.saveState())).toBe(JSON.stringify(b.saveState()));
+  });
+
+  it("names the lineages, counts the added alive, and a save keeps both", () => {
+    const config = smallConfig();
+    config.eco.initialPopulation = 3; // so the three named lineages are among the top 8 the stats list
+    const a = new LiveWorld(config, null);
+    const r = a.addCreatures(request({ copies: 3, name: "Kiwi" }), seq(1));
+    if (!("ids" in r)) throw new Error(r.reason);
+    expect(r.ids).toHaveLength(3);
+    for (const id of r.ids) {
+      const m = a.eco.get(id)!;
+      expect([m.founderId, a.eco.lineageName(id), Math.round(m.hue)]).toEqual([id, "Kiwi", 200]);
+      expect(m.birth).toEqual({ energy: 150, cost: 70, cooldown: 10 });
+    }
+    expect(a.aliveAdded()).toBe(3);
+    expect(a.stats(0).lineages!.filter((l) => l.name === "Kiwi")).toHaveLength(3);
+    const b = new LiveWorld(config, null);
+    b.restoreState(JSON.parse(JSON.stringify(a.saveState())));
+    expect(b.aliveAdded()).toBe(3);
+    expect(b.eco.lineageName(r.ids[0]!)).toBe("Kiwi");
+  });
+
+  it("refuses when the world is full, inserting nothing", () => {
+    const w = new LiveWorld(smallConfig(), null);
+    w.eco.config.eco.maxPopulation = w.eco.population + 2;
+    expect(w.addCreatures(request({ copies: 3 }))).toEqual({ reason: "the world is full, try again later" });
+    expect(w.aliveAdded()).toBe(0);
+  });
+});
+
+// The public server with adds, on ports 61xxx.
+const servers: PublicServer[] = [];
+afterEach(() => {
+  for (const s of servers.splice(0)) s.close();
+});
+async function serve(port: number, change: Partial<typeof LIMITS> = {}, trust = false): Promise<LiveWorld> {
+  LIVE.add.minSpeed = 0; // the test world does not run its clock
+  LIVE.add.aliveShare = 1;
+  const world = new LiveWorld(smallConfig(), null);
+  for (let i = 0; i < 10; i++) world.step();
+  const pub = startPublic("127.0.0.1", port, world, { ...LIMITS, ...change }, new AddGate(), trust);
+  servers.push(pub);
+  await new Promise<void>((r) => (pub.http.listening ? r() : pub.http.once("listening", () => r())));
+  return world;
+}
+interface Client {
+  ws: WebSocket;
+  replies: { t: string; ids?: number[]; reason?: string; add?: unknown }[];
+  hello: Promise<{ add: unknown }>;
+  closed: Promise<number>;
+}
+function client(port: number, headers: Record<string, string> = {}): Client {
+  const ws = new WebSocket(`ws://127.0.0.1:${port}/`, { headers });
+  const c: Client = { ws, replies: [], hello: null!, closed: null! };
+  c.hello = new Promise((r) => ws.on("message", (d: Buffer, bin: boolean) => {
+    if (bin) return;
+    const m = JSON.parse(d.toString());
+    if (m.t === "hello") r(m);
+    if (m.t === "added" || m.t === "refused") c.replies.push(m);
+  }));
+  c.closed = new Promise((r) => ws.on("close", (code: number) => r(code)));
+  ws.on("error", () => {});
+  return c;
+}
+
+describe("add on the public server", () => {
+  it("adds end to end: the hello carries the rules, the reply the ids, the world the named creatures", async () => {
+    const world = await serve(61401);
+    const c = client(61401);
+    const hello = await c.hello;
+    expect(cleanAddRules(hello.add)).toEqual(world.addRules());
+    c.ws.send(encodeAdd(request({ copies: 2, name: "Probe1" })));
+    await vi.waitFor(() => expect(c.replies).toHaveLength(1));
+    const r = c.replies[0]!;
+    expect(r.t).toBe("added");
+    expect(r.ids).toHaveLength(2);
+    for (const id of r.ids!) expect(world.eco.lineageName(id)).toBe("Probe1");
+    c.ws.close();
+  });
+
+  it("refuses a malformed add with a reason and keeps the connection", async () => {
+    await serve(61402);
+    const c = client(61402);
+    await c.hello;
+    c.ws.send(send({ ...asObject(), name: "bad name" }));
+    await vi.waitFor(() => expect(c.replies).toHaveLength(1));
+    expect(c.replies[0]).toMatchObject({ t: "refused", reason: expect.stringMatching(/letters or digits/) });
+    expect(c.ws.readyState).toBe(WebSocket.OPEN);
+    c.ws.close();
+  });
+
+  it("per connection: a third add inside the socket rate cuts the connection off", async () => {
+    await serve(61403);
+    const c = client(61403);
+    await c.hello;
+    c.ws.send(encodeAdd(request({ copies: 1 })));
+    c.ws.send(encodeAdd(request({ copies: 1 })));
+    c.ws.send(encodeAdd(request({ copies: 1 })));
+    expect(await c.closed).toBe(1006);
+  });
+
+  it("an add message past MAX_ADD_BYTES closes the connection (ws payload cap)", async () => {
+    await serve(61404);
+    const c = client(61404);
+    await c.hello;
+    c.ws.send('{"t":"add",' + " ".repeat(MAX_ADD_BYTES));
+    expect(await c.closed).toBe(1009);
+  });
+
+  it("the global window holds across connections", async () => {
+    await serve(61405);
+    LIVE.add.perWindow = 4;
+    const a = client(61405);
+    const b = client(61405);
+    await Promise.all([a.hello, b.hello]);
+    a.ws.send(encodeAdd(request({ copies: 3 })));
+    await vi.waitFor(() => expect(a.replies).toHaveLength(1));
+    b.ws.send(encodeAdd(request({ copies: 2 })));
+    await vi.waitFor(() => expect(b.replies).toHaveLength(1));
+    expect(a.replies[0]!.t).toBe("added");
+    expect(b.replies[0]).toMatchObject({ t: "refused", reason: expect.stringMatching(/busy with new creatures/) });
+    a.ws.close();
+    b.ws.close();
+  });
+
+  it("per visitor via X-Forwarded-For when trusted: a second connection from the same address is held to the visitor cap", async () => {
+    await serve(61406, {}, true);
+    const a = client(61406, { "x-forwarded-for": "198.51.100.7" });
+    const b = client(61406, { "x-forwarded-for": "198.51.100.7" });
+    const other = client(61406, { "x-forwarded-for": "198.51.100.8" });
+    await Promise.all([a.hello, b.hello, other.hello]);
+    a.ws.send(encodeAdd(request({ copies: 3 })));
+    await vi.waitFor(() => expect(a.replies).toHaveLength(1));
+    b.ws.send(encodeAdd(request({ copies: 1 })));
+    other.ws.send(encodeAdd(request({ copies: 1 })));
+    await vi.waitFor(() => expect(b.replies.length + other.replies.length).toBe(2));
+    expect(b.replies[0]).toMatchObject({ t: "refused", reason: expect.stringMatching(/a moment ago/) });
+    expect(other.replies[0]!.t).toBe("added");
+    for (const c of [a, b, other]) c.ws.close();
+  });
+
+  it("an add flood from many connections is refused unread past the global attempt rate", async () => {
+    await serve(61407, { addAttemptsPerSecond: 1, addAttemptBurst: 2, acceptBurst: 100 });
+    const cs = Array.from({ length: 5 }, () => client(61407));
+    await Promise.all(cs.map((c) => c.hello));
+    for (const c of cs) c.ws.send(send({ ...asObject(), name: "bad name" })); // refused either way; the reason says whether it was read
+    await vi.waitFor(() => expect(cs.reduce((s, c) => s + c.replies.length, 0)).toBe(5));
+    const reasons = cs.map((c) => c.replies[0]!.reason);
+    expect(reasons.filter((r) => /letters or digits/.test(r!))).toHaveLength(2);
+    expect(reasons.filter((r) => /busy, try again in 5 s/.test(r!))).toHaveLength(3);
+    for (const c of cs) c.ws.close();
+  });
+});

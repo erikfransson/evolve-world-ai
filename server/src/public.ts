@@ -2,13 +2,16 @@ import { createServer } from "node:http";
 import type { IncomingMessage, Server } from "node:http";
 import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
-import { MAX_CLIENT_MESSAGE_BYTES, parseClientMessage } from "../../src/typescript/src/live/protocol.ts";
+import { parseClientMessage } from "../../src/typescript/src/live/protocol.ts";
+import { ADD_PREFIX, MAX_ADD_BYTES, parseAdd } from "../../src/typescript/src/live/add.ts";
+import type { Added, Refused } from "../../src/typescript/src/live/add.ts";
+import { AddGate, visitorKey } from "./adds.ts";
 import type { ServerText } from "../../src/typescript/src/live/protocol.ts";
 import { MAX_STRIDE, RESYNC_S, RESYNC_SHARE, TokenBucket, fits, frameBudget, gets, sendStride } from "./budget.ts";
 import { dropReason } from "./clients.ts";
 import { ItemFeed } from "./itemFeed.ts";
 import type { ClientState } from "./clients.ts";
-import { LIMITS } from "./config.ts";
+import { LIMITS, LIVE, TRUST_FORWARDED } from "./config.ts";
 import type { LiveWorld } from "./liveWorld.ts";
 
 const PING_MIN_MS = 200;
@@ -33,11 +36,14 @@ interface Viewer {
   details: TokenBucket; // bytes of details and genomes
   selects: TokenBucket;
   historySent: boolean;
+  adds: TokenBucket; // add messages on this connection
+  visitor: string | null; // address key for the per-visitor add cap, null when unknown
+  adding: boolean; // an add waits for the tick in flight
 }
 
 // The public side: an http server that only upgrades to WebSocket, the viewers, the frame and stats loops and the heartbeat.
-// limits: LIMITS, or a variant in tests.
-export function startPublic(host: string, port: number, live: LiveWorld, limits: typeof LIMITS = LIMITS): PublicServer {
+// limits: LIMITS, or a variant in tests. gate: the add caps (a test clock in tests). trustForwarded: key visitors on X-Forwarded-For.
+export function startPublic(host: string, port: number, live: LiveWorld, limits: typeof LIMITS = LIMITS, gate = new AddGate(), trustForwarded = TRUST_FORWARDED): PublicServer {
   // A socket that never finishes its request (the WebSocket upgrade) is closed after headersTimeoutMs, checked every second.
   const timeouts = { headersTimeout: limits.headersTimeoutMs, requestTimeout: limits.headersTimeoutMs, connectionsCheckingInterval: 1000 };
   const http = createServer(timeouts, (_req, res) => res.writeHead(426, { connection: "close" }).end());
@@ -50,6 +56,7 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
   const accepts = new TokenBucket(limits.acceptsPerSecond, limits.acceptBurst);
   const connectBytes = new TokenBucket(limits.connectBytesPerSecond, limits.connectBytesPerSecond); // full item sets and history for new or lagging viewers
   const budget = frameBudget(limits);
+  const addAttempts = new TokenBucket(limits.addAttemptsPerSecond, limits.addAttemptBurst); // add messages parsed, for all viewers together
   const sent = { frames: 0, items: 0, details: 0, text: 0 };
   let lastCreatures: Uint8Array | null = null;
   let lastFrameNo = -1;
@@ -63,7 +70,7 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
   // Floods past the accept rate get a cheap 503 before the upgrade; a visitor at the cap is upgraded and told "busy", which a browser can show.
   const verifyClient = (_info: { req: IncomingMessage }, done: (ok: boolean, code?: number) => void): void => (accepts.take(1) ? done(true) : done(false, 503));
   // autoPong off: the page's keep-alive is the text "ping", and a flood of ws ping frames must not queue replies.
-  const wss = new WebSocketServer({ server: http, maxPayload: MAX_CLIENT_MESSAGE_BYTES, perMessageDeflate: false, autoPong: false, verifyClient });
+  const wss = new WebSocketServer({ server: http, maxPayload: MAX_ADD_BYTES, perMessageDeflate: false, autoPong: false, verifyClient });
   wss.on("error", (e) => console.warn("websocket server error:", e.message));
   const send = (ws: WebSocket, data: Uint8Array | string, kind: keyof typeof sent): void => {
     ws.send(data);
@@ -95,7 +102,37 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
     send(ws, h, "text");
   };
 
-  wss.on("connection", (ws) => {
+  // An add: per connection at most a burst of 2 and then one per add.socketEveryS (faster cuts it off); parsed only while the global
+  // attempt rate allows; inserted between ticks if the caps (adds.ts) allow. Every outcome gets an added or refused reply.
+  const add = (ws: WebSocket, v: Viewer, text: string): void => {
+    const reply = (m: Added | Refused): void => {
+      if (ws.readyState === ws.OPEN) sendText(ws, m);
+    };
+    if (v.adding) return reply({ t: "refused", reason: "the last add is still going in" });
+    if (!addAttempts.take(1)) return reply({ t: "refused", reason: "the world is busy, try again in 5 s", retryS: 5 });
+    const rules = live.addRules();
+    if (LIVE.add.perWindow <= 0 || LIVE.add.aliveShare <= 0) return reply({ t: "refused", reason: "adding is off right now" });
+    const req = parseAdd(text, rules);
+    if (typeof req === "string") return reply({ t: "refused", reason: req });
+    v.adding = true;
+    void live
+      .whenIdle(() => {
+        const e = live.eco;
+        const no = gate.check(v.visitor, req.copies, { aliveAdded: live.aliveAdded(), population: e.population, speed: live.speed, paused: live.paused });
+        if (no) return no;
+        const r = live.addCreatures(req);
+        if ("reason" in r) return { t: "refused", reason: r.reason, retryS: 10 } satisfies Refused;
+        gate.record(v.visitor, r.ids.length);
+        return { t: "added", ids: r.ids, name: req.name } satisfies Added;
+      })
+      .then(reply, (e: unknown) => {
+        console.error("add:", e instanceof Error ? e.message : e);
+        reply({ t: "refused", reason: "the world could not take it, try again later", retryS: 60 });
+      })
+      .finally(() => (v.adding = false));
+  };
+
+  wss.on("connection", (ws, req) => {
     ws.on("error", () => ws.terminate());
     if (!room()) return refuse(ws);
     const now = Date.now();
@@ -109,6 +146,9 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
       details: new TokenBucket(limits.detailBytesPerViewer, limits.detailBurstBytes),
       selects: new TokenBucket(limits.selectsPerSecond, limits.selectBurst),
       historySent: false,
+      adds: new TokenBucket(1 / LIVE.add.socketEveryS, 2),
+      visitor: visitorKey(req.headers["x-forwarded-for"], trustForwarded),
+      adding: false,
     };
     viewers.set(ws, v);
     ws.on("close", () => forget(ws));
@@ -148,7 +188,12 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
       try {
         counted();
         c.lastMessageAt = Date.now();
-        const msg = isBinary ? null : parseClientMessage(data.toString());
+        const text = isBinary ? null : data.toString();
+        if (text?.startsWith(ADD_PREFIX)) {
+          if (!v.ready || !v.adds.take(1)) return void ws.terminate(); // the page waits for its hello and its last reply
+          return add(ws, v, text);
+        }
+        const msg = text === null ? null : parseClientMessage(text);
         if (!msg) return void ws.terminate(); // anything but a ping or a well-formed select
         if (msg.t === "ping") {
           const t = Date.now();

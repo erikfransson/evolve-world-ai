@@ -13,6 +13,7 @@ import { Chronicle } from "./chronicle.ts";
 import { restoreState, saveState } from "../../src/typescript/src/sim/ecoState.ts";
 import type { EcoState } from "../../src/typescript/src/sim/ecoState.ts";
 import { ITEM_HEADROOM, LIMITS, LIVE, MAX_POPULATION } from "./config.ts";
+import type { AddRequest, AddRules } from "../../src/typescript/src/live/add.ts";
 import { fullEnergy } from "../../src/typescript/src/sim/species.ts";
 import type { ThinkPool } from "../../src/typescript/src/worker/ecoPool.ts";
 
@@ -57,6 +58,7 @@ export class LiveWorld {
   private readonly captures = new Map<number, Capture>();
   private readonly refreshes: TokenBucket;
   readonly chronicle = new Chronicle();
+  private added = new Set<number>(); // ids of visitor-added creatures that may still live (pruned in aliveAdded)
 
   // helpers: a pool of helper threads, owned from here on (close() closes it), or null to run on this thread.
   constructor(config: EcoConfig, pool: readonly PoolEntry[] | null, helpers: ThinkPool | null = null) {
@@ -79,6 +81,8 @@ export class LiveWorld {
     this.captures.clear();
     this.chronicle.reset(this.eco);
     this.eco.drainEvents();
+    // Added creatures found named lineages (late rows of the lineage table, kept in saves); the living founders among them count.
+    this.added = new Set(this.eco.lineageTable.toState().late.filter((r) => r[5] !== "" && this.eco.get(r[0])).map((r) => r[0]));
     if (this.helpers) {
       const starting = this.helpers.start(this.eco);
       this.starting = starting;
@@ -224,7 +228,7 @@ export class LiveWorld {
     const s = c.state;
     return encodeDetail(e.tick, id, {
       x: s.x, y: s.y, heading: s.heading, energy: s.energy, age: m.ageTicks * this.config.dt, children: m.children, eaten: m.eaten, depth: m.depth, parentId: m.parentId,
-      founderId: m.founderId, founderPool: e.lineages.fromPool(m.founderId), founderHue: e.lineages.colour(m.founderId), hue: m.hue, upkeep: c.upkeep, drain: c.drain,
+      founderId: m.founderId, founderPool: e.lineages.fromPool(m.founderId), founderName: e.lineageName(m.founderId), founderHue: e.lineages.colour(m.founderId), hue: m.hue, upkeep: c.upkeep, drain: c.drain,
       birthEnergy: m.birth.energy, birthCost: m.birth.cost, birthCooldown: m.birth.cooldown, plan: c.plan, rayKinds: cap.kinds, rayCloseness: cap.closeness, rayOffsets: cap.offsets, inputs: cap.inputs,
     });
   }
@@ -357,6 +361,7 @@ export class LiveWorld {
       itemSlots: this.eco.world.count,
       summary: { initialPopulation: eco.initialPopulation, maxPopulation: eco.maxPopulation, collisionDamage: eco.collisionDamage, seasons: eco.seasons },
       maxViewers,
+      add: LIVE.add.perWindow > 0 && LIVE.add.aliveShare > 0 ? this.addRules() : null,
     };
   }
 
@@ -404,9 +409,48 @@ export class LiveWorld {
     return encodeItems(this.eco.tick, { xs: w.xs, ys: w.ys, kinds: w.kinds, slots: w.count }, this.config.world);
   }
 
-  // TODO(L1): insert a visitor's creatures at random places. Waiting for the engine hook (#22/#31).
-  insertCreature(_genome: Float32Array, _plan: unknown, _name: string, _colour: number): never {
-    throw new Error("insertCreature: waiting for the engine hook (#22/#31)");
+  // Visitor-added creatures alive now (the inserted ones, not their children).
+  aliveAdded(): number {
+    for (const id of this.added) if (!this.eco.get(id)) this.added.delete(id);
+    return this.added.size;
+  }
+
+  // What an add may ask for: the world's birth trait ranges and the costs behind energy per second.
+  addRules(): AddRules {
+    const { eco, creature } = this.config;
+    const pair = (r: number[]): [number, number] => [r[0]!, r[1]!];
+    return { maxCopies: LIVE.add.maxCopies, birth: { energy: pair(eco.birthEnergyRange), cost: pair(eco.birthCostRange), cooldown: pair(eco.birthCooldownRange) }, costs: { living: creature.livingCost, ray: creature.rayCost, neuron: creature.neuronCost } };
+  }
+
+  // Inserts a checked add request (live/add.ts parseAdd) as `copies` founders of new named lineages at random free spots, through the
+  // engine's insertCreature, so a save keeps them. Call between ticks (whenIdle). random: the server's own draws, never the engine's.
+  // Returns the ids, or a reason and nothing inserted.
+  addCreatures(req: AddRequest, random: () => number = Math.random): { ids: number[] } | { reason: string } {
+    const e = this.eco;
+    if (e.population + req.copies > e.config.eco.maxPopulation) return { reason: "the world is full, try again later" };
+    const { width, height } = this.config.world;
+    const r = this.config.creature.radius;
+    const margin = 4 * r;
+    const crowded = (x: number, y: number, taken: readonly { x: number; y: number }[]): boolean => {
+      for (const p of taken) if ((p.x - x) ** 2 + (p.y - y) ** 2 < (4 * r) ** 2) return true;
+      for (const m of e.members) if ((m.creature.state.x - x) ** 2 + (m.creature.state.y - y) ** 2 < (3 * r) ** 2) return true;
+      return false;
+    };
+    const spots: { x: number; y: number; heading: number }[] = [];
+    for (let tries = 0; spots.length < req.copies && tries < 40 * req.copies; tries++) {
+      const x = margin + random() * (width - 2 * margin);
+      const y = margin + random() * (height - 2 * margin);
+      if (!(e.world as World).terrain.touchesRock(x, y, 2 * r) && !crowded(x, y, spots)) spots.push({ x, y, heading: random() * 2 * Math.PI });
+    }
+    if (spots.length < req.copies) return { reason: "no free spot found, try again" };
+    const ids: number[] = [];
+    for (const p of spots) {
+      const res = e.insertCreature({ genome: req.genome, plan: req.plan, x: p.x, y: p.y, heading: p.heading, hue: req.hue, name: req.name, birth: req.birth });
+      if (!res.ok) return ids.length ? { ids } : { reason: res.reason }; // checked up front, so a refusal after the first is not expected
+      ids.push(res.id);
+      this.added.add(res.id);
+    }
+    return { ids };
   }
 
   // The full world as plain data, to be written out by the caller.

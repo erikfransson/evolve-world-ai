@@ -61,7 +61,10 @@ export class Chronicle {
       if (this.lineage.length > MAX_LINEAGE_HISTORY * LINEAGE_FIELDS) this.lineage.splice(0, LINEAGE_FIELDS);
       this.historyJson = null;
     }
-    stats.lineages = top.map((l): WireLineage => ({ founder: l.founder, hue: Math.round(l.hue), pool: l.pool, count: l.count }));
+    stats.lineages = top.map((l): WireLineage => {
+      const name = eco.lineageName(l.founder);
+      return { founder: l.founder, hue: Math.round(l.hue), pool: l.pool, count: l.count, ...(name ? { name } : {}) };
+    });
     let oldest: EcoCreature | null = null;
     let parent: EcoCreature | null = null;
     let depth = 0;

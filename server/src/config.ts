@@ -23,7 +23,23 @@ liveConfig.eco.winterFood = 0.4;
 export const ITEM_HEADROOM = { foodMaxDensity: 3, poisonMaxDensity: 1 };
 
 // Settings of the server rather than the engine, changed from the admin page (tunables.ts).
-export const LIVE = { speed: 4 }; // target simulated seconds per real second
+export const LIVE = {
+  speed: 4, // target simulated seconds per real second
+  // Visitor adds ("Add your creature"), all admin-tunable as "add.<field>" (tunables.ts); adds.ts enforces them.
+  add: {
+    perWindow: 20, // creatures added by all visitors together per window
+    windowS: 300,
+    maxCopies: 3, // copies per add (the protocol allows at most 3)
+    aliveShare: 0.1, // added creatures alive (the inserted ones, not their children) at most this share of the population
+    perVisitor: 3, // creatures per visitor address per window; needs trustForwardedFor
+    socketEveryS: 10, // one add per this many seconds on one connection (burst 2); faster gets the connection cut
+    minSpeed: 0.5, // simulated seconds per real second: below this the world counts as busy and adds wait
+  },
+};
+// Per-visitor limits key on the address the tunnel puts in X-Forwarded-For. Tailscale Funnel (serve proxy mode) sets that header,
+// overwriting any the visitor sent, to the address its ingress saw (ipn/ipnlocal/serve.go, addProxyForwardedHeaders, tailscale 1.104).
+// The public port listens on loopback only, so nothing else can reach it with a made-up header. LIVE_TRUST_FORWARDED=0 turns it off.
+export const TRUST_FORWARDED = process.env.LIVE_TRUST_FORWARDED !== "0";
 // Helper threads that sense and think (createNodeThinkPool); fixed for the process, LIVE_THREADS overrides. They inherit the unit's idle scheduling.
 // None by default: under SCHED_IDLE on a busy host the server gets about one core whatever the thread count, and helpers cost 2.3x the CPU
 // per tick (1190 creatures: 92 ticks/s on one thread, 53 with 6 helpers; 8.8 against 20.3 CPU ms per tick, review 2026-10-11).
@@ -57,6 +73,8 @@ export const LIMITS = {
   heartbeatMs: 30_000, // ws ping, a client that misses the pong is dropped
   idleDropMs: 60_000, // no message from the client for this long: dropped (the page pings every 20 s)
   maxClientMessagesPerSecond: 20,
+  addAttemptsPerSecond: 2, // add messages parsed per second, all viewers together; past it they are refused unread
+  addAttemptBurst: 5,
 };
 
 export const PORTS = { public: 8787, admin: 8788 };
