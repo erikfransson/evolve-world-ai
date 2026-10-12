@@ -9,16 +9,45 @@ export interface RockBody {
   y0: number;
   x1: number;
   y1: number;
-  loops: number[][]; // closed outlines as flat x, y lists, already simplified; draw them as a smooth curve through the midpoints
-  facets: number[][][]; // per tone class (see TONES), polygons as flat x, y lists
-  cracks: number[][]; // polylines as flat x, y lists
+  loops: number[][]; // closed outlines as flat x, y lists, simplified to straight edges; draw them with traceLoop
+  shading(): { facets: number[][][]; cracks: number[][] }; // facets per tone class (see TONES) as polygons, cracks as polylines, all flat x, y lists
 }
 
-export const TONES = 4; // dark 1, dark 2, light 1, light 2
-const CELL = 8; // world units of the contour grid
-const SIMPLIFY = 0.8; // world units a simplified outline may stray from the contour
+export const TONES = 4; // facet tone classes, darkest first: dark 2, dark 1, light 1, light 2
+const CELL = 6; // world units of the contour grid
+const SIMPLIFY = 0.9; // world units a simplified outline may stray from the contour, so round lumps become angular stones
+const CORNER = 2; // world units a corner is rounded over, on each side
 const FACET = 110; // world units between facet seeds
 export const LIGHT = { x: -0.6, y: -0.8 }; // direction towards the light, upper left
+
+export interface PathSink {
+  moveTo(x: number, y: number): void;
+  lineTo(x: number, y: number): void;
+  quadraticCurveTo(cx: number, cy: number, x: number, y: number): void;
+  closePath(): void;
+}
+
+// Draws a closed outline as straight edges with each corner rounded over CORNER units (less on short edges), so stones stay angular
+// and the curve never strays more than about SIMPLIFY from the disc union.
+export function traceLoop(path: PathSink, pts: readonly number[]): void {
+  const n = pts.length / 2;
+  const at = (i: number): [number, number] => [pts[2 * ((i + n) % n)]!, pts[2 * ((i + n) % n) + 1]!];
+  for (let i = 0; i < n; i++) {
+    const [px, py] = at(i - 1);
+    const [vx, vy] = at(i);
+    const [nx, ny] = at(i + 1);
+    const l1 = Math.hypot(vx - px, vy - py) || 1;
+    const l2 = Math.hypot(nx - vx, ny - vy) || 1;
+    const t1 = Math.min(CORNER, 0.4 * l1);
+    const t2 = Math.min(CORNER, 0.4 * l2);
+    const ax = vx + ((px - vx) / l1) * t1;
+    const ay = vy + ((py - vy) / l1) * t1;
+    if (i === 0) path.moveTo(ax, ay);
+    else path.lineTo(ax, ay);
+    path.quadraticCurveTo(vx, vy, vx + ((nx - vx) / l2) * t2, vy + ((ny - vy) / l2) * t2);
+  }
+  path.closePath();
+}
 
 // Groups of discs that overlap each other, as lists of disc indices.
 function lumps(t: Terrain): number[][] {
@@ -215,6 +244,47 @@ function facets(seeds: number[][], box: number[], light: (sx: number, sy: number
   return tones;
 }
 
+// Moves one point onto the exact edge of the union of the discs, a few steps along the radius of the disc it is nearest to.
+function snapPoint(t: Terrain, members: readonly number[], x: number, y: number): [number, number] {
+  for (let step = 0; step < 4; step++) {
+    let best = -Infinity;
+    let ux = 0;
+    let uy = 0;
+    for (const i of members) {
+      const dx = x - t.rockX[i]!;
+      const dy = y - t.rockY[i]!;
+      const d = Math.hypot(dx, dy) || 1e-9;
+      const v = t.rockR[i]! - d;
+      if (v > best) {
+        best = v;
+        ux = dx / d;
+        uy = dy / d;
+      }
+    }
+    if (Math.abs(best) < 0.05) break;
+    x += ux * best; // outwards when inside, inwards when outside
+    y += uy * best;
+  }
+  return [x, y];
+}
+
+// Puts a contour (the grid is only a few units fine) onto the exact union edge, and adds a point where an edge midpoint lies off it,
+// which is where the tip of a notch between two discs was cut.
+function snap(t: Terrain, members: readonly number[], pts: number[]): number[] {
+  const out: number[] = [];
+  const n = pts.length / 2;
+  const on: [number, number][] = [];
+  for (let k = 0; k < n; k++) on.push(snapPoint(t, members, pts[2 * k]!, pts[2 * k + 1]!));
+  for (let k = 0; k < n; k++) {
+    const [x, y] = on[k]!;
+    const [nx, ny] = on[(k + 1) % n]!;
+    out.push(x, y);
+    const [mx, my] = snapPoint(t, members, (x + nx) / 2, (y + ny) / 2);
+    if (Math.hypot(mx - (x + nx) / 2, my - (y + ny) / 2) > 0.3) out.push(mx, my);
+  }
+  return out;
+}
+
 function body(t: Terrain, members: number[], seed: number): RockBody | null {
   let x0 = Infinity;
   let y0 = Infinity;
@@ -253,41 +323,47 @@ function body(t: Terrain, members: number[], seed: number): RockBody | null {
       }
     }
   }
-  const loops = contours(f, w, h, ox, oy).map(simplifyLoop).filter((l) => l.length >= 6);
+  const loops = contours(f, w, h, ox, oy).map((l) => simplifyLoop(snap(t, members, l))).filter((l) => l.length >= 6);
   if (loops.length === 0) return null;
-  const rng = createRng(seed);
-  const inside = (x: number, y: number): boolean => {
-    const k = Math.round((x - ox) / CELL);
-    const j = Math.round((y - oy) / CELL);
-    return k >= 0 && k < w && j >= 0 && j < h && f[j * w + k]! > 0;
-  };
-  const radius = Math.max(x1 - x0, y1 - y0) / 2;
-  const seeds: number[][] = [];
-  for (let gy = y0; gy < y1; gy += FACET) {
-    for (let gx = x0; gx < x1; gx += FACET) {
-      const sx = gx + rng.range(0.1, 0.9) * FACET;
-      const sy = gy + rng.range(0.1, 0.9) * FACET;
-      if (inside(sx, sy)) seeds.push([sx, sy]);
-    }
-  }
-  const lit = (sx: number, sy: number): number => Math.max(-1, Math.min(1, ((sx - cx) * LIGHT.x + (sy - cy) * LIGHT.y) / radius));
-  const cracks: number[][] = [];
-  for (let c = 0, count = 1 + rng.int(3); c < count && seeds.length > 0; c++) {
-    const [sx, sy] = seeds[rng.int(seeds.length)] as [number, number];
-    let a = rng.range(0, 2 * Math.PI);
-    const line = [sx, sy];
-    for (let k = 0; k < 4; k++) {
-      a += rng.range(-0.7, 0.7);
-      const len = rng.range(14, 36);
-      const nx = line[line.length - 2]! + len * Math.cos(a);
-      const ny = line[line.length - 1]! + len * Math.sin(a);
-      if (!inside(nx, ny)) break;
-      line.push(nx, ny);
-    }
-    if (line.length >= 4) cracks.push(line);
-  }
   const box = [x0 - 2 * CELL, y0 - 2 * CELL, x1 + 2 * CELL, y1 + 2 * CELL];
-  return { x0: box[0]!, y0: box[1]!, x1: box[2]!, y1: box[3]!, loops, facets: facets(seeds, box, lit, rng.next), cracks };
+  let shaded: { facets: number[][][]; cracks: number[][] } | null = null;
+  // Facets and cracks, made on first use: a body seen from afar, or in a settings preview, never needs them.
+  const shading = (): { facets: number[][][]; cracks: number[][] } => {
+    if (shaded) return shaded;
+    const rng = createRng(seed);
+    const inside = (x: number, y: number): boolean => {
+      const k = Math.round((x - ox) / CELL);
+      const j = Math.round((y - oy) / CELL);
+      return k >= 0 && k < w && j >= 0 && j < h && f[j * w + k]! > 0;
+    };
+    const radius = Math.max(x1 - x0, y1 - y0) / 2;
+    const seeds: number[][] = [];
+    for (let gy = y0; gy < y1; gy += FACET) {
+      for (let gx = x0; gx < x1; gx += FACET) {
+        const sx = gx + rng.range(0.1, 0.9) * FACET;
+        const sy = gy + rng.range(0.1, 0.9) * FACET;
+        if (inside(sx, sy)) seeds.push([sx, sy]);
+      }
+    }
+    const lit = (sx: number, sy: number): number => Math.max(-1, Math.min(1, ((sx - cx) * LIGHT.x + (sy - cy) * LIGHT.y) / radius));
+    const cracks: number[][] = [];
+    for (let c = 0, count = 1 + rng.int(2); c < count && seeds.length > 0; c++) {
+      const [sx, sy] = seeds[rng.int(seeds.length)] as [number, number];
+      let a = rng.range(0, 2 * Math.PI);
+      const line = [sx, sy];
+      for (let k = 0; k < 5; k++) {
+        a += rng.range(-0.5, 0.5);
+        const len = rng.range(24, 55);
+        const nx = line[line.length - 2]! + len * Math.cos(a);
+        const ny = line[line.length - 1]! + len * Math.sin(a);
+        if (!inside(nx, ny)) break;
+        line.push(nx, ny);
+      }
+      if (line.length >= 4) cracks.push(line);
+    }
+    return (shaded = { facets: facets(seeds, box, lit, rng.next), cracks });
+  };
+  return { x0: box[0]!, y0: box[1]!, x1: box[2]!, y1: box[3]!, loops, shading };
 }
 
 const built = new WeakMap<Terrain, RockBody[]>();

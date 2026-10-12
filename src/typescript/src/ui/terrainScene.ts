@@ -1,7 +1,7 @@
 import { createRng } from "../sim/rng.ts";
 import { TERRAIN_FAST, TERRAIN_SLOW } from "../sim/terrain.ts";
 import type { Terrain } from "../sim/terrain.ts";
-import { rockBodies } from "./rockOutline.ts";
+import { rockBodies, traceLoop } from "./rockOutline.ts";
 import type { RockBody } from "./rockOutline.ts";
 
 // Draws a Terrain (rock and slow and fast ground) for the Trials scene and the Ecosystem renderer, in world coordinates under the
@@ -153,70 +153,83 @@ function discPath(ctx: CanvasRenderingContext2D, x: number, y: number, r: number
 interface Drawable {
   body: RockBody;
   outline: Path2D;
-  tones: Path2D[];
-  cracks: Path2D;
+  detail: { tones: Path2D[]; cracks: Path2D } | null; // the facets and cracks as paths, made when first drawn
 }
 const drawables = new WeakMap<Terrain, Drawable[]>();
-
-// A smooth closed curve through the midpoints of the polygon's sides, with its corners as control points.
-function smooth(path: Path2D, pts: readonly number[]): void {
-  const n = pts.length / 2;
-  const mid = (i: number, k: 0 | 1): number => (pts[2 * (i % n) + k]! + pts[2 * ((i + 1) % n) + k]!) / 2;
-  path.moveTo(mid(n - 1, 0), mid(n - 1, 1));
-  for (let i = 0; i < n; i++) path.quadraticCurveTo(pts[2 * i]!, pts[2 * i + 1]!, mid(i, 0), mid(i, 1));
-  path.closePath();
-}
 
 function drawablesOf(t: Terrain): Drawable[] {
   let d = drawables.get(t);
   if (!d) {
     d = rockBodies(t).map((body) => {
       const outline = new Path2D();
-      for (const loop of body.loops) smooth(outline, loop);
-      const tones = body.facets.map((polys) => {
-        const path = new Path2D();
-        for (const poly of polys) {
-          path.moveTo(poly[0]!, poly[1]!);
-          for (let i = 2; i < poly.length; i += 2) path.lineTo(poly[i]!, poly[i + 1]!);
-          path.closePath();
-        }
-        return path;
-      });
-      const cracks = new Path2D();
-      for (const line of body.cracks) {
-        cracks.moveTo(line[0]!, line[1]!);
-        for (let i = 2; i < line.length; i += 2) cracks.lineTo(line[i]!, line[i + 1]!);
-      }
-      return { body, outline, tones, cracks };
+      for (const loop of body.loops) traceLoop(outline, loop);
+      return { body, outline, detail: null };
     });
     drawables.set(t, d);
   }
   return d;
 }
 
-const FACET_FILL = ["rgba(4, 10, 8, 0.17)", "rgba(4, 10, 8, 0.09)", "rgba(215, 235, 225, 0.06)", "rgba(215, 235, 225, 0.12)"] as const; // dark 2, dark 1, light 1, light 2, as the tone classes of rockOutline.ts
+function detailOf(d: Drawable): { tones: Path2D[]; cracks: Path2D } {
+  if (!d.detail) {
+    const { facets, cracks: lines } = d.body.shading();
+    const tones = facets.map((polys) => {
+      const path = new Path2D();
+      for (const poly of polys) {
+        path.moveTo(poly[0]!, poly[1]!);
+        for (let i = 2; i < poly.length; i += 2) path.lineTo(poly[i]!, poly[i + 1]!);
+        path.closePath();
+      }
+      return path;
+    });
+    const cracks = new Path2D();
+    for (const line of lines) {
+      cracks.moveTo(line[0]!, line[1]!);
+      for (let i = 2; i < line.length; i += 2) cracks.lineTo(line[i]!, line[i + 1]!);
+    }
+    d.detail = { tones, cracks };
+  }
+  return d.detail;
+}
 
-function drawRock(ctx: CanvasRenderingContext2D, t: Terrain, scale: number, view: View): void {
+// Facet fills, as the tone classes of rockOutline.ts: dark 2, dark 1, light 1, light 2.
+const FACET_FILL = ["rgba(2, 8, 6, 0.3)", "rgba(2, 8, 6, 0.15)", "rgba(215, 235, 225, 0.1)", "rgba(215, 235, 225, 0.22)"] as const;
+const FLAT_BODY = "#2b3633"; // a body seen from afar, and where patterns are unavailable
+const CRACK = "rgba(6, 12, 10, 0.5)";
+const EDGE_FADE_SCALE = 0.25; // below this scale (device px per world unit) rims and shadows thin out, to half at half of it
+const VIEW_PAD_PX = 12; // screen px past a body that still draw, for its shadow
+const SHADOW_NEAR = { grow: 6, alpha: 0.8 }; // two shadow layers (px): a tight dark one and a wide faint one
+const SHADOW_FAR = { grow: 14, alpha: 0.5 };
+const SHADOW_SHIFT = { x: 3, y: 4.5 }; // px, down and right
+const RIM_PX = 2.2; // width of the dark rim band inside the edge
+const LIT_SHIFT = 0.7; // the lit rim band is the outline moved this many rim widths down and right, so it shows only on the upper left
+const LIT_WIDTH = 1.1; // in rim widths
+const CRACK_PX = 1.1;
+const NEAR_FACETS = 0.07; // from this scale the facets and cracks are drawn, below it a body is one fill and one rim
+
+// quick: from-afar drawing at any scale (no facets or cracks), for the settings preview that redraws while sliders move.
+function drawRock(ctx: CanvasRenderingContext2D, t: Terrain, scale: number, view: View, quick: boolean): void {
   if (t.rockCount === 0) return;
   if (typeof Path2D === "undefined") {
-    ctx.fillStyle = "#2b3633";
+    ctx.fillStyle = FLAT_BODY;
     ctx.beginPath();
     for (let i = 0; i < t.rockCount; i++) discPath(ctx, t.rockX[i]!, t.rockY[i]!, t.rockR[i]!);
     ctx.fill();
     return;
   }
   const px = 1 / scale;
-  const edge = Math.min(1, Math.max(0.5, scale / 0.25)); // thinner rim and shade from afar
-  const pad = 12 * px;
+  const edge = Math.min(1, Math.max(0.5, scale / EDGE_FADE_SCALE));
+  const pad = VIEW_PAD_PX * px;
   const shown = drawablesOf(t).filter(({ body: b }) => b.x1 + pad >= view.x0 && b.x0 - pad <= view.x1 && b.y1 + pad >= view.y0 && b.y0 - pad <= view.y1);
-  const patterns = rockPatterns(ctx);
+  const detailed = scale >= NEAR_FACETS && !quick;
+  const patterns = detailed ? rockPatterns(ctx) : null;
   ctx.lineJoin = "round";
-  // Shadows first, so a body never lies under the shadow of a neighbour: soft, down and right.
+  // Shadows first, so a body never lies under the shadow of a neighbour: soft, down and right. One layer when far.
   ctx.fillStyle = HALO;
   ctx.strokeStyle = HALO;
   ctx.save();
-  ctx.translate(3 * edge * px, 4.5 * edge * px);
-  for (const [grow, alpha] of [[14, 0.5], [6, 0.8]] as const) {
+  ctx.translate(SHADOW_SHIFT.x * edge * px, SHADOW_SHIFT.y * edge * px);
+  for (const { grow, alpha } of detailed ? [SHADOW_FAR, SHADOW_NEAR] : [SHADOW_NEAR]) {
     ctx.globalAlpha = alpha;
     ctx.lineWidth = grow * edge * px;
     for (const { outline } of shown) {
@@ -226,28 +239,42 @@ function drawRock(ctx: CanvasRenderingContext2D, t: Terrain, scale: number, view
   }
   ctx.restore();
   ctx.globalAlpha = 1;
-  const band = 2.2 * edge * px;
-  for (const { outline, tones, cracks } of shown) {
+  const band = RIM_PX * edge * px;
+  if (!detailed) {
+    // From afar: one fill and one rim per body.
+    ctx.fillStyle = FLAT_BODY;
+    ctx.strokeStyle = EDGE_DARK;
+    ctx.lineWidth = band;
+    for (const { outline } of shown) {
+      ctx.fill(outline, "evenodd");
+      ctx.stroke(outline);
+    }
+    ctx.lineJoin = "miter";
+    return;
+  }
+  for (const d of shown) {
+    const { outline } = d;
     ctx.save();
     ctx.clip(outline, "evenodd");
-    ctx.fillStyle = patterns.body ?? "#2b3633";
+    ctx.fillStyle = patterns?.body ?? FLAT_BODY;
     ctx.fill(outline, "evenodd");
+    const { tones, cracks } = detailOf(d);
     for (let k = 0; k < tones.length; k++) {
       ctx.fillStyle = FACET_FILL[k]!;
       ctx.fill(tones[k]!);
     }
     if (scale >= CRACKS_FROM) {
-      ctx.strokeStyle = "rgba(6, 12, 10, 0.45)";
-      ctx.lineWidth = 1.1 * px;
+      ctx.strokeStyle = CRACK;
+      ctx.lineWidth = CRACK_PX * px;
       ctx.stroke(cracks);
     }
     ctx.strokeStyle = EDGE_DARK; // a dark band inside the whole edge, a lit one on the upper left ones
     ctx.lineWidth = 2 * band;
     ctx.stroke(outline);
     ctx.save();
-    ctx.translate(0.7 * band, 0.7 * band);
+    ctx.translate(LIT_SHIFT * band, LIT_SHIFT * band);
     ctx.strokeStyle = EDGE_LIT;
-    ctx.lineWidth = 1.1 * band;
+    ctx.lineWidth = LIT_WIDTH * band;
     ctx.stroke(outline);
     ctx.restore();
     ctx.restore();
@@ -256,8 +283,9 @@ function drawRock(ctx: CanvasRenderingContext2D, t: Terrain, scale: number, view
 }
 
 // Draws the ground, then the rock, in world coordinates. scale: device pixels per world unit. view: the visible world rectangle.
-export function drawTerrain(ctx: CanvasRenderingContext2D, t: Terrain, scale: number, view: View = { x0: 0, x1: t.width, y0: 0, y1: t.height }): void {
+// quick: rock as plain discs without building outlines, for previews that redraw while settings change.
+export function drawTerrain(ctx: CanvasRenderingContext2D, t: Terrain, scale: number, view: View = { x0: 0, x1: t.width, y0: 0, y1: t.height }, quick = false): void {
   if (t.empty) return;
   drawGround(ctx, t);
-  drawRock(ctx, t, scale, view);
+  drawRock(ctx, t, scale, view, quick);
 }

@@ -54,17 +54,16 @@ describe("terrainOf", () => {
     expect(covered / (300 * 200)).toBeLessThan(0.4);
   });
 
-  it("makes boulders lumpy rather than round and ridges chains of overlapping stones, within the disc cap", () => {
+  it("makes boulders angular polygons and ridges slabs with loose pebbles, within the disc cap", () => {
     const t = terrainOf(withMap({ ridgeDensity: 0, slowDensity: 0, fastDensity: 0 }));
-    expect(t.rockCount).toBeGreaterThan(20); // more than one disc per stone
+    expect(t.rockCount).toBeGreaterThan(40); // rows of discs along the edges, not one disc per stone
     const r = terrainOf(withMap({ stoneDensity: 0, slowDensity: 0, fastDensity: 0 }));
-    expect(r.rockCount).toBeGreaterThan(30);
+    expect(r.rockCount).toBeGreaterThan(60);
     expect(r.rockCount).toBeLessThanOrEqual(MAX_DISCS_PER_PIECE * 20);
-    // no hole inside a ridge: every disc touches another one
-    for (let i = 0; i < r.rockCount; i++) {
-      const near = Array.from(r.rockX).some((x, j) => j !== i && Math.hypot(x - r.rockX[i]!, r.rockY[j]! - r.rockY[i]!) < r.rockR[i]! + r.rockR[j]!);
-      expect(near).toBe(true);
-    }
+    // a ridge is slabs of touching discs and a few small loose pebbles that touch nothing: every disc but a pebble touches another one
+    const lonely = Array.from(r.rockX).filter((x, i) => !Array.from(r.rockX).some((x2, j) => j !== i && Math.hypot(x2 - x, r.rockY[j]! - r.rockY[i]!) < r.rockR[i]! + r.rockR[j]!));
+    expect(lonely.length).toBeLessThanOrEqual(6 * 20);
+    expect(lonely.length).toBeLessThan(r.rockCount / 2);
   });
 
   it("scales the patches with their size setting and keeps today's map at size 1", () => {
