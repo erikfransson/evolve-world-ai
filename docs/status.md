@@ -17,7 +17,6 @@ Work here is iterative and nothing is fixed; update or delete lines as soon as t
 - 2026-10-12: The Great Hunt removed; focus on Live and Ecosystem, with Trials and RL Arena for training.
 - 2026-10-12: The Inland Sea is the next Live World map, built first at 5.5x today's area (about 40000 x 25000), growing to 10x later if creatures still meet often (#36).
 - 2026-10-12: Version history lives in `docs/changes.md` (renamed from releases.md); 0.1.1 removes The Great Hunt.
-
 - 2026-10-12: Inland Sea launch settings: new food values apply at launch (not to today's world); the world starts empty and Erik drops founders in via the page; max population 2500 (admin-adjustable); seasons with a one hour year.
 
 ## Open questions for Erik
