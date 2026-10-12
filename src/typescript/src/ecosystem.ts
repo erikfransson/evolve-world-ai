@@ -13,6 +13,7 @@ import { buildSelectedBrain } from "./ui/ecoBrain.ts";
 import type { SelectedBrain } from "./ui/ecoBrain.ts";
 import { bindGentle, readGentle } from "./ui/gentle.ts";
 import { createEcoView } from "./ui/ecoPage.ts";
+import { syncTerrainLegend } from "./ui/terrainLegend.ts";
 import { ECOSYSTEM_PAGE, PREDATORS_PAGE, openingConfig } from "./ui/ecoModes.ts";
 import { ecoBody } from "./ui/ecoMarkup.ts";
 import { createRenderHost } from "./ui/renderHost.ts";
@@ -95,13 +96,14 @@ let species = speciesList(config); // the config's species, resolved
 function setConfig(c: EcoConfig): void {
   config = c;
   species = speciesList(c);
+  syncTerrainLegend(c);
 }
 
 function drawConfig(): EcoDrawConfig {
   const { world, creature, eco } = config;
   const winter = eco.seasons && live ? winterness(eco, live.msg.simTime) : 0;
   const kinds = species.map((sp) => ({ fullEnergy: fullEnergy(sp), hunter: sp.prey.length > 0 }));
-  return { worldW: world.width, worldH: world.height, radius: creature.radius, itemRadius: world.itemRadius, species: kinds, winter };
+  return { worldW: world.width, worldH: world.height, radius: creature.radius, itemRadius: world.itemRadius, species: kinds, winter, terrain: { seed: config.seed, world } };
 }
 
 // Matches the canvas and camera to the layout; returns the device pixel ratio.
@@ -411,6 +413,7 @@ camera.attach(view.canvas, () => host?.backing() ?? view.canvas);
 showRays = view.showRays();
 bindGentle(document.getElementById("gentle") as HTMLInputElement, (gentle) => send({ type: "gentle", gentle }));
 view.fillConfig(NORMAL);
+syncTerrainLegend(NORMAL);
 new ResizeObserver(drawIdle).observe(view.canvas);
 drawIdle();
 requestAnimationFrame(frame);

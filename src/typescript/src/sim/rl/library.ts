@@ -1,6 +1,7 @@
 import { envById } from "./envs.ts";
-import { genomeLengthIn } from "./env.ts";
+import { genomeLengthIn, layoutConfig } from "./env.ts";
 import type { EnvWorld, Learner, Library } from "./env.ts";
+import { upgradeGenome } from "../brain.ts";
 import type { BodyPlan } from "../sensors.ts";
 import { checkGenome, checkPlan } from "./validate.ts";
 
@@ -21,11 +22,22 @@ export const serialiseLearner = (l: Learner): StoredLearner => ({
   genome: Array.from(l.genome, (v) => Math.round(v * DECIMALS) / DECIMALS || 0), // no -0, which JSON cannot keep
 });
 
+// The weights of a plan in this world's layout, checked like checkGenome. A genome made before the terrain input (#34) is upgraded first
+// (a zero weight column), so old files and library entries load; one that fits neither layout is rejected.
+export function checkGenomeIn(g: unknown, world: EnvWorld, plan: BodyPlan): number[] | string {
+  const length = genomeLengthIn(world, plan);
+  if (Array.isArray(g) && g.length !== length && g.every((v) => typeof v === "number")) {
+    const upgraded = upgradeGenome(Float32Array.from(g as number[]), layoutConfig(world), plan);
+    if (upgraded) return checkGenome(Array.from(upgraded), length);
+  }
+  return checkGenome(g, length);
+}
+
 // One stored learner checked like a creature file (plan limits, exact genome length for the world, bounded weights), or a reason.
 export function checkLearner(e: unknown, world: EnvWorld): Learner | string {
   const plan = checkPlan((e as { plan?: unknown } | null)?.plan);
   if (typeof plan === "string") return plan;
-  const genome = checkGenome((e as { genome?: unknown }).genome, genomeLengthIn(world, plan));
+  const genome = checkGenomeIn((e as { genome?: unknown }).genome, world, plan);
   return typeof genome === "string" ? genome : { plan, genome: Float32Array.from(genome) };
 }
 

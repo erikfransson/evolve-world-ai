@@ -1,4 +1,5 @@
 import type { ModePage } from "./ecoModes.ts";
+import { terrainLegendHtml } from "./terrainLegend.ts";
 import { GENTLE_TIP } from "./gentle.ts";
 
 // The wording and drawings that differ between the Ecosystem and The Great Hunt pages.
@@ -90,7 +91,7 @@ export function ecoBody(page: ModePage): string {
     const [label, title] = c.pickTitles[id]!;
     return `                <button id="${id}" class="secondary" type="button" title="${title}">${label}</button>`;
   };
-  const legend = c.legend.map(([swatch, label]) => `              <li><svg viewBox="0 0 20 20" aria-hidden="true">${swatch}</svg>${label}</li>`);
+  const legend = [...c.legend.map(([swatch, label]) => `              <li><svg viewBox="0 0 20 20" aria-hidden="true">${swatch}</svg>${label}</li>`), `              ${terrainLegendHtml()}`];
   const linSwitch = several
     ? `
               <div class="seg seg-mini lin-species" role="radiogroup" aria-label="Lineages of">

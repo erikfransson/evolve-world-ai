@@ -3,12 +3,14 @@ import { Brain, genomeLength, layerSizes, randomGenome } from "../../src/typescr
 import { Crowd } from "../../src/typescript/src/sim/crowd.ts";
 import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { createRng } from "../../src/typescript/src/sim/rng.ts";
+import { terrainOf } from "../../src/typescript/src/sim/terrain.ts";
 import { inputLayout, planOf } from "../../src/typescript/src/sim/sensors.ts";
 import { HIT_CREATURE, HIT_FOOD, HIT_NONE, HIT_POISON, HIT_WALL } from "../../src/typescript/src/sim/types.ts";
 import { WasmBrainBank } from "../../src/typescript/src/sim/wasm/brainKernel.ts";
 import { setWasmDisabled, wasmAvailable } from "../../src/typescript/src/sim/wasm/loader.ts";
 import { speciesEngine, speciesList } from "../../src/typescript/src/sim/species.ts";
 import { SenseKernels } from "../../src/typescript/src/sim/wasm/senseKernels.ts";
+import type { SimConfig } from "../../src/typescript/src/sim/config.ts";
 import { Creature, SenseBatch } from "../../src/typescript/src/sim/creature.ts";
 import { World } from "../../src/typescript/src/sim/world.ts";
 import { readFileSync } from "node:fs";
@@ -208,6 +210,7 @@ describe("sense.wat (SenseKernels)", () => {
     itemRadius?: number;
     creatures: Spot[];
     items?: [number, number, number][]; // x, y, kind
+    map?: Partial<SimConfig["world"]>; // stones, ridges and ground (terrain.ts) on top of the size
     species?: number; // species count; creature k is of species k % species, and rays carry one flag per species
   }
 
@@ -217,8 +220,8 @@ describe("sense.wat (SenseKernels)", () => {
     const cfg = {
       ...base,
       species: names.map((name) => ({ name, hue: -1, hueSpread: 360, plants: true, prey: [], eatEfficiency: 0, eatBaseline: 0 })),
-      world: { ...base.world, width: o.width ?? 1200, height: o.height ?? 800, ...(o.itemRadius === undefined ? {} : { itemRadius: o.itemRadius }) },
-      creature: { ...base.creature, rayCount: o.rays, raySpread: o.spread, rayLength: o.length ?? 100 },
+      world: { ...base.world, width: o.width ?? 1200, height: o.height ?? 800, ...(o.itemRadius === undefined ? {} : { itemRadius: o.itemRadius }), ...o.map },
+     creature: { ...base.creature, rayCount: o.rays, raySpread: o.spread, rayLength: o.length ?? 100 },
     };
     const eng = o.species ? speciesEngine(cfg, speciesList(cfg)[0]!) : cfg; // what a creature of the ecosystem runs on
     const world = new World(cfg, 400);
@@ -343,6 +346,28 @@ describe("sense.wat (SenseKernels)", () => {
     check({ rays: 3, spread: 0.2, length: 100, creatures: [[200, 300, 0]], items: [[200 + 100 + r, 300, 2], [200 + 100, 300 + r, 1], [250, 300, 2]] }, true);
   });
 
+  it("matches the JS rays bit for bit around rock, and sees the ground under each creature", () => {
+    const map = { stoneDensity: 0.06, ridgeDensity: 0.05, slowDensity: 0.1, fastDensity: 0.1 };
+    const t = terrainOf({ seed: DEFAULT_ECO_CONFIG.seed, world: { width: 3000, height: 2000, ...map } });
+    const rng = createRng(21);
+    const spots: Spot[] = [];
+    for (let tries = 0; spots.length < 24 && tries < 20000; tries++) {
+      const d = rng.int(t.rockCount);
+      const near = t.rockR[d]! + rng.range(5, 220);
+      const a = rng.range(0, 2 * Math.PI);
+      const x = t.rockX[d]! + near * Math.cos(a);
+      const y = t.rockY[d]! + near * Math.sin(a);
+      const apart = spots.every(([sx, sy]) => Math.hypot(sx - x, sy - y) > 300); // out of each other's sight, so the f32 crowd path stays out of it
+      if (apart && x > 12 && y > 12 && x < 2988 && y < 1988 && !t.touchesRock(x, y, 12)) spots.push([x, y, rng.range(0, 2 * Math.PI)]);
+    }
+    const some = items.map(([x, y, k]) => [x * 2.5, y * 2.5, k] as [number, number, number]);
+    const { seen } = check({ width: 3000, height: 2000, rays: 10, spread: 3, length: 150, creatures: spots, items: some, map }, true);
+    expect(seen).toContain(HIT_WALL);
+    const grounds = new Set(spots.map(([x, y]) => t.valueAt(x, y)));
+    expect(grounds.size).toBeGreaterThan(1);
+    check({ width: 3000, height: 2000, rays: 6, spread: 2 * Math.PI, length: 250, creatures: spots, map }, true);
+  });
+
   it("breaks exact ties between items in different cells and in one cell by grid order, as World.castRays does", () => {
     const r = DEFAULT_ECO_CONFIG.world.itemRadius;
     expect(r).toBe(4);
@@ -411,7 +436,7 @@ describe("sense.wat (SenseKernels)", () => {
     const spots: Spot[] = Array.from({ length: 120 }, () => [rng.range(0, 600), rng.range(0, 400), rng.range(0, 7)]);
     const { bad, species, kernel } = check({ width: 600, height: 400, rays: 8, spread: 2, length: 120, creatures: spots, items: items.filter(([x, y]) => x < 600 && y < 400), species: 3 }, false);
     expect([...species].sort()).toEqual([0, 1, 2]);
-    expect(kernel[0]!.brain.layerActivations()[0]!.length).toBe(8 * (5 + 3) + 4 + 4);
+    expect(kernel[0]!.brain.layerActivations()[0]!.length).toBe(8 * (5 + 3) + 5 + 4);
     expect(bad).toBeLessThanOrEqual(2);
     check({ rays: 6, spread: 2, creatures: [[300, 300, 0], [900, 600, 2]], items, species: 2 }, true); // no creature in sight: flags all zero, exact
   });

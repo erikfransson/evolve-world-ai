@@ -9,6 +9,7 @@ import { mutate } from "./ga.ts";
 import { driftBirth, driftPlan, mutateStructure, randomBirth, randomPlan, remapWeights } from "./planMutation.ts";
 import type { BirthTraits } from "./planMutation.ts";
 import { agingOf, collide, hurt, keepInside, settle } from "./physics.ts";
+import type { Body } from "./physics.ts";
 import type { Aging, Contact } from "./physics.ts";
 import type { StatefulRng } from "./rng.ts";
 import { copyPlan, inputLayout, planOf } from "./sensors.ts";
@@ -162,6 +163,8 @@ export interface EcoJournal {
 //    walk the creatures from a random start each tick, so no creature wins contested food, prey or the last free place by its list position.
 // With a species list (The Great Hunt) every creature belongs to one species, with that species' body, costs, births and
 // diet; a hunter eats a touching creature of a species it preys on. Without one there is a single species with the shared settings.
+const MAX_ROCK_TRIES = 200; // random founder spots tried before taking the nearest free one
+
 export class Ecosystem {
   readonly config: EcoConfig;
   readonly world: WorldView;
@@ -294,8 +297,16 @@ export class Ecosystem {
           genome = randomGenome(layerSizes(config, plan), this.rng);
         }
         randomBirth(this.ranges[sp]!, this.rng, this.traits);
-        const x = this.rng.range(r, width - r);
-        const y = this.rng.range(r, height - r);
+        let x = this.rng.range(r, width - r);
+        let y = this.rng.range(r, height - r);
+        for (let tries = 0; this.items.terrain.touchesRock(x, y, r); tries++) {
+          if (tries >= MAX_ROCK_TRIES) {
+            ({ x, y } = this.items.terrain.nearestFree(x, y, r)); // a map that leaves no room is not allowed to hang the build
+            break;
+          }
+          x = this.rng.range(r, width - r);
+          y = this.rng.range(r, height - r);
+        }
         const heading = this.rng.next() * 2 * Math.PI;
         const hue = spec.hue < 0 ? this.rng.next() * 360 : bandHue(spec, spec.hue + (this.rng.next() - 0.5) * spec.hueSpread);
         this.found(i, { species: sp, plan, genome, x, y, heading, hue, energy: spec.startEnergy }, k < fromPool);
@@ -562,7 +573,6 @@ export class Ecosystem {
     if (!gridded) crowd.rebuild(states, states.length);
     const { cols, rows, cellStart, owners } = crowd;
     const { radius } = this.config.creature;
-    const { width, height } = this.config.world;
     const e = 1; // restitution
     // Occupied cells in row-major order, the same order as sweeping every cell.
     for (let o = 0; o < crowd.occupiedCount; o++) {
@@ -573,24 +583,24 @@ export class Ecosystem {
       for (let s = cellStart[c]; s < end; s++) {
         const a = states[owners[s]];
         // Later creatures of this cell, then the cells right, below-left, below and below-right, so each pair is seen once.
-        for (let t = s + 1; t < end; t++) this.bump(a, states[owners[t]], radius, e, width, height);
-        if (cx + 1 < cols) this.bumpCell(a, c + 1, radius, e, width, height);
+        for (let t = s + 1; t < end; t++) this.bump(a, states[owners[t]], radius, e);
+        if (cx + 1 < cols) this.bumpCell(a, c + 1, radius, e);
         if (cy + 1 < rows) {
           const below = c + cols;
-          if (cx > 0) this.bumpCell(a, below - 1, radius, e, width, height);
-          this.bumpCell(a, below, radius, e, width, height);
-          if (cx + 1 < cols) this.bumpCell(a, below + 1, radius, e, width, height);
+          if (cx > 0) this.bumpCell(a, below - 1, radius, e);
+          this.bumpCell(a, below, radius, e);
+          if (cx + 1 < cols) this.bumpCell(a, below + 1, radius, e);
         }
       }
     }
   }
 
-  private bumpCell(a: CreatureState, cell: number, radius: number, e: number, width: number, height: number): void {
+  private bumpCell(a: CreatureState, cell: number, radius: number, e: number): void {
     const { cellStart, owners } = this.crowd;
-    for (let t = cellStart[cell]; t < cellStart[cell + 1]; t++) this.bump(a, this.states[owners[t]], radius, e, width, height);
+    for (let t = cellStart[cell]; t < cellStart[cell + 1]; t++) this.bump(a, this.states[owners[t]], radius, e);
   }
 
-  private bump(a: CreatureState, b: CreatureState, radius: number, e: number, width: number, height: number): void {
+  private bump(a: CreatureState, b: CreatureState, radius: number, e: number): void {
     const eco = this.config.eco;
     if (!a.alive || !b.alive) return; // an eaten prey; everyone else is alive until settle
     if (!collide(a, b, radius, e, this.contact)) return;
@@ -599,8 +609,16 @@ export class Ecosystem {
       hurt(a, b, this.contact.speed, eco.damagePerSpeed);
       if (fresh) this.noteHurt(a, b, eco.damagePerSpeed * this.contact.speed);
     }
-    keepInside(a, radius, width, height, this.config.creature.wallBounce);
-    keepInside(b, radius, width, height, this.config.creature.wallBounce);
+    this.confine(a);
+    this.confine(b);
+  }
+
+  // Keeps a creature inside the walls and out of the rock.
+  private confine(s: Body): void {
+    const { radius, wallBounce } = this.config.creature;
+    const { width, height } = this.config.world;
+    keepInside(s, radius, width, height, wallBounce);
+    this.items.terrain.keepOut(s, radius, wallBounce);
   }
 
   private noteHurt(a: CreatureState, b: CreatureState, loss: number): void {
@@ -623,7 +641,7 @@ export class Ecosystem {
   }
 
   private giveBirth(parent: EcoCreature): void {
-    const { eco, creature: cc, world: w } = this.config;
+    const { eco, creature: cc } = this.config;
     const sp = this.species[parent.species]!;
     const ranges = this.ranges[parent.species]!;
     const ps = parent.creature.state;
@@ -664,7 +682,7 @@ export class Ecosystem {
     const spot = this.spot;
     spot.x = ps.x + Math.cos(angle) * gap;
     spot.y = ps.y + Math.sin(angle) * gap;
-    keepInside(spot, cc.radius, w.width, w.height, cc.wallBounce);
+    this.confine(spot);
     const child = this.spawn(genome, plan, spot.x, spot.y, angle, paid, parent.species);
     this.setBirth(child, traits);
     const s = child.creature.state;
@@ -677,7 +695,7 @@ export class Ecosystem {
     s.vy = ps.vy + sin * half;
     ps.vx -= cos * half;
     ps.vy -= sin * half;
-    keepInside(s, cc.radius, w.width, w.height, cc.wallBounce);
+    this.confine(s);
     child.parentId = parent.id;
     child.founderId = parent.founderId;
     this.lineages.born(child.founderId);
@@ -859,6 +877,7 @@ export class Ecosystem {
     if (!whole(p.memoryShort, 0, MAX_INSERT_MEMORY) || !whole(p.memoryLong, 0, MAX_INSERT_MEMORY)) return bad(`memory units must be whole numbers 0 to ${MAX_INSERT_MEMORY}`);
     if (!Array.isArray(p.hiddenLayers) || !whole(p.hiddenLayers.length, 1, MAX_INSERT_LAYERS) || !p.hiddenLayers.every((n) => whole(n, 1, MAX_INSERT_NEURONS))) return bad(`plan needs 1 to ${MAX_INSERT_LAYERS} hidden layers of 1 to ${MAX_INSERT_NEURONS} neurons`);
     if (!finite(spec.x, spec.y) || spec.x < radius || spec.x > width - radius || spec.y < radius || spec.y > height - radius) return bad("position must be inside the walls");
+    if (this.items.terrain.touchesRock(spec.x, spec.y, radius)) return bad("position must be clear of rock");
     if (!finite(spec.hue)) return bad("hue must be a finite number");
     const heading = spec.heading ?? 0;
     if (!finite(heading)) return bad("heading must be a finite number");

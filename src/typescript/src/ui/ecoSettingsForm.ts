@@ -1,7 +1,7 @@
-import { POISON_LETHAL } from "../sim/config.ts";
+import { ITEM_RADIUS_RANGE, POISON_LETHAL } from "../sim/config.ts";
 import { DEFAULT_ECO_CONFIG } from "../sim/ecoConfig.ts";
 import type { EcoConfig } from "../sim/ecoConfig.ts";
-import { items, perSecond, range, rangePair } from "./settingsForm.ts";
+import { items, mapFields, perSecond, range, rangePair } from "./settingsForm.ts";
 import type { FormSpec, Section } from "./settingsForm.ts";
 
 // Ecosystem settings, built by buildForm in settingsForm.ts.
@@ -16,7 +16,8 @@ export const ECO_SECTIONS: readonly Section<EcoConfig>[] = [
       range({ id: "worldHeight", label: "World height", tip: "Size of the box the creatures live in. For scale, the default vision range is 100 units.", min: 500, max: 20000, step: 50, fmt: "size", get: (c) => c.world.height, set: (c, v) => { c.world.height = v; } }),
       range({ id: "foodDensity", label: "Start food", tip: "How much food lies around at the start. 1 means roughly one piece in every 100 × 100 area.", min: 0, max: 1, step: 0.005, fmt: "dens3", hint: (c) => items(c, c.world.foodDensity), get: (c) => c.world.foodDensity, set: (c, v) => { c.world.foodDensity = v; } }),
       range({ id: "poisonDensity", label: "Start poison", tip: "How much poison lies around at the start, on the same scale as food. 0 turns poison off.", min: 0, max: 1, step: 0.005, fmt: "dens3", hint: (c) => items(c, c.world.poisonDensity), get: (c) => c.world.poisonDensity, set: (c, v) => { c.world.poisonDensity = v; } }),
-      range({ id: "itemRadius", label: "Item size", tip: "Radius of food and poison pieces. Bigger pieces are easier to hit and to see.", min: 2, max: 10, step: 0.1, fmt: "size1", get: (c) => c.world.itemRadius, set: (c, v) => { c.world.itemRadius = v; } }),
+      ...mapFields<EcoConfig>(),
+      range({ id: "itemRadius", label: "Item size", tip: "Radius of food and poison pieces. Bigger pieces are easier to hit and to see.", min: ITEM_RADIUS_RANGE[0], max: ITEM_RADIUS_RANGE[1], step: 0.1, fmt: "size1", get: (c) => c.world.itemRadius, set: (c, v) => { c.world.itemRadius = v; } }),
       range({ id: "poisonDamage", label: "Poison damage", tip: "Energy a creature loses from one piece of poison. The top step, Lethal, kills it at once.", min: 0, max: POISON_LETHAL, step: 5, fmt: "poison", get: (c) => c.world.poisonDamage, set: (c, v) => { c.world.poisonDamage = v; } }),
       range({ id: "foodEnergy", label: "Energy per food", tip: "Energy a creature gains from one piece of food.", min: 5, max: 100, step: 1, get: (c) => c.world.foodEnergy, set: (c, v) => { c.world.foodEnergy = v; } }),
     ],

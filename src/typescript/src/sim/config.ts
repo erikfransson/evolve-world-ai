@@ -1,6 +1,9 @@
+import { checkMapDensities } from "./terrain.ts";
 import type { SpeciesConfig } from "./species.ts";
 
 // All tunable values of a run. Units: world units, seconds, energy points.
+
+export const ITEM_RADIUS_RANGE = [2, 10] as const; // the settings forms' range for world.itemRadius; a saved config outside it is refused
 
 export type SelectionMethod = "truncation" | "proportional";
 
@@ -20,6 +23,11 @@ export interface SimConfig {
     foodEnergy: number;
     poisonDamage: number; // energy one poison item drains, POISON_LETHAL or more kills
     poisonClearRadius: number; // Trials: no poison starts this close to the creature
+    // Static map features (terrain.ts), each the share of the world area covered, 0 for none.
+    stoneDensity: number; // big round stones creatures cannot enter
+    ridgeDensity: number; // long curved mountain ridges creatures cannot enter
+    slowDensity: number; // patches where creatures move at half speed
+    fastDensity: number; // patches where creatures move at 175% speed
   };
   creature: {
     radius: number;
@@ -83,6 +91,10 @@ export const DEFAULT_CONFIG: SimConfig = {
     foodEnergy: 20,
     poisonDamage: POISON_LETHAL,
     poisonClearRadius: 150,
+    stoneDensity: 0,
+    ridgeDensity: 0,
+    slowDensity: 0,
+    fastDensity: 0,
   },
   creature: {
     radius: 12,
@@ -186,6 +198,8 @@ export function overrideConfig<T extends object>(base: T, overrides: DeepPartial
   if (!isPlain(overrides)) throw new Error(`config overrides must be an object, got ${describe(overrides)}`);
   const config = structuredClone(base);
   applyOverrides(config as Record<string, unknown>, overrides, "");
+  const world = (config as { world?: object }).world;
+  if (world) checkMapDensities(world);
   return config;
 }
 

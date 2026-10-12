@@ -4,6 +4,7 @@ Running log of optimisation experiments for large populations (500 to 2000).
 Benchmark: `node src/bench.ts --pop 1000 --gens 2` in `src/typescript` on an 8-core machine, quiet unless noted.
 The fingerprint hashes all fitness values, so an unchanged fingerprint means unchanged results.
 Current fingerprints (since the 2026-10-11 item spacing from poison; before: 265968394 and 836727452): `--pop 1000 --gens 2` 804117055, `--pop 300 --gens 12 --seed 2` 121151891.
+Obstacles and terrain (#34, 2026-10-12) add a brain input, so a genome has more genes and every mutation draws more numbers: fingerprints with the map off changed on purpose. `--pop 300 --gens 12 --seed 2` 727564408; `ecoBench --seconds 30 --pop 600` 739359978 (also with 3 helpers), `--set eco.wasm=false` 877945501, `--predators --seconds 40` 410981010 (before: 847633506, 204227508, 303607739). `--pop 1000 --gens 2` not re-measured. Rollback is one-way: a version 2 save (written after this change) cannot be read by an older build.
 
 | Date       | Idea                                                    | Seconds (pop 1000, 2 gens) | Speedup | Results          | Verdict  |
 |------------|---------------------------------------------------------|----------------------------|---------|------------------|----------|

@@ -1,4 +1,6 @@
 import type { EngineConfig } from "./config.ts";
+import { terrainOf } from "./terrain.ts";
+import type { Terrain } from "./terrain.ts";
 import { HIT_FOOD, HIT_NONE, HIT_POISON, HIT_WALL } from "./types.ts";
 import type { HitKind, RayHit, Rng, WorldView } from "./types.ts";
 
@@ -57,6 +59,8 @@ export const ITEM_REMOVE = 2;
 
 // Food and poison items in fixed slots; a slot of kind HIT_NONE is free.
 const BLOCK = 4; // cells per block side in blockStamp; the shifts by 2 below divide by it
+const MAX_SPOT_TRIES = 5000; // tries of any kind (rock, clear zone, spacing) before taking the last spot, moved off rock
+const MAX_CLEAR_ROUNDS = 2000; // poison moved out of one founder's disc, far above any real count
 const MAX_REJECTS = 256; // placement tries that honour reject before giving up on it
 const SPACING_ITEM_RADII = 3; // new food keeps this many item radii plus one creature radius from poison, new poison from any item
 
@@ -82,6 +86,7 @@ export class World implements WorldView {
   private readonly spacing: number; // see tooClose
   foodHidden = false; // rays pass through food (it stays edible); RL memory envs set it. The WASM sense path does not read it.
   readonly itemRadius: number;
+  readonly terrain: Terrain; // static rock and ground; rays see rock as wall
   // Uniform grid as per-cell linked lists: cellHead[c] -> item -> nextItem[item] -> -1.
   readonly cell: number;
   readonly cols: number;
@@ -111,6 +116,7 @@ export class World implements WorldView {
     this.width = w.width;
     this.height = w.height;
     this.itemRadius = w.itemRadius;
+    this.terrain = terrainOf(config);
     this.spacing = SPACING_ITEM_RADII * w.itemRadius + config.creature.radius;
     this.count = capacity;
     this.xs = new Float32Array(capacity);
@@ -153,7 +159,7 @@ export class World implements WorldView {
     return [r, this.width - r].every((x) => [r, this.height - r].every((y) => (x - d.x) ** 2 + (y - d.y) ** 2 < d.radius ** 2));
   }
 
-  // Puts item i at a uniform random position inside the walls, outside the clear disc if given, where reject says no and
+  // Puts item i at a uniform random position inside the walls and clear of rock, outside the clear disc if given, where reject says no and
   // spaced from poison (see tooClose). reject and the spacing are dropped after MAX_REJECTS tries, so a crowded world cannot
   // loop forever; the clear disc always holds.
   placeRandomly(i: number, kind: HitKind, rng: Rng, clear?: { x: number; y: number; radius: number }, reject?: (x: number, y: number) => boolean): void {
@@ -169,16 +175,22 @@ export class World implements WorldView {
   }
 
   private readonly spot = { x: 0, y: 0 };
+  private readonly rockRange = new Int32Array(4);
 
   private randomSpot(kind: HitKind, rng: Rng, clear?: { x: number; y: number; radius: number }, reject?: (x: number, y: number) => boolean): void {
     const r = this.itemRadius;
     let x: number;
     let y: number;
     let tries = 0;
+    let all = 0;
     do {
+      if (all++ >= MAX_SPOT_TRIES) {
+        ({ x, y } = this.terrain.nearestFree(x!, y!, r)); // bounded: the last try, moved clear of rock
+        break;
+      }
       x = rng.range(r, this.width - r);
       y = rng.range(r, this.height - r);
-    } while ((clear && (x - clear.x) ** 2 + (y - clear.y) ** 2 < clear.radius ** 2) || (tries++ < MAX_REJECTS && (reject?.(x, y) || this.tooClose(x, y, kind))));
+    } while ((clear && (x - clear.x) ** 2 + (y - clear.y) ** 2 < clear.radius ** 2) || this.terrain.touchesRock(x, y, r) || (tries++ < MAX_REJECTS && (reject?.(x, y) || this.tooClose(x, y, kind))));
     this.spot.x = x;
     this.spot.y = y;
   }
@@ -205,7 +217,8 @@ export class World implements WorldView {
   // Moves every poison item touching a body of this radius at (x, y) to a random spot, repeating until none touches.
   // avoid: spots it must not move poison to, such as other bodies already placed (a body of the same radius at each).
   clearPoison(x: number, y: number, radius: number, rng: Rng, avoid?: (x: number, y: number) => boolean): void {
-    for (let p = this.poisonAt(x, y, radius); p >= 0; p = this.poisonAt(x, y, radius)) {
+    // A disc that covers the whole box leaves nowhere to move the poison to, so the rounds are bounded.
+    for (let p = this.poisonAt(x, y, radius), round = 0; p >= 0 && round < MAX_CLEAR_ROUNDS; p = this.poisonAt(x, y, radius), round++) {
       this.placeRandomly(p, HIT_POISON, rng, { x, y, radius: radius + this.itemRadius }, avoid);
     }
   }
@@ -418,7 +431,32 @@ export class World implements WorldView {
       cc[n] = d2 - r2;
       ck[n++] = lk[k];
     }
-    cache.candCount = n;
+    cache.candCount = this.terrain.empty ? n : this.gatherRock(x, y, length, cache, n);
+  }
+
+  // Appends the rock discs a ray from (x, y) can hit within length after the n item candidates, as wall candidates in grid order;
+  // the same arithmetic as sense.wat. A disc is far when its centre is beyond length + radius (plus a rounding margin).
+  private gatherRock(x: number, y: number, length: number, cache: RayCache, n: number): number {
+    const t = this.terrain;
+    const range = this.rockRange;
+    t.cellRange(x, y, length * (1 + 1e-9), range);
+    for (let cy = range[2]!; cy <= range[3]!; cy++) {
+      for (let k = t.rockStart[cy * t.cols + range[0]!]!, end = t.rockStart[cy * t.cols + range[1]! + 1]!; k < end; k++) {
+        const i = t.rockOrder[k]!;
+        const fx = t.rockX[i]! - x;
+        const fy = t.rockY[i]! - y;
+        const r = t.rockR[i]!;
+        const d2 = fx * fx + fy * fy;
+        const far = length + r + 1e-9 * length;
+        if (d2 > far * far) continue;
+        if (n === cache.candFx.length) cache.grow();
+        cache.candFx[n] = fx;
+        cache.candFy[n] = fy;
+        cache.candC[n] = d2 - r * r;
+        cache.candKind[n++] = HIT_WALL;
+      }
+    }
+    return n;
   }
 
   // Writes the grid cells overlapping the square of half-width reach around (x, y) into target, clamped to the grid.

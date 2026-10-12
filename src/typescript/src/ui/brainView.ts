@@ -1,6 +1,6 @@
 import type { Brain } from "../sim/brain.ts";
 import { SPECIES_COLORS } from "./speciesStyle.ts";
-import { EXTRA_INPUTS, FEAT_CREATURE, FEAT_FOOD, FEAT_POISON, INPUT_EXTRA_LABELS, OUTPUT_LABELS, OUTPUT_SIZE, RAY_FEATURE_LABELS } from "../sim/sensors.ts";
+import { EXTRA_INPUTS, FEAT_CREATURE, FEAT_FOOD, FEAT_POISON, INPUT_EXTRA_SHORT, OUTPUT_LABELS, OUTPUT_SIZE, RAY_FEATURE_LABELS } from "../sim/sensors.ts";
 import type { InputLayout } from "../sim/sensors.ts";
 import { fitCanvas } from "./canvas.ts";
 import { FOOD, LABEL, OTHER, POISON } from "./palette.ts";
@@ -63,7 +63,6 @@ const ROW_FONT = `500 10px ${FONT_FAMILY}`;
 const SMALL_FONT = `9px ${FONT_FAMILY}`;
 const OUT_FONT = `600 15px ${FONT_FAMILY}`;
 const DEAD_FONT = `600 16px ${FONT_FAMILY}`;
-const EXTRA_SHORT = INPUT_EXTRA_LABELS.map((l) => l[0]!.toUpperCase()); // E, S, L, T
 
 const rgba = (c: number[], a: number): string => `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${a.toFixed(3)})`;
 
@@ -148,7 +147,7 @@ export function buildLayout(ctx: CanvasRenderingContext2D, sizes: readonly numbe
   }
   const yExtra = row0 + (rays - 1) * pitch + extraGap;
   for (let k = 0; k < EXTRA_INPUTS; k++) {
-    xIn[rays * features + k] = GRID_X + (features - EXTRA_INPUTS + k) * FEAT_DX;
+    xIn[rays * features + k] = GRID_X + (perRow - EXTRA_INPUTS + k) * FEAT_DX;
     yIn[rays * features + k] = yExtra;
   }
   const memoryRows: Layout["memoryRows"] = [];
@@ -169,7 +168,7 @@ export function buildLayout(ctx: CanvasRenderingContext2D, sizes: readonly numbe
   for (const l of OUTPUT_LABELS) labelW = Math.max(labelW, ctx.measureText(l).width);
   const outLabelX = w - 8 - labelW;
   const outX = outLabelX - 6 - GAUGE_GAP - 1 - OUT_RADIUS;
-  const gridRight = GRID_X + (features - 1) * FEAT_DX;
+  const gridRight = GRID_X + (perRow - 1) * FEAT_DX;
 
   for (let c = 1; c < cols - 1; c++) {
     const n = sizes[c]!;
@@ -427,7 +426,7 @@ export class BrainView {
       } else ctx.fillText(FEATURE_LETTERS[labels[f]!] ?? labels[f]![0]!, GRID_X + f * FEAT_DX, headerY);
     }
     ctx.fillStyle = LABEL;
-    for (let k = 0; k < EXTRA_INPUTS; k++) ctx.fillText(EXTRA_SHORT[k]!, xIn[rays * features + k]!, extraLabelY);
+    for (let k = 0; k < EXTRA_INPUTS; k++) ctx.fillText(INPUT_EXTRA_SHORT[k]!, xIn[rays * features + k]!, extraLabelY);
 
     // Ray rows light up green for food and magenta for poison, read from the input features.
     ctx.font = ROW_FONT;

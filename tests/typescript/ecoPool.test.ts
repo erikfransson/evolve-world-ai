@@ -80,12 +80,14 @@ describe("ThinkPool", () => {
       c.eco.agingRate = 3;
       c.eco.seasons = true;
       c.eco.yearMinutes = 0.2; // a short year so winter is passed
+      Object.assign(c.world, { width: 1600, height: 1200, stoneDensity: 0.08, ridgeDensity: 0.05, slowDensity: 0.15, fastDensity: 0.15 }); // rock and ground: helpers rebuild the map from config and seed
       return c;
     };
     const without: Record<string, (c: EcoConfig) => void> = {
       damage: (c) => { c.eco.collisionDamage = false; },
       aging: (c) => { c.eco.aging = false; },
       seasons: (c) => { c.eco.seasons = false; },
+      map: (c) => { Object.assign(c.world, { stoneDensity: 0, ridgeDensity: 0, slowDensity: 0, fastDensity: 0 }); },
     };
     // A predators world, a small and dense one so hunters catch prey within a few hundred ticks.
     const predators = (wasm: boolean): EcoConfig => {
@@ -111,7 +113,7 @@ describe("ThinkPool", () => {
       expect(failures).toEqual([]);
     }
 
-    it.each([false, true])("matches with collision damage, ageing and seasons on, WebAssembly %s", async (wasm) => {
+    it.each([false, true])("matches with collision damage, ageing, seasons and a map on, WebAssembly %s", async (wasm) => {
       const ref = serial(rich(wasm), 250);
       expect(ref.wasm).toBe(wasm);
       expect(ref.births).toBeGreaterThan(0);
@@ -125,17 +127,36 @@ describe("ThinkPool", () => {
     }, 60_000);
 
     it("matches with poison that hurts but does not always kill", async () => {
-      const hurting = (): EcoConfig => {
+      const poisoned = (): EcoConfig => {
         const c = cfg();
         c.eco.wasm = false;
+        c.world.poisonDensity = 0.5; // plenty, so random walkers bite some
+        return c;
+      };
+      const hurting = (): EcoConfig => {
+        const c = poisoned();
         c.world.poisonDamage = 30;
         return c;
       };
-      const plain = cfg();
-      plain.eco.wasm = false;
+      const plain = poisoned();
       const ref = serial(hurting(), 400);
       expect(ref.fingerprint()).not.toBe(serial(plain, 400).fingerprint());
       await compareAll(hurting, 400, ref);
+    }, 60_000);
+
+    it.each([false, true])("matches with rock and slow and fast ground, WebAssembly %s", async (wasm) => {
+      const mapped = (): EcoConfig => {
+        const c = cfg();
+        c.eco.wasm = wasm;
+        c.world = { ...c.world, width: 1800, height: 1300, stoneDensity: 0.06, ridgeDensity: 0.05, slowDensity: 0.1, fastDensity: 0.1 };
+        return c;
+      };
+      const ref = serial(mapped(), 300);
+      expect(ref.wasm).toBe(wasm);
+      const plain = mapped();
+      plain.world = { ...plain.world, stoneDensity: 0, ridgeDensity: 0, slowDensity: 0, fastDensity: 0 };
+      expect(serial(plain, 300).fingerprint()).not.toBe(ref.fingerprint());
+      await compareAll(mapped, 300, ref);
     }, 60_000);
 
     it.each([false, true])("matches in the predators world, WebAssembly %s", async (wasm) => {
@@ -187,7 +208,7 @@ describe("WebAssembly kernels", () => {
     expect(a.births).toBeGreaterThan(0);
     expect(a.deaths).toBeGreaterThan(0);
     expect(serial(wasmCfg(), 300).fingerprint()).toBe(a.fingerprint());
-    expect(a.fingerprint()).toBe(116543125); // pinned; re-pinned for item spacing from poison, was 693541288; change it only on purpose
+    expect(a.fingerprint()).toBe(81047108); // pinned; re-pinned for the terrain input (#34), was 116543125; change it only on purpose
     const js = serial(wasmCfg(5, false), 300);
     expect(js.wasm).toBe(false);
     expect(serial(cfg(), 300).fingerprint()).toBe(a.fingerprint()); // WASM is the default

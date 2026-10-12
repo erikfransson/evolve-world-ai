@@ -1,7 +1,7 @@
 import { DEFAULT_CONFIG, POISON_LETHAL } from "../sim/config.ts";
 import { planOf, planUpkeep } from "../sim/sensors.ts";
 import type { SelectionMethod, SimConfig } from "../sim/config.ts";
-import { items, range } from "./settingsForm.ts";
+import { items, mapFields, range } from "./settingsForm.ts";
 import type { FormSpec, Section } from "./settingsForm.ts";
 
 // Trials settings, built by buildForm in settingsForm.ts.
@@ -19,6 +19,7 @@ export const TRIALS_SECTIONS: readonly Section<SimConfig>[] = [
       r({ id: "worldHeight", label: "World height", tip: SIZE_TIP, min: 200, max: 3000, step: 10, fmt: "size", get: (c) => c.world.height, set: (c, v) => { c.world.height = v; } }),
       r({ id: "foodDensity", label: "Start food", tip: "How much food is in the world. 0 is none, 1 means roughly one piece in every 100 × 100 area.", min: 0, max: 1, step: 0.01, fmt: "dens", hint: (c) => items(c, c.world.foodDensity), get: (c) => c.world.foodDensity, set: (c, v) => { c.world.foodDensity = v; } }),
       r({ id: "poisonDensity", label: "Start poison", tip: "How much poison there is, on the same scale as food. 0 turns poison off.", min: 0, max: 1, step: 0.01, fmt: "dens", hint: (c) => items(c, c.world.poisonDensity), get: (c) => c.world.poisonDensity, set: (c, v) => { c.world.poisonDensity = v; } }),
+      ...mapFields<SimConfig>(),
       r({ id: "poisonDamage", label: "Poison damage", tip: "Energy one piece of poison drains. The top step, Lethal, kills the creature at once. 0 makes poison harmless.", min: 0, max: POISON_LETHAL, step: 5, fmt: "poison", get: (c) => c.world.poisonDamage, set: (c, v) => { c.world.poisonDamage = v; } }),
       { kind: "toggle", id: "respawn", label: "Food regrows", tip: "When on, eaten food reappears elsewhere, so a skilled creature can live very long. When off, food is limited and every life ends.", get: (c) => c.world.respawn, set: (c, v) => { c.world.respawn = v; } },
       r({ id: "itemRadius", label: "Item size", tip: "Radius of food and poison pieces. Bigger pieces are easier to hit and to see.", min: 2, max: 10, step: 0.5, fmt: "size", advanced: true, get: (c) => c.world.itemRadius, set: (c, v) => { c.world.itemRadius = v; } }),

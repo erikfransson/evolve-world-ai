@@ -39,7 +39,8 @@ export class Episode implements EpisodeView {
     const counts = itemCounts(config);
     this.world = new World(config, counts.food + counts.poison);
     const { width, height } = config.world;
-    const clear = { x: width / 2, y: height / 2, radius: poisonClearRadius(config) };
+    const start = this.world.terrain.nearestFree(width / 2, height / 2, config.creature.radius); // the centre, or the nearest spot clear of rock
+    const clear = { ...start, radius: poisonClearRadius(config) };
     this.world.scatter(counts.food, counts.poison, createRng(layoutSeed), clear);
     this.respawnRng = createRng(deriveSeed(layoutSeed, creatureIndex));
     const heading = createRng(deriveSeed(layoutSeed, 0x5eed)).next() * 2 * Math.PI;

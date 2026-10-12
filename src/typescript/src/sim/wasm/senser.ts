@@ -1,19 +1,21 @@
 import type { Creature } from "../creature.ts";
 import type { Crowd } from "../crowd.ts";
 import { energySignal } from "../sensors.ts";
+import type { Terrain } from "../terrain.ts";
 import type { World } from "../world.ts";
 import type { WasmBrainBank } from "./brainKernel.ts";
 import { HIT_CREATURE } from "../types.ts";
 import { SENSE_BYTES, compiled } from "./loader.ts";
+import { ROCK_CELL } from "../terrain.ts";
 
 // The whole Ecosystem sense in one WebAssembly call per batch (sense.wat): ray directions, item and wall rays in f64 with the
 // JS candidate order, crowd rays in f32 as rays.wat, and the ray features written into the brain's input vector in place.
-// Shares the brain bank's linear memory. Per tick the item grid and the crowd are copied in whole, which costs far less
+// Rock (the world's Terrain, static) is copied once per world into three tables the kernel walks like the item grid. Shares the brain bank's linear memory. Per tick the item grid and the crowd are copied in whole, which costs far less
 // than the per-creature object traffic it replaces. The creature's RayHit objects are not updated, except for the one
 // creature given as detail (the selected one), whose rays are read back for the UI.
 
 export const MAX_RAYS = 64;
-const P_BYTES = 128;
+const P_BYTES = 192;
 const SCRATCH_BYTES = 2816;
 const REC_BYTES = 64;
 
@@ -46,6 +48,9 @@ export class WasmSenser {
   private rScratch = new Region();
   private rDetail = new Region();
   private rP = new Region();
+  private rRockStart = new Region();
+  private rRockOrder = new Region();
+  private rRockXYR = new Region();
   // Views of the whole linear memory, valid while buffer is the memory's current buffer (growth replaces it).
   private buffer: ArrayBuffer | null = null;
   private f32 = new Float32Array(0);
@@ -53,6 +58,7 @@ export class WasmSenser {
   private f64 = new Float64Array(0);
   private u8 = new Uint8Array(0);
   private synced: World | null = null; // the world whose items the packed rows in wasm memory match
+  private rockSynced: Terrain | null = null; // the map whose rock tables are in wasm memory
   private rowCap = 0; // item slots per row run
   private pStart = 0;
   private pXY = 0;
@@ -93,6 +99,10 @@ export class WasmSenser {
     this.rScratch = new Region();
     this.rDetail = new Region();
     this.rP = new Region();
+    this.rRockStart = new Region();
+    this.rRockOrder = new Region();
+    this.rRockXYR = new Region();
+    this.rockSynced = null;
     this.buffer = null;
     this.synced = null;
     this.rowCap = 0;
@@ -245,6 +255,7 @@ export class WasmSenser {
     this.syncItems(world);
     const count = crowd.count;
     const ccells = crowd.cols * crowd.rows;
+    const rock = world.terrain;
     const pCStart = this.grow(this.rCStart, (ccells + 1) * 4);
     const pSx = this.grow(this.rSx, count * 4 + 16);
     const pSy = this.grow(this.rSy, count * 4 + 16);
@@ -252,13 +263,27 @@ export class WasmSenser {
     const pSig = this.grow(this.rSig, count * 4 + 16);
     const pSpecies = this.grow(this.rSpecies, count * 4 + 16);
     const pRec = this.grow(this.rRec, n * REC_BYTES);
-    const pCand = this.grow(this.rCand, Math.max(world.count * 32, count * 16) + 64);
+    const pCand = this.grow(this.rCand, Math.max((world.count + rock.rockCount) * 32, count * 16) + 64);
+    const pRockStart = this.grow(this.rRockStart, rock.rockStart.length * 4);
+    const pRockOrder = this.grow(this.rRockOrder, rock.rockCount * 4 + 4);
+    const pRockXYR = this.grow(this.rRockXYR, rock.rockCount * 24 + 8);
     const pScr = this.grow(this.rScratch, SCRATCH_BYTES);
     const pDetail = this.grow(this.rDetail, 16 * MAX_RAYS);
     const pP = this.grow(this.rP, P_BYTES);
     this.views(); // after the last allocation
     const { f32, i32, f64 } = this;
     i32.set(crowd.cellStart, pCStart >> 2);
+    if (this.rockSynced !== rock) {
+      i32.set(rock.rockStart, pRockStart >> 2);
+      i32.set(rock.rockOrder, pRockOrder >> 2);
+      const xyr = pRockXYR >> 3;
+      for (let d = 0; d < rock.rockCount; d++) {
+        f64[xyr + 3 * d] = rock.rockX[d]!;
+        f64[xyr + 3 * d + 1] = rock.rockY[d]!;
+        f64[xyr + 3 * d + 2] = rock.rockR[d]!;
+      }
+      this.rockSynced = rock;
+    }
     const sx = pSx >> 2;
     const sy = pSy >> 2;
     const own = pOwn >> 2;
@@ -323,6 +348,13 @@ export class WasmSenser {
     i32[PF + 27] = pCand;
     i32[PF + 28] = pScr;
     i32[PF + 29] = pSpecies;
+    f64[P + 16] = rock.maxRockR;
+    f64[P + 17] = 1 / ROCK_CELL;
+    i32[PF + 36] = rock.rockCount > 0 ? rock.cols : 0;
+    i32[PF + 37] = rock.rows;
+    i32[PF + 38] = pRockStart;
+    i32[PF + 39] = pRockOrder;
+    i32[PF + 40] = pRockXYR;
     this.exports.sense(pP);
   }
 

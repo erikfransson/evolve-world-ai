@@ -1,4 +1,4 @@
-import { genomeLength, layerSizes } from "./brain.ts";
+import { genomeLength, layerSizes, upgradeGenome } from "./brain.ts";
 import { DEFAULT_CONFIG } from "./config.ts";
 import type { EngineConfig } from "./config.ts";
 import { remapWeights } from "./planMutation.ts";
@@ -13,7 +13,7 @@ export const POOL_VERSION = 1;
 
 export interface PoolEntry {
   plan: BodyPlan;
-  genome: Genome; // Trials input layout (rays without creature features), sized by plan
+  genome: Genome; // Trials input layout (rays without creature features), sized by plan; the file may hold the layout before the terrain input
   fitness: number; // mean Trials survival in seconds on held-out layouts
   world: { food: number; poison: number }; // Trials densities it was trained in
 }
@@ -36,10 +36,11 @@ const NO_RNG: Rng = {
 // The Ecosystem genome of a Trials creature: zero weights from each ray's creature (or species) flags and seen energy, all
 // else kept, so the creature acts exactly as in Trials until evolution makes use of the new inputs. target: the config
 // whose input layout to map to (the Ecosystem's one creature flag by default, or one flag per species).
-export function trialsToEcoGenome(plan: PlanView, genome: Genome, target: EngineConfig = ECO): Float32Array {
+export function trialsToEcoGenome(plan: PlanView, trials: Genome, target: EngineConfig = ECO): Float32Array {
   const from = trialsSizes(plan);
   const to = layerSizes(target, plan);
-  if (genome.length !== genomeLength(from)) throw new Error(`genome length ${genome.length} does not match the Trials plan (${genomeLength(from)})`);
+  const genome = upgradeGenome(trials, TRIALS, plan);
+  if (!genome) throw new Error(`genome length ${trials.length} does not match the Trials plan (${genomeLength(from)})`);
   const F = rayFeatureCount(target);
   const rayInputs = plan.rayCount * F;
   const inputs = Int32Array.from({ length: to[0]! }, (_, i) => {
@@ -63,8 +64,10 @@ function parseEntry(e: unknown): PoolEntry | string {
   if (typeof plan === "string") return plan;
   if (!isNum(e.fitness, 0, Infinity) || !isNum(e.world.food, 0, 100) || !isNum(e.world.poison, 0, 100)) return "bad fitness or world";
   const g = e.genome;
-  if (!Array.isArray(g) || g.length !== genomeLength(trialsSizes(plan)) || !g.every((v) => isNum(v, -1e6, 1e6))) return "genome missing, of the wrong length or not finite";
-  return { plan, genome: Float32Array.from(g as number[]), fitness: e.fitness, world: { food: e.world.food, poison: e.world.poison } };
+  if (!Array.isArray(g) || !g.every((v) => isNum(v, -1e6, 1e6))) return "genome missing or not finite";
+  const genome = upgradeGenome(Float32Array.from(g as number[]), TRIALS, plan);
+  if (!genome) return "genome of the wrong length";
+  return { plan, genome, fitness: e.fitness, world: { food: e.world.food, poison: e.world.poison } };
 }
 
 // The valid entries of a pool file, and a reason per rejected one. Throws when the file itself is not a pool.

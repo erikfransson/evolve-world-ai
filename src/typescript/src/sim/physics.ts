@@ -1,6 +1,7 @@
 import { POISON_LETHAL } from "./config.ts";
 import type { EngineConfig } from "./config.ts";
 import { HIT_FOOD, HIT_POISON } from "./types.ts";
+import { NO_TERRAIN, Terrain } from "./terrain.ts";
 import type { CreatureState, HitKind } from "./types.ts";
 
 // Per-tick decay factors of the exact exponential relaxation, constant for a config.
@@ -41,10 +42,11 @@ export function agingFactor(aging: Aging | null, ticksAlive: number): number {
   return aging && ticksAlive > aging.startTicks ? 1 + aging.perTick * (ticksAlive - aging.startTicks) : 1;
 }
 
-// Advances one creature's motion and energy by one tick: turn, thrust with drag, walls, energy costs.
+// Advances one creature's motion and energy by one tick: turn, thrust with drag, ground speed, walls and rock, energy costs.
+// The ground scales the distance moved, not the velocity or the energy costs: the same effort covers less (slow) or more (fast) ground.
 // turnOut and thrust in [-1, 1]; negative thrust brakes at maxBrake x its size (free, never reverses). Eating and death are separate (consume, settle).
 // upkeep is the plan's energy per second besides thrust and turning (planUpkeep).
-export function stepBody(s: CreatureState, turnOut: number, thrust: number, config: EngineConfig, k: Decays, heading: Heading, upkeep: number): void {
+export function stepBody(s: CreatureState, turnOut: number, thrust: number, config: EngineConfig, k: Decays, heading: Heading, upkeep: number, terrain: Terrain = NO_TERRAIN): void {
   const { dt, creature: c, world: w } = config;
   // Exact exponential relaxation each tick keeps motion smooth and independent of dt.
   const targetTurn = turnOut * c.maxTurnRate;
@@ -69,14 +71,16 @@ export function stepBody(s: CreatureState, turnOut: number, thrust: number, conf
   s.vx = fwd * cos - side * sin;
   s.vy = fwd * sin + side * cos;
 
-  s.x += s.vx * dt;
-  s.y += s.vy * dt;
+  const ground = terrain.empty ? 1 : Terrain.factor(terrain.valueAt(s.x, s.y));
+  s.x += s.vx * dt * ground;
+  s.y += s.vy * dt * ground;
   keepInside(s, c.radius, w.width, w.height, c.wallBounce);
+  terrain.keepOut(s, c.radius, c.wallBounce);
 
   s.energy -= (upkeep + c.thrustCost * Math.max(0, thrust) + (c.turnCost * Math.abs(s.turnRate)) / c.maxTurnRate) * dt;
 }
 
-type Body = Pick<CreatureState, "x" | "y" | "vx" | "vy">;
+export type Body = Pick<CreatureState, "x" | "y" | "vx" | "vy">;
 
 // Out parameter of collide: how fast the pair approached along the line between centres, units/s.
 export interface Contact {

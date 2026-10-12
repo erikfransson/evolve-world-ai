@@ -3,7 +3,9 @@ import { startRng } from "../sim/ecoConfig.ts";
 import type { EcoConfig } from "../sim/ecoConfig.ts";
 import { HIT_FOOD, HIT_POISON } from "../sim/types.ts";
 import { World } from "../sim/world.ts";
+import { terrainOf } from "../sim/terrain.ts";
 import { BACKGROUND, FLOOR, FOOD, POISON, WALL } from "./scene.ts";
+import { drawTerrain } from "./terrainScene.ts";
 
 const MARGIN = 12; // CSS px around the world
 const FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
@@ -56,6 +58,11 @@ export function drawIdleWorld(ctx: CanvasRenderingContext2D, config: EcoConfig, 
   const y = (h - wh) / 2;
   ctx.fillStyle = FLOOR;
   ctx.fillRect(x, y, ww, wh);
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(scale, scale);
+  drawTerrain(ctx, terrainOf(config), scale);
+  ctx.restore();
   const items = startItems(config);
   if (items) drawItems(ctx, items, config, x, y, scale, dpr);
   ctx.strokeStyle = WALL;

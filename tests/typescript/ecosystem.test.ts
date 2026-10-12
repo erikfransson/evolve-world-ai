@@ -457,7 +457,7 @@ describe("Ecosystem collision damage", () => {
   it("with damage off the run is unchanged (fingerprint recorded before the feature)", () => {
     const eco = new Ecosystem(ecoCfg({ seed: 7, world: { width: 600, height: 600 }, creature: { startEnergy: 100 }, eco: { initialPopulation: 80, birthEnergyRange: [120, 120], birthCostRange: [75, 75], birthCooldownRange: [10, 10], collisions: true, wasm: false } })); // JS path, as when recorded
     for (let t = 0; t < 300; t++) eco.step();
-    expect([eco.fingerprint(), eco.births, eco.deaths]).toEqual([300709139, 0, 0]); // re-pinned for heritable birth traits (#31), was 787898088, 0, 1 before
+    expect([eco.fingerprint(), eco.births, eco.deaths]).toEqual([806401477, 1, 2]); // re-pinned for the terrain input (#34), was 300709139, 0, 0
   });
 });
 
@@ -480,7 +480,7 @@ describe("Crowd", () => {
     expect(viewer.rays[0].kind).toBe(HIT_NONE);
 
     const layout = inputLayout(c);
-    expect(layout.size).toBe(3 * 6 + 4 + 4); // rays x features, extras, memory (0.25: 2 + 2 units)
+    expect(layout.size).toBe(3 * 6 + 5 + 4); // rays x features, extras, memory (0.25: 2 + 2 units)
     viewer.think();
     const input = viewer.brain.layerActivations()[0];
     expect(input[layout.rayFeatures + FEAT_CREATURE]).toBe(1);

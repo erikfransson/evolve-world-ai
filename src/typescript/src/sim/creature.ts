@@ -2,10 +2,12 @@ import { Brain, layerSizes, refit } from "./brain.ts";
 import type { EngineConfig } from "./config.ts";
 import { agingFactor, consume, decaysFor, settle, stepBody } from "./physics.ts";
 import type { Aging, Decays, Heading } from "./physics.ts";
-import { energySignal, OUTPUT_SIZE, OUT_THRUST, OUT_TURN, copyPlan, encodeInputs, planOf, planUpkeep, rayAngleOffsets, thrustCommand } from "./sensors.ts";
+import { EXTRA_TERRAIN, energySignal, OUTPUT_SIZE, OUT_THRUST, OUT_TURN, copyPlan, encodeInputs, planOf, planUpkeep, rayAngleOffsets, thrustCommand } from "./sensors.ts";
 import type { BodyPlan, PlanView } from "./sensors.ts";
 import { HIT_NONE } from "./types.ts";
 import type { CreatureState, Genome, HitKind, RayHit } from "./types.ts";
+import { terrainOf } from "./terrain.ts";
+import type { Terrain } from "./terrain.ts";
 import { RayCache } from "./world.ts";
 import type { World } from "./world.ts";
 import type { Crowd } from "./crowd.ts";
@@ -38,6 +40,7 @@ export class Creature {
   private units = new Float64Array(0);
   private energyUpkeep = 0;
   private readonly config: EngineConfig;
+  private readonly terrain: Terrain;
   private readonly decays: Decays;
   private input = new Float32Array(0);
   private output = new Float32Array(0);
@@ -53,6 +56,7 @@ export class Creature {
   // plan defaults to the config's; genome must be sized for it.
   constructor(config: EngineConfig, genome: Genome, x: number, y: number, heading: number, plan: PlanView = planOf(config)) {
     this.config = config;
+    this.terrain = terrainOf(config);
     this.ownPlan = { ...plan, hiddenLayers: plan.hiddenLayers.slice() };
     const sizes = layerSizes(config, this.ownPlan);
     this.brain = new Brain(sizes, genome);
@@ -95,8 +99,9 @@ export class Creature {
     f32[at + 1] = ((s.vx * cos + s.vy * sin) * c.drag) / c.maxThrust;
     f32[at + 2] = ((s.vy * cos - s.vx * sin) * c.drag) / c.maxThrust;
     f32[at + 3] = s.turnRate / c.maxTurnRate;
+    f32[at + EXTRA_TERRAIN] = this.terrain.empty ? 0 : this.terrain.valueAt(s.x, s.y);
     const u = this.units;
-    for (let i = 0; i < u.length; i++) f32[at + 4 + i] = u[i]!;
+    for (let i = 0; i < u.length; i++) f32[at + EXTRA_TERRAIN + 1 + i] = u[i]!;
   }
 
   // Energy per second besides thrust and turning, from the plan.
@@ -267,7 +272,7 @@ export class Creature {
   // The brain's input from the last sensed rays, the body and the memory; also what brain.layerActivations()[0] shows.
   encode(): Float32Array {
     const input = this.inputBuffer();
-    encodeInputs(this.state, this.rays, this.config, input, this.heading.cos, this.heading.sin);
+    encodeInputs(this.state, this.rays, this.config, input, this.heading.cos, this.heading.sin, this.terrain.empty ? 0 : this.terrain.valueAt(this.state.x, this.state.y));
     input.set(this.units, this.memoryAt);
     this.brain.showInput(input);
     return input;
@@ -293,7 +298,7 @@ export class Creature {
   // Motion and energy costs from the last think, without eating or death; touches only this creature.
   steer(output: Float32Array = this.outView()): void {
     const upkeep = this.energyUpkeep * agingFactor(this.aging, this.state.ticksAlive);
-    stepBody(this.state, output[this.outAt + OUT_TURN], thrustCommand(output[this.outAt + OUT_THRUST], this.config.creature.brakeThreshold), this.config, this.decays, this.heading, upkeep);
+    stepBody(this.state, output[this.outAt + OUT_TURN], thrustCommand(output[this.outAt + OUT_THRUST], this.config.creature.brakeThreshold), this.config, this.decays, this.heading, upkeep, this.terrain);
   }
 
   // The first item this creature touches at its position, or -1; changes nothing.
@@ -315,7 +320,7 @@ export class Creature {
 
   // One tick of motion, eating and energy. Returns what eat returns.
   move(world: World, turn: number, thrust: number): number {
-    stepBody(this.state, turn, thrust, this.config, this.decays, this.heading, this.energyUpkeep);
+    stepBody(this.state, turn, thrust, this.config, this.decays, this.heading, this.energyUpkeep, this.terrain);
     const eaten = this.eat(world);
     settle(this.state);
     return eaten;
