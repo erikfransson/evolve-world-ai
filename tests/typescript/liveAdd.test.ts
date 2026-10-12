@@ -27,7 +27,11 @@ const seq = (seed: number): (() => number) => {
   let s = seed;
   return () => ((s = (s * 1103515245 + 12345) % 2 ** 31) / 2 ** 31);
 };
-afterEach(() => Object.assign(LIVE.add, ADD_DEFAULTS));
+const RESEED_DEFAULT = LIVE.reseed;
+afterEach(() => {
+  Object.assign(LIVE.add, ADD_DEFAULTS);
+  LIVE.reseed = RESEED_DEFAULT;
+});
 
 const plan = { rayCount: 3, raySpread: 1.2, rayLength: 120, hiddenLayers: [6], memoryShort: 1, memoryLong: 0 };
 const genomeFor = (p: typeof plan): Float32Array => Float32Array.from({ length: genomeLengthFor("forager", p) }, (_, i) => Math.sin(i) * 0.7);
@@ -180,7 +184,17 @@ describe("add caps (adds.ts)", () => {
     const gate = new AddGate();
     expect(gate.check(null, 3, { ...fresh, aliveAdded: 97 })).toBeNull();
     expect(gate.check(null, 3, { ...fresh, aliveAdded: 98 })?.reason).toMatch(/enough added creatures/);
+    LIVE.add.aliveFloor = 0;
     expect(gate.check(null, 1, { ...fresh, population: 9 })?.reason).toMatch(/enough added creatures/); // floor(0.9) = 0
+  });
+
+  it("alive floor: an empty or small world takes up to 20 added creatures alive, past the 10% share", () => {
+    const gate = new AddGate();
+    const empty = { ...fresh, population: 0 };
+    expect(gate.check(null, 3, empty)).toBeNull();
+    expect(gate.check(null, 3, { ...empty, aliveAdded: 17 })).toBeNull();
+    expect(gate.check(null, 1, { ...empty, aliveAdded: 20 })?.reason).toMatch(/enough added creatures/);
+    expect(gate.check(null, 3, { ...fresh, population: 1000, aliveAdded: 97 })).toBeNull(); // 10% of 1000 is past the floor
   });
 
   it("copies past the admin's max, a busy world and a paused world are refused", () => {
@@ -189,6 +203,27 @@ describe("add caps (adds.ts)", () => {
     expect(gate.check(null, 3, fresh)?.reason).toMatch(/at most 2 copies/);
     expect(gate.check(null, 1, { ...fresh, speed: 0.2 })?.reason).toMatch(/busy, try again in 30 s/);
     expect(gate.check(null, 1, { ...fresh, paused: true })?.reason).toMatch(/paused/);
+  });
+
+  it("an extinct world stays empty unless reseed is on, and adds populate it again", () => {
+    const config = smallConfig();
+    config.eco.initialPopulation = 0;
+    const w = new LiveWorld(config, null);
+    let reseeds = 0;
+    w.onReseed = () => reseeds++;
+    for (let i = 0; i < 5; i++) w.step();
+    expect([w.eco.extinct, reseeds]).toEqual([true, 0]);
+    const r = w.addCreatures(request({ copies: 3 }), seq(3));
+    if (!("ids" in r)) throw new Error(r.reason);
+    expect(w.eco.population).toBe(3);
+    const v = new LiveWorld(config, null);
+    v.onReseed = () => reseeds++;
+    LIVE.reseed = 1;
+    v.step();
+    expect(reseeds).toBe(1);
+    expect(applyTunables(v.eco, { reseed: 0 })).toBeNull();
+    expect(applyTunables(v.eco, { reseed: 0.5 })).toMatch(/whole/);
+    expect(applyTunables(v.eco, { "add.aliveFloor": 5000 })).toMatch(/add.aliveFloor/);
   });
 
   it("the caps are admin settings with limits", () => {

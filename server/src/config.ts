@@ -17,6 +17,7 @@ liveConfig.eco.maxPopulation = MAX_POPULATION; // bounds the frame size, so the 
 liveConfig.eco.seasons = true; // a 40 min year is 10 min at 4x; population swings about 530 to 1220 (docs/tuning-notes.md)
 liveConfig.eco.yearMinutes = 40;
 liveConfig.eco.winterFood = 0.4;
+liveConfig.eco.hueDrift = 3; // degrees (Ecosystem 8): families keep their colour longer, so the view reads as lineages
 
 // Item slots are fixed when a world is built, so it is built with room for admin to raise the food and poison caps (densities, LIVE_MAX allows 10 each).
 // Measured at about 1000 creatures: caps 3 and 1 cost 20 MB more RSS at a save and 0.1 s more saveState than 0.7 and 0.1, caps 10 and 10 cost 90 MB and 0.5 s.
@@ -25,12 +26,14 @@ export const ITEM_HEADROOM = { foodMaxDensity: 3, poisonMaxDensity: 1 };
 // Settings of the server rather than the engine, changed from the admin page (tunables.ts).
 export const LIVE = {
   speed: 4, // target simulated seconds per real second
+  reseed: 0, // 1: an extinct world starts over with a new seed; 0 (Erik's choice): it stays empty until visitors add creatures
   // Visitor adds ("Add your creature"), all admin-tunable as "add.<field>" (tunables.ts); adds.ts enforces them.
   add: {
     perWindow: 20, // creatures added by all visitors together per window
     windowS: 300,
     maxCopies: 3, // copies per add (the protocol allows at most 3)
     aliveShare: 0.1, // added creatures alive (the inserted ones, not their children) at most this share of the population
+    aliveFloor: 20, // ... or at most this many, whichever is more, so an empty or small world can still be populated
     perVisitor: 3, // creatures per visitor address per window; needs trustForwardedFor
     socketEveryS: 10, // one add per this many seconds on one connection (burst 2); faster is refused with retryS, and 3 strikes (one back per minute) cut the connection
     minSpeed: 0.5, // simulated seconds per real second: below this the world counts as busy and adds wait

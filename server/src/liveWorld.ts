@@ -293,7 +293,7 @@ export class LiveWorld {
   // One tick on this thread, for tests and tools; the server's loop uses advance.
   step(): void {
     if (this.helpers) throw new Error("step runs without helpers only");
-    if (this.eco.extinct) this.reseed();
+    if (this.eco.extinct && LIVE.reseed) this.reseed();
     this.eco.detail = null; // with a detail creature the WebAssembly sense costs several times more
     this.eco.step();
     this.collectOps();
@@ -302,7 +302,7 @@ export class LiveWorld {
   // One tick, with the helpers when there are any, and the item changes recorded. Work queued by whenIdle runs after it.
   async tick(): Promise<void> {
     try {
-      if (this.eco.extinct) this.reseed();
+      if (this.eco.extinct && LIVE.reseed) this.reseed();
       this.eco.detail = null;
       const eco = this.eco;
       if (this.helpers && this.starting) {
@@ -340,7 +340,7 @@ export class LiveWorld {
     }
   }
 
-  // An extinct world starts over with a new seed, so visitors never watch an empty board.
+  // With LIVE.reseed on, an extinct world starts over with a new seed; off, it stays empty (the engine's step does nothing) until an add.
   private reseed(): void {
     this.config.seed += 1;
     this.restarts++;

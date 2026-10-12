@@ -19,6 +19,11 @@ import { genomeLength, layerSizes } from "../../src/typescript/src/sim/brain.ts"
 import { PLAN_LIMITS } from "../../src/typescript/src/sim/rl/validate.ts";
 import { smallConfig } from "./liveHelpers.ts";
 
+// These small worlds die out within the test; they check the viewer across a restart, so the world starts over as with reseed on.
+const RESEED = LIVE.reseed;
+beforeAll(() => void (LIVE.reseed = 1));
+afterAll(() => void (LIVE.reseed = RESEED));
+
 const world = { width: 2000, height: 1300 };
 const QX = world.width / 65535;
 const QY = world.height / 65535;

@@ -40,7 +40,7 @@ export class AddGate {
     if (copies > a.maxCopies) return { t: "refused", reason: `at most ${a.maxCopies} copies` };
     if (world.paused) return { t: "refused", reason: "the world is paused, try again later", retryS: 60 };
     if (world.speed < a.minSpeed) return { t: "refused", reason: "the world is busy, try again in 30 s", retryS: 30 };
-    if (world.aliveAdded + copies > Math.floor(a.aliveShare * world.population)) return { t: "refused", reason: "enough added creatures are alive right now, try again in a few minutes", retryS: 120 };
+    if (world.aliveAdded + copies > Math.max(a.aliveFloor, Math.floor(a.aliveShare * world.population))) return { t: "refused", reason: "enough added creatures are alive right now, try again in a few minutes", retryS: 120 };
     const g = this.wait(this.global, a.perWindow, copies, windowMs);
     if (g) return { t: "refused", reason: Number.isFinite(g) ? `the world is busy with new creatures, try again in ${g} s` : "adding is off right now", ...(Number.isFinite(g) ? { retryS: g } : {}) };
     if (visitor !== null) {

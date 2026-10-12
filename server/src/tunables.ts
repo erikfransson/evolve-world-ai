@@ -18,19 +18,21 @@ const SERVER_MAX: Record<string, number> = { "eco.maxPopulation": MAX_POPULATION
 type AddKey = keyof typeof LIVE.add;
 const OWN: Record<string, Limit & { whole?: boolean }> = {
   speed: { min: 0.25, max: 4 }, // simulated seconds per real second, the server clock rather than an engine setting
+  reseed: { min: 0, max: 1, whole: true },
   "add.perWindow": { min: 0, max: 1000, whole: true },
   "add.windowS": { min: 10, max: 86400 },
   "add.maxCopies": { min: 1, max: MAX_COPIES, whole: true },
   "add.aliveShare": { min: 0, max: 1 },
+  "add.aliveFloor": { min: 0, max: MAX_POPULATION, whole: true },
   "add.perVisitor": { min: 0, max: 1000, whole: true },
   "add.socketEveryS": { min: 1, max: 3600 },
   "add.minSpeed": { min: 0, max: 4 },
   "add.startEnergy": { min: 10, max: 1000 },
   "add.birthHoldS": { min: 0, max: 600 },
 };
-const getOwn = (key: string): number => (key === "speed" ? LIVE.speed : LIVE.add[key.slice(4) as AddKey]);
+const getOwn = (key: string): number => (key === "speed" || key === "reseed" ? LIVE[key] : LIVE.add[key.slice(4) as AddKey]);
 const setOwn = (key: string, v: number): void => {
-  if (key === "speed") LIVE.speed = v;
+  if (key === "speed" || key === "reseed") LIVE[key] = v;
   else LIVE.add[key.slice(4) as AddKey] = v;
 };
 
