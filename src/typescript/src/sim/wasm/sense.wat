@@ -26,7 +26,7 @@
     (local $d0xf f32) (local $d0yf f32) (local $d1xf f32) (local $d1yf f32) (local $fxf f32) (local $fyf f32) (local $d2f f32)
     (local $k i32) (local $e i32) (local $row i32) (local $g i32) (local $ro i32) (local $sstart i32) (local $sx i32) (local $sy i32) (local $own i32)
     (local $dxv v128) (local $dyv v128) (local $bs v128) (local $ix v128) (local $bv v128) (local $cv v128) (local $discv v128) (local $tv v128) (local $inside v128) (local $m v128)
-    (local $mk i32) (local $ng i32) (local $rtv v128) (local $rtk v128) (local $infv v128) (local $sv v128) (local $fxv v128) (local $fyv v128)
+    (local $mk i32) (local $ng i32) (local $rtv v128) (local $cim i32) (local $cend i32) (local $pass i32) (local $rtk v128) (local $infv v128) (local $sv v128) (local $fxv v128) (local $fyv v128)
     (local $ist i32) (local $ixy i32) (local $ikd i32)
     (local $ps i32) (local $base i32) (local $sigp i32) (local $cStart i32) (local $ccols i32) (local $crows i32)
     ;; rock
@@ -146,6 +146,7 @@
           (br $itl)))
         (local.set $cy (i32.add (local.get $cy) (i32.const 1)))
         (br $cyl)))
+      (local.set $cim (local.get $cp))  ;; the items end here; the rock discs follow
       ;; rock discs after the items, as wall candidates in grid order; a disc is far past length + radius
       (if (i32.gt_s (local.get $rcols) (i32.const 0)) (then
         (local.set $rext (f64.add (f64.mul (local.get $L) (f64.add (f64.const 1) (f64.const 1e-9))) (local.get $rmax)))
@@ -211,13 +212,17 @@
       (local.set $rtv (f64x2.splat (f64.add (f64.mul (local.get $r) (local.get $r)) (f64.mul (f64.const 1e-9) (f64.mul (f64.add (local.get $L) (f64.abs (local.get $r))) (f64.add (local.get $L) (f64.abs (local.get $r))))))))
       (local.set $infv (f64x2.splat (f64.const inf)))
       (local.set $ng (i32.shr_u (i32.add (local.get $nR) (i32.const 1)) (i32.const 1)))
-      (local.set $cp (local.get $cand))
+      ;; two passes in candidate order: the items with the cheap check, then the rock discs (each with its own radius, not the item's), straight to the exact test
+      (local.set $pass (i32.const 0))
+      (block $pdone (loop $ploop
+      (br_if $pdone (i32.gt_u (local.get $pass) (i32.const 1)))
+      (local.set $cp (select (local.get $cim) (local.get $cand) (local.get $pass)))
+      (local.set $cend (select (local.get $ce) (local.get $cim) (local.get $pass)))
+      (local.set $rtk (select (result v128) (local.get $infv) (local.get $rtv) (local.get $pass)))
       (block $cd (loop $cl
-        (br_if $cd (i32.ge_u (local.get $cp) (local.get $ce)))
+        (br_if $cd (i32.ge_u (local.get $cp) (local.get $cend)))
         (local.set $fxv (v128.load64_splat (local.get $cp)))
         (local.set $fyv (v128.load64_splat offset=8 (local.get $cp)))
-        ;; the cheap check uses the item radius, so a rock disc (kind 3, its own radius) skips it and goes straight to the exact test
-        (local.set $rtk (select (result v128) (local.get $infv) (local.get $rtv) (i32.eq (i32.load offset=24 (local.get $cp)) (i32.const 3))))
         (local.set $g (i32.const 0))
         (block $gd3 (loop $gl3
           (br_if $gd3 (i32.ge_u (local.get $g) (local.get $ng)))
@@ -252,6 +257,8 @@
           (br $gl3)))
         (local.set $cp (i32.add (local.get $cp) (i32.const 32)))
         (br $cl)))
+      (local.set $pass (i32.add (local.get $pass) (i32.const 1)))
+      (br $ploop)))
       ;; closeness, and the crowd rays' inputs
       (local.set $i (i32.const 0))
       (block $rd2 (loop $rl2

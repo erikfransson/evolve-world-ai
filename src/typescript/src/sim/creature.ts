@@ -99,7 +99,7 @@ export class Creature {
     f32[at + 1] = ((s.vx * cos + s.vy * sin) * c.drag) / c.maxThrust;
     f32[at + 2] = ((s.vy * cos - s.vx * sin) * c.drag) / c.maxThrust;
     f32[at + 3] = s.turnRate / c.maxTurnRate;
-    f32[at + EXTRA_TERRAIN] = this.terrain.valueAt(s.x, s.y);
+    f32[at + EXTRA_TERRAIN] = this.terrain.empty ? 0 : this.terrain.valueAt(s.x, s.y);
     const u = this.units;
     for (let i = 0; i < u.length; i++) f32[at + EXTRA_TERRAIN + 1 + i] = u[i]!;
   }
@@ -272,7 +272,7 @@ export class Creature {
   // The brain's input from the last sensed rays, the body and the memory; also what brain.layerActivations()[0] shows.
   encode(): Float32Array {
     const input = this.inputBuffer();
-    encodeInputs(this.state, this.rays, this.config, input, this.heading.cos, this.heading.sin, this.terrain.valueAt(this.state.x, this.state.y));
+    encodeInputs(this.state, this.rays, this.config, input, this.heading.cos, this.heading.sin, this.terrain.empty ? 0 : this.terrain.valueAt(this.state.x, this.state.y));
     input.set(this.units, this.memoryAt);
     this.brain.showInput(input);
     return input;
