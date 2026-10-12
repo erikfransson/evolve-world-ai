@@ -34,17 +34,16 @@ Hourly state stays out of git, since a world of about 1000 creatures is a few MB
 2. Pick one of 4 clear named founders (more later) hand-picked from `pool.json` by measured behaviour (Explorer moves a lot, Slow and steady barely moves with wide rays, Peaceful avoids others, Aggressive approaches others), or upload a saved creature file.
 3. Tune plan and settings within the form limits; energy per second updates live.
 4. Optional toggles: Pretrain (quick Trials run) and RL fine-tune (RL envs from #27), both in the browser.
-5. Choose name and colour, insert: 10 copies at random places. The page then follows and highlights that lineage.
+5. Choose name (1 to 16 letters or digits) and colour, insert 1 to 3 copies at random free spots. The page then follows one and highlights its family (each copy founds its own lineage).
 
 ## Safety
 Follows "Uploaded creatures and settings" in `docs/modes-plan.md` (branch `rl-envs`): data only through `parseCreatureFile`, bounded cost, names rendered as text, re-validated on the server.
 Server limits: insert rate per visitor, cap on visitor creatures alive, name length and character filter.
 
-### Before uploads (L4/L5)
-- Insert plans are already held to the creature-file `PLAN_LIMITS` (16 rays, 32 neurons, 8 memory units each).
-- Name validation on the server for the visitor's own text (length, no control or invisible characters), shown via `textContent` only.
-- Per-visitor limits need the visitor's address, which only a header from the tunnel (Funnel) can give; unverified whether it sends one.
-- Test send backpressure through the real tunnel: a slow reader behind tailscaled must still be dropped by the send-queue caps.
+### Uploads (L4, built)
+- Adds are held to the creature-file `PLAN_LIMITS` and checks (`parseAdd` in `live/add.ts`), names to `[A-Za-z0-9]{1,16}`, shown via `textContent` only. Caps in `server/README.md`.
+- Visitor address: Tailscale Funnel (serve proxy mode, as set up here) sets `X-Forwarded-For` to the client address its ingress saw, overwriting any sent (tailscale source, `ipn/ipnlocal/serve.go`); checked in the source, not yet with a request through the tunnel, so per-visitor limits stay off (`LIVE_TRUST_FORWARDED=1` turns them on).
+- Open: test send backpressure through the real tunnel (a slow reader behind tailscaled must still be dropped by the send-queue caps); prune lineage rows of long-extinct added founders (the engine keeps every inserted lineage in its table and saves).
 
 ## Build steps
 | Step | Work                                                                          | Depends on              |
@@ -52,11 +51,12 @@ Server limits: insert rate per visitor, cap on visitor creatures alive, name len
 | L1   | Engine hooks: insert creature, save and restore state                         | session 16 agrees       |
 | L2   | `server/`: world loop, WebSocket frames, 4-hourly save, systemd unit          | L1                      |
 | L3   | `live/` page: viewer with camera, offline fallback, counter                   | L2 protocol             |
-| L4   | Design panel: named founders, tuning, energy per second, insert               | L3                      |
-| L5   | Upload creature file, Pretrain and RL toggles                                 | L4, rl-envs on main     |
+| L4   | Design panel: named founders, tuning, energy per second, insert (built)       | L3                      |
+| L5   | Upload creature file, Pretrain and RL toggles (built with L4)                 | L4, rl-envs on main     |
 | L6   | Tunnel setup and admin panel                                                  | L2                      |
 
 ## Decisions
+- 2026-10-12: L4 built. Entry card (watch or add); founders Explorer, Slow and steady, Peaceful, Hunter-ish measured by `scripts/pickFounders.ts` into `public/live-founders.json`; tuning keeps the founder's layer count; Pretrain (far-food, patch, minefield) and fine-tune (crowd, rivals) are 30 s of evolution strategies each on the Arena's worker, kept only if they beat the start on held-out layouts; added creatures start with `add.startEnergy` (300) and may first give birth `add.birthHoldS` (60 s) after insertion, both admin settings; the hold is the engine's own birth gate (a last birth placed in the future), so no engine change. Protocol 4 (founder u32, names in DETAIL and lineages, add, map info in the hello).
 - 2026-10-11: self-hosted server behind an HTTPS tunnel (public port only), world pauses while the host is off (page says offline), saves every 4 h kept 4 days with admin revert, founders hand-picked from `pool.json`, 2x speed by default, viewer cap 100 with a 3 MB/s upload budget, server at lowest CPU and IO priority.
 - 2026-10-11: v2 viewer (protocol 2): Ecosystem panels on the live page, a viewer may follow one creature (rays, brain, energy, birth traits at 5 Hz from a 3 kB/s allowance), item changes ride with each frame and apply at their tick, seasons on, 4x by default, 6 helper threads at idle priority (`LIVE_THREADS`).
 - 2026-10-11: helper threads off by default: under SCHED_IDLE the server gets about one core whatever the thread count, and 6 helpers cost 2.3x the CPU per tick (92 against 53 ticks/s at 1190 creatures).

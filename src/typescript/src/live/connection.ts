@@ -3,6 +3,9 @@ import type { CreatureFrame, Delta, Hello, History, ItemsSnapshot, ServerText, S
 import { decodeDetail, decodeGenome } from "./detail.ts";
 import type { Detail } from "./detail.ts";
 import { retryDelayS } from "./serverUrl.ts";
+import { cleanAddReply, cleanAddRules, encodeAdd, validName } from "./add.ts";
+import type { AddRequest, AddRules, Added, Refused } from "./add.ts";
+import { cleanMap } from "./mapInfo.ts";
 
 export type LinkState = "connecting" | "live" | "offline" | "full" | "outdated";
 
@@ -16,6 +19,8 @@ export interface LinkHandlers {
   onGenome(id: number, genome: Float32Array): void;
   onStats(stats: Stats): void;
   onHistory(history: History): void;
+  onAdd?(reply: Added | Refused): void;
+  onRules?(rules: AddRules | null): void;
 }
 
 const PING_EVERY_MS = 20_000;
@@ -64,7 +69,7 @@ export function cleanStats(s: Stats): Stats {
     out.lineages = s.lineages.slice(0, LINEAGE_TOP).filter(isObj).map((l) => {
       const c = Math.min(left, count(l.count));
       left -= c;
-      return { founder: id(l.founder), hue: n(l.hue), pool: l.pool === true, count: c };
+      return { founder: id(l.founder), hue: n(l.hue), pool: l.pool === true, count: c, ...(validName(l.name) ? { name: l.name } : {}) };
     });
   }
   if (Array.isArray(s.records)) {
@@ -91,9 +96,11 @@ export function historyAxis(first: number, last: number, yearS: number): { shift
 }
 
 // A hello with sane numbers, or null.
-function cleanHello(h: Hello): Hello | null {
+export function cleanHello(h: Hello): Hello | null {
   const ok = isObj(h.world) && n(h.world.width) > 0 && n(h.world.height) > 0 && n(h.radius) > 0 && n(h.dt) > 0 && n(h.fullEnergy) > 0 && int(h.itemSlots, 0, MAX_ITEM_SLOTS);
-  return ok ? h : null;
+  const s: Record<string, unknown> = isObj(h.summary) ? h.summary : {};
+  const summary = { initialPopulation: count(s.initialPopulation), maxPopulation: count(s.maxPopulation), collisionDamage: s.collisionDamage === true, seasons: s.seasons === true };
+  return ok ? { ...h, summary, add: cleanAddRules(h.add), map: cleanMap(h.map) } : null;
 }
 
 // One WebSocket to the world server that reconnects with backoff.
@@ -158,6 +165,13 @@ export class LiveLink {
   select(id: number | null): void {
     this.selected = id;
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ t: "select", id }));
+  }
+
+  // Sends an add (live/add.ts); the reply comes to onAdd. False when not connected.
+  add(req: AddRequest): boolean {
+    if (this.ws?.readyState !== WebSocket.OPEN || !this.world) return false;
+    this.ws.send(encodeAdd(req));
+    return true;
   }
 
   // Hidden for long: close without a reconnect, so the server's viewer slot is free for someone watching.
@@ -225,16 +239,21 @@ export class LiveLink {
         ws?.close();
         return this.h.onState("outdated", 0);
       }
-      if (!cleanHello(msg)) throw new Error("bad hello");
+      const hello = cleanHello(msg);
+      if (!hello) throw new Error("bad hello");
       this.full = false;
       this.world = msg.world;
       this.slots = msg.itemSlots;
       this.selected = null; // a new world: the server forgot the selection
       this.failures = 0;
-      this.h.onHello(msg);
+      this.h.onHello(hello);
       this.h.onState("live", 0);
     } else if (msg.t === "stats") this.h.onStats(cleanStats(msg));
     else if (msg.t === "history") this.h.onHistory(cleanHistory(msg));
+    else if (msg.t === "added" || msg.t === "refused") {
+      const r = cleanAddReply(msg);
+      if (r) this.h.onAdd?.(r);
+    } else if (msg.t === "rules") this.h.onRules?.(cleanAddRules(msg.add));
     else if (msg.t === "busy") this.full = true; // the server closes next, lost() reports it with the retry time
   }
 }

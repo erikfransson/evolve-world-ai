@@ -77,13 +77,13 @@ describe("select: validation", () => {
     });
   });
 
-  it("closes a client whose message is over the size cap", async () => {
+  it("cuts off a client whose non-add message is over the size cap", async () => {
     const port = 50440;
     await serve(port);
     const c = client(port);
     await c.open;
     c.ws.send(JSON.stringify({ t: "select", id: 1, pad: "x".repeat(300) }));
-    expect(await c.closed).toBe(1009); // ws maxPayload
+    expect(await c.closed).toBe(1006); // past MAX_CLIENT_MESSAGE_BYTES and not an add: terminated
   });
 
   it("cuts off a select flood at the message rate", async () => {

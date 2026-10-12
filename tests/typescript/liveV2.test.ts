@@ -8,6 +8,7 @@ import { ItemMirror } from "../../src/typescript/src/live/items.ts";
 import { LiveScene } from "../../src/typescript/src/live/scene.ts";
 import { MAX_DETAIL_BYTES, MAX_GENOME, MAX_INPUTS, RAY_FEATURES, decodeDetail, decodeGenome, encodeDetail, encodeGenome, genomeBytes } from "../../src/typescript/src/live/detail.ts";
 import type { DetailSource } from "../../src/typescript/src/live/detail.ts";
+import { NAME_MAX } from "../../src/typescript/src/live/add.ts";
 import {
   HISTORY_FIELDS, LINEAGE_FIELDS, MAX_DELTAS, MAX_DELTA_OPS, MAX_HISTORY, MAX_ID, MAX_LINEAGE_HISTORY, MSG_DELTA, decodeCreatures, decodeDelta, decodeItems, deltaMessage, encodeDeltaChunk, parseClientMessage,
 } from "../../src/typescript/src/live/protocol.ts";
@@ -145,7 +146,7 @@ describe("item deltas", () => {
         expectSame(scene.items, live);
       }
       expect(fulls).toBe(2 + reseeds); // the first frame, the resync after the stall, and one per new world
-    });
+    }, 90_000); // deterministic, but about 5 s of simulation and checks at stride 1 that a loaded machine stretches past the default
   }
 
   // Across seeds, so it does not hang on one random stream. A frame in which the world died out and started over is skipped.
@@ -277,16 +278,17 @@ describe("timeline", () => {
 
 describe("selected creature on the wire", () => {
   const source = (rays: number, inputs: number): DetailSource => ({
-    x: 10, y: 20, heading: 1, energy: 123.4, age: 99.5, children: 3, eaten: 17, depth: 4, parentId: 77, founderId: 9, founderPool: true, founderHue: 120, hue: 200, upkeep: 2.5, drain: 3.5,
+    x: 10, y: 20, heading: 1, energy: 123.4, age: 99.5, children: 3, eaten: 17, depth: 4, parentId: 77, founderId: 9, founderPool: true, founderName: "", founderHue: 120, hue: 200, upkeep: 2.5, drain: 3.5,
     birthEnergy: 150, birthCost: 60, birthCooldown: 10, plan: { rayCount: rays, raySpread: 2, rayLength: 250, hiddenLayers: [32, 32, 32, 32], memoryShort: 8, memoryLong: 8 },
     rayKinds: Uint8Array.from({ length: rays }, (_, i) => i % 5), rayCloseness: Float32Array.from({ length: rays }, (_, i) => i / rays), rayOffsets: Float32Array.from({ length: rays }, (_, i) => -1 + i / rays), inputs: Float32Array.from({ length: inputs }, (_, i) => Math.sin(i)),
   });
 
   it("round-trips the largest detail within its bound and decodes into SelectedDetails", () => {
-    const bytes = encodeDetail(55, 1234, source(16, 16 * RAY_FEATURES + EXTRA_INPUTS + 16));
+    const bytes = encodeDetail(55, 1234, { ...source(16, 16 * RAY_FEATURES + EXTRA_INPUTS + 16), founderName: "Abcdefgh12345678" });
     expect(bytes.length).toBe(MAX_DETAIL_BYTES);
     const { tick, id, details: d } = decodeDetail(bytes);
     expect([tick, id, d.alive, d.children, d.depth, d.parentId, d.founderId, d.founderPool]).toEqual([55, 1234, true, 3, 4, 77, 9, true]);
+    expect(decodeDetail(bytes).founderName).toBe("Abcdefgh12345678");
     expect(d.energy).toBeCloseTo(123.4, 3);
     expect(d.birthCooldown).toBe(10);
     expect(d.plan.hiddenLayers).toEqual([32, 32, 32, 32]);
@@ -314,7 +316,7 @@ describe("selected creature on the wire", () => {
     live.step();
     live.refreshWatched();
     const bytes = live.detail(m.id)!;
-    expect(bytes.length).toBe(MAX_DETAIL_BYTES);
+    expect(bytes.length).toBe(MAX_DETAIL_BYTES - NAME_MAX); // a pool founder has no name
     const d = decodeDetail(bytes).details;
     const engineInputs = m.creature.brain.layerActivations()[0]!;
     expect(d.inputs.length).toBe(engineInputs.length);
@@ -331,7 +333,7 @@ describe("selected creature on the wire", () => {
     new DataView(nan.buffer).setFloat32(10, NaN, true);
     expect(() => decodeDetail(nan)).toThrow();
     const plan = good.slice();
-    plan[75] = 17; // rayCount past the plan limit
+    plan[76] = 17; // rayCount past the plan limit
     expect(() => decodeDetail(plan)).toThrow(/plan/);
     const dead = decodeDetail(encodeDetail(5, 9, null));
     expect(dead.details.alive).toBe(false);

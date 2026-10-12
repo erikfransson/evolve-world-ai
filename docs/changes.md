@@ -1,11 +1,16 @@
-# Release notes
+# Changes
 
-Newest first. Each release is a pull request from `development` into `main`, tagged `vX.Y.Z` on `main`.
+What changed in each version, newest first, so release notes for any range (say 0.1.1 to 0.2.0) can be put together from here.
+Each release is a pull request from `development` into `main`, tagged `vX.Y.Z` on `main`.
 Add notes under "Unreleased" as work lands on `development`, and turn that heading into the version number at release time.
 
 ## Unreleased
-
+- Live World: the page opens on a card to watch the world or add your own creature. "Add your creature" picks one of four founders (or a creature file from the RL Arena), tunes its vision, brain and birth traits with a live energy-per-second readout, can train it for 30 s in the browser, and adds 1 to 3 named copies; the page then follows one and lights its family. The server caps adds (20 creatures per 5 minutes for everyone, 3 per visitor once the tunnel's visitor address is checked, added creatures at most 10% of the population); added creatures start with 300 energy and have their first child no sooner than 60 s after they arrive (admin settings). Protocol 4: names, u32 founder ids. Below the world, an info section with the legend, ground shares and the world's rules, and a footer with the version and source link.
+- Live World saves no longer keep a lineage row for every visitor-inserted founder: a runtime lineage is dropped when its last member dies, and older saves drop such rows on load.
 - Terrain polish: mud and firm ground are a smooth field on a coarse raster instead of unions of circles, so patches have organic, ragged outlines at the same coverage and patch size settings. The edge is the exact 0.5 contour of that field, which is where creatures sense the ground (the field is also cheaper to build). Mud is a wet-earth texture with a lighter shallow rim, firm ground is desaturated sage with fine streaks and a crisp edge. Rock gets a shadowed south cliff face. Maps with mud or firm ground generate differently than before (rock and map-off runs are unchanged).
+
+## 0.1.1 (2026-10-12)
+- Removed The Great Hunt page. The site focuses on Live World and Ecosystem, with Trials and RL Arena as places to train creatures. The two-species engine stays for the RL Arena, and old `predators/` links redirect to the landing page.
 
 ## 0.1.0 (2026-10-12)
 

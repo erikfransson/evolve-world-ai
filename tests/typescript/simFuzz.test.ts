@@ -1,5 +1,6 @@
 import { layerSizes, randomGenome } from "../../src/typescript/src/sim/brain.ts";
 import type { SimConfig } from "../../src/typescript/src/sim/config.ts";
+import { DEFAULT_PREDATOR_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
 import { runEpisode } from "../../src/typescript/src/sim/episode.ts";
@@ -7,7 +8,6 @@ import { createRng } from "../../src/typescript/src/sim/rng.ts";
 import { HIT_FOOD, HIT_NONE, HIT_POISON } from "../../src/typescript/src/sim/types.ts";
 import type { World } from "../../src/typescript/src/sim/world.ts";
 import { ECO_FORM } from "../../src/typescript/src/ui/ecoSettingsForm.ts";
-import { PREDATOR_FORM } from "../../src/typescript/src/ui/predatorForm.ts";
 import type { FormSpec } from "../../src/typescript/src/ui/settingsForm.ts";
 import { TRIALS_FORM } from "../../src/typescript/src/ui/trialsForm.ts";
 import { ThinkPool, serveHelper } from "../../src/typescript/src/worker/ecoPool.ts";
@@ -66,9 +66,16 @@ function ecoConfig(rng: R, seed: number): EcoConfig {
 }
 
 function huntConfig(rng: R, seed: number): EcoConfig {
-  const c = draw(PREDATOR_FORM, rng, (x) => {
+  // The Ecosystem sliders for the shared settings, the two default species with drawn founders, speed and catch gains.
+  const c = draw(ECO_FORM, rng, (x) => {
+    x.species = structuredClone(DEFAULT_PREDATOR_CONFIG.species!);
     smallWorld(x, rng);
-    for (const sp of x.species!) sp.founders = 3 + rng.int(40);
+    for (const sp of x.species) {
+      sp.founders = 3 + rng.int(40);
+      sp.speed = 0.5 + 0.1 * rng.int(16);
+    }
+    x.species[1]!.eatEfficiency = 0.1 * rng.int(11);
+    x.species[1]!.eatBaseline = 10 * rng.int(21);
   });
   c.seed = seed;
   return c;
@@ -200,7 +207,7 @@ describe("simulation invariants under random settings", () => {
   const cases: [string, EcoConfig][] = [];
   const rng = testRng(SEED);
   for (let i = 0; i < ECO_CASES; i++) cases.push([`Ecosystem ${i}`, ecoConfig(rng, 100 + i)]);
-  for (let i = 0; i < HUNT_CASES; i++) cases.push([`Great Hunt ${i}`, huntConfig(rng, 200 + i)]);
+  for (let i = 0; i < HUNT_CASES; i++) cases.push([`Hunting ${i}`, huntConfig(rng, 200 + i)]);
   const done = new Map<string, Ecosystem>();
 
   it.each(cases)("%s keeps its invariants every tick and repeats exactly", (name, config) => {

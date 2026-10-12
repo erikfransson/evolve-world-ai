@@ -20,13 +20,13 @@ export interface LineageRow {
   color: string;
 }
 
-// The listed lineages and one row for everyone else, as shares of population.
-export function lineageRows(lineages: readonly Lineage[], population: number): LineageRow[] {
+// The listed lineages and one row for everyone else, as shares of population. names: founders a visitor named (Live World).
+export function lineageRows(lineages: readonly Lineage[], population: number, names?: ReadonlyMap<number, string>): LineageRow[] {
   const total = Math.max(1, population);
   const rows: LineageRow[] = lineages.map((l) => ({
     founder: l.founder,
-    label: `#${l.founder}`,
-    origin: l.pool ? "pool" : "random",
+    label: names?.get(l.founder) ?? `#${l.founder}`,
+    origin: names?.has(l.founder) ? "added" : l.pool ? "pool" : "random",
     share: l.count / total,
     count: l.count,
     color: lineageColor(l.hue),
@@ -148,9 +148,9 @@ export class LineagePanel {
     e.classList.toggle("on", on);
   }
 
-  setLineages(lineages: readonly Lineage[], population: number): void {
-    const rows = lineageRows(lineages, population);
-    const signature = rows.map((r) => `${r.founder}:${r.count}`).join(",") + `|${this.picked}`;
+  setLineages(lineages: readonly Lineage[], population: number, names?: ReadonlyMap<number, string>): void {
+    const rows = lineageRows(lineages, population, names);
+    const signature = rows.map((r) => `${r.founder}:${r.count}:${r.label}`).join(",") + `|${this.picked}`;
     if (signature === this.signature) return;
     this.signature = signature;
     this.bar.hidden = rows.length === 0;

@@ -252,4 +252,12 @@ describe("save parsing", () => {
     expect(state.junk).toBeUndefined();
     expect(Object.keys(state).sort()).toEqual(Object.keys(JSON.parse(json(w))).sort());
   });
+
+  it("in verify-only mode checks the same and sends no state back", async () => {
+    const { parseSave } = await import("../../server/src/saveParse.ts");
+    const good = json(world(5));
+    await expect(parseSave(gzipSync(good), LIMITS.maxSaveJsonBytes, true)).resolves.toBeUndefined();
+    const bad = { ...JSON.parse(good), lineages: null };
+    await expect(parseSave(gzipSync(JSON.stringify(bad)), LIMITS.maxSaveJsonBytes, true)).rejects.toThrow();
+  });
 });

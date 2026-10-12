@@ -1,7 +1,7 @@
 import type { EngineConfig } from "./config.ts";
 import type { EcoConfig } from "./ecoConfig.ts";
 
-// Species of a Great Hunt world (#12). Children keep their parent's species. A species is its identity and diet
+// Species of a multi-species world (#12). Children keep their parent's species. A species is its identity and diet
 // plus overrides of the shared settings: whatever it leaves out it takes from eco and creature, so the Ecosystem is
 // the case of one species that overrides nothing.
 export interface SpeciesConfig {

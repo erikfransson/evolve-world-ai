@@ -14,7 +14,7 @@ import type { SelectedBrain } from "./ui/ecoBrain.ts";
 import { bindGentle, readGentle } from "./ui/gentle.ts";
 import { createEcoView } from "./ui/ecoPage.ts";
 import { syncTerrainLegend } from "./ui/terrainLegend.ts";
-import { ECOSYSTEM_PAGE, PREDATORS_PAGE, openingConfig } from "./ui/ecoModes.ts";
+import { ECOSYSTEM_PAGE, openingConfig } from "./ui/ecoModes.ts";
 import { ecoBody } from "./ui/ecoMarkup.ts";
 import { createRenderHost } from "./ui/renderHost.ts";
 import type { RenderHost } from "./ui/renderHost.ts";
@@ -48,8 +48,8 @@ interface Selection {
   died: boolean;
 }
 
-// This script runs the Ecosystem page and, with <body data-mode="predators">, the Great Hunt page.
-const PAGE = document.body.dataset.mode === "predators" ? PREDATORS_PAGE : ECOSYSTEM_PAGE;
+// This script runs the Ecosystem page.
+const PAGE = ECOSYSTEM_PAGE;
 document.body.insertAdjacentHTML("afterbegin", ecoBody(PAGE)); // the page structure comes from the spec; the HTML files only name the mode
 // The page opens on the Normal preset.
 const NORMAL = openingConfig(PAGE);
@@ -67,7 +67,6 @@ let followAfter = 0; // camera.animationsCompleted that means the zoom-in finish
 let showRays = true;
 let highlight = -1; // founder whose lineage is highlighted in the world, -1 for none
 let extinctShown = false;
-let goneNoted = 0; // species that died out and have been noted, as a bit mask
 let canvasW = 0;
 let canvasH = 0;
 let lastUiAt = 0;
@@ -99,7 +98,6 @@ function send(msg: EcoInMessage, transfer: Transferable[] = []): void {
   worker?.postMessage(msg, { transfer });
 }
 
-const several = (c: EcoConfig): boolean => (c.species?.length ?? 0) > 1;
 let species = speciesList(config); // the config's species, resolved
 function setConfig(c: EcoConfig): void {
   config = c;
@@ -174,8 +172,7 @@ function onSnapshot(e: MessageEvent<EcoOutMessage>): void {
   if (msg.lineageHistory) view.setLineageHistory(msg.lineageHistory);
   if (msg.traits) view.setTraits(msg.traits);
   if (msg.leaders) view.setLeaders(msg.leaders);
-  if (msg.lineages) view.setLineages(msg.lineages, msg.population, msg.species?.map((c) => c.population));
-  if (msg.species && !msg.extinct) noteGone(msg.species.map((c) => c.population));
+  if (msg.lineages) view.setLineages(msg.lineages, msg.population);
   const d = msg.selected;
   if (pendingBest && msg.bestRequest === pendingBest) {
     pendingBest = 0;
@@ -193,23 +190,11 @@ function onSnapshot(e: MessageEvent<EcoOutMessage>): void {
   }
 }
 
-// A species that dies out while others live on gets a note; the run goes on.
-function noteGone(populations: readonly number[]): void {
-  let gone = 0;
-  populations.forEach((p, s) => { if (p === 0) gone |= 1 << s; });
-  if (gone === goneNoted) return;
-  goneNoted = gone;
-  const names = species.filter((_, s) => gone & (1 << s)).map((sp) => sp.name.toLowerCase());
-  view.setNote(names.length ? `Every ${names.join(" and every ")} has died. The run goes on without them.` : null);
-}
-
 function toSamples(h: Float64Array): PopulationSample[] {
   const out: PopulationSample[] = [];
-  const kinds = several(config) ? species.length : 0;
-  const size = 3 + kinds;
+  const size = 3;
   for (let i = 0; i + size - 1 < h.length; i += size) {
     const sample: PopulationSample = { time: h[i]!, population: h[i + 1]!, food: h[i + 2]! };
-    if (kinds) sample.species = Array.from(h.subarray(i + 3, i + size));
     out.push(sample);
   }
   return out;
@@ -220,7 +205,6 @@ function startRun(c: EcoConfig): void {
   active = true;
   run++;
   extinctShown = false;
-  goneNoted = 0;
   worker ??= createWorker();
   releaseLive();
   host!.reset();
@@ -314,12 +298,10 @@ function syncFollow(): void {
 function updateUi(): void {
   if (!live) return;
   const m = live.msg;
-  view.setStats({ population: m.population, births: m.births, deaths: m.deaths, food: m.food, poison: m.poison, simTime: m.simTime, oldestDepth: m.oldestDepth, speed: m.speed > 0 ? m.speed : null, helpers: m.helpers, wasm: m.wasm, season: config.eco.seasons ? { name: seasonName(config.eco, m.simTime), factor: seasonFactor(config.eco, m.simTime) } : null, species: m.species });
+  view.setStats({ population: m.population, births: m.births, deaths: m.deaths, food: m.food, poison: m.poison, simTime: m.simTime, oldestDepth: m.oldestDepth, speed: m.speed > 0 ? m.speed : null, helpers: m.helpers, wasm: m.wasm, season: config.eco.seasons ? { name: seasonName(config.eco, m.simTime), factor: seasonFactor(config.eco, m.simTime) } : null });
   const d = selection?.last;
   if (selection && d) {
-    const sp = species[d.species]!;
-    const kind = several(config) ? { name: sp.name, index: d.species, kills: d.kills, hunter: sp.prey.length > 0 } : undefined;
-    view.setSelected({ id: d.id, energy: d.energy, fullEnergy: d.birthEnergy, age: d.age, children: d.children, eaten: d.eaten, depth: d.depth, plan: d.plan, upkeep: d.upkeep, drain: d.drain, birth: { energy: d.birthEnergy, cost: d.birthCost, cooldown: d.birthCooldown }, founderId: d.founderId, founderPool: d.founderPool, founderHue: d.founderHue, species: kind, died: selection.died });
+    view.setSelected({ id: d.id, energy: d.energy, fullEnergy: d.birthEnergy, age: d.age, children: d.children, eaten: d.eaten, depth: d.depth, plan: d.plan, upkeep: d.upkeep, drain: d.drain, birth: { energy: d.birthEnergy, cost: d.birthCost, cooldown: d.birthCooldown }, founderId: d.founderId, founderPool: d.founderPool, founderHue: d.founderHue, died: selection.died });
     view.setFollowing(following);
   }
 }
@@ -360,8 +342,7 @@ const view = createEcoView({
     view.clearLineages();
     highlight = -1;
     view.setNote(null);
-    goneNoted = 0;
-    setConfig(view.readConfig());
+      setConfig(view.readConfig());
     camera.setWorld(config.world.width, config.world.height);
     drawIdle();
   },

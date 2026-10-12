@@ -2,7 +2,7 @@
 import { pageBody } from "./pageLoader.ts";
 import { DEFAULT_CONFIG } from "../../src/typescript/src/sim/config.ts";
 import type { SimConfig } from "../../src/typescript/src/sim/config.ts";
-import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
+import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { buildForm } from "../../src/typescript/src/ui/settingsForm.ts";
 import type { FormHandle } from "../../src/typescript/src/ui/settingsForm.ts";
@@ -10,7 +10,6 @@ import { ECO_FORM } from "../../src/typescript/src/ui/ecoSettingsForm.ts";
 import { TRIALS_FORM } from "../../src/typescript/src/ui/trialsForm.ts";
 
 let form: FormHandle<EcoConfig>;
-import { PREDATOR_FORM } from "../../src/typescript/src/ui/predatorForm.ts";
 
 
 // Browsers snap a range to min + n * step, which happy-dom does not, so check that every default sits on a step.
@@ -115,38 +114,5 @@ describe("Ecosystem settings form", () => {
     form.fill(DEFAULT_ECO_CONFIG);
     expect(document.getElementById("foodDensityHint")!.textContent).toBe("≈ 4500 items");
     expect(document.getElementById("foodRegrowHint")!.textContent).toBe("≈ 450 items/s");
-  });
-});
-
-describe("The Great Hunt settings form", () => {
-  beforeEach(() => {
-    document.body.innerHTML = pageBody("predators");
-    form = buildForm(document.getElementById("settings")!, PREDATOR_FORM);
-  });
-
-  it("reads back the defaults and a changed config, species included", () => {
-    form.fill(DEFAULT_PREDATOR_CONFIG);
-    expect(form.read()).toEqual(DEFAULT_PREDATOR_CONFIG);
-    expectRangesOnStep();
-    const c: EcoConfig = structuredClone(DEFAULT_PREDATOR_CONFIG);
-    c.seed = 9;
-    c.eco.foodRegrow = 0.03;
-    c.species![0]!.founders = 600;
-    c.species![0]!.poolFraction = 0.25;
-    c.species![1]!.speed = 1.5;
-    c.species![1]!.birthCostRange = [150, 250];
-    c.species![1]!.eatEfficiency = 0.5;
-    c.species![1]!.eatBaseline = 25;
-    c.species![1]!.rayLengthRange = [120, 320];
-    c.eco.collisions = false;
-    form.fill(c);
-    expect(form.read()).toEqual(c);
-  });
-
-  it("folds the shared Ecosystem sections and tucks costs under More settings", () => {
-    const folded = [...document.querySelectorAll("details.fold h3")].map((h) => h.textContent);
-    expect(folded).toEqual(["Life cycle", "Variation", "Brain", "Mutation"]);
-    expect(document.getElementById("predBirthCostMin")!.closest("details.more")).not.toBeNull();
-    expect(document.getElementById("predSpeed")!.closest("details")).toBeNull();
   });
 });

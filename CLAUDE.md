@@ -8,6 +8,13 @@ Try to minimize usage.
 Let Opus (5.5+) be orchestrator and manager of subagents.
 Work in parallel when can be done
 
+## Machine load
+Erik uses this laptop while many sessions and subagents run on it, so keep it responsive.
+- Run every build, test, benchmark, training run and render at `nice -n 19`, and tell subagents to do the same.
+- Run long jobs detached (`setsid nohup nice -n 19 ...`) with output logged.
+- Cap threads at about 6 of the 8 cores per job, fewer when other sessions are busy. Check `uptime` and `free -g` before starting a big job.
+- Watch peak RSS. If the `available` column of `free -g` drops below 2 GB, stop your newest job and tell Erik.
+
 ## Iteration and notes
 Work here is iterative: plans, maps, looks and numbers change often, and nothing is written in stone.
 Keep `docs/status.md` current with what is being done, what was decided and what is open. Add new information from Erik or other sessions as it arrives, and update or delete stale lines there, in this file and in other docs.
@@ -24,7 +31,7 @@ Layout is in `README.md`. Follow `docs/coding-guidelines.md` for tests and revie
 ### Versions
 - Versions are `MAJOR.MINOR.PATCH`, starting at 0.1.0. Bug fixes and small changes bump the patch (0.1.1, 0.1.2), bigger features bump the minor (0.2.0).
 - The version lives in `src/typescript/src/version.ts` and `src/typescript/package.json` (a test keeps them equal), and the pages show it.
-- Note each change that lands on `development` under "Unreleased" in `docs/releases.md`.
+- Note each change that lands on `development` under "Unreleased" in `docs/changes.md`.
 - To release: set the new version in both files, rename "Unreleased" to the version with the date, open the pull request from `development` to `main`, and after the merge tag `main` as `vX.Y.Z` and make a GitHub release with the same notes.
 
 ### Review development to master merge

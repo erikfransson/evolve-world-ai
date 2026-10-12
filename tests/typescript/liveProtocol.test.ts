@@ -27,7 +27,7 @@ describe("live protocol", () => {
     };
     const bytes = encodeCreatures(123, src, world, 150);
     expect(bytes.length).toBe(creatureFrameBytes(3));
-    expect(CREATURE_RECORD).toBe(17);
+    expect(CREATURE_RECORD).toBe(19);
     const f = decodeCreatures(bytes, world);
     expect(f.tick).toBe(123);
     expect(Array.from(f.ids)).toEqual([5, 70000, 9]);
@@ -42,7 +42,7 @@ describe("live protocol", () => {
     expect(f.energyShare[2]).toBe(1); // over full is capped
     expect(f.age[2]).toBe(255);
     expect(f.hue[1]).toBeCloseTo(180.25, 1);
-    expect(f.founder[2]).toBe(65535);
+    expect(f.founder[2]).toBe(99999); // protocol 4: founder ids are u32, an added lineage's id grows with the world
   });
 
   it("round-trips an empty frame and rejects a truncated one", () => {

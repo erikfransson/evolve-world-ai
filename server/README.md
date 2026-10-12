@@ -5,7 +5,9 @@ It steps the ecosystem (up to 4x real time, slower when the host is busy) on one
 The wire format is in `src/typescript/src/live/protocol.ts`.
 
 ## Safety model
-- Visitors can only watch and follow one creature: a client may send a ping or a strictly checked `select` (one integer id); anything else gets it cut off.
+- Visitors can watch, follow one creature and add creatures: a client may send a ping, a strictly checked `select` (one integer id) or an `add` (live/add.ts: exact keys, the creature-file checks, at most the largest genome's size); anything else gets it cut off.
+- Adds (adds.ts, admin-tunable as `add.*`): 20 creatures per 5 minutes for everyone, 3 per visitor address (from the X-Forwarded-For that Tailscale Funnel sets; off until checked through the real tunnel, `LIVE_TRUST_FORWARDED=1` turns it on), added creatures alive at most 10% of the population, none while the world is busy or paused; no adds once 15 000 lineage rows of added founders exist; per connection 2 adds then one per 10 s (faster is refused unread with the wait, and after 3 such strikes the connection is cut off), and at most 2 add messages a second are read for all viewers together. Admin changes reach open pages as a `rules` message.
+- A save is checked by the same worker parse and restore as a load before it is written; one that would not restore is never written.
 - Every resource is bounded: new viewers (10 a second, burst 30), viewers (100, fewer when the frames would pass the upload budget at the slowest rate), population (2500), message size and rate, selection changes (2 a second), followed-creature details (3 kB/s per viewer) and their senses (25 a second for all), item changes per frame (else a full item set from the connect allowance), history (bounded rings), send buffers, request header time, save size on disk and when unzipped, save parsing (worker with its own heap cap).
 - Dead, slow and flooding clients are terminated; no client input can crash the process.
 - Admin listens on loopback only, needs a token kept on the host, and accepts browsers only from its own page.
