@@ -1,6 +1,6 @@
 # Live World map candidates, final set
 
-Four maps at 54000 x 33600 (10.3x today's area): F1 Realms, F2 Three Rivers, F3 Oases in the Dry, F4 The Inland Sea. Images: `live-realms.jpg`, `live-three-rivers.jpg`, `live-oases.jpg`, `live-inland-sea.jpg` and `live-contact-sheet.jpg` in this folder. Design proposal for GitHub #36; nothing here is built yet.
+Four maps at 54000 x 33600 (10.3x today's area): F1 Realms, F2 Three Rivers, F3 Oases in the Dry, F4 The Inland Sea. Images: `2026-10-12-draft3-*.jpg` in this folder; layer specs `tools/map-F1.json` to `tools/map-F4.json`. Design proposal for GitHub #36; nothing here is built yet.
 Food and poison values are relative to a plain 1.0. "no poison" means poison 0. Normal ground is the area with no mud, firm ground or rock (poison and food zones on plain ground count as normal). Massif disc counts are estimates (large discs of radius 120 to 300 filling the massif mask), stones are clusters of 1 to 6 discs.
 
 ## F1 Realms (89% normal, mud 4.6, firm 2.2, rock 3.9; about 1770 discs)
@@ -59,7 +59,7 @@ Behaviours: waders in the sea, island hoppers, careful foragers that tell food f
 Mixing: all shores meet the sea on ragged coasts. The cliff arc is the only barrier, with two passes.
 
 ## Engine plan
-1. A biome raster at 100 units (540 x 336 cells): terrain kind (plain, mud, firm) plus food and poison weights, all uint8. Built once from the layer spec (the JSON files are those specs). The renderer reads continuous mud and firm values and thresholds at 0.5, so contours are smooth, while the engine only needs the thresholded kind.
+1. A biome raster at 100 units (540 x 336 cells): terrain kind (plain, mud, firm) plus food and poison weights, all uint8. Built once from the layer spec (`tools/map-F*.json` are those specs). The renderer reads continuous mud and firm values and thresholds at 0.5, so contours are smooth, while the engine only needs the thresholded kind.
 2. Weighted spawning by rejection sampling: draw a random position, accept with probability weight / max weight. Poison spawns the same way.
 3. Local food caps on a 1000-unit grid, cap = base x weight, so a rich region cannot be emptied by the global cap (`foodCap` is global today, ecosystem.ts:241) and poor regions do not fill with food from rich ones.
 4. Rock as a disc list from the spec (stones as clusters, massifs as filled discs with passes), with `MAX_PIECES` raised and benched at 10k creatures. The rock grid cell is 300 units, a few thousand discs is cheap to look up, but `keepOut` and ray casts need a bench.

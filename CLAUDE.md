@@ -8,6 +8,10 @@ Try to minimize usage.
 Let Opus (5.5+) be orchestrator and manager of subagents.
 Work in parallel when can be done
 
+## Iteration and notes
+Work here is iterative: plans, maps, looks and numbers change often, and nothing is written in stone.
+Keep `docs/status.md` current with what is being done, what was decided and what is open. Add new information from Erik or other sessions as it arrives, and update or delete stale lines there, in this file and in other docs.
+
 ## Where things are
 Layout is in `README.md`. Follow `docs/coding-guidelines.md` for tests and reviews.
 `main` deploys the site via `.github/workflows/deploy.yml`; keep `development` building (`npm run build` in `src/typescript/`).
