@@ -36,7 +36,7 @@ button.lin-row:hover { background: var(--card-hi); }
 .ov-selected:not(.has-sel) .sel-only, .ov-selected.has-sel .sel-hint { display: none; }
 .sel-pick { display: flex; gap: 0.4rem; }
 .sel-pick button { flex: 1 1 0; min-width: 0; padding: 0.3rem 0.4rem; font-size: 0.8rem; white-space: nowrap; }
-.sel-pick:has(> :nth-child(4)) { display: grid; grid-template-columns: 1fr 1fr; } /* four picks (The Great Hunt) sit two by two */
+.sel-pick:has(> :nth-child(4)) { display: grid; grid-template-columns: 1fr 1fr; } /* four picks sit two by two */
 .sel-energy { display: flex; align-items: center; gap: 0.6rem; }
 .meter { flex: 1; height: 8px; border-radius: 4px; background: var(--border-hi); overflow: hidden; }
 .meter span { display: block; height: 100%; width: 0; border-radius: 4px; background: var(--accent); transition: width 0.15s; }
@@ -81,11 +81,7 @@ button.lin-row:hover { background: var(--card-hi); }
   .sel-facts { grid-template-columns: repeat(3, auto); row-gap: 0.4rem; } /* five facts would run together at phone width */
 }
 
-/* The Great Hunt page */
-.key.prey { color: #60a5fa; }
-.key.pred { color: #f87171; }
-.tile.sp-prey dd { color: #60a5fa; }
-.tile.sp-pred dd { color: #f87171; }
+/* several species */
 .sel-species { --sp: var(--muted); display: inline-flex; align-items: center; gap: 0.35rem; margin-right: auto; padding: 0.05rem 0.55rem; border: 1px solid color-mix(in srgb, var(--sp) 55%, transparent); border-radius: 999px; color: var(--sp); font-size: 0.72rem; font-weight: 600; }
 .sel-species::before { content: ""; width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--sp); }
 .sel-species:empty, .ov-selected:not(.has-sel) .sel-species { display: none; }

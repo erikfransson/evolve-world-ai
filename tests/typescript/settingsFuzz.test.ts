@@ -1,6 +1,6 @@
 import { testRng } from "./helpers.ts";
 import { DEFAULT_CONFIG } from "../../src/typescript/src/sim/config.ts";
-import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
+import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { parseWithPreset, serialise } from "../../src/typescript/src/ui/settingsIO.ts";
 import type { Mode } from "../../src/typescript/src/ui/settingsIO.ts";
 import { Scoreboard } from "../../src/typescript/src/ui/scoreboard.ts";
@@ -72,7 +72,7 @@ function finiteDeep(v: unknown, where = ""): string | null {
   return null;
 }
 
-const DEFAULTS = { trials: DEFAULT_CONFIG, ecosystem: DEFAULT_ECO_CONFIG, predators: DEFAULT_PREDATOR_CONFIG };
+const DEFAULTS = { trials: DEFAULT_CONFIG, ecosystem: DEFAULT_ECO_CONFIG };
 const ROUNDS = 400;
 
 function checkPrototype(): void {
@@ -81,7 +81,7 @@ function checkPrototype(): void {
   expect(Object.keys(Array.prototype)).toEqual([]);
 }
 
-describe.each(["trials", "ecosystem", "predators"] as Mode[])("hostile pasted settings (%s)", (mode) => {
+describe.each(["trials", "ecosystem"] as Mode[])("hostile pasted settings (%s)", (mode) => {
   it("parses to a finite config of the default's shape, or throws a readable Error", () => {
     const valid = JSON.parse(serialise(mode, DEFAULTS[mode], "custom"));
     let accepted = 0;

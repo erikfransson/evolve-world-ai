@@ -14,7 +14,7 @@ import type { SelectedBrain } from "./ui/ecoBrain.ts";
 import { bindGentle, readGentle } from "./ui/gentle.ts";
 import { createEcoView } from "./ui/ecoPage.ts";
 import { syncTerrainLegend } from "./ui/terrainLegend.ts";
-import { ECOSYSTEM_PAGE, PREDATORS_PAGE, openingConfig } from "./ui/ecoModes.ts";
+import { ECOSYSTEM_PAGE, openingConfig } from "./ui/ecoModes.ts";
 import { ecoBody } from "./ui/ecoMarkup.ts";
 import { createRenderHost } from "./ui/renderHost.ts";
 import type { RenderHost } from "./ui/renderHost.ts";
@@ -48,8 +48,8 @@ interface Selection {
   died: boolean;
 }
 
-// This script runs the Ecosystem page and, with <body data-mode="predators">, the Great Hunt page.
-const PAGE = document.body.dataset.mode === "predators" ? PREDATORS_PAGE : ECOSYSTEM_PAGE;
+// This script runs the Ecosystem page.
+const PAGE = ECOSYSTEM_PAGE;
 document.body.insertAdjacentHTML("afterbegin", ecoBody(PAGE)); // the page structure comes from the spec; the HTML files only name the mode
 // The page opens on the Normal preset.
 const NORMAL = openingConfig(PAGE);

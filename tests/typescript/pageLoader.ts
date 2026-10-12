@@ -1,12 +1,12 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { ecoBody } from "../../src/typescript/src/ui/ecoMarkup.ts";
-import { ECOSYSTEM_PAGE, PREDATORS_PAGE } from "../../src/typescript/src/ui/ecoModes.ts";
+import { ECOSYSTEM_PAGE } from "../../src/typescript/src/ui/ecoModes.ts";
 
-const GENERATED = { ecosystem: ECOSYSTEM_PAGE, predators: PREDATORS_PAGE };
+const GENERATED = { ecosystem: ECOSYSTEM_PAGE };
 
 // Body markup of a mode page (`<name>/index.html`) without scripts or stylesheet links, so happy-dom loads nothing over the network.
-// The Ecosystem and Great Hunt structure is built from their ModePage, as the page script does.
+// The Ecosystem structure is built from its ModePage, as the page script does.
 export function pageBody(name: string): string {
   const html = readFileSync(resolve(import.meta.dirname, `../../src/typescript/${name}/index.html`), "utf8");
   const body = /<body[^>]*>([\s\S]*)<\/body>/.exec(html)?.[1];

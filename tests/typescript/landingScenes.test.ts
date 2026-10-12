@@ -1,4 +1,4 @@
-import { TICK_SECONDS, WARMUP_TICKS, arenaScene, ecosystemScene, predatorScene } from "../../src/typescript/src/ui/landing/index.ts";
+import { TICK_SECONDS, WARMUP_TICKS, arenaScene, ecosystemScene } from "../../src/typescript/src/ui/landing/index.ts";
 
 const TICKS = Math.round(60 / TICK_SECONDS);
 
@@ -36,38 +36,6 @@ describe("ecosystemScene births", () => {
     const b = ecosystemScene(3);
     for (let t = 0; t < 1500; t++) { a.step(); b.step(); }
     expect(a.births).toBe(b.births);
-  });
-});
-
-describe("predatorScene", () => {
-  it("chases and catches prey every few seconds, keeps the herd, stays finite and deterministic", () => {
-    const scene = predatorScene(7);
-    const ctx = finiteCtx();
-    for (let t = 0; t < WARMUP_TICKS; t++) scene.step();
-    const caught = scene.catches;
-    for (let t = 1; t <= TICKS; t++) {
-      scene.step();
-      expect(scene.prey()).toBeGreaterThanOrEqual(3);
-      expect(scene.prey()).toBeLessThanOrEqual(5);
-      if (t % 5 === 0) scene.draw(ctx);
-    }
-    // 60 simulated seconds are 40 s on the page at 1.5x: a catch every 3 to 10 s on screen.
-    expect(scene.catches - caught).toBeGreaterThanOrEqual(4);
-    expect(scene.catches - caught).toBeLessThanOrEqual(13);
-    expect(scene.births).toBeGreaterThanOrEqual(scene.catches - 1);
-    const again = predatorScene(7);
-    for (let t = 0; t < WARMUP_TICKS + TICKS; t++) again.step();
-    expect(again.catches).toBe(scene.catches);
-  });
-
-  it("catches a prey whenever it visibly touches the hunter, never overlapping otherwise", () => {
-    for (const seed of [1, 7, 21]) {
-      const scene = predatorScene(seed);
-      for (let t = 0; t < WARMUP_TICKS + TICKS; t++) {
-        scene.step();
-        expect(scene.overlaps()).toBe(0);
-      }
-    }
   });
 });
 

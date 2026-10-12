@@ -10,6 +10,7 @@ Work here is iterative and nothing is fixed; update or delete lines as soon as t
 
 ## Decisions
 - 2026-10-12: `main` is the release, all work goes to `development`, releases are pull requests (CLAUDE.md, Git). Versions start at 0.1.0.
+- 2026-10-12: The Great Hunt removed; focus on Live and Ecosystem, with Trials and RL Arena for training.
 - 2026-10-12: The Inland Sea is the next Live World map.
 
 ## Open questions for Erik

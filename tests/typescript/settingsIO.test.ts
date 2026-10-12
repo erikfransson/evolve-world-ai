@@ -2,7 +2,7 @@
 import { pageBody } from "./pageLoader.ts";
 import { DEFAULT_CONFIG } from "../../src/typescript/src/sim/config.ts";
 import type { SimConfig } from "../../src/typescript/src/sim/config.ts";
-import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
+import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { buildForm } from "../../src/typescript/src/ui/settingsForm.ts";
 import type { FormHandle } from "../../src/typescript/src/ui/settingsForm.ts";
@@ -34,47 +34,17 @@ describe("settings JSON", () => {
     expect(parseSettings(serialise("ecosystem", eco), "ecosystem")).toEqual(eco);
   });
 
-  it("round-trips The Great Hunt and merges each pasted species over its default", () => {
-    const c = structuredClone(DEFAULT_PREDATOR_CONFIG);
-    c.species![1]!.speed = 1.6;
-    c.species![1]!.rayLengthRange = [60, 200];
-    const text = serialise("predators", c, "custom");
-    expect(JSON.parse(text)).toMatchObject({ mode: "predators", preset: "custom" });
-    expect(parseSettings(text, "predators")).toEqual(c);
-    const partial = JSON.stringify({ mode: "predators", version: 1, config: { species: [{ founders: 10 }, { eatBaseline: 5 }] } });
-    const merged = parseSettings(partial, "predators");
-    expect(merged.species![0]).toEqual({ ...DEFAULT_PREDATOR_CONFIG.species![0]!, founders: 10 });
-    expect(merged.species![1]).toEqual({ ...DEFAULT_PREDATOR_CONFIG.species![1]!, eatBaseline: 5 });
-    expect(() => parseSettings(serialise("ecosystem", DEFAULT_ECO_CONFIG), "predators")).toThrow(/for Ecosystem, but this page is The Great Hunt/);
-  });
-
-  it("rejects pasted species lists of the wrong length, bad prey indices, unknown keys and wrong types", () => {
-    const paste = (species: unknown) => () => parseSettings(JSON.stringify({ mode: "predators", version: 1, config: { species } }), "predators");
-    expect(paste([{}])).toThrow(/exactly 2 species \(Prey, Predator\), got 1/);
-    expect(paste([{}, {}, {}])).toThrow(/exactly 2 species/);
-    expect(paste({})).toThrow(/must be a list of 2 species/);
-    expect(paste([{}, { prey: [5] }])).toThrow(/species\[1\].prey" must list other species by index, 0 to 1/);
-    expect(paste([{}, { prey: [1] }])).toThrow(/must list other species/);
-    expect(paste([{ fangs: 3 }, {}])).toThrow(/unknown config key "species\[0\].fangs"/);
-    expect(paste([{}, { speed: "fast" }])).toThrow(/species\[1\].speed" must be a number/);
-    expect(paste([{}, { rayLengthRange: [1, 2, 3] }])).toThrow(/must be \[min, max\]/);
-    expect(() => parseSettings(JSON.stringify({ mode: "ecosystem", version: 1, config: { species: [] } }), "ecosystem")).toThrow(/unknown config key "species"/);
-  });
-
-  it("converts settings saved before heritable birth traits, in eco and in species items, and checks range order", () => {
-    const old = (config: object) => JSON.stringify({ mode: "predators", version: 1, config });
-    const notes: string[] = [];
-    const parsed = parseWithPreset(old({ eco: { birthEnergy: 90, birthCost: 40, childEnergy: 30, birthCooldown: 6 }, species: [{ birthEnergy: 100 }, { birthCost: 150, childEnergy: 80 }] }), "predators");
+  it("converts settings saved before heritable birth traits and checks range order", () => {
+    const parsed = parseWithPreset(JSON.stringify({ mode: "ecosystem", version: 1, config: { eco: { birthEnergy: 90, birthCost: 40, childEnergy: 30, birthCooldown: 6 } } }), "ecosystem");
     expect(parsed.config.eco.birthEnergyRange).toEqual([90, 90]);
     expect(parsed.config.eco.birthCostRange).toEqual([40, 40]);
     expect(parsed.config.eco.birthCooldownRange).toEqual([6, 6]);
-    expect(parsed.config.species![0]!.birthEnergyRange).toEqual([100, 100]);
-    expect(parsed.config.species![1]!.birthCostRange).toEqual([150, 150]);
-    expect(parsed.migrated.join(" ")).toMatch(/eco\.birthEnergy 90.*eco\.childEnergy dropped.*species\[1\]\.birthCost 150/);
-    notes.push(...parsed.migrated);
-    expect(parseSettings(JSON.stringify({ mode: "ecosystem", version: 1, config: { eco: { birthEnergy: 80 } } }), "ecosystem").eco.birthEnergyRange).toEqual([80, 80]);
+    expect(parsed.migrated.join(" ")).toMatch(/eco\.birthEnergy 90.*eco\.childEnergy dropped/);
     expect(() => parseSettings(JSON.stringify({ mode: "ecosystem", version: 1, config: { eco: { birthCostRange: [90, 20] } } }), "ecosystem")).toThrow(/eco.birthCostRange" must have min at most max/);
-    expect(() => parseSettings(old({ species: [{ birthEnergyRange: [200, 100] }, {}] }), "predators")).toThrow(/species\[0\].birthEnergyRange" must have min at most max/);
+  });
+
+  it("rejects pasted species, which only the RL Arena uses", () => {
+    expect(() => parseSettings(JSON.stringify({ mode: "ecosystem", version: 1, config: { species: [] } }), "ecosystem")).toThrow(/unknown config key "species"/);
   });
 
   it("keeps defaults for missing keys", () => {

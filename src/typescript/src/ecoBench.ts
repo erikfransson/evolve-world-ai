@@ -80,8 +80,7 @@ let config: EcoConfig;
 if (values.config !== undefined) {
   if (values.preset !== undefined) throw new Error("--preset and --config do not combine, the file carries its own settings");
   const text = readFileSync(values.config, "utf8");
-  predators = JSON.parse(text).mode === "predators";
-  config = parseSettings(text, predators ? "predators" : "ecosystem");
+  config = parseSettings(text, "ecosystem"); // a settings file is an Ecosystem export
 } else {
   config = structuredClone(predators ? DEFAULT_PREDATOR_CONFIG : DEFAULT_ECO_CONFIG);
   if (values.preset !== undefined) {

@@ -2,7 +2,7 @@ import type { ModePage } from "./ecoModes.ts";
 import { terrainLegendHtml } from "./terrainLegend.ts";
 import { GENTLE_TIP } from "./gentle.ts";
 
-// The wording and drawings that differ between the Ecosystem and The Great Hunt pages.
+// The wording and drawings that shape the Ecosystem page.
 export interface PageCopy {
   title: string;
   tagline: string;
@@ -22,8 +22,6 @@ const circle = (r: number, y: number, hsl: string) =>
   `<clipPath id="swClip"><circle cx="10" cy="10" r="${r}" /></clipPath><circle cx="10" cy="10" r="${r}" fill="rgba(15, 23, 20, 0.85)" /><rect x="0" y="${y}" width="20" height="12" fill="${hsl}" clip-path="url(#swClip)" /><circle cx="10" cy="10" r="${r}" fill="none" stroke="${hsl}" stroke-width="1.6" />`;
 const dot = (fill: string) => `<circle cx="10" cy="10" r="5" fill="${fill}" />`;
 const ring = `<circle cx="10" cy="10" r="8" fill="none" stroke="#eef5f1" stroke-width="1.6" />`;
-const NOSE = "M19 10 L11.4 5.6 A5.4 5.4 0 1 0 11.4 14.4 Z";
-const hunter = `<clipPath id="swClipP"><path d="${NOSE}" /></clipPath><path d="${NOSE}" fill="rgba(15, 23, 20, 0.85)" /><rect x="0" y="9" width="20" height="12" fill="hsl(4, 85%, 62%)" clip-path="url(#swClipP)" /><path d="${NOSE}" fill="none" stroke="hsl(4, 85%, 62%)" stroke-width="1.6" stroke-linejoin="round" />`;
 
 export const ECOSYSTEM_COPY: PageCopy = {
   title: "Ecosystem",
@@ -45,30 +43,6 @@ export const ECOSYSTEM_COPY: PageCopy = {
   popKeys: `<span class="key pop">creatures</span><span class="key food">food</span>`,
   linBarLabel: "Share of living creatures by founder",
   extinct: "Every creature has died.",
-};
-
-export const PREDATORS_COPY: PageCopy = {
-  title: "The Great Hunt",
-  tagline: "grazers, hunters and the plants they live on",
-  logo: `<path d="M3 16 L10 11 A5 5 0 1 1 10 21 Z" /><circle cx="25" cy="16" r="4" />`,
-  seasonTip: "The season now and the plant regrowth multiplier it gives.",
-  legend: [
-    [circle(7, 9, "hsl(205, 80%, 62%)"), "Prey (fill = energy)"],
-    [hunter, "Predator, nose ahead"],
-    [ring, "Selected creature"],
-    [dot("#4ade80"), "Plant"],
-    [dot("#e040fb"), "Poison"],
-  ],
-  pickTitles: {
-    pickAge: ["Oldest", "Select the oldest living creature"],
-    pickChildren: ["Most children", "Select the living creature with the most children"],
-    pickEaten: ["Top grazer", "Select the living prey that has eaten the most plants"],
-    pickKills: ["Top hunter", "Select the living predator that has caught the most prey"],
-  },
-  eatenLabel: "Plants eaten",
-  popKeys: `<span class="key prey">prey</span><span class="key pred">predators</span><span class="key food">plants</span>`,
-  linBarLabel: "Share of living creatures of this kind by founder",
-  extinct: "Every prey and every predator has died.",
 };
 
 const card = (id: string, cls: string, title: string, min: string, body: string, head = "") =>

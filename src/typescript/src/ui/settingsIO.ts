@@ -1,23 +1,22 @@
 import { DEFAULT_CONFIG, overrideConfig } from "../sim/config.ts";
 import type { DeepPartial, SimConfig } from "../sim/config.ts";
-import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "../sim/ecoConfig.ts";
+import { DEFAULT_ECO_CONFIG } from "../sim/ecoConfig.ts";
 import type { EcoConfig } from "../sim/ecoConfig.ts";
-import { checkRanges, mergeSpeciesList, migrateBirthKeys } from "../sim/species.ts";
-import { CUSTOM, ECO_PRESETS, PREDATOR_PRESETS, TRIALS_PRESETS } from "../sim/presets.ts";
+import { checkRanges, migrateBirthKeys } from "../sim/species.ts";
+import { CUSTOM, ECO_PRESETS, TRIALS_PRESETS } from "../sim/presets.ts";
 
-// Copy and paste of the settings as JSON, shared by Trials, Ecosystem and The Great Hunt.
-export type Mode = "trials" | "ecosystem" | "predators";
+// Copy and paste of the settings as JSON, shared by Trials and Ecosystem.
+export type Mode = "trials" | "ecosystem";
 export interface ConfigOf {
   trials: SimConfig;
   ecosystem: EcoConfig;
-  predators: EcoConfig;
 }
-const DEFAULTS: { [M in Mode]: ConfigOf[M] } = { trials: DEFAULT_CONFIG, ecosystem: DEFAULT_ECO_CONFIG, predators: DEFAULT_PREDATOR_CONFIG };
-const PAGE: Record<Mode, string> = { trials: "Trials", ecosystem: "Ecosystem", predators: "The Great Hunt" };
+const DEFAULTS: { [M in Mode]: ConfigOf[M] } = { trials: DEFAULT_CONFIG, ecosystem: DEFAULT_ECO_CONFIG };
+const PAGE: Record<Mode, string> = { trials: "Trials", ecosystem: "Ecosystem" };
 const MODES = Object.keys(PAGE) as Mode[];
 export const VERSION = 1;
 
-const PRESET_IDS: Record<Mode, readonly string[]> = { trials: TRIALS_PRESETS.map((p) => p.id), ecosystem: ECO_PRESETS.map((p) => p.id), predators: PREDATOR_PRESETS.map((p) => p.id) };
+const PRESET_IDS: Record<Mode, readonly string[]> = { trials: TRIALS_PRESETS.map((p) => p.id), ecosystem: ECO_PRESETS.map((p) => p.id) };
 
 // {"mode": ..., "preset": "normal", "version": 1, "angles": "radians", "config": <full config>}; the preset is left out when not given.
 export function serialise<M extends Mode>(mode: M, config: ConfigOf[M], preset?: string): string {
@@ -60,12 +59,8 @@ export function parseWithPreset<M extends Mode>(text: string, mode: M): Parsed<M
   const defaults = DEFAULTS[mode];
   const pasted = data.config;
   if (!isObject(pasted)) return { config: overrideConfig<ConfigOf[M]>(defaults, pasted as DeepPartial<ConfigOf[M]>), preset, migrated };
-  const { species, ...rest } = pasted;
-  if (isObject(rest.eco)) rest.eco = migrateBirthKeys(rest.eco, "eco", migrated);
-  const withSpecies = "species" in pasted && "species" in defaults;
-  const config = overrideConfig<ConfigOf[M]>(defaults, (withSpecies || !("species" in pasted) ? rest : { ...rest, species }) as DeepPartial<ConfigOf[M]>);
-  // The species list merges item by item and is checked as a whole (see mergeSpeciesList).
-  if (withSpecies) (config as EcoConfig).species = mergeSpeciesList(species, (defaults as EcoConfig).species!, migrated);
+  if (isObject(pasted.eco)) pasted.eco = migrateBirthKeys(pasted.eco, "eco", migrated);
+  const config = overrideConfig<ConfigOf[M]>(defaults, pasted as DeepPartial<ConfigOf[M]>);
   if ("eco" in config) checkRanges((config as EcoConfig).eco as unknown as Record<string, unknown>, "eco");
   return { config, preset, migrated };
 }
