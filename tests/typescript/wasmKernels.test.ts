@@ -293,6 +293,23 @@ describe("sense.wat (SenseKernels)", () => {
     check({ rays: 1, spread: 0, creatures: [[300, 300, 0.3], [20, 400, 3]], items }, true);
   });
 
+  it("matches the JS rays for items grazing the rays, where the cheap ray prefilter and the exact test meet", () => {
+    const r = DEFAULT_ECO_CONFIG.world.itemRadius;
+    const rng = createRng(21);
+    const spots: Spot[] = [[600, 400, 0.9], [333.3, 222.2, 4.1], [900.7, 600.1, 2.2]];
+    const graze: [number, number, number][] = [];
+    spots.forEach(([x, y, h]) => {
+      for (let i = 0; i < 90; i++) {
+        const a = h + (i % 9 - 4) * 0.35; // near the direction of a 9 ray fan of spread 1.4
+        const d = rng.range(5, 95);
+        const side = (i % 2 ? 1 : -1) * r * (1 + (rng.range(0, 1) - 0.5) * 4e-3); // perpendicular offset within 0.2% of the radius
+        graze.push([x + d * Math.cos(a) - side * Math.sin(a), y + d * Math.sin(a) + side * Math.cos(a), 1 + (i % 3 === 0 ? 1 : 0)]);
+      }
+    });
+    const { seen } = check({ rays: 9, spread: 1.4, creatures: spots, items: graze }, true);
+    expect(seen).toContain(HIT_FOOD);
+  });
+
   it("handles a plan with zero rays", () => {
     const { kernel } = check({ rays: 0, spread: 0, creatures: [[300, 300, 0.3], [400, 300, 1]], items }, true);
     expect(kernel[0]!.rays.length).toBe(0);
