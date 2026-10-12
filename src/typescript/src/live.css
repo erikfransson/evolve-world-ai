@@ -147,5 +147,56 @@ input.hue::-moz-range-progress { background: transparent; }
 }
 @media (prefers-reduced-motion: reduce) { .entry-card, .addp, .entry-live i { animation: none !important; } }
 
-/* release version under the side panel */
-.panel .ver { margin: 0.4rem 2px 0; font-size: 0.78rem; color: var(--muted); }
+
+/* The page scrolls past the world view to the info section and footer; the world view fills the window below the banner. */
+body:has(.layout.live) { height: auto; min-height: 100%; }
+.layout.live { flex: none; height: calc(100dvh - var(--banner-h, 52px)); min-height: 560px; }
+.info { margin: 0.6rem 0.9rem 0; padding: 1.6rem 1.4rem 1.4rem; background: var(--card); border: 1px solid var(--border); border-radius: 14px; }
+.info-head { max-width: 46rem; margin-bottom: 1.4rem; }
+.info-kicker { margin: 0 0 0.3rem; color: var(--accent); font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em; }
+.info-head h2 { font-size: 1.35rem; font-weight: 700; letter-spacing: -0.01em; }
+.info-lede { margin: 0.45rem 0 0; color: var(--muted); font-size: 0.9rem; line-height: 1.5; }
+.info-grid { display: grid; grid-template-columns: minmax(14rem, 1fr) minmax(16rem, 1.3fr) minmax(14rem, 1fr); gap: 1.2rem 2.2rem; }
+.info-col { display: flex; flex-direction: column; gap: 0.7rem; min-width: 0; }
+.info-col h3 { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.09em; color: var(--accent); }
+.info-col h3:not(:first-child) { margin-top: 0.8rem; }
+.info-legend { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.55rem; font-size: 0.85rem; }
+.info-legend li { display: flex; align-items: center; gap: 0.6rem; }
+.info-legend svg { flex: none; width: 1.3rem; height: 1.3rem; }
+.info-dim { color: var(--muted); }
+.info-note { margin: 0; color: var(--muted); font-size: 0.8rem; line-height: 1.45; }
+.info-note:empty { display: none; }
+.shares { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.4rem; }
+.share { display: flex; flex-direction: column; gap: 0.1rem; }
+.share b { font-size: 1.35rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.share span { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; }
+.share-normal b { color: var(--accent); }
+.share-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--border-hi); }
+.share-bar span { min-width: 3px; }
+.bar-normal { background: #2f7a58; }
+.bar-mud { background: rgba(92, 118, 170, 0.9); }
+.bar-firm { background: rgba(214, 196, 84, 0.8); }
+.bar-rock { background: #7b8982; }
+.info-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+.info-table th { text-align: left; padding: 0 0.5rem 0.35rem 0; color: var(--muted); font-weight: 500; border-bottom: 1px solid var(--border-hi); }
+.info-table td { padding: 0.35rem 0.5rem 0.35rem 0; border-bottom: 1px solid var(--border); }
+.info-table td:first-child { font-weight: 600; }
+.info-table .num { font-variant-numeric: tabular-nums; }
+.info-facts { margin: 0; display: flex; flex-direction: column; gap: 0.55rem; font-size: 0.85rem; }
+.info-facts div { display: grid; grid-template-columns: 6.5rem 1fr; gap: 0.6rem; }
+.info-facts dt { color: var(--muted); }
+.info-facts dd { margin: 0; }
+.live-foot { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 0.3rem 0; padding: 1.4rem 1.2rem 1.3rem; font-size: 0.8rem; color: var(--muted); }
+.live-foot > * + *::before { content: "·"; margin: 0 0.6em; color: var(--muted); }
+.live-foot a { color: var(--muted); text-decoration: none; }
+.live-foot a:hover { color: var(--accent); }
+.live-foot a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+.live-foot .ver:empty { display: none; }
+@media (max-width: 1100px) { .info-grid { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 700px) {
+  .layout.live { height: auto; min-height: 0; }
+  .info { margin: 0.4rem 0.9rem 0; padding: 1.2rem 1rem; }
+  .info-grid { grid-template-columns: 1fr; }
+  .live-foot { flex-direction: column; align-items: center; gap: 0.3rem; padding: 1.2rem 16px 1.4rem; }
+  .live-foot > * + *::before { content: none; }
+}

@@ -4,7 +4,7 @@ import type { CreatureFrame as EngineFrame } from "../../src/typescript/src/sim/
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { PoolEntry } from "../../src/typescript/src/sim/seedPool.ts";
 import { MAX_DELTA_EVENTS, MAX_DELTA_OPS, MAX_ITEM_SLOTS, PROTOCOL_VERSION, encodeCreatures, encodeDeltaChunk, encodeItems, itemsBytes } from "../../src/typescript/src/live/protocol.ts";
-import type { Hello, ItemOp, Stats, WireEvent } from "../../src/typescript/src/live/protocol.ts";
+import type { Hello, ItemOp, Stats, WireEvent, WireMap } from "../../src/typescript/src/live/protocol.ts";
 import { encodeDetail, encodeGenome } from "../../src/typescript/src/live/detail.ts";
 import { ITEM_REMOVE, ITEM_SET } from "../../src/typescript/src/sim/world.ts";
 import type { World } from "../../src/typescript/src/sim/world.ts";
@@ -60,6 +60,7 @@ export class LiveWorld {
   private readonly refreshes: TokenBucket;
   readonly chronicle = new Chronicle();
   private added = new Set<number>(); // ids of visitor-added creatures that may still live (pruned in aliveAdded)
+  private map: WireMap = { ground: { normal: 1, mud: 0, firm: 0, rock: 0 }, regions: [] };
 
   // helpers: a pool of helper threads, owned from here on (close() closes it), or null to run on this thread.
   constructor(config: EcoConfig, pool: readonly PoolEntry[] | null, helpers: ThinkPool | null = null) {
@@ -82,6 +83,7 @@ export class LiveWorld {
     this.captures.clear();
     this.chronicle.reset(this.eco);
     this.eco.drainEvents();
+    this.map = { ground: groundShares(this.eco), regions: [] };
     // Added creatures found named lineages (late rows of the lineage table, kept in saves); the living founders among them count.
     this.added = new Set(this.eco.lineageTable.toState().late.filter((r) => r[5] !== "" && this.eco.get(r[0])).map((r) => r[0]));
     if (this.helpers) {
@@ -363,6 +365,7 @@ export class LiveWorld {
       summary: { initialPopulation: eco.initialPopulation, maxPopulation: eco.maxPopulation, collisionDamage: eco.collisionDamage, seasons: eco.seasons },
       maxViewers,
       add: LIVE.add.perWindow > 0 && LIVE.add.aliveShare > 0 ? this.addRules() : null,
+      map: this.map,
       serverVersion: VERSION,
     };
   }
@@ -471,6 +474,30 @@ export class LiveWorld {
     this.attach();
     this.onReseed?.();
   }
+}
+
+// Shares of the world's area that are normal ground, mud, firm ground and rock, from a grid of samples (about 40000, once per world).
+export function groundShares(eco: Ecosystem, cols = 256): WireMap["ground"] {
+  const { width, height } = eco.config.world;
+  const terrain = (eco.world as World).terrain;
+  const rows = Math.max(1, Math.round((cols * height) / width));
+  const n = { normal: 0, mud: 0, firm: 0, rock: 0 };
+  for (let j = 0; j < rows; j++) {
+    for (let i = 0; i < cols; i++) {
+      const x = ((i + 0.5) / cols) * width;
+      const y = ((j + 0.5) / rows) * height;
+      if (terrain.touchesRock(x, y, 0)) n.rock++;
+      else {
+        const v = terrain.valueAt(x, y);
+        if (v < 0) n.mud++;
+        else if (v > 0) n.firm++;
+        else n.normal++;
+      }
+    }
+  }
+  const all = cols * rows;
+  const r = (v: number): number => Math.round((v / all) * 1000) / 1000;
+  return { normal: r(n.normal), mud: r(n.mud), firm: r(n.firm), rock: r(n.rock) };
 }
 
 // The server's tick loop: advance, then again when the next tick is due. After maxFailures consecutive failed ticks it calls fatal

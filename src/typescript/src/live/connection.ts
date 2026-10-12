@@ -5,6 +5,7 @@ import type { Detail } from "./detail.ts";
 import { retryDelayS } from "./serverUrl.ts";
 import { cleanAddReply, cleanAddRules, encodeAdd, validName } from "./add.ts";
 import type { AddRequest, Added, Refused } from "./add.ts";
+import { cleanMap } from "./mapInfo.ts";
 
 export type LinkState = "connecting" | "live" | "offline" | "full" | "outdated";
 
@@ -96,7 +97,7 @@ export function historyAxis(first: number, last: number, yearS: number): { shift
 // A hello with sane numbers, or null.
 function cleanHello(h: Hello): Hello | null {
   const ok = isObj(h.world) && n(h.world.width) > 0 && n(h.world.height) > 0 && n(h.radius) > 0 && n(h.dt) > 0 && n(h.fullEnergy) > 0 && int(h.itemSlots, 0, MAX_ITEM_SLOTS);
-  return ok ? { ...h, add: cleanAddRules(h.add) } : null;
+  return ok ? { ...h, add: cleanAddRules(h.add), map: cleanMap(h.map) } : null;
 }
 
 // One WebSocket to the world server that reconnects with backoff.

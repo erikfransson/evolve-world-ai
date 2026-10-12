@@ -6,7 +6,7 @@ Work here is iterative and nothing is fixed; update or delete lines as soon as t
 ## Now (2026-10-12)
 - A1 Terrain and obstacle look: polish rock, ridges, mud and firm ground so they look refined when zoomed in, in the style of the map drafts in `docs/world-maps/`. Creatures sense the ground under them through the `terrain` input (-1 mud, 0 normal, 1 firm); keep what is drawn and what is sensed identical.
 - A2 Live World map: build The Inland Sea (`docs/world-maps/2026-10-12-draft3-*`) for the live server after A1. Needs the engine plan in the draft notes (biome raster, weighted spawning, local food caps, rock from the spec, per-region trait stats).
-- A3 Live World page: below the map (scrolling the page, while scrolling over the map still zooms) an information section like the one under the map drafts: legend, region table with food and poison, ground shares and a viewer-zoom inset. At the very end, a small "Created by Erik Fransson · Source on GitHub" in the bottom right corner. Live session's page; region content follows the Inland Sea build (A2).
+- A3 Live World page: info section below the world (legend, ground shares from the server, world rules, a region table that fills once a map has regions) and the footer are built on branch `live-add` with L4; the viewer-zoom inset and the Inland Sea's regions follow A2.
 - B1 Speed: round 3 done (about 1.35x at 50000 wide, bit-identical); write-ups in `docs/perf-explore/`.
 
 ## Decisions

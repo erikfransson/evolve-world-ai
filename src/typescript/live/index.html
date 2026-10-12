@@ -40,7 +40,6 @@
           <p>One world shared by everyone who opens this page. It keeps evolving on a small home server whether anyone watches or not, with seasons that bring lean winters.</p>
           <p>Click a creature to follow it and see what it sees and thinks, or jump to the oldest one.</p>
         </section>
-        <p class="ver" id="version"></p>
       </aside>
       <section class="stage">
         <canvas id="view" tabindex="0" aria-label="The live world. Drag to pan, scroll or pinch to zoom, click a creature to follow it, arrow keys pan, plus and minus zoom, 0 fits the world."></canvas>
@@ -229,6 +228,32 @@
         </div>
       </section>
     </main>
+    <section id="info" class="info" aria-labelledby="infoTitle">
+      <header class="info-head">
+        <p class="info-kicker">Below the creatures</p>
+        <h2 id="infoTitle">The map of this world</h2>
+        <p class="info-lede">What the world view draws, how its ground is made up and the rules everyone lives by. Scroll over the map to zoom, anywhere else to read on.</p>
+      </header>
+      <div class="info-grid">
+        <section class="info-col">
+          <h3>Legend</h3>
+          <ul id="infoLegend" class="info-legend"></ul>
+          <p id="infoLegendNote" class="info-note"></p>
+        </section>
+        <section class="info-col">
+          <h3>Ground shares</h3>
+          <div id="infoShares" class="shares"></div>
+          <div id="infoBar" class="share-bar" role="img" aria-label="Shares of the ground"></div>
+          <h3>Regions</h3>
+          <div id="infoRegions"></div>
+        </section>
+        <section class="info-col">
+          <h3>The world</h3>
+          <dl id="infoWorld" class="info-facts"></dl>
+        </section>
+      </div>
+    </section>
+    <footer class="live-foot"><span class="ver" id="version"></span><span>Created by Erik Fransson</span><a href="https://github.com/erikfransson/evolve-world-ai">Source on GitHub</a></footer>
     <div id="tooltip" class="tooltip" role="tooltip" hidden></div>
     <script type="module" src="../src/live.ts"></script>
   </body>

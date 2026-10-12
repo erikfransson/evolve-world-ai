@@ -3,7 +3,9 @@
 import { WebSocket } from "../../server/node_modules/ws/wrapper.mjs";
 import { AddGate, visitorKey } from "../../server/src/adds.ts";
 import { LIMITS, LIVE } from "../../server/src/config.ts";
-import { LiveWorld } from "../../server/src/liveWorld.ts";
+import { LiveWorld, groundShares } from "../../server/src/liveWorld.ts";
+import { cleanMap } from "../../src/typescript/src/live/mapInfo.ts";
+import { reshapeGenome } from "../../src/typescript/src/live/reshape.ts";
 import { startPublic } from "../../server/src/public.ts";
 import type { PublicServer } from "../../server/src/public.ts";
 import { applyTunables, readTunables } from "../../server/src/tunables.ts";
@@ -347,5 +349,36 @@ describe("add on the public server", () => {
     expect(reasons.filter((r) => /letters or digits/.test(r!))).toHaveLength(2);
     expect(reasons.filter((r) => /busy, try again in 5 s/.test(r!))).toHaveLength(3);
     for (const c of cs) c.ws.close();
+  });
+});
+
+describe("tuning and the map info", () => {
+  it("reshapes a genome to a tuned plan: the same plan keeps every weight, a new plan gets its length", () => {
+    const g = genomeFor(plan);
+    expect(Array.from(reshapeGenome(plan, g, plan))).toEqual(Array.from(g));
+    const to = { ...plan, rayCount: 5, hiddenLayers: [9], memoryShort: 0, memoryLong: 2 };
+    const out = reshapeGenome(plan, g, to);
+    expect(out.length).toBe(genomeLengthFor("forager", to));
+    expect(out.every(Number.isFinite)).toBe(true);
+    expect(() => reshapeGenome(plan, g, { ...plan, hiddenLayers: [6, 6] })).toThrow(/layers/);
+  });
+
+  it("sends the ground shares of the world in the hello; a plain world is all normal ground", () => {
+    const w = new LiveWorld(smallConfig(), null);
+    expect(w.hello(10).map).toEqual({ ground: { normal: 1, mud: 0, firm: 0, rock: 0 }, regions: [] });
+    const c = smallConfig();
+    Object.assign(c.world, { stoneDensity: 0.05, slowDensity: 0.1, fastDensity: 0.1 });
+    const g = groundShares(new LiveWorld(c, null).eco);
+    expect(g.rock).toBeGreaterThan(0);
+    expect(g.mud).toBeGreaterThan(0);
+    expect(g.normal + g.mud + g.firm + g.rock).toBeCloseTo(1, 2);
+  });
+
+  it("cleans the map from the wire: shares clamped, regions bounded and plain text", () => {
+    expect(cleanMap(null).ground.normal).toBe(1);
+    const m = cleanMap({ ground: { normal: 2, mud: -1, firm: NaN, rock: 0.2 }, regions: [...Array(40)].map((_, i) => ({ name: `R${i}‮<b>`, food: 1e9, poison: 0, ground: "mud", role: "x" })) });
+    expect(m.ground).toEqual({ normal: 1, mud: 0, firm: 0, rock: 0.2 });
+    expect(m.regions).toHaveLength(16);
+    expect(m.regions[0]).toEqual({ name: "R0<b>", food: 100, poison: 0, ground: "mud", role: "x" });
   });
 });

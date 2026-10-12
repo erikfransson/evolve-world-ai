@@ -72,8 +72,23 @@ export interface Hello {
   summary: { initialPopulation: number; maxPopulation: number; collisionDamage: boolean; seasons: boolean };
   maxViewers: number;
   add: AddRules | null; // what an add may ask for, null while adding is off
+  map: WireMap; // what the page's info section says about the ground
   serverVersion?: string; // the server's release (src/typescript/src/version.ts), may differ from the page's during a deploy
 }
+
+// The map for the info section below the world: ground shares, and named regions once a map has them (none yet).
+export interface WireRegion {
+  name: string;
+  food: number; // relative to plain ground, 1
+  poison: number; // relative, 0 for none
+  ground: string;
+  role: string;
+}
+export interface WireMap {
+  ground: { normal: number; mud: number; firm: number; rock: number }; // shares of the area, 0 to 1
+  regions: WireRegion[];
+}
+export const MAX_REGIONS = 16;
 
 export interface Season {
   yearMinutes: number;

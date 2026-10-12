@@ -33,6 +33,7 @@ import { serverUrl } from "./live/serverUrl.ts";
 import { HISTORY_FIELDS, LINEAGE_FIELDS, MAX_HISTORY, MAX_LINEAGE_HISTORY } from "./live/protocol.ts";
 import type { Hello, Season, Stats } from "./live/protocol.ts";
 import { AddPanel, parseFounders } from "./live/addPanel.ts";
+import { renderMapInfo } from "./live/mapInfo.ts";
 
 // TODO(L6): admin panel. `?admin` opens a second socket to the owner's loopback admin port (ws://127.0.0.1:8788), sends {t:"auth", token}
 // with a token the owner pastes in, then {t:"get-config"} and {t:"set-config", changes}. See server/src/admin.ts.
@@ -205,6 +206,7 @@ function onHello(h: Hello): void {
   clearSelection();
   names = new Map();
   addPanel.setRules(h.add);
+  renderMapInfo($("info"), h);
 }
 
 // Population samples for the graph, shifted to start near time 0 (historyAxis).
@@ -324,6 +326,7 @@ function onDetail(d: SelectedDetails, founderName: string): void {
   if (!s || d.id !== s.id) return;
   if (!d.alive) {
     s.died = true;
+    followNextCopy(s.id);
     return;
   }
   s.founderName = founderName;
@@ -567,12 +570,29 @@ $("selFounder").addEventListener("click", () => {
 $("pickAge").addEventListener("click", () => { if (lastStats?.best) select(lastStats.best.age); });
 $("pickChildren").addEventListener("click", () => { if (lastStats?.best) select(lastStats.best.children); });
 
+// The visitor's last added copies: when the followed one dies, the page moves on to a living copy and lights its family.
+let myCopies: number[] = [];
+function followNextCopy(dead: number): void {
+  if (!myCopies.includes(dead)) return;
+  myCopies = myCopies.filter((i) => i !== dead);
+  const next = myCopies.find((i) => scene.slotOf(i) >= 0);
+  if (next === undefined) return;
+  setTimeout(() => {
+    if (selection?.id !== dead || scene.slotOf(next) < 0) return; // the visitor picked something else meanwhile
+    select(next);
+    highlight = next;
+    lineages.setHighlight(next);
+    syncFamily();
+  }, 1500);
+}
+
 // Entry card and "Add your creature". The card shows once a visit; its answer is kept in sessionStorage.
 const addPanel = new AddPanel($("addPanel"), {
   send: (req) => link.add(req),
   added(r) {
     addPanel.close();
     $("addPeek").hidden = true;
+    myCopies = r.ids.slice();
     const id = r.ids[0]!; // an added creature founds its own lineage: its id is the family's founder
     select(id);
     highlight = id;
@@ -616,6 +636,10 @@ void fetch(new URL("../live-founders.json", document.baseURI).href)
   .then((r) => (r.ok ? r.json() : null))
   .then((data) => addPanel.setFounders(parseFounders(data)))
   .catch(() => addPanel.setFounders([]));
+
+// The world view fills the window below the banner; the page scrolls on to the info section.
+const banner = document.querySelector<HTMLElement>(".banner")!;
+new ResizeObserver(() => document.documentElement.style.setProperty("--banner-h", `${banner.offsetHeight}px`)).observe(banner);
 
 new ResizeObserver(() => syncCanvas()).observe(canvas);
 link.start();
