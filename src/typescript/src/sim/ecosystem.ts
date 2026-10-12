@@ -250,6 +250,11 @@ export class Ecosystem {
     const perDensity = itemsPerDensity(config);
     const layout = options.items;
     const start = layout ? { food: layout.filter((it) => it.kind === HIT_FOOD).length, poison: layout.filter((it) => it.kind === HIT_POISON).length } : itemCounts(config);
+    const weights = terrainOf(config).weights;
+    if (weights && !layout) {
+      if (!weights.usable(0)) start.food = 0; // a kind with no weight anywhere on the map starts and grows nowhere
+      if (!weights.usable(1)) start.poison = 0;
+    }
     const caps = capsOf(config, eco);
     this.foodCap = caps.food;
     this.poisonCap = caps.poison;

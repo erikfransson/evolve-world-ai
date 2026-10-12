@@ -201,7 +201,11 @@ export class World implements WorldView {
   // the spot lies in a cap cell that is full (nothing is added; the due item is lost, so regrowth stays in proportion to the weights).
   addRandomly(kind: HitKind, rng: Rng): number {
     if (this.freeCount === 0) return -1;
+    const weights = this.terrain.weights;
+    if (weights && !weights.usable(kind === HIT_POISON ? 1 : 0)) return -2; // nowhere on this map has weight for the kind
+    this.exhausted = false;
     this.randomSpot(kind, rng);
+    if (weights && this.exhausted) return -2; // the tries ran out, so the last spot is not a weighted draw
     if (this.capLimit) {
       const c = this.terrain.weights!.capIndex(this.spot.x, this.spot.y);
       const k = kind === HIT_POISON ? 1 : 0;
@@ -211,12 +215,13 @@ export class World implements WorldView {
   }
 
   private readonly spot = { x: 0, y: 0 };
+  private exhausted = false; // the last randomSpot used up its tries and took its last spot as it was
   private readonly rockRange = new Int32Array(4);
 
   private randomSpot(kind: HitKind, rng: Rng, clear?: { x: number; y: number; radius: number }, reject?: (x: number, y: number) => boolean): void {
     const r = this.itemRadius;
-    const weights = this.terrain.weights;
     const wk = kind === HIT_POISON ? 1 : 0;
+    const weights = this.terrain.weights?.usable(wk) ? this.terrain.weights : null; // placing outright on a map with no weight for the kind is uniform
     let x: number;
     let y: number;
     let tries = 0;
@@ -224,6 +229,7 @@ export class World implements WorldView {
     do {
       if (all++ >= MAX_SPOT_TRIES) {
         ({ x, y } = this.terrain.nearestFree(x!, y!, r)); // bounded: the last try, moved clear of rock
+        this.exhausted = true;
         break;
       }
       x = rng.range(r, this.width - r);

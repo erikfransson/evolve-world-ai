@@ -145,17 +145,37 @@ describe("weighted items and local caps", () => {
     for (let i = 6000; i < 9000; i++) expect(w.byteAt(1, world.xs[i]!, world.ys[i]!)).toBeGreaterThan(0);
   });
 
-  it("limits sum to the rounded total and give a cell of weight 0 nothing", () => {
+  it("limits sum to exactly the rounded total, hold nothing under rock or where the weight is 0", () => {
     const w = builtMap("inland-sea").weights;
     const per = (SEA.width * SEA.height) / 100 ** 2;
-    const poison = w.limits(1, 0.01, per);
-    const mean = poison.reduce((a, b) => a + b, 0);
-    const expected = w.capArea.reduce((s, a, c) => s + 0.01 * per * (a / (SEA.width * SEA.height)) * w.meanPoison[c]!, 0);
-    expect(Math.abs(mean - expected)).toBeLessThan(1);
-    poison.forEach((n, c) => { if (w.meanPoison[c]! === 0) expect(n).toBe(0); });
-    expect(poison.some((n) => n === 0)).toBe(true);
-    expect(w.limits(0, 1.5, per).every((n) => n >= 0)).toBe(true);
+    for (const [kind, density] of [[0, 1.5], [0, 2], [1, 0.01], [1, 0.05]] as const) {
+      const limits = w.limits(kind, density, per);
+      expect(limits.reduce((a, b) => a + b, 0)).toBe(Math.round(density * per));
+      limits.forEach((n, c) => {
+        expect(n).toBeGreaterThanOrEqual(0);
+        if (w.open[c]! === 0) expect(n).toBe(0);
+      });
+    }
+    expect(w.open.some((o) => o === 0)).toBe(true); // cells inside the cliff massif are all rock
+    expect(Math.min(...w.open)).toBeLessThan(0.9);
     expect(w.capCols).toBe(SEA.width / CAP_CELL);
+  });
+
+  it("puts poison on the shore: its limits dwarf those of the open sea, which stay near zero", () => {
+    const w = builtMap("inland-sea").weights;
+    const poison = w.limits(1, 0.01, (SEA.width * SEA.height) / 100 ** 2);
+    const shore = w.capIndex(22000, 6500);
+    const elsewhere = w.capIndex(30000, 20000);
+    expect(poison[shore]!).toBeGreaterThanOrEqual(3);
+    expect(poison[elsewhere]!).toBeLessThanOrEqual(1);
+  });
+
+  it("a kind with no weight anywhere is unusable", () => {
+    const none: MapSpec = { ...SEA, width: 3000, height: 2000, basePoison: 0, layers: [], rock: [] };
+    const w = buildMap(none).weights;
+    expect(w.usable(1)).toBe(false);
+    expect(w.usable(0)).toBe(true);
+    expect(w.limits(1, 0.5, 600).every((n) => n === 0)).toBe(true);
   });
 
   it("declines a spot in a full cap cell, counts removals and recounts after load", () => {

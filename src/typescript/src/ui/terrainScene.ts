@@ -3,6 +3,7 @@ import type { Terrain } from "../sim/terrain.ts";
 import { context2d, drawGround, makeCanvas } from "./groundScene.ts";
 import { rockBodies, traceLoop } from "./rockOutline.ts";
 import type { RockBody } from "./rockOutline.ts";
+import { drawTint } from "./mapTint.ts";
 
 // Draws a Terrain (rock and slow and fast ground) for the Trials scene and the Ecosystem renderer, in world coordinates under the
 // current transform. Ground is in groundScene.ts (the legend names the kinds, no symbols on it).
@@ -141,6 +142,14 @@ const RIM_PX = 2.2; // width of the dark rim band inside the edge
 const LIT_SHIFT = 0.7; // the lit rim band is the outline moved this many rim widths down and right, so it shows only on the upper left
 const LIT_WIDTH = 1.1; // in rim widths
 const CRACK_PX = 1.1;
+// Hand-designed maps draw rock lighter from afar so outcrops and massifs read against the floor; a big massif gets its top face lighter towards
+// the middle, a south cliff and a dark band at its foot.
+const FAR_BODY = "#55655e";
+const FAR_CLIFF = "rgba(8, 16, 13, 0.62)";
+const FAR_LIT = "rgba(190, 210, 198, 0.35)";
+const MASSIF_SPAN = 1800; // world units a body must span to be shaded as a massif
+const MASSIF_BANDS = [{ width: 340, alpha: 0.1 }, { width: 220, alpha: 0.12 }, { width: 130, alpha: 0.14 }, { width: 60, alpha: 0.16 }] as const; // dark bands inside the edge, widest and faintest first
+const MASSIF_LIFT = { units: 160, px: 6 };
 const NEAR_FACETS = 0.07; // from this scale the facets and cracks are drawn, below it a body is one fill and one rim
 
 // quick: from-afar drawing at any scale (no facets or cracks), for the settings preview that redraws while sliders move.
@@ -177,6 +186,44 @@ function drawRock(ctx: CanvasRenderingContext2D, t: Terrain, scale: number, view
   ctx.globalAlpha = 1;
   const band = RIM_PX * edge * px;
   const lift = Math.min(LIFT.units, LIFT.px * px) * edge;
+  if (!detailed && t.weights) {
+    for (const { outline, body: b } of shown) {
+      const massif = Math.max(b.x1 - b.x0, b.y1 - b.y0) > MASSIF_SPAN;
+      if (massif) {
+        const up = Math.min(MASSIF_LIFT.units, MASSIF_LIFT.px * px);
+        ctx.fillStyle = FAR_CLIFF;
+        ctx.fill(outline, "evenodd");
+        ctx.save();
+        ctx.translate(0, -up);
+        ctx.clip(outline, "evenodd");
+        ctx.translate(0, up);
+        ctx.fillStyle = FAR_BODY;
+        ctx.fill(outline, "evenodd");
+        ctx.strokeStyle = EDGE_DARK;
+        for (const { width, alpha } of MASSIF_BANDS) {
+          ctx.globalAlpha = alpha * 4;
+          ctx.lineWidth = 2 * width;
+          ctx.stroke(outline);
+        }
+        ctx.globalAlpha = 1;
+        ctx.restore();
+      } else {
+        ctx.fillStyle = FAR_BODY;
+        ctx.fill(outline, "evenodd");
+      }
+      ctx.strokeStyle = EDGE_DARK;
+      ctx.lineWidth = band;
+      ctx.stroke(outline);
+      ctx.save();
+      ctx.translate(-0.8 * band, -0.8 * band);
+      ctx.strokeStyle = FAR_LIT;
+      ctx.lineWidth = band;
+      ctx.stroke(outline);
+      ctx.restore();
+    }
+    ctx.lineJoin = "miter";
+    return;
+  }
   if (!detailed) {
     // From afar: one fill and one rim per body.
     ctx.fillStyle = FLAT_BODY;
@@ -234,6 +281,7 @@ function drawRock(ctx: CanvasRenderingContext2D, t: Terrain, scale: number, view
 // quick: rock as plain discs without building outlines, for previews that redraw while settings change.
 export function drawTerrain(ctx: CanvasRenderingContext2D, t: Terrain, scale: number, view: View = { x0: 0, x1: t.width, y0: 0, y1: t.height }, quick = false): void {
   if (t.empty) return;
+  if (!quick) drawTint(ctx, t);
   drawGround(ctx, t, scale, view, quick);
   drawRock(ctx, t, scale, view, quick);
 }
