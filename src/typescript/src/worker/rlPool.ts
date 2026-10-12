@@ -27,9 +27,10 @@ export type RlJob =
   | { type: "league"; genomes: Float32Array[] } // the self-play rivals from now on (see SELF)
   | ({ type: "episode"; id: number } & RlTask)
   | ({ type: "rollout"; id: number } & RolloutTask) // a stochastic episode of backprop RL, played against a mirror of the learner
+  | { type: "batch"; id: number; genomes: Float32Array[]; tasks: Float64Array } // episodes in a row: triples (env, index into genomes, seed)
   | ({ type: "record"; id: number; every: number; inputs: boolean } & RlTask); // inputs: also record the brain input
 
-export type RlDone = { id: number; reward: number } | { id: number; recording: Recording } | { id: number; rollout: Rollout } | { id: number; error: string }; // error: the episode threw
+export type RlDone = { id: number; reward: number } | { id: number; rewards: Float64Array } | { id: number; recording: Recording } | { id: number; rollout: Rollout } | { id: number; error: string }; // error: the episode threw
 
 export type RlPort = Port<RlJob, RlDone>;
 
@@ -50,6 +51,15 @@ export function rlHelper(): (job: RlJob) => RlDone | null {
       return null;
     }
     try {
+      if (job.type === "batch") {
+        const rewards = new Float64Array(job.tasks.length / 3);
+        const learners = job.genomes.map((genome) => ({ plan: setup.plan, genome }));
+        for (let k = 0; k < rewards.length; k++) {
+          const env = setup.envs[job.tasks[3 * k]!]!;
+          rewards[k] = runEpisode(env, learners[job.tasks[3 * k + 1]!]!, job.tasks[3 * k + 2]!, setup.pool, setup.library).reward;
+        }
+        return { id: job.id, rewards };
+      }
       const env = setup.envs[job.env]!;
       if (job.type === "rollout") return { id: job.id, rollout: playRollout(env, setup.plan, job, setup.pool, base) };
       const learner = { plan: setup.plan, genome: job.genome };
@@ -87,6 +97,7 @@ export function inlineRlPort(): RlPort {
 }
 
 const STALL_MS = 120_000; // no result at all for this long fails the run: an episode takes well under a second
+const CHUNKS_PER_PORT = 6; // batches per helper in a call of rewards()
 const IN_FLIGHT = 2; // jobs queued per helper, so it never waits for the next one
 
 interface Run {
@@ -119,8 +130,24 @@ export class RlPool {
 
   // Rewards of the tasks, in task order.
   async rewards(tasks: readonly RlTask[]): Promise<number[]> {
-    const done = await this.runAll(tasks.map((t) => ({ type: "episode" as const, ...t })));
-    return done.map((d) => (d as { reward: number }).reward);
+    // Chunks of consecutive tasks (genome by genome), so a genome crosses to a helper once per chunk, and a few chunks per helper to balance load.
+    const size = Math.max(1, Math.ceil(tasks.length / (this.ports.length * CHUNKS_PER_PORT)));
+    const jobs: Run["jobs"] = [];
+    for (let from = 0; from < tasks.length; from += size) {
+      const end = Math.min(tasks.length, from + size);
+      const index = new Map<Float32Array, number>();
+      const genomes: Float32Array[] = [];
+      const triples = new Float64Array(3 * (end - from));
+      for (let k = from; k < end; k++) {
+        const t = tasks[k]!;
+        let gi = index.get(t.genome);
+        if (gi === undefined) index.set(t.genome, (gi = genomes.push(t.genome) - 1));
+        triples.set([t.env, gi, t.seed], 3 * (k - from));
+      }
+      jobs.push({ type: "batch", genomes, tasks: triples });
+    }
+    const done = await this.runAll(jobs);
+    return done.flatMap((d) => Array.from((d as { rewards: Float64Array }).rewards));
   }
 
   // Backprop RL's stochastic episodes, in task order.
