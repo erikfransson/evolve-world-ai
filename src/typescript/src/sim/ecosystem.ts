@@ -411,10 +411,10 @@ export class Ecosystem {
       if (this.batchAll) {
         // The batch holds every member in creature construction order: same work, but the objects are read front to back.
         const { creatures, count } = this.batch;
-        const f32 = this.kernels?.f32; // every creature just adopted its outputs there
+        const f32 = this.kernels?.f32;
         for (let k = 0; k < count; k++) {
           const c = creatures[k]!;
-          const out = f32 ?? c.outputs;
+          const out = c.outputArray(f32);
           c.remember(out);
           c.steer(out);
         }

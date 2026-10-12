@@ -219,6 +219,11 @@ export class Creature {
     return this.outBank === null ? this.output : this.outBank.f32.subarray(this.outAt, this.outAt + this.output.length);
   }
 
+  // The array this creature's outputs live in, given the kernel memory its adopted outputs would be in (saves the bank's getter per creature).
+  outputArray(bank: Float32Array | undefined): Float32Array {
+    return this.outBank === null ? this.output : (bank ?? this.outBank.f32);
+  }
+
   private outView(): Float32Array {
     return this.outBank === null ? this.output : this.outBank.f32;
   }
