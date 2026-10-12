@@ -435,7 +435,10 @@ function begin(): void {
   worker.onerror = (ev) => {
     console.error("RL Arena worker error", ev.error ?? ev);
     if (ev.message) return fail(ev.message);
-    void siteUpdated().then((updated) => fail(updated ? "the site was updated while this page was open. Reload the page to train again." : "the training worker crashed (details in the browser console)"));
+    const failed = worker;
+    void siteUpdated().then((updated) => {
+      if (worker === failed) fail(updated ? "the site was updated while this page was open. Reload the page to train again." : "the training worker crashed (details in the browser console)"); // not a run started meanwhile
+    });
   };
   grid.setCount(TILE_COUNTS.includes(tiles as 1) ? tiles : DEFAULT_TILES);
   zoom.close();
