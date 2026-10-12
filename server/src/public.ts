@@ -6,7 +6,7 @@ import { parseClientMessage } from "../../src/typescript/src/live/protocol.ts";
 import { ADD_PREFIX, MAX_ADD_BYTES, parseAdd } from "../../src/typescript/src/live/add.ts";
 import type { Added, Refused } from "../../src/typescript/src/live/add.ts";
 import { AddGate, visitorKey } from "./adds.ts";
-import type { ServerText } from "../../src/typescript/src/live/protocol.ts";
+import type { Rules, ServerText } from "../../src/typescript/src/live/protocol.ts";
 import { MAX_STRIDE, RESYNC_S, RESYNC_SHARE, TokenBucket, fits, frameBudget, gets, sendStride } from "./budget.ts";
 import { dropReason } from "./clients.ts";
 import { ItemFeed } from "./itemFeed.ts";
@@ -15,6 +15,8 @@ import { LIMITS, LIVE, TRUST_FORWARDED } from "./config.ts";
 import type { LiveWorld } from "./liveWorld.ts";
 
 const PING_MIN_MS = 200;
+const ADD_BURST = 2;
+const ADD_STRIKES = 3; // adds past the rate a connection may send (one more each minute) before it counts as a flood: a page with stale rules stays
 export const FRAME_MS = 200;
 const FRAME_HZ = 1000 / FRAME_MS;
 
@@ -36,7 +38,9 @@ interface Viewer {
   details: TokenBucket; // bytes of details and genomes
   selects: TokenBucket;
   historySent: boolean;
-  adds: TokenBucket; // add messages on this connection
+  addTokens: number; // adds this connection may send now: a burst of ADD_BURST, refilled at one per add.socketEveryS (read live, so an admin change applies at once)
+  addAt: number; // ms, when addTokens was last brought up to date
+  strikes: TokenBucket; // adds sent past the connection's rate; when these run out the connection is cut off as a flood
   visitor: string | null; // address key for the per-visitor add cap, null when unknown
   adding: boolean; // an add waits for the tick in flight
 }
@@ -102,7 +106,7 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
     send(ws, h, "text");
   };
 
-  // An add: per connection at most a burst of 2 and then one per add.socketEveryS (faster cuts it off); parsed only while the global
+  // An add: per connection a burst of 2, then one per add.socketEveryS (checked in the message handler); parsed only while the global
   // attempt rate allows; inserted between ticks if the caps (adds.ts) allow. Every outcome gets an added or refused reply.
   const add = (ws: WebSocket, v: Viewer, text: string): void => {
     const reply = (m: Added | Refused): void => {
@@ -146,7 +150,9 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
       details: new TokenBucket(limits.detailBytesPerViewer, limits.detailBurstBytes),
       selects: new TokenBucket(limits.selectsPerSecond, limits.selectBurst),
       historySent: false,
-      adds: new TokenBucket(1 / LIVE.add.socketEveryS, 2),
+      addTokens: ADD_BURST,
+      addAt: now,
+      strikes: new TokenBucket(1 / 60, ADD_STRIKES),
       visitor: visitorKey(req.headers["x-forwarded-for"], trustForwarded),
       adding: false,
     };
@@ -190,7 +196,16 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
         c.lastMessageAt = Date.now();
         const text = isBinary ? null : data.toString();
         if (text?.startsWith(ADD_PREFIX)) {
-          if (!v.ready || !v.adds.take(1)) return void ws.terminate(); // the page waits for its hello and its last reply
+          if (!v.ready) return void ws.terminate(); // the page waits for its hello
+          const t = Date.now();
+          v.addTokens = Math.min(ADD_BURST, v.addTokens + (t - v.addAt) / (1000 * LIVE.add.socketEveryS));
+          v.addAt = t;
+          if (v.addTokens < 1) {
+            // Past the rate: refused unread with the wait, as a page with stale rules might; a flood past the strikes is cut off.
+            if (!v.strikes.take(1)) return void ws.terminate();
+            return sendText(ws, { t: "refused", reason: "adding too fast on this connection", retryS: Math.ceil((1 - v.addTokens) * LIVE.add.socketEveryS) });
+          }
+          v.addTokens -= 1;
           return add(ws, v, text);
         }
         const msg = text === null ? null : parseClientMessage(text);
@@ -356,12 +371,19 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
   }, FRAME_MS);
   let statsNo = 0;
   let statsPending = false;
+  let rulesJson = JSON.stringify(live.currentAddRules());
   const statsLoop = setInterval(() => {
     if (statsPending) return;
     statsPending = true;
     void live.whenIdle(() => {
       try {
         broadcastText(live.stats(viewers.size, statsNo++ % limits.recordsEveryS === 0));
+        const add = live.currentAddRules();
+        const json = JSON.stringify(add);
+        if (json !== rulesJson) {
+          rulesJson = json;
+          broadcastText({ t: "rules", add } satisfies Rules, true);
+        }
       } catch (e) {
         console.error("stats loop:", e instanceof Error ? e.message : e);
       }

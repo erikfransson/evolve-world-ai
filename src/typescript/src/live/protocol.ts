@@ -151,7 +151,12 @@ export interface Busy {
   t: "busy"; // sent before closing when the viewer cap is reached
   maxViewers: number;
 }
-export type ServerText = Hello | Stats | History | Pong | Busy | Added | Refused;
+// The add rules again after an admin change (add.* settings, birth ranges or costs), so an open page keeps to them.
+export interface Rules {
+  t: "rules";
+  add: AddRules | null;
+}
+export type ServerText = Hello | Stats | History | Pong | Busy | Added | Refused | Rules;
 
 export type ClientMessage = { t: "ping" } | { t: "select"; id: number | null };
 

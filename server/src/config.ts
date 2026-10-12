@@ -39,7 +39,7 @@ export const LIVE = {
   },
 };
 // Per-visitor limits key on the address the tunnel puts in X-Forwarded-For. Tailscale Funnel (serve proxy mode) sets that header,
-// overwriting any the visitor sent, to the address its ingress saw (ipn/ipnlocal/serve.go, addProxyForwardedHeaders, tailscale 1.104).
+// overwriting any the visitor sent, to the address its ingress saw (ipn/ipnlocal/serve.go, addProxyForwardedHeaders).
 // Off until checked with a real request through the tunnel (Erik's rule); LIVE_TRUST_FORWARDED=1 turns it on. Off, only the global caps apply.
 export const TRUST_FORWARDED = process.env.LIVE_TRUST_FORWARDED === "1";
 // Helper threads that sense and think (createNodeThinkPool); fixed for the process, LIVE_THREADS overrides. They inherit the unit's idle scheduling.
@@ -75,6 +75,7 @@ export const LIMITS = {
   heartbeatMs: 30_000, // ws ping, a client that misses the pong is dropped
   idleDropMs: 60_000, // no message from the client for this long: dropped (the page pings every 20 s)
   maxClientMessagesPerSecond: 20,
+  maxLateLineages: 15_000, // lineage rows of added founders; no adds past this, well under what a save may hold (saves.ts SAVE_MAX_LATE)
   addAttemptsPerSecond: 2, // add messages parsed per second, all viewers together; past it they are refused unread
   addAttemptBurst: 5,
 };

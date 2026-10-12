@@ -2,6 +2,7 @@ import type { EcoCreature, Ecosystem } from "../../src/typescript/src/sim/ecosys
 import { Leaderboard, boardValue } from "../../src/typescript/src/sim/leaderboard.ts";
 import { HISTORY_FIELDS, LINEAGE_FIELDS, LINEAGE_TOP, MAX_HISTORY, MAX_LINEAGE_HISTORY, MAX_RECORDS, RECORD_BOARDS } from "../../src/typescript/src/live/protocol.ts";
 import type { History, RecordBoard, Stats, WireLineage, WireRecord } from "../../src/typescript/src/live/protocol.ts";
+import { validName } from "../../src/typescript/src/live/add.ts";
 
 export const SAMPLE_EVERY_S = 20; // simulated seconds between population samples: MAX_HISTORY of them span 6 simulated hours
 export const LINEAGE_EVERY_S = 120; // and between lineage samples, the same 6 hours
@@ -63,7 +64,7 @@ export class Chronicle {
     }
     stats.lineages = top.map((l): WireLineage => {
       const name = eco.lineageName(l.founder);
-      return { founder: l.founder, hue: Math.round(l.hue), pool: l.pool, count: l.count, ...(name ? { name } : {}) };
+      return { founder: l.founder, hue: Math.round(l.hue), pool: l.pool, count: l.count, ...(validName(name) ? { name } : {}) };
     });
     let oldest: EcoCreature | null = null;
     let parent: EcoCreature | null = null;

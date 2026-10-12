@@ -4,6 +4,12 @@ import { WebSocket } from "../../server/node_modules/ws/wrapper.mjs";
 import { AddGate, visitorKey } from "../../server/src/adds.ts";
 import { LIMITS, LIVE } from "../../server/src/config.ts";
 import { LiveWorld, groundShares } from "../../server/src/liveWorld.ts";
+import { SAVE_MAX_LATE, Saves } from "../../server/src/saves.ts";
+import { StateStore } from "../../server/src/state.ts";
+import { cleanHello } from "../../src/typescript/src/live/connection.ts";
+import { mkdtempSync, readdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { cleanMap } from "../../src/typescript/src/live/mapInfo.ts";
 import { reshapeGenome } from "../../src/typescript/src/live/reshape.ts";
 import { startPublic } from "../../server/src/public.ts";
@@ -16,6 +22,11 @@ import { planUpkeep } from "../../src/typescript/src/sim/sensors.ts";
 import { smallConfig } from "./liveHelpers.ts";
 
 const ADD_DEFAULTS = structuredClone(LIVE.add);
+// The server's spot draws, made repeatable.
+const seq = (seed: number): (() => number) => {
+  let s = seed;
+  return () => ((s = (s * 1103515245 + 12345) % 2 ** 31) / 2 ** 31);
+};
 afterEach(() => Object.assign(LIVE.add, ADD_DEFAULTS));
 
 const plan = { rayCount: 3, raySpread: 1.2, rayLength: 120, hiddenLayers: [6], memoryShort: 1, memoryLong: 0 };
@@ -75,6 +86,7 @@ describe("add message: encode and parse", () => {
     expect(parseAdd(send({ ...o, plan: { ...plan, hiddenLayers: Array(1e4).fill(4) } }), r)).toMatch(/hiddenLayers/);
     expect(parseAdd(send({ ...o, plan: { ...plan, rayCount: 17 } }), r)).toMatch(/rayCount/);
     expect(parseAdd(send({ ...o, plan: { ...plan, rayLength: 1e9 } }), r)).toMatch(/rayLength/);
+    expect(parseAdd(send({ ...o, plan: { ...plan, raySpread: 0 } }), r)).toMatch(/raySpread must be above 0/); // insertCreature needs a spread
   });
 
   it("refuses bad names: unicode, spaces, 17 characters, control characters, empty, not text", () => {
@@ -102,6 +114,25 @@ describe("add message: encode and parse", () => {
     expect(cleanAddReply({ t: "refused", reason: 5, retryS: NaN })).toEqual({ t: "refused", reason: "refused" });
     expect(cleanAddRules(rules())).toEqual(rules());
     expect(cleanAddRules({ ...rules(), maxCopies: 9 })).toBeNull();
+  });
+
+  it("defaults a hello's missing or bad summary, so the info section cannot throw", () => {
+    const h = new LiveWorld(smallConfig(), null).hello(5);
+    expect(cleanHello({ ...h, summary: undefined as never })!.summary).toEqual({ initialPopulation: 0, maxPopulation: 0, collisionDamage: false, seasons: false });
+    expect(cleanHello({ ...h, summary: { initialPopulation: "x", maxPopulation: -5, collisionDamage: 1, seasons: true } as never })!.summary).toEqual({ initialPopulation: 0, maxPopulation: 0, collisionDamage: false, seasons: true });
+  });
+
+  it("names in the stats lineages pass the name filter, as in the details", () => {
+    const config = smallConfig();
+    config.eco.initialPopulation = 2;
+    const w = new LiveWorld(config, null);
+    const r = w.addCreatures(request({ copies: 1, name: "Good1" }), seq(4));
+    if (!("ids" in r)) throw new Error(r.reason);
+    const t = w.eco.lineageTable.toState();
+    w.eco.lineageTable.load({ ...t, late: t.late.map((row) => [...row.slice(0, 5), "bad name"] as (typeof t.late)[0]) }); // from an older or hand-edited save
+    const named = w.stats(0).lineages!.find((l) => l.founder === r.ids[0]);
+    expect(named).toBeDefined();
+    expect(named!.name).toBeUndefined();
   });
 
   it("computes energy per second like the engine", () => {
@@ -176,9 +207,11 @@ describe("add caps (adds.ts)", () => {
   it("keys visitors on the tunnel's address only when trusted; IPv6 on its /64", () => {
     expect(visitorKey("203.0.113.9", true)).toBe("203.0.113.9");
     expect(visitorKey("203.0.113.9", false)).toBeNull();
-    expect(visitorKey(undefined, true)).toBeNull();
-    expect(visitorKey("1.2.3.4, 5.6.7.8", true)).toBeNull(); // Funnel sets one address; a list is not from it
-    expect(visitorKey(["1.2.3.4"], true)).toBeNull();
+    // Trusted but missing or malformed: one shared key, held to the per-visitor cap like any visitor.
+    expect(visitorKey(undefined, true)).toBe("unknown");
+    expect(visitorKey("1.2.3.4, 5.6.7.8", true)).toBe("unknown"); // Funnel sets one address; a list is not from it
+    expect(visitorKey(["1.2.3.4"], true)).toBe("unknown");
+    expect(visitorKey("x".repeat(100), true)).toBe("unknown");
     expect(visitorKey("2001:db8:1:2:aaaa::1", true)).toBe("2001:db8:1:2::/64");
     expect(visitorKey("2001:db8:1:2:ffff:1:2:3", true)).toBe("2001:db8:1:2::/64");
     expect(visitorKey("2001:db8::1", true)).toBe("2001:db8:0:0::/64");
@@ -186,10 +219,6 @@ describe("add caps (adds.ts)", () => {
 });
 
 describe("adding to the world (LiveWorld)", () => {
-  const seq = (seed: number): (() => number) => {
-    let s = seed;
-    return () => ((s = (s * 1103515245 + 12345) % 2 ** 31) / 2 ** 31);
-  };
 
   it("is deterministic: the same add at the same tick gives the same world", () => {
     const a = new LiveWorld(smallConfig(), null);
@@ -238,6 +267,45 @@ describe("adding to the world (LiveWorld)", () => {
     expect(m.children).toBeGreaterThan(0);
     const child = w.eco.members.find((c) => c.parentId === id)!;
     expect(child.lastBirthTick).toBe(-Infinity);
+  });
+
+  it("refuses adds once the lineage rows of added founders reach the cap, inserting nothing", () => {
+    const cap = LIMITS.maxLateLineages;
+    LIMITS.maxLateLineages = 5;
+    try {
+      const w = new LiveWorld(smallConfig(), null);
+      expect("ids" in w.addCreatures(request({ copies: 3 }), seq(1))).toBe(true);
+      expect("ids" in w.addCreatures(request({ copies: 2 }), seq(2))).toBe(true);
+      const late = w.eco.lineageTable.toState().late.length;
+      expect(w.addCreatures(request({ copies: 1 }), seq(3))).toEqual({ reason: "the world is full of families, adding is paused until old ones are cleared" });
+      expect(w.eco.lineageTable.toState().late.length).toBe(late);
+    } finally {
+      LIMITS.maxLateLineages = cap;
+    }
+  });
+
+  it("never writes a save that would not restore: too many lineage rows, or a row the restore refuses", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const w = new LiveWorld(smallConfig(), null);
+      const r = w.addCreatures(request({ copies: 1 }), seq(1));
+      if (!("ids" in r)) throw new Error(r.reason);
+      const table = w.eco.lineageTable;
+      const good = table.toState();
+      const dir = mkdtempSync(join(tmpdir(), "evolve-add-saves-"));
+      const saves = new Saves(w, new StateStore(dir));
+      // As if the rows had piled up: distinct founders, each with a living member, so the table keeps them.
+      table.load({ ...good, late: Array.from({ length: SAVE_MAX_LATE + 1 }, (_, k) => [good.founders + k, 1, 0, 0, 0, "Pile"] as (typeof good.late)[0]) });
+      await expect(saves.save()).rejects.toThrow(/not saved.*lineage rows/);
+      table.load({ ...good, late: [[...good.late[0]!.slice(0, 5), "x".repeat(40)] as (typeof good.late)[0]] }); // a name restore refuses
+      await expect(saves.save()).rejects.toThrow(/not saved.*would not restore/);
+      expect(err).toHaveBeenCalledWith("SAVE REFUSED: it would not restore, the last good save is kept");
+      expect(readdirSync(dir)).toEqual([]);
+      table.load(good);
+      await expect(saves.save()).resolves.toMatch(/^saved/);
+    } finally {
+      err.mockRestore();
+    }
   });
 
   it("refuses when the world is full, inserting nothing", () => {
@@ -309,14 +377,66 @@ describe("add on the public server", () => {
     c.ws.close();
   });
 
-  it("per connection: a third add inside the socket rate cuts the connection off", async () => {
+  it("per connection: past the burst an add is refused unread with the wait (a page with stale rules), and a flood past the strikes is cut off", async () => {
     await serve(61403);
     const c = client(61403);
     await c.hello;
-    c.ws.send(encodeAdd(request({ copies: 1 })));
-    c.ws.send(encodeAdd(request({ copies: 1 })));
+    for (let i = 1; i <= 3; i++) {
+      c.ws.send(encodeAdd(request({ copies: 1 })));
+      await vi.waitFor(() => expect(c.replies).toHaveLength(i));
+    }
+    expect(c.replies.filter((r) => r.t === "added"), JSON.stringify(c.replies)).toHaveLength(2);
+    expect(c.replies.find((r) => r.t === "refused")).toMatchObject({ reason: "adding too fast on this connection", retryS: expect.any(Number) });
+    expect(c.ws.readyState).toBe(WebSocket.OPEN);
+    for (let i = 0; i < 3; i++) c.ws.send(encodeAdd(request({ copies: 1 }))); // two more strikes, then the fourth past the rate
+    expect(await c.closed).toBe(1006);
+    expect(c.replies.filter((r) => r.reason === "adding too fast on this connection")).toHaveLength(3);
+  });
+
+  it("an add before the hello cuts the connection off (the page waits for its hello)", async () => {
+    LIVE.add.minSpeed = 0;
+    const world = new LiveWorld(smallConfig(), null);
+    const idle = world.whenIdle.bind(world);
+    let held = true; // the connection's hello job waits, as it does behind a tick on helper threads
+    world.whenIdle = <T>(fn: () => T): Promise<T> => (held ? new Promise<T>((r) => setTimeout(() => r(idle(fn)), 1500)) : idle(fn));
+    const pub = startPublic("127.0.0.1", 61408, world, LIMITS, new AddGate(), false);
+    servers.push(pub);
+    await new Promise<void>((r) => (pub.http.listening ? r() : pub.http.once("listening", () => r())));
+    const c = client(61408);
+    await new Promise((r) => c.ws.on("open", r));
     c.ws.send(encodeAdd(request({ copies: 1 })));
     expect(await c.closed).toBe(1006);
+    held = false;
+  });
+
+  it("sends the add rules again when an admin changes them, and the server applies the new socket rate at once", async () => {
+    await serve(61409);
+    const c = client(61409);
+    const rules: { add: { maxCopies: number } | null }[] = [];
+    c.ws.on("message", (d: Buffer, bin: boolean) => {
+      if (!bin && JSON.parse(d.toString()).t === "rules") rules.push(JSON.parse(d.toString()));
+    });
+    await c.hello;
+    LIVE.add.maxCopies = 2;
+    await vi.waitFor(() => expect(rules.at(-1)?.add?.maxCopies).toBe(2), { timeout: 4000 });
+    LIVE.add.perWindow = 0;
+    await vi.waitFor(() => expect(rules.at(-1)?.add).toBeNull(), { timeout: 4000 });
+    c.ws.close();
+  });
+
+  it("trusted header missing: all such adds share one visitor cap", async () => {
+    await serve(61410, {}, true);
+    const a = client(61410);
+    const b = client(61410);
+    await Promise.all([a.hello, b.hello]);
+    a.ws.send(encodeAdd(request({ copies: 3 })));
+    await vi.waitFor(() => expect(a.replies).toHaveLength(1));
+    expect(a.replies[0]!.t).toBe("added");
+    b.ws.send(encodeAdd(request({ copies: 1 })));
+    await vi.waitFor(() => expect(b.replies).toHaveLength(1));
+    expect(b.replies[0]).toMatchObject({ t: "refused", reason: expect.stringMatching(/a moment ago/) });
+    a.ws.close();
+    b.ws.close();
   });
 
   it("an add message past MAX_ADD_BYTES closes the connection (ws payload cap)", async () => {

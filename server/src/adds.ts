@@ -73,14 +73,17 @@ export class AddGate {
   }
 }
 
-// The visitor's address key from the tunnel's X-Forwarded-For (one address, as Tailscale sets it), or null. IPv6 addresses key on
-// their /64, which one visitor usually holds whole.
+// The visitor's address key from the tunnel's X-Forwarded-For (one address, as Tailscale sets it), or null when the header is not
+// trusted (then only the global caps apply). A trusted but missing or malformed header counts under one shared key, so it cannot
+// skip the per-visitor cap. IPv6 addresses key on their /64, which one visitor usually holds whole.
+export const UNKNOWN_VISITOR = "unknown";
 export function visitorKey(header: string | string[] | undefined, trust: boolean): string | null {
-  if (!trust || typeof header !== "string" || header.length > 64) return null;
+  if (!trust) return null;
+  if (typeof header !== "string" || header.length > 64) return UNKNOWN_VISITOR;
   const ip = header.trim();
   const kind = isIP(ip);
   if (kind === 4) return ip;
-  if (kind !== 6) return null;
+  if (kind !== 6) return UNKNOWN_VISITOR;
   if (ip.includes(".")) return ip; // IPv4-mapped
   const [head, tail] = ip.split("::") as [string, string | undefined];
   const left = head ? head.split(":") : [];

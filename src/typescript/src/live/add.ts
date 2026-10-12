@@ -120,6 +120,7 @@ export function parseAdd(data: string, rules: AddRules): AddRequest | string {
   if (!Array.isArray(m.plan.hiddenLayers) || m.plan.hiddenLayers.length > L.layers[1]) return "hiddenLayers must be 1 to 4 layers of 1 to 32";
   const plan = checkPlan(m.plan);
   if (typeof plan === "string") return plan;
+  if (!(plan.raySpread > 0)) return "raySpread must be above 0"; // insertCreature needs a spread
   const n = genomeLengthFor("forager", plan);
   const weights = fromBase64(m.genome, n);
   if (!weights) return `genome must be ${n} float32 weights in base64`;

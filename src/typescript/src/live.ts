@@ -126,13 +126,13 @@ function fmtUptime(s: number): string {
 function onState(state: LinkState, retryInS: number): void {
   clearInterval(retryTimer);
   $("offline").hidden = state !== "offline";
-  if (state === "connecting") setChip(state, "Connecting");
-  else if (state === "full") setChip(state, `Full of viewers, retrying in ${retryInS} s`);
-  else if (state === "outdated") setChip(state, "Page out of date, reload");
   if (state !== "live") {
     addPanel.disconnected();
     $("entryLive").textContent = state === "connecting" ? "Connecting to the world" : state === "full" ? "Full of viewers right now" : state === "outdated" ? "This page is out of date, reload it" : "The world is offline right now";
   }
+  if (state === "connecting") setChip(state, "Connecting");
+  else if (state === "full") setChip(state, `Full of viewers, retrying in ${retryInS} s`);
+  else if (state === "outdated") setChip(state, "Page out of date, reload");
   else if (state === "live") {
     chip.dataset.state = "live";
     renderStats();
@@ -530,6 +530,7 @@ const link = new LiveLink(url, {
   },
   onStats,
   onAdd: (r) => addPanel.reply(r),
+  onRules: (r) => addPanel.setRules(r),
   onHistory(h) {
     samples = h.samples.slice();
     lineageHistory = h.lineage.slice();

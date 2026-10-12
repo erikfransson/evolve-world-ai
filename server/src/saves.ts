@@ -1,8 +1,11 @@
 import { LIMITS } from "./config.ts";
+import { parseSave } from "./saveParse.ts";
 import type { LiveWorld } from "./liveWorld.ts";
 import type { StateStore } from "./state.ts";
 
 const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+export const SAVE_MAX_LATE = 20_000; // late lineage rows restoreState accepts (MAX_CREATURES in ecoState.ts)
+const UNREADABLE = "SAVE REFUSED: it would not restore, the last good save is kept";
 
 // Saving and restoring the live world. Jobs run one at a time. Only saveState and JSON.stringify block the tick loop, the gzip runs on a worker thread.
 export class Saves {
@@ -26,7 +29,12 @@ export class Saves {
     return this.exclusive(async () => {
       if (this.live.failedTicks > 0) throw new Error(`its ticks are failing (${this.live.failedTicks} in a row), the last good save is kept`);
       const t0 = performance.now();
-      const json = JSON.stringify(await this.live.whenIdle(() => this.live.saveState()));
+      const state = await this.live.whenIdle(() => this.live.saveState());
+      if (state.lineages.late.length > SAVE_MAX_LATE) {
+        console.error(UNREADABLE);
+        throw new Error(`the world has ${state.lineages.late.length} lineage rows, more than a restore accepts (${SAVE_MAX_LATE})`);
+      }
+      const json = JSON.stringify(state);
       const bytes = Buffer.byteLength(json);
       if (bytes > LIMITS.maxSaveJsonBytes) {
         const why = `the world is ${Math.round(bytes / 1e6)} MB of JSON, over the ${LIMITS.maxSaveJsonBytes / 1e6} MB a save may hold (it could not be read back)`;
@@ -34,7 +42,13 @@ export class Saves {
         throw new Error(why);
       }
       const stallMs = Math.round(performance.now() - t0);
-      const name = await this.store.write(json, { population: this.live.eco.population, tick: this.live.eco.tick });
+      // The same parse and checks as a restore, on the worker with its heap cap; a save that fails them is never written.
+      const verify = (gz: Uint8Array): Promise<unknown> =>
+        parseSave(gz, LIMITS.maxSaveJsonBytes).catch((e: unknown) => {
+          console.error(UNREADABLE);
+          throw new Error(`it would not restore: ${errText(e)}`);
+        });
+      const name = await this.store.write(json, { population: this.live.eco.population, tick: this.live.eco.tick }, new Date(), true, verify);
       return `saved ${name} (${Math.round(json.length / 1e6)} MB json, ${stallMs} ms tick stall)`;
     }).catch((e: unknown) => {
       throw new Error(`not saved: ${errText(e)}`);

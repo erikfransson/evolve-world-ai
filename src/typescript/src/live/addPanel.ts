@@ -46,6 +46,7 @@ interface Tuned {
   spreadDeg: number;
   length: number;
   neurons: number;
+  neuronsSet: boolean; // the slider was moved: every layer takes `neurons`; until then the base's own layer sizes stay
   memShort: number;
   memLong: number;
   birth: Birth;
@@ -89,12 +90,12 @@ export function planGlyph(plan: Pick<BodyPlan, "rayCount" | "raySpread" | "rayLe
 }
 
 const deg = (r: number): number => Math.round((r * 180) / Math.PI);
-const tunedOf = (plan: BodyPlan, birth: Birth): Tuned => ({ rays: plan.rayCount, spreadDeg: deg(plan.raySpread), length: Math.round(plan.rayLength), neurons: Math.max(...plan.hiddenLayers), memShort: plan.memoryShort, memLong: plan.memoryLong, birth: { ...birth } });
+const tunedOf = (plan: BodyPlan, birth: Birth): Tuned => ({ rays: plan.rayCount, spreadDeg: deg(plan.raySpread), length: Math.round(plan.rayLength), neurons: Math.max(...plan.hiddenLayers), neuronsSet: false, memShort: plan.memoryShort, memLong: plan.memoryLong, birth: { ...birth } });
 const planOf = (base: BodyPlan, t: Tuned): BodyPlan => ({
   rayCount: t.rays,
   raySpread: Math.max(1, t.spreadDeg) * (Math.PI / 180),
   rayLength: t.length,
-  hiddenLayers: base.hiddenLayers.map(() => t.neurons),
+  hiddenLayers: t.neuronsSet ? base.hiddenLayers.map(() => t.neurons) : base.hiddenLayers.slice(),
   memoryShort: t.memShort,
   memoryLong: t.memLong,
 });
@@ -124,6 +125,8 @@ export class AddPanel {
   private hue = Math.floor(Math.random() * 360);
   private copies = 1;
   private job: TrainJob | null = null;
+  // The last trained brain with what it was trained from, reused when an add is refused or fails and nothing changed since.
+  private trained: { from: Float32Array; plan: string; kinds: string; genome: Float32Array } | null = null;
   private waiting = false; // an add is on its way
   private lockedUntil = 0; // ms: the connection's add rate, or the server's retry time
   private lockTimer: ReturnType<typeof setInterval> | undefined;
@@ -140,14 +143,20 @@ export class AddPanel {
     this.$<HTMLInputElement>("addFile").addEventListener("change", (e) => void this.readFile((e.target as HTMLInputElement).files?.[0] ?? null));
     const name = this.$<HTMLInputElement>("addName");
     name.maxLength = NAME_MAX;
-    name.addEventListener("input", () => this.refresh());
+    name.addEventListener("input", () => {
+      delete name.dataset.auto; // typed by the visitor: a new founder or file keeps it
+      this.refresh();
+    });
     const hue = this.$<HTMLInputElement>("addHue");
     hue.value = String(this.hue);
     hue.addEventListener("input", () => {
       this.hue = Number(hue.value);
       this.refresh();
     });
-    for (const r of root.querySelectorAll<HTMLInputElement>('input[name="addCopies"]')) r.addEventListener("change", () => (this.copies = Number(r.value)));
+    for (const r of root.querySelectorAll<HTMLInputElement>('input[name="addCopies"]')) r.addEventListener("change", () => {
+      this.copies = Number(r.value);
+      this.refresh();
+    });
     this.$("addGo").addEventListener("click", () => void this.go());
     this.$("addCancel").addEventListener("click", () => this.cancelTraining());
     root.addEventListener("keydown", (e) => {
@@ -196,7 +205,10 @@ export class AddPanel {
         this.syncSliders();
       }
       for (const r of this.root.querySelectorAll<HTMLInputElement>('input[name="addCopies"]')) r.disabled = Number(r.value) > rules.maxCopies;
-      if (this.copies > rules.maxCopies) this.copies = 1;
+      if (this.copies > rules.maxCopies) {
+        this.copies = 1;
+        this.root.querySelector<HTMLInputElement>('input[name="addCopies"][value="1"]')!.checked = true;
+      }
     }
     this.refresh();
   }
@@ -362,7 +374,10 @@ export class AddPanel {
     this.slider(vision, "rays", "Rays", "How many rays it sees with. Each costs energy by its length.", L.rayCount[0], L.rayCount[1], 1, (v) => String(v), (v) => (t().rays = v));
     this.slider(vision, "spread", "Spread", "The angle the rays fan out over.", 10, 360, 5, (v) => `${v}°`, (v) => (t().spreadDeg = v));
     this.slider(vision, "length", "Ray length", "How far it sees. Longer rays cost more energy.", L.rayLength[0], L.rayLength[1], 10, (v) => String(v), (v) => (t().length = v));
-    this.slider(brain, "neurons", "Neurons per layer", "Size of each hidden layer. New neurons start silent and learn in training.", L.neurons[0], L.neurons[1], 1, (v) => String(v), (v) => (t().neurons = v));
+    this.slider(brain, "neurons", "Neurons per layer", "Size of each hidden layer. New neurons start silent and learn in training.", L.neurons[0], L.neurons[1], 1, (v) => String(v), (v) => {
+      t().neurons = v;
+      t().neuronsSet = true;
+    });
     this.slider(brain, "memShort", "Short memory", "Memory units that fade fast.", L.memory[0], L.memory[1], 1, (v) => String(v), (v) => (t().memShort = v));
     this.slider(brain, "memLong", "Long memory", "Memory units that fade slowly.", L.memory[0], L.memory[1], 1, (v) => String(v), (v) => (t().memLong = v));
     this.slider(birth, "birthEnergy", "Birth at energy", "It has a child when its energy reaches this.", 100, 225, 1, (v) => String(Math.round(v)), (v) => (t().birth.energy = v));
@@ -470,12 +485,19 @@ export class AddPanel {
     if (!b || !plan || !this.t || !NAME_RE.test(name) || this.waiting || this.job) return;
     let genome = sameStructure(b.plan, plan) ? b.genome : reshapeGenome(b.plan, b.genome, plan);
     this.say("");
-    const trained = await this.trainAll(plan, genome);
-    if (!trained) {
-      this.say("Training cancelled. Nothing was added.");
-      return this.refresh();
+    const kinds = ["addPretrain", "addFinetune"].filter((id) => this.$<HTMLInputElement>(id).checked).join();
+    const key = { from: b.genome, plan: JSON.stringify(plan), kinds };
+    const t = this.trained;
+    if (kinds && t && t.from === key.from && t.plan === key.plan && t.kinds === key.kinds) genome = t.genome; // trained already, the add did not go in
+    else {
+      const trained = await this.trainAll(plan, genome);
+      if (!trained) {
+        this.say("Training cancelled. Nothing was added.");
+        return this.refresh();
+      }
+      genome = trained;
+      if (kinds) this.trained = { ...key, genome };
     }
-    genome = trained;
     const req: AddRequest = { plan, genome, birth: { ...this.t.birth }, name, hue: this.hue, copies: this.copies };
     if (!this.hooks.send(req)) {
       this.say("Not connected to the world right now. Try again when it is back.", "error");

@@ -42,7 +42,7 @@ Server limits: insert rate per visitor, cap on visitor creatures alive, name len
 
 ### Uploads (L4, built)
 - Adds are held to the creature-file `PLAN_LIMITS` and checks (`parseAdd` in `live/add.ts`), names to `[A-Za-z0-9]{1,16}`, shown via `textContent` only. Caps in `server/README.md`.
-- Visitor address: Tailscale Funnel (serve proxy mode, as set up here) sets `X-Forwarded-For` to the client address its ingress saw, overwriting any sent (source of tailscale 1.104, `ipn/ipnlocal/serve.go`); checked in the source, not yet with a request through the tunnel, so per-visitor limits stay off (`LIVE_TRUST_FORWARDED=1` turns them on).
+- Visitor address: Tailscale Funnel (serve proxy mode, as set up here) sets `X-Forwarded-For` to the client address its ingress saw, overwriting any sent (tailscale source, `ipn/ipnlocal/serve.go`); checked in the source, not yet with a request through the tunnel, so per-visitor limits stay off (`LIVE_TRUST_FORWARDED=1` turns them on).
 - Open: test send backpressure through the real tunnel (a slow reader behind tailscaled must still be dropped by the send-queue caps); prune lineage rows of long-extinct added founders (the engine keeps every inserted lineage in its table and saves).
 
 ## Build steps

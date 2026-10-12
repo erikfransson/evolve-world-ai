@@ -364,7 +364,7 @@ export class LiveWorld {
       itemSlots: this.eco.world.count,
       summary: { initialPopulation: eco.initialPopulation, maxPopulation: eco.maxPopulation, collisionDamage: eco.collisionDamage, seasons: eco.seasons },
       maxViewers,
-      add: LIVE.add.perWindow > 0 && LIVE.add.aliveShare > 0 ? this.addRules() : null,
+      add: this.currentAddRules(),
       map: this.map,
       serverVersion: VERSION,
     };
@@ -427,12 +427,18 @@ export class LiveWorld {
     return { maxCopies: LIVE.add.maxCopies, everyS: LIVE.add.socketEveryS, birth: { energy: pair(eco.birthEnergyRange), cost: pair(eco.birthCostRange), cooldown: pair(eco.birthCooldownRange) }, costs: { living: creature.livingCost, ray: creature.rayCost, neuron: creature.neuronCost } };
   }
 
+  // The rules for the hello and the rules message: null while adding is off.
+  currentAddRules(): AddRules | null {
+    return LIVE.add.perWindow > 0 && LIVE.add.aliveShare > 0 ? this.addRules() : null;
+  }
+
   // Inserts a checked add request (live/add.ts parseAdd) as `copies` founders of new named lineages at random free spots, through the
   // engine's insertCreature, so a save keeps them. Call between ticks (whenIdle). random: the server's own draws, never the engine's.
   // Returns the ids, or a reason and nothing inserted.
   addCreatures(req: AddRequest, random: () => number = Math.random): { ids: number[] } | { reason: string } {
     const e = this.eco;
     if (e.population + req.copies > e.config.eco.maxPopulation) return { reason: "the world is full, try again later" };
+    if (e.lineageTable.toState().late.length + req.copies > LIMITS.maxLateLineages) return { reason: "the world is full of families, adding is paused until old ones are cleared" };
     const { width, height } = this.config.world;
     const r = this.config.creature.radius;
     const margin = 4 * r;

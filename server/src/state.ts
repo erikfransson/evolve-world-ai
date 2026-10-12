@@ -93,10 +93,12 @@ export class StateStore {
 
   // Writes the gzipped JSON through a .tmp file and a rename, then rotates. Throws, writing nothing, when the directory is over the cap.
   // asyncGzip: compress off the main thread, so only the caller's own JSON work blocks.
-  async write(json: string, meta: { population: number; tick: number }, at = new Date(), asyncGzip = true): Promise<string> {
+  // verify: rejects, so nothing is written, when the gzipped save would not be read back.
+  async write(json: string, meta: { population: number; tick: number }, at = new Date(), asyncGzip = true, verify?: (gz: Uint8Array) => Promise<unknown>): Promise<string> {
     const used = this.dirBytes();
     if (used > LIMITS.maxStateDirBytes) throw new Error(`state directory holds ${Math.round(used / 1e6)} MB, over the ${LIMITS.maxStateDirBytes / 1e6} MB cap: not saving`);
     const data = asyncGzip ? await gzipAsync(json) : gzipSync(json);
+    if (verify) await verify(data);
     const name = saveName(at);
     this.put(name, data);
     this.put(metaName(name), Buffer.from(JSON.stringify(meta)));

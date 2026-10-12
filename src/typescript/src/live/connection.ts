@@ -4,7 +4,7 @@ import { decodeDetail, decodeGenome } from "./detail.ts";
 import type { Detail } from "./detail.ts";
 import { retryDelayS } from "./serverUrl.ts";
 import { cleanAddReply, cleanAddRules, encodeAdd, validName } from "./add.ts";
-import type { AddRequest, Added, Refused } from "./add.ts";
+import type { AddRequest, AddRules, Added, Refused } from "./add.ts";
 import { cleanMap } from "./mapInfo.ts";
 
 export type LinkState = "connecting" | "live" | "offline" | "full" | "outdated";
@@ -20,6 +20,7 @@ export interface LinkHandlers {
   onStats(stats: Stats): void;
   onHistory(history: History): void;
   onAdd?(reply: Added | Refused): void;
+  onRules?(rules: AddRules | null): void;
 }
 
 const PING_EVERY_MS = 20_000;
@@ -95,9 +96,11 @@ export function historyAxis(first: number, last: number, yearS: number): { shift
 }
 
 // A hello with sane numbers, or null.
-function cleanHello(h: Hello): Hello | null {
+export function cleanHello(h: Hello): Hello | null {
   const ok = isObj(h.world) && n(h.world.width) > 0 && n(h.world.height) > 0 && n(h.radius) > 0 && n(h.dt) > 0 && n(h.fullEnergy) > 0 && int(h.itemSlots, 0, MAX_ITEM_SLOTS);
-  return ok ? { ...h, add: cleanAddRules(h.add), map: cleanMap(h.map) } : null;
+  const s: Record<string, unknown> = isObj(h.summary) ? h.summary : {};
+  const summary = { initialPopulation: count(s.initialPopulation), maxPopulation: count(s.maxPopulation), collisionDamage: s.collisionDamage === true, seasons: s.seasons === true };
+  return ok ? { ...h, summary, add: cleanAddRules(h.add), map: cleanMap(h.map) } : null;
 }
 
 // One WebSocket to the world server that reconnects with backoff.
@@ -250,6 +253,7 @@ export class LiveLink {
     else if (msg.t === "added" || msg.t === "refused") {
       const r = cleanAddReply(msg);
       if (r) this.h.onAdd?.(r);
-    } else if (msg.t === "busy") this.full = true; // the server closes next, lost() reports it with the retry time
+    } else if (msg.t === "rules") this.h.onRules?.(cleanAddRules(msg.add));
+    else if (msg.t === "busy") this.full = true; // the server closes next, lost() reports it with the retry time
   }
 }
