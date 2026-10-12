@@ -21,9 +21,9 @@ interface SenseExports extends WebAssembly.Exports {
   sense(p: number): void;
 }
 
-interface Region {
-  ptr: number;
-  cap: number;
+class Region {
+  ptr = -1;
+  cap = 0;
 }
 
 export class WasmSenser {
@@ -31,7 +31,27 @@ export class WasmSenser {
   private readonly exports: SenseExports;
   private readonly offPtr: number[] = [];
   private readonly offBytes: number[] = [];
-  private readonly regions = new Map<string, Region>();
+  // Named regions of the shared memory, grown on demand (see grow); held in fields so a tick does no lookups.
+  private rItems = new Region();
+  private rItemXY = new Region();
+  private rItemKinds = new Region();
+  private rCStart = new Region();
+  private rSx = new Region();
+  private rSy = new Region();
+  private rOwn = new Region();
+  private rSig = new Region();
+  private rSpecies = new Region();
+  private rRec = new Region();
+  private rCand = new Region();
+  private rScratch = new Region();
+  private rDetail = new Region();
+  private rP = new Region();
+  // Views of the whole linear memory, valid while buffer is the memory's current buffer (growth replaces it).
+  private buffer: ArrayBuffer | null = null;
+  private f32 = new Float32Array(0);
+  private i32 = new Int32Array(0);
+  private f64 = new Float64Array(0);
+  private u8 = new Uint8Array(0);
   private synced: World | null = null; // the world whose items the packed rows in wasm memory match
   private rowCap = 0; // item slots per row run
   private pStart = 0;
@@ -59,7 +79,21 @@ export class WasmSenser {
   reset(): void {
     this.offPtr.length = 0;
     this.offBytes.length = 0;
-    this.regions.clear();
+    this.rItems = new Region();
+    this.rItemXY = new Region();
+    this.rItemKinds = new Region();
+    this.rCStart = new Region();
+    this.rSx = new Region();
+    this.rSy = new Region();
+    this.rOwn = new Region();
+    this.rSig = new Region();
+    this.rSpecies = new Region();
+    this.rRec = new Region();
+    this.rCand = new Region();
+    this.rScratch = new Region();
+    this.rDetail = new Region();
+    this.rP = new Region();
+    this.buffer = null;
     this.synced = null;
     this.rowCap = 0;
     this.pStart = 0;
@@ -87,9 +121,8 @@ export class WasmSenser {
     }
   }
 
-  private region(name: string, bytes: number): number {
-    let r = this.regions.get(name);
-    if (!r) this.regions.set(name, (r = { ptr: -1, cap: 0 }));
+  // The pointer of region r holding at least bytes, allocated or moved to a larger block when needed (contents are not kept).
+  private grow(r: Region, bytes: number): number {
     if (bytes > r.cap) {
       if (r.ptr >= 0) this.bank.free(r.ptr, r.cap);
       r.cap = Math.ceil(bytes * 1.25);
@@ -98,18 +131,26 @@ export class WasmSenser {
     return r.ptr;
   }
 
+  // The views of the memory as it is now; take them after the last allocation of a call, as allocating may grow the memory.
+  private views(): void {
+    const buffer = this.bank.memory.buffer;
+    if (buffer === this.buffer) return;
+    this.buffer = buffer;
+    this.f32 = new Float32Array(buffer);
+    this.i32 = new Int32Array(buffer);
+    this.f64 = new Float64Array(buffer);
+    this.u8 = new Uint8Array(buffer);
+  }
+
   // Brings the packed item rows up to date: every row the first time, then each changed cell patched in place.
   // A row holds its cells' items in cell order, each cell in list order, in its own run of rowCap slots (start offsets are absolute).
   private syncItems(world: World): void {
     const { cols, rows, cellHead, nextItem } = world;
     const dirty = world.dirtyCells;
     let full = this.synced !== world || !dirty;
-    if (!full) {
-      const buffer = this.bank.memory.buffer;
-      const start = new Int32Array(buffer, this.pStart, rows * (cols + 1));
-      const xy = new Float32Array(buffer, this.pXY, rows * this.rowCap * 2);
-      const kd = new Uint8Array(buffer, this.pKinds, rows * this.rowCap);
-      for (const c of dirty!) full = !this.patchCell(world, c, start, xy, kd) || full;
+    if (!full && dirty!.length > 0) {
+      this.views();
+      for (const c of dirty!) full = !this.patchCell(world, c) || full;
     }
     if (full) {
       let widest = 0;
@@ -119,19 +160,18 @@ export class WasmSenser {
         widest = Math.max(widest, n);
       }
       this.rowCap = Math.max(64, Math.ceil(widest * 1.5) + 16);
-      this.pStart = this.region("is", rows * (cols + 1) * 4);
-      this.pXY = this.region("ixy", rows * this.rowCap * 8);
-      this.pKinds = this.region("ik", rows * this.rowCap);
-      const buffer = this.bank.memory.buffer;
-      const start = new Int32Array(buffer, this.pStart, rows * (cols + 1));
-      const xy = new Float32Array(buffer, this.pXY, rows * this.rowCap * 2);
-      const kd = new Uint8Array(buffer, this.pKinds, rows * this.rowCap);
+      this.pStart = this.grow(this.rItems, rows * (cols + 1) * 4);
+      this.pXY = this.grow(this.rItemXY, rows * this.rowCap * 8);
+      this.pKinds = this.grow(this.rItemKinds, rows * this.rowCap);
+      this.views();
+      const start = this.i32;
+      const sB = this.pStart >> 2;
       for (let row = 0; row < rows; row++) {
-        const s = row * (cols + 1);
+        const s = sB + row * (cols + 1);
         let p = row * this.rowCap;
         for (let cx = 0; cx < cols; cx++) {
           start[s + cx] = p;
-          p = this.writeCell(world, row * cols + cx, p, xy, kd);
+          p = this.writeCell(world, row * cols + cx, p);
         }
         start[s + cols] = p;
       }
@@ -142,11 +182,15 @@ export class WasmSenser {
   }
 
   // Makes cell c's packed run match its list: the rest of the row shifts by the change in length. False when the row outgrows its run.
-  private patchCell(world: World, c: number, start: Int32Array, xy: Float32Array, kd: Uint8Array): boolean {
+  private patchCell(world: World, c: number): boolean {
     const { cols, cellHead, nextItem } = world;
+    const start = this.i32;
+    const xy = this.f32;
+    const kd = this.u8;
+    const xB = this.pXY >> 2; // element offsets of the packed arrays in the whole-memory views
     const row = Math.floor(c / cols);
-    const s = row * (cols + 1) + (c - row * cols);
-    const last = row * (cols + 1) + cols;
+    const s = (this.pStart >> 2) + row * (cols + 1) + (c - row * cols);
+    const last = (this.pStart >> 2) + row * (cols + 1) + cols;
     let n = 0;
     for (let i = cellHead[c]!; i >= 0; i = nextItem[i]!) n++;
     const at = start[s]!;
@@ -154,21 +198,25 @@ export class WasmSenser {
     if (delta !== 0) {
       const end = start[last]!;
       if (end + delta > (row + 1) * this.rowCap) return false;
-      xy.copyWithin(2 * (at + n), 2 * start[s + 1]!, 2 * end);
-      kd.copyWithin(at + n, start[s + 1], end);
+      xy.copyWithin(xB + 2 * (at + n), xB + 2 * start[s + 1]!, xB + 2 * end);
+      kd.copyWithin(this.pKinds + at + n, this.pKinds + start[s + 1]!, this.pKinds + end);
       for (let j = s + 1; j <= last; j++) start[j] += delta;
     }
-    this.writeCell(world, c, at, xy, kd);
+    this.writeCell(world, c, at);
     return true;
   }
 
   // Writes cell c's items in list order from packed slot p; returns the slot after them.
-  private writeCell(world: World, c: number, p: number, xy: Float32Array, kd: Uint8Array): number {
+  private writeCell(world: World, c: number, p: number): number {
     const { cellHead, nextItem, xs, ys, kinds } = world;
+    const xy = this.f32;
+    const kd = this.u8;
+    const xB = this.pXY >> 2;
+    const kB = this.pKinds;
     for (let i = cellHead[c]!; i >= 0; i = nextItem[i]!) {
-      xy[2 * p] = xs[i]!;
-      xy[2 * p + 1] = ys[i]!;
-      kd[p++] = kinds[i]!;
+      xy[xB + 2 * p] = xs[i]!;
+      xy[xB + 2 * p + 1] = ys[i]!;
+      kd[kB + p++] = kinds[i]!;
     }
     return p;
   }
@@ -197,20 +245,19 @@ export class WasmSenser {
     this.syncItems(world);
     const count = crowd.count;
     const ccells = crowd.cols * crowd.rows;
-    const pCStart = this.region("cs", (ccells + 1) * 4);
-    const pSx = this.region("sx", count * 4 + 16);
-    const pSy = this.region("sy", count * 4 + 16);
-    const pOwn = this.region("ow", count * 4 + 16);
-    const pSig = this.region("sg", count * 4 + 16);
-    const pSpecies = this.region("sp", count * 4 + 16);
-    const pRec = this.region("rc", n * REC_BYTES);
-    const pCand = this.region("cd", Math.max(world.count * 32, count * 16) + 64);
-    const pScr = this.region("sr", SCRATCH_BYTES);
-    const pDetail = this.region("dt", 16 * MAX_RAYS);
-    const pP = this.region("pp", P_BYTES);
-    const buffer = this.bank.memory.buffer;
-    const f32 = new Float32Array(buffer);
-    const i32 = new Int32Array(buffer);
+    const pCStart = this.grow(this.rCStart, (ccells + 1) * 4);
+    const pSx = this.grow(this.rSx, count * 4 + 16);
+    const pSy = this.grow(this.rSy, count * 4 + 16);
+    const pOwn = this.grow(this.rOwn, count * 4 + 16);
+    const pSig = this.grow(this.rSig, count * 4 + 16);
+    const pSpecies = this.grow(this.rSpecies, count * 4 + 16);
+    const pRec = this.grow(this.rRec, n * REC_BYTES);
+    const pCand = this.grow(this.rCand, Math.max(world.count * 32, count * 16) + 64);
+    const pScr = this.grow(this.rScratch, SCRATCH_BYTES);
+    const pDetail = this.grow(this.rDetail, 16 * MAX_RAYS);
+    const pP = this.grow(this.rP, P_BYTES);
+    this.views(); // after the last allocation
+    const { f32, i32, f64 } = this;
     i32.set(crowd.cellStart, pCStart >> 2);
     const sx = pSx >> 2;
     const sy = pSy >> 2;
@@ -226,66 +273,65 @@ export class WasmSenser {
       i32[species + k] = crowdSpecies[k]!;
       f32[sig + k] = energySignal(energies[k]!, startEnergy);
     }
-    const rec = new Float64Array(buffer, pRec, n * (REC_BYTES / 8));
-    const recI = new Int32Array(buffer, pRec, n * (REC_BYTES / 4));
+    const rec = pRec >> 3; // record fields as f64 and as i32 indices
+    const recI = pRec >> 2;
     const place = this.placeByRow(world, creatures, n);
     for (let k = 0; k < n; k++) {
       const c = creatures[k]!;
       const s = c.state;
       const q = place[k]!;
-      const o = q * 8;
+      const o = rec + q * 8;
       const slot = slots[k]!;
       const rays = c.plan.rayCount;
-      rec[o] = s.x;
-      rec[o + 1] = s.y;
-      rec[o + 2] = c.heading.cos;
-      rec[o + 3] = c.heading.sin;
-      rec[o + 4] = c.plan.rayLength;
-      const w = q * 16;
-      recI[w + 10] = selves[k]!;
-      recI[w + 11] = rays;
-      recI[w + 12] = this.offPtr[slot]!;
+      f64[o] = s.x;
+      f64[o + 1] = s.y;
+      f64[o + 2] = c.heading.cos;
+      f64[o + 3] = c.heading.sin;
+      f64[o + 4] = c.plan.rayLength;
+      const w = recI + q * 16;
+      i32[w + 10] = selves[k]!;
+      i32[w + 11] = rays;
+      i32[w + 12] = this.offPtr[slot]!;
       const inFloat = this.bank.inputAt(slot);
-      recI[w + 13] = inFloat * 4;
-      recI[w + 14] = c === detail ? pDetail : 0;
+      i32[w + 13] = inFloat * 4;
+      i32[w + 14] = c === detail ? pDetail : 0;
       c.writeBodyInputs(f32, inFloat + rays * stride);
     }
-    const P = new Float64Array(buffer, pP, P_BYTES / 8);
-    const PF = new Float32Array(buffer, pP, P_BYTES / 4);
-    const PI = new Int32Array(buffer, pP, P_BYTES / 4);
-    P[0] = world.width;
-    P[1] = world.height;
-    P[2] = world.itemRadius;
-    P[3] = 1 / world.cell;
-    PF[8] = 1 / crowd.cell;
-    PF[9] = crowd.radius;
-    PI[10] = world.cols;
-    PI[11] = world.rows;
-    PI[12] = this.pStart;
-    PI[14] = this.pXY;
-    PI[16] = this.pKinds;
-    PI[17] = crowd.cols;
-    PI[18] = crowd.rows;
-    PI[19] = pCStart;
-    PI[20] = pSx;
-    PI[21] = pSy;
-    PI[22] = pOwn;
-    PI[23] = pSig;
-    PI[24] = pRec;
-    PI[25] = n;
-    PI[26] = stride;
-    PI[27] = pCand;
-    PI[28] = pScr;
-    PI[29] = pSpecies;
+    const P = pP >> 3;
+    const PF = pP >> 2;
+    f64[P] = world.width;
+    f64[P + 1] = world.height;
+    f64[P + 2] = world.itemRadius;
+    f64[P + 3] = 1 / world.cell;
+    f32[PF + 8] = 1 / crowd.cell;
+    f32[PF + 9] = crowd.radius;
+    i32[PF + 10] = world.cols;
+    i32[PF + 11] = world.rows;
+    i32[PF + 12] = this.pStart;
+    i32[PF + 14] = this.pXY;
+    i32[PF + 16] = this.pKinds;
+    i32[PF + 17] = crowd.cols;
+    i32[PF + 18] = crowd.rows;
+    i32[PF + 19] = pCStart;
+    i32[PF + 20] = pSx;
+    i32[PF + 21] = pSy;
+    i32[PF + 22] = pOwn;
+    i32[PF + 23] = pSig;
+    i32[PF + 24] = pRec;
+    i32[PF + 25] = n;
+    i32[PF + 26] = stride;
+    i32[PF + 27] = pCand;
+    i32[PF + 28] = pScr;
+    i32[PF + 29] = pSpecies;
     this.exports.sense(pP);
   }
 
   // After run with this creature as detail: writes its rays (closeness, kind, seen energy) into c.rays.
   readRays(c: Creature, crowd: Crowd): void {
-    const ptr = this.regions.get("dt")!.ptr;
-    const buffer = this.bank.memory.buffer;
-    const f64 = new Float64Array(buffer, ptr, 2 * c.rays.length);
-    const i32 = new Int32Array(buffer, ptr, 4 * c.rays.length);
+    const ptr = this.rDetail.ptr;
+    this.views();
+    const f64 = this.f64.subarray(ptr >> 3, (ptr >> 3) + 2 * c.rays.length);
+    const i32 = this.i32.subarray(ptr >> 2, (ptr >> 2) + 4 * c.rays.length);
     for (let i = 0; i < c.rays.length; i++) {
       const ray = c.rays[i]!;
       ray.closeness = f64[2 * i]!;

@@ -77,12 +77,11 @@ export class SenseKernels {
     prof?.lap("senser");
     brains.forwardSlots(slots, n);
     prof?.lap("brain forward");
-    const f32 = brains.f32;
     for (let k = 0; k < n; k++) creatures[k]!.adoptOutput(brains, brains.outputAt(slots[k]!));
     prof?.lap("adopt output");
     if (detail) {
       this.senser.readRays(detail, crowd);
-      detail.adoptInput(f32, brains.inputAt(slots[at]!));
+      detail.adoptInput(brains.f32, brains.inputAt(slots[at]!));
     }
   }
 

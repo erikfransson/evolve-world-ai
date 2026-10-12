@@ -2,6 +2,8 @@ import type { EngineConfig } from "./config.ts";
 import { HIT_CREATURE, HIT_NONE } from "./types.ts";
 import type { CreatureState, RayHit } from "./types.ts";
 
+const SMALL_SORT = 12; // up to this many creatures rebuildFrom sorts by insertion
+
 // Creatures in a uniform grid of cell size config.creature.rayLength, rebuilt each tick by a stable radix sort of the cell keys,
 // so the work follows the creature count, not the world area. Each cell's creatures are contiguous in the sorted arrays, in
 // creature order: slots cellStart[c] .. cellStart[c + 1] - 1. Queries were measured 20-25% faster than per-cell linked lists.
@@ -111,29 +113,42 @@ export class Crowd {
     if (n > this.xs.length) this.grow(n);
     const cellOf = this.cellOf;
     for (let i = 0; i < n; i++) cellOf[i] = this.cellIndex(x[i], y[i]);
-    // Stable LSD radix sort of the creature indices by cell, so equal cells keep creature order.
     const bits = this.radixBits;
     const mask = (1 << bits) - 1;
     const count = this.radixCount;
     let from = this.permB;
     let to = this.perm;
-    for (let i = 0; i < n; i++) to[i] = i;
-    for (let pass = 0; pass < this.radixPasses; pass++) {
-      const shift = pass * bits;
-      const swap = from;
-      from = to;
-      to = swap;
-      count.fill(0);
-      for (let i = 0; i < n; i++) count[(cellOf[from[i]] >> shift) & mask]++;
-      let sum = 0;
-      for (let b = 0; b <= mask; b++) {
-        const c = count[b];
-        count[b] = sum;
-        sum += c;
-      }
+    if (n <= SMALL_SORT) {
+      // Few creatures: stable insertion sort gives the same order as the radix passes without clearing their counters.
       for (let i = 0; i < n; i++) {
-        const j = from[i];
-        to[count[(cellOf[j] >> shift) & mask]++] = j;
+        const v = cellOf[i];
+        let j = i;
+        while (j > 0 && cellOf[to[j - 1]] > v) {
+          to[j] = to[j - 1];
+          j--;
+        }
+        to[j] = i;
+      }
+    } else {
+      // Stable LSD radix sort of the creature indices by cell, so equal cells keep creature order.
+      for (let i = 0; i < n; i++) to[i] = i;
+      for (let pass = 0; pass < this.radixPasses; pass++) {
+        const shift = pass * bits;
+        const swap = from;
+        from = to;
+        to = swap;
+        count.fill(0);
+        for (let i = 0; i < n; i++) count[(cellOf[from[i]] >> shift) & mask]++;
+        let sum = 0;
+        for (let b = 0; b <= mask; b++) {
+          const c = count[b];
+          count[b] = sum;
+          sum += c;
+        }
+        for (let i = 0; i < n; i++) {
+          const j = from[i];
+          to[count[(cellOf[j] >> shift) & mask]++] = j;
+        }
       }
     }
     this.perm = to;
