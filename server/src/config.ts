@@ -40,8 +40,8 @@ export const LIVE = {
 };
 // Per-visitor limits key on the address the tunnel puts in X-Forwarded-For. Tailscale Funnel (serve proxy mode) sets that header,
 // overwriting any the visitor sent, to the address its ingress saw (ipn/ipnlocal/serve.go, addProxyForwardedHeaders, tailscale 1.104).
-// The public port listens on loopback only, so nothing else can reach it with a made-up header. LIVE_TRUST_FORWARDED=0 turns it off.
-export const TRUST_FORWARDED = process.env.LIVE_TRUST_FORWARDED !== "0";
+// Off until checked with a real request through the tunnel (Erik's rule); LIVE_TRUST_FORWARDED=1 turns it on. Off, only the global caps apply.
+export const TRUST_FORWARDED = process.env.LIVE_TRUST_FORWARDED === "1";
 // Helper threads that sense and think (createNodeThinkPool); fixed for the process, LIVE_THREADS overrides. They inherit the unit's idle scheduling.
 // None by default: under SCHED_IDLE on a busy host the server gets about one core whatever the thread count, and helpers cost 2.3x the CPU
 // per tick (1190 creatures: 92 ticks/s on one thread, 53 with 6 helpers; 8.8 against 20.3 CPU ms per tick, review 2026-10-11).
