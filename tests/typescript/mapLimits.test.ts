@@ -12,6 +12,8 @@ const small = (): EcoConfig => {
   c.eco = { ...c.eco, wasm: false, initialPopulation: 10 };
   return c;
 };
+// CPU ms since t (from process.cpuUsage()): time bounds here catch runaway loops, and CPU time does not grow with machine load the way wall time does.
+const cpuMs = (t: NodeJS.CpuUsage): number => { const u = process.cpuUsage(t); return (u.user + u.system) / 1000; };
 const saved = (): EcoState => JSON.parse(JSON.stringify(saveState(new Ecosystem(small())))) as EcoState;
 
 describe("map densities from outside", () => {
@@ -19,9 +21,9 @@ describe("map densities from outside", () => {
     for (const [key, bad] of [["slowDensity", 1e9], ["stoneDensity", 1e9], ["fastDensity", MAP_DENSITY_MAX.fastDensity * 1.01], ["ridgeDensity", -0.1]] as const) {
       const state = saved();
       (state.config.world as unknown as Record<string, number>)[key] = bad;
-      const t = performance.now();
+      const t = process.cpuUsage();
       expect(() => restoreState(state)).toThrow(new RegExp(key));
-      expect(performance.now() - t).toBeLessThan(500);
+      expect(cpuMs(t)).toBeLessThan(500);
     }
   });
 
@@ -53,32 +55,32 @@ describe("map densities from outside", () => {
     const big = empty();
     big.config.world.stoneDensity = 0.2;
     big.config.creature.radius = 440; // once restored, the first extinction reseeded forever
-    const t = performance.now();
+    const t = process.cpuUsage();
     expect(() => restoreState(big)).toThrow(/radius/);
     const tiny = empty();
     tiny.config.world.width = 70;
     tiny.config.world.height = 70;
     expect(() => restoreState(tiny)).toThrow(/world size/);
-    expect(performance.now() - t).toBeLessThan(500);
+    expect(cpuMs(t)).toBeLessThan(500);
   });
 
   it("placing founders among rock the creature cannot fit between ends within the try caps", () => {
     const c = small();
     Object.assign(c.world, { stoneDensity: 0.2, ridgeDensity: 0.15 });
     c.creature.radius = 440;
-    const t = performance.now();
+    const t = process.cpuUsage();
     expect(new Ecosystem({ ...c, eco: { ...c.eco, initialPopulation: 5 } }).population).toBe(5);
-    expect(performance.now() - t).toBeLessThan(10_000);
-  }, 20_000);
+    expect(cpuMs(t)).toBeLessThan(10_000);
+  }, 60_000);
 
   it("clearing poison from a founder whose disc covers the whole world ends", () => {
     const c = small();
     Object.assign(c.world, { width: 70, height: 70, foodDensity: 0, poisonDensity: 1e4 });
     c.creature.radius = 40;
-    const t = performance.now();
+    const t = process.cpuUsage();
     expect(new Ecosystem({ ...c, eco: { ...c.eco, initialPopulation: 3 } }).population).toBe(3);
-    expect(performance.now() - t).toBeLessThan(10_000);
-  }, 20_000);
+    expect(cpuMs(t)).toBeLessThan(10_000);
+  }, 60_000);
 
   it("the form maxima themselves are accepted", () => {
     const state = saved();
@@ -94,9 +96,9 @@ describe("map densities from outside", () => {
   });
 
   it("an absurd density that gets past the checks builds at most the piece cap, in bounded time", () => {
-    const t = performance.now();
+    const t = process.cpuUsage();
     const map = terrainOf({ seed: 77, world: { width: 50_000, height: 50_000, stoneDensity: 1e9, ridgeDensity: 1e9, slowDensity: 1e9, fastDensity: 1e9, slowSize: 1e9, fastSize: -5 } });
-    expect(performance.now() - t).toBeLessThan(20_000);
+    expect(cpuMs(t)).toBeLessThan(20_000);
     expect(map.patchX.length).toBeLessThanOrEqual(2 * MAX_PIECES * 6);
     expect(map.rockCount).toBeLessThanOrEqual(2 * MAX_PIECES * MAX_DISCS_PER_PIECE);
   });
