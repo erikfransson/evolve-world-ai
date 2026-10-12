@@ -168,6 +168,8 @@ describe("add caps (adds.ts)", () => {
     expect(applyTunables(eco, { "add.maxCopies": 4 })).toMatch(/add.maxCopies/);
     expect(applyTunables(eco, { "add.perWindow": 2.5 })).toMatch(/whole/);
     expect(applyTunables(eco, { "add.socketEveryS": 0 })).toMatch(/add.socketEveryS/);
+    expect(applyTunables(eco, { "add.startEnergy": 5000 })).toMatch(/add.startEnergy/);
+    expect(applyTunables(eco, { "add.birthHoldS": -1 })).toMatch(/add.birthHoldS/);
     expect(LIVE.add.maxCopies).toBe(3);
   });
 
@@ -218,6 +220,24 @@ describe("adding to the world (LiveWorld)", () => {
     b.restoreState(JSON.parse(JSON.stringify(a.saveState())));
     expect(b.aliveAdded()).toBe(3);
     expect(b.eco.lineageName(r.ids[0]!)).toBe("Kiwi");
+  });
+
+  it("starts added creatures with the admin's energy, holds their first birth, and their children start without the hold", () => {
+    const w = new LiveWorld(smallConfig(), null);
+    LIVE.add.startEnergy = 400;
+    LIVE.add.birthHoldS = 3;
+    const r = w.addCreatures(request({ copies: 1, birth: { energy: 100, cost: 50, cooldown: 5 } }), seq(3));
+    if (!("ids" in r)) throw new Error(r.reason);
+    const id = r.ids[0]!;
+    expect(w.eco.get(id)!.creature.state.energy).toBe(400);
+    const dt = w.eco.config.dt;
+    for (let t = 0; t < 2.5 / dt; t++) w.step(); // energy far above the birth level, but held
+    expect(w.eco.get(id)?.children ?? 0).toBe(0);
+    for (let t = 0; t < 1 / dt; t++) w.step();
+    const m = w.eco.get(id)!;
+    expect(m.children).toBeGreaterThan(0);
+    const child = w.eco.members.find((c) => c.parentId === id)!;
+    expect(child.lastBirthTick).toBe(-Infinity);
   });
 
   it("refuses when the world is full, inserting nothing", () => {

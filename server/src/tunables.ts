@@ -25,6 +25,8 @@ const OWN: Record<string, Limit & { whole?: boolean }> = {
   "add.perVisitor": { min: 0, max: 1000, whole: true },
   "add.socketEveryS": { min: 1, max: 3600 },
   "add.minSpeed": { min: 0, max: 4 },
+  "add.startEnergy": { min: 10, max: 1000 },
+  "add.birthHoldS": { min: 0, max: 600 },
 };
 const getOwn = (key: string): number => (key === "speed" ? LIVE.speed : LIVE.add[key.slice(4) as AddKey]);
 const setOwn = (key: string, v: number): void => {

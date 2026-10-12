@@ -34,6 +34,8 @@ export const LIVE = {
     perVisitor: 3, // creatures per visitor address per window; needs trustForwardedFor
     socketEveryS: 10, // one add per this many seconds on one connection (burst 2); faster gets the connection cut
     minSpeed: 0.5, // simulated seconds per real second: below this the world counts as busy and adds wait
+    startEnergy: 300, // energy an added creature starts with (the visitor never sets it)
+    birthHoldS: 60, // simulated seconds after insertion before an added creature may first give birth; its children start without it
   },
 };
 // Per-visitor limits key on the address the tunnel puts in X-Forwarded-For. Tailscale Funnel (serve proxy mode) sets that header,
