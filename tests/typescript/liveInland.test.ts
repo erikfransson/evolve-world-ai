@@ -13,6 +13,9 @@ import { MAX_ITEM_SLOTS } from "../../src/typescript/src/live/protocol.ts";
 import { cleanMap } from "../../src/typescript/src/live/mapInfo.ts";
 import { encodeAdd, parseAdd } from "../../src/typescript/src/live/add.ts";
 import { genomeLengthFor } from "../../src/typescript/src/sim/rl/creatureFile.ts";
+import { terrainFromParts } from "../../src/typescript/src/live/mapTerrain.ts";
+import { builtMap } from "../../src/typescript/src/sim/maps/index.ts";
+import { terrainOf } from "../../src/typescript/src/sim/terrain.ts";
 import { smallConfig } from "./liveHelpers.ts";
 
 const FOUNDERS = new URL("../../src/typescript/public/live-founders.json", import.meta.url);
@@ -69,6 +72,23 @@ describe("item slots of the live world", () => {
     expect(cleanMap(JSON.parse(JSON.stringify(map)))).toEqual(map);
     expect(live.hello(1).summary).toMatchObject({ initialPopulation: 0, seedCopies: SEED_COPIES });
   }, 120_000);
+
+  it("the page puts the map together from the worker's arrays only when they fit the map", () => {
+    const b = builtMap("inland-sea");
+    const rock = Float64Array.from(b.rock.flatMap((d) => [d.x, d.y, d.r]));
+    const parts = { ok: true as const, rock, ground: b.ground.data.slice(), food: b.weights.food.slice(), poison: b.weights.poison.slice(), ms: 0 };
+    const t = terrainFromParts("inland-sea", 40000, 25000, parts)!;
+    expect(t.rockCount).toBe(b.rock.length);
+    expect(t.valueAt(20000, 12500)).toBe(terrainOf({ seed: 1, world: { ...liveConfig.world } }).valueAt(20000, 12500));
+    expect(terrainFromParts("inland-sea", 17000, 10600, parts)).toBeNull();
+    expect(terrainFromParts("nowhere", 40000, 25000, parts)).toBeNull();
+    expect(terrainFromParts("inland-sea", 40000, 25000, { ...parts, ground: parts.ground.subarray(1) })).toBeNull();
+    expect(terrainFromParts("inland-sea", 40000, 25000, { ...parts, food: new Uint8Array(3) })).toBeNull();
+    expect(terrainFromParts("inland-sea", 40000, 25000, { ...parts, rock: Float64Array.from([1, 2]) })).toBeNull();
+    expect(terrainFromParts("inland-sea", 40000, 25000, { ...parts, rock: Float64Array.from([1, NaN, 3]) })).toBeNull();
+    expect(terrainFromParts("inland-sea", 40000, 25000, { ...parts, rock: new Float64Array(3 * 8001) })).toBeNull();
+    expect(terrainFromParts("inland-sea", 40000, 25000, { ok: false, message: "x" })).toBeNull();
+  }, 60_000);
 
   it("the page keeps only a known map name", () => {
     expect(cleanMap({ name: "inland-sea" }).name).toBe("inland-sea");

@@ -18,7 +18,7 @@ const adminPort = Number(process.env.LIVE_ADMIN_PORT ?? PORTS.admin);
 const stateDir = process.env.LIVE_STATE_DIR ?? fileURLToPath(new URL("../state", import.meta.url));
 const poolFile = fileURLToPath(new URL("../../src/typescript/public/pool.json", import.meta.url));
 const foundersFile = process.env.LIVE_FOUNDERS_FILE ?? fileURLToPath(new URL("../../src/typescript/public/live-founders.json", import.meta.url)); // seeds a fresh world
-const threads =Number(process.env.LIVE_THREADS ?? HELPER_THREADS);
+const threads = Number(process.env.LIVE_THREADS ?? HELPER_THREADS);
 const webRoot = process.env.LIVE_WEB_ROOT ?? fileURLToPath(new URL("../../src/typescript/dist", import.meta.url)); // npm run build in src/typescript
 
 const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
