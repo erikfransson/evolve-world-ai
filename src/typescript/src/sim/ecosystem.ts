@@ -26,6 +26,7 @@ import type { CreatureState, Genome, HitKind, WorldView } from "./types.ts";
 import { World } from "./world.ts";
 import { SenseKernels } from "./wasm/senseKernels.ts";
 import { PLAN_LIMITS } from "./rl/validate.ts";
+import type { PhaseTimer } from "./profile.ts";
 
 export type { Lineage } from "./lineages.ts";
 
@@ -72,6 +73,7 @@ export class EcoCreature {
   // Heritable birth traits (#31): energy at which it has a child, energy it pays (the child's start energy), seconds between births.
   birth: BirthTraits = { energy: 0, cost: 0, cooldown: 0 };
   cooldownTicks = 0;
+  index = 0; // position in the ecosystem's member list
   owner = 0; // helper thread that thinks for it, set by the coordinator of helper threads
   readonly creature: Creature; // state, rays, rayOffsets and brain.layerActivations() of the last tick
 
@@ -214,6 +216,9 @@ export class Ecosystem {
   private aging: Aging | null;
   private readonly contact: Contact = { speed: 0 };
   onDeath: ((m: EcoCreature) => void) | null = null; // called with each creature as it leaves, before its object is recycled
+  private bySlot: EcoCreature[] = []; // the members in creature construction order (Creature.slot), kept up to date as they come and go
+  private batchAll = false; // the batch from the last sensePhase holds every member
+  profile: PhaseTimer | null = null; // per-phase CPU laps, set by ecoBench --profile
 
   // pool: trained founders (see seedPool.ts); without one, or at poolFraction 0, every founder is random.
   // cast: exactly these founders instead of the species' founder counts; items: exactly these start items (RL environments, see rl/env.ts).
@@ -339,8 +344,12 @@ export class Ecosystem {
 
   step(): void {
     if (this.extinct) return;
+    const prof = this.profile;
+    prof?.start();
     this.prepareTick();
+    prof?.lap("crowd grid");
     this.sensePhase(0, this.members.length);
+    prof?.lap("sense and think, rest");
     this.finishTick();
   }
 
@@ -366,7 +375,14 @@ export class Ecosystem {
   sensePhase(start: number, end: number): void {
     const batch = this.batch;
     batch.clear();
-    for (let i = start; i < end; i++) batch.add(this.members[i].creature, i);
+    if (start === 0 && end === this.members.length && this.bySlot.length === end) {
+      for (const m of this.bySlot) batch.add(m.creature, m.index);
+      batch.sorted = true;
+    } else {
+      for (let i = start; i < end; i++) batch.add(this.members[i].creature, i);
+    }
+    this.batchAll = start === 0 && end === this.members.length;
+    this.profile?.lap("batch build");
     this.senseBatch(batch);
   }
 
@@ -384,7 +400,7 @@ export class Ecosystem {
   // Phase 1a for a batch of members, each at its list index, after prepareTick.
   senseBatch(batch: SenseBatch): void {
     if (this.kernels) this.kernels.detail = this.detail === null ? null : (this.byId.get(this.detail)?.creature ?? null);
-    senseThinkBatch(this.items, this.crowd, batch, this.kernels);
+    senseThinkBatch(this.items, this.crowd, batch, this.kernels, this.profile);
   }
 
   // Phase 1b for one creature: memory and motion. Returns the item it touches there (Creature.touched), for finishTick.
@@ -399,10 +415,24 @@ export class Ecosystem {
   // see Creature.touched), so only the shared phase runs.
   finishTick(touched?: Int32Array): void {
     if (!touched) {
-      for (const m of this.members) {
-        m.creature.remember();
-        m.creature.steer();
+      if (this.batchAll) {
+        // The batch holds every member in creature construction order: same work, but the objects are read front to back.
+        const { creatures, count } = this.batch;
+        const f32 = this.kernels?.f32;
+        for (let k = 0; k < count; k++) {
+          const c = creatures[k]!;
+          const out = c.outputArray(f32);
+          c.remember(out);
+          c.steer(out);
+        }
+      } else {
+        for (const m of this.members) {
+          m.creature.remember();
+          m.creature.steer();
+        }
       }
+      this.batchAll = false;
+      this.profile?.lap("memory and steer");
     }
     this.sharedPhase(touched);
   }
@@ -434,8 +464,12 @@ export class Ecosystem {
       this.items.removeItem(eaten); // so no one else eats it this tick
     }
 
+    const prof = this.profile;
+    prof?.lap("eat");
     if (this.hunters) this.hunt(); // grids the moved positions, which collideAll reuses since hunting moves no one
+    prof?.lap("hunt");
     if (this.config.eco.collisions) this.collideAll(this.hunters);
+    prof?.lap("collisions");
 
     for (let i = n - 1; i >= 0; i--) {
       const state = this.states[i];
@@ -446,6 +480,7 @@ export class Ecosystem {
       }
     }
     this.slain.clear();
+    prof?.lap("settle and deaths");
 
     n = members.length;
     first = n > 0 ? this.rng.int(n) : 0;
@@ -459,8 +494,10 @@ export class Ecosystem {
       for (let i = members.length - 1; i >= 0; i--) if (!this.states[i].alive) this.remove(i);
       this.spent = false;
     }
+    prof?.lap("births");
 
     this.regrow();
+    prof?.lap("regrow");
     this.tick++;
   }
 
@@ -685,7 +722,7 @@ export class Ecosystem {
     m.kills = 0;
     m.lastBirthTick = -Infinity;
     this.journal?.born.push(m.id);
-    this.members.push(m);
+    this.track(m);
     this.kinds.push(species);
     this.states.push(m.creature.state);
     this.byId.set(m.id, m);
@@ -693,10 +730,39 @@ export class Ecosystem {
   }
 
   // Swap-removes members[i].
+  // Adds m to the end of the member list, and to bySlot.
+  private track(m: EcoCreature): void {
+    m.index = this.members.length;
+    this.members.push(m);
+    const list = this.bySlot;
+    const slot = m.creature.slot;
+    if (list.length === 0 || list[list.length - 1]!.creature.slot < slot) list.push(m);
+    else list.splice(this.slotPosition(slot), 0, m);
+  }
+
+  private untrack(m: EcoCreature): void {
+    this.bySlot.splice(this.slotPosition(m.creature.slot), 1);
+  }
+
+  // Where a creature of this slot sits (or would sit) in bySlot.
+  private slotPosition(slot: number): number {
+    const list = this.bySlot;
+    let lo = 0;
+    let hi = list.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (list[mid]!.creature.slot < slot) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
+  }
+
   private remove(i: number): void {
     const m = this.members[i];
     const last = this.members.length - 1;
     this.members[i] = this.members[last];
+    this.members[i].index = i;
+    this.untrack(m);
     this.states[i] = this.states[last];
     this.kinds[i] = this.kinds[last]!;
     this.members.pop();
@@ -867,7 +933,7 @@ export class Ecosystem {
     m.species = r.species; m.hue = r.hue; m.founderId = r.founderId; m.lastBirthTick = r.lastBirthTick;
     m.birth.energy = r.birthEnergy; m.birth.cost = r.birthCost; m.birth.cooldown = r.birthCooldown; m.cooldownTicks = r.cooldownTicks;
     this.journal?.born.push(m.id);
-    this.members.push(m);
+    this.track(m);
     this.kinds.push(r.species);
     this.states.push(s);
     this.byId.set(m.id, m);
