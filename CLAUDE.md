@@ -8,6 +8,13 @@ Try to minimize usage.
 Let Opus (5.5+) be orchestrator and manager of subagents.
 Work in parallel when can be done
 
+## Machine load
+Erik uses this laptop while many sessions and subagents run on it, so keep it responsive.
+- Run every build, test, benchmark, training run and render at `nice -n 19`, and tell subagents to do the same.
+- Run long jobs detached (`setsid nohup nice -n 19 ...`) with output logged.
+- Cap threads at about 6 of the 8 cores per job, fewer when other sessions are busy. Check `uptime` and `free -g` before starting a big job.
+- Watch peak RSS. If swap use passes about 1 GB or the `available` column of `free -g` drops below 2 GB, stop your newest job and tell Erik.
+
 ## Iteration and notes
 Work here is iterative: plans, maps, looks and numbers change often, and nothing is written in stone.
 Keep `docs/status.md` current with what is being done, what was decided and what is open. Add new information from Erik or other sessions as it arrives, and update or delete stale lines there, in this file and in other docs.
