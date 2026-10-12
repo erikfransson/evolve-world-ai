@@ -54,7 +54,7 @@ describe("terrainOf", () => {
 });
 
 // Nearest wall, rock disc or item along a unit direction, by plain geometry.
-function brute(w: World, config: SimConfig, x: number, y: number, a: number): { closeness: number; kind: number } {
+function brute(w: World, config: SimConfig, x: number, y: number, a: number, hideFood = false): { closeness: number; kind: number } {
   const L = config.creature.rayLength;
   const dx = Math.cos(a);
   const dy = Math.sin(a);
@@ -70,7 +70,7 @@ function brute(w: World, config: SimConfig, x: number, y: number, a: number): { 
     if (t < best) [best, kind] = [t, k];
   };
   for (const [cx, cy, r] of discs(w.terrain)) hit(cx!, cy!, r!, HIT_WALL);
-  for (let i = 0; i < w.count; i++) if (w.kinds[i] !== HIT_NONE) hit(w.xs[i]!, w.ys[i]!, config.world.itemRadius, w.kinds[i]!);
+  for (let i = 0; i < w.count; i++) if (w.kinds[i] !== HIT_NONE && !(hideFood && w.kinds[i] === HIT_FOOD)) hit(w.xs[i]!, w.ys[i]!, config.world.itemRadius, w.kinds[i]!);
   return { closeness: kind === HIT_NONE ? 0 : 1 - best / L, kind };
 }
 
@@ -99,6 +99,30 @@ describe("rays and rock", () => {
       if (out.kind === HIT_WALL && w.terrain.touchesRock(x + 150 * Math.cos(a), y + 150 * Math.sin(a), 1)) rockHits++;
     }
     expect(rockHits).toBeGreaterThan(50);
+  });
+
+  it("still hide food from rays beside rock, which they stop at", () => {
+    const config = withMap({ foodDensity: 0.3, poisonDensity: 0.05 });
+    const counts = itemCounts(config);
+    const w = new World(config, counts.food + counts.poison);
+    w.scatter(counts.food, counts.poison, createRng(4));
+    w.foodHidden = true;
+    const rng = createRng(11);
+    const out: RayHit = { closeness: 0, kind: HIT_NONE, energy: 0, species: 0 };
+    let walls = 0;
+    for (let n = 0; n < 2000; n++) {
+      const x = rng.range(10, 2990);
+      const y = rng.range(10, 1990);
+      if (w.terrain.touchesRock(x, y, 0)) continue;
+      const a = rng.range(0, 2 * Math.PI);
+      w.castRays(x, y, Float64Array.of(Math.cos(a)), Float64Array.of(Math.sin(a)), [out], new RayCache(), config.creature.rayLength);
+      const want = brute(w, config, x, y, a, true);
+      expect(out.kind).not.toBe(HIT_FOOD);
+      expect(out.kind).toBe(want.kind);
+      expect(out.closeness).toBeCloseTo(want.closeness, 9);
+      if (out.kind === HIT_WALL) walls++;
+    }
+    expect(walls).toBeGreaterThan(100);
   });
 
   it("keep items out of rock when scattering and regrowing", () => {
