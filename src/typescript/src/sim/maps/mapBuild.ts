@@ -426,9 +426,13 @@ const ROUGH_WAVE_FINE = 260;
 const WIDTH_WAVE = 1700;
 const WIDTH_WAVE_FINE = 600;
 const PASS_WAVE = 500;
-const ANGULAR_EDGE = 0.4; // radius of the discs along an angular stone's edge, in stone radii: the union edge scallops by about a tenth of it
+const ANGULAR_EDGE = 0.45; // radius of the discs along an angular stone's edge, in stone radii: the union edge scallops by about a tenth of it
 const ANGULAR_CORNERS = [7, 9] as const;
-const MASS_EDGE_R = 45; // radius of the discs placed on every edge cell of a massif, so its edge follows the raster's steps instead of a few big circles
+const PEBBLE_CORNERS = [5, 6] as const;
+const PEBBLE_EDGE = 0.55;
+const MASS_EDGE_R_MIN = 38; // radius range and position jitter of the discs placed on every edge cell of a massif, so its edge follows the raster's steps instead of a few big circles
+const MASS_EDGE_R_MAX = 66;
+const MASS_EDGE_JITTER = 24;
 const MASS_CELL = 50; // world units of the massif mask grid
 const MASS_MAX_R = 300; // largest disc of a massif
 const MASS_MIN_R = 30;
@@ -437,9 +441,10 @@ const OUTCROP = { g: 420, r: [170, 380], ex: [2, 5], gap: 140 } as const;
 
 // An irregular polygon of seven to nine corners in place of a round stone of radius d.r: its edges are rows of discs and a ring and a centre
 // disc fill the inside, so the union has straight edges and corners like the boulders of the random map, from a few dozen discs.
-function angularStone(rng: () => number, d: Disc): Disc[] {
-  const n = ANGULAR_CORNERS[0] + Math.floor(rng() * (ANGULAR_CORNERS[1] - ANGULAR_CORNERS[0] + 1));
-  const rho = ANGULAR_EDGE * d.r;
+function angularStone(rng: () => number, d: Disc, small: boolean): Disc[] {
+  const [lo, hi] = small ? PEBBLE_CORNERS : ANGULAR_CORNERS; // a pebble is a pentagon or hexagon of coarser discs, to keep the disc count down
+  const n = lo + Math.floor(rng() * (hi - lo + 1));
+  const rho = (small ? PEBBLE_EDGE : ANGULAR_EDGE) * d.r;
   const corners: { x: number; y: number }[] = [];
   let nearest = Infinity;
   for (let k = 0; k < n; k++) {
@@ -455,7 +460,7 @@ function angularStone(rng: () => number, d: Disc): Disc[] {
     for (let j = 0; j < steps; j++) out.push({ x: p.x + ((q.x - p.x) * j) / steps, y: p.y + ((q.y - p.y) * j) / steps, r: rho });
     nearest = Math.min(nearest, Math.hypot((p.x + q.x) / 2 - d.x, (p.y + q.y) / 2 - d.y));
   }
-  for (const p of corners) out.push({ x: d.x + 0.45 * (p.x - d.x), y: d.y + 0.45 * (p.y - d.y), r: 1.5 * rho });
+  if (!small) for (const p of corners) out.push({ x: d.x + 0.45 * (p.x - d.x), y: d.y + 0.45 * (p.y - d.y), r: 1.5 * rho });
   out.push({ x: d.x, y: d.y, r: Math.max(rho, 0.55 * nearest) });
   return out;
 }
@@ -617,7 +622,7 @@ export function buildMap(spec: MapSpec): BuiltMap {
           discs.push({ x: px + off * Math.cos(ang) - side * Math.sin(ang), y: py + off * Math.sin(ang) + side * Math.cos(ang), r: r * (0.5 + 0.35 * rng()) });
         }
         const bound = r * 1.5 + (nEx ? r * 0.8 : 0);
-        const angular = rockLayer.kind === "outcrop" ? discs.flatMap((d) => angularStone(rng, d)) : discs;
+        const angular = discs.flatMap((d) => angularStone(rng, d, rockLayer.kind === "talus")); // talus too: no stone is a plain circle
         if (hit(px, py, bound, Kd.gap)) continue;
         if (!rockLayer.onMud && discs.some((q) => ground.valueAt(q.x, q.y) < 0)) continue;
         const key = keyOf(Math.floor(px / 400), Math.floor(py / 400));
@@ -677,8 +682,9 @@ function massDiscs(mask: Uint8Array, cols: number, rows: number): Disc[] {
     for (let cx = 0; cx < cols; cx++) {
       const n = cy * cols + cx;
       if (dist[n]! !== 1) continue;
-      const r = MASS_EDGE_R * (0.85 + 0.3 * hash(cx, cy, 7));
-      discs.push({ x: Math.round((cx + 0.5) * MASS_CELL), y: Math.round((cy + 0.5) * MASS_CELL), r: Math.round(r) });
+      const r = MASS_EDGE_R_MIN + (MASS_EDGE_R_MAX - MASS_EDGE_R_MIN) * hash(cx, cy, 7); // seeded radius and offset, so the edge is broken rock
+      const jitter = (salt: number): number => (hash(cx, cy, salt) - 0.5) * MASS_EDGE_JITTER;
+      discs.push({ x: Math.round((cx + 0.5) * MASS_CELL + jitter(8)), y: Math.round((cy + 0.5) * MASS_CELL + jitter(9)), r: Math.round(r) });
       cover(cx, cy, r);
     }
   }
