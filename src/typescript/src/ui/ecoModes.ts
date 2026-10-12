@@ -9,7 +9,7 @@ import { formatDuration } from "./page.ts";
 import { ECOSYSTEM_COPY } from "./ecoMarkup.ts";
 import type { PageCopy } from "./ecoMarkup.ts";
 
-// What differs between the Ecosystem page script runs.
+// Page settings for the Ecosystem page script.
 export interface ModePage {
   mode: "ecosystem"; // also the copy/paste mode and the scoreboard name
   copy: PageCopy; // the wording and drawings of the shared page structure (ecoBody)
