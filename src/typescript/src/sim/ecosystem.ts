@@ -729,7 +729,6 @@ export class Ecosystem {
     return m;
   }
 
-  // Swap-removes members[i].
   // Adds m to the end of the member list, and to bySlot.
   private track(m: EcoCreature): void {
     m.index = this.members.length;
@@ -757,6 +756,7 @@ export class Ecosystem {
     return lo;
   }
 
+  // Swap-removes members[i].
   private remove(i: number): void {
     const m = this.members[i];
     const last = this.members.length - 1;

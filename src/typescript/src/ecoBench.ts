@@ -41,7 +41,7 @@ const { values } = parseArgs({
     preset: { type: "string" },
     config: { type: "string" },
     set: { type: "string", multiple: true },
-    profile: { type: "boolean" }, // CPU ms per phase per steady tick 
+    profile: { type: "boolean" }, // CPU ms per phase per steady tick; serial only, with --threads the first lap also holds the wait for the helpers
   },
 });
 const num = (v: string | undefined, fallback: number): number => (v === undefined ? fallback : Number(v));
