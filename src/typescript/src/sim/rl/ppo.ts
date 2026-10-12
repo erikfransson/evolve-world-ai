@@ -1,4 +1,4 @@
-import { genomeLength, layerSizes, randomGenome } from "../brain.ts";
+import { fastTanh, genomeLength, layerSizes, randomGenome } from "../brain.ts";
 import { DEFAULT_CONFIG } from "../config.ts";
 import type { Creature } from "../creature.ts";
 import { createRng, deriveSeed } from "../rng.ts";
@@ -101,10 +101,10 @@ export class Mlp {
           b1 += p1 * y;
         }
         if (hidden) {
-          da[j] = Math.tanh(a0);
-          da[j + 1] = Math.tanh(a1);
-          db[j] = Math.tanh(b0);
-          db[j + 1] = Math.tanh(b1);
+          da[j] = fastTanh(a0);
+          da[j + 1] = fastTanh(a1);
+          db[j] = fastTanh(b0);
+          db[j + 1] = fastTanh(b1);
         } else {
           da[j] = a0;
           da[j + 1] = a1;
@@ -121,8 +121,8 @@ export class Mlp {
           x += p * sa[i]!;
           y += p * sb[i]!;
         }
-        da[j] = hidden ? Math.tanh(x) : x;
-        db[j] = hidden ? Math.tanh(y) : y;
+        da[j] = hidden ? fastTanh(x) : x;
+        db[j] = hidden ? fastTanh(y) : y;
       }
       at = bias + nOut;
     }
@@ -180,10 +180,10 @@ export class Mlp {
         }
       }
       if (hidden) {
-        dst[j] = Math.tanh(s0);
-        dst[j + 1] = Math.tanh(s1);
-        dst[j + 2] = Math.tanh(s2);
-        dst[j + 3] = Math.tanh(s3);
+        dst[j] = fastTanh(s0);
+        dst[j + 1] = fastTanh(s1);
+        dst[j + 2] = fastTanh(s2);
+        dst[j + 3] = fastTanh(s3);
       } else {
         dst[j] = s0;
         dst[j + 1] = s1;
@@ -196,7 +196,7 @@ export class Mlp {
       const row = at + j * nIn;
       if (l === 0) for (let k = 0; k < n; k++) s += params[row + active[k]!]! * src[active[k]!]!;
       else for (let i = 0; i < nIn; i++) s += params[row + i]! * src[i]!;
-      dst[j] = hidden ? Math.tanh(s) : s;
+      dst[j] = hidden ? fastTanh(s) : s;
     }
     return bias + nOut;
   }
