@@ -28,7 +28,7 @@ Mixing: every realm opens onto the Commons. No walls and no belts, the realms ar
 | Ash coast       | 1.9  | 2.0    | plain                 | poison, rich    |
 | Elsewhere       | 1.0  | 1.0    | plain                 | open            |
 
-Behaviours: slow, efficient river dwellers, meadow generalists, plateau sprinters, poison-tolerant coast foragers, steerers and wall followers at the ridge.
+Behaviours: slow, efficient river dwellers, meadow generalists, plateau sprinters, careful coast foragers, steerers and wall followers at the ridge.
 Mixing: the rivers are crossable everywhere (stepping stones mark the easy fords), the ridge has two wide passes, meadows and plateau edges are open.
 
 ## F3 Oases in the Dry (87% normal, mud 6.5, firm 4.1, rock 2.1; about 620 discs)
