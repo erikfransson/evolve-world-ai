@@ -121,7 +121,7 @@ export function envConfig(env: EnvSpec, seed: number): EcoConfig {
 // The episode config of an env, built once and reused with the seed swapped (the engine only reads it); the key guards an env edited in place.
 const configs = new WeakMap<EnvSpec, { key: string; config: EcoConfig }>();
 function episodeConfig(env: EnvSpec, seed: number): EcoConfig {
-  const key = `${env.world} ${env.size[0]} ${env.size[1]} ${env.food} ${env.poison} ${env.foodRegrow} ${env.collisionDamage} ${env.poisonDamage} ${env.rivals.reduce((a, r) => a + r.count, 1)}`;
+  const key = `${env.world} ${env.size[0]} ${env.size[1]} ${env.food} ${env.poison} ${env.foodRegrow} ${env.collisionDamage} ${env.poisonDamage} ${env.rivals.reduce((a, r) => a + r.count, 1)} ${env.foodVisibleFor}`; // foodVisibleFor sets eco.wasm
   let c = configs.get(env);
   if (c?.key !== key) configs.set(env, (c = { key, config: envConfig(env, 0) }));
   return { ...c.config, seed };
@@ -243,6 +243,8 @@ export function runEpisode(
   const kernels = config.eco.wasm ? (spareKernels ?? SenseKernels.create(config)) : null;
   spareKernels = null; // taken, so an episode started inside this one's onTick builds its own
   const eco = new Ecosystem(config, null, { cast, items: placed?.items, kernels: kernels ?? undefined });
+  // With the WASM kernels only the detail creature gets its rays and brain input copied back; recordings and backprop RL read the learner's.
+  if (onTick || act) eco.detail = 0;
   const reach = 2 * config.creature.radius + 2; // bumping distance, for crediting a ram
   const ticks = Math.round(env.seconds / config.dt);
   const out: EpisodeResult = { reward: 0, food: 0, kills: 0, rams: 0, seconds: 0, energy: 0 };

@@ -1,6 +1,8 @@
 import { genomeLength, layerSizes } from "../../src/typescript/src/sim/brain.ts";
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
 import { castFor, checkEnv, envConfig, randomLearner, runEpisode } from "../../src/typescript/src/sim/rl/env.ts";
+import { recordEpisode } from "../../src/typescript/src/sim/rl/recording.ts";
+import { wasmAvailable } from "../../src/typescript/src/sim/wasm/loader.ts";
 import { creatureFile, parseCreatureFile } from "../../src/typescript/src/sim/rl/creatureFile.ts";
 import type { EnvSpec } from "../../src/typescript/src/sim/rl/env.ts";
 import { ENVS, ENV_GROUPS, envById, groupOf } from "../../src/typescript/src/sim/rl/envs.ts";
@@ -243,5 +245,21 @@ describe("hidden food in envs", () => {
     if (eco.wasm) expect(() => eco.setFoodHidden(true)).toThrow(/JS sense path/);
     const r = runEpisode(env, randomLearner(env, 2), 3);
     expect(r.seconds).toBeGreaterThan(0);
+  });
+});
+
+describe("learner input under the WASM kernels", () => {
+  it("records the learner's rays and brain input, and backprop RL sees them", () => {
+    const env = envById("nibble")!;
+    expect(envConfig(env, 1).eco.wasm).toBe(wasmAvailable());
+    const learner = randomLearner(env, 3);
+    const rec = recordEpisode(env, learner, 5, null, {}, 2, true);
+    expect(rec.inputs.some((v) => v !== 0)).toBe(true);
+    expect(rec.rays.some((v, k) => k % 2 === 0 && v !== 0)).toBe(true);
+    let seen = 0;
+    runEpisode(env, learner, 5, null, {}, undefined, (c) => {
+      seen += c.brain.layerActivations()[0]!.filter((v) => v !== 0).length > 1 ? 1 : 0;
+    });
+    expect(seen).toBeGreaterThan(0);
   });
 });

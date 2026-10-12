@@ -98,6 +98,7 @@ export function inlineRlPort(): RlPort {
 
 const STALL_MS = 120_000; // no result at all for this long fails the run: an episode takes well under a second
 const CHUNKS_PER_PORT = 6; // batches per helper in a call of rewards()
+const MAX_BATCH = 16; // episodes per batch at most, so one batch stays far inside STALL_MS even with few helpers
 const IN_FLIGHT = 2; // jobs queued per helper, so it never waits for the next one
 
 interface Run {
@@ -131,7 +132,7 @@ export class RlPool {
   // Rewards of the tasks, in task order.
   async rewards(tasks: readonly RlTask[]): Promise<number[]> {
     // Chunks of consecutive tasks (genome by genome), so a genome crosses to a helper once per chunk, and a few chunks per helper to balance load.
-    const size = Math.max(1, Math.ceil(tasks.length / (this.ports.length * CHUNKS_PER_PORT)));
+    const size = Math.max(1, Math.min(MAX_BATCH, Math.ceil(tasks.length / (this.ports.length * CHUNKS_PER_PORT))));
     const jobs: Run["jobs"] = [];
     for (let from = 0; from < tasks.length; from += size) {
       const end = Math.min(tasks.length, from + size);
