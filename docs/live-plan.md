@@ -58,3 +58,5 @@ Server limits: insert rate per visitor, cap on visitor creatures alive, name len
 
 ## Decisions
 - 2026-10-11: self-hosted server behind an HTTPS tunnel (public port only), world pauses while the host is off (page says offline), saves every 4 h kept 4 days with admin revert, founders hand-picked from `pool.json`, 2x speed by default, viewer cap 100 with a 3 MB/s upload budget, server at lowest CPU and IO priority.
+- 2026-10-11: v2 viewer (protocol 2): Ecosystem panels on the live page, a viewer may follow one creature (rays, brain, energy, birth traits at 5 Hz from a 3 kB/s allowance), item changes ride with each frame and apply at their tick, seasons on, 4x by default, 6 helper threads at idle priority (`LIVE_THREADS`).
+- 2026-10-11: helper threads off by default: under SCHED_IDLE the server gets about one core whatever the thread count, and 6 helpers cost 2.3x the CPU per tick (92 against 53 ticks/s at 1190 creatures).

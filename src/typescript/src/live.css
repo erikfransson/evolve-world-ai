@@ -1,33 +1,45 @@
-/* Live World page: one full-bleed world view with a few small overlays. Builds on style.css and ecosystem.css. */
-.layout.live { padding: 0; gap: 0; }
-.live .stage > canvas { border: 0; border-radius: 0; }
-.chip { position: absolute; z-index: 1; top: 10px; left: 10px; display: flex; align-items: center; gap: 0.5rem; height: calc(2.2rem + 2px); padding: 0 0.9rem; background: color-mix(in srgb, var(--card) 82%, transparent); border: 1px solid color-mix(in srgb, var(--muted) 35%, transparent); border-radius: 999px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); font-size: 0.85rem; font-weight: 500; font-variant-numeric: tabular-nums; max-width: calc(100% - 4.5rem); }
+/* Live World page: the Ecosystem layout without the run controls. Builds on style.css and ecosystem.css. */
+.banner .chip { margin-left: auto; }
+.chip { display: flex; align-items: center; gap: 0.5rem; min-width: 0; height: 2rem; padding: 0 0.85rem; background: var(--card); border: 1px solid var(--border-hi); border-radius: 999px; font-size: 0.8rem; font-weight: 500; font-variant-numeric: tabular-nums; }
 .chip i { flex: none; width: 0.55rem; height: 0.55rem; border-radius: 50%; background: var(--muted); }
 .chip[data-state="live"] i { background: var(--accent); box-shadow: 0 0 0 0 rgba(61, 220, 151, 0.6); animation: pulse 2s ease-out infinite; }
 .chip[data-state="connecting"] i { background: #fbbf24; animation: blink 1s ease-in-out infinite; }
 .chip[data-state="offline"] i, .chip[data-state="full"] i, .chip[data-state="outdated"] i { background: #f87171; }
 .chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip-more { flex: 0 1 auto; min-width: 0; }
+.banner h1 { white-space: nowrap; }
 @keyframes pulse { 70% { box-shadow: 0 0 0 7px rgba(61, 220, 151, 0); } 100% { box-shadow: 0 0 0 0 rgba(61, 220, 151, 0); } }
 @keyframes blink { 50% { opacity: 0.35; } }
 @media (prefers-reduced-motion: reduce) { .chip i { animation: none !important; } }
 
-.strip { position: absolute; z-index: 1; left: 10px; bottom: 10px; max-width: calc(100% - 20px); margin: 0; display: flex; flex-wrap: wrap; gap: 0.3rem 1.2rem; padding: 0.45rem 0.9rem; background: color-mix(in srgb, var(--card) 82%, transparent); border: 1px solid color-mix(in srgb, var(--muted) 35%, transparent); border-radius: 12px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
-.strip div { display: flex; flex-direction: column-reverse; min-width: 0; }
-.strip dt { color: var(--muted); font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.07em; }
-.strip dd { margin: 0; font-size: 1rem; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
-
-.ov-pick { top: 58px; left: 10px; width: min(18rem, calc(100% - 20px)); }
-.pick-body { display: flex; flex-direction: column; gap: 0.55rem; padding: 0.15rem 0.8rem 0.7rem; }
-.pick-facts { margin: 0; display: flex; gap: 1.2rem; color: var(--muted); font-size: 0.75rem; }
-.pick-facts b { color: var(--text); font-variant-numeric: tabular-nums; }
+.about p { margin: 0; color: var(--muted); font-size: 0.8rem; line-height: 1.45; }
 .retry { font-variant-numeric: tabular-nums; }
-.live .scrim { border-radius: 0; }
+.timer { gap: 0.55rem; }
+.season-pill { padding: 0.05rem 0.5rem; border-radius: 999px; font-size: 0.72rem; font-weight: 600; background: color-mix(in srgb, var(--season, #3ddc97) 22%, transparent); color: var(--season, #3ddc97); }
+.season-pill:empty { display: none; }
+.key.winter { color: rgba(150, 190, 235, 0.9); }
+.key.winter::before { height: 0.7em; vertical-align: -0.1em; background: rgba(150, 190, 235, 0.35); }
+
+/* family highlight: the selected card's founder row becomes a clear toggle */
+.sel-founder.family { border-color: var(--border-hi); color: var(--text); padding: 0.3rem 0.45rem; }
+.sel-founder.family b { margin-left: auto; padding: 0.1rem 0.55rem; border-radius: 999px; background: var(--card-hi); border: 1px solid var(--border-hi); font-size: 0.72rem; font-weight: 600; white-space: nowrap; }
+.sel-founder.family.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.sel-founder.family.on b { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+
+/* records: living entries can be followed */
+.lead-cell.live-pick { cursor: pointer; border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.lead-cell.live-pick:hover, .lead-cell.live-pick:focus-visible { background: var(--card-hi); border-color: var(--accent); outline: none; }
+.lead-cell.following { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.sel-id { margin-right: auto; color: var(--muted); font-size: 0.75rem; font-variant-numeric: tabular-nums; }
+.ov-selected:not(.has-sel) .sel-id { display: none; }
+.live .sel-facts { grid-template-columns: repeat(4, auto); }
+.brain-wait { text-align: center; padding: 1rem 0; }
+.brain-wait[hidden] { display: none; }
 
 @media (max-width: 700px) {
-  body { height: 100%; min-height: 0; }
-  .layout.live { flex-direction: row; }
-  .layout.live .stage { flex: 1; display: block; container-type: size; }
-  .layout.live .stage > canvas { position: absolute; aspect-ratio: auto; height: 100%; max-height: none; }
-  .strip { gap: 0.2rem 0.9rem; padding: 0.35rem 0.7rem; }
-  .strip dd { font-size: 0.9rem; }
+  .banner .chip { height: 1.8rem; padding: 0 0.65rem; font-size: 0.75rem; }
+  .chip-more { display: none; }
+  .about { display: none; }
+  .live .sel-facts { grid-template-columns: repeat(2, auto); }
 }
+#statSeason { white-space: normal; line-height: 1.1; } /* a narrow tile wraps the food factor under the season name */

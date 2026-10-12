@@ -46,12 +46,13 @@ export function removeFavourite(index: number, store: Store | null = defaultStor
 
 // Replay speed choice, kept per browser.
 export const SPEED_KEY = "evolve-arena-speed";
-export const SPEEDS = [1, 2, 4, 8] as const;
+export const SPEEDS = [1, 2, 4, 8, 0] as const; // 0 is Max: no replays, training only
 export const DEFAULT_SPEED = 4;
 
 export function loadSpeed(store: Pick<Storage, "getItem"> | null = defaultStore()): number {
   try {
-    const v = Number(store?.getItem(SPEED_KEY));
+    const raw = store?.getItem(SPEED_KEY);
+    const v = raw ? Number(raw) : NaN; // unset must not read as 0 (Max)
     return (SPEEDS as readonly number[]).includes(v) ? v : DEFAULT_SPEED;
   } catch {
     return DEFAULT_SPEED;

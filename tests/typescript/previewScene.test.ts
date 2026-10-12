@@ -3,7 +3,7 @@ import { layerSizes, randomGenome } from "../../src/typescript/src/sim/brain.ts"
 import { createRng } from "../../src/typescript/src/sim/rng.ts";
 import type { BodyPlan } from "../../src/typescript/src/sim/sensors.ts";
 import { HIT_FOOD, HIT_NONE } from "../../src/typescript/src/sim/types.ts";
-import { PreviewScene, ROOM_H, ROOM_W, pathAt } from "../../src/typescript/src/ui/previewScene.ts";
+import { PERIOD, PreviewScene, ROOM_H, ROOM_W, pathAt } from "../../src/typescript/src/ui/previewScene.ts";
 
 const config = layoutConfig("ecosystem");
 const plan = (over: Partial<BodyPlan> = {}): BodyPlan => ({ rayCount: 7, raySpread: (140 * Math.PI) / 180, rayLength: 150, hiddenLayers: [10], memoryShort: 2, memoryLong: 2, ...over });
@@ -18,7 +18,7 @@ describe("pathAt", () => {
       expect(p.y).toBeGreaterThan(20);
       expect(p.y).toBeLessThan(ROOM_H - 20);
     }
-    expect(pathAt(5.5).x).toBeCloseTo(pathAt(25.5).x, 6);
+    expect(pathAt(5.5).x).toBeCloseTo(pathAt(5.5 + PERIOD).x, 6);
   });
 
   it("is smooth: small steps move the position and heading only a little", () => {

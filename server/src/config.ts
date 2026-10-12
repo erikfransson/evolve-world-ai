@@ -14,19 +14,33 @@ liveConfig.eco.initialPopulation = 1000;
 liveConfig.eco.foodRegrow = 0.02; // population settles near 1100 after 10 min (0.03 gives about 1650)
 liveConfig.eco.collisionDamage = true;
 liveConfig.eco.maxPopulation = MAX_POPULATION; // bounds the frame size, so the viewer budget holds
+liveConfig.eco.seasons = true; // a 40 min year is 10 min at 4x; population swings about 530 to 1220 (docs/tuning-notes.md)
+liveConfig.eco.yearMinutes = 40;
+liveConfig.eco.winterFood = 0.4;
 
 // Item slots are fixed when a world is built, so it is built with room for admin to raise the food and poison caps (densities, LIVE_MAX allows 10 each).
 // Measured at about 1000 creatures: caps 3 and 1 cost 20 MB more RSS at a save and 0.1 s more saveState than 0.7 and 0.1, caps 10 and 10 cost 90 MB and 0.5 s.
 export const ITEM_HEADROOM = { foodMaxDensity: 3, poisonMaxDensity: 1 };
 
 // Settings of the server rather than the engine, changed from the admin page (tunables.ts).
-export const LIVE = { speed: 2 }; // target simulated seconds per real second
+export const LIVE = { speed: 4 }; // target simulated seconds per real second
+// Helper threads that sense and think (createNodeThinkPool); fixed for the process, LIVE_THREADS overrides. They inherit the unit's idle scheduling.
+// None by default: under SCHED_IDLE on a busy host the server gets about one core whatever the thread count, and helpers cost 2.3x the CPU
+// per tick (1190 creatures: 92 ticks/s on one thread, 53 with 6 helpers; 8.8 against 20.3 CPU ms per tick, review 2026-10-11).
+export const HELPER_THREADS = 0;
 
 export const LIMITS = {
   maxViewers: 100,
   maxSendBytesPerSecond: 3_000_000, // total upload budget, the home uplink is the limit; viewers get fewer frames, and none join past the slowest rate (budget.ts)
   connectBytesPerSecond: 300_000, // of the budget: catch-up frames for viewers that just connected, skipped when used up
-  textBytesPerViewer: 1000, // of the budget, per viewer slot: stats, hello and pong
+  maxTickFailures: 50, // consecutive failed ticks before the server exits (code 1) for systemd to restart it from the last good save
+  textBytesPerViewer: 2000, // of the budget, per viewer slot: stats (with lineages, records every few seconds), hello and pong
+  detailBytesPerViewer: 3000, // of the budget, per viewer slot: the selected creature's details (about 2 kB/s) and its genome once
+  detailBurstBytes: 17_000, // a viewer's detail allowance holds this much, room for the largest genome (15 kB) plus a detail
+  selectsPerSecond: 2, // selection changes per viewer; more are ignored (and every message counts against maxClientMessagesPerSecond)
+  selectBurst: 4,
+  detailRefreshesPerSecond: 25, // senses of followed creatures for their rays and brain inputs, all viewers together: 5 viewers get 5 Hz, 100 share it
+  recordsEveryS: 5, // the records ride along with every this many stats
   acceptsPerSecond: 10, // new viewers, for all callers together
   acceptBurst: 30,
   headersTimeoutMs: 10_000, // an http request (the WebSocket upgrade) must arrive within this

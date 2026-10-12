@@ -2,19 +2,35 @@ import "./base.css";
 import "./style.css";
 import "./ecosystem.css";
 import "./live.css";
+import { DEFAULT_ECO_CONFIG, seasonFactor, seasonName, winterness } from "./sim/ecoConfig.ts";
+import type { EcoConfig } from "./sim/ecoConfig.ts";
+import type { Lineage } from "./sim/ecosystem.ts";
+import type { Leaders } from "./sim/leaderboard.ts";
 import { Camera } from "./ui/camera.ts";
 import { fitCanvas } from "./ui/canvas.ts";
 import { pickCreature } from "./ui/ecoPick.ts";
 import { BirthRings } from "./ui/ecoBirths.ts";
+import { ImpactEffects } from "./ui/ecoImpacts.ts";
 import { EcoRenderer } from "./ui/ecoScene.ts";
 import type { EcoDrawConfig } from "./ui/ecoScene.ts";
+import { buildSelectedBrain } from "./ui/ecoBrain.ts";
+import type { SelectedBrain } from "./ui/ecoBrain.ts";
+import { BrainView } from "./ui/brainView.ts";
+import { PopulationGraph } from "./ui/populationGraph.ts";
+import type { PopulationSample } from "./ui/populationGraph.ts";
+import { LineagePanel, lineageColor } from "./ui/lineagePanel.ts";
+import { BOARD_SPECS, LeaderPanel } from "./ui/leaderPanel.ts";
+import { formatBirth, formatPlan } from "./ui/ecoPage.ts";
+import { initCard } from "./ui/overlays.ts";
+import { initTooltips } from "./ui/tooltip.ts";
+import { $, durationText, setTile } from "./ui/page.ts";
 import type { SelectedDetails } from "./worker/ecoProtocol.ts";
-import { LiveLink } from "./live/connection.ts";
+import { LiveLink, historyAxis } from "./live/connection.ts";
 import type { LinkState } from "./live/connection.ts";
 import { LiveScene } from "./live/scene.ts";
 import { serverUrl } from "./live/serverUrl.ts";
-import type { Hello, Stats } from "./live/protocol.ts";
-import { MAX_AGE_S } from "./live/protocol.ts";
+import { HISTORY_FIELDS, LINEAGE_FIELDS, MAX_HISTORY, MAX_LINEAGE_HISTORY } from "./live/protocol.ts";
+import type { Hello, Season, Stats } from "./live/protocol.ts";
 
 // TODO(L6): admin panel. `?admin` opens a second socket to the owner's loopback admin port (ws://127.0.0.1:8788), sends {t:"auth", token}
 // with a token the owner pastes in, then {t:"get-config"} and {t:"set-config", changes}. See server/src/admin.ts.
@@ -22,54 +38,93 @@ import { MAX_AGE_S } from "./live/protocol.ts";
 const MAX_CREATURE_PX = 60; // CSS px radius of a creature at the closest zoom
 const PICK_RADII = 3; // click reach in creature radii
 const PICK_MIN_PX = 14; // click reach never below this many CSS px
-const SELECT_RAY_LENGTHS = 3; // follow zoom: this many default ray lengths across the shorter side
+const SELECT_RAY_LENGTHS = 3; // follow zoom: this many ray lengths across the free part of the view
 const ZOOM_STEP = 1.6;
-const UI_INTERVAL_MS = 200;
-const RAY_LENGTH = 100;
+const UI_INTERVAL_MS = 100;
+const BRAIN_INTERVAL_MS = 25;
+const STORE = "evolve.live.card";
+const SEASON_COLORS: Record<string, string> = { Summer: "#fbbf24", Autumn: "#fb923c", Winter: "#93c5fd", Spring: "#4ade80" };
 
-const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 const canvas = $<HTMLCanvasElement>("view");
 const chip = $("chip");
+const mobile = window.matchMedia("(max-width: 700px)").matches;
 const camera = new Camera(1, 1, 1, 1);
 const renderer = new EcoRenderer();
 const births = new BirthRings();
+const impacts = new ImpactEffects();
 const scene = new LiveScene();
 const url = serverUrl(location.search, import.meta.env.DEV || ["127.0.0.1", "localhost"].includes(location.hostname));
+const nf = new Intl.NumberFormat("en-US");
+// The engine settings the brain view needs (input layout); the live world uses the Ecosystem's single species.
+const engine: EcoConfig = structuredClone(DEFAULT_ECO_CONFIG);
+
+initTooltips($("tooltip"));
+initCard($("legendCard"), `${STORE}.legend`, mobile);
+initCard($("selectedCard"), `${STORE}.selected`, false);
+const brainPanel = initCard($("brainCard"), `${STORE}.brain`, mobile);
+initCard($("graphCard"), `${STORE}.graph`, false);
+initCard($("lineageCard"), `${STORE}.lineage`, mobile);
+initCard($("leaderCard"), `${STORE}.leaders`, mobile);
+const brainView = new BrainView($<HTMLCanvasElement>("brainView"));
+const graph = new PopulationGraph($<HTMLCanvasElement>("graphView"));
+const lineages = new LineagePanel($("lineageCard"), (f) => {
+  highlight = f ?? -1;
+  syncFamily();
+});
+const leaderCard = $("leaderCard");
+let leaderPanel: LeaderPanel | null = null;
 
 let hello: Hello | null = null;
 let draw: EcoDrawConfig | null = null;
 let canvasW = 0;
 let canvasH = 0;
-let selectedId = -1;
-let highlight = -1;
 let lastUiAt = 0;
+let lastBrainAt = 0;
+let lastDrawAt = 0;
 let lastStats: Stats | null = null;
+let season: Season | null = null;
 let retryTimer: ReturnType<typeof setInterval> | undefined;
+let highlight = -1; // founder whose family is lit, -1 for none
+let samples: number[] = []; // population history, HISTORY_FIELDS each
+let lineageHistory: number[] = [];
 
-const fmt = (n: number): string => n.toLocaleString("en-US");
-function fmtDuration(s: number): string {
+// The followed creature: its latest details (from the timeline), the genome once it came, and a brain built from both.
+interface Selection {
+  id: number;
+  last: SelectedDetails | null; // while alive
+  died: boolean;
+  genome: Float32Array | null;
+  brain: SelectedBrain | null;
+  zoomed: boolean; // the zoom-in has started (it waits until the creature is on screen)
+}
+let selection: Selection | null = null;
+let following = false;
+let pendingFollow = false; // follow once the zoom-in has ended (following cuts an animation short)
+let followAfter = 0; // camera.animationsCompleted that means the zoom-in finished
+
+function setChip(state: LinkState, text: string, more = ""): void {
+  chip.dataset.state = state;
+  $("chipText").textContent = text;
+  $("chipMore").textContent = more;
+}
+
+function fmtUptime(s: number): string {
   const d = Math.floor(s / 86400);
   const h = Math.floor((s % 86400) / 3600);
   const m = Math.floor((s % 3600) / 60);
   return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m ${Math.floor(s % 60)}s`;
 }
 
-function setChip(state: LinkState, text: string): void {
-  chip.dataset.state = state;
-  $("chipText").textContent = text;
-}
-
 function onState(state: LinkState, retryInS: number): void {
   clearInterval(retryTimer);
   $("offline").hidden = state !== "offline";
   if (state === "connecting") setChip(state, "Connecting");
-  else if (state === "full") setChip(state, `The world is full of viewers, trying again in ${retryInS} s`);
+  else if (state === "full") setChip(state, `Full of viewers, retrying in ${retryInS} s`);
   else if (state === "outdated") setChip(state, "Page out of date, reload");
   else if (state === "live") {
     chip.dataset.state = "live";
     renderStats();
-  }
-  else {
+  } else {
     setChip(state, "World offline");
     let left = retryInS;
     const tick = (): void => {
@@ -82,27 +137,59 @@ function onState(state: LinkState, retryInS: number): void {
   }
 }
 
+const seasonEco = (s: Season): EcoConfig["eco"] => ({ ...engine.eco, seasons: true, yearMinutes: s.yearMinutes, winterFood: s.winterFood });
+
 function renderStats(): void {
   const s = lastStats;
   if (s) {
-    $("stPop").textContent = fmt(s.population);
-    $("stBirths").textContent = fmt(s.births);
-    $("stDeaths").textContent = fmt(s.deaths);
-    $("stViewers").textContent = fmt(s.viewers);
-    $("stSpeed").textContent = `${s.speed.toFixed(s.speed >= 10 ? 0 : 1)}x`;
-    $("stUptime").textContent = fmtDuration(s.uptimeS);
+    setTile("statPop", nf.format(s.population));
+    setTile("statViewers", nf.format(s.viewers));
+    setTile("statBirths", nf.format(s.births));
+    setTile("statDeaths", nf.format(s.deaths));
+    setTile("statFood", nf.format(s.food));
+    setTile("statTime", durationText(s.simSeconds));
+    setTile("statDepth", nf.format(s.depth));
+    setTile("statSpeed", s.speed.toFixed(1), " ×");
+    setTile("statUptime", fmtUptime(s.uptimeS));
+    $("statSeasonTile").hidden = !s.season;
+    if (s.season) setTile("statSeason", seasonName(seasonEco(s.season), s.simSeconds), ` ·\u00a0food\u00a0${seasonFactor(seasonEco(s.season), s.simSeconds).toFixed(2)}×`);
   }
-  if (chip.dataset.state === "live") setChip("live", s ? `${fmt(s.viewers)} watching · Live · ${fmt(s.population)} creatures · up ${fmtDuration(s.uptimeS)}` : "Live");
+  if (chip.dataset.state === "live") setChip("live", "Live", s ? ` · ${nf.format(s.viewers)} watching` : "");
 }
 
 function onHello(h: Hello): void {
   hello = h;
   scene.reset();
   scene.fullEnergy = h.fullEnergy;
+  scene.dt = h.dt;
   draw = { worldW: h.world.width, worldH: h.world.height, radius: h.radius, itemRadius: h.itemRadius, species: [{ fullEnergy: h.fullEnergy, hunter: false }], winter: 0 };
   camera.setWorld(h.world.width, h.world.height);
   births.reset();
+  impacts.reset();
+  samples = [];
+  lineageHistory = [];
+  showHistory();
+  lineages.reset();
+  highlight = -1;
+  leaderPanel ??= new LeaderPanel(leaderCard, [], h.radius);
+  leaderPanel.clear();
   clearSelection();
+}
+
+// Population samples for the graph, shifted to start near time 0 (historyAxis).
+function showHistory(): void {
+  const first = samples[0] ?? 0;
+  const last = samples.at(-HISTORY_FIELDS) ?? first;
+  const { shift, aligned } = historyAxis(first, last, season ? season.yearMinutes * 60 : 0);
+  const out: PopulationSample[] = [];
+  for (let i = 0; i + HISTORY_FIELDS <= samples.length; i += HISTORY_FIELDS) out.push({ time: samples[i]! - shift, population: samples[i + 1]!, food: samples[i + 2]! });
+  graph.setSeasons(season && aligned ? seasonEco(season) : null);
+  graph.setData(out);
+  $("graphNote").textContent = shift > 0 ? `last ${durationText(last - first)} · simulated time` : "simulated time";
+  const lin = Float64Array.from(lineageHistory);
+  const t0 = lin[0] ?? 0;
+  for (let i = 0; i < lin.length; i += LINEAGE_FIELDS) lin[i]! -= t0;
+  lineages.setHistory(lin);
 }
 
 function syncCanvas(): number {
@@ -116,27 +203,79 @@ function syncCanvas(): number {
   return dpr;
 }
 
-function clearSelection(): void {
-  selectedId = -1;
-  highlight = -1;
-  camera.follow(null);
-  $("selectedCard").hidden = true;
-  $("family").setAttribute("aria-pressed", "false");
+// Shifts the view centre into the part of the canvas the overlay cards leave free. Phones have the cards below the canvas.
+function overlayShift(): number {
+  const stack = document.querySelector<HTMLElement>(".ov-stack");
+  if (!stack || getComputedStyle(stack).position !== "absolute") return 0;
+  const c = canvas.getBoundingClientRect();
+  const r = stack.getBoundingClientRect();
+  if (c.right - r.right < 0.4 * c.width) return 0;
+  return ((r.right - c.left) / 2) * (canvasW / c.width);
 }
 
-function select(slot: number): void {
-  const v = scene.views;
-  selectedId = v.ids[slot]!;
-  highlight = -1;
-  $("family").setAttribute("aria-pressed", "false");
-  $("selectedCard").hidden = false;
-  const zoom = Math.min(canvasW, canvasH) / (SELECT_RAY_LENGTHS * RAY_LENGTH);
-  camera.cancel();
-  camera.animateTo(v.x[slot]!, v.y[slot]!, zoom);
+function setFollowing(on: boolean): void {
+  following = on;
+  $("follow").setAttribute("aria-pressed", String(on));
+}
+
+function clearSelection(): void {
+  if (selection) link.select(null);
+  selection = null;
+  pendingFollow = false;
+  setFollowing(false);
+  camera.follow(null);
+  camera.setFocusOffset(0, 0);
+  $("selectedCard").classList.remove("has-sel");
+  $("brainCard").hidden = true;
+  markRecords();
+}
+
+function followSelected(): void {
   camera.follow(() => {
-    const i = scene.slotOf(selectedId);
-    return i >= 0 && selectedId >= 0 ? { x: scene.views.x[i]!, y: scene.views.y[i]! } : null;
+    const i = selection ? scene.slotOf(selection.id) : -1;
+    return i >= 0 ? { x: scene.views.x[i]!, y: scene.views.y[i]! } : null;
   });
+  setFollowing(true);
+}
+
+// Follows creature id: asks the server for its details and zooms in once it is on screen.
+function select(id: number): void {
+  if (selection?.id === id) return;
+  selection = { id, last: null, died: false, genome: null, brain: null, zoomed: false };
+  link.select(id); // replaces the last one on the server: one message per click, so the select rate is not spent on letting go
+  $("selectedCard").classList.add("has-sel");
+  $("brainCard").hidden = false;
+  $("brainWait").hidden = false;
+  $("brainView").hidden = true;
+  zoomToSelection();
+  markRecords();
+  updateSelectedCard();
+}
+
+function zoomToSelection(): void {
+  const s = selection;
+  if (!s || s.zoomed) return;
+  const i = scene.slotOf(s.id);
+  if (i < 0) return;
+  s.zoomed = true;
+  const shift = overlayShift();
+  const rayLength = s.last?.plan.rayLength ?? engine.creature.rayLength;
+  camera.cancel();
+  camera.setFocusOffset(shift, 0);
+  camera.animateTo(scene.views.x[i]!, scene.views.y[i]!, Math.min(canvasW - 2 * shift, canvasH) / (SELECT_RAY_LENGTHS * rayLength));
+  pendingFollow = true;
+  followAfter = camera.animationsCompleted + 1;
+  setFollowing(true);
+}
+
+// Starts following once the zoom-in has ended, and notices when following stopped: the user dragged, or the creature died.
+function syncFollow(): void {
+  if (pendingFollow) {
+    if (camera.animating) return;
+    pendingFollow = false;
+    if (camera.animationsCompleted >= followAfter && selection && scene.slotOf(selection.id) >= 0) followSelected();
+    else setFollowing(false);
+  } else if (following && !camera.following) setFollowing(false);
 }
 
 camera.onClick = (wx, wy) => {
@@ -145,81 +284,246 @@ camera.onClick = (wx, wy) => {
   const dpr = window.devicePixelRatio || 1;
   const reach = Math.max(PICK_RADII * hello.radius, (PICK_MIN_PX * dpr) / camera.zoom);
   const i = pickCreature(v.x, v.y, v.count, wx, wy, reach);
-  if (i >= 0) select(i);
+  if (i >= 0) select(v.ids[i]! >>> 0); // ids are u32, the views hold them as i32
   else clearSelection();
 };
 
-function updateSelectedCard(): void {
-  if (selectedId < 0) return;
-  const i = scene.slotOf(selectedId);
-  if (i < 0) {
-    // Died: the camera stops following by itself.
-    $("selEnergy").textContent = "died";
-    $("selFill").style.width = "0%";
+function onDetail(d: SelectedDetails): void {
+  const s = selection;
+  if (!s || d.id !== s.id) return;
+  if (!d.alive) {
+    s.died = true;
     return;
   }
-  const v = scene.views;
-  const share = Math.min(1, v.energy[i]! / scene.fullEnergy);
-  $("selFill").style.width = `${Math.round(share * 100)}%`;
-  $("selMeter").setAttribute("aria-valuenow", String(Math.round(share * 100)));
-  $("selEnergy").textContent = `${Math.round(share * 100)}%`;
-  $("selAge").textContent = v.age[i]! >= MAX_AGE_S ? `${fmtDuration(MAX_AGE_S)}+` : fmtDuration(v.age[i]!); // the wire caps the age
-  $("selId").textContent = String(selectedId);
+  const replan = s.last && formatPlan(s.last.plan) !== formatPlan(d.plan);
+  s.last = d;
+  if (replan) s.brain = null;
+  buildBrain();
 }
 
+function buildBrain(): void {
+  const s = selection;
+  if (!s?.last || !s.genome || s.brain) return;
+  try {
+    s.brain = buildSelectedBrain(engine, { ...s.last, genome: s.genome });
+    $("brainWait").hidden = true;
+    $("brainView").hidden = false;
+  } catch {
+    s.genome = null; // a genome that does not fit the plan: wait for none rather than draw a wrong brain
+  }
+}
+
+function updateSelectedCard(): void {
+  const s = selection;
+  if (!s) return;
+  const d = s.last;
+  if (!d) {
+    $("selEnergy").textContent = s.died ? "died" : "…";
+    $("selId").textContent = `#${s.id}`;
+    return;
+  }
+  const full = Math.max(1, d.birthEnergy);
+  const frac = Math.min(1, Math.max(0, d.energy / full));
+  $("selFill").style.width = `${frac * 100}%`;
+  const meter = $("selMeter");
+  meter.setAttribute("aria-valuemax", String(Math.round(full)));
+  meter.setAttribute("aria-valuenow", String(Math.round(d.energy)));
+  $("selEnergy").textContent = s.died ? "died" : `${Math.round(d.energy)} / ${Math.round(full)}`;
+  $("selAge").textContent = durationText(d.age);
+  $("selChildren").textContent = nf.format(d.children);
+  $("selEaten").textContent = nf.format(d.eaten);
+  $("selDepth").textContent = nf.format(d.depth);
+  $("selId").textContent = `#${d.id}`;
+  $("selPlan").textContent = `${formatPlan(d.plan)} · ${formatBirth({ energy: d.birthEnergy, cost: d.birthCost, cooldown: d.birthCooldown })}`;
+  $("selBase").textContent = d.upkeep.toFixed(2);
+  $("selDrain").textContent = s.died ? "-" : d.drain.toFixed(2);
+  $("selFounderSw").style.background = lineageColor(d.founderHue);
+  $("selFounderText").textContent = `Founder #${d.founderId} · ${d.founderPool ? "trained pool" : "random"}`;
+  syncFamily();
+}
+
+function syncFamily(): void {
+  const on = highlight >= 0 && selection?.last?.founderId === highlight;
+  const b = $("selFounder");
+  b.classList.toggle("on", on);
+  b.setAttribute("aria-pressed", String(on));
+  $("selFamilyLabel").textContent = on ? "Family lit" : "Highlight family";
+}
+
+// The records card, with each living entry clickable to follow it. Cells come out of LeaderPanel in BOARD_SPECS order.
+let recordIds: (number | null)[] = [];
+function setRecords(records: NonNullable<Stats["records"]>): void {
+  if (!leaderPanel) return;
+  const leaders: Leaders[] = records.map((r) => ({ species: 0, board: r.board, entries: r.entries.map((e) => ({ ...e, species: 0 })) }));
+  leaderPanel.set(leaders);
+  recordIds = BOARD_SPECS.flatMap((spec) => leaders.find((l) => l.board === spec.board)?.entries.map((e) => (e.alive ? e.id : null)) ?? []);
+  markRecords();
+}
+
+function markRecords(): void {
+  leaderCard.querySelectorAll<HTMLElement>(".lead-cell").forEach((cell, k) => {
+    const id = recordIds[k] ?? null;
+    cell.classList.toggle("live-pick", id !== null);
+    cell.classList.toggle("following", id !== null && id === selection?.id);
+    if (id === null) {
+      cell.removeAttribute("tabindex");
+      cell.removeAttribute("role");
+      delete cell.dataset.id;
+    } else {
+      cell.tabIndex = 0;
+      cell.setAttribute("role", "button");
+      cell.dataset.id = String(id);
+    }
+  });
+}
+
+leaderCard.addEventListener("click", (e) => {
+  const cell = (e.target as HTMLElement).closest<HTMLElement>(".lead-cell[data-id]");
+  if (cell) select(Number(cell.dataset.id));
+});
+leaderCard.addEventListener("keydown", (e) => {
+  const cell = (e.target as HTMLElement).closest<HTMLElement>(".lead-cell[data-id]");
+  if (cell && (e.key === "Enter" || e.key === " ")) {
+    e.preventDefault();
+    select(Number(cell.dataset.id));
+  }
+});
+
+function onStats(s: Stats): void {
+  lastStats = s;
+  const seasonChanged = JSON.stringify(s.season) !== JSON.stringify(season);
+  season = s.season;
+  if (s.sample) {
+    samples.push(...s.sample);
+    if (samples.length > MAX_HISTORY * HISTORY_FIELDS) samples.splice(0, HISTORY_FIELDS);
+  }
+  if (s.lineageSample) {
+    lineageHistory.push(...s.lineageSample);
+    if (lineageHistory.length > MAX_LINEAGE_HISTORY * LINEAGE_FIELDS) lineageHistory.splice(0, LINEAGE_FIELDS);
+  }
+  if (s.sample || s.lineageSample || seasonChanged) showHistory();
+  if (s.lineages) lineages.setLineages(s.lineages.map((l): Lineage => ({ ...l, species: 0 })), s.population);
+  if (s.records) setRecords(s.records);
+  $<HTMLButtonElement>("pickAge").disabled = !s.best;
+  $<HTMLButtonElement>("pickChildren").disabled = !s.best;
+  renderStats();
+}
+
+function drawConfig(): EcoDrawConfig {
+  draw!.winter = season ? winterness(seasonEco(season), scene.displayTick * scene.dt) : 0;
+  return draw!;
+}
+
+function updateTimer(): void {
+  const t = scene.displayTick * scene.dt;
+  const timer = $("timer");
+  timer.hidden = !scene.views.count;
+  $("timerText").textContent = durationText(t);
+  const name = season ? seasonName(seasonEco(season), t) : "";
+  const pill = $("timerSeason");
+  if (pill.textContent !== name) {
+    pill.textContent = name;
+    pill.style.setProperty("--season", SEASON_COLORS[name] ?? "#3ddc97");
+  }
+}
+
+function drawBrain(now: number): void {
+  const s = selection;
+  if (!s?.brain || !s.last || !brainPanel.isExpanded() || now - lastBrainAt < BRAIN_INTERVAL_MS) return;
+  lastBrainAt = now;
+  s.brain.brain.forward(s.last.inputs, s.brain.out);
+  brainView.draw(s.brain.brain, !s.died, s.brain.layout);
+}
+
+const IDLE_FRAME_MS = 1000 / 30 - 2; // with nothing followed or animating, draw at most 30 times a second
 function frame(now: number): void {
   requestAnimationFrame(frame);
+  if (!selection && !camera.animating && now - lastDrawAt < IDLE_FRAME_MS) return;
+  lastDrawAt = now;
   const dpr = syncCanvas();
   const ctx = canvas.getContext("2d")!;
   camera.update(now);
   if (!draw || !scene.views.count) {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = "#0b1d16";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+    if (scene.views.count === 0) scene.sample(now);
     return;
   }
-  const views = scene.sample(now);
-  const i = selectedId >= 0 ? scene.slotOf(selectedId) : -1;
-  // The renderer only reads alive, x and y of a selection when rays are off.
-  const selected = i >= 0 ? ({ alive: true, x: views.x[i]!, y: views.y[i]! } as SelectedDetails) : null;
-  renderer.draw(ctx, camera, draw, views, selected, false, dpr, highlight, births, now, null);
+  if (scene.sample(now)) births.observe(scene.views, now);
+  zoomToSelection();
+  syncFollow();
+  const views = scene.views;
+  const i = selection ? scene.slotOf(selection.id) : -1;
+  // Rays and the ring at the creature as drawn now; its rays from the latest details on the timeline.
+  const d = selection?.last;
+  const selected = i >= 0 && !selection!.died ? ({ ...(d ?? { rayKinds: new Uint8Array(0), rayCloseness: new Float32Array(0), rayOffsets: new Float32Array(0), plan: { rayLength: 0 } }), alive: true, x: views.x[i]!, y: views.y[i]!, heading: views.heading[i]! } as SelectedDetails) : null;
+  renderer.draw(ctx, camera, drawConfig(), views, selected, true, dpr, highlight, births, now, impacts);
   if (now - lastUiAt >= UI_INTERVAL_MS) {
     lastUiAt = now;
     updateSelectedCard();
+    updateTimer();
   }
+  drawBrain(now);
 }
+
+scene.handlers = {
+  onEvents: (events) => impacts.add(events, performance.now()),
+  onDetail: (d) => onDetail(d.details),
+};
 
 const link = new LiveLink(url, {
   onState,
   onHello,
-  onCreatures(f) {
-    scene.push(f, performance.now());
-    births.observe(scene.views, performance.now());
-  },
+  onCreatures: (f) => scene.push(f, performance.now()),
   onItems: (f) => scene.setItems(f),
-  onStats(s) {
-    lastStats = s;
-    renderStats();
+  onDelta: (d) => scene.addDeltas(d),
+  onDetail: (d) => scene.addDetail(d),
+  onGenome(id, genome) {
+    if (selection?.id !== id) return;
+    selection.genome = genome;
+    buildBrain();
   },
-});
-
-camera.attach(canvas);
-$("zoomIn").addEventListener("click", () => zoomBy(ZOOM_STEP));
-$("zoomOut").addEventListener("click", () => zoomBy(1 / ZOOM_STEP));
-$("zoomFit").addEventListener("click", () => {
-  clearSelection();
-  camera.animateToFit();
-});
-$("release").addEventListener("click", clearSelection);
-$("family").addEventListener("click", () => {
-  const i = scene.slotOf(selectedId);
-  highlight = highlight >= 0 || i < 0 ? -1 : scene.views.founder[i]!;
-  $("family").setAttribute("aria-pressed", String(highlight >= 0));
+  onStats,
+  onHistory(h) {
+    samples = h.samples.slice();
+    lineageHistory = h.lineage.slice();
+    showHistory();
+  },
 });
 
 function zoomBy(factor: number): void {
   const g = camera.goal;
   camera.animateTo(g.cx, g.cy, g.zoom * factor);
 }
+
+camera.attach(canvas);
+$("zoomIn").addEventListener("click", () => zoomBy(ZOOM_STEP));
+$("zoomOut").addEventListener("click", () => zoomBy(1 / ZOOM_STEP));
+$("zoomFit").addEventListener("click", () => {
+  pendingFollow = false;
+  setFollowing(false);
+  camera.follow(null);
+  camera.setFocusOffset(0, 0);
+  camera.animateToFit();
+});
+$("worldView").addEventListener("click", () => {
+  clearSelection();
+  camera.animateToFit();
+});
+$("follow").addEventListener("click", () => {
+  pendingFollow = false;
+  if (following) {
+    camera.follow(null);
+    setFollowing(false);
+  } else if (selection && scene.slotOf(selection.id) >= 0) followSelected();
+});
+$("selFounder").addEventListener("click", () => {
+  const f = selection?.last?.founderId;
+  if (f !== undefined && f >= 0) lineages.pick(f);
+});
+$("pickAge").addEventListener("click", () => { if (lastStats?.best) select(lastStats.best.age); });
+$("pickChildren").addEventListener("click", () => { if (lastStats?.best) select(lastStats.best.children); });
 
 new ResizeObserver(() => syncCanvas()).observe(canvas);
 link.start();

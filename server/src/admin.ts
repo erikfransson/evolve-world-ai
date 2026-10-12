@@ -44,6 +44,12 @@ function sameToken(given: unknown, token: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
+// The running world; whenIdle (LiveWorld) runs a change between ticks, so none lands while helper threads are mid-tick.
+export interface AdminWorld {
+  eco: Ecosystem;
+  whenIdle?<T>(fn: () => T): Promise<T>;
+}
+
 export interface AdminCommands {
   pause(): void;
   resume(): void;
@@ -85,13 +91,14 @@ function serveStatic(root: string): ReturnType<typeof createServer> {
 // Then: {t:"get-config"} -> {t:"config", values, limits, paused}; {t:"set-config", changes:{key:value}} -> {t:"config", ...} or {t:"error", message};
 // {t:"pause"} / {t:"resume"} -> {t:"config", ...}; {t:"save-now"} -> {t:"saved", message}; {t:"list-saves"} -> {t:"saves", saves}; {t:"load-save", name} -> {t:"loaded", message} or {t:"error", message}; {t:"stop"} -> {t:"stopping"}, then the server saves and exits 0.
 // The same port serves the built page (webRoot) over http.
-export function startAdmin(host: string, port: number, token: string, world: { eco: Ecosystem }, stateDir: string, webRoot: string, saved: Record<string, Value>, commands: AdminCommands): { wss: WebSocketServer; close(): void } {
+export function startAdmin(host: string, port: number, token: string, world: AdminWorld, stateDir: string, webRoot: string, saved: Record<string, Value>, commands: AdminCommands): { wss: WebSocketServer; close(): void } {
   const http = serveStatic(webRoot);
   // Browsers only from the page this port serves, so another site open in the owner's browser cannot reach admin; non-browser clients send no Origin.
   const allowed = new Set([`http://127.0.0.1:${port}`, `http://localhost:${port}`]);
   const verifyClient = ({ origin }: { origin?: string }): boolean => origin === undefined || allowed.has(origin);
   const wss = new WebSocketServer({ server: http, maxPayload: MAX_MESSAGE_BYTES, perMessageDeflate: false, verifyClient });
   const limits = tunableLimits();
+  const idle = <T>(fn: () => T): Promise<T> => (world.whenIdle ? world.whenIdle(fn) : Promise.resolve().then(fn));
   const overrides = { ...saved };
   const reply = (ws: WebSocket, msg: object): void => {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
@@ -128,17 +135,19 @@ export function startAdmin(host: string, port: number, token: string, world: { e
       }
       if (msg.t === "get-config") return config_(ws);
       if (msg.t === "set-config") {
-        const err = applyTunables(world.eco, msg.changes);
-        if (err) return reply(ws, { t: "error", message: err });
-        Object.assign(overrides, msg.changes);
-        try {
-          const file = join(stateDir, OVERRIDES);
-          writeFileSync(file + ".tmp", JSON.stringify(overrides, null, 2), { mode: 0o600 });
-          renameSync(file + ".tmp", file);
-        } catch (e) {
-          return reply(ws, { t: "error", message: `applied, but could not save: ${e instanceof Error ? e.message : e}` });
-        }
-        return config_(ws);
+        const changes = msg.changes;
+        return void idle(() => applyTunables(world.eco, changes)).then((err) => {
+          if (err) return reply(ws, { t: "error", message: err });
+          Object.assign(overrides, changes);
+          try {
+            const file = join(stateDir, OVERRIDES);
+            writeFileSync(file + ".tmp", JSON.stringify(overrides, null, 2), { mode: 0o600 });
+            renameSync(file + ".tmp", file);
+          } catch (e) {
+            return reply(ws, { t: "error", message: `applied, but could not save: ${e instanceof Error ? e.message : e}` });
+          }
+          config_(ws);
+        }, (e) => reply(ws, { t: "error", message: why(e) }));
       }
       if (msg.t === "pause" || msg.t === "resume") {
         if (msg.t === "pause") commands.pause();
@@ -150,10 +159,11 @@ export function startAdmin(host: string, port: number, token: string, world: { e
       if (msg.t === "load-save") {
         if (typeof msg.name !== "string") return reply(ws, { t: "error", message: "name must be a string" });
         return void commands.loadSave(msg.name).then(
-          (message) => {
-            const err = applyTunables(world.eco, overrides); // the admin's standing settings apply to whatever world is running
-            reply(ws, err ? { t: "error", message: `loaded, but the saved settings were not applied: ${err}` } : { t: "loaded", message });
-          },
+          (message) => void idle(() => applyTunables(world.eco, overrides)).then(
+            // the admin's standing settings apply to whatever world is running
+            (err) => reply(ws, err ? { t: "error", message: `loaded, but the saved settings were not applied: ${err}` } : { t: "loaded", message }),
+            (e) => reply(ws, { t: "error", message: `loaded, but the saved settings were not applied: ${why(e)}` }),
+          ),
           (e) => reply(ws, { t: "error", message: why(e) }),
         );
       }

@@ -11,12 +11,12 @@ import { World } from "../sim/world.ts";
 
 // The Arena's design preview scene: a small real room with food and poison, and a creature that is carried along a smooth
 // loop (never steered by its brain) so the page shows what its rays see and how its brain reacts.
-export const ROOM_W = 480;
-export const ROOM_H = 300;
+export const ROOM_W = 720; // 1.5x the first draft: zoomed out so more of the room is in view
+export const ROOM_H = 450;
 const MARGIN = 46; // the path keeps this far from the walls
-const PERIOD = 20; // seconds per lap
-const FOOD_COUNT = 14;
-const POISON_COUNT = 8;
+export const PERIOD = 30; // seconds per lap
+const FOOD_COUNT = 30;
+const POISON_COUNT = 18;
 const KEEP_AWAY = 70; // a relocated item lands at least this far from the creature
 
 // Figure-eight through the room at time t (seconds): position and heading along the direction of travel.
