@@ -80,6 +80,7 @@ export class World implements WorldView {
   readonly width: number;
   readonly height: number;
   private readonly spacing: number; // see tooClose
+  foodHidden = false; // rays pass through food (it stays edible); RL memory envs set it. The WASM sense path does not read it.
   readonly itemRadius: number;
   // Uniform grid as per-cell linked lists: cellHead[c] -> item -> nextItem[item] -> -1.
   readonly cell: number;
@@ -410,6 +411,7 @@ export class World implements WorldView {
       const fy = ly[k] - y;
       const d2 = fx * fx + fy * fy;
       if (d2 > far2) continue;
+      if (this.foodHidden && lk[k] === HIT_FOOD) continue;
       if (wedge && (d0x * fy - d0y * fx < -margin || d1x * fy - d1y * fx > margin)) continue;
       cfx[n] = fx;
       cfy[n] = fy;

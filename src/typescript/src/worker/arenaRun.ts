@@ -7,6 +7,8 @@ import { BackpropTrainer } from "../sim/rl/ppo.ts";
 import { Trainer, heldSeeds } from "../sim/rl/trainer.ts";
 import type { RlTrainer } from "../sim/rl/trainer.ts";
 import type { RlPool, RlSetup } from "./rlPool.ts";
+import { Pacer, gentleController } from "./pacer.ts";
+import type { DutyController } from "./pacer.ts";
 import type { RlInMessage, RlOutMessage } from "./rlProtocol.ts";
 
 // One Arena training run: ES or backprop steps over the chosen envs, a held-out check every few steps, and a show of the latest best
@@ -34,13 +36,18 @@ export class ArenaRun {
   private gate: { wait: Promise<void>; open: () => void } | null = null; // set while paused
   private nextEnvs: EnvSpec[] | null = null;
   private showWanted = false; // the page asked for a new show; steps run much faster than the page plays them
+  private playback: boolean; // false: the page shows no replays (Max speed), so shows are skipped but the last
   private stopped = false;
+  private readonly pacer = new Pacer();
+  private gentle: DutyController | null = null; // set while Gentle on CPU is on
 
   constructor(start: Start, assets: { pool: PoolEntry[] | null; library: Library }, makePool: (setup: RlSetup) => RlPool, post: Post) {
     this.start = start;
     this.post = post;
     this.envs = start.envs;
+    this.playback = start.playback !== false;
     this.assets = assets;
+    if (start.gentle) this.setGentle(true);
     this.pool = makePool({ envs: start.envs, plan: start.learner.plan, pool: assets.pool, library: assets.library });
   }
 
@@ -60,8 +67,17 @@ export class ArenaRun {
     if (envs.length) this.nextEnvs = envs;
   }
 
+  setGentle(on: boolean): void {
+    this.gentle = on ? (this.gentle ?? gentleController()) : null;
+  }
+
   wantShow(): void {
     this.showWanted = true;
+  }
+
+  setPlayback(on: boolean): void {
+    this.playback = on;
+    if (on) this.showWanted = true;
   }
 
   // Ends the run at its next check and frees the helpers; a run in a pause wakes up to end.
@@ -85,7 +101,7 @@ export class ArenaRun {
     const start = await trainer.held(HELD_SEEDS);
     if (this.stopped) return;
     this.post({ type: "ready", held: start.mean, perEnv: start.perEnv });
-    await this.show(tiles, 0, trainer.theta);
+    if (this.playback) await this.show(tiles, 0, trainer.theta);
     while (!this.stopped && trainer.iter < options.iterations) {
       if (this.gate) await this.gate.wait;
       if (this.stopped) return;
@@ -99,16 +115,19 @@ export class ArenaRun {
         this.post({ type: "rebased", iter: trainer.iter, held: held.mean, perEnv: held.perEnv });
         this.showWanted = true;
       }
+      this.pacer.began();
+      const began = performance.now();
       const step = await trainer.step();
       lastBest = step.bestGenome;
       const held = step.iter % HELD_EVERY === 0 ? await trainer.held(HELD_SEEDS) : null;
       this.post({ type: "iteration", it: { iter: step.iter, train: step.train, best: step.best, held: held?.mean ?? null, perEnv: held?.perEnv ?? null, seconds: (performance.now() - t0) / 1000 } });
       if (held) this.post({ type: "learner", iter: step.iter, learner: serialiseLearner({ plan, genome: trainer.theta }) });
-      if (this.showWanted) {
+      if (this.showWanted && this.playback) {
         this.showWanted = false;
         await this.show(tiles, step.iter, step.bestGenome);
       }
-      await new Promise((done) => setTimeout(done, 0)); // let pause and envs messages in
+      if (this.gentle) this.pacer.finished(began, this.gentle.duty());
+      await new Promise((done) => setTimeout(done, Math.max(0, this.gentle ? this.pacer.wait() : 0))); // lets pause and envs messages in; with Gentle on CPU also idles
     }
     if (this.stopped) return;
     if (lastBest) await this.show(tiles, trainer.iter, lastBest); // so the tiles end on the trained creature

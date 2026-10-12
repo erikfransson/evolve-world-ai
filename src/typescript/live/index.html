@@ -17,11 +17,32 @@
         <path d="M19 16 L29 8 M19 16 L30 16 M19 16 L29 24" />
       </svg>
       <h1>Live World</h1>
+      <span class="tagline">one world for everyone, always running</span>
+      <div id="chip" class="chip" data-state="connecting" role="status" aria-live="polite"><i></i><span id="chipText">Connecting</span><span id="chipMore" class="chip-more"></span></div>
     </header>
     <main class="layout live">
+      <aside class="panel">
+        <dl class="stats">
+          <div class="tile accent"><dt>Population<span class="tip" tabindex="0" role="img" aria-label="Creatures alive now." data-tip="Creatures alive now.">ⓘ</span></dt><dd id="statPop">-</dd></div>
+          <div class="tile"><dt>Watching<span class="tip" tabindex="0" role="img" aria-label="People watching this world right now." data-tip="People watching this world right now.">ⓘ</span></dt><dd id="statViewers">-</dd></div>
+          <div class="tile"><dt>Births<span class="tip" tabindex="0" role="img" aria-label="Creatures born since the server started." data-tip="Creatures born since the server started.">ⓘ</span></dt><dd id="statBirths">-</dd></div>
+          <div class="tile"><dt>Deaths<span class="tip" tabindex="0" role="img" aria-label="Creatures that died since the server started." data-tip="Creatures that died since the server started.">ⓘ</span></dt><dd id="statDeaths">-</dd></div>
+          <div class="tile"><dt>Food items<span class="tip" tabindex="0" role="img" aria-label="Pieces of food lying in the world now." data-tip="Pieces of food lying in the world now.">ⓘ</span></dt><dd id="statFood">-</dd></div>
+          <div class="tile" id="statSeasonTile" hidden><dt>Season<span class="tip" tabindex="0" role="img" aria-label="The season now and the food regrowth multiplier it gives." data-tip="The season now and the food regrowth multiplier it gives.">ⓘ</span></dt><dd id="statSeason">-</dd></div>
+          <div class="tile"><dt>Simulated time<span class="tip" tabindex="0" role="img" aria-label="How long this world has run, in simulated time." data-tip="How long this world has run, in simulated time.">ⓘ</span></dt><dd id="statTime">-</dd></div>
+          <div class="tile"><dt>Deepest lineage<span class="tip" tabindex="0" role="img" aria-label="Generations in the longest unbroken family line alive now. A founder is depth 0." data-tip="Generations in the longest unbroken family line alive now. A founder is depth 0.">ⓘ</span></dt><dd id="statDepth">-</dd></div>
+          <div class="tile"><dt>Speed<span class="tip" tabindex="0" role="img" aria-label="Simulated seconds per real second the server achieves, up to 4. It runs slower when the host is busy." data-tip="Simulated seconds per real second the server achieves, up to 4. It runs slower when the host is busy.">ⓘ</span></dt><dd id="statSpeed">-</dd></div>
+          <div class="tile"><dt>Server uptime<span class="tip" tabindex="0" role="img" aria-label="Real time since the world server last started." data-tip="Real time since the world server last started.">ⓘ</span></dt><dd id="statUptime">-</dd></div>
+        </dl>
+        <section class="card about">
+          <h2>About this world</h2>
+          <p>One world shared by everyone who opens this page. It keeps evolving on a small home server whether anyone watches or not, with seasons that bring lean winters.</p>
+          <p>Click a creature to follow it and see what it sees and thinks, or jump to the oldest one.</p>
+        </section>
+      </aside>
       <section class="stage">
         <canvas id="view" tabindex="0" aria-label="The live world. Drag to pan, scroll or pinch to zoom, click a creature to follow it, arrow keys pan, plus and minus zoom, 0 fits the world."></canvas>
-        <div id="chip" class="chip" data-state="connecting" role="status" aria-live="polite"><i></i><span id="chipText">Connecting</span></div>
+        <div id="timer" class="timer" title="Simulated time and season" hidden><span id="timerText"></span><span id="timerSeason" class="season-pill"></span></div>
         <div class="zoom" role="group" aria-label="Zoom">
           <button id="zoomIn" type="button" aria-label="Zoom in" title="Zoom in">+</button>
           <button id="zoomOut" type="button" aria-label="Zoom out" title="Zoom out">−</button>
@@ -29,25 +50,87 @@
             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" /></svg>
           </button>
         </div>
-        <section id="selectedCard" class="ov ov-pick" hidden>
-          <header class="ov-head"><h2>Following</h2></header>
-          <div class="pick-body">
-            <div class="sel-energy"><div class="meter" role="meter" id="selMeter" aria-label="Energy" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="selFill"></span></div><span id="selEnergy" class="sel-energy-val">-</span></div>
-            <p class="pick-facts"><span>Age <b id="selAge">-</b></span><span>Id <b id="selId">-</b></span></p>
-            <div class="sel-actions">
-              <button id="family" class="secondary" type="button" aria-pressed="false" title="Highlight this creature's family in the world">Highlight family</button>
-              <button id="release" class="secondary" type="button">Release</button>
+        <div class="ov-stack">
+          <section id="legendCard" class="ov ov-legend">
+            <header class="ov-head">
+              <h2>Legend</h2>
+              <button class="ov-toggle" type="button" aria-expanded="true" aria-label="Minimise legend" title="Minimise">−</button>
+            </header>
+            <ul class="ov-body legend">
+              <li><svg viewBox="0 0 20 20" aria-hidden="true"><clipPath id="swClip"><circle cx="10" cy="10" r="8" /></clipPath><circle cx="10" cy="10" r="8" fill="rgba(15, 23, 20, 0.85)" /><rect x="0" y="8.4" width="20" height="12" fill="hsl(200, 75%, 58%)" clip-path="url(#swClip)" /><circle cx="10" cy="10" r="8" fill="none" stroke="hsl(200, 75%, 58%)" stroke-width="1.6" /></svg>Creature (fill = energy)</li>
+              <li><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8" fill="none" stroke="#eef5f1" stroke-width="1.6" /></svg>Selected creature</li>
+              <li><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="5" fill="#4ade80" /></svg>Food</li>
+              <li><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="5" fill="#e040fb" /></svg>Poison</li>
+            </ul>
+          </section>
+          <section id="selectedCard" class="ov ov-selected">
+            <header class="ov-head">
+              <h2>Selected creature</h2>
+              <span id="selId" class="sel-id sel-only"></span>
+              <button class="ov-toggle" type="button" aria-expanded="true" aria-label="Minimise selected creature" title="Minimise">−</button>
+            </header>
+            <div class="ov-body sel-body">
+              <div class="sel-only sel-energy">
+                <div class="meter" role="meter" id="selMeter" aria-label="Energy" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="selFill"></span></div>
+                <span id="selEnergy" class="sel-energy-val">-</span>
+              </div>
+              <dl class="sel-only sel-facts">
+                <div><dt>Age</dt><dd id="selAge">-</dd></div>
+                <div><dt>Children</dt><dd id="selChildren">-</dd></div>
+                <div><dt>Food eaten</dt><dd id="selEaten">-</dd></div>
+                <div><dt>Lineage depth</dt><dd id="selDepth">-</dd></div>
+              </dl>
+              <p class="sel-only sel-plan" id="selPlan"></p>
+              <p class="sel-only sel-burn" title="Energy per second. Base is living, vision and neurons. Now adds thrust, turning and old age."><span>Energy use</span><span><b id="selBase">-</b> base</span><span><b id="selDrain">-</b> now</span><span>per second</span></p>
+              <button id="selFounder" class="sel-only sel-founder family" type="button" aria-pressed="false" title="Dim everyone outside this creature's family"><i id="selFounderSw"></i><span id="selFounderText"></span><b id="selFamilyLabel">Highlight family</b></button>
+              <p class="sel-hint">Click a creature or pick one:</p>
+              <div class="sel-pick" role="group" aria-label="Pick a creature">
+                <button id="pickAge" class="secondary" type="button" title="Follow the oldest living creature">Oldest</button>
+                <button id="pickChildren" class="secondary" type="button" title="Follow the living creature with the most children">Most children</button>
+              </div>
+              <div class="sel-only sel-actions">
+                <button id="follow" class="secondary" type="button" aria-pressed="false" title="Keep the view centred on this creature">Follow</button>
+                <button id="worldView" class="secondary" type="button" title="Let go and zoom out to the whole world">World view</button>
+              </div>
             </div>
-          </div>
-        </section>
-        <dl class="strip" aria-label="World statistics">
-          <div><dt>Creatures</dt><dd id="stPop">-</dd></div>
-          <div><dt>Births</dt><dd id="stBirths">-</dd></div>
-          <div><dt>Deaths</dt><dd id="stDeaths">-</dd></div>
-          <div><dt>Watching</dt><dd id="stViewers">-</dd></div>
-          <div><dt>Speed</dt><dd id="stSpeed">-</dd></div>
-          <div><dt>Uptime</dt><dd id="stUptime">-</dd></div>
-        </dl>
+          </section>
+          <section id="brainCard" class="ov ov-brain" hidden>
+            <header class="ov-head">
+              <h2>Brain</h2>
+              <button class="ov-toggle" type="button" aria-expanded="true" aria-label="Minimise brain" title="Minimise">−</button>
+            </header>
+            <div class="ov-body"><canvas id="brainView"></canvas><p id="brainWait" class="stat-note brain-wait">Loading the brain</p></div>
+          </section>
+          <section id="graphCard" class="ov ov-graph">
+            <header class="ov-head">
+              <h2>Population</h2>
+              <button class="ov-toggle" type="button" aria-expanded="true" aria-label="Minimise population" title="Minimise">−</button>
+            </header>
+            <div class="ov-body">
+              <canvas id="graphView"></canvas>
+              <div class="fit-foot"><span class="key pop">creatures</span><span class="key food">food</span><span class="key winter">winter</span><span class="fit-note" id="graphNote">simulated time</span></div>
+            </div>
+          </section>
+          <section id="lineageCard" class="ov ov-lineage">
+            <header class="ov-head">
+              <h2>Lineages</h2>
+              <button class="ov-toggle" type="button" aria-expanded="true" aria-label="Minimise lineages" title="Minimise">−</button>
+            </header>
+            <div class="ov-body">
+              <div class="lin-bar" role="img" aria-label="Share of living creatures by founder"></div>
+              <ul class="lin-list"></ul>
+              <canvas class="lin-graph" aria-label="Share of each lineage over simulated time"></canvas>
+              <div class="fit-foot"><span class="fit-note">share of creatures · simulated time</span><button class="lin-clear secondary" type="button" hidden>Show all</button></div>
+            </div>
+          </section>
+          <section id="leaderCard" class="ov ov-leaders">
+            <header class="ov-head">
+              <h2>Records</h2>
+              <button class="ov-toggle" type="button" aria-expanded="true" aria-label="Minimise records" title="Minimise">−</button>
+            </header>
+            <div class="ov-body"><ul class="lead-list"></ul><p class="stat-note">Since the server started, dead creatures included. Click a living one to follow it.</p></div>
+          </section>
+        </div>
         <div id="offline" class="scrim" hidden>
           <div class="dialog" role="alertdialog" aria-labelledby="offlineTitle">
             <h2 id="offlineTitle">World offline</h2>
@@ -57,6 +140,7 @@
         </div>
       </section>
     </main>
+    <div id="tooltip" class="tooltip" role="tooltip" hidden></div>
     <script type="module" src="../src/live.ts"></script>
   </body>
 </html>

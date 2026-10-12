@@ -26,3 +26,11 @@ One write-up per exploration, with the tables of tried ideas and their verdicts.
 - `startup.md`: start-up at 50k is mostly founder genome draws; nothing worth changing.
 - `profile50.md`: reference profile at 20k to 50k after round 2; at 50k serial: sense 41%, brain 17%, memory and steer 11%, collisions 9%, eat 8%.
 - `cells.md`: items packed per grid row in exact list order so the WASM sense streams memory, kernel 1.2x and tick 4-7%, bit-identical; merged. The WASM kernel never uses the ray cache; a kernel-side candidate cache would save at most about 7%.
+- `churn.md`: births, deaths and record offers are each under 0.5% of a tick at 50000 wide with 9.4k creatures; the per-second page histogram (`traitStats`) was 1.6% and is now about 1.3% after an exact reuse of its value buffer. Merge.
+- `steer.md`: kernel output view fetched once per tick for memory and steer, members kept in slot order so the batch needs no sort; 1.11x per tick at 50000 wide, bit-identical; merged.
+- `draw.md`: one culling pass over items, 1.2-1.7x per zoomed-in frame, pixel-identical; merged. Whole-world frames are raster-bound.
+- `items.md`: costs that grow with world area are under 1% of a tick at 5000 creatures up to 70000 wide; nothing to cut.
+- `lang.md`: a Rust brain kernel is bit-identical and at best 1.2x on the kernel (about 3% per tick); no language port is worth it, Numba cannot run in browsers.
+- `profile3.md`: reference profile at 38000 to 70000 wide and The Great Hunt at 30000 to 38000, about 80-92 ms CPU per tick at 9-10k creatures.
+- `collide.md`: item lookups in cell order and collisions on the crowd's sorted arrays, 1.048x, bit-identical; held, it duplicates the physics in a second path.
+- `node.md`: V8 flags change nothing measurable; 3 helper threads give 1.39x wall time at 50000 wide for 1.75x CPU and +316 MB.

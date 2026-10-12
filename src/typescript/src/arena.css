@@ -18,7 +18,7 @@ input[type="file"]::file-selector-button:hover { background: var(--card-hi); bor
 .neurons { display: flex; gap: 0.3rem; }
 .neurons input { flex: 1; min-width: 0; padding: 0.4rem 0.2rem; text-align: center; }
 .neurons input[hidden] { display: none; }
-#settings .hint { margin: 0; }
+#settings .hint, .env-summary + .hint { margin: 0; }
 details.more > summary { color: var(--text); font-weight: 500; font-size: 0.85rem; }
 
 /* left panel summary and custom env editor */
@@ -48,6 +48,7 @@ details.more > summary { color: var(--text); font-weight: 500; font-size: 0.85re
 .stage-head .primary { grid-column: auto; padding: 0.55rem 1.6rem; }
 .stage-head .secondary { padding: 0.5rem 1rem; }
 .arena-stage .stats { grid-template-columns: repeat(5, 1fr); } /* more specific than style.css, whose order in the bundle may change */
+.arena-stage .stats[hidden] { display: none; } /* idle: the preview stands in for the empty tiles */
 .tile dd .delta { margin-left: 0.35rem; font-size: 0.8rem; font-weight: 600; color: var(--muted); }
 .tile dd .delta.up { color: var(--accent); }
 .tile dd .delta.down { color: #f87171; }
@@ -69,6 +70,7 @@ details.more > summary { color: var(--text); font-weight: 500; font-size: 0.85re
 .tile-box figcaption b { color: var(--text); font-weight: 600; font-size: 0.75rem; overflow-wrap: anywhere; }
 .empty-note { position: absolute; inset: 0; margin: 0; display: grid; place-items: center; padding: 1rem; text-align: center; color: var(--muted); background: color-mix(in srgb, var(--bg) 70%, transparent); border-radius: 10px; pointer-events: none; }
 .empty-note[hidden] { display: none; }
+.tiles.dim { opacity: 0.4; }
 .brain-card { flex: 0 0 min(100%, 26rem); gap: 0.5rem; padding: 0.7rem 0.8rem; }
 .brain-card[hidden] { display: none; }
 #brainView { display: block; width: 100%; height: 230px; }
@@ -120,15 +122,35 @@ details.more > summary { color: var(--text); font-weight: 500; font-size: 0.85re
 /* creature preview */
 .preview-card { gap: 0.5rem; padding: 0.7rem 0.8rem; }
 .preview-card[hidden] { display: none; }
-.preview-body { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 1rem; align-items: start; width: 100%; max-width: 84rem; margin: 0 auto; } /* fills the card, capped so very wide screens keep the pair balanced */
+.preview-body { display: grid; grid-template-columns: minmax(0, 60fr) minmax(0, 40fr); grid-template-areas: "room brain" "room energy"; grid-template-rows: auto 1fr; gap: 0.5rem 1rem; align-items: start; width: 100%; }
+.preview-fig:first-child { grid-area: room; }
+.preview-fig:nth-child(2) { grid-area: brain; }
+.energy { grid-area: energy; }
 .preview-fig { margin: 0; display: flex; flex-direction: column; gap: 0.4rem; min-width: 0; }
 .preview-fig canvas { display: block; width: 100%; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); }
-#previewView { aspect-ratio: 1 / 1; } /* the creature: square, as large as the column */
-#previewBrain { aspect-ratio: 7 / 5; } /* as tall as the square creature beside it (7 : 5 columns), so the pair lines up */
+#previewView { aspect-ratio: 16 / 10; } /* the room the creature moves through: the wide box */
+#previewBrain { aspect-ratio: 3 / 2; } /* the network: a narrow box, with the energy readout below it */
+.energy { margin-top: 0.3rem; padding: 0.7rem 0.8rem; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); display: flex; flex-direction: column; gap: 0.55rem; font-variant-numeric: tabular-nums; }
+.energy-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 0.35rem; }
+.energy-unit { white-space: nowrap; }
+.energy-big { font-size: 1.7rem; font-weight: 700; color: #fbbf24; line-height: 1; }
+.energy-unit { font-size: 0.85rem; color: var(--text); }
+.energy-full { font-size: 0.8rem; color: var(--muted); margin-top: -0.35rem; }
+.energy-full .nb { color: var(--text); white-space: nowrap; margin-right: 0.25em; }
+.energy-rows { display: grid; gap: 0.3rem; }
+.energy-row { display: grid; grid-template-columns: 9.5rem minmax(0, 1fr) 2.6rem; align-items: center; gap: 0.5rem; font-size: 0.78rem; color: var(--muted); }
+.energy-val { text-align: right; color: var(--text); }
+.energy-bar { height: 0.45rem; border-radius: 999px; background: color-mix(in srgb, var(--border) 70%, transparent); overflow: hidden; }
+.energy-fill { display: block; height: 100%; border-radius: 999px; }
+.energy-fill.living { background: #9fb8ad; }
+.energy-fill.eyes { background: #7dd3fc; }
+.energy-fill.brain { background: #c084fc; }
+.energy-fill.moving { background: #fbbf24; }
+.energy-foot { font-size: 0.78rem; color: var(--muted); line-height: 1.4; }
+.energy-foot b { color: var(--text); font-weight: 600; }
 @media (max-width: 900px) {
-  .preview-body { grid-template-columns: minmax(0, 1fr); justify-items: center; }
-  .preview-fig { width: 100%; max-width: 30rem; }
-  #previewView { max-width: 20rem; margin: 0 auto; } /* on a phone the creature stays modest so the brain shows too */
+  .preview-body { grid-template-columns: minmax(0, 1fr); grid-template-areas: "room" "energy" "brain"; grid-template-rows: none; justify-items: center; }
+  .preview-fig, .energy { width: 100%; max-width: 30rem; }
   #previewBrain { aspect-ratio: 4 / 3; }
 }
 .stats dd.empty { color: var(--muted); opacity: 0.6; }

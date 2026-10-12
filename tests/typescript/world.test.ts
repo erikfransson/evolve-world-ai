@@ -350,3 +350,20 @@ describe("item spacing", () => {
     expect(foodPairs).toBeGreaterThan(0); // food is not spaced from food, so not a clean zone
   });
 });
+
+describe("hidden food", () => {
+  it("lets rays pass through food while it stays edible, and shows poison as before", () => {
+    const w = emptyWorld(cfg());
+    w.setItem(0, 300, 200, HIT_FOOD);
+    w.setItem(1, 200, 300, HIT_POISON);
+    const out: RayHit = { closeness: 0, kind: HIT_NONE, energy: 0, species: 0 };
+    castRay(w, 200, 200, 0, out);
+    expect(out.kind).toBe(HIT_FOOD);
+    w.foodHidden = true;
+    castRay(w, 200, 200, 0, out, new RayCache());
+    expect(out.kind).not.toBe(HIT_FOOD);
+    castRay(w, 200, 200, Math.PI / 2, out, new RayCache());
+    expect(out.kind).toBe(HIT_POISON);
+    expect(w.eatAt(300, 200, 12, new RayCache())).toBe(0); // still there to eat
+  });
+});

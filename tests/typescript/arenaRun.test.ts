@@ -38,6 +38,25 @@ describe.each(["es", "backprop"] as const)("ArenaRun with %s", (method) => {
     expect(out.filter((m) => m.type === "iteration" && m.it.held !== null)).toHaveLength(1); // every 5th
   });
 
+  it("playback off (Max): no shows while stepping, only the final one; same results; on again asks for a show", async () => {
+    const full: RlOutMessage[] = [];
+    await new ArenaRun(start(6), assets, inline, (m) => full.push(m)).run();
+    const out: RlOutMessage[] = [];
+    const run = new ArenaRun({ ...start(6), playback: false }, assets, inline, (m) => out.push(m));
+    run.wantShow(); // e.g. the page's tiles finished, or a rebase
+    await run.run();
+    expect(types(out).filter((t) => t === "show")).toHaveLength(1);
+    expect(types(out).slice(-3)).toEqual(["show", "learner", "done"]);
+    const trace = (o: RlOutMessage[]) => o.flatMap((m) => (m.type === "iteration" ? [[m.it.train, m.it.best]] : []));
+    expect(trace(out)).toEqual(trace(full));
+
+    const again: RlOutMessage[] = [];
+    const r2 = new ArenaRun({ ...start(4), playback: false }, assets, inline, (m) => again.push(m));
+    r2.setPlayback(true);
+    await r2.run();
+    expect(types(again).filter((t) => t === "show").length).toBeGreaterThan(1); // one at the next step end, one final
+  });
+
   it("holds between steps while paused and goes on after resume", async () => {
     const out: RlOutMessage[] = [];
     const run = new ArenaRun(start(3), assets, inline, (m) => out.push(m));
@@ -63,6 +82,17 @@ describe.each(["es", "backprop"] as const)("ArenaRun with %s", (method) => {
     expect(rebased?.type === "rebased" && rebased.perEnv).toHaveLength(2);
     const lastHeld = out.filter((m) => m.type === "iteration" && m.it.perEnv).at(-1);
     expect(lastHeld?.type === "iteration" && lastHeld.it.perEnv).toHaveLength(2);
+  });
+
+  it("gives the same results with Gentle on CPU, which only paces the steps", async () => {
+    const scores = async (gentle: boolean): Promise<number[]> => {
+      const out: RlOutMessage[] = [];
+      const run = new ArenaRun({ ...start(3), gentle }, assets, inline, (m) => out.push(m));
+      run.setGentle(gentle);
+      await run.run();
+      return out.flatMap((m) => (m.type === "iteration" ? [m.it.train, m.it.best] : []));
+    };
+    expect(await scores(true)).toEqual(await scores(false));
   });
 
   it("rejects when the helpers fail, so the worker can report it", async () => {

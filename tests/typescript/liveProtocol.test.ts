@@ -52,23 +52,25 @@ describe("live protocol", () => {
     expect(() => decodeCreatures(bytes.slice(0, bytes.length - 1), world)).toThrow();
   });
 
-  it("splits items into food and poison and skips free slots", () => {
-    const xs = [10, 20, 30, 40];
-    const ys = [1, 2, 3, 4];
-    const kinds = [1, 0, 2, 1];
-    const bytes = encodeItems(7, xs, ys, kinds, 4, world);
-    expect(bytes.length).toBe(ITEMS_HEADER + 4 * 3);
+  it("round-trips the item set by slot and skips free slots", () => {
+    const xs = [10, 20, 30, 40, 50];
+    const ys = [1, 2, 3, 4, 5];
+    const kinds = [1, 0, 2, 1, 0];
+    const bytes = encodeItems(7, { xs, ys, kinds, slots: 5 }, world);
+    expect(bytes.length).toBe(ITEMS_HEADER + 2 + 4 * 3);
     const f = decodeItems(bytes, world);
-    expect(f.foodX.length).toBe(2);
-    expect(f.poisonX.length).toBe(1);
-    expect(f.foodX[1]).toBeCloseTo(40, 0);
-    expect(f.poisonY[0]).toBeCloseTo(3, 0);
+    expect(f.tick).toBe(7);
+    expect(Array.from(f.kinds)).toEqual([1, 0, 2, 1, 0]);
+    expect(f.x[3]).toBeCloseTo(40, 0);
+    expect(f.y[2]).toBeCloseTo(3, 0);
+    expect(() => decodeItems(bytes, world, 4)).toThrow(); // more slots than the hello said
+    expect(() => decodeItems(bytes.slice(0, -1), world)).toThrow();
   });
 });
 
 describe("live scene", () => {
   const frame = (tick: number, ids: number[], xs: number[]) => ({
-    tick, count: ids.length, ids: Int32Array.from(ids), x: Float32Array.from(xs), y: new Float32Array(ids.length), heading: new Float32Array(ids.length),
+    tick, count: ids.length, ids: Uint32Array.from(ids), x: Float32Array.from(xs), y: new Float32Array(ids.length), heading: new Float32Array(ids.length),
     radius: new Float32Array(ids.length).fill(12), energyShare: new Float32Array(ids.length).fill(0.5), age: new Float32Array(ids.length), hue: new Float32Array(ids.length), founder: new Int32Array(ids.length),
   });
 
@@ -76,15 +78,19 @@ describe("live scene", () => {
     const s = new LiveScene();
     s.fullEnergy = 100;
     s.push(frame(1, [1, 2], [0, 100]), 0);
-    expect(s.sample(1000).x[0]).toBe(0);
+    s.sample(1000);
+    expect(s.views.x[0]).toBe(0);
     s.push(frame(2, [2, 1, 3], [200, 100, 50]), 2000); // order changes, id 3 is new
-    const v = s.sample(2100); // the gap of 2000 ms is clamped to a 1200 ms span
+    s.sample(2100); // the gap of 2000 ms is clamped to a 1200 ms span
+    const v = s.views;
     const a = (2100 - 2000) / 1200;
     expect(v.x[s.slotOf(1)]).toBeCloseTo(100 * a, 3);
     expect(v.x[s.slotOf(2)]).toBeCloseTo(100 + 100 * a, 3);
-    expect(v.x[s.slotOf(3)]).toBeCloseTo(50, 3);
+    expect(s.slotOf(3)).toBe(-1); // born at the frame's tick (age 0), so not shown before the timeline gets there
     expect(v.energy[0]).toBe(50);
-    expect(s.sample(5000).x[s.slotOf(1)]).toBeCloseTo(100, 3);
+    s.sample(5000);
+    expect(v.x[s.slotOf(1)]).toBeCloseTo(100, 3);
+    expect(v.x[s.slotOf(3)]).toBeCloseTo(50, 3);
   });
 
   it("starts moving from where a creature is at push time, after a long gap", () => {
@@ -92,7 +98,8 @@ describe("live scene", () => {
     s.push(frame(1, [1], [0]), 0);
     s.push(frame(2, [1], [100]), 100); // span 100 ms
     s.push(frame(3, [1], [100]), 100_000); // a hidden tab: nothing was sampled for 100 s
-    expect(s.sample(100_000).x[0]).toBeCloseTo(100, 3);
+    s.sample(100_000);
+    expect(s.views.x[0]).toBeCloseTo(100, 3);
   });
 
   it("forgets everything on reset, so reused ids of a new world are not matched", () => {
@@ -101,7 +108,8 @@ describe("live scene", () => {
     s.reset();
     expect(s.slotOf(1)).toBe(-1);
     s.push(frame(1, [1], [900]), 10);
-    expect(s.sample(10).x[0]).toBeCloseTo(900, 3);
+    s.sample(10);
+    expect(s.views.x[0]).toBeCloseTo(900, 3);
   });
 });
 
@@ -128,9 +136,10 @@ describe("live server helpers", () => {
   });
 
   it("shares the upload budget round-robin", () => {
-    expect(sendStride(10, 100_000, 3_000_000)).toBe(1);
-    expect(sendStride(100, 100_000, 3_000_000)).toBe(4);
-    expect(sendStride(1000, 100_000, 3_000_000)).toBe(34); // past MAX_STRIDE: the budget holds, new viewers are refused (public.ts)
+    expect(sendStride(10, 100_000, 0, 3_000_000)).toBe(1);
+    expect(sendStride(100, 100_000, 0, 3_000_000)).toBe(4);
+    expect(sendStride(300, 100_000, 0, 3_000_000)).toBe(10); // past MAX_STRIDE: the budget holds, new viewers are refused (public.ts)
+    expect(sendStride(100, 100_000, 10_000, 3_000_000)).toBe(5); // item changes reach every viewer whatever its stride, leaving 2 MB/s for frames
     const stride = 3;
     for (let f = 0; f < 6; f++) expect([0, 1, 2].filter((v) => gets(v, f, stride)).length).toBe(1); // one viewer in three per frame
     for (let v = 0; v < 3; v++) expect([0, 1, 2].filter((f) => gets(v, f, stride)).length).toBe(1); // each viewer one frame in three
@@ -194,7 +203,7 @@ describe("live link", () => {
     vi.stubGlobal("WebSocket", FakeSocket);
     try {
       const states: string[] = [];
-      const link = new LiveLink("ws://x", { onState: (s) => states.push(s), onHello() {}, onCreatures() {}, onItems() {}, onStats() {} });
+      const link = new LiveLink("ws://x", { onState: (s) => states.push(s), onHello() {}, onCreatures() {}, onItems() {}, onDelta() {}, onDetail() {}, onGenome() {}, onStats() {}, onHistory() {} });
       link.start();
       FakeSocket.last!.onmessage!({ data: JSON.stringify({ t: "busy", maxViewers: 1 }) });
       FakeSocket.last!.close();

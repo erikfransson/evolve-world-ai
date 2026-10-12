@@ -2,7 +2,7 @@ import "./base.css";
 import "./style.css";
 import "./ecosystem.css";
 import "./arena.css";
-import { Brain, layerSizes, randomGenome } from "./sim/brain.ts";
+import { layerSizes, randomGenome } from "./sim/brain.ts";
 import { createRng } from "./sim/rng.ts";
 import { loadPool } from "./sim/seedPool.ts";
 import type { PoolEntry } from "./sim/seedPool.ts";
@@ -13,15 +13,17 @@ import { KINDS, MAX_FILE_BYTES, creatureFile, fileLearner, parseCreatureFile } f
 import type { CreatureFile, CreatureKind } from "./sim/rl/creatureFile.ts";
 import { serialiseLearner } from "./sim/rl/library.ts";
 import type { StoredLearner } from "./sim/rl/library.ts";
-import { inputLayout, planOf, planUpkeep } from "./sim/sensors.ts";
-import type { BodyPlan, InputLayout, PlanView } from "./sim/sensors.ts";
+import { planUpkeep } from "./sim/sensors.ts";
+import type { BodyPlan } from "./sim/sensors.ts";
 import { BrainView } from "./ui/brainView.ts";
+import { energyBudget, f1, renderEnergy } from "./ui/energyCard.ts";
 import type { RlInMessage, RlIteration, RlOutMessage, TrainMethod } from "./worker/rlProtocol.ts";
 import { BrainReplay } from "./ui/arenaBrain.ts";
 import { DEFAULT_DESIGN, DEFAULT_RUN, DESIGN_FORM, RUN_FORM, designPlan, planDesign } from "./ui/arenaForm.ts";
 import { ARENA_KIND, bestFounder, change, customEnv, envsForKind, kindRejection, planSummary } from "./ui/arenaPick.ts";
 import { addFavourite, loadFavourites, loadSpeed, removeFavourite, saveSpeed } from "./ui/arenaStore.ts";
-import { drawCreaturePreview, previewSight } from "./ui/creaturePreview.ts";
+import { drawCreaturePreview } from "./ui/creaturePreview.ts";
+import { PreviewScene } from "./ui/previewScene.ts";
 import { fitCanvas } from "./ui/canvas.ts";
 import { DEFAULT_TILES, TILE_COUNTS, TileGrid } from "./ui/arenaTiles.ts";
 import { Zoom } from "./ui/arenaZoom.ts";
@@ -31,6 +33,7 @@ import type { PreviewIn, PreviewOut } from "./worker/envPreviewWorker.ts";
 import { $, durationText } from "./ui/page.ts";
 import { buildForm } from "./ui/settingsForm.ts";
 import { RewardGraph } from "./ui/rewardGraph.ts";
+import { bindGentle } from "./ui/gentle.ts";
 import { initTooltips } from "./ui/tooltip.ts";
 
 // public/pool.json and rl/library.json sit at the site root, one level above this page.
@@ -131,20 +134,28 @@ function showStart(): void {
     note.textContent = selectedEnvs().length === 0 ? "Pick at least one environment." : "";
     const plan = r.learner.plan;
     preview = r.learner;
-    desc.textContent = `${planSummary(plan)}. Upkeep ${planUpkeep(plan, worldConfig(k)).toFixed(2)} energy per second: a bigger body and brain cost more to keep alive.`;
+    desc.textContent = `${planSummary(plan)}. Upkeep ${f1(planUpkeep(plan, worldConfig(k)))}\u00a0energy/s: a bigger body and brain cost more to keep alive.`;
   }
   updateStartButton();
   drawPreview();
 }
 
-// The creature preview shows the plan about to start, only while no run is on screen.
+// The creature preview shows the plan about to start, only while no run is on screen: the creature is carried through a small room
+// and its rays and brain update live. The loop runs only while the card is on screen and the tab is visible.
 let preview: Learner | null = null;
+let previewScene: PreviewScene | null = null;
+let previewShown: Learner | null = null; // the learner previewScene's creature was built from
+let previewKind: CreatureKind | null = null;
+let previewRaf = 0;
+let previewLast = 0;
+let previewOnScreen = true;
 const previewBrainView = new BrainView($<HTMLCanvasElement>("previewBrain"));
-function drawPreview(): void {
-  const card = $("previewCard");
-  card.hidden = run !== null || preview === null;
-  if (card.hidden || !preview) return;
-  const { plan, genome } = preview;
+const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+const PREVIEW_FRAME_MS = 33; // about 30 fps
+
+function paintPreview(): void {
+  const scene = previewScene;
+  if (!scene) return;
   const paint = (id: string, draw: (ctx: CanvasRenderingContext2D, w: number, h: number) => void): void => {
     const canvas = $<HTMLCanvasElement>(id);
     const w = canvas.clientWidth;
@@ -155,19 +166,58 @@ function drawPreview(): void {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     draw(ctx, w, h);
   };
-  const sizes = layerSizes(worldConfig(kind()), plan);
-  paint("previewView", (ctx, w, h) => drawCreaturePreview(ctx, plan, w, h));
-  // The creature's own brain, as the Ecosystem shows a selected creature's, thinking about the example scene on the left.
-  const config = worldConfig(kind());
-  const layout = inputLayout(config, plan);
-  const brain = new Brain(sizes, genome);
-  brain.forward(previewInput(plan, layout), new Float32Array(layout.outputs));
+  paint("previewView", (ctx, w, h) => drawCreaturePreview(ctx, scene, w, h));
   const box = $<HTMLCanvasElement>("previewBrain");
-  previewBrainView.zoom = Math.min(2.2, Math.max(1, Math.min(box.clientWidth / 440, box.clientHeight / 300))); // grow the network with its box
-  previewBrainView.draw(brain, true, layout);
+  previewBrainView.zoom = Math.min(2.2, Math.max(0.6, Math.min(box.clientWidth / 340, box.clientHeight / 220))); // the network follows the size of its box
+  previewBrainView.draw(scene.creature.brain, true, scene.layout);
+}
+
+function previewTick(now: number): void {
+  previewRaf = 0;
+  if (!previewRunning()) return;
+  if (now - previewLast >= PREVIEW_FRAME_MS) {
+    previewScene?.step(Math.min(0.1, (now - (previewLast || now - PREVIEW_FRAME_MS)) / 1000));
+    previewLast = now;
+    paintPreview();
+  }
+  previewRaf = requestAnimationFrame(previewTick);
+}
+
+const previewRunning = (): boolean => !$("previewCard").hidden && previewOnScreen && !document.hidden && !reducedMotion?.matches;
+function previewKick(): void {
+  if (previewRaf || !previewRunning()) return;
+  previewLast = 0;
+  previewRaf = requestAnimationFrame(previewTick);
+}
+new IntersectionObserver((entries) => {
+  previewOnScreen = entries[entries.length - 1]?.isIntersecting ?? true;
+  previewKick();
+}).observe($("previewCard"));
+document.addEventListener("visibilitychange", previewKick);
+reducedMotion?.addEventListener?.("change", () => drawPreview());
+
+function drawPreview(): void {
+  const card = $("previewCard");
+  card.hidden = run !== null || preview === null;
+  document.querySelector<HTMLElement>(".stats")!.hidden = !card.hidden; // empty until a run, so the preview takes their place
+  if (card.hidden || !preview) return;
+  const { plan, genome } = preview;
+  renderEnergy($("energyCard"), energyBudget(plan, worldConfig(kind())));
+  const k = kind();
+  if (!previewScene || previewKind !== k) {
+    previewScene = new PreviewScene(worldConfig(k), plan, genome);
+    previewKind = k;
+    previewShown = preview;
+    if (reducedMotion?.matches) previewScene.step(3); // a still frame with something in sight
+  } else if (previewShown !== preview) {
+    previewScene.setCreature(plan, genome); // the room and the creature's place on its path stay
+    previewShown = preview;
+  }
+  paintPreview();
+  previewKick();
   const deg = Math.round((plan.raySpread * 180) / Math.PI);
-  $("previewStats").textContent = `Its eyes: ${plan.rayCount} ray${plan.rayCount === 1 ? "" : "s"} over ${deg}°, seeing ${Math.round(plan.rayLength)} units far (the dashed ring). A ray turns green on food, purple on poison. Living costs it ${planUpkeep(plan, worldConfig(kind())).toFixed(2)} energy a second.`;
-  $("previewBrainText").textContent = `Its brain: what each ray sees (left), ${plan.hiddenLayers.length === 1 ? `a layer of ${plan.hiddenLayers[0]} neurons` : `${plan.hiddenLayers.length} layers of neurons`} (middle), and turn and thrust (right). Lit lines show how it reacts to the scene beside it.`;
+  $("previewStats").textContent = `${plan.rayCount} ray${plan.rayCount === 1 ? "" : "s"} over ${deg}°, ${Math.round(plan.rayLength)} units far (dashed ring). A ray turns green on food, purple on poison, yellow on a wall.`;
+  $("previewBrainText").textContent = `Live: what the rays see (left), ${plan.hiddenLayers.length === 1 ? `${plan.hiddenLayers[0]} neurons` : `${plan.hiddenLayers.length} layers of neurons`} (middle), turn and thrust (right).`;
 }
 window.addEventListener("resize", drawPreview);
 
@@ -360,6 +410,7 @@ function setState(s: RunState): void {
   settings.disabled = runSettings.disabled = s !== "idle";
   envSettings.disabled = s === "running"; // envs can change while paused, and apply on Resume
   grid.paused = s === "paused";
+  syncMaxNote();
   showGallery();
   updateStartButton();
 }
@@ -388,7 +439,7 @@ function begin(): void {
   zoom.close();
   grid.clear();
   brainReplay.reset();
-  send({ type: "start", envs, learner: serialiseLearner(start.learner), method: cfg.method, options, tiles: grid.size, seed, poolUrl: POOL_URL, libraryUrl: LIBRARY_URL });
+  send({ type: "start", envs, learner: serialiseLearner(start.learner), method: cfg.method, options, tiles: grid.size, seed, poolUrl: POOL_URL, libraryUrl: LIBRARY_URL, gentle: $<HTMLInputElement>("gentle").checked, playback: grid.speed > 0 });
   $("note").textContent = "Starting…";
   $("note").hidden = false;
   setState("running");
@@ -418,7 +469,10 @@ function onMessage(m: RlOutMessage): void {
     run.startPerEnv = m.perEnv;
     const last = run.its[run.its.length - 1];
     run.its.push({ iter: m.iter, train: last?.train ?? m.held, best: last?.best ?? m.held, held: m.held, perEnv: m.perEnv, seconds: last?.seconds ?? 0 });
-  } else if (m.type === "iteration") run.its.push(m.it);
+  } else if (m.type === "iteration") {
+    run.its.push(m.it);
+    if (grid.speed === 0) $("note").hidden = true; // Max: no show arrives to clear "Starting…"
+  }
   else if (m.type === "learner") run.latest = { iter: m.iter, learner: m.learner };
   else if (m.type === "show") {
     grid.show({ iter: m.iter, genome: m.genome, recordings: m.recordings, names: m.recordings.map((_, k) => run!.envs[k % run!.envs.length]!.name), envCount: run.envs.length, policy: run.method === "backprop" }, performance.now());
@@ -450,6 +504,7 @@ function lastHeld(r: Run): RlIteration | undefined {
 }
 
 function render(): void {
+  syncMaxNote();
   const r = run;
   const last = r?.its[r.its.length - 1];
   $("iterNow").textContent = String(last?.iter ?? 0);
@@ -591,21 +646,34 @@ $("brainOn").addEventListener("change", () => {
   brainReplay.reset();
 });
 const speedRadios = document.querySelectorAll<HTMLInputElement>("input[name=speed]");
+// The Max note shares the tiles' overlay spot with the idle and starting note, so it shows only once that note is gone.
+function syncMaxNote(): void {
+  $("maxNote").hidden = grid.speed !== 0 || !$("note").hidden;
+}
+const tilesBox = $("tiles");
+function applySpeed(v: number, wasMax: boolean): void {
+  grid.speed = v;
+  const max = v === 0;
+  syncMaxNote();
+  tilesBox.classList.toggle("dim", max);
+  if (max !== wasMax && state !== "idle") send({ type: "playback", on: !max }); // leaving Max also asks for a show at once
+}
 const speed = loadSpeed();
-grid.speed = speed;
+applySpeed(speed, false);
 speedRadios.forEach((el) => {
   el.checked = Number(el.value) === speed;
   el.addEventListener("change", () => {
-    grid.speed = Number(el.value);
+    applySpeed(Number(el.value), grid.speed === 0);
     saveSpeed(grid.speed);
   });
 });
 grid.onOpen = (k) => zoom.open(k);
 grid.onFinished = () => {
-  if (state !== "idle") send({ type: "show" }); // the tiles played to the end: ask for the next best candidate
+  if (state !== "idle" && grid.speed > 0) send({ type: "show" }); // the tiles played to the end: ask for the next best candidate
 };
 
 initTooltips($("tooltip"));
+bindGentle($<HTMLInputElement>("gentle"), (on) => send({ type: "gentle", on }));
 designForm.fill(DEFAULT_DESIGN);
 runForm.fill(DEFAULT_RUN);
 grid.setCount(DEFAULT_TILES);
@@ -619,17 +687,3 @@ void loadPool(POOL_URL).then((p) => {
   pool = p ?? [];
   fillFounders();
 });
-
-// The brain input for the preview scene: each ray's view from previewSight, a fairly full body at rest, empty memory.
-function previewInput(plan: PlanView, layout: InputLayout): Float32Array {
-  const input = new Float32Array(layout.size);
-  const at = (label: string): number => layout.rayFeatureLabels.indexOf(label);
-  previewSight(plan).forEach((hit, k) => {
-    const base = k * layout.rayFeatures;
-    if (!hit.kind) return;
-    input[base + at("closeness")] = 1 - hit.distance / plan.rayLength;
-    input[base + at(hit.kind)] = 1;
-  });
-  input[layout.rays * layout.rayFeatures] = 0.6; // energy
-  return input;
-}

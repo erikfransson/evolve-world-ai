@@ -13,13 +13,15 @@ export type Layout =
   | { kind: "rooms"; gap: number; near?: number } // a cross of poison walls makes four rooms with a door in each wall; the learner starts in one, the food lies in the others (near of it in the start room)
   | { kind: "islands"; radius: number } // the food split over three islands, the poison scattered in the water between them
   | { kind: "ring"; lane: number } // a circular lane of this width between two poison rings, the food spaced along it, the first just ahead of the start
+  | { kind: "cuedoor" } // a T-maze: a cue bite beside the start (left or right), a walled corridor up, then two doors to separate rooms, the food in the cued one
+  | { kind: "flash" } // food at a middle distance around a central start, in all directions (pair with foodVisibleFor)
   | { kind: "sprint"; near?: number }; // a strip with the learner at one end and the food at the other (near of it halfway, as a first step)
 
-export const LAYOUT_KINDS = ["fence", "maze", "patch", "rooms", "islands", "sprint", "ring"] as const;
+export const LAYOUT_KINDS = ["fence", "maze", "patch", "rooms", "islands", "sprint", "ring", "cuedoor", "flash"] as const;
 
 export interface Placed {
   items: ItemSpot[];
-  start: { x: number; y: number }; // the learner's start
+  start: { x: number; y: number; heading?: number }; // the learner's start, and its heading when the layout fixes it
   walls: number[]; // heights of the poison walls between the start and the food, nearest first
 }
 
@@ -48,7 +50,7 @@ export function placeLayout(layout: Layout, size: readonly [number, number], foo
   const rng = createRng(deriveSeed(seed, 0x1a70));
   const [w, h] = size;
   const items: ItemSpot[] = [];
-  let start: { x: number; y: number };
+  let start: { x: number; y: number; heading?: number };
   const walls: number[] = [];
   if (layout.kind === "fence") {
     const gx = rng.range(layout.gap, w - layout.gap);
@@ -106,6 +108,29 @@ export function placeLayout(layout: Layout, size: readonly [number, number], foo
       if (centres.some((c) => Math.hypot(c.x - p.x, c.y - p.y) < r + 12) || Math.hypot(p.x - start.x, p.y - start.y) < 40) continue;
       items.push({ ...p, kind: HIT_POISON });
       k++;
+    }
+    return { items, start, walls };
+  } else if (layout.kind === "cuedoor") {
+    // A T-maze. The cue bite lies left or right just ahead of the start; a walled corridor above it straightens the way, so by the
+    // doors only memory tells which side it was. The food waits deep in the cued room, out of sight from the doors.
+    const wy = h / 2;
+    const left = rng.next() < 0.5;
+    hwall(items, wy, 0, w / 2, w / 5, 56);
+    hwall(items, wy, w / 2, w, w - w / 5, 56);
+    vwall(items, w / 2, 0, wy, -100, 0);
+    for (const x of [w / 2 - 40, w / 2 + 40]) vwall(items, x, wy + 40, h - 110, -100, 0);
+    start = { x: w / 2, y: h - 25, heading: -Math.PI / 2 };
+    items.push({ x: w / 2 + (left ? -22 : 22), y: h - 75, kind: HIT_FOOD }); // the cue
+    for (let k = 0; k < food; k++) items.push({ ...spot(rng, left ? MARGIN : w / 2 + MARGIN, left ? w / 2 - MARGIN : w - MARGIN, MARGIN, 70), kind: HIT_FOOD });
+    return { items, start, walls };
+  } else if (layout.kind === "flash") {
+    // Food all round a central start, out of reach of a short look in one direction.
+    start = { x: w / 2, y: h / 2 };
+    const a0 = rng.next() * 2 * Math.PI;
+    for (let k = 0; k < food; k++) {
+      const a = a0 + (k * 2 * Math.PI) / food + rng.range(-0.3, 0.3);
+      const d = rng.range(110, 150);
+      items.push({ x: w / 2 + d * Math.cos(a), y: h / 2 + d * Math.sin(a), kind: HIT_FOOD });
     }
     return { items, start, walls };
   } else if (layout.kind === "ring") {

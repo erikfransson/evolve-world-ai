@@ -24,8 +24,9 @@ export class Saves {
   // A short line saying what was saved; rejects with the reason when nothing was.
   save(): Promise<string> {
     return this.exclusive(async () => {
+      if (this.live.failedTicks > 0) throw new Error(`its ticks are failing (${this.live.failedTicks} in a row), the last good save is kept`);
       const t0 = performance.now();
-      const json = JSON.stringify(this.live.saveState());
+      const json = JSON.stringify(await this.live.whenIdle(() => this.live.saveState()));
       const bytes = Buffer.byteLength(json);
       if (bytes > LIMITS.maxSaveJsonBytes) {
         const why = `the world is ${Math.round(bytes / 1e6)} MB of JSON, over the ${LIMITS.maxSaveJsonBytes / 1e6} MB a save may hold (it could not be read back)`;
@@ -41,7 +42,8 @@ export class Saves {
   }
 
   private async restore(name: string): Promise<string> {
-    this.live.restoreState(await this.store.read(name)); // throws, and keeps the running world, when the save is unusable
+    const state = await this.store.read(name);
+    await this.live.whenIdle(() => this.live.restoreState(state)); // throws, and keeps the running world, when the save is unusable
     return `${name}: tick ${this.live.eco.tick}, ${this.live.eco.population} creatures`;
   }
 

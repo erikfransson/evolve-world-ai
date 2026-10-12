@@ -44,6 +44,8 @@ export const ENVS: readonly EnvSpec[] = [
     reward: { food: 1, cross: 1, survive: 0.02 },
     tags: ["navigate"],
   }),
+  // Memory: what it saw a moment ago decides where to go now
+  small({ id: "flash", name: "Flash", description: "Three bites show for two seconds, then go dark but stay there. A creature can head for one; finding the others means remembering where they were.", size: [600, 600], food: 3, poison: 0, seconds: 12, foodVisibleFor: 2, layout: { kind: "flash" }, tags: ["memory"] }),
   // Energy
   small({
     id: "lean-times",
@@ -285,7 +287,7 @@ export const ENVS: readonly EnvSpec[] = [
 export const envById = (id: string): EnvSpec | undefined => ENVS.find((e) => e.id === id);
 
 // Categories for choosing envs, in display order; groupOf files an env under one by its tags.
-export const ENV_GROUPS = ["Find food", "Avoid and find a way", "Energy", "Fight", "Compete", "Advanced", "Custom"] as const;
+export const ENV_GROUPS = ["Find food", "Avoid and find a way", "Memory", "Energy", "Fight", "Compete", "Advanced", "Custom"] as const;
 export type EnvGroup = (typeof ENV_GROUPS)[number];
 
 export function groupOf(env: Pick<EnvSpec, "tags">): EnvGroup {
@@ -295,6 +297,7 @@ export function groupOf(env: Pick<EnvSpec, "tags">): EnvGroup {
   if (t.has("compete")) return "Compete";
   if (t.has("fight")) return "Fight";
   if (t.has("energy")) return "Energy";
+  if (t.has("memory")) return "Memory";
   if (t.has("caution") || t.has("navigate")) return "Avoid and find a way";
   return "Find food";
 }
