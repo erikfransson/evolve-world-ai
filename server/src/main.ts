@@ -1,15 +1,14 @@
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parsePool } from "../../src/typescript/src/sim/seedPool.ts";
-import { OVERRIDES, loadAdminToken, loadOverrides, startAdmin } from "./admin.ts";
-import { HELPER_THREADS, HOST, LIMITS, PORTS, SEED_COPIES, liveConfig } from "./config.ts";
+import { loadAdminToken, startAdmin } from "./admin.ts";
+import { HELPER_THREADS, HOST, LIMITS, PORTS, liveConfig } from "./config.ts";
 import { loadFounders } from "./founders.ts";
 import type { Value } from "./tunables.ts";
 import { createNodeThinkPool } from "../../src/typescript/src/worker/nodePool.ts";
 import { LiveWorld, runTicks } from "./liveWorld.ts";
 import { startPublic } from "./public.ts";
-import { Saves } from "./saves.ts";
+import { Saves, openWorld } from "./saves.ts";
 import { StateStore } from "./state.ts";
 
 // parameters
@@ -43,14 +42,12 @@ const founders = startup("founders file checked", () => loadFounders(foundersFil
 const live = startup(`world built (${liveConfig.world.map || "random map"}, ${liveConfig.world.width} x ${liveConfig.world.height})`, () => new LiveWorld(liveConfig, pool, threads > 0 ? createNodeThinkPool(threads) : null));
 
 const saves = new Saves(live, store);
-const restored = await saves.restoreNewest();
-let savedOverrides: Record<string, Value> = {};
-if (restored) savedOverrides = loadOverrides(stateDir, live); // after the restore, so they apply to the world that runs
-else {
-  // A fresh world starts from liveConfig: overrides tuned for an earlier world are not applied (the file stays until the next admin change).
-  if (existsSync(join(stateDir, OVERRIDES))) console.log(`fresh world: ${OVERRIDES} not applied`);
-  const n = startup("founders seeded", () => live.seedFounders(founders));
-  console.log(`fresh world seeded with ${n} creatures, ${SEED_COPIES} of each of ${founders.map((f) => f.name).join(", ")}`);
+let savedOverrides: Record<string, Value>;
+try {
+  savedOverrides = await openWorld(saves, live, stateDir, founders);
+} catch (e) {
+  console.error(`STARTUP FAILED, opening the world: ${errText(e)}`);
+  process.exit(1);
 }
 
 const pub = startPublic(HOST, publicPort, live);

@@ -21,6 +21,16 @@ export function loadAdminToken(stateDir: string): string {
 }
 
 export const OVERRIDES = "admin-overrides.json";
+export const PREVIOUS_OVERRIDES = "admin-overrides.previous-world.json";
+
+// A fresh world starts from liveConfig: the overrides of the world before are moved aside (one copy kept, an older one replaced),
+// so a later restart that restores the fresh world's save does not apply them. Returns the line to log, or null when there were none.
+export function retireOverrides(stateDir: string): string | null {
+  const file = join(stateDir, OVERRIDES);
+  if (!existsSync(file)) return null;
+  renameSync(file, join(stateDir, PREVIOUS_OVERRIDES));
+  return `fresh world: ${OVERRIDES} of the world before moved to ${PREVIOUS_OVERRIDES}, not applied`;
+}
 
 // Re-applies the settings the admin changed before the last restart and returns them, so later changes are merged into them.
 export function loadOverrides(stateDir: string, world: { eco: Ecosystem }): Record<string, Value> {

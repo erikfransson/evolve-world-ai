@@ -1,4 +1,7 @@
-import { LIMITS } from "./config.ts";
+import { LIMITS, SEED_COPIES } from "./config.ts";
+import { loadOverrides, retireOverrides } from "./admin.ts";
+import type { SeedFounder } from "./founders.ts";
+import type { Value } from "./tunables.ts";
 import { parseSave } from "./saveParse.ts";
 import { OtherWorld } from "./liveWorld.ts";
 import type { LiveWorld } from "./liveWorld.ts";
@@ -90,4 +93,15 @@ export class Saves {
     await this.save();
     return this.exclusive(async () => `loaded ${await this.restore(name)}`);
   }
+}
+
+// At startup: the newest save that restores, with the admin overrides applied to it; else a fresh world seeded with the founders,
+// the overrides of the world before set aside (they were tuned for it), and none in force. Throws when seeding fails.
+export async function openWorld(saves: Saves, live: LiveWorld, stateDir: string, founders: readonly SeedFounder[], log: (line: string) => void = console.log): Promise<Record<string, Value>> {
+  if (await saves.restoreNewest(log)) return loadOverrides(stateDir, live);
+  const retired = retireOverrides(stateDir);
+  if (retired) log(retired);
+  const n = live.seedFounders(founders);
+  log(`fresh world seeded with ${n} creatures, ${SEED_COPIES} of each of ${founders.map((f) => f.name).join(", ")}`);
+  return {};
 }

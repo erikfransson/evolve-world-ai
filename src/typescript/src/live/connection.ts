@@ -69,7 +69,7 @@ export function cleanStats(s: Stats): Stats {
     out.lineages = s.lineages.slice(0, LINEAGE_TOP).filter(isObj).map((l) => {
       const c = Math.min(left, count(l.count));
       left -= c;
-      return { founder: id(l.founder), hue: n(l.hue), pool: l.pool === true, count: c, ...(validName(l.name) ? { name: l.name } : {}) };
+      return { founder: id(l.founder), hue: n(l.hue), pool: l.pool === true, count: c, ...(validName(l.name) ? { name: l.name, ...(l.starter === true ? { starter: true } : {}) } : {}) };
     });
   }
   if (Array.isArray(s.records)) {

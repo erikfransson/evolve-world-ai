@@ -1,17 +1,21 @@
 // @vitest-environment node
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CAP_LIMITS, ITEM_HEADROOM, ITEM_SLOT_SHARE, MAX_FOUNDERS_FILE_BYTES, MAX_SEED_FOUNDERS, SEED_COPIES, itemHeadroom, liveConfig } from "../../server/src/config.ts";
+import { CAP_LIMITS, ITEM_HEADROOM, LIVE, ITEM_SLOT_SHARE, MAX_FOUNDERS_FILE_BYTES, MAX_SEED_FOUNDERS, SEED_COPIES, itemHeadroom, liveConfig } from "../../server/src/config.ts";
 import { lineageName, loadFounders, parseFounders } from "../../server/src/founders.ts";
 import { LiveWorld } from "../../server/src/liveWorld.ts";
-import { Saves } from "../../server/src/saves.ts";
+import { Saves, openWorld } from "../../server/src/saves.ts";
+import { PREVIOUS_OVERRIDES } from "../../server/src/admin.ts";
 import { StateStore } from "../../server/src/state.ts";
 import { applyTunables } from "../../server/src/tunables.ts";
 import { MAX_ITEM_SLOTS } from "../../src/typescript/src/live/protocol.ts";
 import { cleanMap } from "../../src/typescript/src/live/mapInfo.ts";
-import { encodeAdd, parseAdd } from "../../src/typescript/src/live/add.ts";
+import { encodeAdd, parseAdd, wireName } from "../../src/typescript/src/live/add.ts";
+import { decodeDetail } from "../../src/typescript/src/live/detail.ts";
+import { cleanStats } from "../../src/typescript/src/live/connection.ts";
+import { lineageRows } from "../../src/typescript/src/ui/lineagePanel.ts";
 import { genomeLengthFor } from "../../src/typescript/src/sim/rl/creatureFile.ts";
 import { terrainFromParts } from "../../src/typescript/src/live/mapTerrain.ts";
 import { builtMap } from "../../src/typescript/src/sim/maps/index.ts";
@@ -164,7 +168,7 @@ describe("seeding a fresh world", () => {
     expect(e.population).toBe(SEED_COPIES * founders.length);
     const names = new Map<string, number>();
     for (const m of e.members) {
-      const name = e.lineageName(m.founderId);
+      const name = wireName(e.lineageName(m.founderId)).name;
       names.set(name, (names.get(name) ?? 0) + 1);
       expect(m.founderId).toBe(m.id); // each copy founds its own lineage
       expect((e.world as unknown as { terrain: { touchesRock(x: number, y: number, r: number): boolean } }).terrain.touchesRock(m.creature.state.x, m.creature.state.y, live.config.creature.radius)).toBe(false);
@@ -179,6 +183,35 @@ describe("seeding a fresh world", () => {
     const b = freshSmall();
     b.restoreState(JSON.parse(JSON.stringify(live.saveState())));
     expect(b.aliveAdded()).toBe(2); // without the seed rule in attach this is 2 + all the seeds
+  });
+
+  it("labels the seeds as starters, not added, in the stats, the details and the lineage list, also after a save and restore", () => {
+    const live = freshSmall();
+    live.seedFounders(founders.slice(0, 1), seq(3));
+    const seeds = new Set(live.eco.members.map((m) => m.id));
+    live.step();
+    const r = live.addCreatures({ plan: founders[0]!.plan, genome: founders[0]!.genome, birth: { energy: 150, cost: 70, cooldown: 10 }, name: "Kiwi", hue: 10, copies: 1 }, seq(9));
+    if (!("ids" in r)) throw new Error(r.reason);
+    const seed = [...seeds][0]!;
+    const check = (w: LiveWorld): void => {
+      const lineages = cleanStats(JSON.parse(JSON.stringify(w.stats(0)))).lineages!;
+      expect(lineages.length).toBeGreaterThan(0);
+      for (const l of lineages) expect([l.name, l.starter === true]).toEqual(seeds.has(l.founder) ? [founders[0]!.name, true] : ["Kiwi", false]);
+      const kiwi = { founder: r.ids[0]!, hue: 10, pool: false, count: 1, species: 0 };
+      const rows = lineageRows([{ founder: seed, hue: 0, pool: false, count: 1, species: 0 }, kiwi], 2, new Map([[seed, "A"], [kiwi.founder, "Kiwi"]]), new Set(lineages.filter((l) => l.starter).map((l) => l.founder)).add(seed));
+      expect(rows.map((x) => x.origin)).toEqual(["starter", "added"]);
+      for (const [id, starter, name] of [[seed, true, founders[0]!.name], [r.ids[0]!, false, "Kiwi"]] as const) {
+        w.watch(id);
+        w.refreshWatched();
+        const d = decodeDetail(w.detail(id)!);
+        expect([d.founderName, d.founderStarter, d.details.founderPool]).toEqual([name, starter, false]);
+        w.unwatch(id);
+      }
+    };
+    check(live);
+    const b = freshSmall();
+    b.restoreState(JSON.parse(JSON.stringify(live.saveState())));
+    check(b);
   });
 
   it("draws the spots from the given numbers only, and seeds only a fresh empty world", () => {
@@ -227,5 +260,34 @@ describe("restoring at a new world", () => {
     expect(lines[2]).toBe("no usable save, starting a fresh world");
     expect(store.list()).toHaveLength(2);
     expect(live.eco.tick).toBe(0);
+  });
+});
+
+describe("admin overrides across a move to a new world", () => {
+  it("a fresh world sets the earlier world's overrides aside, so a restart that restores does not apply them", async () => {
+    const dir = tmp();
+    const store = new StateStore(dir);
+    const old = { speed: 4, "eco.seasons": true, "eco.yearMinutes": 40, "eco.winterFood": 0.4 };
+    writeFileSync(join(dir, "admin-overrides.json"), JSON.stringify(old));
+    writeFileSync(join(dir, PREVIOUS_OVERRIDES), "{}"); // an older copy is replaced, so only one is kept
+    const speed = LIVE.speed;
+    const founders = loadFounders(FOUNDERS.pathname);
+    try {
+      const lines: string[] = [];
+      const fresh = freshSmall();
+      expect(await openWorld(new Saves(fresh, store), fresh, dir, founders, (l) => lines.push(l))).toEqual({});
+      fresh.step();
+      await new Saves(fresh, store).save();
+      // The restart restores the fresh world's save: the old values must not come back.
+      const again = freshSmall();
+      expect(await openWorld(new Saves(again, store), again, dir, founders, () => {})).toEqual({});
+      expect(again.eco.tick).toBe(1);
+      expect([LIVE.speed, again.config.eco.yearMinutes]).toEqual([speed, liveConfig.eco.yearMinutes]);
+      expect(lines).toContain("fresh world: admin-overrides.json of the world before moved to admin-overrides.previous-world.json, not applied");
+      expect(existsSync(join(dir, "admin-overrides.json"))).toBe(false);
+      expect(JSON.parse(readFileSync(join(dir, PREVIOUS_OVERRIDES), "utf8"))).toEqual(old);
+    } finally {
+      LIVE.speed = speed;
+    }
   });
 });

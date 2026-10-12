@@ -94,7 +94,8 @@ let season: Season | null = null;
 let retryTimer: ReturnType<typeof setInterval> | undefined;
 let highlight = -1; // founder whose family is lit, -1 for none
 let samples: number[] = []; // population history, HISTORY_FIELDS each
-let names = new Map<number, string>(); // founder id -> name, for the lineages a visitor named
+let names = new Map<number, string>(); // founder id -> name, for the named lineages
+let starters = new Set<number>(); // the named ones that are starter founders, not visitor adds
 let lineageHistory: number[] = [];
 
 // The followed creature: its latest details (from the timeline), the genome once it came, and a brain built from both.
@@ -102,6 +103,7 @@ interface Selection {
   id: number;
   last: SelectedDetails | null; // while alive
   founderName: string; // "" for none
+  founderStarter: boolean;
   died: boolean;
   genome: Float32Array | null;
   brain: SelectedBrain | null;
@@ -210,6 +212,7 @@ function onHello(h: Hello): void {
   leaderPanel.clear();
   clearSelection();
   names = new Map();
+  starters = new Set();
   addPanel.setRules(h.add);
   renderMapInfo($("info"), h);
 }
@@ -296,7 +299,7 @@ function followSelected(): void {
 // Follows creature id: asks the server for its details and zooms in once it is on screen.
 function select(id: number): void {
   if (selection?.id === id) return;
-  selection = { id, last: null, founderName: "", died: false, genome: null, brain: null, zoomed: false };
+  selection = { id, last: null, founderName: "", founderStarter: false, died: false, genome: null, brain: null, zoomed: false };
   link.select(id); // replaces the last one on the server: one message per click, so the select rate is not spent on letting go
   $("selectedCard").classList.add("has-sel");
   $("brainCard").hidden = false;
@@ -343,7 +346,7 @@ camera.onClick = (wx, wy) => {
   else clearSelection();
 };
 
-function onDetail(d: SelectedDetails, founderName: string): void {
+function onDetail(d: SelectedDetails, founderName: string, founderStarter: boolean): void {
   const s = selection;
   if (!s || d.id !== s.id) return;
   if (!d.alive) {
@@ -352,6 +355,7 @@ function onDetail(d: SelectedDetails, founderName: string): void {
     return;
   }
   s.founderName = founderName;
+  s.founderStarter = founderStarter;
   const replan = s.last && formatPlan(s.last.plan) !== formatPlan(d.plan);
   s.last = d;
   if (replan) s.brain = null;
@@ -396,7 +400,7 @@ function updateSelectedCard(): void {
   $("selDrain").textContent = s.died ? "-" : d.drain.toFixed(2);
   $("selFounderSw").style.background = lineageColor(d.founderHue);
   const named = s.founderName;
-  $("selFounderText").textContent = named ? `${named} · founder #${d.founderId} · added` : `Founder #${d.founderId} · ${d.founderPool ? "trained pool" : "random"}`;
+  $("selFounderText").textContent = named ? `${named} · founder #${d.founderId} · ${s.founderStarter ? "starter" : "added"}` : `Founder #${d.founderId} · ${d.founderPool ? "trained pool" : "random"}`;
   syncFamily();
 }
 
@@ -465,9 +469,13 @@ function onStats(s: Stats): void {
   }
   if (s.sample || s.lineageSample || seasonChanged) showHistory();
   if (s.lineages) {
-    for (const l of s.lineages) if (l.name) names.set(l.founder, l.name);
+    for (const l of s.lineages) {
+      if (l.name) names.set(l.founder, l.name);
+      if (l.starter) starters.add(l.founder);
+    }
+    if (starters.size > 200) starters = new Set([...starters].slice(-100));
     if (names.size > 200) names = new Map([...names].slice(-100)); // only the listed ones matter; old ones go
-    lineages.setLineages(s.lineages.map((l): Lineage => ({ founder: l.founder, hue: l.hue, pool: l.pool, count: l.count, species: 0 })), s.population, names);
+    lineages.setLineages(s.lineages.map((l): Lineage => ({ founder: l.founder, hue: l.hue, pool: l.pool, count: l.count, species: 0 })), s.population, names, starters);
   }
   if (s.records) setRecords(s.records);
   $<HTMLButtonElement>("pickAge").disabled = !s.best;
@@ -535,7 +543,7 @@ function frame(now: number): void {
 
 scene.handlers = {
   onEvents: (events) => impacts.add(events, performance.now()),
-  onDetail: (d) => onDetail(d.details, d.founderName),
+  onDetail: (d) => onDetail(d.details, d.founderName, d.founderStarter),
 };
 
 const link = new LiveLink(url, {

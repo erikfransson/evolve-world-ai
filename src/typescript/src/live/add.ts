@@ -54,6 +54,15 @@ export interface Refused {
 
 export const validName = (name: unknown): name is string => typeof name === "string" && NAME_RE.test(name);
 
+// The starter founders a fresh Live world is seeded with keep their name in the engine behind this mark, which no visitor's name
+// can have, so they are told apart from visitor adds, also after a save and restore. The wire carries the bare name and a starter flag.
+export const STARTER_MARK = "*";
+export function wireName(engineName: string): { name: string; starter: boolean } {
+  const starter = engineName.startsWith(STARTER_MARK);
+  const name = starter ? engineName.slice(STARTER_MARK.length) : engineName;
+  return validName(name) ? { name, starter } : { name: "", starter: false };
+}
+
 // Energy per second of a plan besides thrust and turning, as the engine's planUpkeep computes it.
 export function upkeepOf(plan: Pick<BodyPlan, "rayCount" | "rayLength" | "hiddenLayers" | "memoryShort" | "memoryLong">, costs: AddRules["costs"]): number {
   let neurons = plan.memoryShort + plan.memoryLong;

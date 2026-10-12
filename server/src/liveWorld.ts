@@ -16,6 +16,7 @@ import type { EcoState } from "../../src/typescript/src/sim/ecoState.ts";
 import { LIMITS, LIVE, MAX_POPULATION, MAX_SEED_FOUNDERS, SEED_COPIES, itemHeadroom } from "./config.ts";
 import type { SeedFounder } from "./founders.ts";
 import { mapRegions } from "../../src/typescript/src/live/mapRegions.ts";
+import { STARTER_MARK, wireName } from "../../src/typescript/src/live/add.ts";
 import type { AddRequest, AddRules } from "../../src/typescript/src/live/add.ts";
 import { fullEnergy } from "../../src/typescript/src/sim/species.ts";
 import type { ThinkPool } from "../../src/typescript/src/worker/ecoPool.ts";
@@ -93,10 +94,8 @@ export class LiveWorld {
     const name = this.config.world.map || undefined;
     this.map = { ...(name ? { name } : {}), ground: groundShares(this.eco), regions: mapRegions(name) };
     // Added creatures found named lineages (late rows of the lineage table, kept in saves); the living founders among them count.
-    // The founders seeded into a fresh world (seedFounders, before its first tick) are no visitor adds: born at tick 0, among its first ids.
-    const seedIds = this.eco.founders + MAX_SEED_FOUNDERS * SEED_COPIES;
-    const seeded = (id: number): boolean => id < seedIds && this.eco.get(id)!.birthTick === 0;
-    this.added = new Set(this.eco.lineageTable.toState().late.filter((r) => r[5] !== "" && this.eco.get(r[0]) && !seeded(r[0])).map((r) => r[0]));
+    // The starter founders a fresh world was seeded with (seedFounders, names behind STARTER_MARK) are no visitor adds.
+    this.added = new Set(this.eco.lineageTable.toState().late.filter((r) => r[5] !== "" && !r[5].startsWith(STARTER_MARK) && this.eco.get(r[0])).map((r) => r[0]));
     if (this.helpers) {
       const starting = this.helpers.start(this.eco);
       this.starting = starting;
@@ -240,9 +239,10 @@ export class LiveWorld {
     if (!cap) return null;
     const c = m.creature;
     const s = c.state;
+    const founder = wireName(e.lineageName(m.founderId));
     return encodeDetail(e.tick, id, {
       x: s.x, y: s.y, heading: s.heading, energy: s.energy, age: m.ageTicks * this.config.dt, children: m.children, eaten: m.eaten, depth: m.depth, parentId: m.parentId,
-      founderId: m.founderId, founderPool: e.lineages.fromPool(m.founderId), founderName: e.lineageName(m.founderId), founderHue: e.lineages.colour(m.founderId), hue: m.hue, upkeep: c.upkeep, drain: c.drain,
+      founderId: m.founderId, founderPool: e.lineages.fromPool(m.founderId), founderName: founder.name, founderStarter: founder.starter, founderHue: e.lineages.colour(m.founderId), hue: m.hue, upkeep: c.upkeep, drain: c.drain,
       birthEnergy: m.birth.energy, birthCost: m.birth.cost, birthCooldown: m.birth.cooldown, plan: c.plan, rayKinds: cap.kinds, rayCloseness: cap.closeness, rayOffsets: cap.offsets, inputs: cap.inputs,
     });
   }
@@ -470,7 +470,7 @@ export class LiveWorld {
   }
 
   // Seeds a fresh world (no tick run, nobody in it) with SEED_COPIES of each founder at random open spots, each copy the founder of a
-  // lineage with the founder's name, each founder its own hue. Not visitor adds: they count toward no add cap (see attach).
+  // lineage with the founder's name (behind STARTER_MARK), each founder its own hue. Not visitor adds: they count toward no add cap (see attach).
   // random: the server's own draws. Throws when the world is not fresh or a founder does not go in.
   seedFounders(founders: readonly SeedFounder[], random: () => number = Math.random): number {
     const e = this.eco;
@@ -485,7 +485,7 @@ export class LiveWorld {
       const k = Math.floor(i / SEED_COPIES);
       const f = founders[k]!;
       const p = spots[i]!;
-      const res = e.insertCreature({ genome: f.genome, plan: f.plan, x: p.x, y: p.y, heading: p.heading, hue: (hue0 + (360 * k) / founders.length) % 360, name: f.name }); // the start energy of a pool founder
+      const res = e.insertCreature({ genome: f.genome, plan: f.plan, x: p.x, y: p.y, heading: p.heading, hue: (hue0 + (360 * k) / founders.length) % 360, name: STARTER_MARK + f.name }); // the start energy of a pool founder
       if (!res.ok) throw new Error(`founder ${f.name} could not be seeded: ${res.reason}`);
     }
     return n;

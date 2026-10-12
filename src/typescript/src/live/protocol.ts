@@ -102,6 +102,7 @@ export interface WireLineage {
   pool: boolean;
   count: number;
   name?: string; // the name an added founder was given (letters and digits), absent for none
+  starter?: boolean; // a starter founder the world was seeded with, not a visitor's add
 }
 
 export type RecordBoard = "age" | "children" | "eaten";
