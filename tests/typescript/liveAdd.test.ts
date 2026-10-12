@@ -308,6 +308,20 @@ describe("adding to the world (LiveWorld)", () => {
     }
   });
 
+  it("an added family that died out leaves no row, no name and no added count, before and after a save", () => {
+    LIVE.add.startEnergy = 10; // dies within seconds, and the birth hold keeps it childless
+    const w = new LiveWorld(smallConfig(), null);
+    const r = w.addCreatures(request({ copies: 1, name: "Brief" }), seq(5));
+    if (!("ids" in r)) throw new Error(r.reason);
+    const id = r.ids[0]!;
+    for (let t = 0; t < 30 / w.eco.config.dt && w.eco.get(id); t++) w.step();
+    expect(w.eco.get(id)).toBeUndefined();
+    expect([w.aliveAdded(), w.eco.lineageName(id), w.eco.lineageTable.toState().late.length]).toEqual([0, "", 0]);
+    const b = new LiveWorld(smallConfig(), null);
+    b.restoreState(JSON.parse(JSON.stringify(w.saveState())));
+    expect([b.aliveAdded(), b.eco.lineageName(id), b.eco.lineageTable.toState().late.length]).toEqual([0, "", 0]);
+  });
+
   it("refuses when the world is full, inserting nothing", () => {
     const w = new LiveWorld(smallConfig(), null);
     w.eco.config.eco.maxPopulation = w.eco.population + 2;
