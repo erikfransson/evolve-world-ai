@@ -15,7 +15,7 @@ One write-up per exploration, with the tables of tried ideas and their verdicts.
 - `crowd.md`: crowd rebuild by radix sort over occupied cells plus dirty-list item sync, bit-identical, 1.7x at 50k and 1.3x at 30k with low population; merged.
 - `serial.md`: item lookups and collisions in an f64 WASM kernel, bit-identical, 1.05-1.08x for about 430 lines; not merged, the per-tick object gather caps the gain (typed-array creature state would be the next step).
 - `memory.md`: building JS-path-only scratch lazily cut RSS 508 to 322 MB at 50000 wide with 10000 creatures (41 to 23 KB per creature), bit-identical, speed unchanged; merged.
-- `brain.md`: sparse input packing and in-place outputs in the brain kernel, 1.33x kernel and 8-13% per tick, bit-identical; merged.
+- `brain.md`: sparse input packing and in-place outputs in the brain kernel, 1.33x kernel and 8-13% per tick, bit-identical; merged.  Round 3: tanh without min/max clamps, kernel 1.2x and tick 1.07x at 50k, bit-identical.
 - `helpers.md`: genomes sent only to the owning helper (start-up RSS 1.37 to 1.0 GB at 50k with 4 helpers) and the start timeout for the first tick; merged. Messaging is near its floor, spatial split and overlap rejected.
 - `soa.md`: typed-array store for hot creature state, bit-identical but 1.00x; rejected.
 - `sensecopy.md`: the per-batch copy of the item grid into WASM is under 1% of a tick even at 50k; rejected.
