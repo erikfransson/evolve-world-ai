@@ -110,10 +110,9 @@ function noise(x: number, y: number, s: number): number {
   const d = hash(i + 1, j + 1, s);
   return a + (b - a) * fx + (c - a) * fy + (a - b - c + d) * fx * fy;
 }
-const fbm = (x: number, y: number, s: number): number => 0.75 * noise(x, y, s) + 0.25 * noise(1.8 * x + 17, 1.8 * y + 5, s + 1);
 
 // Polynomial smooth maximum: the larger of two, rounded off where they are within k of each other, so merged lobes have no crease.
-const SMOOTH = 0.3;
+const SMOOTH = 0.5;
 function smax(a: number, b: number): number {
   const h = Math.max(SMOOTH - Math.abs(a - b), 0) / SMOOTH;
   return Math.max(a, b) + (h * h * SMOOTH) / 4;
@@ -138,19 +137,20 @@ interface Blob {
 }
 
 const PATCH_RADIUS = 1.15; // the standard radius against the old disc patches, so a blob covers about the area one did (300 of them cover 16% of 50000 x 50000, as before)
-const WARP = 0.45; // domain warp amplitude, in blob radii
+const WARP = 0.55; // domain warp amplitude, in blob radii
 const WARP_WAVE = 1.15; // its wavelength in blob radii, never less than 5.5 cells so the raster resolves it
 const DETAIL = 0.07; // edge wobble amplitude in normalised units (1 is the blob radius)
 const DETAIL_WAVE = 0.45; // its wavelength in blob radii, never less than 4 cells
 const SLOPE = 2.2; // layer value per normalised unit of depth: 0.5 at the edge, saturating a fifth of a radius inside
-const TRIES = 40; // placements tried per blob before giving up on the rest of its kind
-export const MAX_BLOBS = 300; // blobs of one kind, however high the setting, so a map stays cheap to build
+const BLUR = 1; // passes of a light 3 x 3 smoothing of the finished depth field, which rounds off sharp notches
+const MIN_RADIUS = 1.5; // in cells: a blob smaller than this would fall between the nodes and vanish
 
 // A blob: one broad ellipse and two to four lobes around it, each at its own angle and aspect, no circles.
-function blob(rng: StatefulRng, w: number, h: number, kind: number, size: number, salt: number): Blob {
-  const r = PATCH_RADIUS * Math.min(550, Math.max(150, 0.08 * Math.min(w, h))) * rng.range(0.8, 1.2) * size;
-  const x = rng.range(0, w);
-  const y = rng.range(0, h);
+function blob(rng: StatefulRng, w: number, h: number, cell: number, kind: number, size: number, salt: number, first: boolean): Blob {
+  const r = Math.max(MIN_RADIUS * cell, PATCH_RADIUS * Math.min(550, Math.max(150, 0.08 * Math.min(w, h))) * rng.range(0.8, 1.2) * size);
+  const edge = first ? 0.8 * r : 0; // the first patch of a kind lies inside the world, so a tiny one is not cut away at a wall
+  const x = rng.range(Math.min(edge, w / 2), Math.max(w - edge, w / 2));
+  const y = rng.range(Math.min(edge, h / 2), Math.max(h - edge, h / 2));
   const part = (px: number, py: number, a: number, b: number): Ellipse => {
     const t = rng.range(0, Math.PI);
     return { x: px, y: py, a, b, cos: Math.cos(t), sin: Math.sin(t) };
@@ -170,19 +170,21 @@ function blob(rng: StatefulRng, w: number, h: number, kind: number, size: number
 // each other with room for the warp.
 function apart(p: Blob, q: Blob): boolean {
   const gap = p.kind === q.kind ? 0 : 0.15 * (p.r + q.r);
+  if (Math.hypot(p.x - q.x, p.y - q.y) >= p.reach + q.reach + gap) return true; // their bounding circles are clear: no lobe pair can touch
   const share = p.kind === q.kind ? 0.75 : 0.9;
   return p.parts.every((u) => q.parts.every((v) => Math.hypot(u.x - v.x, u.y - v.y) >= share * (u.a + v.a) + gap));
 }
 
 // Adds a blob to the scratch depth field m (positive inside, 0 at the edge, in normalised units) of its kind; returns the nodes newly inside.
+// Only nodes inside the world and its far side are painted, so the ring of padding nodes stays outside and every outline closes.
 function paint(f: GroundField, m: Float32Array, b: Blob): number {
   const { cell, cols, rows } = f;
-  const span = b.reach + b.r * (WARP + 1);
-  const i0 = Math.max(0, Math.floor((b.x - span) / cell) + GROUND_PAD);
+  const span = b.reach + b.r * (WARP + 0.5);
+  const i0 = Math.max(GROUND_PAD, Math.floor((b.x - span) / cell) + GROUND_PAD);
   const i1 = Math.min(cols - 1 - GROUND_PAD, Math.ceil((b.x + span) / cell) + GROUND_PAD);
-  const j0 = Math.max(0, Math.floor((b.y - span) / cell) + GROUND_PAD);
+  const j0 = Math.max(GROUND_PAD, Math.floor((b.y - span) / cell) + GROUND_PAD);
   const j1 = Math.min(rows - 1 - GROUND_PAD, Math.ceil((b.y + span) / cell) + GROUND_PAD);
-  const warp = WARP * b.r;
+  const warp = 2 * WARP * b.r;
   const lam = 1 / Math.max(WARP_WAVE * b.r, 5.5 * cell);
   const lamD = 1 / Math.max(DETAIL_WAVE * b.r, 4 * cell);
   let added = 0;
@@ -190,8 +192,9 @@ function paint(f: GroundField, m: Float32Array, b: Blob): number {
     for (let i = i0; i <= i1; i++) {
       const px = (i - GROUND_PAD) * cell;
       const py = (j - GROUND_PAD) * cell;
-      const qx = px + warp * 2 * (fbm(px * lam, py * lam, b.salt) - 0.5);
-      const qy = py + warp * 2 * (fbm(px * lam + 31.7, py * lam + 11.3, b.salt + 7) - 0.5);
+      if ((px - b.x) ** 2 + (py - b.y) ** 2 > span * span) continue; // out of reach: the field stays outside here
+      const qx = px + warp * (noise(px * lam, py * lam, b.salt) - 0.5);
+      const qy = py + warp * (noise(px * lam + 31.7, py * lam + 11.3, b.salt + 7) - 0.5);
       let depth = -Infinity;
       for (const p of b.parts) {
         const dx = qx - p.x;
@@ -213,9 +216,27 @@ function paint(f: GroundField, m: Float32Array, b: Blob): number {
   return added;
 }
 
-// Builds the ground of a map: blobs of each kind are placed until they cover their density (at least one, at most MAX_BLOBS), painted as a
+// A [1 2 1] x [1 2 1] smoothing of the interior of a depth field; the padding ring keeps its outside value.
+function blur(f: GroundField, m: Float32Array): Float32Array {
+  const { cols, rows } = f;
+  const out = m.slice();
+  for (let j = GROUND_PAD; j < rows - GROUND_PAD; j++) {
+    for (let i = GROUND_PAD; i < cols - GROUND_PAD; i++) {
+      const k = j * cols + i;
+      out[k] = (4 * m[k]! + 2 * (m[k - 1]! + m[k + 1]! + m[k - cols]! + m[k + cols]!) + m[k - cols - 1]! + m[k - cols + 1]! + m[k + cols - 1]! + m[k + cols + 1]!) / 16;
+    }
+  }
+  return out;
+}
+
+export interface BuildLimits {
+  maxBlobs: number; // blobs of one kind, however high the setting, so a map stays cheap to build
+  tries: number; // placements tried per blob before giving up on the rest of its kind
+}
+
+// Builds the ground of a map: blobs of each kind are placed until they cover their density (at least one, at most limits.maxBlobs), painted as a
 // smooth depth field with a domain warp and an edge wobble, then turned into the two byte layers. Same inputs, same raster, on every thread.
-export function buildGroundField(width: number, height: number, specs: readonly BlobSpec[], seed: number): GroundField | null {
+export function buildGroundField(width: number, height: number, specs: readonly BlobSpec[], seed: number, limits: BuildLimits): GroundField | null {
   if (!specs.some((s) => s.density > 0)) return null;
   const f = new GroundField(width, height);
   const placed: Blob[] = [];
@@ -228,15 +249,17 @@ export function buildGroundField(width: number, height: number, specs: readonly 
       const s = state[layer]!;
       const spec = specs[layer]!;
       if (s.done) continue;
-      if ((s.covered >= spec.density * width * height && s.count > 0) || s.count >= MAX_BLOBS) {
+      if ((s.covered >= spec.density * width * height && s.count > 0) || s.count >= limits.maxBlobs) {
         s.done = true;
         continue;
       }
       let found: Blob | null = null;
-      for (let t = 0; t < TRIES && !found; t++) {
-        const candidate = blob(spec.rng, width, height, layer, spec.size, deriveSeed(seed, 0x91d, layer, s.count) | 0);
-        if (placed.every((p) => apart(candidate, p))) found = candidate;
+      let last: Blob | null = null;
+      for (let t = 0; t < limits.tries && !found; t++) {
+        last = blob(spec.rng, width, height, f.cell, layer, spec.size, deriveSeed(seed, 0x91d, layer, s.count) | 0, s.count === 0);
+        if (placed.every((p) => apart(last!, p))) found = last;
       }
+      if (!found && s.count === 0) found = last; // a kind with a density always gets its first patch, crowded or not
       if (!found) {
         s.done = true;
         continue;
@@ -247,18 +270,11 @@ export function buildGroundField(width: number, height: number, specs: readonly 
     }
   }
   specs.forEach((spec, layer) => {
-    const m = state[layer]!.m;
+    let m: Float32Array = state[layer]!.m;
+    for (let pass = 0; pass < BLUR && m.length > 0; pass++) m = blur(f, m);
     for (let k = 0; k < m.length; k++) f.data[2 * k + layer] = Math.round(255 * Math.min(1, Math.max(0, 0.5 + SLOPE * m[k]!)));
   });
   const d = f.data;
   for (let k = 0; k < d.length; k += 2) if (d[k]! + d[k + 1]! > 255) d[k + 1] = 255 - d[k]!; // one kind per point
-  for (let j = 0; j < f.rows; j++) {
-    for (let i = 0; i < f.cols; i++) {
-      if (i < GROUND_PAD || j < GROUND_PAD || i >= f.cols - GROUND_PAD || j >= f.rows - GROUND_PAD) {
-        d[2 * (j * f.cols + i)] = 0;
-        d[2 * (j * f.cols + i) + 1] = 0;
-      }
-    }
-  }
   return f;
 }

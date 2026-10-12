@@ -4,7 +4,6 @@ import { overrideConfig } from "../../src/typescript/src/sim/config.ts";
 import { restoreState, saveState } from "../../src/typescript/src/sim/ecoState.ts";
 import type { EcoState } from "../../src/typescript/src/sim/ecoState.ts";
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
-import { MAX_BLOBS } from "../../src/typescript/src/sim/groundField.ts";
 import { MAP_DENSITY_MAX, MAX_DISCS_PER_PIECE, MAX_PIECES, PATCH_SIZE_RANGE, terrainOf } from "../../src/typescript/src/sim/terrain.ts";
 import { groundBodies } from "../../src/typescript/src/ui/groundOutline.ts";
 
@@ -108,7 +107,7 @@ describe("map densities from outside", () => {
     const t = process.cpuUsage();
     const map = terrainOf({ seed: 77, world: { width: 50_000, height: 50_000, stoneDensity: 1e9, ridgeDensity: 1e9, slowDensity: 1e9, fastDensity: 1e9, slowSize: 1e9, fastSize: -5 } });
     expect(cpuMs(t)).toBeLessThan(20_000);
-    expect(groundBodies(map, 1).length).toBeLessThanOrEqual(2 * MAX_BLOBS); // patches merge, never more than the blob cap per kind
+    expect(groundBodies(map, 1).length).toBeLessThanOrEqual(2 * MAX_PIECES); // patches merge, never more than the blob cap per kind
     expect(map.rockCount).toBeLessThanOrEqual(2 * MAX_PIECES * MAX_DISCS_PER_PIECE);
   });
 });

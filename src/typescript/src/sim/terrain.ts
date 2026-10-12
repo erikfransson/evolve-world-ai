@@ -344,7 +344,7 @@ function generate(config: TerrainSettings): Terrain {
   };
   addRock(stoneDensity, 0, stone);
   addRock(ridgeDensity, 1, ridge);
-  const ground = buildGroundField(w, h, [{ density: slowDensity, size: slowSize, rng: stream(2) }, { density: fastDensity, size: fastSize, rng: stream(3) }], config.seed); // mud layer, then firm
+  const ground = buildGroundField(w, h, [{ density: slowDensity, size: slowSize, rng: stream(2) }, { density: fastDensity, size: fastSize, rng: stream(3) }], config.seed, { maxBlobs: MAX_PIECES, tries: TRIES }); // mud layer, then firm
   return new Terrain(rock, ground, w, h);
 }
 

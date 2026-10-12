@@ -7,10 +7,10 @@ import { EXTRA_TERRAIN, inputLayout } from "../../src/typescript/src/sim/sensors
 import { buildGroundField, GROUND_HALF } from "../../src/typescript/src/sim/groundField.ts";
 import { FAST_FACTOR, SLOW_FACTOR, TERRAIN_FAST, TERRAIN_SLOW, Terrain, terrainOf } from "../../src/typescript/src/sim/terrain.ts";
 import { FEATHER_BANDS, FEATHER_UNITS } from "../../src/typescript/src/ui/groundScene.ts";
-import { fineOf, groundBodies } from "../../src/typescript/src/ui/groundOutline.ts";
-import { traceSmooth } from "../../src/typescript/src/ui/rockOutline.ts";
+import { fineOf, groundBodies, traceSmooth } from "../../src/typescript/src/ui/groundOutline.ts";
 import type { PathSink } from "../../src/typescript/src/ui/rockOutline.ts";
 
+const LIMITS = { maxBlobs: 300, tries: 40 };
 const config = structuredClone(DEFAULT_ECO_CONFIG);
 config.world = { ...config.world, width: 4000, height: 2600, stoneDensity: 0.04, ridgeDensity: 0.03, slowDensity: 0.1, fastDensity: 0.08 };
 const terrain = terrainOf(config);
@@ -145,12 +145,20 @@ describe("drawn ground and sensed ground", () => {
 
   it("builds the same raster from the same inputs, within the memory bound, and closes every outline inside the raster", () => {
     const specs = (): { density: number; size: number; rng: ReturnType<typeof createRng> }[] => [{ density: 0.1, size: 1, rng: createRng(3) }, { density: 0.08, size: 1.5, rng: createRng(4) }];
-    const a = buildGroundField(6000, 4000, specs(), 7)!;
-    const b = buildGroundField(6000, 4000, specs(), 7)!;
+    const a = buildGroundField(6000, 4000, specs(), 7, LIMITS)!;
+    const b = buildGroundField(6000, 4000, specs(), 7, LIMITS)!;
     expect(b.data).toEqual(a.data);
-    expect(buildGroundField(6000, 4000, specs(), 8)!.data).not.toEqual(a.data);
-    expect(buildGroundField(50_000, 50_000, [{ density: 0.3, size: 1, rng: createRng(1) }, { density: 0.3, size: 1, rng: createRng(2) }], 1)!.bytes).toBeLessThanOrEqual(520_000);
+    expect(buildGroundField(6000, 4000, specs(), 8, LIMITS)!.data).not.toEqual(a.data);
+    expect(buildGroundField(50_000, 50_000, [{ density: 0.3, size: 1, rng: createRng(1) }, { density: 0.3, size: 1, rng: createRng(2) }], 1, LIMITS)!.bytes).toBeLessThanOrEqual(520_000);
     for (let i = 0; i < 2 * a.cols; i++) expect([a.data[i], a.data[2 * (a.rows - 1) * a.cols + i]]).toEqual([0, 0]); // top and bottom rows of nodes are outside the world
+  });
+
+  it("gives every kind with a density at least one patch, even in a tiny world with the smallest patches", () => {
+    for (let seed = 1; seed <= 40; seed++) {
+      const t = terrainOf({ seed, world: { width: 500, height: 500, stoneDensity: 0, ridgeDensity: 0, slowDensity: 0.01, fastDensity: 0.3, slowSize: 0.4, fastSize: 2.5 } });
+      const has = (layer: number): boolean => t.ground!.data.some((v, k) => k % 2 === layer && v >= 128);
+      expect([has(0), has(1)], `seed ${seed}`).toEqual([true, true]);
+    }
   });
 
   it("keeps the feathering a few units wide and inside the edge", () => {

@@ -1,13 +1,6 @@
 import { createRng } from "../sim/rng.ts";
 import type { Terrain } from "../sim/terrain.ts";
 
-// A set of discs: parallel arrays of centres and radii.
-export interface Discs {
-  x: ArrayLike<number>;
-  y: ArrayLike<number>;
-  r: ArrayLike<number>;
-}
-
 // Turns the rock discs of a map into drawable bodies: one per connected lump of rock, each with a smooth outline that follows the
 // exact union of its discs (so what creatures bounce off is what is drawn), facets for shading and a few cracks. Built once per map.
 
@@ -252,16 +245,16 @@ function facets(seeds: number[][], box: number[], light: (sx: number, sy: number
 }
 
 // Moves one point onto the exact edge of the union of the discs, a few steps along the radius of the disc it is nearest to.
-function snapPoint(t: Discs, members: readonly number[], x: number, y: number): [number, number] {
+function snapPoint(t: Terrain, members: readonly number[], x: number, y: number): [number, number] {
   for (let step = 0; step < 4; step++) {
     let best = -Infinity;
     let ux = 0;
     let uy = 0;
     for (const i of members) {
-      const dx = x - t.x[i]!;
-      const dy = y - t.y[i]!;
+      const dx = x - t.rockX[i]!;
+      const dy = y - t.rockY[i]!;
       const d = Math.hypot(dx, dy) || 1e-9;
-      const v = t.r[i]! - d;
+      const v = t.rockR[i]! - d;
       if (v > best) {
         best = v;
         ux = dx / d;
@@ -277,7 +270,7 @@ function snapPoint(t: Discs, members: readonly number[], x: number, y: number): 
 
 // Puts a contour (the grid is only a few units fine) onto the exact union edge, and adds a point where an edge midpoint lies off it,
 // which is where the tip of a notch between two discs was cut.
-function snap(t: Discs, members: readonly number[], pts: number[]): number[] {
+function snap(t: Terrain, members: readonly number[], pts: number[]): number[] {
   const out: number[] = [];
   const n = pts.length / 2;
   const on: [number, number][] = [];
@@ -292,7 +285,7 @@ function snap(t: Discs, members: readonly number[], pts: number[]): number[] {
   return out;
 }
 
-function body(t: Discs, members: number[], seed: number): RockBody | null {
+function body(t: Terrain, members: number[], seed: number): RockBody | null {
   let x0 = Infinity;
   let y0 = Infinity;
   let x1 = -Infinity;
@@ -300,12 +293,12 @@ function body(t: Discs, members: number[], seed: number): RockBody | null {
   let cx = 0;
   let cy = 0;
   for (const i of members) {
-    x0 = Math.min(x0, t.x[i]! - t.r[i]!);
-    y0 = Math.min(y0, t.y[i]! - t.r[i]!);
-    x1 = Math.max(x1, t.x[i]! + t.r[i]!);
-    y1 = Math.max(y1, t.y[i]! + t.r[i]!);
-    cx += t.x[i]!;
-    cy += t.y[i]!;
+    x0 = Math.min(x0, t.rockX[i]! - t.rockR[i]!);
+    y0 = Math.min(y0, t.rockY[i]! - t.rockR[i]!);
+    x1 = Math.max(x1, t.rockX[i]! + t.rockR[i]!);
+    y1 = Math.max(y1, t.rockY[i]! + t.rockR[i]!);
+    cx += t.rockX[i]!;
+    cy += t.rockY[i]!;
   }
   cx /= members.length;
   cy /= members.length;
@@ -315,9 +308,9 @@ function body(t: Discs, members: number[], seed: number): RockBody | null {
   const h = Math.ceil((y1 - oy) / CELL) + 4;
   const f = new Float32Array(w * h).fill(-3 * CELL);
   for (const i of members) {
-    const r = t.r[i]!;
-    const x = t.x[i]!;
-    const y = t.y[i]!;
+    const r = t.rockR[i]!;
+    const x = t.rockX[i]!;
+    const y = t.rockY[i]!;
     const reach = r + 2 * CELL;
     const i0 = Math.max(0, Math.floor((x - reach - ox) / CELL));
     const i1 = Math.min(w - 1, Math.ceil((x + reach - ox) / CELL));
@@ -381,19 +374,10 @@ export function rockBodies(t: Terrain): RockBody[] {
   if (!bodies) {
     bodies = [];
     for (const members of lumps(t)) {
-      const b = body({ x: t.rockX, y: t.rockY, r: t.rockR }, members, 0x51ac + members[0]!);
+      const b = body(t, members, 0x51ac + members[0]!);
       if (b) bodies.push(b);
     }
     built.set(t, bodies);
   }
   return bodies;
-}
-
-// A closed curve through the midpoints of a dense outline, so ground edges are smooth where rock edges are angular.
-export function traceSmooth(path: PathSink, pts: readonly number[]): void {
-  const n = pts.length / 2;
-  const at = (i: number, c: number): number => pts[2 * ((i + n) % n) + c]!;
-  path.moveTo((at(0, 0) + at(1, 0)) / 2, (at(0, 1) + at(1, 1)) / 2);
-  for (let i = 1; i <= n; i++) path.quadraticCurveTo(at(i, 0), at(i, 1), (at(i, 0) + at(i + 1, 0)) / 2, (at(i, 1) + at(i + 1, 1)) / 2);
-  path.closePath();
 }

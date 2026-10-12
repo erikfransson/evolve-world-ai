@@ -2,6 +2,7 @@ import { GROUND_HALF, GROUND_PAD } from "../sim/groundField.ts";
 import type { GroundField } from "../sim/groundField.ts";
 import { TERRAIN_FAST, TERRAIN_SLOW } from "../sim/terrain.ts";
 import type { Terrain } from "../sim/terrain.ts";
+import type { PathSink } from "./rockOutline.ts";
 
 // The mud and firm ground of a map as closed outlines: the 0.5 contour (value 127.5) of the bilinear blend of the raster layers, which is the
 // same function Terrain.valueAt thresholds, so the outline is where creatures start to sense the ground.
@@ -201,3 +202,12 @@ export function groundBodies(t: Terrain, subdivide: number): GroundBody[] {
 
 // The refinement for close views: fine steps of at most FINE_STEP units.
 export const fineOf = (t: Terrain): number => (t.ground === null ? 1 : Math.max(1, Math.ceil(t.ground.cell / FINE_STEP)));
+
+// A closed curve through the midpoints of a dense outline, so ground edges are smooth where rock edges are angular.
+export function traceSmooth(path: PathSink, pts: readonly number[]): void {
+  const n = pts.length / 2;
+  const at = (i: number, c: number): number => pts[2 * ((i + n) % n) + c]!;
+  path.moveTo((at(0, 0) + at(1, 0)) / 2, (at(0, 1) + at(1, 1)) / 2);
+  for (let i = 1; i <= n; i++) path.quadraticCurveTo(at(i, 0), at(i, 1), (at(i, 0) + at(i + 1, 0)) / 2, (at(i, 1) + at(i + 1, 1)) / 2);
+  path.closePath();
+}
