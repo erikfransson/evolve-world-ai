@@ -1,4 +1,5 @@
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
+import { VERSION } from "../../src/typescript/src/version.ts";
 import type { CreatureFrame as EngineFrame } from "../../src/typescript/src/sim/ecosystem.ts";
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { PoolEntry } from "../../src/typescript/src/sim/seedPool.ts";
@@ -357,6 +358,7 @@ export class LiveWorld {
       itemSlots: this.eco.world.count,
       summary: { initialPopulation: eco.initialPopulation, maxPopulation: eco.maxPopulation, collisionDamage: eco.collisionDamage, seasons: eco.seasons },
       maxViewers,
+      serverVersion: VERSION,
     };
   }
 
