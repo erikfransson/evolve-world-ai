@@ -16,13 +16,16 @@ export const FAST_FACTOR = 1.75;
 const FACTORS = [SLOW_FACTOR, 1, FAST_FACTOR] as const;
 
 export const STONE_RADIUS = [250, 380] as const; // world units; capped at 20% of the shorter world side
-const RIDGE_HALF_WIDTH = 56; // mean; the crest swells and narrows along its length
-const RIDGE_STEP = 0.75; // disc spacing in radii; the edge scallops are about 3% of the width
+const RIDGE_HALF_WIDTH = 56; // mean; a ridge tapers towards both ends and is lumpy along its length
+const RIDGE_STEP = 0.62; // disc spacing in radii of the smaller neighbour, so every stone of the chain overlaps the next deeply
+const STONE_LOBES = 36; // discs round the rim of a boulder; the rim scallops are under 1% of its radius
+export const MAX_DISCS_PER_PIECE = 160; // however long a ridge, so a map stays cheap to build, to look up and to draw
 const GAP = 80; // free passage kept between rock and the walls and between pieces of rock, wider than a creature
 const TRIES = 40; // placements tried per piece before giving up on the rest of its kind
 const MAX_ROCK_SHARE = 0.4; // rock never covers more of the world than this, however high the setting
 export const ROCK_CELL = 300; // world units per cell of the rock grid
 
+export const PATCH_SIZE_RANGE = [0.4, 2.5] as const; // the form's range for the size of a slow or fast patch, a multiple of the standard one
 export const MAX_PIECES = 300; // pieces of one kind, however high the setting, so a map stays cheap to build and to look up
 // The most the settings forms allow for each density; a saved or pasted config above these is refused.
 export const MAP_DENSITY_MAX = { stoneDensity: 0.2, ridgeDensity: 0.15, slowDensity: 0.3, fastDensity: 0.3 } as const;
@@ -35,6 +38,15 @@ export function checkMapDensities(world: object): void {
   }
 }
 
+// Throws when a world's map densities or patch sizes are outside the form's range. Used by every path that reads settings from outside.
+export function checkMapSettings(world: object): void {
+  checkMapDensities(world);
+  for (const key of ["slowSize", "fastSize"]) {
+    const v = (world as Record<string, unknown>)[key];
+    if (v !== undefined && !(typeof v === "number" && v >= PATCH_SIZE_RANGE[0] && v <= PATCH_SIZE_RANGE[1])) throw new Error(`config "world.${key}" must be a number from ${PATCH_SIZE_RANGE[0]} to ${PATCH_SIZE_RANGE[1]}`);
+  }
+}
+
 interface Circle {
   x: number;
   y: number;
@@ -42,7 +54,7 @@ interface Circle {
 }
 
 // The settings that make the map, which key the cache.
-export type TerrainSettings = Pick<EngineConfig, "seed"> & { world: Pick<EngineConfig["world"], "width" | "height" | "stoneDensity" | "ridgeDensity" | "slowDensity" | "fastDensity"> };
+export type TerrainSettings = Pick<EngineConfig, "seed"> & { world: Pick<EngineConfig["world"], "width" | "height" | "stoneDensity" | "ridgeDensity" | "slowDensity" | "fastDensity"> & Partial<Pick<EngineConfig["world"], "slowSize" | "fastSize">> };
 
 export class Terrain {
   readonly width: number;
@@ -213,8 +225,8 @@ export class Terrain {
 export const NO_TERRAIN = new Terrain([], [], 1, 1);
 
 // Places pieces of one kind, each given by make and accepted by ok, until their area reaches the target, at least one, and appends
-// their discs to placed (one array per piece). Stops early when a piece finds no room.
-function place(target: number, make: () => { discs: Circle[]; area: number }, ok: (discs: Circle[]) => boolean, placed: Circle[][]): void {
+// their discs to placed (one array per piece). Stops early when a piece finds no room. Returns the area covered.
+function place(target: number, make: () => { discs: Circle[]; area: number }, ok: (discs: Circle[]) => boolean, placed: Circle[][]): number {
   let covered = 0;
   for (let count = 0; (covered < target || count === 0) && count < MAX_PIECES; count++) {
     let piece: { discs: Circle[]; area: number } | null = null;
@@ -222,10 +234,11 @@ function place(target: number, make: () => { discs: Circle[]; area: number }, ok
       const candidate = make();
       if (ok(candidate.discs)) piece = candidate;
     }
-    if (!piece) return;
+    if (!piece) return covered;
     placed.push(piece.discs);
     covered += piece.area;
   }
+  return covered;
 }
 
 const bounds = (discs: readonly Circle[]): Circle => {
@@ -236,37 +249,64 @@ const bounds = (discs: readonly Circle[]): Circle => {
 
 const apart = (a: readonly Circle[], b: readonly Circle[], gap: number): boolean => a.every((p) => b.every((q) => Math.hypot(p.x - q.x, p.y - q.y) >= p.r + q.r + gap));
 
-// A stone: one big disc.
+// A boulder: a lumpy, slightly elongated outline made of a core disc and a ring of overlapping lobes of uneven size.
 function stone(rng: StatefulRng, w: number, h: number): { discs: Circle[]; area: number } {
   const cap = 0.2 * Math.min(w, h);
-  const r = rng.range(Math.min(STONE_RADIUS[0], cap), Math.min(STONE_RADIUS[1], cap));
-  return { discs: [{ x: rng.range(r + GAP, w - r - GAP), y: rng.range(r + GAP, h - r - GAP), r }], area: Math.PI * r * r };
+  const radius = rng.range(Math.min(STONE_RADIUS[0], cap), Math.min(STONE_RADIUS[1], cap));
+  const harmonics = [2, 3, 4, 6, 9].map((k, i) => ({ k, amp: rng.range(0.5, 1) * [0.12, 0.08, 0.06, 0.035, 0.02][i]!, phase: rng.range(0, 2 * Math.PI) }));
+  const outline = (a: number): number => radius * (1 + harmonics.reduce((sum, hm) => sum + hm.amp * Math.sin(hm.k * a + hm.phase), 0));
+  const extent = 1.3 * radius;
+  const cx = rng.range(extent + GAP, w - extent - GAP);
+  const cy = rng.range(extent + GAP, h - extent - GAP);
+  const discs: Circle[] = [];
+  let least = Infinity;
+  for (let j = 0; j < STONE_LOBES; j++) {
+    const a = (2 * Math.PI * (j + rng.range(-0.3, 0.3))) / STONE_LOBES;
+    const rho = outline(a);
+    const r = 0.3 * radius * rng.range(0.9, 1.15);
+    least = Math.min(least, rho);
+    discs.push({ x: cx + (rho - r) * Math.cos(a), y: cy + (rho - r) * Math.sin(a), r });
+  }
+  discs.unshift({ x: cx, y: cy, r: 0.8 * least });
+  return { discs, area: 0.99 * Math.PI * radius * radius };
 }
 
-// A ridge: a gently bending chain of overlapping discs whose width swells and narrows along it.
+// A ridge: a rocky outcrop, a chain of overlapping stones of uneven size along a gently bent spine, tapering at both ends,
+// with a few small boulders lying against its flanks.
 function ridge(rng: StatefulRng, w: number, h: number): { discs: Circle[]; area: number } {
   const length = Math.min(2400, Math.max(500, 0.45 * Math.min(w, h))) * rng.range(0.7, 1.3);
   let x = rng.range(GAP, w - GAP);
   let y = rng.range(GAP, h - GAP);
   let heading = rng.range(0, 2 * Math.PI);
-  const bend = (rng.range(0.6, 1.4) * (rng.next() < 0.5 ? -1 : 1)) / length; // radians per unit length, a total turn of about a radian
-  const swell = [rng.range(0, 2 * Math.PI), rng.range(0, 2 * Math.PI)];
+  const bend = (rng.range(0.35, 0.9) * (rng.next() < 0.5 ? -1 : 1)) / length; // radians per unit length, a total turn of about half a radian
   const discs: Circle[] = [];
-  for (let s = 0; s < length; ) {
-    const r = RIDGE_HALF_WIDTH * (1 + 0.2 * Math.sin(s / 220 + swell[0]!) + 0.1 * Math.sin(s / 90 + swell[1]!));
-    discs.push({ x, y, r });
-    const step = RIDGE_STEP * r;
+  let side = 0; // sideways offset of a stone in its radii, a slow random walk so the crest zigzags a little
+  let prev = 0;
+  for (let s = 0; s < length && discs.length < MAX_DISCS_PER_PIECE - 2; ) {
+    const along = Math.max(0.02, Math.min(0.98, s / length));
+    const r = RIDGE_HALF_WIDTH * 1.1 * (0.45 + 0.55 * Math.sqrt(Math.sin(Math.PI * along))) * rng.range(0.7, 1.3);
+    side = Math.max(-0.35, Math.min(0.35, side * 0.7 + rng.range(-0.25, 0.25)));
+    const nx = -Math.sin(heading);
+    const ny = Math.cos(heading);
+    discs.push({ x: x + nx * side * r, y: y + ny * side * r, r });
+    if (rng.next() < 0.06) {
+      const sr = RIDGE_HALF_WIDTH * rng.range(0.35, 0.6);
+      const off = (rng.next() < 0.5 ? -1 : 1) * (r * 0.95 + sr * 0.3);
+      discs.push({ x: x + nx * off, y: y + ny * off, r: sr });
+    }
+    const step = RIDGE_STEP * Math.min(r, prev || r);
+    prev = r;
     x += step * Math.cos(heading);
     y += step * Math.sin(heading);
     heading += bend * step;
     s += step;
   }
-  return { discs, area: 2 * RIDGE_HALF_WIDTH * length };
+  return { discs, area: 1.8 * RIDGE_HALF_WIDTH * length };
 }
 
-// A patch: a blob of three to five discs around a larger centre one.
-function patch(rng: StatefulRng, w: number, h: number): { discs: Circle[]; area: number } {
-  const r0 = Math.min(550, Math.max(150, 0.08 * Math.min(w, h))) * rng.range(0.8, 1.2);
+// A patch: a blob of three to five discs around a larger centre one; size scales it.
+function patch(rng: StatefulRng, w: number, h: number, size: number): { discs: Circle[]; area: number } {
+  const r0 = Math.min(550, Math.max(150, 0.08 * Math.min(w, h))) * rng.range(0.8, 1.2) * size;
   const cx = rng.range(0, w);
   const cy = rng.range(0, h);
   const discs: Circle[] = [{ x: cx, y: cy, r: r0 }];
@@ -282,29 +322,30 @@ function patch(rng: StatefulRng, w: number, h: number): { discs: Circle[]; area:
 const insideWorld = (discs: readonly Circle[], w: number, h: number): boolean => discs.every((d) => d.x >= d.r + GAP && d.x <= w - d.r - GAP && d.y >= d.r + GAP && d.y <= h - d.r - GAP);
 
 function generate(config: TerrainSettings): Terrain {
-  const { width: w, height: h, stoneDensity, ridgeDensity, slowDensity, fastDensity } = config.world;
+  const { width: w, height: h, stoneDensity, ridgeDensity, slowDensity, fastDensity, slowSize = 1, fastSize = 1 } = config.world;
   const area = w * h;
   const stream = (kind: number): StatefulRng => createRng(deriveSeed(config.seed, 0x0b57, kind)); // one stream per kind, so a density change leaves the other kinds alone
   const rock: Circle[] = [];
+  let rockArea = 0; // of the pieces placed so far, which overlap their own discs
   const pieces: Circle[][] = [];
   const rockOk = (discs: Circle[]): boolean => insideWorld(discs, w, h) && pieces.every((p) => apart([bounds(discs)], [bounds(p)], GAP) || apart(discs, p, GAP));
   const addRock = (density: number, kind: number, make: typeof stone): void => {
-    const share = Math.min(density, MAX_ROCK_SHARE - rock.reduce((s, d) => s + Math.PI * d.r * d.r, 0) / area);
+    const share = Math.min(density, MAX_ROCK_SHARE - rockArea / area);
     if (!(share > 0)) return;
     const rng = stream(kind);
     const before = pieces.length;
-    place(share * area, () => make(rng, w, h), rockOk, pieces);
+    rockArea += place(share * area, () => make(rng, w, h), rockOk, pieces);
     for (const p of pieces.slice(before)) rock.push(...p);
   };
   addRock(stoneDensity, 0, stone);
   addRock(ridgeDensity, 1, ridge);
   const patches: (Circle & { kind: number })[] = [];
   const patchPieces: Circle[][] = [];
-  for (const [density, kind, id] of [[slowDensity, TERRAIN_SLOW, 2], [fastDensity, TERRAIN_FAST, 3]] as const) {
+  for (const [density, kind, id, size] of [[slowDensity, TERRAIN_SLOW, 2, slowSize], [fastDensity, TERRAIN_FAST, 3, fastSize]] as const) {
     if (!(density > 0)) continue;
     const rng = stream(id);
     const before = patchPieces.length;
-    place(density * area, () => patch(rng, w, h), (discs) => patchPieces.every((p) => apart(discs, p, 0)), patchPieces);
+    place(density * area, () => patch(rng, w, h, size), (discs) => patchPieces.every((p) => apart(discs, p, 0)), patchPieces);
     for (const p of patchPieces.slice(before)) for (const d of p) patches.push({ ...d, kind });
   }
   return new Terrain(rock, patches, w, h);
@@ -318,11 +359,13 @@ export function terrainOf(config: TerrainSettings): Terrain {
   const limit = (key: keyof typeof MAP_DENSITY_MAX): number => Math.min(MAP_DENSITY_MAX[key], Math.max(0, config.world[key]) || 0); // defence in depth: callers that skip checkMapDensities get the form's range
   const [stoneDensity, ridgeDensity, slowDensity, fastDensity] = [limit("stoneDensity"), limit("ridgeDensity"), limit("slowDensity"), limit("fastDensity")] as const;
   if (!(stoneDensity > 0 || ridgeDensity > 0 || slowDensity > 0 || fastDensity > 0)) return NO_TERRAIN;
-  const key = [config.seed, width, height, stoneDensity, ridgeDensity, slowDensity, fastDensity].join("|");
+  const size = (v: number | undefined): number => Math.min(PATCH_SIZE_RANGE[1], Math.max(PATCH_SIZE_RANGE[0], v ?? 1)) || 1; // the same defence for the patch sizes
+  const [slowSize, fastSize] = [size(config.world.slowSize), size(config.world.fastSize)] as const;
+  const key = [config.seed, width, height, stoneDensity, ridgeDensity, slowDensity, fastDensity, slowSize, fastSize].join("|");
   let t = cache.get(key);
   if (!t) {
     if (cache.size >= 8) cache.clear(); // settings edited in a form make many keys; keep only the recent ones
-    cache.set(key, (t = generate({ seed: config.seed, world: { width, height, stoneDensity, ridgeDensity, slowDensity, fastDensity } })));
+    cache.set(key, (t = generate({ seed: config.seed, world: { width, height, stoneDensity, ridgeDensity, slowDensity, fastDensity, slowSize, fastSize } })));
   }
   return t;
 }

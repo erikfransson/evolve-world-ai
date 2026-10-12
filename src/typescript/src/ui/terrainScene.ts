@@ -3,8 +3,8 @@ import { TERRAIN_FAST, TERRAIN_SLOW } from "../sim/terrain.ts";
 import type { Terrain } from "../sim/terrain.ts";
 
 // Draws a Terrain (rock and slow and fast ground) for the Trials scene and the Ecosystem renderer, in world coordinates under the
-// current transform. Ground is a soft tint baked once per map into a small image, with vector marks (ripples, chevrons) that fade in
-// when zoomed in. Rock is drawn live as stacked fills of its discs, so edges stay crisp at every zoom.
+// current transform. Ground is a soft tint baked once per map into a small image (the legend names the kinds, no symbols on it).
+// Rock is drawn live as stacked fills of the union of its discs, lit from the top left, so its edge is exactly where creatures bounce.
 
 export interface View {
   x0: number;
@@ -14,17 +14,14 @@ export interface View {
 }
 
 // Slow ground reads as damp blue-grey mud, fast ground as pale dry gold.
-const GROUND = [{ kind: TERRAIN_SLOW, tint: "rgba(86, 116, 178, 0.46)", mark: "rgba(176, 198, 240, 0.5)" }, { kind: TERRAIN_FAST, tint: "rgba(222, 204, 80, 0.3)", mark: "rgba(255, 238, 150, 0.6)" }] as const;
+const GROUND = [{ kind: TERRAIN_SLOW, tint: "rgba(86, 116, 178, 0.46)" }, { kind: TERRAIN_FAST, tint: "rgba(222, 204, 80, 0.3)" }] as const;
 const GROUND_IMAGE_PX = 1600; // longest side of the baked ground image
 const EDGE_SOFT = 70; // world units of blur on a patch edge
-const MARK_CELL = 100; // world units between ripples and chevrons
-const MARKS_FROM = 0.1; // marks fade in between these scales (device px per world unit)
-const MARKS_FULL = 0.22;
 
-const HALO = "rgba(3, 9, 7, 0.3)";
-const RIM = "#5e686f";
-const HALO_PX = 7; // screen px the shadow reaches past the rim, offset down and right
-const BEVEL_PX = 3.2; // screen px between the rim, the body and the core
+const HALO = "rgba(2, 8, 6, 0.17)";
+const EDGE_DARK = "#141b19";
+const EDGE_LIT = "#7b8982";
+const CORE_FROM = 0.3; // scale (device px per world unit) from which the lighter core is drawn
 const ROCK_TILE_UNITS = 300; // world units one grain tile covers
 const ROCK_TILE_PX = 192;
 
@@ -118,68 +115,12 @@ function rockPatterns(ctx: CanvasRenderingContext2D) {
       pattern?.setTransform(new DOMMatrix().scale(ROCK_TILE_UNITS / ROCK_TILE_PX));
       return pattern;
     };
-    tiles.set(ctx, (p = { body: make("#2d3439", 11), core: make("#384046", 12) }));
+    tiles.set(ctx, (p = { body: make("#2b3633", 11), core: make("#3a4742", 12) }));
   }
   return p;
 }
 
-const hash = (i: number, j: number, k: number): number => {
-  let h = Math.imul(i * 73856093 ^ j * 19349663 ^ k * 83492791, 0x2545f491);
-  h ^= h >>> 15;
-  return (h >>> 0) / 4294967296;
-};
-
-// One ripple (slow) or chevron (fast) per cell of the view that lies on that ground.
-function drawMarks(ctx: CanvasRenderingContext2D, t: Terrain, scale: number, view: View): void {
-  const fade = Math.min(1, Math.max(0, (scale - MARKS_FROM) / (MARKS_FULL - MARKS_FROM)));
-  if (fade <= 0) return;
-  ctx.globalAlpha = fade;
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-  ctx.lineWidth = Math.max(1.4 / scale, 2.2);
-  const i0 = Math.max(0, Math.floor(view.x0 / MARK_CELL));
-  const i1 = Math.min(Math.floor(t.width / MARK_CELL), Math.floor(view.x1 / MARK_CELL));
-  const j0 = Math.max(0, Math.floor(view.y0 / MARK_CELL));
-  const j1 = Math.min(Math.floor(t.height / MARK_CELL), Math.floor(view.y1 / MARK_CELL));
-  const cols = i1 - i0 + 1;
-  const ground = new Int8Array(Math.max(0, cols * (j1 - j0 + 1))); // the ground at each cell's mark, looked up once
-  const at = (i: number, j: number): [number, number] => [(i + 0.15 + 0.7 * hash(i, j, 1)) * MARK_CELL, (j + 0.15 + 0.7 * hash(i, j, 2)) * MARK_CELL];
-  for (let j = j0; j <= j1; j++) {
-    for (let i = i0; i <= i1; i++) {
-      const [x, y] = at(i, j);
-      ground[(j - j0) * cols + i - i0] = x > t.width || y > t.height ? 0 : t.valueAt(x, y);
-    }
-  }
-  for (const { kind, mark } of GROUND) {
-    ctx.strokeStyle = mark;
-    ctx.beginPath();
-    for (let j = j0; j <= j1; j++) {
-      for (let i = i0; i <= i1; i++) {
-        if (ground[(j - j0) * cols + i - i0] !== kind) continue;
-        const [x, y] = at(i, j);
-        if (kind === TERRAIN_SLOW) {
-          // a short wave
-          ctx.moveTo(x - 14, y);
-          ctx.quadraticCurveTo(x - 7, y - 7, x, y);
-          ctx.quadraticCurveTo(x + 7, y + 7, x + 14, y);
-        } else {
-          // a chevron pointing right, two of them
-          for (const dx of [-8, 6]) {
-            ctx.moveTo(x + dx - 6, y - 8);
-            ctx.lineTo(x + dx + 4, y);
-            ctx.lineTo(x + dx - 6, y + 8);
-          }
-        }
-      }
-    }
-    ctx.stroke();
-  }
-  ctx.globalAlpha = 1;
-  ctx.lineCap = "butt";
-  ctx.lineJoin = "miter";
-}
-
-function drawGround(ctx: CanvasRenderingContext2D, t: Terrain, scale: number, view: View): void {
+function drawGround(ctx: CanvasRenderingContext2D, t: Terrain): void {
   let b = baked.get(t);
   if (!b) baked.set(t, (b = { ground: bakeGround(t) }));
   if (b.ground) {
@@ -199,7 +140,6 @@ function drawGround(ctx: CanvasRenderingContext2D, t: Terrain, scale: number, vi
       ctx.fill();
     }
   }
-  if (t.patchX.length > 0) drawMarks(ctx, t, scale, view);
 }
 
 function discPath(ctx: CanvasRenderingContext2D, x: number, y: number, r: number): void {
@@ -207,9 +147,8 @@ function discPath(ctx: CanvasRenderingContext2D, x: number, y: number, r: number
   ctx.arc(x, y, r, 0, Math.PI * 2);
 }
 
-// Fills the union of the rock discs in view, each shrunk by inset world units (at most a third of its radius) and moved by (dx, dy).
-function fillRock(ctx: CanvasRenderingContext2D, t: Terrain, view: View, inset: number, dx = 0, dy = 0): void {
-  ctx.beginPath();
+// Adds the rock discs in view to the current path, each shrunk by inset world units (at most a third of its radius) and moved by (dx, dy).
+function addRock(ctx: CanvasRenderingContext2D, t: Terrain, view: View, inset: number, dx = 0, dy = 0): void {
   for (let i = 0; i < t.rockCount; i++) {
     const r = t.rockR[i]!;
     const x = t.rockX[i]!;
@@ -217,27 +156,47 @@ function fillRock(ctx: CanvasRenderingContext2D, t: Terrain, view: View, inset: 
     if (x + r + dx < view.x0 || x - r + dx > view.x1 || y + r + dy < view.y0 || y - r + dy > view.y1) continue;
     discPath(ctx, x + dx, y + dy, r - Math.min(inset, r / 3));
   }
+}
+
+function fillRock(ctx: CanvasRenderingContext2D, t: Terrain, view: View, inset: number, dx = 0, dy = 0): void {
+  ctx.beginPath();
+  addRock(ctx, t, view, inset, dx, dy);
   ctx.fill();
 }
 
 function drawRock(ctx: CanvasRenderingContext2D, t: Terrain, scale: number, view: View): void {
   if (t.rockCount === 0) return;
   const px = 1 / scale;
+  const edge = Math.min(1, Math.max(0.5, scale / 0.25)); // thinner rim and shade from afar
   const patterns = rockPatterns(ctx);
+  // The shadow reaches past the edge, softer the further out, and falls down and right.
   ctx.fillStyle = HALO;
-  // The shadow spreads past the rim (negative inset) and falls down and right.
-  fillRock(ctx, t, view, -HALO_PX * 0.6 * px, HALO_PX * 0.5 * px, HALO_PX * 0.7 * px);
-  ctx.fillStyle = RIM;
-  fillRock(ctx, t, view, 0);
-  ctx.fillStyle = patterns.body ?? "#2d3439";
-  fillRock(ctx, t, view, BEVEL_PX * px);
-  ctx.fillStyle = patterns.core ?? "#384046";
-  fillRock(ctx, t, view, 3.2 * BEVEL_PX * px);
+  fillRock(ctx, t, view, -7 * edge * px, 3 * edge * px, 4.5 * edge * px);
+  fillRock(ctx, t, view, -3.5 * edge * px, 2 * edge * px, 3 * edge * px);
+  // Everything else stays inside the exact union of the discs, so the outline is where creatures bounce.
+  ctx.save();
+  ctx.beginPath();
+  addRock(ctx, t, view, 0);
+  ctx.clip();
+  ctx.fillStyle = EDGE_DARK;
+  ctx.fillRect(view.x0, view.y0, view.x1 - view.x0, view.y1 - view.y0);
+  ctx.fillStyle = EDGE_LIT; // a thin lit rim on the upper left edges, left dark on the lower right
+  fillRock(ctx, t, view, 0, -1.2 * edge * px, -1.2 * edge * px);
+  ctx.fillStyle = patterns.body ?? "#2b3633";
+  fillRock(ctx, t, view, 2.4 * edge * px);
+  if (scale >= CORE_FROM) {
+    // a lighter core off to the upper left, where the light falls; too small to read from afar
+    ctx.globalAlpha = 0.7;
+    ctx.fillStyle = patterns.core ?? "#3a4742";
+    fillRock(ctx, t, view, 6 * px, -2.2 * px, -3 * px);
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
 }
 
 // Draws the ground, then the rock, in world coordinates. scale: device pixels per world unit. view: the visible world rectangle.
 export function drawTerrain(ctx: CanvasRenderingContext2D, t: Terrain, scale: number, view: View = { x0: 0, x1: t.width, y0: 0, y1: t.height }): void {
   if (t.empty) return;
-  drawGround(ctx, t, scale, view);
+  drawGround(ctx, t);
   drawRock(ctx, t, scale, view);
 }

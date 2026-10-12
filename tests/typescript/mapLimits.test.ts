@@ -4,7 +4,7 @@ import { overrideConfig } from "../../src/typescript/src/sim/config.ts";
 import { restoreState, saveState } from "../../src/typescript/src/sim/ecoState.ts";
 import type { EcoState } from "../../src/typescript/src/sim/ecoState.ts";
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
-import { MAP_DENSITY_MAX, MAX_PIECES, terrainOf } from "../../src/typescript/src/sim/terrain.ts";
+import { MAP_DENSITY_MAX, MAX_DISCS_PER_PIECE, MAX_PIECES, PATCH_SIZE_RANGE, terrainOf } from "../../src/typescript/src/sim/terrain.ts";
 
 const small = (): EcoConfig => {
   const c = structuredClone(DEFAULT_ECO_CONFIG);
@@ -22,6 +22,16 @@ describe("map densities from outside", () => {
       const t = performance.now();
       expect(() => restoreState(state)).toThrow(new RegExp(key));
       expect(performance.now() - t).toBeLessThan(500);
+    }
+  });
+
+  it("a save with a patch size outside the form range is refused", () => {
+    for (const key of ["slowSize", "fastSize"] as const) {
+      for (const bad of [0, PATCH_SIZE_RANGE[0] * 0.99, PATCH_SIZE_RANGE[1] * 1.01, 1e9, -1]) {
+        const state = saved();
+        (state.config.world as unknown as Record<string, number>)[key] = bad;
+        expect(() => restoreState(state)).toThrow(new RegExp(key));
+      }
     }
   });
 
@@ -72,20 +82,22 @@ describe("map densities from outside", () => {
 
   it("the form maxima themselves are accepted", () => {
     const state = saved();
-    Object.assign(state.config.world, MAP_DENSITY_MAX);
+    Object.assign(state.config.world, MAP_DENSITY_MAX, { slowSize: PATCH_SIZE_RANGE[1], fastSize: PATCH_SIZE_RANGE[0] });
     expect(() => restoreState(state)).not.toThrow();
   });
 
   it("pasted or scripted settings are held to the same range", () => {
     expect(() => overrideConfig(DEFAULT_ECO_CONFIG, { world: { slowDensity: 5 } })).toThrow(/slowDensity/);
     expect(overrideConfig(DEFAULT_ECO_CONFIG, { world: { slowDensity: 0.3 } }).world.slowDensity).toBe(0.3);
+    expect(() => overrideConfig(DEFAULT_ECO_CONFIG, { world: { fastSize: 1e6 } })).toThrow(/fastSize/);
+    expect(overrideConfig(DEFAULT_ECO_CONFIG, { world: { fastSize: 2 } }).world.fastSize).toBe(2);
   });
 
   it("an absurd density that gets past the checks builds at most the piece cap, in bounded time", () => {
     const t = performance.now();
-    const map = terrainOf({ seed: 77, world: { width: 50_000, height: 50_000, stoneDensity: 1e9, ridgeDensity: 1e9, slowDensity: 1e9, fastDensity: 1e9 } });
+    const map = terrainOf({ seed: 77, world: { width: 50_000, height: 50_000, stoneDensity: 1e9, ridgeDensity: 1e9, slowDensity: 1e9, fastDensity: 1e9, slowSize: 1e9, fastSize: -5 } });
     expect(performance.now() - t).toBeLessThan(20_000);
     expect(map.patchX.length).toBeLessThanOrEqual(2 * MAX_PIECES * 6);
-    expect(map.rockCount).toBeLessThanOrEqual(2 * MAX_PIECES * 80);
+    expect(map.rockCount).toBeLessThanOrEqual(2 * MAX_PIECES * MAX_DISCS_PER_PIECE);
   });
 });
