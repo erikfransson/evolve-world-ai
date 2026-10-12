@@ -7,6 +7,8 @@ Work here is iterative and nothing is fixed; update or delete lines as soon as t
 - A1 Terrain and obstacle look: polish rock, ridges, mud and firm ground so they look refined when zoomed in, in the style of the map drafts in `docs/world-maps/`. Creatures sense the ground under them through the `terrain` input (-1 mud, 0 normal, 1 firm); keep what is drawn and what is sensed identical.
 - A2 Live World map: build The Inland Sea (`docs/world-maps/2026-10-12-draft3-*`) for the live server after A1. Needs the engine plan in the draft notes (biome raster, weighted spawning, local food caps, rock from the spec, per-region trait stats).
 - A3 Live World page: info section below the world (legend, ground shares from the server, world rules, a region table that fills once a map has regions) and the footer are built on branch `live-add` with L4; the viewer-zoom inset and the Inland Sea's regions follow A2.
+- A4 Visitor-inserted creatures: built on `live-add`: start energy 300 and a 60 s first-birth hold, admin settings `add.startEnergy` and `add.birthHoldS` (no engine change: the hold is a last birth placed in the future).
+- C1 Starter founders (RL session, worktree `.claude/worktrees/founders`, branch `founders`): 3-5 pickable founders for visitors to drop into Live: a sitter that holds still and scans, an explorer, a big-brain thinker with lots of memory, and an aggressor. Trials stage, then RL generalisation, then a test in a world with `liveConfig`. They replace `src/typescript/public/live-founders.json` (now four pool picks).
 - B1 Speed: round 3 done (about 1.35x at 50000 wide, bit-identical); write-ups in `docs/perf-explore/`.
 
 ## Decisions
