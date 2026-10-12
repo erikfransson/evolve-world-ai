@@ -101,7 +101,7 @@ const CHUNKS_PER_PORT = 6; // batches per helper in a call of rewards()
 const IN_FLIGHT = 2; // jobs queued per helper, so it never waits for the next one
 
 interface Run {
-  jobs: Omit<Extract<RlJob, { id: number }>, "id">[];
+  jobs: (Extract<RlJob, { id: number }> extends infer J ? (J extends unknown ? Omit<J, "id"> : never) : never)[]; // Omit per job kind, not over the union
   results: RlDone[];
   next: number; // first job not yet handed out
   remaining: number;
