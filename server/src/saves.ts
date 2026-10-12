@@ -44,7 +44,7 @@ export class Saves {
       const stallMs = Math.round(performance.now() - t0);
       // The same parse and checks as a restore, on the worker with its heap cap; a save that fails them is never written.
       const verify = (gz: Uint8Array): Promise<unknown> =>
-        parseSave(gz, LIMITS.maxSaveJsonBytes).catch((e: unknown) => {
+        parseSave(gz, LIMITS.maxSaveJsonBytes, true).catch((e: unknown) => {
           console.error(UNREADABLE);
           throw new Error(`it would not restore: ${errText(e)}`);
         });

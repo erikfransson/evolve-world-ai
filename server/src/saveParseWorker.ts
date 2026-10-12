@@ -7,7 +7,7 @@ import type { EcoState } from "../../src/typescript/src/sim/ecoState.ts";
 // A real save is a few long base64 texts and some 15 000 commas and brackets (at most about 520 000 for 20 000 creatures), while a crafted one
 // of millions of tiny values ("[{},{},...]") makes JSON.parse allocate far more than its size and grind near the heap cap; it is refused unparsed.
 const MAX_JSON_TOKENS = 1_000_000;
-const { gz, maxJsonBytes } = workerData as { gz: Uint8Array; maxJsonBytes: number };
+const { gz, maxJsonBytes, verifyOnly } = workerData as { gz: Uint8Array; maxJsonBytes: number; verifyOnly: boolean };
 try {
   const json = gunzipSync(gz, { maxOutputLength: maxJsonBytes });
   let tokens = 0;
@@ -17,7 +17,8 @@ try {
   }
   const state = JSON.parse(json.toString("utf8")) as EcoState;
   // Post the state rebuilt from the checked world, so unknown keys and junk in the file never reach the main heap.
-  parentPort!.postMessage({ ok: true, state: saveState(restoreState(state, null)) });
+  const world = restoreState(state, null);
+  parentPort!.postMessage({ ok: true, state: verifyOnly ? null : saveState(world) });
 } catch (e) {
   parentPort!.postMessage({ ok: false, reason: e instanceof Error ? e.message : String(e) });
 }

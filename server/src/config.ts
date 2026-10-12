@@ -32,7 +32,7 @@ export const LIVE = {
     maxCopies: 3, // copies per add (the protocol allows at most 3)
     aliveShare: 0.1, // added creatures alive (the inserted ones, not their children) at most this share of the population
     perVisitor: 3, // creatures per visitor address per window; needs trustForwardedFor
-    socketEveryS: 10, // one add per this many seconds on one connection (burst 2); faster gets the connection cut
+    socketEveryS: 10, // one add per this many seconds on one connection (burst 2); faster is refused with retryS, and 3 strikes (one back per minute) cut the connection
     minSpeed: 0.5, // simulated seconds per real second: below this the world counts as busy and adds wait
     startEnergy: 300, // energy an added creature starts with (the visitor never sets it)
     birthHoldS: 60, // simulated seconds after insertion before an added creature may first give birth; its children start without it
