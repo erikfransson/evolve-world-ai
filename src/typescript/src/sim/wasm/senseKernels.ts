@@ -5,6 +5,7 @@ import { seenEnergyScale, speciesList } from "../species.ts";
 import type { Crowd } from "../crowd.ts";
 import type { World } from "../world.ts";
 import { WasmBrainBank } from "./brainKernel.ts";
+import type { PhaseTimer } from "../profile.ts";
 import { MAX_RAYS, WasmSenser } from "./senser.ts";
 
 // senseThinkBatch on the WASM kernels: sense.wat does rays and brain inputs for the whole batch in one call, then the brains run
@@ -40,7 +41,12 @@ export class SenseKernels {
     return brains && senser ? new SenseKernels(brains, senser, config) : null;
   }
 
-  run(world: World, crowd: Crowd, batch: SenseBatch): void {
+  // The kernel memory as floats, where adopted outputs live; read it fresh, as growth replaces it.
+  get f32(): Float32Array {
+    return this.brains.f32;
+  }
+
+  run(world: World, crowd: Crowd, batch: SenseBatch, prof: PhaseTimer | null = null): void {
     const n = batch.count;
     if (n === 0) return;
     const { creatures, selves } = batch;
@@ -53,10 +59,14 @@ export class SenseKernels {
       if (creatures[k] === this.detail) at = k;
     }
     const detail = at >= 0 ? this.detail : null;
+    prof?.lap("slots");
     this.senser.run(world, crowd, creatures, slots, selves, n, this.stride, this.energyScale, detail);
+    prof?.lap("senser");
     brains.forwardSlots(slots, n);
+    prof?.lap("brain forward");
     const f32 = brains.f32;
     for (let k = 0; k < n; k++) creatures[k]!.adoptOutput(brains, brains.outputAt(slots[k]!));
+    prof?.lap("adopt output");
     if (detail) {
       this.senser.readRays(detail, crowd);
       detail.adoptInput(f32, brains.inputAt(slots[at]!));

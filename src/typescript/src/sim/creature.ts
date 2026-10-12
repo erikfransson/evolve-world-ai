@@ -10,6 +10,7 @@ import { RayCache } from "./world.ts";
 import type { World } from "./world.ts";
 import type { Crowd } from "./crowd.ts";
 import type { SenseKernels } from "./wasm/senseKernels.ts";
+import type { PhaseTimer } from "./profile.ts";
 
 let created = 0; // objects made so far in this process
 
@@ -268,8 +269,8 @@ export class Creature {
   }
 
   // Moves each memory unit toward its target from the last decide.
-  remember(): void {
-    const output = this.outView();
+  // output is the array outputs live in (outView()); a caller doing many creatures passes the kernel's, fetched once.
+  remember(output: Float32Array = this.outView()): void {
     const at = this.outAt + OUTPUT_SIZE;
     const memory = this.units;
     // Outputs are already tanh-squashed, so each unit relaxes toward tanh of its target's pre-activation.
@@ -285,9 +286,9 @@ export class Creature {
   }
 
   // Motion and energy costs from the last think, without eating or death; touches only this creature.
-  steer(): void {
+  steer(output: Float32Array = this.outView()): void {
     const upkeep = this.energyUpkeep * agingFactor(this.aging, this.state.ticksAlive);
-    stepBody(this.state, this.outView()[this.outAt + OUT_TURN], thrustCommand(this.outView()[this.outAt + OUT_THRUST], this.config.creature.brakeThreshold), this.config, this.decays, this.heading, upkeep);
+    stepBody(this.state, output[this.outAt + OUT_TURN], thrustCommand(output[this.outAt + OUT_THRUST], this.config.creature.brakeThreshold), this.config, this.decays, this.heading, upkeep);
   }
 
   // The first item this creature touches at its position, or -1; changes nothing.
@@ -323,19 +324,21 @@ export class SenseBatch {
   readonly creatures: Creature[] = [];
   selves = new Int32Array(64);
   count = 0;
+  sorted = false; // already in slot order, so sortBySlot has nothing to do; cleared by clear
   private keys = new Float64Array(64);
   private scratchCreatures: Creature[] = [];
   private scratchSelves = new Int32Array(64);
 
   clear(): void {
     this.count = 0;
+    this.sorted = false;
   }
 
   // Puts the batch in creature construction order, so the per-creature data (brain weights, ray caches) is read front to back
   // however the list was reordered by deaths and births. Sensing and thinking write only a creature's own data, so results do not depend on it.
   sortBySlot(): void {
     const n = this.count;
-    if (n < 2) return;
+    if (n < 2 || this.sorted) return;
     if (this.keys.length < n) this.keys = new Float64Array(Math.max(n, 2 * this.keys.length));
     const keys = this.keys.subarray(0, n);
     const { creatures, selves } = this;
@@ -370,9 +373,11 @@ export class SenseBatch {
 // Sense and think for a whole batch; writes only each creature's rays and outputs. The one boundary for the per-tick
 // creature work, used by Ecosystem.sensePhase and the helper threads (ecoShare.ts). With kernels, the crowd rays and the
 // brains run in WebAssembly (f32); every owner of creatures (an Ecosystem, a helper) has its own kernels.
-export function senseThinkBatch(world: World, crowd: Crowd, batch: SenseBatch, kernels: SenseKernels | null = null): void {
+export function senseThinkBatch(world: World, crowd: Crowd, batch: SenseBatch, kernels: SenseKernels | null = null, prof: PhaseTimer | null = null): void {
   batch.sortBySlot();
-  if (kernels) return kernels.run(world, crowd, batch);
+  prof?.lap("sort batch");
+  if (kernels) return kernels.run(world, crowd, batch, prof);
   const { creatures, selves } = batch;
   for (let k = 0; k < batch.count; k++) creatures[k]!.senseThink(world, crowd, selves[k]!);
+  prof?.lap("js sense and think");
 }
