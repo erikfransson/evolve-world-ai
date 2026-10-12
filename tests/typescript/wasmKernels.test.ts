@@ -355,8 +355,9 @@ describe("sense.wat (SenseKernels)", () => {
       const d = rng.int(t.rockCount);
       const near = t.rockR[d]! + rng.range(5, 220);
       const a = rng.range(0, 2 * Math.PI);
-      const x = t.rockX[d]! + near * Math.cos(a);
-      const y = t.rockY[d]! + near * Math.sin(a);
+      const hug = tries % 2 === 0; // half the spots hug rock, half lie anywhere, so mud and firm ground are both under some
+      const x = hug ? t.rockX[d]! + near * Math.cos(a) : rng.range(20, 2980);
+      const y = hug ? t.rockY[d]! + near * Math.sin(a) : rng.range(20, 1980);
       const apart = spots.every(([sx, sy]) => Math.hypot(sx - x, sy - y) > 300); // out of each other's sight, so the f32 crowd path stays out of it
       if (apart && x > 12 && y > 12 && x < 2988 && y < 1988 && !t.touchesRock(x, y, 12)) spots.push([x, y, rng.range(0, 2 * Math.PI)]);
     }

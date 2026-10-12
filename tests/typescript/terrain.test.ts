@@ -7,6 +7,8 @@ import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
 import { Episode } from "../../src/typescript/src/sim/episode.ts";
 import { decaysFor, stepBody } from "../../src/typescript/src/sim/physics.ts";
 import { createRng } from "../../src/typescript/src/sim/rng.ts";
+import { GroundField } from "../../src/typescript/src/sim/groundField.ts";
+import { groundBodies } from "../../src/typescript/src/ui/groundOutline.ts";
 import { inputLayout } from "../../src/typescript/src/sim/sensors.ts";
 import { MAX_DISCS_PER_PIECE, FAST_FACTOR, SLOW_FACTOR, TERRAIN_FAST, TERRAIN_SLOW, Terrain, terrainOf } from "../../src/typescript/src/sim/terrain.ts";
 import { HIT_FOOD, HIT_NONE, HIT_POISON, HIT_WALL } from "../../src/typescript/src/sim/types.ts";
@@ -27,7 +29,7 @@ describe("terrainOf", () => {
     const b = terrainOf({ seed: 1, world: { ...withMap().world } });
     expect(a).toBe(b);
     expect(a.rockCount).toBeGreaterThan(0);
-    expect(a.patchX.length).toBeGreaterThan(0);
+    expect(a.ground).not.toBeNull();
     expect(discs(terrainOf({ ...withMap(), seed: 2 }))).not.toEqual(discs(a));
   });
 
@@ -36,7 +38,7 @@ describe("terrainOf", () => {
     const full = terrainOf(withMap());
     const noPatches = terrainOf(withMap({ slowDensity: 0, fastDensity: 0 }));
     expect(discs(noPatches)).toEqual(discs(full));
-    expect(Array.from(terrainOf(withMap({ stoneDensity: 0.02 })).patchX)).toEqual(Array.from(full.patchX));
+    expect(terrainOf(withMap({ stoneDensity: 0.02 })).ground!.data).toEqual(full.ground!.data);
   });
 
   it("keeps rock and creatures-wide gaps inside the world, with boulders at least 500 across", () => {
@@ -67,11 +69,11 @@ describe("terrainOf", () => {
   });
 
   it("scales the patches with their size setting and keeps today's map at size 1", () => {
-    const radius = (t: Terrain): number => Math.max(...t.patchR);
     const base = terrainOf(withMap());
-    expect(Array.from(terrainOf(withMap({ slowSize: 1, fastSize: 1 })).patchR)).toEqual(Array.from(base.patchR));
-    expect(radius(terrainOf(withMap({ slowSize: 2, fastSize: 2 })))).toBeGreaterThan(1.5 * radius(base));
-    expect(radius(terrainOf(withMap({ slowSize: 0.5, fastSize: 0.5 })))).toBeLessThan(0.7 * radius(base));
+    const count = (t: Terrain): number => groundBodies(t, 1).length;
+    expect(terrainOf(withMap({ slowSize: 1, fastSize: 1 })).ground!.data).toEqual(base.ground!.data);
+    expect(count(terrainOf(withMap({ slowSize: 2, fastSize: 2 })))).toBeLessThan(0.6 * count(base)); // the same share of the world in fewer, larger patches
+    expect(count(terrainOf(withMap({ slowSize: 0.5, fastSize: 0.5 })))).toBeGreaterThan(1.5 * count(base));
     expect(discs(terrainOf(withMap({ slowSize: 2 })))).toEqual(discs(base)); // rock does not move
   });
 });
@@ -165,7 +167,9 @@ describe("rays and rock", () => {
 describe("ground and rock under a body", () => {
   const body = (x: number, y: number): CreatureState => ({ x, y, heading: 0, vx: 100, vy: 0, turnRate: 0, energy: 50, alive: true, ticksAlive: 0 });
   const config = structuredClone(DEFAULT_CONFIG);
-  const patches = new Terrain([], [{ x: 200, y: 200, r: 100, kind: TERRAIN_SLOW }, { x: 600, y: 200, r: 100, kind: TERRAIN_FAST }], 1000, 1000);
+  const field = new GroundField(1000, 1000);
+  for (const [layer, cx] of [[0, 200], [1, 600]] as const) for (let y = 100; y <= 300; y += field.cell) for (let x = cx - 100; x <= cx + 100; x += field.cell) field.set(layer, x, y, 255);
+  const patches = new Terrain([], field, 1000, 1000);
 
   it("scales the distance moved per tick by 50% on slow and 175% on fast ground, and not the energy cost", () => {
     const move = (x: number) => {
@@ -186,7 +190,7 @@ describe("ground and rock under a body", () => {
   });
 
   it("bounces a body off a disc like a wall and never leaves it inside", () => {
-    const rock = new Terrain([{ x: 500, y: 500, r: 100 }, { x: 560, y: 500, r: 100 }], [], 1000, 1000);
+    const rock = new Terrain([{ x: 500, y: 500, r: 100 }, { x: 560, y: 500, r: 100 }], null, 1000, 1000);
     const s = body(386, 500);
     stepBody(s, 0, 0, { ...config, creature: { ...config.creature, radius: 12, wallBounce: 0.6 } }, decaysFor(config), { cos: 1, sin: 0 }, 0, rock);
     expect(s.x).toBeCloseTo(500 - 112, 6); // the contact normal points along x

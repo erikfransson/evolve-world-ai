@@ -39,6 +39,7 @@
   * `index.html` landing page, `trials/`, `ecosystem/`, `arena/` (RL Arena: design, train and watch creatures), `live/` (Live World viewer)
   * `src/sim/` simulation; `creature.ts` (body, brain, senses) and `world.ts` (items, rays) are shared by modes
   * `src/sim/terrain.ts` the map (#34): stones and ridges creatures bounce off and rays see as walls, and mud and firm ground that change their speed (50% and 175%); generated from the seed, shared by all modes (`world.stoneDensity` and the other three, each a share of the world area, 0 for none). Brains get a terrain input; `upgradeGenome` (in `brain.ts`) adds it, as zero weights, to genomes made before it
+  * `src/sim/groundField.ts` the mud and firm ground as a smooth raster field (50 to 100 unit cells, one byte per kind per node, bilinear, 0.5 threshold); `Terrain.valueAt` reads it and `src/ui/groundOutline.ts` draws its exact 0.5 contour, so drawn and sensed ground agree. Meant to also carry food and poison weights later
   * `src/sim/species.ts` species of a multi-species world (own body ranges, costs, births and diet), used by the RL Arena; the Ecosystem is the one-species case
   * `src/sim/rl/` RL environments, evolution strategies learner and creature library. `src/rlTrain.ts` and `src/rlBench.ts` are its command-line entry points
   * `src/worker/` simulation workers and helpers; `renderWorker.ts` draws the Ecosystem on an OffscreenCanvas, fed snapshots by the simulation worker. It is on where the browser supports it, and the page draws instead when it is not (or with `?offscreen=0`)
