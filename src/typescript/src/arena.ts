@@ -34,6 +34,7 @@ import { $, durationText } from "./ui/page.ts";
 import { buildForm } from "./ui/settingsForm.ts";
 import { RewardGraph } from "./ui/rewardGraph.ts";
 import { bindGentle } from "./ui/gentle.ts";
+import { siteUpdated } from "./ui/staleSite.ts";
 import { initTooltips } from "./ui/tooltip.ts";
 
 // public/pool.json and rl/library.json sit at the site root, one level above this page.
@@ -433,7 +434,8 @@ function begin(): void {
   worker.onmessage = (ev: MessageEvent<RlOutMessage>) => onMessage(ev.data);
   worker.onerror = (ev) => {
     console.error("RL Arena worker error", ev.error ?? ev);
-    fail(ev.message || "the training worker crashed (details in the browser console)");
+    if (ev.message) return fail(ev.message);
+    void siteUpdated().then((updated) => fail(updated ? "the site was updated while this page was open. Reload the page to train again." : "the training worker crashed (details in the browser console)"));
   };
   grid.setCount(TILE_COUNTS.includes(tiles as 1) ? tiles : DEFAULT_TILES);
   zoom.close();
