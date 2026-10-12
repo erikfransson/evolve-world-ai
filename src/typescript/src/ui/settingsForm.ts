@@ -1,5 +1,6 @@
 import { itemCounts, POISON_LETHAL } from "../sim/config.ts";
 import type { EngineConfig } from "../sim/config.ts";
+import { MAP_DENSITY_MAX } from "../sim/terrain.ts";
 import { escapeAttr } from "./page.ts";
 
 // Settings forms: one table drives the markup, the config read and the fill, so a field is declared once.
@@ -72,10 +73,10 @@ export function mapFields<C extends Sized>(): Range<C>[] {
   const field = (id: MapKey, label: string, tip: string, max: number): Range<C> =>
     range<C>({ id, label, tip: `${tip} The share of the world it covers, 0 for none. The same seed gives the same map.`, min: 0, max, step: 0.005, fmt: "pct1", get: (c) => c.world[id], set: (c, v) => { c.world[id] = v; } });
   return [
-    field("stoneDensity", "Stones", "Huge round stones, 500 units across or more, that creatures bounce off and cannot see past.", 0.2),
-    field("ridgeDensity", "Mountain ridges", "Long curved ridges of rock that creatures bounce off and cannot see past.", 0.15),
-    field("slowDensity", "Slow ground", "Patches of mud where creatures move at half speed. They sense when they stand on it.", 0.3),
-    field("fastDensity", "Fast ground", "Patches of firm ground where creatures move at 175% speed. They sense when they stand on it.", 0.3),
+    field("stoneDensity", "Stones", "Huge round stones, 500 units across or more, that creatures bounce off and cannot see past.", MAP_DENSITY_MAX.stoneDensity),
+    field("ridgeDensity", "Mountain ridges", "Long curved ridges of rock that creatures bounce off and cannot see past.", MAP_DENSITY_MAX.ridgeDensity),
+    field("slowDensity", "Slow ground", "Patches of mud where creatures move at half speed. They sense when they stand on it.", MAP_DENSITY_MAX.slowDensity),
+    field("fastDensity", "Fast ground", "Patches of firm ground where creatures move at 175% speed. They sense when they stand on it.", MAP_DENSITY_MAX.fastDensity),
   ];
 }
 

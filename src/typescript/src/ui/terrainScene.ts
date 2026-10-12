@@ -141,14 +141,22 @@ function drawMarks(ctx: CanvasRenderingContext2D, t: Terrain, scale: number, vie
   const i1 = Math.min(Math.floor(t.width / MARK_CELL), Math.floor(view.x1 / MARK_CELL));
   const j0 = Math.max(0, Math.floor(view.y0 / MARK_CELL));
   const j1 = Math.min(Math.floor(t.height / MARK_CELL), Math.floor(view.y1 / MARK_CELL));
+  const cols = i1 - i0 + 1;
+  const ground = new Int8Array(Math.max(0, cols * (j1 - j0 + 1))); // the ground at each cell's mark, looked up once
+  const at = (i: number, j: number): [number, number] => [(i + 0.15 + 0.7 * hash(i, j, 1)) * MARK_CELL, (j + 0.15 + 0.7 * hash(i, j, 2)) * MARK_CELL];
+  for (let j = j0; j <= j1; j++) {
+    for (let i = i0; i <= i1; i++) {
+      const [x, y] = at(i, j);
+      ground[(j - j0) * cols + i - i0] = x > t.width || y > t.height ? 0 : t.valueAt(x, y);
+    }
+  }
   for (const { kind, mark } of GROUND) {
     ctx.strokeStyle = mark;
     ctx.beginPath();
     for (let j = j0; j <= j1; j++) {
       for (let i = i0; i <= i1; i++) {
-        const x = (i + 0.15 + 0.7 * hash(i, j, 1)) * MARK_CELL;
-        const y = (j + 0.15 + 0.7 * hash(i, j, 2)) * MARK_CELL;
-        if (x > t.width || y > t.height || t.valueAt(x, y) !== kind) continue;
+        if (ground[(j - j0) * cols + i - i0] !== kind) continue;
+        const [x, y] = at(i, j);
         if (kind === TERRAIN_SLOW) {
           // a short wave
           ctx.moveTo(x - 14, y);

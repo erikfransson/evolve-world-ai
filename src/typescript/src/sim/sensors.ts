@@ -46,7 +46,9 @@ export const FEAT_POISON = 2;
 export const FEAT_WALL = 3;
 export const FEAT_CREATURE = 4; // the first species flag
 export const FEAT_SEEN_ENERGY = 5; // with one species; in general the last ray feature
-export const INPUT_EXTRA_LABELS = ["energy", "speed", "lateral", "turn", "terrain"] as const; // speed is forward, lateral is sideways; terrain is -1 slow, 0 normal, 1 fast ground under the creature
+// speed is forward, lateral is sideways; terrain is -1 slow, 0 normal, 1 fast ground under the creature.
+export const INPUT_EXTRA_LABELS = ["energy", "speed", "lateral", "turn", "terrain"] as const;
+export const INPUT_EXTRA_SHORT = ["E", "S", "L", "T", "G"] as const; // one letter each for the brain view, G for ground
 export const EXTRA_INPUTS = INPUT_EXTRA_LABELS.length;
 export const EXTRA_TERRAIN = 4; // index of the terrain input among the extras
 
@@ -140,7 +142,8 @@ export function energySignal(energy: number, startEnergy: number): number {
   return 1 - Math.exp(-energy / startEnergy);
 }
 
-// Extras: squashed energy, forward and sideways speed / top speed, turnRate / maxTurnRate, terrain (valueAt of the ground). Allocation-free.
+// Extras: squashed energy, forward and sideways speed / top speed, turnRate / maxTurnRate, then the terrain value under the creature.
+// Allocation-free.
 export function encodeInputs(state: CreatureState, rays: readonly RayHit[], config: EngineConfig, out: Float32Array, cosHeading: number, sinHeading: number, terrain = 0): void {
   const c = config.creature;
   const stride = rayFeatureCount(config);

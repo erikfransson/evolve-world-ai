@@ -80,12 +80,14 @@ describe("ThinkPool", () => {
       c.eco.agingRate = 3;
       c.eco.seasons = true;
       c.eco.yearMinutes = 0.2; // a short year so winter is passed
+      Object.assign(c.world, { width: 1600, height: 1200, stoneDensity: 0.08, ridgeDensity: 0.05, slowDensity: 0.15, fastDensity: 0.15 }); // rock and ground: helpers rebuild the map from config and seed
       return c;
     };
     const without: Record<string, (c: EcoConfig) => void> = {
       damage: (c) => { c.eco.collisionDamage = false; },
       aging: (c) => { c.eco.aging = false; },
       seasons: (c) => { c.eco.seasons = false; },
+      map: (c) => { Object.assign(c.world, { stoneDensity: 0, ridgeDensity: 0, slowDensity: 0, fastDensity: 0 }); },
     };
     // A predators world, a small and dense one so hunters catch prey within a few hundred ticks.
     const predators = (wasm: boolean): EcoConfig => {
@@ -111,7 +113,7 @@ describe("ThinkPool", () => {
       expect(failures).toEqual([]);
     }
 
-    it.each([false, true])("matches with collision damage, ageing and seasons on, WebAssembly %s", async (wasm) => {
+    it.each([false, true])("matches with collision damage, ageing, seasons and a map on, WebAssembly %s", async (wasm) => {
       const ref = serial(rich(wasm), 250);
       expect(ref.wasm).toBe(wasm);
       expect(ref.births).toBeGreaterThan(0);

@@ -1,6 +1,7 @@
 import type { EngineConfig } from "./config.ts";
 import { createRng, deriveSeed } from "./rng.ts";
 import type { StatefulRng } from "./rng.ts";
+import type { Body } from "./physics.ts";
 
 // Static map features (#34), generated deterministically from the run seed and the world settings, so every thread that builds
 // the world gets the same ones. Rock (stones and ridges) is a set of discs that creatures bounce off like walls and rays report
@@ -22,11 +23,16 @@ const TRIES = 40; // placements tried per piece before giving up on the rest of 
 const MAX_ROCK_SHARE = 0.4; // rock never covers more of the world than this, however high the setting
 export const ROCK_CELL = 300; // world units per cell of the rock grid
 
-export interface Body {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
+export const MAX_PIECES = 300; // pieces of one kind, however high the setting, so a map stays cheap to build and to look up
+// The most the settings forms allow for each density; a saved or pasted config above these is refused.
+export const MAP_DENSITY_MAX = { stoneDensity: 0.2, ridgeDensity: 0.15, slowDensity: 0.3, fastDensity: 0.3 } as const;
+
+// Throws when a world's map densities are not numbers in 0 .. the form's maximum. Used by every path that reads settings from outside.
+export function checkMapDensities(world: object): void {
+  for (const [key, max] of Object.entries(MAP_DENSITY_MAX)) {
+    const v = (world as Record<string, unknown>)[key];
+    if (v !== undefined && !(typeof v === "number" && v >= 0 && v <= max)) throw new Error(`config "world.${key}" must be a number from 0 to ${max}`);
+  }
 }
 
 interface Circle {
@@ -56,6 +62,9 @@ export class Terrain {
   readonly patchY: Float64Array;
   readonly patchR: Float64Array;
   readonly patchKind: Int8Array;
+  // Grid of the patch discs, cells as for rock: cell c lists the discs touching it, in index order, as patchOrder[patchStart[c] .. patchStart[c + 1] - 1].
+  readonly patchStart: Int32Array;
+  readonly patchOrder: Int32Array;
   readonly empty: boolean; // no rock and no patches
 
   constructor(rock: readonly Circle[], patches: readonly (Circle & { kind: number })[], width: number, height: number) {
@@ -80,6 +89,20 @@ export class Terrain {
     this.patchR = Float64Array.from(patches, (d) => d.r);
     this.patchKind = Int8Array.from(patches, (d) => d.kind);
     this.empty = rock.length === 0 && patches.length === 0;
+    const cells = this.cols * this.rows;
+    const span = (d: Circle): number[] => [Math.max(0, Math.floor((d.x - d.r) / ROCK_CELL)), Math.min(this.cols - 1, Math.floor((d.x + d.r) / ROCK_CELL)), Math.max(0, Math.floor((d.y - d.r) / ROCK_CELL)), Math.min(this.rows - 1, Math.floor((d.y + d.r) / ROCK_CELL))];
+    const each = (visit: (c: number, i: number) => void): void => {
+      patches.forEach((d, i) => {
+        const [x0, x1, y0, y1] = span(d) as [number, number, number, number];
+        for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) visit(cy * this.cols + cx, i);
+      });
+    };
+    this.patchStart = new Int32Array(cells + 1);
+    each((c) => this.patchStart[c + 1]!++);
+    for (let c = 0; c < cells; c++) this.patchStart[c + 1]! += this.patchStart[c]!;
+    const next = this.patchStart.slice(0, -1);
+    this.patchOrder = new Int32Array(this.patchStart[cells]!);
+    each((c, i) => (this.patchOrder[next[c]!++] = i));
   }
 
   private cellOf(x: number, y: number): number {
@@ -102,7 +125,9 @@ export class Terrain {
 
   // -1 on slow ground, 1 on fast ground, 0 elsewhere.
   valueAt(x: number, y: number): number {
-    for (let i = 0; i < this.patchX.length; i++) {
+    const c = this.cellOf(x, y);
+    for (let k = this.patchStart[c]!, end = this.patchStart[c + 1]!; k < end; k++) {
+      const i = this.patchOrder[k]!;
       const dx = x - this.patchX[i]!;
       const dy = y - this.patchY[i]!;
       if (dx * dx + dy * dy < this.patchR[i]! ** 2) return this.patchKind[i]!;
@@ -191,7 +216,7 @@ export const NO_TERRAIN = new Terrain([], [], 1, 1);
 // their discs to placed (one array per piece). Stops early when a piece finds no room.
 function place(target: number, make: () => { discs: Circle[]; area: number }, ok: (discs: Circle[]) => boolean, placed: Circle[][]): void {
   let covered = 0;
-  for (let count = 0; covered < target || count === 0; count++) {
+  for (let count = 0; (covered < target || count === 0) && count < MAX_PIECES; count++) {
     let piece: { discs: Circle[]; area: number } | null = null;
     for (let t = 0; t < TRIES && !piece; t++) {
       const candidate = make();
@@ -289,13 +314,15 @@ const cache = new Map<string, Terrain>();
 
 // The map of a config, built once per process and shared by every world and creature that uses it.
 export function terrainOf(config: TerrainSettings): Terrain {
-  const { width, height, stoneDensity, ridgeDensity, slowDensity, fastDensity } = config.world;
+  const { width, height } = config.world;
+  const limit = (key: keyof typeof MAP_DENSITY_MAX): number => Math.min(MAP_DENSITY_MAX[key], Math.max(0, config.world[key]) || 0); // defence in depth: callers that skip checkMapDensities get the form's range
+  const [stoneDensity, ridgeDensity, slowDensity, fastDensity] = [limit("stoneDensity"), limit("ridgeDensity"), limit("slowDensity"), limit("fastDensity")] as const;
   if (!(stoneDensity > 0 || ridgeDensity > 0 || slowDensity > 0 || fastDensity > 0)) return NO_TERRAIN;
   const key = [config.seed, width, height, stoneDensity, ridgeDensity, slowDensity, fastDensity].join("|");
   let t = cache.get(key);
   if (!t) {
     if (cache.size >= 8) cache.clear(); // settings edited in a form make many keys; keep only the recent ones
-    cache.set(key, (t = generate(config)));
+    cache.set(key, (t = generate({ seed: config.seed, world: { width, height, stoneDensity, ridgeDensity, slowDensity, fastDensity } })));
   }
   return t;
 }

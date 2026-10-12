@@ -80,7 +80,7 @@ export function stepBody(s: CreatureState, turnOut: number, thrust: number, conf
   s.energy -= (upkeep + c.thrustCost * Math.max(0, thrust) + (c.turnCost * Math.abs(s.turnRate)) / c.maxTurnRate) * dt;
 }
 
-type Body = Pick<CreatureState, "x" | "y" | "vx" | "vy">;
+export type Body = Pick<CreatureState, "x" | "y" | "vx" | "vy">;
 
 // Out parameter of collide: how fast the pair approached along the line between centres, units/s.
 export interface Contact {

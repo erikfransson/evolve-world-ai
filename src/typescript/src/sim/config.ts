@@ -1,3 +1,4 @@
+import { checkMapDensities } from "./terrain.ts";
 import type { SpeciesConfig } from "./species.ts";
 
 // All tunable values of a run. Units: world units, seconds, energy points.
@@ -195,6 +196,8 @@ export function overrideConfig<T extends object>(base: T, overrides: DeepPartial
   if (!isPlain(overrides)) throw new Error(`config overrides must be an object, got ${describe(overrides)}`);
   const config = structuredClone(base);
   applyOverrides(config as Record<string, unknown>, overrides, "");
+  const world = (config as { world?: object }).world;
+  if (world) checkMapDensities(world);
   return config;
 }
 
