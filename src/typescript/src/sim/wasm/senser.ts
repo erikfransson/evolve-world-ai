@@ -170,7 +170,8 @@ export class WasmSenser {
     const count = this.rowCount.length >= rows + 1 ? this.rowCount.fill(0) : (this.rowCount = new Int32Array(rows + 1));
     const inv = 1 / world.cell;
     for (let k = 0; k < n; k++) {
-      const row = Math.min(rows - 1, Math.max(0, Math.floor(creatures[k]!.state.y * inv)));
+      const v = Math.floor(creatures[k]!.state.y * inv);
+      const row = v >= 0 ? Math.min(rows - 1, v) : 0; // NaN and negative go to row 0
       place[k] = row;
       count[row + 1]!++;
     }

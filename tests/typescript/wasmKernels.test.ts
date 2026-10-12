@@ -205,6 +205,7 @@ describe("sense.wat (SenseKernels)", () => {
     rays: number;
     spread: number;
     length?: number;
+    itemRadius?: number;
     creatures: Spot[];
     items?: [number, number, number][]; // x, y, kind
     species?: number; // species count; creature k is of species k % species, and rays carry one flag per species
@@ -216,7 +217,7 @@ describe("sense.wat (SenseKernels)", () => {
     const cfg = {
       ...base,
       species: names.map((name) => ({ name, hue: -1, hueSpread: 360, plants: true, prey: [], eatEfficiency: 0, eatBaseline: 0 })),
-      world: { ...base.world, width: o.width ?? 1200, height: o.height ?? 800 },
+      world: { ...base.world, width: o.width ?? 1200, height: o.height ?? 800, ...(o.itemRadius === undefined ? {} : { itemRadius: o.itemRadius }) },
       creature: { ...base.creature, rayCount: o.rays, raySpread: o.spread, rayLength: o.length ?? 100 },
     };
     const eng = o.species ? speciesEngine(cfg, speciesList(cfg)[0]!) : cfg; // what a creature of the ecosystem runs on
@@ -308,6 +309,24 @@ describe("sense.wat (SenseKernels)", () => {
     });
     const { seen } = check({ rays: 9, spread: 1.4, creatures: spots, items: graze }, true);
     expect(seen).toContain(HIT_FOOD);
+  });
+
+  it("matches the JS rays for items a few float steps either side of the exact-test boundary, for any item radius", () => {
+    const ulp = 2 ** -15; // spacing of f32 values in [256, 512)
+    check({ rays: 1, spread: 0, width: 6000, length: 5000, itemRadius: 0, creatures: [[500, 100, 0]], items: [[4500, 100 + 2.29e-5, 1]] }, true); // far item, rounding makes the discriminant 0
+    for (const itemRadius of [4, 1e-4, 0]) {
+      const items: [number, number, number][] = [];
+      for (let i = 0; i < 10; i++) {
+        for (let j = -3; j <= 3; j++) {
+          if (j === 0 && itemRadius === 0) continue; // an item on the ray would hide the grazing ones behind it
+          items.push([3000 + 200 * i, 400 + itemRadius + j * ulp, 1], [3100 + 200 * i, 400 - itemRadius + j * ulp, 2]);
+        }
+      }
+      const rng = createRng(9);
+      for (let i = 0; i < 40; i++) items.push([rng.range(3000, 5000), 400 + rng.range(-1, 1) * itemRadius, 1]);
+      check({ rays: 1, spread: 0, width: 6000, length: 5000, itemRadius, creatures: [[600, 400, 0]], items }, true);
+      check({ rays: 3, spread: 1e-3, width: 6000, length: 5000, itemRadius, creatures: [[600, 400, 0]], items }, true);
+    }
   });
 
   it("handles a plan with zero rays", () => {

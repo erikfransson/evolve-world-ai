@@ -24,7 +24,7 @@
     (local $d0xf f32) (local $d0yf f32) (local $d1xf f32) (local $d1yf f32) (local $fxf f32) (local $fyf f32) (local $d2f f32)
     (local $k i32) (local $e i32) (local $row i32) (local $g i32) (local $ro i32) (local $sstart i32) (local $sx i32) (local $sy i32) (local $own i32)
     (local $dxv v128) (local $dyv v128) (local $bs v128) (local $ix v128) (local $bv v128) (local $cv v128) (local $discv v128) (local $tv v128) (local $inside v128) (local $m v128)
-    (local $mk i32) (local $ng i32) (local $rtv v128) (local $fxv v128) (local $fyv v128)
+    (local $mk i32) (local $ng i32) (local $rtv v128) (local $sv v128) (local $fxv v128) (local $fyv v128)
     (local $ist i32) (local $ixy i32) (local $ikd i32)
     (local $ps i32) (local $base i32) (local $sigp i32) (local $cStart i32) (local $ccols i32) (local $crows i32)
     (local.set $n (i32.load offset=100 (local.get $P)))
@@ -159,9 +159,9 @@
         (i32.store offset=1536 (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 2))) (local.get $kind))
         (local.set $i (i32.add (local.get $i) (i32.const 1)))
         (br $rl)))
-      ;; candidates in order, each tested only against the rays it can touch. A ray at distance s from the centre misses unless |s| <= r (plus a margin far above the rounding of
+      ;; candidates in order, each tested only against the rays it can touch. A ray at distance s from the centre misses unless s^2 <= r^2 (plus a relative margin far above the rounding of
       ;; the exact test below), so the exact test runs on the few rays that pass this cheap two-ray check. Per ray the candidates still arrive in the same order.
-      (local.set $rtv (f64x2.splat (f64.add (f64.add (local.get $r) (f64.const 1e-6)) (f64.mul (f64.const 1e-9) (local.get $L)))))
+      (local.set $rtv (f64x2.splat (f64.add (f64.mul (local.get $r) (local.get $r)) (f64.mul (f64.const 1e-9) (f64.mul (f64.add (local.get $L) (f64.abs (local.get $r))) (f64.add (local.get $L) (f64.abs (local.get $r))))))))
       (local.set $ng (i32.shr_u (i32.add (local.get $nR) (i32.const 1)) (i32.const 1)))
       (local.set $cp (local.get $cand))
       (block $cd (loop $cl
@@ -171,11 +171,10 @@
         (local.set $g (i32.const 0))
         (block $gd3 (loop $gl3
           (br_if $gd3 (i32.ge_u (local.get $g) (local.get $ng)))
-          (local.set $mk (i64x2.bitmask (f64x2.le
-            (f64x2.abs (f64x2.sub
-              (f64x2.mul (local.get $fxv) (v128.load offset=512 (i32.add (local.get $scr) (i32.shl (local.get $g) (i32.const 4)))))
-              (f64x2.mul (local.get $fyv) (v128.load (i32.add (local.get $scr) (i32.shl (local.get $g) (i32.const 4)))))))
-            (local.get $rtv))))
+          (local.set $sv (f64x2.sub
+            (f64x2.mul (local.get $fxv) (v128.load offset=512 (i32.add (local.get $scr) (i32.shl (local.get $g) (i32.const 4)))))
+            (f64x2.mul (local.get $fyv) (v128.load (i32.add (local.get $scr) (i32.shl (local.get $g) (i32.const 4)))))))
+          (local.set $mk (i64x2.bitmask (f64x2.le (f64x2.mul (local.get $sv) (local.get $sv)) (local.get $rtv))))
           (block $zd (loop $zl
             (br_if $zd (i32.eqz (local.get $mk)))
             (local.set $i (i32.add (i32.shl (local.get $g) (i32.const 1)) (i32.ctz (local.get $mk))))
