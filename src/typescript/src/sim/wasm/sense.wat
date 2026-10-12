@@ -24,6 +24,8 @@
     (local $d0xf f32) (local $d0yf f32) (local $d1xf f32) (local $d1yf f32) (local $fxf f32) (local $fyf f32) (local $d2f f32)
     (local $k i32) (local $e i32) (local $row i32) (local $g i32) (local $ro i32) (local $sstart i32) (local $sx i32) (local $sy i32) (local $own i32)
     (local $dxv v128) (local $dyv v128) (local $bs v128) (local $ix v128) (local $bv v128) (local $cv v128) (local $discv v128) (local $tv v128) (local $inside v128) (local $m v128)
+    (local $mk i32) (local $ng i32) (local $rtv v128) (local $fxv v128) (local $fyv v128)
+    (local $ist i32) (local $ixy i32) (local $ikd i32)
     (local $ps i32) (local $base i32) (local $sigp i32) (local $cStart i32) (local $ccols i32) (local $crows i32)
     (local.set $n (i32.load offset=100 (local.get $P)))
     (local.set $stride (i32.load offset=104 (local.get $P)))
@@ -47,6 +49,9 @@
     (local.set $own (i32.load offset=88 (local.get $P)))
     (local.set $sigp (i32.load offset=92 (local.get $P)))
     (local.set $spp (i32.load offset=116 (local.get $P)))
+    (local.set $ist (i32.load offset=48 (local.get $P)))
+    (local.set $ixy (i32.load offset=56 (local.get $P)))
+    (local.set $ikd (i32.load offset=64 (local.get $P)))
     (block $jd (loop $jl
       (br_if $jd (i32.ge_u (local.get $j) (local.get $n)))
       (block $jn
@@ -105,27 +110,26 @@
         (br_if $cyd (i32.gt_s (local.get $cy) (local.get $cy1)))
         ;; the cells cx0..cx1 of a row are one run of the packed items, in cell order and head-insertion order inside a cell
         (local.set $ro (i32.mul (local.get $cy) (i32.add (local.get $cols) (i32.const 1))))
-        (local.set $it (i32.load (i32.add (i32.load offset=48 (local.get $P)) (i32.shl (i32.add (local.get $ro) (local.get $cx0)) (i32.const 2)))))
-        (local.set $ie (i32.load (i32.add (i32.load offset=48 (local.get $P)) (i32.shl (i32.add (i32.add (local.get $ro) (local.get $cx1)) (i32.const 1)) (i32.const 2)))))
+        (local.set $it (i32.load (i32.add (local.get $ist) (i32.shl (i32.add (local.get $ro) (local.get $cx0)) (i32.const 2)))))
+        (local.set $ie (i32.load (i32.add (local.get $ist) (i32.shl (i32.add (i32.add (local.get $ro) (local.get $cx1)) (i32.const 1)) (i32.const 2)))))
         (block $itd (loop $itl
           (br_if $itd (i32.ge_s (local.get $it) (local.get $ie)))
-          (local.set $fx (f64.sub (f64.promote_f32 (f32.load (i32.add (i32.load offset=56 (local.get $P)) (i32.shl (local.get $it) (i32.const 3))))) (local.get $x)))
-          (local.set $fy (f64.sub (f64.promote_f32 (f32.load offset=4 (i32.add (i32.load offset=56 (local.get $P)) (i32.shl (local.get $it) (i32.const 3))))) (local.get $y)))
+          (local.set $fx (f64.sub (f64.promote_f32 (f32.load (i32.add (local.get $ixy) (i32.shl (local.get $it) (i32.const 3))))) (local.get $x)))
+          (local.set $fy (f64.sub (f64.promote_f32 (f32.load offset=4 (i32.add (local.get $ixy) (i32.shl (local.get $it) (i32.const 3))))) (local.get $y)))
           (local.set $d2 (f64.add (f64.mul (local.get $fx) (local.get $fx)) (f64.mul (local.get $fy) (local.get $fy))))
-          (if (f64.le (local.get $d2) (local.get $far2)) (then
-              (if (i32.or (i32.eqz (local.get $wedge))
-                    (i32.and
-                      (f64.ge (f64.sub (f64.mul (local.get $d0x) (local.get $fy)) (f64.mul (local.get $d0y) (local.get $fx))) (f64.neg (local.get $margin)))
-                      (f64.le (f64.sub (f64.mul (local.get $d1x) (local.get $fy)) (f64.mul (local.get $d1y) (local.get $fx))) (local.get $margin))))
-                (then
-                  (f64.store (local.get $cp) (local.get $fx))
-                  (f64.store offset=8 (local.get $cp) (local.get $fy))
-                  (f64.store offset=16 (local.get $cp) (f64.sub (local.get $d2) (local.get $r2)))
-                  ;; kind 1 food, otherwise poison
-                  (i32.store offset=24 (local.get $cp)
-                    (select (i32.const 1) (i32.const 2)
-                      (i32.eq (i32.load8_u (i32.add (i32.load offset=64 (local.get $P)) (local.get $it))) (i32.const 1))))
-                  (local.set $cp (i32.add (local.get $cp) (i32.const 32)))))))
+          ;; branch-free: write the candidate, keep it only when it passes the distance and wedge tests
+          (f64.store (local.get $cp) (local.get $fx))
+          (f64.store offset=8 (local.get $cp) (local.get $fy))
+          (f64.store offset=16 (local.get $cp) (f64.sub (local.get $d2) (local.get $r2)))
+          ;; kind 1 food, otherwise poison
+          (i32.store offset=24 (local.get $cp)
+            (select (i32.const 1) (i32.const 2) (i32.eq (i32.load8_u (i32.add (local.get $ikd) (local.get $it))) (i32.const 1))))
+          (local.set $cp (i32.add (local.get $cp)
+            (i32.shl (i32.and (f64.le (local.get $d2) (local.get $far2))
+              (i32.or (i32.eqz (local.get $wedge))
+                (i32.and
+                  (f64.ge (f64.sub (f64.mul (local.get $d0x) (local.get $fy)) (f64.mul (local.get $d0y) (local.get $fx))) (f64.neg (local.get $margin)))
+                  (f64.le (f64.sub (f64.mul (local.get $d1x) (local.get $fy)) (f64.mul (local.get $d1y) (local.get $fx))) (local.get $margin))))) (i32.const 5))))
           (local.set $it (i32.add (local.get $it) (i32.const 1)))
           (br $itl)))
         (local.set $cy (i32.add (local.get $cy) (i32.const 1)))
@@ -151,35 +155,71 @@
             (if (f64.lt (local.get $t) (local.get $tw)) (then (local.set $tw (local.get $t))))))))
         (if (f64.lt (local.get $tw) (f64.const 0)) (then (local.set $tw (f64.const 0))))
         (if (f64.lt (local.get $tw) (local.get $best)) (then (local.set $best (local.get $tw)) (local.set $kind (i32.const 3))))))
-        (local.set $cp (local.get $cand))
-        (block $cd (loop $cl
-          (br_if $cd (i32.ge_u (local.get $cp) (local.get $ce)))
-          (local.set $cc (f64.load offset=16 (local.get $cp)))
-          (local.set $b (f64.add (f64.mul (f64.load (local.get $cp)) (local.get $dx)) (f64.mul (f64.load offset=8 (local.get $cp)) (local.get $dy))))
-          (local.set $cur (i32.const 1))
-          (if (f64.lt (local.get $cc) (f64.const 0))
-            (then (local.set $t (f64.const 0)))
-            (else
-              (if (f64.le (local.get $b) (f64.const 0)) (then (local.set $cur (i32.const 0))) (else
-                (local.set $disc (f64.sub (f64.mul (local.get $b) (local.get $b)) (local.get $cc)))
-                (if (f64.lt (local.get $disc) (f64.const 0)) (then (local.set $cur (i32.const 0))) (else
-                  (local.set $t (f64.sub (local.get $b) (f64.sqrt (local.get $disc))))))))))
-          (if (local.get $cur) (then
-            (if (i32.or (f64.lt (local.get $t) (local.get $best))
-                  (i32.and (f64.eq (local.get $t) (local.get $best)) (i32.eq (local.get $kind) (i32.const 3))))
-              (then (local.set $best (local.get $t)) (local.set $kind (i32.load offset=24 (local.get $cp)))))))
-          (local.set $cp (i32.add (local.get $cp) (i32.const 32)))
-          (br $cl)))
+        (f64.store offset=1024 (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 3))) (local.get $best))
+        (i32.store offset=1536 (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 2))) (local.get $kind))
+        (local.set $i (i32.add (local.get $i) (i32.const 1)))
+        (br $rl)))
+      ;; candidates in order, each tested only against the rays it can touch. A ray at distance s from the centre misses unless |s| <= r (plus a margin far above the rounding of
+      ;; the exact test below), so the exact test runs on the few rays that pass this cheap two-ray check. Per ray the candidates still arrive in the same order.
+      (local.set $rtv (f64x2.splat (f64.add (f64.add (local.get $r) (f64.const 1e-6)) (f64.mul (f64.const 1e-9) (local.get $L)))))
+      (local.set $ng (i32.shr_u (i32.add (local.get $nR) (i32.const 1)) (i32.const 1)))
+      (local.set $cp (local.get $cand))
+      (block $cd (loop $cl
+        (br_if $cd (i32.ge_u (local.get $cp) (local.get $ce)))
+        (local.set $fxv (v128.load64_splat (local.get $cp)))
+        (local.set $fyv (v128.load64_splat offset=8 (local.get $cp)))
+        (local.set $g (i32.const 0))
+        (block $gd3 (loop $gl3
+          (br_if $gd3 (i32.ge_u (local.get $g) (local.get $ng)))
+          (local.set $mk (i64x2.bitmask (f64x2.le
+            (f64x2.abs (f64x2.sub
+              (f64x2.mul (local.get $fxv) (v128.load offset=512 (i32.add (local.get $scr) (i32.shl (local.get $g) (i32.const 4)))))
+              (f64x2.mul (local.get $fyv) (v128.load (i32.add (local.get $scr) (i32.shl (local.get $g) (i32.const 4)))))))
+            (local.get $rtv))))
+          (block $zd (loop $zl
+            (br_if $zd (i32.eqz (local.get $mk)))
+            (local.set $i (i32.add (i32.shl (local.get $g) (i32.const 1)) (i32.ctz (local.get $mk))))
+            (local.set $mk (i32.and (local.get $mk) (i32.sub (local.get $mk) (i32.const 1))))
+            (br_if $zl (i32.ge_u (local.get $i) (local.get $nR)))
+            (local.set $dx (f64.load (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 3)))))
+            (local.set $dy (f64.load offset=512 (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 3)))))
+            (local.set $best (f64.load offset=1024 (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 3)))))
+            (local.set $kind (i32.load offset=1536 (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 2)))))
+            (local.set $cc (f64.load offset=16 (local.get $cp)))
+            (local.set $b (f64.add (f64.mul (f64.load (local.get $cp)) (local.get $dx)) (f64.mul (f64.load offset=8 (local.get $cp)) (local.get $dy))))
+            (local.set $disc (f64.sub (f64.mul (local.get $b) (local.get $b)) (local.get $cc)))
+            (local.set $cur (f64.lt (local.get $cc) (f64.const 0)))
+            ;; a centre inside the disc hits at 0, otherwise the near root of the quadratic when it is real and ahead
+            (local.set $t (select (f64.const 0) (f64.sub (local.get $b) (f64.sqrt (f64.max (local.get $disc) (f64.const 0)))) (local.get $cur)))
+            (local.set $cur (i32.or (local.get $cur) (i32.and (f64.gt (local.get $b) (f64.const 0)) (f64.ge (local.get $disc) (f64.const 0)))))
+            (if (i32.and (local.get $cur)
+                  (i32.or (f64.lt (local.get $t) (local.get $best))
+                          (i32.and (f64.eq (local.get $t) (local.get $best)) (i32.eq (local.get $kind) (i32.const 3)))))
+              (then
+                (f64.store offset=1024 (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 3))) (local.get $t))
+                (i32.store offset=1536 (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 2))) (i32.load offset=24 (local.get $cp)))))
+            (br $zl)))
+          (local.set $g (i32.add (local.get $g) (i32.const 1)))
+          (br $gl3)))
+        (local.set $cp (i32.add (local.get $cp) (i32.const 32)))
+        (br $cl)))
+      ;; closeness, and the crowd rays' inputs
+      (local.set $i (i32.const 0))
+      (block $rd2 (loop $rl2
+        (br_if $rd2 (i32.ge_s (local.get $i) (local.get $nR)))
+        (local.set $dx (f64.load (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 3)))))
+        (local.set $dy (f64.load offset=512 (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 3)))))
+        (local.set $best (f64.load offset=1024 (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 3)))))
+        (local.set $kind (i32.load offset=1536 (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 2)))))
         (if (i32.eqz (local.get $kind)) (then (local.set $clo (f64.const 0))) (else (local.set $clo (f64.sub (f64.const 1) (f64.div (local.get $best) (local.get $L))))))
         (f64.store offset=1024 (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 3))) (local.get $clo))
-        (i32.store offset=1536 (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 2))) (local.get $kind))
         ;; crowd inputs: f32 direction, and the start distance the item pass left
         (f32.store offset=1792 (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 2))) (f32.demote_f64 (local.get $dx)))
         (f32.store offset=2048 (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 2))) (f32.demote_f64 (local.get $dy)))
         (f32.store offset=2304 (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 2)))
           (f32.demote_f64 (select (local.get $L) (f64.mul (f64.sub (f64.const 1) (local.get $clo)) (local.get $L)) (i32.eqz (local.get $kind)))))
         (local.set $i (i32.add (local.get $i) (i32.const 1)))
-        (br $rl)))
+        (br $rl2)))
       ;; pad rays to a multiple of 4
       (local.set $i (local.get $nR))
       (block $pd (loop $pl
@@ -220,21 +260,22 @@
         (local.set $e (i32.load (i32.add (local.get $cStart) (i32.shl (i32.add (i32.add (local.get $row) (local.get $cx1)) (i32.const 1)) (i32.const 2)))))
         (block $kd (loop $kl
           (br_if $kd (i32.ge_s (local.get $k) (local.get $e)))
-          (if (i32.ne (i32.load (i32.add (local.get $own) (i32.shl (local.get $k) (i32.const 2)))) (local.get $self)) (then
-            (local.set $fxf (f32.sub (f32.load (i32.add (local.get $sx) (i32.shl (local.get $k) (i32.const 2)))) (local.get $x32)))
-            (local.set $fyf (f32.sub (f32.load (i32.add (local.get $sy) (i32.shl (local.get $k) (i32.const 2)))) (local.get $y32)))
-            (local.set $d2f (f32.add (f32.mul (local.get $fxf) (local.get $fxf)) (f32.mul (local.get $fyf) (local.get $fyf))))
-            (if (i32.and (f32.le (local.get $d2f) (local.get $far2c))
-                  (i32.or (i32.eqz (local.get $wedge))
-                    (i32.and
-                      (f32.ge (f32.sub (f32.mul (local.get $d0xf) (local.get $fyf)) (f32.mul (local.get $d0yf) (local.get $fxf))) (f32.neg (local.get $marginc)))
-                      (f32.le (f32.sub (f32.mul (local.get $d1xf) (local.get $fyf)) (f32.mul (local.get $d1yf) (local.get $fxf))) (local.get $marginc)))))
-              (then
-                (f32.store (local.get $cp) (local.get $fxf))
-                (f32.store offset=4 (local.get $cp) (local.get $fyf))
-                (f32.store offset=8 (local.get $cp) (f32.sub (local.get $d2f) (local.get $r2c)))
-                (i32.store offset=12 (local.get $cp) (local.get $k))
-                (local.set $cp (i32.add (local.get $cp) (i32.const 16)))))))
+          (local.set $fxf (f32.sub (f32.load (i32.add (local.get $sx) (i32.shl (local.get $k) (i32.const 2)))) (local.get $x32)))
+          (local.set $fyf (f32.sub (f32.load (i32.add (local.get $sy) (i32.shl (local.get $k) (i32.const 2)))) (local.get $y32)))
+          (local.set $d2f (f32.add (f32.mul (local.get $fxf) (local.get $fxf)) (f32.mul (local.get $fyf) (local.get $fyf))))
+          ;; branch-free as the item walk: write the candidate, advance only when it is another creature inside the distance and wedge
+          (f32.store (local.get $cp) (local.get $fxf))
+          (f32.store offset=4 (local.get $cp) (local.get $fyf))
+          (f32.store offset=8 (local.get $cp) (f32.sub (local.get $d2f) (local.get $r2c)))
+          (i32.store offset=12 (local.get $cp) (local.get $k))
+          (local.set $cp (i32.add (local.get $cp)
+            (i32.shl (i32.and (i32.and
+              (i32.ne (i32.load (i32.add (local.get $own) (i32.shl (local.get $k) (i32.const 2)))) (local.get $self))
+              (f32.le (local.get $d2f) (local.get $far2c)))
+              (i32.or (i32.eqz (local.get $wedge))
+                (i32.and
+                  (f32.ge (f32.sub (f32.mul (local.get $d0xf) (local.get $fyf)) (f32.mul (local.get $d0yf) (local.get $fxf))) (f32.neg (local.get $marginc)))
+                  (f32.le (f32.sub (f32.mul (local.get $d1xf) (local.get $fyf)) (f32.mul (local.get $d1yf) (local.get $fxf))) (local.get $marginc))))) (i32.const 4))))
           (local.set $k (i32.add (local.get $k) (i32.const 1)))
           (br $kl)))
         (local.set $cy (i32.add (local.get $cy) (i32.const 1)))

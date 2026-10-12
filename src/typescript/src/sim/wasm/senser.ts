@@ -37,6 +37,8 @@ export class WasmSenser {
   private pStart = 0;
   private pXY = 0;
   private pKinds = 0;
+  private place = new Int32Array(64);
+  private rowCount = new Int32Array(0);
 
   private constructor(bank: WasmBrainBank, exports: SenseExports) {
     this.bank = bank;
@@ -159,6 +161,24 @@ export class WasmSenser {
     return p;
   }
 
+  // Where each creature's record goes: creatures sorted by item grid row (counting sort, stable), so the kernel walks the rows of the
+  // item grid in order and the few rows around the current one stay in cache. Results do not depend on the order.
+  private placeByRow(world: World, creatures: readonly Creature[], n: number): Int32Array {
+    if (this.place.length < n) this.place = new Int32Array(Math.max(n, 2 * this.place.length));
+    const { rows } = world;
+    const place = this.place;
+    const count = this.rowCount.length >= rows + 1 ? this.rowCount.fill(0) : (this.rowCount = new Int32Array(rows + 1));
+    const inv = 1 / world.cell;
+    for (let k = 0; k < n; k++) {
+      const row = Math.min(rows - 1, Math.max(0, Math.floor(creatures[k]!.state.y * inv)));
+      place[k] = row;
+      count[row + 1]!++;
+    }
+    for (let r = 0; r < rows; r++) count[r + 1] += count[r]!;
+    for (let k = 0; k < n; k++) place[k] = count[place[k]!]!++;
+    return place;
+  }
+
   // Senses the batch and writes each creature's complete brain input (rays, extras, memory) at its slot.
   run(world: World, crowd: Crowd, creatures: readonly Creature[], slots: Int32Array, selves: Int32Array, n: number, stride: number, startEnergy: number, detail: Creature | null = null): void {
     this.syncItems(world);
@@ -195,10 +215,12 @@ export class WasmSenser {
     }
     const rec = new Float64Array(buffer, pRec, n * (REC_BYTES / 8));
     const recI = new Int32Array(buffer, pRec, n * (REC_BYTES / 4));
+    const place = this.placeByRow(world, creatures, n);
     for (let k = 0; k < n; k++) {
       const c = creatures[k]!;
       const s = c.state;
-      const o = k * 8;
+      const q = place[k]!;
+      const o = q * 8;
       const slot = slots[k]!;
       const rays = c.plan.rayCount;
       rec[o] = s.x;
@@ -206,7 +228,7 @@ export class WasmSenser {
       rec[o + 2] = c.heading.cos;
       rec[o + 3] = c.heading.sin;
       rec[o + 4] = c.plan.rayLength;
-      const w = k * 16;
+      const w = q * 16;
       recI[w + 10] = selves[k]!;
       recI[w + 11] = rays;
       recI[w + 12] = this.offPtr[slot]!;
