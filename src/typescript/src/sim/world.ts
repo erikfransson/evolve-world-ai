@@ -60,6 +60,7 @@ export const ITEM_REMOVE = 2;
 // Food and poison items in fixed slots; a slot of kind HIT_NONE is free.
 const BLOCK = 4; // cells per block side in blockStamp; the shifts by 2 below divide by it
 const MAX_SPOT_TRIES = 5000; // tries of any kind (rock, clear zone, spacing) before taking the last spot, moved off rock
+const MAX_CLEAR_ROUNDS = 2000; // poison moved out of one founder's disc, far above any real count
 const MAX_REJECTS = 256; // placement tries that honour reject before giving up on it
 const SPACING_ITEM_RADII = 3; // new food keeps this many item radii plus one creature radius from poison, new poison from any item
 
@@ -216,7 +217,8 @@ export class World implements WorldView {
   // Moves every poison item touching a body of this radius at (x, y) to a random spot, repeating until none touches.
   // avoid: spots it must not move poison to, such as other bodies already placed (a body of the same radius at each).
   clearPoison(x: number, y: number, radius: number, rng: Rng, avoid?: (x: number, y: number) => boolean): void {
-    for (let p = this.poisonAt(x, y, radius); p >= 0; p = this.poisonAt(x, y, radius)) {
+    // A disc that covers the whole box leaves nowhere to move the poison to, so the rounds are bounded.
+    for (let p = this.poisonAt(x, y, radius), round = 0; p >= 0 && round < MAX_CLEAR_ROUNDS; p = this.poisonAt(x, y, radius), round++) {
       this.placeRandomly(p, HIT_POISON, rng, { x, y, radius: radius + this.itemRadius }, avoid);
     }
   }

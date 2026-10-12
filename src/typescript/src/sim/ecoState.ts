@@ -101,6 +101,7 @@ const MAX_RAYS = 64; // the WebAssembly kernels' limit
 const MAX_ITEM_SLOTS = 2_000_000;
 const MAX_CREATURES = 20_000;
 const MAX_GENOME_FLOATS = 30_000_000; // all creatures together, 120 MB
+const MIN_WORLD_SIZE = 500; // the settings forms' smallest world
 const MAX_WORLD_SIZE = 50_000;
 const MAX_BODY_RADIUS = 40; // half the gap terrain keeps between rock pieces, so a body always has room somewhere
 const MAX_DUE = 1e6; // food or poison due, items
@@ -151,6 +152,11 @@ function checkLineages(raw: unknown, species: number, nextId: number): void {
 function currentGenomes(version: number, config: EcoConfig, plans: readonly number[][], genomes: Float32Array): { plans: number[][]; genomes: Float32Array } {
   const out: Float32Array[] = [];
   let at = 0;
+  if (version === OLDEST_VERSION) {
+    // The upgraded total is known from the plans, so a state that would grow past the limit is refused before any genome is built.
+    const grown = plans.reduce((n, p) => n + genomeLength(layerSizes(config, { rayCount: p[0]!, raySpread: p[1]!, rayLength: p[2]!, memoryShort: p[3]!, memoryLong: p[4]!, hiddenLayers: p.slice(6) })), 0);
+    if (!(grown <= MAX_GENOME_FLOATS)) return invalid("the genomes are too big");
+  }
   const fitted = plans.map((p) => {
     const plan = { rayCount: p[0]!, raySpread: p[1]!, rayLength: p[2]!, memoryShort: p[3]!, memoryLong: p[4]!, hiddenLayers: p.slice(6) };
     const saved = genomes.subarray(at, at + p[5]!);
@@ -167,7 +173,6 @@ function currentGenomes(version: number, config: EcoConfig, plans: readonly numb
     joined.set(g, at);
     at += g.length;
   }
-  if (joined.length > MAX_GENOME_FLOATS) return invalid("the genomes are too big");
   return { plans: fitted, genomes: joined };
 }
 
@@ -182,7 +187,7 @@ function checkedConfig(raw: unknown): EcoConfig {
   else config.species = mergeSpeciesList(species, DEFAULT_PREDATOR_CONFIG.species!);
   checkRanges(config.eco as unknown as Record<string, unknown>, "eco");
   const { world, creature, eco } = config;
-  if (!(world.width > 0 && world.width <= MAX_WORLD_SIZE && world.height > 0 && world.height <= MAX_WORLD_SIZE)) invalid("world size is out of bounds");
+  if (!(world.width >= MIN_WORLD_SIZE && world.width <= MAX_WORLD_SIZE && world.height >= MIN_WORLD_SIZE && world.height <= MAX_WORLD_SIZE)) invalid("world size is out of bounds");
   if (!(world.itemRadius >= ITEM_RADIUS_RANGE[0] && world.itemRadius <= ITEM_RADIUS_RANGE[1])) invalid("world.itemRadius is out of bounds");
   if (!(config.dt > 0 && config.dt <= 1)) invalid("dt is out of bounds");
   if (!(creature.radius > 0 && creature.radius <= MAX_BODY_RADIUS && creature.rayLength > 0 && creature.rayLength <= 5000)) invalid("creature radius or ray length is out of bounds");

@@ -33,21 +33,42 @@ describe("map densities from outside", () => {
     }
   });
 
-  it("a save whose creatures are too big to place among rock is refused, and a build at the largest body size finishes", () => {
-    const state = saved();
-    state.creatures.count = 0;
-    state.config.world.stoneDensity = 0.2;
-    state.config.creature.radius = 440; // the repro of a founder placement loop that never ended
+  const empty = (): EcoState => {
+    const c = small();
+    c.eco.initialPopulation = 0;
+    return JSON.parse(JSON.stringify(saveState(new Ecosystem(c)))) as EcoState;
+  };
+
+  it("a save whose creatures are too big to place among rock, or whose world is tiny, is refused quickly", () => {
+    const big = empty();
+    big.config.world.stoneDensity = 0.2;
+    big.config.creature.radius = 440; // once restored, the first extinction reseeded forever
     const t = performance.now();
-    expect(() => restoreState(state)).toThrow(/radius/);
+    expect(() => restoreState(big)).toThrow(/radius/);
+    const tiny = empty();
+    tiny.config.world.width = 70;
+    tiny.config.world.height = 70;
+    expect(() => restoreState(tiny)).toThrow(/world size/);
     expect(performance.now() - t).toBeLessThan(500);
+  });
+
+  it("placing founders among rock the creature cannot fit between ends within the try caps", () => {
     const c = small();
     Object.assign(c.world, { stoneDensity: 0.2, ridgeDensity: 0.15 });
+    c.creature.radius = 440;
+    const t = performance.now();
+    expect(new Ecosystem({ ...c, eco: { ...c.eco, initialPopulation: 5 } }).population).toBe(5);
+    expect(performance.now() - t).toBeLessThan(10_000);
+  }, 20_000);
+
+  it("clearing poison from a founder whose disc covers the whole world ends", () => {
+    const c = small();
+    Object.assign(c.world, { width: 70, height: 70, foodDensity: 0, poisonDensity: 1e4 });
     c.creature.radius = 40;
-    const t2 = performance.now();
-    expect(new Ecosystem({ ...c, eco: { ...c.eco, initialPopulation: 30 } }).population).toBe(30);
-    expect(performance.now() - t2).toBeLessThan(5000);
-  });
+    const t = performance.now();
+    expect(new Ecosystem({ ...c, eco: { ...c.eco, initialPopulation: 3 } }).population).toBe(3);
+    expect(performance.now() - t).toBeLessThan(10_000);
+  }, 20_000);
 
   it("the form maxima themselves are accepted", () => {
     const state = saved();
