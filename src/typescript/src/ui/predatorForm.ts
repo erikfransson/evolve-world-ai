@@ -37,7 +37,7 @@ export const PREDATOR_SECTIONS: readonly Section<EcoConfig>[] = [
   {
     title: "World and regrowth",
     fields: [
-      ...pick("World", ["seed", "worldWidth", "worldHeight", "stoneDensity", "ridgeDensity", "slowDensity", "fastDensity"]),
+      ...pick("World", ["seed", "worldWidth", "worldHeight", "stoneDensity", "ridgeDensity", "slowDensity", "slowSize", "fastDensity", "fastSize"]),
       range({ id: "foodDensity", label: "Start plants", tip: "How many plants grow at the start. 1 means roughly one plant in every 100 × 100 area.", min: 0, max: 1, step: 0.005, fmt: "dens3", hint: (c) => items(c, c.world.foodDensity), get: (c) => c.world.foodDensity, set: (c, v) => { c.world.foodDensity = v; } }),
       range({ id: "foodRegrow", label: "Plant regrowth", tip: "How fast new plants appear, in the same density units as the start plants, per second. Together with the energy per plant this sets how many prey the world can feed.", min: 0, max: 0.2, step: 0.001, fmt: "dens3", hint: (c) => perSecond(c, c.eco.foodRegrow), get: (c) => c.eco.foodRegrow, set: (c, v) => { c.eco.foodRegrow = v; } }),
       range({ id: "foodMaxDensity", label: "Plant limit", tip: "Plants stop regrowing when the world holds this much, on the density scale.", min: 0, max: 1, step: 0.005, fmt: "dens3", hint: (c) => items(c, c.eco.foodMaxDensity), get: (c) => c.eco.foodMaxDensity, set: (c, v) => { c.eco.foodMaxDensity = v; } }),
@@ -65,4 +65,4 @@ export const PREDATOR_SECTIONS: readonly Section<EcoConfig>[] = [
 export const PREDATOR_FORM: FormSpec<EcoConfig> = { sections: PREDATOR_SECTIONS, defaults: DEFAULT_PREDATOR_CONFIG };
 
 // Form fields a preset fixes on this page.
-export const PREDATOR_LOCKED: readonly string[] = ["worldWidth", "worldHeight", "foodDensity", "poisonDensity", "itemRadius", "foodEnergy", "poisonDamage", "foodRegrow", "foodMaxDensity", "poisonRegrow", "poisonMaxDensity", "stoneDensity", "ridgeDensity", "slowDensity", "fastDensity"];
+export const PREDATOR_LOCKED: readonly string[] = ["worldWidth", "worldHeight", "foodDensity", "poisonDensity", "itemRadius", "foodEnergy", "poisonDamage", "foodRegrow", "foodMaxDensity", "poisonRegrow", "poisonMaxDensity", "stoneDensity", "ridgeDensity", "slowDensity", "slowSize", "fastDensity", "fastSize"];

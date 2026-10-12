@@ -1,4 +1,4 @@
-import { checkMapDensities } from "./terrain.ts";
+import { checkMapSettings } from "./terrain.ts";
 import type { SpeciesConfig } from "./species.ts";
 
 // All tunable values of a run. Units: world units, seconds, energy points.
@@ -24,10 +24,12 @@ export interface SimConfig {
     poisonDamage: number; // energy one poison item drains, POISON_LETHAL or more kills
     poisonClearRadius: number; // Trials: no poison starts this close to the creature
     // Static map features (terrain.ts), each the share of the world area covered, 0 for none.
-    stoneDensity: number; // big round stones creatures cannot enter
-    ridgeDensity: number; // long curved mountain ridges creatures cannot enter
+    stoneDensity: number; // big lumpy boulders creatures cannot enter
+    ridgeDensity: number; // long rocky mountain ridges creatures cannot enter
     slowDensity: number; // patches where creatures move at half speed
     fastDensity: number; // patches where creatures move at 175% speed
+    slowSize: number; // size of a slow patch, a multiple of the standard one (1 keeps the standard)
+    fastSize: number; // same for fast patches
   };
   creature: {
     radius: number;
@@ -95,6 +97,8 @@ export const DEFAULT_CONFIG: SimConfig = {
     ridgeDensity: 0,
     slowDensity: 0,
     fastDensity: 0,
+    slowSize: 1,
+    fastSize: 1,
   },
   creature: {
     radius: 12,
@@ -199,7 +203,7 @@ export function overrideConfig<T extends object>(base: T, overrides: DeepPartial
   const config = structuredClone(base);
   applyOverrides(config as Record<string, unknown>, overrides, "");
   const world = (config as { world?: object }).world;
-  if (world) checkMapDensities(world);
+  if (world) checkMapSettings(world);
   return config;
 }
 

@@ -1,6 +1,6 @@
 import { itemCounts, POISON_LETHAL } from "../sim/config.ts";
 import type { EngineConfig } from "../sim/config.ts";
-import { MAP_DENSITY_MAX } from "../sim/terrain.ts";
+import { MAP_DENSITY_MAX, PATCH_SIZE_RANGE } from "../sim/terrain.ts";
 import { escapeAttr } from "./page.ts";
 
 // Settings forms: one table drives the markup, the config read and the fill, so a field is declared once.
@@ -69,14 +69,19 @@ export const perSecond = (c: Sized, density: number): string => `≈ ${itemsOf(c
 
 // The map fields of a World section (terrain.ts): the share of the world area covered by each kind, 0 for none.
 type MapKey = "stoneDensity" | "ridgeDensity" | "slowDensity" | "fastDensity";
+type SizeKey = "slowSize" | "fastSize";
 export function mapFields<C extends Sized>(): Range<C>[] {
   const field = (id: MapKey, label: string, tip: string, max: number): Range<C> =>
     range<C>({ id, label, tip: `${tip} The share of the world it covers, 0 for none. The same seed gives the same map.`, min: 0, max, step: 0.005, fmt: "pct1", get: (c) => c.world[id], set: (c, v) => { c.world[id] = v; } });
+  const size = (id: SizeKey, label: string, tip: string): Range<C> =>
+    range<C>({ id, label, tip: `${tip} 1 is the standard size. A bigger patch means fewer of them for the same share of the world.`, min: PATCH_SIZE_RANGE[0], max: PATCH_SIZE_RANGE[1], step: 0.05, fmt: "mult", get: (c) => c.world[id], set: (c, v) => { c.world[id] = v; } });
   return [
-    field("stoneDensity", "Stones", "Huge round stones, 500 units across or more, that creatures bounce off and cannot see past.", MAP_DENSITY_MAX.stoneDensity),
-    field("ridgeDensity", "Mountain ridges", "Long curved ridges of rock that creatures bounce off and cannot see past.", MAP_DENSITY_MAX.ridgeDensity),
+    field("stoneDensity", "Stones", "Huge lumpy boulders, 500 units across or more, that creatures bounce off and cannot see past.", MAP_DENSITY_MAX.stoneDensity),
+    field("ridgeDensity", "Mountain ridges", "Long rocky ridges that creatures bounce off and cannot see past.", MAP_DENSITY_MAX.ridgeDensity),
     field("slowDensity", "Slow ground", "Patches of mud where creatures move at half speed. They sense when they stand on it.", MAP_DENSITY_MAX.slowDensity),
+    size("slowSize", "Mud patch size", "How wide each patch of mud is."),
     field("fastDensity", "Fast ground", "Patches of firm ground where creatures move at 175% speed. They sense when they stand on it.", MAP_DENSITY_MAX.fastDensity),
+    size("fastSize", "Firm patch size", "How wide each patch of firm ground is."),
   ];
 }
 

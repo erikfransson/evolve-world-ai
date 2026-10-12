@@ -81,6 +81,14 @@ function drawIdle(): void {
   if (!active) host?.idle(config);
 }
 
+// The idle preview rebuilds the map, so a slider drag redraws once it pauses.
+const IDLE_DEBOUNCE_MS = 150;
+let idleTimer: ReturnType<typeof setTimeout> | undefined;
+function scheduleIdle(): void {
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(drawIdle, IDLE_DEBOUNCE_MS);
+}
+
 // Acknowledges a snapshot: gives its buffer back, or with a render worker (which holds the buffer) only says it was handled.
 function recycle(m: EcoSnapshot): void {
   if (m.buffer.byteLength) send({ type: "recycle", buffer: m.buffer, run: m.run }, [m.buffer]);
@@ -394,7 +402,7 @@ const view = createEcoView({
   onHighlight: (founder) => { highlight = founder ?? -1; },
   onConfigChange(c) {
     setConfig(c);
-    drawIdle();
+    scheduleIdle();
   },
 }, PAGE);
 
