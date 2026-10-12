@@ -2,7 +2,7 @@ import type { EngineConfig } from "./config.ts";
 import { HIT_CREATURE, HIT_NONE } from "./types.ts";
 import type { CreatureState, RayHit } from "./types.ts";
 
-const SMALL_SORT = 12; // up to this many creatures rebuildFrom sorts by insertion
+const SMALL_SORT = 12; // up to this many creatures rebuildFrom sorts by insertion: RL episodes have 1-11 creatures, the radix sort pays off for crowds
 
 // Creatures in a uniform grid of cell size config.creature.rayLength, rebuilt each tick by a stable radix sort of the cell keys,
 // so the work follows the creature count, not the world area. Each cell's creatures are contiguous in the sorted arrays, in
