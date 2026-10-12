@@ -11,14 +11,14 @@
 
 import { genomeLength } from "../sim/brain.ts";
 import { PLAN_LIMITS } from "../sim/rl/validate.ts";
+import { CREATURE_RAY_FEATURE_LABELS, EXTRA_INPUTS, OUTPUT_SIZE } from "../sim/sensors.ts";
 import type { BodyPlan, PlanView } from "../sim/sensors.ts";
 import type { SelectedDetails } from "../worker/ecoProtocol.ts";
 import { MSG_DETAIL, MSG_GENOME, q16, unq16 } from "./protocol.ts";
 
 export const INPUT_SCALE = 4096; // inputs are sent to 1/4096 and clamped to about +-8
-export const RAY_FEATURES = 6; // closeness, food, poison, wall, creature, seen energy (one species)
-const EXTRA_INPUTS = 4;
-const OUTPUTS = 2;
+export const RAY_FEATURES = CREATURE_RAY_FEATURE_LABELS.length; // ray features with creature sight (closeness, food, poison, wall, creature, seen energy)
+const OUTPUTS = OUTPUT_SIZE;
 const L = PLAN_LIMITS;
 export const MAX_INPUTS = L.rayCount[1] * RAY_FEATURES + EXTRA_INPUTS + 2 * L.memory[1];
 export const MAX_GENOME = genomeLength([MAX_INPUTS, ...Array<number>(L.layers[1]).fill(L.neurons[1]), OUTPUTS + 2 * L.memory[1]]);
