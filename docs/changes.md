@@ -5,6 +5,7 @@ Each release is a pull request from `development` into `main`, tagged `vX.Y.Z` o
 Add notes under "Unreleased" as work lands on `development`, and turn that heading into the version number at release time.
 
 ## Unreleased
+- The Inland Sea look: cliff and massif edges read as broken rock (no round bumps), stones and Drowned Town outcrops are angular, and the Ashfall poison shore has a subtle tint.
 - RL Arena: "Start from" has a Founders choice with the four Live World starter founders (#39), so a founder can be trained further and saved or added to Live from its file.
 - Hand-designed maps: `world.map` names a map (`src/sim/maps/`) that replaces the random stones, mud and firm ground. A map brings its own ground raster, rock, and food and poison weights: items spawn and regrow in proportion to the weights, with local caps per 1000 unit cell, and founders favour rich places. Saves store only the name. The first map is The Inland Sea (40000 x 25000), an Ecosystem preset with the launch food values. Worlds without a map are unchanged bit for bit. The ground outline no longer breaks where the field is exactly one half between two raster cells.
 - Live World: an extinct world stays empty until visitors add creatures again (admin `reseed=1` brings back the restart), at least 20 added creatures may be alive however small the population (`add.aliveFloor`), and children change colour less (3 degrees, was 8) so families keep their colour. An empty world still shows its map, with a note and a button to add a creature.
