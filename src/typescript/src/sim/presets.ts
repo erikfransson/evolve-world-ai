@@ -17,10 +17,10 @@ type Regrowth = Pick<EcoConfig["eco"], "foodRegrow" | "foodMaxDensity" | "poison
 type SeasonFields = Pick<EcoConfig["eco"], "seasons" | "yearMinutes" | "winterFood">;
 
 // Share of the world area covered by stones, ridges, slow and fast ground (terrain.ts): none, a few of each leaving most of the map open, and many.
-type MapShare = Pick<World, "stoneDensity" | "ridgeDensity" | "slowDensity" | "fastDensity">;
-const OPEN: MapShare = { stoneDensity: 0, ridgeDensity: 0, slowDensity: 0, fastDensity: 0 };
-const SOME: MapShare = { stoneDensity: 0.04, ridgeDensity: 0.03, slowDensity: 0.06, fastDensity: 0.05 };
-const MANY: MapShare = { stoneDensity: 0.08, ridgeDensity: 0.06, slowDensity: 0.1, fastDensity: 0.08 };
+type MapShare = Pick<World, "stoneDensity" | "ridgeDensity" | "slowDensity" | "fastDensity" | "slowSize" | "fastSize">;
+const OPEN: MapShare = { stoneDensity: 0, ridgeDensity: 0, slowDensity: 0, fastDensity: 0, slowSize: 1, fastSize: 1 };
+const SOME: MapShare = { stoneDensity: 0.04, ridgeDensity: 0.03, slowDensity: 0.06, fastDensity: 0.05, slowSize: 1, fastSize: 1 };
+const MANY: MapShare = { stoneDensity: 0.08, ridgeDensity: 0.06, slowDensity: 0.1, fastDensity: 0.08, slowSize: 1, fastSize: 1 };
 
 export interface TrialsPreset extends PresetInfo {
   world: World;
@@ -66,8 +66,8 @@ export const PREDATOR_PRESETS: readonly EcoPreset[] = [
 ];
 
 // Form field ids a preset fixes; the forms disable them while a preset is chosen.
-export const TRIALS_LOCKED: readonly string[] = ["worldWidth", "worldHeight", "foodDensity", "poisonDensity", "poisonDamage", "respawn", "itemRadius", "foodEnergy", "poisonClearRadius", "stoneDensity", "ridgeDensity", "slowDensity", "fastDensity"];
-export const ECO_LOCKED: readonly string[] = ["worldWidth", "worldHeight", "foodDensity", "poisonDensity", "itemRadius", "foodEnergy", "poisonDamage", "foodRegrow", "foodMaxDensity", "poisonRegrow", "poisonMaxDensity", "seasons", "yearMinutes", "winterFood", "stoneDensity", "ridgeDensity", "slowDensity", "fastDensity"];
+export const TRIALS_LOCKED: readonly string[] = ["worldWidth", "worldHeight", "foodDensity", "poisonDensity", "poisonDamage", "respawn", "itemRadius", "foodEnergy", "poisonClearRadius", "stoneDensity", "ridgeDensity", "slowDensity", "slowSize", "fastDensity", "fastSize"];
+export const ECO_LOCKED: readonly string[] = ["worldWidth", "worldHeight", "foodDensity", "poisonDensity", "itemRadius", "foodEnergy", "poisonDamage", "foodRegrow", "foodMaxDensity", "poisonRegrow", "poisonMaxDensity", "seasons", "yearMinutes", "winterFood", "stoneDensity", "ridgeDensity", "slowDensity", "slowSize", "fastDensity", "fastSize"];
 
 export const trialsPreset = (id: string): TrialsPreset | undefined => TRIALS_PRESETS.find((p) => p.id === id);
 export const ecoPreset = (id: string, presets: readonly EcoPreset[] = ECO_PRESETS): EcoPreset | undefined => presets.find((p) => p.id === id);

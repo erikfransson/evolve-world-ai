@@ -2,9 +2,9 @@ import type { EngineConfig } from "../sim/config.ts";
 
 // Legend rows for the map (terrain.ts), shared by the Trials and Ecosystem pages. A row shows only while the world has that kind.
 const SWATCHES = {
-  rock: `<circle cx="10" cy="10" r="8" fill="#79828a" /><circle cx="10" cy="10" r="6.2" fill="#394046" /><circle cx="9" cy="9" r="3.4" fill="#444c53" />`,
-  slow: `<circle cx="10" cy="10" r="8" fill="rgba(92, 118, 170, 0.6)" /><path d="M5 10 Q7.5 7 10 10 T15 10" fill="none" stroke="rgba(190, 208, 245, 0.9)" stroke-width="1.4" stroke-linecap="round" />`,
-  fast: `<circle cx="10" cy="10" r="8" fill="rgba(214, 196, 84, 0.45)" /><path d="M6 6.5 L9.5 10 L6 13.5 M10.5 6.5 L14 10 L10.5 13.5" fill="none" stroke="rgba(255, 240, 160, 0.95)" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />`,
+  rock: `<path d="M4.2 6.3 Q6 2.6 10.2 3 Q15.6 2.8 16.6 8 Q18 12.6 14.2 15.8 Q10.6 18 6.6 16 Q2.6 13.4 3.2 9.6 Z" fill="#141b19" /><path d="M4.2 6.3 Q6 2.6 10.2 3 Q15.6 2.8 16.6 8 Q18 12.6 14.2 15.8 Q10.6 18 6.6 16 Q2.6 13.4 3.2 9.6 Z" fill="#7b8982" transform="translate(-0.6 -0.6)" /><path d="M5.4 7 Q6.8 4.2 10 4.4 Q14.4 4.2 15.2 8.4 Q16.2 12 13.2 14.6 Q10.4 16.4 7.2 14.8 Q4.4 12.8 4.8 9.8 Z" fill="#2b3633" /><path d="M6.4 8 Q7.6 5.8 10 5.9 Q12.6 6 12.8 8.4 Q11 9 9.4 11.2 Q7.2 11 6.4 8 Z" fill="#3a4742" opacity="0.8" />`,
+  slow: `<circle cx="10" cy="10" r="8" fill="rgba(92, 118, 170, 0.6)" />`,
+  fast: `<circle cx="10" cy="10" r="8" fill="rgba(214, 196, 84, 0.45)" />`,
 };
 
 const ROWS = [

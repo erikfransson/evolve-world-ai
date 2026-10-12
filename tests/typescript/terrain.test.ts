@@ -8,7 +8,7 @@ import { Episode } from "../../src/typescript/src/sim/episode.ts";
 import { decaysFor, stepBody } from "../../src/typescript/src/sim/physics.ts";
 import { createRng } from "../../src/typescript/src/sim/rng.ts";
 import { inputLayout } from "../../src/typescript/src/sim/sensors.ts";
-import { FAST_FACTOR, SLOW_FACTOR, TERRAIN_FAST, TERRAIN_SLOW, Terrain, terrainOf } from "../../src/typescript/src/sim/terrain.ts";
+import { MAX_DISCS_PER_PIECE, FAST_FACTOR, SLOW_FACTOR, TERRAIN_FAST, TERRAIN_SLOW, Terrain, terrainOf } from "../../src/typescript/src/sim/terrain.ts";
 import { HIT_FOOD, HIT_NONE, HIT_POISON, HIT_WALL } from "../../src/typescript/src/sim/types.ts";
 import type { CreatureState, RayHit } from "../../src/typescript/src/sim/types.ts";
 import { RayCache, World } from "../../src/typescript/src/sim/world.ts";
@@ -39,7 +39,7 @@ describe("terrainOf", () => {
     expect(Array.from(terrainOf(withMap({ stoneDensity: 0.02 })).patchX)).toEqual(Array.from(full.patchX));
   });
 
-  it("keeps rock and creatures-wide gaps inside the world, with stones of at least 250 radius", () => {
+  it("keeps rock and creatures-wide gaps inside the world, with boulders at least 500 across", () => {
     const t = terrainOf(withMap());
     for (const [x, y, r] of discs(t)) {
       expect(x - r).toBeGreaterThan(0);
@@ -47,9 +47,32 @@ describe("terrainOf", () => {
       expect(x + r).toBeLessThan(3000);
       expect(y + r).toBeLessThan(2000);
     }
-    expect(Math.max(...t.rockR)).toBeGreaterThanOrEqual(250);
-    const share = discs(t).reduce((s, [, , r]) => s + Math.PI * r! * r!, 0) / (3000 * 2000);
-    expect(share).toBeLessThan(0.4); // overlap inside a ridge makes the sum an upper bound
+    const stones = terrainOf(withMap({ ridgeDensity: 0, slowDensity: 0, fastDensity: 0 }));
+    expect(Math.max(...stones.rockX.map((x, i) => x + stones.rockR[i]!)) - Math.min(...stones.rockX.map((x, i) => x - stones.rockR[i]!))).toBeGreaterThanOrEqual(500);
+    let covered = 0; // sampled, since the discs of a piece overlap
+    for (let y = 5; y < 2000; y += 10) for (let x = 5; x < 3000; x += 10) if (t.touchesRock(x, y, 0)) covered++;
+    expect(covered / (300 * 200)).toBeLessThan(0.4);
+  });
+
+  it("makes boulders angular polygons and ridges slabs with loose pebbles, within the disc cap", () => {
+    const t = terrainOf(withMap({ ridgeDensity: 0, slowDensity: 0, fastDensity: 0 }));
+    expect(t.rockCount).toBeGreaterThan(40); // rows of discs along the edges, not one disc per stone
+    const r = terrainOf(withMap({ stoneDensity: 0, slowDensity: 0, fastDensity: 0 }));
+    expect(r.rockCount).toBeGreaterThan(60);
+    expect(r.rockCount).toBeLessThanOrEqual(MAX_DISCS_PER_PIECE * 20);
+    // a ridge is slabs of touching discs and a few small loose pebbles that touch nothing: every disc but a pebble touches another one
+    const lonely = Array.from(r.rockX).filter((x, i) => !Array.from(r.rockX).some((x2, j) => j !== i && Math.hypot(x2 - x, r.rockY[j]! - r.rockY[i]!) < r.rockR[i]! + r.rockR[j]!));
+    expect(lonely.length).toBeLessThanOrEqual(6 * 20);
+    expect(lonely.length).toBeLessThan(r.rockCount / 2);
+  });
+
+  it("scales the patches with their size setting and keeps today's map at size 1", () => {
+    const radius = (t: Terrain): number => Math.max(...t.patchR);
+    const base = terrainOf(withMap());
+    expect(Array.from(terrainOf(withMap({ slowSize: 1, fastSize: 1 })).patchR)).toEqual(Array.from(base.patchR));
+    expect(radius(terrainOf(withMap({ slowSize: 2, fastSize: 2 })))).toBeGreaterThan(1.5 * radius(base));
+    expect(radius(terrainOf(withMap({ slowSize: 0.5, fastSize: 0.5 })))).toBeLessThan(0.7 * radius(base));
+    expect(discs(terrainOf(withMap({ slowSize: 2 })))).toEqual(discs(base)); // rock does not move
   });
 });
 

@@ -43,3 +43,6 @@
   .live .sel-facts { grid-template-columns: repeat(2, auto); }
 }
 #statSeason { white-space: normal; line-height: 1.1; } /* a narrow tile wraps the food factor under the season name */
+
+/* release version under the side panel */
+.panel .ver { margin: 0.4rem 2px 0; font-size: 0.78rem; color: var(--muted); }

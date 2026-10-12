@@ -69,6 +69,7 @@ export interface Hello {
   itemSlots: number; // item slot capacity, at most MAX_ITEM_SLOTS
   summary: { initialPopulation: number; maxPopulation: number; collisionDamage: boolean; seasons: boolean };
   maxViewers: number;
+  serverVersion?: string; // the server's release (src/typescript/src/version.ts), may differ from the page's during a deploy
 }
 
 export interface Season {

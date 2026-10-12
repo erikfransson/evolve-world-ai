@@ -61,7 +61,7 @@ export function drawIdleWorld(ctx: CanvasRenderingContext2D, config: EcoConfig, 
   ctx.save();
   ctx.translate(x, y);
   ctx.scale(scale, scale);
-  drawTerrain(ctx, terrainOf(config), scale);
+  drawTerrain(ctx, terrainOf(config), scale, undefined, true);
   ctx.restore();
   const items = startItems(config);
   if (items) drawItems(ctx, items, config, x, y, scale, dpr);
