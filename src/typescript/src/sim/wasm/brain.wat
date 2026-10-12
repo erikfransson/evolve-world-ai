@@ -3,10 +3,9 @@
   (memory (export "mem") 1)
 
   (func $tanh (param $x v128) (result v128)
-    (local $c v128) (local $x2 v128) (local $n v128) (local $d v128) (local $r v128)
-    (local.set $c (f32x4.min (f32x4.max (local.get $x) (v128.const f32x4 -4.97 -4.97 -4.97 -4.97)) (v128.const f32x4 4.97 4.97 4.97 4.97)))
-    (local.set $x2 (f32x4.mul (local.get $c) (local.get $c)))
-    (local.set $n (f32x4.mul (local.get $c)
+    (local $x2 v128) (local $n v128) (local $d v128) (local $r v128)
+    (local.set $x2 (f32x4.mul (local.get $x) (local.get $x)))
+    (local.set $n (f32x4.mul (local.get $x)
       (f32x4.add (v128.const f32x4 135135 135135 135135 135135)
         (f32x4.mul (local.get $x2) (f32x4.add (v128.const f32x4 17325 17325 17325 17325)
           (f32x4.mul (local.get $x2) (f32x4.add (v128.const f32x4 378 378 378 378) (local.get $x2))))))))
@@ -14,8 +13,8 @@
       (f32x4.mul (local.get $x2) (f32x4.add (v128.const f32x4 62370 62370 62370 62370)
         (f32x4.mul (local.get $x2) (f32x4.add (v128.const f32x4 3150 3150 3150 3150)
           (f32x4.mul (local.get $x2) (v128.const f32x4 28 28 28 28))))))))
-    (local.set $r (f32x4.min (f32x4.max (f32x4.div (local.get $n) (local.get $d)) (v128.const f32x4 -1 -1 -1 -1)) (v128.const f32x4 1 1 1 1)))
-    ;; |x| >= 4.97 gives exactly +-1, as the JS version does
+    (local.set $r (f32x4.div (local.get $n) (local.get $d)))
+    ;; |x| >= 4.97 gives exactly +-1, as the JS version does. No clamps: wild quotients outside that range are replaced.
     (v128.bitselect
       (v128.or (v128.and (local.get $x) (v128.const i32x4 0x80000000 0x80000000 0x80000000 0x80000000)) (v128.const f32x4 1 1 1 1))
       (local.get $r)
