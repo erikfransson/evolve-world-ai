@@ -3,7 +3,7 @@ import type { SimConfig } from "./config.ts";
 import { DEFAULT_PREDATOR_CONFIG } from "./ecoConfig.ts";
 import type { EcoConfig } from "./ecoConfig.ts";
 
-// Preset worlds for Trials, Ecosystem and The Great Hunt. A preset fixes the world (and in Ecosystem the regrowth), never the creature, brain or evolution.
+// Preset worlds for Trials and Ecosystem. A preset fixes the world (and in Ecosystem the regrowth), never the creature, brain or evolution.
 export const CUSTOM = "custom";
 
 export interface PresetInfo {
@@ -52,7 +52,7 @@ export const ECO_PRESETS: readonly EcoPreset[] = [
   { id: "highlands", name: "Highlands", description: "Mountain ranges and large stones split the world into valleys. Mud and firm ground change how fast creatures cross it.", world: { ...ECO_BASE, ...MANY }, regrowth: ECO_REGROWTH },
 ];
 
-// The Great Hunt: one preset, the tuned defaults (docs/tuning-notes.md).
+// The two-species world of the benchmark (ecoBench --predators): one preset, the tuned defaults (docs/tuning-notes.md).
 const { width, height, foodDensity, poisonDensity, itemRadius, foodEnergy, poisonDamage } = DEFAULT_PREDATOR_CONFIG.world;
 const { foodRegrow, foodMaxDensity, poisonRegrow, poisonMaxDensity } = DEFAULT_PREDATOR_CONFIG.eco;
 export const PREDATOR_PRESETS: readonly EcoPreset[] = [

@@ -21,7 +21,8 @@
         <p class="lede">Neural creatures that learn to survive, one generation at a time.</p>
         <p class="credit">Created by Erik Fransson. <a href="https://github.com/erikfransson/evolve-world-ai/issues">Feedback and suggestions welcome in GitHub issues</a>.</p>
       </header>
-      <section class="featured" aria-label="Live World">
+      <section class="group featured" aria-labelledby="g-worlds">
+        <h2 class="group-title" id="g-worlds">Worlds</h2>
         <a class="mode live-card" href="live/">
           <canvas data-scene="live" aria-hidden="true"></canvas>
           <div class="mode-body">
@@ -31,25 +32,7 @@
             <span class="go">Open Live World <span aria-hidden="true">→</span></span>
           </div>
         </a>
-      </section>
-      <nav class="modes" aria-label="Modes">
-        <a class="mode" href="trials/">
-          <canvas data-scene="trials" aria-hidden="true"></canvas>
-          <div class="mode-body">
-            <h2>Trials</h2>
-            <p>Each creature is tested alone in its own arena. Press Start and watch generations of brains learn to find food.</p>
-            <span class="go">Open Trials <span aria-hidden="true">→</span></span>
-          </div>
-        </a>
-        <a class="mode" href="arena/">
-          <canvas data-scene="arena" aria-hidden="true"></canvas>
-          <div class="mode-body">
-            <h2>RL Arena</h2>
-            <p>Design a creature, train it in small worlds and watch its brain improve. Save your favourites.</p>
-            <span class="go">Open RL Arena <span aria-hidden="true">→</span></span>
-          </div>
-        </a>
-        <a class="mode" href="ecosystem/">
+        <a class="mode wide-card" href="ecosystem/">
           <canvas data-scene="ecosystem" aria-hidden="true"></canvas>
           <div class="mode-body">
             <h2>Ecosystem</h2>
@@ -57,15 +40,28 @@
             <span class="go">Open Ecosystem <span aria-hidden="true">→</span></span>
           </div>
         </a>
-        <a class="mode" href="predators/">
-          <canvas data-scene="predators" aria-hidden="true"></canvas>
-          <div class="mode-body">
-            <h2>The Great Hunt</h2>
-            <p>Prey graze on regrowing plants while faster hunters chase them down. Watch both populations rise and fall in turn.</p>
-            <span class="go">Open The Great Hunt <span aria-hidden="true">→</span></span>
-          </div>
-        </a>
-      </nav>
+      </section>
+      <section class="group" aria-labelledby="g-train">
+        <h2 class="group-title" id="g-train">Train creatures</h2>
+        <nav class="modes" aria-label="Training">
+          <a class="mode" href="trials/">
+            <canvas data-scene="trials" aria-hidden="true"></canvas>
+            <div class="mode-body">
+              <h2>Trials</h2>
+              <p>Each creature is tested alone in its own arena. Press Start and watch generations of brains learn to find food.</p>
+              <span class="go">Open Trials <span aria-hidden="true">→</span></span>
+            </div>
+          </a>
+          <a class="mode" href="arena/">
+            <canvas data-scene="arena" aria-hidden="true"></canvas>
+            <div class="mode-body">
+              <h2>RL Arena</h2>
+              <p>Design a creature, train it in small worlds and watch its brain improve. Save your favourites.</p>
+              <span class="go">Open RL Arena <span aria-hidden="true">→</span></span>
+            </div>
+          </a>
+        </nav>
+      </section>
       <footer class="foot"><span class="ver" id="version"></span><a href="https://github.com/erikfransson/evolve-world-ai">Source on GitHub</a></footer>
     </main>
     <script type="module" src="./src/landing.ts"></script>

@@ -35,7 +35,7 @@ Self-play envs (Melee, Brawl) score against the learner's own league, so their h
 | Brawl (brawl)       | Compete              | Melee with collision damage, rams pay               | 0.54 -> 1.94   | 0.72 -> 1.05 |
 | Crowd (crowd)       | Compete              | many rivals on regrowing food                       | ES beats PPO   |              |
 
-Advanced (bigger, slower): forage-sparse, poison-field, rivals, endurance; Great Hunt hunters and prey (hidden while the Arena trains foragers only).
+Advanced (bigger, slower): forage-sparse, poison-field, rivals, endurance; hunters and prey (hidden while the Arena trains foragers only).
 
 ## Notes
 
