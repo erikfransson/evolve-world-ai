@@ -10,7 +10,7 @@ export interface PageCopy {
   seasonTip: string;
   legend: readonly (readonly [swatch: string, label: string])[]; // the swatch is the <svg> inside the item
   pickTitles: Readonly<Record<string, readonly [label: string, title: string]>>; // by button id
-  eatenLabel: string; // the Selected card's "eaten" row;
+  eatenLabel: string; // the Selected card's "eaten" row
   popKeys: string; // the Population graph's key spans
   linBarLabel: string;
   extinct: string;

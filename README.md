@@ -36,7 +36,7 @@
 
 ## Repo structure
 * `src/typescript/` web app and simulation (Vite + TypeScript), one HTML page per mode
-  * `index.html` landing page, `trials/`, `ecosystem/`, `arena/` (RL Arena: design, train and watch creatures), `live/` placeholder
+  * `index.html` landing page, `trials/`, `ecosystem/`, `arena/` (RL Arena: design, train and watch creatures), `live/` (Live World viewer)
   * `src/sim/` simulation; `creature.ts` (body, brain, senses) and `world.ts` (items, rays) are shared by modes
   * `src/sim/terrain.ts` the map (#34): stones and ridges creatures bounce off and rays see as walls, and mud and firm ground that change their speed (50% and 175%); generated from the seed, shared by all modes (`world.stoneDensity` and the other three, each a share of the world area, 0 for none). Brains get a terrain input; `upgradeGenome` (in `brain.ts`) adds it, as zero weights, to genomes made before it
   * `src/sim/species.ts` species of a multi-species world (own body ranges, costs, births and diet), used by the RL Arena; the Ecosystem is the one-species case
