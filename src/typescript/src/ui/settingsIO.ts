@@ -45,6 +45,7 @@ export function parseWithPreset<M extends Mode>(text: string, mode: M): Parsed<M
   for (const key of Object.keys(data)) {
     if (!["mode", "preset", "version", "angles", "config"].includes(key)) throw new Error(`Unknown key "${key}" at the top level.`);
   }
+  if (data.mode === "predators") throw new Error("These settings are for The Great Hunt, which has been removed.");
   if (!MODES.includes(data.mode as Mode)) throw new Error(`Missing "mode", expected ${MODES.map((m) => `"${m}"`).join(", ").replace(/, ([^,]*)$/, " or $1")}.`);
   if (data.mode !== mode) throw new Error(`These settings are for ${PAGE[data.mode as Mode]}, but this page is ${PAGE[mode]}.`);
   if (data.version !== VERSION) throw new Error(`Unsupported version ${JSON.stringify(data.version)}, expected ${VERSION}.`);

@@ -51,7 +51,7 @@ Contract: `EcoConfig` in `src/sim/ecoConfig.ts`, built on `EngineConfig` (the sh
 - Ecosystem: founders may differ. Vision angle and length drift slightly with mutation; rare structural mutations add or remove a ray or a hidden neuron, with weights remapped.
 - Memory (#10): recurrent units fed back as brain inputs on the next tick, as leaky averages of their targets: short-term at rate 0.3 per tick, long-term at 0.01 per tick. Default 4 + 4, roughly up to 20% of the weights.
 - A tiny energy cost per hidden and memory neuron per second, so bigger brains are not free (tunable, 0 turns it off).
-- Seed pool (#11, done): `src/buildPool.ts` runs Trials evolutions over a sampled grid of plans and worlds and keeps 300 diverse validated creatures in `public/pool.json`. Ecosystem `poolFraction` (default 30%, 50% per species in the Great Hunt) of founders are mutated copies, round-robin over the pool; their Trials genomes get zero weights for the creature ray features. Without the file, all founders are random.
+- Seed pool (#11, done): `src/buildPool.ts` runs Trials evolutions over a sampled grid of plans and worlds and keeps 300 diverse validated creatures in `public/pool.json`. Ecosystem `poolFraction` (default 30%, 50% per species in multi-species worlds) of founders are mutated copies, round-robin over the pool; their Trials genomes get zero weights for the creature ray features. Without the file, all founders are random.
 
 ## Presets and lineages (issues #8, #5), draft
 - Trials and Ecosystem get about 4 preset worlds (normal, poison everywhere, starvation with long vision, ...) plus custom; Trials worlds grow to 2300 x 1400.

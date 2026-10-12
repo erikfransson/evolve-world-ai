@@ -43,6 +43,10 @@ describe("settings JSON", () => {
     expect(() => parseSettings(JSON.stringify({ mode: "ecosystem", version: 1, config: { eco: { birthCostRange: [90, 20] } } }), "ecosystem")).toThrow(/eco.birthCostRange" must have min at most max/);
   });
 
+  it("says that The Great Hunt was removed for an old pasted file", () => {
+    expect(() => parseSettings(JSON.stringify({ mode: "predators", version: 1 }), "ecosystem")).toThrow(/The Great Hunt, which has been removed/);
+  });
+
   it("rejects pasted species, which only the RL Arena uses", () => {
     expect(() => parseSettings(JSON.stringify({ mode: "ecosystem", version: 1, config: { species: [] } }), "ecosystem")).toThrow(/unknown config key "species"/);
   });

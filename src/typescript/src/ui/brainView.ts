@@ -14,7 +14,7 @@ const TRACK = "rgba(44, 87, 68, 0.5)";
 const TEXT_COLOR = "#d6e4dc";
 const FEATURE_LETTERS: Record<string, string> = { closeness: "c", food: "f", poison: "p", wall: "w", creature: "o", "seen energy": "e" };
 const FEATURE_COLORS = [TEXT_COLOR, FOOD, POISON, LABEL, OTHER, OTHER];
-// True when ray feature f of n is one of several species flags (The Great Hunt), labelled by a short upright word.
+// True when ray feature f of n is one of several species flags, labelled by a short upright word.
 const isSpeciesFlag = (f: number, n: number): boolean => n > FEATURE_COLORS.length && f >= 4 && f < n - 1;
 // Colour of a ray's row label from its inputs at k (features per ray): what it sees, a seen creature in its species'
 // colour (the strongest flag of any species), otherwise grey.

@@ -1,8 +1,8 @@
 // Ecosystem benchmark: runs a seeded world headless and prints ticks/s, population over time and a fingerprint.
 // Usage: node src/ecoBench.ts [--seconds 120] [--seed 1] [--pop 300] [--width 12000] [--every 10] [--series 30]
 //   [--pool public/pool.json] [--threads 0] [--predators] [--preset ID] [--config file.json] [--set path=value ...]
-// --config reads settings in the page's Copy format (Ecosystem or The Great Hunt) as the base; --preset applies a preset's world
-// and regrowth to the defaults (not with --config); --predators starts from the The Great Hunt defaults.
+// --config reads settings in the page's Copy format (an Ecosystem export) as the base; --preset applies a preset's world
+// and regrowth to the defaults (not with --config); --predators starts from the two-species (prey and predator) defaults.
 // --set overrides any config value after that, checked like a pasted config: --set eco.foodRegrow=0.04 --set species.1.speed=1.4
 // (--set eco.wasm=false runs the JS path, --set eco.aging=true turns on old-age upkeep). --pool none runs without the seed pool.
 // --pop and --width scale the founders and the area (height and the default population scale with --width).
@@ -75,7 +75,7 @@ function overridesOf(assignments: readonly string[]): Record<string, unknown> {
   return out;
 }
 
-let predators = values.predators ?? false;
+const predators = values.predators ?? false;
 let config: EcoConfig;
 if (values.config !== undefined) {
   if (values.preset !== undefined) throw new Error("--preset and --config do not combine, the file carries its own settings");

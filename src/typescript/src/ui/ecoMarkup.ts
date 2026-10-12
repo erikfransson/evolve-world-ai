@@ -10,7 +10,7 @@ export interface PageCopy {
   seasonTip: string;
   legend: readonly (readonly [swatch: string, label: string])[]; // the swatch is the <svg> inside the item
   pickTitles: Readonly<Record<string, readonly [label: string, title: string]>>; // by button id
-  eatenLabel: string; // the Selected card's "eaten" row; a hunting page rewrites it per species
+  eatenLabel: string; // the Selected card's "eaten" row;
   popKeys: string; // the Population graph's key spans
   linBarLabel: string;
   extinct: string;
@@ -57,7 +57,6 @@ ${body}
 // The page structure both pages share, filled from the page's spec. Inserted at the start of <body>, ahead of the page's script.
 export function ecoBody(page: ModePage): string {
   const c = page.copy;
-  const several = page.speciesColors.length > 0;
   const tiles = page.tiles.map((t) => `          <div class="${t.cls ?? "tile"}"><dt>${t.label}${tip(t.tip)}</dt><dd id="${t.id}">-</dd></div>`);
   const season = `          <div class="tile" id="statSeasonTile" hidden><dt>Season${tip(c.seasonTip)}</dt><dd id="statSeason">-</dd></div>`;
   tiles.splice(page.tiles.findIndex((t) => t.id === "statTime") + 1, 0, season);
@@ -66,13 +65,6 @@ export function ecoBody(page: ModePage): string {
     return `                <button id="${id}" class="secondary" type="button" title="${title}">${label}</button>`;
   };
   const legend = [...c.legend.map(([swatch, label]) => `              <li><svg viewBox="0 0 20 20" aria-hidden="true">${swatch}</svg>${label}</li>`), `              ${terrainLegendHtml()}`];
-  const linSwitch = several
-    ? `
-              <div class="seg seg-mini lin-species" role="radiogroup" aria-label="Lineages of">
-                <label><input type="radio" name="linSpecies" value="0" checked /><span>Prey</span></label>
-                <label><input type="radio" name="linSpecies" value="1" /><span>Predators</span></label>
-              </div>`
-    : "";
   return `
     <header class="banner">
       <a class="back" href="../">← Evolve World</a>
@@ -148,7 +140,7 @@ ${tiles.join("\n")}
               <dl class="sel-only sel-facts">
                 <div><dt>Age</dt><dd id="selAge">-</dd></div>
                 <div><dt>Children</dt><dd id="selChildren">-</dd></div>
-                <div><dt${several ? ' id="selEatenLabel"' : ""}>${c.eatenLabel}</dt><dd id="selEaten">-</dd></div>
+                <div><dt>${c.eatenLabel}</dt><dd id="selEaten">-</dd></div>
                 <div><dt>Lineage depth</dt><dd id="selDepth">-</dd></div>
                 <div><dt>Id</dt><dd id="selId">-</dd></div>
               </dl>
@@ -164,7 +156,6 @@ ${page.picks.map(([id]) => pick(id)).join("\n")}
                 <button id="worldView" class="secondary" type="button" title="Zoom out to the whole world">World view</button>
               </div>
             </div>`,
-            several ? `\n              <span id="selSpecies" class="sel-species sel-only"></span>` : "",
           )}
           ${card("brainCard", "ov-brain", "Brain", "brain", `            <div class="ov-body"><canvas id="brainView"></canvas></div>`)}
           ${card(
@@ -188,7 +179,6 @@ ${page.picks.map(([id]) => pick(id)).join("\n")}
               <canvas class="lin-graph" aria-label="Share of each lineage over simulated time"></canvas>
               <div class="fit-foot"><span class="fit-note">share of creatures · simulated time</span><button class="lin-clear secondary" type="button" hidden>Show all</button></div>
             </div>`,
-            linSwitch,
           )}
           ${card("traitCard", "ov-traits", "Traits now", "traits", `            <div class="ov-body"><ul class="trait-list"></ul><p class="stat-note">Living creatures now. Bars run from the lowest to the highest value.</p></div>`)}
           ${card("leaderCard", "ov-leaders", "Records", "records", `            <div class="ov-body"><ul class="lead-list"></ul><p class="stat-note">This run so far, dead creatures included. Times are simulated time lived.</p></div>`)}

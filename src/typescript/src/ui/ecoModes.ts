@@ -6,7 +6,6 @@ import { ECO_FORM } from "./ecoSettingsForm.ts";
 import type { FormSpec } from "./settingsForm.ts";
 import type { EcoStats } from "./ecoPage.ts";
 import { formatDuration } from "./page.ts";
-import { SPECIES_COLORS } from "./speciesStyle.ts";
 import { ECOSYSTEM_COPY } from "./ecoMarkup.ts";
 import type { PageCopy } from "./ecoMarkup.ts";
 
@@ -18,7 +17,6 @@ export interface ModePage {
   presets: readonly EcoPreset[];
   locked: readonly string[]; // form fields a preset fixes
   store: string; // localStorage prefix for the cards' open state
-  speciesColors: readonly string[]; // one per species with several: graph lines, the lineage switch, the Selected chip; empty otherwise
   picks: readonly (readonly [id: string, by: Board])[]; // quick-select buttons; copy.pickTitles words them
   tiles: readonly Tile[]; // stat tiles; the season tile follows statTime
   // While the run counts for the scoreboard, the number whose peak the entry notes; null when it does not count.
@@ -47,7 +45,6 @@ export const ECOSYSTEM_PAGE: ModePage = {
   presets: ECO_PRESETS,
   locked: ECO_LOCKED,
   store: "evolve.eco.card",
-  speciesColors: [],
   picks: [["pickAge", "age"], ["pickChildren", "children"], ["pickEaten", "eaten"]],
   tiles: [
     count("statPop", "Population", "Creatures alive now.", (s) => s.population, "tile accent"),
