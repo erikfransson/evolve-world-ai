@@ -17,7 +17,9 @@ import { decodeDetail } from "../../src/typescript/src/live/detail.ts";
 import { cleanStats } from "../../src/typescript/src/live/connection.ts";
 import { lineageRows } from "../../src/typescript/src/ui/lineagePanel.ts";
 import { genomeLengthFor } from "../../src/typescript/src/sim/rl/creatureFile.ts";
-import { terrainFromParts } from "../../src/typescript/src/live/mapTerrain.ts";
+import { MAX_OUTLINE_LOOPS, MAX_OUTLINE_POINTS, checkOutlines, terrainFromParts } from "../../src/typescript/src/live/mapTerrain.ts";
+import { rockBodies, rockGeometry } from "../../src/typescript/src/ui/rockOutline.ts";
+import type { RockGeometry } from "../../src/typescript/src/ui/rockOutline.ts";
 import { builtMap } from "../../src/typescript/src/sim/maps/index.ts";
 import { terrainOf } from "../../src/typescript/src/sim/terrain.ts";
 import { smallConfig } from "./liveHelpers.ts";
@@ -80,9 +82,15 @@ describe("item slots of the live world", () => {
   it("the page puts the map together from the worker's arrays only when they fit the map", () => {
     const b = builtMap("inland-sea");
     const rock = Float64Array.from(b.rock.flatMap((d) => [d.x, d.y, d.r]));
-    const parts = { ok: true as const, rock, ground: b.ground.data.slice(), food: b.weights.food.slice(), poison: b.weights.poison.slice(), ms: 0 };
+    const outlines = rockGeometry(terrainOf({ seed: 1, world: { ...liveConfig.world } }));
+    const parts = { ok: true as const, rock, ground: b.ground.data.slice(), food: b.weights.food.slice(), poison: b.weights.poison.slice(), outlines, ms: 0 };
     const t = terrainFromParts("inland-sea", 40000, 25000, parts)!;
     expect(t.rockCount).toBe(b.rock.length);
+    const bodies = rockBodies(t); // the worker's outlines, not traced again
+    expect(bodies).toHaveLength(outlines.bodyLoops.length);
+    expect(bodies[0]!.loops[0]!.slice(0, 4)).toEqual(Array.from(outlines.points.subarray(0, 4)));
+    expect(terrainFromParts("inland-sea", 40000, 25000, { ...parts, rock: rock.subarray(0, 30) })).toBeNull(); // outlines of other rock
+    expect(terrainFromParts("inland-sea", 40000, 25000, { ...parts, outlines: { ...outlines, points: Float64Array.from(outlines.points, (v, i) => (i === 5 ? NaN : v)) } })).toBeNull();
     expect(t.valueAt(20000, 12500)).toBe(terrainOf({ seed: 1, world: { ...liveConfig.world } }).valueAt(20000, 12500));
     expect(terrainFromParts("inland-sea", 17000, 10600, parts)).toBeNull();
     expect(terrainFromParts("nowhere", 40000, 25000, parts)).toBeNull();
@@ -92,6 +100,35 @@ describe("item slots of the live world", () => {
     expect(terrainFromParts("inland-sea", 40000, 25000, { ...parts, rock: Float64Array.from([1, NaN, 3]) })).toBeNull();
     expect(terrainFromParts("inland-sea", 40000, 25000, { ...parts, rock: new Float64Array(3 * 8001) })).toBeNull();
     expect(terrainFromParts("inland-sea", 40000, 25000, { ok: false, message: "x" })).toBeNull();
+  }, 60_000);
+
+  it("the page takes rock outlines only when their counts add up and every value is bounded and finite", () => {
+    const g = rockGeometry(terrainOf({ seed: 1, world: { ...liveConfig.world } }));
+    const W = 40000;
+    const H = 25000;
+    expect(checkOutlines(g, W, H)).toBe(true);
+    const bad = (change: Partial<RockGeometry>): boolean => checkOutlines({ ...g, ...change }, W, H);
+    const pts = (f: (p: Float64Array) => void): Float64Array => { const p = g.points.slice(); f(p); return p; };
+    const u32 = (a: Uint32Array, f: (p: Uint32Array) => void): Uint32Array => { const p = a.slice(); f(p); return p; };
+    expect(bad({ points: pts((p) => (p[7] = NaN)) })).toBe(false);
+    expect(bad({ points: pts((p) => (p[7] = 1e9)) })).toBe(false);
+    expect(bad({ points: pts((p) => (p[7] = -5000)) })).toBe(false);
+    expect(bad({ points: g.points.subarray(2) })).toBe(false); // the loops no longer add up to the points
+    expect(bad({ points: g.points.subarray(1) })).toBe(false); // half a point
+    expect(bad({ box: g.box.subarray(4) })).toBe(false);
+    expect(bad({ box: (() => { const b = g.box.slice(); [b[0], b[2]] = [b[2]!, b[0]!]; return b; })() })).toBe(false); // x0 past x1
+    expect(bad({ box: (() => { const b = g.box.slice(); b[1] = Infinity; return b; })() })).toBe(false);
+    expect(bad({ loopPoints: u32(g.loopPoints, (p) => (p[3] = p[2]! + 1)) })).toBe(false); // a loop of 1 point, or falling
+    expect(bad({ loopPoints: u32(g.loopPoints, (p) => (p[3] = p[4]! + 10)) })).toBe(false);
+    expect(bad({ bodyLoops: u32(g.bodyLoops, (p) => (p[1] = p[0]!)) })).toBe(false); // a body without loops
+    expect(bad({ bodyLoops: u32(g.bodyLoops, (p) => (p[p.length - 1] = p[p.length - 1]! + 1)) })).toBe(false);
+    expect(bad({ points: Array.from(g.points) as unknown as Float64Array })).toBe(false); // not typed arrays
+    expect(checkOutlines(null, W, H)).toBe(false);
+    // Totals are capped before anything is read: a huge set is refused by its size.
+    const loops = MAX_OUTLINE_LOOPS + 1;
+    expect(checkOutlines({ box: new Float64Array(4), bodyLoops: Uint32Array.of(loops), loopPoints: Uint32Array.from({ length: loops }, (_, i) => 3 * (i + 1)), points: new Float64Array(6 * loops) }, W, H)).toBe(false);
+    expect(checkOutlines({ box: new Float64Array(4), bodyLoops: Uint32Array.of(1), loopPoints: Uint32Array.of(MAX_OUTLINE_POINTS + 1), points: new Float64Array(2 * (MAX_OUTLINE_POINTS + 1)) }, W, H)).toBe(false);
+    expect(checkOutlines({ box: new Float64Array(4), bodyLoops: Uint32Array.of(1), loopPoints: Uint32Array.of(MAX_OUTLINE_POINTS), points: new Float64Array(2 * MAX_OUTLINE_POINTS) }, W, H)).toBe(true);
   }, 60_000);
 
   it("the page keeps only a known map name", () => {
