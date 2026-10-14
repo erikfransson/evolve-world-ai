@@ -96,11 +96,12 @@ export function stepRows(store: ResidentStore, f32: Float32Array, rows: Int32Arr
   }
 }
 
+// Scratch for advanceBodies, shared by all callers: safe because the call is synchronous and nothing keeps the arrays.
 let px = new Float64Array(0);
 let py = new Float64Array(0);
 
 // stepRows for helper threads, then the item each of these bodies touches (what Creature.touched returns) into touched[selves[k]].
-export function advanceRows(store: ResidentStore, f32: Float32Array, rows: Int32Array, selves: Int32Array, n: number, aging: Aging | null, world: World, radius: number, touched: Int32Array): void {
+export function advanceBodies(store: ResidentStore, f32: Float32Array, rows: Int32Array, selves: Int32Array, n: number, aging: Aging | null, world: World, radius: number, touched: Int32Array): void {
   stepRows(store, f32, rows, n, aging, world.terrain);
   px = refit(px, n);
   py = refit(py, n);

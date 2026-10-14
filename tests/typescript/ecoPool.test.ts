@@ -458,10 +458,10 @@ describe("helper packets", () => {
     expect((publishedBytes(home) - home.delta.byteOffset) / 8).toBe(need.delta);
   });
 
-  it("helpers follow a live change of the ageing rate, as the serial run does", async () => {
+  it.each([false, true])("helpers follow a live change of the ageing rate, as the serial run does, WebAssembly %s", async (wasm) => {
     const aging = (): EcoConfig => {
       const c = cfg();
-      c.eco.wasm = false;
+      c.eco.wasm = wasm;
       c.eco.aging = true;
       c.eco.agingStart = 2;
       c.eco.agingRate = 0.1;

@@ -12,7 +12,7 @@ import type { HitKind } from "./types.ts";
 import { ITEM_REMOVE, ITEM_SET, World } from "./world.ts";
 import { F, I } from "./wasm/resident.ts";
 import type { ResidentStore } from "./wasm/resident.ts";
-import { advanceRows, prepareRows } from "./wasm/residentStep.ts";
+import { advanceBodies, prepareRows } from "./wasm/residentStep.ts";
 import { SenseKernels } from "./wasm/senseKernels.ts";
 
 // Sense and think on helper threads. Each tick the coordinator, which owns the Ecosystem, publishes a packet:
@@ -68,7 +68,7 @@ export interface Packet {
   ticks: Float64Array; // ticks alive
   delta: Float64Array;
   genomes: Float64Array; // genomes of the helper's own births, in birth order; the delta records carry only their lengths
-  // Outputs of the thread that owns creature i: its state after memory and motion, the new memory (laid out like memory)
+  // Outputs of the thread that owns creature i: its state after memory and motion, the new memory (stride units per creature)
   // and the item it touches there (-1 for none).
   after: Record<"x" | "y" | "vx" | "vy" | "turnRate" | "energy" | "angle" | "cos" | "sin", Float64Array>;
   memoryOut: Float64Array; // stride units per creature, creature i's from i * stride (header slot H_STRIDE)
@@ -102,6 +102,31 @@ function writeState(c: Creature, a: StateColumns, i: number): void {
   a.angle[i] = s.heading;
   a.cos[i] = c.heading.cos;
   a.sin[i] = c.heading.sin;
+}
+
+// The nine state columns of creature i, from and to the row at f64 index o (see wasm/resident.ts).
+function rowToState(f: Float64Array, o: number, a: StateColumns, i: number): void {
+  a.x[i] = f[o + F.x]!;
+  a.y[i] = f[o + F.y]!;
+  a.vx[i] = f[o + F.vx]!;
+  a.vy[i] = f[o + F.vy]!;
+  a.turnRate[i] = f[o + F.turn]!;
+  a.energy[i] = f[o + F.energy]!;
+  a.angle[i] = f[o + F.heading]!;
+  a.cos[i] = f[o + F.cos]!;
+  a.sin[i] = f[o + F.sin]!;
+}
+
+function stateToRow(f: Float64Array, o: number, a: StateColumns, i: number): void {
+  f[o + F.x] = a.x[i]!;
+  f[o + F.y] = a.y[i]!;
+  f[o + F.vx] = a.vx[i]!;
+  f[o + F.vy] = a.vy[i]!;
+  f[o + F.turn] = a.turnRate[i]!;
+  f[o + F.energy] = a.energy[i]!;
+  f[o + F.heading] = a.angle[i]!;
+  f[o + F.cos] = a.cos[i]!;
+  f[o + F.sin] = a.sin[i]!;
 }
 
 function layout(caps: Caps): { f64At: number; outputAt: number; bytes: number } {
@@ -207,6 +232,7 @@ export class ShareCoordinator {
   }
 
   // Sizes the next packet needs; eco must have been built with the journal option.
+  // As a side effect it raises this.stride to the largest memory of any creature born so far; the stride never shrinks within a run.
   need(eco: Ecosystem): Caps {
     const j = eco.journal!;
     let delta = j.items.length + 2 * j.died.length;
@@ -311,15 +337,7 @@ export class ShareCoordinator {
       for (let k = 0; k < all.n; k++) {
         const i = all.selves[k]!;
         const o = all.rows[k]! >> 3;
-        p.x[i] = f[o + F.x]!;
-        p.y[i] = f[o + F.y]!;
-        p.vx[i] = f[o + F.vx]!;
-        p.vy[i] = f[o + F.vy]!;
-        p.turnRate[i] = f[o + F.turn]!;
-        p.energy[i] = f[o + F.energy]!;
-        p.angle[i] = f[o + F.heading]!;
-        p.cos[i] = f[o + F.cos]!;
-        p.sin[i] = f[o + F.sin]!;
+        rowToState(f, o, p, i);
         p.ticks[i] = f[o + F.ticks]!;
       }
     } else for (let i = 0; i < n; i++) {
@@ -411,15 +429,7 @@ export class ShareCoordinator {
         const p = packets[owner]!;
         const a = p.after;
         const o = rowAt[i]!;
-        f[o + F.x] = a.x[i]!;
-        f[o + F.y] = a.y[i]!;
-        f[o + F.vx] = a.vx[i]!;
-        f[o + F.vy] = a.vy[i]!;
-        f[o + F.turn] = a.turnRate[i]!;
-        f[o + F.energy] = a.energy[i]!;
-        f[o + F.heading] = a.angle[i]!;
-        f[o + F.cos] = a.cos[i]!;
-        f[o + F.sin] = a.sin[i]!;
+        stateToRow(f, o, a, i);
         const b = o << 1;
         const u0 = i32[b + I.units]! >> 3;
         const count = i32[b + I.unitCount]!;
@@ -489,7 +499,7 @@ export class ShareHelper {
     this.followAging(p.aging);
     const n = p.header[H_COUNT]!;
     this.crowd.rebuildFrom(p.x, p.y, p.energy, n, p.species);
-    if (this.store) return this.runRows(p, n);
+    if (this.store) return this.runOwnRows(p, n);
     const batch = this.batch;
     batch.clear();
     for (let i = 0; i < n; i++) {
@@ -516,7 +526,7 @@ export class ShareHelper {
   }
 
   // run for resident bodies: the packet's state goes into the rows, which are sensed, stepped and read back in bulk.
-  private runRows(p: Packet, n: number): void {
+  private runOwnRows(p: Packet, n: number): void {
     const store = this.store!;
     const kernels = this.kernels!;
     if (n > this.rows.length) {
@@ -530,22 +540,14 @@ export class ShareHelper {
       if (p.owner[i] !== this.index) continue;
       const r = this.mine.get(p.ids[i]!)!.resident!;
       const o = r.o;
-      f[o + F.x] = p.x[i]!;
-      f[o + F.y] = p.y[i]!;
-      f[o + F.vx] = p.vx[i]!;
-      f[o + F.vy] = p.vy[i]!;
-      f[o + F.turn] = p.turnRate[i]!;
-      f[o + F.energy] = p.energy[i]!;
-      f[o + F.heading] = p.angle[i]!;
-      f[o + F.cos] = p.cos[i]!;
-      f[o + F.sin] = p.sin[i]!;
+      stateToRow(f, o, p, i);
       f[o + F.ticks] = p.ticks[i]!;
       rows[m] = r.ptr;
       selves[m++] = i;
     }
     prepareRows(store, rows, m, this.world.terrain);
     kernels.runRows(this.world, this.crowd, rows, selves, m, null);
-    advanceRows(store, kernels.f32, rows, selves, m, this.aging, this.world, this.engines[0]!.creature.radius, p.touched);
+    advanceBodies(store, kernels.f32, rows, selves, m, this.aging, this.world, this.engines[0]!.creature.radius, p.touched);
     const a = p.after;
     const stride = p.header[H_STRIDE]!;
     f = store.f64; // the memory may have grown
@@ -553,15 +555,7 @@ export class ShareHelper {
     for (let k = 0; k < m; k++) {
       const i = selves[k]!;
       const o = rows[k]! >> 3;
-      a.x[i] = f[o + F.x]!;
-      a.y[i] = f[o + F.y]!;
-      a.vx[i] = f[o + F.vx]!;
-      a.vy[i] = f[o + F.vy]!;
-      a.turnRate[i] = f[o + F.turn]!;
-      a.energy[i] = f[o + F.energy]!;
-      a.angle[i] = f[o + F.heading]!;
-      a.cos[i] = f[o + F.cos]!;
-      a.sin[i] = f[o + F.sin]!;
+      rowToState(f, o, a, i);
       const b = o << 1;
       const u0 = g[b + I.units]! >> 3;
       const count = g[b + I.unitCount]!;

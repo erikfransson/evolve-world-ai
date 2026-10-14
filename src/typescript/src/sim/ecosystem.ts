@@ -12,7 +12,7 @@ import { agingOf, collide, hurt, keepInside, settle } from "./physics.ts";
 import { terrainOf } from "./terrain.ts";
 import { F } from "./wasm/resident.ts";
 import type { ResidentStore } from "./wasm/resident.ts";
-import { advanceRows, prepareRows, stepRows } from "./wasm/residentStep.ts";
+import { advanceBodies, prepareRows, stepRows } from "./wasm/residentStep.ts";
 import type { Body } from "./physics.ts";
 import type { Aging, Contact } from "./physics.ts";
 import type { StatefulRng } from "./rng.ts";
@@ -417,7 +417,7 @@ export class Ecosystem {
 
   // Phase 1b for the resident bodies at selves: memory and motion, and the item each touches into touched[self].
   advanceRows(rows: Int32Array, selves: Int32Array, n: number, touched: Int32Array): void {
-    advanceRows(this.resident!, this.kernels!.f32, rows, selves, n, this.aging, this.items, this.config.creature.radius, touched);
+    advanceBodies(this.resident!, this.kernels!.f32, rows, selves, n, this.aging, this.items, this.config.creature.radius, touched);
   }
 
   // Empties the journal, once a helper coordinator has published it.
