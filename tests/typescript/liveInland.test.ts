@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CAP_LIMITS, ITEM_HEADROOM, LIVE, ITEM_SLOT_SHARE, MAX_FOUNDERS_FILE_BYTES, MAX_SEED_FOUNDERS, SEED_COPIES, itemHeadroom, liveConfig } from "../../server/src/config.ts";
+import { CAP_LIMITS, ITEM_HEADROOM, LIVE, MAX_POPULATION, ITEM_SLOT_SHARE, MAX_FOUNDERS_FILE_BYTES, MAX_SEED_FOUNDERS, SEED_COPIES, itemHeadroom, liveConfig } from "../../server/src/config.ts";
 import { lineageName, loadFounders, parseFounders } from "../../server/src/founders.ts";
 import { LiveWorld } from "../../server/src/liveWorld.ts";
 import { Saves, openWorld } from "../../server/src/saves.ts";
@@ -326,5 +326,44 @@ describe("admin overrides across a move to a new world", () => {
     } finally {
       LIVE.speed = speed;
     }
+  });
+});
+
+const smallFounder = loadFounders(FOUNDERS.pathname)[0]!;
+
+describe("room held back for visitors", () => {
+  it("births stop at the cap less the reserve, and a visitor's add still goes in, up to maxPopulation and no further", () => {
+    expect(liveConfig.eco.birthReserve).toBe(100);
+    const world = (reserve: number): LiveWorld => {
+      const c = smallConfig();
+      c.eco.initialPopulation = 50;
+      c.eco.maxPopulation = 60;
+      c.eco.birthReserve = reserve;
+      c.creature.startEnergy = 1000; // everyone may give birth as soon as the cooldown allows
+      return new LiveWorld(c, null);
+    };
+    const open = world(0);
+    let grew = 0;
+    for (let i = 0; i < 400; i++) {
+      open.step();
+      grew = Math.max(grew, open.eco.population);
+    }
+    expect(grew).toBe(60); // without a reserve births fill the world
+    const live = world(10);
+    let most = 0;
+    for (let i = 0; i < 400; i++) {
+      live.step();
+      most = Math.max(most, live.eco.population);
+    }
+    expect(most).toBe(50);
+    expect(live.eco.population).toBe(50); // held at the cap less the reserve
+    const add = (copies: number) => live.addCreatures({ plan: smallFounder.plan, genome: smallFounder.genome, birth: { energy: 150, cost: 70, cooldown: 10 }, name: "Kiwi", hue: 10, copies }, seq(copies));
+    for (let i = 0; i < 3; i++) expect("ids" in add(3)).toBe(true); // 59
+    expect("ids" in add(1)).toBe(true); // 60, the cap
+    expect(live.eco.population).toBe(60);
+    expect(add(1)).toEqual({ reason: "the world is full, try again later" });
+    // The admin may move the reserve, but never to the whole population.
+    expect(applyTunables(live.eco, { "eco.birthReserve": Math.min(1000, MAX_POPULATION - 1) })).toBeNull();
+    expect(applyTunables(live.eco, { "eco.birthReserve": 1001 })).toMatch(/birthReserve/);
   });
 });

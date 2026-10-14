@@ -24,6 +24,7 @@ liveConfig.eco.poisonRegrow = 0.0003;
 liveConfig.eco.poisonMaxDensity = 0.01;
 liveConfig.eco.collisionDamage = true;
 liveConfig.eco.maxPopulation = MAX_POPULATION; // bounds the frame size, so the viewer budget holds
+liveConfig.eco.birthReserve = 100; // births stop 100 below the cap, so visitors can still add (insertCreature fills to maxPopulation)
 liveConfig.eco.seasons = true;
 liveConfig.eco.yearMinutes = 60;
 liveConfig.eco.winterFood = 0.4;

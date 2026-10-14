@@ -14,7 +14,7 @@ export interface Limit {
 
 // Tighter than the engine's LIVE_MAX where the server needs it: the population bounds the frame size and so the viewer budget,
 // and the item caps the item slots a world is built with (each alone; retune refuses a pair that needs more slots than the world has).
-const SERVER_MAX: Record<string, number> = { "eco.maxPopulation": MAX_POPULATION, "eco.foodMaxDensity": CAP_LIMITS.foodMaxDensity, "eco.poisonMaxDensity": CAP_LIMITS.poisonMaxDensity };
+const SERVER_MAX: Record<string, number> = { "eco.maxPopulation": MAX_POPULATION, "eco.birthReserve": Math.min(1000, MAX_POPULATION - 1), "eco.foodMaxDensity": CAP_LIMITS.foodMaxDensity, "eco.poisonMaxDensity": CAP_LIMITS.poisonMaxDensity };
 // Server settings: limits, and whole numbers only where marked.
 type AddKey = keyof typeof LIVE.add;
 const OWN: Record<string, Limit & { whole?: boolean }> = {
