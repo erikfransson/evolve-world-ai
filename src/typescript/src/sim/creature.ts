@@ -6,12 +6,12 @@ import { EXTRA_TERRAIN, energySignal, OUTPUT_SIZE, OUT_THRUST, OUT_TURN, copyPla
 import type { BodyPlan, PlanView } from "./sensors.ts";
 import { HIT_NONE } from "./types.ts";
 import type { CreatureState, Genome, HitKind, RayHit } from "./types.ts";
-import { terrainOf } from "./terrain.ts";
-import type { Terrain } from "./terrain.ts";
+import { Terrain, terrainOf } from "./terrain.ts";
 import { RayCache } from "./world.ts";
 import type { World } from "./world.ts";
 import type { Crowd } from "./crowd.ts";
 import type { SenseKernels } from "./wasm/senseKernels.ts";
+import type { ResidentState, ResidentStore } from "./wasm/resident.ts";
 import type { PhaseTimer } from "./profile.ts";
 
 let created = 0; // objects made so far in this process
@@ -26,10 +26,11 @@ const IDLE_CACHE = new RayCache();
 // rays, rayOffsets, memory and brain sizes follow the plan, which only reset changes.
 export class Creature {
   readonly state: CreatureState;
+  readonly resident: ResidentState | null; // the state and heading when the body lives in WASM memory (stepped by the kernel), else null
   readonly slot = created++; // construction order, which follows heap order; SenseBatch sorts by it
   private rayList: RayHit[] | null = null; // made on first use, since the WebAssembly sense only fills the detail creature's
   readonly brain: Brain;
-  readonly heading: Heading = { cos: 0, sin: 0 };
+  readonly heading: Heading;
   aging: Aging | null = null; // old-age upkeep, set by the owner
   brainVersion = 0; // bumped whenever reset changes the genome or plan, so a copy of the brain elsewhere (WASM) knows to refresh
   kernelSlot = -1; // this creature's brain slot in kernelOwner, the SenseKernels that last ran it
@@ -37,7 +38,7 @@ export class Creature {
 
   private readonly ownPlan: BodyPlan; // this creature's own copy
   private offsets = new Float32Array(0);
-  private units = new Float64Array(0);
+  private ownUnits = new Float64Array(0);
   private energyUpkeep = 0;
   private readonly config: EngineConfig;
   private readonly terrain: Terrain;
@@ -56,16 +57,26 @@ export class Creature {
   private inputLength = 0;
   private cache: RayCache | null = null; // made by the JS sense path only
 
-  // plan defaults to the config's; genome must be sized for it.
-  constructor(config: EngineConfig, genome: Genome, x: number, y: number, heading: number, plan: PlanView = planOf(config)) {
+  // plan defaults to the config's; genome must be sized for it. With a store the body is a resident row of it.
+  constructor(config: EngineConfig, genome: Genome, x: number, y: number, heading: number, plan: PlanView = planOf(config), store: ResidentStore | null = null) {
     this.config = config;
+    const res = (this.resident = store ? store.add() : null);
+    this.heading = res ?? { cos: 0, sin: 0 };
+    if (res) res.params = store!.block(config);
     this.terrain = terrainOf(config);
     this.ownPlan = { ...plan, hiddenLayers: plan.hiddenLayers.slice() };
     const sizes = layerSizes(config, this.ownPlan);
     this.brain = new Brain(sizes, genome);
     this.decays = decaysFor(config);
     this.fitPlan(sizes);
-    this.state = { x, y, heading, vx: 0, vy: 0, turnRate: 0, energy: config.creature.startEnergy, alive: true, ticksAlive: 0 };
+    this.state = res ?? { x, y, heading, vx: 0, vy: 0, turnRate: 0, energy: config.creature.startEnergy, alive: true, ticksAlive: 0 };
+    if (res) {
+      res.x = x;
+      res.y = y;
+      res.heading = heading;
+      res.energy = config.creature.startEnergy;
+      res.groundFactor = 1;
+    }
     this.heading.cos = Math.cos(heading);
     this.heading.sin = Math.sin(heading);
   }
@@ -92,6 +103,10 @@ export class Creature {
     return this.units;
   }
 
+  private get units(): Float64Array {
+    return this.resident ? this.resident.units : this.ownUnits;
+  }
+
   // The terrain value under the creature (0 on a map without ground), read again only after it moved.
   private ground(): number {
     const s = this.state;
@@ -113,7 +128,9 @@ export class Creature {
     f32[at + 1] = ((s.vx * cos + s.vy * sin) * c.drag) / c.maxThrust;
     f32[at + 2] = ((s.vy * cos - s.vx * sin) * c.drag) / c.maxThrust;
     f32[at + 3] = s.turnRate / c.maxTurnRate;
-    f32[at + EXTRA_TERRAIN] = this.ground();
+    const ground = this.ground();
+    f32[at + EXTRA_TERRAIN] = ground;
+    if (this.resident && !this.terrain.empty) this.resident.groundFactor = Terrain.factor(ground); // the step kernel moves by it
     const u = this.units;
     for (let i = 0; i < u.length; i++) f32[at + EXTRA_TERRAIN + 1 + i] = u[i]!;
   }
@@ -140,13 +157,17 @@ export class Creature {
     this.output = refit(this.output, sizes[sizes.length - 1]!);
     this.outBank = null;
     this.outAt = 0;
-    this.units = refit(this.units, plan.memoryShort + plan.memoryLong);
-    this.units.fill(0);
+    if (this.resident) this.resident.fitUnits(plan.memoryShort + plan.memoryLong, plan.memoryShort);
+    else {
+      this.ownUnits = refit(this.ownUnits, plan.memoryShort + plan.memoryLong);
+      this.ownUnits.fill(0);
+    }
     this.offsets = refit(this.offsets, n);
     rayAngleOffsets(plan, this.offsets);
     this.trigFresh = false;
     if (this.rayList) this.fitRays();
     this.energyUpkeep = planUpkeep(plan, this.config);
+    if (this.resident) this.resident.upkeep = this.energyUpkeep;
   }
 
   private fitRays(): void {
@@ -251,6 +272,7 @@ export class Creature {
   adoptOutput(bank: { readonly f32: Float32Array }, at: number): void {
     this.outBank = bank;
     this.outAt = at;
+    if (this.resident) this.resident.outPtr = at * 4;
   }
 
   // Overwrites the memory units with from[at ..], e.g. with a coordinator's published values.

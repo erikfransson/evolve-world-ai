@@ -85,6 +85,11 @@ export class WasmBrainBank {
     return this.kernel.memory;
   }
 
+  // Sets the function called whenever the memory grows, after which views of it must be taken again (one listener: the resident store).
+  onGrow(listener: (() => void) | null): void {
+    this.kernel.onGrow = listener;
+  }
+
   // Raw bytes in the bank's memory for a caller that shares it (the senser); 16-byte aligned, kept until freed.
   alloc(bytes: number): number {
     return this.arena.alloc(bytes);
@@ -166,6 +171,21 @@ export class WasmBrainBank {
     for (let k = 0; k < count; k++) if (this.blockPtr[slots[k]!] === undefined) throw new Error(`slot ${slots[k]} holds no brain`);
     this.kernel.i32.set(slots.subarray(0, count), this.runPtr >> 2);
     this.kernel.exports.forward(this.descPtr, this.runPtr, count, 0, SCRATCH_B, NZ_AT, IOTA_AT, TAB_AT);
+  }
+
+  // The address of the slot list of the next forwardRun (room for count slots), for a kernel to fill in place.
+  runRegion(count: number): number {
+    if (count > this.runCap) {
+      if (this.runPtr !== NO_SLOT) this.arena.release(this.runPtr, this.runCap * 4);
+      this.runCap = Math.max(64, 2 * this.runCap, count);
+      this.runPtr = this.arena.alloc(this.runCap * 4);
+    }
+    return this.runPtr;
+  }
+
+  // forwardSlots for the slots a kernel wrote at runRegion (every one holds a brain: they come from creatures attached to this bank).
+  forwardRun(count: number): void {
+    if (count > 0) this.kernel.exports.forward(this.descPtr, this.runPtr, count, 0, SCRATCH_B, NZ_AT, IOTA_AT, TAB_AT);
   }
 
   private ensureSlots(n: number): void {

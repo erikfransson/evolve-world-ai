@@ -7,6 +7,7 @@ import type { WasmBrainBank } from "./brainKernel.ts";
 import { HIT_CREATURE } from "../types.ts";
 import { SENSE_BYTES, compiled } from "./loader.ts";
 import { ROCK_CELL } from "../terrain.ts";
+import type { WasmStepper } from "./stepKernel.ts";
 
 // The whole Ecosystem sense in one WebAssembly call per batch (sense.wat): ray directions, item and wall rays in f64 with the
 // JS candidate order, crowd rays in f32 as rays.wat, and the ray features written into the brain's input vector in place.
@@ -131,6 +132,11 @@ export class WasmSenser {
     }
   }
 
+  // The address of the ray offset tables stored for the slot.
+  offsetsAt(slot: number): number {
+    return this.offPtr[slot]!;
+  }
+
   // The pointer of region r holding at least bytes, allocated or moved to a larger block when needed (contents are not kept).
   private grow(r: Region, bytes: number): number {
     if (bytes > r.cap) {
@@ -251,7 +257,8 @@ export class WasmSenser {
   }
 
   // Senses the batch and writes each creature's complete brain input (rays, extras, memory) at its slot.
-  run(world: World, crowd: Crowd, creatures: readonly Creature[], slots: Int32Array, selves: Int32Array, n: number, stride: number, startEnergy: number, detail: Creature | null = null): void {
+  // With resident, the creatures' bodies are resident rows and the step kernel builds the records and the body inputs (slotsAt is where it writes the brain slot list).
+  run(world: World, crowd: Crowd, creatures: readonly Creature[], slots: Int32Array, selves: Int32Array, n: number, stride: number, startEnergy: number, detail: Creature | null = null, resident: { stepper: WasmStepper; slotsAt: number } | null = null): void {
     this.syncItems(world);
     const count = crowd.count;
     const ccells = crowd.cols * crowd.rows;
@@ -271,7 +278,7 @@ export class WasmSenser {
     const pDetail = this.grow(this.rDetail, 16 * MAX_RAYS);
     const pP = this.grow(this.rP, P_BYTES);
     this.views(); // after the last allocation
-    const { f32, i32, f64 } = this;
+    let { f32, i32, f64 } = this;
     i32.set(crowd.cellStart, pCStart >> 2);
     if (this.rockSynced !== rock) {
       i32.set(rock.rockStart, pRockStart >> 2);
@@ -298,29 +305,35 @@ export class WasmSenser {
       i32[species + k] = crowdSpecies[k]!;
       f32[sig + k] = energySignal(energies[k]!, startEnergy);
     }
-    const rec = pRec >> 3; // record fields as f64 and as i32 indices
-    const recI = pRec >> 2;
-    const place = this.placeByRow(world, creatures, n);
-    for (let k = 0; k < n; k++) {
-      const c = creatures[k]!;
-      const s = c.state;
-      const q = place[k]!;
-      const o = rec + q * 8;
-      const slot = slots[k]!;
-      const rays = c.plan.rayCount;
-      f64[o] = s.x;
-      f64[o + 1] = s.y;
-      f64[o + 2] = c.heading.cos;
-      f64[o + 3] = c.heading.sin;
-      f64[o + 4] = c.plan.rayLength;
-      const w = recI + q * 16;
-      i32[w + 10] = selves[k]!;
-      i32[w + 11] = rays;
-      i32[w + 12] = this.offPtr[slot]!;
-      const inFloat = this.bank.inputAt(slot);
-      i32[w + 13] = inFloat * 4;
-      i32[w + 14] = c === detail ? pDetail : 0;
-      c.writeBodyInputs(f32, inFloat + rays * stride);
+    if (resident) {
+      resident.stepper.fill(creatures, n, selves, world, rock, pRec, resident.slotsAt, pDetail, detail, stride);
+      this.views(); // fill may have grown the memory
+      ({ f32, i32, f64 } = this);
+    } else {
+      const rec = pRec >> 3; // record fields as f64 and as i32 indices
+      const recI = pRec >> 2;
+      const place = this.placeByRow(world, creatures, n);
+      for (let k = 0; k < n; k++) {
+        const c = creatures[k]!;
+        const s = c.state;
+        const q = place[k]!;
+        const o = rec + q * 8;
+        const slot = slots[k]!;
+        const rays = c.plan.rayCount;
+        f64[o] = s.x;
+        f64[o + 1] = s.y;
+        f64[o + 2] = c.heading.cos;
+        f64[o + 3] = c.heading.sin;
+        f64[o + 4] = c.plan.rayLength;
+        const w = recI + q * 16;
+        i32[w + 10] = selves[k]!;
+        i32[w + 11] = rays;
+        i32[w + 12] = this.offPtr[slot]!;
+        const inFloat = this.bank.inputAt(slot);
+        i32[w + 13] = inFloat * 4;
+        i32[w + 14] = c === detail ? pDetail : 0;
+        c.writeBodyInputs(f32, inFloat + rays * stride);
+      }
     }
     const P = pP >> 3;
     const PF = pP >> 2;

@@ -10,6 +10,7 @@ import { driftBirth, driftPlan, mutateStructure, randomBirth, randomPlan, remapW
 import type { BirthTraits } from "./planMutation.ts";
 import { agingOf, collide, hurt, keepInside, settle } from "./physics.ts";
 import { terrainOf } from "./terrain.ts";
+import type { ResidentStore } from "./wasm/resident.ts";
 import type { Body } from "./physics.ts";
 import type { Aging, Contact } from "./physics.ts";
 import type { StatefulRng } from "./rng.ts";
@@ -201,6 +202,7 @@ export class Ecosystem {
   private readonly crowd: Crowd;
   private readonly batch = new SenseBatch();
   private readonly kernels: SenseKernels | null; // with eco.wasm when WebAssembly SIMD is available
+  private readonly resident: ResidentStore | null; // creature bodies in the kernel memory, stepped by the WASM step kernel; not with helper threads, which step in JS
   private readonly states: CreatureState[] = [];
   private readonly byId = new Map<number, EcoCreature>();
   private readonly spare: EcoCreature[][]; // per species, since a creature keeps its species' engine config
@@ -289,6 +291,7 @@ export class Ecosystem {
     const maxRays = Math.max(config.creature.rayCount, ...this.ranges.map((r) => r.rayCountRange[1] ?? 0), ...(pool ?? []).map((e) => e.plan.rayCount), ...(cast ?? []).map((c) => c.plan.rayCount));
     // options.kernels: instances to reuse (RL), reset here; the caller owns them and runs one Ecosystem on them at a time.
     this.kernels = !eco.wasm ? null : options.kernels && maxRays <= MAX_RAYS ? options.kernels.reset(config) : SenseKernels.create(config, maxRays);
+    this.resident = this.kernels?.stepper && !options.journal ? this.kernels.store : null;
     this.childPlan = planOf(config);
 
     const { width, height } = config.world;
@@ -453,7 +456,8 @@ export class Ecosystem {
         // The batch holds every member in creature construction order: same work, but the objects are read front to back.
         const { creatures, count } = this.batch;
         const f32 = this.kernels?.f32;
-        for (let k = 0; k < count; k++) {
+        if (this.resident) this.kernels!.stepper!.run(creatures, count, this.aging, this.items.terrain, this.profile);
+        else for (let k = 0; k < count; k++) {
           const c = creatures[k]!;
           const out = c.outputArray(f32);
           c.remember(out);
@@ -783,9 +787,10 @@ export class Ecosystem {
     let m = this.spare[species]!.pop();
     if (m) m.creature.reset(genome, x, y, heading, energy, plan);
     else {
-      m = new EcoCreature(new Creature(this.engines[species]!, genome, x, y, heading, plan));
+      m = new EcoCreature(new Creature(this.engines[species]!, genome, x, y, heading, plan, this.resident));
       m.creature.state.energy = energy;
     }
+    if (this.resident) this.kernels!.attach(m.creature);
     m.species = species;
     this.counts[species]!.population++;
     m.id = this.nextId++;
@@ -1011,8 +1016,9 @@ export class Ecosystem {
 
   // Appends a saved creature to the end of the member list (call in saved order), with its id and every field; the journal sees it as born.
   restoreMember(r: MemberRecord): EcoCreature {
-    const m = new EcoCreature(new Creature(this.engines[r.species]!, r.genome, r.x, r.y, r.heading, r.plan));
+    const m = new EcoCreature(new Creature(this.engines[r.species]!, r.genome, r.x, r.y, r.heading, r.plan, this.resident));
     const c = m.creature;
+    if (this.resident) this.kernels!.attach(c);
     const s = c.state;
     s.vx = r.vx; s.vy = r.vy; s.turnRate = r.turnRate; s.energy = r.energy; s.ticksAlive = r.ticksAlive;
     c.heading.cos = r.cos; c.heading.sin = r.sin;

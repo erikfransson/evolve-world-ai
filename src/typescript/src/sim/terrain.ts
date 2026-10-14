@@ -166,6 +166,12 @@ export class Terrain {
     this.nearRadius = radius;
   }
 
+  // keepOut's clear-of-rock raster for discs of this radius (one byte per 100 unit square, row-major), for the WASM step kernel.
+  clearRaster(radius: number): { near: Uint8Array; cols: number; rows: number } {
+    if (radius !== this.nearRadius) this.buildNear(radius);
+    return { near: this.near, cols: this.nearCols, rows: this.nearRows };
+  }
+
   // -1 on slow ground, 1 on fast ground, 0 elsewhere.
   valueAt(x: number, y: number): number {
     return this.ground === null ? 0 : this.ground.valueAt(x, y);

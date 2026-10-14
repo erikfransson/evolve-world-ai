@@ -6,7 +6,9 @@ import type { Crowd } from "../crowd.ts";
 import type { World } from "../world.ts";
 import { WasmBrainBank } from "./brainKernel.ts";
 import type { PhaseTimer } from "../profile.ts";
+import { ResidentStore } from "./resident.ts";
 import { MAX_RAYS, WasmSenser } from "./senser.ts";
+import { WasmStepper } from "./stepKernel.ts";
 
 // senseThinkBatch on the WASM kernels: sense.wat does rays and brain inputs for the whole batch in one call, then the brains run
 // in WebAssembly too. Each creature keeps a brain slot here for as long as this owner holds it (creatures are recycled, not
@@ -19,6 +21,8 @@ export class SenseKernels {
   detail: Creature | null = null;
   private readonly brains: WasmBrainBank;
   private readonly senser: WasmSenser;
+  readonly store: ResidentStore; // creature bodies resident in the kernel memory (an Ecosystem that steps its creatures here makes them in it)
+  readonly stepper: WasmStepper | null;
   private stride: number; // ray features per ray in the brain input
   private energyScale: number; // seen energies are squashed against this, the largest species start energy (speciesEngine's seenEnergyScale)
   private readonly versions: number[] = []; // brainVersion of the creature each slot was set from
@@ -28,6 +32,8 @@ export class SenseKernels {
   private constructor(brains: WasmBrainBank, senser: WasmSenser, config: EcoConfig) {
     this.brains = brains;
     this.senser = senser;
+    this.store = new ResidentStore(brains);
+    this.stepper = WasmStepper.create(this.store);
     this.stride = inputLayout(config).rayFeatures;
     this.energyScale = seenEnergyScale(speciesList(config));
   }
@@ -46,6 +52,8 @@ export class SenseKernels {
   reset(config: EcoConfig): this {
     this.brains.reset();
     this.senser.reset();
+    this.store.reset();
+    this.stepper?.reset();
     this.versions.length = 0;
     this.nextSlot = 0;
     this.detail = null;
@@ -59,10 +67,28 @@ export class SenseKernels {
     return this.brains.f32;
   }
 
+  // Gives a resident creature (see ResidentStore) its brain slot and tells its row where the kernels find it. Call after each new Creature
+  // and each reset; the creature's brain then stays in its slot and a tick needs no per-creature slot work.
+  attach(c: Creature): void {
+    if (c.kernelOwner !== this) {
+      c.kernelOwner = this;
+      c.kernelSlot = this.nextSlot++;
+    }
+    const slot = c.kernelSlot;
+    this.brains.set(slot, c.brain.sizes, c.brain.genome);
+    this.senser.setOffsets(slot, c);
+    this.versions[slot] = c.brainVersion;
+    c.adoptOutput(this.brains, this.brains.outputAt(slot));
+    const r = c.resident!;
+    r.setBrain(slot, c.plan.rayCount, this.senser.offsetsAt(slot), this.brains.inputAt(slot) * 4);
+    r.rayLength = c.plan.rayLength;
+  }
+
   run(world: World, crowd: Crowd, batch: SenseBatch, prof: PhaseTimer | null = null): void {
     const n = batch.count;
     if (n === 0) return;
     const { creatures, selves } = batch;
+    if (creatures[0]!.resident) return this.runResident(world, crowd, batch, prof);
     if (n > this.slots.length) this.slots = new Int32Array(Math.max(n, 2 * this.slots.length));
     const slots = this.slots;
     const brains = this.brains;
@@ -82,6 +108,23 @@ export class SenseKernels {
     if (detail) {
       this.senser.readRays(detail, crowd);
       detail.adoptInput(brains.f32, brains.inputAt(slots[at]!));
+    }
+  }
+
+  // run for resident creatures: the step kernel builds the records and brain inputs from their rows, and the slot list of the brain run.
+  private runResident(world: World, crowd: Crowd, batch: SenseBatch, prof: PhaseTimer | null): void {
+    const n = batch.count;
+    const { creatures, selves } = batch;
+    const detail = this.detail && creatures.includes(this.detail) ? this.detail : null;
+    const slotsAt = this.brains.runRegion(n);
+    prof?.lap("slots");
+    this.senser.run(world, crowd, creatures, this.slots, selves, n, this.stride, this.energyScale, detail, { stepper: this.stepper!, slotsAt });
+    prof?.lap("senser");
+    this.brains.forwardRun(n);
+    prof?.lap("brain forward");
+    if (detail) {
+      this.senser.readRays(detail, crowd);
+      detail.adoptInput(this.brains.f32, this.brains.inputAt(detail.kernelSlot));
     }
   }
 
