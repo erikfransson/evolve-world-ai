@@ -133,11 +133,20 @@ export class Terrain {
   private near = new Uint8Array(0);
   private nearCols = 0;
   private nearRows = 0;
+  private readonly nearByRadius = new Map<number, Uint8Array<ArrayBuffer>>(); // built rasters, so worlds of different radii sharing this Terrain do not rebuild in turn
 
   private buildNear(radius: number): void {
     const cols = (this.nearCols = Math.ceil(this.width / CLEAR_CELL));
     const rows = (this.nearRows = Math.ceil(this.height / CLEAR_CELL));
+    const built = this.nearByRadius.get(radius);
+    if (built) {
+      this.near = built;
+      this.nearRadius = radius;
+      return;
+    }
+    if (this.nearByRadius.size >= 8) this.nearByRadius.clear(); // a bound; there are only a few creature radii in practice
     const near = (this.near = new Uint8Array(cols * rows));
+    this.nearByRadius.set(radius, near);
     for (let i = 0; i < this.rockCount; i++) {
       const x = this.rockX[i]!;
       const y = this.rockY[i]!;

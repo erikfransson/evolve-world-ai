@@ -514,7 +514,7 @@ export class Ecosystem {
     prof?.lap("eat");
     if (this.hunters) this.hunt();
     prof?.lap("hunt");
-    if (eco.collisions) this.collideAll(gridded);
+    if (eco.collisions) this.collideAll();
     prof?.lap("collisions");
 
     for (let i = n - 1; i >= 0; i--) {
@@ -604,12 +604,11 @@ export class Ecosystem {
   // Pushes overlapping pairs apart with a bounce, using a grid of the moved positions. Pairs resolve in grid order.
   // The sweep culls on the grid's sorted position arrays; only overlapping pairs touch the creature objects (bump), which write
   // their new positions back to the arrays for the pairs after them.
-  // gridded: the crowd already holds the moved positions.
-  private collideAll(gridded = false): void {
+  // The crowd already holds the moved positions (sharedPhase rebuilds it before eating).
+  private collideAll(): void {
     const crowd = this.crowd;
     const states = this.states;
     if (states.length < 2) return; // no pairs
-    if (!gridded) crowd.rebuild(states, states.length);
     const { cols, rows, cellStart, xs, ys } = crowd;
     const { radius } = this.config.creature;
     const reach = 2 * radius;
