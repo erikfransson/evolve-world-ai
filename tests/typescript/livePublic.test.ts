@@ -145,6 +145,17 @@ describe("public server: GET /stats", () => {
     expect(await (await fetch(`http://127.0.0.1:${port}/stats`)).text()).toBe(before); // the viewer is not counted until the next rebuild
   });
 
+  it("answers a 503 and keeps serving when the numbers cannot be read", async () => {
+    const port = 50422;
+    const { world } = await serve(port);
+    const eco = world.eco;
+    Object.defineProperty(world, "eco", { configurable: true, get: () => { throw new Error("mid-swap"); } });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    expect((await fetch(`http://127.0.0.1:${port}/stats`)).status).toBe(503);
+    Object.defineProperty(world, "eco", { configurable: true, value: eco, writable: true });
+    expect((await fetch(`http://127.0.0.1:${port}/stats`)).status).toBe(200);
+  });
+
   it("a request flood gets at most the burst plus the rate, the rest a 503", async () => {
     const port = 50420;
     await serve(port, { statsGetsPerSecond: 1, statsGetBurst: 3 });

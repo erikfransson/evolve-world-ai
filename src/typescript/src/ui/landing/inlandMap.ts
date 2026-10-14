@@ -27,7 +27,7 @@ const MIN_AGE_S = 8; // before the first birth
 const LIFE_S = [70, 140] as const;
 const FADE_SECONDS = 1.2;
 const HUE_DRIFT = 3; // degrees a child's colour moves, as in the live world
-const FOLLOW_S = 9; // the followed creature changes this often
+const FOLLOW_S = 9; // the followed creature changes this often (or when it dies)
 const SPECKS_PER_FOOD = 0.08; // food specks per cell per food level above FOOD_SPECKS_FROM
 const FOOD_SPECKS_FROM = 6; // of 15: only the richer ground shows food
 
@@ -80,12 +80,14 @@ export function inlandMapScene(seed: number): MapScene {
     }
   }
 
+  // A rich, clean open spot away from the edge; the map centre if a regenerated grid had none.
   const free = (): { x: number; y: number } => {
-    for (;;) {
+    for (let k = 0; k < 10000; k++) {
       const x = rng.range(0, MAP_W);
       const y = rng.range(0, MAP_H);
       if (!rockAt(x, y) && foodAt(x, y) > 0.6 && poisonAt(x, y) === 0 && x > 80 && x < MAP_W - 80 && y > 80 && y < MAP_H - 80) return { x, y };
     }
+    return { x: MAP_W / 2, y: MAP_H / 2 };
   };
   const spawn = (x: number, y: number, hue: number, e: number): Dot => {
     const d: Dot = { x, y, h: rng.range(0, 2 * Math.PI), e, hue, born: tick, dies: tick + ticksOf(rng.range(LIFE_S[0], LIFE_S[1])), fading: -1 };
@@ -156,8 +158,10 @@ export function inlandMapScene(seed: number): MapScene {
         }
       }
       if (!followed || followed.fading >= 0 || (tick - followAt) * dt > FOLLOW_S) {
-        followed = null;
-        for (const d of dots) if (d.fading < 0 && (!followed || d.born < followed.born)) followed = d;
+        // Another living creature, picked at random.
+        const was = followed;
+        const pick = dots.filter((d) => d.fading < 0 && d !== was);
+        followed = pick.length ? pick[Math.floor(rng.next() * pick.length)]! : was && was.fading < 0 ? was : null;
         followAt = tick;
       }
     },

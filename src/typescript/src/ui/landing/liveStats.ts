@@ -41,8 +41,28 @@ export function statsText(s: LiveStats): string {
 export async function fetchStats(url: string, timeoutMs = 5000): Promise<LiveStats | null> {
   try {
     const r = await fetch(url, { signal: AbortSignal.timeout(timeoutMs), credentials: "omit", referrerPolicy: "no-referrer" });
-    if (!r.ok) return null;
-    return parseStats(await r.text());
+    if (!r.ok || !r.body) return null;
+    // At most MAX_BYTES + 1 bytes are read, so a hostile server cannot fill the tab's memory.
+    const reader = r.body.getReader();
+    const parts: Uint8Array[] = [];
+    let size = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      parts.push(value);
+      size += value.length;
+      if (size > MAX_BYTES) {
+        void reader.cancel();
+        return null;
+      }
+    }
+    const bytes = new Uint8Array(size);
+    let at = 0;
+    for (const p of parts) {
+      bytes.set(p, at);
+      at += p.length;
+    }
+    return parseStats(new TextDecoder().decode(bytes));
   } catch {
     return null;
   }

@@ -1,7 +1,7 @@
 import { TICK_SECONDS, WARMUP_TICKS, arenaScene, ecosystemScene, inlandMapScene } from "../../src/typescript/src/ui/landing/index.ts";
 import { ECO_CAP } from "../../src/typescript/src/ui/landing/ecosystem.ts";
 import { MAP_CAP, rockAt } from "../../src/typescript/src/ui/landing/inlandMap.ts";
-import { parseStats, statsText, statsUrl } from "../../src/typescript/src/ui/landing/liveStats.ts";
+import { fetchStats, parseStats, statsText, statsUrl } from "../../src/typescript/src/ui/landing/liveStats.ts";
 
 const TICKS = Math.round(60 / TICK_SECONDS);
 
@@ -126,5 +126,18 @@ describe("live stats line", () => {
     expect(statsText({ creatures: 2987, viewers: 4 })).toBe("2,987 creatures alive · 4 watching");
     expect(statsText({ creatures: 0, viewers: 1 })).toBe("No creatures right now, add the first one · 1 watching");
     expect(statsText({ creatures: 1, viewers: 0 })).toBe("1 creature alive");
+  });
+
+  it("reads at most a few hundred bytes of the answer, however much the server sends", async () => {
+    let pulled = 0;
+    const endless = new ReadableStream<Uint8Array>({ pull(c) { pulled++; c.enqueue(new Uint8Array(100).fill(32)); } });
+    vi.stubGlobal("fetch", async () => new Response(endless, { status: 200 }));
+    expect(await fetchStats("http://x/stats")).toBeNull();
+    expect(pulled).toBeLessThan(10);
+    vi.stubGlobal("fetch", async () => new Response('{"creatures":5,"viewers":2}', { status: 200 }));
+    expect(await fetchStats("http://x/stats")).toEqual({ creatures: 5, viewers: 2 });
+    vi.stubGlobal("fetch", async () => new Response("{}", { status: 503 }));
+    expect(await fetchStats("http://x/stats")).toBeNull();
+    vi.unstubAllGlobals();
   });
 });

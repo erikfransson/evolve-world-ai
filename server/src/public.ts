@@ -57,7 +57,7 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
   const http = createServer(timeouts, (req, res) => {
     if (req.method !== "GET" || req.url !== "/stats") return void res.writeHead(426, { connection: "close" }).end();
     if (!statsGets.take(1)) return void res.writeHead(503, { connection: "close", "retry-after": "10" }).end();
-    const now = Date.now();
+    const now = performance.now(); // monotonic, so a clock step cannot freeze the numbers
     try {
       if (now - statsAt >= limits.statsEveryMs) {
         statsBody = JSON.stringify({ creatures: live.eco.population, viewers: viewers.size });
