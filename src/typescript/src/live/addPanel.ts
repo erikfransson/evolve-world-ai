@@ -281,7 +281,7 @@ export class AddPanel {
     }
     const parsed = parseCreatureFile(text);
     if (typeof parsed === "string") return this.fileError(`Not a creature file this world can take: ${parsed}.`);
-    if (parsed.kind !== "forager") return this.fileError("That creature is from The Great Hunt. Live World takes foragers (Ecosystem creatures) from the RL Arena.");
+    if (parsed.kind !== "forager") return this.fileError("That creature is a hunter or prey from the RL Arena's hunt worlds. Live World takes foragers (Ecosystem creatures).");
     this.file = { label: parsed.name, plan: parsed.plan, genome: Float32Array.from(parsed.genome) };
     msg.textContent = `${parsed.name}: ${parsed.plan.rayCount} rays, brain ${parsed.plan.hiddenLayers.join("-")}${parsed.training.iterations ? `, trained ${parsed.training.iterations} iterations` : ""}.`;
     const name = this.$<HTMLInputElement>("addName");

@@ -233,6 +233,13 @@ describe("env groups", () => {
     expect(groupOf(envById("brawl")!)).toBe("Compete");
     expect(groupOf(envById("aggressor")!)).toBe("Fight");
     expect(groupOf(envById("poison-field")!)).toBe("Advanced");
+    expect(groupOf(envById("live-patch")!)).toBe("Bigger");
+  });
+
+  it("keeps every Bigger env within the custom env limits", () => {
+    const bigger = ENVS.filter((e) => groupOf(e) === "Bigger");
+    expect(bigger.length).toBeGreaterThanOrEqual(5);
+    for (const e of bigger) expect(typeof checkEnv(JSON.parse(JSON.stringify(e)), "ecosystem", 0)).not.toBe("string");
   });
 });
 

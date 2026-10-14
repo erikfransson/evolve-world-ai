@@ -3,8 +3,8 @@
 Running log of optimisation experiments for large populations (500 to 2000).
 Benchmark: `node src/bench.ts --pop 1000 --gens 2` in `src/typescript` on an 8-core machine, quiet unless noted.
 The fingerprint hashes all fitness values, so an unchanged fingerprint means unchanged results.
-Current fingerprints (since the 2026-10-11 item spacing from poison; before: 265968394 and 836727452): `--pop 1000 --gens 2` 804117055, `--pop 300 --gens 12 --seed 2` 121151891.
-Obstacles and terrain (#34, 2026-10-12) add a brain input, so a genome has more genes and every mutation draws more numbers: fingerprints with the map off changed on purpose. `--pop 300 --gens 12 --seed 2` 727564408; `ecoBench --seconds 30 --pop 600` 739359978 (also with 3 helpers), `--set eco.wasm=false` 877945501, `--predators --seconds 40` 410981010 (before: 847633506, 204227508, 303607739). `--pop 1000 --gens 2` not re-measured. Rollback is one-way: a version 2 save (written after this change) cannot be read by an older build.
+Current fingerprints (since obstacles and terrain, #34, 2026-10-12, which add a brain input, so a genome has more genes and every mutation draws more numbers; the map-off values changed on purpose):
+`--pop 300 --gens 12 --seed 2` 727564408; `ecoBench --seconds 30 --pop 600` 739359978 (also with 3 helpers), `--set eco.wasm=false` 877945501, `--predators --seconds 40` 410981010 (before: 847633506, 204227508, 303607739). `--pop 1000 --gens 2` not re-measured. Rollback is one-way: a version 2 save (written after this change) cannot be read by an older build.
 
 | Date       | Idea                                                    | Seconds (pop 1000, 2 gens) | Speedup | Results          | Verdict  |
 |------------|---------------------------------------------------------|----------------------------|---------|------------------|----------|
@@ -134,9 +134,9 @@ Browser (headless Chrome, preview, about 1000-1100 creatures, default world): on
 
 ## WebAssembly in Ecosystem sense and think (E5c)
 
-`node src/ecoBench.ts --seconds 10 --pop N [--threads 4 --shared] --set eco.wasm=true|false`, steady ms per tick, world 12000 x 7500, 2026-10-11, JS and WASM run in alternating pairs.
+`node src/ecoBench.ts --seconds 10 --pop N [--threads 4] --set eco.wasm=true|false`, steady ms per tick, world 12000 x 7500, 2026-10-11, JS and WASM run in alternating pairs.
 Item and wall rays, encoding and the shared phase stay in JS; crowd rays and brains run in WASM, each thread with its own kernels.
-Several runs per cell, machine load 5-12 from other jobs.
+Several runs per cell, machine load 5-12 from other jobs. The shared columns and runs are from the since removed shared-memory mode.
 
 | Creatures | Serial JS         | Serial WASM       | 4 shared JS             | 4 shared WASM           |
 |-----------|-------------------|-------------------|-------------------------|-------------------------|
@@ -188,5 +188,5 @@ Browser comparison on current main (headless Chrome, preview, 1440x900, 4 helper
 | Predators & prey      | 1.8, 4.0, 4.1 | 3.2, 3.4, 4.4 |
 
 Means 2.9 vs 2.8, 3.4 vs 3.1, 3.3 vs 3.7. No case is clearly better by 10%, and run-to-run spread (load 12 vs 40) is larger than the difference, so the extra barrier code, second resize path and installed service worker are not paid back.
-Fingerprints are unchanged: `ecoBench --seconds 30 --pop 600` 417250420 and `--predators --seconds 40` 657843665 for 0 and 3 helpers, Trials `bench --pop 300 --gens 12 --seed 2` 836727452.
+Fingerprints were unchanged then (before the later terrain input): `ecoBench --seconds 30 --pop 600` 417250420 and `--predators --seconds 40` 657843665 for 0 and 3 helpers, Trials `bench --pop 300 --gens 12 --seed 2` 836727452.
 The `unref` on node helper workers was only needed for shared-mode waits; without it a closed pool still lets the process exit, so it was dropped.

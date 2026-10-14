@@ -382,7 +382,7 @@ describe("catch-up of a new viewer", () => {
     const world = new LiveWorld(c, null);
     expect(world.itemsSize()).toBeGreaterThan(300_000);
     expect(LIMITS.connectBurstBytes).toBeGreaterThan(world.itemsSize() + 3000 * 19);
-    const port = 50460;
+    const port = 62460;
     const pub = startPublic("127.0.0.1", port, world);
     try {
       await new Promise<void>((r) => (pub.http.listening ? r() : pub.http.once("listening", () => r())));

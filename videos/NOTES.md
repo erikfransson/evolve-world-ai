@@ -6,7 +6,7 @@
 | A1  | Render tooling (Node canvas to ffmpeg)           | done, ~5 ms/frame for the landing scene at 720p          |
 | A2  | Style and face samples for Erik to rate          | in progress: emotions story in classic, cute, neon        |
 | A3  | Compare with another stack (Motion Canvas etc.)  | open                                                      |
-| B1  | Sound: synthesized effects and CC0 assets         | open                                                      |
+| B1  | Sound: synthesized effects and CC0 assets         | synth effects and music bed built (`src/lib/audio.ts`)   |
 | C1  | Trailers 15/30/60 s                              | after Erik rates the samples                              |
 | R1  | Independent reviews (2-3 Opus, 1 Fable)          | open, each round rates video quality only                 |
 

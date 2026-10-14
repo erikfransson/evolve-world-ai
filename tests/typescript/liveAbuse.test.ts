@@ -22,8 +22,8 @@ describe("admin overrides", () => {
     writeFileSync(join(dir, "admin-overrides.json"), JSON.stringify({ "eco.hueDrift": 10 }));
     const world = new LiveWorld(smallConfig(), null);
     const saved = loadOverrides(dir, world);
-    const admin = startAdmin("127.0.0.1", 43517, "tok", world, dir, dir, saved, { pause() {}, resume() {}, paused: () => false, saveNow: async () => "", listSaves: () => [], loadSave: async () => "", stop() {} });
-    const ws = new WebSocket("ws://127.0.0.1:43517/");
+    const admin = startAdmin("127.0.0.1", 62517, "tok", world, dir, dir, saved, { pause() {}, resume() {}, paused: () => false, saveNow: async () => "", listSaves: () => [], loadSave: async () => "", stop() {} });
+    const ws = new WebSocket("ws://127.0.0.1:62517/");
     const replies: { t: string }[] = [];
     ws.on("message", (d: Buffer) => replies.push(JSON.parse(d.toString())));
     await new Promise((r) => ws.on("open", r));
@@ -54,14 +54,14 @@ describe("slow readers", () => {
   }
 
   it("drops a client whose queue passes the hard cap", async () => {
-    const { ws, done } = await slowClient(43518, LIMITS.hardBufferedBytes);
+    const { ws, done } = await slowClient(62518, LIMITS.hardBufferedBytes);
     expect(ws.bufferedAmount).toBeGreaterThan(LIMITS.hardBufferedBytes);
     expect(dropReason(ws.bufferedAmount, state(), 1000)).toMatch(/hard cap/);
     done();
   });
 
   it("drops a client held above the frame-skip level for more than 10 s, not before", async () => {
-    const { ws, done } = await slowClient(43519, LIMITS.maxBufferedBytes);
+    const { ws, done } = await slowClient(62519, LIMITS.maxBufferedBytes);
     expect(ws.bufferedAmount).toBeGreaterThan(LIMITS.maxBufferedBytes);
     expect(ws.bufferedAmount).toBeLessThan(LIMITS.hardBufferedBytes);
     const c = state();

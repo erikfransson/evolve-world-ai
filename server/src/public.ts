@@ -45,12 +45,39 @@ interface Viewer {
   adding: boolean; // an add waits for the tick in flight
 }
 
-// The public side: an http server that only upgrades to WebSocket, the viewers, the frame and stats loops and the heartbeat.
+// The public side: an http server that upgrades to WebSocket (and answers GET /stats), the viewers, the frame and stats loops and the heartbeat.
 // limits: LIMITS, or a variant in tests. gate: the add caps (a test clock in tests). trustForwarded: key visitors on X-Forwarded-For.
 export function startPublic(host: string, port: number, live: LiveWorld, limits: typeof LIMITS = LIMITS, gate = new AddGate(), trustForwarded = TRUST_FORWARDED): PublicServer {
   // A socket that never finishes its request (the WebSocket upgrade) is closed after headersTimeoutMs, checked every second.
   const timeouts = { headersTimeout: limits.headersTimeoutMs, requestTimeout: limits.headersTimeoutMs, connectionsCheckingInterval: 1000 };
-  const http = createServer(timeouts, (_req, res) => res.writeHead(426, { connection: "close" }).end());
+  // Besides the upgrade, only GET /stats: two small numbers for the landing page, public, rebuilt at most once a statsEveryMs, never the request body.
+  const statsGets = new TokenBucket(limits.statsGetsPerSecond, limits.statsGetBurst);
+  let statsBody = "";
+  let statsAt = -Infinity;
+  const http = createServer(timeouts, (req, res) => {
+    if (req.method !== "GET" || req.url !== "/stats") return void res.writeHead(426, { connection: "close" }).end();
+    if (!statsGets.take(1)) return void res.writeHead(503, { connection: "close", "retry-after": "10" }).end();
+    const now = performance.now(); // monotonic, so a clock step cannot freeze the numbers
+    try {
+      if (now - statsAt >= limits.statsEveryMs) {
+        statsBody = JSON.stringify({ creatures: live.eco.population, viewers: viewers.size });
+        statsAt = now;
+      }
+    } catch (e) {
+      console.error("stats:", e instanceof Error ? e.message : e);
+      return void res.writeHead(503, { connection: "close" }).end();
+    }
+    res
+      .writeHead(200, {
+        connection: "close",
+        "content-type": "application/json",
+        "content-length": Buffer.byteLength(statsBody),
+        "cache-control": "public, max-age=10",
+        "access-control-allow-origin": "*",
+        "x-content-type-options": "nosniff",
+      })
+      .end(statsBody);
+  });
   http.on("error", (e) => {
     console.error(`public port ${port}: ${e.message}`);
     process.exit(1);

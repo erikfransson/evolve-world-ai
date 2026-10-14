@@ -7,7 +7,7 @@ import { cleanAddReply, cleanAddRules, encodeAdd, validName } from "./add.ts";
 import type { AddRequest, AddRules, Added, Refused } from "./add.ts";
 import { cleanMap } from "./mapInfo.ts";
 
-export type LinkState = "connecting" | "live" | "offline" | "full" | "outdated";
+export type LinkState = "connecting" | "live" | "offline" | "full" | "updating" | "outdated";
 
 export interface LinkHandlers {
   onState(state: LinkState, retryInS: number): void;
@@ -27,6 +27,7 @@ const PING_EVERY_MS = 20_000;
 export const HIDDEN_CLOSE_MS = 3 * 60_000; // a tab hidden this long lets go of its viewer slot, and connects again when shown
 const STALE_MS = 15_000; // no message for this long counts as a dead link
 const OFFLINE_AFTER_FAILURES = 2; // the first try is "connecting", later failed ones "offline"
+const UPDATING_RETRY_S = 60; // while the server runs an older protocol (plus up to 25% jitter)
 
 const n = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : 0);
 const MAX_COUNT = 1e9; // creatures, births, items: far past any real world, short enough for a tile
@@ -121,6 +122,7 @@ export class LiveLink {
   private selected: number | null = null;
   private failures = 0;
   private full = false; // the server said it has no room, until the next hello
+  private updating = false; // the server runs an older protocol than this page: it is being updated, keep retrying
   private timer: ReturnType<typeof setTimeout> | undefined;
   private lastMessage = 0;
   private readonly url: string;
@@ -186,6 +188,7 @@ export class LiveLink {
 
   private open(): void {
     this.full = false; // a busy reply on this try sets it again
+    this.updating = false;
     let ws: WebSocket;
     try {
       ws = new WebSocket(this.url);
@@ -204,8 +207,10 @@ export class LiveLink {
 
   private lost(): void {
     this.ws = null;
-    const wait = retryDelayS(this.failures++);
-    this.h.onState(this.full ? "full" : this.failures >= OFFLINE_AFTER_FAILURES ? "offline" : "connecting", Math.ceil(wait));
+    // An older server costs it a full connect per try, so while it is being updated the page asks only about once a minute.
+    const wait = this.updating ? UPDATING_RETRY_S * (1 + 0.25 * Math.random()) : retryDelayS(this.failures);
+    this.failures++;
+    this.h.onState(this.full ? "full" : this.updating ? "updating" : this.failures >= OFFLINE_AFTER_FAILURES ? "offline" : "connecting", Math.ceil(wait));
     this.timer = setTimeout(() => this.open(), wait * 1000);
   }
 
@@ -232,6 +237,12 @@ export class LiveLink {
 
   private text(msg: ServerText): void {
     if (msg.t === "hello") {
+      if (typeof msg.version === "number" && msg.version < PROTOCOL_VERSION) {
+        // The page was released before the server was: retry with backoff until it runs the new version.
+        this.updating = true;
+        this.ws?.close();
+        return;
+      }
       if (msg.version !== PROTOCOL_VERSION) {
         clearTimeout(this.timer);
         this.outdated = true;

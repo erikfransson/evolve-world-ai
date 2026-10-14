@@ -1,5 +1,7 @@
 # Per-phase profile at 12k, 20k, 30k
 
+Note: the `--shared` helper runs used the shared-memory mode, since removed (see `docs/perf-notes.md`).
+
 Branch `worktree-agent-a6d063fc3cb59d409`, 2026-10-11, based on main at e17cba7.
 
 | Idea | Before | After | Speedup | Exact? | Verdict |

@@ -20,8 +20,8 @@ export type CreatureKind = "forager" | "prey" | "predator";
 // What each kind runs as: its input layout (world) and species.
 export const KINDS: Record<CreatureKind, { world: EnvWorld; role: number; label: string }> = {
   forager: { world: "ecosystem", role: PREY, label: "Forager (Ecosystem)" },
-  prey: { world: "hunt", role: PREY, label: "Prey (The Great Hunt)" },
-  predator: { world: "hunt", role: PREDATOR, label: "Predator (The Great Hunt)" },
+  prey: { world: "hunt", role: PREY, label: "Prey (hunt world)" },
+  predator: { world: "hunt", role: PREDATOR, label: "Predator (hunt world)" },
 };
 
 export interface CreatureFile {

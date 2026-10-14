@@ -15,8 +15,7 @@ Polished short animations of the Evolve World creatures: trailers and README dem
 ## Pipeline
 - Shots are TypeScript modules in `src/shots/`, drawn with the Canvas 2D API by [`@napi-rs/canvas`](https://github.com/Brooooooklyn/canvas) (Skia) in Node, no browser.
 - `src/render.ts` steps a shot at a fixed frame rate and pipes raw frames into ffmpeg (H.264, CRF 16). Every render is deterministic.
-- `src/lib/`: `critter.ts` (body, face, squash and stretch, three styles), `face.ts` (expression rig and emotions), `fx.ts` (sparkles, hearts, anger marks, comic words, brain hologram), `stage.ts` (floor, food, poison, camera), `ease.ts` (easing, keyframes, paths, seeded noise).
-- Sound (planned): synthesized effects plus CC0 assets, mixed to a WAV that the renderer muxes in.
+- `src/lib/`: `critter.ts` (body, face, squash and stretch, three styles), `face.ts` (expression rig and emotions), `fx.ts` (sparkles, hearts, anger marks, comic words, brain hologram), `stage.ts` (floor, food, poison, camera), `ease.ts` (easing, keyframes, paths, seeded noise), `crowd.ts` (a grazing crowd driven by the real simulation), `audio.ts` (synthesized effects and music bed mixed to a WAV that the renderer muxes in), `titles.ts` (title cards), `paint.ts` (soft shapes), `shot.ts` (the shot interface).
 
 ## Setup
 ```
