@@ -91,9 +91,9 @@ describe.skipIf(!wasmAvailable())("resident bodies", () => {
     expect(bad).toBe(0);
   });
 
-  it("helper-thread worlds keep plain bodies", () => {
+  it("helper-thread worlds have resident bodies too", () => {
     const eco = new Ecosystem(structuredClone(DEFAULT_ECO_CONFIG), null, { journal: true });
-    expect(eco.members[0]!.creature.resident).toBeNull();
+    expect(eco.members[0]!.creature.resident).not.toBeNull();
   });
 
   it("the member list, rows and sense batch stay in step through births and deaths", () => {

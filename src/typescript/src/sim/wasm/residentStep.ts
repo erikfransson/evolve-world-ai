@@ -2,6 +2,8 @@ import type { Aging, Body, Decays } from "../physics.ts";
 import { agingFactor, decaysFor, keepInside } from "../physics.ts";
 import { OUTPUT_SIZE, energySignal, thrustCommand } from "../sensors.ts";
 import { Terrain } from "../terrain.ts";
+import type { World } from "../world.ts";
+import { refit } from "../brain.ts";
 import { F, I } from "./resident.ts";
 import type { ResidentStore } from "./resident.ts";
 
@@ -92,4 +94,21 @@ export function stepRows(store: ResidentStore, f32: Float32Array, rows: Int32Arr
     const upkeep = f[o + F.upkeep]! * agingFactor(aging, f[o + F.ticks]!);
     f[o + F.energy] = f[o + F.energy]! - (upkeep + c.thrustCost * Math.max(0, thrust) + (c.turnCost * Math.abs(turnRate)) / c.maxTurnRate) * dt;
   }
+}
+
+let px = new Float64Array(0);
+let py = new Float64Array(0);
+
+// stepRows for helper threads, then the item each of these bodies touches (what Creature.touched returns) into touched[selves[k]].
+export function advanceRows(store: ResidentStore, f32: Float32Array, rows: Int32Array, selves: Int32Array, n: number, aging: Aging | null, world: World, radius: number, touched: Int32Array): void {
+  stepRows(store, f32, rows, n, aging, world.terrain);
+  px = refit(px, n);
+  py = refit(py, n);
+  const f = store.f64;
+  for (let k = 0; k < n; k++) {
+    const o = rows[k]! >> 3;
+    px[k] = f[o + F.x]!;
+    py[k] = f[o + F.y]!;
+  }
+  world.touchedBatch(px, py, selves, n, radius, touched);
 }
