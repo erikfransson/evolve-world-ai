@@ -65,7 +65,7 @@ describe("select: validation", () => {
   ];
   cases.forEach(([what, send], k) => {
     it(`cuts off a client that sends ${what}, and the server keeps serving`, async () => {
-      const port = 50430 + k;
+      const port = 62430 + k;
       const { pub } = await serve(port);
       const bad = client(port);
       await bad.open;
@@ -78,7 +78,7 @@ describe("select: validation", () => {
   });
 
   it("cuts off a client whose non-add message is over the size cap", async () => {
-    const port = 50440;
+    const port = 62440;
     await serve(port);
     const c = client(port);
     await c.open;
@@ -87,7 +87,7 @@ describe("select: validation", () => {
   });
 
   it("cuts off a select flood at the message rate", async () => {
-    const port = 50441;
+    const port = 62441;
     await serve(port);
     const c = client(port);
     await c.open;
@@ -98,7 +98,7 @@ describe("select: validation", () => {
 
 describe("select: details", () => {
   it("sends the followed creature about 5 times a second and its genome once", async () => {
-    const port = 50442;
+    const port = 62442;
     const { world } = await serve(port);
     const c = client(port);
     await c.open;
@@ -118,7 +118,7 @@ describe("select: details", () => {
   });
 
   it("says once that a creature is gone, then stops", async () => {
-    const port = 50443;
+    const port = 62443;
     await serve(port);
     const c = client(port);
     await c.open;
@@ -130,7 +130,7 @@ describe("select: details", () => {
 
   // Each viewer's details come out of its own allowance. Red without it: about 5 x 400 B/s of details plus the genome.
   it("keeps a viewer's detail bytes within its allowance", async () => {
-    const port = 50444;
+    const port = 62444;
     const rate = 300;
     const burst = 600;
     const { world } = await serve(port, { detailBytesPerViewer: rate, detailBurstBytes: burst });
@@ -146,7 +146,7 @@ describe("select: details", () => {
 
   // Selection changes past selectsPerSecond are ignored, so switching cannot pull genome after genome. Red without the limit.
   it("ignores selection changes past the select rate", async () => {
-    const port = 50445;
+    const port = 62445;
     const { world } = await serve(port);
     const c = client(port);
     await c.open;
@@ -164,7 +164,7 @@ describe("select: details", () => {
   });
 
   it("forgets a viewer's selection when it disconnects", async () => {
-    const port = 50446;
+    const port = 62446;
     const { world, pub } = await serve(port);
     const c = client(port);
     await c.open;

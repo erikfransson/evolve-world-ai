@@ -11,6 +11,7 @@ import { startPublic } from "../../server/src/public.ts";
 import type { PublicServer } from "../../server/src/public.ts";
 import { smallConfig } from "./liveHelpers.ts";
 
+// Test ports sit above the Linux ephemeral range (32768-60999), so a test client's own socket can never hold a server's port (EADDRINUSE).
 // The public server in this process on a small world, with test limits.
 type Limits = typeof LIMITS;
 const servers: PublicServer[] = [];
@@ -51,7 +52,7 @@ const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms)
 
 describe("public server: connections", () => {
   it("a reconnect loop gets at most the burst plus 10 new viewers a second, the rest refused before the upgrade", async () => {
-    const port = 50411;
+    const port = 62411;
     const { pub } = await serve(port, { maxViewers: 1000, maxSendBytesPerSecond: 1e9 });
     // A fixed number of attempts rather than a fixed time, so a loaded machine that connects slowly still makes far more attempts
     // than the bucket lets in (the allowance below grows with the time they took).
@@ -83,7 +84,7 @@ describe("public server: connections", () => {
   }, 60_000);
 
   it("tells a viewer past the cap it is busy and cuts it off, and counts only registered viewers", async () => {
-    const port = 50412;
+    const port = 62412;
     const { pub } = await serve(port, { maxViewers: 3 });
     const vs = [viewer(port), viewer(port), viewer(port)];
     expect(await Promise.all(vs.map((v) => v.status))).toEqual(["hello", "hello", "hello"]);
@@ -97,7 +98,7 @@ describe("public server: connections", () => {
   });
 
   it("closes a socket that never finishes its request headers", async () => {
-    const port = 50413;
+    const port = 62413;
     await serve(port, { headersTimeoutMs: 1000 });
     const sock = net.connect(port, "127.0.0.1");
     sock.on("error", () => {});
@@ -109,7 +110,7 @@ describe("public server: connections", () => {
   });
 
   it("sends the hello of a new world to every viewer, even one held back from frames", async () => {
-    const port = 50414;
+    const port = 62414;
     const { world } = await serve(port, { maxBufferedBytes: -1 }); // every viewer counts as backed up
     const v = viewer(port);
     expect(await v.status).toBe("hello");
@@ -120,7 +121,7 @@ describe("public server: connections", () => {
 
 describe("public server: GET /stats", () => {
   it("answers two public numbers, small and cacheable, and every other request still gets a 426", async () => {
-    const port = 50418;
+    const port = 62418;
     await serve(port);
     const r = await fetch(`http://127.0.0.1:${port}/stats`);
     expect(r.status).toBe(200);
@@ -137,7 +138,7 @@ describe("public server: GET /stats", () => {
   });
 
   it("rebuilds the numbers at most once a statsEveryMs, so a flood of requests costs no work", async () => {
-    const port = 50419;
+    const port = 62419;
     await serve(port, { statsEveryMs: 60_000 });
     const before = await (await fetch(`http://127.0.0.1:${port}/stats`)).text();
     const v = viewer(port);
@@ -146,7 +147,7 @@ describe("public server: GET /stats", () => {
   });
 
   it("answers a 503 and keeps serving when the numbers cannot be read", async () => {
-    const port = 50422;
+    const port = 62422;
     const { world } = await serve(port);
     const eco = world.eco;
     Object.defineProperty(world, "eco", { configurable: true, get: () => { throw new Error("mid-swap"); } });
@@ -158,7 +159,7 @@ describe("public server: GET /stats", () => {
   });
 
   it("a request flood gets at most the burst plus the rate, the rest a 503", async () => {
-    const port = 50420;
+    const port = 62420;
     await serve(port, { statsGetsPerSecond: 1, statsGetBurst: 3 });
     const t0 = Date.now();
     const codes = await Promise.all(Array.from({ length: 40 }, async () => (await fetch(`http://127.0.0.1:${port}/stats`)).status));
@@ -169,7 +170,7 @@ describe("public server: GET /stats", () => {
   });
 
   it("does not read a request body: a huge upload to /stats is cut off", async () => {
-    const port = 50421;
+    const port = 62421;
     await serve(port);
     const sock = net.connect(port, "127.0.0.1");
     sock.on("error", () => {});
@@ -189,7 +190,7 @@ describe("public server: GET /stats", () => {
 
 describe("public server: upload budget", () => {
   it("all viewers together stay inside the budget, and viewers past it are refused", async () => {
-    const port = 50415;
+    const port = 62415;
     const world = new LiveWorld(smallConfig(), null);
     for (let i = 0; i < 20; i++) world.eco.step();
     const frame = world.creatureFrame().length; // per frame; item changes in this small world are a few bytes
@@ -218,7 +219,7 @@ describe("public server: upload budget", () => {
   });
 
   it("does not send the catch-up frames on connect past the connect allowance", async () => {
-    const port = 50416;
+    const port = 62416;
     const world = new LiveWorld(smallConfig(), null);
     for (let i = 0; i < 20; i++) world.eco.step();
     const { pub } = await serve(port, { connectBurstBytes: 0, connectBytesPerSecond: 1, acceptBurst: 100 }, world);
@@ -260,7 +261,7 @@ describe("live world", () => {
 
 describe("admin port", () => {
   it("the server exits with code 1 when the admin port is taken", async () => {
-    const port = 50417;
+    const port = 62417;
     const blocker = createServer();
     await new Promise<void>((r) => blocker.listen(port, "127.0.0.1", r));
     try {
