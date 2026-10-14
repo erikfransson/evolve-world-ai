@@ -282,17 +282,36 @@ export const ENVS: readonly EnvSpec[] = [
     reward: { survive: 0.1, food: 0.5 },
     tags: ["prey", "league", "advanced"],
   },
+  // Bigger: patches of the Live World (regrowing food, lethal poison, seed pool crowds, bumps hurt), starting at a visitor's 300 energy.
+  ...[
+    { id: "live-patch", name: "Live patch", description: "A slice of the Live World: regrowing food, lethal poison and a crowd of trained foragers. Bumps hurt.", size: [1200, 1200], food: 60, poison: 20, foodRegrow: 2, rivals: 20, reward: { food: 1, survive: 0.03 } },
+    { id: "live-famine", name: "Feast and famine", description: "A wide, thinly fed land with a few rivals. Range far to find the food before it runs out.", size: [2200, 2200], food: 35, poison: 15, foodRegrow: 0.3, rivals: 8, reward: { food: 1, survive: 0.03 } },
+    { id: "live-meadow", name: "Busy meadow", description: "Food keeps growing back among many foragers. Wait, watch and keep your energy high.", size: [1000, 1000], food: 70, poison: 15, foodRegrow: 4, rivals: 25, reward: { food: 0.5, energy: 1, survive: 0.03 } },
+    { id: "live-poison", name: "Poison country", description: "More poison than food over a big land, with rivals. Tell the two apart or die.", size: [1500, 1500], food: 40, poison: 90, foodRegrow: 1, rivals: 12, reward: { food: 1, survive: 0.05 } },
+    { id: "live-commons", name: "Crowded commons", description: "Little food and many weak foragers. Ramming them pays.", size: [1000, 1000], food: 20, poison: 10, foodRegrow: 0.5, rivals: 25, rivalEnergy: 25, reward: { food: 0.5, ram: 2, survive: 0.02 } },
+  ].map(({ rivals, rivalEnergy, ...e }): EnvSpec => ({
+    ...e,
+    size: e.size as [number, number],
+    world: "ecosystem",
+    role: PREY,
+    seconds: 90,
+    collisionDamage: true,
+    learnerEnergy: 300,
+    rivals: [{ species: PREY, count: rivals, source: "pool", ...(rivalEnergy === undefined ? {} : { energy: rivalEnergy }) }],
+    tags: ["forager", "bigger"],
+  })),
 ];
 
 export const envById = (id: string): EnvSpec | undefined => ENVS.find((e) => e.id === id);
 
 // Categories for choosing envs, in display order; groupOf files an env under one by its tags.
-export const ENV_GROUPS = ["Find food", "Avoid and find a way", "Memory", "Energy", "Fight", "Compete", "Advanced", "Custom"] as const;
+export const ENV_GROUPS = ["Find food", "Avoid and find a way", "Memory", "Energy", "Fight", "Compete", "Advanced", "Bigger", "Custom"] as const;
 export type EnvGroup = (typeof ENV_GROUPS)[number];
 
 export function groupOf(env: Pick<EnvSpec, "tags">): EnvGroup {
   const t = new Set(env.tags);
   if (t.has("custom")) return "Custom";
+  if (t.has("bigger")) return "Bigger";
   if (t.has("advanced")) return "Advanced";
   if (t.has("compete")) return "Compete";
   if (t.has("fight")) return "Fight";

@@ -259,7 +259,7 @@ describe("envGroups", () => {
     expect(quick.every((e) => e.tags.includes("small"))).toBe(true);
     expect(quick.some((e) => e.id === "nibble")).toBe(true);
     expect(advanced.length).toBeGreaterThan(0);
-    expect(advanced.every((e) => e.tags.includes("advanced"))).toBe(true);
+    expect(advanced.every((e) => e.tags.includes("advanced") || e.tags.includes("bigger"))).toBe(true);
   });
 });
 

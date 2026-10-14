@@ -5,7 +5,7 @@ import { fitCanvas } from "./canvas.ts";
 import { envFacts, galleryGroups, pickedIn } from "./envSelect.ts";
 
 const CLIP_SPEED = 3; // clip seconds per real second
-const COLLAPSED = new Set(["Advanced"]); // groups folded until opened
+const COLLAPSED = new Set(["Advanced", "Bigger"]); // groups folded until opened
 
 export interface GalleryHandlers {
   toggle: (id: string) => void;

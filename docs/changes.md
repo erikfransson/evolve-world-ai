@@ -5,6 +5,7 @@ Each release is a pull request from `development` into `main`, tagged `vX.Y.Z` o
 Add notes under "Unreleased" as work lands on `development`, and turn that heading into the version number at release time.
 
 ## Unreleased
+- RL Arena: a new "Bigger" env group after Advanced with five Live-like worlds (1000 to 2200 wide, 90 s, regrowing food, lethal poison, 8 to 25 seed pool foragers, bumps hurt, start energy 300): Live patch, Feast and famine, Busy meadow, Poison country and Crowded commons.
 - Helper threads use the resident creature rows too: with 3 helpers the CPU per tick drops about 1.3x and the coordinator's share from about 37 to 24 ms at 10k creatures on The Inland Sea, results unchanged.
 - Eating walks only the creatures that touch an item and the crowd rebuild skips a species copy: about 1.04x per tick on The Inland Sea, results unchanged.
 - Creature body state lives in rows in WASM memory (physics stays in JS): about 1.15x per tick on big worlds, results unchanged, about 7% less memory. With the round 1 and memory-growth changes, The Inland Sea at 10k creatures went from 70 to about 48 ms CPU per tick.
