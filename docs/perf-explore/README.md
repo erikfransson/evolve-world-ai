@@ -34,3 +34,4 @@ One write-up per exploration, with the tables of tried ideas and their verdicts.
 - `profile3.md`: reference profile at 38000 to 70000 wide and The Great Hunt at 30000 to 38000, about 80-92 ms CPU per tick at 9-10k creatures.
 - `collide.md`: item lookups in cell order and collisions on the crowd's sorted arrays, 1.048x, bit-identical; held, it duplicates the physics in a second path.
 - `node.md`: V8 flags change nothing measurable; 3 helper threads give 1.39x wall time at 50000 wide for 1.75x CPU and +316 MB.
+- `smallphases.md`: birth scan reads a birth-energy mirror, births phase 1.29 to 0.77 ms at 9760 creatures, bit-identical; crowd grid and slots have no small exact fix.
