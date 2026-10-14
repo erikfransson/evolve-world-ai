@@ -6,9 +6,9 @@ import { context2d, makeCanvas } from "./groundScene.ts";
 // A soft wash over the floor of a map with food and poison weights, so its regions read at a glance: purple where poison is rich, a dry tone where
 // food is poor, a richer green where food is plentiful. One small image (a pixel per raster node) drawn scaled up smoothly under the ground and rock.
 
-const POISON_TINT = { rgb: [128, 84, 150], from: 1, span: 2.5, alpha: 0.17 } as const;
+export const POISON_TINT = { rgb: [128, 84, 150], from: 1, span: 2.5, alpha: 0.17 } as const;
 const DRY_TINT = { rgb: [176, 152, 84], from: 0.8, span: 0.3, alpha: 0.24 } as const; // applies below `from`
-const RICH_TINT = { rgb: [56, 196, 116], from: 1.3, span: 0.5, alpha: 0.22 } as const;
+export const RICH_TINT = { rgb: [56, 196, 116], from: 1.3, span: 0.5, alpha: 0.22 } as const;
 
 const images = new WeakMap<Terrain, OffscreenCanvas | HTMLCanvasElement | null>();
 

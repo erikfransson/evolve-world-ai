@@ -6,6 +6,7 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- Ecosystem fixes on The Inland Sea: the legend now lists Rock, Mud, Firm ground and the poison and rich food tints (it read the random-terrain densities, which are 0 on a map), and Start no longer makes every helper thread build the map (several seconds each, which could trip the start timeout and drop to one thread): the coordinator sends the built arrays and the results are unchanged. Time to first frame in headless Chrome on a busy machine went from 50 s (helpers failed) to 26 s.
 ## 0.2.0 (2026-10-14)
 
 ### Live World
