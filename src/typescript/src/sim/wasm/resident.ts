@@ -131,7 +131,7 @@ export class ResidentStore {
   // A new row. Call bank-resetting owners' reset() first when the bank was reset.
   add(): ResidentState {
     if (this.left === 0) {
-      this.chunk = (this.bank.alloc(CHUNK_ROWS * ROW_BYTES + 64) + 63) & ~63; // rows start on a cache line
+      this.chunk = Math.ceil(this.bank.alloc(CHUNK_ROWS * ROW_BYTES + 64) / 64) * 64; // rows start on a cache line
       this.left = CHUNK_ROWS;
     }
     const ptr = this.chunk + (CHUNK_ROWS - this.left--) * ROW_BYTES;

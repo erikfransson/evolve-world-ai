@@ -257,8 +257,9 @@ export class WasmSenser {
   }
 
   // Senses the batch and writes each creature's complete brain input (rays, extras, memory) at its slot.
-  // With resident, the creatures' bodies are resident rows and the step kernel builds the records and the body inputs (slotsAt is where it writes the brain slot list).
-  run(world: World, crowd: Crowd, creatures: readonly Creature[], slots: Int32Array, selves: Int32Array, n: number, stride: number, startEnergy: number, detail: Creature | null = null, resident: { stepper: WasmStepper; slotsAt: number } | null = null): void {
+  // The batch is creatures with their brain slots, or resident rows (the step kernel builds the records and the body inputs from them,
+  // and writes the brain slot list at slotsAt). selves[k] is the crowd index of batch member k.
+  run(world: World, crowd: Crowd, n: number, selves: Int32Array, stride: number, startEnergy: number, detail: Creature | null, batch: { creatures: readonly Creature[]; slots: Int32Array } | { stepper: WasmStepper; rows: Int32Array; slotsAt: number }): void {
     this.syncItems(world);
     const count = crowd.count;
     const ccells = crowd.cols * crowd.rows;
@@ -305,11 +306,12 @@ export class WasmSenser {
       i32[species + k] = crowdSpecies[k]!;
       f32[sig + k] = energySignal(energies[k]!, startEnergy);
     }
-    if (resident) {
-      resident.stepper.fill(creatures, n, selves, world, rock, pRec, resident.slotsAt, pDetail, detail, stride);
+    if ("stepper" in batch) {
+      batch.stepper.fill(batch.rows, selves, n, world, rock, pRec, batch.slotsAt, pDetail, detail, stride);
       this.views(); // fill may have grown the memory
       ({ f32, i32, f64 } = this);
     } else {
+      const { creatures, slots } = batch;
       const rec = pRec >> 3; // record fields as f64 and as i32 indices
       const recI = pRec >> 2;
       const place = this.placeByRow(world, creatures, n);

@@ -488,6 +488,10 @@
 
   (func (export "setTab") (param $t i32) (global.set $tab (local.get $t)))
 
+  ;; for the start-up probe against the engine's Math: sin x at byte $o and cos x at $o + 8 (returns 1 when x is out of the port's range), and exp x
+  (func (export "sincos") (param $x f64) (param $o i32) (result i32) (call $sc (local.get $x) (local.get $o)))
+  (func (export "expf") (param $x f64) (result f64) (call $exp (local.get $x)))
+
   (func (export "step") (param $P i32) (result i32)
     (local $Q i32) (local $n i32) (local $k i32) (local $rows i32) (local $rec i32) (local $bad i32)
     (local $out i32) (local $short i32) (local $cnt i32) (local $i i32) (local $at i32) (local $sc i32)

@@ -91,6 +91,25 @@ export class Crowd {
     this.rebuildFrom(this.px, this.py, this.pe, n, this.ps);
   }
 
+  // The same from resident rows (see wasm/resident.ts): creature i is the row at f64 index rowAt[i], x then y first, energy 4 on.
+  rebuildRows(f: Float64Array, rowAt: ArrayLike<number>, n: number, species?: ArrayLike<number>): void {
+    if (n > this.px.length) {
+      const size = Math.max(n, 2 * this.px.length);
+      this.px = new Float64Array(size);
+      this.py = new Float64Array(size);
+      this.pe = new Float64Array(size);
+      this.ps = new Int32Array(size);
+    }
+    for (let i = 0; i < n; i++) {
+      const j = rowAt[i]!;
+      this.px[i] = f[j]!;
+      this.py[i] = f[j + 1]!;
+      this.pe[i] = f[j + 4]!;
+      this.ps[i] = species ? species[i]! : 0;
+    }
+    this.rebuildFrom(this.px, this.py, this.pe, n, this.ps);
+  }
+
   // True when a snapshotted creature is closer than reach to (x, y).
   anyWithin(x: number, y: number, reach: number): boolean {
     const inv = 1 / this.cell;

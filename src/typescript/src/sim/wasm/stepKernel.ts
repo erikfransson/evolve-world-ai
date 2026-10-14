@@ -15,6 +15,8 @@ import type { World } from "../world.ts";
 // gets self-consistent results that are not the JS path's, so one world never mixes the two (resident creatures always step here).
 
 const P_BYTES = 64;
+const PROBES = 20000;
+let probed: boolean | undefined; // the probe's result, which only depends on the engine
 const F_BYTES = 128;
 const NEAR_ROWS_AT = 200;
 
@@ -22,6 +24,8 @@ interface StepExports extends WebAssembly.Exports {
   setTab(ptr: number): void;
   step(p: number): number;
   fill(f: number): void;
+  sincos(x: number, o: number): number;
+  expf(x: number): number;
 }
 
 export class WasmStepper {
@@ -59,19 +63,45 @@ export class WasmStepper {
     this.exports.setTab(tab);
   }
 
+  // Null when this engine's Math.sin, Math.cos or Math.exp differ from the kernel's ports of V8's fdlibm (a browser whose engine uses another libm),
+  // so that resident creatures never change a result.
   static create(store: ResidentStore): WasmStepper | null {
     try {
       const instance = new WebAssembly.Instance(compiled(STEP_BYTES), { brain: { mem: store.bank.memory } });
-      return new WasmStepper(store, instance.exports as StepExports);
+      const stepper = new WasmStepper(store, instance.exports as StepExports);
+      return (probed ??= stepper.probe()) ? stepper : null;
     } catch {
       return null;
     }
   }
 
+  // True when the kernel's sin, cos and exp equal the engine's on a spread of inputs: small and large headings, near multiples of pi / 2, energy ratios.
+  private probe(): boolean {
+    const scratch = this.store.bank.alloc(16);
+    let seed = 12345;
+    const next = (): number => {
+      seed ^= seed << 13;
+      seed ^= seed >>> 17;
+      seed ^= seed << 5;
+      return (seed >>> 0) / 4294967296;
+    };
+    for (let i = 0; i < PROBES; i++) {
+      const x = i % 4 === 0 ? (next() - 0.5) * 20 : i % 4 === 1 ? (next() - 0.5) * 4000 : i % 4 === 2 ? (Math.floor(next() * 4000) - 2000) * (Math.PI / 2) + (next() - 0.5) * 1e-9 : (next() - 0.5) * 2e5;
+      if (this.exports.sincos(x, scratch) !== 0) continue; // beyond the port's range, which the step leaves to JS
+      const out = new Float64Array(this.store.bank.memory.buffer, scratch, 2);
+      if (!Object.is(out[0], Math.sin(x)) || !Object.is(out[1], Math.cos(x))) return false;
+      const e = -next() * (i % 3 === 0 ? 800 : 12);
+      if (!Object.is(this.exports.expf(e), Math.exp(e))) return false;
+    }
+    this.store.bank.free(scratch, 16);
+    return true;
+  }
+
   // Memory and motion for creatures[0 .. n-1], each with outputs adopted from the brain kernel.
-  run(creatures: readonly Creature[], n: number, aging: Aging | null, terrain: Terrain, prof: PhaseTimer | null): void {
-    if (n === 0) return;
-    if (this.rowsN !== n) this.batch(creatures, n);
+  // Returns how many rows were left unsteered (see step.wat).
+  run(n: number, aging: Aging | null, terrain: Terrain, prof: PhaseTimer | null): number {
+    if (n === 0) return 0;
+    if (this.rowsN !== n) throw new Error("the step kernel runs on the batch the last fill built");
     if (this.terrain !== terrain) this.syncRock(terrain);
     this.writeBlocks(terrain);
     const { f64, i32 } = this.store;
@@ -83,30 +113,14 @@ export class WasmStepper {
     prof?.lap("step setup");
     const bad = this.exports.step(this.pP);
     this.rowsN = 0;
-    if (bad > 0) {
-      for (let k = 0; k < n; k++) {
-        const r = creatures[k]!.resident!;
-        if (r.bad) {
-          r.clearBad();
-          creatures[k]!.steer(); // heading beyond the port's range: motion in JS (memory was updated by the kernel)
-        }
-      }
-    }
-  }
-
-  // Writes the addresses of the rows of creatures[0 .. n-1] for fill and run.
-  private batch(creatures: readonly Creature[], n: number): void {
-    const at = this.store.grow(this.rRows, n * 4);
-    const i32 = this.store.i32;
-    const base = at >> 2;
-    for (let k = 0; k < n; k++) i32[base + k] = creatures[k]!.resident!.ptr;
-    this.rowsN = n;
+    return bad;
   }
 
   // The sense records (into pRec) and brain input extras of creatures[0 .. n-1], and the brain slot list at slotsAt (see fill in step.wat).
   // selves[k] is the crowd index of creatures[k]; detail, when in the batch, gets its rays written at pDetail.
-  fill(creatures: readonly Creature[], n: number, selves: Int32Array, world: World, terrain: Terrain, pRec: number, slotsAt: number, pDetail: number, detail: Creature | null, stride: number): void {
-    this.batch(creatures, n);
+  fill(rows: Int32Array, selves: Int32Array, n: number, world: World, terrain: Terrain, pRec: number, slotsAt: number, pDetail: number, detail: Creature | null, stride: number): void {
+    const rowsAt = this.store.grow(this.rRows, n * 4);
+    this.rowsN = n;
     if (this.terrain !== terrain) this.syncRock(terrain);
     this.writeBlocks(terrain);
     const store = this.store;
@@ -116,10 +130,11 @@ export class WasmStepper {
     const ground = terrain.ground;
     const groundAt = ground ? this.groundOf(ground.data) : 0;
     const { f64, i32 } = store;
+    i32.set(rows.subarray(0, n), rowsAt >> 2);
     i32.set(selves.subarray(0, n), selvesAt >> 2);
     const F = this.pF >> 2;
     i32[F] = n;
-    i32[F + 1] = this.rRows.ptr;
+    i32[F + 1] = rowsAt;
     i32[F + 2] = selvesAt;
     i32[F + 3] = pRec;
     i32[F + 4] = placeAt;

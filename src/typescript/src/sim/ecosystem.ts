@@ -204,6 +204,9 @@ export class Ecosystem {
   private readonly kernels: SenseKernels | null; // with eco.wasm when WebAssembly SIMD is available
   private readonly resident: ResidentStore | null; // creature bodies in the kernel memory, stepped by the WASM step kernel; not with helper threads, which step in JS
   private readonly states: CreatureState[] = [];
+  private readonly rowAt: number[] = []; // with resident bodies: rowAt[i] is the f64 index of members[i]'s row, so the hot loops read the rows, not the state objects
+  private slotRows = new Int32Array(64); // with resident bodies: the row addresses and member indices of bySlot, in that order (the whole sense batch, kept up to date)
+  private slotSelves = new Int32Array(64);
   private readonly byId = new Map<number, EcoCreature>();
   private readonly spare: EcoCreature[][]; // per species, since a creature keeps its species' engine config
   private readonly engines: EngineConfig[]; // per species
@@ -291,7 +294,7 @@ export class Ecosystem {
     const maxRays = Math.max(config.creature.rayCount, ...this.ranges.map((r) => r.rayCountRange[1] ?? 0), ...(pool ?? []).map((e) => e.plan.rayCount), ...(cast ?? []).map((c) => c.plan.rayCount));
     // options.kernels: instances to reuse (RL), reset here; the caller owns them and runs one Ecosystem on them at a time.
     this.kernels = !eco.wasm ? null : options.kernels && maxRays <= MAX_RAYS ? options.kernels.reset(config) : SenseKernels.create(config, maxRays);
-    this.resident = this.kernels?.stepper && !options.journal ? this.kernels.store : null;
+    this.resident = this.kernels && !options.journal ? this.kernels.residentStore() : null;
     this.childPlan = planOf(config);
 
     const { width, height } = config.world;
@@ -344,7 +347,7 @@ export class Ecosystem {
     this.poolFounders = restore?.poolFounders ?? poolFounders;
     // Poison moves only once every founder stands, and never onto one, so none ends up on a founder placed earlier.
     const reach = r + config.world.itemRadius;
-    this.crowd.rebuild(this.states, this.states.length);
+    this.gridCrowd(this.states.length);
     const onFounder = (px: number, py: number): boolean => this.crowd.anyWithin(px, py, reach);
     for (const s of this.states) this.items.clearPoison(s.x, s.y, r, this.rng, onFounder);
   }
@@ -402,14 +405,28 @@ export class Ecosystem {
     this.items.log = null;
   }
 
+  private gridCrowd(n: number, species?: ArrayLike<number>): void {
+    if (this.resident) this.crowd.rebuildRows(this.resident.f64, this.rowAt, n, species);
+    else this.crowd.rebuild(this.states, n, species);
+  }
+
   // Grids the creatures as they stand at the tick start, for sensePhase.
   prepareTick(): void {
     if (this.states.length < 2 && this.crowd.count < 2) return; // a lone creature, or none, only sees itself in a grid of at most itself
-    this.crowd.rebuild(this.states, this.states.length, this.multi ? this.kinds : undefined);
+    this.gridCrowd(this.states.length, this.multi ? this.kinds : undefined);
   }
 
   // Phase 1a for members start .. end-1, after prepareTick: sense and think into each creature's outputs.
   sensePhase(start: number, end: number): void {
+    if (this.resident && start === 0 && end === this.members.length && this.bySlot.length === end) {
+      // Resident bodies: the batch is the maintained row list, nothing to gather per creature.
+      this.batchAll = true;
+      this.profile?.lap("batch build");
+      const kernels = this.kernels!;
+      kernels.detail = this.detail === null ? null : (this.byId.get(this.detail)?.creature ?? null);
+      kernels.runRows(this.items, this.crowd, this.slotRows, this.slotSelves, end, kernels.detail, this.profile);
+      return;
+    }
     const batch = this.batch;
     batch.clear();
     if (start === 0 && end === this.members.length && this.bySlot.length === end) {
@@ -428,7 +445,7 @@ export class Ecosystem {
   refreshDetail(): void {
     const i = this.detail === null ? -1 : this.members.findIndex((m) => m.id === this.detail);
     if (i < 0) return;
-    this.crowd.rebuild(this.states, this.states.length, this.multi ? this.kinds : undefined);
+    this.gridCrowd(this.states.length, this.multi ? this.kinds : undefined);
     const c = this.members[i]!.creature;
     c.sense(this.items, this.crowd, i);
     c.encode();
@@ -456,8 +473,17 @@ export class Ecosystem {
         // The batch holds every member in creature construction order: same work, but the objects are read front to back.
         const { creatures, count } = this.batch;
         const f32 = this.kernels?.f32;
-        if (this.resident) this.kernels!.stepper!.run(creatures, count, this.aging, this.items.terrain, this.profile);
-        else for (let k = 0; k < count; k++) {
+        if (this.resident) {
+          if (this.kernels!.stepper.run(this.members.length, this.aging, this.items.terrain, this.profile) > 0) {
+            for (const m of this.bySlot) {
+              const r = m.creature.resident!;
+              if (r.bad) {
+                r.clearBad();
+                m.creature.steer(); // heading beyond the sin/cos port's range: motion in JS (memory was updated by the kernel)
+              }
+            }
+          }
+        } else for (let k = 0; k < count; k++) {
           const c = creatures[k]!;
           const out = c.outputArray(f32);
           c.remember(out);
@@ -484,7 +510,7 @@ export class Ecosystem {
     const eco = this.config.eco;
     const gridded = (eco.collisions || this.hunters) && n > 0;
     if (gridded) {
-      this.crowd.rebuild(this.states, n, this.kinds);
+      this.gridCrowd(n, this.kinds);
       if (!touched) {
         const crowd = this.crowd;
         touched = this.lookups = refit(this.lookups, n);
@@ -521,9 +547,20 @@ export class Ecosystem {
     if (eco.collisions) this.collideAll();
     prof?.lap("collisions");
 
+    const res = this.resident;
     for (let i = n - 1; i >= 0; i--) {
       const state = this.states[i];
-      settle(state);
+      if (res) {
+        // settle on the row: a creature that is not alive has no energy left
+        const f = res.f64;
+        const j = this.rowAt[i]! + 4;
+        if (f[j]! > 0 || Number.isNaN(f[j]!)) {
+          f[j + 3]!++;
+          continue;
+        }
+        f[j] = 0;
+        state.alive = false;
+      } else settle(state);
       if (!state.alive) {
         if (this.slain.size > 0 && this.slain.delete(state)) this.report(EVENT_DEATH, state.x, state.y, this.members[i].hue);
         this.remove(i);
@@ -540,7 +577,7 @@ export class Ecosystem {
     const thresholds = this.birthEnergies;
     for (let k = 0; k < n && members.length < birthCap; k++) {
       const at = (first + k) % n;
-      if (states[at]!.energy < thresholds[at]!) continue;
+      if ((res ? res.f64[this.rowAt[at]! + 4]! : states[at]!.energy) < thresholds[at]!) continue;
       const parent = members[at]!;
       if (this.tick - parent.lastBirthTick >= parent.cooldownTicks) this.giveBirth(parent);
     }
@@ -809,6 +846,7 @@ export class Ecosystem {
     this.kinds.push(species);
     this.birthEnergies.push(m.birth.energy); // setBirth follows and updates it
     this.states.push(m.creature.state);
+    if (this.resident) this.rowAt.push(m.creature.resident!.o);
     this.byId.set(m.id, m);
     return m;
   }
@@ -819,12 +857,33 @@ export class Ecosystem {
     this.members.push(m);
     const list = this.bySlot;
     const slot = m.creature.slot;
-    if (list.length === 0 || list[list.length - 1]!.creature.slot < slot) list.push(m);
-    else list.splice(this.slotPosition(slot), 0, m);
+    const at = list.length === 0 || list[list.length - 1]!.creature.slot < slot ? list.length : this.slotPosition(slot);
+    list.splice(at, 0, m);
+    if (this.resident) {
+      const n = list.length - 1;
+      if (n === this.slotRows.length) {
+        const rows = new Int32Array(2 * n);
+        const selves = new Int32Array(2 * n);
+        rows.set(this.slotRows);
+        selves.set(this.slotSelves);
+        this.slotRows = rows;
+        this.slotSelves = selves;
+      }
+      this.slotRows.copyWithin(at + 1, at, n);
+      this.slotSelves.copyWithin(at + 1, at, n);
+      this.slotRows[at] = m.creature.resident!.ptr;
+      this.slotSelves[at] = m.index;
+    }
   }
 
   private untrack(m: EcoCreature): void {
-    this.bySlot.splice(this.slotPosition(m.creature.slot), 1);
+    const at = this.slotPosition(m.creature.slot);
+    this.bySlot.splice(at, 1);
+    if (this.resident) {
+      const n = this.bySlot.length;
+      this.slotRows.copyWithin(at, at + 1, n + 1);
+      this.slotSelves.copyWithin(at, at + 1, n + 1);
+    }
   }
 
   // Where a creature of this slot sits (or would sit) in bySlot.
@@ -848,6 +907,12 @@ export class Ecosystem {
     this.members[i].index = i;
     this.untrack(m);
     this.states[i] = this.states[last];
+    if (this.resident) {
+      this.rowAt[i] = this.rowAt[last]!;
+      this.rowAt.pop();
+      const moved = this.members[i];
+      if (moved !== m) this.slotSelves[this.slotPosition(moved.creature.slot)] = i; // the member that took m's place in the list
+    }
     this.kinds[i] = this.kinds[last]!;
     this.birthEnergies[i] = this.birthEnergies[last]!;
     this.members.pop();
@@ -1032,6 +1097,7 @@ export class Ecosystem {
     this.kinds.push(r.species);
     this.birthEnergies.push(m.birth.energy);
     this.states.push(s);
+    if (this.resident) this.rowAt.push(c.resident!.o);
     this.byId.set(m.id, m);
     return m;
   }

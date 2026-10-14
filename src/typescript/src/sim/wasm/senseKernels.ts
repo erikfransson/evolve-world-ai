@@ -21,8 +21,7 @@ export class SenseKernels {
   detail: Creature | null = null;
   private readonly brains: WasmBrainBank;
   private readonly senser: WasmSenser;
-  readonly store: ResidentStore; // creature bodies resident in the kernel memory (an Ecosystem that steps its creatures here makes them in it)
-  readonly stepper: WasmStepper | null;
+  private resident: { store: ResidentStore; stepper: WasmStepper } | null | undefined; // made by residentStore, when an Ecosystem wants its creatures' bodies in this memory
   private stride: number; // ray features per ray in the brain input
   private energyScale: number; // seen energies are squashed against this, the largest species start energy (speciesEngine's seenEnergyScale)
   private readonly versions: number[] = []; // brainVersion of the creature each slot was set from
@@ -32,8 +31,6 @@ export class SenseKernels {
   private constructor(brains: WasmBrainBank, senser: WasmSenser, config: EcoConfig) {
     this.brains = brains;
     this.senser = senser;
-    this.store = new ResidentStore(brains);
-    this.stepper = WasmStepper.create(this.store);
     this.stride = inputLayout(config).rayFeatures;
     this.energyScale = seenEnergyScale(speciesList(config));
   }
@@ -52,14 +49,30 @@ export class SenseKernels {
   reset(config: EcoConfig): this {
     this.brains.reset();
     this.senser.reset();
-    this.store.reset();
-    this.stepper?.reset();
+    if (this.resident) {
+      this.resident.store.reset();
+      this.resident.stepper.reset();
+    }
     this.versions.length = 0;
     this.nextSlot = 0;
     this.detail = null;
     this.stride = inputLayout(config).rayFeatures;
     this.energyScale = seenEnergyScale(speciesList(config));
     return this;
+  }
+
+  // Where creature bodies can live in this memory (see ResidentStore), or null when this engine's Math differs from the step kernel's ports.
+  residentStore(): ResidentStore | null {
+    if (this.resident === undefined) {
+      const store = new ResidentStore(this.brains);
+      const stepper = WasmStepper.create(store);
+      this.resident = stepper ? { store, stepper } : null;
+    }
+    return this.resident?.store ?? null;
+  }
+
+  get stepper(): WasmStepper {
+    return this.resident!.stepper;
   }
 
   // The kernel memory as floats, where adopted outputs live; read it fresh, as growth replaces it.
@@ -88,7 +101,11 @@ export class SenseKernels {
     const n = batch.count;
     if (n === 0) return;
     const { creatures, selves } = batch;
-    if (creatures[0]!.resident) return this.runResident(world, crowd, batch, prof);
+    if (creatures[0]!.resident) {
+      const rows = new Int32Array(n);
+      for (let k = 0; k < n; k++) rows[k] = creatures[k]!.resident!.ptr;
+      return this.runRows(world, crowd, rows, selves, n, this.detail && creatures.includes(this.detail) ? this.detail : null, prof);
+    }
     if (n > this.slots.length) this.slots = new Int32Array(Math.max(n, 2 * this.slots.length));
     const slots = this.slots;
     const brains = this.brains;
@@ -99,7 +116,7 @@ export class SenseKernels {
     }
     const detail = at >= 0 ? this.detail : null;
     prof?.lap("slots");
-    this.senser.run(world, crowd, creatures, slots, selves, n, this.stride, this.energyScale, detail);
+    this.senser.run(world, crowd, n, selves, this.stride, this.energyScale, detail, { creatures, slots });
     prof?.lap("senser");
     brains.forwardSlots(slots, n);
     prof?.lap("brain forward");
@@ -111,14 +128,13 @@ export class SenseKernels {
     }
   }
 
-  // run for resident creatures: the step kernel builds the records and brain inputs from their rows, and the slot list of the brain run.
-  private runResident(world: World, crowd: Crowd, batch: SenseBatch, prof: PhaseTimer | null): void {
-    const n = batch.count;
-    const { creatures, selves } = batch;
-    const detail = this.detail && creatures.includes(this.detail) ? this.detail : null;
+  // run for resident creatures given as their row addresses and crowd indices, in brain run order: the step kernel builds the records
+  // and brain inputs from the rows, and the slot list of the brain run. detail, when in the batch, gets its rays and input read back.
+  runRows(world: World, crowd: Crowd, rows: Int32Array, selves: Int32Array, n: number, detail: Creature | null, prof: PhaseTimer | null = null): void {
+    if (n === 0) return;
     const slotsAt = this.brains.runRegion(n);
     prof?.lap("slots");
-    this.senser.run(world, crowd, creatures, this.slots, selves, n, this.stride, this.energyScale, detail, { stepper: this.stepper!, slotsAt });
+    this.senser.run(world, crowd, n, selves, this.stride, this.energyScale, detail, { stepper: this.stepper, rows, slotsAt });
     prof?.lap("senser");
     this.brains.forwardRun(n);
     prof?.lap("brain forward");

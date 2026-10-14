@@ -71,11 +71,11 @@ export class Kernel<E extends WebAssembly.Exports> {
     return this.i32Cache;
   }
 
-  // Grows the memory to at least bytes.
+  // Grows the memory to at least bytes, by an eighth more than needed so that growing (which replaces every view of it) stays rare.
   ensure(bytes: number): void {
     const have = this.memory.buffer.byteLength;
     if (bytes <= have) return;
-    this.memory.grow(Math.ceil((bytes - have) / PAGE));
+    this.memory.grow(Math.ceil((Math.max(bytes, have + have / 8) - have) / PAGE));
     this.onGrow?.();
   }
 }
