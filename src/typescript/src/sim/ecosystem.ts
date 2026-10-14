@@ -724,6 +724,13 @@ export class Ecosystem {
     const { radius } = this.config.creature;
     const reach = 2 * radius;
     const reach2 = reach * reach;
+    const kernel = crowd.kernel;
+    if (kernel && !jsCrowdForced()) {
+      // the same sweep in WebAssembly (crowd.wat sweep), which finds the pairs; the bumps stay here
+      kernel.sweepStart(reach2);
+      while (kernel.sweepNext()) this.bumpSlots(kernel.hitS, kernel.hitT, radius);
+      return;
+    }
     // Occupied cells in row-major order, the same order as sweeping every cell.
     for (let o = 0; o < crowd.occupiedCount; o++) {
       const c = crowd.occupied[o]!;

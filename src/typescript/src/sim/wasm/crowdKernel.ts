@@ -18,6 +18,7 @@ interface CrowdExports extends WebAssembly.Exports {
   rebuild(c: number): void;
   pack(c: number): void;
   touch(c: number): void;
+  sweep(c: number): number;
 }
 
 const REGIONS = ["touched", "rowAt", "cellOf", "perm", "permB", "count", "start", "occupied", "speciesIn", "xs", "ys", "energies", "species", "owners"] as const;
@@ -98,6 +99,26 @@ export class WasmCrowd {
     f64[(C + L.C_ITEM_REACH) >> 3] = reach;
     this.exports.touch(C);
     out.set(i32.subarray(outAt >> 2, (outAt >> 2) + this.n));
+  }
+
+  // The collision sweep (twin of the loops in Ecosystem.collideAll) over the crowd arrays, pair by pair: start, then next until it returns false. After a pair the
+  // caller must have written the pair's new positions into the crowd arrays. The pair is in hitS and hitT, as sorted slots.
+  hitS = 0;
+  hitT = 0;
+  sweepStart(reach2: number): void {
+    const C = this.pC;
+    this.store.f64[(C + L.C_REACH2) >> 3] = reach2;
+    const i32 = this.store.i32;
+    for (const off of [L.C_SW_O, L.C_SW_S, L.C_SW_PHASE, L.C_SW_T, L.C_SW_RESUME]) i32[(C + off) >> 2] = 0;
+  }
+
+  sweepNext(): boolean {
+    const C = this.pC;
+    if (this.exports.sweep(C) === 0) return false;
+    const i32 = this.store.i32;
+    this.hitS = i32[(C + L.C_HIT_S) >> 2]!;
+    this.hitT = i32[(C + L.C_HIT_T) >> 2]!;
+    return true;
   }
 
   // The next rebuild is in JS: the views no longer stand for the crowd.

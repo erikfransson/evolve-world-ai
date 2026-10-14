@@ -240,6 +240,63 @@ describe.skipIf(!wasmAvailable())("the WebAssembly item lookup equals World.touc
   });
 });
 
+// The collision sweep's pairs: the kernel finds them (crowd.wat sweep) in the order of the loops of Ecosystem.collideAll. The pairs are compared with no bump in
+// between, so the arrays stay as they are; the whole-run tests below cover the bumps.
+describe.skipIf(!wasmAvailable())("the WebAssembly collision sweep finds the pairs of the JS sweep, in order", () => {
+  function jsPairs(crowd: Crowd, reach2: number): [number, number][] {
+    const { cols, rows, cellStart, xs, ys } = crowd;
+    const pairs: [number, number][] = [];
+    for (let o = 0; o < crowd.occupiedCount; o++) {
+      const c = crowd.occupied[o]!;
+      const cy = Math.floor(c / cols);
+      const cx = c - cy * cols;
+      const end = cellStart[c + 1]!;
+      const hasRight = cx + 1 < cols;
+      const run1 = hasRight ? cellStart[c + 2]! : end;
+      let run2a = 0;
+      let run2b = 0;
+      if (cy + 1 < rows) {
+        const below = c + cols;
+        run2a = cellStart[cx > 0 ? below - 1 : below]!;
+        run2b = cellStart[hasRight ? below + 2 : below + 1]!;
+      }
+      for (let s = cellStart[c]!; s < end; s++) {
+        for (let t = s + 1; t < run1; t++) if (!((xs[t]! - xs[s]!) ** 2 + (ys[t]! - ys[s]!) ** 2 >= reach2)) pairs.push([s, t]);
+        for (let t = run2a; t < run2b; t++) if (!((xs[t]! - xs[s]!) ** 2 + (ys[t]! - ys[s]!) ** 2 >= reach2)) pairs.push([s, t]);
+      }
+    }
+    return pairs;
+  }
+
+  it("on crowded worlds of every shape, with creatures anywhere", () => {
+    let found = 0;
+    for (let seed = 1; seed <= 20; seed++) {
+      const rng = createRng(seed * 131);
+      const eco = make((c) => {
+        (c.world as Any).width = 300 + rng.int(3000);
+        (c.world as Any).height = 200 + rng.int(2000);
+        (c.creature as Any).radius = rng.range(3, 25);
+        (c.creature as Any).rayLength = rng.range(30, 300);
+        return c;
+      }, [14, 80, 500][rng.int(3)]!, seed, seed % 2 ? DEFAULT_PREDATOR_CONFIG : DEFAULT_ECO_CONFIG);
+      const e = eco as Any;
+      const back = scatter(eco, seed);
+      e.gridCrowd(eco.members.length, e.multi ? e.kinds : undefined);
+      const crowd: Crowd = e.crowd;
+      const reach2 = (2 * eco.config.creature.radius) ** 2;
+      const want = jsPairs(crowd, reach2);
+      const kernel = crowd.kernel!;
+      const got: [number, number][] = [];
+      kernel.sweepStart(reach2);
+      while (kernel.sweepNext()) got.push([kernel.hitS, kernel.hitT]);
+      expect(got).toEqual(want);
+      found += want.length;
+      back();
+    }
+    expect(found).toBeGreaterThan(200);
+  });
+});
+
 describe.skipIf(!wasmAvailable())("whole runs with the WebAssembly crowd grid and with the JS one", () => {
   afterEach(() => forceJsCrowd(false));
   const run = (build: () => Ecosystem, ticks: number, js: boolean, midRun?: (eco: Ecosystem, t: number) => void): [number, number, number] => {
@@ -256,6 +313,7 @@ describe.skipIf(!wasmAvailable())("whole runs with the WebAssembly crowd grid an
     ["plain", () => make((c) => c, 200)],
     ["Inland Sea", () => make(inland, 800)],
     ["collisions and damage", () => make((c) => damage(c), 400)],
+    ["a crowded small world with damage (many bumps)", () => make((c) => damage({ ...c, world: { ...c.world, width: 700, height: 500, foodDensity: 1 } }), 350)],
     ["predators (hunting uses the grid)", () => new Ecosystem(structuredClone(DEFAULT_PREDATOR_CONFIG), null)],
   ];
   for (const [name, build] of cases) {

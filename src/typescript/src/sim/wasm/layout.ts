@@ -98,7 +98,15 @@ export const LAYOUT = {
   C_TOUCH_OUT: 124,
   C_INV_ITEM_CELL: 128, // f64
   C_ITEM_REACH: 136, // f64
-  C_BYTES: 144,
+  C_REACH2: 144, // f64, the sweep's squared contact distance
+  C_SW_O: 152, // the sweep's place: occupied cell, first creature, which run, second creature, and whether the next call resumes there
+  C_SW_S: 156,
+  C_SW_PHASE: 160,
+  C_SW_T: 164,
+  C_SW_RESUME: 168,
+  C_HIT_S: 172, // out: the pair found, as sorted slots
+  C_HIT_T: 176,
+  C_BYTES: 184,
   // call block of members (i32)
   M_N: 0,
   M_ROW_AT: 4, // f64 index of each member's row, in member order

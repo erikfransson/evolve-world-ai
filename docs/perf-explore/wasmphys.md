@@ -36,3 +36,11 @@ Branch `wasmphys`. Alternating pairs, load average 10 to 14, noise about 3%. Swi
 
 - Exactness of the birth walk: a birth changes only the parent's energy and appends a child past the walk, so the candidates found before the first birth are the ones the loop would reach; the loop still stops at the birth cap.
 - Tests: `tests/typescript/wasmMembers.test.ts` (11): both scans against the loops on rows with energies 0, -0, negative, tiny, huge, infinite and NaN and thresholds at, below and above the energy, from random starts, empty and single worlds, whole runs with births and deaths forced (5 worlds including a full one), insert and retune, cross-mode saves, RL reuse. Red checks on members.wat: `>=` for `>` 6 fail, 2 ticks 1, NaN counted alive 1, `<=` for `<` 1, NaN not a candidate 1, wrap off by one 8.
+
+## Phase c: the collision sweep's pair search (`sweep` in crowd.wat)
+| Idea | Before | After | Speedup | Exact? | Peak RSS change | Lines added | Verdict |
+|------|--------|-------|---------|--------|-----------------|-------------|---------|
+| The pair search of `collideAll` over the crowd arrays in kernel memory, resumable: the kernel returns each overlapping pair, JS bumps it (collide, hurt, confine, events) and writes the positions back, then the kernel goes on | collisions phase 0.94 / 0.98 / 0.91 / 1.00 ms; tick 41.6 / 41.0 / 41.1 / 43.8 | 0.71 / 0.70 / 0.73 / 0.72; tick 41.1 / 41.3 / 42.1 / 43.7 | phase 1.3x (0.24 ms), tick about 1.00x | bit-identical (all fingerprints) | none | 85 WAT + 25 TS + 10 layout + 70 test | marginal, separate commit so it can be dropped |
+
+- About 100 pairs overlap per tick at 9760 creatures, so the JS bump and the call per pair stay the larger part of the 0.7 ms left. Moving the bump into WASM (collide, hurt, confine with the event list replayed in order) could save about 0.3 ms more, not built: under 1% of a tick.
+- Tests: the pair sequence against a JS copy of the loops on 20 fuzz worlds (more than 200 pairs, creatures anywhere), and a crowded small world with damage among the whole-run tests. Red checks: neighbour cell column off 2 tests fail, grid row bound 2, second run start 2, NaN pair test inverted 1.
