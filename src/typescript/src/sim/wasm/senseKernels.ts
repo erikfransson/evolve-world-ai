@@ -10,6 +10,7 @@ import { ResidentStore } from "./resident.ts";
 import { prepareRows } from "./residentStep.ts";
 import { MAX_RAYS, WasmSenser } from "./senser.ts";
 import { WasmFiller } from "./fillKernel.ts";
+import { WasmStepper } from "./stepKernel.ts";
 
 // senseThinkBatch on the WASM kernels: sense.wat does rays and brain inputs for the whole batch in one call, then the brains run
 // in WebAssembly too. Each creature keeps a brain slot here for as long as this owner holds it (creatures are recycled, not
@@ -55,6 +56,7 @@ export class SenseKernels {
     if (this.resident) {
       this.resident.store.reset();
       this.resident.filler.reset();
+      this.resident.store.stepper?.reset();
     }
     this.versions.length = 0;
     this.nextSlot = 0;
@@ -69,6 +71,7 @@ export class SenseKernels {
     if (this.resident === undefined) {
       const store = new ResidentStore(this.brains);
       const filler = WasmFiller.create(store);
+      store.stepper = WasmStepper.create(store);
       this.resident = filler ? { store, filler } : null;
     }
     return this.resident?.store ?? null;

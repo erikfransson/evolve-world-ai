@@ -5,6 +5,7 @@ import { Terrain } from "../terrain.ts";
 import type { World } from "../world.ts";
 import { refit } from "../brain.ts";
 import { F, I } from "./resident.ts";
+import { jsStepForced } from "./stepKernel.ts";
 import type { ResidentStore } from "./resident.ts";
 
 // The per-creature physics of resident bodies in JS, on the rows' arrays: the same arithmetic in the same order as Creature.writeBodyInputs
@@ -39,7 +40,7 @@ export function prepareRows(store: ResidentStore, rows: Int32Array, n: number, t
   }
 }
 
-// Twin of Creature.remember and physics.stepBody (same parity test). Memory and motion for each row of the batch. The brain outputs are in f32, the bank's memory as floats.
+// Twin of Creature.remember and physics.stepBody (same parity test), and of step.wat (WasmStepper in stepKernel.ts), which stepResident prefers; this is its reference and fallback. Memory and motion for each row of the batch. The brain outputs are in f32, the bank's memory as floats.
 export function stepRows(store: ResidentStore, f32: Float32Array, rows: Int32Array, n: number, aging: Aging | null, terrain: Terrain): void {
   const f = store.f64;
   const i32 = store.i32;
@@ -96,13 +97,19 @@ export function stepRows(store: ResidentStore, f32: Float32Array, rows: Int32Arr
   }
 }
 
+// stepRows in WebAssembly when the store has the stepper, else in JS; the results are bit for bit the same (tests/typescript/wasmStep.test.ts).
+export function stepResident(store: ResidentStore, f32: Float32Array, rows: Int32Array, n: number, aging: Aging | null, terrain: Terrain): void {
+  if (store.stepper && !jsStepForced()) store.stepper.step(rows, n, aging, terrain);
+  else stepRows(store, f32, rows, n, aging, terrain);
+}
+
 // Scratch for advanceBodies, shared by all callers: safe because the call is synchronous and nothing keeps the arrays.
 let px = new Float64Array(0);
 let py = new Float64Array(0);
 
-// stepRows for helper threads, then the item each of these bodies touches (what Creature.touched returns) into touched[selves[k]].
+// stepResident for helper threads, then the item each of these bodies touches (what Creature.touched returns) into touched[selves[k]].
 export function advanceBodies(store: ResidentStore, f32: Float32Array, rows: Int32Array, selves: Int32Array, n: number, aging: Aging | null, world: World, radius: number, touched: Int32Array): void {
-  stepRows(store, f32, rows, n, aging, world.terrain);
+  stepResident(store, f32, rows, n, aging, world.terrain);
   px = refit(px, n);
   py = refit(py, n);
   const f = store.f64;

@@ -12,7 +12,7 @@ import { agingOf, collide, hurt, keepInside, settle } from "./physics.ts";
 import { terrainOf } from "./terrain.ts";
 import { F } from "./wasm/resident.ts";
 import type { ResidentStore } from "./wasm/resident.ts";
-import { advanceBodies, prepareRows, stepRows } from "./wasm/residentStep.ts";
+import { advanceBodies, prepareRows, stepResident } from "./wasm/residentStep.ts";
 import type { Body } from "./physics.ts";
 import type { Aging, Contact } from "./physics.ts";
 import type { StatefulRng } from "./rng.ts";
@@ -502,7 +502,7 @@ export class Ecosystem {
         const { creatures, count } = this.batch;
         const f32 = this.kernels?.f32;
         if (this.resident) {
-          stepRows(this.resident, this.kernels!.f32, this.slotRows, this.members.length, this.aging, this.items.terrain);
+          stepResident(this.resident, this.kernels!.f32, this.slotRows, this.members.length, this.aging, this.items.terrain);
         } else for (let k = 0; k < count; k++) {
           const c = creatures[k]!;
           const out = c.outputArray(f32);

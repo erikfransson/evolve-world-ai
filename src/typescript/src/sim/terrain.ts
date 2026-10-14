@@ -31,7 +31,7 @@ const GAP = 80; // free passage kept between rock and the walls and between piec
 const TRIES = 40; // placements tried per piece before giving up on the rest of its kind
 const MAX_ROCK_SHARE = 0.4; // rock never covers more of the world than this, however high the setting
 export const ROCK_CELL = 300; // world units per cell of the rock grid
-const CLEAR_CELL = 100; // world units per square of keepOut's clear-of-rock raster
+export const CLEAR_CELL = 100; // world units per square of keepOut's clear-of-rock raster
 
 export const PATCH_SIZE_RANGE = [0.4, 2.5] as const; // the form's range for the size of a slow or fast patch, a multiple of the standard one
 export const MAX_PIECES = 300; // pieces of one kind, however high the setting, so a map stays cheap to build and to look up
@@ -131,9 +131,15 @@ export class Terrain {
   // keepOut's early-out: one byte per CLEAR_CELL square, 1 where a disc of nearRadius could touch rock from somewhere inside it. Built on the first keepOut per radius.
   private nearRadius = NaN;
   private near = new Uint8Array(0);
-  private nearCols = 0;
-  private nearRows = 0;
+  nearCols = 0; // size of the raster, set with it
+  nearRows = 0;
   private readonly nearByRadius = new Map<number, Uint8Array<ArrayBuffer>>(); // built rasters, so worlds of different radii sharing this Terrain do not rebuild in turn
+
+  // The clear-of-rock raster for this radius (nearCols x nearRows bytes), for the WASM twin of keepOut.
+  nearFor(radius: number): Uint8Array {
+    if (radius !== this.nearRadius) this.buildNear(radius);
+    return this.near;
+  }
 
   private buildNear(radius: number): void {
     const cols = (this.nearCols = Math.ceil(this.width / CLEAR_CELL));
@@ -192,7 +198,7 @@ export class Terrain {
   }
 
   // Pushes a disc of this radius out of the rock along the contact normal and reflects the velocity pointing into it, scaled by
-  // restitution like a wall. Repeats a few times, since leaving one disc of a ridge can enter the next.
+  // restitution like a wall. Repeats a few times, since leaving one disc of a ridge can enter the next. Twin of $keepOut in wasm/step.wat.
   keepOut(s: Body, radius: number, restitution: number): void {
     if (this.rockCount === 0) return;
     if (radius !== this.nearRadius) this.buildNear(radius);
