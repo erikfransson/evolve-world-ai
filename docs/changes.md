@@ -5,6 +5,7 @@ Each release is a pull request from `development` into `main`, tagged `vX.Y.Z` o
 Add notes under "Unreleased" as work lands on `development`, and turn that heading into the version number at release time.
 
 ## Unreleased
+- Creature body state lives in rows in WASM memory (physics stays in JS): about 1.15x per tick on big worlds, results unchanged, about 7% less memory. With the round 1 and memory-growth changes, The Inland Sea at 10k creatures went from 70 to about 48 ms CPU per tick.
 - WASM memory now grows by at least an eighth at a time instead of page by page (each grow copied the whole memory): about 1.14x per tick on The Inland Sea at 10k creatures, results unchanged, about 10% more memory.
 - Faster simulation on big maps (about 1.08x on The Inland Sea at 10k creatures, results unchanged): one array-based collision pass for every mode, item lookups in grid order, keepOut skips rock where none is near, and a faster birth scan.
 - Live World moves to The Inland Sea (40000 x 25000) with the launch food values (food worth 50, slower regrowth, cap 1.5, scarce poison), a one hour year and 3x speed. A fresh world starts with 10 of each starter founder; saves of the old world are not restored and are deleted by the usual rotation after 4 days. The page draws the map (built on a worker from its name), and the info section lists its regions with their food and poison.
