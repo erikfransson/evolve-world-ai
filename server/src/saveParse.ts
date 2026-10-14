@@ -3,7 +3,7 @@ import type { EcoState } from "../../src/typescript/src/sim/ecoState.ts";
 
 // Unzips, parses and checks a save on a worker thread with its own small heap, so a crafted save (deep or many tiny JSON values)
 // can at worst kill that worker, never the server. Resolves with a state restoreState accepted there, rejects with the reason otherwise.
-// verifyOnly: only check, and resolve with nothing, so the rebuilt state (100 to 200 MB at 2500 creatures) never crosses to the main heap.
+// verifyOnly: only check, and resolve with nothing, so the rebuilt state (100 to 200 MB at 2500 creatures, more at the 3000 cap) never crosses to the main heap.
 export const PARSE_HEAP_MB = 384;
 const PARSE_TIMEOUT_MS = 120_000;
 // A save's own check must finish well inside the unit's TimeoutStopSec=60, so a slow one cannot cost the shutdown save; a real one takes 3 to 6 s.

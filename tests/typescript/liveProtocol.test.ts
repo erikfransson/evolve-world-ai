@@ -1,4 +1,4 @@
-import { CREATURE_RECORD, ITEMS_HEADER, creatureFrameBytes, decodeCreatures, decodeItems, encodeCreatures, encodeItems } from "../../src/typescript/src/live/protocol.ts";
+import { CREATURE_RECORD, ITEMS_HEADER, MAX_FRAME_CREATURES, creatureFrameBytes, decodeCreatures, decodeItems, encodeCreatures, encodeItems } from "../../src/typescript/src/live/protocol.ts";
 import { LiveScene } from "../../src/typescript/src/live/scene.ts";
 import { retryDelayS, serverUrl, DEV_SERVER, PUBLIC_SERVER } from "../../src/typescript/src/live/serverUrl.ts";
 import { LiveLink, cleanStats } from "../../src/typescript/src/live/connection.ts";
@@ -12,6 +12,15 @@ import { LIVE } from "../../server/src/config.ts";
 const world = { width: 17000, height: 10600 };
 
 describe("live protocol", () => {
+  it("takes a creature frame of at most MAX_FRAME_CREATURES", () => {
+    const frame = (n: number): Uint8Array => {
+      const z = new Array<number>(n).fill(0);
+      return encodeCreatures(1, { count: n, ids: z, x: z, y: z, heading: z, energy: z, hue: z, founder: z, age: z, radius: 12 }, world, 150);
+    };
+    expect(decodeCreatures(frame(MAX_FRAME_CREATURES), world).count).toBe(MAX_FRAME_CREATURES);
+    expect(() => decodeCreatures(frame(MAX_FRAME_CREATURES + 1), world)).toThrow(/size/);
+  });
+
   it("round-trips creature frames within the quantisation", () => {
     const src = {
       count: 3,

@@ -3,7 +3,9 @@ import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { itemsPerDensity } from "../../src/typescript/src/sim/config.ts";
 import { MAX_ITEM_SLOTS } from "../../src/typescript/src/live/protocol.ts";
 
-export const MAX_POPULATION = 2500; // also the admin's upper limit (tunables.ts)
+// Also the admin's upper limit (tunables.ts). At 3000 a creature frame is 57 kB: room() lets in about 23 to 38 viewers at the full
+// population (fewer while items change fast), a save is about 29 MB of JSON, and a save and admin load peak near 720 MB (2500: 687 MB, 5000: 857 MB).
+export const MAX_POPULATION = 3000;
 
 // The one world this server runs: The Inland Sea map (src/sim/maps/inlandSea.ts) with the Ecosystem rules, collision damage on.
 // The admin channel (admin.ts) edits this object in place for the settings the engine reads every tick.
@@ -104,7 +106,7 @@ export const LIMITS = {
   stateEveryMs: 4 * 60 * 60 * 1000,
   keepStateMs: 4 * 24 * 60 * 60 * 1000, // saves older than this are deleted, except the newest six (state.ts)
   maxStateDirBytes: 2e9, // no save is written while the state directory holds more than this
-  maxSaveJsonBytes: 50e6, // a save may be at most this much JSON (24 MB at 2500 creatures on the Inland Sea, food at its cap or not); parsing runs in a worker with its own heap cap (saveParse.ts)
+  maxSaveJsonBytes: 50e6, // a save may be at most this much JSON (Inland Sea: 24 MB at 2500 creatures, 42 MB at 5000, about 29 MB at the 3000 cap); parsing runs in a worker with its own heap cap (saveParse.ts)
   maxCatchUpS: 1, // after a stall longer than this the clock resyncs instead of racing to catch up
   sliceMs: 15, // simulation work per event-loop turn, so sockets stay served
   maxBufferedBytes: 1_000_000, // a viewer with more queued than this is skipped for frames (slow link)
