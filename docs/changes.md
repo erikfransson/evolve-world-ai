@@ -5,8 +5,10 @@ Each release is a pull request from `development` into `main`, tagged `vX.Y.Z` o
 Add notes under "Unreleased" as work lands on `development`, and turn that heading into the version number at release time.
 
 ## Unreleased
+
+## 0.2.0 (2026-10-14)
 - RL Arena: a new "Bigger" env group after Advanced with five Live-like worlds (1000 to 2200 wide, 90 s, regrowing food, lethal poison, 8 to 25 seed pool foragers, bumps hurt, start energy 300): Live patch, Feast and famine, Busy meadow, Poison country and Crowded commons.
-- Landing page polish: a hero with buttons to watch the Live World or train your own, a Live World card that shows the real Inland Sea from above with six lineages grazing, giving birth and dying, its live numbers (creatures alive, people watching) from the server, a busier Ecosystem card, a short "How it works" (sense, think, evolve), a fuller footer, and share previews (description, Open Graph and Twitter tags, a 1200 x 630 image). The Trials card's rays no longer reach past the arena wall.
+- Landing page polish: a hero with buttons to watch the Live World or create your own, a Live World card that shows the real Inland Sea from above with six lineages grazing, giving birth and dying, its live numbers (creatures alive, people watching) from the server, a busier Ecosystem card, a short "How it works" (sense, think, evolve), a fuller footer, and share previews (description, Open Graph and Twitter tags, a 1200 x 630 image). The Trials card's rays no longer reach past the arena wall.
 - Live server: `GET /stats` answers `{"creatures", "viewers"}` for the landing page (public, cacheable for 10 s, rebuilt at most once a second, 5 requests a second for all callers with a burst of 20, past that a 503; every other plain request still gets a 426).
 - Helper threads use the resident creature rows too: with 3 helpers the CPU per tick drops about 1.3x and the coordinator's share from about 37 to 24 ms at 10k creatures on The Inland Sea, results unchanged.
 - Eating walks only the creatures that touch an item and the crowd rebuild skips a species copy: about 1.04x per tick on The Inland Sea, results unchanged.
