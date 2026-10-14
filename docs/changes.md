@@ -5,6 +5,7 @@ Each release is a pull request from `development` into `main`, tagged `vX.Y.Z` o
 Add notes under "Unreleased" as work lands on `development`, and turn that heading into the version number at release time.
 
 ## Unreleased
+- Helper threads use the resident creature rows too: with 3 helpers the CPU per tick drops about 1.3x and the coordinator's share from about 37 to 24 ms at 10k creatures on The Inland Sea, results unchanged.
 - Eating walks only the creatures that touch an item and the crowd rebuild skips a species copy: about 1.04x per tick on The Inland Sea, results unchanged.
 - Creature body state lives in rows in WASM memory (physics stays in JS): about 1.15x per tick on big worlds, results unchanged, about 7% less memory. With the round 1 and memory-growth changes, The Inland Sea at 10k creatures went from 70 to about 48 ms CPU per tick.
 - WASM memory now grows by at least an eighth at a time instead of page by page (each grow copied the whole memory): about 1.14x per tick on The Inland Sea at 10k creatures, results unchanged, about 10% more memory.
