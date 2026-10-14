@@ -103,5 +103,8 @@ export async function openWorld(saves: Saves, live: LiveWorld, stateDir: string,
   if (retired) log(retired);
   const n = live.seedFounders(founders);
   log(`fresh world seeded with ${n} creatures, ${SEED_COPIES} of each of ${founders.map((f) => f.name).join(", ")}`);
+  // Saved at once, so a crash before the first 4-hourly save restores this world instead of starting yet another (and retiring its overrides).
+  // A failed save is logged and the world runs on, as with any save.
+  await saves.save().then(log, (e: unknown) => log(errText(e)));
   return {};
 }

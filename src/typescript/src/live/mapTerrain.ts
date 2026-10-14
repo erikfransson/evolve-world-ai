@@ -64,21 +64,54 @@ export function terrainFromParts(name: string, width: number, height: number, m:
   return t;
 }
 
-// Builds a map on a worker so the page stays responsive; resolves to its Terrain, or null when it cannot be built.
-export function loadMapTerrain(name: string, width: number, height: number): Promise<Terrain | null> {
+export const MAP_TIMEOUT_MS = 60_000; // a map not built by then (a stuck or very slow worker) is given up, and the next hello tries again
+type MapWorker = Pick<Worker, "postMessage" | "terminate" | "onmessage" | "onerror">;
+const newWorker = (): MapWorker => new Worker(new URL("../worker/mapWorker.ts", import.meta.url), { type: "module" });
+
+// Builds a map on a worker so the page stays responsive; resolves to its Terrain, or null when it cannot be built in timeoutMs.
+export function loadMapTerrain(name: string, width: number, height: number, timeoutMs = MAP_TIMEOUT_MS, makeWorker: () => MapWorker = newWorker): Promise<Terrain | null> {
   return new Promise((resolve) => {
-    let worker: Worker;
+    let worker: MapWorker;
     try {
-      worker = new Worker(new URL("../worker/mapWorker.ts", import.meta.url), { type: "module" });
+      worker = makeWorker();
     } catch {
       return resolve(null);
     }
+    let settled = false;
     const done = (t: Terrain | null): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
       worker.terminate();
       resolve(t);
     };
+    const timer = setTimeout(() => done(null), timeoutMs);
     worker.onmessage = (e: MessageEvent<MapOut>) => done(terrainFromParts(name, width, height, e.data));
     worker.onerror = () => done(null);
     worker.postMessage({ name });
   });
+}
+
+// One map for the page at a time: the same name and size share one build; a build that failed or timed out is forgotten, so the next asks again.
+export class MapCache {
+  private key = "";
+  private promise: Promise<Terrain | null> | null = null;
+  private readonly load: typeof loadMapTerrain;
+
+  constructor(load: typeof loadMapTerrain = loadMapTerrain) {
+    this.load = load;
+  }
+
+  get(name: string, width: number, height: number): Promise<Terrain | null> {
+    const key = `${name}|${width}|${height}`;
+    if (key !== this.key || !this.promise) {
+      this.key = key;
+      const p = this.load(name, width, height);
+      this.promise = p;
+      void p.then((t) => {
+        if (!t && this.promise === p) this.promise = null;
+      });
+    }
+    return this.promise;
+  }
 }

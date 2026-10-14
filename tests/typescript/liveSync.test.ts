@@ -84,7 +84,7 @@ describe("public server: order and item sets", () => {
     const port = 50450;
     const world = grown();
     const one = world.itemsSize() + world.creatureFrame().length;
-    await serve(port, { connectBytesPerSecond: Math.round(one * 1.05) }, world);
+    await serve(port, { connectBurstBytes: 0, connectBytesPerSecond: Math.round(one * 1.05) }, world);
     await wait(600);
     inFlight(world, true); // a tick waits for the helpers: the frame loop queues its work
     await wait(250);
@@ -110,7 +110,7 @@ describe("public server: order and item sets", () => {
     const perViewer = world.creatureFrame().length * 5;
     const budget = Math.round((40 * perViewer) / 2);
     const connect = 2 * full;
-    const { pub } = await serve(port, { maxViewers: 100, acceptBurst: 100, acceptsPerSecond: 100, connectBytesPerSecond: connect, textBytesPerViewer: 10, detailBytesPerViewer: 0, maxSendBytesPerSecond: budget + connect + 100 * 10 }, world);
+    const { pub } = await serve(port, { maxViewers: 100, acceptBurst: 100, acceptsPerSecond: 100, connectBurstBytes: 0, connectBytesPerSecond: connect, textBytesPerViewer: 10, detailBytesPerViewer: 0, maxSendBytesPerSecond: budget + connect + 100 * 10 }, world);
     await wait(300);
     const cs = Array.from({ length: 40 }, () => client(port, world));
     await Promise.all(cs.map((c) => c.open));

@@ -34,8 +34,7 @@ import { HISTORY_FIELDS, LINEAGE_FIELDS, MAX_HISTORY, MAX_LINEAGE_HISTORY } from
 import type { Hello, Season, Stats } from "./live/protocol.ts";
 import { AddPanel, parseFounders } from "./live/addPanel.ts";
 import { renderMapInfo } from "./live/mapInfo.ts";
-import { loadMapTerrain } from "./live/mapTerrain.ts";
-import type { Terrain } from "./sim/terrain.ts";
+import { MapCache } from "./live/mapTerrain.ts";
 
 // TODO(L6): admin panel. `?admin` opens a second socket to the owner's loopback admin port (ws://127.0.0.1:8788), sends {t:"auth", token}
 // with a token the owner pastes in, then {t:"get-config"} and {t:"set-config", changes}. See server/src/admin.ts.
@@ -218,18 +217,12 @@ function onHello(h: Hello): void {
 }
 
 // The ground and rock of a hand-designed map, built from its name on a worker (once per map and size); plain ground meanwhile.
-let mapKey = "";
-let mapTerrain: Promise<Terrain | null> | null = null;
+const maps = new MapCache();
 function showMap(h: Hello): void {
   const name = h.map.name;
   if (!name) return;
-  const key = `${name}|${h.world.width}|${h.world.height}`;
-  if (key !== mapKey) {
-    mapKey = key;
-    mapTerrain = loadMapTerrain(name, h.world.width, h.world.height);
-  }
   const d = draw;
-  void mapTerrain!.then((t) => {
+  void maps.get(name, h.world.width, h.world.height).then((t) => {
     if (t && draw === d) d!.map = t; // a newer hello has its own
   });
 }

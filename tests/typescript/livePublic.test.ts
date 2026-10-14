@@ -129,7 +129,7 @@ describe("public server: upload budget", () => {
     const text = 10;
     const maxViewers = 100;
     const budget = Math.floor(6.5 * frame);
-    const limits = { maxViewers, maxSendBytesPerSecond: budget + connect + maxViewers * text, connectBytesPerSecond: connect, textBytesPerViewer: text, detailBytesPerViewer: 0, acceptBurst: 100 };
+    const limits = { maxViewers, maxSendBytesPerSecond: budget + connect + maxViewers * text, connectBurstBytes: 0, connectBytesPerSecond: connect, textBytesPerViewer: text, detailBytesPerViewer: 0, acceptBurst: 100 };
     const { pub } = await serve(port, limits, world);
     await wait(300); // the first frame sets the per-viewer size
     const vs: Viewer[] = [];
@@ -152,7 +152,7 @@ describe("public server: upload budget", () => {
     const port = 50416;
     const world = new LiveWorld(smallConfig(), null);
     for (let i = 0; i < 20; i++) world.eco.step();
-    const { pub } = await serve(port, { connectBytesPerSecond: 1, acceptBurst: 100 }, world);
+    const { pub } = await serve(port, { connectBurstBytes: 0, connectBytesPerSecond: 1, acceptBurst: 100 }, world);
     await wait(300);
     const v = viewer(port);
     expect(await v.status).toBe("hello");

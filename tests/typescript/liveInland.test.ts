@@ -1,9 +1,12 @@
 // @vitest-environment node
 import { spawnSync } from "node:child_process";
+// @ts-expect-error the web tsconfig finds no types for the server's ws
+import { WebSocket } from "../../server/node_modules/ws/wrapper.mjs";
+import { startPublic } from "../../server/src/public.ts";
 import { existsSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CAP_LIMITS, ITEM_HEADROOM, LIVE, MAX_POPULATION, ITEM_SLOT_SHARE, MAX_FOUNDERS_FILE_BYTES, MAX_SEED_FOUNDERS, SEED_COPIES, itemHeadroom, liveConfig } from "../../server/src/config.ts";
+import { CAP_LIMITS, ITEM_HEADROOM, LIMITS, LIVE, MAX_POPULATION, ITEM_SLOT_SHARE, MAX_FOUNDERS_FILE_BYTES, MAX_SEED_FOUNDERS, SEED_COPIES, itemHeadroom, liveConfig } from "../../server/src/config.ts";
 import { lineageName, loadFounders, parseFounders } from "../../server/src/founders.ts";
 import { LiveWorld } from "../../server/src/liveWorld.ts";
 import { Saves, openWorld } from "../../server/src/saves.ts";
@@ -17,11 +20,12 @@ import { decodeDetail } from "../../src/typescript/src/live/detail.ts";
 import { cleanStats } from "../../src/typescript/src/live/connection.ts";
 import { lineageRows } from "../../src/typescript/src/ui/lineagePanel.ts";
 import { genomeLengthFor } from "../../src/typescript/src/sim/rl/creatureFile.ts";
-import { MAX_OUTLINE_LOOPS, MAX_OUTLINE_POINTS, checkOutlines, terrainFromParts } from "../../src/typescript/src/live/mapTerrain.ts";
+import { MAP_TIMEOUT_MS, MAX_OUTLINE_LOOPS, MAX_OUTLINE_POINTS, MapCache, checkOutlines, loadMapTerrain, terrainFromParts } from "../../src/typescript/src/live/mapTerrain.ts";
 import { rockBodies, rockGeometry } from "../../src/typescript/src/ui/rockOutline.ts";
 import type { RockGeometry } from "../../src/typescript/src/ui/rockOutline.ts";
 import { builtMap } from "../../src/typescript/src/sim/maps/index.ts";
 import { terrainOf } from "../../src/typescript/src/sim/terrain.ts";
+import type { Terrain } from "../../src/typescript/src/sim/terrain.ts";
 import { smallConfig } from "./liveHelpers.ts";
 
 const FOUNDERS = new URL("../../src/typescript/public/live-founders.json", import.meta.url);
@@ -365,5 +369,102 @@ describe("room held back for visitors", () => {
     // The admin may move the reserve, but never to the whole population.
     expect(applyTunables(live.eco, { "eco.birthReserve": Math.min(1000, MAX_POPULATION - 1) })).toBeNull();
     expect(applyTunables(live.eco, { "eco.birthReserve": 1001 })).toMatch(/birthReserve/);
+  });
+});
+
+describe("catch-up of a new viewer", () => {
+  it("gets a full item set over 300 kB from the connect allowance, before any creature frame", async () => {
+    const c = smallConfig();
+    c.world.width = 12000;
+    c.world.height = 7500;
+    c.world.foodDensity = 10; // 90 000 items
+    c.eco.initialPopulation = 20;
+    const world = new LiveWorld(c, null);
+    expect(world.itemsSize()).toBeGreaterThan(300_000);
+    expect(LIMITS.connectBurstBytes).toBeGreaterThan(world.itemsSize() + 3000 * 19);
+    const port = 50460;
+    const pub = startPublic("127.0.0.1", port, world);
+    try {
+      await new Promise<void>((r) => (pub.http.listening ? r() : pub.http.once("listening", () => r())));
+      await new Promise((r) => setTimeout(r, 700)); // a creature frame to go with the set
+      const first = await new Promise<number>((resolve, reject) => {
+        const ws = new WebSocket(`ws://127.0.0.1:${port}/`);
+        ws.on("message", (d: Buffer, isBinary: boolean) => {
+          if (!isBinary) return;
+          ws.close();
+          resolve(d[0]!); // the first binary message: 2 is the item set, from the connect allowance; 1 a creature frame while the set waits
+        });
+        ws.on("error", reject);
+      });
+      expect(first).toBe(2);
+    } finally {
+      pub.close();
+    }
+  }, 60_000);
+});
+
+describe("the first save of a fresh world", () => {
+  it("is written right after the seeding, so a crash before the 4-hourly save restores the seeded world", async () => {
+    const dir = tmp();
+    const store = new StateStore(dir);
+    const founders = loadFounders(FOUNDERS.pathname);
+    const fresh = freshSmall();
+    const lines: string[] = [];
+    await openWorld(new Saves(fresh, store), fresh, dir, founders, (l) => lines.push(l));
+    expect(store.list()).toHaveLength(1);
+    expect(lines.at(-1)).toMatch(/^saved world-/);
+    // The crash: a new process restores that save rather than seeding another world.
+    const again = freshSmall();
+    const later: string[] = [];
+    await openWorld(new Saves(again, store), again, dir, founders, (l) => later.push(l));
+    expect(later[0]).toMatch(/^restored world-/);
+    expect(again.eco.population).toBe(fresh.eco.population);
+  });
+
+  it("that fails is logged, and the world runs on", async () => {
+    class NoDisk extends Saves {
+      override save(): Promise<string> {
+        return Promise.reject(new Error("not saved: disk full"));
+      }
+    }
+    const fresh = freshSmall();
+    const lines: string[] = [];
+    const dir = tmp();
+    await openWorld(new NoDisk(fresh, new StateStore(dir)), fresh, dir, loadFounders(FOUNDERS.pathname), (l) => lines.push(l));
+    expect(lines.at(-1)).toBe("not saved: disk full");
+    expect(fresh.eco.population).toBeGreaterThan(0);
+    fresh.step();
+  });
+});
+
+describe("the page's map worker", () => {
+  // A worker that never answers, and counts its ends.
+  const silent = () => {
+    const w = { terminated: 0, postMessage() {}, terminate() { w.terminated++; }, onmessage: null, onerror: null };
+    return w;
+  };
+
+  it("is given up after the timeout: terminated, and null", async () => {
+    expect(MAP_TIMEOUT_MS).toBe(60_000);
+    const w = silent();
+    const t0 = Date.now();
+    expect(await loadMapTerrain("inland-sea", 40000, 25000, 50, () => w as never)).toBeNull();
+    expect(Date.now() - t0).toBeLessThan(5000);
+    expect(w.terminated).toBe(1);
+  });
+
+  it("a failed build is forgotten, so the next hello builds again; a good one is kept", async () => {
+    let calls = 0;
+    let answer: Terrain | null = null;
+    const cache = new MapCache(async () => {
+      calls++;
+      return answer;
+    });
+    expect(await cache.get("inland-sea", 40000, 25000)).toBeNull();
+    await Promise.resolve();
+    answer = { width: 40000 } as Terrain;
+    expect(await cache.get("inland-sea", 40000, 25000)).toBe(answer);
+    expect(await cache.get("inland-sea", 40000, 25000)).toBe(answer);
+    expect(calls).toBe(2);
   });
 });

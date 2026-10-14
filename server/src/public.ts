@@ -58,7 +58,7 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
 
   const viewers = new Map<WebSocket, Viewer>(); // registered viewers only, not sockets about to be refused
   const accepts = new TokenBucket(limits.acceptsPerSecond, limits.acceptBurst);
-  const connectBytes = new TokenBucket(limits.connectBytesPerSecond, limits.connectBytesPerSecond); // full item sets and history for new or lagging viewers
+  const connectBytes = new TokenBucket(limits.connectBytesPerSecond, Math.max(limits.connectBytesPerSecond, limits.connectBurstBytes)); // full item sets and history for new or lagging viewers
   const budget = frameBudget(limits);
   const addAttempts = new TokenBucket(limits.addAttemptsPerSecond, limits.addAttemptBurst); // add messages parsed, for all viewers together
   const sent = { frames: 0, items: 0, details: 0, text: 0 };
