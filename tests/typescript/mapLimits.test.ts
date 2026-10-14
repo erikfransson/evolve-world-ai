@@ -88,7 +88,7 @@ describe("map densities from outside", () => {
       const map = terrainOf({ seed: 3, world: { width, height, stoneDensity: 0, ridgeDensity: 0, slowDensity: 0.3, fastDensity: 0.3 } });
       expect(map.ground!.bytes).toBeLessThanOrEqual(520_000);
     }
-  });
+  }, 60_000); // builds four maps; slow on a loaded machine
 
   it("the form maxima themselves are accepted", () => {
     const state = saved();
@@ -109,5 +109,5 @@ describe("map densities from outside", () => {
     expect(cpuMs(t)).toBeLessThan(20_000);
     expect(groundBodies(map, 1).length).toBeLessThanOrEqual(2 * MAX_PIECES); // patches merge, never more than the blob cap per kind
     expect(map.rockCount).toBeLessThanOrEqual(2 * MAX_PIECES * MAX_DISCS_PER_PIECE);
-  });
+  }, 60_000); // the CPU bound above is the check; wall time under a loaded machine can exceed the default 5 s
 });
