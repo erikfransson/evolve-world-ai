@@ -1,6 +1,6 @@
 # Live World map candidates, final set
 
-Four maps at 54000 x 33600 (10.3x today's area): F1 Realms, F2 Three Rivers, F3 Oases in the Dry, F4 The Inland Sea. Images: `2026-10-12-draft3-*.jpg` in this folder; layer specs `tools/map-F1.json` to `tools/map-F4.json`. Design proposal for GitHub #36; nothing here is built yet.
+Four maps at 54000 x 33600 (10.3x today's area): F1 Realms, F2 Three Rivers, F3 Oases in the Dry, F4 The Inland Sea. Images: `2026-10-12-draft3-*.jpg` in this folder; layer specs `tools/map-F1.json` to `tools/map-F4.json`. Design proposal for GitHub #36. Only F4 is built, at 40000 x 25000 (`src/typescript/src/sim/maps/inlandSea.ts`).
 Food and poison values are relative to a plain 1.0. "no poison" means poison 0. Normal ground is the area with no mud, firm ground or rock (poison and food zones on plain ground count as normal). Massif disc counts are estimates (large discs of radius 120 to 300 filling the massif mask), stones are clusters of 1 to 6 discs.
 
 ## F1 Realms (89% normal, mud 4.6, firm 2.2, rock 3.9; about 1770 discs)
@@ -58,8 +58,8 @@ Mixing: the plain is open everywhere, wadis join three oases to others. Three la
 Behaviours: waders in the sea, island hoppers, careful foragers that tell food from poison (one poison bite kills) on the north shore (food x1.8 against poison x2), sprinters on the dunes, steerers in the karst.
 Mixing: all shores meet the sea on ragged coasts. The cliff arc is the only barrier, with two passes.
 
-## Engine plan
-1. A biome raster at 100 units (540 x 336 cells): terrain kind (plain, mud, firm) plus food and poison weights, all uint8. Built once from the layer spec (`tools/map-F*.json` are those specs). The renderer reads continuous mud and firm values and thresholds at 0.5, so contours are smooth, while the engine only needs the thresholded kind.
+## Engine plan (steps 1 to 4 built in `src/sim/maps/`, step 5 open)
+1. A biome raster at the ground field's cell size (50 to 100 units): terrain kind (plain, mud, firm) plus food and poison weights, all uint8. Built once from the layer spec (`tools/map-F*.json` are those specs). The renderer reads continuous mud and firm values and thresholds at 0.5, so contours are smooth, while the engine only needs the thresholded kind.
 2. Weighted spawning by rejection sampling: draw a random position, accept with probability weight / max weight. Poison spawns the same way.
 3. Local food caps on a 1000-unit grid, cap = base x weight, so a rich region cannot be emptied by the global cap (`foodCap` is global today, ecosystem.ts:241) and poor regions do not fill with food from rich ones.
 4. Rock as a disc list from the spec (stones as clusters, massifs as filled discs with passes), with `MAX_PIECES` raised and benched at 10k creatures. The rock grid cell is 300 units, a few thousand discs is cheap to look up, but `keepOut` and ray casts need a bench.
@@ -67,5 +67,7 @@ Mixing: all shores meet the sea on ragged coasts. The cliff arc is the only barr
 Optional later: region-offset seasons, per-region founder seeding, a slower mire level.
 
 ## Population and size
-The server is CPU-bound at about 1200 to 2000 creatures. At 54000 x 33600 with about 1800 creatures the mean spacing is about 850 units, while rays reach 50 to 250, so most creatures rarely meet another one. A 5.5x map (about 40000 x 25000) would keep the spacing near 600. We suggest about 40000x25000 (5.5x) first, and scaling to 10x if encounters stay frequent. The designs are scale-free (all shapes are given in fractions of the map and the generator takes the world size), so either size works.
-Regrowth for an equilibrium of about 1800 under the 2500 cap: the config comments say 0.02 gives about 1100 creatures and 0.03 about 1650 on today's 17000 x 10600 world, which is about 360 and 540 items per second. So the total regrow should be about 600 items per second. On the 10x map that is `foodRegrow` of about 0.0033 per density unit per second (items per density is 181 440 there), and about 0.003 if the mean food weight is 1.1 as in these maps. This is scaled from the comments and not measured on the new map, so it needs a run to confirm.
+The designs are scale-free (shapes are fractions of the map, the generator takes the world size).
+At 54000 x 33600 with about 1800 creatures the mean spacing is about 850 units while rays reach 50 to 250, so most creatures rarely meet.
+The Inland Sea was built at 5.5x (40000 x 25000), keeping the spacing near 600, with 10x as a later option if creatures still meet often.
+Regrowth and cap values measured on it are in `docs/status.md` (A5, A7).

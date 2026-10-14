@@ -1,8 +1,7 @@
 # Initial plan (rough draft)
 
-This is a starting point, not a specification.
-Everything here is expected to change as we build, try it in the browser, and learn what works.
-Edit freely and mark what changed and why under "Revisions" at the bottom.
+This is the starting point, kept as history, not a specification.
+The values below are the first guesses. The current defaults are in `src/typescript/src/sim/config.ts` and the modes in `docs/modes-plan.md`.
 
 ## Idea
 Small blob creatures move around a big world with walls, food, and optionally poison.
@@ -48,21 +47,8 @@ A genetic algorithm evolves the networks over generations while the user watches
 - Toggle whether the rays are drawn.
 - Creature point of view: everything dark except a circle around the creature with radius equal to the ray length.
 
-## First steps to try
-1. World with walls and food, creatures moving randomly, rays drawn on screen, to check that the vision looks right.
-2. Add the neural network brain with random weights and see that creatures react to what their rays hit.
-3. Add epochs, fitness and breeding, and watch whether behaviour improves over generations.
-4. Add the settings screen.
-
-## Wanted next (owner requests, not started)
+## Wanted next (not started)
 - Choose which generation to watch next, in a neat way. For example watch generation 1, then 20, then jump to 60, or set a stride such as every 100th generation. Today the replay always shows the newest computed generation, and only one generation is kept, so this needs the worker to keep or re-create the chosen generations (genomes and layout seed are enough to replay one).
-- Live world preview while editing settings, before Start. The canvas shows an example world for the current values: food and poison at the chosen densities, world size, and one creature with its rays at the chosen ray count, angle and vision range. It updates as each slider moves.
-
-## Open questions
-- Is 8 rays over 75 degrees enough to find food, or do creatures need a wider view?
-- Should poison look different from food to the creature, or only by its effect?
-- Later, should creatures share a world, compete and see each other?
-- Should the page also plot best fitness over generations?
 
 ## Revisions
 - 2026-10-09: first draft.
