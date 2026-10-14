@@ -263,3 +263,24 @@ describe("learner input under the WASM kernels", () => {
     expect(seen).toBeGreaterThan(0);
   });
 });
+
+describe("rams", () => {
+  // A scripted learner charges a weak rival at full speed: the kill is a ram, though the learner's energy drops (it gains the
+  // rival's energy from before the hit, at most the damage it took itself).
+  it("counts a rival killed by bumping into the learner", () => {
+    const env = checkEnv({ id: "ram-test", name: "Ram", size: [200, 200], food: 0, poison: 0, foodRegrow: 0, seconds: 15, collisionDamage: true, learnerEnergy: 300, rivals: [{ species: 0, count: 1, source: "random", energy: 10 }], reward: { ram: 1 } }, "ecosystem", 0) as EnvSpec;
+    let rams = 0;
+    for (let seed = 1; seed <= 4; seed++) {
+      let eco: Ecosystem | null = null;
+      const charge = (c: { state: { x: number; y: number; heading: number }; outputs: Float32Array }): void => {
+        const rival = eco?.members.find((m) => m.id !== 0)?.creature.state;
+        if (!rival) return;
+        const turn = Math.atan2(rival.y - c.state.y, rival.x - c.state.x) - c.state.heading;
+        c.outputs[0] = Math.max(-1, Math.min(1, 3 * Math.atan2(Math.sin(turn), Math.cos(turn))));
+        c.outputs[1] = 1;
+      };
+      rams += runEpisode(env, randomLearner(env, seed), seed, null, undefined, (e) => (eco = e), charge as never).rams;
+    }
+    expect(rams).toBeGreaterThan(0);
+  });
+});
