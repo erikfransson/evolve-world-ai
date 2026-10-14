@@ -131,19 +131,21 @@ export class Terrain {
   // keepOut's early-out: one byte per CLEAR_CELL square, 1 where a disc of nearRadius could touch rock from somewhere inside it. Built on the first keepOut per radius.
   private nearRadius = NaN;
   private near = new Uint8Array(0);
-  nearCols = 0; // size of the raster, set with it
-  nearRows = 0;
+  private nearW = 0; // size of the raster, set with it
+  private nearH = 0;
+  get nearCols(): number { return this.nearW; }
+  get nearRows(): number { return this.nearH; }
   private readonly nearByRadius = new Map<number, Uint8Array<ArrayBuffer>>(); // built rasters, so worlds of different radii sharing this Terrain do not rebuild in turn
 
-  // The clear-of-rock raster for this radius (nearCols x nearRows bytes), for the WASM twin of keepOut.
+  // The clear-of-rock raster for this radius (nearCols x nearRows bytes), for the WASM twin of keepOut. Builds it when it is not the current one, which makes it the one keepOut uses next (a cache switch, no change in results).
   nearFor(radius: number): Uint8Array {
     if (radius !== this.nearRadius) this.buildNear(radius);
     return this.near;
   }
 
   private buildNear(radius: number): void {
-    const cols = (this.nearCols = Math.ceil(this.width / CLEAR_CELL));
-    const rows = (this.nearRows = Math.ceil(this.height / CLEAR_CELL));
+    const cols = (this.nearW = Math.ceil(this.width / CLEAR_CELL));
+    const rows = (this.nearH = Math.ceil(this.height / CLEAR_CELL));
     const built = this.nearByRadius.get(radius);
     if (built) {
       this.near = built;

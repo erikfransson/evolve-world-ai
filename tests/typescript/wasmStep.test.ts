@@ -19,8 +19,8 @@ type Any = any; // the tests reach into the Ecosystem's tick phases
 
 const ROW_F = L.ROW_BYTES / 8;
 
-const make = (setup: (c: EcoConfig) => EcoConfig, founders: number, seed = 1): Ecosystem => {
-  const config = setup(structuredClone(DEFAULT_ECO_CONFIG));
+const make = (setup: (c: EcoConfig) => EcoConfig, founders: number, seed = 1, base: EcoConfig = DEFAULT_ECO_CONFIG): Ecosystem => {
+  const config = setup(structuredClone(base));
   config.seed = seed;
   config.eco.initialPopulation = founders;
   return new Ecosystem(config, null);
@@ -149,7 +149,7 @@ describe.skipIf(!wasmAvailable())("the WebAssembly step equals stepRows", () => 
         if (rng.next() < 0.5) c = aging(c);
         if (rng.next() < 0.5) c = damage(c);
         return c;
-      }, [0, 1, 2, 7, 60, 200][rng.int(6)]!, seed);
+      }, [0, 1, 2, 7, 60, 200][rng.int(6)]!, seed, seed % 3 === 0 ? DEFAULT_PREDATOR_CONFIG : DEFAULT_ECO_CONFIG); // every third world has several species with bodies of their own
       for (let t = 0; t < 40 && !eco.extinct; t++) {
         if (t % 2 === 0) perturb(eco, seed * 100 + t);
         bad += checkedTick(eco);
@@ -173,6 +173,66 @@ describe.skipIf(!wasmAvailable())("the WebAssembly step equals stepRows", () => 
     });
     expect(stepBoth(eco)).toBe(0);
     expect(e.resident.stepper).not.toBeNull();
+  });
+
+  // The f32 brain outputs of the row at batch position k, as an index into the f32 view.
+  const outAt = (e: Any, k: number): number => e.resident.i32[((e.slotRows[k] >> 3) << 1) + L.R_OUT / 4] >> 2;
+
+  it("on a creature exactly on a rock centre, which must leave along +x", () => {
+    const eco = make(inland, 300);
+    const e = eco as Any;
+    for (let t = 0; t < 3; t++) eco.step();
+    eco.prepareTick();
+    eco.sensePhase(0, eco.members.length);
+    const rock = e.items.terrain;
+    const f32 = e.kernels.f32;
+    for (let k = 0; k < 12; k++) {
+      const c = e.bySlot[k].creature;
+      c.state.x = rock.rockX[k * 3];
+      c.state.y = rock.rockY[k * 3];
+      c.state.vx = c.state.vy = 0;
+      f32[outAt(e, k)] = 0; // no turn
+      f32[outAt(e, k) + 1] = -1; // brake from rest: the body stays where it is
+    }
+    expect(stepBoth(eco)).toBe(0);
+    expect(e.bySlot[0].creature.state.x).not.toBe(rock.rockX[0]); // and was pushed out
+  });
+
+  it("on NaN rows in a world with rock in the first grid cell, where the NaN distance reaches a disc", () => {
+    let eco: Ecosystem | null = null;
+    for (let seed = 1; seed <= 80 && !eco; seed++) {
+      const tried = make((c) => ({ ...c, world: { ...c.world, width: 1500, height: 1500, stoneDensity: 0.1, ridgeDensity: 0.05 } }), 40, seed);
+      if ((tried as Any).items.terrain.rockStart[1] > 0) eco = tried;
+    }
+    expect(eco).not.toBeNull();
+    const e = eco as Any;
+    eco!.prepareTick();
+    eco!.sensePhase(0, eco!.members.length);
+    eco!.members.forEach((m, i) => {
+      if (i % 3 === 0) m.creature.state.x = NaN;
+      if (i % 3 === 1) m.creature.state.y = NaN;
+    });
+    expect(stepBoth(eco!)).toBe(0);
+    expect(e.bySlot.some((m: Any) => Number.isFinite(m.creature.state.x))).toBe(true); // JS and WebAssembly both leave along +x from a disc, so some come out finite
+  });
+
+  it("on NaN, negative zero and infinite brain outputs", () => {
+    for (const build of [() => make((c) => c, 100), () => make(inland, 100)]) {
+      const eco = build();
+      const e = eco as Any;
+      for (let t = 0; t < 3; t++) eco.step();
+      eco.prepareTick();
+      eco.sensePhase(0, eco.members.length);
+      const f32 = e.kernels.f32;
+      const turns = [NaN, -0, 0, 1, -1, Infinity];
+      const thrusts = [NaN, -0, Infinity, -Infinity, 0.5, -0.5, 1e-30];
+      eco.members.forEach((_, k) => {
+        f32[outAt(e, k)] = turns[k % turns.length]!;
+        f32[outAt(e, k) + 1] = thrusts[k % thrusts.length]!;
+        if (k % 4 === 0) f32[outAt(e, k) + 2] = NaN; // a memory target
+      });
+      expect(stepBoth(eco)).toBe(0);
+    }
   });
 
   it("when the memory grows between sensing and stepping", () => {
