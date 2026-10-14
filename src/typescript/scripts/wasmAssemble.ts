@@ -4,7 +4,7 @@ import wabtInit from "wabt";
 import { LAYOUT } from "../src/sim/wasm/layout.ts";
 
 const dir = new URL("../src/sim/wasm/", import.meta.url);
-const kernels = { BRAIN: "brain.wat", SENSE: "sense.wat", FILL: "fill.wat", STEP: "step.wat", CROWD: "crowd.wat" };
+const kernels = { BRAIN: "brain.wat", SENSE: "sense.wat", FILL: "fill.wat", STEP: "step.wat", CROWD: "crowd.wat", MEMBERS: "members.wat" };
 
 // {{NAME}} in a .wat file becomes LAYOUT.NAME (the row and call block offsets shared with the TypeScript).
 const withLayout = (text: string, file: string): string =>

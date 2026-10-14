@@ -99,6 +99,14 @@ export const LAYOUT = {
   C_INV_ITEM_CELL: 128, // f64
   C_ITEM_REACH: 136, // f64
   C_BYTES: 144,
+  // call block of members (i32)
+  M_N: 0,
+  M_ROW_AT: 4, // f64 index of each member's row, in member order
+  M_OUT: 8, // the list of member indices found
+  M_OUT_COUNT: 12,
+  M_THRESHOLDS: 16, // f64 per member
+  M_FIRST: 20,
+  M_BYTES: 24,
   // species block of step (f64 unless noted), one per species: the config values the step reads and the decay factors
   Q_DT: 0,
   Q_MAX_THRUST: 8,

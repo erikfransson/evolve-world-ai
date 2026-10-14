@@ -12,6 +12,7 @@ import { agingOf, collide, hurt, keepInside, settle } from "./physics.ts";
 import { terrainOf } from "./terrain.ts";
 import { SMALL_SORT } from "./crowd.ts";
 import { WasmCrowd, jsCrowdForced } from "./wasm/crowdKernel.ts";
+import { WasmMembers, jsMembersForced } from "./wasm/membersKernel.ts";
 import { F } from "./wasm/resident.ts";
 import type { ResidentStore } from "./wasm/resident.ts";
 import { advanceBodies, prepareRows, stepResident } from "./wasm/residentStep.ts";
@@ -208,6 +209,7 @@ export class Ecosystem {
   private readonly batch = new SenseBatch();
   private readonly kernels: SenseKernels | null; // with eco.wasm when WebAssembly SIMD is available
   private readonly wasmCrowd: WasmCrowd | null; // the crowd grid built in WebAssembly from the rows (crowdKernel.ts), when the rows are resident
+  private readonly wasmMembers: WasmMembers | null; // the settle and birth scans over the rows in WebAssembly (membersKernel.ts)
   private readonly resident: ResidentStore | null; // creature bodies as rows of the kernel memory, which the fill kernel reads
   private readonly states: CreatureState[] = [];
   private readonly rowAt: number[] = []; // with resident bodies: rowAt[i] is the f64 index of members[i]'s row, so the hot loops read the rows, not the state objects
@@ -303,6 +305,7 @@ export class Ecosystem {
     this.resident = this.kernels ? this.kernels.residentStore() : null;
     if (this.resident) this.resident.species.push(...this.engines); // the configs the rows' species indices stand for
     this.wasmCrowd = this.resident ? WasmCrowd.create(this.resident, this.crowd) : null;
+    this.wasmMembers = this.resident ? WasmMembers.create(this.resident) : null;
     this.childPlan = planOf(config);
 
     const { width, height } = config.world;
@@ -576,7 +579,12 @@ export class Ecosystem {
     prof?.lap("collisions");
 
     const res = this.resident;
-    for (let i = n - 1; i >= 0; i--) {
+    const scan = this.wasmMembers && !jsMembersForced() ? this.wasmMembers : null;
+    if (scan) {
+      // the scan counts the tick for everyone with energy left and lists the others, highest first
+      const dying = scan.settle(this.rowAt, n);
+      for (let k = 0; k < dying.length; k++) this.settleAt(dying[k]!);
+    } else for (let i = n - 1; i >= 0; i--) {
       const state = this.states[i];
       if (res) {
         // a creature with energy left only counts the tick, on the row; settle decides the rest
@@ -587,11 +595,7 @@ export class Ecosystem {
           continue;
         }
       }
-      settle(state);
-      if (!state.alive) {
-        if (this.slain.size > 0 && this.slain.delete(state)) this.report(EVENT_DEATH, state.x, state.y, this.members[i].hue);
-        this.remove(i);
-      }
+      this.settleAt(i);
     }
     this.slain.clear();
     prof?.lap("settle and deaths");
@@ -602,7 +606,14 @@ export class Ecosystem {
     // states[i] is members[i].creature.state and birthEnergies[i] is members[i].birth.energy: the energy test reads no creature object.
     const states = this.states;
     const thresholds = this.birthEnergies;
-    for (let k = 0; k < n && members.length < birthCap; k++) {
+    if (scan) {
+      // only the members with energy for a child, in the order of the walk from first; births change no one else's energy
+      const ready = scan.birthCandidates(this.rowAt, n, thresholds, first);
+      for (let k = 0; k < ready.length && members.length < birthCap; k++) {
+        const parent = members[ready[k]!]!;
+        if (this.tick - parent.lastBirthTick >= parent.cooldownTicks) this.giveBirth(parent);
+      }
+    } else for (let k = 0; k < n && members.length < birthCap; k++) {
       const at = (first + k) % n;
       if ((res ? res.f64[this.rowAt[at]! + F.energy]! : states[at]!.energy) < thresholds[at]!) continue;
       const parent = members[at]!;
@@ -618,6 +629,16 @@ export class Ecosystem {
     this.regrow();
     prof?.lap("regrow");
     this.tick++;
+  }
+
+  // Ends member i's tick (settle), removing it when it died.
+  private settleAt(i: number): void {
+    const state = this.states[i]!;
+    settle(state);
+    if (!state.alive) {
+      if (this.slain.size > 0 && this.slain.delete(state)) this.report(EVENT_DEATH, state.x, state.y, this.members[i].hue);
+      this.remove(i);
+    }
   }
 
   // Member at eats: the item looked up for it in touched, or the first it touches now.
