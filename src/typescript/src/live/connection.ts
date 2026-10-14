@@ -7,7 +7,7 @@ import { cleanAddReply, cleanAddRules, encodeAdd, validName } from "./add.ts";
 import type { AddRequest, AddRules, Added, Refused } from "./add.ts";
 import { cleanMap } from "./mapInfo.ts";
 
-export type LinkState = "connecting" | "live" | "offline" | "full" | "outdated";
+export type LinkState = "connecting" | "live" | "offline" | "full" | "updating" | "outdated";
 
 export interface LinkHandlers {
   onState(state: LinkState, retryInS: number): void;
@@ -121,6 +121,7 @@ export class LiveLink {
   private selected: number | null = null;
   private failures = 0;
   private full = false; // the server said it has no room, until the next hello
+  private updating = false; // the server runs an older protocol than this page: it is being updated, keep retrying
   private timer: ReturnType<typeof setTimeout> | undefined;
   private lastMessage = 0;
   private readonly url: string;
@@ -186,6 +187,7 @@ export class LiveLink {
 
   private open(): void {
     this.full = false; // a busy reply on this try sets it again
+    this.updating = false;
     let ws: WebSocket;
     try {
       ws = new WebSocket(this.url);
@@ -205,7 +207,7 @@ export class LiveLink {
   private lost(): void {
     this.ws = null;
     const wait = retryDelayS(this.failures++);
-    this.h.onState(this.full ? "full" : this.failures >= OFFLINE_AFTER_FAILURES ? "offline" : "connecting", Math.ceil(wait));
+    this.h.onState(this.full ? "full" : this.updating ? "updating" : this.failures >= OFFLINE_AFTER_FAILURES ? "offline" : "connecting", Math.ceil(wait));
     this.timer = setTimeout(() => this.open(), wait * 1000);
   }
 
@@ -232,6 +234,12 @@ export class LiveLink {
 
   private text(msg: ServerText): void {
     if (msg.t === "hello") {
+      if (typeof msg.version === "number" && msg.version < PROTOCOL_VERSION) {
+        // The page was released before the server was: retry with backoff until it runs the new version.
+        this.updating = true;
+        this.ws?.close();
+        return;
+      }
       if (msg.version !== PROTOCOL_VERSION) {
         clearTimeout(this.timer);
         this.outdated = true;

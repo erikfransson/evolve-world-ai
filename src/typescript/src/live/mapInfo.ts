@@ -45,6 +45,7 @@ export function renderMapInfo(root: HTMLElement, hello: Hello): void {
   const map = hello.map;
   const g = map.ground;
   const $ = (id: string): HTMLElement => root.querySelector<HTMLElement>(`#${id}`)!;
+  root.hidden = false; // hidden until the first hello, so no empty headings show
 
   const legend = $("infoLegend");
   legend.replaceChildren(

@@ -4,7 +4,7 @@
 .chip i { flex: none; width: 0.55rem; height: 0.55rem; border-radius: 50%; background: var(--muted); }
 .chip[data-state="live"] i { background: var(--accent); box-shadow: 0 0 0 0 rgba(61, 220, 151, 0.6); animation: pulse 2s ease-out infinite; }
 .chip[data-state="connecting"] i { background: #fbbf24; animation: blink 1s ease-in-out infinite; }
-.chip[data-state="offline"] i, .chip[data-state="full"] i, .chip[data-state="outdated"] i { background: #f87171; }
+.chip[data-state="offline"] i, .chip[data-state="full"] i, .chip[data-state="updating"] i, .chip[data-state="outdated"] i { background: #f87171; }
 .chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chip-more { flex: 0 1 auto; min-width: 0; }
 .banner h1 { white-space: nowrap; }
@@ -37,7 +37,8 @@
 .brain-wait[hidden] { display: none; }
 
 @media (max-width: 700px) {
-  .banner .chip { height: 1.8rem; padding: 0 0.65rem; font-size: 0.75rem; }
+  .banner .chip { flex: none; height: 1.8rem; padding: 0 0.65rem; font-size: 0.75rem; }
+  .banner .back { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } /* the back link gives way, so the status reads in full */
   .chip-more { display: none; }
   .about { display: none; }
   .live .sel-facts { grid-template-columns: repeat(2, auto); }

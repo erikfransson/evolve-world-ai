@@ -1,4 +1,4 @@
-import { CREATURE_RECORD, ITEMS_HEADER, MAX_FRAME_CREATURES, creatureFrameBytes, decodeCreatures, decodeItems, encodeCreatures, encodeItems } from "../../src/typescript/src/live/protocol.ts";
+import { CREATURE_RECORD, ITEMS_HEADER, MAX_FRAME_CREATURES, PROTOCOL_VERSION, creatureFrameBytes, decodeCreatures, decodeItems, encodeCreatures, encodeItems } from "../../src/typescript/src/live/protocol.ts";
 import { LiveScene } from "../../src/typescript/src/live/scene.ts";
 import { retryDelayS, serverUrl, DEV_SERVER, PUBLIC_SERVER } from "../../src/typescript/src/live/serverUrl.ts";
 import { LiveLink, cleanStats } from "../../src/typescript/src/live/connection.ts";
@@ -213,6 +213,29 @@ describe("live link", () => {
       vi.advanceTimersByTime(60_000); // the retry opens a new socket
       FakeSocket.last!.close(); // refused without a busy (e.g. 503 before the upgrade) or the server is down
       expect(states.at(-1)).not.toBe("full");
+    } finally {
+      vi.unstubAllGlobals();
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps retrying a server older than the page, and asks for a reload only from a newer one", () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("WebSocket", FakeSocket);
+    try {
+      const states: string[] = [];
+      const link = new LiveLink("ws://x", { onState: (s) => states.push(s), onHello() {}, onCreatures() {}, onItems() {}, onDelta() {}, onDetail() {}, onGenome() {}, onStats() {}, onHistory() {} });
+      link.start();
+      FakeSocket.last!.onmessage!({ data: JSON.stringify({ t: "hello", version: PROTOCOL_VERSION - 1 }) });
+      expect(states.at(-1)).toBe("updating");
+      const first = FakeSocket.last;
+      vi.advanceTimersByTime(60_000);
+      expect(FakeSocket.last).not.toBe(first); // retried
+      FakeSocket.last!.onmessage!({ data: JSON.stringify({ t: "hello", version: PROTOCOL_VERSION + 1 }) });
+      expect(states.at(-1)).toBe("outdated");
+      const last = FakeSocket.last;
+      vi.advanceTimersByTime(60_000);
+      expect(FakeSocket.last).toBe(last); // no more tries
     } finally {
       vi.unstubAllGlobals();
       vi.useRealTimers();
