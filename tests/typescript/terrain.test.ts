@@ -204,6 +204,22 @@ describe("ground and rock under a body", () => {
       expect(rock.touchesRock(p.x, p.y, 12 - 1e-6)).toBe(false);
     }
   });
+
+  it("keepOut moves exactly the bodies that touch rock, for any radius (clear-of-rock early-out)", () => {
+    const terrain = terrainOf(withMap({ width: 3000, height: 2000, stoneDensity: 0.1, ridgeDensity: 0.08 }));
+    expect(terrain.rockCount).toBeGreaterThan(0);
+    const rng = createRng(7);
+    for (const radius of [12, 30, 12]) {
+      for (let k = 0; k < 20000; k++) {
+        const s = { ...body(rng.range(-5, 3005), rng.range(-5, 2005)), vx: 3, vy: -2 };
+        const touches = terrain.touchesRock(s.x, s.y, radius);
+        const before = { ...s };
+        terrain.keepOut(s, radius, 0.6);
+        if (touches) expect(s.x !== before.x || s.y !== before.y).toBe(true);
+        else expect(s).toEqual(before);
+      }
+    }
+  });
 });
 
 describe("Episode and Ecosystem with rock", () => {
