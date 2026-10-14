@@ -1,6 +1,6 @@
 import type { EngineConfig } from "../sim/config.ts";
 import { mapSpec } from "../sim/maps/index.ts";
-import { POISON_TINT, RICH_TINT } from "./mapTint.ts";
+import { POISON_TINT, RICH_TINT, visibleFrom } from "./mapTint.ts";
 
 // Legend rows for the map (terrain.ts), shared by the Trials and Ecosystem pages. A row shows only while the world has that kind.
 export const SWATCHES = {
@@ -31,8 +31,8 @@ export function terrainKinds(world: Pick<EngineConfig["world"], "stoneDensity" |
     spec.rock.length > 0,
     layers.some((l) => l.mud),
     layers.some((l) => l.firm),
-    layers.some((l) => (l.poison ?? spec.basePoison ?? 1) > POISON_TINT.from),
-    layers.some((l) => (l.food ?? spec.baseFood ?? 1) > RICH_TINT.from),
+    [spec.basePoison, ...layers.map((l) => l.poison)].some((v) => (v ?? 1) > visibleFrom(POISON_TINT)),
+    [spec.baseFood, ...layers.map((l) => l.food)].some((v) => (v ?? 1) > visibleFrom(RICH_TINT)),
   ];
 }
 

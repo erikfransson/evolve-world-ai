@@ -10,6 +10,10 @@ export const POISON_TINT = { rgb: [128, 84, 150], from: 1, span: 2.5, alpha: 0.1
 const DRY_TINT = { rgb: [176, 152, 84], from: 0.8, span: 0.3, alpha: 0.24 } as const; // applies below `from`
 export const RICH_TINT = { rgb: [56, 196, 116], from: 1.3, span: 0.5, alpha: 0.22 } as const;
 
+// The weight above which a tint (not the dry one) is strong enough to see: its wash reaches this alpha. The legend shows a tint row from here.
+const VISIBLE_ALPHA = 0.05;
+export const visibleFrom = (t: { from: number; span: number; alpha: number }): number => t.from + (t.span * VISIBLE_ALPHA) / t.alpha;
+
 const images = new WeakMap<Terrain, OffscreenCanvas | HTMLCanvasElement | null>();
 
 function build(t: Terrain): OffscreenCanvas | HTMLCanvasElement | null {

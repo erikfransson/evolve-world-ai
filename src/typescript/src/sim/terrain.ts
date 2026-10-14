@@ -424,7 +424,7 @@ export interface MapParts {
   poison: Uint8Array;
 }
 
-// The arrays of the map a config names, copied; null for the random map.
+// The arrays of the map a config names, shared with the Terrain (postMessage clones them); null for the random map. live/mapTerrain.ts rebuilds a Terrain from such arrays too, with validation.
 export function mapPartsOf(config: TerrainSettings): MapParts | null {
   const { map, width, height } = config.world;
   if (!map) return null;
@@ -432,7 +432,7 @@ export function mapPartsOf(config: TerrainSettings): MapParts | null {
   if (!t.ground || !t.weights) return null;
   const rock = new Float64Array(3 * t.rockCount);
   for (let i = 0; i < t.rockCount; i++) rock.set([t.rockX[i]!, t.rockY[i]!, t.rockR[i]!], 3 * i);
-  return { rock, ground: t.ground.data.slice(), food: t.weights.food.slice(), poison: t.weights.poison.slice() };
+  return { rock, ground: t.ground.data, food: t.weights.food, poison: t.weights.poison };
 }
 
 // Makes terrainOf use these arrays for a named map instead of building it, unless this thread already has the map. Throws when they do not fit the map's raster.
