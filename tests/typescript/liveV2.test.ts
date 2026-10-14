@@ -427,9 +427,10 @@ describe("history and records", () => {
 
 describe("selection cost", () => {
   // 100 viewers each following a different creature: the server's per-frame work for them (refreshing their rays and brain inputs,
-  // encoding 100 details a frame and each genome once) stays under 10% of the time the ticks take. Timed inside one run, interleaved
-  // with the ticks, so other load on the machine affects both alike.
-  it("100 viewers following different creatures add less than 10% to the tick time", () => {
+  // encoding 100 details a frame and each genome once) stays under an absolute bound per viewer and frame. An absolute bound, not a
+  // share of the tick, since the selection work does not shrink when the engine gets faster. Measured near 0.07 ms on a laptop, while
+  // re-sending every genome each frame (0.14 ms) or unlimited refreshes (0.18 ms) go over it.
+  it("100 viewers following different creatures cost under 0.12 ms each per frame", () => {
     const c = smallConfig();
     c.world.width = 6000;
     c.world.height = 4000;
@@ -462,7 +463,8 @@ describe("selection cost", () => {
     let ticking = 0;
     let selecting = 0;
     // A fixed number of ticks, not a fixed time: the same world each run (it thins out from about 600 ticks on and later starts over).
-    for (let frame = 0; frame < 20; frame++) {
+    const frames = 20;
+    for (let frame = 0; frame < frames; frame++) {
       let t0 = cpuMs();
       for (let t = 0; t < 24; t++, ticks++) live.step(); // a frame every 24 ticks, as at 4x
       ticking += cpuMs() - t0;
@@ -479,10 +481,10 @@ describe("selection cost", () => {
       }
       selecting += cpuMs() - t0;
     }
-    const share = selecting / ticking;
-    console.log(`${ticks} ticks at ${(ticking / ticks).toFixed(3)} ms, following 100 adds ${(selecting / ticks).toFixed(4)} ms a tick, ${(100 * share).toFixed(2)}%, population ${live.eco.population}`);
+    const perViewerFrame = selecting / frames / ids.length;
+    console.log(`${ticks} ticks at ${(ticking / ticks).toFixed(3)} ms, following 100 adds ${(selecting / ticks).toFixed(4)} ms a tick (${(100 * selecting / ticking).toFixed(2)}%), ${perViewerFrame.toFixed(4)} ms per viewer and frame, population ${live.eco.population}`);
     expect(live.eco.population).toBeGreaterThan(100);
-    expect(share).toBeLessThan(0.1);
+    expect(perViewerFrame).toBeLessThan(0.12);
   });
 });
 
