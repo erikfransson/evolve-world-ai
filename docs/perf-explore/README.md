@@ -18,9 +18,10 @@ One write-up per exploration, with the tables of tried ideas and their verdicts.
 - `brain.md`: sparse input packing and in-place outputs in the brain kernel, 1.33x kernel and 8-13% per tick, bit-identical; merged.  Round 3: tanh without min/max clamps, kernel 1.2x and tick 1.07x at 50k, bit-identical.
 - `helpers2.md`: resident rows with helper threads (coordinator and helpers), memory units kept on the owner, bulk packet copies; Inland 10k with 3 helpers 97.7 to 75.7 CPU ms per tick, coordinator thread 24 ms against 45.6 serial, bit-identical.
 - `helpers.md`: genomes sent only to the owning helper (start-up RSS 1.37 to 1.0 GB at 50k with 4 helpers) and the start timeout for the first tick; merged. Messaging is near its floor, spatial split and overlap rejected.
+- `sense.md`: item trace with an f64x2 prefilter (kernel 1.24x) and the batch in item-grid row order (1.09x), whole tick 1.05x at 38000 and 1.15x at 50000, bit-identical; verdict merge.
 - `soa.md`: typed-array store for hot creature state, bit-identical but 1.00x; rejected.
 - `sensecopy.md`: the per-batch copy of the item grid into WASM is under 1% of a tick even at 50k; rejected.
-- `hunt.md`: The Great Hunt's hunt search is about 1.5% of a tick; nothing to gain.
+- `hunt.md`: the hunt search of the two-species world (The Great Hunt, page since removed) is about 1.5% of a tick; nothing to gain.
 - `v8.md`: no JS-engine hot spot worth a change; WASM sense is about 46% of samples.
 - `render50.md`: tiled item cache, about 1.25x per whole-world frame but not pixel-identical; held until measured on a real GPU browser.
 - `snapshot.md`: item deltas cut snapshot bytes 60-70% but only 1.5-2% of sim time; rejected for now.
@@ -32,13 +33,13 @@ One write-up per exploration, with the tables of tried ideas and their verdicts.
 - `draw.md`: one culling pass over items, 1.2-1.7x per zoomed-in frame, pixel-identical; merged. Whole-world frames are raster-bound.
 - `items.md`: costs that grow with world area are under 1% of a tick at 5000 creatures up to 70000 wide; nothing to cut.
 - `lang.md`: a Rust brain kernel is bit-identical and at best 1.2x on the kernel (about 3% per tick); no language port is worth it, Numba cannot run in browsers.
-- `profile3.md`: reference profile at 38000 to 70000 wide and The Great Hunt at 30000 to 38000, about 80-92 ms CPU per tick at 9-10k creatures.
+- `profile3.md`: reference profile at 38000 to 70000 wide and the two-species world (`--predators`) at 30000 to 38000, about 80-92 ms CPU per tick at 9-10k creatures.
 - `collide.md`: item lookups in cell order and collisions on the crowd's sorted arrays, 1.048x, bit-identical; held, it duplicates the physics in a second path.
 - `collide2.md`: redo of the above as one array-culled `collideAll` for all modes plus cell-ordered item lookups, 1.039x, bit-identical; mergeable.
 - `node.md`: V8 flags change nothing measurable; 3 helper threads give 1.39x wall time at 50000 wide for 1.75x CPU and +316 MB.
 - `smallphases.md`: birth scan reads a birth-energy mirror, births phase 1.29 to 0.77 ms at 9760 creatures, bit-identical; crowd grid and slots have no small exact fix.
 - B2 campaign (2026-10-14, The Inland Sea at about 10k creatures, baseline 70 ms CPU per tick): merged `collide2.md`, `steermap.md` and `smallphases.md` (together about 1.08x). Studied without a merge: `gcmap.md` (GC about 1-2%, Live frame encode about 5% of a core at 5 Hz), `brain2.md` and `tanhil.md` (no exact brain kernel speedup left), `wasmstep.md` (steer in WASM is exact but the copies eat the gain; resident state might give 1.13-1.28x for 600-900 lines), `senserock.md` (rock is about 2 ms of the senser, 1.02x), `glue.md` (the senser fill loop is bound by object reads).
-- B2 rounds 3-4 (no merge, all exact): `crowdsparse.md` (cellStart writes under 1% of a tick), `fusedio.md` (moving memory, ground and y writes out of the senser fill gives noise), `eatwasm.md` (touched items from the packed rows in WASM, 1.009x for 117 lines), `kernelprof.md` (sense kernel cost is flat across its parts; best cut 1.04x kernel, 1.00x tick). What remains is the resident creature state refactor (`resident`, in progress).
+- B2 rounds 3-4 (no merge, all exact): `crowdsparse.md` (cellStart writes under 1% of a tick), `fusedio.md` (moving memory, ground and y writes out of the senser fill gives noise), `eatwasm.md` (touched items from the packed rows in WASM, 1.009x for 117 lines), `kernelprof.md` (sense kernel cost is flat across its parts; best cut 1.04x kernel, 1.00x tick).
 - B2 round 3-5 merges: memory grown in eighths (`a561bed`, 1.14x), resident creature rows (`resident.md`, lite variant, 1.15x), eating over the touched list (`eatrows.md`, 1.04x). The Inland Sea at 10k creatures went from 70 to about 48 ms CPU per tick under load (about 35 ms on a quiet machine). `gridslots.md`: reusing the crowd grid or fusing the input fill with the step is not worth it or not exact.
 - `helpers2.md`: helpers now use the resident rows; 3 helpers cost 1.29x less CPU and the coordinator thread is about 1.5x shorter (merged).
 - B2 round 7 (no merge): `helpers3.md` (coordinator weight not measurable at load 10-14; balance would save under 3%), `onecall.md` (body inputs computed in fill.wat: 1.016x for +66 lines and a second copy of the ground lookup; rejected).
