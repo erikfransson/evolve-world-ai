@@ -1,40 +1,36 @@
-import type { WasmBrainBank } from "./brainKernel.ts";
-import type { Heading } from "../physics.ts";
 import type { EngineConfig } from "../config.ts";
+import type { Heading } from "../physics.ts";
 import type { CreatureState } from "../types.ts";
+import type { WasmBrainBank } from "./brainKernel.ts";
+import { LAYOUT as L, f64At, i32At } from "./layout.ts";
 
-// Creature bodies that live in the WebAssembly memory (rows of ROW_BYTES, layout in step.wat), so the step kernel works on them in
-// place and JS reads them through ResidentState, an object with the same fields as a plain CreatureState. Rows are carved from
-// chunks of the brain bank's arena and never move; a row belongs to its Creature for life (creatures are recycled, not dropped).
-// The memory's views go stale when it grows, so the store keeps every state pointed at the current ones (Kernel.onGrow).
+// Creature bodies that live in the WebAssembly memory, one row each (offsets in layout.ts), so the fill kernel builds the sense batch from
+// them without touching a JS object, and JS reads them through ResidentState, an object with the same fields as a plain CreatureState.
+// Rows are carved from chunks of the brain bank's arena and never move. A row belongs to its Creature for life (creatures are recycled,
+// not dropped). The memory's views go stale when it grows, so the store keeps every state pointed at the current ones (Kernel.onGrow).
 
-export const ROW_BYTES = 320;
-export const UNITS_MAX = 16; // memory units a row holds (8 short and 8 long, the plan limit)
 const CHUNK_ROWS = 256;
-const BLOCK_BYTES = 256; // a species' parameter block (step.wat)
-const UNITS_AT = 24; // f64 index of the units in a row
-// i32 indices in a row (bytes / 4)
-export const I_OUT = 28;
-export const I_PARAMS = 29;
-export const I_SHORT = 30;
-export const I_UNITS = 31;
-export const I_RAYS = 32;
-export const I_OFFSETS = 33;
-export const I_INPUT = 34;
-export const I_BAD = 35;
-export const I_SLOT = 36;
+const ROW_F = f64At(L.ROW_BYTES);
+const [X, Y, VX, VY, ENERGY, HEADING, TURN, TICKS, COS, SIN, UPKEEP, GFACTOR, RAYLEN] = [L.R_X, L.R_Y, L.R_VX, L.R_VY, L.R_ENERGY, L.R_HEADING, L.R_TURN, L.R_TICKS, L.R_COS, L.R_SIN, L.R_UPKEEP, L.R_GROUND_FACTOR, L.R_RAY_LENGTH].map(f64At) as [number, number, number, number, number, number, number, number, number, number, number, number, number];
+
+// Field indices (f64 elements from the row's) for the code that works on the row arrays directly.
+export const F = { x: X, y: Y, vx: VX, vy: VY, energy: ENERGY, heading: HEADING, turn: TURN, ticks: TICKS, cos: COS, sin: SIN, upkeep: UPKEEP, groundFactor: GFACTOR, extras: f64At(L.R_EXTRAS) } as const;
+// The same for the i32 fields (i32 elements from the row's).
+export const I = { out: i32At(L.R_OUT), species: i32At(L.R_SPECIES), short: i32At(L.R_SHORT), unitCount: i32At(L.R_UNIT_COUNT), units: i32At(L.R_UNITS) } as const;
 
 export class ResidentState implements CreatureState, Heading {
   alive = true;
   f: Float64Array;
   i: Int32Array;
-  private count = 0; // memory units the plan has
   readonly o: number; // f64 index of the row
   readonly ptr: number; // byte address of the row
+  private readonly store: ResidentStore;
+  private unitBytes = 0; // size of the units block
 
-  constructor(f: Float64Array, i: Int32Array, ptr: number) {
-    this.f = f;
-    this.i = i;
+  constructor(store: ResidentStore, ptr: number) {
+    this.store = store;
+    this.f = store.f64;
+    this.i = store.i32;
     this.ptr = ptr;
     this.o = ptr >> 3;
   }
@@ -44,60 +40,68 @@ export class ResidentState implements CreatureState, Heading {
     this.i = i;
   }
 
-  get x(): number { return this.f[this.o]!; }
-  set x(v: number) { this.f[this.o] = v; }
-  get y(): number { return this.f[this.o + 1]!; }
-  set y(v: number) { this.f[this.o + 1] = v; }
-  get vx(): number { return this.f[this.o + 2]!; }
-  set vx(v: number) { this.f[this.o + 2] = v; }
-  get vy(): number { return this.f[this.o + 3]!; }
-  set vy(v: number) { this.f[this.o + 3] = v; }
-  get heading(): number { return this.f[this.o + 5]!; }
-  set heading(v: number) { this.f[this.o + 5] = v; }
-  get cos(): number { return this.f[this.o + 8]!; }
-  set cos(v: number) { this.f[this.o + 8] = v; }
-  get sin(): number { return this.f[this.o + 9]!; }
-  set sin(v: number) { this.f[this.o + 9] = v; }
-  get turnRate(): number { return this.f[this.o + 6]!; }
-  set turnRate(v: number) { this.f[this.o + 6] = v; }
-  get energy(): number { return this.f[this.o + 4]!; }
-  set energy(v: number) { this.f[this.o + 4] = v; }
-  get ticksAlive(): number { return this.f[this.o + 7]!; }
-  set ticksAlive(v: number) { this.f[this.o + 7] = v; }
-  set upkeep(v: number) { this.f[this.o + 10] = v; }
-  set groundFactor(v: number) { this.f[this.o + 11] = v; }
-  set rayLength(v: number) { this.f[this.o + 13] = v; }
+  get x(): number { return this.f[this.o + X]!; }
+  set x(v: number) { this.f[this.o + X] = v; }
+  get y(): number { return this.f[this.o + Y]!; }
+  set y(v: number) { this.f[this.o + Y] = v; }
+  get vx(): number { return this.f[this.o + VX]!; }
+  set vx(v: number) { this.f[this.o + VX] = v; }
+  get vy(): number { return this.f[this.o + VY]!; }
+  set vy(v: number) { this.f[this.o + VY] = v; }
+  get energy(): number { return this.f[this.o + ENERGY]!; }
+  set energy(v: number) { this.f[this.o + ENERGY] = v; }
+  get heading(): number { return this.f[this.o + HEADING]!; }
+  set heading(v: number) { this.f[this.o + HEADING] = v; }
+  get turnRate(): number { return this.f[this.o + TURN]!; }
+  set turnRate(v: number) { this.f[this.o + TURN] = v; }
+  get ticksAlive(): number { return this.f[this.o + TICKS]!; }
+  set ticksAlive(v: number) { this.f[this.o + TICKS] = v; }
+  get cos(): number { return this.f[this.o + COS]!; }
+  set cos(v: number) { this.f[this.o + COS] = v; }
+  get sin(): number { return this.f[this.o + SIN]!; }
+  set sin(v: number) { this.f[this.o + SIN] = v; }
+  set upkeep(v: number) { this.f[this.o + UPKEEP] = v; }
+  set rayLength(v: number) { this.f[this.o + RAYLEN] = v; }
 
-  // Sizes the units for a plan (all zero) and tells the kernel how many there are.
+  // Sizes the memory units for a plan (all zero) and tells the kernels how many there are. The units live in a block of their own, so a plan can have any number.
   fitUnits(count: number, short: number): void {
-    if (count > UNITS_MAX) throw new Error(`${count} memory units exceed the ${UNITS_MAX} of a resident row`);
-    this.count = count;
-    this.f.fill(0, this.o + UNITS_AT, this.o + UNITS_AT + UNITS_MAX);
-    this.i[this.o * 2 + I_SHORT] = short;
-    this.i[this.o * 2 + I_UNITS] = count;
+    const bytes = 8 * Math.max(1, count);
+    if (bytes > this.unitBytes) {
+      const bank = this.store.bank;
+      const old = this.unitBytes === 0 ? 0 : this.i[this.o * 2 + I.units]!;
+      if (old) bank.free(old, this.unitBytes);
+      const ptr = bank.alloc(bytes);
+      this.unitBytes = bytes;
+      this.i[this.o * 2 + I.units] = ptr; // after the alloc, which may have replaced this.i
+    }
+    const b = this.o * 2;
+    this.i[b + I.short] = short;
+    this.i[b + I.unitCount] = count;
+    const at = this.i[b + I.units]! >> 3;
+    this.f.fill(0, at, at + count);
   }
 
   // A view of the units, valid until the memory grows; made on each call, so keep it out of hot loops.
   get units(): Float64Array {
-    return this.f.subarray(this.o + UNITS_AT, this.o + UNITS_AT + this.count);
+    const b = this.o * 2;
+    const at = this.i[b + I.units]! >> 3;
+    return this.f.subarray(at, at + this.i[b + I.unitCount]!);
   }
 
-  // The byte address of this creature's brain outputs, for the step kernel.
-  set outPtr(bytes: number) { this.i[this.o * 2 + I_OUT] = bytes; }
-  set params(ptr: number) { this.i[this.o * 2 + I_PARAMS] = ptr; }
+  // The byte address of this creature's brain outputs, for the step.
+  set outPtr(bytes: number) { this.i[this.o * 2 + I.out] = bytes; }
+  set species(index: number) { this.i[this.o * 2 + I.species] = index; }
 
   // What the fill kernel reads to build this creature's sense record and brain input: its brain slot, the number of rays, the address of
   // its ray offset tables and the byte address of its brain input vector.
   setBrain(slot: number, rays: number, offsets: number, input: number): void {
     const i = this.i;
     const b = this.o * 2;
-    i[b + I_SLOT] = slot;
-    i[b + I_RAYS] = rays;
-    i[b + I_OFFSETS] = offsets;
-    i[b + I_INPUT] = input;
+    i[b + i32At(L.R_SLOT)] = slot;
+    i[b + i32At(L.R_RAYS)] = rays;
+    i[b + i32At(L.R_OFFSETS)] = offsets;
+    i[b + i32At(L.R_INPUT)] = input;
   }
-  get bad(): boolean { return this.i[this.o * 2 + I_BAD] !== 0; }
-  clearBad(): void { this.i[this.o * 2 + I_BAD] = 0; }
 }
 
 // A block of the memory that grows on demand (contents are not kept).
@@ -113,7 +117,7 @@ export class ResidentStore {
   private readonly states: ResidentState[] = [];
   private chunk = 0;
   private left = 0;
-  readonly blocks = new Map<EngineConfig, number>(); // a parameter block per species config (rewritten each tick by the stepper)
+  readonly species: EngineConfig[] = []; // the configs the rows' species indices stand for, set by the Ecosystem
 
   constructor(bank: WasmBrainBank) {
     this.bank = bank;
@@ -128,15 +132,15 @@ export class ResidentStore {
     for (const s of this.states) s.bind(this.f64, this.i32);
   }
 
-  // A new row. Call bank-resetting owners' reset() first when the bank was reset.
+  // A new row.
   add(): ResidentState {
     if (this.left === 0) {
-      this.chunk = Math.ceil(this.bank.alloc(CHUNK_ROWS * ROW_BYTES + 64) / 64) * 64; // rows start on a cache line
+      this.chunk = Math.ceil(this.bank.alloc(CHUNK_ROWS * L.ROW_BYTES + 64) / 64) * 64; // rows start on a cache line
       this.left = CHUNK_ROWS;
     }
-    const ptr = this.chunk + (CHUNK_ROWS - this.left--) * ROW_BYTES;
-    this.f64.fill(0, ptr >> 3, (ptr + ROW_BYTES) >> 3);
-    const s = new ResidentState(this.f64, this.i32, ptr);
+    const ptr = this.chunk + (CHUNK_ROWS - this.left--) * L.ROW_BYTES;
+    this.f64.fill(0, ptr >> 3, (ptr >> 3) + ROW_F);
+    const s = new ResidentState(this, ptr);
     this.states.push(s);
     return s;
   }
@@ -151,20 +155,10 @@ export class ResidentStore {
     return r.ptr;
   }
 
-  // The species parameter block of a config (rewritten each tick by the stepper), allocated on first use.
-  block(key: EngineConfig): number {
-    let ptr = this.blocks.get(key);
-    if (ptr === undefined) {
-      ptr = this.bank.alloc(BLOCK_BYTES);
-      this.blocks.set(key, ptr);
-    }
-    return ptr;
-  }
-
-  // Forgets every row and block, after the bank was reset; creatures of the previous owner must be gone.
+  // Forgets every row, after the bank was reset; creatures of the previous owner must be gone.
   reset(): void {
     this.states.length = 0;
-    this.blocks.clear();
+    this.species.length = 0;
     this.chunk = 0;
     this.left = 0;
     this.refresh();

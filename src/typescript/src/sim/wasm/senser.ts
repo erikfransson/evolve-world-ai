@@ -7,7 +7,7 @@ import type { WasmBrainBank } from "./brainKernel.ts";
 import { HIT_CREATURE } from "../types.ts";
 import { SENSE_BYTES, compiled } from "./loader.ts";
 import { ROCK_CELL } from "../terrain.ts";
-import type { WasmStepper } from "./stepKernel.ts";
+import type { WasmFiller } from "./fillKernel.ts";
 
 // The whole Ecosystem sense in one WebAssembly call per batch (sense.wat): ray directions, item and wall rays in f64 with the
 // JS candidate order, crowd rays in f32 as rays.wat, and the ray features written into the brain's input vector in place.
@@ -257,9 +257,9 @@ export class WasmSenser {
   }
 
   // Senses the batch and writes each creature's complete brain input (rays, extras, memory) at its slot.
-  // The batch is creatures with their brain slots, or resident rows (the step kernel builds the records and the body inputs from them,
+  // The batch is creatures with their brain slots, or resident rows (the fill kernel builds the records and the body inputs from them,
   // and writes the brain slot list at slotsAt). selves[k] is the crowd index of batch member k.
-  run(world: World, crowd: Crowd, n: number, selves: Int32Array, stride: number, startEnergy: number, detail: Creature | null, batch: { creatures: readonly Creature[]; slots: Int32Array } | { stepper: WasmStepper; rows: Int32Array; slotsAt: number }): void {
+  run(world: World, crowd: Crowd, n: number, selves: Int32Array, stride: number, startEnergy: number, detail: Creature | null, batch: { creatures: readonly Creature[]; slots: Int32Array } | { filler: WasmFiller; rows: Int32Array; slotsAt: number }): void {
     this.syncItems(world);
     const count = crowd.count;
     const ccells = crowd.cols * crowd.rows;
@@ -306,8 +306,8 @@ export class WasmSenser {
       i32[species + k] = crowdSpecies[k]!;
       f32[sig + k] = energySignal(energies[k]!, startEnergy);
     }
-    if ("stepper" in batch) {
-      batch.stepper.fill(batch.rows, selves, n, world, rock, pRec, batch.slotsAt, pDetail, detail, stride);
+    if ("filler" in batch) {
+      batch.filler.fill(batch.rows, selves, n, world, pRec, batch.slotsAt, pDetail, detail, stride);
       this.views(); // fill may have grown the memory
       ({ f32, i32, f64 } = this);
     } else {

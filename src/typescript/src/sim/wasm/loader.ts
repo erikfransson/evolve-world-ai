@@ -1,4 +1,4 @@
-import { BRAIN_WASM_BASE64, SENSE_WASM_BASE64, STEP_WASM_BASE64 } from "./kernels.generated.ts";
+import { BRAIN_WASM_BASE64, SENSE_WASM_BASE64, FILL_WASM_BASE64 } from "./kernels.generated.ts";
 
 // WebAssembly SIMD kernels are optional: callers get null from the create functions when they are unavailable and keep the JS path.
 
@@ -13,7 +13,7 @@ function decode(base64: string): Uint8Array<ArrayBuffer> {
 
 export const BRAIN_BYTES = decode(BRAIN_WASM_BASE64);
 export const SENSE_BYTES = decode(SENSE_WASM_BASE64);
-export const STEP_BYTES = decode(STEP_WASM_BASE64);
+export const FILL_BYTES = decode(FILL_WASM_BASE64);
 
 // Compiled modules by their bytes: compiling is most of an instance's cost, and a module holds no state.
 const modules = new WeakMap<Uint8Array, WebAssembly.Module>();

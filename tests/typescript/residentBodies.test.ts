@@ -3,9 +3,10 @@ import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
 import { ECO_PRESETS, withEcoPreset } from "../../src/typescript/src/sim/presets.ts";
 import { wasmAvailable } from "../../src/typescript/src/sim/wasm/loader.ts";
+import { stepRows } from "../../src/typescript/src/sim/wasm/residentStep.ts";
 
-// Creature bodies resident in the WebAssembly memory (wasm/resident.ts): the step and fill kernels must equal the JS they replace,
-// bit for bit, on every tick.
+// Creature bodies resident in the WebAssembly memory (wasm/resident.ts): the row code (fill kernel, residentStep.ts) must equal the
+// Creature code it replaces, bit for bit, on every tick.
 
 type Any = any; // the tests reach into the Ecosystem's tick phases
 
@@ -20,8 +21,8 @@ const grab = (c: Any): number[] => {
   return [s.x, s.y, s.vx, s.vy, s.heading, s.turnRate, s.energy, s.ticksAlive, c.heading.cos, c.heading.sin, ...c.memory];
 };
 
-// One tick with the kernels, checked against the JS: the sense inputs the fill kernel wrote against Creature.writeBodyInputs, then the step
-// kernel's result against remember + steer on the same state. Returns how many values differ.
+// One tick, checked against the Creature code: the sense inputs the fill kernel wrote against Creature.writeBodyInputs, then the row step
+// against remember + steer on the same state (the ground factor is the one prepareRows wrote). Returns how many values differ.
 function checkedTick(eco: Ecosystem): number {
   const e = eco as Any;
   eco.prepareTick();
@@ -38,7 +39,7 @@ function checkedTick(eco: Ecosystem): number {
     for (let i = 0; i < 5 + c.memory.length; i++) if (!Object.is(scratch[i], f32[at + i])) bad++;
   }
   const before = creatures.map(grab);
-  e.kernels.stepper.run(creatures.length, e.aging, e.items.terrain, null);
+  stepRows(e.resident, f32, e.slotRows, creatures.length, e.aging, e.items.terrain);
   const got = creatures.map(grab);
   creatures.forEach((c: Any, k: number) => {
     const s = c.state;
@@ -67,7 +68,7 @@ describe.skipIf(!wasmAvailable())("resident bodies", () => {
     ["two species", () => new Ecosystem({ ...structuredClone(DEFAULT_PREDATOR_CONFIG) }, null)],
   ];
   for (const [name, make] of worlds) {
-    it(`fill and step kernels equal the JS on ${name}`, () => {
+    it(`the fill kernel and the row step equal the Creature code on ${name}`, () => {
       const eco = make();
       expect((eco as Any).resident).not.toBeNull();
       let bad = 0;
@@ -75,25 +76,6 @@ describe.skipIf(!wasmAvailable())("resident bodies", () => {
       expect(bad).toBe(0);
     });
   }
-
-  it("a heading past the sin/cos port's range is stepped in JS, with the same result", () => {
-    const eco = world((c) => c, 100);
-    const e = eco as Any;
-    const twin = world((c) => c, 100);
-    for (const w of [eco, twin]) for (const [i, m] of w.members.entries()) if (i % 3 === 0) m.creature.state.heading = 5e6 + i;
-    eco.step();
-    // the same tick through the JS path on the twin: kernels off for its stepping
-    (twin as Any).resident = null;
-    twin.prepareTick();
-    twin.sensePhase(0, twin.members.length);
-    (twin as Any).batchAll = false;
-    for (const m of twin.members) {
-      m.creature.remember();
-      m.creature.steer();
-    }
-    (twin as Any).sharedPhase();
-    expect(e.members.map((m: Any) => grab(m.creature))).toEqual(twin.members.map((m) => grab(m.creature)));
-  });
 
   it("bodies survive the memory growing, and a long run stays equal to the JS", () => {
     const eco = world((c) => c, 200);
@@ -107,26 +89,6 @@ describe.skipIf(!wasmAvailable())("resident bodies", () => {
       if (t === 20) bank.alloc(20 * 1024 * 1024);
     }
     expect(bad).toBe(0);
-  });
-
-  it("is off when this engine's Math differs from the kernel's ports, and the world still runs", async () => {
-    vi.resetModules(); // the probe's verdict is cached per module graph
-    const real = Math.sin;
-    Math.sin = (x: number) => real(x) + (Math.abs(x) > 3 ? 1e-16 : 0);
-    try {
-      const { Ecosystem: Fresh } = await import("../../src/typescript/src/sim/ecosystem.ts");
-      const config = structuredClone(DEFAULT_ECO_CONFIG);
-      config.eco.initialPopulation = 50;
-      const eco = new Fresh(config, null);
-      expect((eco as Any).kernels).not.toBeNull();
-      expect((eco as Any).resident).toBeNull();
-      expect(eco.members[0]!.creature.resident).toBeNull();
-      for (let t = 0; t < 5; t++) eco.step();
-      expect(eco.population).toBeGreaterThan(0);
-    } finally {
-      Math.sin = real;
-      vi.resetModules();
-    }
   });
 
   it("helper-thread worlds keep plain bodies", () => {
@@ -157,5 +119,14 @@ describe.skipIf(!wasmAvailable())("resident bodies", () => {
     }
     expect(eco.births).toBeGreaterThan(0);
     expect(eco.deaths).toBeGreaterThan(0);
+  });
+
+  it("plans with more memory units than a fixed row would hold run and save like any other", () => {
+    const eco = world((c) => ({ ...c, brain: { ...c.brain, memory: 1 }, eco: { ...c.eco, memoryRange: [20, 24] } }), 40);
+    expect((eco as Any).resident).not.toBeNull();
+    expect(eco.members[0]!.creature.memory.length).toBeGreaterThan(16);
+    let bad = 0;
+    for (let t = 0; t < 20; t++) bad += checkedTick(eco);
+    expect(bad).toBe(0);
   });
 });

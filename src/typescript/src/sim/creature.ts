@@ -6,7 +6,8 @@ import { EXTRA_TERRAIN, energySignal, OUTPUT_SIZE, OUT_THRUST, OUT_TURN, copyPla
 import type { BodyPlan, PlanView } from "./sensors.ts";
 import { HIT_NONE } from "./types.ts";
 import type { CreatureState, Genome, HitKind, RayHit } from "./types.ts";
-import { Terrain, terrainOf } from "./terrain.ts";
+import { terrainOf } from "./terrain.ts";
+import type { Terrain } from "./terrain.ts";
 import { RayCache } from "./world.ts";
 import type { World } from "./world.ts";
 import type { Crowd } from "./crowd.ts";
@@ -26,7 +27,7 @@ const IDLE_CACHE = new RayCache();
 // rays, rayOffsets, memory and brain sizes follow the plan, which only reset changes.
 export class Creature {
   readonly state: CreatureState;
-  readonly resident: ResidentState | null; // the state and heading when the body lives in WASM memory (stepped by the kernel), else null
+  readonly resident: ResidentState | null; // the state and heading when the body lives in WASM memory (see wasm/resident.ts), else null
   readonly slot = created++; // construction order, which follows heap order; SenseBatch sorts by it
   private rayList: RayHit[] | null = null; // made on first use, since the WebAssembly sense only fills the detail creature's
   readonly brain: Brain;
@@ -62,7 +63,6 @@ export class Creature {
     this.config = config;
     const res = (this.resident = store ? store.add() : null);
     this.heading = res ?? { cos: 0, sin: 0 };
-    if (res) res.params = store!.block(config);
     this.terrain = terrainOf(config);
     this.ownPlan = { ...plan, hiddenLayers: plan.hiddenLayers.slice() };
     const sizes = layerSizes(config, this.ownPlan);
@@ -75,7 +75,6 @@ export class Creature {
       res.y = y;
       res.heading = heading;
       res.energy = config.creature.startEnergy;
-      res.groundFactor = 1;
     }
     this.heading.cos = Math.cos(heading);
     this.heading.sin = Math.sin(heading);
@@ -130,7 +129,6 @@ export class Creature {
     f32[at + 3] = s.turnRate / c.maxTurnRate;
     const ground = this.ground();
     f32[at + EXTRA_TERRAIN] = ground;
-    if (this.resident && !this.terrain.empty) this.resident.groundFactor = Terrain.factor(ground); // the step kernel moves by it
     const u = this.units;
     for (let i = 0; i < u.length; i++) f32[at + EXTRA_TERRAIN + 1 + i] = u[i]!;
   }

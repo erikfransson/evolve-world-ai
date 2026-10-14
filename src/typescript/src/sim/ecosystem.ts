@@ -10,7 +10,9 @@ import { driftBirth, driftPlan, mutateStructure, randomBirth, randomPlan, remapW
 import type { BirthTraits } from "./planMutation.ts";
 import { agingOf, collide, hurt, keepInside, settle } from "./physics.ts";
 import { terrainOf } from "./terrain.ts";
+import { F } from "./wasm/resident.ts";
 import type { ResidentStore } from "./wasm/resident.ts";
+import { prepareRows, stepRows } from "./wasm/residentStep.ts";
 import type { Body } from "./physics.ts";
 import type { Aging, Contact } from "./physics.ts";
 import type { StatefulRng } from "./rng.ts";
@@ -202,7 +204,7 @@ export class Ecosystem {
   private readonly crowd: Crowd;
   private readonly batch = new SenseBatch();
   private readonly kernels: SenseKernels | null; // with eco.wasm when WebAssembly SIMD is available
-  private readonly resident: ResidentStore | null; // creature bodies in the kernel memory, stepped by the WASM step kernel; not with helper threads, which step in JS
+  private readonly resident: ResidentStore | null; // creature bodies as rows of the kernel memory, which the fill kernel reads; not with helper threads
   private readonly states: CreatureState[] = [];
   private readonly rowAt: number[] = []; // with resident bodies: rowAt[i] is the f64 index of members[i]'s row, so the hot loops read the rows, not the state objects
   private slotRows = new Int32Array(64); // with resident bodies: the row addresses and member indices of bySlot, in that order (the whole sense batch, kept up to date)
@@ -295,6 +297,7 @@ export class Ecosystem {
     // options.kernels: instances to reuse (RL), reset here; the caller owns them and runs one Ecosystem on them at a time.
     this.kernels = !eco.wasm ? null : options.kernels && maxRays <= MAX_RAYS ? options.kernels.reset(config) : SenseKernels.create(config, maxRays);
     this.resident = this.kernels && !options.journal ? this.kernels.residentStore() : null;
+    if (this.resident) this.resident.species.push(...this.engines); // the configs the rows' species indices stand for
     this.childPlan = planOf(config);
 
     const { width, height } = config.world;
@@ -424,6 +427,7 @@ export class Ecosystem {
       this.profile?.lap("batch build");
       const kernels = this.kernels!;
       kernels.detail = this.detail === null ? null : (this.byId.get(this.detail)?.creature ?? null);
+      prepareRows(this.resident, this.slotRows, end, this.items.terrain);
       kernels.runRows(this.items, this.crowd, this.slotRows, this.slotSelves, end, kernels.detail, this.profile);
       return;
     }
@@ -474,15 +478,7 @@ export class Ecosystem {
         const { creatures, count } = this.batch;
         const f32 = this.kernels?.f32;
         if (this.resident) {
-          if (this.kernels!.stepper.run(this.members.length, this.aging, this.items.terrain, this.profile) > 0) {
-            for (const m of this.bySlot) {
-              const r = m.creature.resident!;
-              if (r.bad) {
-                r.clearBad();
-                m.creature.steer(); // heading beyond the sin/cos port's range: motion in JS (memory was updated by the kernel)
-              }
-            }
-          }
+          stepRows(this.resident, this.kernels!.f32, this.slotRows, this.members.length, this.aging, this.items.terrain);
         } else for (let k = 0; k < count; k++) {
           const c = creatures[k]!;
           const out = c.outputArray(f32);
@@ -551,16 +547,15 @@ export class Ecosystem {
     for (let i = n - 1; i >= 0; i--) {
       const state = this.states[i];
       if (res) {
-        // settle on the row: a creature that is not alive has no energy left
+        // a creature with energy left only counts the tick, on the row; settle decides the rest
         const f = res.f64;
-        const j = this.rowAt[i]! + 4;
-        if (f[j]! > 0 || Number.isNaN(f[j]!)) {
-          f[j + 3]!++;
+        const j = this.rowAt[i]! + F.energy;
+        if (f[j]! > 0) {
+          f[j + F.ticks - F.energy] = f[j + F.ticks - F.energy]! + 1;
           continue;
         }
-        f[j] = 0;
-        state.alive = false;
-      } else settle(state);
+      }
+      settle(state);
       if (!state.alive) {
         if (this.slain.size > 0 && this.slain.delete(state)) this.report(EVENT_DEATH, state.x, state.y, this.members[i].hue);
         this.remove(i);
@@ -577,7 +572,7 @@ export class Ecosystem {
     const thresholds = this.birthEnergies;
     for (let k = 0; k < n && members.length < birthCap; k++) {
       const at = (first + k) % n;
-      if ((res ? res.f64[this.rowAt[at]! + 4]! : states[at]!.energy) < thresholds[at]!) continue;
+      if ((res ? res.f64[this.rowAt[at]! + F.energy]! : states[at]!.energy) < thresholds[at]!) continue;
       const parent = members[at]!;
       if (this.tick - parent.lastBirthTick >= parent.cooldownTicks) this.giveBirth(parent);
     }
@@ -827,7 +822,10 @@ export class Ecosystem {
       m = new EcoCreature(new Creature(this.engines[species]!, genome, x, y, heading, plan, this.resident));
       m.creature.state.energy = energy;
     }
-    if (this.resident) this.kernels!.attach(m.creature);
+    if (this.resident) {
+      this.kernels!.attach(m.creature);
+      m.creature.resident!.species = species;
+    }
     m.species = species;
     this.counts[species]!.population++;
     m.id = this.nextId++;
@@ -1083,7 +1081,10 @@ export class Ecosystem {
   restoreMember(r: MemberRecord): EcoCreature {
     const m = new EcoCreature(new Creature(this.engines[r.species]!, r.genome, r.x, r.y, r.heading, r.plan, this.resident));
     const c = m.creature;
-    if (this.resident) this.kernels!.attach(c);
+    if (this.resident) {
+      this.kernels!.attach(c);
+      c.resident!.species = r.species;
+    }
     const s = c.state;
     s.vx = r.vx; s.vy = r.vy; s.turnRate = r.turnRate; s.energy = r.energy; s.ticksAlive = r.ticksAlive;
     c.heading.cos = r.cos; c.heading.sin = r.sin;
