@@ -107,6 +107,8 @@ export const LIMITS = {
   acceptsPerSecond: 10, // new viewers, for all callers together
   acceptBurst: 30,
   headersTimeoutMs: 10_000, // an http request (the WebSocket upgrade) must arrive within this
+  statsGetsPerSecond: 5, // GET /stats (the landing page's numbers), all callers together; past it a 503
+  statsGetBurst: 20,
   statsEveryMs: 1000,
   stateEveryMs: 4 * 60 * 60 * 1000,
   keepStateMs: 4 * 24 * 60 * 60 * 1000, // saves older than this are deleted, except the newest six (state.ts)

@@ -118,6 +118,63 @@ describe("public server: connections", () => {
   });
 });
 
+describe("public server: GET /stats", () => {
+  it("answers two public numbers, small and cacheable, and every other request still gets a 426", async () => {
+    const port = 50418;
+    await serve(port);
+    const r = await fetch(`http://127.0.0.1:${port}/stats`);
+    expect(r.status).toBe(200);
+    expect(r.headers.get("access-control-allow-origin")).toBe("*");
+    expect(r.headers.get("content-type")).toBe("application/json");
+    const body = await r.text();
+    expect(body.length).toBeLessThan(128);
+    const j = JSON.parse(body);
+    expect(Object.keys(j).sort()).toEqual(["creatures", "viewers"]);
+    expect(Number.isInteger(j.creatures) && Number.isInteger(j.viewers)).toBe(true);
+    for (const [path, method] of [["/stats", "POST"], ["/stats?x=1", "GET"], ["/", "GET"], ["/stats/", "GET"], ["/stats", "HEAD"]] as const) {
+      expect((await fetch(`http://127.0.0.1:${port}${path}`, { method })).status, `${method} ${path}`).toBe(426);
+    }
+  });
+
+  it("rebuilds the numbers at most once a statsEveryMs, so a flood of requests costs no work", async () => {
+    const port = 50419;
+    await serve(port, { statsEveryMs: 60_000 });
+    const before = await (await fetch(`http://127.0.0.1:${port}/stats`)).text();
+    const v = viewer(port);
+    expect(await v.status).toBe("hello");
+    expect(await (await fetch(`http://127.0.0.1:${port}/stats`)).text()).toBe(before); // the viewer is not counted until the next rebuild
+  });
+
+  it("a request flood gets at most the burst plus the rate, the rest a 503", async () => {
+    const port = 50420;
+    await serve(port, { statsGetsPerSecond: 1, statsGetBurst: 3 });
+    const t0 = Date.now();
+    const codes = await Promise.all(Array.from({ length: 40 }, async () => (await fetch(`http://127.0.0.1:${port}/stats`)).status));
+    const allowance = 3 + Math.ceil((Date.now() - t0) / 1000) + 1;
+    const ok = codes.filter((c) => c === 200).length;
+    expect(ok + codes.filter((c) => c === 503).length).toBe(40);
+    expect(ok).toBeLessThanOrEqual(allowance);
+  });
+
+  it("does not read a request body: a huge upload to /stats is cut off", async () => {
+    const port = 50421;
+    await serve(port);
+    const sock = net.connect(port, "127.0.0.1");
+    sock.on("error", () => {});
+    sock.resume();
+    sock.write("GET /stats HTTP/1.1\r\nHost: x\r\nContent-Length: 1000000000\r\n\r\n");
+    const chunk = Buffer.alloc(64 * 1024);
+    let written = 0;
+    const closed = new Promise((r) => sock.on("close", r));
+    const pump = setInterval(() => {
+      if (!sock.destroyed && written < 50e6) written += sock.write(chunk) ? chunk.length : 0;
+    }, 1);
+    await closed;
+    clearInterval(pump);
+    expect(written).toBeLessThan(50e6); // closed long before the body was in (the reply itself may be lost to the reset)
+  }, 20_000);
+});
+
 describe("public server: upload budget", () => {
   it("all viewers together stay inside the budget, and viewers past it are refused", async () => {
     const port = 50415;
