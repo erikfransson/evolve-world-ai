@@ -208,6 +208,7 @@ export class Ecosystem {
   private readonly ranges: EcoConfig["eco"][]; // per species, for plan variation
   private readonly counts: SpeciesCount[];
   private readonly kinds: number[] = []; // kinds[i] is members[i].species
+  private readonly birthEnergies: number[] = []; // birthEnergies[i] is members[i].birth.energy, so the birth scan reads no creature object
   private readonly multi: boolean; // more than one species, so rays tell species apart
   private readonly hunters: boolean; // some species eats another
   private lookups = new Int32Array(0); // the item each creature touches, by list index
@@ -530,9 +531,14 @@ export class Ecosystem {
     n = members.length;
     first = n > 0 ? this.rng.int(n) : 0;
     const birthCap = eco.maxPopulation - eco.birthReserve;
+    // states[i] is members[i].creature.state and birthEnergies[i] is members[i].birth.energy: the energy test reads no creature object.
+    const states = this.states;
+    const thresholds = this.birthEnergies;
     for (let k = 0; k < n && members.length < birthCap; k++) {
-      const parent = members[(first + k) % n];
-      if (parent.creature.state.energy >= parent.birth.energy && this.tick - parent.lastBirthTick >= parent.cooldownTicks) this.giveBirth(parent);
+      const at = (first + k) % n;
+      if (states[at]!.energy < thresholds[at]!) continue;
+      const parent = members[at]!;
+      if (this.tick - parent.lastBirthTick >= parent.cooldownTicks) this.giveBirth(parent);
     }
     if (this.spent) {
       // Parents that gave all they had are gone.
@@ -759,6 +765,7 @@ export class Ecosystem {
 
   private setBirth(m: EcoCreature, t: BirthTraits): void {
     m.birth.energy = t.energy;
+    this.birthEnergies[m.index] = t.energy;
     m.birth.cost = t.cost;
     m.birth.cooldown = t.cooldown;
     m.cooldownTicks = Math.round(t.cooldown / this.config.dt);
@@ -796,6 +803,7 @@ export class Ecosystem {
     this.journal?.born.push(m.id);
     this.track(m);
     this.kinds.push(species);
+    this.birthEnergies.push(m.birth.energy); // setBirth follows and updates it
     this.states.push(m.creature.state);
     this.byId.set(m.id, m);
     return m;
@@ -837,9 +845,11 @@ export class Ecosystem {
     this.untrack(m);
     this.states[i] = this.states[last];
     this.kinds[i] = this.kinds[last]!;
+    this.birthEnergies[i] = this.birthEnergies[last]!;
     this.members.pop();
     this.states.pop();
     this.kinds.pop();
+    this.birthEnergies.pop();
     this.byId.delete(m.id);
     this.onDeath?.(m);
     this.lineages.died(m.founderId);
@@ -1015,6 +1025,7 @@ export class Ecosystem {
     this.journal?.born.push(m.id);
     this.track(m);
     this.kinds.push(r.species);
+    this.birthEnergies.push(m.birth.energy);
     this.states.push(s);
     this.byId.set(m.id, m);
     return m;

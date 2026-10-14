@@ -35,3 +35,4 @@ One write-up per exploration, with the tables of tried ideas and their verdicts.
 - `collide.md`: item lookups in cell order and collisions on the crowd's sorted arrays, 1.048x, bit-identical; held, it duplicates the physics in a second path.
 - `collide2.md`: redo of the above as one array-culled `collideAll` for all modes plus cell-ordered item lookups, 1.039x, bit-identical; mergeable.
 - `node.md`: V8 flags change nothing measurable; 3 helper threads give 1.39x wall time at 50000 wide for 1.75x CPU and +316 MB.
+- `smallphases.md`: birth scan reads a birth-energy mirror, births phase 1.29 to 0.77 ms at 9760 creatures, bit-identical; crowd grid and slots have no small exact fix.
