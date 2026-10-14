@@ -17,9 +17,10 @@ export const jsCrowdForced = (): boolean => jsOnly;
 interface CrowdExports extends WebAssembly.Exports {
   rebuild(c: number): void;
   pack(c: number): void;
+  touch(c: number): void;
 }
 
-const REGIONS = ["rowAt", "cellOf", "perm", "permB", "count", "start", "occupied", "speciesIn", "xs", "ys", "energies", "species", "owners"] as const;
+const REGIONS = ["touched", "rowAt", "cellOf", "perm", "permB", "count", "start", "occupied", "speciesIn", "xs", "ys", "energies", "species", "owners"] as const;
 type Name = (typeof REGIONS)[number];
 
 export class WasmCrowd {
@@ -83,6 +84,22 @@ export class WasmCrowd {
     this.exports.pack(C);
   }
 
+  // The item each creature touches into out[owner] for owners 0 .. count-1 (twin of World.touchedBatch on the crowd's arrays), in cell order, over the packed item
+  // rows of the sense kernel (WasmSenser.itemTables). reach is the creature radius plus the item radius.
+  touch(tables: { start: number; xy: number; ids: number; cols: number }, rows: number, invCell: number, reach: number, out: Int32Array): void {
+    const C = this.pC;
+    const { i32, f64 } = this.store;
+    const outAt = this.region.touched.ptr;
+    const ints: [number, number][] = [
+      [L.C_ITEM_START, tables.start], [L.C_ITEM_XY, tables.xy], [L.C_ITEM_IDS, tables.ids], [L.C_ITEM_COLS, tables.cols], [L.C_ITEM_ROWS, rows], [L.C_TOUCH_OUT, outAt],
+    ];
+    for (const [off, v] of ints) i32[(C + off) >> 2] = v;
+    f64[(C + L.C_INV_ITEM_CELL) >> 3] = invCell;
+    f64[(C + L.C_ITEM_REACH) >> 3] = reach;
+    this.exports.touch(C);
+    out.set(i32.subarray(outAt >> 2, (outAt >> 2) + this.n));
+  }
+
   // The next rebuild is in JS: the views no longer stand for the crowd.
   drop(): void {
     this.n = 0;
@@ -93,7 +110,7 @@ export class WasmCrowd {
     const { store, crowd, region } = this;
     const bytes = n * 4;
     const sizes: Record<Name, number> = {
-      rowAt: bytes, cellOf: bytes, perm: bytes, permB: bytes, count: 4 << crowd.radixBits, start: (crowd.cols * crowd.rows + 1) * 4, occupied: bytes,
+      touched: bytes, rowAt: bytes, cellOf: bytes, perm: bytes, permB: bytes, count: 4 << crowd.radixBits, start: (crowd.cols * crowd.rows + 1) * 4, occupied: bytes,
       speciesIn: bytes, xs: n * 8, ys: n * 8, energies: n * 8, species: bytes, owners: bytes,
     };
     const at = {} as Record<Name, number>;

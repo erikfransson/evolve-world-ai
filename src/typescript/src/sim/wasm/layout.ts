@@ -90,7 +90,15 @@ export const LAYOUT = {
   C_SIG: 84,
   C_CELL: 88, // f64
   C_START_ENERGY: 96, // f64, pack's input
-  C_BYTES: 104,
+  C_ITEM_START: 104, // touch's inputs: the packed item rows of the sense kernel and the item grid, and where the item of each creature goes
+  C_ITEM_XY: 108,
+  C_ITEM_IDS: 112,
+  C_ITEM_COLS: 116,
+  C_ITEM_ROWS: 120,
+  C_TOUCH_OUT: 124,
+  C_INV_ITEM_CELL: 128, // f64
+  C_ITEM_REACH: 136, // f64
+  C_BYTES: 144,
   // species block of step (f64 unless noted), one per species: the config values the step reads and the decay factors
   Q_DT: 0,
   Q_MAX_THRUST: 8,

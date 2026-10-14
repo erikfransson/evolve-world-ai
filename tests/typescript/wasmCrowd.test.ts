@@ -173,6 +173,73 @@ describe.skipIf(!wasmAvailable())("the WebAssembly crowd grid equals Crowd.rebui
   });
 });
 
+// The item each creature touches, looked up by the kernel over the packed item rows (crowd.wat touch), against World.touchedBatch on the same crowd.
+describe.skipIf(!wasmAvailable())("the WebAssembly item lookup equals World.touchedBatch", () => {
+  const lookups = (eco: Ecosystem): [Int32Array, Int32Array, boolean] => {
+    const e = eco as Any;
+    const n = eco.members.length;
+    const tables = e.kernels.itemTables(e.items);
+    const crowd: Crowd = e.crowd;
+    const want = new Int32Array(n).fill(-7);
+    e.items.touchedBatch(crowd.xs, crowd.ys, crowd.owners, n, eco.config.creature.radius, want);
+    const got = new Int32Array(n).fill(-7);
+    if (tables) crowd.kernel!.touch(tables, e.items.rows, 1 / e.items.cell, eco.config.creature.radius + e.items.itemRadius, got);
+    return [got, want, tables !== null];
+  };
+  const compare = (eco: Ecosystem): number => {
+    const [got, want, fresh] = lookups(eco);
+    expect(fresh).toBe(true);
+    let bad = 0;
+    want.forEach((v, i) => { if (got[i] !== v) bad++; });
+    return bad;
+  };
+
+  it("on worlds of every size and density, with creatures anywhere", () => {
+    let bad = 0;
+    let hits = 0;
+    for (let seed = 1; seed <= 16; seed++) {
+      const rng = createRng(seed * 977);
+      const eco = make((c) => {
+        (c.world as Any).width = 500 + rng.int(5000);
+        (c.world as Any).height = 400 + rng.int(3000);
+        (c.world as Any).foodDensity = rng.range(0.05, 2);
+        (c.world as Any).poisonDensity = rng.range(0, 0.3);
+        (c.creature as Any).radius = rng.range(3, 20);
+        return c;
+      }, [14, 60, 400][rng.int(3)]!, seed, seed % 2 ? DEFAULT_PREDATOR_CONFIG : DEFAULT_ECO_CONFIG);
+      const e = eco as Any;
+      for (let t = 0; t < 6 && eco.members.length > 13; t++) {
+        eco.prepareTick();
+        eco.sensePhase(0, eco.members.length); // brings the packed item rows up to date
+        const back = scatter(eco, seed * 7 + t);
+        e.gridCrowd(eco.members.length, e.multi ? e.kinds : undefined);
+        bad += compare(eco);
+        hits += lookups(eco)[1].filter((v) => v >= 0).length;
+        back();
+        e.batchAll = false;
+        e.finishTick();
+      }
+    }
+    expect(bad).toBe(0);
+    expect(hits).toBeGreaterThan(50); // the worlds had creatures touching items, not only misses
+  });
+
+  it("only while the packed rows match the items", () => {
+    const eco = make(inland, 300);
+    const e = eco as Any;
+    for (let t = 0; t < 3; t++) eco.step();
+    eco.prepareTick();
+    eco.sensePhase(0, eco.members.length);
+    expect(e.kernels.itemTables(e.items)).not.toBeNull();
+    const item = e.items.kinds.findIndex((k: number) => k !== 0);
+    e.items.removeItem(item);
+    expect(e.kernels.itemTables(e.items)).toBeNull(); // changed since the sync: the JS lookup is used
+    eco.prepareTick();
+    eco.sensePhase(0, eco.members.length);
+    expect(e.kernels.itemTables(e.items)).not.toBeNull();
+  });
+});
+
 describe.skipIf(!wasmAvailable())("whole runs with the WebAssembly crowd grid and with the JS one", () => {
   afterEach(() => forceJsCrowd(false));
   const run = (build: () => Ecosystem, ticks: number, js: boolean, midRun?: (eco: Ecosystem, t: number) => void): [number, number, number] => {

@@ -542,7 +542,9 @@ export class Ecosystem {
       if (!touched) {
         const crowd = this.crowd;
         touched = this.lookups = refit(this.lookups, n);
-        this.items.touchedBatch(crowd.xs, crowd.ys, crowd.owners, n, this.config.creature.radius, touched);
+        const tables = crowd.kernel && !jsCrowdForced() ? this.kernels!.itemTables(this.items) : null;
+        if (tables) crowd.kernel!.touch(tables, this.items.rows, 1 / this.items.cell, this.config.creature.radius + this.items.itemRadius, touched); // twin of touchedBatch
+        else this.items.touchedBatch(crowd.xs, crowd.ys, crowd.owners, n, this.config.creature.radius, touched);
       }
     }
     let first = this.rng.int(n);

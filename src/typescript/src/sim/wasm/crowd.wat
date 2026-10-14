@@ -140,4 +140,58 @@
       (local.set $k (i32.add (local.get $k) (i32.const 1)))
       (br $each)))
   )
+
+  ;; The index of the first item within reach of (x, y) in the item grid walk (cells row by row, each list in order), or -1 (World.firstItemWithin). The items are the
+  ;; packed rows of the sense kernel, in that same walk order, with f32 positions. A NaN position has an empty cell range and finds nothing, like in JS.
+  (func $firstItem (param $C i32) (param $x f64) (param $y f64) (result i32)
+    (local $reach f64) (local $reach2 f64) (local $inv f64) (local $cx0 f64) (local $cx1 f64) (local $cy0 f64) (local $cy1 f64)
+    (local $cols i32) (local $cy i32) (local $cyLast i32) (local $cxFirst i32) (local $cxLast i32) (local $rowAt i32) (local $p i32) (local $end i32) (local $fx f64) (local $fy f64) (local $at i32)
+    (local.set $reach (f64.load offset={{C_ITEM_REACH}} (local.get $C)))
+    (local.set $reach2 (f64.mul (local.get $reach) (local.get $reach)))
+    (local.set $inv (f64.load offset={{C_INV_ITEM_CELL}} (local.get $C)))
+    (local.set $cols (i32.load offset={{C_ITEM_COLS}} (local.get $C)))
+    (local.set $cx0 (f64.max (f64.const 0) (f64.floor (f64.mul (f64.sub (local.get $x) (local.get $reach)) (local.get $inv)))))
+    (local.set $cx1 (f64.min (f64.convert_i32_s (i32.sub (local.get $cols) (i32.const 1))) (f64.floor (f64.mul (f64.add (local.get $x) (local.get $reach)) (local.get $inv)))))
+    (local.set $cy0 (f64.max (f64.const 0) (f64.floor (f64.mul (f64.sub (local.get $y) (local.get $reach)) (local.get $inv)))))
+    (local.set $cy1 (f64.min (f64.convert_i32_s (i32.sub (i32.load offset={{C_ITEM_ROWS}} (local.get $C)) (i32.const 1))) (f64.floor (f64.mul (f64.add (local.get $y) (local.get $reach)) (local.get $inv)))))
+    ;; an empty range (or a NaN one) finds nothing; otherwise both ranges lie inside the grid
+    (if (i32.eqz (i32.and (f64.le (local.get $cx0) (local.get $cx1)) (f64.le (local.get $cy0) (local.get $cy1)))) (then (return (i32.const -1))))
+    (local.set $cxFirst (i32.trunc_sat_f64_s (local.get $cx0)))
+    (local.set $cxLast (i32.trunc_sat_f64_s (local.get $cx1)))
+    (local.set $cy (i32.trunc_sat_f64_s (local.get $cy0)))
+    (local.set $cyLast (i32.trunc_sat_f64_s (local.get $cy1)))
+    (block $rowsDone (loop $rowLoop
+      (br_if $rowsDone (i32.gt_s (local.get $cy) (local.get $cyLast)))
+      ;; the items of the cells cxFirst .. cxLast of this grid row are one run of the packed row
+      (local.set $rowAt (i32.add (i32.load offset={{C_ITEM_START}} (local.get $C)) (i32.shl (i32.mul (local.get $cy) (i32.add (local.get $cols) (i32.const 1))) (i32.const 2))))
+      (local.set $p (i32.load (i32.add (local.get $rowAt) (i32.shl (local.get $cxFirst) (i32.const 2)))))
+      (local.set $end (i32.load (i32.add (local.get $rowAt) (i32.shl (i32.add (local.get $cxLast) (i32.const 1)) (i32.const 2)))))
+      (block $itemsDone (loop $itemLoop
+        (br_if $itemsDone (i32.ge_s (local.get $p) (local.get $end)))
+        (local.set $at (i32.add (i32.load offset={{C_ITEM_XY}} (local.get $C)) (i32.shl (local.get $p) (i32.const 3))))
+        (local.set $fx (f64.sub (f64.promote_f32 (f32.load (local.get $at))) (local.get $x)))
+        (local.set $fy (f64.sub (f64.promote_f32 (f32.load offset=4 (local.get $at))) (local.get $y)))
+        (if (f64.lt (f64.add (f64.mul (local.get $fx) (local.get $fx)) (f64.mul (local.get $fy) (local.get $fy))) (local.get $reach2))
+          (then (return (i32.load (i32.add (i32.load offset={{C_ITEM_IDS}} (local.get $C)) (i32.shl (local.get $p) (i32.const 2)))))))
+        (local.set $p (i32.add (local.get $p) (i32.const 1)))
+        (br $itemLoop)))
+      (local.set $cy (i32.add (local.get $cy) (i32.const 1)))
+      (br $rowLoop)))
+    (i32.const -1)
+  )
+
+  ;; For each creature of the sorted arrays, in cell order, the item it touches into touchOut[owner] (World.touchedBatch).
+  (func (export "touch") (param $C i32)
+    (local $k i32) (local $n i32)
+    (local.set $n (i32.load offset={{C_N}} (local.get $C)))
+    (block $done (loop $each
+      (br_if $done (i32.ge_s (local.get $k) (local.get $n)))
+      (i32.store
+        (i32.add (i32.load offset={{C_TOUCH_OUT}} (local.get $C)) (i32.shl (i32.load (i32.add (i32.load offset={{C_OWNERS}} (local.get $C)) (i32.shl (local.get $k) (i32.const 2)))) (i32.const 2)))
+        (call $firstItem (local.get $C)
+          (f64.load (i32.add (i32.load offset={{C_XS}} (local.get $C)) (i32.shl (local.get $k) (i32.const 3))))
+          (f64.load (i32.add (i32.load offset={{C_YS}} (local.get $C)) (i32.shl (local.get $k) (i32.const 3))))))
+      (local.set $k (i32.add (local.get $k) (i32.const 1)))
+      (br $each)))
+  )
 )

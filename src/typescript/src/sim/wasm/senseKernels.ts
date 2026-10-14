@@ -77,6 +77,11 @@ export class SenseKernels {
     return this.resident?.store ?? null;
   }
 
+  // The item tables the step kernel looks items up in, or null when stale (see WasmSenser.itemTables).
+  itemTables(world: World): { start: number; xy: number; ids: number; cols: number } | null {
+    return this.senser.itemTables(world);
+  }
+
   get filler(): WasmFiller {
     return this.resident!.filler;
   }

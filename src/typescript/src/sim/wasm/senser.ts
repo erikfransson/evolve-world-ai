@@ -38,6 +38,7 @@ export class WasmSenser {
   private rItems = new Region();
   private rItemXY = new Region();
   private rItemKinds = new Region();
+  private rItemIds = new Region();
   private rCStart = new Region();
   private rSx = new Region();
   private rSy = new Region();
@@ -64,6 +65,7 @@ export class WasmSenser {
   private pStart = 0;
   private pXY = 0;
   private pKinds = 0;
+  private pIds = 0;
   private place = new Int32Array(64);
   private rowCount = new Int32Array(0);
 
@@ -89,6 +91,7 @@ export class WasmSenser {
     this.rItems = new Region();
     this.rItemXY = new Region();
     this.rItemKinds = new Region();
+    this.rItemIds = new Region();
     this.rCStart = new Region();
     this.rSx = new Region();
     this.rSy = new Region();
@@ -110,6 +113,7 @@ export class WasmSenser {
     this.pStart = 0;
     this.pXY = 0;
     this.pKinds = 0;
+    this.pIds = 0;
   }
 
   // Stores the creature's ray offset cos and sin tables for its slot; call when the slot's brain is set.
@@ -158,6 +162,12 @@ export class WasmSenser {
     this.u8 = new Uint8Array(buffer);
   }
 
+  // The packed item rows for kernels that look items up (step.wat), or null when they do not match the world's items right now (changed since the last sync).
+  itemTables(world: World): { start: number; xy: number; ids: number; cols: number } | null {
+    if (this.synced !== world || world.dirtyCells === null || world.dirtyCells.length > 0) return null;
+    return { start: this.pStart, xy: this.pXY, ids: this.pIds, cols: world.cols };
+  }
+
   // Brings the packed item rows up to date: every row the first time, then each changed cell patched in place.
   // A row holds its cells' items in cell order, each cell in list order, in its own run of rowCap slots (start offsets are absolute).
   private syncItems(world: World): void {
@@ -179,6 +189,7 @@ export class WasmSenser {
       this.pStart = this.grow(this.rItems, rows * (cols + 1) * 4);
       this.pXY = this.grow(this.rItemXY, rows * this.rowCap * 8);
       this.pKinds = this.grow(this.rItemKinds, rows * this.rowCap);
+      this.pIds = this.grow(this.rItemIds, rows * this.rowCap * 4);
       this.views();
       const start = this.i32;
       const sB = this.pStart >> 2;
@@ -216,6 +227,7 @@ export class WasmSenser {
       if (end + delta > (row + 1) * this.rowCap) return false;
       xy.copyWithin(xB + 2 * (at + n), xB + 2 * start[s + 1]!, xB + 2 * end);
       kd.copyWithin(this.pKinds + at + n, this.pKinds + start[s + 1]!, this.pKinds + end);
+      start.copyWithin((this.pIds >> 2) + at + n, (this.pIds >> 2) + start[s + 1]!, (this.pIds >> 2) + end);
       for (let j = s + 1; j <= last; j++) start[j] += delta;
     }
     this.writeCell(world, c, at);
@@ -229,7 +241,10 @@ export class WasmSenser {
     const kd = this.u8;
     const xB = this.pXY >> 2;
     const kB = this.pKinds;
+    const ids = this.i32;
+    const idB = this.pIds >> 2;
     for (let i = cellHead[c]!; i >= 0; i = nextItem[i]!) {
+      ids[idB + p] = i;
       xy[xB + 2 * p] = xs[i]!;
       xy[xB + 2 * p + 1] = ys[i]!;
       kd[kB + p++] = kinds[i]!;
