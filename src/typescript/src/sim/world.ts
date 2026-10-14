@@ -628,6 +628,12 @@ export class World implements WorldView {
       }
       return -1;
     }
+    return this.firstItemWithin(x, y, reach);
+  }
+
+  // The first item in the grid walk (cells row by row, each list in order) closer than reach to (x, y), or -1.
+  private firstItemWithin(x: number, y: number, reach: number): number {
+    const reach2 = reach * reach;
     this.clampCellRange(x, y, reach, this.eatRange);
     const { rangeX0: cx0, rangeX1: cx1, rangeY0: cy0, rangeY1: cy1 } = this.eatRange;
     for (let cy = cy0; cy <= cy1; cy++) {
@@ -640,5 +646,12 @@ export class World implements WorldView {
       }
     }
     return -1;
+  }
+
+  // For each of the n bodies k, in the order given, stores in out[owners[k]] what eatAt returns for (px[k], py[k]), without the ray cache.
+  // Meant for bodies sorted by cell, so neighbours read the same cells. Lookups do not change the items.
+  touchedBatch(px: Float64Array, py: Float64Array, owners: Int32Array, n: number, radius: number, out: Int32Array): void {
+    const reach = radius + this.itemRadius;
+    for (let k = 0; k < n; k++) out[owners[k]!] = this.firstItemWithin(px[k]!, py[k]!, reach);
   }
 }

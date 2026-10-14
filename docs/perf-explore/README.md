@@ -33,4 +33,5 @@ One write-up per exploration, with the tables of tried ideas and their verdicts.
 - `lang.md`: a Rust brain kernel is bit-identical and at best 1.2x on the kernel (about 3% per tick); no language port is worth it, Numba cannot run in browsers.
 - `profile3.md`: reference profile at 38000 to 70000 wide and The Great Hunt at 30000 to 38000, about 80-92 ms CPU per tick at 9-10k creatures.
 - `collide.md`: item lookups in cell order and collisions on the crowd's sorted arrays, 1.048x, bit-identical; held, it duplicates the physics in a second path.
+- `collide2.md`: redo of the above as one array-culled `collideAll` for all modes plus cell-ordered item lookups, 1.039x, bit-identical; mergeable.
 - `node.md`: V8 flags change nothing measurable; 3 helper threads give 1.39x wall time at 50000 wide for 1.75x CPU and +316 MB.

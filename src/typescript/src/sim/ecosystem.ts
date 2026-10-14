@@ -210,6 +210,7 @@ export class Ecosystem {
   private readonly kinds: number[] = []; // kinds[i] is members[i].species
   private readonly multi: boolean; // more than one species, so rays tell species apart
   private readonly hunters: boolean; // some species eats another
+  private lookups = new Int32Array(0); // the item each creature touches, by list index
   private readonly slain = new Set<CreatureState>(); // killed by a bump or a hunt this tick
   private readonly events = new Float32Array(EVENT_CAP * EVENT_STRIDE);
   private eventCount = 0;
@@ -473,6 +474,18 @@ export class Ecosystem {
   private sharedPhase(touched?: Int32Array): void {
     const members = this.members;
     let n = members.length;
+    // Eating and hunting move no one, so the moved positions are gridded once, here, for the item lookups (in cell order, so
+    // neighbours read the same cells), hunting and collisions.
+    const eco = this.config.eco;
+    const gridded = (eco.collisions || this.hunters) && n > 0;
+    if (gridded) {
+      this.crowd.rebuild(this.states, n, this.kinds);
+      if (!touched) {
+        const crowd = this.crowd;
+        touched = this.lookups = refit(this.lookups, n);
+        this.items.touchedBatch(crowd.xs, crowd.ys, crowd.owners, n, this.config.creature.radius, touched);
+      }
+    }
     let first = this.rng.int(n);
     for (let k = 0; k < n; k++) {
       const at = (first + k) % n;
@@ -498,9 +511,9 @@ export class Ecosystem {
 
     const prof = this.profile;
     prof?.lap("eat");
-    if (this.hunters) this.hunt(); // grids the moved positions, which collideAll reuses since hunting moves no one
+    if (this.hunters) this.hunt();
     prof?.lap("hunt");
-    if (this.config.eco.collisions) this.collideAll(this.hunters);
+    if (eco.collisions) this.collideAll(gridded);
     prof?.lap("collisions");
 
     for (let i = n - 1; i >= 0; i--) {
@@ -516,7 +529,6 @@ export class Ecosystem {
 
     n = members.length;
     first = n > 0 ? this.rng.int(n) : 0;
-    const eco = this.config.eco;
     const birthCap = eco.maxPopulation - eco.birthReserve;
     for (let k = 0; k < n && members.length < birthCap; k++) {
       const parent = members[(first + k) % n];
@@ -535,13 +547,12 @@ export class Ecosystem {
   }
 
   // Each living hunter, from a random start, eats the nearest touching creature of a species it preys on, at most one per
-  // tick, using a grid of the moved positions. The prey dies (removed with the other deaths) and cannot be eaten twice.
+  // tick, using the grid of the moved positions. The prey dies (removed with the other deaths) and cannot be eaten twice.
   private hunt(): void {
     const crowd = this.crowd;
     const states = this.states;
     const members = this.members;
     const n = members.length;
-    crowd.rebuild(states, n, this.kinds);
     const reach = 2 * this.config.creature.radius;
     const inv = 1 / crowd.cell;
     const first = n > 0 ? this.rng.int(n) : 0;
@@ -585,39 +596,60 @@ export class Ecosystem {
   }
 
   // Pushes overlapping pairs apart with a bounce, using a grid of the moved positions. Pairs resolve in grid order.
+  // The sweep culls on the grid's sorted position arrays; only overlapping pairs touch the creature objects (bump), which write
+  // their new positions back to the arrays for the pairs after them.
   // gridded: the crowd already holds the moved positions.
   private collideAll(gridded = false): void {
     const crowd = this.crowd;
     const states = this.states;
     if (states.length < 2) return; // no pairs
     if (!gridded) crowd.rebuild(states, states.length);
-    const { cols, rows, cellStart, owners } = crowd;
+    const { cols, rows, cellStart, xs, ys } = crowd;
     const { radius } = this.config.creature;
-    const e = 1; // restitution
+    const reach = 2 * radius;
+    const reach2 = reach * reach;
     // Occupied cells in row-major order, the same order as sweeping every cell.
     for (let o = 0; o < crowd.occupiedCount; o++) {
       const c = crowd.occupied[o]!;
       const cy = Math.floor(c / cols);
       const cx = c - cy * cols;
-      const end = cellStart[c + 1];
-      for (let s = cellStart[c]; s < end; s++) {
-        const a = states[owners[s]];
-        // Later creatures of this cell, then the cells right, below-left, below and below-right, so each pair is seen once.
-        for (let t = s + 1; t < end; t++) this.bump(a, states[owners[t]], radius, e);
-        if (cx + 1 < cols) this.bumpCell(a, c + 1, radius, e);
-        if (cy + 1 < rows) {
-          const below = c + cols;
-          if (cx > 0) this.bumpCell(a, below - 1, radius, e);
-          this.bumpCell(a, below, radius, e);
-          if (cx + 1 < cols) this.bumpCell(a, below + 1, radius, e);
+      const end = cellStart[c + 1]!;
+      const hasRight = cx + 1 < cols;
+      // Later creatures of this cell and the cell to the right are one run, the cells below-left, below and below-right another,
+      // so each pair is seen once.
+      const run1 = hasRight ? cellStart[c + 2]! : end;
+      let run2a = 0;
+      let run2b = 0;
+      if (cy + 1 < rows) {
+        const below = c + cols;
+        run2a = cellStart[cx > 0 ? below - 1 : below]!;
+        run2b = cellStart[hasRight ? below + 2 : below + 1]!;
+      }
+      for (let s = cellStart[c]!; s < end; s++) {
+        for (let t = s + 1; t < run1; t++) {
+          const dx = xs[t]! - xs[s]!;
+          const dy = ys[t]! - ys[s]!;
+          if (!(dx * dx + dy * dy >= reach2)) this.bumpSlots(s, t, radius);
+        }
+        for (let t = run2a; t < run2b; t++) {
+          const dx = xs[t]! - xs[s]!;
+          const dy = ys[t]! - ys[s]!;
+          if (!(dx * dx + dy * dy >= reach2)) this.bumpSlots(s, t, radius);
         }
       }
     }
   }
 
-  private bumpCell(a: CreatureState, cell: number, radius: number, e: number): void {
-    const { cellStart, owners } = this.crowd;
-    for (let t = cellStart[cell]; t < cellStart[cell + 1]; t++) this.bump(a, this.states[owners[t]], radius, e);
+  // bump for the creatures at sorted slots s and t of the crowd, then their positions back into its arrays.
+  private bumpSlots(s: number, t: number, radius: number): void {
+    const { owners, xs, ys } = this.crowd;
+    const a = this.states[owners[s]!]!;
+    const b = this.states[owners[t]!]!;
+    this.bump(a, b, radius, 1);
+    xs[s] = a.x;
+    ys[s] = a.y;
+    xs[t] = b.x;
+    ys[t] = b.y;
   }
 
   private bump(a: CreatureState, b: CreatureState, radius: number, e: number): void {
