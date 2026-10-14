@@ -103,9 +103,8 @@ export class Crowd {
       this.px[i] = f[j]!;
       this.py[i] = f[j + 1]!;
       this.pe[i] = f[j + energyAt]!;
-      this.ps[i] = species ? species[i]! : 0;
     }
-    this.rebuildFrom(this.px, this.py, this.pe, n, this.ps);
+    this.rebuildFrom(this.px, this.py, this.pe, n, species);
   }
 
   // True when a snapshotted creature is closer than reach to (x, y).
@@ -129,7 +128,18 @@ export class Crowd {
   rebuildFrom(x: Float64Array, y: Float64Array, e: Float64Array, n: number, sp?: ArrayLike<number>): void {
     if (n > this.xs.length) this.grow(n);
     const cellOf = this.cellOf;
-    for (let i = 0; i < n; i++) cellOf[i] = this.cellIndex(x[i], y[i]);
+    const { cell, cols } = this;
+    const maxX = cols - 1;
+    const maxY = this.rows - 1;
+    for (let i = 0; i < n; i++) {
+      let cx = Math.floor(x[i] / cell);
+      let cy = Math.floor(y[i] / cell);
+      if (cx < 0) cx = 0;
+      else if (cx > maxX) cx = maxX;
+      if (cy < 0) cy = 0;
+      else if (cy > maxY) cy = maxY;
+      cellOf[i] = cy * cols + cx;
+    }
     const bits = this.radixBits;
     const mask = (1 << bits) - 1;
     const count = this.radixCount;

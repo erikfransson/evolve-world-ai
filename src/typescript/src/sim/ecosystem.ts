@@ -202,6 +202,7 @@ export class Ecosystem {
 
   private readonly items: World;
   private readonly crowd: Crowd;
+  private hits = new Int32Array(0); // members touching an item this tick, ascending
   private readonly batch = new SenseBatch();
   private readonly kernels: SenseKernels | null; // with eco.wasm when WebAssembly SIMD is available
   private readonly resident: ResidentStore | null; // creature bodies as rows of the kernel memory, which the fill kernel reads; not with helper threads
@@ -514,26 +515,24 @@ export class Ecosystem {
       }
     }
     let first = this.rng.int(n);
-    for (let k = 0; k < n; k++) {
-      const at = (first + k) % n;
-      const m = members[at];
-      if (!this.species[m.species]!.plants) continue;
-      let eaten: number;
-      if (touched && (touched[at] < 0 || this.items.kinds[touched[at]] !== HIT_NONE)) {
-        // Items are only removed in this loop, so a looked-up item still there is still the first touched, and none stays none.
-        eaten = touched[at];
-        if (eaten >= 0) m.creature.eatItem(this.items, eaten);
-      } else eaten = m.creature.eat(this.items); // looked up item taken by an earlier creature, or no lookup
-      if (eaten < 0) continue;
-      if (this.items.kinds[eaten] === HIT_FOOD) {
-        this.food--;
-        m.eaten++;
-        this.foodEaten++;
-      } else {
-        this.poison--;
-        this.poisonEaten++;
+    if (touched) {
+      // Only creatures touching an item can eat: list them, then walk the list from the random start, in the same order as a walk
+      // over every member.
+      const hits = (this.hits = refit(this.hits, n));
+      let h = 0;
+      let from = 0;
+      for (let at = 0; at < n; at++) {
+        if (touched[at]! < 0) continue;
+        if (at < first) from++;
+        hits[h++] = at;
       }
-      this.items.removeItem(eaten); // so no one else eats it this tick
+      for (let k = 0; k < h; k++) {
+        let q = from + k;
+        if (q >= h) q -= h;
+        this.eatAt(hits[q]!, touched);
+      }
+    } else {
+      for (let k = 0; k < n; k++) this.eatAt((first + k) % n);
     }
 
     const prof = this.profile;
@@ -586,6 +585,28 @@ export class Ecosystem {
     this.regrow();
     prof?.lap("regrow");
     this.tick++;
+  }
+
+  // Member at eats: the item looked up for it in touched, or the first it touches now.
+  private eatAt(at: number, touched?: Int32Array): void {
+    const m = this.members[at];
+    if (!this.species[m.species]!.plants) return;
+    let eaten: number;
+    if (touched && (touched[at] < 0 || this.items.kinds[touched[at]] !== HIT_NONE)) {
+      // Items are only removed in the eat loop, so a looked-up item still there is still the first touched, and none stays none.
+      eaten = touched[at];
+      if (eaten >= 0) m.creature.eatItem(this.items, eaten);
+    } else eaten = m.creature.eat(this.items); // looked up item taken by an earlier creature, or no lookup
+    if (eaten < 0) return;
+    if (this.items.kinds[eaten] === HIT_FOOD) {
+      this.food--;
+      m.eaten++;
+      this.foodEaten++;
+    } else {
+      this.poison--;
+      this.poisonEaten++;
+    }
+    this.items.removeItem(eaten); // so no one else eats it this tick
   }
 
   // Each living hunter, from a random start, eats the nearest touching creature of a species it preys on, at most one per
