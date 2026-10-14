@@ -5,6 +5,7 @@ Each release is a pull request from `development` into `main`, tagged `vX.Y.Z` o
 Add notes under "Unreleased" as work lands on `development`, and turn that heading into the version number at release time.
 
 ## Unreleased
+- Faster simulation on big maps (about 1.08x on The Inland Sea at 10k creatures, results unchanged): one array-based collision pass for every mode, item lookups in grid order, keepOut skips rock where none is near, and a faster birth scan.
 - Live World moves to The Inland Sea (40000 x 25000) with the launch food values (food worth 50, slower regrowth, cap 1.5, scarce poison), a one hour year and 3x speed. A fresh world starts with 10 of each starter founder; saves of the old world are not restored and are deleted by the usual rotation after 4 days. The page draws the map (built on a worker from its name), and the info section lists its regions with their food and poison.
 - `eco.birthReserve`: births stop this many creatures below `maxPopulation` while inserted creatures may still fill up to it (default 0; admin-tunable on Live up to 1000), so Live visitors can add creatures after a boom.
 - RL Arena fix: rams now count. A rival killed by bumping into the learner never raised the learner's energy (it gets the rival's energy from before the hit, at most the damage it took), so the ram reward in Aggressor and Brawl never paid out. A ram is now a rival that dies touching the learner, and no other rival, with energy left the tick before (a rival eating poison while touching the learner also counts).
