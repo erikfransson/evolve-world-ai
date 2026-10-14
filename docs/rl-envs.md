@@ -37,6 +37,8 @@ Self-play envs (Melee, Brawl) score against the learner's own league, so their h
 
 Advanced (bigger, slower): forage-sparse, poison-field, rivals, endurance; hunters and prey (hidden while the Arena trains foragers only).
 
+Bigger (Live-like, 90 s, start energy 300, lethal poison, bumps hurt, seed pool crowds): live-patch, live-famine, live-meadow, live-poison, live-commons.
+
 ## Notes
 
 - 2026-10-11: dropped near-duplicates (forage-box, box, box-poison, nibble-poison, scatter). Fence and Zigzag with lethal walls never learned (no candidate got through); walls now sting (25 energy) and 2 food lie on the learner's side as a first step. Lean times showed no signal at 25-30 energy; raised to 40 energy, 8 food, food reward 0.5.

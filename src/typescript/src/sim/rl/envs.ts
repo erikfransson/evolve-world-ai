@@ -6,7 +6,7 @@ export const PREDATOR = 1;
 // The environment index. Ids are stable: keep an env's id when tuning it, add a new one for a new task.
 
 // Small, quick tasks first: one idea each, a few items, short episodes. Each takes milliseconds, so a population of hundreds
-// can train for thousands of iterations; the bigger "advanced" envs below come after.
+// can train for thousands of iterations; the bigger "advanced" envs and the Live-like "bigger" ones come after.
 const small = (o: Pick<EnvSpec, "id" | "name" | "description" | "size" | "food" | "poison" | "seconds"> & Partial<EnvSpec> & { tags: string[] }): EnvSpec => ({
   world: "ecosystem",
   role: PREY,
