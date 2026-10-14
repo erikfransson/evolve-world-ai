@@ -264,12 +264,14 @@ export class WasmSenser {
     const count = crowd.count;
     const ccells = crowd.cols * crowd.rows;
     const rock = world.terrain;
-    const pCStart = this.grow(this.rCStart, (ccells + 1) * 4);
+    const kernel = crowd.kernel; // the grid is already in this memory: the kernel packs the f32 columns and the rest is read in place
+    const grid = kernel?.at;
+    const pCStart = grid ? grid.start : this.grow(this.rCStart, (ccells + 1) * 4);
     const pSx = this.grow(this.rSx, count * 4 + 16);
     const pSy = this.grow(this.rSy, count * 4 + 16);
-    const pOwn = this.grow(this.rOwn, count * 4 + 16);
+    const pOwn = grid ? grid.owners : this.grow(this.rOwn, count * 4 + 16);
     const pSig = this.grow(this.rSig, count * 4 + 16);
-    const pSpecies = this.grow(this.rSpecies, count * 4 + 16);
+    const pSpecies = grid ? grid.species : this.grow(this.rSpecies, count * 4 + 16);
     const pRec = this.grow(this.rRec, n * REC_BYTES);
     const pCand = this.grow(this.rCand, Math.max((world.count + rock.rockCount) * 32, count * 16) + 64);
     const pRockStart = this.grow(this.rRockStart, rock.rockStart.length * 4);
@@ -280,7 +282,7 @@ export class WasmSenser {
     const pP = this.grow(this.rP, P_BYTES);
     this.views(); // after the last allocation
     let { f32, i32, f64 } = this;
-    i32.set(crowd.cellStart, pCStart >> 2);
+    if (!kernel) i32.set(crowd.cellStart, pCStart >> 2);
     if (this.rockSynced !== rock) {
       i32.set(rock.rockStart, pRockStart >> 2);
       i32.set(rock.rockOrder, pRockOrder >> 2);
@@ -299,7 +301,8 @@ export class WasmSenser {
     const species = pSpecies >> 2;
     const { xs, ys, owners, energies } = crowd;
     const crowdSpecies = crowd.species;
-    for (let k = 0; k < count; k++) {
+    if (kernel) kernel.pack(startEnergy, pSx, pSy, pSig);
+    else for (let k = 0; k < count; k++) {
       f32[sx + k] = xs[k]!;
       f32[sy + k] = ys[k]!;
       i32[own + k] = owners[k]!;

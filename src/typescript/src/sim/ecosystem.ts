@@ -10,6 +10,8 @@ import { driftBirth, driftPlan, mutateStructure, randomBirth, randomPlan, remapW
 import type { BirthTraits } from "./planMutation.ts";
 import { agingOf, collide, hurt, keepInside, settle } from "./physics.ts";
 import { terrainOf } from "./terrain.ts";
+import { SMALL_SORT } from "./crowd.ts";
+import { WasmCrowd, jsCrowdForced } from "./wasm/crowdKernel.ts";
 import { F } from "./wasm/resident.ts";
 import type { ResidentStore } from "./wasm/resident.ts";
 import { advanceBodies, prepareRows, stepResident } from "./wasm/residentStep.ts";
@@ -205,6 +207,7 @@ export class Ecosystem {
   private hits = new Int32Array(0); // members touching an item this tick, ascending
   private readonly batch = new SenseBatch();
   private readonly kernels: SenseKernels | null; // with eco.wasm when WebAssembly SIMD is available
+  private readonly wasmCrowd: WasmCrowd | null; // the crowd grid built in WebAssembly from the rows (crowdKernel.ts), when the rows are resident
   private readonly resident: ResidentStore | null; // creature bodies as rows of the kernel memory, which the fill kernel reads
   private readonly states: CreatureState[] = [];
   private readonly rowAt: number[] = []; // with resident bodies: rowAt[i] is the f64 index of members[i]'s row, so the hot loops read the rows, not the state objects
@@ -299,6 +302,7 @@ export class Ecosystem {
     this.kernels = !eco.wasm ? null : options.kernels && maxRays <= MAX_RAYS ? options.kernels.reset(config) : SenseKernels.create(config, maxRays);
     this.resident = this.kernels ? this.kernels.residentStore() : null;
     if (this.resident) this.resident.species.push(...this.engines); // the configs the rows' species indices stand for
+    this.wasmCrowd = this.resident ? WasmCrowd.create(this.resident, this.crowd) : null;
     this.childPlan = planOf(config);
 
     const { width, height } = config.world;
@@ -433,8 +437,12 @@ export class Ecosystem {
   }
 
   private gridCrowd(n: number, species?: ArrayLike<number>): void {
-    if (this.resident) this.crowd.rebuildRows(this.resident.f64, this.rowAt, F.energy, n, species);
-    else this.crowd.rebuild(this.states, n, species);
+    const wasm = this.wasmCrowd;
+    if (wasm && n > SMALL_SORT && !jsCrowdForced()) wasm.rebuild(this.rowAt, n, species);
+    else if (this.resident) {
+      wasm?.drop();
+      this.crowd.rebuildRows(this.resident.f64, this.rowAt, F.energy, n, species);
+    } else this.crowd.rebuild(this.states, n, species);
   }
 
   // Grids the creatures as they stand at the tick start, for sensePhase.

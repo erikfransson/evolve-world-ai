@@ -1,0 +1,239 @@
+import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
+import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
+import { Crowd } from "../../src/typescript/src/sim/crowd.ts";
+import { restoreState, saveState } from "../../src/typescript/src/sim/ecoState.ts";
+import type { EcoState } from "../../src/typescript/src/sim/ecoState.ts";
+import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
+import { ECO_PRESETS, withEcoPreset } from "../../src/typescript/src/sim/presets.ts";
+import { createRng } from "../../src/typescript/src/sim/rng.ts";
+import { dropSpareKernels, randomLearner, runEpisode } from "../../src/typescript/src/sim/rl/env.ts";
+import { envById } from "../../src/typescript/src/sim/rl/envs.ts";
+import { energySignal } from "../../src/typescript/src/sim/sensors.ts";
+import { forceJsCrowd } from "../../src/typescript/src/sim/wasm/crowdKernel.ts";
+import { wasmAvailable } from "../../src/typescript/src/sim/wasm/loader.ts";
+import { Region, F } from "../../src/typescript/src/sim/wasm/resident.ts";
+
+// The WebAssembly crowd grid (crowd.wat, crowdKernel.ts) against its JS twin Crowd.rebuildRows (crowd.ts): every array must be the same bit for bit,
+// on rows anywhere (outside the world, NaN, infinite), and whole runs must not tell the two apart.
+
+type Any = any; // the tests reach into the Ecosystem
+
+const make = (setup: (c: EcoConfig) => EcoConfig, founders: number, seed = 1, base: EcoConfig = DEFAULT_ECO_CONFIG): Ecosystem => {
+  const config = setup(structuredClone(base));
+  config.seed = seed;
+  config.eco.initialPopulation = founders;
+  return new Ecosystem(config, null);
+};
+const inland = (c: EcoConfig): EcoConfig => withEcoPreset(c, "inland-sea", ECO_PRESETS);
+const damage = (c: EcoConfig): EcoConfig => ({ ...c, eco: { ...c.eco, collisions: true, collisionDamage: true, damagePerSpeed: 1 } });
+
+// Differences between the crowd as built (by the kernel) and a fresh JS Crowd built from the same rows.
+function crowdDifferences(eco: Ecosystem): number {
+  const e = eco as Any;
+  const n = eco.members.length;
+  const got: Crowd = e.crowd;
+  const want = new Crowd(eco.config, 64);
+  want.rebuildRows(e.resident.f64, e.rowAt, F.energy, n, e.multi ? e.kinds : undefined);
+  let bad = 0;
+  const same = (a: ArrayLike<number>, b: ArrayLike<number>, len: number): void => {
+    for (let i = 0; i < len; i++) if (!Object.is(a[i], b[i])) bad++;
+  };
+  if (got.count !== want.count || got.occupiedCount !== want.occupiedCount) bad++;
+  same(got.xs, want.xs, n);
+  same(got.ys, want.ys, n);
+  same(got.energies, want.energies, n);
+  same(got.species, want.species, n);
+  same(got.owners, want.owners, n);
+  same(got.occupied, want.occupied, want.occupiedCount);
+  if (got.cellStart.length !== want.cellStart.length) bad++;
+  same(got.cellStart, want.cellStart, want.cellStart.length);
+  return bad;
+}
+
+// Rows anywhere, so that every clamp of the cell key is taken.
+// Returns the way back to the true positions and energies, so the run goes on with sane bodies.
+function scatter(eco: Ecosystem, seed: number): () => void {
+  const rng = createRng(seed);
+  const saved = eco.members.map((m) => [m.creature.state.x, m.creature.state.y, m.creature.state.energy]);
+  const { width, height } = eco.config.world;
+  const pick = <T,>(v: T[]): T => v[rng.int(v.length)]!;
+  for (const m of eco.members) {
+    const s = m.creature.state;
+    const r = rng.next();
+    if (r < 0.1) s.x = pick([-1e6, -1, 0, width, width + 1, 1e9, Infinity, -Infinity, NaN]);
+    else if (r < 0.2) s.y = pick([-1e6, -1, 0, height, height + 1, 1e9, Infinity, -Infinity, NaN]);
+    else if (r < 0.5) {
+      s.x = rng.next() * width;
+      s.y = rng.next() * height;
+    }
+    if (rng.next() < 0.1) s.energy = pick([0, 1e-9, 1e9, -3]);
+  }
+  return () => eco.members.forEach((m, i) => ([m.creature.state.x, m.creature.state.y, m.creature.state.energy] = saved[i]! as [number, number, number]));
+}
+
+describe.skipIf(!wasmAvailable())("the WebAssembly crowd grid equals Crowd.rebuildRows", () => {
+  const worlds: [string, () => Ecosystem][] = [
+    ["a plain world", () => make((c) => c, 300)],
+    ["the Inland Sea", () => make(inland, 1500)],
+    ["two species", () => new Ecosystem(structuredClone(DEFAULT_PREDATOR_CONFIG), null)],
+    ["13 creatures, just past the insertion sort", () => make((c) => c, 13)],
+    ["12 creatures, JS only", () => make((c) => c, 12)],
+    ["2 creatures", () => make((c) => c, 2)],
+    ["1000 creatures in a tiny world (few cells)", () => make((c) => ({ ...c, world: { ...c.world, width: 300, height: 200 } }), 1000)],
+  ];
+  for (const [name, build] of worlds) {
+    it(`on ${name}, array for array, with rows scattered anywhere`, () => {
+      const eco = build();
+      const e = eco as Any;
+      expect(e.wasmCrowd).not.toBeNull();
+      let bad = 0;
+      for (let t = 0; t < 30; t++) {
+        eco.step();
+        if (eco.members.length < 2) break;
+        const back = t % 2 === 0 ? scatter(eco, 50 + t) : () => {};
+        e.gridCrowd(eco.members.length, e.multi ? e.kinds : undefined);
+        bad += crowdDifferences(eco);
+        back();
+      }
+      expect(bad).toBe(0);
+    });
+  }
+
+  it("on randomised worlds of every size and species mix", () => {
+    let bad = 0;
+    for (let seed = 1; seed <= 20; seed++) {
+      const rng = createRng(seed * 31);
+      const eco = make((c) => {
+        (c.world as Any).width = 400 + rng.int(9000);
+        (c.world as Any).height = 300 + rng.int(6000);
+        (c.creature as Any).rayLength = rng.range(40, 400);
+        return c;
+      }, [3, 13, 14, 40, 300, 900][rng.int(6)]!, seed, seed % 2 ? DEFAULT_PREDATOR_CONFIG : DEFAULT_ECO_CONFIG);
+      const e = eco as Any;
+      for (let t = 0; t < 8 && eco.members.length > 0; t++) {
+        eco.step();
+        const back = t % 2 === 0 ? scatter(eco, seed * 10 + t) : () => {};
+        e.gridCrowd(eco.members.length, e.multi ? e.kinds : undefined);
+        bad += crowdDifferences(eco);
+        back();
+      }
+    }
+    expect(bad).toBe(0);
+  });
+
+  it("in the f32 columns the sense kernel reads (positions and energy signals)", () => {
+    const eco = make(inland, 400);
+    const e = eco as Any;
+    for (let t = 0; t < 5; t++) eco.step();
+    eco.prepareTick();
+    const crowd: Crowd = e.crowd;
+    expect(crowd.kernel).not.toBeNull();
+    const start = 50;
+    const store = e.resident;
+    const [sx, sy, sig] = [new Region(), new Region(), new Region()].map((r) => store.grow(r, crowd.count * 4 + 16));
+    crowd.kernel!.pack(start, sx!, sy!, sig!);
+    const f32 = e.kernels.f32;
+    let bad = 0;
+    for (let k = 0; k < crowd.count; k++) {
+      if (!Object.is(f32[(sx! >> 2) + k], Math.fround(crowd.xs[k]!))) bad++;
+      if (!Object.is(f32[(sy! >> 2) + k], Math.fround(crowd.ys[k]!))) bad++;
+      if (!Object.is(f32[(sig! >> 2) + k], Math.fround(energySignal(crowd.energies[k]!, start)))) bad++;
+    }
+    expect(bad).toBe(0);
+  });
+
+  it("after the memory grows, which replaces every view of it", () => {
+    const eco = make(inland, 300);
+    const e = eco as Any;
+    for (let t = 0; t < 4; t++) eco.step();
+    eco.prepareTick();
+    expect(crowdDifferences(eco)).toBe(0);
+    e.kernels.brains.alloc(40 * 1024 * 1024);
+    expect(e.crowd.xs.length).toBe(eco.members.length); // still views, not detached
+    expect(crowdDifferences(eco)).toBe(0);
+    for (let t = 0; t < 5; t++) {
+      eco.step();
+      e.kernels.brains.alloc(16 * 1024 * 1024);
+      expect(crowdDifferences(eco)).toBe(0);
+    }
+  });
+
+  it("when the world shrinks to JS-only sizes and grows again", () => {
+    const eco = make((c) => ({ ...c, eco: { ...c.eco, foodRegrow: 0 } }), 40);
+    const e = eco as Any;
+    let bad = 0;
+    for (let t = 0; t < 40; t++) {
+      while (eco.members.length > 40 - t) (eco as Any).remove(eco.members.length - 1); // ends in the 1-12 range, then none
+      if (eco.members.length >= 2) {
+        e.gridCrowd(eco.members.length, undefined);
+        bad += crowdDifferences(eco);
+      }
+    }
+    expect(bad).toBe(0);
+  });
+});
+
+describe.skipIf(!wasmAvailable())("whole runs with the WebAssembly crowd grid and with the JS one", () => {
+  afterEach(() => forceJsCrowd(false));
+  const run = (build: () => Ecosystem, ticks: number, js: boolean, midRun?: (eco: Ecosystem, t: number) => void): [number, number, number] => {
+    forceJsCrowd(js);
+    const eco = build();
+    for (let t = 0; t < ticks && !eco.extinct; t++) {
+      midRun?.(eco, t);
+      eco.step();
+    }
+    forceJsCrowd(false);
+    return [eco.fingerprint(), eco.population, eco.deaths];
+  };
+  const cases: [string, () => Ecosystem][] = [
+    ["plain", () => make((c) => c, 200)],
+    ["Inland Sea", () => make(inland, 800)],
+    ["collisions and damage", () => make((c) => damage(c), 400)],
+    ["predators (hunting uses the grid)", () => new Ecosystem(structuredClone(DEFAULT_PREDATOR_CONFIG), null)],
+  ];
+  for (const [name, build] of cases) {
+    it(`give the same world on ${name}`, () => {
+      expect(run(build, 300, false)).toEqual(run(build, 300, true));
+    });
+  }
+
+  it("give the same world with creatures inserted and a retune on the way", () => {
+    const go = (eco: Ecosystem, t: number): void => {
+      if (t === 40) {
+        const plan = eco.members[0]!.creature.plan;
+        expect(eco.insertCreature({ genome: eco.members[0]!.creature.brain.genome.slice(), plan: { ...plan }, x: 500, y: 500, hue: 3, name: "v" }).ok).toBe(true);
+      }
+      if (t === 80) expect(eco.retune({ eco: { collisions: true, collisionDamage: true, damagePerSpeed: 0.5 } })).toMatchObject({ ok: true });
+    };
+    expect(run(() => make(inland, 500), 200, false, go)).toEqual(run(() => make(inland, 500), 200, true, go));
+  });
+
+  it("save in one mode and continue in the other, both ways", () => {
+    const build = () => make((c) => damage(inland(c)), 500);
+    for (const [first, second] of [[false, true], [true, false]] as const) {
+      forceJsCrowd(first);
+      const a = build();
+      for (let t = 0; t < 60; t++) a.step();
+      const state = JSON.parse(JSON.stringify(saveState(a))) as EcoState;
+      forceJsCrowd(second);
+      const b = restoreState(state);
+      forceJsCrowd(first);
+      for (let t = 0; t < 60; t++) a.step();
+      forceJsCrowd(second);
+      for (let t = 0; t < 60; t++) b.step();
+      forceJsCrowd(false);
+      expect([b.fingerprint(), b.population, b.deaths]).toEqual([a.fingerprint(), a.population, a.deaths]);
+    }
+  });
+
+  it("give the same RL episodes, on reused kernels", () => {
+    const env = envById("islands")!;
+    const l = randomLearner(env, 3);
+    dropSpareKernels();
+    forceJsCrowd(true);
+    const js = runEpisode(env, l, 11);
+    forceJsCrowd(false);
+    runEpisode(envById("crowd")!, l, 5);
+    expect(runEpisode(env, l, 11)).toEqual(js);
+  });
+});

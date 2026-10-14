@@ -65,6 +65,32 @@ export const LAYOUT = {
   P_AGING_START: 80, // f64
   P_AGING_PER_TICK: 88, // f64
   P_BYTES: 96,
+  // call block of crowd (i32 unless noted)
+  C_N: 0,
+  C_ROW_AT: 4, // f64 index of each creature's row, in creature order
+  C_CELL_OF: 8, // scratch
+  C_COLS: 12,
+  C_ROWS: 16,
+  C_RADIX_BITS: 20,
+  C_RADIX_PASSES: 24,
+  C_COUNT: 28, // scratch of the radix sort
+  C_PERM: 32,
+  C_PERM_B: 36,
+  C_CELL_START: 40, // the grid, as Crowd's arrays
+  C_OCCUPIED: 44,
+  C_SPECIES_IN: 48, // species of each creature in creature order, 0 for none
+  C_XS: 52,
+  C_YS: 56,
+  C_ENERGIES: 60,
+  C_SPECIES: 64,
+  C_OWNERS: 68,
+  C_OCCUPIED_COUNT: 72, // out
+  C_SX: 76, // pack's outputs, f32 per creature in sorted order
+  C_SY: 80,
+  C_SIG: 84,
+  C_CELL: 88, // f64
+  C_START_ENERGY: 96, // f64, pack's input
+  C_BYTES: 104,
   // species block of step (f64 unless noted), one per species: the config values the step reads and the decay factors
   Q_DT: 0,
   Q_MAX_THRUST: 8,

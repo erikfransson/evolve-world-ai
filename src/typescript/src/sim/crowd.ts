@@ -1,8 +1,9 @@
 import type { EngineConfig } from "./config.ts";
 import { HIT_CREATURE, HIT_NONE } from "./types.ts";
 import type { CreatureState, RayHit } from "./types.ts";
+import type { WasmCrowd } from "./wasm/crowdKernel.ts";
 
-const SMALL_SORT = 12; // up to this many creatures rebuildFrom sorts by insertion: RL episodes have 1-11 creatures, the radix sort pays off for crowds
+export const SMALL_SORT = 12; // up to this many creatures rebuildFrom sorts by insertion: RL episodes have 1-11 creatures, the radix sort pays off for crowds
 
 // Creatures in a uniform grid of cell size config.creature.rayLength, rebuilt each tick by a stable radix sort of the cell keys,
 // so the work follows the creature count, not the world area. Each cell's creatures are contiguous in the sorted arrays, in
@@ -11,7 +12,7 @@ export class Crowd {
   count = 0;
   readonly cols: number;
   readonly rows: number;
-  readonly cellStart: Int32Array;
+  cellStart: Int32Array;
   // Sorted by cell; owner is the index into the states array the grid was built from.
   xs: Float64Array;
   ys: Float64Array;
@@ -31,8 +32,9 @@ export class Crowd {
   occupiedCount = 0;
   private perm: Int32Array; // creature indices in cell order, and the radix sort's second buffer
   private permB: Int32Array;
-  private readonly radixPasses: number;
-  private readonly radixBits: number;
+  readonly radixPasses: number;
+  readonly radixBits: number;
+  kernel: WasmCrowd | null = null; // set while the arrays are views of WebAssembly memory (adopt), where the sense kernel can read them in place
   private readonly radixCount: Int32Array;
   // Candidates of one sensing: offset to the creature, squared distance minus squared radius, energy.
   private candFx = new Float64Array(64);
@@ -95,7 +97,7 @@ export class Crowd {
     }
   }
 
-  // The same from resident rows (see wasm/resident.ts): creature i is the row at f64 index rowAt[i], with x then y first and the energy energyAt on.
+  // The same from resident rows (see wasm/resident.ts; WasmCrowd in wasm/crowdKernel.ts does this in WebAssembly): creature i is the row at f64 index rowAt[i], with x then y first and the energy energyAt on.
   rebuildRows(f: Float64Array, rowAt: ArrayLike<number>, energyAt: number, n: number, species?: ArrayLike<number>): void {
     this.fitGather(n);
     for (let i = 0; i < n; i++) {
@@ -105,6 +107,22 @@ export class Crowd {
       this.pe[i] = f[j + energyAt]!;
     }
     this.rebuildFrom(this.px, this.py, this.pe, n, species);
+  }
+
+  // Takes the grid the WebAssembly kernel built (crowd.wat, a twin of rebuildFrom) as its arrays. They stay views of that memory until the next JS rebuild.
+  adopt(v: { xs: Float64Array; ys: Float64Array; energies: Float64Array; species: Int32Array; owners: Int32Array; cellStart: Int32Array; occupied: Int32Array }, n: number, occupiedCount: number, kernel: WasmCrowd): void {
+    Object.assign(this, v);
+    this.count = n;
+    this.occupiedCount = occupiedCount;
+    this.kernel = kernel;
+  }
+
+  // Own arrays again after adopt, for a rebuild in JS.
+  private own(n: number): void {
+    this.kernel = null;
+    this.xs = new Float64Array(0);
+    this.grow(Math.max(n, 64));
+    this.cellStart = new Int32Array(this.cols * this.rows + 1);
   }
 
   // True when a snapshotted creature is closer than reach to (x, y).
@@ -126,6 +144,7 @@ export class Crowd {
 
   // The same from arrays: creature i at (x[i], y[i]) with energy e[i] and species sp[i] (all 0 without).
   rebuildFrom(x: Float64Array, y: Float64Array, e: Float64Array, n: number, sp?: ArrayLike<number>): void {
+    if (this.kernel) this.own(n);
     if (n > this.xs.length) this.grow(n);
     const cellOf = this.cellOf;
     const { cell, cols } = this;
