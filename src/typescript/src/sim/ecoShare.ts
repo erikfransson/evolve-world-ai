@@ -35,7 +35,7 @@ const H_MEMORY_CAP = 2;
 const H_DELTA_CAP = 3;
 const H_DELTA_LENGTH = 4;
 const H_GENOME_CAP = 5;
-const H_STRIDE = 6; // memory units reserved per creature in memoryOut
+const H_STRIDE = 12; // memory units reserved per creature in memoryOut (after the aging rule, which takes bytes 24 to 47)
 const AGING_AT = 24; // byte offset in the header after the six int32 fields, 8-aligned
 const HEADER_BYTES = 64;
 

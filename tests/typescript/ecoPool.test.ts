@@ -1,6 +1,7 @@
 import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
+import { restoreState, saveState } from "../../src/typescript/src/sim/ecoState.ts";
 import { ShareCoordinator, fittedCaps, packetBytes, packetViews, publishedBytes } from "../../src/typescript/src/sim/ecoShare.ts";
 import { ThinkPool, defaultHelpers, serveHelper, tickTimeoutMs } from "../../src/typescript/src/worker/ecoPool.ts";
 import type { HelperIn, HelperOut, HelperPort } from "../../src/typescript/src/worker/ecoPool.ts";
@@ -167,6 +168,50 @@ describe("ThinkPool", () => {
       await compareAll(() => predators(wasm), 200, ref);
     }, 60_000);
   });
+
+  it.each([false, true])("keeps the memory units of a restored world on the helpers, WebAssembly %s", async (wasm) => {
+    const config = (): EcoConfig => ({ ...cfg(), eco: { ...cfg().eco, wasm } });
+    const before = serial(config(), 120);
+    expect(before.members.some((m) => m.creature.memory.some((v) => v !== 0))).toBe(true); // the helpers must start from these, not from zeros
+    const saved = saveState(before);
+    const ref = restoreState(structuredClone(saved));
+    for (let t = 0; t < 80; t++) ref.step();
+    const pool = new ThinkPool(fakePorts(2));
+    try {
+      const eco = restoreState(structuredClone(saved), null, { journal: true });
+      await pool.start(eco);
+      for (let t = 0; t < 80; t++) await pool.step(eco);
+      expect(eco.fingerprint()).toBe(ref.fingerprint());
+    } finally {
+      pool.close();
+    }
+  }, 60_000);
+
+  it.each([false, true])("a watched creature that a helper owns has the serial run's rays, WebAssembly %s", async (wasm) => {
+    const config = (): EcoConfig => ({ ...cfg(), eco: { ...cfg().eco, wasm } });
+    const ref = serial(config(), 60);
+    const pool = new ThinkPool(fakePorts(2));
+    try {
+      const eco = await pooled(pool, config(), 60);
+      const id = eco.members.find((m) => m.owner < 2)!.id;
+      pool.watch = id;
+      eco.detail = ref.detail = id;
+      let seen = 0;
+      for (let t = 0; t < 8; t++) {
+        ref.step();
+        await pool.step(eco);
+        const a = ref.get(id)?.creature;
+        const b = eco.get(id)?.creature;
+        if (!a || !b) break;
+        expect(b.rays).toEqual(a.rays);
+        seen++;
+      }
+      expect(seen).toBeGreaterThan(0);
+      expect(eco.fingerprint()).toBe(ref.fingerprint());
+    } finally {
+      pool.close();
+    }
+  }, 60_000);
 
   it("reuses its helpers for a second run", async () => {
     const pool = new ThinkPool(fakePorts(2));
