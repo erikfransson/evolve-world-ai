@@ -20,7 +20,7 @@ import { LAYOUT_KINDS, placeLayout } from "./layouts.ts";
 import type { Layout } from "./layouts.ts";
 
 // RL environments (#27): short episodes on the Ecosystem engine, so a creature trained here acts exactly as it would in the
-// Ecosystem or The Great Hunt. An environment is plain data: a small world, the learner's species, rivals, and reward weights.
+// Ecosystem or the two-species hunt world. An environment is plain data: a small world, the learner's species, rivals, and reward weights.
 
 export type EnvWorld = "ecosystem" | "hunt"; // the input layout: one species, or prey (0) and predators (1)
 export { PREDATOR, PREY } from "./envs.ts";
@@ -89,7 +89,7 @@ const BIRTHLESS = 1e9; // birth energy no creature reaches
 export const RL_WASM = true;
 const useWasm = (env: EnvSpec): boolean => RL_WASM && env.foodVisibleFor === undefined; // hidden food needs the JS sense path
 
-// The engine config of an env: its world on the base of the Ecosystem or The Great Hunt, no births, no structural change.
+// The engine config of an env: its world on the base of the Ecosystem or the hunt world, no births, no structural change.
 export function envConfig(env: EnvSpec, seed: number): EcoConfig {
   const base = structuredClone(env.world === "hunt" ? DEFAULT_PREDATOR_CONFIG : DEFAULT_ECO_CONFIG);
   const [width, height] = env.size;
