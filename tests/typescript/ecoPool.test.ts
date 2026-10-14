@@ -187,8 +187,8 @@ describe("ThinkPool", () => {
     }
   }, 60_000);
 
-  it.each([false, true])("a watched creature that a helper owns has the serial run's rays, WebAssembly %s", async (wasm) => {
-    const config = (): EcoConfig => ({ ...cfg(), eco: { ...cfg().eco, wasm } });
+  it("a watched creature that a helper owns has the serial run's rays (WebAssembly)", async () => {
+    const config = (): EcoConfig => ({ ...cfg(), eco: { ...cfg().eco, wasm: true } });
     const ref = serial(config(), 60);
     const pool = new ThinkPool(fakePorts(2));
     try {

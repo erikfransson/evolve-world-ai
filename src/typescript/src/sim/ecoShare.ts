@@ -16,17 +16,18 @@ import { advanceRows, prepareRows } from "./wasm/residentStep.ts";
 import { SenseKernels } from "./wasm/senseKernels.ts";
 
 // Sense and think on helper threads. Each tick the coordinator, which owns the Ecosystem, publishes a packet:
-// every creature's pose, energy, species and memory, plus the changes since the last packet (item changes, deaths, and births
-// with their plan; the genome goes only to the helper that owns the creature). Each helper keeps a copy of the item world and the brains of the creatures it owns,
+// every creature's pose, energy and species, plus the changes since the last packet (item changes, deaths, and births
+// with their plan; the genome and the starting memory units go only to the helper that owns the creature, which keeps the memory from then on). Each helper keeps a copy of the item world and the brains of the creatures it owns,
 // runs senseThinkBatch for those and writes their outputs into the packet. The coordinator owns a share too and senses
 // it on its own creatures meanwhile; then it copies the helpers' outputs into its creatures and finishes the tick.
 // Each thread also does memory and motion of its own creatures and looks up what each touches (the part of the tick that
 // touches only one creature), so the coordinator is left with the order-dependent shared phase and the copies.
 // Helpers see exactly what Ecosystem.sensePhase sees, so results are identical.
+// Bodies are rows of each thread's kernel memory (wasm/resident.ts) when the kernels run, so the packet is filled from and read into the rows in bulk.
 // The packet is a plain buffer, so it travels by postMessage (one copy per helper).
 
 const DIED = 3; // delta record: DIED, id
-const BORN = 4; // delta record: BORN, id, owner, species, rayCount, raySpread, rayLength, memoryShort, memoryLong, hidden layers, ...sizes, genome length (the genome itself goes only to its owner, in Packet.genomes)
+const BORN = 4; // delta record: BORN, id, owner, species, rayCount, raySpread, rayLength, memoryShort, memoryLong, hidden layers, ...sizes, genome length (the genome itself, then the memory units, go only to its owner, in Packet.genomes)
 
 // Header slots (Int32).
 const H_COUNT = 0;
