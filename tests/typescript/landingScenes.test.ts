@@ -129,15 +129,18 @@ describe("live stats line", () => {
   });
 
   it("reads at most a few hundred bytes of the answer, however much the server sends", async () => {
-    let pulled = 0;
-    const endless = new ReadableStream<Uint8Array>({ pull(c) { pulled++; c.enqueue(new Uint8Array(100).fill(32)); } });
-    vi.stubGlobal("fetch", async () => new Response(endless, { status: 200 }));
-    expect(await fetchStats("http://x/stats")).toBeNull();
-    expect(pulled).toBeLessThan(10);
-    vi.stubGlobal("fetch", async () => new Response('{"creatures":5,"viewers":2}', { status: 200 }));
-    expect(await fetchStats("http://x/stats")).toEqual({ creatures: 5, viewers: 2 });
-    vi.stubGlobal("fetch", async () => new Response("{}", { status: 503 }));
-    expect(await fetchStats("http://x/stats")).toBeNull();
-    vi.unstubAllGlobals();
+    try {
+      let pulled = 0;
+      const endless = new ReadableStream<Uint8Array>({ pull(c) { pulled++; c.enqueue(new Uint8Array(100).fill(32)); } });
+      vi.stubGlobal("fetch", async () => new Response(endless, { status: 200 }));
+      expect(await fetchStats("http://x/stats")).toBeNull();
+      expect(pulled).toBeLessThan(10);
+      vi.stubGlobal("fetch", async () => new Response('{"creatures":5,"viewers":2}', { status: 200 }));
+      expect(await fetchStats("http://x/stats")).toEqual({ creatures: 5, viewers: 2 });
+      vi.stubGlobal("fetch", async () => new Response("{}", { status: 503 }));
+      expect(await fetchStats("http://x/stats")).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
