@@ -19,7 +19,7 @@ Branch `wasmphys`. Alternating pairs, load average 10 to 14, noise about 3%. Swi
 
 - Only worlds above 12 creatures use it (`SMALL_SORT` is the insertion sort path, kept in JS). The views are re-pointed after the memory grows (`ResidentStore.rebind`) and the sense kernel skips copying cellStart, owners and species.
 - Tests: `tests/typescript/wasmCrowd.test.ts` (18), array for array against `Crowd.rebuildRows` on rows scattered outside the world, at NaN and infinity, 20 fuzz worlds, the f32 columns, memory growth, shrinking to the JS size and back, whole runs, insert and retune, cross-mode saves, RL reuse. Red checks on crowd.wat: column clamp 6 tests fail, negative clamp 5, cellStart tail 9, owner 14, energy 14, energy signal 7, species 1.
-- Found on the way: the existing sense kernel traps with `memory access out of bounds` when a row holds NaN, 1e9 or infinite positions and the crowd was built in JS. Positions are bounded by `keepInside` in normal runs, so not reachable today, but worth a look.
+- Found on the way: the sense kernel trapped with `memory access out of bounds` for a position of about 1e9 or more (the item and rock walks clamped the first column only from below and the last only from above), with the JS crowd and with the WASM one. Positions are bounded by `keepInside` in normal runs, so it was not reachable, but on Live a trap would fail every tick. Both walks now skip an empty column range, like the crowd walk; test: creatures at 1e9, -1e9 and -1e18 in both crowd modes, with and without rock.
 
 ## Phase d: the item each creature touches, over the crowd's arrays (`touch` in crowd.wat)
 | Idea | Before | After | Speedup | Exact? | Peak RSS change | Lines added | Verdict |
@@ -45,3 +45,5 @@ Branch `wasmphys`. Alternating pairs, load average 10 to 14, noise about 3%. Swi
 
 - About 100 pairs overlap per tick at 9760 creatures, so the JS bump and the call per pair stay the larger part of the 0.7 ms left. Moving the bump into WASM (collide, hurt, confine with the event list replayed in order) could save about 0.3 ms more, not built: under 1% of a tick.
 - Tests: the pair sequence against a JS copy of the loops on 20 fuzz worlds (more than 200 pairs, creatures anywhere), and a crowded small world with damage among the whole-run tests. Red checks: neighbour cell column off 2 tests fail, grid row bound 2, second run start 2, NaN pair test inverted 1.
+
+- Edge tests added after the review of b to e (all go red on their mutation): switching between the WASM and the JS crowd across a memory growth (without `drop()` the old grid becomes the crowd again, without resetting `cellStart` the view is detached), the sense walks at extreme positions (either guard removed), an item exactly at reach (`<` to `<=` in the lookup), a pair exactly at contact distance (`>=` to `>` in the sweep). `ResidentStore.rebinders` is a set, and list inputs longer than the batch are cut to n.

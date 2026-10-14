@@ -297,6 +297,104 @@ describe.skipIf(!wasmAvailable())("the WebAssembly collision sweep finds the pai
   });
 });
 
+describe.skipIf(!wasmAvailable())("the WebAssembly kernels at their edges", () => {
+  afterEach(() => forceJsCrowd(false));
+
+  it("switching between the WebAssembly and the JS crowd while the memory grows", () => {
+    const eco = make(inland, 300);
+    const e = eco as Any;
+    for (let t = 0; t < 4; t++) eco.step();
+    for (const grow of [true, false]) {
+      e.gridCrowd(eco.members.length, undefined); // by the kernel
+      expect(e.crowd.kernel).not.toBeNull();
+      forceJsCrowd(true);
+      e.gridCrowd(eco.members.length, undefined); // by JS: the arrays are the crowd's own again
+      if (grow) e.kernels.brains.alloc(40 * 1024 * 1024); // replaces every view of the memory
+      expect(e.crowd.kernel).toBeNull(); // and does not make the kernel's old grid the crowd again
+      expect(crowdDifferences(eco)).toBe(0);
+      expect(e.crowd.cellStart.length).toBe(e.crowd.cols * e.crowd.rows + 1);
+      forceJsCrowd(false);
+      eco.step();
+      expect(crowdDifferences(eco)).toBe(0);
+    }
+  });
+
+  it("the sense kernel on creatures at extreme positions, in both crowd modes, with and without rock", () => {
+    for (const js of [false, true]) {
+      for (const build of [() => make((c) => c, 100), () => make(inland, 200)]) {
+        forceJsCrowd(js);
+        const eco = build();
+        for (let t = 0; t < 2; t++) eco.step();
+        eco.members.forEach((m, i) => {
+          const s = m.creature.state;
+          if (i % 6 === 0) s.x = 1e9;
+          if (i % 6 === 1) s.x = -1e9;
+          if (i % 6 === 2) s.y = 1e9;
+          if (i % 6 === 3) s.y = -1e9;
+          if (i % 6 === 4) s.x = s.y = -1e18;
+        });
+        eco.prepareTick();
+        expect(() => eco.sensePhase(0, eco.members.length)).not.toThrow();
+        forceJsCrowd(false);
+      }
+    }
+  });
+
+  it("an item exactly at reach is not touched, one just inside is", () => {
+    const eco = make((c) => ({ ...c, world: { ...c.world, foodDensity: 0.3 } }), 40);
+    const e = eco as Any;
+    for (let t = 0; t < 2; t++) eco.step();
+    eco.prepareTick();
+    eco.sensePhase(0, eco.members.length); // the packed item rows match the items
+    const items = e.items;
+    // an item with no other within 6 units, and a body 3 and 4 units from it (so exactly 5, with every value exact)
+    let item = -1;
+    for (let i = 0; i < items.count && item < 0; i++) {
+      if (items.kinds[i] === 0) continue;
+      let alone = true;
+      for (let j = 0; j < items.count && alone; j++) if (j !== i && items.kinds[j] !== 0 && Math.hypot(items.xs[j] - items.xs[i], items.ys[j] - items.ys[i]) < 8) alone = false;
+      if (alone) item = i;
+    }
+    expect(item).toBeGreaterThanOrEqual(0);
+    const bodyX = items.xs[item] + 3;
+    const bodyY = items.ys[item] + 4;
+    const back = scatter(eco, 3);
+    eco.members.forEach((m, i) => {
+      m.creature.state.x = i === 0 ? bodyX : 50 + 150 * i;
+      m.creature.state.y = i === 0 ? bodyY : 50;
+    });
+    e.gridCrowd(eco.members.length, undefined);
+    const crowd: Crowd = e.crowd;
+    const tables = e.kernels.itemTables(items);
+    expect(tables).not.toBeNull();
+    const out = new Int32Array(eco.members.length);
+    crowd.kernel!.touch(tables, items.rows, 1 / items.cell, 5, out);
+    expect(out[0]).toBe(-1);
+    crowd.kernel!.touch(tables, items.rows, 1 / items.cell, 5.000001, out);
+    expect(out[0]).toBe(item);
+    back();
+  });
+
+  it("a pair exactly the contact distance apart is not a pair, one just inside is", () => {
+    const eco = make((c) => c, 20);
+    const e = eco as Any;
+    eco.members.forEach((m, i) => {
+      m.creature.state.x = i === 1 ? 103 : 100 + 200 * i;
+      m.creature.state.y = i === 1 ? 104 : 100;
+    });
+    e.gridCrowd(eco.members.length, undefined);
+    const kernel = (e.crowd as Crowd).kernel!;
+    const pairs = (reach2: number): number => {
+      let n = 0;
+      kernel.sweepStart(reach2);
+      while (kernel.sweepNext()) n++;
+      return n;
+    };
+    expect(pairs(25)).toBe(0); // 3 and 4 apart is exactly 5
+    expect(pairs(25.000001)).toBe(1);
+  });
+});
+
 describe.skipIf(!wasmAvailable())("whole runs with the WebAssembly crowd grid and with the JS one", () => {
   afterEach(() => forceJsCrowd(false));
   const run = (build: () => Ecosystem, ticks: number, js: boolean, midRun?: (eco: Ecosystem, t: number) => void): [number, number, number] => {

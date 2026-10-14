@@ -18,6 +18,9 @@ export function forceJsMembers(flag: boolean): void {
 }
 export const jsMembersForced = (): boolean => jsOnly;
 
+// The first n elements, for lists that may be longer than the batch.
+const head = (a: ArrayLike<number>, n: number): ArrayLike<number> => (a.length === n ? a : Array.prototype.slice.call(a, 0, n) as number[]);
+
 export class WasmMembers {
   private readonly store: ResidentStore;
   private readonly exports: MembersExports;
@@ -48,8 +51,8 @@ export class WasmMembers {
     const outAt = store.grow(this.rOut, n * 4);
     const thresholdsAt = thresholds ? store.grow(this.rThresholds, n * 8) : 0;
     const { i32, f64 } = store; // after the last allocation
-    i32.set(rowAt as ArrayLike<number>, rowAtAt >> 2);
-    if (thresholds) f64.set(thresholds as ArrayLike<number>, thresholdsAt >> 3);
+    i32.set(head(rowAt, n), rowAtAt >> 2);
+    if (thresholds) f64.set(head(thresholds, n), thresholdsAt >> 3);
     const M = this.pM;
     i32[(M + L.M_N) >> 2] = n;
     i32[(M + L.M_ROW_AT) >> 2] = rowAtAt;

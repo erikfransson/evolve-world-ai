@@ -22,6 +22,8 @@ interface CrowdExports extends WebAssembly.Exports {
 }
 
 const REGIONS = ["touched", "rowAt", "cellOf", "perm", "permB", "count", "start", "occupied", "speciesIn", "xs", "ys", "energies", "species", "owners"] as const;
+// The first n elements, for lists that may be longer than the batch.
+const head = (a: ArrayLike<number>, n: number): ArrayLike<number> => (a.length === n ? a : Array.prototype.slice.call(a, 0, n) as number[]);
 type Name = (typeof REGIONS)[number];
 
 export class WasmCrowd {
@@ -37,7 +39,7 @@ export class WasmCrowd {
     this.crowd = crowd;
     this.exports = exports;
     this.pC = store.bank.alloc(L.C_BYTES);
-    store.rebind = () => this.bind(); // the views go stale when the memory grows
+    store.rebinders.add(() => this.bind()); // the views go stale when the memory grows
   }
 
   static create(store: ResidentStore, crowd: Crowd): WasmCrowd | null {
@@ -137,8 +139,8 @@ export class WasmCrowd {
     const at = {} as Record<Name, number>;
     for (const name of REGIONS) at[name] = store.grow(region[name], sizes[name]);
     const { i32, f64 } = store; // after the last allocation
-    i32.set(rowAt as ArrayLike<number>, at.rowAt >> 2);
-    if (species) i32.set(species, at.speciesIn >> 2);
+    i32.set(head(rowAt, n), at.rowAt >> 2);
+    if (species) i32.set(head(species, n), at.speciesIn >> 2);
     const C = this.pC;
     const fields: [number, number][] = [
       [L.C_N, n], [L.C_ROW_AT, at.rowAt], [L.C_CELL_OF, at.cellOf], [L.C_COLS, crowd.cols], [L.C_ROWS, crowd.rows], [L.C_RADIX_BITS, crowd.radixBits],

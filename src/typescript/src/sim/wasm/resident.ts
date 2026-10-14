@@ -119,7 +119,7 @@ export class ResidentStore {
   private chunk = 0;
   private left = 0;
   readonly species: EngineConfig[] = []; // the configs the rows' species indices stand for, set by the Ecosystem
-  rebind: (() => void) | null = null; // set by the Ecosystem: re-points the views it holds into the memory after it grew
+  readonly rebinders = new Set<() => void>(); // views of the memory held elsewhere (the Ecosystem's crowd): each is called to re-point after the memory grew
   stepper: WasmStepper | null = null; // the WebAssembly step (stepResident), when available
 
   constructor(bank: WasmBrainBank) {
@@ -133,7 +133,7 @@ export class ResidentStore {
     this.f64 = new Float64Array(buffer);
     this.i32 = new Int32Array(buffer);
     for (const s of this.states) s.bind(this.f64, this.i32);
-    this.rebind?.();
+    for (const rebind of this.rebinders) rebind();
   }
 
   // A new row.
@@ -163,7 +163,7 @@ export class ResidentStore {
   reset(): void {
     this.states.length = 0;
     this.species.length = 0;
-    this.rebind = null;
+    this.rebinders.clear();
     this.chunk = 0;
     this.left = 0;
     this.refresh();

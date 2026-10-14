@@ -116,6 +116,8 @@
       (local.set $cy0 (select (i32.const 0) (local.get $cy0) (i32.lt_s (local.get $cy0) (i32.const 0))))
       (local.set $cy1 (i32.trunc_sat_f64_s (f64.floor (f64.mul (f64.add (local.get $y) (local.get $far)) (local.get $inv)))))
       (local.set $cy1 (select (i32.sub (local.get $rows) (i32.const 1)) (local.get $cy1) (i32.ge_s (local.get $cy1) (local.get $rows))))
+      ;; a first column past the last (an extreme position) has no cells and must not index the tables
+      (if (i32.gt_s (local.get $cx0) (local.get $cx1)) (then (local.set $cy1 (i32.sub (local.get $cy0) (i32.const 1)))))
       (local.set $cp (local.get $cand))
       (local.set $cy (local.get $cy0))
       (block $cyd (loop $cyl
@@ -158,6 +160,7 @@
         (local.set $cy0 (select (i32.const 0) (local.get $cy0) (i32.lt_s (local.get $cy0) (i32.const 0))))
         (local.set $cy1 (i32.trunc_sat_f64_s (f64.floor (f64.mul (f64.add (local.get $y) (local.get $rext)) (local.get $rinv)))))
         (local.set $cy1 (select (i32.sub (local.get $rrows) (i32.const 1)) (local.get $cy1) (i32.ge_s (local.get $cy1) (local.get $rrows))))
+        (if (i32.gt_s (local.get $cx0) (local.get $cx1)) (then (local.set $cy1 (i32.sub (local.get $cy0) (i32.const 1)))))
         (local.set $cy (local.get $cy0))
         (block $rcyd (loop $rcyl
           (br_if $rcyd (i32.gt_s (local.get $cy) (local.get $cy1)))
