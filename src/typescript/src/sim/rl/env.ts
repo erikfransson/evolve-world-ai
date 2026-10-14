@@ -13,7 +13,6 @@ import type { PoolEntry } from "../seedPool.ts";
 import { energySignal, planOf } from "../sensors.ts";
 import type { BodyPlan, PlanView } from "../sensors.ts";
 import { speciesList, speciesRanges } from "../species.ts";
-import type { Species } from "../species.ts";
 import type { Genome } from "../types.ts";
 import { plainText } from "./validate.ts";
 import { envById } from "./envs.ts";
@@ -220,7 +219,6 @@ export function castFor(env: EnvSpec, config: EcoConfig, learner: Learner, seed:
 // Walls whose far side the learner reached: its centre a full body above the wall line.
 const crossed = (walls: readonly number[], minY: number, radius: number): number => walls.filter((y) => minY < y - radius).length;
 
-const learnerStartEnergy = (env: EnvSpec, species: readonly Species[]): number => env.learnerEnergy ?? species[env.role]!.startEnergy;
 
 // One kernel set per thread, reused by successive episodes (building one costs about 9% of a small episode).
 let spareKernels: SenseKernels | null = null;
@@ -248,14 +246,18 @@ export function runEpisode(
   const reach = 2 * config.creature.radius + 2; // bumping distance, for crediting a ram
   const ticks = Math.round(env.seconds / config.dt);
   const out: EpisodeResult = { reward: 0, food: 0, kills: 0, rams: 0, seconds: 0, energy: 0 };
+  const rivalEnergy = new Map<number, number>(); // each rival's energy after the previous tick, for crediting rams
   // The learner's last tick counts too: what it ate before it died; a dead learner ends with no energy.
   eco.onDeath = (m) => {
     if (m.id !== 0) {
       // A rival dying in contact with the living learner in a collision-damage world was rammed by it.
       const me = eco.get(0)?.creature.state;
       const s = m.creature.state;
-      // It must also hand the learner its energy this tick, so a rival starving next to it does not count.
-      if (env.collisionDamage && me?.alive && me.energy > lastEnergy && (me.x - s.x) ** 2 + (me.y - s.y) ** 2 <= reach * reach) out.rams++;
+      // It must have had energy left last tick, so a rival starving next to it does not count, and no other rival may touch it, so a
+      // rival-on-rival kill does not count. (The learner's own energy cannot tell: a kill hands over the rival's energy from before the
+      // hit, at most the damage both took, so it never rises.) Approximate: a rival eating poison while touching the learner counts too.
+      const near = (o: { x: number; y: number }): boolean => (o.x - s.x) ** 2 + (o.y - s.y) ** 2 <= reach * reach;
+      if (env.collisionDamage && me?.alive && (rivalEnergy.get(m.id) ?? 0) > 1 && near(me) && !eco.members.some((o) => o.id !== 0 && o.id !== m.id && o.creature.state.alive && near(o.creature.state))) out.rams++;
       return;
     }
     out.food = m.eaten;
@@ -263,7 +265,6 @@ export function runEpisode(
     out.energy = 0;
   };
   let cleared = 0; // seconds left when the learner ate the last food
-  let lastEnergy = learnerStartEnergy(env, eco.species); // the learner's energy after the previous tick
   let minY = Infinity; // the learner's highest point (walls run across, the food lies above them)
   // Only speed-scored envs without regrowth end early, and only when the learner itself ate every item (not a rival).
   const clearable = env.reward.fast !== undefined && env.food > 0 && env.foodRegrow === 0;
@@ -277,11 +278,12 @@ export function runEpisode(
       eco.finishTick();
     } else eco.step();
     onTick?.(eco);
+    if (env.collisionDamage) for (const m of eco.members) if (m.id !== 0) rivalEnergy.set(m.id, m.creature.state.energy);
     const me = eco.get(0);
     if (!me) break;
     out.food = me.eaten;
     out.kills = me.kills;
-    out.energy = lastEnergy = me.creature.state.energy;
+    out.energy = me.creature.state.energy;
     minY = Math.min(minY, me.creature.state.y);
     out.seconds = (t + 1) * config.dt;
     if (clearable && me.eaten === env.food) {
