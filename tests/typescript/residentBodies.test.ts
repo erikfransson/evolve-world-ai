@@ -129,4 +129,24 @@ describe.skipIf(!wasmAvailable())("resident bodies", () => {
     for (let t = 0; t < 20; t++) bad += checkedTick(eco);
     expect(bad).toBe(0);
   });
+
+  it("a batch that is not the whole world gets fresh sense inputs", () => {
+    const eco = world((c) => withEcoPreset(c, "inland-sea", ECO_PRESETS), 300);
+    const e = eco as Any;
+    for (let t = 0; t < 5; t++) eco.step(); // move things so stale inputs would differ
+    eco.prepareTick();
+    eco.sensePhase(0, 50);
+    const kernels = e.kernels;
+    const f32 = kernels.f32;
+    const scratch = new Float32Array(256);
+    let checked = 0;
+    for (let i = 0; i < 50; i++) {
+      const c = eco.members[i]!.creature as Any;
+      const at = kernels.brains.inputAt(c.kernelSlot) + c.plan.rayCount * kernels.stride;
+      scratch.fill(0);
+      c.writeBodyInputs(scratch, 0);
+      for (let k = 0; k < 5 + c.memory.length; k++, checked++) expect(Object.is(scratch[k], f32[at + k])).toBe(true);
+    }
+    expect(checked).toBeGreaterThan(250);
+  });
 });

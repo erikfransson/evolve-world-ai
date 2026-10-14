@@ -46,6 +46,7 @@ export function agingFactor(aging: Aging | null, ticksAlive: number): number {
 // The ground scales the distance moved, not the velocity or the energy costs: the same effort covers less (slow) or more (fast) ground.
 // turnOut and thrust in [-1, 1]; negative thrust brakes at maxBrake x its size (free, never reverses). Eating and death are separate (consume, settle).
 // upkeep is the plan's energy per second besides thrust and turning (planUpkeep).
+// Resident creatures run the same arithmetic on their row arrays in stepRows (wasm/residentStep.ts), which must stay in step with this.
 export function stepBody(s: CreatureState, turnOut: number, thrust: number, config: EngineConfig, k: Decays, heading: Heading, upkeep: number, terrain: Terrain = NO_TERRAIN, groundValue?: number): void {
   const { dt, creature: c, world: w } = config;
   // Exact exponential relaxation each tick keeps motion smooth and independent of dt.

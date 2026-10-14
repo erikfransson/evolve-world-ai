@@ -7,6 +7,7 @@ import type { World } from "../world.ts";
 import { WasmBrainBank } from "./brainKernel.ts";
 import type { PhaseTimer } from "../profile.ts";
 import { ResidentStore } from "./resident.ts";
+import { prepareRows } from "./residentStep.ts";
 import { MAX_RAYS, WasmSenser } from "./senser.ts";
 import { WasmFiller } from "./fillKernel.ts";
 
@@ -46,6 +47,8 @@ export class SenseKernels {
 
   // Back to the state of a new SenseKernels for this config, so successive Ecosystems on one thread can share the instances
   // (RL builds one per episode). Results are bit-identical to fresh kernels. One owner at a time; creatures of the previous owner must be gone.
+  // Resident rows are forgotten here, but the previous owner's ResidentStates still point at the same memory, which the new owner reuses:
+  // they must not be read or written after this.
   reset(config: EcoConfig): this {
     this.brains.reset();
     this.senser.reset();
@@ -110,6 +113,7 @@ export class SenseKernels {
         rows[k] = creatures[k]!.resident!.ptr;
         if (creatures[k] === this.detail) detail = this.detail;
       }
+      prepareRows(this.resident!.store, rows, n, world.terrain);
       return this.runRows(world, crowd, rows, selves, n, detail, prof);
     }
     if (n > this.slots.length) this.slots = new Int32Array(Math.max(n, 2 * this.slots.length));

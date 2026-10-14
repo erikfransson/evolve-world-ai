@@ -1,7 +1,6 @@
 import type { EngineConfig } from "./config.ts";
 import { HIT_CREATURE, HIT_NONE } from "./types.ts";
 import type { CreatureState, RayHit } from "./types.ts";
-import { F } from "./wasm/resident.ts";
 
 const SMALL_SORT = 12; // up to this many creatures rebuildFrom sorts by insertion: RL episodes have 1-11 creatures, the radix sort pays off for crowds
 
@@ -75,13 +74,7 @@ export class Crowd {
 
   // Snapshots positions and energies of states[0 .. n-1], and species[i] of each (all 0 without).
   rebuild(states: readonly CreatureState[], n: number, species?: ArrayLike<number>): void {
-    if (n > this.px.length) {
-      const size = Math.max(n, 2 * this.px.length);
-      this.px = new Float64Array(size);
-      this.py = new Float64Array(size);
-      this.pe = new Float64Array(size);
-      this.ps = new Int32Array(size);
-    }
+    this.fitGather(n);
     for (let i = 0; i < n; i++) {
       const s = states[i];
       this.px[i] = s.x;
@@ -92,8 +85,7 @@ export class Crowd {
     this.rebuildFrom(this.px, this.py, this.pe, n, this.ps);
   }
 
-  // The same from resident rows (see wasm/resident.ts): creature i is the row at f64 index rowAt[i], x, y and energy at the offsets of F (wasm/resident.ts).
-  rebuildRows(f: Float64Array, rowAt: ArrayLike<number>, n: number, species?: ArrayLike<number>): void {
+  private fitGather(n: number): void {
     if (n > this.px.length) {
       const size = Math.max(n, 2 * this.px.length);
       this.px = new Float64Array(size);
@@ -101,11 +93,16 @@ export class Crowd {
       this.pe = new Float64Array(size);
       this.ps = new Int32Array(size);
     }
+  }
+
+  // The same from resident rows (see wasm/resident.ts): creature i is the row at f64 index rowAt[i], with x then y first and the energy energyAt on.
+  rebuildRows(f: Float64Array, rowAt: ArrayLike<number>, energyAt: number, n: number, species?: ArrayLike<number>): void {
+    this.fitGather(n);
     for (let i = 0; i < n; i++) {
       const j = rowAt[i]!;
       this.px[i] = f[j]!;
       this.py[i] = f[j + 1]!;
-      this.pe[i] = f[j + F.energy]!;
+      this.pe[i] = f[j + energyAt]!;
       this.ps[i] = species ? species[i]! : 0;
     }
     this.rebuildFrom(this.px, this.py, this.pe, n, this.ps);

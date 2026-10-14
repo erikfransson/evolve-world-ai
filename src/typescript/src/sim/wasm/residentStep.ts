@@ -1,4 +1,4 @@
-import type { Aging, Body } from "../physics.ts";
+import type { Aging, Body, Decays } from "../physics.ts";
 import { agingFactor, decaysFor, keepInside } from "../physics.ts";
 import { OUTPUT_SIZE, energySignal, thrustCommand } from "../sensors.ts";
 import { Terrain } from "../terrain.ts";
@@ -10,8 +10,9 @@ import type { ResidentStore } from "./resident.ts";
 // byte addresses; row r is the f64 element r / 8 and its i32 fields start at r / 4.
 
 const body: Body = { x: 0, y: 0, vx: 0, vy: 0 }; // keepInside and keepOut work on an object
+const decays: Decays[] = []; // per species, refreshed each tick in place (a retune may change them)
 
-// Writes each row's brain input extras (energy signal, forward and sideways speed, turn rate, ground value; the fill kernel copies them as f32)
+// Twin of Creature.writeBodyInputs (parity test: tests/typescript/residentBodies.test.ts). Writes each row's brain input extras (energy signal, forward and sideways speed, turn rate, ground value; the fill kernel copies them as f32)
 // and the ground factor the step moves by.
 export function prepareRows(store: ResidentStore, rows: Int32Array, n: number, terrain: Terrain): void {
   const f = store.f64;
@@ -36,12 +37,12 @@ export function prepareRows(store: ResidentStore, rows: Int32Array, n: number, t
   }
 }
 
-// Memory and motion (Creature.remember, then steer) for each row of the batch. The brain outputs are in f32, the bank's memory as floats.
+// Twin of Creature.remember and physics.stepBody (same parity test). Memory and motion for each row of the batch. The brain outputs are in f32, the bank's memory as floats.
 export function stepRows(store: ResidentStore, f32: Float32Array, rows: Int32Array, n: number, aging: Aging | null, terrain: Terrain): void {
   const f = store.f64;
   const i32 = store.i32;
   const configs = store.species;
-  const decays = configs.map(decaysFor);
+  for (let s = 0; s < configs.length; s++) decays[s] = decaysFor(configs[s]!);
   for (let k = 0; k < n; k++) {
     const o = rows[k]! >> 3;
     const b = o << 1;

@@ -46,8 +46,6 @@ export const LAYOUT = {
   F_BYTES: 64,
 } as const;
 
-export type LayoutName = keyof typeof LAYOUT;
-
 // The offset in f64 elements, for a byte offset of an f64 field.
 export const f64At = (bytes: number): number => bytes / 8;
 // The offset in i32 elements.

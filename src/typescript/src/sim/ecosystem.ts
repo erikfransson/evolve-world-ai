@@ -409,7 +409,7 @@ export class Ecosystem {
   }
 
   private gridCrowd(n: number, species?: ArrayLike<number>): void {
-    if (this.resident) this.crowd.rebuildRows(this.resident.f64, this.rowAt, n, species);
+    if (this.resident) this.crowd.rebuildRows(this.resident.f64, this.rowAt, F.energy, n, species);
     else this.crowd.rebuild(this.states, n, species);
   }
 
@@ -421,7 +421,7 @@ export class Ecosystem {
 
   // Phase 1a for members start .. end-1, after prepareTick: sense and think into each creature's outputs.
   sensePhase(start: number, end: number): void {
-    if (this.resident && start === 0 && end === this.members.length && this.bySlot.length === end) {
+    if (this.resident && start === 0 && end === this.members.length) {
       // Resident bodies: the batch is the maintained row list, nothing to gather per creature.
       this.batchAll = true;
       this.profile?.lap("batch build");

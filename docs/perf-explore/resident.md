@@ -1,6 +1,6 @@
 | Idea | Before | After | Speedup | Exact? | Peak RSS change | Lines added | Verdict |
 |------|--------|-------|---------|--------|-----------------|-------------|---------|
-| Resident rows, physics in JS on the row arrays, fill kernel only moves data (`resident-lite`) | 54.9 ms per tick single-threaded (53.5 all threads) | 48.1 (48.8) | 1.14x (1.10x) | bit-identical, every fingerprint, same Math as today | -19% (334 against 412 MB) | 750 production (91 WAT) + 132 test | Recommended |
+| Resident rows, physics in JS on the row arrays, fill kernel only moves data (`resident-lite`) | 54.9 ms per tick single-threaded (53.5 all threads) | 48.1 (48.8) | 1.14x (1.10x) | bit-identical, every fingerprint, same Math as today | -7% (331 against 356 MB, independent measurement) | 750 production (91 WAT) + 132 test | Recommended |
 | Same with step, exp, ground and keepOut in WAT, fdlibm ports and a probe (`resident`, reviewed) | 54.9 (53.5) | 44.2 (44.5) | 1.24x (1.20x) | bit-identical on Node, probe turns it off elsewhere | -24% (313 MB) | 1270 production + 161 test | Larger, two languages for the physics |
 
 Inland Sea, 10000 creatures, serial, wasm on, 15 s, development a561bed (memory growth in eighths already in). Medians of cpuMsPerTick over 3 alternating rounds of the three variants, `node --single-threaded` (load 11 to 15) and then with all threads (load 11 to 14). Fingerprint 830514026 in every run.
