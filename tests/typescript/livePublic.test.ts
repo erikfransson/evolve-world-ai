@@ -150,8 +150,9 @@ describe("public server: GET /stats", () => {
     const { world } = await serve(port);
     const eco = world.eco;
     Object.defineProperty(world, "eco", { configurable: true, get: () => { throw new Error("mid-swap"); } });
-    vi.spyOn(console, "error").mockImplementation(() => {});
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
     expect((await fetch(`http://127.0.0.1:${port}/stats`)).status).toBe(503);
+    quiet.mockRestore();
     Object.defineProperty(world, "eco", { configurable: true, value: eco, writable: true });
     expect((await fetch(`http://127.0.0.1:${port}/stats`)).status).toBe(200);
   });
