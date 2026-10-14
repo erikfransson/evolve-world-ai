@@ -4,7 +4,19 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Evolve World</title>
-    <meta name="description" content="Watch neural creatures evolve to survive." />
+    <meta name="description" content="Watch tiny neural creatures learn and evolve to survive, right in your browser. Join one shared live world, or train your own." />
+    <meta name="theme-color" content="#0b1d16" />
+    <link rel="canonical" href="https://erikfransson.github.io/evolve-world-ai/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Evolve World" />
+    <meta property="og:title" content="Evolve World" />
+    <meta property="og:description" content="Watch tiny neural creatures learn and evolve to survive, right in your browser. Join one shared live world, or train your own." />
+    <meta property="og:url" content="https://erikfransson.github.io/evolve-world-ai/" />
+    <meta property="og:image" content="https://erikfransson.github.io/evolve-world-ai/og.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Coloured creatures with sensing rays grazing on food in Evolve World" />
+    <meta name="twitter:card" content="summary_large_image" />
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -18,8 +30,11 @@
           <path d="M19 16 L29 8 M19 16 L30 16 M19 16 L29 24" />
         </svg>
         <h1>Evolve World</h1>
-        <p class="lede">Neural creatures that learn to survive, one generation at a time.</p>
-        <p class="credit">Created by Erik Fransson. <a href="https://github.com/erikfransson/evolve-world-ai/issues">Feedback and suggestions welcome in GitHub issues</a>.</p>
+        <p class="lede">Tiny creatures with neural network brains learn to find food, dodge poison and survive. Watch them evolve, right in your browser.</p>
+        <div class="cta">
+          <a class="btn primary" href="live/"><span class="live-dot" aria-hidden="true"></span>Watch the Live World</a>
+          <a class="btn" href="#train">Train your own</a>
+        </div>
       </header>
       <section class="group featured" aria-labelledby="g-worlds">
         <h2 class="group-title" id="g-worlds">Worlds</h2>
@@ -28,7 +43,8 @@
           <div class="mode-body">
             <span class="live-pill"><span class="live-dot" aria-hidden="true"></span>Live</span>
             <h2>Live World</h2>
-            <p>One shared world that keeps evolving. Watch it live.</p>
+            <p>One shared world on the Inland Sea that never stops evolving. Follow a creature to see what it senses, or add your own and see if its line survives.</p>
+            <p class="live-stats" id="liveStats" hidden></p>
             <span class="go">Open Live World <span aria-hidden="true">→</span></span>
           </div>
         </a>
@@ -36,12 +52,12 @@
           <canvas data-scene="ecosystem" aria-hidden="true"></canvas>
           <div class="mode-body">
             <h2>Ecosystem</h2>
-            <p>Many creatures share one world, compete for regrowing food and pass on their brains.</p>
+            <p>Your own world in this tab. Creatures share regrowing food, bump into each other and pass their brains on to their children. Tune the world and watch what evolves.</p>
             <span class="go">Open Ecosystem <span aria-hidden="true">→</span></span>
           </div>
         </a>
       </section>
-      <section class="group" aria-labelledby="g-train">
+      <section class="group" id="train" aria-labelledby="g-train">
         <h2 class="group-title" id="g-train">Train creatures</h2>
         <nav class="modes" aria-label="Training">
           <a class="mode" href="trials/">
@@ -62,7 +78,32 @@
           </a>
         </nav>
       </section>
-      <footer class="foot"><span class="ver" id="version"></span><a href="https://github.com/erikfransson/evolve-world-ai">Source on GitHub</a></footer>
+      <section class="group how" aria-labelledby="g-how">
+        <h2 class="group-title" id="g-how">How it works</h2>
+        <ol class="steps">
+          <li>
+            <svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="10" cy="16" r="5" /><path d="M15 16 L29 7 M15 16 L30 16 M15 16 L29 25" /></svg>
+            <h3>Sense</h3>
+            <p>Each creature sees the world through a fan of rays that pick up food, poison, walls and other creatures.</p>
+          </li>
+          <li>
+            <svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="6" cy="9" r="2.5" /><circle cx="6" cy="23" r="2.5" /><circle cx="16" cy="6" r="2.5" /><circle cx="16" cy="16" r="2.5" /><circle cx="16" cy="26" r="2.5" /><circle cx="26" cy="16" r="2.5" /><path d="M8 9 L14 6 M8 9 L14 16 M8 23 L14 16 M8 23 L14 26 M18 6 L24 16 M18 16 L24 16 M18 26 L24 16" /></svg>
+            <h3>Think</h3>
+            <p>A small neural network turns what it sees, and what it remembers, into turning and speed.</p>
+          </li>
+          <li>
+            <svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="9" cy="20" r="5" /><circle cx="22" cy="10" r="3.5" /><circle cx="24" cy="24" r="3.5" /><path d="M13 17 L19 12 M14 21 L20 23" /></svg>
+            <h3>Evolve</h3>
+            <p>Creatures that eat well have children with slightly changed brains. Over many generations, better behaviour takes over.</p>
+          </li>
+        </ol>
+      </section>
+      <footer class="foot">
+        <span class="ver" id="version"></span>
+        <span>Created by Erik Fransson</span>
+        <a href="https://github.com/erikfransson/evolve-world-ai/issues">Feedback and ideas</a>
+        <a href="https://github.com/erikfransson/evolve-world-ai">Source on GitHub</a>
+      </footer>
     </main>
     <script type="module" src="./src/landing.ts"></script>
   </body>

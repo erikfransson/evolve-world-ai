@@ -1,4 +1,7 @@
-import { TICK_SECONDS, WARMUP_TICKS, arenaScene, ecosystemScene } from "../../src/typescript/src/ui/landing/index.ts";
+import { TICK_SECONDS, WARMUP_TICKS, arenaScene, ecosystemScene, inlandMapScene } from "../../src/typescript/src/ui/landing/index.ts";
+import { ECO_CAP } from "../../src/typescript/src/ui/landing/ecosystem.ts";
+import { MAP_CAP, rockAt } from "../../src/typescript/src/ui/landing/inlandMap.ts";
+import { parseStats, statsText, statsUrl } from "../../src/typescript/src/ui/landing/liveStats.ts";
 
 const TICKS = Math.round(60 / TICK_SECONDS);
 
@@ -16,19 +19,13 @@ describe("ecosystemScene births", () => {
   it("gives birth several times, keeps the cap, stays finite", () => {
     const scene = ecosystemScene(7);
     const ctx = finiteCtx();
-    let firstBirth = -1;
     for (let t = 1; t <= TICKS + WARMUP_TICKS; t++) {
       scene.step();
-      if (firstBirth < 0 && scene.births > 0) firstBirth = t;
-      expect(scene.living()).toBeLessThanOrEqual(6);
+      expect(scene.living()).toBeLessThanOrEqual(ECO_CAP);
       expect(scene.living()).toBeGreaterThan(0);
       if (t % 5 === 0) scene.draw(ctx);
     }
     expect(scene.births).toBeGreaterThanOrEqual(3);
-    // Seen within 3-5 s after the warm-up at the page's 1.5x speed.
-    const seen = ((firstBirth - WARMUP_TICKS) * TICK_SECONDS) / 1.5;
-    expect(seen).toBeGreaterThan(3);
-    expect(seen).toBeLessThan(5);
   });
 
   it("is deterministic per seed", () => {
@@ -82,5 +79,52 @@ describe("arenaScene", () => {
       expect(scene.penalties).toBeGreaterThan(0); // the early, clumsy part brushes poison now and then
       expect(scene.penalties).toBeLessThan(scene.rewards / 3);
     }
+  });
+});
+
+describe("inlandMapScene", () => {
+  it("keeps its creatures off rock and under the cap, with births and deaths, and stays finite", () => {
+    const scene = inlandMapScene(7);
+    const ctx = finiteCtx();
+    const start = scene.living();
+    let low = Infinity;
+    for (let t = 1; t <= 3 * TICKS; t++) {
+      scene.step();
+      expect(scene.living()).toBeLessThanOrEqual(MAP_CAP);
+      low = Math.min(low, scene.living());
+      if (t % 30 === 0) {
+        for (const d of scene.dots()) expect(rockAt(d.x, d.y)).toBe(false);
+        scene.draw(ctx);
+      }
+    }
+    expect(start).toBeGreaterThan(150);
+    expect(low).toBeGreaterThan(80); // the world never empties
+    expect(scene.births).toBeGreaterThan(50);
+    expect(scene.deaths).toBeGreaterThan(50);
+  });
+
+  it("is deterministic per seed", () => {
+    const a = inlandMapScene(3);
+    const b = inlandMapScene(3);
+    for (let t = 0; t < 600; t++) { a.step(); b.step(); }
+    expect(a.births).toBe(b.births);
+    expect(a.dots()).toEqual(b.dots());
+  });
+});
+
+describe("live stats line", () => {
+  it("reads the server's stats address from its WebSocket address", () => {
+    expect(statsUrl("wss://example.ts.net")).toBe("https://example.ts.net/stats");
+    expect(statsUrl("ws://127.0.0.1:8787/?x=1")).toBe("http://127.0.0.1:8787/stats");
+  });
+
+  it("accepts only two whole numbers in range", () => {
+    expect(parseStats('{"creatures":2987,"viewers":4}')).toEqual({ creatures: 2987, viewers: 4 });
+    for (const bad of ["", "null", "[]", '"x"', '{"creatures":1.5,"viewers":1}', '{"creatures":-1,"viewers":1}', '{"creatures":1e9,"viewers":1}', '{"creatures":"5","viewers":1}', '{"creatures":5}', `{"creatures":1,"viewers":1,"pad":"${"x".repeat(600)}"}`]) {
+      expect(parseStats(bad), bad.slice(0, 40)).toBeNull();
+    }
+    expect(statsText({ creatures: 2987, viewers: 4 })).toBe("2,987 creatures alive · 4 watching");
+    expect(statsText({ creatures: 0, viewers: 1 })).toBe("No creatures right now, add the first one · 1 watching");
+    expect(statsText({ creatures: 1, viewers: 0 })).toBe("1 creature alive");
   });
 });

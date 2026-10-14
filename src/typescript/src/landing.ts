@@ -1,13 +1,25 @@
 import "./base.css";
 import "./landing.css";
 import { fitCanvas } from "./ui/canvas.ts";
-import { TICK_SECONDS, WARMUP_TICKS, arenaScene, ecosystemScene, liveScene, trialsScene } from "./ui/landing/index.ts";
-import type { Scene } from "./ui/landing/index.ts";
+import { TICK_SECONDS, WARMUP_TICKS, arenaScene, ecosystemScene, inlandMapScene, trialsScene } from "./ui/landing/index.ts";
+import type { MapScene, Scene } from "./ui/landing/index.ts";
+import inlandSea from "./ui/landing/inland-sea.webp";
+import { fetchStats, statsText, statsUrl } from "./ui/landing/liveStats.ts";
 import { TickClock } from "./ui/tickClock.ts";
+import { serverUrl } from "./live/serverUrl.ts";
 import { VERSION } from "./version.ts";
 
-const SCENES: Record<string, (seed: number) => Scene> = { trials: trialsScene, ecosystem: ecosystemScene, arena: arenaScene, live: liveScene };
+const SCENES: Record<string, (seed: number) => Scene> = { trials: trialsScene, ecosystem: ecosystemScene, arena: arenaScene, live: inlandMapScene };
 document.getElementById("version")!.textContent = `Evolve World v${VERSION}`;
+
+// The Live World card's numbers, once per visit; the line stays hidden when the server does not answer.
+const statsLine = document.getElementById("liveStats")!;
+const local = import.meta.env.DEV || ["127.0.0.1", "localhost"].includes(location.hostname);
+void fetchStats(statsUrl(serverUrl(location.search, local))).then((s) => {
+  if (!s) return;
+  statsLine.textContent = statsText(s);
+  statsLine.hidden = false;
+});
 
 const SPEED = 1.5; // times real time
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -26,6 +38,20 @@ for (const canvas of document.querySelectorAll<HTMLCanvasElement>("canvas[data-s
   const card: Card = { ctx: canvas.getContext("2d")!, canvas, scene: make(7), visible: false };
   for (let i = 0; i < WARMUP_TICKS; i++) card.scene.step(); // start mid-action
   cards.push(card);
+}
+
+// The Live World card's map picture; the card draws plain ground until it has loaded.
+const mapCard = cards.find((c) => c.canvas.dataset.scene === "live");
+if (mapCard) {
+  const img = new Image();
+  img.src = inlandSea;
+  img.decode().then(
+    () => {
+      (mapCard.scene as MapScene).background = img;
+      if (mapCard.visible) drawCard(mapCard);
+    },
+    () => {},
+  );
 }
 
 const drawCard = (c: Card): void => {

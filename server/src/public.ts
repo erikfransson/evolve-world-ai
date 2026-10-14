@@ -71,6 +71,7 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
       .writeHead(200, {
         connection: "close",
         "content-type": "application/json",
+        "content-length": Buffer.byteLength(statsBody),
         "cache-control": "public, max-age=10",
         "access-control-allow-origin": "*",
         "x-content-type-options": "nosniff",

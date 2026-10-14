@@ -1,0 +1,19 @@
+<!doctype html><!-- The share image public/og.jpg: open under `npx vite` and screenshot at 1200 x 630. --><html><head><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
+<style>html,body{margin:0;width:1200px;height:630px;overflow:hidden;background:#0b1d16;font-family:Inter,sans-serif}
+canvas{position:absolute;left:300px;top:-60px;width:600px;height:375px;transform:scale(2);transform-origin:0 0}
+.shade{position:absolute;inset:0;background:linear-gradient(90deg,rgba(11,29,22,.94) 0%,rgba(11,29,22,.8) 38%,rgba(11,29,22,0) 66%)}
+.t{position:absolute;left:72px;top:190px;color:#e6f4ea}
+.t h1{font-size:76px;margin:0;font-weight:700;letter-spacing:.01em}
+.t p{font-size:28px;color:#a9c7b8;margin:18px 0 0;max-width:520px;line-height:1.35}
+.pill{display:inline-flex;align-items:center;gap:10px;margin-bottom:22px;padding:6px 16px 6px 12px;border:1px solid rgba(255,90,95,.55);border-radius:999px;background:rgba(255,90,95,.12);color:#ff8a8e;font-size:18px;font-weight:700;letter-spacing:.14em}
+.dot{width:12px;height:12px;border-radius:50%;background:#ff5a5f}</style></head>
+<body><canvas id="c" width="1200" height="750"></canvas><div class="shade"></div>
+<div class="t"><div class="pill"><span class="dot"></span>LIVE</div><h1>Evolve World</h1><p>Tiny creatures with neural network brains evolve to survive. Watch them in your browser.</p></div>
+<script type="module">
+import { inlandMapScene } from "../../src/ui/landing/inlandMap.ts";
+import url from "../../src/ui/landing/inland-sea.webp";
+const c = document.getElementById("c"); const ctx = c.getContext("2d");
+const s = inlandMapScene(11); for (let i = 0; i < 900; i++) s.step();
+const img = new Image(); img.src = url; await img.decode(); s.background = img; await document.fonts.ready;
+s.draw(ctx); window.__done = true;
+</script></body></html>
