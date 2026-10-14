@@ -192,6 +192,7 @@ function checkedConfig(raw: unknown): EcoConfig {
   if (!(config.dt > 0 && config.dt <= 1)) invalid("dt is out of bounds");
   if (!(creature.radius > 0 && creature.radius <= MAX_BODY_RADIUS && creature.rayLength > 0 && creature.rayLength <= 5000)) invalid("creature radius or ray length is out of bounds");
   whole(eco.maxPopulation, 0, MAX_CREATURES, "eco.maxPopulation");
+  whole(eco.birthReserve, 0, MAX_CREATURES, "eco.birthReserve");
   whole(eco.initialPopulation, 0, MAX_CREATURES, "eco.initialPopulation");
   return config;
 }

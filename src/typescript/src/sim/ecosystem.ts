@@ -517,7 +517,8 @@ export class Ecosystem {
     n = members.length;
     first = n > 0 ? this.rng.int(n) : 0;
     const eco = this.config.eco;
-    for (let k = 0; k < n && members.length < eco.maxPopulation; k++) {
+    const birthCap = eco.maxPopulation - eco.birthReserve;
+    for (let k = 0; k < n && members.length < birthCap; k++) {
       const parent = members[(first + k) % n];
       if (parent.creature.state.energy >= parent.birth.energy && this.tick - parent.lastBirthTick >= parent.cooldownTicks) this.giveBirth(parent);
     }
