@@ -31,6 +31,7 @@ const GAP = 80; // free passage kept between rock and the walls and between piec
 const TRIES = 40; // placements tried per piece before giving up on the rest of its kind
 const MAX_ROCK_SHARE = 0.4; // rock never covers more of the world than this, however high the setting
 export const ROCK_CELL = 300; // world units per cell of the rock grid
+const CLEAR_CELL = 100; // world units per square of keepOut's clear-of-rock raster
 
 export const PATCH_SIZE_RANGE = [0.4, 2.5] as const; // the form's range for the size of a slow or fast patch, a multiple of the standard one
 export const MAX_PIECES = 300; // pieces of one kind, however high the setting, so a map stays cheap to build and to look up
@@ -127,6 +128,34 @@ export class Terrain {
   }
 
   private readonly range = new Int32Array(4);
+  // keepOut's early-out: one byte per CLEAR_CELL square, 1 where a disc of nearRadius could touch rock from somewhere inside it. Built on the first keepOut per radius.
+  private nearRadius = NaN;
+  private near = new Uint8Array(0);
+  private nearCols = 0;
+  private nearRows = 0;
+
+  private buildNear(radius: number): void {
+    const cols = (this.nearCols = Math.ceil(this.width / CLEAR_CELL));
+    const rows = (this.nearRows = Math.ceil(this.height / CLEAR_CELL));
+    const near = (this.near = new Uint8Array(cols * rows));
+    for (let i = 0; i < this.rockCount; i++) {
+      const x = this.rockX[i]!;
+      const y = this.rockY[i]!;
+      const reach = this.rockR[i]! + radius + 1; // +1 world unit of slack over the exact touch distance
+      const c0 = Math.max(0, Math.floor((x - reach) / CLEAR_CELL));
+      const c1 = Math.min(cols - 1, Math.floor((x + reach) / CLEAR_CELL));
+      const r0 = Math.max(0, Math.floor((y - reach) / CLEAR_CELL));
+      const r1 = Math.min(rows - 1, Math.floor((y + reach) / CLEAR_CELL));
+      for (let r = r0; r <= r1; r++) {
+        const dy = Math.max(r * CLEAR_CELL - y, 0, y - (r + 1) * CLEAR_CELL);
+        for (let c = c0; c <= c1; c++) {
+          const dx = Math.max(c * CLEAR_CELL - x, 0, x - (c + 1) * CLEAR_CELL);
+          if (dx * dx + dy * dy < reach * reach) near[r * cols + c] = 1;
+        }
+      }
+    }
+    this.nearRadius = radius;
+  }
 
   // -1 on slow ground, 1 on fast ground, 0 elsewhere.
   valueAt(x: number, y: number): number {
@@ -157,6 +186,10 @@ export class Terrain {
   // restitution like a wall. Repeats a few times, since leaving one disc of a ridge can enter the next.
   keepOut(s: Body, radius: number, restitution: number): void {
     if (this.rockCount === 0) return;
+    if (radius !== this.nearRadius) this.buildNear(radius);
+    const nx0 = Math.floor(s.x / CLEAR_CELL);
+    const ny0 = Math.floor(s.y / CLEAR_CELL);
+    if (nx0 >= 0 && nx0 < this.nearCols && ny0 >= 0 && ny0 < this.nearRows && this.near[ny0 * this.nearCols + nx0] === 0) return; // no disc reaches this square (NaN fails the tests and takes the full path)
     const range = this.range;
     for (let pass = 0; pass < 4; pass++) {
       let moved = false;
