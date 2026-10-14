@@ -229,7 +229,9 @@ describe("live link", () => {
       FakeSocket.last!.onmessage!({ data: JSON.stringify({ t: "hello", version: PROTOCOL_VERSION - 1 }) });
       expect(states.at(-1)).toBe("updating");
       const first = FakeSocket.last;
-      vi.advanceTimersByTime(60_000);
+      vi.advanceTimersByTime(59_000);
+      expect(FakeSocket.last).toBe(first); // an older server is asked only about once a minute
+      vi.advanceTimersByTime(17_000);
       expect(FakeSocket.last).not.toBe(first); // retried
       FakeSocket.last!.onmessage!({ data: JSON.stringify({ t: "hello", version: PROTOCOL_VERSION + 1 }) });
       expect(states.at(-1)).toBe("outdated");

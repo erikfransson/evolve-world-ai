@@ -27,6 +27,7 @@ const PING_EVERY_MS = 20_000;
 export const HIDDEN_CLOSE_MS = 3 * 60_000; // a tab hidden this long lets go of its viewer slot, and connects again when shown
 const STALE_MS = 15_000; // no message for this long counts as a dead link
 const OFFLINE_AFTER_FAILURES = 2; // the first try is "connecting", later failed ones "offline"
+const UPDATING_RETRY_S = 60; // while the server runs an older protocol (plus up to 25% jitter)
 
 const n = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : 0);
 const MAX_COUNT = 1e9; // creatures, births, items: far past any real world, short enough for a tile
@@ -206,7 +207,9 @@ export class LiveLink {
 
   private lost(): void {
     this.ws = null;
-    const wait = retryDelayS(this.failures++);
+    // An older server costs it a full connect per try, so while it is being updated the page asks only about once a minute.
+    const wait = this.updating ? UPDATING_RETRY_S * (1 + 0.25 * Math.random()) : retryDelayS(this.failures);
+    this.failures++;
     this.h.onState(this.full ? "full" : this.updating ? "updating" : this.failures >= OFFLINE_AFTER_FAILURES ? "offline" : "connecting", Math.ceil(wait));
     this.timer = setTimeout(() => this.open(), wait * 1000);
   }
