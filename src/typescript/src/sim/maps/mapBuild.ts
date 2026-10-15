@@ -70,6 +70,9 @@ export interface BuiltMap {
   stats: { rockDiscs: number; massifDiscs: number; stones: number; mud: number; firm: number; rockShare: number };
 }
 
+// Bump when a change here alters any built map: saves record it with the spec (mapVersion), and maps.test.ts pins the built data to catch a missed bump.
+export const MAP_BUILD = 1;
+
 const LIMITS = { layers: 64, points: 64, discs: MAX_MAP_DISCS, area: 2e9 }; // of a spec, and the world area it may cover
 
 const valueNoise = (x: number, y: number, s: number): number => noise(x, y, s, CUBIC_FADE);

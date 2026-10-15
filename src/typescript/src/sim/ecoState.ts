@@ -24,7 +24,7 @@ const OLDEST_VERSION = 1;
 
 export interface EcoState {
   version: number;
-  mapVersion?: string; // hash of the named map's built data; absent in older saves and in worlds without a named map
+  mapVersion?: string; // the named map's mapVersion (spec hash and MAP_BUILD); absent in older saves and in worlds without a named map
   config: EcoConfig; // as it stands, retunes included; eco.wasm says whether the run used the kernels
   core: EcoCore;
   items: { xs: string; ys: string; kinds: string; nextItem: string; cellHead: string; freeSlots: string; freeCount: number };

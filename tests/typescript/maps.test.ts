@@ -7,8 +7,8 @@ import { restoreState, saveState } from "../../src/typescript/src/sim/ecoState.t
 import type { EcoState } from "../../src/typescript/src/sim/ecoState.ts";
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
 import { createRng } from "../../src/typescript/src/sim/rng.ts";
-import { MAPS, builtMap, mapVersion } from "../../src/typescript/src/sim/maps/index.ts";
-import { buildMap } from "../../src/typescript/src/sim/maps/mapBuild.ts";
+import { MAPS, builtHash, builtMap, mapVersion } from "../../src/typescript/src/sim/maps/index.ts";
+import { buildMap, MAP_BUILD } from "../../src/typescript/src/sim/maps/mapBuild.ts";
 import { MAX_MAP_DISC_R } from "../../src/typescript/src/sim/maps/mapParts.ts";
 import { CAP_CELL, discsBlocked, MapWeights, WEIGHT_UNIT } from "../../src/typescript/src/sim/maps/weights.ts";
 import type { MapSpec } from "../../src/typescript/src/sim/maps/mapBuild.ts";
@@ -48,9 +48,15 @@ describe("The Inland Sea map", () => {
     expect(map.ground.bytes + w.bytes).toBeLessThan(1_100_000);
   });
 
-  // Red when inlandSea.ts changes the built rock, ground or weights; update the pin, which makes older Live saves refuse to restore.
-  it("has a pinned version", () => {
-    expect(mapVersion("inland-sea")).toBe("cd938f9e");
+  // builtHash red: the built rock, ground or weights changed. If the spec did not change, bump MAP_BUILD in mapBuild.ts; then update both pins.
+  // A new mapVersion makes older Live saves count as another world's.
+  it("has a pinned version and pinned built data", () => {
+    expect(builtHash("inland-sea")).toBe("cd938f9e");
+    expect(mapVersion("inland-sea")).toBe("d09e9129-1");
+  });
+
+  it("versions a map by its spec and MAP_BUILD, not by floating point results", () => {
+    expect(mapVersion("inland-sea")).toMatch(new RegExp(`^[0-9a-f]{8}-${MAP_BUILD}$`));
   });
 
   it("has the regions: no poison in the sea, more on the north shore, poor food on the dunes, rich food in the shallows", () => {
