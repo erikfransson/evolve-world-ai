@@ -1,3 +1,5 @@
+import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { GROUND_HALF, oneKindPerNode } from "../../src/typescript/src/sim/groundField.ts";
 import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
@@ -31,7 +33,7 @@ describe("The Inland Sea map", () => {
 
   it("is built once per name and fits the world and the bounds", () => {
     expect(builtMap("inland-sea")).toBe(map);
-    expect([SEA.width, SEA.height]).toEqual([40000, 25000]);
+    expect([SEA.width, SEA.height]).toEqual([30000, 18750]);
     expect(map.rock.length).toBeGreaterThan(500);
     expect(map.rock.length).toBeLessThanOrEqual(8000);
     for (const d of map.rock) {
@@ -48,7 +50,7 @@ describe("The Inland Sea map", () => {
 
   // Red when inlandSea.ts changes the built rock, ground or weights; update the pin, which makes older Live saves refuse to restore.
   it("has a pinned version", () => {
-    expect(mapVersion("inland-sea")).toBe("2dbc735a");
+    expect(mapVersion("inland-sea")).toBe("cd938f9e");
   });
 
   it("has the regions: no poison in the sea, more on the north shore, poor food on the dunes, rich food in the shallows", () => {
@@ -56,8 +58,8 @@ describe("The Inland Sea map", () => {
     let mud = 0;
     let mudFood = 0;
     let mudPoison = 0;
-    for (let x = 1000; x < 39000; x += 250) {
-      for (let y = 1000; y < 24000; y += 250) {
+    for (let x = 750; x < 29250; x += 190) {
+      for (let y = 750; y < 18000; y += 190) {
         if (sea.valueAt(x, y) !== TERRAIN_SLOW) continue;
         mud++;
         mudFood += w.byteAt(0, x, y) / WEIGHT_UNIT;
@@ -67,11 +69,11 @@ describe("The Inland Sea map", () => {
     expect(mud).toBeGreaterThan(1000);
     expect(mudFood / mud).toBeGreaterThan(1.3);
     expect(mudPoison / mud / WEIGHT_UNIT).toBeLessThan(0.15); // almost none: only the fringe where the sea's edge fades
-    expect(w.byteAt(1, 22000, 6500) / WEIGHT_UNIT).toBeGreaterThan(1.7); // the ash shore
-    expect(w.byteAt(0, 22000, 6500) / WEIGHT_UNIT).toBeGreaterThan(1.5);
+    expect(w.byteAt(1, 16500, 4875) / WEIGHT_UNIT).toBeGreaterThan(1.7); // the ash shore
+    expect(w.byteAt(0, 16500, 4875) / WEIGHT_UNIT).toBeGreaterThan(1.5);
     let firm = 0;
     let firmFood = 0;
-    for (let x = 1000; x < 39000; x += 250) for (let y = 1000; y < 24000; y += 250) if (sea.valueAt(x, y) === TERRAIN_FAST) { firm++; firmFood += w.byteAt(0, x, y) / WEIGHT_UNIT; }
+    for (let x = 750; x < 29250; x += 190) for (let y = 750; y < 18000; y += 190) if (sea.valueAt(x, y) === TERRAIN_FAST) { firm++; firmFood += w.byteAt(0, x, y) / WEIGHT_UNIT; }
     expect(firm).toBeGreaterThan(300);
     expect(firmFood / firm).toBeLessThan(0.8);
     expect(w.maxFood / WEIGHT_UNIT).toBeLessThan(3.9);
@@ -118,6 +120,21 @@ describe("The Inland Sea map", () => {
       expect(sea.valueAt(x, y)).toBe(drawnKind(x, y));
     }
     expect(checked).toBeGreaterThan(5000);
+  });
+
+  it("is what to-engine.mjs makes from the draft, apart from the hand edits listed in inlandSea.ts", () => {
+    const draft = fileURLToPath(new URL("../../docs/world-maps/tools/", import.meta.url));
+    const text = execFileSync("node", [`${draft}to-engine.mjs`, `${draft}map-F4.json`, String(SEA.width), String(SEA.height), SEA.name, SEA.title, "40000"], { encoding: "utf8" });
+    const made = JSON.parse(text.slice(text.indexOf("{", text.indexOf("INLAND_SEA")), text.lastIndexOf("}") + 1)) as MapSpec;
+    const unedited = (s: MapSpec): unknown => ({ ...s, basePoison: undefined, layers: s.layers.map((l) => (l.id === "karst" || l.id === "ash" ? { ...l, poison: undefined } : l)) });
+    expect(JSON.parse(JSON.stringify(unedited(SEA)))).toEqual(JSON.parse(JSON.stringify(unedited(made))));
+  });
+
+  it("keeps the edge roughness wavelengths at fineScale, so a smaller map keeps its rock and shore detail", () => {
+    const base: MapSpec = { ...SEA, layers: SEA.layers.slice(0, 1), rock: [], fineScale: undefined };
+    const food = (spec: MapSpec): Uint8Array => buildMap(spec).weights.food;
+    expect(food({ ...base, fineScale: base.scale })).toEqual(food(base)); // no fineScale: scale for everything
+    expect(food({ ...base, fineScale: 2 * base.scale })).not.toEqual(food(base));
   });
 
   it("refuses at build time a rock disc that another thread's unpackMap would refuse", () => {
@@ -175,7 +192,7 @@ describe("weighted items and local caps", () => {
     let area = 0;
     let richArea = 0;
     let poorArea = 0;
-    for (let x = 100; x < 40000; x += 200) for (let y = 100; y < 25000; y += 200) { const weight = w.byteAt(0, x, y) / WEIGHT_UNIT; area++; if (weight > 1.5) richArea++; if (weight < 0.7) poorArea++; }
+    for (let x = 100; x < SEA.width; x += 200) for (let y = 100; y < SEA.height; y += 200) { const weight = w.byteAt(0, x, y) / WEIGHT_UNIT; area++; if (weight > 1.5) richArea++; if (weight < 0.7) poorArea++; }
     expect(rich / 6000).toBeGreaterThan(1.4 * (richArea / area)); // rich places hold well over their area share of the food
     expect(poor / 6000).toBeLessThan(0.7 * (poorArea / area));
     for (let i = 6000; i < 9000; i++) expect(w.byteAt(1, world.xs[i]!, world.ys[i]!)).toBeGreaterThan(0);
@@ -218,8 +235,8 @@ describe("weighted items and local caps", () => {
   it("puts poison on the shore: its limits dwarf those of the open sea, which stay near zero", () => {
     const w = builtMap("inland-sea").weights;
     const poison = w.limits(1, 0.01, (SEA.width * SEA.height) / 100 ** 2);
-    const shore = w.capIndex(22000, 6500);
-    const elsewhere = w.capIndex(30000, 20000);
+    const shore = w.capIndex(16500, 4875);
+    const elsewhere = w.capIndex(22500, 15000);
     expect(poison[shore]!).toBeGreaterThanOrEqual(3);
     expect(poison[elsewhere]!).toBeLessThanOrEqual(1);
   });
@@ -236,7 +253,7 @@ describe("weighted items and local caps", () => {
     const world = new World(seaConfig(), 400);
     const w = world.terrain.weights!;
     const cells = w.capCols * w.capRows;
-    const open = w.capIndex(22500, 6500); // on the ash shore, where poison is likely to be drawn
+    const open = w.capIndex(16875, 4875); // on the ash shore, where poison is likely to be drawn
     const poisonLimit = new Int32Array(cells);
     poisonLimit[open] = 1; // one poison fits in that cell and none anywhere else
     world.setCapLimits(new Int32Array(cells), poisonLimit);
@@ -294,7 +311,7 @@ describe("a world with a named map", () => {
     };
     expect(() => restoreState(bad((w) => { w.map = "atlantis"; }))).toThrow(/world\.map/);
     expect(() => restoreState(bad((w) => { w.map = 5; }))).toThrow(/world\.map/);
-    expect(() => restoreState(bad((w) => { w.width = 30000; }))).toThrow(/needs a world of 40000 x 25000/);
+    expect(() => restoreState(bad((w) => { w.width = 40000; }))).toThrow(/needs a world of 30000 x 18750/);
     expect(() => terrainOf({ seed: 1, world: { ...seaConfig().world, map: "atlantis" } })).toThrow(/unknown map/);
   });
 

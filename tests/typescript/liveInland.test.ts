@@ -47,31 +47,33 @@ describe("item slots of the live world", () => {
   it("keeps the fixed headroom where it fits, and scales it down to the wire on a big world", () => {
     expect(itemHeadroom({ width: 2000, height: 1300 }, { foodMaxDensity: 0.7, poisonMaxDensity: 0.1 })).toEqual(ITEM_HEADROOM);
     expect(itemHeadroom({ width: 17000, height: 10600 }, { foodMaxDensity: 0.7, poisonMaxDensity: 0.1 })).toEqual(ITEM_HEADROOM);
-    const room = itemHeadroom(liveConfig.world, liveConfig.eco);
+    expect(itemHeadroom(liveConfig.world, liveConfig.eco)).toEqual(ITEM_HEADROOM); // the Inland Sea (56 250 items per density unit) fits the fixed headroom
+    expect(CAP_LIMITS).toEqual(ITEM_HEADROOM);
+    const big = { width: 40000, height: 25000 }; // 100 000 items per density unit: the headroom is scaled down to the wire
+    const room = itemHeadroom(big, liveConfig.eco);
     expect(room).toEqual({ foodMaxDensity: 2.3, poisonMaxDensity: 0.05 });
-    expect(CAP_LIMITS).toEqual(room);
     // Never below the caps in force, and never past the slot budget.
     for (const caps of [{ foodMaxDensity: 2.25, poisonMaxDensity: 0.06 }, { foodMaxDensity: 0.1, poisonMaxDensity: 2 }, { foodMaxDensity: 2.35, poisonMaxDensity: 0 }]) {
-      const r = itemHeadroom(liveConfig.world, caps);
+      const r = itemHeadroom(big, caps);
       expect(r.foodMaxDensity).toBeGreaterThanOrEqual(caps.foodMaxDensity);
       expect(r.poisonMaxDensity).toBeGreaterThanOrEqual(caps.poisonMaxDensity);
       expect((r.foodMaxDensity + r.poisonMaxDensity) * 100_000).toBeLessThanOrEqual(ITEM_SLOT_SHARE * MAX_ITEM_SLOTS);
     }
-    expect(() => itemHeadroom(liveConfig.world, { foodMaxDensity: 2.5, poisonMaxDensity: 0 })).toThrow(/item slots/);
+    expect(() => itemHeadroom(big, { foodMaxDensity: 2.5, poisonMaxDensity: 0 })).toThrow(/item slots/);
   });
 
   it("builds the Inland Sea world inside the wire's item slots, with the caps in force and admin held to the slots", () => {
-    const live = new LiveWorld(structuredClone(liveConfig), null); // with a fixed 3 and 1 headroom this throws: 400 000 slots
+    const live = new LiveWorld(structuredClone(liveConfig), null);
     const slots = live.hello(1).itemSlots;
-    expect(slots).toBe(235_000);
+    expect(slots).toBe(225_000); // (3 + 1) x 56 250
     expect(slots).toBeLessThanOrEqual(ITEM_SLOT_SHARE * MAX_ITEM_SLOTS);
     expect([live.config.eco.foodMaxDensity, live.config.eco.poisonMaxDensity]).toEqual([1.5, 0.01]);
-    expect(live.eco.food).toBe(50_000);
-    expect(live.eco.poison).toBe(1000);
+    expect(live.eco.food).toBe(28_125);
+    expect(live.eco.poison).toBe(563);
     expect(applyTunables(live.eco, { "eco.foodMaxDensity": CAP_LIMITS.foodMaxDensity, "eco.poisonMaxDensity": CAP_LIMITS.poisonMaxDensity })).toBeNull();
-    expect(applyTunables(live.eco, { "eco.foodMaxDensity": CAP_LIMITS.foodMaxDensity + 0.1 })).toMatch(/at most 2.3/);
-    expect(applyTunables(live.eco, { "eco.poisonMaxDensity": 1 })).toMatch(/at most 0.05/);
-    expect(live.eco.retune({ eco: { foodMaxDensity: 2.4 } })).toMatchObject({ ok: false, reason: expect.stringMatching(/item slots/) }); // the engine's own guard
+    expect(applyTunables(live.eco, { "eco.foodMaxDensity": CAP_LIMITS.foodMaxDensity + 0.1 })).toMatch(/at most 3/);
+    expect(applyTunables(live.eco, { "eco.poisonMaxDensity": 1.1 })).toMatch(/at most 1/);
+    expect(live.eco.retune({ eco: { foodMaxDensity: 4 } })).toMatchObject({ ok: false, reason: expect.stringMatching(/item slots/) }); // the engine's own guard
     // A save made on other data of the same map counts as another world (startup starts fresh), not as a failure to retry.
     expect(() => live.restoreState({ ...live.saveState(), mapVersion: "00000000" })).toThrow(OtherWorld);
     // The page gets the map's name and its regions.
@@ -91,28 +93,28 @@ describe("item slots of the live world", () => {
     const rock = Float64Array.from(b.rock.flatMap((d) => [d.x, d.y, d.r]));
     const outlines = rockGeometry(terrainOf({ seed: 1, world: { ...liveConfig.world } }));
     const parts = { ok: true as const, rock, ground: b.ground.data.slice(), food: b.weights.food.slice(), poison: b.weights.poison.slice(), outlines, ms: 0 };
-    const t = terrainFromParts("inland-sea", 40000, 25000, parts)!;
+    const t = terrainFromParts("inland-sea", liveConfig.world.width, liveConfig.world.height, parts)!;
     expect(t.rockCount).toBe(b.rock.length);
     const bodies = rockBodies(t); // the worker's outlines, not traced again
     expect(bodies).toHaveLength(outlines.bodyLoops.length);
     expect(bodies[0]!.loops[0]!.slice(0, 4)).toEqual(Array.from(outlines.points.subarray(0, 4)));
-    expect(terrainFromParts("inland-sea", 40000, 25000, { ...parts, rock: rock.subarray(0, 30) })).toBeNull(); // outlines of other rock
-    expect(terrainFromParts("inland-sea", 40000, 25000, { ...parts, outlines: { ...outlines, points: Float64Array.from(outlines.points, (v, i) => (i === 5 ? NaN : v)) } })).toBeNull();
+    expect(terrainFromParts("inland-sea", liveConfig.world.width, liveConfig.world.height, { ...parts, rock: rock.subarray(0, 30) })).toBeNull(); // outlines of other rock
+    expect(terrainFromParts("inland-sea", liveConfig.world.width, liveConfig.world.height, { ...parts, outlines: { ...outlines, points: Float64Array.from(outlines.points, (v, i) => (i === 5 ? NaN : v)) } })).toBeNull();
     expect(t.valueAt(20000, 12500)).toBe(terrainOf({ seed: 1, world: { ...liveConfig.world } }).valueAt(20000, 12500));
     expect(terrainFromParts("inland-sea", 17000, 10600, parts)).toBeNull();
-    expect(terrainFromParts("nowhere", 40000, 25000, parts)).toBeNull();
-    expect(terrainFromParts("inland-sea", 40000, 25000, { ...parts, ground: parts.ground.subarray(1) })).toBeNull();
-    expect(terrainFromParts("inland-sea", 40000, 25000, { ...parts, food: new Uint8Array(3) })).toBeNull();
-    expect(terrainFromParts("inland-sea", 40000, 25000, { ...parts, rock: Float64Array.from([1, 2]) })).toBeNull();
-    expect(terrainFromParts("inland-sea", 40000, 25000, { ...parts, rock: Float64Array.from([1, NaN, 3]) })).toBeNull();
-    expect(terrainFromParts("inland-sea", 40000, 25000, { ...parts, rock: new Float64Array(3 * 8001) })).toBeNull();
-    expect(terrainFromParts("inland-sea", 40000, 25000, { ok: false, message: "x" })).toBeNull();
+    expect(terrainFromParts("nowhere", liveConfig.world.width, liveConfig.world.height, parts)).toBeNull();
+    expect(terrainFromParts("inland-sea", liveConfig.world.width, liveConfig.world.height, { ...parts, ground: parts.ground.subarray(1) })).toBeNull();
+    expect(terrainFromParts("inland-sea", liveConfig.world.width, liveConfig.world.height, { ...parts, food: new Uint8Array(3) })).toBeNull();
+    expect(terrainFromParts("inland-sea", liveConfig.world.width, liveConfig.world.height, { ...parts, rock: Float64Array.from([1, 2]) })).toBeNull();
+    expect(terrainFromParts("inland-sea", liveConfig.world.width, liveConfig.world.height, { ...parts, rock: Float64Array.from([1, NaN, 3]) })).toBeNull();
+    expect(terrainFromParts("inland-sea", liveConfig.world.width, liveConfig.world.height, { ...parts, rock: new Float64Array(3 * 8001) })).toBeNull();
+    expect(terrainFromParts("inland-sea", liveConfig.world.width, liveConfig.world.height, { ok: false, message: "x" })).toBeNull();
   }, 60_000);
 
   it("the page takes rock outlines only when their counts add up and every value is bounded and finite", () => {
     const g = rockGeometry(terrainOf({ seed: 1, world: { ...liveConfig.world } }));
-    const W = 40000;
-    const H = 25000;
+    const W = liveConfig.world.width;
+    const H = liveConfig.world.height;
     expect(checkOutlines(g, W, H)).toBe(true);
     const bad = (change: Partial<RockGeometry>): boolean => checkOutlines({ ...g, ...change }, W, H);
     const pts = (f: (p: Float64Array) => void): Float64Array => { const p = g.points.slice(); f(p); return p; };
@@ -469,7 +471,7 @@ describe("the page's map worker", () => {
     expect(MAP_TIMEOUT_MS).toBe(60_000);
     const w = silent();
     const t0 = Date.now();
-    expect(await loadMapTerrain("inland-sea", 40000, 25000, 50, () => w as never)).toBeNull();
+    expect(await loadMapTerrain("inland-sea", liveConfig.world.width, liveConfig.world.height, 50, () => w as never)).toBeNull();
     expect(Date.now() - t0).toBeLessThan(5000);
     expect(w.terminated).toBe(1);
   });
@@ -481,11 +483,11 @@ describe("the page's map worker", () => {
       calls++;
       return answer;
     });
-    expect(await cache.get("inland-sea", 40000, 25000)).toBeNull();
+    expect(await cache.get("inland-sea", liveConfig.world.width, liveConfig.world.height)).toBeNull();
     await Promise.resolve();
-    answer = { width: 40000 } as Terrain;
-    expect(await cache.get("inland-sea", 40000, 25000)).toBe(answer);
-    expect(await cache.get("inland-sea", 40000, 25000)).toBe(answer);
+    answer = { width: liveConfig.world.width } as Terrain;
+    expect(await cache.get("inland-sea", liveConfig.world.width, liveConfig.world.height)).toBe(answer);
+    expect(await cache.get("inland-sea", liveConfig.world.width, liveConfig.world.height)).toBe(answer);
     expect(calls).toBe(2);
   });
 });
