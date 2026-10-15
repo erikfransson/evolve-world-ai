@@ -16,6 +16,7 @@ import type { EcoState } from "../../src/typescript/src/sim/ecoState.ts";
 import { LIMITS, LIVE, MAX_POPULATION, MAX_SEED_FOUNDERS, SEED_COPIES, itemHeadroom } from "./config.ts";
 import type { SeedFounder } from "./founders.ts";
 import { mapRegions } from "../../src/typescript/src/live/mapRegions.ts";
+import { mapVersion } from "../../src/typescript/src/sim/maps/index.ts";
 import { STARTER_MARK, wireName } from "../../src/typescript/src/live/add.ts";
 import type { AddRequest, AddRules } from "../../src/typescript/src/live/add.ts";
 import { fullEnergy } from "../../src/typescript/src/sim/species.ts";
@@ -548,6 +549,8 @@ export class LiveWorld {
     const w = state.config?.world;
     const h = this.home;
     if (!w || w.width !== h.width || w.height !== h.height || (w.map ?? "") !== h.map) throw new OtherWorld(`it is a ${w?.width} x ${w?.height} world${w?.map ? ` (${w.map})` : " without a map"}, this server runs ${h.width} x ${h.height}${h.map ? ` (${h.map})` : " without a map"}; the save is kept`);
+    // A save made on other map data under the same name is of another world too, so startup starts fresh instead of retrying it.
+    if (h.map && state.mapVersion !== undefined && state.mapVersion !== mapVersion(h.map)) throw new OtherWorld(`it was made on another version of the map ${h.map} (${String(state.mapVersion).slice(0, 16)}, this server runs ${mapVersion(h.map)}); the save is kept`);
     const eco = restoreState(state, this.pool, { journal: this.helpers !== null });
     const maxPopulation = Math.min(eco.config.eco.maxPopulation, MAX_POPULATION); // older saves allowed more
     const birthReserve = Math.min(eco.config.eco.birthReserve, Math.max(0, maxPopulation - 1)); // a reserve at the cap would stop every birth

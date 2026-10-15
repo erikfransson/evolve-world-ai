@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { CAP_LIMITS, ITEM_HEADROOM, LIMITS, LIVE, MAX_POPULATION, ITEM_SLOT_SHARE, MAX_FOUNDERS_FILE_BYTES, MAX_SEED_FOUNDERS, SEED_COPIES, itemHeadroom, liveConfig } from "../../server/src/config.ts";
 import { lineageName, loadFounders, parseFounders } from "../../server/src/founders.ts";
 import { parseFounders as parsePageFounders } from "../../src/typescript/src/live/founders.ts";
-import { LiveWorld } from "../../server/src/liveWorld.ts";
+import { LiveWorld, OtherWorld } from "../../server/src/liveWorld.ts";
 import { Saves, openWorld } from "../../server/src/saves.ts";
 import { PREVIOUS_OVERRIDES } from "../../server/src/admin.ts";
 import { StateStore } from "../../server/src/state.ts";
@@ -72,6 +72,8 @@ describe("item slots of the live world", () => {
     expect(applyTunables(live.eco, { "eco.foodMaxDensity": CAP_LIMITS.foodMaxDensity + 0.1 })).toMatch(/at most 2.3/);
     expect(applyTunables(live.eco, { "eco.poisonMaxDensity": 1 })).toMatch(/at most 0.05/);
     expect(live.eco.retune({ eco: { foodMaxDensity: 2.4 } })).toMatchObject({ ok: false, reason: expect.stringMatching(/item slots/) }); // the engine's own guard
+    // A save made on other data of the same map counts as another world (startup starts fresh), not as a failure to retry.
+    expect(() => live.restoreState({ ...live.saveState(), mapVersion: "00000000" })).toThrow(OtherWorld);
     // The page gets the map's name and its regions.
     const map = live.hello(1).map;
     expect(map.name).toBe("inland-sea");
