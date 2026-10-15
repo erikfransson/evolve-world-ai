@@ -36,6 +36,7 @@ import { AddPanel } from "./live/addPanel.ts";
 import { parseFounders } from "./live/founders.ts";
 import { renderMapInfo } from "./live/mapInfo.ts";
 import { MapCache } from "./live/mapTerrain.ts";
+import { specVersion } from "./live/specVersion.ts";
 
 // TODO(L6): admin panel. `?admin` opens a second socket to the owner's loopback admin port (ws://127.0.0.1:8788), sends {t:"auth", token}
 // with a token the owner pastes in, then {t:"get-config"} and {t:"set-config", changes}. See server/src/admin.ts.
@@ -226,11 +227,12 @@ function showMap(h: Hello): void {
   const name = h.map.name;
   if (!name) return;
   const d = draw;
-  void maps.get(name, h.world.width, h.world.height, h.map.version).then((t) => {
-    if (draw !== d) return; // a newer hello has its own
-    mapStale = t === "stale"; // the server runs other map data than this page: plain ground, and the pill says so
-    if (t && t !== "stale") d!.map = t;
-    renderStats();
+  // The server runs another design of this map than this page has: plain ground, and the pill says so, until the page is updated.
+  mapStale = h.map.version !== undefined && h.map.version !== specVersion(name);
+  renderStats();
+  if (mapStale) return;
+  void maps.get(name, h.world.width, h.world.height).then((t) => {
+    if (t && draw === d) d!.map = t; // a newer hello has its own
   });
 }
 

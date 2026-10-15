@@ -16,8 +16,7 @@ export class PageMaps {
 
   // The map once it is built, or null when it cannot be (the next ask tries again).
   async load(name: string, width: number, height: number): Promise<MapReady | null> {
-    const got = await this.cache.get(name, width, height); // no version asked for, so never "stale"
-    const t = got === "stale" ? null : got;
+    const t = await this.cache.get(name, width, height);
     const parts = t && packMap(t);
     const outlines = t && rockGeometryOf(t);
     if (!parts || !outlines) return null;

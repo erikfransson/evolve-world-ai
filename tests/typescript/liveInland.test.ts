@@ -17,6 +17,7 @@ import { StateStore } from "../../server/src/state.ts";
 import { applyTunables } from "../../server/src/tunables.ts";
 import { MAX_ITEM_SLOTS } from "../../src/typescript/src/live/protocol.ts";
 import { cleanMap } from "../../src/typescript/src/live/mapInfo.ts";
+import { specVersion } from "../../src/typescript/src/live/specVersion.ts";
 import { STARTER_MARK, encodeAdd, parseAdd, wireName } from "../../src/typescript/src/live/add.ts";
 import { decodeDetail } from "../../src/typescript/src/live/detail.ts";
 import { cleanStats } from "../../src/typescript/src/live/connection.ts";
@@ -25,7 +26,7 @@ import { genomeLengthFor } from "../../src/typescript/src/sim/rl/creatureFile.ts
 import { MAP_TIMEOUT_MS, MAX_OUTLINE_LOOPS, MAX_OUTLINE_POINTS, MapCache, checkOutlines, loadMapTerrain, terrainFromParts } from "../../src/typescript/src/live/mapTerrain.ts";
 import { rockBodies, rockGeometry } from "../../src/typescript/src/ui/rockOutline.ts";
 import type { RockGeometry } from "../../src/typescript/src/ui/rockOutline.ts";
-import { builtMap, mapVersion } from "../../src/typescript/src/sim/maps/index.ts";
+import { builtMap } from "../../src/typescript/src/sim/maps/index.ts";
 import { terrainOf } from "../../src/typescript/src/sim/terrain.ts";
 import type { Terrain } from "../../src/typescript/src/sim/terrain.ts";
 import { smallConfig } from "./liveHelpers.ts";
@@ -86,7 +87,9 @@ describe("item slots of the live world", () => {
       ["The Shallows", 1.6, 0], ["Isles", 1.5, 0], ["Ashfall Shore", 1.8, 3.5], ["Dune Coast", 0.65, 0.15], ["Drowned Town", 1.2, 0.15], ["Cliff Coast", 1, 0.15], ["Open plain", 1, 0.15],
     ]);
     expect(cleanMap(JSON.parse(JSON.stringify(map)))).toEqual(map);
-    expect(map.version).toBe(mapVersion("inland-sea")); // the page compares it with its own build
+    expect(map.version).toBe(specVersion("inland-sea")); // the page compares it with its own bundle's design
+    expect(specVersion("inland-sea")).toMatch(/^[0-9a-f]{8}$/);
+    expect(specVersion("nowhere")).toBe("");
     expect(cleanMap({ ...map, version: "<b>" }).version).toBeUndefined();
     expect(cleanMap({ ...map, name: undefined, version: map.version }).version).toBeUndefined();
     expect(live.hello(1).summary).toMatchObject({ initialPopulation: 0, seedCopies: SEED_COPIES });
@@ -503,16 +506,6 @@ describe("the page's map worker", () => {
     const w = { terminated: 0, postMessage() {}, terminate() { w.terminated++; }, onmessage: null, onerror: null };
     return w;
   };
-
-  it("answers \"stale\" when the worker's map data is not the server's version, so the page draws plain ground", async () => {
-    const answering = (version: string) => {
-      const w: { terminated: number; postMessage(): void; terminate(): void; onmessage: ((e: { data: unknown }) => void) | null; onerror: null } = { terminated: 0, postMessage() { queueMicrotask(() => w.onmessage?.({ data: { ok: true, version, rock: new Float64Array(0), ground: new Uint8Array(0), food: new Uint8Array(0), poison: new Uint8Array(0), outlines: {}, ms: 0 } })); }, terminate() { w.terminated++; }, onmessage: null, onerror: null };
-      return w;
-    };
-    const { width, height } = liveConfig.world;
-    expect(await loadMapTerrain("inland-sea", width, height, 1000, () => answering("aaaa") as never, "bbbb")).toBe("stale");
-    expect(await loadMapTerrain("inland-sea", width, height, 1000, () => answering("bbbb") as never, "bbbb")).toBeNull(); // same version: on to the checks (these arrays fail them)
-  });
 
   it("is given up after the timeout: terminated, and null", async () => {
     expect(MAP_TIMEOUT_MS).toBe(60_000);
