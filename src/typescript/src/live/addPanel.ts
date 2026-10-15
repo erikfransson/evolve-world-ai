@@ -218,7 +218,9 @@ export class AddPanel {
 
   private defaultBirth(): Birth {
     const b = this.rules?.birth ?? { energy: [100, 225], cost: [50, 110], cooldown: [5, 20] };
-    return { energy: Math.round(Math.sqrt(b.energy[0] * b.energy[1])), cost: Math.round(Math.sqrt(b.cost[0] * b.cost[1])), cooldown: Math.round((b.cooldown[0] + b.cooldown[1]) / 2) };
+    // The middles insertCreature gives (log scale, linear for a range from 0), on the sliders' steps.
+    const mid = ([lo, hi]: [number, number]): number => (lo > 0 ? Math.sqrt(lo * hi) : (lo + hi) / 2);
+    return { energy: Math.round(mid(b.energy)), cost: Math.round(mid(b.cost)), cooldown: Math.round(mid(b.cooldown) * 2) / 2 };
   }
 
   private pickFounder(i: number): void {
