@@ -6,6 +6,9 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+### Live World
+- "Add your creature" adds up to 10 copies (1, 2, 3, 5 or 10; was 1 to 3), #42. The other caps let a full add in: 20 creatures per 5 minutes for everyone (two adds of 10), 10 per visitor once the tunnel's address is checked, at least 20 added creatures alive however small the world.
+
 ## 0.2.1 (2026-10-16)
 
 ### Live World

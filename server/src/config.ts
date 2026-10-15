@@ -73,12 +73,12 @@ export const LIVE = {
   reseed: 0, // 1: an extinct world starts over with a new seed; 0 (Erik's choice): it stays empty until visitors add creatures
   // Visitor adds ("Add your creature"), all admin-tunable as "add.<field>" (tunables.ts); adds.ts enforces them.
   add: {
-    perWindow: 20, // creatures added by all visitors together per window
+    perWindow: 20, // creatures added by all visitors together per window: two adds of 10 copies every 5 minutes
     windowS: 300,
-    maxCopies: 3, // copies per add (the protocol allows at most 3)
+    maxCopies: 10, // copies per add (the protocol allows at most MAX_COPIES, 10); each copy is one insert and one free-spot search of at most 40 tries
     aliveShare: 0.1, // added creatures alive (the inserted ones, not their children) at most this share of the population
     aliveFloor: 20, // ... or at most this many, whichever is more, so an empty or small world can still be populated
-    perVisitor: 3, // creatures per visitor address per window; needs trustForwardedFor
+    perVisitor: 10, // creatures per visitor address per window, one full add; needs trustForwardedFor
     socketEveryS: 10, // one add per this many seconds on one connection (burst 2); faster is refused with retryS, and 3 strikes (one back per minute) cut the connection
     minSpeed: 0.5, // simulated seconds per real second: below this the world counts as busy and adds wait
     startEnergy: 300, // energy an added creature starts with (the visitor never sets it)

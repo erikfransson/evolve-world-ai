@@ -107,7 +107,7 @@ describe("add message: encode and parse", () => {
 
   it("refuses copies, hue and birth traits out of range", () => {
     const r = rules();
-    for (const copies of [0, 4, 1.5, "2"]) expect(parseAdd(send({ ...asObject(), copies }), r)).toMatch(/copies/);
+    for (const copies of [0, 11, 1.5, "2", 1e9]) expect(parseAdd(send({ ...asObject(), copies }), r)).toMatch(/copies/);
     expect(parseAdd(send({ ...asObject(), copies: 3 }), { ...r, maxCopies: 2 })).toMatch(/copies must be 1 to 2/);
     for (const hue of [-1, 361, "red"]) expect(parseAdd(send({ ...asObject(), hue }), r)).toMatch(/hue/);
     expect(parseAdd(send({ ...asObject(), birth: { energy: r.birth.energy[1] + 1, cost: 70, cooldown: 10 } }), r)).toMatch(/birth/);
@@ -131,11 +131,12 @@ describe("add message: encode and parse", () => {
   it("cleans replies and rules from the wire", () => {
     expect(cleanAddReply({ t: "added", ids: [3, 4], name: "Zed" })).toEqual({ t: "added", ids: [3, 4], name: "Zed" });
     expect(cleanAddReply({ t: "added", ids: [3], name: "Z d" })).toBeNull();
-    expect(cleanAddReply({ t: "added", ids: [1, 2, 3, 4], name: "Z" })).toBeNull();
+    expect(cleanAddReply({ t: "added", ids: [...Array(11).keys()], name: "Z" })).toBeNull(); // past MAX_COPIES (10)
+    expect(cleanAddReply({ t: "added", ids: [...Array(10).keys()], name: "Z" })).toMatchObject({ t: "added" });
     expect(cleanAddReply({ t: "refused", reason: "busy‮<b>", retryS: 12.2 })).toEqual({ t: "refused", reason: "busy<b>", retryS: 13 });
     expect(cleanAddReply({ t: "refused", reason: 5, retryS: NaN })).toEqual({ t: "refused", reason: "refused" });
     expect(cleanAddRules(rules())).toEqual(rules());
-    expect(cleanAddRules({ ...rules(), maxCopies: 9 })).toBeNull();
+    expect(cleanAddRules({ ...rules(), maxCopies: 11 })).toBeNull();
   });
 
   it("defaults a hello's missing or bad summary, so the info section cannot throw", () => {
@@ -247,6 +248,7 @@ describe("add caps (adds.ts)", () => {
   });
 
   it("per visitor: 3 creatures per window per address, other addresses unaffected, unknown address not limited per visitor", () => {
+    LIVE.add.perVisitor = 3; // the mechanism, at a cap smaller than the default 10
     const c = clock();
     const gate = new AddGate(c.now);
     gate.record("1.2.3.4", 3);
@@ -334,12 +336,12 @@ describe("add caps (adds.ts)", () => {
     expect(applyTunables(eco, { "add.perWindow": 5, "add.aliveShare": 0.2 })).toBeNull();
     expect([LIVE.add.perWindow, LIVE.add.aliveShare]).toEqual([5, 0.2]);
     expect(readTunables(eco)["add.perWindow"]).toBe(5);
-    expect(applyTunables(eco, { "add.maxCopies": 4 })).toMatch(/add.maxCopies/);
+    expect(applyTunables(eco, { "add.maxCopies": 11 })).toMatch(/add.maxCopies/);
     expect(applyTunables(eco, { "add.perWindow": 2.5 })).toMatch(/whole/);
     expect(applyTunables(eco, { "add.socketEveryS": 0 })).toMatch(/add.socketEveryS/);
     expect(applyTunables(eco, { "add.startEnergy": 5000 })).toMatch(/add.startEnergy/);
     expect(applyTunables(eco, { "add.birthHoldS": -1 })).toMatch(/add.birthHoldS/);
-    expect(LIVE.add.maxCopies).toBe(3);
+    expect(LIVE.add.maxCopies).toBe(10);
     // A birth reserve at or past the cap would stop every birth: refused, alone or with a lower cap, and nothing changes.
     const cap = 500;
     expect(applyTunables(eco, { "eco.maxPopulation": cap })).toBeNull();
@@ -468,6 +470,24 @@ describe("adding to the world (LiveWorld)", () => {
     for (let t = 0; t < 30 / w.eco.config.dt && w.eco.get(first.ids[0]!); t++) w.step();
     expect(w.eco.get(first.ids[0]!)).toBeUndefined();
     expect("ids" in w.addCreatures(request({ copies: 1, name: "Kiwi" }), seq(5))).toBe(true);
+  });
+
+  it("a full add of 10 copies goes in on a fresh small world, two fit the global window, an 11th copy never does (#42)", () => {
+    const gate = new AddGate(() => 0);
+    const world = { aliveAdded: 0, population: 40, speed: 3, paused: false }; // a fresh world: the alive floor (20) applies
+    expect(gate.check(null, 10, world)).toBeNull();
+    gate.record(null, 10);
+    expect(gate.check(null, 10, { ...world, aliveAdded: 10 })).toBeNull();
+    gate.record(null, 10);
+    expect(gate.check(null, 1, { ...world, aliveAdded: 20 })?.reason).toMatch(/enough added creatures|busy with new creatures/);
+    expect(gate.check("v", 10, world)?.reason).toMatch(/busy with new creatures/); // the window is spent
+    expect(new AddGate(() => 0).check("v", 11, world)?.reason).toMatch(/at most 10 copies/);
+    const w = new LiveWorld(smallConfig(), null);
+    const r = w.addCreatures(request({ copies: 10 }), seq(7));
+    if (!("ids" in r)) throw new Error(r.reason);
+    expect(r.ids).toHaveLength(10);
+    expect(parseAdd(encodeAdd(request({ copies: 10 })), w.addRules())).toMatchObject({ copies: 10 });
+    expect(parseAdd(encodeAdd(request({ copies: 11 })), w.addRules())).toMatch(/copies must be 1 to 10/);
   });
 
   it("refuses when the world is full, inserting nothing", () => {
@@ -606,6 +626,7 @@ describe("add on the public server", () => {
 
   it("trusted header missing: all such adds share one visitor cap", async () => {
     await serve(61410, {}, true);
+    LIVE.add.perVisitor = 3; // the mechanism, at a cap smaller than the default 10
     const a = client(61410);
     const b = client(61410);
     await Promise.all([a.hello, b.hello]);
@@ -645,6 +666,7 @@ describe("add on the public server", () => {
 
   it("per visitor via X-Forwarded-For when trusted: a second connection from the same address is held to the visitor cap", async () => {
     await serve(61406, {}, true);
+    LIVE.add.perVisitor = 3;
     const a = client(61406, { "x-forwarded-for": "198.51.100.7" });
     const b = client(61406, { "x-forwarded-for": "198.51.100.7" });
     const other = client(61406, { "x-forwarded-for": "198.51.100.8" });

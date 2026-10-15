@@ -6,7 +6,7 @@ One shared world that keeps running on a small self-hosted server; visitors watc
 ## Goals
 - Problem: every other mode is a private run that stops when the tab closes. Live is one world everyone shares and that keeps evolving.
 - For: visitors of the site, and the owner as admin.
-- Success: a visitor opens `live/`, sees the world running, designs or uploads a creature, inserts 1 to 3 named copies and can find and follow its lineage later.
+- Success: a visitor opens `live/`, sees the world running, designs or uploads a creature, inserts 1 to 10 named copies and can find and follow its lineage later.
 - Not: accounts, chat, a cloud server, or anything that slows the host noticeably.
 
 ## Architecture
@@ -34,7 +34,7 @@ Hourly state stays out of git, since a world of about 1000 creatures is a few MB
 2. Pick one of 4 named founders trained for the Live World (Explorer ranges far, Juggernaut rams, Oracle has the biggest brain, Grazer never fights), or upload a saved creature file.
 3. Tune plan and settings within the form limits; energy per second updates live.
 4. Optional toggles: Pretrain (quick Trials run) and RL fine-tune (RL envs from #27), both in the browser.
-5. Choose name (1 to 16 letters or digits) and colour, insert 1 to 3 copies at random free spots. The page then follows one and highlights its family (each copy founds its own lineage).
+5. Choose name (1 to 16 letters or digits) and colour, insert 1 to 10 copies at random free spots. The page then follows one and highlights its family (each copy founds its own lineage).
 
 ## Safety
 Follows "Uploaded creatures and settings" in `docs/modes-plan.md`: data only through `parseCreatureFile`, bounded cost, names rendered as text, re-validated on the server.

@@ -1,6 +1,6 @@
 // "Add your creature" on the wire (Live World protocol 4, see protocol.ts), shared by the page and the server.
 //
-// Client to server, text: {"t":"add","plan":Plan,"genome":<base64>,"birth":{"energy","cost","cooldown"},"name":<1-16 letters or digits>,"hue":<0..360>,"copies":<1..3>[,"mutationScale":<0.25..4>]}
+// Client to server, text: {"t":"add","plan":Plan,"genome":<base64>,"birth":{"energy","cost","cooldown"},"name":<1-16 letters or digits>,"hue":<0..360>,"copies":<1..10>[,"mutationScale":<0.25..4>]}
 //   plan: exactly the six creature-file plan fields within PLAN_LIMITS. genome: little-endian float32 weights in the forager (Ecosystem)
 //   layout for the plan, base64, every weight finite and within the creature-file bound. Exact keys everywhere; anything else is refused.
 // Server to client, text: Added {"t":"added","ids":[...],"name"} or Refused {"t":"refused","reason","retryS"?}.
@@ -12,7 +12,7 @@ import type { BodyPlan } from "../sim/sensors.ts";
 
 export const NAME_MAX = 16;
 export const NAME_RE = /^[A-Za-z0-9]{1,16}$/;
-export const MAX_COPIES = 3;
+export const MAX_COPIES = 10; // copies per add the protocol allows; the server's add.maxCopies may hold it lower
 const L = PLAN_LIMITS;
 // The largest forager genome PLAN_LIMITS allow, and the add message that carries it (base64 of 4 bytes a weight, plus room for the rest).
 export const MAX_ADD_GENOME = genomeLengthFor("forager", { rayCount: L.rayCount[1], raySpread: 1, rayLength: 100, hiddenLayers: Array<number>(L.layers[1]).fill(L.neurons[1]), memoryShort: L.memory[1], memoryLong: L.memory[1] });
