@@ -1,4 +1,5 @@
-import { GROUND_PAD, GroundField, hash, oneKindPerNode } from "../groundField.ts";
+import { insidePolygon, marchingSquares, simplifyClosed } from "../../geom/contour.ts";
+import { CUBIC_FADE, GROUND_PAD, GroundField, hash, oneKindPerNode, valueNoise as noise } from "../groundField.ts";
 import { createRng } from "../rng.ts";
 
 // Builds the ground, the food and poison weights and the rock of a hand-designed map (docs/world-maps/) from its spec. Port of the draft generator
@@ -225,18 +226,7 @@ export interface BuiltMap {
 
 const LIMITS = { layers: 64, points: 64, discs: 8000, area: 2e9 }; // of a spec, and the world area it may cover
 
-const cubic = (x: number): number => x * x * (3 - 2 * x);
-const valueNoise = (x: number, y: number, s: number): number => {
-  const i = Math.floor(x);
-  const j = Math.floor(y);
-  const fx = cubic(x - i);
-  const fy = cubic(y - j);
-  const a = hash(i, j, s);
-  const b = hash(i + 1, j, s);
-  const c = hash(i, j + 1, s);
-  const d = hash(i + 1, j + 1, s);
-  return a + (b - a) * fx + (c - a) * fy + (a - b - c + d) * fx * fy;
-};
+const valueNoise = (x: number, y: number, s: number): number => noise(x, y, s, CUBIC_FADE);
 const fbm = (x: number, y: number, s: number): number => valueNoise(x, y, s) * 0.55 + valueNoise(x * 2.1, y * 2.1, s + 7) * 0.3 + valueNoise(x * 4.3, y * 4.3, s + 13) * 0.15;
 const clamp = (v: number, a: number, b: number): number => Math.max(a, Math.min(b, v));
 const smoothRange = (a: number, b: number, v: number): number => {
@@ -263,20 +253,6 @@ function catmull(pts: readonly Pt[], closed: boolean, per: number): Pt[] {
   if (!closed) out.push(pts[n - 1]!);
   return out;
 }
-
-// Whether (x, y) is inside the polygon given as a flat x, y list.
-const inside = (flat: Float64Array, x: number, y: number): boolean => {
-  let c = false;
-  const n = flat.length / 2;
-  for (let i = 0, j = n - 1; i < n; j = i++) {
-    const xi = flat[2 * i]!;
-    const yi = flat[2 * i + 1]!;
-    const xj = flat[2 * j]!;
-    const yj = flat[2 * j + 1]!;
-    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) c = !c;
-  }
-  return c;
-};
 
 // Squared distance from (x, y) to the segment a-b; the position along it in 0 .. 1 is left in segU (a hot loop, so no allocation).
 let segU = 0;
@@ -336,7 +312,7 @@ function makeShape(layer: Outline, seed: number, k: number): Sdf {
         }
       }
       m = Math.sqrt(m);
-      return inside(flat, x, y) ? -m : m;
+      return insidePolygon(flat, x, y) ? -m : m;
     };
   } else {
     const path = catmull(sh.path, false, 12);
@@ -663,117 +639,29 @@ export function buildMap(spec: MapSpec): BuiltMap {
   };
 }
 
-// Marching squares of the mask at 128 on the cell centres: closed outlines as [x, y] lists in world units, the mask treated as 0 past its edge.
-function maskContours(mask: Uint8Array, cols: number, rows: number): Pt[][] {
-  const value = (i: number, j: number): number => (i < 0 || j < 0 || i >= cols || j >= rows ? 0 : mask[j * cols + i]!);
-  const stride = cols + 2;
-  const points = new Map<number, Pt>(); // the crossing on each edge, keyed by edge
-  const joins = new Map<number, number[]>();
-  const edge = (i: number, j: number, vertical: boolean): number => {
-    const key = 2 * ((j + 1) * stride + i + 1) + (vertical ? 1 : 0);
-    if (!points.has(key)) {
-      const a = value(i, j);
-      const b = vertical ? value(i, j + 1) : value(i + 1, j);
-      const t = (MASK_EDGE - a) / (b - a);
-      points.set(key, [(i + 0.5 + (vertical ? 0 : t)) * MASS_CELL, (j + 0.5 + (vertical ? t : 0)) * MASS_CELL]);
-    }
-    return key;
-  };
-  const link = (p: number, q: number): void => {
-    (joins.get(p) ?? joins.set(p, []).get(p)!).push(q);
-    (joins.get(q) ?? joins.set(q, []).get(q)!).push(p);
-  };
-  for (let j = -1; j < rows; j++) {
-    for (let i = -1; i < cols; i++) {
-      const a = value(i, j) >= MASK_EDGE;
-      const b = value(i + 1, j) >= MASK_EDGE;
-      const c = value(i + 1, j + 1) >= MASK_EDGE;
-      const d = value(i, j + 1) >= MASK_EDGE;
-      if (a === b && b === c && c === d) continue;
-      const found: number[] = [];
-      if (a !== b) found.push(edge(i, j, false));
-      if (b !== c) found.push(edge(i + 1, j, true));
-      if (d !== c) found.push(edge(i, j + 1, false));
-      if (a !== d) found.push(edge(i, j, true));
-      if (found.length === 2) link(found[0]!, found[1]!);
-      else {
-        const centre = (value(i, j) + value(i + 1, j) + value(i + 1, j + 1) + value(i, j + 1)) / 4 >= MASK_EDGE;
-        if (centre === a) {
-          link(edge(i, j, false), edge(i + 1, j, true));
-          link(edge(i, j + 1, false), edge(i, j, true));
-        } else {
-          link(edge(i, j, false), edge(i, j, true));
-          link(edge(i + 1, j, true), edge(i, j + 1, false));
-        }
-      }
-    }
-  }
-  const loops: Pt[][] = [];
-  const seen = new Set<number>();
-  for (const start of joins.keys()) {
-    if (seen.has(start)) continue;
-    const loop: Pt[] = [];
-    let prev = -1;
-    let cur = start;
-    while (!seen.has(cur)) {
-      seen.add(cur);
-      loop.push(points.get(cur)!);
-      const [n0, n1] = joins.get(cur)!;
-      const next = n0 !== prev && !seen.has(n0!) ? n0! : n1!;
-      prev = cur;
-      if (next === undefined) break;
-      cur = next;
-    }
-    if (loop.length >= 4) loops.push(loop);
-  }
-  return loops;
-}
-
-// Douglas-Peucker on a closed outline: the corners that matter, so the faces between them are straight.
-function simplify(loop: readonly Pt[], tolerance: number): Pt[] {
-  const n = loop.length;
-  let far = 0;
-  for (let k = 1; k < n; k++) if (Math.hypot(loop[k]![0] - loop[0]![0], loop[k]![1] - loop[0]![1]) > Math.hypot(loop[far]![0] - loop[0]![0], loop[far]![1] - loop[0]![1])) far = k;
-  const keep = new Set<number>([0, far]);
-  const run = (from: number, to: number): void => {
-    const stack: [number, number][] = [[from, to]];
-    while (stack.length > 0) {
-      const [i, j] = stack.pop()!;
-      const [ax, ay] = loop[i % n]!;
-      const [bx, by] = loop[j % n]!;
-      const len = Math.hypot(bx - ax, by - ay) || 1;
-      let worst = tolerance;
-      let at = -1;
-      for (let k = i + 1; k < j; k++) {
-        const d = Math.abs((loop[k % n]![0] - ax) * (by - ay) - (loop[k % n]![1] - ay) * (bx - ax)) / len;
-        if (d > worst) {
-          worst = d;
-          at = k;
-        }
-      }
-      if (at >= 0) {
-        keep.add(at % n);
-        stack.push([i, at], [at, j]);
-      }
-    }
-  };
-  run(0, far);
-  run(far, n);
-  return [...keep].sort((p, q) => p - q).map((k) => loop[k]!);
+// The outlines of a mask (cells at 128 or more) at its cell centres, as flat x, y lists in world units, the mask treated as 0 past its edge.
+function maskContours(mask: Uint8Array, cols: number, rows: number): number[][] {
+  const w = cols + 2;
+  const padded = new Uint8Array(w * (rows + 2));
+  for (let j = 0; j < rows; j++) padded.set(mask.subarray(j * cols, (j + 1) * cols), (j + 1) * w + 1);
+  return marchingSquares(padded, w, rows + 2, MASK_EDGE, { scale: MASS_CELL, shift: -0.5, minPoints: 4 });
 }
 
 // Seeded notches and knobs: every long face gets a midpoint moved sideways, so the outline reads as broken rock.
-function breakUp(line: readonly Pt[], salt: number): Pt[] {
-  const out: Pt[] = [];
-  for (let k = 0; k < line.length; k++) {
-    const [ax, ay] = line[k]!;
-    const [bx, by] = line[(k + 1) % line.length]!;
-    out.push([ax, ay]);
+function breakUp(line: readonly number[], salt: number): number[] {
+  const out: number[] = [];
+  const n = line.length / 2;
+  for (let k = 0; k < n; k++) {
+    const ax = line[2 * k]!;
+    const ay = line[2 * k + 1]!;
+    const bx = line[2 * ((k + 1) % n)]!;
+    const by = line[2 * ((k + 1) % n) + 1]!;
+    out.push(ax, ay);
     const len = Math.hypot(bx - ax, by - ay);
     if (len > EDGE_FACE) {
       const side = (hash(Math.round(ax), Math.round(ay), salt) - 0.5) * 2 * EDGE_NOTCH;
       const along = 0.35 + 0.3 * hash(Math.round(bx), Math.round(by), salt + 1);
-      out.push([ax + (bx - ax) * along - ((by - ay) / len) * side, ay + (by - ay) * along + ((bx - ax) / len) * side]);
+      out.push(ax + (bx - ax) * along - ((by - ay) / len) * side, ay + (by - ay) * along + ((bx - ax) / len) * side);
     }
   }
   return out;
@@ -818,11 +706,14 @@ function massDiscs(mask: Uint8Array, cols: number, rows: number): Disc[] {
     return Math.max(0, (dist[j * cols + i]! - 0.5) * MASS_CELL);
   };
   for (const loop of maskContours(mask, cols, rows)) {
-    const line = breakUp(simplify(loop, EDGE_SIMPLIFY), loop.length);
+    const line = breakUp(simplifyClosed(loop, EDGE_SIMPLIFY), loop.length / 2);
     let carry = 0; // distance left to the next disc along the polyline
-    for (let k = 0; k < line.length; k++) {
-      const [ax, ay] = line[k]!;
-      const [bx, by] = line[(k + 1) % line.length]!;
+    const points = line.length / 2;
+    for (let k = 0; k < points; k++) {
+      const ax = line[2 * k]!;
+      const ay = line[2 * k + 1]!;
+      const bx = line[2 * ((k + 1) % points)]!;
+      const by = line[2 * ((k + 1) % points) + 1]!;
       const len = Math.hypot(bx - ax, by - ay);
       if (len < 1e-6) continue;
       const tx = (bx - ax) / len;

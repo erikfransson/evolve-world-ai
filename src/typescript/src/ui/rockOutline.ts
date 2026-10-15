@@ -1,3 +1,4 @@
+import { marchingSquares, simplifyClosed } from "../geom/contour.ts";
 import { createRng } from "../sim/rng.ts";
 import type { Terrain } from "../sim/terrain.ts";
 
@@ -82,157 +83,6 @@ function lumps(t: RockInput): number[][] {
     else groups.set(root, [i]);
   }
   return [...groups.values()];
-}
-
-// Douglas-Peucker on the open polyline pts[a..b] (inclusive, flat x, y), appending the kept indices after a.
-function simplifyRun(pts: number[], a: number, b: number, tol: number, keep: number[]): void {
-  const stack: number[][] = [[a, b]];
-  const kept = new Set<number>();
-  while (stack.length > 0) {
-    const [i, j] = stack.pop() as [number, number];
-    const ax = pts[2 * i]!;
-    const ay = pts[2 * i + 1]!;
-    const dx = pts[2 * j]! - ax;
-    const dy = pts[2 * j + 1]! - ay;
-    const len = Math.hypot(dx, dy) || 1;
-    let far = -1;
-    let worst = tol;
-    for (let k = i + 1; k < j; k++) {
-      const d = Math.abs((pts[2 * k]! - ax) * dy - (pts[2 * k + 1]! - ay) * dx) / len;
-      if (d > worst) {
-        worst = d;
-        far = k;
-      }
-    }
-    if (far >= 0) {
-      kept.add(far);
-      stack.push([i, far], [far, j]);
-    }
-  }
-  for (const k of [...kept].sort((p, q) => p - q)) keep.push(k);
-}
-
-function simplifyLoop(pts: number[]): number[] {
-  const n = pts.length / 2;
-  if (n < 8) return pts;
-  let far = 0;
-  let best = 0;
-  for (let k = 1; k < n; k++) {
-    const d = Math.hypot(pts[2 * k]! - pts[0]!, pts[2 * k + 1]! - pts[1]!);
-    if (d > best) {
-      best = d;
-      far = k;
-    }
-  }
-  const idx = [0];
-  simplifyRun(pts, 0, far, SIMPLIFY, idx);
-  idx.push(far);
-  // second half runs far .. n (n is point 0 again)
-  const wrapped = pts.concat(pts[0]!, pts[1]!);
-  simplifyRun(wrapped, far, n, SIMPLIFY, idx);
-  const out: number[] = [];
-  for (const k of idx) out.push(wrapped[2 * k]!, wrapped[2 * k + 1]!);
-  return out;
-}
-
-// Marching squares of the field f (positive inside) on a w x h grid of nodes at (ox + i * CELL, oy + j * CELL): closed outlines.
-function contours(f: Float32Array, w: number, h: number, ox: number, oy: number, active: Uint8Array): number[][] {
-  const bw = (w >> BLOCK) + 1;
-  const ids = new Map<number, number>(); // edge key to the id of the point where the contour crosses it
-  const px: number[] = []; // crossing points by id
-  const py: number[] = [];
-  const n0: number[] = []; // the two crossings each one joins (-1 for none yet), and the ids in the order they were first joined
-  const n1: number[] = [];
-  const order: number[] = [];
-  const hEdge = (i: number, j: number): number => 2 * (j * w + i); // between node (i, j) and (i + 1, j)
-  const vEdge = (i: number, j: number): number => 2 * (j * w + i) + 1; // between node (i, j) and (i, j + 1)
-  const cross = (key: number, i: number, j: number, vertical: boolean): void => {
-    if (ids.has(key)) return;
-    const a = f[j * w + i]!;
-    const b = vertical ? f[(j + 1) * w + i]! : f[j * w + i + 1]!;
-    const s = a / (a - b);
-    ids.set(key, px.length);
-    px.push(vertical ? ox + i * CELL : ox + (i + s) * CELL);
-    py.push(vertical ? oy + (j + s) * CELL : oy + j * CELL);
-    n0.push(-1);
-    n1.push(-1);
-  };
-  const join = (a: number, b: number): void => {
-    if (n0[a] === -1) {
-      n0[a] = b;
-      order.push(a);
-    } else n1[a] = b;
-  };
-  const link = (pk: number, qk: number): void => {
-    const p = ids.get(pk)!;
-    const q = ids.get(qk)!;
-    join(p, q);
-    join(q, p);
-  };
-  for (let j = 0; j + 1 < h; j++) {
-    for (let i = 0; i + 1 < w; i++) {
-      if (!active[(j >> BLOCK) * bw + (i >> BLOCK)]) {
-        i |= (1 << BLOCK) - 1; // the rest of this block's cells in the row cross nothing
-        continue;
-      }
-      const a = f[j * w + i]! > 0;
-      const b = f[j * w + i + 1]! > 0;
-      const c = f[(j + 1) * w + i + 1]! > 0;
-      const d = f[(j + 1) * w + i]! > 0;
-      if (a === b && b === c && c === d) continue;
-      const top = a !== b;
-      const right = b !== c;
-      const bottom = d !== c;
-      const left = a !== d;
-      const edges: number[] = [];
-      if (top) {
-        cross(hEdge(i, j), i, j, false);
-        edges.push(hEdge(i, j));
-      }
-      if (right) {
-        cross(vEdge(i + 1, j), i + 1, j, true);
-        edges.push(vEdge(i + 1, j));
-      }
-      if (bottom) {
-        cross(hEdge(i, j + 1), i, j + 1, false);
-        edges.push(hEdge(i, j + 1));
-      }
-      if (left) {
-        cross(vEdge(i, j), i, j, true);
-        edges.push(vEdge(i, j));
-      }
-      if (edges.length === 2) link(edges[0]!, edges[1]!);
-      else if (edges.length === 4) {
-        const centre = (f[j * w + i]! + f[j * w + i + 1]! + f[(j + 1) * w + i + 1]! + f[(j + 1) * w + i]!) / 4 > 0;
-        if (centre === a) {
-          link(hEdge(i, j), vEdge(i + 1, j));
-          link(hEdge(i, j + 1), vEdge(i, j));
-        } else {
-          link(hEdge(i, j), vEdge(i, j));
-          link(vEdge(i + 1, j), hEdge(i, j + 1));
-        }
-      }
-    }
-  }
-  const loops: number[][] = [];
-  const seen = new Uint8Array(px.length);
-  for (const start of order) {
-    if (seen[start]) continue;
-    const pts: number[] = [];
-    let prev = -1;
-    let cur = start;
-    while (!seen[cur]) {
-      seen[cur] = 1;
-      pts.push(px[cur]!, py[cur]!);
-      const a = n0[cur]!;
-      const step = a !== prev && !seen[a] ? a : n1[cur]!;
-      prev = cur;
-      if (step === -1) break;
-      cur = step;
-    }
-    loops.push(pts);
-  }
-  return loops;
 }
 
 // The facet polygons of a lump: the Voronoi cells of jittered seeds (one per FACET square of the lump box from (gx0, gy0), at 0.1 .. 0.9 of it),
@@ -484,9 +334,13 @@ function lumpField(t: RockInput, lump: Lump): { f: Float32Array; w: number; h: n
   return { f, w, h, ox, oy, active };
 }
 
+// Straight edges between the corners that matter; a short outline is kept whole.
+const simplifyOutline = (pts: number[]): number[] => (pts.length < 16 ? pts : simplifyClosed(pts, SIMPLIFY));
+
 function lumpLoops(t: RockInput, lump: Lump, lumpOf: Int32Array): number[][] {
   const { f, w, h, ox, oy, active } = lumpField(t, lump);
-  return contours(f, w, h, ox, oy, active).map((l) => simplifyLoop(snap(t, lump.members, lumpOf, lump.id, l))).filter((l) => l.length >= 6);
+  return marchingSquares(f, w, h, 0, { scale: CELL, ox, oy, strict: true, active, block: BLOCK }) // the field is positive inside, on nodes CELL apart
+    .map((l) => simplifyOutline(snap(t, lump.members, lumpOf, lump.id, l))).filter((l) => l.length >= 6);
 }
 
 // Facets and cracks of a lump, made on first use: a body seen from afar, or in a settings preview, never needs them.

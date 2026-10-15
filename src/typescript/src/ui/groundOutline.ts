@@ -1,3 +1,4 @@
+import { ContourTracer, insidePolygon } from "../geom/contour.ts";
 import { GROUND_HALF, GROUND_PAD } from "../sim/groundField.ts";
 import type { GroundField } from "../sim/groundField.ts";
 import { TERRAIN_FAST, TERRAIN_SLOW } from "../sim/terrain.ts";
@@ -26,32 +27,9 @@ function traceLayer(f: GroundField, layer: number, subdivide: number): number[][
   const g = f.data;
   const { cols, rows, cell } = f;
   const S = subdivide;
-  const h = cell / S;
   const FW = (cols - 1) * S + 1;
-  const px: number[] = [];
-  const py: number[] = [];
-  const nb: number[] = []; // two neighbours per crossing, -1 for none yet
-  const ids = new Map<number, number>(); // fine edge key to its crossing
+  const tracer = new ContourTracer(GROUND_HALF, { stride: FW, scale: cell / S, ox: -GROUND_PAD * cell, oy: -GROUND_PAD * cell });
   const vals = new Float64Array((S + 1) * (S + 1));
-  const origin = GROUND_PAD * cell;
-  // The crossing on the fine edge from fine node (gi, gj) along x (dir 0) or y (dir 1), between values v0 and v1.
-  const cross = (gi: number, gj: number, dir: number, v0: number, v1: number): number => {
-    const key = 2 * (gj * FW + gi) + dir;
-    let id = ids.get(key);
-    if (id === undefined) {
-      const s = (v0 - GROUND_HALF) / (v0 - v1);
-      id = px.length;
-      px.push((gi + (dir === 0 ? s : 0)) * h - origin);
-      py.push((gj + (dir === 1 ? s : 0)) * h - origin);
-      nb.push(-1, -1);
-      ids.set(key, id);
-    }
-    return id;
-  };
-  const link = (p: number, q: number): void => {
-    nb[nb[2 * p]! < 0 ? 2 * p : 2 * p + 1] = q;
-    nb[nb[2 * q]! < 0 ? 2 * q : 2 * q + 1] = p;
-  };
   for (let cj = 0; cj + 1 < rows; cj++) {
     for (let ci = 0; ci + 1 < cols; ci++) {
       const k = 2 * (cj * cols + ci) + layer;
@@ -69,56 +47,11 @@ function traceLayer(f: GroundField, layer: number, subdivide: number): number[][
         }
       }
       for (let sy = 0; sy < S; sy++) {
-        for (let sx = 0; sx < S; sx++) {
-          const v00 = vals[sy * (S + 1) + sx]!;
-          const v10 = vals[sy * (S + 1) + sx + 1]!;
-          const v01 = vals[(sy + 1) * (S + 1) + sx]!;
-          const v11 = vals[(sy + 1) * (S + 1) + sx + 1]!;
-          const i00 = v00 >= GROUND_HALF;
-          const i10 = v10 >= GROUND_HALF;
-          const i01 = v01 >= GROUND_HALF;
-          const i11 = v11 >= GROUND_HALF;
-          if (i00 === i10 && i10 === i11 && i11 === i01) continue;
-          const gi = ci * S + sx;
-          const gj = cj * S + sy;
-          const top = i00 !== i10 ? cross(gi, gj, 0, v00, v10) : -1;
-          const right = i10 !== i11 ? cross(gi + 1, gj, 1, v10, v11) : -1;
-          const bottom = i01 !== i11 ? cross(gi, gj + 1, 0, v01, v11) : -1;
-          const left = i00 !== i01 ? cross(gi, gj, 1, v00, v01) : -1;
-          const edges = [top, right, bottom, left].filter((e) => e >= 0);
-          if (edges.length === 2) link(edges[0]!, edges[1]!);
-          else if (edges.length === 4) {
-            if ((v00 + v10 + v01 + v11) / 4 >= GROUND_HALF === i00) {
-              link(top, right);
-              link(bottom, left);
-            } else {
-              link(top, left);
-              link(right, bottom);
-            }
-          }
-        }
+        for (let sx = 0; sx < S; sx++) tracer.cell(ci * S + sx, cj * S + sy, vals[sy * (S + 1) + sx]!, vals[sy * (S + 1) + sx + 1]!, vals[(sy + 1) * (S + 1) + sx + 1]!, vals[(sy + 1) * (S + 1) + sx]!);
       }
     }
   }
-  const loops: number[][] = [];
-  const seen = new Uint8Array(px.length);
-  for (let start = 0; start < px.length; start++) {
-    if (seen[start]) continue;
-    const pts: number[] = [];
-    let prev = -1;
-    let cur = start;
-    while (cur >= 0 && !seen[cur]) {
-      seen[cur] = 1;
-      pts.push(px[cur]!, py[cur]!);
-      const n0 = nb[2 * cur]!;
-      const n1 = nb[2 * cur + 1]!;
-      const step = n0 !== prev && n0 >= 0 && !seen[n0] ? n0 : n1;
-      prev = cur;
-      cur = step;
-    }
-    if (pts.length >= 6) loops.push(pts);
-  }
-  return loops;
+  return tracer.loops(3);
 }
 
 function areaOf(loop: readonly number[]): number {
@@ -128,18 +61,6 @@ function areaOf(loop: readonly number[]): number {
     a += loop[2 * i]! * loop[2 * j + 1]! - loop[2 * j]! * loop[2 * i + 1]!;
   }
   return a / 2;
-}
-
-function contains(loop: readonly number[], x: number, y: number): boolean {
-  let inside = false;
-  for (let i = 0, n = loop.length / 2, j = n - 1; i < n; j = i++) {
-    const xi = loop[2 * i]!;
-    const yi = loop[2 * i + 1]!;
-    const xj = loop[2 * j]!;
-    const yj = loop[2 * j + 1]!;
-    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
-  }
-  return inside;
 }
 
 // Groups loops into bodies: an outer loop with the holes directly inside it, so a body can be culled by its box and filled even-odd.
@@ -164,7 +85,7 @@ function bodiesOf(kind: number, loops: number[][]): GroundBody[] {
     let parent = -1;
     for (let k = placed.length - 1; k >= 0; k--) {
       const o = info[placed[k]!]!;
-      if (me.x0 >= o.x0 && me.x1 <= o.x1 && me.y0 >= o.y0 && me.y1 <= o.y1 && contains(o.loop, me.loop[0]!, me.loop[1]!)) {
+      if (me.x0 >= o.x0 && me.x1 <= o.x1 && me.y0 >= o.y0 && me.y1 <= o.y1 && insidePolygon(o.loop, me.loop[0]!, me.loop[1]!)) {
         parent = placed[k]!; // the smallest container, as placed is in decreasing area
         break;
       }

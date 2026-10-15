@@ -102,19 +102,20 @@ export function hash(i: number, j: number, s: number): number {
   h = Math.imul(h ^ (h >>> 13), 1274126177);
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
-function noise(x: number, y: number, s: number): number {
+export const CUBIC_FADE = (t: number): number => t * t * (3 - 2 * t);
+export const QUINTIC_FADE = (t: number): number => t * t * t * (t * (t * 6 - 15) + 10);
+export function valueNoise(x: number, y: number, s: number, fade: (t: number) => number): number {
   const i = Math.floor(x);
   const j = Math.floor(y);
-  let fx = x - i;
-  let fy = y - j;
-  fx = fx * fx * fx * (fx * (fx * 6 - 15) + 10);
-  fy = fy * fy * fy * (fy * (fy * 6 - 15) + 10);
+  const fx = fade(x - i);
+  const fy = fade(y - j);
   const a = hash(i, j, s);
   const b = hash(i + 1, j, s);
   const c = hash(i, j + 1, s);
   const d = hash(i + 1, j + 1, s);
   return a + (b - a) * fx + (c - a) * fy + (a - b - c + d) * fx * fy;
 }
+const noise = (x: number, y: number, s: number): number => valueNoise(x, y, s, QUINTIC_FADE);
 
 // Polynomial smooth maximum: the larger of two, rounded off where they are within k of each other, so merged lobes have no crease.
 const SMOOTH = 0.5;
