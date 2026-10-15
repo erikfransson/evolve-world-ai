@@ -29,7 +29,9 @@ export function fitWorld(worldW: number, worldH: number, canvasW: number, canvas
 function clampAxis(c: number, world: number, view: number, off = 0): number {
   if (view >= world) return world / 2 + off;
   const h = (world - view) / 2 + SLACK * view;
-  return Math.min(world / 2 + h + off, Math.max(world / 2 - h + off, c));
+  // The union of the centred range and the shifted one: the far edge becomes reachable, the near one is held as before (so a creature by
+  // the world edge is not pushed under the cards).
+  return Math.min(world / 2 + h + Math.max(0, off), Math.max(world / 2 - h + Math.min(0, off), c));
 }
 
 // Latches "dragging" once the pointer has moved more than threshold from where it went down.

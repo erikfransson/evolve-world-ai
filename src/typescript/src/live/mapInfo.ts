@@ -1,4 +1,5 @@
 import { MAX_REGIONS } from "./protocol.ts";
+import { SWATCHES } from "../ui/terrainLegend.ts";
 import { mapSpec } from "../sim/maps/index.ts";
 import type { Hello, WireMap, WireRegion } from "./protocol.ts";
 
@@ -36,6 +37,9 @@ const ITEM_SWATCHES = {
   poison: `<circle cx="16" cy="19" r="2.6" fill="#e040fb" /><circle cx="32" cy="12" r="2.6" fill="#e040fb" />`,
 };
 
+// A 20 x 20 drawn icon (ui/terrainLegend.ts) in the middle of a 48 x 32 tile, until a swatch cut from the built map replaces it.
+const icon = (inner: string): string => `<g transform="translate(14 6)">${inner}</g>`;
+
 type Kind = "rock" | "mud" | "firm" | "rich" | "poison" | "dry";
 interface Row {
   group: string;
@@ -46,9 +50,9 @@ interface Row {
   svg?: string;
 }
 const ROWS: Row[] = [
-  { group: "Ground", label: "Rock", key: "rock", kind: "rock", note: () => "creatures bounce off it, and their rays stop at it" },
-  { group: "Ground", label: "Mud", key: "mud", kind: "mud", note: () => `slows a creature to half speed (×${SLOW})` },
-  { group: "Ground", label: "Firm ground", key: "firm", kind: "firm", note: () => `a creature runs faster here (×${FAST})` },
+  { group: "Ground", label: "Rock", key: "rock", kind: "rock", svg: icon(SWATCHES.rock), note: () => "creatures bounce off it, and their rays stop at it" },
+  { group: "Ground", label: "Mud", key: "mud", kind: "mud", svg: icon(SWATCHES.slow), note: () => `slows a creature to half speed (×${SLOW})` },
+  { group: "Ground", label: "Firm ground", key: "firm", kind: "firm", svg: icon(SWATCHES.fast), note: () => `a creature runs faster here (×${FAST})` },
   { group: "Regions", label: "Rich ground", kind: "rich", note: () => "the green wash: more food grows here, and more of it stays" },
   { group: "Regions", label: "Poisoned ground", kind: "poison", note: () => "the purple wash: poison grows here" },
   { group: "Regions", label: "Poor ground", kind: "dry", note: () => "the dry wash: little food grows here" },

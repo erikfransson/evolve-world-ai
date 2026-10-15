@@ -127,7 +127,11 @@ function loadMap(): void {
 
 // A random map's legend swatches, from its terrain (cached by its settings), a moment after a change so a form drag stays smooth.
 function paintRandomLegend(c: EcoConfig): void {
-  if (!c.world.map) setTimeout(() => config === c && paintTerrainLegend(readyTerrainOf(c)), 50);
+  if (c.world.map) return;
+  // Building a random map costs 80 to 180 ms on this thread (the render worker has its own), so it waits for an idle moment.
+  const paint = (): void => void (config === c && paintTerrainLegend(readyTerrainOf(c)));
+  if (typeof requestIdleCallback === "function") requestIdleCallback(paint, { timeout: 3000 });
+  else setTimeout(paint, 200);
 }
 
 let species = speciesList(config); // the config's species, resolved

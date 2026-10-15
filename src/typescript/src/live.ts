@@ -95,7 +95,8 @@ let lastStats: Stats | null = null;
 let season: Season | null = null;
 let retryTimer: ReturnType<typeof setInterval> | undefined;
 let highlight = -1; // founder whose family is lit (a row's founder), -1 for none
-let familyOf = new Map<number, number>(); // founder -> the founder of the lineage row it is counted in, from the latest stats
+let familyOf = new Map<number, number>();
+let lastLineages: readonly { founder: number; name?: string }[] = []; // the rows of the last stats, to follow a lit group // founder -> the founder of the lineage row it is counted in, from the latest stats
 const rowOf = (f: number): number => familyOf.get(f) ?? f;
 // The views with every founder of the lit row drawn as that row's founder, so the whole named family lights up.
 let litFounder: Uint32Array | null = null;
@@ -230,6 +231,7 @@ function onHello(h: Hello): void {
   names = new Map();
   starters = new Set();
   familyOf = new Map();
+  lastLineages = [];
   addPanel.setRules(h.add);
   renderMapInfo($("info"), h);
 }
@@ -490,6 +492,8 @@ function onStats(s: Stats): void {
   }
   if (s.sample || s.lineageSample || seasonChanged) showHistory();
   if (s.lineages) {
+    // A named group's row is its lowest living founder; when that line dies out the row moves to the next one. A lit group follows it.
+    const litName = highlight >= 0 ? (lastLineages.find((l) => l.founder === highlight)?.name ?? "") : "";
     familyOf = new Map();
     for (const l of s.lineages) {
       for (const f of l.founders ?? []) familyOf.set(f, l.founder); // the seeded copies of a starter share its row and its light
@@ -501,6 +505,15 @@ function onStats(s: Stats): void {
     }
     if (starters.size > 200) starters = new Set([...starters].slice(-100));
     if (names.size > 200) names = new Map([...names].slice(-100)); // only the listed ones matter; old ones go
+    if (litName && !s.lineages.some((l) => l.founder === highlight)) {
+      const row = s.lineages.find((l) => l.name === litName);
+      if (row) {
+        highlight = row.founder;
+        lineages.setHighlight(highlight);
+        syncFamily();
+      }
+    }
+    lastLineages = s.lineages;
     lineages.setLineages(s.lineages.map((l): Lineage => ({ founder: l.founder, hue: l.hue, pool: l.pool, count: l.count, species: 0 })), s.population, names, starters);
   }
   if (s.records) setRecords(s.records);
@@ -637,8 +650,8 @@ function followNextCopy(dead: number): void {
   setTimeout(() => {
     if (selection?.id !== dead || scene.slotOf(next) < 0) return; // the visitor picked something else meanwhile
     select(next);
-    highlight = next;
-    lineages.setHighlight(next);
+    highlight = rowOf(next); // a copy's family is counted in its name's row
+    lineages.setHighlight(highlight);
     syncFamily();
   }, 1500);
 }
@@ -652,8 +665,8 @@ const addPanel = new AddPanel($("addPanel"), {
     myCopies = r.ids.slice();
     const id = r.ids[0]!; // an added creature founds its own lineage: its id is the family's founder
     select(id);
-    highlight = id;
-    lineages.setHighlight(id);
+    highlight = rowOf(id);
+    lineages.setHighlight(highlight);
     syncFamily();
   },
   minimised: (on) => ($("addPeek").hidden = !on),

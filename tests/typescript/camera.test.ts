@@ -29,6 +29,14 @@ describe("camera maths", () => {
     }
   });
 
+  it("keeps the near world edge clear of the cards the focus offset makes room for", () => {
+    const c = new Camera(30000, 18750, 1000, 800, 5);
+    c.zoomAt(500, 400, 2);
+    c.setFocusOffset(250, 0, true); // cards over the left of the view
+    c.panBy(1e7, 0); // drag right as far as it goes: the left world edge comes into view
+    expect(c.worldToScreen(0, 0).x).toBeGreaterThanOrEqual(250); // not under the cards
+  });
+
   it("maps the centre to the middle of the canvas", () => {
     const c = make();
     const s = c.worldToScreen(c.cx, c.cy);
