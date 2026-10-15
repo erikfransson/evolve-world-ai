@@ -95,8 +95,8 @@ let lastStats: Stats | null = null;
 let season: Season | null = null;
 let retryTimer: ReturnType<typeof setInterval> | undefined;
 let highlight = -1; // founder whose family is lit (a row's founder), -1 for none
-let familyOf = new Map<number, number>();
-let lastLineages: readonly { founder: number; name?: string }[] = []; // the rows of the last stats, to follow a lit group // founder -> the founder of the lineage row it is counted in, from the latest stats
+let familyOf = new Map<number, number>(); // founder -> the founder of the lineage row it is counted in, from the latest stats
+let lastLineages: readonly { founder: number; name?: string }[] = []; // the rows of the last stats, to follow a lit group
 const rowOf = (f: number): number => familyOf.get(f) ?? f;
 // The views with every founder of the lit row drawn as that row's founder, so the whole named family lights up.
 let litFounder: Uint32Array | null = null;
