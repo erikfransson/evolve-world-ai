@@ -55,7 +55,8 @@ export interface MapSpec {
   seed: number;
   width: number;
   height: number;
-  scale: number; // noise wavelengths of the draft are multiplied by this
+  scale: number; // the draft's coarse noise wavelengths (warp, path width, passes) are multiplied by this
+  fineScale?: number; // the same for the edge roughness wavelengths, which are detail and stay when the map shrinks; default scale
   baseFood?: number;
   basePoison?: number;
   layers: readonly MapLayer[];
@@ -117,7 +118,7 @@ interface Sdf {
 }
 
 // An outline's signed distance after domain warp, edge roughness and, for paths, width wobble.
-function makeShape(layer: Outline, seed: number, k: number): Sdf {
+function makeShape(layer: Outline, seed: number, k: number, kFine: number): Sdf {
   const sh = layer.shape;
   const amp = layer.warp ?? 900;
   const rough = layer.rough ?? 300;
@@ -206,8 +207,8 @@ function makeShape(layer: Outline, seed: number, k: number): Sdf {
     };
   }
   const margin = amp * 1.4 + rough * 1.5 + (layer.feather ?? 800) / 2 + 50 + (layer.band ?? 0); // beyond the box by this much the layer has no effect (the warp moves a point by at most 1.35 amp, the roughness by 1.4 rough)
-  const n1 = ROUGH_WAVE * k;
-  const n2 = ROUGH_WAVE_FINE * k;
+  const n1 = ROUGH_WAVE * kFine;
+  const n2 = ROUGH_WAVE_FINE * kFine;
   const box = { x0: pad.x0 - margin, x1: pad.x1 + margin, y0: pad.y0 - margin, y1: pad.y1 + margin };
   // The warped distance (the costly part, smooth at this scale) sampled on a lattice and interpolated; the roughness is added per point.
   const lc = Math.ceil((box.x1 - box.x0) / LATTICE) + 2;
@@ -239,7 +240,7 @@ function makeShape(layer: Outline, seed: number, k: number): Sdf {
 const LATTICE = 192; // world units between samples of an outline's warped distance
 const TAU = 2 * Math.PI;
 const stoneSeed = (seed: number): number => seed * 7919 + 17; // the stone sampling stream of a map
-// Wavelengths of the draft's noise in world units at scale 1, multiplied by the spec's scale.
+// Wavelengths of the draft's noise in world units at scale 1, multiplied by the spec's scale (the roughness ones by fineScale).
 const WARP_WAVE = 5200;
 const WARP_WAVE_FINE = 1800;
 const ROUGH_WAVE = 800;
@@ -316,7 +317,8 @@ export function buildMap(spec: MapSpec): BuiltMap {
   check(spec);
   const { width: W, height: H, seed } = spec;
   const k = spec.scale;
-  const layers = spec.layers.map((layer, i) => ({ ...layer, outline: makeShape(layer, seed + 41 * i, k), i, thr: -1 }));
+  const kFine = spec.fineScale ?? k;
+  const layers = spec.layers.map((layer, i) => ({ ...layer, outline: makeShape(layer, seed + 41 * i, k, kFine), i, thr: -1 }));
   for (const layer of layers) {
     const tx = layer.mud ?? layer.firm;
     if (!tx || tx.coverage >= 1) continue;
@@ -390,7 +392,7 @@ export function buildMap(spec: MapSpec): BuiltMap {
   const mask = new Uint8Array(mcols * mrows);
   const massifs = spec.rock.map((rockLayer, i) => ({ rockLayer, i })).filter(({ rockLayer }) => rockLayer.kind === "massif");
   for (const { rockLayer, i } of massifs) {
-    const outline = makeShape(rockLayer, seed + 977 + 31 * i, k);
+    const outline = makeShape(rockLayer, seed + 977 + 31 * i, k, kFine);
     const fe = rockLayer.feather ?? 800;
     const passes = rockLayer.passes ?? [];
     const nw = PASS_WAVE * k;
@@ -424,7 +426,7 @@ export function buildMap(spec: MapSpec): BuiltMap {
   let stones = 0;
   spec.rock.forEach((rockLayer, ri) => {
     if (rockLayer.kind === "massif") return;
-    const outline = makeShape(rockLayer, seed + 1977 + 31 * ri, k);
+    const outline = makeShape(rockLayer, seed + 1977 + 31 * ri, k, kFine);
     const feather = rockLayer.feather ?? 1200;
     const Kd = rockLayer.kind === "talus" ? TALUS : OUTCROP;
     const r0 = rockLayer.r ?? Kd.r;
