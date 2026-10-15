@@ -143,10 +143,11 @@ export class StateStore {
       });
   }
 
-  // Whether any file here is named as a save, whether or not the listing shows it (stamped in the future by a clock that was behind, a
-  // sidecar that does not parse): the store holds saves, so startup must not take it for an empty one.
-  hasSaveFiles(): boolean {
-    return readdirSync(this.dir).some(isSaveName);
+  // Files named as saves that the listing does not show (stamped in the future by a clock that was behind, a sidecar that does not
+  // parse): they may be the running world's, so startup must not start over while there are any.
+  hiddenSaves(): number {
+    const listed = new Set(this.list().map((s) => s.name));
+    return readdirSync(this.dir).filter((n) => isSaveName(n) && !listed.has(n)).length;
   }
 
   // The checked state of a save, parsed on a worker (saveParse.ts). The name must be one the listing shows (pattern, regular file, not from the future),

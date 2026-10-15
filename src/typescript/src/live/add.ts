@@ -57,6 +57,7 @@ export const validName = (name: unknown): name is string => typeof name === "str
 // The starter founders a fresh Live world is seeded with keep their name in the engine behind this mark, which no visitor's name
 // can have, so they are told apart from visitor adds, also after a save and restore. The wire carries the bare name and a starter flag.
 export const STARTER_MARK = "*";
+export const BLANKED = "-"; // a name an admin cleared (no valid name, so the wire carries none), still a visitor's add
 export function wireName(engineName: string): { name: string; starter: boolean } {
   const starter = engineName.startsWith(STARTER_MARK);
   const name = starter ? engineName.slice(STARTER_MARK.length) : engineName;

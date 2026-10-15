@@ -82,12 +82,12 @@ export class Lineages {
     return f >= 0 && (f < this.founders || this.late.has(f));
   }
 
-  // Clears the name tag of every runtime lineage whose name passes `match`; returns how many were cleared.
-  clearNames(match: (name: string) => boolean): number {
+  // Renames every runtime lineage whose name passes `match` to `to(name)`; returns how many were renamed.
+  renameWhere(match: (name: string) => boolean, to: (name: string) => string): number {
     let n = 0;
     for (const l of this.late.values()) {
       if (l.name && match(l.name)) {
-        l.name = "";
+        l.name = to(l.name);
         n++;
       }
     }

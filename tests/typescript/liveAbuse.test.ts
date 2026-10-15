@@ -14,6 +14,7 @@ import { LiveWorld } from "../../server/src/liveWorld.ts";
 import { smallConfig } from "./liveHelpers.ts";
 import { StateStore } from "../../server/src/state.ts";
 import { loadFounders } from "../../server/src/founders.ts";
+import { wireName } from "../../src/typescript/src/live/add.ts";
 
 const tmp = (): string => mkdtempSync(join(tmpdir(), "evolve-abuse-"));
 
@@ -60,11 +61,12 @@ describe("admin blank-name", () => {
     await vi.waitFor(() => expect(replies).toHaveLength(3));
     expect(replies[1]).toMatchObject({ t: "error", message: expect.stringMatching(/letters or digits/) });
     expect(replies[2]).toEqual({ t: "blanked", message: "cleared the name from 3 families" });
-    for (const id of rude) expect(world.eco.lineageName(id)).toBe("");
+    for (const id of rude) expect(wireName(world.eco.lineageName(id))).toEqual({ name: "", starter: false });
     expect(world.eco.lineageName(kind[0]!)).toBe("Kind");
     const restored = new LiveWorld(smallConfig(), null);
     restored.restoreState(JSON.parse(JSON.stringify(world.saveState())));
-    expect(restored.eco.lineageName(rude[0]!)).toBe(""); // a save keeps it blank
+    expect(wireName(restored.eco.lineageName(rude[0]!)).name).toBe(""); // a save keeps it blank
+    expect(restored.aliveAdded()).toBe(world.aliveAdded()); // and the families still count as visitor adds
     ws.close();
     admin.close();
   });

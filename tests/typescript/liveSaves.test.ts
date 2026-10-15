@@ -221,7 +221,23 @@ describe("saves", () => {
     expect(later.list()).toEqual([]);
     const out: string[] = [];
     expect(await new Saves(new LiveWorld(smallConfig(), null), later).restoreNewest((l) => out.push(l))).toBe("unreadable");
-    expect(out.at(-1)).toMatch(/none is listed/);
+    expect(out.at(-1)).toMatch(/not listed/);
+
+    // The newest listed save is of an earlier world (a recent move to a new map) while this world's saves are hidden: still no fresh world.
+    const other = new LiveWorld(smallConfig(), null);
+    other.config.world.width = 2100;
+    other.eco.config.world.width = 2100;
+    await later.write(JSON.stringify(other.saveState()), meta(good), at(5));
+    expect(later.list()).toHaveLength(1);
+    expect(await new Saves(new LiveWorld(smallConfig(), null), later).restoreNewest(() => {})).toBe("unreadable");
+
+    // A save of this world that fails, then one of an earlier world: the failed one may be the running world's.
+    const mixed = tmp();
+    const both = new StateStore(mixed);
+    await both.write(JSON.stringify(other.saveState()), meta(good), at(2));
+    await both.write(json(good), meta(good), at(1));
+    writeFileSync(join(mixed, saveName(at(1))), "garbage");
+    expect(await new Saves(new LiveWorld(smallConfig(), null), both).restoreNewest(() => {})).toBe("unreadable");
   });
 
   it("a restore keeps a birth reserve below the population cap, so births can go on", () => {

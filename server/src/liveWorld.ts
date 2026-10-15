@@ -17,7 +17,7 @@ import { LIMITS, LIVE, MAX_POPULATION, MAX_SEED_FOUNDERS, SEED_COPIES, itemHeadr
 import type { SeedFounder } from "./founders.ts";
 import { mapRegions } from "../../src/typescript/src/live/mapRegions.ts";
 import { mapVersion } from "../../src/typescript/src/sim/maps/index.ts";
-import { STARTER_MARK, wireName } from "../../src/typescript/src/live/add.ts";
+import { BLANKED, STARTER_MARK, wireName } from "../../src/typescript/src/live/add.ts";
 import type { AddRequest, AddRules } from "../../src/typescript/src/live/add.ts";
 import { fullEnergy } from "../../src/typescript/src/sim/species.ts";
 import type { ThinkPool } from "../../src/typescript/src/worker/ecoPool.ts";
@@ -511,8 +511,9 @@ export class LiveWorld {
 
   // Blanks a visitor's name (as viewers see it, without the starter mark) on every family that carries it, for an admin who finds it
   // unfit; the families live on unnamed. Stats, details and the next save carry the change. Call between ticks (whenIdle).
+  // The name becomes BLANKED (or STARTER_MARK + BLANKED), which viewers see as no name, so a visitor family still counts as added.
   blankName(name: string): number {
-    return this.eco.lineageTable.clearNames((n) => wireName(n).name === name);
+    return this.eco.lineageTable.renameWhere((n) => wireName(n).name === name, (n) => (n.startsWith(STARTER_MARK) ? STARTER_MARK : "") + BLANKED);
   }
 
   // Inserts a checked add request (live/add.ts parseAdd) as `copies` founders of new named lineages at random free spots, through the

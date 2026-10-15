@@ -46,8 +46,12 @@ export function loadOverrides(stateDir: string, world: { eco: Ecosystem }): Reco
   } catch (e) {
     console.error(`OVERRIDES IGNORED: ${OVERRIDES}: ${e instanceof Error ? e.message : e}`);
   }
-  copyFileSync(file, join(stateDir, IGNORED_OVERRIDES)); // kept aside, as the next admin change writes the file anew
-  console.error(`OVERRIDES IGNORED: a copy is in ${IGNORED_OVERRIDES}`);
+  try {
+    copyFileSync(file, join(stateDir, IGNORED_OVERRIDES)); // kept aside, as the next admin change writes the file anew
+    console.error(`OVERRIDES IGNORED: a copy is in ${IGNORED_OVERRIDES}`);
+  } catch (e) {
+    console.error(`OVERRIDES IGNORED: could not keep a copy: ${e instanceof Error ? e.message : e}`);
+  }
   return {};
 }
 

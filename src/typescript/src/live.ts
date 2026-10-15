@@ -465,8 +465,11 @@ function onStats(s: Stats): void {
   if (s.sample || s.lineageSample || seasonChanged) showHistory();
   if (s.lineages) {
     for (const l of s.lineages) {
+      // Each listed lineage carries its name every time, so a missing one (an admin cleared it) clears the page's copy.
       if (l.name) names.set(l.founder, l.name);
+      else names.delete(l.founder);
       if (l.starter) starters.add(l.founder);
+      else starters.delete(l.founder);
     }
     if (starters.size > 200) starters = new Set([...starters].slice(-100));
     if (names.size > 200) names = new Map([...names].slice(-100)); // only the listed ones matter; old ones go

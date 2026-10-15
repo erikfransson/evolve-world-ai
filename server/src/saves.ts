@@ -80,15 +80,15 @@ export class Saves {
         if (e instanceof OtherWorld) {
           log("older saves are taken to be of earlier worlds and are not tried; all are kept on disk");
           if (tried > 0) return "unreadable";
-          log("no usable save, starting a fresh world");
-          return "fresh";
+          break;
         }
         if (++tried >= RESTORE_TRIES) return "unreadable";
       }
     }
     if (tried > 0) return "unreadable";
-    if (this.store.hasSaveFiles()) {
-      log("saves are on disk but none is listed (stamped in the future by a clock behind at boot, or an unreadable sidecar)");
+    const hidden = this.store.hiddenSaves();
+    if (hidden > 0) {
+      log(`${hidden} saves on disk are not listed (stamped in the future by a clock behind at boot, or an unreadable sidecar): not starting a fresh world`);
       return "unreadable";
     }
     log("no usable save, starting a fresh world");
