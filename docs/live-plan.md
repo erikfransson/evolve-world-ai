@@ -31,7 +31,7 @@ Hourly state stays out of git, since a world of about 1000 creatures is a few MB
 
 ## Visitor flow
 1. Page opens into the running world, with a hideable "Add your creature" panel on top.
-2. Pick one of 4 clear named founders (more later) hand-picked from `pool.json` by measured behaviour (Explorer moves a lot, Slow and steady barely moves with wide rays, Peaceful avoids others, Aggressive approaches others), or upload a saved creature file.
+2. Pick one of 4 named founders trained for the Live World (Pathfinder ranges far, Juggernaut rams, Oracle has the biggest brain, Gentle Grazer never fights), or upload a saved creature file.
 3. Tune plan and settings within the form limits; energy per second updates live.
 4. Optional toggles: Pretrain (quick Trials run) and RL fine-tune (RL envs from #27), both in the browser.
 5. Choose name (1 to 16 letters or digits) and colour, insert 1 to 3 copies at random free spots. The page then follows one and highlights its family (each copy founds its own lineage).
@@ -57,6 +57,7 @@ The public port answers only the WebSocket upgrade and `GET /stats` (`{creatures
 | L6   | Tunnel setup and admin panel                                                  | L2                      |
 
 ## Decisions
+- 2026-10-15: trained starter founders (Pathfinder, Juggernaut, Oracle, Gentle Grazer) replace the pool picks in `public/live-founders.json`, approved by Erik; measured numbers in the file. Together in a fresh world Juggernaut and Oracle die out within 20 min; Erik keeps all four.
 - 2026-10-13: The Inland Sea on the server: item slots scale with the world area to stay under the wire's 262144, a fresh world is seeded from `live-founders.json` (checked like an upload), a save of another world is not restored, the page builds the map from the name in the hello. Numbers in `docs/status.md` A7.
 - 2026-10-12: L4 built. Entry card (watch or add); founders Explorer, Slow and steady, Peaceful, Hunter-ish measured by `scripts/pickFounders.ts` into `public/live-founders.json`; tuning keeps the founder's layer count; Pretrain (far-food, patch, minefield) and fine-tune (crowd, rivals) are 30 s of evolution strategies each on the Arena's worker, kept only if they beat the start on held-out layouts; added creatures start with `add.startEnergy` (300) and may first give birth `add.birthHoldS` (60 s) after insertion, both admin settings; the hold is the engine's own birth gate (a last birth placed in the future), so no engine change. Protocol 4 (founder u32, names in DETAIL and lineages, add, map info in the hello).
 - 2026-10-11: self-hosted server behind an HTTPS tunnel (public port only), world pauses while the host is off (page says offline), saves every 4 h kept 4 days with admin revert, founders hand-picked from `pool.json`, 2x speed by default (now 3x), viewer cap 100 with a 3 MB/s upload budget, server at lowest CPU and IO priority.

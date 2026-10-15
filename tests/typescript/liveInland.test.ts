@@ -153,7 +153,7 @@ describe("founders file", () => {
     // The pages read the same file with the same parser, so a visitor's copy of a starter carries the starter's lineage name.
     const page = parsePageFounders(JSON.parse(readFileSync(FOUNDERS, "utf8")));
     expect(page.map((x) => x.lineage)).toEqual(f.map((x) => x.name));
-    expect(page.find((x) => x.name === "Slow and steady")?.lineage).toBe("SlowAndSteady");
+    expect(page.find((x) => x.name === "Gentle Grazer")?.lineage).toBe("GentleGrazer");
     // Each founder would also pass as a visitor's add.
     const rules = freshSmall().addRules();
     for (const x of f) expect(typeof parseAdd(encodeAdd({ plan: x.plan, genome: x.genome, birth: { energy: 150, cost: 70, cooldown: 10 }, name: x.name, hue: 0, copies: 1 }), rules)).toBe("object");
