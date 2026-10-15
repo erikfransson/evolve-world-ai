@@ -33,8 +33,10 @@ export function paintTerrainLegend(t: Terrain | null): void {
   painted = t;
   for (const r of ROWS) {
     const tile = document.querySelector<HTMLElement>(`#${r.id} .lg-tile`);
-    const c = tile ? mapSwatch(t, r.kind, 30, 20) : null;
-    if (tile && c) tile.replaceChildren(c);
+    if (!tile) continue;
+    const c = mapSwatch(t, r.kind, 30, 20);
+    if (c) tile.replaceChildren(c);
+    else tile.innerHTML = `<svg viewBox="0 0 20 20" aria-hidden="true">${r.swatch}</svg>`; // this world has none: the drawn icon, not the last world's swatch
   }
 }
 

@@ -77,7 +77,7 @@ export interface AdminCommands {
   loadSave(name: string): Promise<string>; // saves the running world, then restores; rejects with the reason and keeps the running world
   stop(): void | Promise<void>; // save, then exit with code 0
   blankName(name: string): Promise<number>; // families whose visitor name was cleared
-  renameName(from: string, to: string): Promise<number>; // families renamed
+  renameName(from: string, to: string, force: boolean): Promise<number | string>; // families renamed, or why not
 }
 
 const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".wasm": "application/wasm", ".ico": "image/x-icon" };
@@ -111,7 +111,8 @@ function serveStatic(root: string): ReturnType<typeof createServer> {
 // Then: {t:"get-config"} -> {t:"config", values, limits, paused}; {t:"set-config", changes:{key:value}} -> {t:"config", ...} or {t:"error", message};
 // {t:"pause"} / {t:"resume"} -> {t:"config", ...}; {t:"save-now"} -> {t:"saved", message}; {t:"list-saves"} -> {t:"saves", saves}; {t:"load-save", name} -> {t:"loaded", message} or {t:"error", message}; {t:"stop"} -> {t:"stopping"}, then the server saves and exits 0;
 // {t:"blank-name", name} -> {t:"blanked", message}: the name is cleared from every family that carries it;
-// {t:"rename", name, to} -> {t:"renamed", message}: every family named `name` is named `to` (starters stay starters).
+// {t:"rename", name, to, force?} -> {t:"renamed", message}: every family named `name` (any case) is named `to` (starters stay starters);
+// a `to` another living family carries is refused unless force.
 // The same port serves the built page (webRoot) over http.
 export function startAdmin(host: string, port: number, token: string, world: AdminWorld, stateDir: string, webRoot: string, saved: Record<string, Value>, commands: AdminCommands): { wss: WebSocketServer; close(): void } {
   const http = serveStatic(webRoot);
@@ -143,7 +144,7 @@ export function startAdmin(host: string, port: number, token: string, world: Adm
       }
     });
     const handle = (data: import("ws").RawData, isBinary: boolean): void => {
-      let msg: { t?: unknown; token?: unknown; changes?: unknown; name?: unknown; to?: unknown };
+      let msg: { t?: unknown; token?: unknown; changes?: unknown; name?: unknown; to?: unknown; force?: unknown };
       try {
         if (isBinary) throw new Error("binary");
         msg = JSON.parse(data.toString());
@@ -195,7 +196,7 @@ export function startAdmin(host: string, port: number, token: string, world: Adm
       }
       if (msg.t === "rename") {
         if (!validName(msg.name) || !validName(msg.to)) return reply(ws, { t: "error", message: "both names must be 1 to 16 letters or digits" });
-        return void commands.renameName(msg.name, msg.to).then((n) => reply(ws, { t: "renamed", message: `renamed ${n} ${n === 1 ? "family" : "families"}` }), (e) => reply(ws, { t: "error", message: why(e) }));
+        return void commands.renameName(msg.name, msg.to, msg.force === true).then((n) => reply(ws, typeof n === "string" ? { t: "error", message: n } : { t: "renamed", message: `renamed ${n} ${n === 1 ? "family" : "families"}` }), (e) => reply(ws, { t: "error", message: why(e) }));
       }
       if (msg.t === "stop") {
         reply(ws, { t: "stopping" });

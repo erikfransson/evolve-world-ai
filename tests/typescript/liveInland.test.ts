@@ -11,6 +11,7 @@ import { lineageName, loadFounders, parseFounders } from "../../server/src/found
 import { parseFounders as parsePageFounders } from "../../src/typescript/src/live/founders.ts";
 import { LiveWorld } from "../../server/src/liveWorld.ts";
 import { namedTop } from "../../server/src/chronicle.ts";
+import { MAX_GROUP_FOUNDERS } from "../../src/typescript/src/live/protocol.ts";
 import { OtherWorld } from "../../server/src/saveParse.ts";
 import { Saves, openWorld } from "../../server/src/saves.ts";
 import { PREVIOUS_OVERRIDES } from "../../server/src/admin.ts";
@@ -190,6 +191,31 @@ describe("founders file", () => {
     const back = freshSmall();
     back.restoreState(JSON.parse(JSON.stringify(live.saveState())));
     expect(namedTop(back.eco, 8).find((g) => g.name === "Scout")).toMatchObject({ count: SEED_COPIES, starter: true }); // a save keeps it
+  });
+
+  it("caps a row's other founders at MAX_GROUP_FOUNDERS on the server and on the page", () => {
+    const live = freshSmall();
+    const f = loadFounders(FOUNDERS.pathname)[0]!;
+    for (let k = 0; k < MAX_GROUP_FOUNDERS + 8; k++) {
+      const r = live.eco.insertCreature({ genome: f.genome, plan: f.plan, x: 100 + 40 * (k % 40), y: 100 + 40 * Math.floor(k / 40), heading: 0, hue: 10, name: "Many" });
+      if (!r.ok) throw new Error(r.reason);
+    }
+    const row = live.stats(0).lineages!.find((l) => l.name === "Many")!;
+    expect([row.count, row.founders!.length]).toEqual([MAX_GROUP_FOUNDERS + 8, MAX_GROUP_FOUNDERS]);
+    const wire = { ...live.stats(0), lineages: [{ ...row, founders: [...Array(MAX_GROUP_FOUNDERS + 5).keys(), -1, 1.5, "x"] }] };
+    expect(cleanStats(JSON.parse(JSON.stringify(wire))).lineages![0]!.founders).toHaveLength(MAX_GROUP_FOUNDERS);
+    expect(cleanStats(JSON.parse(JSON.stringify({ ...wire, lineages: [{ ...row, founders: [3, -1, 1.5, "x", 7] }] }))).lineages![0]!.founders).toEqual([3, 7]);
+  });
+
+  it("refuses a rename onto a living family's name (any case) unless forced, and matches the old name in any case", () => {
+    const live = freshSmall();
+    const founders = loadFounders(FOUNDERS.pathname);
+    live.seedFounders(founders, seq(4));
+    const [a, b] = [founders[0]!.name, founders[1]!.name];
+    expect(live.renameName(a, b.toUpperCase())).toMatch(/name of a living family/);
+    expect(live.renameName(a.toLowerCase(), "Fresh")).toBe(SEED_COPIES);
+    expect(live.renameName("Fresh", b, true)).toBe(SEED_COPIES); // forced: the two merge on the list
+    expect(namedTop(live.eco, 8).find((g) => g.name === b)?.count).toBe(2 * SEED_COPIES);
   });
 
   it("refuses a file with a bad founder, too many founders, or none, and skips nothing", () => {

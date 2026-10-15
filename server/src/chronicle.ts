@@ -18,24 +18,22 @@ interface Group {
 }
 
 // The k largest families, with every family of the same visible name (the 10 seeded copies of a starter, a visitor's 1 to 3 copies)
-// counted as one; unnamed families stand alone. O(population) per call.
+// counted as one; unnamed families stand alone. From the lineage table's kept counts, O(living families) per call.
 export function namedTop(eco: Ecosystem, k: number): Group[] {
-  const counts = new Map<number, number>();
-  for (const m of eco.members) counts.set(m.founderId, (counts.get(m.founderId) ?? 0) + 1);
   const groups = new Map<string, Group>();
-  for (const [founder, count] of counts) {
+  eco.lineages.forEachLiving((founder, count, hue, pool) => {
     const { name, starter } = wireName(eco.lineageName(founder));
-    const key = name ? `${starter ? "*" : ""}${name}` : `#${founder}`;
+    const key = name ? `${starter ? "*" : ""}${name.toLowerCase()}` : `#${founder}`; // the add rule's case: one name, one family on the list
     const g = groups.get(key);
-    if (!g) groups.set(key, { founder, hue: eco.lineages.colour(founder), pool: eco.lineages.fromPool(founder), count, name, starter, others: [] });
+    if (!g) groups.set(key, { founder, hue, pool, count, name, starter, others: [] });
     else {
       g.count += count;
       if (founder < g.founder) {
         g.others.push(g.founder);
-        Object.assign(g, { founder, hue: eco.lineages.colour(founder), pool: eco.lineages.fromPool(founder) });
+        Object.assign(g, { founder, hue, pool, name });
       } else g.others.push(founder);
     }
-  }
+  });
   return [...groups.values()].sort((a, b) => b.count - a.count || a.founder - b.founder).slice(0, k);
 }
 

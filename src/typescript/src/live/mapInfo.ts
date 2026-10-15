@@ -1,4 +1,6 @@
 import { MAX_REGIONS } from "./protocol.ts";
+import { POISON_LETHAL } from "../sim/config.ts";
+import { FAST_FACTOR, SLOW_FACTOR } from "../sim/terrain.ts";
 import { SWATCHES } from "../ui/terrainLegend.ts";
 import { mapSpec } from "../sim/maps/index.ts";
 import type { Hello, WireMap, WireRegion } from "./protocol.ts";
@@ -21,9 +23,6 @@ export function cleanMap(m: unknown): WireMap {
   return { ...(name ? { name } : {}), ...(version ? { version } : {}), ground, regions };
 }
 
-const POISON_LETHAL = 100; // sim/config.ts: poison damage from this kills at once
-const SLOW = 0.5; // sim/terrain.ts SLOW_FACTOR and FAST_FACTOR, kept here so this module stays light (the server imports cleanMap)
-const FAST = 1.75;
 
 // Item and creature swatches (the page's own constant markup), drawn over a patch of plain ground like the map.
 const CREATURE = (hue: number, fill: number, id: string, dim = false): string =>
@@ -51,8 +50,8 @@ interface Row {
 }
 const ROWS: Row[] = [
   { group: "Ground", label: "Rock", key: "rock", kind: "rock", svg: icon(SWATCHES.rock), note: () => "creatures bounce off it, and their rays stop at it" },
-  { group: "Ground", label: "Mud", key: "mud", kind: "mud", svg: icon(SWATCHES.slow), note: () => `slows a creature to half speed (×${SLOW})` },
-  { group: "Ground", label: "Firm ground", key: "firm", kind: "firm", svg: icon(SWATCHES.fast), note: () => `a creature runs faster here (×${FAST})` },
+  { group: "Ground", label: "Mud", key: "mud", kind: "mud", svg: icon(SWATCHES.slow), note: () => `slows a creature to half speed (×${SLOW_FACTOR})` },
+  { group: "Ground", label: "Firm ground", key: "firm", kind: "firm", svg: icon(SWATCHES.fast), note: () => `a creature runs faster here (×${FAST_FACTOR})` },
   { group: "Regions", label: "Rich ground", kind: "rich", note: () => "the green wash: more food grows here, and more of it stays" },
   { group: "Regions", label: "Poisoned ground", kind: "poison", note: () => "the purple wash: poison grows here" },
   { group: "Regions", label: "Poor ground", kind: "dry", note: () => "the dry wash: little food grows here" },

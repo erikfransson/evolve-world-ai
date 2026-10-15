@@ -1,4 +1,5 @@
-import { readyTerrainOf } from "./sim/terrain.ts";
+import { Terrain, readyTerrainOf } from "./sim/terrain.ts";
+import { unpackMap } from "./sim/maps/mapParts.ts";
 import "./base.css";
 import "./style.css";
 import "./ecosystem.css";
@@ -197,6 +198,12 @@ function onSnapshot(e: MessageEvent<EcoOutMessage>): void {
     if (!mapShown && host && msg.name === map && msg.width === width && msg.height === height) {
       host.useMap({ name: msg.name, width: msg.width, height: msg.height, parts: msg.parts, outlines: null });
       mapShown = true;
+      try {
+        const m = unpackMap(msg.width, msg.height, msg.parts); // checked like the page's own build; rock outlines trace lazily, only the swatch's
+        paintTerrainLegend(new Terrain(m.rock, m.ground, msg.width, msg.height, m.weights));
+      } catch {
+        // arrays that do not fit: the legend keeps its drawn icons
+      }
     }
     return;
   }

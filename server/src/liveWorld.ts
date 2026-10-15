@@ -526,8 +526,13 @@ export class LiveWorld {
 
   // Renames every family whose name viewers see as `from` to `to` (both letters and digits), keeping the starter mark: a renamed
   // starter founder (the shipped file's names changed) stays a starter. Call between ticks (whenIdle).
-  renameName(from: string, to: string): number {
-    return this.eco.lineageTable.renameWhere((n) => wireName(n).name === from, (n) => (n.startsWith(STARTER_MARK) ? STARTER_MARK : "") + to);
+  // Names compare without case, as the add rule does. A target another living family carries is refused (renaming would merge the two
+  // on the list for good) unless force. Returns the families renamed, or the reason.
+  renameName(from: string, to: string, force = false): number | string {
+    const f = from.toLowerCase();
+    const t = to.toLowerCase();
+    if (!force && f !== t && this.eco.lineageTable.someName((n) => wireName(n).name.toLowerCase() === t)) return `${to} is the name of a living family; rename with force to merge them`;
+    return this.eco.lineageTable.renameWhere((n) => wireName(n).name.toLowerCase() === f, (n) => (n.startsWith(STARTER_MARK) ? STARTER_MARK : "") + to);
   }
 
   // Blanks a visitor's name (as viewers see it, without the starter mark) on every family that carries it, for an admin who finds it

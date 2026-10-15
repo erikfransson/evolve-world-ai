@@ -129,6 +129,12 @@ export class Lineages {
     for (const [id, live, hue, species, pool, name] of s.late) if (live > 0) this.late.set(id, { live, hue, species, pool: pool === 1, name }); // older saves kept extinct rows
   }
 
+  // Every lineage with living members, from the kept counts (no scan of the creatures).
+  forEachLiving(fn: (founder: number, count: number, hue: number, pool: boolean) => void): void {
+    for (let f = 0; f < this.founders; f++) if (this.live[f]! > 0) fn(f, this.live[f]!, this.hue[f]!, this.pool[f] === 1);
+    for (const [f, l] of this.late) if (l.live > 0) fn(f, l.live, l.hue, l.pool);
+  }
+
   // The k largest living lineages, of one species or of all (-1), biggest first, ties to the lowest founder id. Scans the founders, not the creatures.
   top(k: number, species = -1): Lineage[] {
     const top: Lineage[] = [];

@@ -83,7 +83,7 @@ const admin = startAdmin(HOST, adminPort, token, live, stateDir, webRoot, savedO
   loadSave,
   stop,
   blankName: (name) => live.whenIdle(() => live.blankName(name)),
-  renameName: (from, to) => live.whenIdle(() => live.renameName(from, to)),
+  renameName: (from, to, force) => live.whenIdle(() => live.renameName(from, to, force)),
 });
 
 runTicks(live, LIMITS.maxTickFailures, (why) => {
