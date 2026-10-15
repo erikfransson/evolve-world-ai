@@ -87,6 +87,7 @@ export interface WireRegion {
 }
 export interface WireMap {
   name?: string; // a hand-designed map (sim/maps/index.ts MAPS) of the world's size, absent for the random map
+  version?: string; // with a name: the server's mapVersion of it, so a page built with other map data can tell
   ground: { normal: number; mud: number; firm: number; rock: number }; // shares of the area, 0 to 1
   regions: WireRegion[];
 }

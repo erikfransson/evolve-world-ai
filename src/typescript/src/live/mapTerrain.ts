@@ -33,7 +33,7 @@ export function checkOutlines(g: unknown, width: number, height: number): g is R
   if (!(bodyLoops instanceof Uint32Array) || !(loopPoints instanceof Uint32Array) || !(points instanceof Float64Array)) return false;
   const bodies = bodyLoops.length;
   if (bodies > MAX_ROCK || loopPoints.length > MAX_OUTLINE_LOOPS || points.length > 2 * MAX_OUTLINE_POINTS || points.length % 2 !== 0) return false;
-  if (!cumulative(bodyLoops, 1, loopPoints.length) || !cumulative(loopPoints, 3, points.length / 2)) return false;
+  if (!cumulative(bodyLoops, 0, loopPoints.length) || !cumulative(loopPoints, 3, points.length / 2)) return false;
   const lo = -OUTLINE_PAD;
   const hi = Math.max(width, height) + OUTLINE_PAD;
   return within(points, lo, hi);
@@ -63,8 +63,10 @@ export const MAP_TIMEOUT_MS = 60_000; // a map not built by then (a stuck or ver
 type MapWorker = Pick<Worker, "postMessage" | "terminate" | "onmessage" | "onerror">;
 const newWorker = (): MapWorker => new Worker(new URL("../worker/mapWorker.ts", import.meta.url), { type: "module" });
 
-// Builds a map on a worker so the page stays responsive; resolves to its Terrain, or null when it cannot be built in timeoutMs.
-export function loadMapTerrain(name: string, width: number, height: number, timeoutMs = MAP_TIMEOUT_MS, makeWorker: () => MapWorker = newWorker): Promise<Terrain | null> {
+// Builds a map on a worker so the page stays responsive; resolves to its Terrain, null when it cannot be built in timeoutMs, or "stale"
+// when the server's map data (version, from the hello) is not this page's: the page then draws plain ground until it is updated.
+export type MapResult = Terrain | null | "stale";
+export function loadMapTerrain(name: string, width: number, height: number, timeoutMs = MAP_TIMEOUT_MS, makeWorker: () => MapWorker = newWorker, version?: string): Promise<MapResult> {
   return new Promise((resolve) => {
     let worker: MapWorker;
     try {
@@ -73,7 +75,7 @@ export function loadMapTerrain(name: string, width: number, height: number, time
       return resolve(null);
     }
     let settled = false;
-    const done = (t: Terrain | null): void => {
+    const done = (t: MapResult): void => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
@@ -81,7 +83,7 @@ export function loadMapTerrain(name: string, width: number, height: number, time
       resolve(t);
     };
     const timer = setTimeout(() => done(null), timeoutMs);
-    worker.onmessage = (e: MessageEvent<MapOut>) => done(terrainFromParts(name, width, height, e.data));
+    worker.onmessage = (e: MessageEvent<MapOut>) => done(version !== undefined && e.data?.ok && e.data.version !== version ? "stale" : terrainFromParts(name, width, height, e.data));
     worker.onerror = () => done(null);
     worker.postMessage({ name });
   });
@@ -90,21 +92,21 @@ export function loadMapTerrain(name: string, width: number, height: number, time
 // One map for the page at a time: the same name and size share one build; a build that failed or timed out is forgotten, so the next asks again.
 export class MapCache {
   private key = "";
-  private promise: Promise<Terrain | null> | null = null;
+  private promise: Promise<MapResult> | null = null;
   private readonly load: typeof loadMapTerrain;
 
   constructor(load: typeof loadMapTerrain = loadMapTerrain) {
     this.load = load;
   }
 
-  get(name: string, width: number, height: number): Promise<Terrain | null> {
-    const key = `${name}|${width}|${height}`;
+  get(name: string, width: number, height: number, version?: string): Promise<MapResult> {
+    const key = `${name}|${width}|${height}|${version ?? ""}`;
     if (key !== this.key || !this.promise) {
       this.key = key;
-      const p = this.load(name, width, height);
+      const p = this.load(name, width, height, undefined, undefined, version);
       this.promise = p;
       void p.then((t) => {
-        if (!t && this.promise === p) this.promise = null;
+        if ((t === null || t === "stale") && this.promise === p) this.promise = null;
       });
     }
     return this.promise;

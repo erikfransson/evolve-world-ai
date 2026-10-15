@@ -9,8 +9,9 @@ const ADD_STRIKES = 3; // adds past the rate a connection may send (one more eac
 // "per 5 minutes", "per 90 s": the window as a visitor reads it.
 const per = (windowS: number): string => (windowS % 60 === 0 ? `per ${windowS / 60 === 1 ? "minute" : `${windowS / 60} minutes`}` : `per ${Math.round(windowS)} s`);
 
-// Adding is off while the admin set no room for it; the hello and rules then carry no rules.
-export const addingOn = (): boolean => LIVE.add.perWindow > 0 && LIVE.add.aliveShare > 0;
+// Adding is off while the admin set no room for it: no creatures per window, or no added creatures alive (neither a share nor a floor).
+// The hello and rules then carry no rules.
+export const addingOn = (): boolean => LIVE.add.perWindow > 0 && (LIVE.add.aliveShare > 0 || LIVE.add.aliveFloor > 0);
 
 // A connection's add rate: a burst, refilled at the admin's socket rate (read live), and the strikes past it.
 export interface AddPace {

@@ -172,7 +172,7 @@ function renderStats(): void {
     $("statSeasonTile").hidden = !s.season;
     if (s.season) showSeason(seasonName(seasonEco(s.season), s.simSeconds), `food\u00a0${seasonFactor(seasonEco(s.season), s.simSeconds).toFixed(2)}×`);
   }
-  if (chip.dataset.state === "live") setChip("live", "Live", s ? ` · ${nf.format(s.viewers)} watching` : "");
+  if (chip.dataset.state === "live") setChip("live", mapStale ? "Map updating" : "Live", s ? ` · ${nf.format(s.viewers)} watching` : "");
   if (s && chip.dataset.state === "live") $("entryLive").textContent = s.population > 0 ? `${nf.format(s.population)} creatures alive · ${nf.format(s.viewers)} watching` : `No creatures right now, add one to start the world again · ${nf.format(s.viewers)} watching`;
   $("emptyNote").hidden = !(s && chip.dataset.state === "live" && s.population === 0);
 }
@@ -195,6 +195,7 @@ function showSeason(name: string, food: string): void {
 
 function onHello(h: Hello): void {
   hello = h;
+  mapStale = false;
   versionEl.textContent = versionLabel(h.serverVersion);
   scene.reset();
   scene.fullEnergy = h.fullEnergy;
@@ -220,12 +221,16 @@ function onHello(h: Hello): void {
 
 // The ground and rock of a hand-designed map, built from its name on a worker (once per map and size); plain ground meanwhile.
 const maps = new MapCache();
+let mapStale = false;
 function showMap(h: Hello): void {
   const name = h.map.name;
   if (!name) return;
   const d = draw;
-  void maps.get(name, h.world.width, h.world.height).then((t) => {
-    if (t && draw === d) d!.map = t; // a newer hello has its own
+  void maps.get(name, h.world.width, h.world.height, h.map.version).then((t) => {
+    if (draw !== d) return; // a newer hello has its own
+    mapStale = t === "stale"; // the server runs other map data than this page: plain ground, and the pill says so
+    if (t && t !== "stale") d!.map = t;
+    renderStats();
   });
 }
 

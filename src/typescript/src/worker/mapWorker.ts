@@ -1,4 +1,4 @@
-import { mapSpec } from "../sim/maps/index.ts";
+import { mapSpec, mapVersion } from "../sim/maps/index.ts";
 import { packMap } from "../sim/maps/mapParts.ts";
 import type { MapParts } from "../sim/maps/mapParts.ts";
 import { mapTerrain } from "../sim/terrain.ts";
@@ -9,7 +9,7 @@ import type { RockGeometry } from "../ui/rockOutline.ts";
 // arrays, buffers transferred; the page checks them and puts the Terrain together (live/mapTerrain.ts). One map per worker, which the page then closes.
 
 export type MapIn = { name: string };
-export type MapOut = ({ ok: true; outlines: RockGeometry; ms: number } & MapParts) | { ok: false; message: string };
+export type MapOut = ({ ok: true; outlines: RockGeometry; ms: number; version?: string } & MapParts) | { ok: false; message: string };
 
 self.onmessage = (e: MessageEvent<MapIn>) => {
   const post = (m: MapOut, transfer: Transferable[] = []): void => (self as unknown as Worker).postMessage(m, transfer);
@@ -23,7 +23,7 @@ self.onmessage = (e: MessageEvent<MapIn>) => {
     const parts = { rock: shared.rock, ground: shared.ground.slice(), food: shared.food.slice(), poison: shared.poison.slice() }; // copies, since the worker's cached Terrain keeps its own
     const outlines = rockGeometry(terrain);
     const buffers = [parts.rock.buffer, parts.ground.buffer, parts.food.buffer, parts.poison.buffer, outlines.bodyLoops.buffer, outlines.loopPoints.buffer, outlines.points.buffer];
-    post({ ok: true, ...parts, outlines, ms: Math.round(performance.now() - t0) }, buffers);
+    post({ ok: true, ...parts, outlines, ms: Math.round(performance.now() - t0), version: mapVersion(spec.name) }, buffers);
   } catch (err) {
     post({ ok: false, message: err instanceof Error ? err.message : String(err) });
   }

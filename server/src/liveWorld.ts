@@ -35,7 +35,6 @@ interface Capture {
 }
 
 // A save of another world (size or map) than the one this server runs, e.g. after the server moved to a new map.
-export { OtherWorld }; // saveParse.ts; re-exported for the callers that know it from here
 
 // The shared world: one Ecosystem stepped against the clock, on this thread or with helper threads that sense and think.
 // With helpers a tick awaits them, so everything else that reads or changes the world goes through whenIdle, between ticks.
@@ -49,6 +48,8 @@ export class LiveWorld {
   private speedSince = performance.now();
   paused = false; // admin pause: no ticks run and no time is owed afterwards
   speed = 0; // simulated seconds per real second achieved, over the last second (below LIVE.speed when the machine cannot keep up)
+  private speedKnown = false; // a full second was measured since the start or the last resume
+  private speedFresh = true; // the next unpaused advance starts a new measuring window (after a slow restore, or a pause)
   readonly startedAt = Date.now();
   private restarts = 0;
   private reseedStuck = false; // a reseed gave an empty world: no more until the world has creatures again
@@ -98,7 +99,7 @@ export class LiveWorld {
     this.chronicle.reset(this.eco);
     this.eco.drainEvents();
     const name = this.config.world.map || undefined;
-    this.map = { ...(name ? { name } : {}), ground: groundShares(this.eco), regions: mapRegions(name) };
+    this.map = { ...(name ? { name, version: mapVersion(name) } : {}), ground: groundShares(this.eco), regions: mapRegions(name) };
     // Added creatures found named lineages (late rows of the lineage table, kept in saves); the living founders among them count.
     // The starter founders a fresh world was seeded with (seedFounders, names behind STARTER_MARK) are no visitor adds.
     this.added = new Set(this.eco.lineageTable.toState().late.filter((r) => r[5] !== "" && !r[5].startsWith(STARTER_MARK) && this.eco.get(r[0])).map((r) => r[0]));
@@ -287,9 +288,14 @@ export class LiveWorld {
     if (this.paused) {
       this.lastAt = now;
       this.speed = 0;
+      this.speedKnown = false;
+      this.speedFresh = true;
+      return 100;
+    }
+    if (this.speedFresh) {
+      this.speedFresh = false;
       this.speedTicks = 0;
       this.speedSince = now;
-      return 100;
     }
     this.owed = Math.min(this.owed + ((now - this.lastAt) / dtMs) * LIVE.speed, LIMITS.maxCatchUpS / this.config.dt);
     this.lastAt = now;
@@ -302,10 +308,16 @@ export class LiveWorld {
     const t = performance.now();
     if (t - this.speedSince >= 1000) {
       this.speed = (this.speedTicks * this.config.dt * 1000) / (t - this.speedSince);
+      this.speedKnown = true;
       this.speedTicks = 0;
       this.speedSince = t;
     }
     return this.owed >= 1 ? 0 : Math.max(1, ((1 - this.owed) * dtMs) / LIVE.speed);
+  }
+
+  // The speed the add caps judge "busy" by: the set speed until a full second was measured, so a start or a resume is not taken for a busy world.
+  speedForAdds(): number {
+    return this.speedKnown ? this.speed : LIVE.speed;
   }
 
   // One tick on this thread, for tests and tools; the server's loop uses advance.

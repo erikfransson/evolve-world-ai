@@ -1,7 +1,7 @@
 // @vitest-environment node
 // @ts-expect-error the web tsconfig finds no types for the server's ws
 import { WebSocket } from "../../server/node_modules/ws/wrapper.mjs";
-import { AddGate, AddPolicy, visitorKey } from "../../server/src/adds.ts";
+import { AddGate, AddPolicy, addingOn, visitorKey } from "../../server/src/adds.ts";
 import { loadFounders } from "../../server/src/founders.ts";
 import { LIMITS, LIVE } from "../../server/src/config.ts";
 import { LiveWorld, groundShares } from "../../server/src/liveWorld.ts";
@@ -184,6 +184,27 @@ describe("add caps (adds.ts)", () => {
     } finally {
       clock.mockRestore();
     }
+  });
+
+  it("an alive floor with no share still lets visitors add, capped at the floor (whichever is more)", () => {
+    LIVE.add.aliveShare = 0;
+    LIVE.add.aliveFloor = 50;
+    expect(addingOn()).toBe(true);
+    expect(new LiveWorld(smallConfig(), null).currentAddRules()).not.toBeNull();
+    expect(new AddGate(clock().now).check(null, 1, { ...fresh, aliveAdded: 49 })).toBeNull();
+    expect(new AddGate(clock().now).check(null, 2, { ...fresh, aliveAdded: 49 })?.reason).toMatch(/enough added creatures/);
+    LIVE.add.aliveFloor = 0;
+    expect(addingOn()).toBe(false);
+  });
+
+  it("a world just started or resumed is not taken for a busy one: the set speed until a full second is measured", async () => {
+    const w = new LiveWorld(smallConfig(), null);
+    expect(w.speed).toBe(0);
+    expect(w.speedForAdds()).toBe(LIVE.speed);
+    w.paused = true;
+    await w.advance();
+    w.paused = false;
+    expect(w.speedForAdds()).toBe(LIVE.speed);
   });
 
   it("the policy: a connection's burst, then refusals with the wait, then a cut; the global read rate; adding off", () => {

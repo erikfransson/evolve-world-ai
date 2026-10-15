@@ -140,6 +140,7 @@ export class AddPanel {
     root.addEventListener("keydown", (e) => {
       if (e.key === "Escape") this.minimise(true);
     });
+    this.refresh(); // sliders stay disabled until there is a plan (a founder or a file) behind them
   }
 
   get isOpen(): boolean {

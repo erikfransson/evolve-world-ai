@@ -3,7 +3,7 @@ import { loadOverrides, retireOverrides } from "./admin.ts";
 import type { SeedFounder } from "./founders.ts";
 import type { Value } from "./tunables.ts";
 import { parseSave } from "./saveParse.ts";
-import { OtherWorld } from "./liveWorld.ts";
+import { OtherWorld } from "./saveParse.ts";
 import type { LiveWorld } from "./liveWorld.ts";
 import type { StateStore } from "./state.ts";
 
@@ -61,15 +61,15 @@ export class Saves {
     return `${name}: tick ${this.live.eco.tick}, ${this.live.eco.population} creatures`;
   }
 
-  // At startup: the newest save that restores. "restored" when one did; "fresh" when there is no save or the newest is of another world
-  // (a move to a new map), so a fresh world may start; "unreadable" when saves of this world are there and none restores (a worker out of
-  // memory, a parse timeout on a busy host, a bad deploy; at most RESTORE_TRIES are tried), or when save files are on disk that the listing
-  // hides: the caller must not start over on top of them. Saves that do not restore stay
-  // on disk; rotation (state.ts) deletes them only once older than keepStateMs and not among the newest six.
-  // A save of another world ends the search: older ones are taken to be of earlier worlds too, so a move to a new map parses one old
-  // save (about 5 s), not all of them.
+  // At startup: the newest save of this world that restores. "restored" when one did; "fresh" only when no save of this world is on
+  // disk (none at all, or only other worlds' saves: another size, map or map data), so a fresh world may start; "unreadable" when saves
+  // of this world are there and none restores (a worker out of memory, a parse timeout on a busy host, a bad deploy; at most
+  // RESTORE_TRIES are tried), or when save files are on disk that the listing hides: the caller must not start over on top of them.
+  // Other worlds' saves are skipped, not taken to end the search, so one run on a test map and a revert finds this world's older saves.
+  // Saves that do not restore stay on disk; rotation (state.ts) deletes them only once older than keepStateMs and not among the newest six.
   async restoreNewest(log: (line: string) => void = console.log): Promise<"restored" | "fresh" | "unreadable"> {
     let tried = 0;
+    let others = 0;
     for (const { name } of this.store.list()) {
       try {
         const t0 = performance.now();
@@ -77,12 +77,8 @@ export class Saves {
         return "restored";
       } catch (e) {
         log(`cannot restore ${name}: ${errText(e)}`);
-        if (e instanceof OtherWorld) {
-          log("older saves are taken to be of earlier worlds and are not tried; all are kept on disk");
-          if (tried > 0) return "unreadable";
-          break;
-        }
-        if (++tried >= RESTORE_TRIES) return "unreadable";
+        if (e instanceof OtherWorld) others++;
+        else if (++tried >= RESTORE_TRIES) break;
       }
     }
     if (tried > 0) return "unreadable";
@@ -91,6 +87,7 @@ export class Saves {
       log(`${hidden} saves on disk are not listed (stamped in the future by a clock behind at boot, or an unreadable sidecar): not starting a fresh world`);
       return "unreadable";
     }
+    if (others > 0) log(`${others} saves of other worlds are kept on disk`);
     log("no usable save, starting a fresh world");
     return "fresh";
   }

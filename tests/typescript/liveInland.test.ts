@@ -9,7 +9,8 @@ import { join } from "node:path";
 import { CAP_LIMITS, ITEM_HEADROOM, LIMITS, LIVE, MAX_POPULATION, ITEM_SLOT_SHARE, MAX_FOUNDERS_FILE_BYTES, MAX_SEED_FOUNDERS, SEED_COPIES, itemHeadroom, liveConfig } from "../../server/src/config.ts";
 import { lineageName, loadFounders, parseFounders } from "../../server/src/founders.ts";
 import { parseFounders as parsePageFounders } from "../../src/typescript/src/live/founders.ts";
-import { LiveWorld, OtherWorld } from "../../server/src/liveWorld.ts";
+import { LiveWorld } from "../../server/src/liveWorld.ts";
+import { OtherWorld } from "../../server/src/saveParse.ts";
 import { Saves, openWorld } from "../../server/src/saves.ts";
 import { PREVIOUS_OVERRIDES } from "../../server/src/admin.ts";
 import { StateStore } from "../../server/src/state.ts";
@@ -24,7 +25,7 @@ import { genomeLengthFor } from "../../src/typescript/src/sim/rl/creatureFile.ts
 import { MAP_TIMEOUT_MS, MAX_OUTLINE_LOOPS, MAX_OUTLINE_POINTS, MapCache, checkOutlines, loadMapTerrain, terrainFromParts } from "../../src/typescript/src/live/mapTerrain.ts";
 import { rockBodies, rockGeometry } from "../../src/typescript/src/ui/rockOutline.ts";
 import type { RockGeometry } from "../../src/typescript/src/ui/rockOutline.ts";
-import { builtMap } from "../../src/typescript/src/sim/maps/index.ts";
+import { builtMap, mapVersion } from "../../src/typescript/src/sim/maps/index.ts";
 import { terrainOf } from "../../src/typescript/src/sim/terrain.ts";
 import type { Terrain } from "../../src/typescript/src/sim/terrain.ts";
 import { smallConfig } from "./liveHelpers.ts";
@@ -85,6 +86,9 @@ describe("item slots of the live world", () => {
       ["The Shallows", 1.6, 0], ["Isles", 1.5, 0], ["Ashfall Shore", 1.8, 3.5], ["Dune Coast", 0.65, 0.15], ["Drowned Town", 1.2, 0.15], ["Cliff Coast", 1, 0.15], ["Open plain", 1, 0.15],
     ]);
     expect(cleanMap(JSON.parse(JSON.stringify(map)))).toEqual(map);
+    expect(map.version).toBe(mapVersion("inland-sea")); // the page compares it with its own build
+    expect(cleanMap({ ...map, version: "<b>" }).version).toBeUndefined();
+    expect(cleanMap({ ...map, name: undefined, version: map.version }).version).toBeUndefined();
     expect(live.hello(1).summary).toMatchObject({ initialPopulation: 0, seedCopies: SEED_COPIES });
   }, 120_000);
 
@@ -95,6 +99,10 @@ describe("item slots of the live world", () => {
     const parts = { ok: true as const, rock, ground: b.ground.data.slice(), food: b.weights.food.slice(), poison: b.weights.poison.slice(), outlines, ms: 0 };
     const t = terrainFromParts("inland-sea", liveConfig.world.width, liveConfig.world.height, parts)!;
     expect(t.rockCount).toBe(b.rock.length);
+    // A body whose outline simplified away (no loops) is allowed: a cumulative step of 0.
+    const n = outlines.bodyLoops.length;
+    const zero = { ...outlines, bodyLoops: Uint32Array.from([...outlines.bodyLoops, outlines.bodyLoops[n - 1]!]) };
+    expect(checkOutlines(zero, liveConfig.world.width, liveConfig.world.height)).toBe(true);
     const bodies = rockBodies(t); // the worker's outlines, not traced again
     expect(bodies).toHaveLength(outlines.bodyLoops.length);
     expect(bodies[0]!.loops[0]!.slice(0, 4)).toEqual(Array.from(outlines.points.subarray(0, 4)));
@@ -126,7 +134,7 @@ describe("item slots of the live world", () => {
     expect(bad({ points: g.points.subarray(1) })).toBe(false); // half a point
     expect(bad({ loopPoints: u32(g.loopPoints, (p) => (p[3] = p[2]! + 1)) })).toBe(false); // a loop of 1 point, or falling
     expect(bad({ loopPoints: u32(g.loopPoints, (p) => (p[3] = p[4]! + 10)) })).toBe(false);
-    expect(bad({ bodyLoops: u32(g.bodyLoops, (p) => (p[1] = p[0]!)) })).toBe(false); // a body without loops
+    expect(bad({ bodyLoops: u32(g.bodyLoops, (p) => (p[1] = p[0]!)) })).toBe(true); // a body without loops (its outline simplified away) is allowed
     expect(bad({ bodyLoops: u32(g.bodyLoops, (p) => (p[p.length - 1] = p[p.length - 1]! + 1)) })).toBe(false);
     expect(bad({ points: Array.from(g.points) as unknown as Float64Array })).toBe(false); // not typed arrays
     expect(checkOutlines(null, W, H)).toBe(false);
@@ -301,7 +309,7 @@ describe("seeding a fresh world", () => {
 });
 
 describe("restoring at a new world", () => {
-  it("refuses a save of another world size or map, keeps it on disk, and the server starts fresh", async () => {
+  it("skips a save of another world size or map, keeps it on disk, restores this world's older save, and starts fresh only without one", async () => {
     const old = smallConfig();
     old.world.width = 2100;
     const a = new LiveWorld(old, null);
@@ -316,13 +324,20 @@ describe("restoring at a new world", () => {
     const live = freshSmall();
     expect(() => live.restoreState(a.saveState())).toThrow(/2100 x 1300 world without a map, this server runs 2000 x 1300 world without a map/);
     const lines: string[] = [];
-    expect(await new Saves(live, store).restoreNewest((l) => lines.push(l))).toBe("fresh");
-    expect(lines).toHaveLength(3); // the older save is not tried: past a save of another world all are taken to be older worlds
+    // The newest is another world's (a run on a test map, then a revert): it is skipped and this world's older save restores.
+    expect(await new Saves(live, store).restoreNewest((l) => lines.push(l))).toBe("restored");
     expect(lines[0]).toMatch(/cannot restore world-.*this server runs 2000 x 1300/);
-    expect(lines[1]).toMatch(/not tried; all are kept/);
-    expect(lines[2]).toBe("no usable save, starting a fresh world");
+    expect(lines[1]).toMatch(new RegExp(`^restored ${store.list()[1]!.name}`)); // the older one, of this world
+    // Only other worlds' saves: a fresh world, and they stay on disk.
+    const others = new StateStore(tmp());
+    await others.write(JSON.stringify(a.saveState()), { population: a.eco.population, tick: a.eco.tick }, new Date(now));
+    const fresh = freshSmall();
+    const out: string[] = [];
+    expect(await new Saves(fresh, others).restoreNewest((l) => out.push(l))).toBe("fresh");
+    expect(out.slice(-2)).toEqual(["1 saves of other worlds are kept on disk", "no usable save, starting a fresh world"]);
+    expect(others.list()).toHaveLength(1);
+    expect(fresh.eco.tick).toBe(0);
     expect(store.list()).toHaveLength(2);
-    expect(live.eco.tick).toBe(0);
   });
 });
 
@@ -488,6 +503,16 @@ describe("the page's map worker", () => {
     const w = { terminated: 0, postMessage() {}, terminate() { w.terminated++; }, onmessage: null, onerror: null };
     return w;
   };
+
+  it("answers \"stale\" when the worker's map data is not the server's version, so the page draws plain ground", async () => {
+    const answering = (version: string) => {
+      const w: { terminated: number; postMessage(): void; terminate(): void; onmessage: ((e: { data: unknown }) => void) | null; onerror: null } = { terminated: 0, postMessage() { queueMicrotask(() => w.onmessage?.({ data: { ok: true, version, rock: new Float64Array(0), ground: new Uint8Array(0), food: new Uint8Array(0), poison: new Uint8Array(0), outlines: {}, ms: 0 } })); }, terminate() { w.terminated++; }, onmessage: null, onerror: null };
+      return w;
+    };
+    const { width, height } = liveConfig.world;
+    expect(await loadMapTerrain("inland-sea", width, height, 1000, () => answering("aaaa") as never, "bbbb")).toBe("stale");
+    expect(await loadMapTerrain("inland-sea", width, height, 1000, () => answering("bbbb") as never, "bbbb")).toBeNull(); // same version: on to the checks (these arrays fail them)
+  });
 
   it("is given up after the timeout: terminated, and null", async () => {
     expect(MAP_TIMEOUT_MS).toBe(60_000);

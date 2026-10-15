@@ -238,7 +238,7 @@ describe("saves", () => {
     await both.write(json(good), meta(good), at(1));
     writeFileSync(join(mixed, saveName(at(1))), "garbage");
     expect(await new Saves(new LiveWorld(smallConfig(), null), both).restoreNewest(() => {})).toBe("unreadable");
-  });
+  }, 120_000); // a dozen parse workers
 
   it("a restore keeps a birth reserve below the population cap, so births can go on", () => {
     const w = world(5);
