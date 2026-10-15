@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, symlinkSync, truncateSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, symlinkSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gzipSync } from "node:zlib";
@@ -8,6 +8,7 @@ import { LIMITS } from "../../server/src/config.ts";
 import { LiveWorld } from "../../server/src/liveWorld.ts";
 import { Saves, openWorld } from "../../server/src/saves.ts";
 import { loadFounders } from "../../server/src/founders.ts";
+import { loadOverrides } from "../../server/src/admin.ts";
 import { StateStore, readRegularFile, saveName } from "../../server/src/state.ts";
 import { smallConfig } from "./liveHelpers.ts";
 
@@ -202,6 +203,49 @@ describe("saves", () => {
     expect(await new Saves(fresh, store).restoreNewest((l) => out.push(l))).toBe("unreadable");
     expect(fresh.eco.tick).toBe(0);
     expect(out.some((l) => /fresh world/.test(l))).toBe(false);
+  });
+
+  it("startup tries at most 3 saves of this world, and never takes saves the listing hides for an empty store", async () => {
+    const dir = tmp();
+    const store = new StateStore(dir);
+    const good = world(5);
+    for (let d = 1; d <= 4; d++) await store.write(json(good), meta(good), at(d));
+    for (let d = 1; d <= 4; d++) writeFileSync(join(dir, saveName(at(d))), "garbage");
+    const lines: string[] = [];
+    expect(await new Saves(new LiveWorld(smallConfig(), null), store).restoreNewest((l) => lines.push(l))).toBe("unreadable");
+    expect(lines.filter((l) => l.startsWith("cannot restore"))).toHaveLength(3);
+
+    const ahead = tmp(); // a clock an hour behind at boot: every real save looks stamped in the future
+    const later = new StateStore(ahead);
+    await later.write(json(good), meta(good), new Date(Date.now() + 3_600_000));
+    expect(later.list()).toEqual([]);
+    const out: string[] = [];
+    expect(await new Saves(new LiveWorld(smallConfig(), null), later).restoreNewest((l) => out.push(l))).toBe("unreadable");
+    expect(out.at(-1)).toMatch(/none is listed/);
+  });
+
+  it("a restore keeps a birth reserve below the population cap, so births can go on", () => {
+    const w = world(5);
+    const state = w.saveState();
+    state.config.eco.maxPopulation = 50;
+    state.config.eco.birthReserve = 50;
+    const live = new LiveWorld(smallConfig(), null);
+    live.restoreState(JSON.parse(JSON.stringify(state)));
+    expect([live.eco.config.eco.maxPopulation, live.eco.config.eco.birthReserve]).toEqual([50, 49]);
+  });
+
+  it("admin overrides that no longer apply are ignored loudly and kept aside, not lost", () => {
+    const dir = tmp();
+    const bad = { "eco.maxPopulation": 50, "eco.birthReserve": 50 };
+    writeFileSync(join(dir, "admin-overrides.json"), JSON.stringify(bad));
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect(loadOverrides(dir, new LiveWorld(smallConfig(), null))).toEqual({});
+      expect(err).toHaveBeenCalledWith(expect.stringMatching(/^OVERRIDES IGNORED/));
+    } finally {
+      err.mockRestore();
+    }
+    expect(JSON.parse(readFileSync(join(dir, "admin-overrides.ignored.json"), "utf8"))).toEqual(bad);
   });
 
   it("a save of this world that fails to restore (a worker out of memory, a timeout) seeds, saves and retires nothing: startup throws", async () => {

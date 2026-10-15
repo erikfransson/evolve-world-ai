@@ -543,7 +543,9 @@ export class LiveWorld {
     const h = this.home;
     if (!w || w.width !== h.width || w.height !== h.height || (w.map ?? "") !== h.map) throw new OtherWorld(`it is a ${w?.width} x ${w?.height} world${w?.map ? ` (${w.map})` : " without a map"}, this server runs ${h.width} x ${h.height}${h.map ? ` (${h.map})` : " without a map"}; the save is kept`);
     const eco = restoreState(state, this.pool, { journal: this.helpers !== null });
-    const r = eco.retune({ eco: { maxPopulation: Math.min(eco.config.eco.maxPopulation, MAX_POPULATION) } }); // older saves allowed more
+    const maxPopulation = Math.min(eco.config.eco.maxPopulation, MAX_POPULATION); // older saves allowed more
+    const birthReserve = Math.min(eco.config.eco.birthReserve, Math.max(0, maxPopulation - 1)); // a reserve at the cap would stop every birth
+    const r = eco.retune({ eco: { maxPopulation, birthReserve } });
     if (!r.ok) throw new Error(`cannot cap the population: ${r.reason}`);
     this.eco = eco;
     this.owed = 0;

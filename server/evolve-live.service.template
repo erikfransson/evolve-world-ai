@@ -4,8 +4,8 @@
 [Unit]
 Description=Evolve World live server
 After=network-online.target
-# Stop restarting after 5 failures in 5 minutes, so a bad save or build cannot crash-loop.
-StartLimitIntervalSec=300
+# Stop restarting after 5 failures in an hour, so a bad save or build cannot crash-loop (a start tries at most 3 saves of up to 2 min each, saves.ts).
+StartLimitIntervalSec=3600
 StartLimitBurst=5
 
 [Service]

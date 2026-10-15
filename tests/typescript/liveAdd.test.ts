@@ -172,6 +172,20 @@ describe("add caps (adds.ts)", () => {
     expect(gate.check("v10", 3, fresh)).toBeNull();
   });
 
+  it("the window runs on the monotonic clock: a wall clock step forward does not open it early", () => {
+    const wall = Date.now();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(wall); // before the gate, so a gate on the wall clock would read this one
+    try {
+      const gate = new AddGate();
+      LIVE.add.perWindow = 3;
+      gate.record(null, 3);
+      clock.mockReturnValue(wall + 86_400_000);
+      expect(gate.check(null, 1, fresh)?.reason).toMatch(/busy with new creatures/);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   it("per visitor: 3 creatures per window per address, other addresses unaffected, unknown address not limited per visitor", () => {
     const c = clock();
     const gate = new AddGate(c.now);

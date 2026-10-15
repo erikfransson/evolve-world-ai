@@ -201,7 +201,7 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
       }
       sendHistory(ws, v);
     }).catch(() => ws.terminate());
-    let lastPing = 0;
+    let lastPing = -Infinity;
     const c = v.c;
     // Every frame from the client, of any kind, counts against the message rate.
     const counted = (): void => {

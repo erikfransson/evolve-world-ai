@@ -1,5 +1,5 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { existsSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { extname, join, normalize, sep } from "node:path";
 import { WebSocketServer } from "ws";
@@ -22,6 +22,7 @@ export function loadAdminToken(stateDir: string): string {
 
 export const OVERRIDES = "admin-overrides.json";
 export const PREVIOUS_OVERRIDES = "admin-overrides.previous-world.json";
+export const IGNORED_OVERRIDES = "admin-overrides.ignored.json";
 
 // A fresh world starts from liveConfig: the overrides of the world before are moved aside (one copy kept, an older one replaced),
 // so a later restart that restores the fresh world's save does not apply them. Returns the line to log, or null when there were none.
@@ -40,10 +41,12 @@ export function loadOverrides(stateDir: string, world: { eco: Ecosystem }): Reco
     const saved = JSON.parse(readFileSync(file, "utf8"));
     const err = applyTunables(world.eco, saved);
     if (!err) return saved;
-    console.warn(`ignoring ${OVERRIDES}: ${err}`);
+    console.error(`OVERRIDES IGNORED: ${OVERRIDES}: ${err}`);
   } catch (e) {
-    console.warn(`ignoring ${OVERRIDES}: ${e instanceof Error ? e.message : e}`);
+    console.error(`OVERRIDES IGNORED: ${OVERRIDES}: ${e instanceof Error ? e.message : e}`);
   }
+  copyFileSync(file, join(stateDir, IGNORED_OVERRIDES)); // kept aside, as the next admin change writes the file anew
+  console.error(`OVERRIDES IGNORED: a copy is in ${IGNORED_OVERRIDES}`);
   return {};
 }
 

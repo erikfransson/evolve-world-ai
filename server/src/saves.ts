@@ -8,6 +8,7 @@ import type { LiveWorld } from "./liveWorld.ts";
 import type { StateStore } from "./state.ts";
 
 const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+const RESTORE_TRIES = 3; // saves of this world tried at startup before giving up, so a failing start exits in minutes and systemd stops retrying
 const UNREADABLE = "SAVE REFUSED: it would not restore, the last good save is kept";
 
 // Saving and restoring the live world. Jobs run one at a time. Only saveState and JSON.stringify block the tick loop, the gzip runs on a worker thread.
@@ -62,7 +63,8 @@ export class Saves {
 
   // At startup: the newest save that restores. "restored" when one did; "fresh" when there is no save or the newest is of another world
   // (a move to a new map), so a fresh world may start; "unreadable" when saves of this world are there and none restores (a worker out of
-  // memory, a parse timeout on a busy host, a bad deploy): the caller must not start over on top of them. Saves that do not restore stay
+  // memory, a parse timeout on a busy host, a bad deploy; at most RESTORE_TRIES are tried), or when save files are on disk that the listing
+  // hides: the caller must not start over on top of them. Saves that do not restore stay
   // on disk; rotation (state.ts) deletes them only once older than keepStateMs and not among the newest six.
   // A save of another world ends the search: older ones are taken to be of earlier worlds too, so a move to a new map parses one old
   // save (about 5 s), not all of them.
@@ -77,13 +79,18 @@ export class Saves {
         log(`cannot restore ${name}: ${errText(e)}`);
         if (e instanceof OtherWorld) {
           log("older saves are taken to be of earlier worlds and are not tried; all are kept on disk");
-          if (tried === 0) break;
-          return "unreadable";
+          if (tried > 0) return "unreadable";
+          log("no usable save, starting a fresh world");
+          return "fresh";
         }
-        tried++;
+        if (++tried >= RESTORE_TRIES) return "unreadable";
       }
     }
     if (tried > 0) return "unreadable";
+    if (this.store.hasSaveFiles()) {
+      log("saves are on disk but none is listed (stamped in the future by a clock behind at boot, or an unreadable sidecar)");
+      return "unreadable";
+    }
     log("no usable save, starting a fresh world");
     return "fresh";
   }

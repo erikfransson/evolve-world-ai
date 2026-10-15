@@ -143,6 +143,12 @@ export class StateStore {
       });
   }
 
+  // Whether any file here is named as a save, whether or not the listing shows it (stamped in the future by a clock that was behind, a
+  // sidecar that does not parse): the store holds saves, so startup must not take it for an empty one.
+  hasSaveFiles(): boolean {
+    return readdirSync(this.dir).some(isSaveName);
+  }
+
   // The checked state of a save, parsed on a worker (saveParse.ts). The name must be one the listing shows (pattern, regular file, not from the future),
   // never a path from the caller. Rejects on a missing, special or oversized file, a gzip that unpacks past the cap, bad JSON or an invalid state.
   async read(name: unknown): Promise<EcoState> {
