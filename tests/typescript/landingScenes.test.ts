@@ -1,6 +1,7 @@
 import { TICK_SECONDS, WARMUP_TICKS, arenaScene, ecosystemScene, inlandMapScene } from "../../src/typescript/src/ui/landing/index.ts";
 import { ECO_CAP } from "../../src/typescript/src/ui/landing/ecosystem.ts";
 import { MAP_CAP, rockAt } from "../../src/typescript/src/ui/landing/inlandMap.ts";
+import { BIRTH_RING, RING_SECONDS, drawBirthRings } from "../../src/typescript/src/ui/landing/kit.ts";
 import { fetchStats, parseStats, statsText, statsUrl } from "../../src/typescript/src/ui/landing/liveStats.ts";
 
 const TICKS = Math.round(60 / TICK_SECONDS);
@@ -109,6 +110,27 @@ describe("inlandMapScene", () => {
     for (let t = 0; t < 600; t++) { a.step(); b.step(); }
     expect(a.births).toBe(b.births);
     expect(a.dots()).toEqual(b.dots());
+  });
+});
+
+describe("drawBirthRings", () => {
+  const draw = (look?: Parameters<typeof drawBirthRings>[5]): Record<string, unknown> => {
+    const at: Record<string, unknown> = {}; // the state when the ring is stroked
+    const state: Record<string, unknown> = {};
+    const ctx = new Proxy({}, { get: (_, k) => (...a: unknown[]) => { if (k === "stroke") Object.assign(at, state); if (k === "arc") at.arc = a; }, set: (_, k, v) => { state[String(k)] = v; return true; } }) as unknown as CanvasRenderingContext2D;
+    drawBirthRings(ctx, 2, [{ at: 0, x: 3, y: 4, hue: 30 }], Math.round(RING_SECONDS / 2 / TICK_SECONDS), 10, look);
+    return at;
+  };
+
+  it("draws the ecosystem look by default and a given look when asked", () => {
+    expect(draw()).toMatchObject({ globalAlpha: expect.closeTo(0.95 * 0.5, 1), strokeStyle: "hsl(30, 90%, 70%)", lineWidth: expect.closeTo(2 * 2.25, 1), arc: [3, 4, expect.closeTo(10 * (1.2 + 2.6 * 0.75), 0), 0, 2 * Math.PI] });
+    expect(draw({ ...BIRTH_RING, alpha: 0.9, lightness: 72, width: 1.6, shrink: 0.8, radius: 1.4, eased: false })).toMatchObject({ globalAlpha: expect.closeTo(0.45, 1), strokeStyle: "hsl(30, 90%, 72%)", lineWidth: expect.closeTo(2 * 1.2, 1), arc: [3, 4, expect.closeTo(10 * (1.4 + 2.6 * 0.5), 0), 0, 2 * Math.PI] });
+  });
+
+  it("drops a ring once it has run its course", () => {
+    const list = [{ at: 0, x: 0, y: 0, hue: 0 }];
+    drawBirthRings(finiteCtx(), 1, list, Math.ceil(RING_SECONDS / TICK_SECONDS) + 1, 10);
+    expect(list).toEqual([]);
   });
 });
 

@@ -4,8 +4,8 @@ import { createRng } from "../../sim/rng.ts";
 import type { Creature } from "../../sim/creature.ts";
 import type { HitKind } from "../../sim/types.ts";
 import { RAY_COLORS, beginFrame, drawItems } from "../scene.ts";
-import { LAUNCH_SPEED, POP_SECONDS, RING_SECONDS, TICK_SECONDS, clamp, easeOutBack, foodWorld, nearestFood, sceneConfig, scriptedCreature, steer, ticksOf } from "./kit.ts";
-import type { Scene } from "./kit.ts";
+import { LAUNCH_SPEED, POP_SECONDS, TICK_SECONDS, clamp, drawBirthRings, easeOutBack, foodWorld, nearestFood, sceneConfig, scriptedCreature, steer, ticksOf } from "./kit.ts";
+import type { Effect, Scene } from "./kit.ts";
 
 export const WARMUP_TICKS = 150; // ticks stepped before the first frame
 const FAMILY_HUES = [200, 20, 280, 50, 340]; // one family per lineage
@@ -28,9 +28,6 @@ interface Body {
   live: boolean;
   fadeAt: number;
   bornAt: number;
-  ringAt: number;
-  ringX: number;
-  ringY: number;
 }
 
 export interface EcoScene extends Scene {
@@ -48,13 +45,14 @@ export function ecosystemScene(seed: number): EcoScene {
   const r = config.creature.radius;
   const start = config.creature.startEnergy;
   const genome = new Float32Array(genomeLength(layerSizes(config)));
+  const rings: Effect[] = [];
   let tick = 0;
   const bodies: Body[] = Array.from({ length: SLOTS }, (_, i) => {
     const creature = scriptedCreature(config, 0, 0, 0);
     const first = i < FAMILY_HUES.length * PER_FAMILY;
     const hue = ((FAMILY_HUES[Math.floor(i / PER_FAMILY)] ?? 0) + rng.range(-12, 12) + 360) % 360;
     if (first) creature.reset(genome, rng.range(r, W - r), rng.range(r, H - r), rng.range(0, 2 * Math.PI), start);
-    return { creature, hue, e: rng.range(0.3, 0.95), skip: i % 2, live: first, fadeAt: -1, bornAt: 0, ringAt: -1, ringX: 0, ringY: 0 };
+    return { creature, hue, e: rng.range(0.3, 0.95), skip: i % 2, live: first, fadeAt: -1, bornAt: 0 };
   });
   const lit = (i: number): boolean => ((i * 7 + Math.floor(tick / ticksOf(5))) % bodies.length) % 5 === 0; // rotates every 5 s
 
@@ -81,9 +79,7 @@ export function ecosystemScene(seed: number): EcoScene {
     child.live = true;
     child.fadeAt = -1;
     child.bornAt = tick;
-    parent.ringAt = tick;
-    parent.ringX = p.x;
-    parent.ringY = p.y;
+    rings.push({ at: tick, x: p.x, y: p.y, hue: parent.hue });
     scene.births++;
   }
 
@@ -177,18 +173,7 @@ export function ecosystemScene(seed: number): EcoScene {
         ctx.fill();
       }
       ctx.globalAlpha = 1;
-      for (const b of bodies) {
-        if (b.ringAt < 0) continue;
-        const t = ((tick - b.ringAt) * TICK_SECONDS) / RING_SECONDS;
-        if (t >= 1) { b.ringAt = -1; continue; }
-        ctx.globalAlpha = 0.95 * (1 - t);
-        ctx.strokeStyle = `hsl(${b.hue}, 90%, 70%)`;
-        ctx.lineWidth = (3 - 1.5 * t) * px;
-        ctx.beginPath();
-        ctx.arc(b.ringX, b.ringY, r * (1.2 + 2.6 * (1 - (1 - t) ** 2)), 0, Math.PI * 2);
-        ctx.stroke();
-      }
-      ctx.globalAlpha = 1;
+      drawBirthRings(ctx, px, rings, tick, r);
     },
   };
   return scene;

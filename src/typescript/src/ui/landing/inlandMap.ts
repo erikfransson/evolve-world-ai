@@ -3,8 +3,8 @@ import { makeCanvas } from "../canvas.ts";
 import { FLOOR } from "../scene.ts";
 import { FOOD, POISON } from "../palette.ts";
 import { GRID, GRID_H, GRID_W } from "./inlandGrid.ts";
-import { RING_SECONDS, TICK_SECONDS, ticksOf } from "./kit.ts";
-import type { Scene } from "./kit.ts";
+import { TICK_SECONDS, drawBirthRings, ticksOf } from "./kit.ts";
+import type { Effect, RingLook, Scene } from "./kit.ts";
 
 // Live World: the whole Inland Sea from above, a few hundred creatures of six lineages grazing its rich places, giving birth and dying out.
 // The map is the real one (a picture and a coarse grid of rock, food and poison); the creatures are scripted, not the engine's.
@@ -30,6 +30,7 @@ const HUE_DRIFT = 3; // degrees a child's colour moves, as in the live world
 const FOLLOW_S = 9; // the followed creature changes this often (or when it dies)
 const SPECKS_PER_FOOD = 0.08; // food specks per cell per food level above FOOD_SPECKS_FROM
 const FOOD_SPECKS_FROM = 6; // of 15: only the richer ground shows food
+const RING_LOOK: RingLook = { alpha: 0.9, lightness: 72, width: 1.6, shrink: 0.8, radius: 1.4, growth: 2.6, eased: false };
 
 const cells = Uint8Array.from(atob(GRID), (c) => c.charCodeAt(0));
 const cellAt = (x: number, y: number): number => {
@@ -63,7 +64,7 @@ export interface MapScene extends Scene {
 export function inlandMapScene(seed: number): MapScene {
   const rng = createRng(seed);
   const dots: Dot[] = [];
-  const rings: { at: number; x: number; y: number; hue: number }[] = [];
+  const rings: Effect[] = [];
   let tick = 0;
   let followed: Dot | null = null;
   let followAt = 0;
@@ -208,16 +209,10 @@ export function inlandMapScene(seed: number): MapScene {
         ctx.stroke();
       }
       ctx.globalAlpha = 1;
-      while (rings.length && (tick - rings[0]!.at) * dt >= RING_SECONDS) rings.shift();
-      for (const g of rings) {
-        const t = ((tick - g.at) * dt) / RING_SECONDS;
-        ctx.globalAlpha = 0.9 * (1 - t);
-        ctx.strokeStyle = `hsl(${g.hue}, 90%, 72%)`;
-        ctx.lineWidth = (1.6 - 0.8 * t) * css;
-        ctx.beginPath();
-        ctx.arc(g.x * k, g.y * k, r * (1.4 + 2.6 * t), 0, 2 * Math.PI);
-        ctx.stroke();
-      }
+      ctx.save();
+      ctx.scale(k, k); // the rings are in world units
+      drawBirthRings(ctx, css / k, rings, tick, r / k, RING_LOOK);
+      ctx.restore();
       if (followed) {
         // The followed creature, ringed as the live page marks a selection.
         ctx.globalAlpha = 0.95;
