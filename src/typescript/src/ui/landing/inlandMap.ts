@@ -30,6 +30,7 @@ const HUE_DRIFT = 3; // degrees a child's colour moves, as in the live world
 const FOLLOW_S = 9; // the followed creature changes this often (or when it dies)
 const SPECKS_PER_FOOD = 0.08; // food specks per cell per food level above FOOD_SPECKS_FROM
 const FOOD_SPECKS_FROM = 6; // of 15: only the richer ground shows food
+const LOOKS = [-0.7, 0, 0.7]; // directions tasted, radians off the heading
 const RING_LOOK: RingLook = { alpha: 0.9, lightness: 72, width: 1.6, shrink: 0.8, radius: 1.4, growth: 2.6, eased: false };
 
 const cells = Uint8Array.from(atob(GRID), (c) => c.charCodeAt(0));
@@ -48,6 +49,8 @@ interface Dot {
   h: number; // heading
   e: number; // energy 0..1
   hue: number;
+  fillHead: string; // the colour strings that depend on the hue alone
+  stroke: string;
   born: number; // tick
   dies: number; // tick of old age
   fading: number; // tick the fade began, -1 while alive
@@ -91,7 +94,7 @@ export function inlandMapScene(seed: number): MapScene {
     return { x: MAP_W / 2, y: MAP_H / 2 };
   };
   const spawn = (x: number, y: number, hue: number, e: number): Dot => {
-    const d: Dot = { x, y, h: rng.range(0, 2 * Math.PI), e, hue, born: tick, dies: tick + ticksOf(rng.range(LIFE_S[0], LIFE_S[1])), fading: -1 };
+    const d: Dot = { x, y, h: rng.range(0, 2 * Math.PI), e, hue, fillHead: `hsl(${hue}, 80%, `, stroke: `hsl(${hue}, 90%, 82%)`, born: tick, dies: tick + ticksOf(rng.range(LIFE_S[0], LIFE_S[1])), fading: -1 };
     dots.push(d);
     return d;
   };
@@ -126,7 +129,7 @@ export function inlandMapScene(seed: number): MapScene {
         // Taste the ground ahead, a little to each side, and turn toward the best.
         let best = 0;
         let bestV = -Infinity;
-        for (const off of [-0.7, 0, 0.7]) {
+        for (const off of LOOKS) {
           const a = d.h + off;
           const px = d.x + Math.cos(a) * LOOK;
           const py = d.y + Math.sin(a) * LOOK;
@@ -201,8 +204,8 @@ export function inlandMapScene(seed: number): MapScene {
       for (const d of dots) {
         const grow = Math.min(1, ((tick - d.born) * dt) / 0.4);
         ctx.globalAlpha = d.fading < 0 ? 1 : Math.max(0, 1 - ((tick - d.fading) * dt) / FADE_SECONDS);
-        ctx.fillStyle = `hsl(${d.hue}, 80%, ${40 + 25 * Math.min(1, d.e)}%)`;
-        ctx.strokeStyle = `hsl(${d.hue}, 90%, 82%)`;
+        ctx.fillStyle = `${d.fillHead}${40 + 25 * Math.min(1, d.e)}%)`;
+        ctx.strokeStyle = d.stroke;
         ctx.beginPath();
         ctx.arc(d.x * k, d.y * k, Math.max(0.1, r * (0.5 + 0.5 * grow)), 0, 2 * Math.PI);
         ctx.fill();

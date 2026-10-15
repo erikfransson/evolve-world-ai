@@ -104,6 +104,18 @@ describe("inlandMapScene", () => {
     expect(scene.deaths).toBeGreaterThan(50);
   });
 
+  it("paints each creature in its lineage colour, lighter with energy", () => {
+    const scene = inlandMapScene(5);
+    for (let t = 0; t < 60; t++) scene.step();
+    const fills: string[] = [];
+    const strokes = new Set<string>();
+    const ctx = new Proxy({}, { get: (_, k) => (k === "canvas" ? { width: 720, height: 450 } : () => undefined), set: (_, k, v) => { if (k === "fillStyle") fills.push(v as string); if (k === "strokeStyle") strokes.add(v as string); return true; } }) as unknown as CanvasRenderingContext2D;
+    scene.draw(ctx);
+    const colours = fills.filter((f) => /^hsl\(\d+(\.\d+)?, 80%, [\d.]+%\)$/.test(f));
+    expect(colours.length).toBeGreaterThanOrEqual(scene.dots().length);
+    expect([...strokes].filter((c) => /^hsl\([\d.]+, 90%, 82%\)$/.test(c)).length).toBeGreaterThan(3); // one per lineage
+  });
+
   it("is deterministic per seed", () => {
     const a = inlandMapScene(3);
     const b = inlandMapScene(3);
