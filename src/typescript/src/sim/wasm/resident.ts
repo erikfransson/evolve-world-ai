@@ -2,7 +2,6 @@ import type { EngineConfig } from "../config.ts";
 import type { Heading } from "../physics.ts";
 import type { CreatureState } from "../types.ts";
 import type { WasmBrainBank } from "./brainKernel.ts";
-import type { WasmStepper } from "./stepKernel.ts";
 import { LAYOUT as L, f64At, i32At } from "./layout.ts";
 
 // Creature bodies that live in the WebAssembly memory, one row each (offsets in layout.ts), so the fill kernel builds the sense batch from
@@ -131,7 +130,6 @@ export class ResidentStore {
   readonly species: EngineConfig[] = []; // the configs the rows' species indices stand for, set by the Ecosystem
   readonly rebinders = new Set<() => void>(); // views of the memory held elsewhere (the Ecosystem's crowd): each is called to re-point after the memory grew
   moved = 0; // counts the times a region moved or the memory grew, so views of them can be kept until it changes
-  stepper: WasmStepper | null = null; // the WebAssembly step (stepResident), when available
 
   constructor(bank: WasmBrainBank) {
     this.bank = bank;

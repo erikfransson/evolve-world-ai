@@ -289,7 +289,7 @@ export function runEpisode(
     poisonBefore = eco.poisonEaten;
     if (act) {
       eco.prepareTick();
-      eco.sensePhase(0, eco.members.length);
+      eco.sensePhase();
       act(eco.get(0)!.creature);
       eco.finishTick();
     } else eco.step();

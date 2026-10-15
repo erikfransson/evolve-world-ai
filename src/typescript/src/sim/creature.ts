@@ -415,13 +415,11 @@ export class SenseBatch {
   }
 }
 
-// Sense and think for a whole batch; writes only each creature's rays and outputs. The one boundary for the per-tick
-// creature work, used by Ecosystem.sensePhase and the helper threads (ecoShare.ts). With kernels, the crowd rays and the
-// brains run in WebAssembly (f32); every owner of creatures (an Ecosystem, a helper) has its own kernels.
-export function senseThinkBatch(world: World, crowd: Crowd, batch: SenseBatch, kernels: SenseKernels | null = null, prof: PhaseTimer | null = null): void {
+// Sense and think for a whole batch on the JS path; writes only each creature's rays and outputs. The one boundary for the per-tick
+// creature work without kernels, used by Ecosystem.sensePhase and the helper threads (ecoShare.ts); resident creatures go through SenseKernels.runRows.
+export function senseThinkBatch(world: World, crowd: Crowd, batch: SenseBatch, prof: PhaseTimer | null = null): void {
   batch.sortBySlot();
   prof?.lap("sort batch");
-  if (kernels) return kernels.run(world, crowd, batch, prof);
   const { creatures, selves } = batch;
   for (let k = 0; k < batch.count; k++) creatures[k]!.senseThink(world, crowd, selves[k]!);
   prof?.lap("js sense and think");

@@ -400,7 +400,7 @@ describe("Ecosystem collision damage", () => {
     shared(e); // the second one dies and is removed
     expect(e.population).toBe(1);
     e.prepareTick();
-    e.sensePhase(0, 1);
+    e.sensePhase();
     expect(e.members[0]!.creature.rays.some((ray) => ray.kind === HIT_CREATURE)).toBe(false);
   });
 

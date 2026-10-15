@@ -3,7 +3,6 @@ import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
 import { ECO_PRESETS, withEcoPreset } from "../../src/typescript/src/sim/presets.ts";
 import { wasmAvailable } from "../../src/typescript/src/sim/wasm/loader.ts";
-import { stepRows } from "../../src/typescript/src/sim/wasm/residentStep.ts";
 
 // Creature bodies resident in the WebAssembly memory (wasm/resident.ts): the row code (fill kernel, residentStep.ts) must equal the
 // Creature code it replaces, bit for bit, on every tick.
@@ -21,12 +20,12 @@ const grab = (c: Any): number[] => {
   return [s.x, s.y, s.vx, s.vy, s.heading, s.turnRate, s.energy, s.ticksAlive, c.heading.cos, c.heading.sin, ...c.memory];
 };
 
-// One tick, checked against the Creature code: the sense inputs the fill kernel wrote against Creature.writeBodyInputs, then the row step
+// One tick, checked against the Creature code: the sense inputs the fill kernel wrote against Creature.writeBodyInputs, then the WebAssembly step
 // against remember + steer on the same state (the ground factor is the one prepareRows wrote). Returns how many values differ.
 function checkedTick(eco: Ecosystem): number {
   const e = eco as Any;
   eco.prepareTick();
-  eco.sensePhase(0, eco.members.length);
+  eco.sensePhase();
   const creatures = e.bySlot.map((m: Any) => m.creature);
   const kernels = e.kernels;
   const f32 = kernels.f32;
@@ -39,7 +38,7 @@ function checkedTick(eco: Ecosystem): number {
     for (let i = 0; i < 5 + c.memory.length; i++) if (!Object.is(scratch[i], f32[at + i])) bad++;
   }
   const before = creatures.map(grab);
-  stepRows(e.resident, f32, e.slotRows, creatures.length, e.aging, e.items.terrain);
+  kernels.stepper.step(e.slotRows, creatures.length, e.aging, e.items.terrain);
   const got = creatures.map(grab);
   creatures.forEach((c: Any, k: number) => {
     const s = c.state;
@@ -55,7 +54,6 @@ function checkedTick(eco: Ecosystem): number {
     const want = grab(c);
     for (let i = 0; i < want.length; i++) if (!Object.is(want[i], got[k]![i])) bad++;
   });
-  e.batchAll = false;
   e.sharedPhase();
   return bad;
 }
@@ -128,25 +126,5 @@ describe.skipIf(!wasmAvailable())("resident bodies", () => {
     let bad = 0;
     for (let t = 0; t < 20; t++) bad += checkedTick(eco);
     expect(bad).toBe(0);
-  });
-
-  it("a batch that is not the whole world gets fresh sense inputs", () => {
-    const eco = world((c) => withEcoPreset(c, "inland-sea", ECO_PRESETS), 300);
-    const e = eco as Any;
-    for (let t = 0; t < 5; t++) eco.step(); // move things so stale inputs would differ
-    eco.prepareTick();
-    eco.sensePhase(0, 50);
-    const kernels = e.kernels;
-    const f32 = kernels.f32;
-    const scratch = new Float32Array(256);
-    let checked = 0;
-    for (let i = 0; i < 50; i++) {
-      const c = eco.members[i]!.creature as Any;
-      const at = kernels.brains.inputAt(c.kernelSlot) + c.plan.rayCount * kernels.stride;
-      scratch.fill(0);
-      c.writeBodyInputs(scratch, 0);
-      for (let k = 0; k < 5 + c.memory.length; k++, checked++) expect(Object.is(scratch[k], f32[at + k])).toBe(true);
-    }
-    expect(checked).toBeGreaterThan(250);
   });
 });

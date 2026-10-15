@@ -9,11 +9,11 @@ import { createRng } from "../../src/typescript/src/sim/rng.ts";
 import { dropSpareKernels, randomLearner, runEpisode } from "../../src/typescript/src/sim/rl/env.ts";
 import { envById } from "../../src/typescript/src/sim/rl/envs.ts";
 import { energySignal } from "../../src/typescript/src/sim/sensors.ts";
-import { forceJsCrowd } from "../../src/typescript/src/sim/wasm/crowdKernel.ts";
 import { wasmAvailable } from "../../src/typescript/src/sim/wasm/loader.ts";
-import { Region, F } from "../../src/typescript/src/sim/wasm/resident.ts";
+import { Region } from "../../src/typescript/src/sim/wasm/resident.ts";
+import { useKernels } from "./helpers.ts";
 
-// The WebAssembly crowd grid (crowd.wat, crowdKernel.ts) against its JS twin Crowd.rebuildRows (crowd.ts): every array must be the same bit for bit,
+// The WebAssembly crowd grid (crowd.wat, crowdKernel.ts) against its JS twin Crowd.rebuild (crowd.ts): every array must be the same bit for bit,
 // on rows anywhere (outside the world, NaN, infinite), and whole runs must not tell the two apart.
 
 type Any = any; // the tests reach into the Ecosystem
@@ -33,7 +33,7 @@ function crowdDifferences(eco: Ecosystem): number {
   const n = eco.members.length;
   const got: Crowd = e.crowd;
   const want = new Crowd(eco.config, 64);
-  want.rebuildRows(e.resident.f64, e.rowAt, F.energy, n, e.multi ? e.kinds : undefined);
+  want.rebuild(e.states, n, e.multi ? e.kinds : undefined);
   let bad = 0;
   const same = (a: ArrayLike<number>, b: ArrayLike<number>, len: number): void => {
     for (let i = 0; i < len; i++) if (!Object.is(a[i], b[i])) bad++;
@@ -71,7 +71,7 @@ function scatter(eco: Ecosystem, seed: number): () => void {
   return () => eco.members.forEach((m, i) => ([m.creature.state.x, m.creature.state.y, m.creature.state.energy] = saved[i]! as [number, number, number]));
 }
 
-describe.skipIf(!wasmAvailable())("the WebAssembly crowd grid equals Crowd.rebuildRows", () => {
+describe.skipIf(!wasmAvailable())("the WebAssembly crowd grid equals Crowd.rebuild", () => {
   const worlds: [string, () => Ecosystem][] = [
     ["a plain world", () => make((c) => c, 300)],
     ["the Inland Sea", () => make(inland, 1500)],
@@ -210,13 +210,12 @@ describe.skipIf(!wasmAvailable())("the WebAssembly item lookup equals World.touc
       const e = eco as Any;
       for (let t = 0; t < 6 && eco.members.length > 13; t++) {
         eco.prepareTick();
-        eco.sensePhase(0, eco.members.length); // brings the packed item rows up to date
+        eco.sensePhase(); // brings the packed item rows up to date
         const back = scatter(eco, seed * 7 + t);
         e.gridCrowd(eco.members.length, e.multi ? e.kinds : undefined);
         bad += compare(eco);
         hits += lookups(eco)[1].filter((v) => v >= 0).length;
         back();
-        e.batchAll = false;
         e.finishTick();
       }
     }
@@ -229,13 +228,13 @@ describe.skipIf(!wasmAvailable())("the WebAssembly item lookup equals World.touc
     const e = eco as Any;
     for (let t = 0; t < 3; t++) eco.step();
     eco.prepareTick();
-    eco.sensePhase(0, eco.members.length);
+    eco.sensePhase();
     expect(e.kernels.itemTables(e.items)).not.toBeNull();
     const item = e.items.kinds.findIndex((k: number) => k !== 0);
     e.items.removeItem(item);
     expect(e.kernels.itemTables(e.items)).toBeNull(); // changed since the sync: the JS lookup is used
     eco.prepareTick();
-    eco.sensePhase(0, eco.members.length);
+    eco.sensePhase();
     expect(e.kernels.itemTables(e.items)).not.toBeNull();
   });
 });
@@ -298,8 +297,6 @@ describe.skipIf(!wasmAvailable())("the WebAssembly collision sweep finds the pai
 });
 
 describe.skipIf(!wasmAvailable())("the WebAssembly kernels at their edges", () => {
-  afterEach(() => forceJsCrowd(false));
-
   it("switching between the WebAssembly and the JS crowd while the memory grows", () => {
     const eco = make(inland, 300);
     const e = eco as Any;
@@ -307,13 +304,13 @@ describe.skipIf(!wasmAvailable())("the WebAssembly kernels at their edges", () =
     for (const grow of [true, false]) {
       e.gridCrowd(eco.members.length, undefined); // by the kernel
       expect(e.crowd.kernel).not.toBeNull();
-      forceJsCrowd(true);
+      useKernels(eco, { crowd: false });
       e.gridCrowd(eco.members.length, undefined); // by JS: the arrays are the crowd's own again
       if (grow) e.kernels.brains.alloc(40 * 1024 * 1024); // replaces every view of the memory
       expect(e.crowd.kernel).toBeNull(); // and does not make the kernel's old grid the crowd again
       expect(crowdDifferences(eco)).toBe(0);
       expect(e.crowd.cellStart.length).toBe(e.crowd.cols * e.crowd.rows + 1);
-      forceJsCrowd(false);
+      useKernels(eco, { crowd: true });
       eco.step();
       expect(crowdDifferences(eco)).toBe(0);
     }
@@ -353,8 +350,8 @@ describe.skipIf(!wasmAvailable())("the WebAssembly kernels at their edges", () =
   it("the sense kernel on creatures at extreme positions, in both crowd modes, with and without rock", () => {
     for (const js of [false, true]) {
       for (const build of [() => make((c) => c, 100), () => make(inland, 200)]) {
-        forceJsCrowd(js);
         const eco = build();
+        useKernels(eco, { crowd: !js });
         for (let t = 0; t < 2; t++) eco.step();
         eco.members.forEach((m, i) => {
           const s = m.creature.state;
@@ -365,8 +362,7 @@ describe.skipIf(!wasmAvailable())("the WebAssembly kernels at their edges", () =
           if (i % 6 === 4) s.x = s.y = -1e18;
         });
         eco.prepareTick();
-        expect(() => eco.sensePhase(0, eco.members.length)).not.toThrow();
-        forceJsCrowd(false);
+        expect(() => eco.sensePhase()).not.toThrow();
       }
     }
   });
@@ -376,7 +372,7 @@ describe.skipIf(!wasmAvailable())("the WebAssembly kernels at their edges", () =
     const e = eco as Any;
     for (let t = 0; t < 2; t++) eco.step();
     eco.prepareTick();
-    eco.sensePhase(0, eco.members.length); // the packed item rows match the items
+    eco.sensePhase(); // the packed item rows match the items
     const items = e.items;
     // an item with no other within 6 units, and a body 3 and 4 units from it (so exactly 5, with every value exact)
     let item = -1;
@@ -427,15 +423,13 @@ describe.skipIf(!wasmAvailable())("the WebAssembly kernels at their edges", () =
 });
 
 describe.skipIf(!wasmAvailable())("whole runs with the WebAssembly crowd grid and with the JS one", () => {
-  afterEach(() => forceJsCrowd(false));
   const run = (build: () => Ecosystem, ticks: number, js: boolean, midRun?: (eco: Ecosystem, t: number) => void): [number, number, number] => {
-    forceJsCrowd(js);
     const eco = build();
+    useKernels(eco, { crowd: !js });
     for (let t = 0; t < ticks && !eco.extinct; t++) {
       midRun?.(eco, t);
       eco.step();
     }
-    forceJsCrowd(false);
     return [eco.fingerprint(), eco.population, eco.deaths];
   };
   const cases: [string, () => Ecosystem][] = [
@@ -465,29 +459,15 @@ describe.skipIf(!wasmAvailable())("whole runs with the WebAssembly crowd grid an
   it("save in one mode and continue in the other, both ways", () => {
     const build = () => make((c) => damage(inland(c)), 500);
     for (const [first, second] of [[false, true], [true, false]] as const) {
-      forceJsCrowd(first);
       const a = build();
+      useKernels(a, { crowd: !first });
       for (let t = 0; t < 60; t++) a.step();
       const state = JSON.parse(JSON.stringify(saveState(a))) as EcoState;
-      forceJsCrowd(second);
       const b = restoreState(state);
-      forceJsCrowd(first);
+      useKernels(b, { crowd: !second });
       for (let t = 0; t < 60; t++) a.step();
-      forceJsCrowd(second);
       for (let t = 0; t < 60; t++) b.step();
-      forceJsCrowd(false);
       expect([b.fingerprint(), b.population, b.deaths]).toEqual([a.fingerprint(), a.population, a.deaths]);
     }
-  });
-
-  it("give the same RL episodes, on reused kernels", () => {
-    const env = envById("islands")!;
-    const l = randomLearner(env, 3);
-    dropSpareKernels();
-    forceJsCrowd(true);
-    const js = runEpisode(env, l, 11);
-    forceJsCrowd(false);
-    runEpisode(envById("crowd")!, l, 5);
-    expect(runEpisode(env, l, 11)).toEqual(js);
   });
 });

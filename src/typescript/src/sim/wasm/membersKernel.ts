@@ -11,13 +11,6 @@ interface MembersExports extends WebAssembly.Exports {
   birthCandidates(m: number): void;
 }
 
-let jsOnly = false;
-// Runs the scans in JS even where the WebAssembly ones exist (tests and comparisons).
-export function forceJsMembers(flag: boolean): void {
-  jsOnly = flag;
-}
-export const jsMembersForced = (): boolean => jsOnly;
-
 // The first n elements, for lists that may be longer than the batch.
 const head = (a: ArrayLike<number>, n: number): ArrayLike<number> => (a.length === n ? a : Array.prototype.slice.call(a, 0, n) as number[]);
 

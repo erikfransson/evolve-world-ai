@@ -9,16 +9,8 @@ import { LAYOUT as L, f64At } from "./layout.ts";
 import { Region } from "./resident.ts";
 import type { ResidentStore } from "./resident.ts";
 
-// The per-creature step of resident rows in WebAssembly (step.wat). Twin of stepRows in residentStep.ts, which stays the reference and the
-// fallback; wasm/stepParity in tests/typescript/wasmStep.test.ts compares them bit for bit. Math.sin and Math.cos are the engine's own,
-// imported, and the decay factors (Math.exp) are computed here per call, so the results equal the JS path on every engine.
-
-let jsOnly = false;
-// Runs the JS step even where the WebAssembly one exists (tests and comparisons).
-export function forceJsStep(flag: boolean): void {
-  jsOnly = flag;
-}
-export const jsStepForced = (): boolean => jsOnly;
+// The per-creature step of resident rows in WebAssembly (step.wat), a twin of Creature.remember and steer (physics.stepBody) that tests/typescript/wasmStep.test.ts
+// compares bit for bit. Math.sin and Math.cos are the engine's own, imported, and the decay factors (Math.exp) are computed here per call, so the results equal the JS path on every engine.
 
 interface StepExports extends WebAssembly.Exports {
   step(p: number): void;
@@ -115,7 +107,7 @@ export class WasmStepper {
     i32[(at + L.Q_NEAR) >> 2] = terrain.rockCount > 0 ? nearAt : 0;
   }
 
-  // Steps the resident rows at rows[0 .. n-1] (byte addresses), as stepRows does.
+  // Steps the resident rows at rows[0 .. n-1] (byte addresses): memory and motion, as Creature.remember and steer do.
   step(rows: Int32Array, n: number, aging: Aging | null, terrain: Terrain): void {
     const store = this.store;
     const species = store.species;

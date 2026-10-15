@@ -5,14 +5,7 @@ import { Region } from "./resident.ts";
 import type { ResidentStore } from "./resident.ts";
 
 // The crowd grid of resident creatures built in WebAssembly (crowd.wat), straight from the rows into the kernel memory, where the Crowd's arrays
-// are views. Twin of Crowd.rebuildRows, which stays the reference and the fallback; tests/typescript/wasmCrowd.test.ts compares them.
-
-let jsOnly = false;
-// Builds the crowd in JS even where the WebAssembly kernel exists (tests and comparisons).
-export function forceJsCrowd(flag: boolean): void {
-  jsOnly = flag;
-}
-export const jsCrowdForced = (): boolean => jsOnly;
+// are views. Twin of Crowd.rebuildFrom, which stays the reference and the fallback; tests/typescript/wasmCrowd.test.ts compares them.
 
 interface CrowdExports extends WebAssembly.Exports {
   rebuild(c: number): void;

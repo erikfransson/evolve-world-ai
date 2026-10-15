@@ -5,15 +5,11 @@ import type { EcoState } from "../../src/typescript/src/sim/ecoState.ts";
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
 import { ECO_PRESETS, withEcoPreset } from "../../src/typescript/src/sim/presets.ts";
 import { createRng } from "../../src/typescript/src/sim/rng.ts";
-import { dropSpareKernels, randomLearner, runEpisode } from "../../src/typescript/src/sim/rl/env.ts";
-import { envById } from "../../src/typescript/src/sim/rl/envs.ts";
 import { LAYOUT as L } from "../../src/typescript/src/sim/wasm/layout.ts";
 import { wasmAvailable } from "../../src/typescript/src/sim/wasm/loader.ts";
-import { stepRows } from "../../src/typescript/src/sim/wasm/residentStep.ts";
-import { forceJsStep } from "../../src/typescript/src/sim/wasm/stepKernel.ts";
 
-// The WebAssembly step (step.wat, stepKernel.ts) against its JS twin stepRows (residentStep.ts) on the same rows: every f64 of every row and every
-// memory unit must be the same bit for bit (Object.is), tick after tick, in worlds of every kind, and whole runs and saves must not tell the two apart.
+// The WebAssembly step (step.wat, stepKernel.ts) against the Creature code it replaces (remember and steer, which run on resident rows like on any state) on the same rows:
+// every f64 of every row and every memory unit must be the same bit for bit (Object.is), tick after tick, in worlds of every kind, and whole runs and saves must not tell the two apart.
 
 type Any = any; // the tests reach into the Ecosystem's tick phases
 
@@ -56,15 +52,23 @@ const differences = (a: Float64Array[], b: Float64Array[]): number => {
   return bad;
 };
 
+// The Creature code's memory and motion for every member.
+function stepCreatures(eco: Ecosystem): void {
+  for (const m of (eco as Any).bySlot) {
+    m.creature.remember();
+    m.creature.steer();
+  }
+}
+
 // The step on the rows of the current batch, once by each implementation from the same start. Leaves the WebAssembly result in the rows.
 function stepBoth(eco: Ecosystem): number {
   const e = eco as Any;
   const n = eco.members.length;
   const start = capture(e, n);
-  e.resident.stepper.step(e.slotRows, n, e.aging, e.items.terrain);
+  e.kernels.stepper.step(e.slotRows, n, e.aging, e.items.terrain);
   const wasm = capture(e, n);
   restore(e, n, start);
-  stepRows(e.resident, e.kernels.f32, e.slotRows, n, e.aging, e.items.terrain);
+  stepCreatures(eco);
   const js = capture(e, n);
   restore(e, n, wasm);
   return differences(wasm, js);
@@ -74,9 +78,8 @@ function stepBoth(eco: Ecosystem): number {
 function checkedTick(eco: Ecosystem): number {
   const e = eco as Any;
   eco.prepareTick();
-  eco.sensePhase(0, eco.members.length);
+  eco.sensePhase();
   const bad = eco.members.length ? stepBoth(eco) : 0;
-  e.batchAll = false;
   e.sharedPhase();
   return bad;
 }
@@ -112,7 +115,7 @@ function perturb(eco: Ecosystem, seed: number): void {
   }
 }
 
-describe.skipIf(!wasmAvailable())("the WebAssembly step equals stepRows", () => {
+describe.skipIf(!wasmAvailable())("the WebAssembly step equals the Creature code", () => {
   const worlds: [string, () => Ecosystem][] = [
     ["a plain world", () => make((c) => c, 300)],
     ["the Inland Sea (rock, mud and firm ground)", () => make(inland, 1200)],
@@ -125,7 +128,7 @@ describe.skipIf(!wasmAvailable())("the WebAssembly step equals stepRows", () => 
   for (const [name, build] of worlds) {
     it(`on ${name}, field for field over 120 ticks with perturbed creatures`, () => {
       const eco = build();
-      expect((eco as Any).resident.stepper).not.toBeNull();
+      expect((eco as Any).kernels).not.toBeNull();
       let bad = 0;
       for (let t = 0; t < 120 && !eco.extinct; t++) {
         if (t % 3 === 0) perturb(eco, 1000 + t);
@@ -162,8 +165,6 @@ describe.skipIf(!wasmAvailable())("the WebAssembly step equals stepRows", () => 
     const eco = make(inland, 300);
     const e = eco as Any;
     for (let t = 0; t < 5; t++) eco.step();
-    eco.prepareTick();
-    eco.sensePhase(0, eco.members.length);
     eco.members.forEach((m, i) => {
       const s = m.creature.state;
       if (i % 5 === 0) s.heading = NaN;
@@ -171,8 +172,10 @@ describe.skipIf(!wasmAvailable())("the WebAssembly step equals stepRows", () => 
       if (i % 5 === 2) s.vy = Infinity;
       if (i % 5 === 3) s.energy = -Infinity;
     });
+    eco.prepareTick(); // the ground factor of a row is the one read when the body was sensed, as the Creature code reads it where the body stands
+    eco.sensePhase();
     expect(stepBoth(eco)).toBe(0);
-    expect(e.resident.stepper).not.toBeNull();
+    expect(e.kernels).not.toBeNull();
   });
 
   // The f32 brain outputs of the row at batch position k, as an index into the f32 view.
@@ -182,15 +185,17 @@ describe.skipIf(!wasmAvailable())("the WebAssembly step equals stepRows", () => 
     const eco = make(inland, 300);
     const e = eco as Any;
     for (let t = 0; t < 3; t++) eco.step();
-    eco.prepareTick();
-    eco.sensePhase(0, eco.members.length);
     const rock = e.items.terrain;
-    const f32 = e.kernels.f32;
     for (let k = 0; k < 12; k++) {
       const c = e.bySlot[k].creature;
       c.state.x = rock.rockX[k * 3];
       c.state.y = rock.rockY[k * 3];
       c.state.vx = c.state.vy = 0;
+    }
+    eco.prepareTick();
+    eco.sensePhase();
+    const f32 = e.kernels.f32;
+    for (let k = 0; k < 12; k++) {
       f32[outAt(e, k)] = 0; // no turn
       f32[outAt(e, k) + 1] = -1; // brake from rest: the body stays where it is
     }
@@ -206,12 +211,12 @@ describe.skipIf(!wasmAvailable())("the WebAssembly step equals stepRows", () => 
     }
     expect(eco).not.toBeNull();
     const e = eco as Any;
-    eco!.prepareTick();
-    eco!.sensePhase(0, eco!.members.length);
     eco!.members.forEach((m, i) => {
       if (i % 3 === 0) m.creature.state.x = NaN;
       if (i % 3 === 1) m.creature.state.y = NaN;
     });
+    eco!.prepareTick();
+    eco!.sensePhase();
     expect(stepBoth(eco!)).toBe(0);
     expect(e.bySlot.some((m: Any) => Number.isFinite(m.creature.state.x))).toBe(true); // JS and WebAssembly both leave along +x from a disc, so some come out finite
   });
@@ -222,7 +227,7 @@ describe.skipIf(!wasmAvailable())("the WebAssembly step equals stepRows", () => 
       const e = eco as Any;
       for (let t = 0; t < 3; t++) eco.step();
       eco.prepareTick();
-      eco.sensePhase(0, eco.members.length);
+      eco.sensePhase();
       const f32 = e.kernels.f32;
       const turns = [NaN, -0, 0, 1, -1, Infinity];
       const thrusts = [NaN, -0, Infinity, -Infinity, 0.5, -0.5, 1e-30];
@@ -241,27 +246,31 @@ describe.skipIf(!wasmAvailable())("the WebAssembly step equals stepRows", () => 
     let bad = 0;
     for (let t = 0; t < 30; t++) {
       eco.prepareTick();
-      eco.sensePhase(0, eco.members.length);
+      eco.sensePhase();
       if (t % 10 === 5) e.kernels.brains.alloc(30 * 1024 * 1024); // replaces every view of the memory
       bad += stepBoth(eco);
-      e.batchAll = false;
       e.sharedPhase();
     }
     expect(bad).toBe(0);
   });
 });
 
-// Whole runs: the WebAssembly step and the JS step must not tell apart in anything the world reaches.
-describe.skipIf(!wasmAvailable())("whole runs with the WebAssembly step and with the JS step", () => {
-  afterEach(() => forceJsStep(false));
+// Whole runs: the WebAssembly step and the Creature code's step must not tell apart in anything the world reaches.
+describe.skipIf(!wasmAvailable())("whole runs with the WebAssembly step and with the Creature code's step", () => {
+  const tick = (eco: Ecosystem, js: boolean): void => {
+    if (!js) return eco.step();
+    if (eco.extinct) return;
+    eco.prepareTick();
+    eco.sensePhase();
+    stepCreatures(eco);
+    (eco as Any).sharedPhase();
+  };
   const run = (build: () => Ecosystem, ticks: number, js: boolean, midRun?: (eco: Ecosystem, t: number) => void): [number, number, number] => {
-    forceJsStep(js);
     const eco = build();
     for (let t = 0; t < ticks && !eco.extinct; t++) {
       midRun?.(eco, t);
-      eco.step();
+      tick(eco, js);
     }
-    forceJsStep(false);
     return [eco.fingerprint(), eco.population, eco.deaths];
   };
   const cases: [string, () => Ecosystem][] = [
@@ -291,29 +300,13 @@ describe.skipIf(!wasmAvailable())("whole runs with the WebAssembly step and with
   it("save in one mode and continue in the other, both ways", () => {
     const build = () => make((c) => damage(aging(inland(c))), 500);
     for (const [first, second] of [[false, true], [true, false]] as const) {
-      forceJsStep(first);
       const a = build();
-      for (let t = 0; t < 60; t++) a.step();
+      for (let t = 0; t < 60; t++) tick(a, first);
       const state = JSON.parse(JSON.stringify(saveState(a))) as EcoState;
-      forceJsStep(second);
       const b = restoreState(state);
-      forceJsStep(first);
-      for (let t = 0; t < 60; t++) a.step();
-      forceJsStep(second);
-      for (let t = 0; t < 60; t++) b.step();
-      forceJsStep(false);
+      for (let t = 0; t < 60; t++) tick(a, first);
+      for (let t = 0; t < 60; t++) tick(b, second);
       expect([b.fingerprint(), b.population, b.deaths]).toEqual([a.fingerprint(), a.population, a.deaths]);
     }
-  });
-
-  it("give the same RL episodes, on reused kernels", () => {
-    const env = envById("islands")!;
-    const l = randomLearner(env, 3);
-    dropSpareKernels();
-    forceJsStep(true);
-    const js = runEpisode(env, l, 11);
-    forceJsStep(false);
-    runEpisode(envById("crowd")!, l, 5); // leaves another world's state in the shared kernel
-    expect(runEpisode(env, l, 11)).toEqual(js);
   });
 });

@@ -483,7 +483,7 @@ export class ShareHelper {
     this.aging = agingOf(config.eco, config.dt);
     this.world = new World(config, worldCapacity);
     this.crowd = new Crowd(config);
-    this.store = this.kernels?.residentStore() ?? null;
+    this.store = this.kernels?.store ?? null;
     this.store?.species.push(...this.engines); // the configs the rows' species indices stand for
   }
 
@@ -509,7 +509,7 @@ export class ShareHelper {
       c.state.ticksAlive = p.ticks[i]!;
       batch.add(c, i);
     }
-    senseThinkBatch(this.world, this.crowd, batch, this.kernels);
+    senseThinkBatch(this.world, this.crowd, batch);
     const a = p.after;
     const stride = p.header[H_STRIDE]!;
     for (let k = 0; k < batch.count; k++) {
@@ -547,7 +547,7 @@ export class ShareHelper {
     }
     prepareRows(store, rows, m, this.world.terrain);
     kernels.runRows(this.world, this.crowd, rows, selves, m, null);
-    advanceBodies(store, kernels.f32, rows, selves, m, this.aging, this.world, this.engines[0]!.creature.radius, p.touched);
+    advanceBodies(kernels, rows, selves, m, this.aging, this.world, this.engines[0]!.creature.radius, p.touched);
     const a = p.after;
     const stride = p.header[H_STRIDE]!;
     f = store.f64; // the memory may have grown

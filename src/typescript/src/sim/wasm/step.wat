@@ -1,7 +1,7 @@
-;; The per-creature step of resident rows: memory units, turn, thrust, drag, ground, walls, rock and energy. Twin of stepRows in residentStep.ts (the reference and
-;; the fallback): the same arithmetic in the same order, one f64 operation per JS operation and none fused, so the rows come out bit for bit alike. Math.sin and
+;; The per-creature step of resident rows: memory units, turn, thrust, drag, ground, walls, rock and energy. Twin of Creature.remember and steer (physics.stepBody, the
+;; reference): the same arithmetic in the same order, one f64 operation per JS operation and none fused, so the rows come out bit for bit alike. Math.sin and
 ;; Math.cos are the engine's own, imported, so the results equal the JS path on every engine. Offsets are layout.ts's, substituted for the double-brace tokens.
-;; Keep this and stepRows in step: tests/typescript/wasmStep.test.ts compares them.
+;; Keep this and stepBody in step: tests/typescript/wasmStep.test.ts compares them.
 ;; Memory is the brain bank's (imported); a row's brain outputs are f32 in the same memory.
 (module
   (import "brain" "mem" (memory 1))

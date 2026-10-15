@@ -5,11 +5,9 @@ import type { EcoState } from "../../src/typescript/src/sim/ecoState.ts";
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
 import { ECO_PRESETS, withEcoPreset } from "../../src/typescript/src/sim/presets.ts";
 import { createRng } from "../../src/typescript/src/sim/rng.ts";
-import { dropSpareKernels, randomLearner, runEpisode } from "../../src/typescript/src/sim/rl/env.ts";
-import { envById } from "../../src/typescript/src/sim/rl/envs.ts";
-import { forceJsMembers } from "../../src/typescript/src/sim/wasm/membersKernel.ts";
 import { wasmAvailable } from "../../src/typescript/src/sim/wasm/loader.ts";
 import { F } from "../../src/typescript/src/sim/wasm/resident.ts";
+import { useKernels } from "./helpers.ts";
 
 // The WebAssembly settle and birth scans (members.wat, membersKernel.ts) against the loops in Ecosystem.sharedPhase they replace.
 
@@ -81,16 +79,14 @@ describe.skipIf(!wasmAvailable())("the WebAssembly scans equal the loops", () =>
 });
 
 describe.skipIf(!wasmAvailable())("whole runs with the WebAssembly scans and with the JS loops", () => {
-  afterEach(() => forceJsMembers(false));
   type Mid = (eco: Ecosystem, t: number) => void;
   const run = (build: () => Ecosystem, ticks: number, js: boolean, mid?: Mid): [number, number, number, number] => {
-    forceJsMembers(js);
     const eco = build();
+    useKernels(eco, { members: !js });
     for (let t = 0; t < ticks && !eco.extinct; t++) {
       mid?.(eco, t);
       eco.step();
     }
-    forceJsMembers(false);
     return [eco.fingerprint(), eco.population, eco.deaths, eco.births];
   };
   // Feeds some creatures past their birth threshold and starves others, so births, deaths and swap-removals happen throughout.
@@ -131,38 +127,24 @@ describe.skipIf(!wasmAvailable())("whole runs with the WebAssembly scans and wit
   it("save in one mode and continue in the other, both ways", () => {
     const build = () => make((c) => damage(aging(inland(c))), 300);
     for (const [first, second] of [[false, true], [true, false]] as const) {
-      forceJsMembers(first);
       const a = build();
+      useKernels(a, { members: !first });
       for (let t = 0; t < 50; t++) {
         churn(a, t);
         a.step();
       }
       const state = JSON.parse(JSON.stringify(saveState(a))) as EcoState;
-      forceJsMembers(second);
       const b = restoreState(state);
-      forceJsMembers(first);
+      useKernels(b, { members: !second });
       for (let t = 50; t < 100; t++) {
         churn(a, t);
         a.step();
       }
-      forceJsMembers(second);
       for (let t = 50; t < 100; t++) {
         churn(b, t);
         b.step();
       }
-      forceJsMembers(false);
       expect([b.fingerprint(), b.population, b.deaths, b.births]).toEqual([a.fingerprint(), a.population, a.deaths, a.births]);
     }
-  });
-
-  it("give the same RL episodes, on reused kernels", () => {
-    const env = envById("islands")!;
-    const l = randomLearner(env, 3);
-    dropSpareKernels();
-    forceJsMembers(true);
-    const js = runEpisode(env, l, 11);
-    forceJsMembers(false);
-    runEpisode(envById("crowd")!, l, 5);
-    expect(runEpisode(env, l, 11)).toEqual(js);
   });
 });

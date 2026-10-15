@@ -11,11 +11,10 @@ import type { BirthTraits } from "./planMutation.ts";
 import { agingOf, collide, hurt, keepInside, settle } from "./physics.ts";
 import { terrainOf } from "./terrain.ts";
 import { SMALL_SORT } from "./crowd.ts";
-import { WasmCrowd, jsCrowdForced } from "./wasm/crowdKernel.ts";
-import { WasmMembers, jsMembersForced } from "./wasm/membersKernel.ts";
-import { F } from "./wasm/resident.ts";
+import { WasmCrowd } from "./wasm/crowdKernel.ts";
+import { WasmMembers } from "./wasm/membersKernel.ts";
 import type { ResidentStore } from "./wasm/resident.ts";
-import { advanceBodies, prepareRows, stepResident } from "./wasm/residentStep.ts";
+import { advanceBodies, prepareRows } from "./wasm/residentStep.ts";
 import type { Body } from "./physics.ts";
 import type { Aging, Contact } from "./physics.ts";
 import type { StatefulRng } from "./rng.ts";
@@ -248,7 +247,6 @@ export class Ecosystem {
   private readonly contact: Contact = { speed: 0 };
   onDeath: ((m: EcoCreature) => void) | null = null; // called with each creature as it leaves, before its object is recycled
   private bySlot: EcoCreature[] = []; // the members in creature construction order (Creature.slot), kept up to date as they come and go
-  private batchAll = false; // the batch from the last sensePhase holds every member
   profile: PhaseTimer | null = null; // per-phase CPU laps, set by ecoBench --profile
 
   // pool: trained founders (see seedPool.ts); without one, or at poolFraction 0, every founder is random.
@@ -302,7 +300,7 @@ export class Ecosystem {
     const maxRays = Math.max(config.creature.rayCount, ...this.ranges.map((r) => r.rayCountRange[1] ?? 0), ...(pool ?? []).map((e) => e.plan.rayCount), ...(cast ?? []).map((c) => c.plan.rayCount));
     // options.kernels: instances to reuse (RL), reset here; the caller owns them and runs one Ecosystem on them at a time.
     this.kernels = !eco.wasm ? null : options.kernels && maxRays <= MAX_RAYS ? options.kernels.reset(config) : SenseKernels.create(config, maxRays);
-    this.resident = this.kernels ? this.kernels.residentStore() : null;
+    this.resident = this.kernels?.store ?? null;
     if (this.resident) this.resident.species.push(...this.engines); // the configs the rows' species indices stand for
     this.wasmCrowd = this.resident ? WasmCrowd.create(this.resident, this.crowd) : null;
     this.wasmMembers = this.resident ? WasmMembers.create(this.resident) : null;
@@ -399,7 +397,7 @@ export class Ecosystem {
     prof?.start();
     this.prepareTick();
     prof?.lap("crowd grid");
-    this.sensePhase(0, this.members.length);
+    this.sensePhase();
     prof?.lap("sense and think, rest");
     this.finishTick();
   }
@@ -424,7 +422,7 @@ export class Ecosystem {
 
   // Phase 1b for the resident bodies at selves: memory and motion, and the item each touches into touched[self].
   advanceRows(rows: Int32Array, selves: Int32Array, n: number, touched: Int32Array): void {
-    advanceBodies(this.resident!, this.kernels!.f32, rows, selves, n, this.aging, this.items, this.config.creature.radius, touched);
+    advanceBodies(this.kernels!, rows, selves, n, this.aging, this.items, this.config.creature.radius, touched);
   }
 
   // Empties the journal, once a helper coordinator has published it.
@@ -441,10 +439,8 @@ export class Ecosystem {
 
   private gridCrowd(n: number, species?: ArrayLike<number>): void {
     const wasm = this.wasmCrowd;
-    if (wasm && n > SMALL_SORT && !jsCrowdForced()) wasm.rebuild(this.rowAt, n, species);
-    else if (this.resident) {
-      this.crowd.rebuildRows(this.resident.f64, this.rowAt, F.energy, n, species);
-    } else this.crowd.rebuild(this.states, n, species);
+    if (wasm && n > SMALL_SORT) wasm.rebuild(this.rowAt, n, species);
+    else this.crowd.rebuild(this.states, n, species);
   }
 
   // Grids the creatures as they stand at the tick start, for sensePhase.
@@ -453,27 +449,22 @@ export class Ecosystem {
     this.gridCrowd(this.states.length, this.multi ? this.kinds : undefined);
   }
 
-  // Phase 1a for members start .. end-1, after prepareTick: sense and think into each creature's outputs.
-  sensePhase(start: number, end: number): void {
-    if (this.resident && start === 0 && end === this.members.length) {
+  // Phase 1a for every member, after prepareTick: sense and think into each creature's outputs.
+  sensePhase(): void {
+    if (this.kernels) {
       // Resident bodies: the batch is the maintained row list, nothing to gather per creature.
-      this.batchAll = true;
       this.profile?.lap("batch build");
-      const kernels = this.kernels!;
+      const kernels = this.kernels;
+      const n = this.members.length;
       kernels.detail = this.detail === null ? null : (this.byId.get(this.detail)?.creature ?? null);
-      prepareRows(this.resident, this.slotRows, end, this.items.terrain);
-      kernels.runRows(this.items, this.crowd, this.slotRows, this.slotSelves, end, kernels.detail, this.profile);
+      prepareRows(this.resident!, this.slotRows, n, this.items.terrain);
+      kernels.runRows(this.items, this.crowd, this.slotRows, this.slotSelves, n, kernels.detail, this.profile);
       return;
     }
     const batch = this.batch;
     batch.clear();
-    if (start === 0 && end === this.members.length && this.bySlot.length === end) {
-      for (const m of this.bySlot) batch.add(m.creature, m.index);
-      batch.sorted = true;
-    } else {
-      for (let i = start; i < end; i++) batch.add(this.members[i].creature, i);
-    }
-    this.batchAll = start === 0 && end === this.members.length;
+    for (const m of this.bySlot) batch.add(m.creature, m.index);
+    batch.sorted = true;
     this.profile?.lap("batch build");
     this.senseBatch(batch);
   }
@@ -489,10 +480,9 @@ export class Ecosystem {
     c.encode();
   }
 
-  // Phase 1a for a batch of members, each at its list index, after prepareTick.
+  // Phase 1a for a batch of members on the JS path, each at its list index, after prepareTick.
   senseBatch(batch: SenseBatch): void {
-    if (this.kernels) this.kernels.detail = this.detail === null ? null : (this.byId.get(this.detail)?.creature ?? null);
-    senseThinkBatch(this.items, this.crowd, batch, this.kernels, this.profile);
+    senseThinkBatch(this.items, this.crowd, batch, this.profile);
   }
 
   // Phase 1b for one creature: memory and motion. Returns the item it touches there (Creature.touched), for finishTick.
@@ -507,25 +497,16 @@ export class Ecosystem {
   // see Creature.touched), so only the shared phase runs.
   finishTick(touched?: Int32Array): void {
     if (!touched) {
-      if (this.batchAll) {
-        // The batch holds every member in creature construction order: same work, but the objects are read front to back.
+      if (this.kernels) this.kernels.stepper.step(this.slotRows, this.members.length, this.aging, this.items.terrain);
+      else {
+        // The batch holds every member in creature construction order: the objects are read front to back.
         const { creatures, count } = this.batch;
-        const f32 = this.kernels?.f32;
-        if (this.resident) {
-          stepResident(this.resident, this.kernels!.f32, this.slotRows, this.members.length, this.aging, this.items.terrain);
-        } else for (let k = 0; k < count; k++) {
+        for (let k = 0; k < count; k++) {
           const c = creatures[k]!;
-          const out = c.outputArray(f32);
-          c.remember(out);
-          c.steer(out);
-        }
-      } else {
-        for (const m of this.members) {
-          m.creature.remember();
-          m.creature.steer();
+          c.remember();
+          c.steer();
         }
       }
-      this.batchAll = false;
       this.profile?.lap("memory and steer");
     }
     this.sharedPhase(touched);
@@ -544,7 +525,7 @@ export class Ecosystem {
       if (!touched) {
         const crowd = this.crowd;
         touched = this.lookups = refit(this.lookups, n);
-        const tables = crowd.kernel && !jsCrowdForced() ? this.kernels!.itemTables(this.items) : null;
+        const tables = crowd.kernel ? this.kernels!.itemTables(this.items) : null;
         if (tables) crowd.kernel!.touch(tables, this.items.rows, 1 / this.items.cell, this.config.creature.radius + this.items.itemRadius, touched); // twin of touchedBatch
         else this.items.touchedBatch(crowd.xs, crowd.ys, crowd.owners, n, this.config.creature.radius, touched);
       }
@@ -577,25 +558,12 @@ export class Ecosystem {
     if (eco.collisions) this.collideAll();
     prof?.lap("collisions");
 
-    const res = this.resident;
-    const scan = this.wasmMembers && !jsMembersForced() ? this.wasmMembers : null;
+    const scan = this.wasmMembers;
     if (scan) {
       // the scan counts the tick for everyone with energy left and lists the others, highest first
       const dying = scan.settle(this.rowAt, n);
       for (let k = 0; k < dying.length; k++) this.settleAt(dying[k]!);
-    } else for (let i = n - 1; i >= 0; i--) {
-      const state = this.states[i];
-      if (res) {
-        // a creature with energy left only counts the tick, on the row; settle decides the rest
-        const f = res.f64;
-        const j = this.rowAt[i]! + F.energy;
-        if (f[j]! > 0) {
-          f[j + F.ticks - F.energy] = f[j + F.ticks - F.energy]! + 1;
-          continue;
-        }
-      }
-      this.settleAt(i);
-    }
+    } else for (let i = n - 1; i >= 0; i--) this.settleAt(i);
     this.slain.clear();
     prof?.lap("settle and deaths");
 
@@ -614,7 +582,7 @@ export class Ecosystem {
       }
     } else for (let k = 0; k < n && members.length < birthCap; k++) {
       const at = (first + k) % n;
-      if ((res ? res.f64[this.rowAt[at]! + F.energy]! : states[at]!.energy) < thresholds[at]!) continue;
+      if (states[at]!.energy < thresholds[at]!) continue;
       const parent = members[at]!;
       if (this.tick - parent.lastBirthTick >= parent.cooldownTicks) this.giveBirth(parent);
     }
@@ -724,7 +692,7 @@ export class Ecosystem {
     const reach = 2 * radius;
     const reach2 = reach * reach;
     const kernel = crowd.kernel;
-    if (kernel && !jsCrowdForced()) {
+    if (kernel) {
       // the same sweep in WebAssembly (crowd.wat sweep), which finds the pairs; the bumps stay here
       kernel.sweepStart(reach2);
       while (kernel.sweepNext()) this.bumpSlots(kernel.hitS, kernel.hitT, radius);

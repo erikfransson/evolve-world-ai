@@ -289,7 +289,7 @@ describe("WebAssembly kernels", () => {
       const m = eco.members[t % eco.population]!;
       eco.detail = m.id;
       eco.prepareTick();
-      eco.sensePhase(0, eco.population);
+      eco.sensePhase();
       const c = m.creature;
       if (c.brainVersion > 0) recycledShapes.add(c.brain.genome.length);
       c.brain.forward(c.brain.layerActivations()[0]!, out.subarray(0, c.outputs.length));

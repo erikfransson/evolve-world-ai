@@ -100,18 +100,6 @@ export class Crowd {
     }
   }
 
-  // The same from resident rows (see wasm/resident.ts; WasmCrowd in wasm/crowdKernel.ts does this in WebAssembly): creature i is the row at f64 index rowAt[i], with x then y first and the energy energyAt on.
-  rebuildRows(f: Float64Array, rowAt: ArrayLike<number>, energyAt: number, n: number, species?: ArrayLike<number>): void {
-    this.fitGather(n);
-    for (let i = 0; i < n; i++) {
-      const j = rowAt[i]!;
-      this.px[i] = f[j]!;
-      this.py[i] = f[j + 1]!;
-      this.pe[i] = f[j + energyAt]!;
-    }
-    this.rebuildFrom(this.px, this.py, this.pe, n, species);
-  }
-
   // Takes the grid the WebAssembly kernel built (crowd.wat, a twin of rebuildFrom) as its arrays. They stay views of that memory until the next JS rebuild.
   adopt(v: GridArrays, n: number, occupiedCount: number, kernel: WasmCrowd): void {
     if (!this.kernel) {

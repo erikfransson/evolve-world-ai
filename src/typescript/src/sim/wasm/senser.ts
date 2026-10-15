@@ -8,7 +8,7 @@ import { HIT_CREATURE } from "../types.ts";
 import { SENSE_BYTES, compiled } from "./loader.ts";
 import { ROCK_CELL } from "../terrain.ts";
 import type { WasmFiller } from "./fillKernel.ts";
-import { LAYOUT as L, f64At, i32At } from "./layout.ts";
+import { LAYOUT as L } from "./layout.ts";
 import { Region, growRegion } from "./resident.ts";
 
 // The whole Ecosystem sense in one WebAssembly call per batch (sense.wat): ray directions, item and wall rays in f64 with the
@@ -62,8 +62,6 @@ export class WasmSenser {
   private pXY = 0;
   private pKinds = 0;
   private pIds = 0;
-  private place = new Int32Array(64);
-  private rowCount = new Int32Array(0);
 
   private constructor(bank: WasmBrainBank, exports: SenseExports) {
     this.bank = bank;
@@ -243,29 +241,9 @@ export class WasmSenser {
     return p;
   }
 
-  // Where each creature's record goes: creatures sorted by item grid row (counting sort, stable), so the kernel walks the rows of the
-  // item grid in order and the few rows around the current one stay in cache. Results do not depend on the order.
-  private placeByRow(world: World, creatures: readonly Creature[], n: number): Int32Array {
-    if (this.place.length < n) this.place = new Int32Array(Math.max(n, 2 * this.place.length));
-    const { rows } = world;
-    const place = this.place;
-    const count = this.rowCount.length >= rows + 1 ? this.rowCount.fill(0) : (this.rowCount = new Int32Array(rows + 1));
-    const inv = 1 / world.cell;
-    for (let k = 0; k < n; k++) {
-      const v = Math.floor(creatures[k]!.state.y * inv);
-      const row = v >= 0 ? Math.min(rows - 1, v) : 0; // NaN and negative go to row 0
-      place[k] = row;
-      count[row + 1]!++;
-    }
-    for (let r = 0; r < rows; r++) count[r + 1] += count[r]!;
-    for (let k = 0; k < n; k++) place[k] = count[place[k]!]!++;
-    return place;
-  }
-
-  // Senses the batch and writes each creature's complete brain input (rays, extras, memory) at its slot.
-  // The batch is creatures with their brain slots, or resident rows (the fill kernel builds the records and the body inputs from them,
-  // and writes the brain slot list at slotsAt). selves[k] is the crowd index of batch member k.
-  run(world: World, crowd: Crowd, n: number, selves: Int32Array, stride: number, startEnergy: number, detail: Creature | null, batch: { creatures: readonly Creature[]; slots: Int32Array } | { filler: WasmFiller; rows: Int32Array; slotsAt: number }): void {
+  // Senses the batch of resident rows and writes each creature's complete brain input at its slot: the fill kernel builds the records and the body inputs
+  // from the rows, and writes the brain slot list at slotsAt. selves[k] is the crowd index of batch member k.
+  run(world: World, crowd: Crowd, n: number, selves: Int32Array, stride: number, startEnergy: number, detail: Creature | null, filler: WasmFiller, rows: Int32Array, slotsAt: number): void {
     this.syncItems(world);
     const count = crowd.count;
     const ccells = crowd.cols * crowd.rows;
@@ -315,37 +293,9 @@ export class WasmSenser {
       i32[species + k] = crowdSpecies[k]!;
       f32[sig + k] = energySignal(energies[k]!, startEnergy);
     }
-    if ("filler" in batch) {
-      batch.filler.fill(batch.rows, selves, n, world, pRec, batch.slotsAt, pDetail, detail, stride);
-      this.views(); // fill may have grown the memory
-      ({ f32, i32, f64 } = this);
-    } else {
-      const { creatures, slots } = batch;
-      const rec = pRec >> 3; // record fields as f64 and as i32 indices
-      const recI = pRec >> 2;
-      const place = this.placeByRow(world, creatures, n);
-      for (let k = 0; k < n; k++) {
-        const c = creatures[k]!;
-        const s = c.state;
-        const q = place[k]!;
-        const o = rec + q * f64At(L.REC_BYTES);
-        const slot = slots[k]!;
-        const rays = c.plan.rayCount;
-        f64[o + f64At(L.REC_X)] = s.x;
-        f64[o + f64At(L.REC_Y)] = s.y;
-        f64[o + f64At(L.REC_COS)] = c.heading.cos;
-        f64[o + f64At(L.REC_SIN)] = c.heading.sin;
-        f64[o + f64At(L.REC_RAY_LENGTH)] = c.plan.rayLength;
-        const w = recI + q * i32At(L.REC_BYTES);
-        i32[w + i32At(L.REC_SELF)] = selves[k]!;
-        i32[w + i32At(L.REC_RAYS)] = rays;
-        i32[w + i32At(L.REC_OFFSETS)] = this.offPtr[slot]!;
-        const inFloat = this.bank.inputAt(slot);
-        i32[w + i32At(L.REC_INPUT)] = inFloat * 4;
-        i32[w + i32At(L.REC_DETAIL)] = c === detail ? pDetail : 0;
-        c.writeBodyInputs(f32, inFloat + rays * stride);
-      }
-    }
+    filler.fill(rows, selves, n, world, pRec, slotsAt, pDetail, detail, stride);
+    this.views(); // fill may have grown the memory
+    ({ f32, i32, f64 } = this);
     const P = pP >> 3;
     const PF = pP >> 2;
     f64[P] = world.width;
