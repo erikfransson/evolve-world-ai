@@ -240,7 +240,7 @@ export class AddPanel {
     this.t = tunedOf(f.plan, f.birth ? { energy: fit(f.birth.energy, 1, r?.energy), cost: fit(f.birth.cost, 1, r?.cost), cooldown: fit(f.birth.cooldown ?? d.cooldown, 0.5, r?.cooldown) } : d);
     const name = this.$<HTMLInputElement>("addName");
     if (!name.value || name.dataset.auto === "1") {
-      name.value = f.lineage; // the starters' own lineage name, so a copy carries the same
+      name.value = `My${f.lineage}`.slice(0, NAME_MAX); // the starters keep their own names (the server refuses those), so a copy starts as the visitor's own
       name.dataset.auto = "1";
     }
     for (const b of this.root.querySelectorAll<HTMLElement>(".founder")) b.setAttribute("aria-checked", String(Number(b.dataset.index) === i));

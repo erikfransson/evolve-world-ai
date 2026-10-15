@@ -524,15 +524,15 @@ export class LiveWorld {
     return n;
   }
 
-  // Blanks a visitor's name (as viewers see it, without the starter mark) on every family that carries it, for an admin who finds it
-  // unfit; the families live on unnamed. Stats, details and the next save carry the change. Call between ticks (whenIdle).
-  // The name becomes BLANKED (or STARTER_MARK + BLANKED), which viewers see as no name, so a visitor family still counts as added.
   // Renames every family whose name viewers see as `from` to `to` (both letters and digits), keeping the starter mark: a renamed
   // starter founder (the shipped file's names changed) stays a starter. Call between ticks (whenIdle).
   renameName(from: string, to: string): number {
     return this.eco.lineageTable.renameWhere((n) => wireName(n).name === from, (n) => (n.startsWith(STARTER_MARK) ? STARTER_MARK : "") + to);
   }
 
+  // Blanks a visitor's name (as viewers see it, without the starter mark) on every family that carries it, for an admin who finds it
+  // unfit; the families live on unnamed. Stats, details and the next save carry the change. Call between ticks (whenIdle).
+  // The name becomes BLANKED (or STARTER_MARK + BLANKED), which viewers see as no name, so a visitor family still counts as added.
   blankName(name: string): number {
     return this.eco.lineageTable.renameWhere((n) => wireName(n).name === name, (n) => (n.startsWith(STARTER_MARK) ? STARTER_MARK : "") + BLANKED);
   }

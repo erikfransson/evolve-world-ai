@@ -187,6 +187,9 @@ describe("founders file", () => {
     expect(live.renameName(founders[0]!.name, "Scout")).toBe(SEED_COPIES);
     const renamed = namedTop(live.eco, 8).find((g) => g.name === "Scout");
     expect([renamed?.count, renamed?.starter]).toEqual([SEED_COPIES, true]);
+    const back = freshSmall();
+    back.restoreState(JSON.parse(JSON.stringify(live.saveState())));
+    expect(namedTop(back.eco, 8).find((g) => g.name === "Scout")).toMatchObject({ count: SEED_COPIES, starter: true }); // a save keeps it
   });
 
   it("refuses a file with a bad founder, too many founders, or none, and skips nothing", () => {
