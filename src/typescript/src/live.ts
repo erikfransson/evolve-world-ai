@@ -32,7 +32,8 @@ import { LiveScene } from "./live/scene.ts";
 import { serverUrl } from "./live/serverUrl.ts";
 import { HISTORY_FIELDS, LINEAGE_FIELDS, MAX_HISTORY, MAX_LINEAGE_HISTORY } from "./live/protocol.ts";
 import type { Hello, Season, Stats } from "./live/protocol.ts";
-import { AddPanel, parseFounders } from "./live/addPanel.ts";
+import { AddPanel } from "./live/addPanel.ts";
+import { parseFounders } from "./live/founders.ts";
 import { renderMapInfo } from "./live/mapInfo.ts";
 import { MapCache } from "./live/mapTerrain.ts";
 

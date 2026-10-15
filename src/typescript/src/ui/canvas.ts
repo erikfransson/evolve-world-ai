@@ -15,3 +15,13 @@ export function graphFont(): string {
   const desktop = typeof window.matchMedia === "function" && window.matchMedia("(min-width: 701px)").matches;
   return `${desktop ? 12.5 : 10}px system-ui, -apple-system, "Segoe UI", sans-serif`;
 }
+
+// A canvas of w x h pixels for drawing off screen: an OffscreenCanvas where there is one, else a detached element, null in a worker without either.
+export function makeCanvas(w: number, h: number): OffscreenCanvas | HTMLCanvasElement | null {
+  if (typeof OffscreenCanvas !== "undefined") return new OffscreenCanvas(w, h);
+  if (typeof document === "undefined") return null;
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  return c;
+}

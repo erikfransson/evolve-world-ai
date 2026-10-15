@@ -1,4 +1,6 @@
 import { MAX_FILE_BYTES, parseCreatureFile } from "../sim/rl/creatureFile.ts";
+import { lineageName } from "./founders.ts";
+import type { Founder } from "./founders.ts";
 import { PLAN_LIMITS } from "../sim/rl/validate.ts";
 import { lineageColor } from "../ui/lineagePanel.ts";
 import type { BodyPlan } from "../sim/sensors.ts";
@@ -10,30 +12,6 @@ import type { TrainJob, TrainKind, TrainProgress } from "./training.ts";
 
 // "Add your creature": pick a founder or upload a file, tune it, optionally train it in this browser, name it and send it.
 // Visitor text (names, file contents) only ever reaches the page through textContent and input values.
-
-export interface Founder {
-  id: string;
-  name: string;
-  blurb: string;
-  speed: number;
-  plan: BodyPlan;
-  genome: Float32Array;
-}
-
-const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
-
-// The founders asset (public/live-founders.json, from scripts/pickFounders.ts), each checked like a creature file.
-export function parseFounders(data: unknown): Founder[] {
-  if (!isObj(data) || !Array.isArray(data.founders)) return [];
-  const out: Founder[] = [];
-  for (const f of data.founders.slice(0, 8)) {
-    if (!isObj(f) || typeof f.name !== "string" || typeof f.blurb !== "string") continue;
-    const file = parseCreatureFile({ format: "evolve-world-creature", version: 1, kind: "forager", name: f.name, plan: f.plan, genome: f.genome });
-    if (typeof file === "string") continue;
-    out.push({ id: String(f.id).slice(0, 20), name: file.name.slice(0, 30), blurb: f.blurb.slice(0, 80), speed: typeof f.speed === "number" && Number.isFinite(f.speed) ? f.speed : 0, plan: file.plan, genome: Float32Array.from(file.genome) });
-  }
-  return out;
-}
 
 interface Base {
   label: string;
@@ -250,7 +228,7 @@ export class AddPanel {
     this.t = tunedOf(f.plan, this.t?.birth ?? this.defaultBirth());
     const name = this.$<HTMLInputElement>("addName");
     if (!name.value || name.dataset.auto === "1") {
-      name.value = f.name.replace(/[^A-Za-z0-9]/g, "").slice(0, NAME_MAX);
+      name.value = f.lineage; // the starters' own lineage name, so a copy carries the same
       name.dataset.auto = "1";
     }
     for (const b of this.root.querySelectorAll<HTMLElement>(".founder")) b.setAttribute("aria-checked", String(Number(b.dataset.index) === i));
@@ -286,7 +264,7 @@ export class AddPanel {
     msg.textContent = `${parsed.name}: ${parsed.plan.rayCount} rays, brain ${parsed.plan.hiddenLayers.join("-")}${parsed.training.iterations ? `, trained ${parsed.training.iterations} iterations` : ""}.`;
     const name = this.$<HTMLInputElement>("addName");
     if (!name.value || name.dataset.auto === "1") {
-      name.value = parsed.name.replace(/[^A-Za-z0-9]/g, "").slice(0, NAME_MAX);
+      name.value = lineageName(parsed.name);
       name.dataset.auto = "1";
     }
     this.t = tunedOf(parsed.plan, this.t?.birth ?? this.defaultBirth());

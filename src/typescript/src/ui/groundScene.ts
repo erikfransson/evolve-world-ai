@@ -43,14 +43,8 @@ const TILE_PX = 256;
 const TEXTURE_FROM = 0.03; // scale (device px per world unit) from which textures and rims are drawn, below it a patch is one flat fill
 const VIEW_PAD = 80; // world units past a patch that still draw
 
-export function makeCanvas(w: number, h: number): OffscreenCanvas | HTMLCanvasElement | null {
-  if (typeof OffscreenCanvas !== "undefined") return new OffscreenCanvas(w, h);
-  if (typeof document === "undefined") return null;
-  const c = document.createElement("canvas");
-  c.width = w;
-  c.height = h;
-  return c;
-}
+import { makeCanvas } from "./canvas.ts";
+export { makeCanvas };
 
 export const context2d = (c: OffscreenCanvas | HTMLCanvasElement | null): CanvasRenderingContext2D | null => (c ? (c.getContext("2d") as CanvasRenderingContext2D | null) : null);
 

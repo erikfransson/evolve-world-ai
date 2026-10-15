@@ -1,5 +1,5 @@
 import { createRng } from "../../sim/rng.ts";
-import { makeCanvas } from "../groundScene.ts";
+import { makeCanvas } from "../canvas.ts";
 import { FLOOR } from "../scene.ts";
 import { FOOD, POISON } from "../palette.ts";
 import { GRID, GRID_H, GRID_W } from "./inlandGrid.ts";

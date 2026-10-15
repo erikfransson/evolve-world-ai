@@ -2,6 +2,7 @@ import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { itemsPerDensity } from "../../src/typescript/src/sim/config.ts";
 import { MAX_ITEM_SLOTS, creatureFrameBytes, itemsBytes } from "../../src/typescript/src/live/protocol.ts";
+import { MAX_FOUNDERS } from "../../src/typescript/src/live/founders.ts";
 
 // Also the admin's upper limit (tunables.ts). At 3000 a creature frame is 57 kB: room() lets in about 23 to 38 viewers at the full
 // population (fewer while items change fast), a save is about 29 MB of JSON, and a save and admin load peak near 720 MB (2500: 687 MB, 5000: 857 MB).
@@ -32,7 +33,7 @@ liveConfig.eco.hueDrift = 3; // degrees (Ecosystem 8): families keep their colou
 
 // A fresh world gets this many copies of each founder in the founders file, at random open spots.
 export const SEED_COPIES = 10;
-export const MAX_SEED_FOUNDERS = 8; // the page offers at most 8 founders too (addPanel.ts parseFounders)
+export const MAX_SEED_FOUNDERS = MAX_FOUNDERS; // the same bound as the pages (live/founders.ts)
 export const MAX_FOUNDERS_FILE_BYTES = 512 * 1024; // 4 founders are 25 kB; 8 of the largest genomes (about 3800 weights) fit
 
 // Item slots are fixed when a world is built, so it is built with room for admin to raise the food and poison caps (densities).

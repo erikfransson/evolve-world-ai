@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CAP_LIMITS, ITEM_HEADROOM, LIMITS, LIVE, MAX_POPULATION, ITEM_SLOT_SHARE, MAX_FOUNDERS_FILE_BYTES, MAX_SEED_FOUNDERS, SEED_COPIES, itemHeadroom, liveConfig } from "../../server/src/config.ts";
 import { lineageName, loadFounders, parseFounders } from "../../server/src/founders.ts";
+import { parseFounders as parsePageFounders } from "../../src/typescript/src/live/founders.ts";
 import { LiveWorld } from "../../server/src/liveWorld.ts";
 import { Saves, openWorld } from "../../server/src/saves.ts";
 import { PREVIOUS_OVERRIDES } from "../../server/src/admin.ts";
@@ -150,6 +151,10 @@ describe("founders file", () => {
     expect(lineageName("Slow and steady")).toBe("SlowAndSteady");
     expect(lineageName("Hunter-ish")).toBe("HunterIsh");
     expect(lineageName(" -- ")).toBe("");
+    // The pages read the same file with the same parser, so a visitor's copy of a starter carries the starter's lineage name.
+    const page = parsePageFounders(JSON.parse(readFileSync(FOUNDERS, "utf8")));
+    expect(page.map((x) => x.lineage)).toEqual(f.map((x) => x.name));
+    expect(page.find((x) => x.name === "Slow and steady")?.lineage).toBe("SlowAndSteady");
     // Each founder would also pass as a visitor's add.
     const rules = freshSmall().addRules();
     for (const x of f) expect(typeof parseAdd(encodeAdd({ plan: x.plan, genome: x.genome, birth: { energy: 150, cost: 70, cooldown: 10 }, name: x.name, hue: 0, copies: 1 }), rules)).toBe("object");
