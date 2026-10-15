@@ -149,7 +149,7 @@ describe.skipIf(!wasmAvailable())("the WebAssembly crowd grid equals Crowd.rebui
     eco.prepareTick();
     expect(crowdDifferences(eco)).toBe(0);
     e.kernels.brains.alloc(40 * 1024 * 1024);
-    expect(e.crowd.xs.length).toBe(eco.members.length); // still views, not detached
+    expect(e.crowd.xs.buffer).toBe(e.kernels.brains.memory.buffer); // still views, not detached
     expect(crowdDifferences(eco)).toBe(0);
     for (let t = 0; t < 5; t++) {
       eco.step();
@@ -317,6 +317,20 @@ describe.skipIf(!wasmAvailable())("the WebAssembly kernels at their edges", () =
       eco.step();
       expect(crowdDifferences(eco)).toBe(0);
     }
+  });
+
+  it("the crowd's views are kept across rebuilds until a region moves or the memory grows", () => {
+    const eco = make(inland, 300);
+    const e = eco as Any;
+    const xs = e.crowd.xs;
+    e.gridCrowd(eco.members.length - 40, undefined); // fewer creatures, the same regions
+    expect(e.crowd.xs).toBe(xs);
+    expect(e.crowd.count).toBe(eco.members.length - 40);
+    e.gridCrowd(eco.members.length, undefined);
+    expect(e.crowd.xs).toBe(xs);
+    e.kernels.brains.alloc(40 * 1024 * 1024); // replaces every view of the memory
+    expect(e.crowd.xs === xs).toBe(false);
+    expect(crowdDifferences(eco)).toBe(0);
   });
 
   it("a JS rebuild on the Crowd itself drops the kernel's grid and takes the set-aside arrays back", () => {

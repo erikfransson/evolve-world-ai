@@ -111,6 +111,16 @@ export class Region {
   cap = 0;
 }
 
+// The address of region r with room for bytes, moved to a larger block of bank when needed.
+export function growRegion(bank: WasmBrainBank, r: Region, bytes: number): number {
+  if (bytes > r.cap) {
+    if (r.cap) bank.free(r.ptr, r.cap);
+    r.cap = Math.ceil(bytes * 1.25);
+    r.ptr = bank.alloc(r.cap);
+  }
+  return r.ptr;
+}
+
 export class ResidentStore {
   f64 = new Float64Array(0);
   i32 = new Int32Array(0);
@@ -120,6 +130,7 @@ export class ResidentStore {
   private left = 0;
   readonly species: EngineConfig[] = []; // the configs the rows' species indices stand for, set by the Ecosystem
   readonly rebinders = new Set<() => void>(); // views of the memory held elsewhere (the Ecosystem's crowd): each is called to re-point after the memory grew
+  moved = 0; // counts the times a region moved or the memory grew, so views of them can be kept until it changes
   stepper: WasmStepper | null = null; // the WebAssembly step (stepResident), when available
 
   constructor(bank: WasmBrainBank) {
@@ -133,6 +144,7 @@ export class ResidentStore {
     this.f64 = new Float64Array(buffer);
     this.i32 = new Int32Array(buffer);
     for (const s of this.states) s.bind(this.f64, this.i32);
+    this.moved++;
     for (const rebind of this.rebinders) rebind();
   }
 
@@ -151,11 +163,9 @@ export class ResidentStore {
 
   // The address of region r with room for bytes, moved to a larger block when needed.
   grow(r: Region, bytes: number): number {
-    if (bytes > r.cap) {
-      if (r.cap) this.bank.free(r.ptr, r.cap);
-      r.cap = Math.ceil(bytes * 1.25);
-      r.ptr = this.bank.alloc(r.cap);
-    }
+    const before = r.cap;
+    growRegion(this.bank, r, bytes);
+    if (r.cap !== before) this.moved++;
     return r.ptr;
   }
 

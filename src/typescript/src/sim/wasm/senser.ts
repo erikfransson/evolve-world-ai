@@ -9,6 +9,7 @@ import { SENSE_BYTES, compiled } from "./loader.ts";
 import { ROCK_CELL } from "../terrain.ts";
 import type { WasmFiller } from "./fillKernel.ts";
 import { LAYOUT as L, f64At, i32At } from "./layout.ts";
+import { Region, growRegion } from "./resident.ts";
 
 // The whole Ecosystem sense in one WebAssembly call per batch (sense.wat): ray directions, item and wall rays in f64 with the
 // JS candidate order, crowd rays in f32 as rays.wat, and the ray features written into the brain's input vector in place.
@@ -22,11 +23,6 @@ const SCRATCH_BYTES = 2816;
 
 interface SenseExports extends WebAssembly.Exports {
   sense(p: number): void;
-}
-
-class Region {
-  ptr = -1;
-  cap = 0;
 }
 
 export class WasmSenser {
@@ -143,12 +139,7 @@ export class WasmSenser {
 
   // The pointer of region r holding at least bytes, allocated or moved to a larger block when needed (contents are not kept).
   private grow(r: Region, bytes: number): number {
-    if (bytes > r.cap) {
-      if (r.ptr >= 0) this.bank.free(r.ptr, r.cap);
-      r.cap = Math.ceil(bytes * 1.25);
-      r.ptr = this.bank.alloc(r.cap);
-    }
-    return r.ptr;
+    return growRegion(this.bank, r, bytes);
   }
 
   // The views of the memory as it is now; take them after the last allocation of a call, as allocating may grow the memory.

@@ -24,15 +24,16 @@ interface CrowdExports extends WebAssembly.Exports {
 const REGIONS = ["touched", "rowAt", "cellOf", "perm", "permB", "count", "start", "occupied", "speciesIn", "xs", "ys", "energies", "species", "owners"] as const;
 // The first n elements, for lists that may be longer than the batch.
 const head = (a: ArrayLike<number>, n: number): ArrayLike<number> => (a.length === n ? a : Array.prototype.slice.call(a, 0, n) as number[]);
-type Name = (typeof REGIONS)[number];
 
 export class WasmCrowd {
   private readonly store: ResidentStore;
   private readonly crowd: Crowd;
   private readonly exports: CrowdExports;
-  private readonly region = Object.fromEntries(REGIONS.map((r) => [r, new Region()])) as Record<Name, Region>;
+  private readonly region = Object.fromEntries(REGIONS.map((r) => [r, new Region()])) as Record<(typeof REGIONS)[number], Region>;
   private readonly pC: number;
   private n = 0;
+  private views: Parameters<Crowd["adopt"]>[0] | null = null;
+  private viewsMoved = -1; // store.moved when the views were made
 
   private constructor(store: ResidentStore, crowd: Crowd, exports: CrowdExports) {
     this.store = store;
@@ -51,23 +52,22 @@ export class WasmCrowd {
     }
   }
 
-  // The crowd's arrays as views of the grid in memory.
+  // The crowd's arrays as views of the grid in memory. The views cover the regions' capacity and are made again only when a region moved or the memory grew.
   private bind(): void {
     if (this.n === 0) return;
-    const { buffer } = this.store.bank.memory;
+    const { store } = this;
     const r = this.region;
-    const n = this.n;
-    const cells = this.crowd.cols * this.crowd.rows + 1;
-    this.crowd.adopt(
-      {
-        xs: new Float64Array(buffer, r.xs.ptr, n), ys: new Float64Array(buffer, r.ys.ptr, n), energies: new Float64Array(buffer, r.energies.ptr, n),
-        species: new Int32Array(buffer, r.species.ptr, n), owners: new Int32Array(buffer, r.owners.ptr, n),
-        cellStart: new Int32Array(buffer, r.start.ptr, cells), occupied: new Int32Array(buffer, r.occupied.ptr, n),
-      },
-      n,
-      this.store.i32[(this.pC + L.C_OCCUPIED_COUNT) >> 2]!,
-      this,
-    );
+    if (!this.views || this.viewsMoved !== store.moved) {
+      const { buffer } = store.bank.memory;
+      const cells = this.crowd.cols * this.crowd.rows + 1;
+      this.views = {
+        xs: new Float64Array(buffer, r.xs.ptr, r.xs.cap >> 3), ys: new Float64Array(buffer, r.ys.ptr, r.ys.cap >> 3), energies: new Float64Array(buffer, r.energies.ptr, r.energies.cap >> 3),
+        species: new Int32Array(buffer, r.species.ptr, r.species.cap >> 2), owners: new Int32Array(buffer, r.owners.ptr, r.owners.cap >> 2),
+        cellStart: new Int32Array(buffer, r.start.ptr, cells), occupied: new Int32Array(buffer, r.occupied.ptr, r.occupied.cap >> 2),
+      };
+      this.viewsMoved = store.moved;
+    }
+    this.crowd.adopt(this.views, this.n, store.i32[(this.pC + L.C_OCCUPIED_COUNT) >> 2]!, this);
   }
 
   // Addresses of the grid in memory, for the sense kernel to read in place.
@@ -130,25 +130,44 @@ export class WasmCrowd {
 
   // Grids the n creatures whose rows are at f64 indices rowAt[0 .. n-1], with species[i] for creature i (all 0 without).
   rebuild(rowAt: ArrayLike<number>, n: number, species?: ArrayLike<number>): void {
-    const { store, crowd, region } = this;
+    const { store, crowd, region: r } = this;
     const bytes = n * 4;
-    const sizes: Record<Name, number> = {
-      touched: bytes, rowAt: bytes, cellOf: bytes, perm: bytes, permB: bytes, count: 4 << crowd.radixBits, start: (crowd.cols * crowd.rows + 1) * 4, occupied: bytes,
-      speciesIn: bytes, xs: n * 8, ys: n * 8, energies: n * 8, species: bytes, owners: bytes,
-    };
-    const at = {} as Record<Name, number>;
-    for (const name of REGIONS) at[name] = store.grow(region[name], sizes[name]);
+    const touched = store.grow(r.touched, bytes);
+    const rowAtAt = store.grow(r.rowAt, bytes);
+    const cellOf = store.grow(r.cellOf, bytes);
+    const perm = store.grow(r.perm, bytes);
+    const permB = store.grow(r.permB, bytes);
+    const count = store.grow(r.count, 4 << crowd.radixBits);
+    const start = store.grow(r.start, (crowd.cols * crowd.rows + 1) * 4);
+    const occupied = store.grow(r.occupied, bytes);
+    const speciesIn = store.grow(r.speciesIn, bytes);
+    const xs = store.grow(r.xs, n * 8);
+    const ys = store.grow(r.ys, n * 8);
+    const energies = store.grow(r.energies, n * 8);
+    const speciesOut = store.grow(r.species, bytes);
+    const owners = store.grow(r.owners, bytes);
     const { i32, f64 } = store; // after the last allocation
-    i32.set(head(rowAt, n), at.rowAt >> 2);
-    if (species) i32.set(head(species, n), at.speciesIn >> 2);
+    i32.set(head(rowAt, n), rowAtAt >> 2);
+    if (species) i32.set(head(species, n), speciesIn >> 2);
     const C = this.pC;
-    const fields: [number, number][] = [
-      [L.C_N, n], [L.C_ROW_AT, at.rowAt], [L.C_CELL_OF, at.cellOf], [L.C_COLS, crowd.cols], [L.C_ROWS, crowd.rows], [L.C_RADIX_BITS, crowd.radixBits],
-      [L.C_RADIX_PASSES, crowd.radixPasses], [L.C_COUNT, at.count], [L.C_PERM, at.perm], [L.C_PERM_B, at.permB], [L.C_CELL_START, at.start],
-      [L.C_OCCUPIED, at.occupied], [L.C_SPECIES_IN, species ? at.speciesIn : 0], [L.C_XS, at.xs], [L.C_YS, at.ys], [L.C_ENERGIES, at.energies],
-      [L.C_SPECIES, at.species], [L.C_OWNERS, at.owners],
-    ];
-    for (const [off, v] of fields) i32[(C + off) >> 2] = v;
+    i32[(C + L.C_N) >> 2] = n;
+    i32[(C + L.C_ROW_AT) >> 2] = rowAtAt;
+    i32[(C + L.C_CELL_OF) >> 2] = cellOf;
+    i32[(C + L.C_COLS) >> 2] = crowd.cols;
+    i32[(C + L.C_ROWS) >> 2] = crowd.rows;
+    i32[(C + L.C_RADIX_BITS) >> 2] = crowd.radixBits;
+    i32[(C + L.C_RADIX_PASSES) >> 2] = crowd.radixPasses;
+    i32[(C + L.C_COUNT) >> 2] = count;
+    i32[(C + L.C_PERM) >> 2] = perm;
+    i32[(C + L.C_PERM_B) >> 2] = permB;
+    i32[(C + L.C_CELL_START) >> 2] = start;
+    i32[(C + L.C_OCCUPIED) >> 2] = occupied;
+    i32[(C + L.C_SPECIES_IN) >> 2] = species ? speciesIn : 0;
+    i32[(C + L.C_XS) >> 2] = xs;
+    i32[(C + L.C_YS) >> 2] = ys;
+    i32[(C + L.C_ENERGIES) >> 2] = energies;
+    i32[(C + L.C_SPECIES) >> 2] = speciesOut;
+    i32[(C + L.C_OWNERS) >> 2] = owners;
     f64[(C + L.C_CELL) >> 3] = crowd.cell;
     this.exports.rebuild(C);
     this.n = n;

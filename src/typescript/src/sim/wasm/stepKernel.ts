@@ -1,10 +1,11 @@
+import type { EngineConfig } from "../config.ts";
 import type { Aging } from "../physics.ts";
 import { decaysFor } from "../physics.ts";
 import { OUTPUT_SIZE } from "../sensors.ts";
 import { CLEAR_CELL, ROCK_CELL } from "../terrain.ts";
 import type { Terrain } from "../terrain.ts";
 import { STEP_BYTES, compiled } from "./loader.ts";
-import { LAYOUT as L } from "./layout.ts";
+import { LAYOUT as L, f64At } from "./layout.ts";
 import { Region } from "./resident.ts";
 import type { ResidentStore } from "./resident.ts";
 
@@ -77,15 +78,41 @@ export class WasmStepper {
       }
     }
     if (terrain.rockCount === 0) return;
-    store.species.forEach((config, s) => {
-      const radius = config.creature.radius;
-      if (this.nearRadius[s] === radius) return;
+    for (let s = 0; s < store.species.length; s++) {
+      const radius = store.species[s]!.creature.radius;
+      if (this.nearRadius[s] === radius) continue;
       const raster = terrain.nearFor(radius);
       const region = (this.nearRegions[s] ??= new Region());
       const at = store.grow(region, raster.length);
       new Uint8Array(store.i32.buffer, at, raster.length).set(raster);
       this.nearRadius[s] = radius;
-    });
+    }
+  }
+
+  // The species block at byte address at: the config values the step reads and the decay factors; nearAt is the clear-of-rock raster of its radius.
+  private writeSpecies(at: number, config: EngineConfig, nearAt: number, terrain: Terrain): void {
+    const { dt, creature: c, world: w, brain } = config;
+    const k = decaysFor(config);
+    const { f64, i32 } = this.store;
+    const q = at >> 3;
+    f64[q + f64At(L.Q_DT)] = dt;
+    f64[q + f64At(L.Q_MAX_THRUST)] = c.maxThrust;
+    f64[q + f64At(L.Q_DRAG)] = c.drag;
+    f64[q + f64At(L.Q_MAX_TURN)] = c.maxTurnRate;
+    f64[q + f64At(L.Q_BRAKE_THRESHOLD)] = c.brakeThreshold;
+    f64[q + f64At(L.Q_MAX_BRAKE)] = c.maxBrake;
+    f64[q + f64At(L.Q_THRUST_COST)] = c.thrustCost;
+    f64[q + f64At(L.Q_TURN_COST)] = c.turnCost;
+    f64[q + f64At(L.Q_RADIUS)] = c.radius;
+    f64[q + f64At(L.Q_WALL_BOUNCE)] = c.wallBounce;
+    f64[q + f64At(L.Q_WIDTH)] = w.width;
+    f64[q + f64At(L.Q_HEIGHT)] = w.height;
+    f64[q + f64At(L.Q_SHORT_RATE)] = brain.shortRate;
+    f64[q + f64At(L.Q_LONG_RATE)] = brain.longRate;
+    f64[q + f64At(L.Q_DECAY_TURN)] = k.turn;
+    f64[q + f64At(L.Q_DECAY_DRAG)] = k.drag;
+    f64[q + f64At(L.Q_DECAY_SIDE)] = k.side;
+    i32[(at + L.Q_NEAR) >> 2] = terrain.rockCount > 0 ? nearAt : 0;
   }
 
   // Steps the resident rows at rows[0 .. n-1] (byte addresses), as stepRows does.
@@ -97,32 +124,27 @@ export class WasmStepper {
     this.syncTerrain(terrain);
     const { f64, i32 } = store; // after the last allocation
     i32.set(rows.subarray(0, n), rowsAt >> 2);
-    species.forEach((config, s) => {
-      const { dt, creature: c, world: w, brain } = config;
-      const k = decaysFor(config);
-      const at = (speciesAt + s * L.Q_BYTES) >> 3;
-      const values: [number, number][] = [
-        [L.Q_DT, dt], [L.Q_MAX_THRUST, c.maxThrust], [L.Q_DRAG, c.drag], [L.Q_MAX_TURN, c.maxTurnRate], [L.Q_BRAKE_THRESHOLD, c.brakeThreshold],
-        [L.Q_MAX_BRAKE, c.maxBrake], [L.Q_THRUST_COST, c.thrustCost], [L.Q_TURN_COST, c.turnCost], [L.Q_RADIUS, c.radius], [L.Q_WALL_BOUNCE, c.wallBounce],
-        [L.Q_WIDTH, w.width], [L.Q_HEIGHT, w.height], [L.Q_SHORT_RATE, brain.shortRate], [L.Q_LONG_RATE, brain.longRate],
-        [L.Q_DECAY_TURN, k.turn], [L.Q_DECAY_DRAG, k.drag], [L.Q_DECAY_SIDE, k.side],
-      ];
-      for (const [off, v] of values) f64[at + off / 8] = v;
-      const nearAt = this.nearRegions[s]?.ptr ?? 0;
-      i32[(speciesAt + s * L.Q_BYTES + L.Q_NEAR) >> 2] = terrain.rockCount > 0 ? nearAt : 0;
-    });
+    for (let s = 0; s < species.length; s++) this.writeSpecies(speciesAt + s * L.Q_BYTES, species[s]!, this.nearRegions[s]?.ptr ?? 0, terrain);
     const P = this.pP;
-    const ints: [number, number][] = [
-      [L.P_N, n], [L.P_ROWS, rowsAt], [L.P_SPECIES, speciesAt], [L.P_OUTPUT_SIZE, OUTPUT_SIZE], [L.P_AGING, aging ? 1 : 0], [L.P_EMPTY, terrain.empty ? 1 : 0],
-      [L.P_ROCKS, terrain.rockCount], [L.P_ROCK_COLS, terrain.cols], [L.P_ROCK_ROWS, terrain.rows], [L.P_ROCK_START, this.rRock[0]!.ptr],
-      [L.P_ROCK_ORDER, this.rRock[1]!.ptr], [L.P_ROCK_XYR, this.rRock[2]!.ptr], [L.P_NEAR_COLS, terrain.nearCols], [L.P_NEAR_ROWS, terrain.nearRows],
-    ];
-    for (const [off, v] of ints) i32[(P + off) >> 2] = v;
-    const doubles: [number, number][] = [
-      [L.P_MAX_ROCK_R, terrain.maxRockR], [L.P_INV_ROCK_CELL, 1 / ROCK_CELL], [L.P_CLEAR_CELL, CLEAR_CELL],
-      [L.P_AGING_START, aging?.startTicks ?? 0], [L.P_AGING_PER_TICK, aging?.perTick ?? 0],
-    ];
-    for (const [off, v] of doubles) f64[(P + off) >> 3] = v;
+    i32[(P + L.P_N) >> 2] = n;
+    i32[(P + L.P_ROWS) >> 2] = rowsAt;
+    i32[(P + L.P_SPECIES) >> 2] = speciesAt;
+    i32[(P + L.P_OUTPUT_SIZE) >> 2] = OUTPUT_SIZE;
+    i32[(P + L.P_AGING) >> 2] = aging ? 1 : 0;
+    i32[(P + L.P_EMPTY) >> 2] = terrain.empty ? 1 : 0;
+    i32[(P + L.P_ROCKS) >> 2] = terrain.rockCount;
+    i32[(P + L.P_ROCK_COLS) >> 2] = terrain.cols;
+    i32[(P + L.P_ROCK_ROWS) >> 2] = terrain.rows;
+    i32[(P + L.P_ROCK_START) >> 2] = this.rRock[0]!.ptr;
+    i32[(P + L.P_ROCK_ORDER) >> 2] = this.rRock[1]!.ptr;
+    i32[(P + L.P_ROCK_XYR) >> 2] = this.rRock[2]!.ptr;
+    i32[(P + L.P_NEAR_COLS) >> 2] = terrain.nearCols;
+    i32[(P + L.P_NEAR_ROWS) >> 2] = terrain.nearRows;
+    f64[(P + L.P_MAX_ROCK_R) >> 3] = terrain.maxRockR;
+    f64[(P + L.P_INV_ROCK_CELL) >> 3] = 1 / ROCK_CELL;
+    f64[(P + L.P_CLEAR_CELL) >> 3] = CLEAR_CELL;
+    f64[(P + L.P_AGING_START) >> 3] = aging?.startTicks ?? 0;
+    f64[(P + L.P_AGING_PER_TICK) >> 3] = aging?.perTick ?? 0;
     this.exports.step(P);
   }
 }
