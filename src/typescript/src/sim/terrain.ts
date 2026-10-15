@@ -6,6 +6,8 @@ import { buildGroundField, GroundField } from "./groundField.ts";
 import { packMap, unpackMap } from "./maps/mapParts.ts";
 import type { MapParts } from "./maps/mapParts.ts";
 import type { MapWeights } from "./maps/weights.ts";
+import { UNIFORM_FIELD } from "./spawnField.ts";
+import type { SpawnField } from "./spawnField.ts";
 
 // Static map features (#34), generated deterministically from the run seed and the world settings, so every thread that builds
 // the world gets the same ones. Rock (stones and ridges) is a set of discs that creatures bounce off like walls and rays report
@@ -99,6 +101,8 @@ export class Terrain {
   readonly ground: GroundField | null;
   // Food and poison weights of a hand-designed map (see maps/weights.ts); null for the random map, where items spread evenly.
   readonly weights: MapWeights | null;
+  readonly designed: boolean; // a hand-designed map, which the scenes draw in its own style
+  readonly spawn: SpawnField; // where items appear: by the weights, or anywhere on the random map
   readonly empty: boolean; // no rock and no patches
 
   constructor(rock: readonly Circle[], ground: GroundField | null, width: number, height: number, weights: MapWeights | null = null) {
@@ -120,6 +124,8 @@ export class Terrain {
     cellOf.forEach((c, i) => (this.rockOrder[fill[c]!++] = i));
     this.ground = ground;
     this.weights = weights;
+    this.designed = weights !== null;
+    this.spawn = weights ?? UNIFORM_FIELD;
     this.empty = rock.length === 0 && ground === null;
   }
 

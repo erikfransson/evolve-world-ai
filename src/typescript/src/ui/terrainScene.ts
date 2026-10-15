@@ -195,7 +195,7 @@ function drawRock(ctx: CanvasRenderingContext2D, t: Terrain, scale: number, view
   ctx.globalAlpha = 1;
   const band = RIM_PX * edge * px;
   const lift = Math.min(LIFT.units, LIFT.px * px) * edge;
-  if (!detailed && t.weights) {
+  if (!detailed && t.designed) {
     for (const { outline, body: b } of shown) {
       const massif = Math.max(b.x1 - b.x0, b.y1 - b.y0) > MASSIF_SPAN;
       if (massif) {

@@ -13,7 +13,7 @@ import { MAX_MAP_DISC_R } from "../../src/typescript/src/sim/maps/mapParts.ts";
 import { CAP_CELL, discsBlocked, MapWeights, WEIGHT_UNIT } from "../../src/typescript/src/sim/maps/weights.ts";
 import type { MapSpec } from "../../src/typescript/src/sim/maps/mapBuild.ts";
 import { withEcoPreset } from "../../src/typescript/src/sim/presets.ts";
-import { terrainOf } from "../../src/typescript/src/sim/terrain.ts";
+import { Terrain, terrainOf } from "../../src/typescript/src/sim/terrain.ts";
 import { TERRAIN_FAST, TERRAIN_SLOW } from "../../src/typescript/src/sim/terrain.ts";
 import { HIT_FOOD, HIT_POISON } from "../../src/typescript/src/sim/types.ts";
 import { World } from "../../src/typescript/src/sim/world.ts";
@@ -330,5 +330,18 @@ describe("a world with a named map", () => {
     expect(eco.members.length).toBe(60);
     const plain = new Ecosystem({ ...DEFAULT_ECO_CONFIG, eco: { ...DEFAULT_ECO_CONFIG.eco, wasm: false, initialPopulation: 5 }, world: { ...DEFAULT_ECO_CONFIG.world, width: 1200, height: 900 } });
     expect((plain.world as World).terrain.weights).toBeNull();
+  });
+});
+
+describe("The spawn field of a map", () => {
+  it("is the weights, uses one draw of the rng per call, and marks the terrain designed", () => {
+    const b = builtMap("inland-sea");
+    const t = new Terrain(b.rock, b.ground, SEA.width, SEA.height, b.weights);
+    expect(t.designed).toBe(true);
+    expect(t.spawn).toBe(b.weights);
+    const rng = createRng(3);
+    const twin = createRng(3);
+    expect(t.spawn.accepts(0, 22500, 6500, rng)).toBe(twin.next() * b.weights.maxFood < b.weights.byteAt(0, 22500, 6500));
+    expect(rng.next()).toBe(twin.next());
   });
 });

@@ -302,3 +302,16 @@ describe("terrain input and genome upgrade", () => {
     expect(upgradeGenome(new Float32Array(0), config, plan)).toBeNull();
   });
 });
+
+describe("the spawn field", () => {
+  it("is uniform on the random map: usable, accepts every spot, draws no random number, has no caps", () => {
+    const t = terrainOf(withMap());
+    expect(t.designed).toBe(false);
+    const rng = createRng(5);
+    const next = rng.next;
+    let draws = 0;
+    rng.next = () => (draws++, next());
+    expect([0, 1].map((k) => t.spawn.usable(k) && t.spawn.accepts(k, 10, 10, rng) && t.spawn.limits(k, 0.1, 1000) === null)).toEqual([true, true]);
+    expect(draws).toBe(0);
+  });
+});

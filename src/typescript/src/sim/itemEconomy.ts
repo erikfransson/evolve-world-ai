@@ -17,10 +17,10 @@ export interface ItemCaps {
 // mean weight, see MapWeights.limits), so a rich region keeps more and a bare one less; the totals are the sums of the cells.
 export function capsOf(config: EcoConfig, eco: Pick<EcoConfig["eco"], "foodMaxDensity" | "poisonMaxDensity">): ItemCaps {
   const perDensity = itemsPerDensity(config);
-  const weights = terrainOf(config).weights;
-  if (!weights) return { food: Math.round(eco.foodMaxDensity * perDensity), poison: Math.round(eco.poisonMaxDensity * perDensity), limits: null };
-  const food = weights.limits(0, eco.foodMaxDensity, perDensity);
-  const poison = weights.limits(1, eco.poisonMaxDensity, perDensity);
+  const { spawn } = terrainOf(config);
+  const food = spawn.limits(0, eco.foodMaxDensity, perDensity);
+  const poison = spawn.limits(1, eco.poisonMaxDensity, perDensity);
+  if (!food || !poison) return { food: Math.round(eco.foodMaxDensity * perDensity), poison: Math.round(eco.poisonMaxDensity * perDensity), limits: null };
   return { food: food.reduce((a, b) => a + b, 0), poison: poison.reduce((a, b) => a + b, 0), limits: [food, poison] };
 }
 
@@ -86,6 +86,6 @@ export class ItemEconomy {
   // Whether a founder may start at (x, y): clear of rock, and on a map with weights accepted by the food weight, so founders favour the rich places.
   startOk(x: number, y: number, r: number): boolean {
     const t = this.items.terrain;
-    return !t.touchesRock(x, y, r) && (t.weights === null || t.weights.accepts(0, x, y, this.rng.next()));
+    return !t.touchesRock(x, y, r) && t.spawn.accepts(0, x, y, this.rng);
   }
 }

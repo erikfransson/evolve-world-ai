@@ -1,5 +1,7 @@
 import { GROUND_PAD } from "../groundField.ts";
 import type { GroundField } from "../groundField.ts";
+import type { SpawnField } from "../spawnField.ts";
+import type { Rng } from "../types.ts";
 
 // The food and poison weights of a hand-designed map and the local caps derived from them, which every thread that runs the map needs.
 // The generator that makes them (mapBuild.ts) and the map specs stay out of this file, so pages and threads that only run a map do not load them.
@@ -48,7 +50,8 @@ interface CapStats {
 }
 
 // Food and poison weights on the nodes of the ground raster (same geometry as GroundField), and their mean per cap cell.
-export class MapWeights {
+export class MapWeights implements SpawnField {
+  readonly exact = true;
   readonly cell: number;
   readonly cols: number;
   readonly rows: number;
@@ -170,9 +173,9 @@ export class MapWeights {
     return (kind === 0 ? this.food : this.poison)[j * this.cols + i]!;
   }
 
-  // Whether a draw u in [0, 1) lands inside the weight of a kind at (x, y): accepted with probability weight / maximum weight.
-  accepts(kind: number, x: number, y: number, u: number): boolean {
-    return u * (kind === 0 ? this.maxFood : this.maxPoison) < this.byteAt(kind, x, y);
+  // Whether a draw of rng lands inside the weight of a kind at (x, y): accepted with probability weight / maximum weight.
+  accepts(kind: number, x: number, y: number, rng: Rng): boolean {
+    return rng.next() * (kind === 0 ? this.maxFood : this.maxPoison) < this.byteAt(kind, x, y);
   }
 
   // Items allowed in each cap cell for a density of the kind (as the world setting): exactly round(density * perDensity) in all, shared out in

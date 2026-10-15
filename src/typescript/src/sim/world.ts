@@ -201,14 +201,14 @@ export class World implements WorldView {
   // the spot lies in a cap cell that is full (nothing is added; the due item is lost, so regrowth stays in proportion to the weights).
   addRandomly(kind: HitKind, rng: Rng): number {
     if (this.freeCount === 0) return -1;
-    const weights = this.terrain.weights;
-    if (weights && !weights.usable(kind === HIT_POISON ? 1 : 0)) return -2; // nowhere on this map has weight for the kind
+    const { spawn } = this.terrain;
+    const k = kind === HIT_POISON ? 1 : 0;
+    if (!spawn.usable(k)) return -2; // nowhere on this map has weight for the kind
     this.exhausted = false;
     this.randomSpot(kind, rng);
-    if (weights && this.exhausted) return -2; // the tries ran out, so the last spot is not a weighted draw
+    if (spawn.exact && this.exhausted) return -2; // the tries ran out, so the last spot is not a weighted draw
     if (this.capLimit) {
       const c = this.terrain.weights!.capIndex(this.spot.x, this.spot.y);
-      const k = kind === HIT_POISON ? 1 : 0;
       if (this.capCount![k * (this.capCount!.length / 2) + c]! >= this.capLimit[k]![c]!) return -2;
     }
     return this.addItem(this.spot.x, this.spot.y, kind);
@@ -221,7 +221,8 @@ export class World implements WorldView {
   private randomSpot(kind: HitKind, rng: Rng, clear?: { x: number; y: number; radius: number }, reject?: (x: number, y: number) => boolean): void {
     const r = this.itemRadius;
     const wk = kind === HIT_POISON ? 1 : 0;
-    const weights = this.terrain.weights?.usable(wk) ? this.terrain.weights : null; // placing outright on a map with no weight for the kind is uniform
+    const { spawn } = this.terrain;
+    const picky = spawn.usable(wk); // placing outright on a map with no weight for the kind is uniform
     let x: number;
     let y: number;
     let tries = 0;
@@ -234,7 +235,7 @@ export class World implements WorldView {
       }
       x = rng.range(r, this.width - r);
       y = rng.range(r, this.height - r);
-    } while ((clear && (x - clear.x) ** 2 + (y - clear.y) ** 2 < clear.radius ** 2) || (weights !== null && !weights.accepts(wk, x, y, rng.next())) || this.terrain.touchesRock(x, y, r) || (tries++ < MAX_REJECTS && (reject?.(x, y) || this.tooClose(x, y, kind))));
+    } while ((clear && (x - clear.x) ** 2 + (y - clear.y) ** 2 < clear.radius ** 2) || (picky && !spawn.accepts(wk, x, y, rng)) || this.terrain.touchesRock(x, y, r) || (tries++ < MAX_REJECTS && (reject?.(x, y) || this.tooClose(x, y, kind))));
     this.spot.x = x;
     this.spot.y = y;
   }
