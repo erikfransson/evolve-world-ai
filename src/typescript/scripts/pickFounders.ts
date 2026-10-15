@@ -1,9 +1,10 @@
-// Picks the four named Live World founders from public/pool.json by measured behaviour and writes public/live-founders.json.
-// Usage (from src/typescript): nice -n 19 node scripts/pickFounders.ts [--out public/live-founders.json]
+// Picks four named founders from public/pool.json by measured behaviour (the pre-0.2.0 Live starters; the shipped ones are now trained).
+// Usage (from src/typescript): nice -n 19 node scripts/pickFounders.ts [--out runs/founders/picked.json]; --out public/live-founders.json replaces them.
 // Every pool entry is inserted (COPIES copies) into small Ecosystem worlds of BATCH entries each and watched for SECONDS of simulated time:
 // speed (units/s), turning (|turn rate| as a share of the maximum) and the distance to the nearest other creature. Deterministic: fixed seeds.
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { parseArgs } from "node:util";
 import { DEFAULT_ECO_CONFIG } from "../src/sim/ecoConfig.ts";
 import type { EcoConfig } from "../src/sim/ecoConfig.ts";
@@ -21,7 +22,7 @@ const WORLD = { width: 2400, height: 1500 };
 const SAMPLE_EVERY = 10; // ticks between samples
 const SEED = 7;
 
-const { values } = parseArgs({ options: { out: { type: "string", default: "public/live-founders.json" } } });
+const { values } = parseArgs({ options: { out: { type: "string", default: "runs/founders/picked.json" } } });
 const pool = parsePool(JSON.parse(readFileSync("public/pool.json", "utf8"))).entries;
 
 interface Measure {
@@ -146,6 +147,7 @@ const out = {
     return { ...f, pool: m.index, speed: round(m.speed, 1), turn: round(m.turn), nearest: round(m.nearest, 0), plan: e.plan, genome: Array.from(trialsToEcoGenome(e.plan, e.genome, ecoConfig), (v) => round(v, 4)) };
   }),
 };
+mkdirSync(dirname(values.out!), { recursive: true });
 writeFileSync(values.out!, JSON.stringify(out) + "\n");
 for (const f of out.founders) console.log(`${f.name.padEnd(16)} pool #${f.pool}  speed ${f.speed}  turn ${f.turn}  nearest ${f.nearest}  rays ${f.plan.rayCount} x ${round(f.plan.raySpread, 2)} rad x ${f.plan.rayLength}`);
 console.log(`medians: speed ${round(medSpeed, 1)}, nearest ${round(medNear, 0)}; ${fit.length} of ${pool.length} entries kept half their copies alive and ate`);

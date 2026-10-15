@@ -1,6 +1,6 @@
 {
  "version": 1,
- "command": "trained in the RL Arena setup (founders worktree, docs/founders-notes.md), not scripts/pickFounders.ts",
+ "command": "trained with the RL Arena's methods for the Live World, not by scripts/pickFounders.ts",
  "measured": {
   "world": "liveConfig at half size, 3 seeds, mean family size at +30 min",
   "alone": "5 copies each: Pathfinder 241, Juggernaut 186, Oracle 41, Gentle Grazer 258",

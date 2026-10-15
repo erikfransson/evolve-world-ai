@@ -34,7 +34,7 @@ liveConfig.eco.hueDrift = 3; // degrees (Ecosystem 8): families keep their colou
 // A fresh world gets this many copies of each founder in the founders file, at random open spots.
 export const SEED_COPIES = 10;
 export const MAX_SEED_FOUNDERS = MAX_FOUNDERS; // the same bound as the pages (live/founders.ts)
-export const MAX_FOUNDERS_FILE_BYTES = 512 * 1024; // 4 founders are 25 kB; 8 of the largest genomes (about 3800 weights) fit
+export const MAX_FOUNDERS_FILE_BYTES = 512 * 1024; // 4 trained founders are 57 kB; 8 of the largest genomes an add allows (7538 weights, about 60 kB each) fit
 
 // Item slots are fixed when a world is built, so it is built with room for admin to raise the food and poison caps (densities).
 // Up to ITEM_HEADROOM where that fits (small worlds); else the slots are held to ITEM_SLOT_SHARE of the wire's MAX_ITEM_SLOTS:

@@ -2,7 +2,7 @@ import { parseCreatureFile } from "../sim/rl/creatureFile.ts";
 import type { BodyPlan } from "../sim/sensors.ts";
 import { NAME_MAX, validName } from "./add.ts";
 
-// The Live World's starter founders (public/live-founders.json, from scripts/pickFounders.ts): the server seeds a fresh world with them,
+// The Live World's starter founders (public/live-founders.json, trained ones since 0.2.0): the server seeds a fresh world with them,
 // the Live page and the RL Arena offer them. Each is held to the rules of an upload: the creature-file checks (parseCreatureFile:
 // checkPlan, checkGenome), a spread above 0 as an add needs, and a lineage name of letters and digits.
 
