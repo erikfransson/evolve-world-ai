@@ -38,7 +38,8 @@ afterEach(() => {
 
 const plan = { rayCount: 3, raySpread: 1.2, rayLength: 120, hiddenLayers: [6], memoryShort: 1, memoryLong: 0 };
 const genomeFor = (p: typeof plan): Float32Array => Float32Array.from({ length: genomeLengthFor("forager", p) }, (_, i) => Math.sin(i) * 0.7);
-const request = (over: Partial<AddRequest> = {}): AddRequest => ({ plan, genome: genomeFor(plan), birth: { energy: 150, cost: 70, cooldown: 10 }, name: "Zed42", hue: 200, copies: 2, ...over });
+let names = 0; // each request its own name by default: a name a living family carries is refused
+const request = (over: Partial<AddRequest> = {}): AddRequest => ({ plan, genome: genomeFor(plan), birth: { energy: 150, cost: 70, cooldown: 10 }, name: `Zed${++names}`, hue: 200, copies: 2, ...over });
 const rules = (): AddRules => new LiveWorld(smallConfig(), null).addRules();
 // The add message as an object, to break one field at a time.
 const asObject = (r = request()): Record<string, unknown> => JSON.parse(encodeAdd(r));
@@ -46,7 +47,7 @@ const send = (o: unknown): string => JSON.stringify(o);
 
 describe("add message: encode and parse", () => {
   it("round-trips a request exactly, weights as float32", () => {
-    const r = request();
+    const r = request({ name: "Zed42" });
     const back = parseAdd(encodeAdd(r), rules());
     if (typeof back === "string") throw new Error(back);
     expect(back.plan).toEqual(plan);
@@ -355,8 +356,8 @@ describe("adding to the world (LiveWorld)", () => {
     const a = new LiveWorld(smallConfig(), null);
     const b = new LiveWorld(smallConfig(), null);
     for (let i = 0; i < 20; i++) [a, b].forEach((w) => w.step());
-    const ra = a.addCreatures(request({ copies: 3 }), seq(5));
-    const rb = b.addCreatures(request({ copies: 3 }), seq(5));
+    const ra = a.addCreatures(request({ copies: 3, name: "Same" }), seq(5));
+    const rb = b.addCreatures(request({ copies: 3, name: "Same" }), seq(5));
     expect(ra).toEqual(rb);
     for (let i = 0; i < 200; i++) [a, b].forEach((w) => w.step());
     expect(JSON.stringify(a.saveState())).toBe(JSON.stringify(b.saveState()));
@@ -376,7 +377,9 @@ describe("adding to the world (LiveWorld)", () => {
       expect(m.birth).toEqual({ energy: 150, cost: 70, cooldown: 10 });
     }
     expect(a.aliveAdded()).toBe(3);
-    expect(a.stats(0).lineages!.filter((l) => l.name === "Kiwi")).toHaveLength(3);
+    const kiwi = a.stats(0).lineages!.filter((l) => l.name === "Kiwi"); // the three copies' families as one row
+    expect(kiwi).toHaveLength(1);
+    expect([kiwi[0]!.count, kiwi[0]!.founders]).toEqual([3, r.ids.slice(1)]);
     const b = new LiveWorld(config, null);
     b.restoreState(JSON.parse(JSON.stringify(a.saveState())));
     expect(b.aliveAdded()).toBe(3);
@@ -437,6 +440,20 @@ describe("adding to the world (LiveWorld)", () => {
     const b = new LiveWorld(smallConfig(), null);
     b.restoreState(JSON.parse(JSON.stringify(w.saveState())));
     expect([b.aliveAdded(), b.eco.lineageName(id), b.eco.lineageTable.toState().late.length]).toEqual([0, "", 0]);
+  });
+
+  it("refuses a name a living family or a starter carries (any case), and frees it when that family dies out", () => {
+    const w = new LiveWorld(smallConfig(), null);
+    w.founders = [{ name: "Juggernaut", plan, genome: genomeFor(plan) }];
+    LIVE.add.startEnergy = 10; // the Kiwi dies within seconds
+    const first = w.addCreatures(request({ copies: 1, name: "Kiwi" }), seq(1));
+    if (!("ids" in first)) throw new Error(first.reason);
+    expect(w.addCreatures(request({ copies: 1, name: "KIWI" }), seq(2))).toEqual({ reason: "the name KIWI is taken by a family alive now, pick another", now: false });
+    expect(w.addCreatures(request({ copies: 1, name: "juggernaut" }), seq(3))).toMatchObject({ now: false });
+    expect("ids" in w.addCreatures(request({ copies: 1, name: "Lime" }), seq(4))).toBe(true);
+    for (let t = 0; t < 30 / w.eco.config.dt && w.eco.get(first.ids[0]!); t++) w.step();
+    expect(w.eco.get(first.ids[0]!)).toBeUndefined();
+    expect("ids" in w.addCreatures(request({ copies: 1, name: "Kiwi" }), seq(5))).toBe(true);
   });
 
   it("refuses when the world is full, inserting nothing", () => {

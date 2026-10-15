@@ -18,6 +18,10 @@ export const MAX_ADD_GENOME = genomeLengthFor("forager", { rayCount: L.rayCount[
 export const MAX_ADD_BYTES = Math.ceil((MAX_ADD_GENOME * 4) / 3) * 4 + 1024;
 export const ADD_PREFIX = '{"t":"add",'; // encodeAdd puts t first; the server reads no longer message that does not start so
 
+// The Live World's birth trait ranges (wider than the Ecosystem's 100-225, 50-110, 5-20), so a visitor can make a creature that waits
+// for far more energy before a child. The server's world uses them (config.ts), the add panel falls back to them before the hello.
+export const LIVE_BIRTH = { energy: [100, 500], cost: [50, 250], cooldown: [5, 40] } as const satisfies Record<string, readonly [number, number]>;
+
 export interface Birth {
   energy: number;
   cost: number;

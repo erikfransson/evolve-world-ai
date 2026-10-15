@@ -82,6 +82,12 @@ export class Lineages {
     return f >= 0 && (f < this.founders || this.late.has(f));
   }
 
+  // Whether a runtime lineage with living members has a name that passes `match`.
+  someName(match: (name: string) => boolean): boolean {
+    for (const l of this.late.values()) if (l.name && l.live > 0 && match(l.name)) return true;
+    return false;
+  }
+
   // Renames every runtime lineage whose name passes `match` to `to(name)`; returns how many were renamed.
   renameWhere(match: (name: string) => boolean, to: (name: string) => string): number {
     let n = 0;

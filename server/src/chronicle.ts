@@ -1,11 +1,43 @@
 import type { EcoCreature, Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
 import { Leaderboard, boardValue } from "../../src/typescript/src/sim/leaderboard.ts";
-import { HISTORY_FIELDS, LINEAGE_FIELDS, LINEAGE_TOP, MAX_HISTORY, MAX_LINEAGE_HISTORY, MAX_RECORDS, RECORD_BOARDS } from "../../src/typescript/src/live/protocol.ts";
+import { HISTORY_FIELDS, LINEAGE_FIELDS, MAX_GROUP_FOUNDERS, LINEAGE_TOP, MAX_HISTORY, MAX_LINEAGE_HISTORY, MAX_RECORDS, RECORD_BOARDS } from "../../src/typescript/src/live/protocol.ts";
 import type { History, RecordBoard, Stats, WireLineage, WireRecord } from "../../src/typescript/src/live/protocol.ts";
 import { wireName } from "../../src/typescript/src/live/add.ts";
 
 export const SAMPLE_EVERY_S = 20; // simulated seconds between population samples: MAX_HISTORY of them span 6 simulated hours
 export const LINEAGE_EVERY_S = 120; // and between lineage samples, the same 6 hours
+
+interface Group {
+  founder: number; // the lowest founder id in the group, so its colour and row stay put as families come and go
+  hue: number;
+  pool: boolean;
+  count: number;
+  name: string;
+  starter: boolean;
+  others: number[]; // the group's other founders
+}
+
+// The k largest families, with every family of the same visible name (the 10 seeded copies of a starter, a visitor's 1 to 3 copies)
+// counted as one; unnamed families stand alone. O(population) per call.
+export function namedTop(eco: Ecosystem, k: number): Group[] {
+  const counts = new Map<number, number>();
+  for (const m of eco.members) counts.set(m.founderId, (counts.get(m.founderId) ?? 0) + 1);
+  const groups = new Map<string, Group>();
+  for (const [founder, count] of counts) {
+    const { name, starter } = wireName(eco.lineageName(founder));
+    const key = name ? `${starter ? "*" : ""}${name}` : `#${founder}`;
+    const g = groups.get(key);
+    if (!g) groups.set(key, { founder, hue: eco.lineages.colour(founder), pool: eco.lineages.fromPool(founder), count, name, starter, others: [] });
+    else {
+      g.count += count;
+      if (founder < g.founder) {
+        g.others.push(g.founder);
+        Object.assign(g, { founder, hue: eco.lineages.colour(founder), pool: eco.lineages.fromPool(founder) });
+      } else g.others.push(founder);
+    }
+  }
+  return [...groups.values()].sort((a, b) => b.count - a.count || a.founder - b.founder).slice(0, k);
+}
 
 // The world's history and records as the page shows them: population and lineage samples in bounded rings, the best few creatures
 // per board since the server started (dead ones included), and the best living ones. Fed about once a second from the stats loop.
@@ -40,7 +72,7 @@ export class Chronicle {
   observe(eco: Ecosystem, stats: Stats, records: boolean): void {
     if (this.watched !== eco) this.reset(eco);
     const t = eco.tick * eco.config.dt;
-    const top = eco.lineages.top(LINEAGE_TOP);
+    const top = namedTop(eco, LINEAGE_TOP);
     // An extinct world's clock stops (no ticks), so its 0 is sampled at once, or the graph would end on the last living count.
     const diedOut = eco.extinct && this.samples.length > 0 && this.samples[this.samples.length - 2] !== 0;
     if (t >= this.nextSample || diedOut) {
@@ -64,10 +96,7 @@ export class Chronicle {
       if (this.lineage.length > MAX_LINEAGE_HISTORY * LINEAGE_FIELDS) this.lineage.splice(0, LINEAGE_FIELDS);
       this.historyJson = null;
     }
-    stats.lineages = top.map((l): WireLineage => {
-      const { name, starter } = wireName(eco.lineageName(l.founder));
-      return { founder: l.founder, hue: Math.round(l.hue), pool: l.pool, count: l.count, ...(name ? { name, ...(starter ? { starter } : {}) } : {}) };
-    });
+    stats.lineages = top.map((l): WireLineage => ({ founder: l.founder, hue: Math.round(l.hue), pool: l.pool, count: l.count, ...(l.name ? { name: l.name, ...(l.starter ? { starter: true } : {}) } : {}), ...(l.others.length ? { founders: l.others.sort((a, b) => a - b).slice(0, MAX_GROUP_FOUNDERS) } : {}) }));
     let oldest: EcoCreature | null = null;
     let parent: EcoCreature | null = null;
     let depth = 0;

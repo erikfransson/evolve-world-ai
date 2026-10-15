@@ -24,7 +24,7 @@ describe("admin overrides", () => {
     writeFileSync(join(dir, "admin-overrides.json"), JSON.stringify({ "eco.hueDrift": 10 }));
     const world = new LiveWorld(smallConfig(), null);
     const saved = loadOverrides(dir, world);
-    const admin = startAdmin("127.0.0.1", 62517, "tok", world, dir, dir, saved, { pause() {}, resume() {}, paused: () => false, saveNow: async () => "", listSaves: () => [], loadSave: async () => "", stop() {}, blankName: async () => 0 });
+    const admin = startAdmin("127.0.0.1", 62517, "tok", world, dir, dir, saved, { pause() {}, resume() {}, paused: () => false, saveNow: async () => "", listSaves: () => [], loadSave: async () => "", stop() {}, blankName: async () => 0, renameName: async () => 0 });
     const ws = new WebSocket("ws://127.0.0.1:62517/");
     const replies: { t: string }[] = [];
     ws.on("message", (d: Buffer) => replies.push(JSON.parse(d.toString())));
@@ -48,9 +48,9 @@ describe("admin blank-name", () => {
       if (!("ids" in r)) throw new Error(r.reason);
       return r.ids;
     };
-    const rude = [...add("Rude", 2), ...add("Rude", 1)];
+    const rude = add("Rude", 3);
     const kind = add("Kind", 1);
-    const admin = startAdmin("127.0.0.1", 62521, "tok", world, dir, dir, {}, { pause() {}, resume() {}, paused: () => false, saveNow: async () => "", listSaves: () => [], loadSave: async () => "", stop() {}, blankName: async (n) => world.blankName(n) });
+    const admin = startAdmin("127.0.0.1", 62521, "tok", world, dir, dir, {}, { pause() {}, resume() {}, paused: () => false, saveNow: async () => "", listSaves: () => [], loadSave: async () => "", stop() {}, blankName: async (n) => world.blankName(n), renameName: async (a, b) => world.renameName(a, b) });
     const ws = new WebSocket("ws://127.0.0.1:62521/");
     const replies: { t: string; message?: string }[] = [];
     ws.on("message", (d: Buffer) => replies.push(JSON.parse(d.toString())));
@@ -67,6 +67,12 @@ describe("admin blank-name", () => {
     restored.restoreState(JSON.parse(JSON.stringify(world.saveState())));
     expect(wireName(restored.eco.lineageName(rude[0]!)).name).toBe(""); // a save keeps it blank
     expect(restored.aliveAdded()).toBe(world.aliveAdded()); // and the families still count as visitor adds
+    ws.send(JSON.stringify({ t: "rename", name: "Kind", to: "Gentle" }));
+    ws.send(JSON.stringify({ t: "rename", name: "Kind", to: "no way" }));
+    await vi.waitFor(() => expect(replies).toHaveLength(5));
+    expect(replies.slice(3).find((r) => r.t === "renamed")).toEqual({ t: "renamed", message: "renamed 1 family" });
+    expect(replies.slice(3).find((r) => r.t === "error")).toBeDefined(); // the bad name, answered at once
+    expect(world.eco.lineageName(kind[0]!)).toBe("Gentle");
     ws.close();
     admin.close();
   });

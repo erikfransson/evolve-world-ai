@@ -10,6 +10,7 @@ import { CAP_LIMITS, ITEM_HEADROOM, LIMITS, LIVE, MAX_POPULATION, ITEM_SLOT_SHAR
 import { lineageName, loadFounders, parseFounders } from "../../server/src/founders.ts";
 import { parseFounders as parsePageFounders } from "../../src/typescript/src/live/founders.ts";
 import { LiveWorld } from "../../server/src/liveWorld.ts";
+import { namedTop } from "../../server/src/chronicle.ts";
 import { OtherWorld } from "../../server/src/saveParse.ts";
 import { Saves, openWorld } from "../../server/src/saves.ts";
 import { PREVIOUS_OVERRIDES } from "../../server/src/admin.ts";
@@ -166,10 +167,26 @@ describe("founders file", () => {
     // The pages read the same file with the same parser, so a visitor's copy of a starter carries the starter's lineage name.
     const page = parsePageFounders(JSON.parse(readFileSync(FOUNDERS, "utf8")));
     expect(page.map((x) => x.lineage)).toEqual(f.map((x) => x.name));
-    expect(page.find((x) => x.name === "Gentle Grazer")?.lineage).toBe("GentleGrazer");
+    expect(page.find((x) => x.name === "Grazer")?.lineage).toBe("Grazer");
     // Each founder would also pass as a visitor's add.
     const rules = freshSmall().addRules();
     for (const x of f) expect(typeof parseAdd(encodeAdd({ plan: x.plan, genome: x.genome, birth: { energy: 150, cost: 70, cooldown: 10 }, name: x.name, hue: 0, copies: 1 }), rules)).toBe("object");
+  });
+
+  it("lists the seeded copies of a starter as one family, and a rename keeps it a starter", () => {
+    const live = freshSmall();
+    const founders = loadFounders(FOUNDERS.pathname);
+    live.seedFounders(founders, seq(4));
+    const top = namedTop(live.eco, 8);
+    expect(top).toHaveLength(founders.length);
+    for (const g of top) {
+      expect(g.count).toBe(SEED_COPIES);
+      expect(g.others).toHaveLength(SEED_COPIES - 1);
+      expect(g.starter).toBe(true);
+    }
+    expect(live.renameName(founders[0]!.name, "Scout")).toBe(SEED_COPIES);
+    const renamed = namedTop(live.eco, 8).find((g) => g.name === "Scout");
+    expect([renamed?.count, renamed?.starter]).toEqual([SEED_COPIES, true]);
   });
 
   it("refuses a file with a bad founder, too many founders, or none, and skips nothing", () => {
@@ -193,7 +210,7 @@ describe("founders file", () => {
     expect(parseFounders(with_({ ...one, birth: { energy: 160 } }))).toMatch(/founder 2: birth/);
     expect(parseFounders(with_({ ...one, birth: { energy: 160, cost: 70, cooldown: -1 } }))).toMatch(/founder 2: birth/);
     expect(parseFounders(with_({ ...one, birth: { energy: 99, cost: 70 } }))).toMatch(/founder 2: birth must lie in the world's ranges/);
-    expect(parseFounders(with_({ ...one, birth: { energy: 160, cost: 70, cooldown: 30 } }))).toMatch(/world's ranges/);
+    expect(parseFounders(with_({ ...one, birth: { energy: 160, cost: 70, cooldown: 50 } }))).toMatch(/world's ranges/);
     const ok = parseFounders(with_({ ...one, name: "Second", birth: { energy: 160, cost: 70, cooldown: 8 } }));
     if (typeof ok === "string") throw new Error(ok);
     expect([ok[0]!.birth, ok[1]!.birth]).toEqual([undefined, { energy: 160, cost: 70, cooldown: 8 }]);
@@ -423,7 +440,8 @@ describe("room held back for visitors", () => {
     }
     expect(most).toBe(50);
     expect(live.eco.population).toBe(50); // held at the cap less the reserve
-    const add = (copies: number) => live.addCreatures({ plan: smallFounder.plan, genome: smallFounder.genome, birth: { energy: 150, cost: 70, cooldown: 10 }, name: "Kiwi", hue: 10, copies }, seq(copies));
+    let k = 0;
+    const add = (copies: number) => live.addCreatures({ plan: smallFounder.plan, genome: smallFounder.genome, birth: { energy: 150, cost: 70, cooldown: 10 }, name: `Kiwi${++k}`, hue: 10, copies }, seq(copies));
     for (let i = 0; i < 3; i++) expect("ids" in add(3)).toBe(true); // 59
     expect("ids" in add(1)).toBe(true); // 60, the cap
     expect(live.eco.population).toBe(60);

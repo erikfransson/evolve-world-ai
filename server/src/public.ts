@@ -148,7 +148,7 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
         const no = policy.gate.check(v.visitor, req.copies, { aliveAdded: live.aliveAdded(), population: e.population, speed: live.speedForAdds(), paused: live.paused });
         if (no) return no;
         const r = live.addCreatures(req);
-        if ("reason" in r) return { t: "refused", reason: r.reason, retryS: 10 } satisfies Refused;
+        if ("reason" in r) return { t: "refused", reason: r.reason, ...(r.now === false ? {} : { retryS: 10 }) } satisfies Refused;
         policy.gate.record(v.visitor, r.ids.length);
         return { t: "added", ids: r.ids, name: req.name } satisfies Added;
       })

@@ -105,7 +105,9 @@ export interface WireLineage {
   count: number;
   name?: string; // the name an added founder was given (letters and digits), absent for none
   starter?: boolean; // a starter founder the world was seeded with, not a visitor's add
+  founders?: number[]; // the other founders of the same name counted in this row (the seeded copies of a starter), at most MAX_GROUP_FOUNDERS
 }
+export const MAX_GROUP_FOUNDERS = 32;
 
 export type RecordBoard = "age" | "children" | "eaten";
 export const RECORD_BOARDS: readonly RecordBoard[] = ["age", "children", "eaten"];

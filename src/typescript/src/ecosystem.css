@@ -12,12 +12,14 @@
 .lin-bar[hidden] { display: none; }
 .lin-bar span { min-width: 1px; cursor: pointer; }
 .lin-list { list-style: none; margin: 0.4rem 0 0.3rem; padding: 0; display: flex; flex-direction: column; gap: 1px; }
-.lin-row { width: 100%; display: grid; grid-template-columns: 0.8rem 3.4rem 1fr 3.2rem 3rem; align-items: center; gap: 0.5rem; padding: 0.08rem 0.3rem; background: transparent; border: 1px solid transparent; border-radius: 6px; color: var(--text); font: inherit; font-size: 0.78rem; text-align: left; font-variant-numeric: tabular-nums; }
+.lin-row { width: 100%; display: grid; grid-template-columns: 0.8rem 3.4rem minmax(0, 1fr) 3.2rem 3rem; align-items: center; gap: 0.5rem; padding: 0.08rem 0.3rem; background: transparent; border: 1px solid transparent; border-radius: 6px; color: var(--text); font: inherit; font-size: 0.78rem; text-align: left; font-variant-numeric: tabular-nums; }
 button.lin-row { cursor: pointer; }
 button.lin-row:hover { background: var(--card-hi); }
 .lin-row.on { border-color: var(--accent); background: var(--card-hi); }
 .lin-row i, .sel-founder i { width: 0.8rem; height: 0.8rem; border-radius: 50%; }
 .lin-origin { color: var(--muted); font-size: 0.7rem; }
+.lin-name, .lin-origin { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } /* a name past its column ends in an ellipsis, never over the origin */
+.live .lin-row { grid-template-columns: 0.8rem 6.8rem minmax(0, 1fr) 3.2rem 3rem; } /* Live names (up to 16 letters) next to "starter" */
 .lin-share, .lin-count { text-align: right; }
 .lin-count { color: var(--muted); }
 .lin-graph { display: block; width: 100%; aspect-ratio: 375 / 110; }

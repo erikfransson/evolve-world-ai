@@ -93,7 +93,19 @@ let lastDrawAt = 0;
 let lastStats: Stats | null = null;
 let season: Season | null = null;
 let retryTimer: ReturnType<typeof setInterval> | undefined;
-let highlight = -1; // founder whose family is lit, -1 for none
+let highlight = -1; // founder whose family is lit (a row's founder), -1 for none
+let familyOf = new Map<number, number>(); // founder -> the founder of the lineage row it is counted in, from the latest stats
+const rowOf = (f: number): number => familyOf.get(f) ?? f;
+// The views with every founder of the lit row drawn as that row's founder, so the whole named family lights up.
+let litFounder: Uint32Array | null = null;
+function litViews<V extends { founder: ArrayLike<number> }>(v: V): V {
+  if (highlight < 0 || familyOf.size === 0) return v;
+  const n = v.founder.length;
+  if (!litFounder || litFounder.length < n) litFounder = new Uint32Array(Math.max(n, 1024));
+  const out = litFounder.subarray(0, n);
+  for (let i = 0; i < n; i++) out[i] = rowOf(v.founder[i]!);
+  return { ...v, founder: out };
+}
 let samples: number[] = []; // population history, HISTORY_FIELDS each
 let names = new Map<number, string>(); // founder id -> name, for the named lineages
 let starters = new Set<number>(); // the named ones that are starter founders, not visitor adds
@@ -216,6 +228,7 @@ function onHello(h: Hello): void {
   clearSelection();
   names = new Map();
   starters = new Set();
+  familyOf = new Map();
   addPanel.setRules(h.add);
   renderMapInfo($("info"), h);
 }
@@ -409,11 +422,11 @@ function updateSelectedCard(): void {
 // The family toggle on the selected card. When one founder's family is the whole world, lighting it dims nobody, so it says so.
 function syncFamily(): void {
   const f = selection?.last?.founderId;
-  const on = highlight >= 0 && f === highlight;
+  const on = highlight >= 0 && f !== undefined && rowOf(f) === highlight;
   const b = $("selFounder");
   b.classList.toggle("on", on);
   b.setAttribute("aria-pressed", String(on));
-  const size = lastStats?.lineages?.find((l) => l.founder === f)?.count ?? 0;
+  const size = lastStats?.lineages?.find((l) => f !== undefined && l.founder === rowOf(f))?.count ?? 0;
   const everyone = !!lastStats && lastStats.population > 0 && size >= lastStats.population;
   $("selFamilyLabel").textContent = everyone ? (on ? "Everyone shares this founder" : "Everyone's founder") : on ? "Family lit" : "Highlight family";
 }
@@ -471,7 +484,9 @@ function onStats(s: Stats): void {
   }
   if (s.sample || s.lineageSample || seasonChanged) showHistory();
   if (s.lineages) {
+    familyOf = new Map();
     for (const l of s.lineages) {
+      for (const f of l.founders ?? []) familyOf.set(f, l.founder); // the seeded copies of a starter share its row and its light
       // Each listed lineage carries its name every time, so a missing one (an admin cleared it) clears the page's copy.
       if (l.name) names.set(l.founder, l.name);
       else names.delete(l.founder);
@@ -537,7 +552,7 @@ function frame(now: number): void {
   // Rays and the ring at the creature as drawn now; its rays from the latest details on the timeline.
   const d = selection?.last;
   const selected = i >= 0 && !selection!.died ? ({ ...(d ?? { rayKinds: new Uint8Array(0), rayCloseness: new Float32Array(0), rayOffsets: new Float32Array(0), plan: { rayLength: 0 } }), alive: true, x: views.x[i]!, y: views.y[i]!, heading: views.heading[i]! } as SelectedDetails) : null;
-  renderer.draw(ctx, camera, drawConfig(), views, selected, true, dpr, highlight, births, now, impacts);
+  renderer.draw(ctx, camera, drawConfig(), litViews(views), selected, true, dpr, highlight, births, now, impacts);
   if (now - lastUiAt >= UI_INTERVAL_MS) {
     lastUiAt = now;
     updateSelectedCard();
@@ -601,7 +616,7 @@ $("follow").addEventListener("click", () => {
 });
 $("selFounder").addEventListener("click", () => {
   const f = selection?.last?.founderId;
-  if (f !== undefined && f >= 0) lineages.pick(f);
+  if (f !== undefined && f >= 0) lineages.pick(rowOf(f));
 });
 $("pickAge").addEventListener("click", () => { if (lastStats?.best) select(lastStats.best.age); });
 $("pickChildren").addEventListener("click", () => { if (lastStats?.best) select(lastStats.best.children); });

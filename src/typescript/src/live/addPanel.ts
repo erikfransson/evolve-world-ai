@@ -4,7 +4,7 @@ import type { Founder } from "./founders.ts";
 import { PLAN_LIMITS } from "../sim/rl/validate.ts";
 import { lineageColor } from "../ui/lineagePanel.ts";
 import type { BodyPlan } from "../sim/sensors.ts";
-import { NAME_MAX, NAME_RE, upkeepOf } from "./add.ts";
+import { LIVE_BIRTH, NAME_MAX, NAME_RE, upkeepOf } from "./add.ts";
 import type { AddRequest, AddRules, Added, Birth, Refused } from "./add.ts";
 import { reshapeGenome } from "./reshape.ts";
 import { TRAIN_SECONDS, train } from "./training.ts";
@@ -218,7 +218,7 @@ export class AddPanel {
   }
 
   private defaultBirth(): Birth {
-    const b = this.rules?.birth ?? { energy: [100, 225], cost: [50, 110], cooldown: [5, 20] };
+    const b = this.rules?.birth ?? { energy: [...LIVE_BIRTH.energy], cost: [...LIVE_BIRTH.cost], cooldown: [...LIVE_BIRTH.cooldown] };
     // The middles insertCreature gives (log scale, linear for a range from 0), on the sliders' steps.
     const mid = ([lo, hi]: [number, number]): number => (lo > 0 ? Math.sqrt(lo * hi) : (lo + hi) / 2);
     return { energy: Math.round(mid(b.energy)), cost: Math.round(mid(b.cost)), cooldown: Math.round(mid(b.cooldown) * 2) / 2 };
@@ -368,9 +368,9 @@ export class AddPanel {
     });
     this.slider(brain, "memShort", "Short memory", "Memory units that fade fast.", L.memory[0], L.memory[1], 1, (v) => String(v), (v) => (t().memShort = v));
     this.slider(brain, "memLong", "Long memory", "Memory units that fade slowly.", L.memory[0], L.memory[1], 1, (v) => String(v), (v) => (t().memLong = v));
-    this.slider(birth, "birthEnergy", "Birth at energy", "It has a child when its energy reaches this.", 100, 225, 1, (v) => String(Math.round(v)), (v) => (t().birth.energy = v));
-    this.slider(birth, "birthCost", "Birth cost", "Energy it gives its child, who starts with it.", 50, 110, 1, (v) => String(Math.round(v)), (v) => (t().birth.cost = v));
-    this.slider(birth, "birthCooldown", "Birth cooldown", "Seconds before it can have another child.", 5, 20, 0.5, (v) => `${v} s`, (v) => (t().birth.cooldown = v));
+    this.slider(birth, "birthEnergy", "Birth at energy", "It has a child when its energy reaches this.", LIVE_BIRTH.energy[0], LIVE_BIRTH.energy[1], 1, (v) => String(Math.round(v)), (v) => (t().birth.energy = v));
+    this.slider(birth, "birthCost", "Birth cost", "Energy it gives its child, who starts with it.", LIVE_BIRTH.cost[0], LIVE_BIRTH.cost[1], 1, (v) => String(Math.round(v)), (v) => (t().birth.cost = v));
+    this.slider(birth, "birthCooldown", "Birth cooldown", "Seconds before it can have another child.", LIVE_BIRTH.cooldown[0], LIVE_BIRTH.cooldown[1], 0.5, (v) => `${v} s`, (v) => (t().birth.cooldown = v));
   }
 
   private syncSliders(): void {
