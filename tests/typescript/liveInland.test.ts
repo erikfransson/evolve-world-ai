@@ -16,7 +16,7 @@ import { StateStore } from "../../server/src/state.ts";
 import { applyTunables } from "../../server/src/tunables.ts";
 import { MAX_ITEM_SLOTS } from "../../src/typescript/src/live/protocol.ts";
 import { cleanMap } from "../../src/typescript/src/live/mapInfo.ts";
-import { encodeAdd, parseAdd, wireName } from "../../src/typescript/src/live/add.ts";
+import { STARTER_MARK, encodeAdd, parseAdd, wireName } from "../../src/typescript/src/live/add.ts";
 import { decodeDetail } from "../../src/typescript/src/live/detail.ts";
 import { cleanStats } from "../../src/typescript/src/live/connection.ts";
 import { lineageRows } from "../../src/typescript/src/ui/lineagePanel.ts";
@@ -175,6 +175,22 @@ describe("founders file", () => {
     expect(parseFounders({ founders: [] })).toMatch(/1 to 8/);
     expect(parseFounders(null)).toMatch(/no founders/);
     expect(parseFounders({ founders: {} })).toMatch(/no founders/);
+    // A founder's own birth traits: optional, numbers, and inside the live world's ranges on the server.
+    expect(parseFounders(with_({ ...one, birth: { energy: 160, cost: "70" } }))).toMatch(/founder 2: birth/);
+    expect(parseFounders(with_({ ...one, birth: { energy: 160 } }))).toMatch(/founder 2: birth/);
+    expect(parseFounders(with_({ ...one, birth: { energy: 160, cost: 70, cooldown: -1 } }))).toMatch(/founder 2: birth/);
+    expect(parseFounders(with_({ ...one, birth: { energy: 99, cost: 70 } }))).toMatch(/founder 2: birth must lie in the world's ranges/);
+    expect(parseFounders(with_({ ...one, birth: { energy: 160, cost: 70, cooldown: 30 } }))).toMatch(/world's ranges/);
+    const ok = parseFounders(with_({ ...one, name: "Second", birth: { energy: 160, cost: 70, cooldown: 8 } }));
+    if (typeof ok === "string") throw new Error(ok);
+    expect([ok[0]!.birth, ok[1]!.birth]).toEqual([undefined, { energy: 160, cost: 70, cooldown: 8 }]);
+    // Seeded starters carry them.
+    const live = freshSmall();
+    live.seedFounders(ok, seq(3));
+    const traits = (m: { birth: { energy: number; cost: number; cooldown: number } }) => [m.birth.energy, m.birth.cost, m.birth.cooldown];
+    const second = live.eco.members.filter((m) => live.eco.lineageName(m.founderId) === STARTER_MARK + ok[1]!.name);
+    expect(second.length).toBe(SEED_COPIES);
+    for (const m of second) expect(traits(m)).toEqual([160, 70, 8]);
   });
 
   it("reads only a regular file within its size cap", () => {

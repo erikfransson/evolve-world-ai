@@ -504,7 +504,7 @@ export class LiveWorld {
       const k = Math.floor(i / SEED_COPIES);
       const f = founders[k]!;
       const p = spots[i]!;
-      const res = e.insertCreature({ genome: f.genome, plan: f.plan, x: p.x, y: p.y, heading: p.heading, hue: (hue0 + (360 * k) / founders.length) % 360, name: STARTER_MARK + f.name }); // the start energy of a pool founder
+      const res = e.insertCreature({ genome: f.genome, plan: f.plan, x: p.x, y: p.y, heading: p.heading, hue: (hue0 + (360 * k) / founders.length) % 360, name: STARTER_MARK + f.name, ...(f.birth ? { birth: f.birth } : {}) }); // the start energy of a pool founder; its own birth traits or the range middles
       if (!res.ok) throw new Error(`founder ${f.name} could not be seeded: ${res.reason}`);
     }
     return n;

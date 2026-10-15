@@ -225,7 +225,11 @@ export class AddPanel {
     this.founder = i;
     const f = this.founders[i];
     if (!f) return;
-    this.t = tunedOf(f.plan, this.t?.birth ?? this.defaultBirth());
+    // The founder's own birth traits, within this world's ranges, else the ones set before.
+    const r = this.rules?.birth;
+    const fit = (v: number, range: [number, number] | undefined): number => (range ? Math.min(range[1], Math.max(range[0], v)) : v); // the rules clamp again when they come
+    const own = f.birth ? { energy: fit(f.birth.energy, r?.energy), cost: fit(f.birth.cost, r?.cost), cooldown: fit(f.birth.cooldown ?? this.defaultBirth().cooldown, r?.cooldown) } : null;
+    this.t = tunedOf(f.plan, own ?? this.t?.birth ?? this.defaultBirth());
     const name = this.$<HTMLInputElement>("addName");
     if (!name.value || name.dataset.auto === "1") {
       name.value = f.lineage; // the starters' own lineage name, so a copy carries the same
