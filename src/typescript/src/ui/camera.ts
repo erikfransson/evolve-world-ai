@@ -24,10 +24,12 @@ export function fitWorld(worldW: number, worldH: number, canvasW: number, canvas
 }
 
 // Zoomed out the world stays centred, zoomed in its edge may sit at most SLACK of the view inside the screen.
-function clampAxis(c: number, world: number, view: number): number {
-  if (view >= world) return world / 2;
+// off: how far the view centre sits from the screen centre, in world units (the focus offset over the zoom). The visible span is
+// c - view/2 - off .. c + view/2 - off, so the clamp moves with it and both world edges stay reachable with a focus offset.
+function clampAxis(c: number, world: number, view: number, off = 0): number {
+  if (view >= world) return world / 2 + off;
   const h = (world - view) / 2 + SLACK * view;
-  return Math.min(world / 2 + h, Math.max(world / 2 - h, c));
+  return Math.min(world / 2 + h + off, Math.max(world / 2 - h + off, c));
 }
 
 // Latches "dragging" once the pointer has moved more than threshold from where it went down.
@@ -197,8 +199,9 @@ export class Camera {
 
   clampCentre(): void {
     if (this.zoom <= this.minZoom * 1.0001) this.focusGoalX = this.focusGoalY = 0; // a fitted world sits centred
-    this.cx = clampAxis(this.cx, this.worldW, this.viewW);
-    this.cy = clampAxis(this.cy, this.worldH, this.viewH);
+    // The offset the focus eases to, so the clamp holds where the view settles (a fitted world drops its offset, and is centred then).
+    this.cx = clampAxis(this.cx, this.worldW, this.viewW, this.focusGoalX / this.zoom);
+    this.cy = clampAxis(this.cy, this.worldH, this.viewH, this.focusGoalY / this.zoom);
   }
 
   // Multiplies zoom by factor keeping the world point under screen (sx, sy) fixed.
@@ -231,7 +234,7 @@ export class Camera {
     this.anim = {
       t0: null,
       from: { cx: this.cx, cy: this.cy, zoom: this.zoom },
-      to: { cx: clampAxis(cx, this.worldW, this.canvasW / z), cy: clampAxis(cy, this.worldH, this.canvasH / z), zoom: z },
+      to: { cx: clampAxis(cx, this.worldW, this.canvasW / z, this.focusGoalX / z), cy: clampAxis(cy, this.worldH, this.canvasH / z, this.focusGoalY / z), zoom: z },
     };
   }
 

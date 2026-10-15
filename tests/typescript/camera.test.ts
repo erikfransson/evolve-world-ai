@@ -13,6 +13,22 @@ describe("camera maths", () => {
     expect(w.y).toBeCloseTo(987);
   });
 
+  it("reaches every world edge by dragging with a focus offset (the Live page shifts the view centre past its side cards)", () => {
+    for (const [focus, dpr] of [[0, 1], [250, 1], [-250, 1], [400, 2]] as const) {
+      for (const times of [1.3, 2, 8]) {
+        const c = new Camera(30000, 18750, 1000 * dpr, 800 * dpr, 5);
+        c.zoomAt(500 * dpr, 400 * dpr, times);
+        c.setFocusOffset(focus * dpr, 0, true);
+        c.panBy(-1e7, -1e7); // drag far left and up: the right and bottom edges come into view
+        expect(c.screenToWorld(1000 * dpr, 800 * dpr).x, `right, focus ${focus} x${times}`).toBeGreaterThanOrEqual(30000);
+        expect(c.screenToWorld(1000 * dpr, 800 * dpr).y, `bottom, focus ${focus} x${times}`).toBeGreaterThanOrEqual(18750);
+        c.panBy(1e7, 1e7);
+        expect(c.screenToWorld(0, 0).x, `left, focus ${focus} x${times}`).toBeLessThanOrEqual(0);
+        expect(c.screenToWorld(0, 0).y, `top, focus ${focus} x${times}`).toBeLessThanOrEqual(0);
+      }
+    }
+  });
+
   it("maps the centre to the middle of the canvas", () => {
     const c = make();
     const s = c.worldToScreen(c.cx, c.cy);
