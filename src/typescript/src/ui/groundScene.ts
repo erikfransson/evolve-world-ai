@@ -12,7 +12,8 @@ import type { View } from "./terrainScene.ts";
 // and a lighter shallow rim of mud (or firm ground) fades into the deeper colour further in. The rim is the field itself, drawn as a small image scaled up
 // smoothly (alpha falls as the field value rises from the edge value to its full value), so it is a true gradient that follows the contour and costs no strokes.
 // Cost: a patch is a clip, a fill and a few dozen strokes of a long path, too much per frame for a whole world. From afar each patch is painted once
-// into a small bitmap (at the next scale tier up, so it is only ever shrunk) and drawn as an image; close up only the patches in view are painted live.
+// into a bitmap (at the next scale tier up, so it is only ever shrunk) and drawn as an image, a patch larger than MAX_BITMAP_PX as tiles of that size made when first in view;
+// close up only the patches in view are painted live. A map keeps the bitmaps of every tier it was viewed at, within MAX_BAKED_PX pixels in all.
 
 export const FEATHER_UNITS = 4; // widest the fade into the floor reaches inside the edge, world units: a slight softening, the edge stays crisp
 const FLOOR = "#10291f";
@@ -23,8 +24,8 @@ const FINE_FROM = 0.05; // scale from which the outline is the fine one; coarser
 const EDGE_PX = 1.1; // device px of the dark line inside the contour
 const SHOULDER_PX = 1.6; // device px of the pale line just inside that
 const TIERS = [0.02, 0.04, 0.08, 0.16, 0.32]; // bitmap scales; a view at a scale up to the largest draws bitmaps of the next tier up
-const MAX_BITMAP_PX = 640; // longest side of a patch bitmap; larger patches are painted live
-const MAX_BAKED_PX = 16_000_000; // pixels of bitmaps kept per map (64 MB), beyond that patches are painted live
+const MAX_BITMAP_PX = 640; // longest side of a bitmap; larger patches are cut into tiles of this size
+const MAX_BAKED_PX = 16_000_000; // pixels of bitmaps kept per map over all tiers (64 MB of RGBA), beyond that patches are painted live
 const BAKE_PAD = 4; // px around a bitmap
 interface Style {
   flat: string;
@@ -237,34 +238,123 @@ function paintPatch(ctx: CanvasRenderingContext2D, { body, path, rim, field }: P
   ctx.restore();
 }
 
-interface Bitmap {
+// A patch at a tier scale is one bitmap, or a grid of bitmaps of at most MAX_BITMAP_PX when it is larger. A tile's bitmap carries BAKE_PAD px of its neighbours' content
+// around the part it shows, and tiles are made when first in view.
+interface Tile {
   image: OffscreenCanvas | HTMLCanvasElement;
-  x: number;
+  sx: number; // the shown part of the image, px
+  sy: number;
+  sw: number;
+  sh: number;
+  x: number; // where it lands, world units
   y: number;
   w: number;
   h: number;
 }
-interface Baked {
-  tier: number;
-  bitmaps: Map<Patch, Bitmap | null>; // null: too big to bake, painted live
+interface Grid {
+  ox: number; // world position of the patch bitmap's corner
+  oy: number;
+  px: number; // patch bitmap size, px
+  py: number;
+  cols: number;
+  rows: number;
+  tiles: (Tile | undefined)[];
+}
+interface TierStore {
+  grids: Map<Patch, Grid>;
   pixels: number;
 }
+interface Baked {
+  tiers: Map<number, TierStore>; // least recently used first
+  pixels: number; // over all tiers, at most MAX_BAKED_PX
+}
 const baked = new WeakMap<Terrain, Baked>();
+const TILE_BODY = MAX_BITMAP_PX - 2 * BAKE_PAD; // px of a tile's own part
 
-// A patch painted once at a tier scale into its own bitmap, or null when it is too big or the map's bitmap budget is spent.
-function bake(store: Baked, patch: Patch): Bitmap | null {
+// Pixels of bitmaps a map holds now (4 bytes each), never more than MAX_BAKED_PX.
+export const bakedPixels = (t: Terrain): number => baked.get(t)?.pixels ?? 0;
+
+function gridOf(tier: number, patch: Patch): Grid {
   const b = patch.body;
-  const w = Math.ceil((b.x1 - b.x0) * store.tier) + 2 * BAKE_PAD;
-  const h = Math.ceil((b.y1 - b.y0) * store.tier) + 2 * BAKE_PAD;
-  if (w > MAX_BITMAP_PX || h > MAX_BITMAP_PX || store.pixels + w * h > MAX_BAKED_PX) return null;
+  const px = Math.ceil((b.x1 - b.x0) * tier) + 2 * BAKE_PAD;
+  const py = Math.ceil((b.y1 - b.y0) * tier) + 2 * BAKE_PAD;
+  const whole = px <= MAX_BITMAP_PX && py <= MAX_BITMAP_PX;
+  const cols = whole ? 1 : Math.ceil(px / TILE_BODY);
+  const rows = whole ? 1 : Math.ceil(py / TILE_BODY);
+  return { ox: b.x0 - BAKE_PAD / tier, oy: b.y0 - BAKE_PAD / tier, px, py, cols, rows, tiles: new Array<Tile | undefined>(cols * rows) };
+}
+
+// Paints tile (i, j) of a patch once, or returns null when the map's bitmap budget cannot hold it even after dropping the other tiers.
+function bake(store: Baked, tier: number, ts: TierStore, g: Grid, patch: Patch, i: number, j: number): Tile | null {
+  const whole = g.cols === 1 && g.rows === 1;
+  const x0 = whole ? 0 : i * TILE_BODY; // the tile's own part, in patch bitmap px
+  const y0 = whole ? 0 : j * TILE_BODY;
+  const sw = whole ? g.px : Math.min(TILE_BODY, g.px - x0);
+  const sh = whole ? g.py : Math.min(TILE_BODY, g.py - y0);
+  const pad = whole ? 0 : BAKE_PAD;
+  const w = sw + 2 * pad;
+  const h = sh + 2 * pad;
+  for (const [t, other] of store.tiers) {
+    if (store.pixels + w * h <= MAX_BAKED_PX) break;
+    if (t === tier) continue;
+    store.tiers.delete(t);
+    store.pixels -= other.pixels;
+  }
+  if (store.pixels + w * h > MAX_BAKED_PX) return null;
   const image = makeCanvas(w, h);
-  const g = context2d(image);
-  if (!image || !g) return null;
+  const c = context2d(image);
+  if (!image || !c) return null;
   store.pixels += w * h;
-  g.setTransform(store.tier, 0, 0, store.tier, BAKE_PAD - b.x0 * store.tier, BAKE_PAD - b.y0 * store.tier);
-  g.lineJoin = "round";
-  paintPatch(g, patch, store.tier);
-  return { image, x: b.x0 - BAKE_PAD / store.tier, y: b.y0 - BAKE_PAD / store.tier, w: w / store.tier, h: h / store.tier };
+  ts.pixels += w * h;
+  const b = patch.body;
+  c.setTransform(tier, 0, 0, tier, pad - x0 + BAKE_PAD - b.x0 * tier, pad - y0 + BAKE_PAD - b.y0 * tier);
+  c.lineJoin = "round";
+  paintPatch(c, patch, tier);
+  return { image, sx: pad, sy: pad, sw, sh, x: g.ox + x0 / tier, y: g.oy + y0 / tier, w: sw / tier, h: sh / tier };
+}
+
+// Draws the tiles of a patch that are in view, baking those not yet made. False when the budget is spent, then the caller paints the patch live.
+function drawBaked(ctx: CanvasRenderingContext2D, store: Baked, tier: number, patch: Patch, view: View): boolean {
+  let ts = store.tiers.get(tier);
+  if (!ts) store.tiers.set(tier, (ts = { grids: new Map(), pixels: 0 }));
+  else if (store.tiers.keys().next().value !== tier) {
+    store.tiers.delete(tier);
+    store.tiers.set(tier, ts);
+  }
+  let g = ts.grids.get(patch);
+  if (!g) ts.grids.set(patch, (g = gridOf(tier, patch)));
+  const tiled = g.cols * g.rows > 1;
+  const wanted: Tile[] = [];
+  for (let j = 0; j < g.rows; j++) {
+    for (let i = 0; i < g.cols; i++) {
+      if (tiled) {
+        const x = g.ox + (i * TILE_BODY) / tier;
+        const y = g.oy + (j * TILE_BODY) / tier;
+        if (x > view.x1 || y > view.y1 || x + TILE_BODY / tier < view.x0 || y + TILE_BODY / tier < view.y0) continue;
+      }
+      const k = j * g.cols + i;
+      const tile = g.tiles[k] ?? (g.tiles[k] = bake(store, tier, ts, g, patch, i, j) ?? undefined);
+      if (!tile) return false;
+      wanted.push(tile);
+    }
+  }
+  const m = tiled ? ctx.getTransform() : null;
+  for (const t of wanted) {
+    if (!m || m.b !== 0 || m.c !== 0) ctx.drawImage(t.image as CanvasImageSource, t.sx, t.sy, t.sw, t.sh, t.x, t.y, t.w, t.h);
+    else {
+      // Neighbouring tiles share whole device pixel edges, so no hairline shows between them.
+      const dx = Math.round(m.a * t.x + m.e);
+      const dy = Math.round(m.d * t.y + m.f);
+      const dw = Math.round(m.a * (t.x + t.w) + m.e) - dx;
+      const dh = Math.round(m.d * (t.y + t.h) + m.f) - dy;
+      if (dw === 0 || dh === 0) continue;
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.drawImage(t.image as CanvasImageSource, t.sx, t.sy, t.sw, t.sh, dx, dy, dw, dh);
+      ctx.restore();
+    }
+  }
+  return true;
 }
 
 // quick: the coarse outline with flat fills, for the settings preview that redraws while sliders move.
@@ -287,13 +377,8 @@ export function drawGround(ctx: CanvasRenderingContext2D, t: Terrain, scale: num
     for (const patch of shown) paintPatch(ctx, patch, scale); // close up: live, only what is in view
   } else {
     let store = baked.get(t);
-    if (!store || store.tier !== tier) baked.set(t, (store = { tier, bitmaps: new Map(), pixels: 0 }));
-    for (const patch of shown) {
-      let bitmap = store.bitmaps.get(patch);
-      if (bitmap === undefined) store.bitmaps.set(patch, (bitmap = bake(store, patch)));
-      if (bitmap) ctx.drawImage(bitmap.image as CanvasImageSource, bitmap.x, bitmap.y, bitmap.w, bitmap.h);
-      else paintPatch(ctx, patch, scale);
-    }
+    if (!store) baked.set(t, (store = { tiers: new Map(), pixels: 0 }));
+    for (const patch of shown) if (!drawBaked(ctx, store, tier, patch, view)) paintPatch(ctx, patch, scale);
   }
   ctx.restore();
 }
