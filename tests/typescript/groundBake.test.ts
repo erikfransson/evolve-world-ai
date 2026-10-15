@@ -88,11 +88,17 @@ describe("ground bitmaps of a patch larger than one bitmap", () => {
     expect([paints(), bitmaps.length - made]).toEqual([0, 4]);
   });
 
-  it("on a zoom out paints live what the tier just left does not cover, then settles", async () => {
+  it("on a zoom out finds the next coarser tier ready, and paints live only what no tier covers", async () => {
     const { frame, settle } = await inlandSea();
-    settle(0.3); // tier 0.32: only the tiles of a small view
+    settle(0.3); // tier 0.32, and while idle the bitmaps of tier 0.16 for a view twice as wide
+    const tier32 = bitmaps.length;
     drawn.length = 0;
-    frame(0.05);
+    frame(0.15); // the next tier out
+    expect(paints()).toBe(0);
+    expect(bitmaps.length - tier32).toBeLessThanOrEqual(1); // only the idle bake for the tier beyond
+    settle(0.3);
+    drawn.length = 0;
+    frame(0.05); // two tiers out: nothing is ready
     expect(paints()).toBeGreaterThan(0);
     settle(0.05);
     drawn.length = 0;

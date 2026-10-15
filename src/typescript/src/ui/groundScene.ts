@@ -383,12 +383,26 @@ function drawBaked(ctx: CanvasRenderingContext2D, store: Baked, ts: TierStore, p
   return true;
 }
 
+const patchesIn = (t: Terrain, tier: number | undefined, scale: number, view: View): Patch[] =>
+  patchesOf(t, (tier ?? scale) >= FINE_FROM ? fineOf(t) : 1).filter(({ body: b }) => b.x1 + VIEW_PAD >= view.x0 && b.x0 - VIEW_PAD <= view.x1 && b.y1 + VIEW_PAD >= view.y0 && b.y0 - VIEW_PAD <= view.y1);
+
+// With the frame's bake unused, makes the bitmaps of the next coarser tier for a view twice as wide, so a zoom out finds them ready. Never when a bitmap might push a tier out.
+function bakeCoarser(t: Terrain, store: Baked, tier: number, view: View, left: { n: number }): void {
+  const coarser = TIERS[TIERS.indexOf(tier) - 1];
+  if (coarser === undefined || left.n <= 0 || store.pixels + MAX_BITMAP_PX * MAX_BITMAP_PX > MAX_BAKED_PX) return;
+  const ts = store.tiers.get(coarser) ?? { tier: coarser, grids: new Map(), pixels: 0 };
+  store.tiers.set(coarser, ts);
+  const w = (view.x1 - view.x0) / 2;
+  const h = (view.y1 - view.y0) / 2;
+  const wide = { x0: view.x0 - w, x1: view.x1 + w, y0: view.y0 - h, y1: view.y1 + h };
+  for (const patch of patchesIn(t, coarser, coarser, wide)) if (left.n > 0) tilesIn(store, ts, patch, wide, left);
+}
+
 // quick: the coarse outline with flat fills, for the settings preview that redraws while sliders move.
 export function drawGround(ctx: CanvasRenderingContext2D, t: Terrain, scale: number, view: View, quick: boolean): void {
   if (t.ground === null || typeof Path2D === "undefined") return;
   const tier = quick ? undefined : TIERS.find((s) => s >= scale);
-  const level = !quick && (tier ?? scale) >= FINE_FROM ? fineOf(t) : 1;
-  const shown = patchesOf(t, level).filter(({ body: b }) => b.x1 + VIEW_PAD >= view.x0 && b.x0 - VIEW_PAD <= view.x1 && b.y1 + VIEW_PAD >= view.y0 && b.y0 - VIEW_PAD <= view.y1);
+  const shown = patchesIn(t, tier, quick ? 0 : scale, view);
   ctx.save();
   ctx.beginPath();
   ctx.rect(0, 0, t.width, t.height);
@@ -407,6 +421,8 @@ export function drawGround(ctx: CanvasRenderingContext2D, t: Terrain, scale: num
     const ts = touch(store, tier);
     const left = { n: BAKES_PER_FRAME };
     for (const patch of shown) if (!drawBaked(ctx, store, ts, patch, view, left)) paintPatch(ctx, patch, scale);
+    bakeCoarser(t, store, tier, view, left);
+    touch(store, tier); // the coarser tier is the older one
   }
   ctx.restore();
 }
