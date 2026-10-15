@@ -19,7 +19,8 @@ self.onmessage = (e: MessageEvent<MapIn>) => {
     if (!spec) return post({ ok: false, message: "unknown map" });
     const t0 = performance.now();
     const terrain = mapTerrain(spec.name, spec.width, spec.height);
-    const parts = packMap(terrain)!;
+    const shared = packMap(terrain)!;
+    const parts = { rock: shared.rock, ground: shared.ground.slice(), food: shared.food.slice(), poison: shared.poison.slice() }; // copies, since the worker's cached Terrain keeps its own
     const outlines = rockGeometry(terrain);
     const buffers = [parts.rock.buffer, parts.ground.buffer, parts.food.buffer, parts.poison.buffer, outlines.bodyLoops.buffer, outlines.loopPoints.buffer, outlines.points.buffer];
     post({ ok: true, ...parts, outlines, ms: Math.round(performance.now() - t0) }, buffers);
