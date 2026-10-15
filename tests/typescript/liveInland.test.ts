@@ -334,7 +334,10 @@ describe("restoring Inland Sea saves of another size or map data", () => {
     bigger.config.world.width = 40000;
     bigger.config.world.height = 25000;
     const older = { ...structuredClone(state), mapVersion: "00000000" };
-    for (const [save, why] of [[bigger, /40000 x 25000 world \(inland-sea\), this server runs 30000 x 18750 world \(inland-sea\)/], [older, /another version of the map inland-sea/]] as const) {
+    const crafted = structuredClone(state) as unknown as { config: { world: Record<string, unknown> }; mapVersion: unknown };
+    crafted.config.world.width = { toString: 0 }; // String() of this throws; the reason must not
+    const craftedVersion = { ...structuredClone(state), mapVersion: { toString: 0 } };
+    for (const [save, why] of [[bigger, /40000 x 25000 world \(inland-sea\), this server runs 30000 x 18750 world \(inland-sea\)/], [older, /another version of the map inland-sea/], [crafted, /it is a object x 18750 world/], [craftedVersion, /another version of the map inland-sea \(object,/]] as const) {
       const store = new StateStore(tmp());
       await store.write(JSON.stringify(save), { population: 0, tick: 0 }, new Date());
       const lines: string[] = [];

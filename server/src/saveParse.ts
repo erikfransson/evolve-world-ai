@@ -27,9 +27,10 @@ export function otherWorldReason(state: unknown, home: Home): string | null {
   const s = typeof state === "object" && state !== null ? (state as { config?: { world?: { width?: unknown; height?: unknown; map?: unknown } }; mapVersion?: unknown }) : {};
   const w = s.config?.world;
   const map = typeof w?.map === "string" ? w.map : "";
-  const where = (width: unknown, height: unknown, m: string): string => `${String(width).slice(0, 12)} x ${String(height).slice(0, 12)} world${m ? ` (${m.slice(0, 40)})` : " without a map"}`;
+  const show = (v: unknown, n: number): string => (typeof v === "number" || typeof v === "string" ? String(v).slice(0, n) : typeof v); // never a crafted object's toString
+  const where = (width: unknown, height: unknown, m: string): string => `${show(width, 12)} x ${show(height, 12)} world${m ? ` (${m.slice(0, 40)})` : " without a map"}`;
   if (!w || w.width !== home.width || w.height !== home.height || map !== home.map) return `it is a ${where(w?.width, w?.height, map)}, this server runs ${where(home.width, home.height, home.map)}; the save is kept`;
-  if (home.map && s.mapVersion !== undefined && s.mapVersion !== home.mapVersion) return `it was made on another version of the map ${home.map} (${String(s.mapVersion).slice(0, 16)}, this server runs ${home.mapVersion}); the save is kept`;
+  if (home.map && s.mapVersion !== undefined && s.mapVersion !== home.mapVersion) return `it was made on another version of the map ${home.map} (${show(s.mapVersion, 16)}, this server runs ${home.mapVersion}); the save is kept`;
   return null;
 }
 
