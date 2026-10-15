@@ -14,10 +14,10 @@ export const MAX_POPULATION = 3000;
 export const liveConfig: EcoConfig = structuredClone(DEFAULT_ECO_CONFIG);
 liveConfig.seed = 1;
 liveConfig.world.map = "inland-sea";
-liveConfig.world.width = 40000;
-liveConfig.world.height = 25000;
+liveConfig.world.width = 30000;
+liveConfig.world.height = 18750;
 liveConfig.world.foodEnergy = 50;
-liveConfig.world.poisonDensity = 0.01; // start counts stay at or below the caps (foodDensity 0.5 is 50 000 items)
+liveConfig.world.poisonDensity = 0.01; // start counts stay at or below the caps (foodDensity 0.5 is 28 125 items)
 liveConfig.eco.initialPopulation = 0; // a fresh world is seeded with the founders file instead (founders.ts)
 liveConfig.eco.foodRegrow = 0.003;
 liveConfig.eco.foodMaxDensity = 1.5;
@@ -39,7 +39,7 @@ export const MAX_FOUNDERS_FILE_BYTES = 512 * 1024; // 4 trained founders are 57 
 // Item slots are fixed when a world is built, so it is built with room for admin to raise the food and poison caps (densities).
 // Up to ITEM_HEADROOM where that fits (small worlds); else the slots are held to ITEM_SLOT_SHARE of the wire's MAX_ITEM_SLOTS:
 // poison gets POISON_ROOM times its cap (at most its ITEM_HEADROOM), food the rest, never below the caps in force.
-// The Inland Sea (100 000 items per density unit, caps 1.5 and 0.01) gets food 2.3 and poison 0.05: 235 000 slots.
+// The Inland Sea (56 250 items per density unit) gets the full headroom, food 3 and poison 1: 225 000 slots.
 // Measured at about 1000 creatures on the old 17000 x 10600 world: caps 3 and 1 cost 20 MB more RSS at a save than 0.7 and 0.1.
 export const ITEM_HEADROOM = { foodMaxDensity: 3, poisonMaxDensity: 1 };
 export const ITEM_SLOT_SHARE = 0.9;
