@@ -7,6 +7,11 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 ## Unreleased
 
 ### Live World
+- Poison is no longer lethal on Live: a bite costs 50 energy (one food's worth); admin-tunable as `world.poisonDamage` (100 or more kills, `./live get` says so).
+- "Add your creature": birth energy up to 500, cost up to 250, cooldown up to 40 s (the Live world's own ranges, so children drift within them too), and a mutation strength slider (×0.25 to ×4, its family inherits it).
+- The lineage list counts all families of one name as one row (the 10 seeded copies of a starter, a visitor's copies), and lighting it lights all of them. A name a living family carries, or a starter's, is refused for a new add. Admin `rename <from> <to>`. Starters renamed Explorer and Grazer.
+- Legend: grouped (ground, regions, items, creatures) with swatches cut from the map itself and the effect of each, with numbers; the Ecosystem and Trials legends use the same swatches.
+- Camera: with the side cards' offset (after selecting a creature) every edge of the world can be dragged into view.
 - Ecosystem creatures carry a mutation factor (`mutationScale`, default 1, 0.25 to 4 on insert) that multiplies the mutation std when they have children; children inherit it unchanged. Saves hold it only for creatures that differ from 1, older saves restore as 1. Runs at the default 1 are bit-identical.
 
 ## 0.2.0 (2026-10-15)

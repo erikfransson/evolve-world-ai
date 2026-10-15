@@ -32,7 +32,8 @@ function show(msg: { t: string; [k: string]: unknown }): void {
     console.log(msg.paused ? "paused" : "running");
     const limits = msg.limits as Record<string, { min: number; max: number }>;
     const shown = cmd === "get" ? Object.keys(values) : cmd === "set" ? args.map((a) => a.split("=")[0]!) : cmd === "speed" ? ["speed"] : [];
-    for (const k of shown) console.log(`${k.padEnd(24)} ${String(values[k]).padEnd(8)} (${limits[k]!.min} to ${limits[k]!.max ?? "any"})`);
+    const note = (k: string): string => (k === "world.poisonDamage" ? `  ${Number(values[k]) >= 100 ? "lethal: one bite kills" : "energy a bite takes; 100 or more kills"}` : "");
+    for (const k of shown) console.log(`${k.padEnd(24)} ${String(values[k]).padEnd(8)} (${limits[k]!.min} to ${limits[k]!.max ?? "any"})${note(k)}`);
   } else if (msg.t === "saves") {
     const saves = msg.saves as { name: string; bytes: number; population?: number; tick?: number }[];
     if (saves.length === 0) console.log("no saves");

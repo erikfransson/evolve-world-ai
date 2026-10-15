@@ -114,6 +114,20 @@ describe("add message: encode and parse", () => {
     expect(parseAdd(send({ ...asObject(), birth: { energy: 150, cost: 70, cooldown: -1 } }), r)).toMatch(/birth/);
   });
 
+  it("takes an optional mutation scale of 0.25 to 4, refuses anything else, and the added creatures carry it", () => {
+    const r = rules();
+    for (const mutationScale of [0.25, 1, 2.5, 4]) expect(parseAdd(send({ ...asObject(), mutationScale }), r)).toMatchObject({ mutationScale });
+    expect(parseAdd(send(asObject()), r)).not.toHaveProperty("mutationScale"); // a page from before 0.2.1
+    for (const mutationScale of [0, 0.2, 4.01, -1, 1e308, "2", null, [2], { v: 2 }]) expect(parseAdd(send({ ...asObject(), mutationScale }), r)).toMatch(/mutationScale/);
+    expect(parseAdd(send({ ...asObject(), mutationScale: 2, extra: 1 }), r)).toBe("wrong fields");
+    const back = parseAdd(encodeAdd(request({ mutationScale: 0.5 })), r);
+    if (typeof back === "string") throw new Error(back);
+    const w = new LiveWorld(smallConfig(), null);
+    const added = w.addCreatures(back, seq(2));
+    if (!("ids" in added)) throw new Error(added.reason);
+    for (const id of added.ids) expect(w.eco.get(id)!.mutationScale).toBe(0.5);
+  });
+
   it("cleans replies and rules from the wire", () => {
     expect(cleanAddReply({ t: "added", ids: [3, 4], name: "Zed" })).toEqual({ t: "added", ids: [3, 4], name: "Zed" });
     expect(cleanAddReply({ t: "added", ids: [3], name: "Z d" })).toBeNull();

@@ -551,7 +551,7 @@ export class LiveWorld {
     if (spots.length < req.copies) return { reason: "no free spot found, try again" };
     const ids: number[] = [];
     for (const p of spots) {
-      const res = e.insertCreature({ genome: req.genome, plan: req.plan, x: p.x, y: p.y, heading: p.heading, hue: req.hue, name: req.name, birth: req.birth, energy: LIVE.add.startEnergy }); // tunables.ts bounds it
+      const res = e.insertCreature({ genome: req.genome, plan: req.plan, x: p.x, y: p.y, heading: p.heading, hue: req.hue, name: req.name, birth: req.birth, energy: LIVE.add.startEnergy, ...(req.mutationScale !== undefined ? { mutationScale: req.mutationScale } : {}) }); // tunables.ts bounds it
       if (!res.ok) return ids.length ? { ids } : { reason: res.reason }; // checked up front, so a refusal after the first is not expected
       // Birth hold: the engine lets a creature give birth once tick - lastBirthTick >= cooldownTicks, so a last birth placed in the future
       // holds the first one back for birthHoldS. Saves keep lastBirthTick; children are spawned without it.

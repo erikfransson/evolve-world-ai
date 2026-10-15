@@ -1,4 +1,5 @@
 import { MAX_FILE_BYTES, parseCreatureFile } from "../sim/rl/creatureFile.ts";
+import { MUTATION_SCALE_RANGE } from "../sim/ecoInsert.ts";
 import { lineageName } from "./founders.ts";
 import type { Founder } from "./founders.ts";
 import { PLAN_LIMITS } from "../sim/rl/validate.ts";
@@ -28,6 +29,7 @@ interface Tuned {
   memShort: number;
   memLong: number;
   birth: Birth;
+  mutation: number; // log2 of the mutation scale: 0 is ×1, -2 is ×0.25, 2 is ×4
 }
 
 const SVG = "http://www.w3.org/2000/svg";
@@ -68,7 +70,7 @@ export function planGlyph(plan: Pick<BodyPlan, "rayCount" | "raySpread" | "rayLe
 }
 
 const deg = (r: number): number => Math.round((r * 180) / Math.PI);
-const tunedOf = (plan: BodyPlan, birth: Birth): Tuned => ({ rays: plan.rayCount, spreadDeg: deg(plan.raySpread), length: Math.round(plan.rayLength), neurons: Math.max(...plan.hiddenLayers), neuronsSet: false, memShort: plan.memoryShort, memLong: plan.memoryLong, birth: { ...birth } });
+const tunedOf = (plan: BodyPlan, birth: Birth): Tuned => ({ rays: plan.rayCount, spreadDeg: deg(plan.raySpread), length: Math.round(plan.rayLength), neurons: Math.max(...plan.hiddenLayers), neuronsSet: false, memShort: plan.memoryShort, memLong: plan.memoryLong, birth: { ...birth }, mutation: 0 });
 const planOf = (base: BodyPlan, t: Tuned): BodyPlan => ({
   rayCount: t.rays,
   raySpread: Math.max(1, t.spreadDeg) * (Math.PI / 180),
@@ -371,12 +373,14 @@ export class AddPanel {
     this.slider(birth, "birthEnergy", "Birth at energy", "It has a child when its energy reaches this.", LIVE_BIRTH.energy[0], LIVE_BIRTH.energy[1], 1, (v) => String(Math.round(v)), (v) => (t().birth.energy = v));
     this.slider(birth, "birthCost", "Birth cost", "Energy it gives its child, who starts with it.", LIVE_BIRTH.cost[0], LIVE_BIRTH.cost[1], 1, (v) => String(Math.round(v)), (v) => (t().birth.cost = v));
     this.slider(birth, "birthCooldown", "Birth cooldown", "Seconds before it can have another child.", LIVE_BIRTH.cooldown[0], LIVE_BIRTH.cooldown[1], 0.5, (v) => `${v} s`, (v) => (t().birth.cooldown = v));
+    // Log scale: each step doubles or halves at the ends, ×1 in the middle; its children inherit it exactly.
+    this.slider(birth, "mutation", "Mutation strength", "How strongly its children's brains change. Higher explores faster but loses good traits more easily.", Math.log2(MUTATION_SCALE_RANGE[0]), Math.log2(MUTATION_SCALE_RANGE[1]), 0.25, (v) => `×${Number((2 ** v).toPrecision(2))}`, (v) => (t().mutation = v));
   }
 
   private syncSliders(): void {
     const t = this.t;
     if (!t) return;
-    const values: Record<string, number> = { rays: t.rays, spread: t.spreadDeg, length: t.length, neurons: t.neurons, memShort: t.memShort, memLong: t.memLong, birthEnergy: t.birth.energy, birthCost: t.birth.cost, birthCooldown: t.birth.cooldown };
+    const values: Record<string, number> = { rays: t.rays, spread: t.spreadDeg, length: t.length, neurons: t.neurons, memShort: t.memShort, memLong: t.memLong, birthEnergy: t.birth.energy, birthCost: t.birth.cost, birthCooldown: t.birth.cooldown, mutation: t.mutation };
     for (const [id, v] of Object.entries(values)) this.sliders.get(id)?.set(v);
     const b = this.base();
     this.$("addLayers").textContent = b ? `${b.plan.hiddenLayers.length} hidden ${b.plan.hiddenLayers.length === 1 ? "layer" : "layers"}` : "";
@@ -486,7 +490,8 @@ export class AddPanel {
       genome = trained;
       if (kinds) this.trained = { ...key, genome };
     }
-    const req: AddRequest = { plan, genome, birth: { ...this.t.birth }, name, hue: this.hue, copies: this.copies };
+    const scale = Math.min(MUTATION_SCALE_RANGE[1], Math.max(MUTATION_SCALE_RANGE[0], 2 ** this.t.mutation));
+    const req: AddRequest = { plan, genome, birth: { ...this.t.birth }, name, hue: this.hue, copies: this.copies, ...(scale !== 1 ? { mutationScale: scale } : {}) };
     if (!this.hooks.send(req)) {
       this.say("Not connected to the world right now. Try again when it is back.", "error");
       return this.refresh();

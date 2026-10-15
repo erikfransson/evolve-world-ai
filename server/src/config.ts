@@ -18,6 +18,7 @@ liveConfig.world.map = "inland-sea";
 liveConfig.world.width = 30000;
 liveConfig.world.height = 18750;
 liveConfig.world.foodEnergy = 50;
+liveConfig.world.poisonDamage = 50; // a bite costs one food's worth, not the life (POISON_LETHAL is 100); see docs/tuning-notes.md
 liveConfig.world.poisonDensity = 0.01; // start counts stay at or below the caps (foodDensity 0.5 is 28 125 items)
 liveConfig.eco.initialPopulation = 0; // a fresh world is seeded with the founders file instead (founders.ts)
 liveConfig.eco.foodRegrow = 0.003;

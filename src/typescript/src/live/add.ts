@@ -1,10 +1,11 @@
 // "Add your creature" on the wire (Live World protocol 4, see protocol.ts), shared by the page and the server.
 //
-// Client to server, text: {"t":"add","plan":Plan,"genome":<base64>,"birth":{"energy","cost","cooldown"},"name":<1-16 letters or digits>,"hue":<0..360>,"copies":<1..3>}
+// Client to server, text: {"t":"add","plan":Plan,"genome":<base64>,"birth":{"energy","cost","cooldown"},"name":<1-16 letters or digits>,"hue":<0..360>,"copies":<1..3>[,"mutationScale":<0.25..4>]}
 //   plan: exactly the six creature-file plan fields within PLAN_LIMITS. genome: little-endian float32 weights in the forager (Ecosystem)
 //   layout for the plan, base64, every weight finite and within the creature-file bound. Exact keys everywhere; anything else is refused.
 // Server to client, text: Added {"t":"added","ids":[...],"name"} or Refused {"t":"refused","reason","retryS"?}.
 
+import { MUTATION_SCALE_RANGE } from "../sim/ecoInsert.ts";
 import { PLAN_LIMITS, checkGenome, checkPlan } from "../sim/rl/validate.ts";
 import { genomeLengthFor } from "../sim/rl/creatureFile.ts";
 import type { BodyPlan } from "../sim/sensors.ts";
@@ -35,6 +36,7 @@ export interface AddRequest {
   name: string;
   hue: number;
   copies: number;
+  mutationScale?: number; // how strongly its descendants' brains change, MUTATION_SCALE_RANGE; missing is 1 (a page from before 0.2.1)
 }
 
 // What the server allows, sent in the hello (null while adding is off): copies, birth trait ranges and the costs behind energy per second.
@@ -107,7 +109,7 @@ function fromBase64(s: unknown, n: number): Float32Array | null {
 
 export function encodeAdd(r: AddRequest): string {
   const plan = { rayCount: r.plan.rayCount, raySpread: r.plan.raySpread, rayLength: r.plan.rayLength, hiddenLayers: r.plan.hiddenLayers.slice(), memoryShort: r.plan.memoryShort, memoryLong: r.plan.memoryLong };
-  return JSON.stringify({ t: "add", plan, genome: toBase64(r.genome), birth: { energy: r.birth.energy, cost: r.birth.cost, cooldown: r.birth.cooldown }, name: r.name, hue: r.hue, copies: r.copies });
+  return JSON.stringify({ t: "add", plan, genome: toBase64(r.genome), birth: { energy: r.birth.energy, cost: r.birth.cost, cooldown: r.birth.cooldown }, name: r.name, hue: r.hue, copies: r.copies, ...(r.mutationScale !== undefined ? { mutationScale: r.mutationScale } : {}) });
 }
 
 const isPlain = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v) && Object.getPrototypeOf(v) === Object.prototype;
@@ -129,7 +131,8 @@ export function parseAdd(data: string, rules: AddRules): AddRequest | string {
   } catch {
     return "not JSON";
   }
-  if (!isPlain(m) || !exactKeys(m, ["t", "plan", "genome", "birth", "name", "hue", "copies"]) || m.t !== "add") return "wrong fields";
+  const keys = ["t", "plan", "genome", "birth", "name", "hue", "copies"];
+  if (!isPlain(m) || !(exactKeys(m, keys) || exactKeys(m, [...keys, "mutationScale"])) || m.t !== "add") return "wrong fields";
   if (!isPlain(m.plan) || !exactKeys(m.plan, PLAN_KEYS)) return "wrong plan fields";
   if (!Array.isArray(m.plan.hiddenLayers) || m.plan.hiddenLayers.length > L.layers[1]) return "hiddenLayers must be 1 to 4 layers of 1 to 32";
   const plan = checkPlan(m.plan);
@@ -146,7 +149,8 @@ export function parseAdd(data: string, rules: AddRules): AddRequest | string {
   if (!validName(m.name)) return `name must be 1 to ${NAME_MAX} letters or digits`;
   if (!inRange(m.hue, [0, 360])) return "hue must be 0 to 360";
   if (!Number.isInteger(m.copies) || !inRange(m.copies, [1, Math.min(MAX_COPIES, rules.maxCopies)])) return `copies must be 1 to ${Math.min(MAX_COPIES, rules.maxCopies)}`;
-  return { plan, genome: Float32Array.from(genome), birth: { energy: m.birth.energy, cost: m.birth.cost, cooldown: m.birth.cooldown }, name: m.name, hue: m.hue, copies: m.copies };
+  if (m.mutationScale !== undefined && !inRange(m.mutationScale, MUTATION_SCALE_RANGE)) return `mutationScale must be a number from ${MUTATION_SCALE_RANGE[0]} to ${MUTATION_SCALE_RANGE[1]}`;
+  return { plan, genome: Float32Array.from(genome), birth: { energy: m.birth.energy, cost: m.birth.cost, cooldown: m.birth.cooldown }, name: m.name, hue: m.hue, copies: m.copies, ...(m.mutationScale !== undefined ? { mutationScale: m.mutationScale as number } : {}) };
 }
 
 // Replies from the wire with sane values, or null.
