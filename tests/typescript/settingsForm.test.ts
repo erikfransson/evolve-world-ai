@@ -4,6 +4,8 @@ import { DEFAULT_CONFIG, withOverrides } from "../../src/typescript/src/sim/conf
 import type { DeepPartial, SimConfig } from "../../src/typescript/src/sim/config.ts";
 import { buildForm, el, rangePair, range, syncSlider } from "../../src/typescript/src/ui/settingsForm.ts";
 import type { FormHandle, FormSpec } from "../../src/typescript/src/ui/settingsForm.ts";
+import { ECO_SECTIONS } from "../../src/typescript/src/ui/ecoSettingsForm.ts";
+import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { TRIALS_FORM } from "../../src/typescript/src/ui/trialsForm.ts";
 
 const deg = (d: number): number => (d * Math.PI) / 180;
@@ -147,5 +149,20 @@ describe("settings form pieces", () => {
     mode.value = "y";
     expect(form.read().mode).toBe("y");
     expect(() => el("mode", HTMLInputElement)).toThrow(/not a/);
+  });
+});
+
+describe("Ecosystem form with a map", () => {
+  const sizeFields = ECO_SECTIONS.flatMap((s) => s.fields).filter((f) => f.id === "worldWidth" || f.id === "worldHeight");
+
+  it("the world size sliders are disabled when a map sets the size", () => {
+    expect(sizeFields).toHaveLength(2);
+    const plain = structuredClone(DEFAULT_ECO_CONFIG);
+    const mapped = structuredClone(DEFAULT_ECO_CONFIG);
+    mapped.world.map = "inland-sea";
+    for (const f of sizeFields) {
+      expect(f.enabledWhen!(plain)).toBe(true);
+      expect(f.enabledWhen!(mapped)).toBe(false);
+    }
   });
 });

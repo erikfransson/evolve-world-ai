@@ -660,8 +660,6 @@ export function buildMap(spec: MapSpec): BuiltMap {
   };
 }
 
-// Discs that fill a mask (cells at 128 or more): the cells are taken from the widest inside outwards, each uncovered one becoming the centre of a
-// disc as wide as its distance to the outside (3-4 chamfer distance), at most MASS_MAX_R, so the union follows the mask edge.
 // Marching squares of the mask at 128 on the cell centres: closed outlines as [x, y] lists in world units, the mask treated as 0 past its edge.
 function maskContours(mask: Uint8Array, cols: number, rows: number): Pt[][] {
   const value = (i: number, j: number): number => (i < 0 || j < 0 || i >= cols || j >= rows ? 0 : mask[j * cols + i]!);
@@ -778,6 +776,8 @@ function breakUp(line: readonly Pt[], salt: number): Pt[] {
   return out;
 }
 
+// Discs that fill a mask (cells at 128 or more): the cells are taken from the widest inside outwards, each uncovered one becoming the centre of a
+// disc as wide as its distance to the outside (3-4 chamfer distance), at most MASS_MAX_R, so the union follows the mask edge.
 function massDiscs(mask: Uint8Array, cols: number, rows: number): Disc[] {
   const dist = new Float32Array(cols * rows);
   for (let n = 0; n < dist.length; n++) dist[n] = mask[n]! >= 128 ? 1e9 : 0;

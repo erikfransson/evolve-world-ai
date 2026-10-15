@@ -44,6 +44,9 @@
   * `src/sim/species.ts` species of a multi-species world (own body ranges, costs, births and diet), used by the RL Arena; the Ecosystem is the one-species case
   * `src/sim/rl/` RL environments, evolution strategies learner and creature library. `src/rlTrain.ts` and `src/rlBench.ts` are its command-line entry points
   * `src/worker/` simulation workers and helpers; `renderWorker.ts` draws the Ecosystem on an OffscreenCanvas, fed snapshots by the simulation worker. It is on where the browser supports it, and the page draws instead when it is not (or with `?offscreen=0`)
+  * `src/worker/mapWorker.ts` builds a map (ground, rock) off the main thread for the pages
+  * `src/ui/landing/` the landing page cards (Live World, Ecosystem, Trials, Arena) and live stats
+  * `scripts/` build and maintenance scripts (WASM assembly, coverage badge, `pickFounders.ts`); `scripts/landing/` makes the landing images (`mapshot`, `og.jpg`)
   * `src/trials.ts`, `src/ecosystem.ts`, `src/landing.ts`, `src/arena.ts`, `src/live.ts` one entry script per page; `predators/index.html` only redirects old Great Hunt links to the landing page
   * `src/sim/wasm/` optional WebAssembly SIMD kernels (brain forward, one-call sense); `.wat` sources are assembled into `kernels.generated.ts` with `npm run wasm` (wabt), and a test fails if they drift
   * `public/pool.json` Ecosystem seed pool: 300 Trials-trained founders picked for diversity from two `node src/buildPool.ts` sweeps and the earlier pool; the file's `command` field holds the recipe (each sweep about 3 h on 6 threads)
