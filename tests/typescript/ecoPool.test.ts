@@ -284,6 +284,7 @@ describe("WebAssembly kernels", () => {
     const out = new Float32Array(64);
     let checked = 0;
     const recycledShapes = new Set<number>(); // genome lengths of creatures that took over a dead one
+    const firstId = new Map<object, number>(); // the member a creature object first served; another id later means it was recycled
     for (let t = 0; t < 600; t++) {
       // Only the detail creature keeps its brain input; the next member takes over each tick.
       const m = eco.members[t % eco.population]!;
@@ -291,7 +292,8 @@ describe("WebAssembly kernels", () => {
       eco.prepareTick();
       eco.sensePhase();
       const c = m.creature;
-      if (c.brainVersion > 0) recycledShapes.add(c.brain.genome.length);
+      if (firstId.get(c) !== undefined && firstId.get(c) !== m.id) recycledShapes.add(c.brain.genome.length);
+      firstId.set(c, firstId.get(c) ?? m.id);
       c.brain.forward(c.brain.layerActivations()[0]!, out.subarray(0, c.outputs.length));
       for (let i = 0; i < c.outputs.length; i++) expect(Math.abs(c.outputs[i]! - out[i]!)).toBeLessThan(1e-4);
       checked++;

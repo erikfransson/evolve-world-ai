@@ -18,7 +18,6 @@ import { Region, growRegion } from "./resident.ts";
 // creature given as detail (the selected one), whose rays are read back for the UI.
 
 export const MAX_RAYS = 64;
-const P_BYTES = 192;
 const SCRATCH_BYTES = 2816;
 
 interface SenseExports extends WebAssembly.Exports {
@@ -263,7 +262,7 @@ export class WasmSenser {
     const pRockXYR = this.grow(this.rRockXYR, rock.rockCount * 24 + 8);
     const pScr = this.grow(this.rScratch, SCRATCH_BYTES);
     const pDetail = this.grow(this.rDetail, 16 * MAX_RAYS);
-    const pP = this.grow(this.rP, P_BYTES);
+    const pP = this.grow(this.rP, L.S_BYTES);
     this.views(); // after the last allocation
     let { f32, i32, f64 } = this;
     if (!kernel) i32.set(crowd.cellStart, pCStart >> 2);
@@ -296,39 +295,37 @@ export class WasmSenser {
     filler.fill(rows, selves, n, world, pRec, slotsAt, pDetail, detail, stride);
     this.views(); // fill may have grown the memory
     ({ f32, i32, f64 } = this);
-    const P = pP >> 3;
-    const PF = pP >> 2;
-    f64[P] = world.width;
-    f64[P + 1] = world.height;
-    f64[P + 2] = world.itemRadius;
-    f64[P + 3] = 1 / world.cell;
-    f32[PF + 8] = 1 / crowd.cell;
-    f32[PF + 9] = crowd.radius;
-    i32[PF + 10] = world.cols;
-    i32[PF + 11] = world.rows;
-    i32[PF + 12] = this.pStart;
-    i32[PF + 14] = this.pXY;
-    i32[PF + 16] = this.pKinds;
-    i32[PF + 17] = crowd.cols;
-    i32[PF + 18] = crowd.rows;
-    i32[PF + 19] = pCStart;
-    i32[PF + 20] = pSx;
-    i32[PF + 21] = pSy;
-    i32[PF + 22] = pOwn;
-    i32[PF + 23] = pSig;
-    i32[PF + 24] = pRec;
-    i32[PF + 25] = n;
-    i32[PF + 26] = stride;
-    i32[PF + 27] = pCand;
-    i32[PF + 28] = pScr;
-    i32[PF + 29] = pSpecies;
-    f64[P + 16] = rock.maxRockR;
-    f64[P + 17] = 1 / ROCK_CELL;
-    i32[PF + 36] = rock.rockCount > 0 ? rock.cols : 0;
-    i32[PF + 37] = rock.rows;
-    i32[PF + 38] = pRockStart;
-    i32[PF + 39] = pRockOrder;
-    i32[PF + 40] = pRockXYR;
+    f64[(pP + L.S_WORLD_W) >> 3] = world.width;
+    f64[(pP + L.S_WORLD_H) >> 3] = world.height;
+    f64[(pP + L.S_ITEM_R) >> 3] = world.itemRadius;
+    f64[(pP + L.S_INV_ITEM_CELL) >> 3] = 1 / world.cell;
+    f32[(pP + L.S_INV_CROWD_CELL) >> 2] = 1 / crowd.cell;
+    f32[(pP + L.S_CROWD_R) >> 2] = crowd.radius;
+    i32[(pP + L.S_ITEM_COLS) >> 2] = world.cols;
+    i32[(pP + L.S_ITEM_ROWS) >> 2] = world.rows;
+    i32[(pP + L.S_ITEM_START) >> 2] = this.pStart;
+    i32[(pP + L.S_ITEM_XY) >> 2] = this.pXY;
+    i32[(pP + L.S_ITEM_KIND) >> 2] = this.pKinds;
+    i32[(pP + L.S_CROWD_COLS) >> 2] = crowd.cols;
+    i32[(pP + L.S_CROWD_ROWS) >> 2] = crowd.rows;
+    i32[(pP + L.S_CROWD_START) >> 2] = pCStart;
+    i32[(pP + L.S_SX) >> 2] = pSx;
+    i32[(pP + L.S_SY) >> 2] = pSy;
+    i32[(pP + L.S_OWN) >> 2] = pOwn;
+    i32[(pP + L.S_SIG) >> 2] = pSig;
+    i32[(pP + L.S_REC) >> 2] = pRec;
+    i32[(pP + L.S_N) >> 2] = n;
+    i32[(pP + L.S_STRIDE) >> 2] = stride;
+    i32[(pP + L.S_CAND) >> 2] = pCand;
+    i32[(pP + L.S_SCRATCH) >> 2] = pScr;
+    i32[(pP + L.S_SPECIES) >> 2] = pSpecies;
+    f64[(pP + L.S_ROCK_MAX_R) >> 3] = rock.maxRockR;
+    f64[(pP + L.S_INV_ROCK_CELL) >> 3] = 1 / ROCK_CELL;
+    i32[(pP + L.S_ROCK_COLS) >> 2] = rock.rockCount > 0 ? rock.cols : 0;
+    i32[(pP + L.S_ROCK_ROWS) >> 2] = rock.rows;
+    i32[(pP + L.S_ROCK_START) >> 2] = pRockStart;
+    i32[(pP + L.S_ROCK_ORDER) >> 2] = pRockOrder;
+    i32[(pP + L.S_ROCK_XYR) >> 2] = pRockXYR;
     this.exports.sense(pP);
   }
 

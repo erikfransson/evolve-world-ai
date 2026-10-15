@@ -19,7 +19,7 @@ import type { Aging } from "./physics.ts";
 import type { StatefulRng } from "./rng.ts";
 import { copyPlan, inputLayout, planOf } from "./sensors.ts";
 import type { BodyPlan, PlanView } from "./sensors.ts";
-import { Contacts, EVENT_DEATH } from "./contacts.ts";
+import { Contacts } from "./contacts.ts";
 import { checkInsert } from "./ecoInsert.ts";
 import type { InsertResult, InsertSpec } from "./ecoInsert.ts";
 import { ItemEconomy, capsOf } from "./itemEconomy.ts";
@@ -512,7 +512,7 @@ export class Ecosystem {
       const dying = scan.settle(this.table.rowAt, n);
       for (let k = 0; k < dying.length; k++) this.settleAt(dying[k]!);
     } else for (let i = n - 1; i >= 0; i--) this.settleAt(i);
-    this.contacts.slain.clear();
+    this.contacts.endTick();
     prof?.lap("settle and deaths");
 
     n = members.length;
@@ -562,7 +562,7 @@ export class Ecosystem {
     const state = this.table.states[i]!;
     settle(state);
     if (!state.alive) {
-      if (this.contacts.slain.size > 0 && this.contacts.slain.delete(state)) this.contacts.report(EVENT_DEATH, state.x, state.y, this.members[i].hue);
+      this.contacts.died(state, this.members[i]!.hue);
       this.remove(i);
     }
   }

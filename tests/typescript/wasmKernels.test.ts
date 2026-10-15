@@ -38,6 +38,12 @@ describe("wasm toolchain", () => {
     expect(L.UNITS_AT).toBe(4 * EXTRA_INPUTS); // the memory units follow the f32 extras
     expect(L.R_OUT).toBe(L.R_EXTRAS + 8 * EXTRA_INPUTS); // the f64 extras end where the i32 fields begin
     expect(EXTRA_TERRAIN).toBe(EXTRA_INPUTS - 1);
+    const sense = Object.entries(L).filter(([k]) => k.startsWith("S_") && k !== "S_BYTES").map(([k, v]) => [k, v] as const);
+    const size = (k: string): number => (/_(WORLD_W|WORLD_H|ITEM_R|INV_ITEM_CELL|ROCK_MAX_R|INV_ROCK_CELL)$/.test(k) ? 8 : 4);
+    for (const [k, v] of sense) expect(v % size(k), k).toBe(0); // naturally aligned
+    for (const [k, v] of sense) expect(v + size(k), k).toBeLessThanOrEqual(L.S_BYTES);
+    const spans = sense.map(([k, v]) => [v, v + size(k)] as const).sort((a, b) => a[0] - b[0]);
+    spans.slice(1).forEach(([from], i) => expect(from).toBeGreaterThanOrEqual(spans[i]![1])); // no two fields overlap
   });
 
   it("detects WebAssembly SIMD here", () => {

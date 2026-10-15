@@ -1,5 +1,5 @@
-// The one place that says where things sit in a resident creature row and in the fill kernel's call block. resident.ts and fillKernel.ts
-// read the offsets from here, and scripts/wasmAssemble.ts substitutes them for the {{NAME}} tokens of fill.wat, so the two sides cannot drift apart.
+// The one place that says where things sit in a resident creature row, in the 64-byte sense record and in the call blocks of the kernels (fill, step, crowd, members, sense).
+// The TypeScript side reads the offsets from here, and scripts/wasmAssemble.ts substitutes them for the {{NAME}} tokens of the .wat files, so the two sides cannot drift apart.
 // Offsets are in bytes from the start of the row or block.
 
 import { EXTRA_INPUTS } from "../sensors.ts";
@@ -49,6 +49,39 @@ export const LAYOUT = {
   REC_OFFSETS: 48,
   REC_INPUT: 52,
   REC_DETAIL: 56,
+  // call block of sense (sense.wat; the tick's item grid, crowd columns, rock tables and batch). f64 and f32 where marked, else i32 (addresses in bytes)
+  S_WORLD_W: 0, // f64
+  S_WORLD_H: 8, // f64
+  S_ITEM_R: 16, // f64
+  S_INV_ITEM_CELL: 24, // f64
+  S_INV_CROWD_CELL: 32, // f32
+  S_CROWD_R: 36, // f32
+  S_ITEM_COLS: 40,
+  S_ITEM_ROWS: 44,
+  S_ITEM_START: 48,
+  S_ITEM_XY: 56,
+  S_ITEM_KIND: 64,
+  S_CROWD_COLS: 68,
+  S_CROWD_ROWS: 72,
+  S_CROWD_START: 76,
+  S_SX: 80,
+  S_SY: 84,
+  S_OWN: 88,
+  S_SIG: 92,
+  S_REC: 96,
+  S_N: 100,
+  S_STRIDE: 104,
+  S_CAND: 108,
+  S_SCRATCH: 112,
+  S_SPECIES: 116,
+  S_ROCK_MAX_R: 128, // f64
+  S_INV_ROCK_CELL: 136, // f64
+  S_ROCK_COLS: 144,
+  S_ROCK_ROWS: 148,
+  S_ROCK_START: 152,
+  S_ROCK_ORDER: 156,
+  S_ROCK_XYR: 160,
+  S_BYTES: 192,
   // call block of fill (i32 unless noted)
   F_N: 0,
   F_ROWS: 4,

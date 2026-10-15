@@ -21,7 +21,7 @@ export const BIG_IMPACT = 15;
 // What creatures do to each other and to items in the shared phase of a tick: eating, hunting and collisions, with their events. Works on the Ecosystem's
 // member table, crowd grid and items; the counters of eaten items stay with the Ecosystem, which reads them off eatAt.
 export class Contacts {
-  readonly slain = new Set<CreatureState>(); // killed by a bump or a hunt this tick
+  private readonly slain = new Set<CreatureState>(); // killed by a bump or a hunt this tick
   private readonly config: EcoConfig;
   private readonly items: World;
   private readonly crowd: Crowd;
@@ -198,9 +198,19 @@ export class Contacts {
     if (b.energy <= 0) this.slain.add(b);
   }
 
-  report(kind: number, x: number, y: number, value: number): void {
+  private report(kind: number, x: number, y: number, value: number): void {
     if (this.eventCount >= EVENT_CAP) return;
     this.events.set([kind, x, y, value], this.eventCount++ * EVENT_STRIDE);
+  }
+
+  // A creature has died in settle (state, hue): reports its death as an event when a bump or a hunt killed it.
+  died(state: CreatureState, hue: number): void {
+    if (this.slain.size > 0 && this.slain.delete(state)) this.report(EVENT_DEATH, state.x, state.y, hue);
+  }
+
+  // The end of the tick's deaths: forgets the creatures killed this tick that settle did not meet.
+  endTick(): void {
+    this.slain.clear();
   }
 
   // The events since the last call, or null for none.

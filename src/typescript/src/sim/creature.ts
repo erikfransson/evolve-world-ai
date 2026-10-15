@@ -33,7 +33,6 @@ export class Creature {
   readonly brain: Brain;
   readonly heading: Heading;
   aging: Aging | null = null; // old-age upkeep, set by the owner
-  brainVersion = 0; // counts resets
   kernelSlot = -1; // this creature's brain slot in kernelOwner, the SenseKernels that last ran it
   kernelOwner: SenseKernels | null = null;
 
@@ -188,7 +187,6 @@ export class Creature {
     const sizes = layerSizes(this.config, this.ownPlan);
     this.brain.load(sizes, genome);
     this.fitPlan(sizes);
-    this.brainVersion++;
     const s = this.state;
     s.x = x;
     s.y = y;
