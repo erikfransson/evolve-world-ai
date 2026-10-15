@@ -412,7 +412,7 @@ export class LiveWorld {
       frameHz: 5,
       dt: this.config.dt,
       itemSlots: this.eco.world.count,
-      summary: { initialPopulation: eco.initialPopulation, maxPopulation: eco.maxPopulation, collisionDamage: eco.collisionDamage, seasons: eco.seasons, ...(eco.initialPopulation === 0 ? { seedCopies: SEED_COPIES } : {}) },
+      summary: { initialPopulation: eco.initialPopulation, maxPopulation: eco.maxPopulation, collisionDamage: eco.collisionDamage, seasons: eco.seasons, ...(eco.initialPopulation === 0 ? { seedCopies: SEED_COPIES } : {}), foodEnergy: this.eco.config.world.foodEnergy, poisonDamage: this.eco.config.world.poisonDamage },
       maxViewers,
       add: this.currentAddRules(),
       map: this.map,

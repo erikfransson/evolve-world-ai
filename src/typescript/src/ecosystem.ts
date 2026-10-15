@@ -1,3 +1,4 @@
+import { readyTerrainOf } from "./sim/terrain.ts";
 import "./base.css";
 import "./style.css";
 import "./ecosystem.css";
@@ -13,7 +14,7 @@ import { buildSelectedBrain } from "./ui/ecoBrain.ts";
 import type { SelectedBrain } from "./ui/ecoBrain.ts";
 import { bindGentle, readGentle } from "./ui/gentle.ts";
 import { createEcoView } from "./ui/ecoPage.ts";
-import { syncTerrainLegend } from "./ui/terrainLegend.ts";
+import { paintTerrainLegend, syncTerrainLegend } from "./ui/terrainLegend.ts";
 import { ECOSYSTEM_PAGE, openingConfig } from "./ui/ecoModes.ts";
 import { ecoBody } from "./ui/ecoMarkup.ts";
 import { PageMaps } from "./ui/pageMaps.ts";
@@ -118,9 +119,15 @@ function loadMap(): void {
     } else if (host && !mapShown) {
       host.useMap(m);
       mapShown = true; // after useMap: when it throws, a run's map message gets another go
+      paintTerrainLegend(pageMaps.terrain);
       drawIdle();
     }
   });
+}
+
+// A random map's legend swatches, from its terrain (cached by its settings), a moment after a change so a form drag stays smooth.
+function paintRandomLegend(c: EcoConfig): void {
+  if (!c.world.map) setTimeout(() => config === c && paintTerrainLegend(readyTerrainOf(c)), 50);
 }
 
 let species = speciesList(config); // the config's species, resolved
@@ -128,6 +135,7 @@ function setConfig(c: EcoConfig): void {
   config = c;
   species = speciesList(c);
   syncTerrainLegend(c);
+  paintRandomLegend(c);
   loadMap();
 }
 
@@ -437,6 +445,7 @@ showRays = view.showRays();
 bindGentle(document.getElementById("gentle") as HTMLInputElement, (gentle) => send({ type: "gentle", gentle }));
 view.fillConfig(NORMAL);
 syncTerrainLegend(NORMAL);
+paintRandomLegend(NORMAL);
 new ResizeObserver(drawIdle).observe(view.canvas);
 drawIdle();
 requestAnimationFrame(frame);

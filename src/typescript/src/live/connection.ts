@@ -102,7 +102,10 @@ export function cleanHello(h: Hello): Hello | null {
   const ok = isObj(h.world) && n(h.world.width) > 0 && n(h.world.height) > 0 && n(h.radius) > 0 && n(h.dt) > 0 && n(h.fullEnergy) > 0 && int(h.itemSlots, 0, MAX_ITEM_SLOTS);
   const s: Record<string, unknown> = isObj(h.summary) ? h.summary : {};
   const seedCopies = int(s.seedCopies, 1, 100) ? (s.seedCopies as number) : undefined;
-  const summary = { initialPopulation: count(s.initialPopulation), maxPopulation: count(s.maxPopulation), collisionDamage: s.collisionDamage === true, seasons: s.seasons === true, ...(seedCopies ? { seedCopies } : {}) };
+  const energy = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 10_000 ? v : undefined);
+  const foodEnergy = energy(s.foodEnergy);
+  const poisonDamage = energy(s.poisonDamage);
+  const summary = { initialPopulation: count(s.initialPopulation), maxPopulation: count(s.maxPopulation), collisionDamage: s.collisionDamage === true, seasons: s.seasons === true, ...(seedCopies ? { seedCopies } : {}), ...(foodEnergy !== undefined ? { foodEnergy } : {}), ...(poisonDamage !== undefined ? { poisonDamage } : {}) };
   return ok ? { ...h, summary, add: cleanAddRules(h.add), map: cleanMap(h.map) } : null;
 }
 

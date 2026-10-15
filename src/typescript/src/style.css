@@ -162,6 +162,8 @@ fieldset:disabled .tip { cursor: help; }
 .legend li { display: flex; align-items: center; gap: 0.45em; }
 .legend li[hidden] { display: none; }
 .legend svg { flex: none; width: 1.1em; height: 1.1em; }
+.legend .lg-small { flex: none; display: grid; place-items: center; width: 30px; height: 20px; border-radius: 4px; overflow: hidden; background: #10291f; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1); } /* a swatch cut from the map (ui/mapSwatch.ts), or the drawn icon until then */
+.legend .lg-small canvas { display: block; width: 30px; height: 20px; }
 .ov-legend { background: var(--card); } /* solid, so the world border does not show through */
 .ov-brain { background: color-mix(in srgb, var(--card) 95%, transparent); }
 .ov-brain .ov-body { padding: 0 0.4rem 0.4rem; }

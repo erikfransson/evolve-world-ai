@@ -70,7 +70,9 @@ export interface Hello {
   frameHz: number;
   dt: number; // simulated seconds per tick
   itemSlots: number; // item slot capacity, at most MAX_ITEM_SLOTS
-  summary: { initialPopulation: number; maxPopulation: number; collisionDamage: boolean; seasons: boolean; seedCopies?: number }; // seedCopies: a fresh world starts with this many of each starter founder
+  // seedCopies: a fresh world starts with this many of each starter founder. foodEnergy, poisonDamage: energy a bite of each gives or
+  // takes (poisonDamage POISON_LETHAL or more kills), for the legend.
+  summary: { initialPopulation: number; maxPopulation: number; collisionDamage: boolean; seasons: boolean; seedCopies?: number; foodEnergy?: number; poisonDamage?: number };
   maxViewers: number;
   add: AddRules | null; // what an add may ask for, null while adding is off
   map: WireMap; // what the page's info section says about the ground

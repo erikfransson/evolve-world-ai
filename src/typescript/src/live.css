@@ -162,8 +162,13 @@ body:has(.layout.live) { height: auto; min-height: 100%; }
 .info-col h3 { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.09em; color: var(--accent); }
 .info-col h3:not(:first-child) { margin-top: 0.8rem; }
 .info-legend { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.55rem; font-size: 0.85rem; }
-.info-legend li { display: flex; align-items: center; gap: 0.6rem; }
-.info-legend svg { flex: none; width: 1.3rem; height: 1.3rem; }
+.info-legend li { display: flex; align-items: center; gap: 0.7rem; }
+.info-legend li[hidden] { display: none; }
+.info-legend .lg-head { margin-top: 0.5rem; color: var(--muted); font-size: 0.68rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; }
+.info-legend .lg-head:first-child { margin-top: 0; }
+/* A tile of the map itself (live/mapLegend.ts) or the page's own item and creature drawing, on the map's plain ground. */
+.lg-tile { flex: none; width: 48px; height: 32px; border-radius: 6px; overflow: hidden; background: #10291f; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08); }
+.lg-tile svg, .lg-tile canvas { display: block; width: 48px; height: 32px; }
 .info-dim { color: var(--muted); }
 .info-note { margin: 0; color: var(--muted); font-size: 0.8rem; line-height: 1.45; }
 .info-note:empty { display: none; }
@@ -175,8 +180,8 @@ body:has(.layout.live) { height: auto; min-height: 100%; }
 .share-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--border-hi); }
 .share-bar span { min-width: 3px; }
 .bar-normal { background: #2f7a58; }
-.bar-mud { background: rgba(92, 118, 170, 0.9); }
-.bar-firm { background: rgba(214, 196, 84, 0.8); }
+.bar-mud { background: #7a6844; } /* the map's mud and firm ground, lightened to read as a bar */
+.bar-firm { background: #a9a476; }
 .bar-rock { background: #7b8982; }
 .info-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
 .info-table th { text-align: left; padding: 0 0.5rem 0.35rem 0; color: var(--muted); font-weight: 500; border-bottom: 1px solid var(--border-hi); }

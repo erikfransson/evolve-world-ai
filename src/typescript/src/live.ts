@@ -36,6 +36,7 @@ import { AddPanel } from "./live/addPanel.ts";
 import { parseFounders } from "./live/founders.ts";
 import { renderMapInfo } from "./live/mapInfo.ts";
 import { MapCache } from "./live/mapTerrain.ts";
+import { paintMapLegend } from "./live/mapLegend.ts";
 import { mapVersion } from "./sim/maps/index.ts";
 
 // TODO(L6): admin panel. `?admin` opens a second socket to the owner's loopback admin port (ws://127.0.0.1:8788), sends {t:"auth", token}
@@ -245,7 +246,10 @@ function showMap(h: Hello): void {
   renderStats();
   if (mapStale) return;
   void maps.get(name, h.world.width, h.world.height).then((t) => {
-    if (t && draw === d) d!.map = t; // a newer hello has its own
+    if (t && draw === d) {
+      d!.map = t; // a newer hello has its own
+      paintMapLegend($("info"), t);
+    }
   });
 }
 
