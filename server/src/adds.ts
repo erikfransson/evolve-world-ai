@@ -6,6 +6,9 @@ import { LIVE } from "./config.ts";
 const ADD_BURST = 2; // adds a connection may send at once, then one per add.socketEveryS
 const ADD_STRIKES = 3; // adds past the rate a connection may send (one more each minute) before it counts as a flood: a page with stale rules stays
 
+// "per 5 minutes", "per 90 s": the window as a visitor reads it.
+const per = (windowS: number): string => (windowS % 60 === 0 ? `per ${windowS / 60 === 1 ? "minute" : `${windowS / 60} minutes`}` : `per ${Math.round(windowS)} s`);
+
 // Adding is off while the admin set no room for it; the hello and rules then carry no rules.
 export const addingOn = (): boolean => LIVE.add.perWindow > 0 && LIVE.add.aliveShare > 0;
 
@@ -87,7 +90,7 @@ export class AddGate {
     if (world.speed < a.minSpeed) return { t: "refused", reason: "the world is busy, try again in 30 s", retryS: 30 };
     if (world.aliveAdded + copies > Math.max(a.aliveFloor, Math.floor(a.aliveShare * world.population))) return { t: "refused", reason: "enough added creatures are alive right now, try again in a few minutes", retryS: 120 };
     const g = this.wait(this.global, a.perWindow, copies, windowMs);
-    if (g) return Number.isFinite(g) ? { t: "refused", reason: `the world is busy with new creatures, try again in ${g} s`, retryS: g } : { t: "refused", reason: `at most ${a.perWindow} creatures go in per window, ask for fewer copies` };
+    if (g) return Number.isFinite(g) ? { t: "refused", reason: `the world is busy with new creatures, try again in ${g} s`, retryS: g } : { t: "refused", reason: a.perWindow > 0 ? `at most ${a.perWindow} creatures go in ${per(a.windowS)}, ask for fewer copies` : "adding is off right now" };
     if (visitor !== null) {
       const list = this.visitors.get(visitor);
       if (list) {
@@ -95,7 +98,7 @@ export class AddGate {
         if (!list.length) this.visitors.delete(visitor);
       }
       const v = this.wait(list ?? [], a.perVisitor, copies, windowMs);
-      if (v) return Number.isFinite(v) ? { t: "refused", reason: `you added creatures a moment ago, try again in ${v} s`, retryS: v } : { t: "refused", reason: a.perVisitor > 0 ? `at most ${a.perVisitor} creatures per visitor per window, ask for fewer copies` : "adding is off right now" };
+      if (v) return Number.isFinite(v) ? { t: "refused", reason: `you added creatures a moment ago, try again in ${v} s`, retryS: v } : { t: "refused", reason: a.perVisitor > 0 ? `at most ${a.perVisitor} creatures per visitor ${per(a.windowS)}, ask for fewer copies` : "adding is off right now" };
     }
     return null;
   }

@@ -205,7 +205,9 @@ describe("add caps (adds.ts)", () => {
     const gate = new AddGate(clock().now);
     LIVE.add.perVisitor = 2;
     LIVE.add.maxCopies = 3;
-    expect(gate.check("v", 3, fresh)?.reason).toMatch(/at most 2 creatures per visitor/);
+    expect(gate.check("v", 3, fresh)?.reason).toBe("at most 2 creatures per visitor per 5 minutes, ask for fewer copies");
+    LIVE.add.perWindow = 0; // turned off while an add waited for its tick
+    expect(gate.check(null, 1, fresh)?.reason).toBe("adding is off right now");
   });
 
   it("per visitor: 3 creatures per window per address, other addresses unaffected, unknown address not limited per visitor", () => {
