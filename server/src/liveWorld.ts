@@ -18,6 +18,8 @@ import { LIMITS, LIVE, MAX_POPULATION, MAX_SEED_FOUNDERS, SEED_COPIES, itemHeadr
 import type { SeedFounder } from "./founders.ts";
 import { mapRegions } from "../../src/typescript/src/live/mapRegions.ts";
 import { mapVersion } from "../../src/typescript/src/sim/maps/index.ts";
+import { OtherWorld, otherWorldReason } from "./saveParse.ts";
+import type { Home } from "./saveParse.ts";
 import { BLANKED, STARTER_MARK, wireName } from "../../src/typescript/src/live/add.ts";
 import type { AddRequest, AddRules } from "../../src/typescript/src/live/add.ts";
 import { fullEnergy } from "../../src/typescript/src/sim/species.ts";
@@ -33,7 +35,7 @@ interface Capture {
 }
 
 // A save of another world (size or map) than the one this server runs, e.g. after the server moved to a new map.
-export class OtherWorld extends Error {}
+export { OtherWorld }; // saveParse.ts; re-exported for the callers that know it from here
 
 // The shared world: one Ecosystem stepped against the clock, on this thread or with helper threads that sense and think.
 // With helpers a tick awaits them, so everything else that reads or changes the world goes through whenIdle, between ticks.
@@ -544,14 +546,18 @@ export class LiveWorld {
     return saveState(this.eco);
   }
 
+  // The world this server runs, as a save must match it (saveParse.ts otherWorldReason).
+  homeWorld(): Home {
+    const h = this.home;
+    return { ...h, mapVersion: h.map ? mapVersion(h.map) : "" };
+  }
+
   // Replaces the world with the saved one. Throws, and leaves the running world alone, if the state is invalid
   // or needs WebAssembly kernels this machine lacks. Viewers then need a fresh hello.
   restoreState(state: EcoState): void {
-    const w = state.config?.world;
-    const h = this.home;
-    if (!w || w.width !== h.width || w.height !== h.height || (w.map ?? "") !== h.map) throw new OtherWorld(`it is a ${w?.width} x ${w?.height} world${w?.map ? ` (${w.map})` : " without a map"}, this server runs ${h.width} x ${h.height}${h.map ? ` (${h.map})` : " without a map"}; the save is kept`);
-    // A save made on other map data under the same name is of another world too, so startup starts fresh instead of retrying it.
-    if (h.map && state.mapVersion !== undefined && state.mapVersion !== mapVersion(h.map)) throw new OtherWorld(`it was made on another version of the map ${h.map} (${String(state.mapVersion).slice(0, 16)}, this server runs ${mapVersion(h.map)}); the save is kept`);
+    // A save of another size, map or map data is of another world, so startup starts fresh instead of retrying it.
+    const other = otherWorldReason(state, this.homeWorld());
+    if (other) throw new OtherWorld(other);
     const eco = restoreState(state, this.pool, { journal: this.helpers !== null });
     const maxPopulation = Math.min(eco.config.eco.maxPopulation, MAX_POPULATION); // older saves allowed more
     const birthReserve = Math.min(eco.config.eco.birthReserve, Math.max(0, maxPopulation - 1)); // a reserve at the cap would stop every birth

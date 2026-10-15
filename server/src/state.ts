@@ -4,6 +4,7 @@ import { gzip, gzipSync } from "node:zlib";
 import { promisify } from "node:util";
 import { LIMITS } from "./config.ts";
 import { parseSave } from "./saveParse.ts";
+import type { Home } from "./saveParse.ts";
 import type { EcoState } from "../../src/typescript/src/sim/ecoState.ts";
 
 // Saves are `world-<UTC timestamp>.json.gz` (gzipped JSON of the engine's saveState) with a small sidecar `world-<timestamp>.meta.json`
@@ -152,9 +153,10 @@ export class StateStore {
 
   // The checked state of a save, parsed on a worker (saveParse.ts). The name must be one the listing shows (pattern, regular file, not from the future),
   // never a path from the caller. Rejects on a missing, special or oversized file, a gzip that unpacks past the cap, bad JSON or an invalid state.
-  async read(name: unknown): Promise<EcoState> {
+  // home: a save of another world rejects with OtherWorld (saveParse.ts) before the engine's checks.
+  async read(name: unknown, home?: Home): Promise<EcoState> {
     if (!isSaveName(name)) throw new Error("not a save name");
     if (!this.list().some((s) => s.name === name)) throw new Error("no such save");
-    return parseSave(readRegularFile(join(this.dir, name), LIMITS.maxSaveJsonBytes), LIMITS.maxSaveJsonBytes);
+    return parseSave(readRegularFile(join(this.dir, name), LIMITS.maxSaveJsonBytes), LIMITS.maxSaveJsonBytes, false, home);
   }
 }

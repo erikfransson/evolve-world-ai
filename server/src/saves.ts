@@ -56,7 +56,7 @@ export class Saves {
   }
 
   private async restore(name: string): Promise<string> {
-    const state = await this.store.read(name);
+    const state = await this.store.read(name, this.live.homeWorld());
     await this.live.whenIdle(() => this.live.restoreState(state)); // throws, and keeps the running world, when the save is unusable
     return `${name}: tick ${this.live.eco.tick}, ${this.live.eco.population} creatures`;
   }

@@ -314,7 +314,7 @@ describe("restoring at a new world", () => {
     await store.write(JSON.stringify(same.saveState()), { population: 0, tick: 1 }, new Date(now - 60_000)); // older, of this world
     await store.write(JSON.stringify(a.saveState()), { population: a.eco.population, tick: a.eco.tick }, new Date(now));
     const live = freshSmall();
-    expect(() => live.restoreState(a.saveState())).toThrow(/2100 x 1300 world without a map, this server runs 2000 x 1300 without a map/);
+    expect(() => live.restoreState(a.saveState())).toThrow(/2100 x 1300 world without a map, this server runs 2000 x 1300 world without a map/);
     const lines: string[] = [];
     expect(await new Saves(live, store).restoreNewest((l) => lines.push(l))).toBe("fresh");
     expect(lines).toHaveLength(3); // the older save is not tried: past a save of another world all are taken to be older worlds
@@ -324,6 +324,25 @@ describe("restoring at a new world", () => {
     expect(store.list()).toHaveLength(2);
     expect(live.eco.tick).toBe(0);
   });
+});
+
+describe("restoring Inland Sea saves of another size or map data", () => {
+  it("counts them as other worlds at startup (the parse worker checks before the engine), so the server starts fresh", async () => {
+    const live = new LiveWorld(structuredClone(liveConfig), null);
+    const state = live.saveState();
+    const bigger = structuredClone(state);
+    bigger.config.world.width = 40000;
+    bigger.config.world.height = 25000;
+    const older = { ...structuredClone(state), mapVersion: "00000000" };
+    for (const [save, why] of [[bigger, /40000 x 25000 world \(inland-sea\), this server runs 30000 x 18750 world \(inland-sea\)/], [older, /another version of the map inland-sea/]] as const) {
+      const store = new StateStore(tmp());
+      await store.write(JSON.stringify(save), { population: 0, tick: 0 }, new Date());
+      const lines: string[] = [];
+      expect(await new Saves(live, store).restoreNewest((l) => lines.push(l))).toBe("fresh");
+      expect(lines[0]).toMatch(why);
+      expect(store.list()).toHaveLength(1);
+    }
+  }, 120_000);
 });
 
 describe("admin overrides across a move to a new world", () => {
