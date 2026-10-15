@@ -79,6 +79,27 @@ describe("ground bitmaps of a patch larger than one bitmap", () => {
     expect([paints(), bitmaps.length - made]).toEqual([0, 0]);
   });
 
+  it("on a zoom in draws from the tier just left and paints nothing live while the new tier is baked", async () => {
+    const { frame, settle } = await inlandSea();
+    settle(0.05); // tier 0.08 covers the whole map
+    drawn.length = 0;
+    const made = bitmaps.length;
+    for (let i = 0; i < 4; i++) frame(0.1); // tier 0.16, not yet baked
+    expect([paints(), bitmaps.length - made]).toEqual([0, 4]);
+  });
+
+  it("on a zoom out paints live what the tier just left does not cover, then settles", async () => {
+    const { frame, settle } = await inlandSea();
+    settle(0.3); // tier 0.32: only the tiles of a small view
+    drawn.length = 0;
+    frame(0.05);
+    expect(paints()).toBeGreaterThan(0);
+    settle(0.05);
+    drawn.length = 0;
+    frame(0.05);
+    expect(paints()).toBe(0);
+  });
+
   it("holds at most the pixel budget however the scale changes", async () => {
     const { settle, pixels } = await inlandSea();
     for (const s of [0.02, 0.05, 0.1, 0.2, 0.3, 0.05, 0.3]) {

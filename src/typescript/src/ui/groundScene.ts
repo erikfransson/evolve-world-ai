@@ -251,6 +251,7 @@ interface Tile {
   y: number;
   w: number;
   h: number;
+  whole: boolean; // the patch is this one bitmap, drawn as it is
 }
 interface Grid {
   ox: number; // world position of the patch bitmap's corner
@@ -322,7 +323,7 @@ function bake(store: Baked, ts: TierStore, g: Grid, patch: Patch, i: number, j: 
   c.lineJoin = "round";
   paintPatch(c, patch, tier);
   rasterNow(image);
-  return { image, sx: pad, sy: pad, sw, sh, x: g.ox + x0 / tier, y: g.oy + y0 / tier, w: sw / tier, h: sh / tier };
+  return { image, sx: pad, sy: pad, sw, sh, x: g.ox + x0 / tier, y: g.oy + y0 / tier, w: sw / tier, h: sh / tier, whole };
 }
 
 // The store of a tier, made the most recently used.
@@ -333,11 +334,12 @@ function touch(store: Baked, tier: number): TierStore {
   return ts;
 }
 
-// Draws the tiles of a patch that are in view, baking those not yet made while left allows. False when a tile in view is missing, then the caller paints the patch live.
-function drawBaked(ctx: CanvasRenderingContext2D, store: Baked, ts: TierStore, patch: Patch, view: View, left: { n: number }): boolean {
+// The tiles of a patch in view at a tier, baking those not yet made while left allows (never with left null, then a missing grid counts as a missing tile). Null when one is missing.
+function tilesIn(store: Baked, ts: TierStore, patch: Patch, view: View, left: { n: number } | null): Tile[] | null {
   const tier = ts.tier;
   let g = ts.grids.get(patch);
-  if (!g) ts.grids.set(patch, (g = gridOf(tier, patch)));
+  if (!g && left) ts.grids.set(patch, (g = gridOf(tier, patch)));
+  if (!g) return null;
   const tiled = g.cols * g.rows > 1;
   const wanted: Tile[] = [];
   for (let j = 0; j < g.rows; j++) {
@@ -348,14 +350,23 @@ function drawBaked(ctx: CanvasRenderingContext2D, store: Baked, ts: TierStore, p
         if (x > view.x1 || y > view.y1 || x + TILE_BODY / tier < view.x0 || y + TILE_BODY / tier < view.y0) continue;
       }
       const k = j * g.cols + i;
-      const tile = g.tiles[k] ?? (g.tiles[k] = bake(store, ts, g, patch, i, j, left) ?? undefined);
-      if (!tile) return false;
+      const tile = g.tiles[k] ?? (left ? (g.tiles[k] = bake(store, ts, g, patch, i, j, left) ?? undefined) : undefined);
+      if (!tile) return null;
       wanted.push(tile);
     }
   }
-  const m = tiled ? ctx.getTransform() : null;
+  return wanted;
+}
+
+// Draws a patch from its bitmaps at this tier, baking what is missing while left allows. While a tile in view is still missing it is drawn, scaled, from the most recently used other tier
+// that has all of its tiles in view (on a zoom in, the tier just left), and only when none has does this return false and the caller paints the patch live.
+function drawBaked(ctx: CanvasRenderingContext2D, store: Baked, ts: TierStore, patch: Patch, view: View, left: { n: number }): boolean {
+  let wanted = tilesIn(store, ts, patch, view, left);
+  if (!wanted) for (const other of [...store.tiers.values()].reverse()) if (other !== ts && (wanted = tilesIn(store, other, patch, view, null))) break;
+  if (!wanted) return false;
+  const m = wanted.some((t) => !t.whole) ? ctx.getTransform() : null;
   for (const t of wanted) {
-    if (!m || m.b !== 0 || m.c !== 0) ctx.drawImage(t.image as CanvasImageSource, t.sx, t.sy, t.sw, t.sh, t.x, t.y, t.w, t.h);
+    if (t.whole || !m || m.b !== 0 || m.c !== 0) ctx.drawImage(t.image as CanvasImageSource, t.sx, t.sy, t.sw, t.sh, t.x, t.y, t.w, t.h);
     else {
       // Neighbouring tiles share whole device pixel edges, so no hairline shows between them.
       const dx = Math.round(m.a * t.x + m.e);
