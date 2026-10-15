@@ -17,6 +17,7 @@ import type { DeepPartial } from "./sim/config.ts";
 import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "./sim/ecoConfig.ts";
 import type { EcoConfig } from "./sim/ecoConfig.ts";
 import { Ecosystem } from "./sim/ecosystem.ts";
+import "./sim/maps/index.ts"; // for --preset inland-sea
 import { PhaseTimer } from "./sim/profile.ts";
 import { ECO_PRESETS, PREDATOR_PRESETS, withEcoPreset } from "./sim/presets.ts";
 import { parsePool } from "./sim/seedPool.ts";

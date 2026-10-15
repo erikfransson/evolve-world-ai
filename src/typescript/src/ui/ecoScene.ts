@@ -4,6 +4,7 @@ import type { Camera } from "./camera.ts";
 import { HUNTER_REACH, hunterPath } from "./speciesStyle.ts";
 import type { BirthRings } from "./ecoBirths.ts";
 import type { ImpactEffects } from "./ecoImpacts.ts";
+import "../sim/maps/index.ts"; // this thread builds a named map itself
 import { terrainOf } from "../sim/terrain.ts";
 import type { Terrain } from "../sim/terrain.ts";
 import type { TerrainSettings } from "../sim/terrain.ts";

@@ -3,10 +3,9 @@ import { createRng, deriveSeed } from "./rng.ts";
 import type { StatefulRng } from "./rng.ts";
 import type { Body } from "./physics.ts";
 import { buildGroundField, GroundField } from "./groundField.ts";
-import { builtMap, mapSpec } from "./maps/index.ts";
-import type { MapWeights } from "./maps/mapBuild.ts";
 import { packMap, unpackMap } from "./maps/mapParts.ts";
 import type { MapParts } from "./maps/mapParts.ts";
+import type { MapWeights } from "./maps/weights.ts";
 
 // Static map features (#34), generated deterministically from the run seed and the world settings, so every thread that builds
 // the world gets the same ones. Rock (stones and ridges) is a set of discs that creatures bounce off like walls and rays report
@@ -39,6 +38,17 @@ export const MAX_PIECES = 300; // pieces of one kind, however high the setting, 
 // The most the settings forms allow for each density; a saved or pasted config above these is refused.
 export const MAP_DENSITY_MAX = { stoneDensity: 0.2, ridgeDensity: 0.15, slowDensity: 0.3, fastDensity: 0.3 } as const;
 
+// The hand-designed maps, made known by importing maps/index.ts. Only the code that runs a map imports it, so Trials and the Arena leave out
+// the map generator and the specs, and a thread seeded with a map's arrays (seedMapTerrain) never needs them.
+export interface MapSource {
+  spec(name: string): { width: number; height: number } | undefined;
+  built(name: string): { rock: readonly Circle[]; ground: GroundField; weights: MapWeights };
+}
+let maps: MapSource | null = null;
+export function registerMaps(source: MapSource): void {
+  maps = source;
+}
+
 // Throws when a world's map densities are not numbers in 0 .. the form's maximum. Used by every path that reads settings from outside.
 export function checkMapDensities(world: object): void {
   for (const [key, max] of Object.entries(MAP_DENSITY_MAX)) {
@@ -52,9 +62,9 @@ export function checkMapSettings(world: object): void {
   checkMapDensities(world);
   const { map, width, height } = world as { map?: unknown; width?: unknown; height?: unknown };
   if (map !== undefined && map !== "") {
-    const spec = typeof map === "string" ? mapSpec(map) : undefined;
+    const spec = typeof map === "string" ? maps?.spec(map) : undefined;
     if (!spec) throw new Error(`config "world.map" must be "" or the name of a map`);
-    if (width !== spec.width || height !== spec.height) throw new Error(`config "world.map" ${spec.name} needs a world of ${spec.width} x ${spec.height}`);
+    if (width !== spec.width || height !== spec.height) throw new Error(`config "world.map" ${map} needs a world of ${spec.width} x ${spec.height}`);
   }
   for (const key of ["slowSize", "fastSize"]) {
     const v = (world as Record<string, unknown>)[key];
@@ -86,7 +96,7 @@ export class Terrain {
   readonly rockOrder: Int32Array;
   // Mud and firm ground as a raster field; null when the map has none.
   readonly ground: GroundField | null;
-  // Food and poison weights of a hand-designed map (see maps/mapBuild.ts); null for the random map, where items spread evenly.
+  // Food and poison weights of a hand-designed map (see maps/weights.ts); null for the random map, where items spread evenly.
   readonly weights: MapWeights | null;
   readonly empty: boolean; // no rock and no patches
 
@@ -415,14 +425,15 @@ const mapTerrains = new Map<string, Terrain>(); // by map name; few and large, s
 
 // The Terrain of a named map, which does not depend on the seed. Throws for an unknown name or a world of the wrong size.
 export function mapTerrain(name: string, width: number, height: number): Terrain {
-  const spec = mapSpec(name);
-  if (!spec) throw new Error(`unknown map "${name}"`);
-  if (width !== spec.width || height !== spec.height) throw new Error(`map ${name} needs a world of ${spec.width} x ${spec.height}`);
   let t = mapTerrains.get(name);
   if (!t) {
-    const b = builtMap(name);
+    if (!maps) throw new Error(`map "${name}" needs maps/index.ts to be imported`);
+    const spec = maps.spec(name);
+    if (!spec) throw new Error(`unknown map "${name}"`);
+    if (width !== spec.width || height !== spec.height) throw new Error(`map ${name} needs a world of ${spec.width} x ${spec.height}`);
+    const b = maps.built(name);
     mapTerrains.set(name, (t = new Terrain(b.rock, b.ground, width, height, b.weights)));
-  }
+  } else if (width !== t.width || height !== t.height) throw new Error(`map ${name} needs a world of ${t.width} x ${t.height}`);
   return t;
 }
 
@@ -434,8 +445,6 @@ export function mapPartsOf(config: TerrainSettings): MapParts | null {
 
 // Makes terrainOf use these arrays for a named map instead of building it, unless this thread already has the map. Throws when they do not fit the map's raster.
 export function seedMapTerrain(name: string, width: number, height: number, parts: MapParts): void {
-  const spec = mapSpec(name);
-  if (!spec || spec.width !== width || spec.height !== height) throw new Error(`unknown map "${name}"`);
   const map = unpackMap(width, height, parts);
   if (!mapTerrains.has(name)) mapTerrains.set(name, new Terrain(map.rock, map.ground, width, height, map.weights));
 }

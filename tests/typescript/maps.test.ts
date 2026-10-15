@@ -6,7 +6,8 @@ import type { EcoState } from "../../src/typescript/src/sim/ecoState.ts";
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
 import { createRng } from "../../src/typescript/src/sim/rng.ts";
 import { MAPS, builtMap, mapVersion } from "../../src/typescript/src/sim/maps/index.ts";
-import { buildMap, CAP_CELL, WEIGHT_UNIT } from "../../src/typescript/src/sim/maps/mapBuild.ts";
+import { buildMap } from "../../src/typescript/src/sim/maps/mapBuild.ts";
+import { CAP_CELL, discsBlocked, MapWeights, WEIGHT_UNIT } from "../../src/typescript/src/sim/maps/weights.ts";
 import type { MapSpec } from "../../src/typescript/src/sim/maps/mapBuild.ts";
 import { withEcoPreset } from "../../src/typescript/src/sim/presets.ts";
 import { terrainOf } from "../../src/typescript/src/sim/terrain.ts";
@@ -187,6 +188,24 @@ describe("weighted items and local caps", () => {
     expect(w.open.some((o) => o === 0)).toBe(true); // cells inside the cliff massif are all rock
     expect(Math.min(...w.open)).toBeLessThan(0.9);
     expect(w.capCols).toBe(SEA.width / CAP_CELL);
+  });
+
+  it("looks at the rock only when the caps are first needed, and the terrain's own rock lookup gives the same answer", () => {
+    const b = builtMap("inland-sea");
+    const seen = vi.fn(() => false);
+    const lazy = new MapWeights(b.ground, b.weights.food, b.weights.poison, seen);
+    expect(lazy.maxFood).toBe(b.weights.maxFood);
+    expect(seen).not.toHaveBeenCalled();
+    expect(lazy.open.every((o) => o === 1)).toBe(true);
+    expect(seen).toHaveBeenCalled();
+    const t = terrainOf(seaConfig());
+    const blocked = discsBlocked(b.rock, SEA.width);
+    const rng = createRng(5);
+    for (let k = 0; k < 20000; k++) {
+      const x = rng.range(0, SEA.width);
+      const y = rng.range(0, SEA.height);
+      expect(blocked(x, y)).toBe(t.touchesRock(x, y, 0));
+    }
   });
 
   it("puts poison on the shore: its limits dwarf those of the open sea, which stay near zero", () => {

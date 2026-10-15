@@ -1,6 +1,9 @@
 import { insidePolygon, marchingSquares, simplifyClosed } from "../../geom/contour.ts";
 import { CUBIC_FADE, GROUND_PAD, GroundField, hash, oneKindPerNode, valueNoise as noise } from "../groundField.ts";
 import { createRng } from "../rng.ts";
+import { discsBlocked, MapWeights, WEIGHT_UNIT } from "./weights.ts";
+import type { Disc } from "./weights.ts";
+import { MAX_MAP_DISCS } from "./mapParts.ts";
 
 // Builds the ground, the food and poison weights and the rock of a hand-designed map (docs/world-maps/) from its spec. Port of the draft generator
 // docs/world-maps/tools/gen.mjs, evaluated on the nodes of the ground raster. The result depends on the spec alone, so every thread builds the same map.
@@ -59,164 +62,6 @@ export interface MapSpec {
   rock: readonly MapRock[];
 }
 
-export interface Disc {
-  x: number;
-  y: number;
-  r: number;
-}
-
-export const WEIGHT_UNIT = 64; // weight byte per 1.0, so weights run from 0 to just under 4
-export const CAP_CELL = 1000; // world units per cell of the local caps
-
-// Food and poison weights on the nodes of the ground raster (same geometry as GroundField), and their mean per cap cell.
-export class MapWeights {
-  readonly cell: number;
-  readonly cols: number;
-  readonly rows: number;
-  readonly food: Uint8Array;
-  readonly poison: Uint8Array;
-  readonly maxFood: number;
-  readonly maxPoison: number;
-  readonly capCols: number;
-  readonly capRows: number;
-  readonly capArea: Float64Array; // world area of each cap cell (the last row and column are partial)
-  readonly meanFood: Float64Array; // mean weight, 1 is plain
-  readonly meanPoison: Float64Array;
-  private readonly inv: number;
-
-  readonly open: Float64Array; // share of each cap cell that is not under rock
-
-  constructor(ground: GroundField, food: Uint8Array, poison: Uint8Array, rock: readonly Disc[]) {
-    this.cell = ground.cell;
-    this.cols = ground.cols;
-    this.rows = ground.rows;
-    this.inv = 1 / ground.cell;
-    this.food = food;
-    this.poison = poison;
-    this.maxFood = food.reduce((m, v) => Math.max(m, v), 0);
-    this.maxPoison = poison.reduce((m, v) => Math.max(m, v), 0);
-    const { width, height } = ground;
-    this.capCols = Math.ceil(width / CAP_CELL);
-    this.capRows = Math.ceil(height / CAP_CELL);
-    const n = this.capCols * this.capRows;
-    this.capArea = new Float64Array(n);
-    this.meanFood = new Float64Array(n);
-    this.meanPoison = new Float64Array(n);
-    const count = new Float64Array(n);
-    this.open = openShares(rock, width, height, this.capCols, this.capRows);
-    for (let j = GROUND_PAD; j < ground.rows - GROUND_PAD; j++) {
-      for (let i = GROUND_PAD; i < ground.cols - GROUND_PAD; i++) {
-        const x = (i - GROUND_PAD) * this.cell;
-        const y = (j - GROUND_PAD) * this.cell;
-        if (x >= width || y >= height) continue;
-        const c = this.capIndex(x, y);
-        count[c]!++;
-        this.meanFood[c]! += food[j * ground.cols + i]! / WEIGHT_UNIT;
-        this.meanPoison[c]! += poison[j * ground.cols + i]! / WEIGHT_UNIT;
-      }
-    }
-    for (let cy = 0; cy < this.capRows; cy++) {
-      for (let cx = 0; cx < this.capCols; cx++) {
-        const c = cy * this.capCols + cx;
-        this.capArea[c] = (Math.min(width, (cx + 1) * CAP_CELL) - cx * CAP_CELL) * (Math.min(height, (cy + 1) * CAP_CELL) - cy * CAP_CELL);
-        if (count[c]! > 0) {
-          this.meanFood[c]! /= count[c]!;
-          this.meanPoison[c]! /= count[c]!;
-        } else {
-          this.meanFood[c] = this.meanPoison[c] = 1;
-        }
-      }
-    }
-  }
-
-  // Whether the kind (0 food, 1 poison) has weight anywhere.
-  usable(kind: number): boolean {
-    return (kind === 0 ? this.maxFood : this.maxPoison) > 0;
-  }
-
-  get bytes(): number {
-    return this.food.length + this.poison.length;
-  }
-
-  capIndex(x: number, y: number): number {
-    const cx = Math.min(this.capCols - 1, Math.max(0, Math.floor(x / CAP_CELL)));
-    const cy = Math.min(this.capRows - 1, Math.max(0, Math.floor(y / CAP_CELL)));
-    return cy * this.capCols + cx;
-  }
-
-  // The weight byte of a kind (0 food, 1 poison) at (x, y): the nearest node's.
-  byteAt(kind: number, x: number, y: number): number {
-    const i = Math.min(this.cols - 2, Math.max(1, Math.round(x * this.inv) + GROUND_PAD));
-    const j = Math.min(this.rows - 2, Math.max(1, Math.round(y * this.inv) + GROUND_PAD));
-    return (kind === 0 ? this.food : this.poison)[j * this.cols + i]!;
-  }
-
-  // Whether a draw u in [0, 1) lands inside the weight of a kind at (x, y): accepted with probability weight / maximum weight.
-  accepts(kind: number, x: number, y: number, u: number): boolean {
-    return u * (kind === 0 ? this.maxFood : this.maxPoison) < this.byteAt(kind, x, y);
-  }
-
-  // Items allowed in each cap cell for a density of the kind (as the world setting): exactly round(density * perDensity) in all, shared out in
-  // proportion to each cell's open (not under rock) area times its mean weight, rounded so the cells sum to the total (a cell of weight 0 holds none).
-  limits(kind: number, density: number, perDensity: number): Int32Array {
-    const mean = kind === 0 ? this.meanFood : this.meanPoison;
-    const out = new Int32Array(this.capArea.length);
-    const share = Float64Array.from(out, (_, c) => this.capArea[c]! * this.open[c]! * mean[c]!);
-    const sum = share.reduce((a, b) => a + b, 0);
-    if (!(sum > 0)) return out;
-    const total = Math.round(density * perDensity);
-    let run = 0;
-    let before = 0;
-    for (let c = 0; c < out.length; c++) {
-      run += (total * share[c]!) / sum;
-      const now = Math.round(run);
-      out[c] = now - before;
-      before = now;
-    }
-    return out;
-  }
-}
-
-const OPEN_SAMPLES = 8; // sample points per side of a cap cell when finding its open share
-
-// The share of each cap cell not covered by rock discs, from a grid of sample points.
-function openShares(rock: readonly Disc[], width: number, height: number, cols: number, rows: number): Float64Array {
-  const cell = 300; // grid of the discs by centre, wider than the largest disc reach below
-  const gc = Math.ceil(width / cell);
-  const grid = new Map<number, Disc[]>();
-  for (const d of rock) {
-    const key = Math.min(gc - 1, Math.floor(d.x / cell)) + gc * Math.floor(d.y / cell);
-    if (!grid.has(key)) grid.set(key, []);
-    grid.get(key)!.push(d);
-  }
-  const blocked = (x: number, y: number): boolean => {
-    const cx = Math.floor(x / cell);
-    const cy = Math.floor(y / cell);
-    for (let j = cy - 2; j <= cy + 2; j++) {
-      for (let i = cx - 2; i <= cx + 2; i++) {
-        if (i < 0 || j < 0 || i >= gc) continue;
-        for (const d of grid.get(i + gc * j) ?? []) if ((d.x - x) ** 2 + (d.y - y) ** 2 < d.r * d.r) return true;
-      }
-    }
-    return false;
-  };
-  const out = new Float64Array(cols * rows);
-  for (let cy = 0; cy < rows; cy++) {
-    for (let cx = 0; cx < cols; cx++) {
-      let free = 0;
-      for (let j = 0; j < OPEN_SAMPLES; j++) {
-        for (let i = 0; i < OPEN_SAMPLES; i++) {
-          const x = Math.min(width - 1, (cx + (i + 0.5) / OPEN_SAMPLES) * CAP_CELL);
-          const y = Math.min(height - 1, (cy + (j + 0.5) / OPEN_SAMPLES) * CAP_CELL);
-          if (!blocked(x, y)) free++;
-        }
-      }
-      out[cy * cols + cx] = free / OPEN_SAMPLES ** 2;
-    }
-  }
-  return out;
-}
-
 export interface BuiltMap {
   ground: GroundField;
   weights: MapWeights;
@@ -224,7 +69,7 @@ export interface BuiltMap {
   stats: { rockDiscs: number; massifDiscs: number; stones: number; mud: number; firm: number; rockShare: number };
 }
 
-const LIMITS = { layers: 64, points: 64, discs: 8000, area: 2e9 }; // of a spec, and the world area it may cover
+const LIMITS = { layers: 64, points: 64, discs: MAX_MAP_DISCS, area: 2e9 }; // of a spec, and the world area it may cover
 
 const valueNoise = (x: number, y: number, s: number): number => noise(x, y, s, CUBIC_FADE);
 const fbm = (x: number, y: number, s: number): number => valueNoise(x, y, s) * 0.55 + valueNoise(x * 2.1, y * 2.1, s + 7) * 0.3 + valueNoise(x * 4.3, y * 4.3, s + 13) * 0.15;
@@ -633,7 +478,7 @@ export function buildMap(spec: MapSpec): BuiltMap {
   const nodes = (cols - 2 * GROUND_PAD) * (rows - 2 * GROUND_PAD);
   return {
     ground,
-    weights: new MapWeights(ground, food, poison, rock),
+    weights: new MapWeights(ground, food, poison, discsBlocked(rock, W)),
     rock,
     stats: { rockDiscs: rock.length, massifDiscs: massifDiscs, stones, mud: mudNodes / nodes, firm: firmNodes / nodes, rockShare: rockArea / (W * H) },
   };

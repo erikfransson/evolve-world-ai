@@ -3,6 +3,7 @@ import { startRng } from "../sim/ecoConfig.ts";
 import type { EcoConfig } from "../sim/ecoConfig.ts";
 import { HIT_FOOD, HIT_POISON } from "../sim/types.ts";
 import { World } from "../sim/world.ts";
+import "../sim/maps/index.ts"; // this thread builds a named map itself
 import { terrainOf } from "../sim/terrain.ts";
 import { BACKGROUND, FLOOR, FOOD, POISON, WALL } from "./scene.ts";
 import { drawTerrain } from "./terrainScene.ts";

@@ -1,5 +1,5 @@
 import { GROUND_PAD } from "../sim/groundField.ts";
-import { WEIGHT_UNIT } from "../sim/maps/mapBuild.ts";
+import { WEIGHT_UNIT } from "../sim/maps/weights.ts";
 import type { Terrain } from "../sim/terrain.ts";
 import { context2d, makeCanvas } from "./groundScene.ts";
 

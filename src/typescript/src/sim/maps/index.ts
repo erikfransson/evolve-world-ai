@@ -1,4 +1,5 @@
 import { INLAND_SEA } from "./inlandSea.ts";
+import { registerMaps } from "../terrain.ts";
 import { buildMap } from "./mapBuild.ts";
 import type { BuiltMap, MapSpec } from "./mapBuild.ts";
 
@@ -37,3 +38,5 @@ export function mapVersion(name: string): string {
   }
   return v;
 }
+
+registerMaps({ spec: mapSpec, built: builtMap });

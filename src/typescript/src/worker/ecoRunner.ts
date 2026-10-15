@@ -1,4 +1,5 @@
 import type { EcoConfig } from "../sim/ecoConfig.ts";
+import "../sim/maps/index.ts"; // the coordinator builds a named map for the world and its helpers
 import { planOf } from "../sim/sensors.ts";
 import { Ecosystem } from "../sim/ecosystem.ts";
 import type { CreatureFrame, EcoCreature } from "../sim/ecosystem.ts";

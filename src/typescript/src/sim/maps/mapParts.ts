@@ -1,7 +1,7 @@
 import { GroundField } from "../groundField.ts";
 import type { Terrain } from "../terrain.ts";
-import { MapWeights } from "./mapBuild.ts";
-import type { Disc } from "./mapBuild.ts";
+import { discsBlocked, MapWeights } from "./weights.ts";
+import type { Disc } from "./weights.ts";
 
 // A built hand-designed map as plain arrays, enough to rebuild its Terrain in another thread without the seconds the build takes. Every
 // thread and page that gets a map's arrays from elsewhere goes through packMap and unpackMap.
@@ -32,5 +32,5 @@ export function unpackMap(width: number, height: number, parts: MapParts): { roc
   if (!(rock instanceof Float64Array) || rock.length % 3 !== 0 || rock.length > 3 * MAX_MAP_DISCS || !rock.every(Number.isFinite)) throw new Error("rock does not fit the map");
   ground.data.set(parts.ground);
   const discs = Array.from({ length: rock.length / 3 }, (_, i) => ({ x: rock[3 * i]!, y: rock[3 * i + 1]!, r: rock[3 * i + 2]! }));
-  return { rock: discs, ground, weights: new MapWeights(ground, food, poison, discs) };
+  return { rock: discs, ground, weights: new MapWeights(ground, food, poison, discsBlocked(discs, width)) };
 }
