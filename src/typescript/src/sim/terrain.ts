@@ -437,6 +437,12 @@ export function mapTerrain(name: string, width: number, height: number): Terrain
   return t;
 }
 
+// The Terrain of a config, or null while a named map is not here yet (built or seeded), for code that must not wait for a build.
+export function readyTerrainOf(config: TerrainSettings): Terrain | null {
+  const { map } = config.world;
+  return map && !mapTerrains.has(map) ? null : terrainOf(config);
+}
+
 // The arrays of the map a config names, shared with the Terrain (postMessage clones them); null for the random map.
 export function mapPartsOf(config: TerrainSettings): MapParts | null {
   const { map, width, height } = config.world;

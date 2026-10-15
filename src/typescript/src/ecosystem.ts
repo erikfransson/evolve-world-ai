@@ -16,6 +16,7 @@ import { createEcoView } from "./ui/ecoPage.ts";
 import { syncTerrainLegend } from "./ui/terrainLegend.ts";
 import { ECOSYSTEM_PAGE, openingConfig } from "./ui/ecoModes.ts";
 import { ecoBody } from "./ui/ecoMarkup.ts";
+import { PageMaps } from "./ui/pageMaps.ts";
 import { createRenderHost } from "./ui/renderHost.ts";
 import type { RenderHost } from "./ui/renderHost.ts";
 import type { EcoDrawConfig } from "./ui/ecoScene.ts";
@@ -98,11 +99,29 @@ function send(msg: EcoInMessage, transfer: Transferable[] = []): void {
   worker?.postMessage(msg, { transfer });
 }
 
+const pageMaps = new PageMaps();
+let mapKey = ""; // the named map asked for
+// A named map is built once, on a worker. Whoever draws and the next run take its arrays, so nobody builds it a second time or freezes the page doing so.
+function loadMap(): void {
+  const { map, width, height } = config.world;
+  const key = map ? `${map}|${width}|${height}` : "";
+  if (!map || key === mapKey) return;
+  mapKey = key;
+  void ready.then(() => pageMaps.load(map, width, height)).then((m) => {
+    if (!m) mapKey = ""; // not built: the next change asks again
+    else if (host) {
+      host.useMap(m);
+      drawIdle();
+    }
+  });
+}
+
 let species = speciesList(config); // the config's species, resolved
 function setConfig(c: EcoConfig): void {
   config = c;
   species = speciesList(c);
   syncTerrainLegend(c);
+  loadMap();
 }
 
 function drawConfig(): EcoDrawConfig {
@@ -218,7 +237,7 @@ function startRun(c: EcoConfig): void {
   highlight = -1;
   view.setStats(null);
   view.setNote(null);
-  send({ type: "start", config: c, run, poolUrl: POOL_URL, threads: THREADS, gentle: readGentle() });
+  send({ type: "start", config: c, run, poolUrl: POOL_URL, threads: THREADS, gentle: readGentle(), map: pageMaps.partsOf(c.world.map, c.world.width, c.world.height) });
   send({ type: "speed", speed: view.speed() });
 }
 

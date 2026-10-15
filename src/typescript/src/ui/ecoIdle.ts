@@ -3,8 +3,7 @@ import { startRng } from "../sim/ecoConfig.ts";
 import type { EcoConfig } from "../sim/ecoConfig.ts";
 import { HIT_FOOD, HIT_POISON } from "../sim/types.ts";
 import { World } from "../sim/world.ts";
-import "../sim/maps/index.ts"; // this thread builds a named map itself
-import { terrainOf } from "../sim/terrain.ts";
+import { readyTerrainOf } from "../sim/terrain.ts";
 import { BACKGROUND, FLOOR, FOOD, POISON, WALL } from "./scene.ts";
 import { drawTerrain } from "./terrainScene.ts";
 
@@ -15,7 +14,7 @@ const FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
 let cached: { key: string; world: World | null } = { key: "", world: null };
 export function startItems(config: EcoConfig): World | null {
   const { food, poison } = itemCounts(config);
-  const key = [config.seed, config.world.width, config.world.height, config.world.itemRadius, config.creature.rayLength, food, poison].join();
+  const key = [config.seed, config.world.map, config.world.width, config.world.height, config.world.itemRadius, config.creature.rayLength, food, poison].join();
   if (cached.key === key) return cached.world;
   let world: World | null = null;
   try {
@@ -62,9 +61,10 @@ export function drawIdleWorld(ctx: CanvasRenderingContext2D, config: EcoConfig, 
   ctx.save();
   ctx.translate(x, y);
   ctx.scale(scale, scale);
-  drawTerrain(ctx, terrainOf(config), scale, undefined, true);
+  const terrain = readyTerrainOf(config); // none while a named map is on its way from the page's map worker
+  if (terrain) drawTerrain(ctx, terrain, scale, undefined, true);
   ctx.restore();
-  const items = startItems(config);
+  const items = terrain ? startItems(config) : null;
   if (items) drawItems(ctx, items, config, x, y, scale, dpr);
   ctx.strokeStyle = WALL;
   ctx.lineWidth = 2 * dpr;
@@ -80,5 +80,5 @@ export function drawIdleWorld(ctx: CanvasRenderingContext2D, config: EcoConfig, 
   ctx.fillText(`${config.world.width} × ${config.world.height}`, w / 2, h / 2 - 10 * dpr);
   ctx.fillStyle = "rgba(143, 174, 159, 0.6)";
   ctx.font = `${13 * dpr}px ${FONT}`;
-  ctx.fillText("Press Start", w / 2, h / 2 + 12 * dpr);
+  ctx.fillText(terrain ? "Press Start" : "Building the map", w / 2, h / 2 + 12 * dpr);
 }

@@ -1,5 +1,6 @@
 import type { EcoConfig } from "../sim/ecoConfig.ts";
 import type { Lineage, SpeciesCount } from "../sim/ecosystem.ts";
+import type { MapParts } from "../sim/maps/mapParts.ts";
 import type { Board, Leaders } from "../sim/leaderboard.ts";
 import type { TraitHistogram } from "../sim/popStats.ts";
 import type { BodyPlan } from "../sim/sensors.ts";
@@ -8,7 +9,8 @@ export type EcoSpeedSetting = number | "max"; // simulated seconds per real seco
 
 export type EcoInMessage =
   // poolUrl: seed pool JSON, fetched once by the worker. threads: helper threads, 0 for none, default from the core count. gentle: see pacer.ts.
-  | { type: "start"; config: EcoConfig; run: number; poolUrl?: string; threads?: number; gentle?: boolean }
+  // map: the arrays of the config's named map when the page has built it, which spares the worker the build.
+  | { type: "start"; config: EcoConfig; run: number; poolUrl?: string; threads?: number; gentle?: boolean; map?: MapParts }
   | { type: "gentle"; gentle: boolean } // "Gentle on CPU" changed: pacing applies at once, the helper count from the next start
   | { type: "pause" }
   | { type: "resume" }

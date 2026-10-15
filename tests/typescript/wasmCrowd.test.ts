@@ -1,3 +1,4 @@
+import "../../src/typescript/src/sim/maps/index.ts"; // the Inland Sea cases build the map
 import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { Crowd } from "../../src/typescript/src/sim/crowd.ts";

@@ -7,6 +7,8 @@ import { BirthRings } from "./ecoBirths.ts";
 import { drawIdleWorld } from "./ecoIdle.ts";
 import { ImpactEffects } from "./ecoImpacts.ts";
 import { pickCreature } from "./ecoPick.ts";
+import { applyMap } from "./mapReady.ts";
+import type { MapReady } from "./mapReady.ts";
 import { EcoRenderer } from "./ecoScene.ts";
 import type { EcoDrawConfig } from "./ecoScene.ts";
 
@@ -34,6 +36,7 @@ export interface RenderHost {
   backing(): { width: number; height: number }; // size of the backing store
   fit(): number; // matches the backing store to the layout; returns the device pixel ratio
   idle(config: EcoConfig): void; // the empty world before a run
+  useMap(map: MapReady): void; // a named map built elsewhere, drawn from the next frame on
   observe(views: SnapshotViews | null, events: Float32Array | undefined, now: number): void; // a new snapshot
   reset(): void; // a new run
   frame(args: FrameArgs): boolean; // false when drawing has stopped for good
@@ -56,6 +59,8 @@ class PageHost implements RenderHost {
 
   backing = () => this.canvas;
   fit = () => fitCanvas(this.canvas);
+
+  useMap = applyMap;
 
   idle(config: EcoConfig): void {
     const dpr = this.fit();
@@ -136,6 +141,10 @@ class WorkerHost implements RenderHost {
 
   idle(config: EcoConfig): void {
     this.worker.postMessage({ type: "idle", config, dpr: this.fit() } satisfies RenderInMessage);
+  }
+
+  useMap(map: MapReady): void {
+    this.worker.postMessage({ type: "map", map } satisfies RenderInMessage);
   }
 
   observe = () => {};

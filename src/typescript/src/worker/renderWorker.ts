@@ -6,6 +6,7 @@ import { BirthRings } from "../ui/ecoBirths.ts";
 import { drawIdleWorld } from "../ui/ecoIdle.ts";
 import { ImpactEffects } from "../ui/ecoImpacts.ts";
 import { pickCreature } from "../ui/ecoPick.ts";
+import { applyMap } from "../ui/mapReady.ts";
 import { EcoRenderer } from "../ui/ecoScene.ts";
 
 // Draws the ecosystem on an OffscreenCanvas with the page's EcoRenderer, off the page's main thread.
@@ -83,6 +84,9 @@ self.onmessage = (e: MessageEvent<RenderInMessage>) => {
       out({ type: "picked", request: m.request, run: m.run, id: i >= 0 ? v!.ids[i]! : -1, x: i >= 0 ? v!.x[i]! : 0, y: i >= 0 ? v!.y[i]! : 0 });
       break;
     }
+    case "map":
+      applyMap(m.map);
+      break;
     case "idle":
       frame = null; // a pending frame would draw over the preview
       drawIdleWorld(ctx, m.config, canvas.width, canvas.height, m.dpr);

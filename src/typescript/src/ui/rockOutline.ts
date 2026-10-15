@@ -454,6 +454,9 @@ export function rockGeometry(t: RockInput): RockGeometry {
   return { bodyLoops, loopPoints, points };
 }
 
+// The geometry a map was handed by useRockGeometry, if any.
+export const rockGeometryOf = (t: RockInput): RockGeometry | null => geometries.get(t) ?? null;
+
 // Hands a map the geometry built elsewhere (a worker): bodies not drawn yet take their outlines from it instead of tracing them. Facets and
 // cracks are still made here, on first use.
 export function useRockGeometry(t: RockInput, g: RockGeometry): void {
