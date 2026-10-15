@@ -122,9 +122,6 @@ describe("item slots of the live world", () => {
     expect(bad({ points: pts((p) => (p[7] = -5000)) })).toBe(false);
     expect(bad({ points: g.points.subarray(2) })).toBe(false); // the loops no longer add up to the points
     expect(bad({ points: g.points.subarray(1) })).toBe(false); // half a point
-    expect(bad({ box: g.box.subarray(4) })).toBe(false);
-    expect(bad({ box: (() => { const b = g.box.slice(); [b[0], b[2]] = [b[2]!, b[0]!]; return b; })() })).toBe(false); // x0 past x1
-    expect(bad({ box: (() => { const b = g.box.slice(); b[1] = Infinity; return b; })() })).toBe(false);
     expect(bad({ loopPoints: u32(g.loopPoints, (p) => (p[3] = p[2]! + 1)) })).toBe(false); // a loop of 1 point, or falling
     expect(bad({ loopPoints: u32(g.loopPoints, (p) => (p[3] = p[4]! + 10)) })).toBe(false);
     expect(bad({ bodyLoops: u32(g.bodyLoops, (p) => (p[1] = p[0]!)) })).toBe(false); // a body without loops
@@ -133,9 +130,9 @@ describe("item slots of the live world", () => {
     expect(checkOutlines(null, W, H)).toBe(false);
     // Totals are capped before anything is read: a huge set is refused by its size.
     const loops = MAX_OUTLINE_LOOPS + 1;
-    expect(checkOutlines({ box: new Float64Array(4), bodyLoops: Uint32Array.of(loops), loopPoints: Uint32Array.from({ length: loops }, (_, i) => 3 * (i + 1)), points: new Float64Array(6 * loops) }, W, H)).toBe(false);
-    expect(checkOutlines({ box: new Float64Array(4), bodyLoops: Uint32Array.of(1), loopPoints: Uint32Array.of(MAX_OUTLINE_POINTS + 1), points: new Float64Array(2 * (MAX_OUTLINE_POINTS + 1)) }, W, H)).toBe(false);
-    expect(checkOutlines({ box: new Float64Array(4), bodyLoops: Uint32Array.of(1), loopPoints: Uint32Array.of(MAX_OUTLINE_POINTS), points: new Float64Array(2 * MAX_OUTLINE_POINTS) }, W, H)).toBe(true);
+    expect(checkOutlines({ bodyLoops: Uint32Array.of(loops), loopPoints: Uint32Array.from({ length: loops }, (_, i) => 3 * (i + 1)), points: new Float64Array(6 * loops) }, W, H)).toBe(false);
+    expect(checkOutlines({ bodyLoops: Uint32Array.of(1), loopPoints: Uint32Array.of(MAX_OUTLINE_POINTS + 1), points: new Float64Array(2 * (MAX_OUTLINE_POINTS + 1)) }, W, H)).toBe(false);
+    expect(checkOutlines({ bodyLoops: Uint32Array.of(1), loopPoints: Uint32Array.of(MAX_OUTLINE_POINTS), points: new Float64Array(2 * MAX_OUTLINE_POINTS) }, W, H)).toBe(true);
   }, 60_000);
 
   it("the page keeps only a known map name", () => {

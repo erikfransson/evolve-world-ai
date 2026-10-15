@@ -4,7 +4,9 @@ import type { StatefulRng } from "./rng.ts";
 import type { Body } from "./physics.ts";
 import { buildGroundField, GroundField } from "./groundField.ts";
 import { builtMap, mapSpec } from "./maps/index.ts";
-import { MapWeights } from "./maps/mapBuild.ts";
+import type { MapWeights } from "./maps/mapBuild.ts";
+import { packMap, unpackMap } from "./maps/mapParts.ts";
+import type { MapParts } from "./maps/mapParts.ts";
 
 // Static map features (#34), generated deterministically from the run seed and the world settings, so every thread that builds
 // the world gets the same ones. Rock (stones and ridges) is a set of discs that creatures bounce off like walls and rays report
@@ -412,7 +414,7 @@ const cache = new Map<string, Terrain>();
 const mapTerrains = new Map<string, Terrain>(); // by map name; few and large, so never evicted
 
 // The Terrain of a named map, which does not depend on the seed. Throws for an unknown name or a world of the wrong size.
-function mapTerrain(name: string, width: number, height: number): Terrain {
+export function mapTerrain(name: string, width: number, height: number): Terrain {
   const spec = mapSpec(name);
   if (!spec) throw new Error(`unknown map "${name}"`);
   if (width !== spec.width || height !== spec.height) throw new Error(`map ${name} needs a world of ${spec.width} x ${spec.height}`);
@@ -424,36 +426,18 @@ function mapTerrain(name: string, width: number, height: number): Terrain {
   return t;
 }
 
-// The built arrays of a hand-designed map, enough to rebuild its Terrain in another thread without the seconds the build takes.
-export interface MapParts {
-  rock: Float64Array; // x, y, r per disc
-  ground: Uint8Array;
-  food: Uint8Array;
-  poison: Uint8Array;
-}
-
-// The arrays of the map a config names, shared with the Terrain (postMessage clones them); null for the random map. live/mapTerrain.ts rebuilds a Terrain from such arrays too, with validation.
+// The arrays of the map a config names, shared with the Terrain (postMessage clones them); null for the random map.
 export function mapPartsOf(config: TerrainSettings): MapParts | null {
   const { map, width, height } = config.world;
-  if (!map) return null;
-  const t = mapTerrain(map, width, height);
-  if (!t.ground || !t.weights) return null;
-  const rock = new Float64Array(3 * t.rockCount);
-  for (let i = 0; i < t.rockCount; i++) rock.set([t.rockX[i]!, t.rockY[i]!, t.rockR[i]!], 3 * i);
-  return { rock, ground: t.ground.data, food: t.weights.food, poison: t.weights.poison };
+  return map ? packMap(mapTerrain(map, width, height)) : null;
 }
 
 // Makes terrainOf use these arrays for a named map instead of building it, unless this thread already has the map. Throws when they do not fit the map's raster.
 export function seedMapTerrain(name: string, width: number, height: number, parts: MapParts): void {
   const spec = mapSpec(name);
   if (!spec || spec.width !== width || spec.height !== height) throw new Error(`unknown map "${name}"`);
-  const ground = new GroundField(width, height);
-  const nodes = ground.cols * ground.rows;
-  if (parts.ground.length !== ground.data.length || parts.food.length !== nodes || parts.poison.length !== nodes || parts.rock.length % 3 !== 0) throw new Error(`arrays do not fit map ${name}`);
-  if (mapTerrains.has(name)) return;
-  ground.data.set(parts.ground);
-  const discs = Array.from({ length: parts.rock.length / 3 }, (_, i) => ({ x: parts.rock[3 * i]!, y: parts.rock[3 * i + 1]!, r: parts.rock[3 * i + 2]! }));
-  mapTerrains.set(name, new Terrain(discs, ground, width, height, new MapWeights(ground, parts.food, parts.poison, discs)));
+  const map = unpackMap(width, height, parts);
+  if (!mapTerrains.has(name)) mapTerrains.set(name, new Terrain(map.rock, map.ground, width, height, map.weights));
 }
 
 // The map of a config, built once per process and shared by every world and creature that uses it.

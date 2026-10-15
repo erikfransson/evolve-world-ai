@@ -1,6 +1,5 @@
-import { GroundField } from "../sim/groundField.ts";
-import { MapWeights } from "../sim/maps/mapBuild.ts";
 import { mapSpec } from "../sim/maps/index.ts";
+import { unpackMap } from "../sim/maps/mapParts.ts";
 import { Terrain } from "../sim/terrain.ts";
 import { useRockGeometry } from "../ui/rockOutline.ts";
 import type { RockGeometry } from "../ui/rockOutline.ts";
@@ -27,35 +26,31 @@ const cumulative = (a: Uint32Array, step: number, total: number): boolean => {
 };
 
 // Rock outlines from the worker that fit a world of this size: bounded counts, cumulative arrays that rise and add up, at least
-// 3 points a loop and 1 loop a body, every coordinate finite and near the world, boxes the right way round.
+// 3 points a loop and 1 loop a body, every coordinate finite and near the world.
 export function checkOutlines(g: unknown, width: number, height: number): g is RockGeometry {
   if (typeof g !== "object" || g === null) return false;
-  const { box, bodyLoops, loopPoints, points } = g as Partial<RockGeometry>;
-  if (!(box instanceof Float64Array) || !(bodyLoops instanceof Uint32Array) || !(loopPoints instanceof Uint32Array) || !(points instanceof Float64Array)) return false;
+  const { bodyLoops, loopPoints, points } = g as Partial<RockGeometry>;
+  if (!(bodyLoops instanceof Uint32Array) || !(loopPoints instanceof Uint32Array) || !(points instanceof Float64Array)) return false;
   const bodies = bodyLoops.length;
-  if (bodies > MAX_ROCK || loopPoints.length > MAX_OUTLINE_LOOPS || points.length > 2 * MAX_OUTLINE_POINTS || points.length % 2 !== 0 || box.length !== 4 * bodies) return false;
+  if (bodies > MAX_ROCK || loopPoints.length > MAX_OUTLINE_LOOPS || points.length > 2 * MAX_OUTLINE_POINTS || points.length % 2 !== 0) return false;
   if (!cumulative(bodyLoops, 1, loopPoints.length) || !cumulative(loopPoints, 3, points.length / 2)) return false;
   const lo = -OUTLINE_PAD;
   const hi = Math.max(width, height) + OUTLINE_PAD;
-  if (!within(box, lo, hi) || !within(points, lo, hi)) return false;
-  for (let b = 0; b < bodies; b++) if (box[4 * b]! > box[4 * b + 2]! || box[4 * b + 1]! > box[4 * b + 3]!) return false;
-  return true;
+  return within(points, lo, hi);
 }
 
 // The Terrain of a hand-designed map from the worker's arrays, its rock outlines in place, or null when they do not fit the map (checked, never trusted).
 export function terrainFromParts(name: string, width: number, height: number, m: MapOut): Terrain | null {
   const spec = mapSpec(name);
   if (!spec || spec.width !== width || spec.height !== height || !m.ok) return null;
-  const ground = new GroundField(width, height);
-  const nodes = ground.cols * ground.rows;
-  const { rock } = m;
-  if (!(m.ground instanceof Uint8Array) || m.ground.length !== ground.data.length) return null;
-  if (!(m.food instanceof Uint8Array) || !(m.poison instanceof Uint8Array) || m.food.length !== nodes || m.poison.length !== nodes) return null;
-  if (!(rock instanceof Float64Array) || rock.length % 3 !== 0 || rock.length > 3 * MAX_ROCK || !rock.every(Number.isFinite)) return null;
   if (!checkOutlines(m.outlines, width, height)) return null;
-  ground.data.set(m.ground);
-  const discs = Array.from({ length: rock.length / 3 }, (_, i) => ({ x: rock[3 * i]!, y: rock[3 * i + 1]!, r: rock[3 * i + 2]! }));
-  const t = new Terrain(discs, ground, width, height, new MapWeights(ground, m.food, m.poison, discs));
+  let map: ReturnType<typeof unpackMap>;
+  try {
+    map = unpackMap(width, height, m);
+  } catch {
+    return null;
+  }
+  const t = new Terrain(map.rock, map.ground, width, height, map.weights);
   try {
     useRockGeometry(t, m.outlines); // throws when the bodies are not this map's
   } catch {

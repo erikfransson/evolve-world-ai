@@ -425,11 +425,10 @@ export function rockBodies(t: RockInput): RockBody[] {
 }
 
 // All the outlines of a map's rock as plain typed arrays, for building them on a Web Worker: needs no DOM and no canvas, and the arrays
-// can be transferred. Body b (in the order of rockBodies) has box[4b .. 4b + 3] = x0, y0, x1, y1 and the loops bodyLoops[b - 1] .. bodyLoops[b] - 1
+// can be transferred. Body b (in the order of rockBodies) has the loops bodyLoops[b - 1] .. bodyLoops[b] - 1
 // (bodyLoops is cumulative, the count before body 0 is 0). Loop l has the points loopPoints[l - 1] .. loopPoints[l] - 1 (cumulative the same way)
 // in points, each at points[2p], points[2p + 1], a closed outline to draw with traceLoop.
 export interface RockGeometry {
-  box: Float64Array;
   bodyLoops: Uint32Array;
   loopPoints: Uint32Array;
   points: Float64Array;
@@ -437,11 +436,9 @@ export interface RockGeometry {
 
 export function rockGeometry(t: RockInput): RockGeometry {
   const { lumps: list, lumpOf } = layoutOf(t);
-  const box = new Float64Array(4 * list.length);
   const bodyLoops = new Uint32Array(list.length);
   const loops: number[][] = [];
   list.forEach((lump, b) => {
-    box.set([lump.x0 - 2 * CELL, lump.y0 - 2 * CELL, lump.x1 + 2 * CELL, lump.y1 + 2 * CELL], 4 * b);
     loops.push(...lumpLoops(t, lump, lumpOf));
     bodyLoops[b] = loops.length;
   });
@@ -454,7 +451,7 @@ export function rockGeometry(t: RockInput): RockGeometry {
     points.set(l, at);
     at += l.length;
   }
-  return { box, bodyLoops, loopPoints, points };
+  return { bodyLoops, loopPoints, points };
 }
 
 // Hands a map the geometry built elsewhere (a worker): bodies not drawn yet take their outlines from it instead of tracing them. Facets and

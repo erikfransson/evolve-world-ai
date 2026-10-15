@@ -1,6 +1,6 @@
 import type { EcoConfig } from "../sim/ecoConfig.ts";
+import type { MapParts } from "../sim/maps/mapParts.ts";
 import { mapPartsOf, seedMapTerrain } from "../sim/terrain.ts";
-import type { MapParts } from "../sim/terrain.ts";
 import type { Ecosystem } from "../sim/ecosystem.ts";
 import { ShareCoordinator, ShareHelper, fittedCaps, packetBytes, packetViews, publishedBytes } from "../sim/ecoShare.ts";
 import type { Port } from "./port.ts";

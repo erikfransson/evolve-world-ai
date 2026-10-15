@@ -63,7 +63,6 @@ describe("rockBodies", () => {
     expect(g.bodyLoops.length).toBe(bodies.length);
     expect(g.bodyLoops[bodies.length - 1]).toBe(g.loopPoints.length);
     expect(g.loopPoints[g.loopPoints.length - 1]! * 2).toBe(g.points.length);
-    bodies.forEach((b, i) => expect(Array.from(g.box.subarray(4 * i, 4 * i + 4))).toEqual([b.x0, b.y0, b.x1, b.y1]));
     const flat = bodies.flatMap((b) => b.loops);
     expect(flat.length).toBe(g.loopPoints.length);
     expect(flat.flat()).toEqual(Array.from(g.points));
