@@ -48,10 +48,12 @@ describe("The Inland Sea map", () => {
     expect(map.ground.bytes + w.bytes).toBeLessThan(1_100_000);
   });
 
-  // builtHash red: the built rock, ground or weights changed. If the spec did not change, bump MAP_BUILD in mapBuild.ts; then update both pins.
-  // A new mapVersion makes older Live saves count as another world's.
+  // The built data per MAP_BUILD: entries are only ever added, never edited. builtHash red after a change to the builder or its output: bump
+  // MAP_BUILD in mapBuild.ts and add an entry (older Live saves then count as another world's). Red after a Node or engine upgrade alone
+  // (sin, cos and hypot may differ by an ulp): the saves are still valid, so only correct the current entry. mapVersion changes with the spec.
+  const BUILT: Record<number, string> = { 1: "cd938f9e" };
   it("has a pinned version and pinned built data", () => {
-    expect(builtHash("inland-sea")).toBe("cd938f9e");
+    expect(builtHash("inland-sea")).toBe(BUILT[MAP_BUILD]);
     expect(mapVersion("inland-sea")).toBe("d09e9129-1");
   });
 
