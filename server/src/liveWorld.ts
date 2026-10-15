@@ -47,6 +47,8 @@ export class LiveWorld {
   speed = 0; // simulated seconds per real second achieved, over the last second (below LIVE.speed when the machine cannot keep up)
   readonly startedAt = Date.now();
   private restarts = 0;
+  private reseedStuck = false; // a reseed gave an empty world: no more until the world has creatures again
+  founders: readonly SeedFounder[] = []; // what a reseed seeds a world built empty with (openWorld sets them)
   failedTicks = 0; // consecutive ticks that threw; a world that keeps failing is not saved (saves.ts) and the server exits (main.ts)
   onReseed: (() => void) | null = null; // the world was replaced, viewers need a fresh hello
 
@@ -305,7 +307,7 @@ export class LiveWorld {
   // One tick on this thread, for tests and tools; the server's loop uses advance.
   step(): void {
     if (this.helpers) throw new Error("step runs without helpers only");
-    if (this.eco.extinct && LIVE.reseed) this.reseed();
+    this.maybeReseed();
     if (this.eco.extinct) return; // stays as it is until an add, the same with and without helpers
     this.eco.detail = null; // with a detail creature the WebAssembly sense costs several times more
     this.eco.step();
@@ -315,7 +317,7 @@ export class LiveWorld {
   // One tick, with the helpers when there are any, and the item changes recorded. Work queued by whenIdle runs after it.
   async tick(): Promise<void> {
     try {
-      if (this.eco.extinct && LIVE.reseed) this.reseed();
+      this.maybeReseed();
       if (this.eco.extinct) {
         this.failedTicks = 0; // nothing to step, so nothing failed: the helpers never see an empty world, and finally still runs outside work
         return;
@@ -357,12 +359,27 @@ export class LiveWorld {
     }
   }
 
-  // With LIVE.reseed on, an extinct world starts over with a new seed; off, it stays empty (the engine's step does nothing) until an add.
+  // With LIVE.reseed on, an extinct world starts over with a new seed and the founders; off, it stays empty (the engine's step does
+  // nothing) until an add. A reseed that still gives an empty world is not tried again until the world has creatures, so it never
+  // rebuilds every tick.
+  private maybeReseed(): void {
+    if (!this.eco.extinct) this.reseedStuck = false;
+    else if (LIVE.reseed && !this.reseedStuck) this.reseed();
+  }
+
   private reseed(): void {
     this.config.seed += 1;
     this.restarts++;
     this.eco = this.build(this.config);
     this.attach();
+    if (this.eco.population === 0 && this.founders.length) {
+      try {
+        this.seedFounders(this.founders);
+      } catch (e) {
+        console.error(`reseed: founders not seeded: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+    this.reseedStuck = this.eco.extinct;
     console.log(`world extinct, restarted with seed ${this.config.seed} (restart ${this.restarts})`);
     this.onReseed?.();
   }

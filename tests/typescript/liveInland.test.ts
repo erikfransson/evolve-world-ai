@@ -294,7 +294,7 @@ describe("restoring at a new world", () => {
     const live = freshSmall();
     expect(() => live.restoreState(a.saveState())).toThrow(/2100 x 1300 world without a map, this server runs 2000 x 1300 without a map/);
     const lines: string[] = [];
-    expect(await new Saves(live, store).restoreNewest((l) => lines.push(l))).toBe(false);
+    expect(await new Saves(live, store).restoreNewest((l) => lines.push(l))).toBe("fresh");
     expect(lines).toHaveLength(3); // the older save is not tried: past a save of another world all are taken to be older worlds
     expect(lines[0]).toMatch(/cannot restore world-.*this server runs 2000 x 1300/);
     expect(lines[1]).toMatch(/not tried; all are kept/);
@@ -367,7 +367,8 @@ describe("room held back for visitors", () => {
     expect(live.eco.population).toBe(60);
     expect(add(1)).toEqual({ reason: "the world is full, try again later" });
     // The admin may move the reserve, but never to the whole population.
-    expect(applyTunables(live.eco, { "eco.birthReserve": Math.min(1000, MAX_POPULATION - 1) })).toBeNull();
+    expect(applyTunables(live.eco, { "eco.birthReserve": 59 })).toBeNull();
+    expect(applyTunables(live.eco, { "eco.birthReserve": 60 })).toMatch(/birthReserve must be below/);
     expect(applyTunables(live.eco, { "eco.birthReserve": 1001 })).toMatch(/birthReserve/);
   });
 });

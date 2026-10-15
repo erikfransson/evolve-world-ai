@@ -65,26 +65,32 @@ export class Saves {
     return `${name}: tick ${this.live.eco.tick}, ${this.live.eco.population} creatures`;
   }
 
-  // At startup: the newest save that restores, else the world as built. True when a save was restored. Saves that do not restore
-  // (another world's, or broken) stay on disk; rotation (state.ts) deletes them only once older than keepStateMs and not among the newest six.
-  // The first save of another world ends the search: older ones are taken to be of earlier worlds too, so a move to a new map
-  // parses one old save (about 5 s), not all of them.
-  async restoreNewest(log: (line: string) => void = console.log): Promise<boolean> {
+  // At startup: the newest save that restores. "restored" when one did; "fresh" when there is no save or the newest is of another world
+  // (a move to a new map), so a fresh world may start; "unreadable" when saves of this world are there and none restores (a worker out of
+  // memory, a parse timeout on a busy host, a bad deploy): the caller must not start over on top of them. Saves that do not restore stay
+  // on disk; rotation (state.ts) deletes them only once older than keepStateMs and not among the newest six.
+  // A save of another world ends the search: older ones are taken to be of earlier worlds too, so a move to a new map parses one old
+  // save (about 5 s), not all of them.
+  async restoreNewest(log: (line: string) => void = console.log): Promise<"restored" | "fresh" | "unreadable"> {
+    let tried = 0;
     for (const { name } of this.store.list()) {
       try {
         const t0 = performance.now();
         log(`restored ${await this.restore(name)} (${Math.round(performance.now() - t0)} ms)`);
-        return true;
+        return "restored";
       } catch (e) {
         log(`cannot restore ${name}: ${errText(e)}`);
         if (e instanceof OtherWorld) {
           log("older saves are taken to be of earlier worlds and are not tried; all are kept on disk");
-          break;
+          if (tried === 0) break;
+          return "unreadable";
         }
+        tried++;
       }
     }
+    if (tried > 0) return "unreadable";
     log("no usable save, starting a fresh world");
-    return false;
+    return "fresh";
   }
 
   // Saves the running world, then replaces it with the named save. Only a name from the listing is accepted, and a failure at any step keeps the running world.
@@ -95,10 +101,15 @@ export class Saves {
   }
 }
 
-// At startup: the newest save that restores, with the admin overrides applied to it; else a fresh world seeded with the founders,
-// the overrides of the world before set aside (they were tuned for it), and none in force. Throws when seeding fails.
+// At startup: the newest save that restores, with the admin overrides applied to it; else, with no save or only another world's, a fresh
+// world seeded with the founders, the overrides of the world before set aside (they were tuned for it), and none in force.
+// Throws when saves of this world are there but none restores (main exits 1 and systemd tries again; a fresh world's save would
+// otherwise become the newest and rotation would delete the real world's), and when seeding fails.
 export async function openWorld(saves: Saves, live: LiveWorld, stateDir: string, founders: readonly SeedFounder[], log: (line: string) => void = console.log): Promise<Record<string, Value>> {
-  if (await saves.restoreNewest(log)) return loadOverrides(stateDir, live);
+  live.founders = founders;
+  const found = await saves.restoreNewest(log);
+  if (found === "restored") return loadOverrides(stateDir, live);
+  if (found === "unreadable") throw new Error("saves of this world are there but none restores: not starting a fresh world over them");
   const retired = retireOverrides(stateDir);
   if (retired) log(retired);
   const n = live.seedFounders(founders);

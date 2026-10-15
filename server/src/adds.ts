@@ -3,13 +3,14 @@ import type { Refused } from "../../src/typescript/src/live/add.ts";
 import { LIVE } from "./config.ts";
 
 // The caps on visitor adds (LIVE.add, admin-tunable): creatures per window for everyone together and per visitor address, the share of
-// added creatures alive, and a world that cannot keep up. Only adds that went in count. The clock is injectable for tests.
+// added creatures alive, and a world that cannot keep up. Only adds that went in count. The clock is monotonic (a wall clock step back
+// would stretch the window) and injectable for tests.
 export class AddGate {
   private global: { at: number; n: number }[] = []; // successful adds in the window, oldest first
   private visitors = new Map<string, { at: number; n: number }[]>();
   private readonly now: () => number;
 
-  constructor(now: () => number = Date.now) {
+  constructor(now: () => number = () => performance.now()) {
     this.now = now;
   }
 

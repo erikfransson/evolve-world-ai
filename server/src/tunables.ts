@@ -78,6 +78,11 @@ export function applyTunables(eco: Ecosystem, changes: unknown): string | null {
     if (max !== undefined && typeof value === "number" && value > max) return `${key} must be at most ${max} on the live server`;
     (patch[at[0]] ??= {})[at[1]] = value;
   }
+  // A reserve at or past the cap would leave births no room at all, and the world would die out.
+  const after = (k: string, now: number): unknown => (Object.hasOwn(changes, k) ? (changes as Record<string, unknown>)[k] : now);
+  const cap = after("eco.maxPopulation", eco.config.eco.maxPopulation);
+  const reserve = after("eco.birthReserve", eco.config.eco.birthReserve);
+  if (typeof cap === "number" && typeof reserve === "number" && reserve > 0 && reserve >= cap) return "eco.birthReserve must be below eco.maxPopulation";
   if (Object.keys(patch).length > 0) {
     const result = eco.retune(patch as RetunePatch);
     if (!result.ok) return result.reason;

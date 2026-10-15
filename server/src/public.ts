@@ -166,7 +166,7 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
   wss.on("connection", (ws, req) => {
     ws.on("error", () => ws.terminate());
     if (!room()) return refuse(ws);
-    const now = Date.now();
+    const now = performance.now();
     const v: Viewer = {
       c: { alive: true, lastMessageAt: now, overSince: 0, windowAt: now, windowCount: 0 },
       ready: false,
@@ -205,7 +205,7 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
     const c = v.c;
     // Every frame from the client, of any kind, counts against the message rate.
     const counted = (): void => {
-      const t = Date.now();
+      const t = performance.now();
       if (t - c.windowAt >= 1000) {
         c.windowAt = t;
         c.windowCount = 0;
@@ -220,11 +220,11 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
     ws.on("message", (data, isBinary) => {
       try {
         counted();
-        c.lastMessageAt = Date.now();
+        c.lastMessageAt = performance.now();
         const text = isBinary ? null : data.toString();
         if (text?.startsWith(ADD_PREFIX)) {
           if (!v.ready) return void ws.terminate(); // the page waits for its hello
-          const t = Date.now();
+          const t = performance.now();
           v.addTokens = Math.min(ADD_BURST, v.addTokens + (t - v.addAt) / (1000 * LIVE.add.socketEveryS));
           v.addAt = t;
           if (v.addTokens < 1) {
@@ -238,7 +238,7 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
         const msg = text === null ? null : parseClientMessage(text);
         if (!msg) return void ws.terminate(); // anything but a ping or a well-formed select
         if (msg.t === "ping") {
-          const t = Date.now();
+          const t = performance.now();
           if (t - lastPing < PING_MIN_MS) return;
           lastPing = t;
           return sendText(ws, { t: "pong" });
@@ -255,9 +255,9 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
   });
 
   // Once a second: drop clients that are far behind, silent, or did not answer the last heartbeat.
-  let lastHeartbeat = Date.now();
+  let lastHeartbeat = performance.now();
   const heartbeat = setInterval(() => {
-    const now = Date.now();
+    const now = performance.now();
     const beat = now - lastHeartbeat >= limits.heartbeatMs;
     if (beat) lastHeartbeat = now;
     for (const [ws, v] of viewers) {

@@ -2,6 +2,7 @@
 // @ts-expect-error the web tsconfig finds no types for the server's ws
 import { WebSocket } from "../../server/node_modules/ws/wrapper.mjs";
 import { AddGate, visitorKey } from "../../server/src/adds.ts";
+import { loadFounders } from "../../server/src/founders.ts";
 import { LIMITS, LIVE } from "../../server/src/config.ts";
 import { LiveWorld, groundShares } from "../../server/src/liveWorld.ts";
 import { SAVE_MAX_LATE, Saves } from "../../server/src/saves.ts";
@@ -27,6 +28,7 @@ const seq = (seed: number): (() => number) => {
   let s = seed;
   return () => ((s = (s * 1103515245 + 12345) % 2 ** 31) / 2 ** 31);
 };
+const FOUNDERS = new URL("../../src/typescript/public/live-founders.json", import.meta.url);
 const RESEED_DEFAULT = LIVE.reseed;
 afterEach(() => {
   Object.assign(LIVE.add, ADD_DEFAULTS);
@@ -219,8 +221,14 @@ describe("add caps (adds.ts)", () => {
     const v = new LiveWorld(config, null);
     v.onReseed = () => reseeds++;
     LIVE.reseed = 1;
-    v.step();
-    expect(reseeds).toBe(1);
+    for (let i = 0; i < 5; i++) v.step();
+    expect([v.eco.extinct, reseeds]).toEqual([true, 1]); // no founders: one reseed, not one per tick
+    const f = new LiveWorld(config, null);
+    f.founders = loadFounders(FOUNDERS.pathname);
+    f.onReseed = () => reseeds++;
+    for (let i = 0; i < 5; i++) f.step();
+    expect(reseeds).toBe(2); // once, with the founders seeded
+    expect(f.eco.population).toBeGreaterThan(0);
     expect(applyTunables(v.eco, { reseed: 0 })).toBeNull();
     expect(applyTunables(v.eco, { reseed: 0.5 })).toMatch(/whole/);
     expect(applyTunables(v.eco, { "add.aliveFloor": 5000 })).toMatch(/add.aliveFloor/);
@@ -257,6 +265,14 @@ describe("add caps (adds.ts)", () => {
     expect(applyTunables(eco, { "add.startEnergy": 5000 })).toMatch(/add.startEnergy/);
     expect(applyTunables(eco, { "add.birthHoldS": -1 })).toMatch(/add.birthHoldS/);
     expect(LIVE.add.maxCopies).toBe(3);
+    // A birth reserve at or past the cap would stop every birth: refused, alone or with a lower cap, and nothing changes.
+    const cap = 500;
+    expect(applyTunables(eco, { "eco.maxPopulation": cap })).toBeNull();
+    expect(applyTunables(eco, { "eco.birthReserve": cap })).toMatch(/birthReserve must be below/);
+    expect(applyTunables(eco, { "eco.maxPopulation": 50, "eco.birthReserve": 50 })).toMatch(/birthReserve must be below/);
+    expect(applyTunables(eco, { "eco.birthReserve": cap - 1 })).toBeNull();
+    expect(applyTunables(eco, { "eco.maxPopulation": cap - 1 })).toMatch(/birthReserve must be below/);
+    expect([eco.config.eco.maxPopulation, eco.config.eco.birthReserve]).toEqual([cap, cap - 1]);
   });
 
   it("keys visitors on the tunnel's address only when trusted; IPv6 on its /64", () => {
@@ -461,6 +477,24 @@ describe("add on the public server", () => {
     for (let i = 0; i < 3; i++) c.ws.send(encodeAdd(request({ copies: 1 }))); // two more strikes, then the fourth past the rate
     expect(await c.closed).toBe(1006);
     expect(c.replies.filter((r) => r.reason === "adding too fast on this connection")).toHaveLength(3);
+  });
+
+  it("a wall clock step back does not turn the next add into a strike (the add limits run on the monotonic clock)", async () => {
+    await serve(61411);
+    const c = client(61411);
+    await c.hello;
+    c.ws.send(encodeAdd(request({ copies: 1 })));
+    await vi.waitFor(() => expect(c.replies).toHaveLength(1));
+    const wall = Date.now();
+    const back = vi.spyOn(Date, "now").mockReturnValue(wall - 3_600_000); // NTP or an admin set the clock an hour back
+    try {
+      c.ws.send(encodeAdd(request({ copies: 1 })));
+      await vi.waitFor(() => expect(c.replies).toHaveLength(2));
+    } finally {
+      back.mockRestore();
+    }
+    expect(c.replies.map((r) => r.t)).toEqual(["added", "added"]);
+    c.ws.close();
   });
 
   it("an add before the hello cuts the connection off (the page waits for its hello)", async () => {
