@@ -6,6 +6,9 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+### Live World
+- Ecosystem creatures carry a mutation factor (`mutationScale`, default 1, 0.25 to 4 on insert) that multiplies the mutation std when they have children; children inherit it unchanged. Saves hold it only for creatures that differ from 1, older saves restore as 1. Runs at the default 1 are bit-identical.
+
 ## 0.2.0 (2026-10-15)
 
 ### Live World

@@ -39,7 +39,7 @@ import { MAX_RAYS } from "./wasm/senser.ts";
 import type { PhaseTimer } from "./profile.ts";
 
 export { BIG_IMPACT, EVENT_CAP, EVENT_DEATH, EVENT_IMPACT, EVENT_STRIDE } from "./contacts.ts";
-export { MAX_INSERT_ENERGY, MAX_INSERT_LAYERS, MAX_INSERT_MEMORY, MAX_INSERT_NEURONS, MAX_INSERT_RAYS, MAX_INSERT_RAY_LENGTH, MAX_NAME_LENGTH } from "./ecoInsert.ts";
+export { MAX_INSERT_ENERGY, MAX_INSERT_LAYERS, MAX_INSERT_MEMORY, MAX_INSERT_NEURONS, MAX_INSERT_RAYS, MAX_INSERT_RAY_LENGTH, MAX_NAME_LENGTH, MUTATION_SCALE_RANGE } from "./ecoInsert.ts";
 export type { InsertResult, InsertSpec } from "./ecoInsert.ts";
 export type { Lineage } from "./lineages.ts";
 
@@ -78,6 +78,7 @@ export class EcoCreature {
   // Heritable birth traits (#31): energy at which it has a child, energy it pays (the child's start energy), seconds between births.
   birth: BirthTraits = { energy: 0, cost: 0, cooldown: 0 };
   cooldownTicks = 0;
+  mutationScale = 1; // multiplies the mutation std of its children's genomes; a child keeps its parent's, only an insert sets another
   index = 0; // position in the ecosystem's member list
   owner = 0; // helper thread that thinks for it, set by the coordinator of helper threads
   readonly creature: Creature; // state, rays, rayOffsets and brain.layerActivations() of the last tick
@@ -123,6 +124,7 @@ export interface EcoCore {
 export interface MemberRecord {
   id: number; parentId: number; depth: number; birthTick: number; children: number; eaten: number; kills: number; species: number; hue: number;
   founderId: number; lastBirthTick: number; birthEnergy: number; birthCost: number; birthCooldown: number; cooldownTicks: number;
+  mutationScale?: number; // 1 when left out
   x: number; y: number; heading: number; vx: number; vy: number; turnRate: number; energy: number; ticksAlive: number; cos: number; sin: number;
   plan: PlanView; genome: Float32Array; memory: ArrayLike<number>;
 }
@@ -602,7 +604,7 @@ export class Ecosystem {
     }
     const genome = (this.childGenome = refit(this.childGenome, source.length));
     genome.set(source);
-    mutate(genome, this.config.mutation.rate, this.config.mutation.std, this.rng);
+    mutate(genome, this.config.mutation.rate, this.config.mutation.std * parent.mutationScale, this.rng);
     const traits = this.traits;
     traits.energy = parent.birth.energy;
     traits.cost = parent.birth.cost;
@@ -615,7 +617,7 @@ export class Ecosystem {
     spot.x = ps.x + Math.cos(angle) * gap;
     spot.y = ps.y + Math.sin(angle) * gap;
     this.contacts.confine(spot);
-    const child = this.spawn(genome, plan, spot.x, spot.y, angle, paid, parent.species, traits);
+    const child = this.spawn(genome, plan, spot.x, spot.y, angle, paid, parent.species, traits, parent.mutationScale);
     const s = child.creature.state;
     // Parent and child part at birthSpeed relative to each other, half each way, so the parent's own motion cannot carry it back
     // into the child, and the pair's momentum stays what the parent had.
@@ -644,7 +646,7 @@ export class Ecosystem {
   }
 
   // Adds a creature with these birth traits, reusing a dead one's storage when there is one; genome and plan are copied.
-  private spawn(genome: Genome, plan: PlanView, x: number, y: number, heading: number, energy: number, species: number, birth: BirthTraits): EcoCreature {
+  private spawn(genome: Genome, plan: PlanView, x: number, y: number, heading: number, energy: number, species: number, birth: BirthTraits, mutationScale = 1): EcoCreature {
     let m = this.spare[species]!.pop();
     if (m) m.creature.reset(genome, x, y, heading, energy, plan);
     else {
@@ -668,6 +670,7 @@ export class Ecosystem {
     m.birth.cost = birth.cost;
     m.birth.cooldown = birth.cooldown;
     m.cooldownTicks = Math.round(birth.cooldown / this.config.dt);
+    m.mutationScale = mutationScale;
     this.journal?.born.push(m.id);
     this.table.admit(m);
     return m;
@@ -727,10 +730,10 @@ export class Ecosystem {
   insertCreature(spec: InsertSpec): InsertResult {
     const checked = checkInsert(spec, { config: this.config, species: this.species, ranges: this.ranges, engines: this.engines, population: this.members.length, terrain: this.items.terrain }, this.traits);
     if (!checked.ok) return checked;
-    const { genome, sp, heading, energy } = checked;
+    const { genome, sp, heading, energy, mutationScale } = checked;
     const p = spec.plan;
     const traits = this.traits;
-    const m = this.spawn(genome, p, spec.x, spec.y, heading, energy, sp, traits);
+    const m = this.spawn(genome, p, spec.x, spec.y, heading, energy, sp, traits, mutationScale);
     m.hue = ((spec.hue % 360) + 360) % 360;
     this.lineages.describe(m.id, m.hue, sp, false, spec.name);
     this.lineages.found(m.id);
@@ -783,7 +786,7 @@ export class Ecosystem {
     c.aging = this.aging;
     m.id = r.id; m.parentId = r.parentId; m.depth = r.depth; m.birthTick = r.birthTick; m.children = r.children; m.eaten = r.eaten; m.kills = r.kills;
     m.species = r.species; m.hue = r.hue; m.founderId = r.founderId; m.lastBirthTick = r.lastBirthTick;
-    m.birth.energy = r.birthEnergy; m.birth.cost = r.birthCost; m.birth.cooldown = r.birthCooldown; m.cooldownTicks = r.cooldownTicks;
+    m.birth.energy = r.birthEnergy; m.birth.cost = r.birthCost; m.birth.cooldown = r.birthCooldown; m.cooldownTicks = r.cooldownTicks; m.mutationScale = r.mutationScale ?? 1;
     this.journal?.born.push(m.id);
     this.table.admit(m);
     return m;

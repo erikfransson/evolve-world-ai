@@ -45,6 +45,7 @@ export interface SelectedDetails {
   birthEnergy: number; // energy at which it has a child
   birthCost: number; // energy the parent pays, and the child starts with
   birthCooldown: number; // seconds between births
+  mutationScale?: number; // multiplier of the mutation std of its children (1 unless inserted with another); the Live binary details leave it out
   drain: number; // energy per second now, with old age, thrust and turning
   rayKinds: Uint8Array; // HitKind per ray
   rayCloseness: Float32Array;
