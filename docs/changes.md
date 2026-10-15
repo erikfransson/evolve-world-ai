@@ -6,7 +6,7 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
-## 0.2.0 (not released yet)
+## 0.2.0 (2026-10-15)
 
 ### Live World
 - Landing page polish: a hero with buttons to watch the Live World or create your own, a Live World card that shows the real Inland Sea from above with six lineages grazing, giving birth and dying, its live numbers (creatures alive, people watching) from the server, a busier Ecosystem card, a short "How it works" (sense, think, evolve), a fuller footer, and share previews (description, Open Graph and Twitter tags, a 1200 x 630 image). The Trials card's rays no longer reach past the arena wall.
