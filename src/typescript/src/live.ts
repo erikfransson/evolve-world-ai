@@ -285,9 +285,11 @@ function overlayShift(): number {
   const stack = document.querySelector<HTMLElement>(".ov-stack");
   if (!stack || getComputedStyle(stack).position !== "absolute") return 0;
   const c = canvas.getBoundingClientRect();
-  const r = stack.getBoundingClientRect();
-  if (c.right - r.right < 0.4 * c.width) return 0;
-  return ((r.right - c.left) / 2) * (canvasW / c.width);
+  // The open cards only: folded ones are small chips, and with all folded the creature is centred in the whole view.
+  let right = c.left;
+  for (const card of stack.querySelectorAll<HTMLElement>(":scope > .ov:not(.min):not([hidden])")) right = Math.max(right, card.getBoundingClientRect().right);
+  if (right <= c.left || c.right - right < 0.4 * c.width) return 0;
+  return ((right - c.left) / 2) * (canvasW / c.width);
 }
 
 function setFollowing(on: boolean): void {
