@@ -3,6 +3,8 @@ import { HIT_CREATURE, HIT_NONE } from "./types.ts";
 import type { CreatureState, RayHit } from "./types.ts";
 import type { WasmCrowd } from "./wasm/crowdKernel.ts";
 
+type GridArrays = Pick<Crowd, "xs" | "ys" | "energies" | "species" | "owners" | "cellStart" | "occupied">;
+
 export const SMALL_SORT = 12; // up to this many creatures rebuildFrom sorts by insertion: RL episodes have 1-11 creatures, the radix sort pays off for crowds
 
 // Creatures in a uniform grid of cell size config.creature.rayLength, rebuilt each tick by a stable radix sort of the cell keys,
@@ -35,6 +37,7 @@ export class Crowd {
   readonly radixPasses: number;
   readonly radixBits: number;
   kernel: WasmCrowd | null = null; // set while the arrays are views of WebAssembly memory (adopt), where the sense kernel can read them in place
+  private kept: GridArrays | null = null; // the own arrays set aside while adopted, so a JS rebuild takes them back instead of allocating
   private readonly radixCount: Int32Array;
   // Candidates of one sensing: offset to the creature, squared distance minus squared radius, energy.
   private candFx = new Float64Array(64);
@@ -110,19 +113,24 @@ export class Crowd {
   }
 
   // Takes the grid the WebAssembly kernel built (crowd.wat, a twin of rebuildFrom) as its arrays. They stay views of that memory until the next JS rebuild.
-  adopt(v: { xs: Float64Array; ys: Float64Array; energies: Float64Array; species: Int32Array; owners: Int32Array; cellStart: Int32Array; occupied: Int32Array }, n: number, occupiedCount: number, kernel: WasmCrowd): void {
+  adopt(v: GridArrays, n: number, occupiedCount: number, kernel: WasmCrowd): void {
+    if (!this.kernel) {
+      const { xs, ys, energies, species, owners, cellStart, occupied } = this;
+      this.kept = { xs, ys, energies, species, owners, cellStart, occupied };
+    }
     Object.assign(this, v);
     this.count = n;
     this.occupiedCount = occupiedCount;
     this.kernel = kernel;
   }
 
-  // Own arrays again after adopt, for a rebuild in JS.
+  // Own arrays again after adopt, for a rebuild in JS; the kernel forgets its grid.
   private own(n: number): void {
+    this.kernel!.drop();
     this.kernel = null;
-    this.xs = new Float64Array(0);
-    this.grow(Math.max(n, 64));
-    this.cellStart = new Int32Array(this.cols * this.rows + 1);
+    Object.assign(this, this.kept);
+    this.kept = null;
+    if (n > this.xs.length) this.grow(n);
   }
 
   // True when a snapshotted creature is closer than reach to (x, y).

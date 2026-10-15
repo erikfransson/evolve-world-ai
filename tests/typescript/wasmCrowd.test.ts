@@ -319,6 +319,23 @@ describe.skipIf(!wasmAvailable())("the WebAssembly kernels at their edges", () =
     }
   });
 
+  it("a JS rebuild on the Crowd itself drops the kernel's grid and takes the set-aside arrays back", () => {
+    const eco = make(inland, 300);
+    const e = eco as Any;
+    const crowd: Crowd = e.crowd;
+    expect(crowd.kernel).not.toBeNull();
+    const own = (crowd as Any).kept.xs;
+    const n = eco.members.length;
+    const x = Float64Array.from(eco.members, (m) => m.creature.state.x);
+    const y = Float64Array.from(eco.members, (m) => m.creature.state.y);
+    crowd.rebuildFrom(x, y, new Float64Array(n), n);
+    expect(crowd.kernel).toBeNull();
+    expect(e.wasmCrowd.n).toBe(0); // so a memory growth does not put the old grid back
+    expect(crowd.xs).toBe(own);
+    e.kernels.brains.alloc(40 * 1024 * 1024);
+    expect(crowd.xs).toBe(own);
+  });
+
   it("the sense kernel on creatures at extreme positions, in both crowd modes, with and without rock", () => {
     for (const js of [false, true]) {
       for (const build of [() => make((c) => c, 100), () => make(inland, 200)]) {

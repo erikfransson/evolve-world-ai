@@ -443,7 +443,6 @@ export class Ecosystem {
     const wasm = this.wasmCrowd;
     if (wasm && n > SMALL_SORT && !jsCrowdForced()) wasm.rebuild(this.rowAt, n, species);
     else if (this.resident) {
-      wasm?.drop();
       this.crowd.rebuildRows(this.resident.f64, this.rowAt, F.energy, n, species);
     } else this.crowd.rebuild(this.states, n, species);
   }
