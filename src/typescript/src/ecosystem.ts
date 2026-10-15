@@ -126,13 +126,17 @@ function loadMap(): void {
   });
 }
 
+// Legend swatches cost up to about 150 ms on this thread (a map's ground outlines), so they wait for an idle moment.
+function idle(fn: () => void): void {
+  if (typeof requestIdleCallback === "function") requestIdleCallback(fn, { timeout: 3000 });
+  else setTimeout(fn, 200);
+}
+
 // A random map's legend swatches, from its terrain (cached by its settings), a moment after a change so a form drag stays smooth.
 function paintRandomLegend(c: EcoConfig): void {
   if (c.world.map) return;
   // Building a random map costs 80 to 180 ms on this thread (the render worker has its own), so it waits for an idle moment.
-  const paint = (): void => void (config === c && paintTerrainLegend(readyTerrainOf(c)));
-  if (typeof requestIdleCallback === "function") requestIdleCallback(paint, { timeout: 3000 });
-  else setTimeout(paint, 200);
+  idle(() => void (config === c && paintTerrainLegend(readyTerrainOf(c))));
 }
 
 let species = speciesList(config); // the config's species, resolved
@@ -198,12 +202,14 @@ function onSnapshot(e: MessageEvent<EcoOutMessage>): void {
     if (!mapShown && host && msg.name === map && msg.width === width && msg.height === height) {
       host.useMap({ name: msg.name, width: msg.width, height: msg.height, parts: msg.parts, outlines: null });
       mapShown = true;
-      try {
-        const m = unpackMap(msg.width, msg.height, msg.parts); // checked like the page's own build; rock outlines trace lazily, only the swatch's
-        paintTerrainLegend(new Terrain(m.rock, m.ground, msg.width, msg.height, m.weights));
-      } catch {
-        // arrays that do not fit: the legend keeps its drawn icons
-      }
+      idle(() => {
+        try {
+          const m = unpackMap(msg.width, msg.height, msg.parts); // checked like the page's own build; rock outlines trace lazily, only the swatch's
+          paintTerrainLegend(new Terrain(m.rock, m.ground, msg.width, msg.height, m.weights));
+        } catch {
+          // arrays that do not fit: the legend keeps its drawn icons
+        }
+      });
     }
     return;
   }
