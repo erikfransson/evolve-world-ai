@@ -110,6 +110,11 @@ export class World implements WorldView {
   // When set, the cells whose item list changed since the consumer last cleared them (repeats allowed), so a packed copy of the grid
   // elsewhere can be patched instead of rewritten.
   dirtyCells: number[] | null = null;
+  // Maps with weights keep local caps: the items of each kind per cap cell (kind 0 food, 1 poison, count[kind * cells + cell]) and the most the
+  // ecosystem lets a cell hold. capOf[i] is the cell of slot i, -1 while it is free. All null on the random map.
+  private readonly capOf: Int32Array | null;
+  private readonly capCount: Int32Array | null;
+  private capLimit: [Int32Array, Int32Array] | null = null;
 
   constructor(config: EngineConfig, capacity: number) {
     const w = config.world;
@@ -139,6 +144,31 @@ export class World implements WorldView {
       this.freePos[capacity - 1 - k] = k;
     }
     this.freeCount = capacity;
+    const weights = this.terrain.weights;
+    this.capOf = weights ? new Int32Array(capacity).fill(-1) : null;
+    this.capCount = weights ? new Int32Array(2 * weights.capCols * weights.capRows) : null;
+  }
+
+  // Sets how many items of each kind a cap cell may hold; addRandomly declines a spot in a full cell. Only for worlds on a map with weights.
+  setCapLimits(food: Int32Array, poison: Int32Array): void {
+    this.capLimit = [food, poison];
+  }
+
+  private capSlot(i: number): number {
+    return this.kinds[i] === HIT_POISON ? this.capCount!.length / 2 : 0;
+  }
+
+  private uncount(i: number): void {
+    const c = this.capOf![i]!;
+    if (c < 0) return;
+    this.capCount![this.capSlot(i) + c]!--;
+    this.capOf![i] = -1;
+  }
+
+  private recount(i: number): void {
+    const c = this.terrain.weights!.capIndex(this.xs[i]!, this.ys[i]!);
+    this.capOf![i] = c;
+    this.capCount![this.capSlot(i) + c]!++;
   }
 
   // Slots holding an item.
@@ -167,18 +197,32 @@ export class World implements WorldView {
     this.setItem(i, this.spot.x, this.spot.y, kind);
   }
 
-  // Adds an item at a random spot chosen as placeRandomly does, in the most recently freed slot; the slot, or -1 when all are taken.
+  // Adds an item at a random spot chosen as placeRandomly does, in the most recently freed slot; the slot, -1 when all are taken, or -2 when
+  // the spot lies in a cap cell that is full (nothing is added; the due item is lost, so regrowth stays in proportion to the weights).
   addRandomly(kind: HitKind, rng: Rng): number {
     if (this.freeCount === 0) return -1;
+    const { spawn } = this.terrain;
+    const k = kind === HIT_POISON ? 1 : 0;
+    if (!spawn.usable(k)) return -2; // nowhere on this map has weight for the kind
+    this.exhausted = false;
     this.randomSpot(kind, rng);
+    if (spawn.exact && this.exhausted) return -2; // the tries ran out, so the last spot is not a weighted draw
+    if (this.capLimit) {
+      const c = this.terrain.weights!.capIndex(this.spot.x, this.spot.y);
+      if (this.capCount![k * (this.capCount!.length / 2) + c]! >= this.capLimit[k]![c]!) return -2;
+    }
     return this.addItem(this.spot.x, this.spot.y, kind);
   }
 
   private readonly spot = { x: 0, y: 0 };
+  private exhausted = false; // the last randomSpot used up its tries and took its last spot as it was
   private readonly rockRange = new Int32Array(4);
 
   private randomSpot(kind: HitKind, rng: Rng, clear?: { x: number; y: number; radius: number }, reject?: (x: number, y: number) => boolean): void {
     const r = this.itemRadius;
+    const wk = kind === HIT_POISON ? 1 : 0;
+    const { spawn } = this.terrain;
+    const picky = spawn.usable(wk); // placing outright on a map with no weight for the kind is uniform
     let x: number;
     let y: number;
     let tries = 0;
@@ -186,11 +230,12 @@ export class World implements WorldView {
     do {
       if (all++ >= MAX_SPOT_TRIES) {
         ({ x, y } = this.terrain.nearestFree(x!, y!, r)); // bounded: the last try, moved clear of rock
+        this.exhausted = true;
         break;
       }
       x = rng.range(r, this.width - r);
       y = rng.range(r, this.height - r);
-    } while ((clear && (x - clear.x) ** 2 + (y - clear.y) ** 2 < clear.radius ** 2) || this.terrain.touchesRock(x, y, r) || (tries++ < MAX_REJECTS && (reject?.(x, y) || this.tooClose(x, y, kind))));
+    } while ((clear && (x - clear.x) ** 2 + (y - clear.y) ** 2 < clear.radius ** 2) || (picky && !spawn.accepts(wk, x, y, rng)) || this.terrain.touchesRock(x, y, r) || (tries++ < MAX_REJECTS && (reject?.(x, y) || this.tooClose(x, y, kind))));
     this.spot.x = x;
     this.spot.y = y;
   }
@@ -262,6 +307,11 @@ export class World implements WorldView {
     this.cellHead.set(s.cellHead);
     this.freeSlots.set(s.freeSlots);
     this.freeCount = s.freeCount;
+    if (this.capOf) {
+      this.capOf.fill(-1);
+      this.capCount!.fill(0);
+      for (let i = 0; i < this.count; i++) if (this.kinds[i] !== HIT_NONE) this.recount(i);
+    }
     this.freePos.fill(-1);
     for (let k = 0; k < this.freeCount; k++) this.freePos[this.freeSlots[k]!] = k;
     this.itemCell.fill(-1);
@@ -282,6 +332,7 @@ export class World implements WorldView {
   setItem(i: number, x: number, y: number, kind: HitKind): void {
     this.log?.push(ITEM_SET, i, x, y, kind);
     this.version++;
+    if (this.capOf) this.uncount(i);
     this.unlink(i);
     this.takeSlot(i);
     this.xs[i] = x;
@@ -293,6 +344,7 @@ export class World implements WorldView {
     this.cellHead[c] = i;
     this.stampCell(c);
     this.markDirty(c);
+    if (this.capOf) this.recount(i);
   }
 
   // Records a changed cell for the WASM item rows; null (rebuild all) once the list is longer than the grid, so it stays bounded when nobody syncs.
@@ -304,6 +356,7 @@ export class World implements WorldView {
   removeItem(i: number): void {
     this.log?.push(ITEM_REMOVE, i);
     this.version++;
+    if (this.capOf) this.uncount(i);
     this.unlink(i);
     this.kinds[i] = HIT_NONE;
     if (this.freePos[i] < 0) {
@@ -576,6 +629,12 @@ export class World implements WorldView {
       }
       return -1;
     }
+    return this.firstItemWithin(x, y, reach);
+  }
+
+  // The first item in the grid walk (cells row by row, each list in order) closer than reach to (x, y), or -1.
+  private firstItemWithin(x: number, y: number, reach: number): number {
+    const reach2 = reach * reach;
     this.clampCellRange(x, y, reach, this.eatRange);
     const { rangeX0: cx0, rangeX1: cx1, rangeY0: cy0, rangeY1: cy1 } = this.eatRange;
     for (let cy = cy0; cy <= cy1; cy++) {
@@ -588,5 +647,12 @@ export class World implements WorldView {
       }
     }
     return -1;
+  }
+
+  // For each of the n bodies k, in the order given, stores in out[owners[k]] what eatAt returns for (px[k], py[k]), without the ray cache.
+  // Meant for bodies sorted by cell, so neighbours read the same cells. Lookups do not change the items.
+  touchedBatch(px: Float64Array, py: Float64Array, owners: Int32Array, n: number, radius: number, out: Int32Array): void {
+    const reach = radius + this.itemRadius;
+    for (let k = 0; k < n; k++) out[owners[k]!] = this.firstItemWithin(px[k]!, py[k]!, reach);
   }
 }

@@ -13,6 +13,8 @@ import { LIMITS } from "../../server/src/config.ts";
 import { LiveWorld } from "../../server/src/liveWorld.ts";
 import { smallConfig } from "./liveHelpers.ts";
 import { StateStore } from "../../server/src/state.ts";
+import { loadFounders } from "../../server/src/founders.ts";
+import { wireName } from "../../src/typescript/src/live/add.ts";
 
 const tmp = (): string => mkdtempSync(join(tmpdir(), "evolve-abuse-"));
 
@@ -22,8 +24,8 @@ describe("admin overrides", () => {
     writeFileSync(join(dir, "admin-overrides.json"), JSON.stringify({ "eco.hueDrift": 10 }));
     const world = new LiveWorld(smallConfig(), null);
     const saved = loadOverrides(dir, world);
-    const admin = startAdmin("127.0.0.1", 43517, "tok", world, dir, dir, saved, { pause() {}, resume() {}, paused: () => false, saveNow: async () => "", listSaves: () => [], loadSave: async () => "", stop() {} });
-    const ws = new WebSocket("ws://127.0.0.1:43517/");
+    const admin = startAdmin("127.0.0.1", 62517, "tok", world, dir, dir, saved, { pause() {}, resume() {}, paused: () => false, saveNow: async () => "", listSaves: () => [], loadSave: async () => "", stop() {}, blankName: async () => 0 });
+    const ws = new WebSocket("ws://127.0.0.1:62517/");
     const replies: { t: string }[] = [];
     ws.on("message", (d: Buffer) => replies.push(JSON.parse(d.toString())));
     await new Promise((r) => ws.on("open", r));
@@ -31,6 +33,40 @@ describe("admin overrides", () => {
     ws.send(JSON.stringify({ t: "set-config", changes: { "mutation.rate": 0.1 } }));
     await vi.waitFor(() => expect(replies.map((m) => m.t)).toEqual(["authed", "config"]));
     expect(JSON.parse(readFileSync(join(dir, "admin-overrides.json"), "utf8"))).toEqual({ "eco.hueDrift": 10, "mutation.rate": 0.1 });
+    ws.close();
+    admin.close();
+  });
+});
+
+describe("admin blank-name", () => {
+  it("clears a visitor's name from every family that carries it, starters and other names untouched; a bad name is refused", async () => {
+    const dir = tmp();
+    const world = new LiveWorld(smallConfig(), null);
+    const add = (name: string, copies: number): number[] => {
+      const f = loadFounders(new URL("../../src/typescript/public/live-founders.json", import.meta.url).pathname)[0]!;
+      const r = world.addCreatures({ plan: f.plan, genome: f.genome, birth: { energy: 150, cost: 70, cooldown: 10 }, name, hue: 10, copies });
+      if (!("ids" in r)) throw new Error(r.reason);
+      return r.ids;
+    };
+    const rude = [...add("Rude", 2), ...add("Rude", 1)];
+    const kind = add("Kind", 1);
+    const admin = startAdmin("127.0.0.1", 62521, "tok", world, dir, dir, {}, { pause() {}, resume() {}, paused: () => false, saveNow: async () => "", listSaves: () => [], loadSave: async () => "", stop() {}, blankName: async (n) => world.blankName(n) });
+    const ws = new WebSocket("ws://127.0.0.1:62521/");
+    const replies: { t: string; message?: string }[] = [];
+    ws.on("message", (d: Buffer) => replies.push(JSON.parse(d.toString())));
+    await new Promise((r) => ws.on("open", r));
+    ws.send(JSON.stringify({ t: "auth", token: "tok" }));
+    ws.send(JSON.stringify({ t: "blank-name", name: "not ok!" }));
+    ws.send(JSON.stringify({ t: "blank-name", name: "Rude" }));
+    await vi.waitFor(() => expect(replies).toHaveLength(3));
+    expect(replies[1]).toMatchObject({ t: "error", message: expect.stringMatching(/letters or digits/) });
+    expect(replies[2]).toEqual({ t: "blanked", message: "cleared the name from 3 families" });
+    for (const id of rude) expect(wireName(world.eco.lineageName(id))).toEqual({ name: "", starter: false });
+    expect(world.eco.lineageName(kind[0]!)).toBe("Kind");
+    const restored = new LiveWorld(smallConfig(), null);
+    restored.restoreState(JSON.parse(JSON.stringify(world.saveState())));
+    expect(wireName(restored.eco.lineageName(rude[0]!)).name).toBe(""); // a save keeps it blank
+    expect(restored.aliveAdded()).toBe(world.aliveAdded()); // and the families still count as visitor adds
     ws.close();
     admin.close();
   });
@@ -54,14 +90,14 @@ describe("slow readers", () => {
   }
 
   it("drops a client whose queue passes the hard cap", async () => {
-    const { ws, done } = await slowClient(43518, LIMITS.hardBufferedBytes);
+    const { ws, done } = await slowClient(62518, LIMITS.hardBufferedBytes);
     expect(ws.bufferedAmount).toBeGreaterThan(LIMITS.hardBufferedBytes);
     expect(dropReason(ws.bufferedAmount, state(), 1000)).toMatch(/hard cap/);
     done();
   });
 
   it("drops a client held above the frame-skip level for more than 10 s, not before", async () => {
-    const { ws, done } = await slowClient(43519, LIMITS.maxBufferedBytes);
+    const { ws, done } = await slowClient(62519, LIMITS.maxBufferedBytes);
     expect(ws.bufferedAmount).toBeGreaterThan(LIMITS.maxBufferedBytes);
     expect(ws.bufferedAmount).toBeLessThan(LIMITS.hardBufferedBytes);
     const c = state();

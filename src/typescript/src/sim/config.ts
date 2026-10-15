@@ -30,6 +30,8 @@ export interface SimConfig {
     fastDensity: number; // patches where creatures move at 175% speed
     slowSize: number; // size of a slow patch, a multiple of the standard one (1 keeps the standard)
     fastSize: number; // same for fast patches
+    // A hand-designed map by name (maps/index.ts) instead of the random features above, which it ignores; "" for none. Its size must be the map's.
+    map?: string;
   };
   creature: {
     radius: number;
@@ -99,6 +101,7 @@ export const DEFAULT_CONFIG: SimConfig = {
     fastDensity: 0,
     slowSize: 1,
     fastSize: 1,
+    map: "",
   },
   creature: {
     radius: 12,

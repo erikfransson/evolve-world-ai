@@ -1,4 +1,4 @@
-import { BRAIN_WASM_BASE64, SENSE_WASM_BASE64 } from "./kernels.generated.ts";
+import { BRAIN_WASM_BASE64, SENSE_WASM_BASE64, FILL_WASM_BASE64, STEP_WASM_BASE64, CROWD_WASM_BASE64, MEMBERS_WASM_BASE64 } from "./kernels.generated.ts";
 
 // WebAssembly SIMD kernels are optional: callers get null from the create functions when they are unavailable and keep the JS path.
 
@@ -13,6 +13,10 @@ function decode(base64: string): Uint8Array<ArrayBuffer> {
 
 export const BRAIN_BYTES = decode(BRAIN_WASM_BASE64);
 export const SENSE_BYTES = decode(SENSE_WASM_BASE64);
+export const FILL_BYTES = decode(FILL_WASM_BASE64);
+export const STEP_BYTES = decode(STEP_WASM_BASE64);
+export const CROWD_BYTES = decode(CROWD_WASM_BASE64);
+export const MEMBERS_BYTES = decode(MEMBERS_WASM_BASE64);
 
 // Compiled modules by their bytes: compiling is most of an instance's cost, and a module holds no state.
 const modules = new WeakMap<Uint8Array, WebAssembly.Module>();
@@ -41,6 +45,7 @@ export function wasmAvailable(): boolean {
 export class Kernel<E extends WebAssembly.Exports> {
   readonly exports: E;
   readonly memory: WebAssembly.Memory;
+  onGrow: (() => void) | null = null; // called after the memory grew, when every view of it is stale
   private f32Cache = new Float32Array(0);
   private i32Cache = new Int32Array(0);
 
@@ -69,11 +74,12 @@ export class Kernel<E extends WebAssembly.Exports> {
     return this.i32Cache;
   }
 
-  // Grows the memory to at least bytes.
+  // Grows the memory to at least bytes, by an eighth more than needed so that growing (which replaces every view of it) stays rare.
   ensure(bytes: number): void {
     const have = this.memory.buffer.byteLength;
     if (bytes <= have) return;
-    this.memory.grow(Math.ceil((bytes - have) / PAGE));
+    this.memory.grow(Math.ceil((Math.max(bytes, have + have / 8) - have) / PAGE));
+    this.onGrow?.();
   }
 }
 

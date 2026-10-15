@@ -306,7 +306,11 @@ describe("Ecosystem collision damage", () => {
     const [a, b] = e.members.map((m) => m.creature.state) as [CreatureState, CreatureState];
     Object.assign(a, { x: 500, y: 500, vx: va, vy: 0, energy: ea });
     Object.assign(b, { x: 520, y: 500, vx: vb, vy: 0, energy: eb });
-    const bump = () => (e as unknown as { collideAll(): void }).collideAll();
+    const inner = e as unknown as { contacts: { collideAll(): void }; crowd: { rebuild(s: readonly CreatureState[], n: number): void }; table: { states: CreatureState[] } };
+    const bump = () => {
+      inner.crowd.rebuild(inner.table.states, inner.table.states.length); // sharedPhase grids the moved positions before collideAll
+      inner.contacts.collideAll();
+    };
     return { e, a, b, bump };
   };
 
@@ -396,7 +400,7 @@ describe("Ecosystem collision damage", () => {
     shared(e); // the second one dies and is removed
     expect(e.population).toBe(1);
     e.prepareTick();
-    e.sensePhase(0, 1);
+    e.sensePhase();
     expect(e.members[0]!.creature.rays.some((ray) => ray.kind === HIT_CREATURE)).toBe(false);
   });
 

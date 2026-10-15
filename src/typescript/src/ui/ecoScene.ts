@@ -4,7 +4,8 @@ import type { Camera } from "./camera.ts";
 import { HUNTER_REACH, hunterPath } from "./speciesStyle.ts";
 import type { BirthRings } from "./ecoBirths.ts";
 import type { ImpactEffects } from "./ecoImpacts.ts";
-import { terrainOf } from "../sim/terrain.ts";
+import { readyTerrainOf } from "../sim/terrain.ts";
+import type { Terrain } from "../sim/terrain.ts";
 import type { TerrainSettings } from "../sim/terrain.ts";
 import { BACKGROUND, FLOOR, FOOD, POISON, RAY_COLORS, WALL } from "./scene.ts";
 import { drawTerrain } from "./terrainScene.ts";
@@ -17,6 +18,7 @@ export interface EcoDrawConfig {
   species: readonly { fullEnergy: number; hunter: boolean }[]; // per species: energy at which the body fill is full, and hunters drawn with a pointed nose
   winter?: number; // 0 (summer) to 1 (mid-winter): how far the floor is tinted cold
   terrain?: TerrainSettings; // the map to draw (rock and slow and fast ground); none without
+  map?: Terrain; // or the map already built (the Live page builds it on a worker), used instead of terrain
 }
 
 // Adds a creature's outline to the current path: a circle, or a hunter's teardrop.
@@ -95,7 +97,8 @@ export class EcoRenderer {
       ctx.fillStyle = `rgba(150, 190, 235, ${WINTER_TINT * cfg.winter})`;
       ctx.fillRect(0, 0, cfg.worldW, cfg.worldH);
     }
-    if (cfg.terrain) drawTerrain(ctx, terrainOf(cfg.terrain), z, { x0: tl.x, x1: br.x, y0: tl.y, y1: br.y });
+    const terrain = cfg.map ?? (cfg.terrain ? readyTerrainOf(cfg.terrain) : null); // none while a named map is on its way
+    if (terrain) drawTerrain(ctx, terrain, z, { x0: tl.x, x1: br.x, y0: tl.y, y1: br.y });
     ctx.strokeStyle = WALL;
     ctx.lineWidth = Math.max(2, 1.5 * dpr) * dev;
     ctx.strokeRect(0, 0, cfg.worldW, cfg.worldH);
@@ -112,7 +115,8 @@ export class EcoRenderer {
     const r = cfg.itemRadius;
     const px = r * z; // device px radius
     const tiny = px < TINY_ITEM;
-    const side = 2 * TINY_ITEM * dev * 0.55; // about 1.6 device px
+    const dense = (cfg.map ?? (cfg.terrain ? readyTerrainOf(cfg.terrain) : null))?.designed === true; // a map with tens of thousands of items: food dots stay light from afar
+    const side = 2 * TINY_ITEM * dev * (dense ? 0.4 : 0.55); // about 1.6 device px
     // Dim while small, opaque once large, so mid zoom blends into the full-size items.
     const solid = Math.min(1, Math.max(0, (px - TINY_ITEM) / (SOLID_ITEM - TINY_ITEM)));
     // One pass over all items collects the visible ones per kind, in snapshot order: food from the front of the scratch array, poison from the back.
@@ -133,7 +137,7 @@ export class EcoRenderer {
     }
     for (const [kind, color, boost] of [[1, FOOD, 0], [2, POISON, 0.15]] as const) {
       ctx.fillStyle = color;
-      ctx.globalAlpha = Math.min(1, ITEM_DIM + boost + (1 - ITEM_DIM - boost) * solid);
+      ctx.globalAlpha = Math.min(1, ITEM_DIM + boost + (1 - ITEM_DIM - boost) * solid) * (dense && kind === 1 ? 0.5 + 0.5 * solid : 1);
       ctx.beginPath();
       const count = kind === 1 ? nFood : nPoison;
       for (let k = 0; k < count; k++) {

@@ -1,6 +1,6 @@
 import { genomeLength, layerSizes } from "../../src/typescript/src/sim/brain.ts";
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
-import { castFor, checkEnv, envConfig, randomLearner, runEpisode } from "../../src/typescript/src/sim/rl/env.ts";
+import { castFor, checkEnv, envConfig, isRam, RAM_MIN_ENERGY, randomLearner, runEpisode } from "../../src/typescript/src/sim/rl/env.ts";
 import { recordEpisode } from "../../src/typescript/src/sim/rl/recording.ts";
 import { wasmAvailable } from "../../src/typescript/src/sim/wasm/loader.ts";
 import { creatureFile, parseCreatureFile } from "../../src/typescript/src/sim/rl/creatureFile.ts";
@@ -230,9 +230,24 @@ describe("env groups", () => {
   it("file every built-in env under a group, the small ones outside Advanced", () => {
     for (const e of ENVS) expect(ENV_GROUPS).toContain(groupOf(e));
     expect(groupOf(envById("fence")!)).toBe("Avoid and find a way");
-    expect(groupOf(envById("brawl")!)).toBe("Compete");
+    expect(groupOf(envById("brawl")!)).toBe("Fight");
     expect(groupOf(envById("aggressor")!)).toBe("Fight");
-    expect(groupOf(envById("poison-field")!)).toBe("Advanced");
+    expect(groupOf(envById("poison-field")!)).toBe("Avoid and find a way");
+    expect(groupOf(envById("glimpse")!)).toBe("Memory");
+    expect(groupOf(envById("hunt-grazers")!)).toBe("Advanced");
+    expect(groupOf(envById("live-patch")!)).toBe("Bigger");
+  });
+
+  it("gives every forager group at least three envs", () => {
+    const count = new Map<string, number>();
+    for (const e of ENVS) if (e.tags.includes("forager")) count.set(groupOf(e), (count.get(groupOf(e)) ?? 0) + 1);
+    for (const g of ENV_GROUPS) if (g !== "Advanced" && g !== "Custom") expect(count.get(g) ?? 0).toBeGreaterThanOrEqual(3);
+  });
+
+  it("keeps every Bigger env within the custom env limits", () => {
+    const bigger = ENVS.filter((e) => groupOf(e) === "Bigger");
+    expect(bigger.length).toBeGreaterThanOrEqual(4);
+    for (const e of bigger) expect(typeof checkEnv(JSON.parse(JSON.stringify(e)), "ecosystem", 0)).not.toBe("string");
   });
 });
 
@@ -261,5 +276,37 @@ describe("learner input under the WASM kernels", () => {
       seen += c.brain.layerActivations()[0]!.filter((v) => v !== 0).length > 1 ? 1 : 0;
     });
     expect(seen).toBeGreaterThan(0);
+  });
+});
+
+describe("rams", () => {
+  // A scripted learner charges a weak rival at full speed: the kill is a ram, though the learner's energy drops (it gains the
+  // rival's energy from before the hit, at most the damage it took itself).
+  it("counts a rival killed by bumping into the learner", () => {
+    const env = checkEnv({ id: "ram-test", name: "Ram", size: [200, 200], food: 0, poison: 0, foodRegrow: 0, seconds: 15, collisionDamage: true, learnerEnergy: 300, rivals: [{ species: 0, count: 1, source: "random", energy: 10 }], reward: { ram: 1 } }, "ecosystem", 0) as EnvSpec;
+    let rams = 0;
+    for (let seed = 1; seed <= 4; seed++) {
+      let eco: Ecosystem | null = null;
+      const charge = (c: { state: { x: number; y: number; heading: number }; outputs: Float32Array }): void => {
+        const rival = eco?.members.find((m) => m.id !== 0)?.creature.state;
+        if (!rival) return;
+        const turn = Math.atan2(rival.y - c.state.y, rival.x - c.state.x) - c.state.heading;
+        c.outputs[0] = Math.max(-1, Math.min(1, 3 * Math.atan2(Math.sin(turn), Math.cos(turn))));
+        c.outputs[1] = 1;
+      };
+      rams += runEpisode(env, randomLearner(env, seed), seed, null, undefined, (e) => (eco = e), charge as never).rams;
+    }
+    expect(rams).toBeGreaterThan(0);
+  });
+
+  // Each clause of the rule on its own: a ram, then the same death with one condition changed.
+  const ram = { learnerAlive: true, touchesLearner: true, energyBefore: 5, touchesOtherRival: false, poisonEatenThisTick: false };
+  it("credits a rival with energy left that dies touching only the living learner", () => expect(isRam(ram)).toBe(true));
+  it("does not credit a rival that starved next to the learner", () => expect(isRam({ ...ram, energyBefore: RAM_MIN_ENERGY })).toBe(false));
+  it("does not credit a rival killed by another rival", () => expect(isRam({ ...ram, touchesOtherRival: true })).toBe(false));
+  it("does not credit a poison death beside the learner", () => expect(isRam({ ...ram, poisonEatenThisTick: true })).toBe(false));
+  it("does not credit a death away from the learner or after it died", () => {
+    expect(isRam({ ...ram, touchesLearner: false })).toBe(false);
+    expect(isRam({ ...ram, learnerAlive: false })).toBe(false);
   });
 });

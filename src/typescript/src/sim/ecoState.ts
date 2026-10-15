@@ -5,6 +5,7 @@ import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "./ecoConfig.ts";
 import type { EcoConfig } from "./ecoConfig.ts";
 import { Ecosystem } from "./ecosystem.ts";
 import type { EcoCore, MemberRecord } from "./ecosystem.ts";
+import { mapSpec, mapVersion } from "./maps/index.ts";
 import type { LineageState } from "./lineages.ts";
 import type { PoolEntry } from "./seedPool.ts";
 import { checkRanges, mergeSpeciesList } from "./species.ts";
@@ -23,6 +24,7 @@ const OLDEST_VERSION = 1;
 
 export interface EcoState {
   version: number;
+  mapVersion?: string; // the named map's mapVersion (spec hash and MAP_BUILD); absent in older saves and in worlds without a named map
   config: EcoConfig; // as it stands, retunes included; eco.wasm says whether the run used the kernels
   core: EcoCore;
   items: { xs: string; ys: string; kinds: string; nextItem: string; cellHead: string; freeSlots: string; freeCount: number };
@@ -88,6 +90,7 @@ export function saveState(eco: Ecosystem): EcoState {
   const w = (eco.world as World).snapshot();
   return {
     version: STATE_VERSION,
+    ...(config.world.map ? { mapVersion: mapVersion(config.world.map) } : {}),
     config,
     core: eco.exportCore(),
     items: { xs: pack(w.xs), ys: pack(w.ys), kinds: pack(w.kinds), nextItem: pack(w.nextItem), cellHead: pack(w.cellHead), freeSlots: pack(w.freeSlots), freeCount: w.freeCount },
@@ -192,6 +195,7 @@ function checkedConfig(raw: unknown): EcoConfig {
   if (!(config.dt > 0 && config.dt <= 1)) invalid("dt is out of bounds");
   if (!(creature.radius > 0 && creature.radius <= MAX_BODY_RADIUS && creature.rayLength > 0 && creature.rayLength <= 5000)) invalid("creature radius or ray length is out of bounds");
   whole(eco.maxPopulation, 0, MAX_CREATURES, "eco.maxPopulation");
+  whole(eco.birthReserve, 0, MAX_CREATURES, "eco.birthReserve");
   whole(eco.initialPopulation, 0, MAX_CREATURES, "eco.initialPopulation");
   return config;
 }
@@ -244,6 +248,9 @@ export function restoreState(state: EcoState, pool: readonly PoolEntry[] | null 
   const { core, creatures: cr } = state;
   if (!isObject(core) || !isObject(cr) || !isObject(state.items)) return invalid("core, items or creatures are missing");
   const config = checkedConfig(state.config);
+  // A save without the field predates it and is taken to match the current map.
+  const named = config.world.map ? mapSpec(config.world.map) : undefined;
+  if (named && state.mapVersion !== undefined && state.mapVersion !== mapVersion(config.world.map!)) throw new Error(`saved state was made on another version of the map "${config.world.map}"`);
   const species = config.species?.length ?? 1;
   const capacity = whole(core.itemCapacity, 0, MAX_ITEM_SLOTS, "itemCapacity");
   const founders = whole(core.founders, 0, MAX_CREATURES, "founders");

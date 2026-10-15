@@ -4,6 +4,7 @@ import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 // The live settings on a small world, so a test builds and saves one in milliseconds.
 export function smallConfig(): EcoConfig {
   const c = structuredClone(liveConfig);
+  c.world.map = "";
   c.world.width = 2000;
   c.world.height = 1300;
   c.eco.initialPopulation = 40;

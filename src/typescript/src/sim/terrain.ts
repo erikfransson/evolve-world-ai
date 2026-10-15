@@ -2,11 +2,17 @@ import type { EngineConfig } from "./config.ts";
 import { createRng, deriveSeed } from "./rng.ts";
 import type { StatefulRng } from "./rng.ts";
 import type { Body } from "./physics.ts";
+import { buildGroundField, GroundField } from "./groundField.ts";
+import { packMap, unpackMap } from "./maps/mapParts.ts";
+import type { MapParts } from "./maps/mapParts.ts";
+import type { MapWeights } from "./maps/weights.ts";
+import { UNIFORM_FIELD } from "./spawnField.ts";
+import type { SpawnField } from "./spawnField.ts";
 
 // Static map features (#34), generated deterministically from the run seed and the world settings, so every thread that builds
 // the world gets the same ones. Rock (stones and ridges) is a set of discs that creatures bounce off like walls and rays report
-// as walls. Slow and fast patches are unions of discs under the creatures: they move at SLOW_FACTOR or FAST_FACTOR of their
-// speed, and the brain senses which one it stands on. A density is the share of the world area covered, 0 for none.
+// as walls. Slow and fast patches are a smooth field on a coarse raster (groundField.ts) under the creatures: they move at SLOW_FACTOR or
+// FAST_FACTOR of their speed, and the brain senses which one it stands on. A density is the share of the world area covered, 0 for none.
 
 export const TERRAIN_SLOW = -1;
 export const TERRAIN_NORMAL = 0;
@@ -27,11 +33,23 @@ const GAP = 80; // free passage kept between rock and the walls and between piec
 const TRIES = 40; // placements tried per piece before giving up on the rest of its kind
 const MAX_ROCK_SHARE = 0.4; // rock never covers more of the world than this, however high the setting
 export const ROCK_CELL = 300; // world units per cell of the rock grid
+export const CLEAR_CELL = 100; // world units per square of keepOut's clear-of-rock raster
 
 export const PATCH_SIZE_RANGE = [0.4, 2.5] as const; // the form's range for the size of a slow or fast patch, a multiple of the standard one
 export const MAX_PIECES = 300; // pieces of one kind, however high the setting, so a map stays cheap to build and to look up
 // The most the settings forms allow for each density; a saved or pasted config above these is refused.
 export const MAP_DENSITY_MAX = { stoneDensity: 0.2, ridgeDensity: 0.15, slowDensity: 0.3, fastDensity: 0.3 } as const;
+
+// The hand-designed maps, made known by importing maps/index.ts. Only the code that runs a map imports it, so Trials and the Arena leave out
+// the map generator and the specs, and a thread seeded with a map's arrays (seedMapTerrain) never needs them.
+export interface MapSource {
+  spec(name: string): { width: number; height: number } | undefined;
+  built(name: string): { rock: readonly Circle[]; ground: GroundField; weights: MapWeights };
+}
+let maps: MapSource | null = null;
+export function registerMaps(source: MapSource): void {
+  maps = source;
+}
 
 // Throws when a world's map densities are not numbers in 0 .. the form's maximum. Used by every path that reads settings from outside.
 export function checkMapDensities(world: object): void {
@@ -44,6 +62,13 @@ export function checkMapDensities(world: object): void {
 // Throws when a world's map densities or patch sizes are outside the form's range. Used by every path that reads settings from outside.
 export function checkMapSettings(world: object): void {
   checkMapDensities(world);
+  const { map, width, height } = world as { map?: unknown; width?: unknown; height?: unknown };
+  if (map !== undefined && map !== "") {
+    if (!maps) throw new Error(`config "world.map" is set but no maps are registered (import sim/maps/index.ts)`);
+    const spec = typeof map === "string" ? maps.spec(map) : undefined;
+    if (!spec) throw new Error(`config "world.map" must be "" or the name of a map`);
+    if (width !== spec.width || height !== spec.height) throw new Error(`config "world.map" ${map} needs a world of ${spec.width} x ${spec.height}`);
+  }
   for (const key of ["slowSize", "fastSize"]) {
     const v = (world as Record<string, unknown>)[key];
     if (v !== undefined && !(typeof v === "number" && v >= PATCH_SIZE_RANGE[0] && v <= PATCH_SIZE_RANGE[1])) throw new Error(`config "world.${key}" must be a number from ${PATCH_SIZE_RANGE[0]} to ${PATCH_SIZE_RANGE[1]}`);
@@ -57,7 +82,7 @@ interface Circle {
 }
 
 // The settings that make the map, which key the cache.
-export type TerrainSettings = Pick<EngineConfig, "seed"> & { world: Pick<EngineConfig["world"], "width" | "height" | "stoneDensity" | "ridgeDensity" | "slowDensity" | "fastDensity"> & Partial<Pick<EngineConfig["world"], "slowSize" | "fastSize">> };
+export type TerrainSettings = Pick<EngineConfig, "seed"> & { world: Pick<EngineConfig["world"], "width" | "height" | "stoneDensity" | "ridgeDensity" | "slowDensity" | "fastDensity"> & Partial<Pick<EngineConfig["world"], "slowSize" | "fastSize" | "map">> };
 
 export class Terrain {
   readonly width: number;
@@ -72,17 +97,15 @@ export class Terrain {
   readonly rows: number;
   readonly rockStart: Int32Array;
   readonly rockOrder: Int32Array;
-  // Patch discs of both kinds; patches of different kinds never overlap.
-  readonly patchX: Float64Array;
-  readonly patchY: Float64Array;
-  readonly patchR: Float64Array;
-  readonly patchKind: Int8Array;
-  // Grid of the patch discs, cells as for rock: cell c lists the discs touching it, in index order, as patchOrder[patchStart[c] .. patchStart[c + 1] - 1].
-  readonly patchStart: Int32Array;
-  readonly patchOrder: Int32Array;
+  // Mud and firm ground as a raster field; null when the map has none.
+  readonly ground: GroundField | null;
+  // Food and poison weights of a hand-designed map (see maps/weights.ts); null for the random map, where items spread evenly.
+  readonly weights: MapWeights | null;
+  readonly designed: boolean; // a hand-designed map, which the scenes draw in its own style
+  readonly spawn: SpawnField; // where items appear: by the weights, or anywhere on the random map
   readonly empty: boolean; // no rock and no patches
 
-  constructor(rock: readonly Circle[], patches: readonly (Circle & { kind: number })[], width: number, height: number) {
+  constructor(rock: readonly Circle[], ground: GroundField | null, width: number, height: number, weights: MapWeights | null = null) {
     this.width = width;
     this.height = height;
     this.rockCount = rock.length;
@@ -99,25 +122,11 @@ export class Terrain {
     const fill = this.rockStart.slice(0, -1);
     this.rockOrder = new Int32Array(rock.length);
     cellOf.forEach((c, i) => (this.rockOrder[fill[c]!++] = i));
-    this.patchX = Float64Array.from(patches, (d) => d.x);
-    this.patchY = Float64Array.from(patches, (d) => d.y);
-    this.patchR = Float64Array.from(patches, (d) => d.r);
-    this.patchKind = Int8Array.from(patches, (d) => d.kind);
-    this.empty = rock.length === 0 && patches.length === 0;
-    const cells = this.cols * this.rows;
-    const span = (d: Circle): number[] => [Math.max(0, Math.floor((d.x - d.r) / ROCK_CELL)), Math.min(this.cols - 1, Math.floor((d.x + d.r) / ROCK_CELL)), Math.max(0, Math.floor((d.y - d.r) / ROCK_CELL)), Math.min(this.rows - 1, Math.floor((d.y + d.r) / ROCK_CELL))];
-    const each = (visit: (c: number, i: number) => void): void => {
-      patches.forEach((d, i) => {
-        const [x0, x1, y0, y1] = span(d) as [number, number, number, number];
-        for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) visit(cy * this.cols + cx, i);
-      });
-    };
-    this.patchStart = new Int32Array(cells + 1);
-    each((c) => this.patchStart[c + 1]!++);
-    for (let c = 0; c < cells; c++) this.patchStart[c + 1]! += this.patchStart[c]!;
-    const next = this.patchStart.slice(0, -1);
-    this.patchOrder = new Int32Array(this.patchStart[cells]!);
-    each((c, i) => (this.patchOrder[next[c]!++] = i));
+    this.ground = ground;
+    this.weights = weights;
+    this.designed = weights !== null;
+    this.spawn = weights ?? UNIFORM_FIELD;
+    this.empty = rock.length === 0 && ground === null;
   }
 
   private cellOf(x: number, y: number): number {
@@ -137,17 +146,55 @@ export class Terrain {
   }
 
   private readonly range = new Int32Array(4);
+  // keepOut's early-out: one byte per CLEAR_CELL square, 1 where a disc of nearRadius could touch rock from somewhere inside it. Built on the first keepOut per radius.
+  private nearRadius = NaN;
+  private near = new Uint8Array(0);
+  private nearW = 0; // size of the raster, set with it
+  private nearH = 0;
+  get nearCols(): number { return this.nearW; }
+  get nearRows(): number { return this.nearH; }
+  private readonly nearByRadius = new Map<number, Uint8Array<ArrayBuffer>>(); // built rasters, so worlds of different radii sharing this Terrain do not rebuild in turn
+
+  // The clear-of-rock raster for this radius (nearCols x nearRows bytes), for the WASM twin of keepOut. Builds it when it is not the current one, which makes it the one keepOut uses next (a cache switch, no change in results).
+  nearFor(radius: number): Uint8Array {
+    if (radius !== this.nearRadius) this.buildNear(radius);
+    return this.near;
+  }
+
+  private buildNear(radius: number): void {
+    const cols = (this.nearW = Math.ceil(this.width / CLEAR_CELL));
+    const rows = (this.nearH = Math.ceil(this.height / CLEAR_CELL));
+    const built = this.nearByRadius.get(radius);
+    if (built) {
+      this.near = built;
+      this.nearRadius = radius;
+      return;
+    }
+    if (this.nearByRadius.size >= 8) this.nearByRadius.clear(); // a bound; there are only a few creature radii in practice
+    const near = (this.near = new Uint8Array(cols * rows));
+    this.nearByRadius.set(radius, near);
+    for (let i = 0; i < this.rockCount; i++) {
+      const x = this.rockX[i]!;
+      const y = this.rockY[i]!;
+      const reach = this.rockR[i]! + radius + 1; // +1 world unit of slack over the exact touch distance
+      const c0 = Math.max(0, Math.floor((x - reach) / CLEAR_CELL));
+      const c1 = Math.min(cols - 1, Math.floor((x + reach) / CLEAR_CELL));
+      const r0 = Math.max(0, Math.floor((y - reach) / CLEAR_CELL));
+      const r1 = Math.min(rows - 1, Math.floor((y + reach) / CLEAR_CELL));
+      for (let r = r0; r <= r1; r++) {
+        const dy = Math.max(r * CLEAR_CELL - y, 0, y - (r + 1) * CLEAR_CELL);
+        for (let c = c0; c <= c1; c++) {
+          const dx = Math.max(c * CLEAR_CELL - x, 0, x - (c + 1) * CLEAR_CELL);
+          if (dx * dx + dy * dy < reach * reach) near[r * cols + c] = 1;
+        }
+      }
+    }
+    this.nearRadius = radius;
+  }
 
   // -1 on slow ground, 1 on fast ground, 0 elsewhere.
   valueAt(x: number, y: number): number {
-    const c = this.cellOf(x, y);
-    for (let k = this.patchStart[c]!, end = this.patchStart[c + 1]!; k < end; k++) {
-      const i = this.patchOrder[k]!;
-      const dx = x - this.patchX[i]!;
-      const dy = y - this.patchY[i]!;
-      if (dx * dx + dy * dy < this.patchR[i]! ** 2) return this.patchKind[i]!;
-    }
-    return 0;
+    return this.ground === null ? 0 : this.ground.valueAt(x, y);
   }
 
   // Speed multiplier of a terrain value from valueAt.
@@ -171,9 +218,13 @@ export class Terrain {
   }
 
   // Pushes a disc of this radius out of the rock along the contact normal and reflects the velocity pointing into it, scaled by
-  // restitution like a wall. Repeats a few times, since leaving one disc of a ridge can enter the next.
+  // restitution like a wall. Repeats a few times, since leaving one disc of a ridge can enter the next. Twin of $keepOut in wasm/step.wat.
   keepOut(s: Body, radius: number, restitution: number): void {
     if (this.rockCount === 0) return;
+    if (radius !== this.nearRadius) this.buildNear(radius);
+    const nx0 = Math.floor(s.x / CLEAR_CELL);
+    const ny0 = Math.floor(s.y / CLEAR_CELL);
+    if (nx0 >= 0 && nx0 < this.nearCols && ny0 >= 0 && ny0 < this.nearRows && this.near[ny0 * this.nearCols + nx0] === 0) return; // no disc reaches this square (NaN fails the tests and takes the full path)
     const range = this.range;
     for (let pass = 0; pass < 4; pass++) {
       let moved = false;
@@ -225,7 +276,7 @@ export class Terrain {
   }
 }
 
-export const NO_TERRAIN = new Terrain([], [], 1, 1);
+export const NO_TERRAIN = new Terrain([], null, 1, 1);
 
 // Places pieces of one kind, each given by make and accepted by ok, until their area reaches the target, at least one, and appends
 // their discs to placed (one array per piece). Stops early when a piece finds no room. Returns the area covered.
@@ -352,21 +403,6 @@ function ridge(rng: StatefulRng, w: number, h: number): { discs: Circle[]; area:
   return { discs, area: 2.8 * rho * covered };
 }
 
-// A patch: a blob of three to five discs around a larger centre one; size scales it.
-function patch(rng: StatefulRng, w: number, h: number, size: number): { discs: Circle[]; area: number } {
-  const r0 = Math.min(550, Math.max(150, 0.08 * Math.min(w, h))) * rng.range(0.8, 1.2) * size;
-  const cx = rng.range(0, w);
-  const cy = rng.range(0, h);
-  const discs: Circle[] = [{ x: cx, y: cy, r: r0 }];
-  const extra = 2 + rng.int(3);
-  for (let k = 0; k < extra; k++) {
-    const a = rng.range(0, 2 * Math.PI);
-    const d = r0 * rng.range(0.5, 0.9);
-    discs.push({ x: cx + d * Math.cos(a), y: cy + d * Math.sin(a), r: r0 * rng.range(0.5, 0.85) });
-  }
-  return { discs, area: 0.7 * discs.reduce((s, d) => s + Math.PI * d.r * d.r, 0) };
-}
-
 const insideWorld = (discs: readonly Circle[], w: number, h: number): boolean => discs.every((d) => d.x >= d.r + GAP && d.x <= w - d.r - GAP && d.y >= d.r + GAP && d.y <= h - d.r - GAP);
 
 function generate(config: TerrainSettings): Terrain {
@@ -387,23 +423,51 @@ function generate(config: TerrainSettings): Terrain {
   };
   addRock(stoneDensity, 0, stone);
   addRock(ridgeDensity, 1, ridge);
-  const patches: (Circle & { kind: number })[] = [];
-  const patchPieces: Circle[][] = [];
-  for (const [density, kind, id, size] of [[slowDensity, TERRAIN_SLOW, 2, slowSize], [fastDensity, TERRAIN_FAST, 3, fastSize]] as const) {
-    if (!(density > 0)) continue;
-    const rng = stream(id);
-    const before = patchPieces.length;
-    place(density * area, () => patch(rng, w, h, size), (discs) => patchPieces.every((p) => apart(discs, p, 0)), patchPieces);
-    for (const p of patchPieces.slice(before)) for (const d of p) patches.push({ ...d, kind });
-  }
-  return new Terrain(rock, patches, w, h);
+  const ground = buildGroundField(w, h, [{ density: slowDensity, size: slowSize, rng: stream(2) }, { density: fastDensity, size: fastSize, rng: stream(3) }], config.seed, { maxBlobs: MAX_PIECES, tries: TRIES }); // mud layer, then firm
+  return new Terrain(rock, ground, w, h);
 }
 
 const cache = new Map<string, Terrain>();
+const mapTerrains = new Map<string, Terrain>(); // by map name; few and large, so never evicted
+
+// The Terrain of a named map, which does not depend on the seed. Throws for an unknown name or a world of the wrong size.
+export function mapTerrain(name: string, width: number, height: number): Terrain {
+  let t = mapTerrains.get(name);
+  if (!t) {
+    if (!maps) throw new Error(`map "${name}" needs maps/index.ts to be imported`);
+    const spec = maps.spec(name);
+    if (!spec) throw new Error(`unknown map "${name}"`);
+    if (width !== spec.width || height !== spec.height) throw new Error(`map ${name} needs a world of ${spec.width} x ${spec.height}`);
+    const b = maps.built(name);
+    mapTerrains.set(name, (t = new Terrain(b.rock, b.ground, width, height, b.weights)));
+  } else if (width !== t.width || height !== t.height) throw new Error(`map ${name} needs a world of ${t.width} x ${t.height}`);
+  return t;
+}
+
+// The Terrain of a config, or null while a named map is not here yet (built or seeded), for code that must not wait for a build.
+export function readyTerrainOf(config: TerrainSettings): Terrain | null {
+  const { map } = config.world;
+  return map && !mapTerrains.has(map) ? null : terrainOf(config);
+}
+
+// The arrays of the map a config names, shared with the Terrain (postMessage clones them); null for the random map.
+export function mapPartsOf(config: TerrainSettings): MapParts | null {
+  const { map, width, height } = config.world;
+  return map ? packMap(mapTerrain(map, width, height)) : null;
+}
+
+// Makes terrainOf use these arrays for a named map instead of building it, unless this thread already has the map. Throws when they do not fit the map's raster.
+export function seedMapTerrain(name: string, width: number, height: number, parts: MapParts): void {
+  const spec = maps?.spec(name); // a thread without the registry trusts the arrays' fit to the raster
+  if (maps && (!spec || spec.width !== width || spec.height !== height)) throw new Error(`unknown map "${name}" or a world of the wrong size`);
+  const map = unpackMap(width, height, parts);
+  if (!mapTerrains.has(name)) mapTerrains.set(name, new Terrain(map.rock, map.ground, width, height, map.weights));
+}
 
 // The map of a config, built once per process and shared by every world and creature that uses it.
 export function terrainOf(config: TerrainSettings): Terrain {
   const { width, height } = config.world;
+  if (config.world.map) return mapTerrain(config.world.map, width, height);
   const limit = (key: keyof typeof MAP_DENSITY_MAX): number => Math.min(MAP_DENSITY_MAX[key], Math.max(0, config.world[key]) || 0); // defence in depth: callers that skip checkMapDensities get the form's range
   const [stoneDensity, ridgeDensity, slowDensity, fastDensity] = [limit("stoneDensity"), limit("ridgeDensity"), limit("slowDensity"), limit("fastDensity")] as const;
   if (!(stoneDensity > 0 || ridgeDensity > 0 || slowDensity > 0 || fastDensity > 0)) return NO_TERRAIN;

@@ -1,7 +1,8 @@
 // The selected creature on the wire (Live World protocol, see protocol.ts), decoded into the Ecosystem's SelectedDetails so its panels draw it as is.
 //
 // DETAIL (3): u8 type | u32 tick | u32 id | u8 alive | when alive:
-//   f32 x | f32 y | f32 heading | f32 energy | f32 age | u32 children | u32 eaten | u32 depth | i32 parentId | u32 founderId | u8 founderPool
+//   f32 x | f32 y | f32 heading | f32 energy | f32 age | u32 children | u32 eaten | u32 depth | i32 parentId | u32 founderId | u8 founder kind (1 pool, 2 starter, else 0)
+//   | u8 n | n bytes founder name (letters and digits, n <= NAME_MAX; 0 for none)
 //   | u16 founderHue | u16 hue | f32 upkeep | f32 drain | f32 birthEnergy | f32 birthCost | f32 birthCooldown
 //   | plan: u8 rayCount | f32 raySpread | f32 rayLength | u8 layers | layers x u8 neurons | u8 memoryShort | u8 memoryLong
 //   | rayCount x (u8 kind | u16 closeness | u16 offset) | u16 inputs | inputs x i16
@@ -15,6 +16,7 @@ import { CREATURE_RAY_FEATURE_LABELS, EXTRA_INPUTS, OUTPUT_SIZE } from "../sim/s
 import type { BodyPlan, PlanView } from "../sim/sensors.ts";
 import type { SelectedDetails } from "../worker/ecoProtocol.ts";
 import { MSG_DETAIL, MSG_GENOME, q16, unq16 } from "./protocol.ts";
+import { NAME_MAX, validName } from "./add.ts";
 
 export const INPUT_SCALE = 4096; // inputs are sent to 1/4096 and clamped to about +-8
 export const RAY_FEATURES = CREATURE_RAY_FEATURE_LABELS.length; // ray features with creature sight (closeness, food, poison, wall, creature, seen energy)
@@ -23,8 +25,8 @@ const L = PLAN_LIMITS;
 export const MAX_INPUTS = L.rayCount[1] * RAY_FEATURES + EXTRA_INPUTS + 2 * L.memory[1];
 export const MAX_GENOME = genomeLength([MAX_INPUTS, ...Array<number>(L.layers[1]).fill(L.neurons[1]), OUTPUTS + 2 * L.memory[1]]);
 export const genomeBytes = (n: number): number => 13 + 2 * n;
-const FIXED = 10 + 4 * 5 + 4 * 5 + 1 + 4 + 4 * 5 + 1 + 8 + 3 + 2; // header, five f32, five u32, pool, hues, five f32, plan scalars, memory, input count
-export const MAX_DETAIL_BYTES = FIXED + L.layers[1] + 5 * L.rayCount[1] + 2 * MAX_INPUTS;
+const FIXED = 10 + 4 * 5 + 4 * 5 + 1 + 1 + 4 + 4 * 5 + 1 + 8 + 3 + 2; // header, five f32, five u32, pool, name length, hues, five f32, plan scalars, memory, input count
+export const MAX_DETAIL_BYTES = FIXED + NAME_MAX + L.layers[1] + 5 * L.rayCount[1] + 2 * MAX_INPUTS;
 
 // What the server reads off a living creature.
 export interface DetailSource {
@@ -39,6 +41,8 @@ export interface DetailSource {
   parentId: number;
   founderId: number;
   founderPool: boolean;
+  founderStarter?: boolean; // a starter founder the world was seeded with
+  founderName: string; // "" for none; anything but 1 to NAME_MAX letters and digits is sent as none
   founderHue: number;
   hue: number;
   upkeep: number;
@@ -71,7 +75,8 @@ export function encodeDetail(tick: number, id: number, d: DetailSource | null): 
   const rays = Math.min(plan.rayCount, d.rayKinds.length, L.rayCount[1]);
   const layers = Math.min(plan.hiddenLayers.length, L.layers[1]);
   const inputs = Math.min(d.inputs.length, MAX_INPUTS);
-  const out = new Uint8Array(FIXED + layers + 5 * rays + 2 * inputs);
+  const name = validName(d.founderName) ? d.founderName : "";
+  const out = new Uint8Array(FIXED + name.length + layers + 5 * rays + 2 * inputs);
   const dv = new DataView(out.buffer);
   let p = 0;
   const u8 = (v: number): void => void dv.setUint8(p++, v);
@@ -86,7 +91,9 @@ export function encodeDetail(tick: number, id: number, d: DetailSource | null): 
   w32(u32(d.children)); w32(u32(d.eaten)); w32(u32(d.depth));
   dv.setInt32(p, Number.isSafeInteger(d.parentId) ? Math.max(-1, Math.min(0x7fffffff, d.parentId)) : -1, true); p += 4;
   w32(u32(d.founderId));
-  u8(d.founderPool ? 1 : 0);
+  u8(d.founderPool ? 1 : d.founderStarter ? 2 : 0);
+  u8(name.length);
+  for (let i = 0; i < name.length; i++) u8(name.charCodeAt(i));
   u16(hue16(d.founderHue)); u16(hue16(d.hue));
   fl(d.upkeep); fl(d.drain); fl(d.birthEnergy); fl(d.birthCost); fl(d.birthCooldown);
   u8(rays); fl(plan.raySpread); fl(plan.rayLength);
@@ -110,6 +117,8 @@ export interface Detail {
   tick: number;
   id: number;
   details: SelectedDetails; // alive false once it has died; genome always null, it comes in its own message
+  founderName: string; // "" for none
+  founderStarter: boolean;
 }
 
 const range = (v: number, [lo, hi]: readonly [number, number]): boolean => Number.isInteger(v) && v >= lo && v <= hi;
@@ -125,7 +134,7 @@ export function decodeDetail(buf: ArrayBuffer | Uint8Array): Detail {
   if (dv.getUint8(9) === 0) {
     if (dv.byteLength !== 10) throw new Error("bad detail size");
     const plan: BodyPlan = { rayCount: 0, raySpread: 0, rayLength: 0, hiddenLayers: [], memoryShort: 0, memoryLong: 0 };
-    return { tick, id, details: { id, alive: false, x: 0, y: 0, heading: 0, energy: 0, age: 0, children: 0, eaten: 0, kills: 0, species: 0, depth: 0, parentId: -1, hue: 0, founderId: -1, founderPool: false, founderHue: 0, plan, upkeep: 0, drain: 0, birthEnergy: 0, birthCost: 0, birthCooldown: 0, ...empty, genome: null } };
+    return { tick, id, details: { id, alive: false, x: 0, y: 0, heading: 0, energy: 0, age: 0, children: 0, eaten: 0, kills: 0, species: 0, depth: 0, parentId: -1, hue: 0, founderId: -1, founderPool: false, founderHue: 0, plan, upkeep: 0, drain: 0, birthEnergy: 0, birthCost: 0, birthCooldown: 0, ...empty, genome: null }, founderName: "", founderStarter: false };
   }
   let p = 10;
   const need = (n: number): void => {
@@ -147,7 +156,13 @@ export function decodeDetail(buf: ArrayBuffer | Uint8Array): Detail {
   const parentId = dv.getInt32(p, true);
   p += 4;
   const founderId = r32();
-  const founderPool = u8() === 1;
+  const kind = u8();
+  const founderPool = kind === 1;
+  const nameLength = u8();
+  if (nameLength > NAME_MAX) throw new Error("bad detail name");
+  let founderName = "";
+  for (let i = 0; i < nameLength; i++) founderName += String.fromCharCode(u8());
+  if (nameLength && !validName(founderName)) throw new Error("bad detail name");
   const founderHue = unq16(u16(), 360), hue = unq16(u16(), 360);
   const upkeep = fl(), drain = fl(), birthEnergy = fl(), birthCost = fl(), birthCooldown = fl();
   const rayCount = u8(), raySpread = fl(), rayLength = fl();
@@ -182,6 +197,8 @@ export function decodeDetail(buf: ArrayBuffer | Uint8Array): Detail {
     tick,
     id,
     details: { id, alive: true, x, y, heading, energy, age, children, eaten, kills: 0, species: 0, depth, parentId, hue, founderId, founderPool, founderHue, plan, upkeep, drain, birthEnergy, birthCost, birthCooldown, rayKinds, rayCloseness, rayEnergy: new Float32Array(rayCount), rayOffsets, inputs, genome: null },
+    founderName,
+    founderStarter: kind === 2,
   };
 }
 

@@ -22,6 +22,7 @@
     </header>
     <main class="layout live">
       <aside class="panel">
+        <button id="openAdd" class="primary add-open" type="button">Add your creature</button>
         <dl class="stats">
           <div class="tile accent"><dt>Population<span class="tip" tabindex="0" role="img" aria-label="Creatures alive now." data-tip="Creatures alive now.">ⓘ</span></dt><dd id="statPop">-</dd></div>
           <div class="tile"><dt>Watching<span class="tip" tabindex="0" role="img" aria-label="People watching this world right now." data-tip="People watching this world right now.">ⓘ</span></dt><dd id="statViewers">-</dd></div>
@@ -39,11 +40,11 @@
           <p>One world shared by everyone who opens this page. It keeps evolving on a small home server whether anyone watches or not, with seasons that bring lean winters.</p>
           <p>Click a creature to follow it and see what it sees and thinks, or jump to the oldest one.</p>
         </section>
-        <p class="ver" id="version"></p>
       </aside>
       <section class="stage">
         <canvas id="view" tabindex="0" aria-label="The live world. Drag to pan, scroll or pinch to zoom, click a creature to follow it, arrow keys pan, plus and minus zoom, 0 fits the world."></canvas>
         <div id="timer" class="timer" title="Simulated time and season" hidden><span id="timerText"></span><span id="timerSeason" class="season-pill"></span></div>
+        <div id="emptyNote" class="empty-note" hidden><p>No creatures right now.</p><button id="emptyAdd" class="primary" type="button">Add one to start the world again</button></div>
         <div class="zoom" role="group" aria-label="Zoom">
           <button id="zoomIn" type="button" aria-label="Zoom in" title="Zoom in">+</button>
           <button id="zoomOut" type="button" aria-label="Zoom out" title="Zoom out">−</button>
@@ -132,6 +133,93 @@
             <div class="ov-body"><ul class="lead-list"></ul><p class="stat-note">Since the server started, dead creatures included. Click a living one to follow it.</p></div>
           </section>
         </div>
+        <div id="entry" class="entry" hidden>
+          <section class="entry-card" role="dialog" aria-modal="false" aria-labelledby="entryTitle" aria-describedby="entryText">
+            <svg class="entry-logo" viewBox="0 0 32 32" aria-hidden="true"><circle cx="13" cy="16" r="6" /><path d="M19 16 L29 8 M19 16 L30 16 M19 16 L29 24" /></svg>
+            <p class="entry-kicker">Live World</p>
+            <h2 id="entryTitle">One world, shared by everyone</h2>
+            <p id="entryText" class="entry-text">Creatures with small brains eat, meet and have children here around the clock. Watch them evolve, or add one of your own and follow its family.</p>
+            <p class="entry-live" aria-live="polite"><i></i><span id="entryLive">Connecting to the world</span></p>
+            <div class="entry-actions">
+              <button id="entryAdd" class="primary" type="button">Add your creature</button>
+              <button id="entryWatch" class="secondary" type="button">Watch the world</button>
+            </div>
+          </section>
+        </div>
+        <section id="addPanel" class="addp" hidden aria-labelledby="addTitle">
+          <header class="addp-head">
+            <h2 id="addTitle" tabindex="-1">Add your creature</h2>
+            <button id="addMin" class="ov-toggle" type="button" aria-label="Minimise to peek at the world" title="Minimise to peek at the world">−</button>
+            <button id="addClose" class="ov-toggle" type="button" aria-label="Close" title="Close">×</button>
+          </header>
+          <div class="addp-body">
+            <p id="addOff" class="addp-off" hidden>Adding is off on this server right now. You can still look around.</p>
+            <section class="addp-step">
+              <h3><b>1</b>Start from</h3>
+              <div class="seg" role="radiogroup" aria-label="Start from">
+                <label><input type="radio" name="addSource" value="founder" checked /><span>A founder</span></label>
+                <label><input type="radio" name="addSource" value="file" /><span>Your file</span></label>
+              </div>
+              <div id="addFounders" class="founders" role="radiogroup" aria-label="Founder"></div>
+              <div id="addUpload" class="upload" hidden>
+                <label class="upload-drop"><input id="addFile" type="file" accept=".json,application/json" /><b>Choose a creature file</b><span>A forager saved in the RL Arena</span></label>
+                <p id="addFileMsg" class="hint" aria-live="polite"></p>
+              </div>
+            </section>
+            <section class="addp-step">
+              <h3><b>2</b>Tune</h3>
+              <div class="tune-head">
+                <div id="addPreview" class="tune-preview" aria-hidden="true"></div>
+                <div class="burn" title="Energy per second while it stands still: living, vision and neurons. Moving and turning cost more.">
+                  <span class="burn-label">Energy use at rest</span>
+                  <span><b id="addBurn">-</b> per second</span>
+                  <span id="addBurnDelta" class="burn-delta"></span>
+                </div>
+              </div>
+              <h4>Vision</h4>
+              <div id="addVision" class="tune-grid"></div>
+              <h4>Brain <span id="addLayers" class="h4-note"></span></h4>
+              <div id="addBrain" class="tune-grid"></div>
+              <h4>Children</h4>
+              <div id="addBirth" class="tune-grid"></div>
+            </section>
+            <section class="addp-step">
+              <h3><b>3</b>Train it here <span class="h3-note">optional</span></h3>
+              <div class="toggle"><label for="addPretrain">Pretrain on food and poison <span class="hint">30 s</span></label><input id="addPretrain" type="checkbox" /></div>
+              <div class="toggle"><label for="addFinetune">Fine-tune among other creatures <span class="hint">30 s</span></label><input id="addFinetune" type="checkbox" /></div>
+              <div id="addTrain" class="train" hidden>
+                <div class="train-bar"><span id="addTrainFill"></span></div>
+                <div class="train-row"><span id="addTrainText" class="hint"></span><button id="addCancel" class="mini" type="button">Cancel</button></div>
+              </div>
+            </section>
+            <section class="addp-step">
+              <h3><b>4</b>Name and colour</h3>
+              <div class="field">
+                <label class="name" for="addName">Name</label>
+                <input id="addName" class="text" type="text" autocomplete="off" spellcheck="false" inputmode="text" pattern="[A-Za-z0-9]{1,16}" />
+                <span id="addNameHint" class="hint"></span>
+              </div>
+              <div class="field">
+                <div class="row"><label class="name" for="addHue">Colour</label><i id="addHueSw" class="hue-sw"></i></div>
+                <input id="addHue" class="hue" type="range" min="0" max="359" step="1" />
+              </div>
+              <div class="field">
+                <span class="name" id="addCopiesLabel">Copies</span>
+                <div class="seg" role="radiogroup" aria-labelledby="addCopiesLabel">
+                  <label><input type="radio" name="addCopies" value="1" checked /><span>1</span></label>
+                  <label><input type="radio" name="addCopies" value="2" /><span>2</span></label>
+                  <label><input type="radio" name="addCopies" value="3" /><span>3</span></label>
+                </div>
+                <span class="hint">Each copy starts a family of its own at a random free spot.</span>
+              </div>
+            </section>
+          </div>
+          <footer class="addp-foot">
+            <p id="addMsg" class="addp-msg" aria-live="polite"></p>
+            <button id="addGo" class="primary" type="button" disabled>Add to the world</button>
+          </footer>
+        </section>
+        <button id="addPeek" class="add-peek" type="button" hidden><span class="peek-dot"></span>Add your creature</button>
         <div id="offline" class="scrim" hidden>
           <div class="dialog" role="alertdialog" aria-labelledby="offlineTitle">
             <h2 id="offlineTitle">World offline</h2>
@@ -141,6 +229,32 @@
         </div>
       </section>
     </main>
+    <section id="info" class="info" aria-labelledby="infoTitle" hidden>
+      <header class="info-head">
+        <p class="info-kicker">Below the creatures</p>
+        <h2 id="infoTitle">The map of this world</h2>
+        <p class="info-lede">What the world view draws, how its ground is made up and the rules everyone lives by. Scroll over the map to zoom, anywhere else to read on.</p>
+      </header>
+      <div class="info-grid">
+        <section class="info-col">
+          <h3>Legend</h3>
+          <ul id="infoLegend" class="info-legend"></ul>
+          <p id="infoLegendNote" class="info-note"></p>
+        </section>
+        <section class="info-col">
+          <h3>Ground shares</h3>
+          <div id="infoShares" class="shares"></div>
+          <div id="infoBar" class="share-bar" role="img" aria-label="Shares of the ground"></div>
+          <h3>Regions</h3>
+          <div id="infoRegions"></div>
+        </section>
+        <section class="info-col">
+          <h3>The world</h3>
+          <dl id="infoWorld" class="info-facts"></dl>
+        </section>
+      </div>
+    </section>
+    <footer class="live-foot"><span class="ver" id="version"></span><span>Created by Erik Fransson</span><a href="https://github.com/erikfransson/evolve-world-ai">Source on GitHub</a></footer>
     <div id="tooltip" class="tooltip" role="tooltip" hidden></div>
     <script type="module" src="../src/live.ts"></script>
   </body>

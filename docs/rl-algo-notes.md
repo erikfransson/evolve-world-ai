@@ -1,6 +1,7 @@
 # RL fine-tuning: sample-efficiency notes
 
 Setup: 60 iterations, pairs 16, 2 episodes per candidate = 3840 training episodes per run (--valid adds ~0.5k selection episodes). Held-out: 32 seeds (EVAL_BASE+k), end value after the run. Values are the mean over n runs (training seeds 1..n), runs listed. Baseline = ES_DEFAULTS before this branch (sigma 0.04, lr 0.02, rank shaping). Rows not in the table were not run (laptop load limits cut the plan): pairs/episodes splits, sigma 0.02, rivals, poison-field/hunt from random:1.
+forage-box (a 400 x 400 box of food) was dropped from the env list on 2026-10-11; the rows stay as the record.
 
 | env            | start  | config                       | n | start | end  | runs                |
 |----------------|--------|------------------------------|---|-------|------|---------------------|
@@ -43,4 +44,4 @@ Setup: 60 iterations, pairs 16, 2 episodes per candidate = 3840 training episode
 
 ## Changes
 
-ES_DEFAULTS and rlTrain: sigma 0.04 -> 0.08, shaping rank -> zscore (`Es` option `shaping`). Arena sigma default 0.04 -> 0.08 to match. The experiment flags used for the table (--decay, --shaping, --lrEnd, --reward, --valid) stayed on branch rl-perf-algo and are not on main.
+ES_DEFAULTS and rlTrain: sigma 0.04 -> 0.08, shaping rank -> zscore (`Es` option `shaping`). Arena sigma default 0.04 -> 0.08 to match. The experiment flags used for the table (--decay, --shaping, --lrEnd, --reward, --valid) stayed on the unmerged branch rl-perf-algo.

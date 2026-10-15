@@ -1,10 +1,11 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { existsSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { extname, join, normalize, sep } from "node:path";
 import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
 import type { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
+import { validName } from "../../src/typescript/src/live/add.ts";
 import type { SaveInfo } from "./state.ts";
 import { applyTunables, readTunables, tunableLimits } from "./tunables.ts";
 import type { Value } from "./tunables.ts";
@@ -20,7 +21,18 @@ export function loadAdminToken(stateDir: string): string {
   return readFileSync(file, "utf8").trim();
 }
 
-const OVERRIDES = "admin-overrides.json";
+export const OVERRIDES = "admin-overrides.json";
+export const PREVIOUS_OVERRIDES = "admin-overrides.previous-world.json";
+export const IGNORED_OVERRIDES = "admin-overrides.ignored.json";
+
+// A fresh world starts from liveConfig: the overrides of the world before are moved aside (one copy kept, an older one replaced),
+// so a later restart that restores the fresh world's save does not apply them. Returns the line to log, or null when there were none.
+export function retireOverrides(stateDir: string): string | null {
+  const file = join(stateDir, OVERRIDES);
+  if (!existsSync(file)) return null;
+  renameSync(file, join(stateDir, PREVIOUS_OVERRIDES));
+  return `fresh world: ${OVERRIDES} of the world before moved to ${PREVIOUS_OVERRIDES}, not applied`;
+}
 
 // Re-applies the settings the admin changed before the last restart and returns them, so later changes are merged into them.
 export function loadOverrides(stateDir: string, world: { eco: Ecosystem }): Record<string, Value> {
@@ -30,9 +42,15 @@ export function loadOverrides(stateDir: string, world: { eco: Ecosystem }): Reco
     const saved = JSON.parse(readFileSync(file, "utf8"));
     const err = applyTunables(world.eco, saved);
     if (!err) return saved;
-    console.warn(`ignoring ${OVERRIDES}: ${err}`);
+    console.error(`OVERRIDES IGNORED: ${OVERRIDES}: ${err}`);
   } catch (e) {
-    console.warn(`ignoring ${OVERRIDES}: ${e instanceof Error ? e.message : e}`);
+    console.error(`OVERRIDES IGNORED: ${OVERRIDES}: ${e instanceof Error ? e.message : e}`);
+  }
+  try {
+    copyFileSync(file, join(stateDir, IGNORED_OVERRIDES)); // kept aside, as the next admin change writes the file anew
+    console.error(`OVERRIDES IGNORED: a copy is in ${IGNORED_OVERRIDES}`);
+  } catch (e) {
+    console.error(`OVERRIDES IGNORED: could not keep a copy: ${e instanceof Error ? e.message : e}`);
   }
   return {};
 }
@@ -58,6 +76,7 @@ export interface AdminCommands {
   listSaves(): SaveInfo[];
   loadSave(name: string): Promise<string>; // saves the running world, then restores; rejects with the reason and keeps the running world
   stop(): void | Promise<void>; // save, then exit with code 0
+  blankName(name: string): Promise<number>; // families whose visitor name was cleared
 }
 
 const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".wasm": "application/wasm", ".ico": "image/x-icon" };
@@ -89,7 +108,8 @@ function serveStatic(root: string): ReturnType<typeof createServer> {
 
 // Admin channel on its own port, bound to loopback and never put behind the tunnel. The first message must be {t:"auth", token}.
 // Then: {t:"get-config"} -> {t:"config", values, limits, paused}; {t:"set-config", changes:{key:value}} -> {t:"config", ...} or {t:"error", message};
-// {t:"pause"} / {t:"resume"} -> {t:"config", ...}; {t:"save-now"} -> {t:"saved", message}; {t:"list-saves"} -> {t:"saves", saves}; {t:"load-save", name} -> {t:"loaded", message} or {t:"error", message}; {t:"stop"} -> {t:"stopping"}, then the server saves and exits 0.
+// {t:"pause"} / {t:"resume"} -> {t:"config", ...}; {t:"save-now"} -> {t:"saved", message}; {t:"list-saves"} -> {t:"saves", saves}; {t:"load-save", name} -> {t:"loaded", message} or {t:"error", message}; {t:"stop"} -> {t:"stopping"}, then the server saves and exits 0;
+// {t:"blank-name", name} -> {t:"blanked", message}: the name is cleared from every family that carries it.
 // The same port serves the built page (webRoot) over http.
 export function startAdmin(host: string, port: number, token: string, world: AdminWorld, stateDir: string, webRoot: string, saved: Record<string, Value>, commands: AdminCommands): { wss: WebSocketServer; close(): void } {
   const http = serveStatic(webRoot);
@@ -166,6 +186,10 @@ export function startAdmin(host: string, port: number, token: string, world: Adm
           ),
           (e) => reply(ws, { t: "error", message: why(e) }),
         );
+      }
+      if (msg.t === "blank-name") {
+        if (!validName(msg.name)) return reply(ws, { t: "error", message: "name must be 1 to 16 letters or digits, as viewers see it" });
+        return void commands.blankName(msg.name).then((n) => reply(ws, { t: "blanked", message: `cleared the name from ${n} ${n === 1 ? "family" : "families"}` }), (e) => reply(ws, { t: "error", message: why(e) }));
       }
       if (msg.t === "stop") {
         reply(ws, { t: "stopping" });

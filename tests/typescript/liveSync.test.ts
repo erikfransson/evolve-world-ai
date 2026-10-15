@@ -81,10 +81,10 @@ describe("public server: order and item sets", () => {
   // Red without the ready flag: frame jobs queued during a tick ran before the hello job, sent the items the client then dropped,
   // and used up the connect allowance, so the viewer never got a full set.
   it("sends nothing before a viewer's hello, even when its hello waits behind a tick", async () => {
-    const port = 50450;
+    const port = 62450;
     const world = grown();
     const one = world.itemsSize() + world.creatureFrame().length;
-    await serve(port, { connectBytesPerSecond: Math.round(one * 1.05) }, world);
+    await serve(port, { connectBurstBytes: 0, connectBytesPerSecond: Math.round(one * 1.05) }, world);
     await wait(600);
     inFlight(world, true); // a tick waits for the helpers: the frame loop queues its work
     await wait(250);
@@ -104,13 +104,13 @@ describe("public server: order and item sets", () => {
 
   // Red without full sets from the frame budget: 40 viewers waited ~20 s for the connect allowance, with no creature frames meanwhile.
   it("after a reload, 40 viewers get their item sets within seconds and creature frames while they wait", async () => {
-    const port = 50451;
+    const port = 62451;
     const world = grown();
     const full = world.itemsSize();
     const perViewer = world.creatureFrame().length * 5;
     const budget = Math.round((40 * perViewer) / 2);
     const connect = 2 * full;
-    const { pub } = await serve(port, { maxViewers: 100, acceptBurst: 100, acceptsPerSecond: 100, connectBytesPerSecond: connect, textBytesPerViewer: 10, detailBytesPerViewer: 0, maxSendBytesPerSecond: budget + connect + 100 * 10 }, world);
+    const { pub } = await serve(port, { maxViewers: 100, acceptBurst: 100, acceptsPerSecond: 100, connectBurstBytes: 0, connectBytesPerSecond: connect, textBytesPerViewer: 10, detailBytesPerViewer: 0, maxSendBytesPerSecond: budget + connect + 100 * 10 }, world);
     await wait(300);
     const cs = Array.from({ length: 40 }, () => client(port, world));
     await Promise.all(cs.map((c) => c.open));
@@ -139,7 +139,7 @@ describe("public server: order and item sets", () => {
   // Red without frames++ in a finally: a frame that failed after sending kept its number, the next frame's changes replaced it in
   // the feed, and the viewer that had it never got those changes.
   it("a frame that fails half way never reuses its number, so the items stay in sync", async () => {
-    const port = 50452;
+    const port = 62452;
     const { world } = await serve(port);
     vi.spyOn(console, "error").mockImplementation(() => {});
     world.refreshWatched = () => {
@@ -158,7 +158,7 @@ describe("public server: order and item sets", () => {
 
   // Red without one pending job per loop: each 200 ms the frame loop queued another job behind the stalled tick.
   it("keeps at most one frame job and one stats job waiting during a stalled tick", async () => {
-    const port = 50453;
+    const port = 62453;
     const { world } = await serve(port, { statsEveryMs: 200 });
     await wait(300);
     inFlight(world, true);
@@ -276,9 +276,9 @@ describe("admin load", () => {
     const unhandled = vi.fn();
     process.on("unhandledRejection", unhandled);
     const flaky = { eco: world.eco, whenIdle: <T>(_fn: () => T): Promise<T> => Promise.reject(new Error("idle failed")) };
-    const admin = startAdmin("127.0.0.1", 43520, "tok", flaky, dir, dir, {}, { pause() {}, resume() {}, paused: () => false, saveNow: async () => "", listSaves: () => [], loadSave: async () => "loaded x", stop() {} });
+    const admin = startAdmin("127.0.0.1", 62520, "tok", flaky, dir, dir, {}, { pause() {}, resume() {}, paused: () => false, saveNow: async () => "", listSaves: () => [], loadSave: async () => "loaded x", stop() {}, blankName: async () => 0 });
     try {
-      const ws = new WebSocket("ws://127.0.0.1:43520/");
+      const ws = new WebSocket("ws://127.0.0.1:62520/");
       sockets.push(ws);
       const replies: { t: string; message?: string }[] = [];
       ws.on("message", (d: Buffer) => replies.push(JSON.parse(d.toString())));
@@ -299,7 +299,7 @@ describe("admin load", () => {
 describe("selection under the rate limit", () => {
   // Red without v.want: clicks past the select rate were dropped, and the viewer stayed on an older creature ("Loading" on the page).
   it("follows the last creature asked for, even when it was asked for past the select rate", async () => {
-    const port = 50454;
+    const port = 62454;
     const { world } = await serve(port);
     const c = client(port, world);
     const details: number[] = [];

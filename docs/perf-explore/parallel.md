@@ -1,5 +1,7 @@
 # Multi-core scaling at 20k worlds
 
+Note: the shared-memory helper mode this write-up studies was removed (see `docs/perf-notes.md`).
+
 Branch `worktree-agent-acfda11bfbd556398`, 2026-10-11. World 20000 x 12500 (same aspect and densities as the default 12000 x 7500, 2.8x the area), founders 2800 and 5000, WebAssembly on, shared-memory helpers.
 
 | Idea                                                                                    | Before (ms/tick, 7 threads, pop 2800) | After | Speedup | Exact? | Verdict |

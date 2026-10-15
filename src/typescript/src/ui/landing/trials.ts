@@ -16,10 +16,10 @@ export function trialsScene(seed: number): Scene {
   const view: EpisodeView = { state, rays, rayOffsets, world };
   return {
     step() {
-      creature.sense(world);
       const target = nearestFood(world, state.x, state.y);
       const { turn, thrust } = steer(state, world.xs[target]!, world.ys[target]!);
       moveAndEat(creature, world, turn, thrust, respawnRng);
+      creature.sense(world); // after the move, so the drawn rays start where the body is and stop at the wall
       state.energy = Math.max(state.energy, 0.2 * config.creature.startEnergy); // keep the body fill in the readable range
     },
     draw(ctx) {

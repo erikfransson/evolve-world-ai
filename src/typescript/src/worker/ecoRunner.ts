@@ -1,5 +1,7 @@
 import type { EcoConfig } from "../sim/ecoConfig.ts";
+import "../sim/maps/index.ts"; // the coordinator builds a named map for the world and its helpers
 import { planOf } from "../sim/sensors.ts";
+import { mapPartsOf, seedMapTerrain } from "../sim/terrain.ts";
 import { Ecosystem } from "../sim/ecosystem.ts";
 import type { CreatureFrame, EcoCreature } from "../sim/ecosystem.ts";
 import type { PoolEntry } from "../sim/seedPool.ts";
@@ -67,7 +69,9 @@ export class EcoRunner {
   handle(msg: EcoInMessage): void {
     switch (msg.type) {
       case "start":
+        this.seedMap(msg);
         this.begin(msg.config, msg.run);
+        this.shareMap(msg);
         break;
       case "pause":
         this.paused = true;
@@ -215,6 +219,24 @@ export class EcoRunner {
     if (max || this.debt >= 1) return 0;
     const wait = ((1 - this.debt) * dt * 1000) / (this.speed as number);
     return Math.min(10, Math.max(1, wait));
+  }
+
+  // Takes the page's arrays of the named map, if it sent them and they fit, so this thread does not build the map.
+  private seedMap(msg: Extract<EcoInMessage, { type: "start" }>): void {
+    const { map, width, height } = msg.config.world;
+    if (!msg.map || !map) return;
+    try {
+      seedMapTerrain(map, width, height, msg.map);
+    } catch {
+      // they do not fit: the world builds the map itself
+    }
+  }
+
+  // Without the page's arrays the page cannot draw the map, so it gets this thread's once the world has built it.
+  private shareMap(msg: Extract<EcoInMessage, { type: "start" }>): void {
+    const { map, width, height } = msg.config.world;
+    const parts = msg.map || !map ? null : mapPartsOf(msg.config);
+    if (parts && map) this.post({ type: "map", name: map, width, height, parts }, []);
   }
 
   private begin(config: EcoConfig, run: number): void {

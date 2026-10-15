@@ -7,6 +7,8 @@ import { inputLayout, planUpkeep, rayAngleOffsets } from "../../src/typescript/s
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
 import { DutyController } from "../../src/typescript/src/worker/pacer.ts";
 import { EcoRunner } from "../../src/typescript/src/worker/ecoRunner.ts";
+import { withEcoPreset } from "../../src/typescript/src/sim/presets.ts";
+import { mapPartsOf } from "../../src/typescript/src/sim/terrain.ts";
 
 function cfg(over: { creature?: Partial<EcoConfig["creature"]>; eco?: Partial<EcoConfig["eco"]> } = {}): EcoConfig {
   const d = structuredClone(DEFAULT_ECO_CONFIG);
@@ -322,4 +324,30 @@ describe("Gentle on CPU pacing", () => {
     expect(full.delays.every((d) => d === 0)).toBe(true);
     expect(gentle.delays.some((d) => d > 0)).toBe(true); // idle is owed in slices and slept in larger pieces
   });
+});
+
+describe("EcoRunner and a named map", () => {
+  const inland = (): EcoConfig => {
+    const c = withEcoPreset(structuredClone(DEFAULT_ECO_CONFIG), "inland-sea");
+    c.eco = { ...c.eco, wasm: false, initialPopulation: 12, poolFraction: 0 };
+    return c;
+  };
+
+  it("sends the page its own arrays of the map when the page had none, and not when it had them", () => {
+    const sent: EcoOutMessage[] = [];
+    const runner = new EcoRunner((msg) => sent.push(msg), () => 0);
+    runner.handle({ type: "start", config: inland(), run: 1 });
+    const maps = sent.filter((m) => m.type === "map");
+    expect(maps).toHaveLength(1);
+    const m = maps[0]!;
+    if (m.type !== "map") throw new Error("not a map message");
+    expect([m.name, m.width, m.height]).toEqual(["inland-sea", 30000, 18750]);
+    expect(m.parts.rock.length).toBeGreaterThan(0);
+    sent.length = 0;
+    runner.handle({ type: "start", config: inland(), run: 2, map: mapPartsOf(inland())! });
+    expect(sent.some((x) => x.type === "map")).toBe(false);
+    sent.length = 0;
+    runner.handle({ type: "start", config: cfg(), run: 3 });
+    expect(sent.some((x) => x.type === "map")).toBe(false); // the random map needs none
+  }, 180_000);
 });

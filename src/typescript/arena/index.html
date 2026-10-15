@@ -28,11 +28,13 @@
               <p id="kindDesc" class="preset-desc"></p>
               <div class="seg" role="radiogroup" aria-label="Start from">
                 <label><input type="radio" name="source" value="design" checked /><span>Design</span></label>
+                <label><input type="radio" name="source" value="founders" /><span>Founders</span></label>
                 <label><input type="radio" name="source" value="pool" /><span>Seed pool</span></label>
                 <label><input type="radio" name="source" value="import" /><span>Import</span></label>
                 <label><input type="radio" name="source" value="saved" /><span>Saved</span></label>
               </div>
-              <div id="srcPool" class="src"><div class="field"><div class="row"><span class="lbl"><label class="name" for="founder">Seed pool founder</label><span class="tip" tabindex="0" role="img" aria-label="Creatures evolved in the Ecosystem. The strongest is preselected." data-tip="Creatures evolved in the Ecosystem. The strongest is preselected.">ⓘ</span></span></div><select id="founder"></select></div></div>
+              <div id="srcPool" class="src"><div class="field"><div class="row"><span class="lbl"><label class="name" for="poolEntry">Seed pool founder</label><span class="tip" tabindex="0" role="img" aria-label="Creatures evolved in the Ecosystem. The strongest is preselected." data-tip="Creatures evolved in the Ecosystem. The strongest is preselected.">ⓘ</span></span></div><select id="poolEntry"></select></div></div>
+              <div id="srcFounders" class="src" hidden><div class="field"><div class="row"><span class="lbl"><label class="name" for="liveFounder">Founder</label><span class="tip" tabindex="0" role="img" aria-label="The starter founders a visitor can add to the Live World. Train one further here." data-tip="The starter founders a visitor can add to the Live World. Train one further here.">ⓘ</span></span></div><select id="liveFounder"></select></div><p id="founderBlurb" class="preset-desc"></p></div>
               <div id="srcImport" class="src" hidden>
                 <input id="importFile" type="file" accept=".json,application/json" aria-label="Creature file" />
                 <p id="importMsg" class="msg" role="status"></p>

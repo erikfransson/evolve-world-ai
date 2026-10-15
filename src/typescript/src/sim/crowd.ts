@@ -1,8 +1,11 @@
 import type { EngineConfig } from "./config.ts";
 import { HIT_CREATURE, HIT_NONE } from "./types.ts";
 import type { CreatureState, RayHit } from "./types.ts";
+import type { WasmCrowd } from "./wasm/crowdKernel.ts";
 
-const SMALL_SORT = 12; // up to this many creatures rebuildFrom sorts by insertion: RL episodes have 1-11 creatures, the radix sort pays off for crowds
+type GridArrays = Pick<Crowd, "xs" | "ys" | "energies" | "species" | "owners" | "cellStart" | "occupied">;
+
+export const SMALL_SORT = 12; // up to this many creatures rebuildFrom sorts by insertion: RL episodes have 1-11 creatures, the radix sort pays off for crowds
 
 // Creatures in a uniform grid of cell size config.creature.rayLength, rebuilt each tick by a stable radix sort of the cell keys,
 // so the work follows the creature count, not the world area. Each cell's creatures are contiguous in the sorted arrays, in
@@ -11,7 +14,7 @@ export class Crowd {
   count = 0;
   readonly cols: number;
   readonly rows: number;
-  readonly cellStart: Int32Array;
+  cellStart: Int32Array;
   // Sorted by cell; owner is the index into the states array the grid was built from.
   xs: Float64Array;
   ys: Float64Array;
@@ -31,8 +34,10 @@ export class Crowd {
   occupiedCount = 0;
   private perm: Int32Array; // creature indices in cell order, and the radix sort's second buffer
   private permB: Int32Array;
-  private readonly radixPasses: number;
-  private readonly radixBits: number;
+  readonly radixPasses: number;
+  readonly radixBits: number;
+  kernel: WasmCrowd | null = null; // set while the arrays are views of WebAssembly memory (adopt), where the sense kernel can read them in place
+  private kept: GridArrays | null = null; // the own arrays set aside while adopted, so a JS rebuild takes them back instead of allocating
   private readonly radixCount: Int32Array;
   // Candidates of one sensing: offset to the creature, squared distance minus squared radius, energy.
   private candFx = new Float64Array(64);
@@ -74,13 +79,7 @@ export class Crowd {
 
   // Snapshots positions and energies of states[0 .. n-1], and species[i] of each (all 0 without).
   rebuild(states: readonly CreatureState[], n: number, species?: ArrayLike<number>): void {
-    if (n > this.px.length) {
-      const size = Math.max(n, 2 * this.px.length);
-      this.px = new Float64Array(size);
-      this.py = new Float64Array(size);
-      this.pe = new Float64Array(size);
-      this.ps = new Int32Array(size);
-    }
+    this.fitGather(n);
     for (let i = 0; i < n; i++) {
       const s = states[i];
       this.px[i] = s.x;
@@ -89,6 +88,37 @@ export class Crowd {
       this.ps[i] = species ? species[i]! : 0;
     }
     this.rebuildFrom(this.px, this.py, this.pe, n, this.ps);
+  }
+
+  private fitGather(n: number): void {
+    if (n > this.px.length) {
+      const size = Math.max(n, 2 * this.px.length);
+      this.px = new Float64Array(size);
+      this.py = new Float64Array(size);
+      this.pe = new Float64Array(size);
+      this.ps = new Int32Array(size);
+    }
+  }
+
+  // Takes the grid the WebAssembly kernel built (crowd.wat, a twin of rebuildFrom) as its arrays. They stay views of that memory until the next JS rebuild.
+  adopt(v: GridArrays, n: number, occupiedCount: number, kernel: WasmCrowd): void {
+    if (!this.kernel) {
+      const { xs, ys, energies, species, owners, cellStart, occupied } = this;
+      this.kept = { xs, ys, energies, species, owners, cellStart, occupied };
+    }
+    Object.assign(this, v);
+    this.count = n;
+    this.occupiedCount = occupiedCount;
+    this.kernel = kernel;
+  }
+
+  // Own arrays again after adopt, for a rebuild in JS; the kernel forgets its grid.
+  private own(n: number): void {
+    this.kernel!.drop();
+    this.kernel = null;
+    Object.assign(this, this.kept);
+    this.kept = null;
+    if (n > this.xs.length) this.grow(n);
   }
 
   // True when a snapshotted creature is closer than reach to (x, y).
@@ -110,9 +140,21 @@ export class Crowd {
 
   // The same from arrays: creature i at (x[i], y[i]) with energy e[i] and species sp[i] (all 0 without).
   rebuildFrom(x: Float64Array, y: Float64Array, e: Float64Array, n: number, sp?: ArrayLike<number>): void {
+    if (this.kernel) this.own(n);
     if (n > this.xs.length) this.grow(n);
     const cellOf = this.cellOf;
-    for (let i = 0; i < n; i++) cellOf[i] = this.cellIndex(x[i], y[i]);
+    const { cell, cols } = this;
+    const maxX = cols - 1;
+    const maxY = this.rows - 1;
+    for (let i = 0; i < n; i++) {
+      let cx = Math.floor(x[i] / cell);
+      let cy = Math.floor(y[i] / cell);
+      if (cx < 0) cx = 0;
+      else if (cx > maxX) cx = maxX;
+      if (cy < 0) cy = 0;
+      else if (cy > maxY) cy = maxY;
+      cellOf[i] = cy * cols + cx;
+    }
     const bits = this.radixBits;
     const mask = (1 << bits) - 1;
     const count = this.radixCount;

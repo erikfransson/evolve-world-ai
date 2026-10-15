@@ -1,6 +1,7 @@
 import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
+import { restoreState, saveState } from "../../src/typescript/src/sim/ecoState.ts";
 import { ShareCoordinator, fittedCaps, packetBytes, packetViews, publishedBytes } from "../../src/typescript/src/sim/ecoShare.ts";
 import { ThinkPool, defaultHelpers, serveHelper, tickTimeoutMs } from "../../src/typescript/src/worker/ecoPool.ts";
 import type { HelperIn, HelperOut, HelperPort } from "../../src/typescript/src/worker/ecoPool.ts";
@@ -168,6 +169,50 @@ describe("ThinkPool", () => {
     }, 60_000);
   });
 
+  it.each([false, true])("keeps the memory units of a restored world on the helpers, WebAssembly %s", async (wasm) => {
+    const config = (): EcoConfig => ({ ...cfg(), eco: { ...cfg().eco, wasm } });
+    const before = serial(config(), 120);
+    expect(before.members.some((m) => m.creature.memory.some((v) => v !== 0))).toBe(true); // the helpers must start from these, not from zeros
+    const saved = saveState(before);
+    const ref = restoreState(structuredClone(saved));
+    for (let t = 0; t < 80; t++) ref.step();
+    const pool = new ThinkPool(fakePorts(2));
+    try {
+      const eco = restoreState(structuredClone(saved), null, { journal: true });
+      await pool.start(eco);
+      for (let t = 0; t < 80; t++) await pool.step(eco);
+      expect(eco.fingerprint()).toBe(ref.fingerprint());
+    } finally {
+      pool.close();
+    }
+  }, 60_000);
+
+  it("a watched creature that a helper owns has the serial run's rays (WebAssembly)", async () => {
+    const config = (): EcoConfig => ({ ...cfg(), eco: { ...cfg().eco, wasm: true } });
+    const ref = serial(config(), 60);
+    const pool = new ThinkPool(fakePorts(2));
+    try {
+      const eco = await pooled(pool, config(), 60);
+      const id = eco.members.find((m) => m.owner < 2)!.id;
+      pool.watch = id;
+      eco.detail = ref.detail = id;
+      let seen = 0;
+      for (let t = 0; t < 8; t++) {
+        ref.step();
+        await pool.step(eco);
+        const a = ref.get(id)?.creature;
+        const b = eco.get(id)?.creature;
+        if (!a || !b) break;
+        expect(b.rays).toEqual(a.rays);
+        seen++;
+      }
+      expect(seen).toBeGreaterThan(0);
+      expect(eco.fingerprint()).toBe(ref.fingerprint());
+    } finally {
+      pool.close();
+    }
+  }, 60_000);
+
   it("reuses its helpers for a second run", async () => {
     const pool = new ThinkPool(fakePorts(2));
     await pooled(pool, cfg(1), 50);
@@ -239,14 +284,16 @@ describe("WebAssembly kernels", () => {
     const out = new Float32Array(64);
     let checked = 0;
     const recycledShapes = new Set<number>(); // genome lengths of creatures that took over a dead one
+    const firstId = new Map<object, number>(); // the member a creature object first served; another id later means it was recycled
     for (let t = 0; t < 600; t++) {
       // Only the detail creature keeps its brain input; the next member takes over each tick.
       const m = eco.members[t % eco.population]!;
       eco.detail = m.id;
       eco.prepareTick();
-      eco.sensePhase(0, eco.population);
+      eco.sensePhase();
       const c = m.creature;
-      if (c.brainVersion > 0) recycledShapes.add(c.brain.genome.length);
+      if (firstId.get(c) !== undefined && firstId.get(c) !== m.id) recycledShapes.add(c.brain.genome.length);
+      firstId.set(c, firstId.get(c) ?? m.id);
       c.brain.forward(c.brain.layerActivations()[0]!, out.subarray(0, c.outputs.length));
       for (let i = 0; i < c.outputs.length; i++) expect(Math.abs(c.outputs[i]! - out[i]!)).toBeLessThan(1e-4);
       checked++;
@@ -413,10 +460,10 @@ describe("helper packets", () => {
     expect((publishedBytes(home) - home.delta.byteOffset) / 8).toBe(need.delta);
   });
 
-  it("helpers follow a live change of the ageing rate, as the serial run does", async () => {
+  it.each([false, true])("helpers follow a live change of the ageing rate, as the serial run does, WebAssembly %s", async (wasm) => {
     const aging = (): EcoConfig => {
       const c = cfg();
-      c.eco.wasm = false;
+      c.eco.wasm = wasm;
       c.eco.aging = true;
       c.eco.agingStart = 2;
       c.eco.agingRate = 0.1;

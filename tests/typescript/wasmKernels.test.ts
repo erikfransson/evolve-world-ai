@@ -4,11 +4,13 @@ import { Crowd } from "../../src/typescript/src/sim/crowd.ts";
 import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { createRng } from "../../src/typescript/src/sim/rng.ts";
 import { terrainOf } from "../../src/typescript/src/sim/terrain.ts";
-import { inputLayout, planOf } from "../../src/typescript/src/sim/sensors.ts";
+import { EXTRA_INPUTS, EXTRA_TERRAIN, inputLayout, planOf } from "../../src/typescript/src/sim/sensors.ts";
 import { HIT_CREATURE, HIT_FOOD, HIT_NONE, HIT_POISON, HIT_WALL } from "../../src/typescript/src/sim/types.ts";
+import { LAYOUT as L } from "../../src/typescript/src/sim/wasm/layout.ts";
 import { WasmBrainBank } from "../../src/typescript/src/sim/wasm/brainKernel.ts";
 import { setWasmDisabled, wasmAvailable } from "../../src/typescript/src/sim/wasm/loader.ts";
 import { speciesEngine, speciesList } from "../../src/typescript/src/sim/species.ts";
+import { prepareRows } from "../../src/typescript/src/sim/wasm/residentStep.ts";
 import { SenseKernels } from "../../src/typescript/src/sim/wasm/senseKernels.ts";
 import type { SimConfig } from "../../src/typescript/src/sim/config.ts";
 import { Creature, SenseBatch } from "../../src/typescript/src/sim/creature.ts";
@@ -22,6 +24,26 @@ describe("wasm toolchain", () => {
   it("kernels.generated.ts matches the .wat sources (run `npm run wasm` after editing them)", async () => {
     const committed = readFileSync(new URL("../../src/typescript/src/sim/wasm/kernels.generated.ts", import.meta.url), "utf8");
     expect(await generatedSource()).toBe(committed);
+  });
+
+  it("the layout fits the sense record, the brain input extras and the row", () => {
+    const f64 = [L.REC_X, L.REC_Y, L.REC_COS, L.REC_SIN, L.REC_RAY_LENGTH];
+    const i32 = [L.REC_SELF, L.REC_RAYS, L.REC_OFFSETS, L.REC_INPUT, L.REC_DETAIL];
+    expect(L.REC_BYTES).toBe(1 << L.REC_SHIFT);
+    expect(f64.map((o, i) => o - 8 * i)).toEqual([0, 0, 0, 0, 0]); // consecutive f64
+    expect(i32[0]).toBeGreaterThanOrEqual(8 * f64.length);
+    expect(i32.map((o, i) => o - 4 * i - i32[0]!)).toEqual([0, 0, 0, 0, 0]);
+    expect(L.REC_DETAIL + 4).toBeLessThanOrEqual(L.REC_BYTES);
+    expect(L.EXTRAS).toBe(EXTRA_INPUTS);
+    expect(L.UNITS_AT).toBe(4 * EXTRA_INPUTS); // the memory units follow the f32 extras
+    expect(L.R_OUT).toBe(L.R_EXTRAS + 8 * EXTRA_INPUTS); // the f64 extras end where the i32 fields begin
+    expect(EXTRA_TERRAIN).toBe(EXTRA_INPUTS - 1);
+    const sense = Object.entries(L).filter(([k]) => k.startsWith("S_") && k !== "S_BYTES").map(([k, v]) => [k, v] as const);
+    const size = (k: string): number => (/_(WORLD_W|WORLD_H|ITEM_R|INV_ITEM_CELL|ROCK_MAX_R|INV_ROCK_CELL)$/.test(k) ? 8 : 4);
+    for (const [k, v] of sense) expect(v % size(k), k).toBe(0); // naturally aligned
+    for (const [k, v] of sense) expect(v + size(k), k).toBeLessThanOrEqual(L.S_BYTES);
+    const spans = sense.map(([k, v]) => [v, v + size(k)] as const).sort((a, b) => a[0] - b[0]);
+    spans.slice(1).forEach(([from], i) => expect(from).toBeGreaterThanOrEqual(spans[i]![1])); // no two fields overlap
   });
 
   it("detects WebAssembly SIMD here", () => {
@@ -227,26 +249,33 @@ describe("sense.wat (SenseKernels)", () => {
     const world = new World(cfg, 400);
     (o.items ?? []).forEach(([x, y, kind], i) => world.setItem(i, x, y, kind as 1 | 2));
     const rng = createRng(3);
-    const make = () => o.creatures.map(([x, y, h]) => {
+    const kernels = SenseKernels.create(cfg)!;
+    kernels.store.species.push(eng); // the config the rows' species index 0 stands for
+    const kernel = o.creatures.map(([x, y, h]) => {
       const g = randomGenome(layerSizes(cfg, planOf(cfg)), rng);
-      return new Creature(eng, g, x, y, h);
+      const c = new Creature(eng, g, x, y, h, undefined, kernels); // resident, as in an Ecosystem
+      return c;
     });
-    const genomes = make();
-    const kernel = genomes; // creatures for the kernel
     const reference = o.creatures.map(([x, y, h], k) => new Creature(eng, kernel[k]!.brain.genome.slice(), x, y, h));
     const states = kernel.map((c) => c.state);
     states.forEach((s, k) => (s.energy = 10 + 37 * k));
     reference.forEach((c, k) => (c.state.energy = states[k]!.energy));
-    return { cfg, world, kernel, reference, speciesOf: Int32Array.from(kernel, (_, k) => (o.species ? k % o.species : 0)) };
+    return { cfg, world, kernels, kernel, reference, speciesOf: Int32Array.from(kernel, (_, k) => (o.species ? k % o.species : 0)) };
+  }
+
+  // The sense kernels on the batch of resident creatures, as Ecosystem.sensePhase runs them on its members.
+  function run(kernels: SenseKernels, world: World, crowd: Crowd, batch: SenseBatch): void {
+    const rows = Int32Array.from({ length: batch.count }, (_, k) => batch.creatures[k]!.resident!.ptr);
+    prepareRows(kernels.store, rows, batch.count, world.terrain);
+    kernels.runRows(world, crowd, rows, batch.selves, batch.count, kernels.detail);
   }
 
   // Runs the kernel with each creature in turn as the detail one and compares rays and brain input with the JS sense.
   // exact: no creature is in sight of another, so the f32 crowd path does not enter and every bit must agree.
   function check(o: Setup, exact: boolean) {
-    const { cfg, world, kernel, reference, speciesOf } = build(o);
+    const { cfg, world, kernels, kernel, reference, speciesOf } = build(o);
     const crowd = new Crowd(cfg);
     crowd.rebuild(kernel.map((c) => c.state), kernel.length, speciesOf);
-    const kernels = SenseKernels.create(cfg)!;
     const batch = new SenseBatch();
     kernel.forEach((c, k) => batch.add(c, k));
     reference.forEach((c, k) => {
@@ -258,7 +287,7 @@ describe("sense.wat (SenseKernels)", () => {
     const species = new Set<number>();
     kernel.forEach((c, k) => {
       kernels.detail = c;
-      kernels.run(world, crowd, batch);
+      run(kernels, world, crowd, batch);
       const ref = reference[k]!;
       c.rays.forEach((ray, i) => {
         seen.add(ray.kind);
@@ -355,8 +384,9 @@ describe("sense.wat (SenseKernels)", () => {
       const d = rng.int(t.rockCount);
       const near = t.rockR[d]! + rng.range(5, 220);
       const a = rng.range(0, 2 * Math.PI);
-      const x = t.rockX[d]! + near * Math.cos(a);
-      const y = t.rockY[d]! + near * Math.sin(a);
+      const hug = tries % 2 === 0; // half the spots hug rock, half lie anywhere, so mud and firm ground are both under some
+      const x = hug ? t.rockX[d]! + near * Math.cos(a) : rng.range(20, 2980);
+      const y = hug ? t.rockY[d]! + near * Math.sin(a) : rng.range(20, 1980);
       const apart = spots.every(([sx, sy]) => Math.hypot(sx - x, sy - y) > 300); // out of each other's sight, so the f32 crowd path stays out of it
       if (apart && x > 12 && y > 12 && x < 2988 && y < 1988 && !t.touchesRock(x, y, 12)) spots.push([x, y, rng.range(0, 2 * Math.PI)]);
     }
@@ -390,7 +420,7 @@ describe("sense.wat (SenseKernels)", () => {
       step();
       reference[0]!.sense(world, crowd, 0);
       kernels.detail = kernel[0]!;
-      kernels.run(world, crowd, batch);
+      run(kernels, world, crowd, batch);
       kernel[0]!.rays.forEach((ray, i) => {
         expect(ray.kind).toBe(reference[0]!.rays[i]!.kind);
         expect(ray.closeness).toBe(reference[0]!.rays[i]!.closeness);
@@ -406,7 +436,7 @@ describe("sense.wat (SenseKernels)", () => {
       kernel.forEach((c, k) => {
         reference[k]!.sense(world, crowd, k);
         kernels.detail = c;
-        kernels.run(world, crowd, batch);
+        run(kernels, world, crowd, batch);
         c.rays.forEach((ray, i) => {
           expect(ray.kind).toBe(reference[k]!.rays[i]!.kind);
           expect(ray.closeness).toBe(reference[k]!.rays[i]!.closeness);
@@ -454,13 +484,31 @@ describe("sense.wat (SenseKernels)", () => {
     });
   });
 
+  it("runs a creature reset with a new genome and plan as that one, without the caller attaching it again", () => {
+    const { cfg, world, kernels, kernel } = build({ rays: 6, spread: 1.5, creatures: [[300, 300, 0.3]], items });
+    const c = kernel[0]!;
+    const plan = { ...c.plan, rayCount: 4, raySpread: 1, hiddenLayers: [5, 3] };
+    const genome = randomGenome(layerSizes(cfg, plan), createRng(8));
+    c.reset(genome, 320, 310, 1.1, 50, plan);
+    const reference = new Creature(cfg, genome.slice(), 320, 310, 1.1, plan);
+    reference.state.energy = 50;
+    const crowd = new Crowd(cfg);
+    crowd.rebuild([c.state], 1);
+    const batch = new SenseBatch();
+    batch.add(c, 0);
+    run(kernels, world, crowd, batch);
+    reference.senseThink(world, crowd, 0);
+    expect(c.outputs.length).toBe(reference.outputs.length);
+    c.outputs.forEach((v, i) => expect(Math.abs(v - reference.outputs[i]!)).toBeLessThan(1e-4));
+  });
+
   it("keeps the rays of non-detail creatures untouched and needs no detail", () => {
     const { kernel, world, crowd, kernels, batch } = check({ rays: 4, spread: 1, creatures: [[300, 300, 0], [320, 300, 3]], items }, false);
     kernel[1]!.rays[0]!.closeness = 0.123;
     kernels.detail = kernel[0]!;
-    kernels.run(world, crowd, batch);
+    run(kernels, world, crowd, batch);
     expect(kernel[1]!.rays[0]!.closeness).toBe(0.123);
     kernels.detail = null;
-    kernels.run(world, crowd, batch);
+    run(kernels, world, crowd, batch);
   });
 });

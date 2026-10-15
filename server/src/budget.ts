@@ -28,15 +28,15 @@ export const fits = (viewers: number, strided: number, unstrided: number, budget
 // Round-robin: of every `stride` frames a viewer gets one, and neighbouring viewers get different ones, so the load is level.
 export const gets = (viewerIndex: number, frameNo: number, stride: number): boolean => (frameNo + viewerIndex) % stride === 0;
 
-// Allows `rate` units per second on average and up to `burst` at once.
+// Allows `rate` units per second on average and up to `burst` at once. rate may be a getter, read at each take, so a setting applies live.
 export class TokenBucket {
   private tokens: number;
   private at: number;
-  private readonly rate: number;
+  private readonly rate: number | (() => number);
   private readonly burst: number;
   private readonly now: () => number;
 
-  constructor(rate: number, burst: number, now: () => number = () => performance.now() / 1000) {
+  constructor(rate: number | (() => number), burst: number, now: () => number = () => performance.now() / 1000) {
     this.rate = rate;
     this.burst = burst;
     this.now = now;
@@ -44,12 +44,21 @@ export class TokenBucket {
     this.at = now();
   }
 
+  private get perSecond(): number {
+    return typeof this.rate === "function" ? this.rate() : this.rate;
+  }
+
   take(n: number): boolean {
     const t = this.now();
-    this.tokens = Math.min(this.burst, this.tokens + (t - this.at) * this.rate);
+    this.tokens = Math.min(this.burst, this.tokens + (t - this.at) * this.perSecond);
     this.at = t;
     if (n > this.tokens) return false;
     this.tokens -= n;
     return true;
+  }
+
+  // Seconds until n units are there, as of the last take.
+  waitS(n: number): number {
+    return Math.max(0, n - this.tokens) / this.perSecond;
   }
 }

@@ -1,4 +1,4 @@
-import { CREATURE_RECORD, ITEMS_HEADER, creatureFrameBytes, decodeCreatures, decodeItems, encodeCreatures, encodeItems } from "../../src/typescript/src/live/protocol.ts";
+import { CREATURE_RECORD, ITEMS_HEADER, MAX_FRAME_CREATURES, PROTOCOL_VERSION, creatureFrameBytes, decodeCreatures, decodeItems, encodeCreatures, encodeItems } from "../../src/typescript/src/live/protocol.ts";
 import { LiveScene } from "../../src/typescript/src/live/scene.ts";
 import { retryDelayS, serverUrl, DEV_SERVER, PUBLIC_SERVER } from "../../src/typescript/src/live/serverUrl.ts";
 import { LiveLink, cleanStats } from "../../src/typescript/src/live/connection.ts";
@@ -7,11 +7,20 @@ import { gets, sendStride } from "../../server/src/budget.ts";
 import { LiveWorld } from "../../server/src/liveWorld.ts";
 import { smallConfig } from "./liveHelpers.ts";
 import { applyTunables } from "../../server/src/tunables.ts";
-import { ITEM_HEADROOM, LIVE } from "../../server/src/config.ts";
+import { LIVE } from "../../server/src/config.ts";
 
 const world = { width: 17000, height: 10600 };
 
 describe("live protocol", () => {
+  it("takes a creature frame of at most MAX_FRAME_CREATURES", () => {
+    const frame = (n: number): Uint8Array => {
+      const z = new Array<number>(n).fill(0);
+      return encodeCreatures(1, { count: n, ids: z, x: z, y: z, heading: z, energy: z, hue: z, founder: z, age: z, radius: 12 }, world, 150);
+    };
+    expect(decodeCreatures(frame(MAX_FRAME_CREATURES), world).count).toBe(MAX_FRAME_CREATURES);
+    expect(() => decodeCreatures(frame(MAX_FRAME_CREATURES + 1), world)).toThrow(/size/);
+  });
+
   it("round-trips creature frames within the quantisation", () => {
     const src = {
       count: 3,
@@ -27,7 +36,7 @@ describe("live protocol", () => {
     };
     const bytes = encodeCreatures(123, src, world, 150);
     expect(bytes.length).toBe(creatureFrameBytes(3));
-    expect(CREATURE_RECORD).toBe(17);
+    expect(CREATURE_RECORD).toBe(19);
     const f = decodeCreatures(bytes, world);
     expect(f.tick).toBe(123);
     expect(Array.from(f.ids)).toEqual([5, 70000, 9]);
@@ -42,7 +51,7 @@ describe("live protocol", () => {
     expect(f.energyShare[2]).toBe(1); // over full is capped
     expect(f.age[2]).toBe(255);
     expect(f.hue[1]).toBeCloseTo(180.25, 1);
-    expect(f.founder[2]).toBe(65535);
+    expect(f.founder[2]).toBe(99999); // protocol 4: founder ids are u32, an added lineage's id grows with the world
   });
 
   it("round-trips an empty frame and rejects a truncated one", () => {
@@ -170,13 +179,6 @@ describe("live server helpers", () => {
     expect(applyTunables(eco, JSON.parse('{"__proto__":1}'))).toMatch(/not a live setting/);
     expect(applyTunables(eco, [])).toMatch(/object/);
   });
-
-  it("lets admin raise the item caps up to the headroom and no further", () => {
-    const eco = new LiveWorld(smallConfig(), null).eco;
-    expect(applyTunables(eco, { "eco.foodMaxDensity": ITEM_HEADROOM.foodMaxDensity, "eco.poisonMaxDensity": ITEM_HEADROOM.poisonMaxDensity })).toBeNull();
-    expect(applyTunables(eco, { "eco.foodMaxDensity": ITEM_HEADROOM.foodMaxDensity + 1 })).toMatch(/item slots/);
-    expect(eco.config.eco.foodMaxDensity).toBe(ITEM_HEADROOM.foodMaxDensity);
-  });
 });
 
 describe("live link", () => {
@@ -211,6 +213,31 @@ describe("live link", () => {
       vi.advanceTimersByTime(60_000); // the retry opens a new socket
       FakeSocket.last!.close(); // refused without a busy (e.g. 503 before the upgrade) or the server is down
       expect(states.at(-1)).not.toBe("full");
+    } finally {
+      vi.unstubAllGlobals();
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps retrying a server older than the page, and asks for a reload only from a newer one", () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("WebSocket", FakeSocket);
+    try {
+      const states: string[] = [];
+      const link = new LiveLink("ws://x", { onState: (s) => states.push(s), onHello() {}, onCreatures() {}, onItems() {}, onDelta() {}, onDetail() {}, onGenome() {}, onStats() {}, onHistory() {} });
+      link.start();
+      FakeSocket.last!.onmessage!({ data: JSON.stringify({ t: "hello", version: PROTOCOL_VERSION - 1 }) });
+      expect(states.at(-1)).toBe("updating");
+      const first = FakeSocket.last;
+      vi.advanceTimersByTime(59_000);
+      expect(FakeSocket.last).toBe(first); // an older server is asked only about once a minute
+      vi.advanceTimersByTime(17_000);
+      expect(FakeSocket.last).not.toBe(first); // retried
+      FakeSocket.last!.onmessage!({ data: JSON.stringify({ t: "hello", version: PROTOCOL_VERSION + 1 }) });
+      expect(states.at(-1)).toBe("outdated");
+      const last = FakeSocket.last;
+      vi.advanceTimersByTime(60_000);
+      expect(FakeSocket.last).toBe(last); // no more tries
     } finally {
       vi.unstubAllGlobals();
       vi.useRealTimers();

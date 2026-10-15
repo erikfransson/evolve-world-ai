@@ -1,4 +1,6 @@
 import type { EcoConfig } from "../sim/ecoConfig.ts";
+import type { MapParts } from "../sim/maps/mapParts.ts";
+import { mapPartsOf, seedMapTerrain } from "../sim/terrain.ts";
 import type { Ecosystem } from "../sim/ecosystem.ts";
 import { ShareCoordinator, ShareHelper, fittedCaps, packetBytes, packetViews, publishedBytes } from "../sim/ecoShare.ts";
 import type { Port } from "./port.ts";
@@ -10,7 +12,7 @@ import type { Caps, Packet } from "../sim/ecoShare.ts";
 // gen: the run a message belongs to, echoed in the reply, so a late reply from an earlier run is dropped.
 
 export type HelperIn =
-  | { type: "init"; gen: number; config: EcoConfig; worldCapacity: number; index: number; wasm: boolean } // a new run, wasm as the coordinator
+  | { type: "init"; gen: number; config: EcoConfig; worldCapacity: number; index: number; wasm: boolean; map: MapParts | null } // a new run, wasm as the coordinator; map: a hand-designed map's built arrays, so helpers skip its multi-second build
   | { type: "tick"; gen: number; buffer: ArrayBuffer }; // one tick's packet, transferred both ways
 
 export type HelperOut = { type: "ready"; gen: number } | { type: "done"; gen: number; buffer: ArrayBuffer };
@@ -100,7 +102,8 @@ export class ThinkPool {
     this.fresh = true;
     this.avgTickMs = null;
     const done = this.expect(START_MS);
-    this.ports.forEach((port, index) => port.post({ type: "init", gen, config: eco.config, worldCapacity: eco.world.count, index, wasm: eco.wasm }));
+    const map = mapPartsOf(eco.config);
+    this.ports.forEach((port, index) => port.post({ type: "init", gen, config: eco.config, worldCapacity: eco.world.count, index, wasm: eco.wasm, map }));
     return done;
   }
 
@@ -198,6 +201,7 @@ export function serveHelper(post: (msg: HelperOut, transfer?: Transferable[]) =>
   return (msg) => {
     switch (msg.type) {
       case "init":
+        if (msg.map && msg.config.world.map) seedMapTerrain(msg.config.world.map, msg.config.world.width, msg.config.world.height, msg.map);
         helper = new ShareHelper(msg.config, msg.worldCapacity, msg.index, msg.wasm);
         post({ type: "ready", gen: msg.gen });
         break;

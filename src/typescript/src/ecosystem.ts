@@ -16,6 +16,7 @@ import { createEcoView } from "./ui/ecoPage.ts";
 import { syncTerrainLegend } from "./ui/terrainLegend.ts";
 import { ECOSYSTEM_PAGE, openingConfig } from "./ui/ecoModes.ts";
 import { ecoBody } from "./ui/ecoMarkup.ts";
+import { PageMaps } from "./ui/pageMaps.ts";
 import { createRenderHost } from "./ui/renderHost.ts";
 import type { RenderHost } from "./ui/renderHost.ts";
 import type { EcoDrawConfig } from "./ui/ecoScene.ts";
@@ -98,11 +99,36 @@ function send(msg: EcoInMessage, transfer: Transferable[] = []): void {
   worker?.postMessage(msg, { transfer });
 }
 
+const pageMaps = new PageMaps();
+let mapKey = ""; // the named map asked for
+let mapShown = false; // the drawing side has it, from the page's worker or the simulation worker
+// A named map is built once, on a worker. Whoever draws and the next run take its arrays, so nobody builds it a second time or freezes the page doing so.
+function loadMap(): void {
+  const { map, width, height } = config.world;
+  const key = map ? `${map}|${width}|${height}` : "";
+  if (key === mapKey) return;
+  mapKey = key;
+  mapShown = false;
+  if (!map) return;
+  void ready.then(() => pageMaps.load(map, width, height)).then((m) => {
+    if (key !== mapKey) return; // the choice changed meanwhile
+    if (!m) {
+      mapKey = ""; // not built: the next change asks again, and a run sends the map from its own worker
+      if (!mapShown && !active) view.setNote("The map could not be built in the background. It shows once a run starts.");
+    } else if (host && !mapShown) {
+      host.useMap(m);
+      mapShown = true; // after useMap: when it throws, a run's map message gets another go
+      drawIdle();
+    }
+  });
+}
+
 let species = speciesList(config); // the config's species, resolved
 function setConfig(c: EcoConfig): void {
   config = c;
   species = speciesList(c);
   syncTerrainLegend(c);
+  loadMap();
 }
 
 function drawConfig(): EcoDrawConfig {
@@ -154,6 +180,14 @@ function clearSelection(): void {
 
 function onSnapshot(e: MessageEvent<EcoOutMessage>): void {
   const msg = e.data;
+  if (msg.type === "map") {
+    const { map, width, height } = config.world;
+    if (!mapShown && host && msg.name === map && msg.width === width && msg.height === height) {
+      host.useMap({ name: msg.name, width: msg.width, height: msg.height, parts: msg.parts, outlines: null });
+      mapShown = true;
+    }
+    return;
+  }
   if (msg.type === "error") {
     active = false;
     view.setPhase("idle");
@@ -218,7 +252,7 @@ function startRun(c: EcoConfig): void {
   highlight = -1;
   view.setStats(null);
   view.setNote(null);
-  send({ type: "start", config: c, run, poolUrl: POOL_URL, threads: THREADS, gentle: readGentle() });
+  send({ type: "start", config: c, run, poolUrl: POOL_URL, threads: THREADS, gentle: readGentle(), map: pageMaps.partsOf(c.world.map, c.world.width, c.world.height) });
   send({ type: "speed", speed: view.speed() });
 }
 

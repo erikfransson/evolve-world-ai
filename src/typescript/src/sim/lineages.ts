@@ -15,7 +15,7 @@ export class Lineages {
   private readonly pool: Uint8Array;
 
   readonly founders: number;
-  // Lineages founded at runtime (Ecosystem.insertCreature), keyed by founder id, which lies at or above `founders`; ids only grow, so insertion order is id order.
+  // Living lineages founded at runtime (Ecosystem.insertCreature), keyed by founder id, which lies at or above `founders`; ids only grow, so insertion order is id order.
   private readonly late = new Map<number, { live: number; hue: number; species: number; pool: boolean; name: string }>();
 
   constructor(founders: number) {
@@ -48,9 +48,14 @@ export class Lineages {
     else this.live[f]!++;
   }
 
+  // A runtime lineage whose last member dies is dropped, so inserted founders do not pile up in saves.
   died(f: number): void {
-    if (f >= this.founders) this.late.get(f)!.live--;
-    else this.live[f]!--;
+    if (f < this.founders) {
+      this.live[f]!--;
+      return;
+    }
+    const l = this.late.get(f)!;
+    if (--l.live <= 0) this.late.delete(f);
   }
 
   colour(f: number): number {
@@ -75,6 +80,18 @@ export class Lineages {
   // True when f has a row in the table.
   has(f: number): boolean {
     return f >= 0 && (f < this.founders || this.late.has(f));
+  }
+
+  // Renames every runtime lineage whose name passes `match` to `to(name)`; returns how many were renamed.
+  renameWhere(match: (name: string) => boolean, to: (name: string) => string): number {
+    let n = 0;
+    for (const l of this.late.values()) {
+      if (l.name && match(l.name)) {
+        l.name = to(l.name);
+        n++;
+      }
+    }
+    return n;
   }
 
   // The name tag given at insertion, "" for none.
@@ -103,7 +120,7 @@ export class Lineages {
     this.species.set(s.species);
     this.pool.set(s.pool);
     this.late.clear();
-    for (const [id, live, hue, species, pool, name] of s.late) this.late.set(id, { live, hue, species, pool: pool === 1, name });
+    for (const [id, live, hue, species, pool, name] of s.late) if (live > 0) this.late.set(id, { live, hue, species, pool: pool === 1, name }); // older saves kept extinct rows
   }
 
   // The k largest living lineages, of one species or of all (-1), biggest first, ties to the lowest founder id. Scans the founders, not the creatures.

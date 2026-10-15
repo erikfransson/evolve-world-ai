@@ -119,16 +119,27 @@ export function drawBursts(ctx: CanvasRenderingContext2D, px: number, list: Effe
   ctx.globalAlpha = 1;
 }
 
-// The ecosystem card's birth ring.
-export function drawBirthRings(ctx: CanvasRenderingContext2D, px: number, list: Effect[], tick: number, r: number): void {
+// The birth ring. The default is the ecosystem card's look, the Live World map card passes its own.
+export interface RingLook {
+  alpha: number; // at the start
+  lightness: number; // percent
+  width: number; // in px, at the start
+  shrink: number; // the width lost by the end
+  radius: number; // in body radii, at the start
+  growth: number; // the radius gained by the end
+  eased: boolean; // fast at first, slowing down
+}
+export const BIRTH_RING: RingLook = { alpha: 0.95, lightness: 70, width: 3, shrink: 1.5, radius: 1.2, growth: 2.6, eased: true };
+
+export function drawBirthRings(ctx: CanvasRenderingContext2D, px: number, list: Effect[], tick: number, r: number, look: RingLook = BIRTH_RING): void {
   while (list.length && (tick - list[0]!.at) * TICK_SECONDS >= RING_SECONDS) list.shift();
   for (const e of list) {
     const t = ((tick - e.at) * TICK_SECONDS) / RING_SECONDS;
-    ctx.globalAlpha = 0.95 * (1 - t);
-    ctx.strokeStyle = `hsl(${e.hue}, 90%, 70%)`;
-    ctx.lineWidth = (3 - 1.5 * t) * px;
+    ctx.globalAlpha = look.alpha * (1 - t);
+    ctx.strokeStyle = `hsl(${e.hue}, 90%, ${look.lightness}%)`;
+    ctx.lineWidth = (look.width - look.shrink * t) * px;
     ctx.beginPath();
-    ctx.arc(e.x, e.y, r * (1.2 + 2.6 * (1 - (1 - t) ** 2)), 0, Math.PI * 2);
+    ctx.arc(e.x, e.y, r * (look.radius + look.growth * (look.eased ? 1 - (1 - t) ** 2 : t)), 0, Math.PI * 2);
     ctx.stroke();
   }
   ctx.globalAlpha = 1;

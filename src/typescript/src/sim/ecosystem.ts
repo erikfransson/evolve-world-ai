@@ -1,35 +1,46 @@
 import { genomeLength, layerSizes, randomGenome, refit } from "./brain.ts";
-import { itemCounts, itemsPerDensity } from "./config.ts";
+import { itemCounts } from "./config.ts";
 import type { EngineConfig } from "./config.ts";
 import { Creature, SenseBatch, senseThinkBatch } from "./creature.ts";
 import { Crowd } from "./crowd.ts";
-import { seasonFactor, startRng } from "./ecoConfig.ts";
+import { startRng } from "./ecoConfig.ts";
 import type { EcoConfig } from "./ecoConfig.ts";
 import { mutate } from "./ga.ts";
 import { driftBirth, driftPlan, mutateStructure, randomBirth, randomPlan, remapWeights } from "./planMutation.ts";
 import type { BirthTraits } from "./planMutation.ts";
-import { agingOf, collide, hurt, keepInside, settle } from "./physics.ts";
-import type { Body } from "./physics.ts";
-import type { Aging, Contact } from "./physics.ts";
+import { agingOf, settle } from "./physics.ts";
+import { terrainOf } from "./terrain.ts";
+import { SMALL_SORT } from "./crowd.ts";
+import { WasmCrowd } from "./wasm/crowdKernel.ts";
+import { WasmMembers } from "./wasm/membersKernel.ts";
+import type { ResidentStore } from "./wasm/resident.ts";
+import { advanceBodies, prepareRows } from "./wasm/residentStep.ts";
+import type { Aging } from "./physics.ts";
 import type { StatefulRng } from "./rng.ts";
 import { copyPlan, inputLayout, planOf } from "./sensors.ts";
 import type { BodyPlan, PlanView } from "./sensors.ts";
+import { Contacts } from "./contacts.ts";
+import { checkInsert } from "./ecoInsert.ts";
+import type { InsertResult, InsertSpec } from "./ecoInsert.ts";
+import { ItemEconomy, capsOf } from "./itemEconomy.ts";
 import { Lineages } from "./lineages.ts";
+import { MemberTable } from "./memberTable.ts";
 import { checkRetune } from "./retune.ts";
 import type { RetunePatch, RetuneResult } from "./retune.ts";
-import type { Lineage } from "./lineages.ts";
 import { trialsToEcoGenome } from "./seedPool.ts";
 import type { PoolEntry } from "./seedPool.ts";
 import { bandHue, founderCounts, seenEnergyScale, speciesEngine, speciesList, speciesRanges } from "./species.ts";
 import type { Species } from "./species.ts";
 import { HIT_FOOD, HIT_NONE, HIT_POISON } from "./types.ts";
-import type { CreatureState, Genome, HitKind, WorldView } from "./types.ts";
+import type { Genome, HitKind, WorldView } from "./types.ts";
 import { World } from "./world.ts";
 import { SenseKernels } from "./wasm/senseKernels.ts";
 import { MAX_RAYS } from "./wasm/senser.ts";
-import { PLAN_LIMITS } from "./rl/validate.ts";
 import type { PhaseTimer } from "./profile.ts";
 
+export { BIG_IMPACT, EVENT_CAP, EVENT_DEATH, EVENT_IMPACT, EVENT_STRIDE } from "./contacts.ts";
+export { MAX_INSERT_ENERGY, MAX_INSERT_LAYERS, MAX_INSERT_MEMORY, MAX_INSERT_NEURONS, MAX_INSERT_RAYS, MAX_INSERT_RAY_LENGTH, MAX_NAME_LENGTH } from "./ecoInsert.ts";
+export type { InsertResult, InsertSpec } from "./ecoInsert.ts";
 export type { Lineage } from "./lineages.ts";
 
 // An item placed as given (RL environments with a layout), instead of the scattered start items.
@@ -50,14 +61,6 @@ export interface CastMember {
   hue: number;
   energy?: number; // the species' start energy when left out
 }
-
-// Collision events for the page's effects, collected since the last drain and bounded: a Float32Array of EVENT_STRIDE numbers each, kind, x, y, value.
-// An impact (kind 0, value = energy each lost) is reported at BIG_IMPACT or more; a death (kind 1, value = hue) from a bump or a hunt. Reporting changes no results.
-export const EVENT_IMPACT = 0;
-export const EVENT_DEATH = 1;
-export const EVENT_STRIDE = 4;
-export const EVENT_CAP = 32;
-export const BIG_IMPACT = 15;
 
 // One creature of the ecosystem with its family record. Objects are recycled after death, so hold ids, not references.
 export class EcoCreature {
@@ -109,29 +112,6 @@ export interface SpeciesCount {
   eaten: number;
 }
 
-// Limits of a runtime insert (insertCreature): the plan limits of a creature file (rl/validate.ts), so an uploaded creature is never bigger than one the Arena makes.
-export const MAX_INSERT_RAYS = PLAN_LIMITS.rayCount[1];
-export const MAX_INSERT_RAY_LENGTH = 2000;
-export const MAX_INSERT_MEMORY = PLAN_LIMITS.memory[1];
-export const MAX_INSERT_LAYERS = PLAN_LIMITS.layers[1];
-export const MAX_INSERT_NEURONS = PLAN_LIMITS.neurons[1];
-export const MAX_INSERT_ENERGY = 100000;
-export const MAX_NAME_LENGTH = 24;
-
-export interface InsertSpec {
-  genome: ArrayLike<number>; // sized for plan
-  plan: PlanView;
-  species?: number; // default 0
-  x: number;
-  y: number;
-  hue: number; // degrees
-  name: string; // short tag of the new lineage
-  heading?: number; // default 0
-  energy?: number; // default the species' start energy
-  birth?: Partial<BirthTraits>; // a missing trait takes the middle of the species' range (log scale, linear for a range from 0); all are clamped into the range
-}
-export type InsertResult = { ok: true; id: number } | { ok: false; reason: string };
-
 // Scalars of a run for saveState (ecoState.ts).
 export interface EcoCore {
   tick: number; births: number; deaths: number; foodEaten: number; poisonEaten: number; food: number; poison: number;
@@ -146,8 +126,6 @@ export interface MemberRecord {
   x: number; y: number; heading: number; vx: number; vy: number; turnRate: number; energy: number; ticksAlive: number; cos: number; sin: number;
   plan: PlanView; genome: Float32Array; memory: ArrayLike<number>;
 }
-
-const middle = (r: readonly number[]): number => (r[0]! > 0 ? Math.sqrt(r[0]! * r[1]!) : (r[0]! + r[1]!) / 2);
 
 export interface EcoJournal {
   born: number[];
@@ -176,10 +154,8 @@ export class Ecosystem {
   readonly poolFounders: number; // founders taken from the seed pool, the first ones of each species in id order
   readonly founders: number; // founders are ids 0 .. founders-1, species by species
   readonly species: readonly Species[];
-  food = 0;
-  poison = 0;
-  // Living creatures in list order; states[i] is members[i].creature.state.
-  readonly members: EcoCreature[] = [];
+  // Living creatures in list order.
+  readonly members: EcoCreature[];
   // Id of a creature whose rays and brain input must be current after each tick (the selected one); the WASM sense leaves everyone else's stale.
   detail: number | null = null;
   // With the journal option: changes not yet drained by a helper coordinator (ecoShare.ts). born and died hold ids, items World.log records.
@@ -187,41 +163,34 @@ export class Ecosystem {
 
   private readonly items: World;
   private readonly crowd: Crowd;
+  private hits = new Int32Array(0); // members touching an item this tick, ascending
   private readonly batch = new SenseBatch();
   private readonly kernels: SenseKernels | null; // with eco.wasm when WebAssembly SIMD is available
-  private readonly states: CreatureState[] = [];
-  private readonly byId = new Map<number, EcoCreature>();
+  private readonly wasmCrowd: WasmCrowd | null; // the crowd grid built in WebAssembly from the rows (crowdKernel.ts), when the rows are resident
+  private readonly wasmMembers: WasmMembers | null; // the settle and birth scans over the rows in WebAssembly (membersKernel.ts)
+  private readonly resident: ResidentStore | null; // creature bodies as rows of the kernel memory, which the fill kernel reads
+  private readonly table: MemberTable; // members and the columns kept with them
+  private readonly economy: ItemEconomy; // food and poison: counts, caps, regrowth
+  private readonly contacts: Contacts; // eating, hunting and collisions
   private readonly spare: EcoCreature[][]; // per species, since a creature keeps its species' engine config
   private readonly engines: EngineConfig[]; // per species
   private readonly ranges: EcoConfig["eco"][]; // per species, for plan variation
   private readonly counts: SpeciesCount[];
-  private readonly kinds: number[] = []; // kinds[i] is members[i].species
   private readonly multi: boolean; // more than one species, so rays tell species apart
   private readonly hunters: boolean; // some species eats another
-  private readonly slain = new Set<CreatureState>(); // killed by a bump or a hunt this tick
-  private readonly events = new Float32Array(EVENT_CAP * EVENT_STRIDE);
-  private eventCount = 0;
+  private lookups = new Int32Array(0); // the item each creature touches, by list index
   private readonly rng: StatefulRng;
   // Scratch of one birth, grown as plans need: the child's plan, its genome, and the parent's weights remapped to a new shape.
   private readonly childPlan: BodyPlan;
   private childGenome = new Float32Array(0);
   private remapped = new Float32Array(0);
-  private foodCap: number;
-  private poisonCap: number;
-  private foodPerTick: number;
-  private poisonPerTick: number;
-  private foodDue = 0; // fractional items accumulated by regrowth
-  private poisonDue = 0;
   private nextId = 0;
   private readonly spot = { x: 0, y: 0, vx: 0, vy: 0 }; // scratch of a newborn's place
   private spent = false; // a parent gave its last energy to a child this tick
   private readonly traits: BirthTraits = { energy: 0, cost: 0, cooldown: 0 }; // scratch of one birth
   readonly lineages: Lineages;
   private aging: Aging | null;
-  private readonly contact: Contact = { speed: 0 };
   onDeath: ((m: EcoCreature) => void) | null = null; // called with each creature as it leaves, before its object is recycled
-  private bySlot: EcoCreature[] = []; // the members in creature construction order (Creature.slot), kept up to date as they come and go
-  private batchAll = false; // the batch from the last sensePhase holds every member
   profile: PhaseTimer | null = null; // per-phase CPU laps, set by ecoBench --profile
 
   // pool: trained founders (see seedPool.ts); without one, or at poolFraction 0, every founder is random.
@@ -235,13 +204,14 @@ export class Ecosystem {
     const restore = options.restore;
     this.config = config;
     const { eco, dt } = config;
-    const perDensity = itemsPerDensity(config);
     const layout = options.items;
     const start = layout ? { food: layout.filter((it) => it.kind === HIT_FOOD).length, poison: layout.filter((it) => it.kind === HIT_POISON).length } : itemCounts(config);
-    this.foodCap = Math.round(eco.foodMaxDensity * perDensity);
-    this.poisonCap = Math.round(eco.poisonMaxDensity * perDensity);
-    this.foodPerTick = eco.foodRegrow * perDensity * dt;
-    this.poisonPerTick = eco.poisonRegrow * perDensity * dt;
+    const { spawn } = terrainOf(config);
+    if (!layout) {
+      if (!spawn.usable(0)) start.food = 0; // a kind with no weight anywhere on the map starts and grows nowhere
+      if (!spawn.usable(1)) start.poison = 0;
+    }
+    const caps = capsOf(config, eco);
     this.species = speciesList(config);
     this.multi = this.species.length > 1;
     this.hunters = this.species.some((sp) => sp.prey.length > 0);
@@ -252,14 +222,15 @@ export class Ecosystem {
     this.spare = this.species.map(() => []);
     this.rng = startRng(config);
     this.aging = agingOf(eco, dt);
-    this.items = new World(config, restore?.itemCapacity ?? Math.max(start.food, this.foodCap) + Math.max(start.poison, this.poisonCap));
+    this.items = new World(config, restore?.itemCapacity ?? Math.max(start.food, caps.food) + Math.max(start.poison, caps.poison));
     this.world = this.items;
+    this.economy = new ItemEconomy(config, this.items, this.rng, caps);
     this.journal = options.journal ? { born: [], died: [], items: [] } : null;
     this.items.log = this.journal?.items ?? null;
     if (layout && !restore) layout.forEach((it, i) => this.items.setItem(i, it.x, it.y, it.kind));
     else this.items.scatter(restore ? 0 : start.food, restore ? 0 : start.poison, this.rng);
-    this.food = start.food;
-    this.poison = start.poison;
+    this.economy.food = start.food;
+    this.economy.poison = start.poison;
     const cast = options.cast;
     const counts = cast || restore ? this.species.map(() => 0) : founderCounts(this.species, eco.maxPopulation);
     const founders = cast ? cast.length : counts.reduce((a, b) => a + b, 0);
@@ -268,6 +239,13 @@ export class Ecosystem {
     const maxRays = Math.max(config.creature.rayCount, ...this.ranges.map((r) => r.rayCountRange[1] ?? 0), ...(pool ?? []).map((e) => e.plan.rayCount), ...(cast ?? []).map((c) => c.plan.rayCount));
     // options.kernels: instances to reuse (RL), reset here; the caller owns them and runs one Ecosystem on them at a time.
     this.kernels = !eco.wasm ? null : options.kernels && maxRays <= MAX_RAYS ? options.kernels.reset(config) : SenseKernels.create(config, maxRays);
+    this.resident = this.kernels?.store ?? null;
+    this.table = new MemberTable(this.resident !== null);
+    this.members = this.table.members;
+    this.contacts = new Contacts(config, this.items, this.crowd, this.table, this.species, this.counts, this.rng);
+    if (this.resident) this.resident.species.push(...this.engines); // the configs the rows' species indices stand for
+    this.wasmCrowd = this.resident ? WasmCrowd.create(this.resident, this.crowd) : null;
+    this.wasmMembers = this.resident ? WasmMembers.create(this.resident) : null;
     this.childPlan = planOf(config);
 
     const { width, height } = config.world;
@@ -299,7 +277,7 @@ export class Ecosystem {
         randomBirth(this.ranges[sp]!, this.rng, this.traits);
         let x = this.rng.range(r, width - r);
         let y = this.rng.range(r, height - r);
-        for (let tries = 0; this.items.terrain.touchesRock(x, y, r); tries++) {
+        for (let tries = 0; !this.economy.startOk(x, y, r); tries++) {
           if (tries >= MAX_ROCK_TRIES) {
             ({ x, y } = this.items.terrain.nearestFree(x, y, r)); // a map that leaves no room is not allowed to hang the build
             break;
@@ -320,9 +298,9 @@ export class Ecosystem {
     this.poolFounders = restore?.poolFounders ?? poolFounders;
     // Poison moves only once every founder stands, and never onto one, so none ends up on a founder placed earlier.
     const reach = r + config.world.itemRadius;
-    this.crowd.rebuild(this.states, this.states.length);
+    this.gridCrowd(this.table.length);
     const onFounder = (px: number, py: number): boolean => this.crowd.anyWithin(px, py, reach);
-    for (const s of this.states) this.items.clearPoison(s.x, s.y, r, this.rng, onFounder);
+    for (const s of this.table.states) this.items.clearPoison(s.x, s.y, r, this.rng, onFounder);
   }
 
   // Makes food invisible to every creature's rays, or visible again; eating is unchanged (RL memory envs, which run with wasm off).
@@ -331,6 +309,12 @@ export class Ecosystem {
     if (hidden && this.kernels) throw new Error("hiding food needs the JS sense path (eco.wasm false)");
     this.items.foodHidden = hidden;
   }
+
+  // Items of each kind in the world now.
+  get food(): number { return this.economy.food; }
+  set food(v: number) { this.economy.food = v; }
+  get poison(): number { return this.economy.poison; }
+  set poison(v: number) { this.economy.poison = v; }
 
   get population(): number {
     return this.members.length;
@@ -352,7 +336,7 @@ export class Ecosystem {
 
   // The living creature with this id, or undefined once it has died.
   get(id: number): EcoCreature | undefined {
-    return this.byId.get(id);
+    return this.table.byId.get(id);
   }
 
   step(): void {
@@ -361,9 +345,32 @@ export class Ecosystem {
     prof?.start();
     this.prepareTick();
     prof?.lap("crowd grid");
-    this.sensePhase(0, this.members.length);
+    this.sensePhase();
     prof?.lap("sense and think, rest");
     this.finishTick();
+  }
+
+  // The rows of the members' bodies and rowAt (member index to f64 index of its row), for the helper coordinator's bulk copies; null without resident bodies.
+  residentRows(): { store: ResidentStore; rowAt: Int32Array } | null {
+    return this.resident ? { store: this.resident, rowAt: this.table.rowAt } : null;
+  }
+
+  // Helper threads with resident bodies: the whole sense batch, as row addresses and member indices (n entries each), valid until the next spawn or removal.
+  senseBatchRows(): { rows: Int32Array; selves: Int32Array; n: number } {
+    return { rows: this.table.slotRows, selves: this.table.slotSelves, n: this.table.bySlot.length };
+  }
+
+  // Phase 1a for the resident bodies at selves, after prepareTick.
+  senseRows(rows: Int32Array, selves: Int32Array, n: number): void {
+    const kernels = this.kernels!;
+    kernels.detail = this.detail === null ? null : (this.table.byId.get(this.detail)?.creature ?? null);
+    prepareRows(this.resident!, rows, n, this.items.terrain);
+    kernels.runRows(this.items, this.crowd, rows, selves, n, kernels.detail, this.profile);
+  }
+
+  // Phase 1b for the resident bodies at selves: memory and motion, and the item each touches into touched[self].
+  advanceRows(rows: Int32Array, selves: Int32Array, n: number, touched: Int32Array): void {
+    advanceBodies(this.kernels!, rows, selves, n, this.aging, this.items, this.config.creature.radius, touched);
   }
 
   // Empties the journal, once a helper coordinator has published it.
@@ -378,23 +385,34 @@ export class Ecosystem {
     this.items.log = null;
   }
 
-  // Grids the creatures as they stand at the tick start, for sensePhase.
-  prepareTick(): void {
-    if (this.states.length < 2 && this.crowd.count < 2) return; // a lone creature, or none, only sees itself in a grid of at most itself
-    this.crowd.rebuild(this.states, this.states.length, this.multi ? this.kinds : undefined);
+  private gridCrowd(n: number, species?: Int32Array): void {
+    const wasm = this.wasmCrowd;
+    if (wasm && n > SMALL_SORT) wasm.rebuild(this.table.rowAt, n, species);
+    else this.crowd.rebuild(this.table.states, n, species);
   }
 
-  // Phase 1a for members start .. end-1, after prepareTick: sense and think into each creature's outputs.
-  sensePhase(start: number, end: number): void {
+  // Grids the creatures as they stand at the tick start, for sensePhase.
+  prepareTick(): void {
+    if (this.table.length < 2 && this.crowd.count < 2) return; // a lone creature, or none, only sees itself in a grid of at most itself
+    this.gridCrowd(this.table.length, this.multi ? this.table.kinds : undefined);
+  }
+
+  // Phase 1a for every member, after prepareTick: sense and think into each creature's outputs.
+  sensePhase(): void {
+    if (this.kernels) {
+      // Resident bodies: the batch is the maintained row list, nothing to gather per creature.
+      this.profile?.lap("batch build");
+      const kernels = this.kernels;
+      const n = this.members.length;
+      kernels.detail = this.detail === null ? null : (this.table.byId.get(this.detail)?.creature ?? null);
+      prepareRows(this.resident!, this.table.slotRows, n, this.items.terrain);
+      kernels.runRows(this.items, this.crowd, this.table.slotRows, this.table.slotSelves, n, kernels.detail, this.profile);
+      return;
+    }
     const batch = this.batch;
     batch.clear();
-    if (start === 0 && end === this.members.length && this.bySlot.length === end) {
-      for (const m of this.bySlot) batch.add(m.creature, m.index);
-      batch.sorted = true;
-    } else {
-      for (let i = start; i < end; i++) batch.add(this.members[i].creature, i);
-    }
-    this.batchAll = start === 0 && end === this.members.length;
+    for (const m of this.table.bySlot) batch.add(m.creature, m.index);
+    batch.sorted = true;
     this.profile?.lap("batch build");
     this.senseBatch(batch);
   }
@@ -404,16 +422,15 @@ export class Ecosystem {
   refreshDetail(): void {
     const i = this.detail === null ? -1 : this.members.findIndex((m) => m.id === this.detail);
     if (i < 0) return;
-    this.crowd.rebuild(this.states, this.states.length, this.multi ? this.kinds : undefined);
+    this.gridCrowd(this.table.length, this.multi ? this.table.kinds : undefined);
     const c = this.members[i]!.creature;
     c.sense(this.items, this.crowd, i);
     c.encode();
   }
 
-  // Phase 1a for a batch of members, each at its list index, after prepareTick.
+  // Phase 1a for a batch of members on the JS path, each at its list index, after prepareTick.
   senseBatch(batch: SenseBatch): void {
-    if (this.kernels) this.kernels.detail = this.detail === null ? null : (this.byId.get(this.detail)?.creature ?? null);
-    senseThinkBatch(this.items, this.crowd, batch, this.kernels, this.profile);
+    senseThinkBatch(this.items, this.crowd, batch, this.profile);
   }
 
   // Phase 1b for one creature: memory and motion. Returns the item it touches there (Creature.touched), for finishTick.
@@ -428,23 +445,16 @@ export class Ecosystem {
   // see Creature.touched), so only the shared phase runs.
   finishTick(touched?: Int32Array): void {
     if (!touched) {
-      if (this.batchAll) {
-        // The batch holds every member in creature construction order: same work, but the objects are read front to back.
+      if (this.kernels) this.kernels.stepper.step(this.table.slotRows, this.members.length, this.aging, this.items.terrain);
+      else {
+        // The batch holds every member in creature construction order: the objects are read front to back.
         const { creatures, count } = this.batch;
-        const f32 = this.kernels?.f32;
         for (let k = 0; k < count; k++) {
           const c = creatures[k]!;
-          const out = c.outputArray(f32);
-          c.remember(out);
-          c.steer(out);
-        }
-      } else {
-        for (const m of this.members) {
-          m.creature.remember();
-          m.creature.steer();
+          c.remember();
+          c.steer();
         }
       }
-      this.batchAll = false;
       this.profile?.lap("memory and steer");
     }
     this.sharedPhase(touched);
@@ -454,190 +464,112 @@ export class Ecosystem {
   private sharedPhase(touched?: Int32Array): void {
     const members = this.members;
     let n = members.length;
-    let first = this.rng.int(n);
-    for (let k = 0; k < n; k++) {
-      const at = (first + k) % n;
-      const m = members[at];
-      if (!this.species[m.species]!.plants) continue;
-      let eaten: number;
-      if (touched && (touched[at] < 0 || this.items.kinds[touched[at]] !== HIT_NONE)) {
-        // Items are only removed in this loop, so a looked-up item still there is still the first touched, and none stays none.
-        eaten = touched[at];
-        if (eaten >= 0) m.creature.eatItem(this.items, eaten);
-      } else eaten = m.creature.eat(this.items); // looked up item taken by an earlier creature, or no lookup
-      if (eaten < 0) continue;
-      if (this.items.kinds[eaten] === HIT_FOOD) {
-        this.food--;
-        m.eaten++;
-        this.foodEaten++;
-      } else {
-        this.poison--;
-        this.poisonEaten++;
+    // Eating and hunting move no one, so the moved positions are gridded once, here, for the item lookups (in cell order, so
+    // neighbours read the same cells), hunting and collisions.
+    const eco = this.config.eco;
+    const gridded = (eco.collisions || this.hunters) && n > 0;
+    if (gridded) {
+      this.gridCrowd(n, this.table.kinds);
+      if (!touched) {
+        const crowd = this.crowd;
+        touched = this.lookups = refit(this.lookups, n);
+        const tables = crowd.kernel ? this.kernels!.itemTables(this.items) : null;
+        if (tables) crowd.kernel!.touch(tables, this.items.rows, 1 / this.items.cell, this.config.creature.radius + this.items.itemRadius, touched); // twin of touchedBatch
+        else this.items.touchedBatch(crowd.xs, crowd.ys, crowd.owners, n, this.config.creature.radius, touched);
       }
-      this.items.removeItem(eaten); // so no one else eats it this tick
+    }
+    let first = this.rng.int(n);
+    if (touched) {
+      // Only creatures touching an item can eat: list them, then walk the list from the random start, in the same order as a walk
+      // over every member.
+      const hits = (this.hits = refit(this.hits, n));
+      let h = 0;
+      let from = 0;
+      for (let at = 0; at < n; at++) {
+        if (touched[at]! < 0) continue;
+        if (at < first) from++;
+        hits[h++] = at;
+      }
+      for (let k = 0; k < h; k++) {
+        let q = from + k;
+        if (q >= h) q -= h;
+        this.eat(hits[q]!, touched);
+      }
+    } else {
+      for (let k = 0; k < n; k++) this.eat((first + k) % n);
     }
 
     const prof = this.profile;
     prof?.lap("eat");
-    if (this.hunters) this.hunt(); // grids the moved positions, which collideAll reuses since hunting moves no one
+    if (this.hunters) this.contacts.hunt();
     prof?.lap("hunt");
-    if (this.config.eco.collisions) this.collideAll(this.hunters);
+    if (eco.collisions) this.contacts.collideAll();
     prof?.lap("collisions");
 
-    for (let i = n - 1; i >= 0; i--) {
-      const state = this.states[i];
-      settle(state);
-      if (!state.alive) {
-        if (this.slain.size > 0 && this.slain.delete(state)) this.report(EVENT_DEATH, state.x, state.y, this.members[i].hue);
-        this.remove(i);
-      }
-    }
-    this.slain.clear();
+    const scan = this.wasmMembers;
+    if (scan) {
+      // the scan counts the tick for everyone with energy left and lists the others, highest first
+      const dying = scan.settle(this.table.rowAt, n);
+      for (let k = 0; k < dying.length; k++) this.settleAt(dying[k]!);
+    } else for (let i = n - 1; i >= 0; i--) this.settleAt(i);
+    this.contacts.endTick();
     prof?.lap("settle and deaths");
 
     n = members.length;
     first = n > 0 ? this.rng.int(n) : 0;
-    const eco = this.config.eco;
-    for (let k = 0; k < n && members.length < eco.maxPopulation; k++) {
-      const parent = members[(first + k) % n];
-      if (parent.creature.state.energy >= parent.birth.energy && this.tick - parent.lastBirthTick >= parent.cooldownTicks) this.giveBirth(parent);
+    const birthCap = eco.maxPopulation - eco.birthReserve;
+    // The energy test reads no creature object: table.states[i] is members[i].creature.state and table.birthEnergies[i] its birth energy. Births replace the table's arrays when they fill up.
+    if (scan) {
+      // only the members with energy for a child, in the order of the walk from first; births change no one else's energy
+      const ready = scan.birthCandidates(this.table.rowAt, n, this.table.birthEnergies, first);
+      for (let k = 0; k < ready.length && members.length < birthCap; k++) {
+        const parent = members[ready[k]!]!;
+        if (this.tick - parent.lastBirthTick >= parent.cooldownTicks) this.giveBirth(parent);
+      }
+    } else for (let k = 0; k < n && members.length < birthCap; k++) {
+      const at = (first + k) % n;
+      if (this.table.states[at]!.energy < this.table.birthEnergies[at]!) continue;
+      const parent = members[at]!;
+      if (this.tick - parent.lastBirthTick >= parent.cooldownTicks) this.giveBirth(parent);
     }
     if (this.spent) {
       // Parents that gave all they had are gone.
-      for (let i = members.length - 1; i >= 0; i--) if (!this.states[i].alive) this.remove(i);
+      for (let i = members.length - 1; i >= 0; i--) if (!this.table.states[i]!.alive) this.remove(i);
       this.spent = false;
     }
     prof?.lap("births");
 
-    this.regrow();
+    this.economy.regrow(this.tick);
     prof?.lap("regrow");
     this.tick++;
   }
 
-  // Each living hunter, from a random start, eats the nearest touching creature of a species it preys on, at most one per
-  // tick, using a grid of the moved positions. The prey dies (removed with the other deaths) and cannot be eaten twice.
-  private hunt(): void {
-    const crowd = this.crowd;
-    const states = this.states;
-    const members = this.members;
-    const n = members.length;
-    crowd.rebuild(states, n, this.kinds);
-    const reach = 2 * this.config.creature.radius;
-    const inv = 1 / crowd.cell;
-    const first = n > 0 ? this.rng.int(n) : 0;
-    for (let k = 0; k < n; k++) {
-      const hunter = members[(first + k) % n]!;
-      const sp = this.species[hunter.species]!;
-      const s = states[(first + k) % n]!;
-      if (sp.prey.length === 0 || s.energy <= 0) continue;
-      const cx0 = Math.max(0, Math.floor((s.x - reach) * inv));
-      const cx1 = Math.min(crowd.cols - 1, Math.floor((s.x + reach) * inv));
-      const cy0 = Math.max(0, Math.floor((s.y - reach) * inv));
-      const cy1 = Math.min(crowd.rows - 1, Math.floor((s.y + reach) * inv));
-      let best = -1;
-      let bestD2 = reach * reach;
-      for (let cy = cy0; cy <= cy1; cy++) {
-        const row = cy * crowd.cols;
-        const end = crowd.cellStart[row + cx1 + 1]!;
-        for (let t = crowd.cellStart[row + cx0]!; t < end; t++) {
-          if (!sp.prey.includes(crowd.species[t]!)) continue;
-          const o = crowd.owners[t]!;
-          const p = states[o]!;
-          if (!p.alive || p.energy <= 0) continue;
-          const dx = p.x - s.x;
-          const dy = p.y - s.y;
-          const d2 = dx * dx + dy * dy;
-          if (d2 < bestD2 || (d2 === bestD2 && best >= 0 && members[o]!.id < members[best]!.id)) {
-            best = o;
-            bestD2 = d2;
-          }
-        }
-      }
-      if (best < 0) continue;
-      const prey = states[best]!;
-      s.energy += sp.eatEfficiency * prey.energy + sp.eatBaseline;
-      prey.energy = 0;
-      prey.alive = false;
-      this.slain.add(prey);
-      hunter.kills++;
-      this.counts[members[best]!.species]!.eaten++;
+  // Member at eats (see Contacts.eatAt); the counts follow.
+  private eat(at: number, touched?: Int32Array): void {
+    const kind = this.contacts.eatAt(at, touched);
+    if (kind === HIT_NONE) return;
+    if (kind === HIT_FOOD) {
+      this.economy.food--;
+      this.foodEaten++;
+    } else {
+      this.economy.poison--;
+      this.poisonEaten++;
     }
   }
 
-  // Pushes overlapping pairs apart with a bounce, using a grid of the moved positions. Pairs resolve in grid order.
-  // gridded: the crowd already holds the moved positions.
-  private collideAll(gridded = false): void {
-    const crowd = this.crowd;
-    const states = this.states;
-    if (states.length < 2) return; // no pairs
-    if (!gridded) crowd.rebuild(states, states.length);
-    const { cols, rows, cellStart, owners } = crowd;
-    const { radius } = this.config.creature;
-    const e = 1; // restitution
-    // Occupied cells in row-major order, the same order as sweeping every cell.
-    for (let o = 0; o < crowd.occupiedCount; o++) {
-      const c = crowd.occupied[o]!;
-      const cy = Math.floor(c / cols);
-      const cx = c - cy * cols;
-      const end = cellStart[c + 1];
-      for (let s = cellStart[c]; s < end; s++) {
-        const a = states[owners[s]];
-        // Later creatures of this cell, then the cells right, below-left, below and below-right, so each pair is seen once.
-        for (let t = s + 1; t < end; t++) this.bump(a, states[owners[t]], radius, e);
-        if (cx + 1 < cols) this.bumpCell(a, c + 1, radius, e);
-        if (cy + 1 < rows) {
-          const below = c + cols;
-          if (cx > 0) this.bumpCell(a, below - 1, radius, e);
-          this.bumpCell(a, below, radius, e);
-          if (cx + 1 < cols) this.bumpCell(a, below + 1, radius, e);
-        }
-      }
+  // Ends member i's tick (settle), removing it when it died.
+  private settleAt(i: number): void {
+    const state = this.table.states[i]!;
+    settle(state);
+    if (!state.alive) {
+      this.contacts.died(state, this.members[i]!.hue);
+      this.remove(i);
     }
   }
 
-  private bumpCell(a: CreatureState, cell: number, radius: number, e: number): void {
-    const { cellStart, owners } = this.crowd;
-    for (let t = cellStart[cell]; t < cellStart[cell + 1]; t++) this.bump(a, this.states[owners[t]], radius, e);
-  }
-
-  private bump(a: CreatureState, b: CreatureState, radius: number, e: number): void {
-    const eco = this.config.eco;
-    if (!a.alive || !b.alive) return; // an eaten prey; everyone else is alive until settle
-    if (!collide(a, b, radius, e, this.contact)) return;
-    if (eco.collisionDamage) {
-      const fresh = a.energy > 0 && b.energy > 0 && this.contact.speed > 0; // else hurt does nothing
-      hurt(a, b, this.contact.speed, eco.damagePerSpeed);
-      if (fresh) this.noteHurt(a, b, eco.damagePerSpeed * this.contact.speed);
-    }
-    this.confine(a);
-    this.confine(b);
-  }
-
-  // Keeps a creature inside the walls and out of the rock.
-  private confine(s: Body): void {
-    const { radius, wallBounce } = this.config.creature;
-    const { width, height } = this.config.world;
-    keepInside(s, radius, width, height, wallBounce);
-    this.items.terrain.keepOut(s, radius, wallBounce);
-  }
-
-  private noteHurt(a: CreatureState, b: CreatureState, loss: number): void {
-    if (loss >= BIG_IMPACT) this.report(EVENT_IMPACT, (a.x + b.x) / 2, (a.y + b.y) / 2, loss);
-    if (a.energy <= 0) this.slain.add(a);
-    if (b.energy <= 0) this.slain.add(b);
-  }
-
-  private report(kind: number, x: number, y: number, value: number): void {
-    if (this.eventCount >= EVENT_CAP) return;
-    this.events.set([kind, x, y, value], this.eventCount++ * EVENT_STRIDE);
-  }
-
-  // The events since the last call, or null for none.
+  // The collision events since the last call, or null for none.
   drainEvents(): Float32Array | null {
-    if (this.eventCount === 0) return null;
-    const out = this.events.slice(0, this.eventCount * EVENT_STRIDE);
-    this.eventCount = 0;
-    return out;
+    return this.contacts.drainEvents();
   }
 
   private giveBirth(parent: EcoCreature): void {
@@ -682,9 +614,8 @@ export class Ecosystem {
     const spot = this.spot;
     spot.x = ps.x + Math.cos(angle) * gap;
     spot.y = ps.y + Math.sin(angle) * gap;
-    this.confine(spot);
-    const child = this.spawn(genome, plan, spot.x, spot.y, angle, paid, parent.species);
-    this.setBirth(child, traits);
+    this.contacts.confine(spot);
+    const child = this.spawn(genome, plan, spot.x, spot.y, angle, paid, parent.species, traits);
     const s = child.creature.state;
     // Parent and child part at birthSpeed relative to each other, half each way, so the parent's own motion cannot carry it back
     // into the child, and the pair's momentum stays what the parent had.
@@ -695,7 +626,7 @@ export class Ecosystem {
     s.vy = ps.vy + sin * half;
     ps.vx -= cos * half;
     ps.vy -= sin * half;
-    this.confine(s);
+    this.contacts.confine(s);
     child.parentId = parent.id;
     child.founderId = parent.founderId;
     this.lineages.born(child.founderId);
@@ -705,27 +636,19 @@ export class Ecosystem {
     this.counts[parent.species]!.births++;
   }
 
-  private setBirth(m: EcoCreature, t: BirthTraits): void {
-    m.birth.energy = t.energy;
-    m.birth.cost = t.cost;
-    m.birth.cooldown = t.cooldown;
-    m.cooldownTicks = Math.round(t.cooldown / this.config.dt);
-  }
-
   // Places founder i with the birth traits in this.traits; the one path for drawn and cast founders.
   private found(i: number, c: CastMember, fromPool: boolean): void {
-    const m = this.spawn(c.genome, c.plan, c.x, c.y, c.heading, c.energy ?? this.species[c.species]!.startEnergy, c.species);
-    this.setBirth(m, this.traits);
+    const m = this.spawn(c.genome, c.plan, c.x, c.y, c.heading, c.energy ?? this.species[c.species]!.startEnergy, c.species, this.traits);
     m.hue = c.hue;
     this.lineages.describe(i, c.hue, c.species, fromPool);
   }
 
-  // Adds a creature, reusing a dead one's storage when there is one; genome and plan are copied.
-  private spawn(genome: Genome, plan: PlanView, x: number, y: number, heading: number, energy: number, species: number): EcoCreature {
+  // Adds a creature with these birth traits, reusing a dead one's storage when there is one; genome and plan are copied.
+  private spawn(genome: Genome, plan: PlanView, x: number, y: number, heading: number, energy: number, species: number, birth: BirthTraits): EcoCreature {
     let m = this.spare[species]!.pop();
     if (m) m.creature.reset(genome, x, y, heading, energy, plan);
     else {
-      m = new EcoCreature(new Creature(this.engines[species]!, genome, x, y, heading, plan));
+      m = new EcoCreature(new Creature(this.engines[species]!, genome, x, y, heading, plan, this.kernels, species));
       m.creature.state.energy = energy;
     }
     m.species = species;
@@ -741,54 +664,18 @@ export class Ecosystem {
     m.eaten = 0;
     m.kills = 0;
     m.lastBirthTick = -Infinity;
+    m.birth.energy = birth.energy;
+    m.birth.cost = birth.cost;
+    m.birth.cooldown = birth.cooldown;
+    m.cooldownTicks = Math.round(birth.cooldown / this.config.dt);
     this.journal?.born.push(m.id);
-    this.track(m);
-    this.kinds.push(species);
-    this.states.push(m.creature.state);
-    this.byId.set(m.id, m);
+    this.table.admit(m);
     return m;
-  }
-
-  // Adds m to the end of the member list, and to bySlot.
-  private track(m: EcoCreature): void {
-    m.index = this.members.length;
-    this.members.push(m);
-    const list = this.bySlot;
-    const slot = m.creature.slot;
-    if (list.length === 0 || list[list.length - 1]!.creature.slot < slot) list.push(m);
-    else list.splice(this.slotPosition(slot), 0, m);
-  }
-
-  private untrack(m: EcoCreature): void {
-    this.bySlot.splice(this.slotPosition(m.creature.slot), 1);
-  }
-
-  // Where a creature of this slot sits (or would sit) in bySlot.
-  private slotPosition(slot: number): number {
-    const list = this.bySlot;
-    let lo = 0;
-    let hi = list.length;
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1;
-      if (list[mid]!.creature.slot < slot) lo = mid + 1;
-      else hi = mid;
-    }
-    return lo;
   }
 
   // Swap-removes members[i].
   private remove(i: number): void {
-    const m = this.members[i];
-    const last = this.members.length - 1;
-    this.members[i] = this.members[last];
-    this.members[i].index = i;
-    this.untrack(m);
-    this.states[i] = this.states[last];
-    this.kinds[i] = this.kinds[last]!;
-    this.members.pop();
-    this.states.pop();
-    this.kinds.pop();
-    this.byId.delete(m.id);
+    const m = this.table.swapRemove(i);
     this.onDeath?.(m);
     this.lineages.died(m.founderId);
     this.journal?.died.push(m.id);
@@ -797,31 +684,6 @@ export class Ecosystem {
     const count = this.counts[m.species]!;
     count.population--;
     count.deaths++;
-  }
-
-  private regrow(): void {
-    this.foodDue += this.config.eco.seasons ? this.foodPerTick * seasonFactor(this.config.eco, this.tick * this.config.dt) : this.foodPerTick;
-    this.poisonDue += this.poisonPerTick;
-    // At the cap the rest of the due items is dropped at once, so a huge rate cannot loop; below 2^53 the leftover fraction is what counting down leaves.
-    while (this.foodDue >= 1 && this.food < this.foodCap) {
-      this.foodDue--;
-      const grown = this.grow(HIT_FOOD);
-      this.food += grown;
-      if (grown === 0) break; // no free slot
-    }
-    this.foodDue -= Math.floor(this.foodDue);
-    while (this.poisonDue >= 1 && this.poison < this.poisonCap) {
-      this.poisonDue--;
-      const grown = this.grow(HIT_POISON);
-      this.poison += grown;
-      if (grown === 0) break;
-    }
-    this.poisonDue -= Math.floor(this.poisonDue);
-  }
-
-  // Places one item at a random spot, spaced from poison like every placement; returns 1, or 0 if no slot was free.
-  private grow(kind: HitKind): number {
-    return this.items.addRandomly(kind, this.rng) >= 0 ? 1 : 0;
   }
 
   // Copies every living creature into frame, growing its arrays when needed.
@@ -843,7 +705,7 @@ export class Ecosystem {
     }
     for (let i = 0; i < n; i++) {
       const m = this.members[i];
-      const s = this.states[i];
+      const s = this.table.states[i]!;
       frame.ids[i] = m.id;
       frame.x[i] = s.x;
       frame.y[i] = s.y;
@@ -863,43 +725,12 @@ export class Ecosystem {
   // Goes through spawn like a birth, so the journal and helper threads see it; uses no random numbers, so it can be called between any two ticks.
   // Rejects, without changing anything, bad numbers, a genome that does not fit the plan, a position outside the walls and a full world.
   insertCreature(spec: InsertSpec): InsertResult {
-    const bad = (reason: string): InsertResult => ({ ok: false, reason });
-    const eco = this.config.eco;
-    const { radius } = this.config.creature;
-    const { width, height } = this.config.world;
-    const sp = spec.species ?? 0;
-    if (!Number.isInteger(sp) || sp < 0 || sp >= this.species.length) return bad(`species must be 0 to ${this.species.length - 1}`);
-    if (this.members.length >= eco.maxPopulation) return bad("the world is full");
+    const checked = checkInsert(spec, { config: this.config, species: this.species, ranges: this.ranges, engines: this.engines, population: this.members.length, terrain: this.items.terrain }, this.traits);
+    if (!checked.ok) return checked;
+    const { genome, sp, heading, energy } = checked;
     const p = spec.plan;
-    const finite = (...v: number[]): boolean => v.every((x) => typeof x === "number" && Number.isFinite(x));
-    const whole = (x: unknown, min: number, max: number): boolean => typeof x === "number" && Number.isInteger(x) && x >= min && x <= max;
-    if (!p || !whole(p.rayCount, 1, MAX_INSERT_RAYS) || !finite(p.raySpread, p.rayLength) || !(p.raySpread > 0 && p.raySpread <= 2 * Math.PI) || !(p.rayLength > 0 && p.rayLength <= MAX_INSERT_RAY_LENGTH)) return bad(`plan needs 1 to ${MAX_INSERT_RAYS} rays, a spread up to a full turn and a ray length up to ${MAX_INSERT_RAY_LENGTH}`);
-    if (!whole(p.memoryShort, 0, MAX_INSERT_MEMORY) || !whole(p.memoryLong, 0, MAX_INSERT_MEMORY)) return bad(`memory units must be whole numbers 0 to ${MAX_INSERT_MEMORY}`);
-    if (!Array.isArray(p.hiddenLayers) || !whole(p.hiddenLayers.length, 1, MAX_INSERT_LAYERS) || !p.hiddenLayers.every((n) => whole(n, 1, MAX_INSERT_NEURONS))) return bad(`plan needs 1 to ${MAX_INSERT_LAYERS} hidden layers of 1 to ${MAX_INSERT_NEURONS} neurons`);
-    if (!finite(spec.x, spec.y) || spec.x < radius || spec.x > width - radius || spec.y < radius || spec.y > height - radius) return bad("position must be inside the walls");
-    if (this.items.terrain.touchesRock(spec.x, spec.y, radius)) return bad("position must be clear of rock");
-    if (!finite(spec.hue)) return bad("hue must be a finite number");
-    const heading = spec.heading ?? 0;
-    if (!finite(heading)) return bad("heading must be a finite number");
-    const energy = spec.energy ?? this.species[sp]!.startEnergy;
-    if (!finite(energy) || energy <= 0 || energy > MAX_INSERT_ENERGY) return bad(`energy must be above 0 and at most ${MAX_INSERT_ENERGY}`);
-    if (typeof spec.name !== "string" || spec.name.length > MAX_NAME_LENGTH || /[\u0000-\u001f\u007f]/.test(spec.name)) return bad(`name must be text of at most ${MAX_NAME_LENGTH} characters without control characters`);
-    const ranges = this.ranges[sp]!;
     const traits = this.traits;
-    traits.energy = spec.birth?.energy ?? middle(ranges.birthEnergyRange);
-    traits.cost = spec.birth?.cost ?? middle(ranges.birthCostRange);
-    traits.cooldown = spec.birth?.cooldown ?? middle(ranges.birthCooldownRange);
-    if (!finite(traits.energy, traits.cost, traits.cooldown) || traits.energy <= 0 || traits.cost <= 0 || traits.cooldown < 0) return bad("birth energy and cost must be above 0 and the cooldown 0 or more");
-    traits.energy = Math.min(ranges.birthEnergyRange[1]!, Math.max(ranges.birthEnergyRange[0]!, traits.energy));
-    traits.cost = Math.min(ranges.birthCostRange[1]!, Math.max(ranges.birthCostRange[0]!, traits.cost));
-    traits.cooldown = Math.min(ranges.birthCooldownRange[1]!, Math.max(ranges.birthCooldownRange[0]!, traits.cooldown));
-    const need = genomeLength(layerSizes(this.engines[sp]!, p));
-    const given = spec.genome?.length;
-    if (given !== need) return bad(`genome has ${String(given)} numbers, the plan needs ${need}`);
-    const genome = Float32Array.from(spec.genome);
-    if (!genome.every(Number.isFinite)) return bad("genome must hold finite numbers");
-    const m = this.spawn(genome, p, spec.x, spec.y, heading, energy, sp);
-    this.setBirth(m, traits);
+    const m = this.spawn(genome, p, spec.x, spec.y, heading, energy, sp, traits);
     m.hue = ((spec.hue % 360) + 360) % 360;
     this.lineages.describe(m.id, m.hue, sp, false, spec.name);
     this.lineages.found(m.id);
@@ -925,7 +756,7 @@ export class Ecosystem {
   exportCore(): EcoCore {
     return {
       tick: this.tick, births: this.births, deaths: this.deaths, foodEaten: this.foodEaten, poisonEaten: this.poisonEaten,
-      food: this.food, poison: this.poison, rngState: this.rng.state, foodDue: this.foodDue, poisonDue: this.poisonDue, nextId: this.nextId,
+      food: this.food, poison: this.poison, rngState: this.rng.state, foodDue: this.economy.foodDue, poisonDue: this.economy.poisonDue, nextId: this.nextId,
       founders: this.founders, poolFounders: this.poolFounders, itemCapacity: this.items.count, counts: this.counts.map((c) => ({ ...c })),
     };
   }
@@ -933,7 +764,7 @@ export class Ecosystem {
   // Sets the scalars of a saved run, for restoreState on a world built with the restore option.
   importCore(c: EcoCore): void {
     this.tick = c.tick; this.births = c.births; this.deaths = c.deaths; this.foodEaten = c.foodEaten; this.poisonEaten = c.poisonEaten;
-    this.food = c.food; this.poison = c.poison; this.rng.state = c.rngState; this.foodDue = c.foodDue; this.poisonDue = c.poisonDue; this.nextId = c.nextId;
+    this.food = c.food; this.poison = c.poison; this.rng.state = c.rngState; this.economy.foodDue = c.foodDue; this.economy.poisonDue = c.poisonDue; this.nextId = c.nextId;
     if (c.counts.length !== this.counts.length) throw new Error("saved species counts do not fit this world");
     c.counts.forEach((x, i) => {
       const to = this.counts[i]!;
@@ -943,7 +774,7 @@ export class Ecosystem {
 
   // Appends a saved creature to the end of the member list (call in saved order), with its id and every field; the journal sees it as born.
   restoreMember(r: MemberRecord): EcoCreature {
-    const m = new EcoCreature(new Creature(this.engines[r.species]!, r.genome, r.x, r.y, r.heading, r.plan));
+    const m = new EcoCreature(new Creature(this.engines[r.species]!, r.genome, r.x, r.y, r.heading, r.plan, this.kernels, r.species));
     const c = m.creature;
     const s = c.state;
     s.vx = r.vx; s.vy = r.vy; s.turnRate = r.turnRate; s.energy = r.energy; s.ticksAlive = r.ticksAlive;
@@ -954,10 +785,7 @@ export class Ecosystem {
     m.species = r.species; m.hue = r.hue; m.founderId = r.founderId; m.lastBirthTick = r.lastBirthTick;
     m.birth.energy = r.birthEnergy; m.birth.cost = r.birthCost; m.birth.cooldown = r.birthCooldown; m.cooldownTicks = r.cooldownTicks;
     this.journal?.born.push(m.id);
-    this.track(m);
-    this.kinds.push(r.species);
-    this.states.push(s);
-    this.byId.set(m.id, m);
+    this.table.admit(m);
     return m;
   }
 
@@ -970,15 +798,12 @@ export class Ecosystem {
     const sections = config as unknown as Record<string, Record<string, unknown>>;
     const eco = { ...config.eco } as Record<string, unknown>;
     for (const [section, key, v] of checked.fields) if (section === "eco") eco[key] = v;
-    const perDensity = itemsPerDensity(config);
-    const foodCap = Math.round((eco.foodMaxDensity as number) * perDensity);
-    const poisonCap = Math.round((eco.poisonMaxDensity as number) * perDensity);
+    const caps = capsOf(config, eco as unknown as EcoConfig["eco"]);
+    const foodCap = caps.food;
+    const poisonCap = caps.poison;
     if (foodCap + poisonCap > this.items.count) return { ok: false, reason: `food and poison caps need ${foodCap + poisonCap} item slots, this world has ${this.items.count}` };
     for (const [section, key, v] of checked.fields) sections[section]![key] = Array.isArray(v) ? v.slice() : v;
-    this.foodCap = foodCap;
-    this.poisonCap = poisonCap;
-    this.foodPerTick = config.eco.foodRegrow * perDensity * config.dt;
-    this.poisonPerTick = config.eco.poisonRegrow * perDensity * config.dt;
+    this.economy.retune(caps);
     this.aging = agingOf(config.eco, config.dt);
     for (const m of this.members) m.creature.aging = this.aging;
     if (checked.fields.some(([, key]) => key.startsWith("birth") && key.endsWith("Range"))) {
@@ -997,7 +822,7 @@ export class Ecosystem {
     let h = (this.tick * 31 + this.births) % P;
     for (const v of [this.deaths, this.food, this.poison, this.members.length]) h = (h * 31 + v) % P;
     for (let i = 0; i < this.members.length; i++) {
-      const s = this.states[i];
+      const s = this.table.states[i]!;
       h = (h * 31 + this.members[i].id) % P;
       h = (h * 31 + (Math.round(s.x * 100) % P)) % P;
       h = (h * 31 + (Math.round(s.y * 100) % P)) % P;

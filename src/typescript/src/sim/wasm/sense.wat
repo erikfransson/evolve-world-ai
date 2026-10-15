@@ -1,12 +1,13 @@
 ;; Whole Ecosystem sense in one call: per creature the ray directions, item and wall rays (f64, same arithmetic and candidate order as World.castRays),
 ;; the crowd rays (f32), and the ray features written straight into the brain input vector.
 ;; Memory is the brain bank's (imported), so inputs need no copy. Everything is scratch per tick except the per-slot offset tables.
-;; Param block P (bytes): f64 W@0 H@8 itemR@16 invWorldCell@24; f32 invCrowdCell@32 crowdR@36;
-;;   i32 wCols@40 wRows@44 itemStart@48 (cols+1 per row, absolute) itemXY@56 (f32 pairs) itemKind@64 (u8), items packed per row in cell order cCols@68 cRows@72 cStart@76 sx@80 sy@84 own@88 sig@92 rec@96 n@100 stride@104 cand@108 scr@112 species@116 (i32 per crowd slot; the ray features are 4 + S + 1 per ray: S species flags, then the energy).
-;; Rock (Terrain, as World.gatherRock): f64 rockMaxR@128 invRockCell@136; i32 rockCols@144 (0 for no rock) rockRows@148 rockStart@152 (cols*rows+1) rockOrder@156 rockXYR@160 (f64 x y r per disc).
+;; Param block P (layout.ts S_*, double-brace tokens below): the world's item grid (itemStart is cols+1 per row, absolute; itemXY f32 pairs; itemKind u8; items packed per row in cell order),
+;;   the crowd grid (cStart, sx, sy, own, sig, species: i32 per crowd slot), the creature records (rec, n), the brain input stride (ray features are 4 + S + 1 per ray: S species flags, then the energy),
+;;   the candidate and ray scratch (cand, scr).
+;; Rock (Terrain, as World.gatherRock): rockMaxR, invRockCell, rockCols (0 for no rock), rockRows, rockStart (cols*rows+1), rockOrder, rockXYR (f64 x y r per disc).
 ;;   Rock discs join the item candidates as kind 3 (wall), after the items, so a ray reports the nearest of wall, rock, item and creature.
-;; Creature record, 64 bytes: f64 x y cos sin L; i32 self@40 rays@44 offsets@48 (f64 cos[rays], then sin[rays]) input@52 (byte address)
-;;   detail@56 (0, or the address where to also write each ray as f64 closeness, i32 kind, i32 crowd slot hit or -1, for the UI).
+;; Creature record, 64 bytes (layout.ts REC_*, double-brace tokens below): f64 x y cos sin L; i32 self, rays, offsets (f64 cos[rays], then sin[rays]), input (byte address),
+;;   detail (0, or the address where to also write each ray as f64 closeness, i32 kind, i32 crowd slot hit or -1, for the UI).
 ;; Ray scratch (max 64 rays): dx f64@0 dy f64@512 clo f64@1024 kind i32@1536 dxf f32@1792 dyf f32@2048 best f32@2304 hit i32@2560.
 (module
   (import "brain" "mem" (memory 1))
@@ -32,52 +33,52 @@
     ;; rock
     (local $rcols i32) (local $rrows i32) (local $rstart i32) (local $rorder i32) (local $rxyr i32) (local $rmax f64) (local $rinv f64)
     (local $rext f64) (local $rr f64) (local $rfar f64) (local $di i32)
-    (local.set $n (i32.load offset=100 (local.get $P)))
-    (local.set $stride (i32.load offset=104 (local.get $P)))
-    (local.set $cand (i32.load offset=108 (local.get $P)))
-    (local.set $scr (i32.load offset=112 (local.get $P)))
-    (local.set $W (f64.load (local.get $P)))
-    (local.set $H (f64.load offset=8 (local.get $P)))
-    (local.set $r (f64.load offset=16 (local.get $P)))
+    (local.set $n (i32.load offset={{S_N}} (local.get $P)))
+    (local.set $stride (i32.load offset={{S_STRIDE}} (local.get $P)))
+    (local.set $cand (i32.load offset={{S_CAND}} (local.get $P)))
+    (local.set $scr (i32.load offset={{S_SCRATCH}} (local.get $P)))
+    (local.set $W (f64.load offset={{S_WORLD_W}} (local.get $P)))
+    (local.set $H (f64.load offset={{S_WORLD_H}} (local.get $P)))
+    (local.set $r (f64.load offset={{S_ITEM_R}} (local.get $P)))
     (local.set $r2 (f64.mul (local.get $r) (local.get $r)))
-    (local.set $inv (f64.load offset=24 (local.get $P)))
-    (local.set $cols (i32.load offset=40 (local.get $P)))
-    (local.set $rows (i32.load offset=44 (local.get $P)))
-    (local.set $invc (f32.load offset=32 (local.get $P)))
-    (local.set $rc (f32.load offset=36 (local.get $P)))
+    (local.set $inv (f64.load offset={{S_INV_ITEM_CELL}} (local.get $P)))
+    (local.set $cols (i32.load offset={{S_ITEM_COLS}} (local.get $P)))
+    (local.set $rows (i32.load offset={{S_ITEM_ROWS}} (local.get $P)))
+    (local.set $invc (f32.load offset={{S_INV_CROWD_CELL}} (local.get $P)))
+    (local.set $rc (f32.load offset={{S_CROWD_R}} (local.get $P)))
     (local.set $r2c (f32.mul (local.get $rc) (local.get $rc)))
-    (local.set $ccols (i32.load offset=68 (local.get $P)))
-    (local.set $crows (i32.load offset=72 (local.get $P)))
-    (local.set $cStart (i32.load offset=76 (local.get $P)))
-    (local.set $sx (i32.load offset=80 (local.get $P)))
-    (local.set $sy (i32.load offset=84 (local.get $P)))
-    (local.set $own (i32.load offset=88 (local.get $P)))
-    (local.set $sigp (i32.load offset=92 (local.get $P)))
-    (local.set $spp (i32.load offset=116 (local.get $P)))
-    (local.set $rmax (f64.load offset=128 (local.get $P)))
-    (local.set $rinv (f64.load offset=136 (local.get $P)))
-    (local.set $rcols (i32.load offset=144 (local.get $P)))
-    (local.set $rrows (i32.load offset=148 (local.get $P)))
-    (local.set $rstart (i32.load offset=152 (local.get $P)))
-    (local.set $rorder (i32.load offset=156 (local.get $P)))
-    (local.set $rxyr (i32.load offset=160 (local.get $P)))
-    (local.set $ist (i32.load offset=48 (local.get $P)))
-    (local.set $ixy (i32.load offset=56 (local.get $P)))
-    (local.set $ikd (i32.load offset=64 (local.get $P)))
+    (local.set $ccols (i32.load offset={{S_CROWD_COLS}} (local.get $P)))
+    (local.set $crows (i32.load offset={{S_CROWD_ROWS}} (local.get $P)))
+    (local.set $cStart (i32.load offset={{S_CROWD_START}} (local.get $P)))
+    (local.set $sx (i32.load offset={{S_SX}} (local.get $P)))
+    (local.set $sy (i32.load offset={{S_SY}} (local.get $P)))
+    (local.set $own (i32.load offset={{S_OWN}} (local.get $P)))
+    (local.set $sigp (i32.load offset={{S_SIG}} (local.get $P)))
+    (local.set $spp (i32.load offset={{S_SPECIES}} (local.get $P)))
+    (local.set $rmax (f64.load offset={{S_ROCK_MAX_R}} (local.get $P)))
+    (local.set $rinv (f64.load offset={{S_INV_ROCK_CELL}} (local.get $P)))
+    (local.set $rcols (i32.load offset={{S_ROCK_COLS}} (local.get $P)))
+    (local.set $rrows (i32.load offset={{S_ROCK_ROWS}} (local.get $P)))
+    (local.set $rstart (i32.load offset={{S_ROCK_START}} (local.get $P)))
+    (local.set $rorder (i32.load offset={{S_ROCK_ORDER}} (local.get $P)))
+    (local.set $rxyr (i32.load offset={{S_ROCK_XYR}} (local.get $P)))
+    (local.set $ist (i32.load offset={{S_ITEM_START}} (local.get $P)))
+    (local.set $ixy (i32.load offset={{S_ITEM_XY}} (local.get $P)))
+    (local.set $ikd (i32.load offset={{S_ITEM_KIND}} (local.get $P)))
     (block $jd (loop $jl
       (br_if $jd (i32.ge_u (local.get $j) (local.get $n)))
       (block $jn
-      (local.set $q (i32.add (i32.load offset=96 (local.get $P)) (i32.shl (local.get $j) (i32.const 6))))
-      (local.set $x (f64.load (local.get $q)))
-      (local.set $y (f64.load offset=8 (local.get $q)))
-      (local.set $hc (f64.load offset=16 (local.get $q)))
-      (local.set $hs (f64.load offset=24 (local.get $q)))
-      (local.set $L (f64.load offset=32 (local.get $q)))
-      (local.set $self (i32.load offset=40 (local.get $q)))
-      (local.set $nR (i32.load offset=44 (local.get $q)))
-      (local.set $off (i32.load offset=48 (local.get $q)))
-      (local.set $inp (i32.load offset=52 (local.get $q)))
-      (local.set $det (i32.load offset=56 (local.get $q)))
+      (local.set $q (i32.add (i32.load offset={{S_REC}} (local.get $P)) (i32.shl (local.get $j) (i32.const {{REC_SHIFT}}))))
+      (local.set $x (f64.load offset={{REC_X}} (local.get $q)))
+      (local.set $y (f64.load offset={{REC_Y}} (local.get $q)))
+      (local.set $hc (f64.load offset={{REC_COS}} (local.get $q)))
+      (local.set $hs (f64.load offset={{REC_SIN}} (local.get $q)))
+      (local.set $L (f64.load offset={{REC_RAY_LENGTH}} (local.get $q)))
+      (local.set $self (i32.load offset={{REC_SELF}} (local.get $q)))
+      (local.set $nR (i32.load offset={{REC_RAYS}} (local.get $q)))
+      (local.set $off (i32.load offset={{REC_OFFSETS}} (local.get $q)))
+      (local.set $inp (i32.load offset={{REC_INPUT}} (local.get $q)))
+      (local.set $det (i32.load offset={{REC_DETAIL}} (local.get $q)))
       (br_if $jn (i32.eqz (local.get $nR)))
       (local.set $walls (i32.or (i32.or
         (f64.lt (local.get $x) (f64.mul (local.get $L) (f64.add (f64.const 1) (f64.const 1e-6))))
@@ -116,6 +117,8 @@
       (local.set $cy0 (select (i32.const 0) (local.get $cy0) (i32.lt_s (local.get $cy0) (i32.const 0))))
       (local.set $cy1 (i32.trunc_sat_f64_s (f64.floor (f64.mul (f64.add (local.get $y) (local.get $far)) (local.get $inv)))))
       (local.set $cy1 (select (i32.sub (local.get $rows) (i32.const 1)) (local.get $cy1) (i32.ge_s (local.get $cy1) (local.get $rows))))
+      ;; a first column past the last (an extreme position) has no cells and must not index the tables
+      (if (i32.gt_s (local.get $cx0) (local.get $cx1)) (then (local.set $cy1 (i32.sub (local.get $cy0) (i32.const 1)))))
       (local.set $cp (local.get $cand))
       (local.set $cy (local.get $cy0))
       (block $cyd (loop $cyl
@@ -158,6 +161,7 @@
         (local.set $cy0 (select (i32.const 0) (local.get $cy0) (i32.lt_s (local.get $cy0) (i32.const 0))))
         (local.set $cy1 (i32.trunc_sat_f64_s (f64.floor (f64.mul (f64.add (local.get $y) (local.get $rext)) (local.get $rinv)))))
         (local.set $cy1 (select (i32.sub (local.get $rrows) (i32.const 1)) (local.get $cy1) (i32.ge_s (local.get $cy1) (local.get $rrows))))
+        (if (i32.gt_s (local.get $cx0) (local.get $cx1)) (then (local.set $cy1 (i32.sub (local.get $cy0) (i32.const 1)))))
         (local.set $cy (local.get $cy0))
         (block $rcyd (loop $rcyl
           (br_if $rcyd (i32.gt_s (local.get $cy) (local.get $cy1)))

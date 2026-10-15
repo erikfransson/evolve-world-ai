@@ -4,6 +4,7 @@ import { gzip, gzipSync } from "node:zlib";
 import { promisify } from "node:util";
 import { LIMITS } from "./config.ts";
 import { parseSave } from "./saveParse.ts";
+import type { Home } from "./saveParse.ts";
 import type { EcoState } from "../../src/typescript/src/sim/ecoState.ts";
 
 // Saves are `world-<UTC timestamp>.json.gz` (gzipped JSON of the engine's saveState) with a small sidecar `world-<timestamp>.meta.json`
@@ -93,10 +94,12 @@ export class StateStore {
 
   // Writes the gzipped JSON through a .tmp file and a rename, then rotates. Throws, writing nothing, when the directory is over the cap.
   // asyncGzip: compress off the main thread, so only the caller's own JSON work blocks.
-  async write(json: string, meta: { population: number; tick: number }, at = new Date(), asyncGzip = true): Promise<string> {
+  // verify: rejects, so nothing is written, when the gzipped save would not be read back.
+  async write(json: string, meta: { population: number; tick: number }, at = new Date(), asyncGzip = true, verify?: (gz: Uint8Array) => Promise<unknown>): Promise<string> {
     const used = this.dirBytes();
     if (used > LIMITS.maxStateDirBytes) throw new Error(`state directory holds ${Math.round(used / 1e6)} MB, over the ${LIMITS.maxStateDirBytes / 1e6} MB cap: not saving`);
     const data = asyncGzip ? await gzipAsync(json) : gzipSync(json);
+    if (verify) await verify(data);
     const name = saveName(at);
     this.put(name, data);
     this.put(metaName(name), Buffer.from(JSON.stringify(meta)));
@@ -141,11 +144,19 @@ export class StateStore {
       });
   }
 
+  // Files named as saves that the listing does not show (stamped in the future by a clock that was behind, a sidecar that does not
+  // parse): they may be the running world's, so startup must not start over while there are any.
+  hiddenSaves(): number {
+    const listed = new Set(this.list().map((s) => s.name));
+    return readdirSync(this.dir).filter((n) => isSaveName(n) && !listed.has(n)).length;
+  }
+
   // The checked state of a save, parsed on a worker (saveParse.ts). The name must be one the listing shows (pattern, regular file, not from the future),
   // never a path from the caller. Rejects on a missing, special or oversized file, a gzip that unpacks past the cap, bad JSON or an invalid state.
-  async read(name: unknown): Promise<EcoState> {
+  // home: a save of another world rejects with OtherWorld (saveParse.ts) before the engine's checks.
+  async read(name: unknown, home?: Home): Promise<EcoState> {
     if (!isSaveName(name)) throw new Error("not a save name");
     if (!this.list().some((s) => s.name === name)) throw new Error("no such save");
-    return parseSave(readRegularFile(join(this.dir, name), LIMITS.maxSaveJsonBytes), LIMITS.maxSaveJsonBytes);
+    return parseSave(readRegularFile(join(this.dir, name), LIMITS.maxSaveJsonBytes), LIMITS.maxSaveJsonBytes, false, home);
   }
 }

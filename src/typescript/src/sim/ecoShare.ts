@@ -10,20 +10,24 @@ import type { BodyPlan } from "./sensors.ts";
 import { seenEnergyScale, speciesEngine, speciesList } from "./species.ts";
 import type { HitKind } from "./types.ts";
 import { ITEM_REMOVE, ITEM_SET, World } from "./world.ts";
+import { F, I } from "./wasm/resident.ts";
+import type { ResidentStore } from "./wasm/resident.ts";
+import { advanceBodies, prepareRows } from "./wasm/residentStep.ts";
 import { SenseKernels } from "./wasm/senseKernels.ts";
 
 // Sense and think on helper threads. Each tick the coordinator, which owns the Ecosystem, publishes a packet:
-// every creature's pose, energy, species and memory, plus the changes since the last packet (item changes, deaths, and births
-// with their plan; the genome goes only to the helper that owns the creature). Each helper keeps a copy of the item world and the brains of the creatures it owns,
+// every creature's pose, energy and species, plus the changes since the last packet (item changes, deaths, and births
+// with their plan; the genome and the starting memory units go only to the helper that owns the creature, which keeps the memory from then on). Each helper keeps a copy of the item world and the brains of the creatures it owns,
 // runs senseThinkBatch for those and writes their outputs into the packet. The coordinator owns a share too and senses
 // it on its own creatures meanwhile; then it copies the helpers' outputs into its creatures and finishes the tick.
 // Each thread also does memory and motion of its own creatures and looks up what each touches (the part of the tick that
 // touches only one creature), so the coordinator is left with the order-dependent shared phase and the copies.
 // Helpers see exactly what Ecosystem.sensePhase sees, so results are identical.
+// Bodies are rows of each thread's kernel memory (wasm/resident.ts) when the kernels run, so the packet is filled from and read into the rows in bulk.
 // The packet is a plain buffer, so it travels by postMessage (one copy per helper).
 
 const DIED = 3; // delta record: DIED, id
-const BORN = 4; // delta record: BORN, id, owner, species, rayCount, raySpread, rayLength, memoryShort, memoryLong, hidden layers, ...sizes, genome length (the genome itself goes only to its owner, in Packet.genomes)
+const BORN = 4; // delta record: BORN, id, owner, species, rayCount, raySpread, rayLength, memoryShort, memoryLong, hidden layers, ...sizes, genome length (the genome itself, then the memory units, go only to its owner, in Packet.genomes)
 
 // Header slots (Int32).
 const H_COUNT = 0;
@@ -32,12 +36,13 @@ const H_MEMORY_CAP = 2;
 const H_DELTA_CAP = 3;
 const H_DELTA_LENGTH = 4;
 const H_GENOME_CAP = 5;
+const H_STRIDE = 12; // memory units reserved per creature in memoryOut (after the aging rule, which takes bytes 24 to 47)
 const AGING_AT = 24; // byte offset in the header after the six int32 fields, 8-aligned
 const HEADER_BYTES = 64;
 
 export interface Caps {
   creatures: number;
-  memory: number; // memory units of all creatures
+  memory: number; // Float64 words of memory units in a packet: creatures times the stride
   delta: number; // Float64 words of changes
   genome: number; // Float64 words of genomes, per helper packet: only those of its own new creatures
 }
@@ -51,7 +56,6 @@ export interface Packet {
   ids: Int32Array;
   owner: Int32Array; // helper that thinks for creature i
   species: Int32Array;
-  memoryAt: Int32Array; // creature i's memory units are memory[memoryAt[i] .. memoryAt[i + 1] - 1]
   x: Float64Array;
   y: Float64Array;
   cos: Float64Array; // heading
@@ -62,13 +66,12 @@ export interface Packet {
   energy: Float64Array;
   angle: Float64Array; // heading angle
   ticks: Float64Array; // ticks alive
-  memory: Float64Array;
   delta: Float64Array;
   genomes: Float64Array; // genomes of the helper's own births, in birth order; the delta records carry only their lengths
-  // Outputs of the thread that owns creature i: its state after memory and motion, the new memory (laid out like memory)
+  // Outputs of the thread that owns creature i: its state after memory and motion, the new memory (stride units per creature)
   // and the item it touches there (-1 for none).
   after: Record<"x" | "y" | "vx" | "vy" | "turnRate" | "energy" | "angle" | "cos" | "sin", Float64Array>;
-  memoryOut: Float64Array;
+  memoryOut: Float64Array; // stride units per creature, creature i's from i * stride (header slot H_STRIDE)
   touched: Int32Array;
   outputAt: number; // byte offset of the outputs
 }
@@ -101,10 +104,35 @@ function writeState(c: Creature, a: StateColumns, i: number): void {
   a.sin[i] = c.heading.sin;
 }
 
+// The nine state columns of creature i, from and to the row at f64 index o (see wasm/resident.ts).
+function rowToState(f: Float64Array, o: number, a: StateColumns, i: number): void {
+  a.x[i] = f[o + F.x]!;
+  a.y[i] = f[o + F.y]!;
+  a.vx[i] = f[o + F.vx]!;
+  a.vy[i] = f[o + F.vy]!;
+  a.turnRate[i] = f[o + F.turn]!;
+  a.energy[i] = f[o + F.energy]!;
+  a.angle[i] = f[o + F.heading]!;
+  a.cos[i] = f[o + F.cos]!;
+  a.sin[i] = f[o + F.sin]!;
+}
+
+function stateToRow(f: Float64Array, o: number, a: StateColumns, i: number): void {
+  f[o + F.x] = a.x[i]!;
+  f[o + F.y] = a.y[i]!;
+  f[o + F.vx] = a.vx[i]!;
+  f[o + F.vy] = a.vy[i]!;
+  f[o + F.turn] = a.turnRate[i]!;
+  f[o + F.energy] = a.energy[i]!;
+  f[o + F.heading] = a.angle[i]!;
+  f[o + F.cos] = a.cos[i]!;
+  f[o + F.sin] = a.sin[i]!;
+}
+
 function layout(caps: Caps): { f64At: number; outputAt: number; bytes: number } {
-  const ints = HEADER_BYTES + 4 * (4 * caps.creatures + 1);
+  const ints = HEADER_BYTES + 4 * 3 * caps.creatures;
   const f64At = Math.ceil(ints / 8) * 8;
-  const outputAt = f64At + 8 * (10 * caps.creatures + caps.memory + caps.delta + caps.genome);
+  const outputAt = f64At + 8 * (10 * caps.creatures + caps.delta + caps.genome);
   return { f64At, outputAt, bytes: outputAt + 8 * (9 * caps.creatures + caps.memory) + 4 * caps.creatures };
 }
 
@@ -137,7 +165,6 @@ export function packetViews(buffer: ArrayBufferLike, caps?: Caps): Packet {
     ids: new Int32Array(buffer, HEADER_BYTES, C),
     owner: new Int32Array(buffer, HEADER_BYTES + 4 * C, C),
     species: new Int32Array(buffer, HEADER_BYTES + 8 * C, C),
-    memoryAt: new Int32Array(buffer, HEADER_BYTES + 12 * C, C + 1),
     x: f64(C),
     y: f64(C),
     cos: f64(C),
@@ -148,7 +175,6 @@ export function packetViews(buffer: ArrayBufferLike, caps?: Caps): Packet {
     energy: f64(C),
     angle: f64(C),
     ticks: f64(C),
-    memory: f64(caps.memory),
     delta: f64(caps.delta),
     genomes: f64(caps.genome),
     after: {
@@ -193,6 +219,10 @@ export class ShareCoordinator {
   private readonly load: Float64Array;
   private readonly genomeAt: Float64Array; // words of genomes written into each helper's packet this tick
   private readonly batch = new SenseBatch();
+  private stride = 0; // most memory units of any creature so far
+  private undo = new Float64Array(0); // the own creatures' memory at the tick start, for undoOwn, laid out like Packet.memoryOut
+  private ownRows = new Int32Array(0); // resident bodies: row addresses and member indices of the own creatures, plus the watched one last
+  private ownSelves = new Int32Array(0);
   private advanced = false; // senseOwn has moved the own creatures since the last publish
 
   constructor(helpers: number) {
@@ -202,19 +232,20 @@ export class ShareCoordinator {
   }
 
   // Sizes the next packet needs; eco must have been built with the journal option.
+  // As a side effect it raises this.stride to the largest memory of any creature born so far; the stride never shrinks within a run.
   need(eco: Ecosystem): Caps {
     const j = eco.journal!;
-    let memory = 0;
-    for (const m of eco.members) memory += m.creature.memory.length;
     let delta = j.items.length + 2 * j.died.length;
     let genome = 0;
     for (const id of j.born) {
       const c = eco.get(id)?.creature;
       if (!c) continue;
-      delta += 11 + c.plan.hiddenLayers.length;
-      genome += c.brain.genome.length;
+      const plan = c.plan;
+      delta += 11 + plan.hiddenLayers.length;
+      genome += c.brain.genome.length + plan.memoryShort + plan.memoryLong;
+      this.stride = Math.max(this.stride, plan.memoryShort + plan.memoryLong);
     }
-    return { creatures: eco.population, memory, delta, genome };
+    return { creatures: eco.population, memory: eco.population * this.stride, delta, genome };
   }
 
   // Writes the tick-start state and drains the journal into p, whose caps must cover need(eco). Each new helper
@@ -265,6 +296,8 @@ export class ShareCoordinator {
         const to = packets[owner]!.genomes;
         let at = genomeAt[owner]!;
         for (let g = 0; g < genome.length; g++) to[at++] = genome[g]!;
+        const memory = c.memory; // a restored creature has memory already; the helper keeps it from here on
+        for (let u = 0; u < memory.length; u++) to[at++] = memory[u]!;
         genomeAt[owner] = at;
       }
     }
@@ -278,27 +311,54 @@ export class ShareCoordinator {
     const members = eco.members;
     const n = members.length;
     p.header[H_COUNT] = n;
-    let at = 0;
-    for (let i = 0; i < n; i++) {
+    const stride = this.stride;
+    p.header[H_STRIDE] = stride;
+    if (this.undo.length < n * stride) this.undo = new Float64Array(Math.ceil(1.5 * n * stride));
+    const undo = this.undo;
+    const rows = eco.residentRows();
+    if (rows) {
+      // Bodies are rows of the kernel memory: copy the columns straight from there, walking the rows in memory order.
+      const f = rows.store.f64;
+      const i32 = rows.store.i32;
+      const rowAt = rows.rowAt;
+      for (let i = 0; i < n; i++) {
+        const m = members[i]!;
+        p.ids[i] = m.id;
+        p.owner[i] = m.owner;
+        p.species[i] = m.species;
+        if (m.owner === this.helpers) {
+          const b = rowAt[i]! << 1;
+          const u0 = i32[b + I.units]! >> 3;
+          const count = i32[b + I.unitCount]!;
+          for (let u = 0; u < count; u++) undo[i * stride + u] = f[u0 + u]!;
+        }
+      }
+      const all = eco.senseBatchRows();
+      for (let k = 0; k < all.n; k++) {
+        const i = all.selves[k]!;
+        const o = all.rows[k]! >> 3;
+        rowToState(f, o, p, i);
+        p.ticks[i] = f[o + F.ticks]!;
+      }
+    } else for (let i = 0; i < n; i++) {
       const m = members[i]!;
       const c = m.creature;
-      const s = c.state;
       p.ids[i] = m.id;
       p.owner[i] = m.owner;
       p.species[i] = m.species;
-      p.memoryAt[i] = at;
       writeState(c, p, i);
-      p.ticks[i] = s.ticksAlive;
-      const memory = c.memory;
-      for (let u = 0; u < memory.length; u++) p.memory[at + u] = memory[u]!;
-      at += memory.length;
+      p.ticks[i] = c.state.ticksAlive;
+      if (m.owner === this.helpers) {
+        const memory = c.memory;
+        for (let u = 0; u < memory.length; u++) undo[i * stride + u] = memory[u]!;
+      }
     }
-    p.memoryAt[n] = at;
   }
 
   // Senses and thinks for the coordinator's own share, after eco.prepareTick; watch: id of a creature to sense even when
   // a helper owns it (same outputs), so its rays and brain inputs are current on this thread, or null.
   senseOwn(eco: Ecosystem, p: Packet, watch: number | null): void {
+    if (eco.residentRows()) return this.senseOwnRows(eco, p, watch);
     const n = p.header[H_COUNT]!;
     const batch = this.batch;
     batch.clear();
@@ -309,6 +369,32 @@ export class ShareCoordinator {
       const i = batch.selves[k]!;
       if (p.owner[i] === this.helpers) p.touched[i] = eco.advance(batch.creatures[k]!);
     }
+    this.advanced = true;
+  }
+
+  // senseOwn for resident bodies: sense the own rows (and the watched one), then step the own rows in one pass.
+  private senseOwnRows(eco: Ecosystem, p: Packet, watch: number | null): void {
+    const all = eco.senseBatchRows();
+    if (all.n > this.ownRows.length) {
+      this.ownRows = new Int32Array(all.n + 1);
+      this.ownSelves = new Int32Array(all.n + 1);
+    }
+    const { ownRows, ownSelves } = this;
+    let n = 0;
+    let watched = -1; // position in all of the watched creature when a helper owns it
+    for (let k = 0; k < all.n; k++) {
+      const self = all.selves[k]!;
+      if (p.owner[self] === this.helpers) {
+        ownRows[n] = all.rows[k]!;
+        ownSelves[n++] = self;
+      } else if (p.ids[self] === watch) watched = k;
+    }
+    if (watched >= 0) {
+      ownRows[n] = all.rows[watched]!; // sensed after the own bodies, but not stepped
+      ownSelves[n] = all.selves[watched]!;
+      eco.senseRows(ownRows, ownSelves, n + 1);
+    } else eco.senseRows(ownRows, ownSelves, n);
+    eco.advanceRows(ownRows, ownSelves, n, p.touched);
     this.advanced = true;
   }
 
@@ -323,7 +409,7 @@ export class ShareCoordinator {
       if (p.owner[i] !== this.helpers) continue;
       const c = members[i]!.creature;
       readState(c, p, i);
-      c.setMemory(p.memory, p.memoryAt[i]!);
+      c.setMemory(this.undo, i * p.header[H_STRIDE]!);
     }
   }
 
@@ -331,13 +417,35 @@ export class ShareCoordinator {
   // helper h's. Leaves what every creature touches in home.touched.
   collect(eco: Ecosystem, home: Packet, packets: readonly Packet[]): void {
     const members = eco.members;
+    const stride = home.header[H_STRIDE]!;
+    const rows = eco.residentRows();
+    if (rows) {
+      const f = rows.store.f64;
+      const i32 = rows.store.i32;
+      const rowAt = rows.rowAt;
+      for (let i = 0; i < members.length; i++) {
+        const owner = home.owner[i]!;
+        if (owner === this.helpers) continue;
+        const p = packets[owner]!;
+        const a = p.after;
+        const o = rowAt[i]!;
+        stateToRow(f, o, a, i);
+        const b = o << 1;
+        const u0 = i32[b + I.units]! >> 3;
+        const count = i32[b + I.unitCount]!;
+        const at = i * stride;
+        for (let u = 0; u < count; u++) f[u0 + u] = p.memoryOut[at + u]!;
+        home.touched[i] = p.touched[i]!;
+      }
+      return;
+    }
     for (let i = 0; i < members.length; i++) {
       const owner = home.owner[i]!;
       if (owner === this.helpers) continue;
       const p = packets[owner]!;
       const c = members[i]!.creature;
       readState(c, p.after, i);
-      c.setMemory(p.memoryOut, home.memoryAt[i]!);
+      c.setMemory(p.memoryOut, i * stride);
       home.touched[i] = p.touched[i]!;
     }
   }
@@ -359,6 +467,9 @@ export class ShareHelper {
 
   private readonly kernels: SenseKernels | null;
   private aging: Aging | null;
+  private readonly store: ResidentStore | null; // with the kernels, the creatures' bodies are rows of their memory, as in the coordinator
+  private rows = new Int32Array(0); // per owned creature of this tick: its row address and its index in the packet
+  private selves = new Int32Array(0);
 
   // wasm: sense and think on the WebAssembly kernels when available, as the coordinator does.
   constructor(config: EcoConfig, worldCapacity: number, index: number, wasm = false) {
@@ -372,6 +483,8 @@ export class ShareHelper {
     this.aging = agingOf(config.eco, config.dt);
     this.world = new World(config, worldCapacity);
     this.crowd = new Crowd(config);
+    this.store = this.kernels?.store ?? null;
+    this.store?.species.push(...this.engines); // the configs the rows' species indices stand for
   }
 
   // Creatures this helper thinks for.
@@ -386,6 +499,7 @@ export class ShareHelper {
     this.followAging(p.aging);
     const n = p.header[H_COUNT]!;
     this.crowd.rebuildFrom(p.x, p.y, p.energy, n, p.species);
+    if (this.store) return this.runOwnRows(p, n);
     const batch = this.batch;
     batch.clear();
     for (let i = 0; i < n; i++) {
@@ -393,11 +507,11 @@ export class ShareHelper {
       const c = this.mine.get(p.ids[i]!)!;
       readState(c, p, i);
       c.state.ticksAlive = p.ticks[i]!;
-      c.setMemory(p.memory, p.memoryAt[i]!);
       batch.add(c, i);
     }
-    senseThinkBatch(this.world, this.crowd, batch, this.kernels);
+    senseThinkBatch(this.world, this.crowd, batch);
     const a = p.after;
+    const stride = p.header[H_STRIDE]!;
     for (let k = 0; k < batch.count; k++) {
       const i = batch.selves[k]!;
       const c = batch.creatures[k]!;
@@ -406,8 +520,47 @@ export class ShareHelper {
       p.touched[i] = c.touched(this.world);
       writeState(c, a, i);
       const memory = c.memory;
-      const at = p.memoryAt[i]!;
+      const at = i * stride;
       for (let u = 0; u < memory.length; u++) p.memoryOut[at + u] = memory[u]!;
+    }
+  }
+
+  // run for resident bodies: the packet's state goes into the rows, which are sensed, stepped and read back in bulk.
+  private runOwnRows(p: Packet, n: number): void {
+    const store = this.store!;
+    const kernels = this.kernels!;
+    if (n > this.rows.length) {
+      this.rows = new Int32Array(n);
+      this.selves = new Int32Array(n);
+    }
+    const { rows, selves } = this;
+    let m = 0;
+    let f = store.f64;
+    for (let i = 0; i < n; i++) {
+      if (p.owner[i] !== this.index) continue;
+      const r = this.mine.get(p.ids[i]!)!.resident!;
+      const o = r.o;
+      stateToRow(f, o, p, i);
+      f[o + F.ticks] = p.ticks[i]!;
+      rows[m] = r.ptr;
+      selves[m++] = i;
+    }
+    prepareRows(store, rows, m, this.world.terrain);
+    kernels.runRows(this.world, this.crowd, rows, selves, m, null);
+    advanceBodies(kernels, rows, selves, m, this.aging, this.world, this.engines[0]!.creature.radius, p.touched);
+    const a = p.after;
+    const stride = p.header[H_STRIDE]!;
+    f = store.f64; // the memory may have grown
+    const g = store.i32;
+    for (let k = 0; k < m; k++) {
+      const i = selves[k]!;
+      const o = rows[k]! >> 3;
+      rowToState(f, o, a, i);
+      const b = o << 1;
+      const u0 = g[b + I.units]! >> 3;
+      const count = g[b + I.unitCount]!;
+      const at = i * stride;
+      for (let u = 0; u < count; u++) p.memoryOut[at + u] = f[u0 + u]!;
     }
   }
 
@@ -460,9 +613,12 @@ export class ShareHelper {
     this.genome = refit(this.genome, length);
     const genome = this.genome;
     for (let g = 0; g < length; g++) genome[g] = genomes[this.genomeAt++]!;
+    const units = plan.memoryShort + plan.memoryLong;
     let c = this.spare[species]!.pop();
     if (c) c.reset(genome, 0, 0, 0, 0, plan);
-    else c = new Creature(this.engines[species]!, genome, 0, 0, 0, plan);
+    else c = new Creature(this.engines[species]!, genome, 0, 0, 0, plan, this.kernels, species);
+    c.setMemory(genomes, this.genomeAt);
+    this.genomeAt += units;
     c.aging = this.aging;
     this.mine.set(id, c);
     this.speciesOf.set(id, species);

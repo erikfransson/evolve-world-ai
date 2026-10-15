@@ -1,3 +1,4 @@
+import type { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
 import type { Rng } from "../../src/typescript/src/sim/types.ts";
 
 // Small deterministic Rng for tests, independent of src/sim/rng.ts.
@@ -75,4 +76,15 @@ export function fakeCanvas(cssWidth = 300, cssHeight = 100) {
     addEventListener: (type: string, fn: (e: unknown) => void) => { (listeners[type] ??= []).push(fn); },
   };
   return { canvas: canvas as unknown as HTMLCanvasElement, click: (clientX: number) => listeners.click?.forEach((fn) => fn({ clientX })), ...fc };
+}
+
+const keptKernels = new WeakMap<Ecosystem, { crowd: unknown; members: unknown }>();
+// Gives an Ecosystem its WebAssembly crowd grid and member scans (true) or takes them away (false), so the same steps run as JS on the creature objects.
+// Works between any two ticks; a field left out stays as it is. Reaches into private fields.
+export function useKernels(eco: Ecosystem, use: { crowd?: boolean; members?: boolean }): void {
+  const e = eco as unknown as { wasmCrowd: unknown; wasmMembers: unknown };
+  let own = keptKernels.get(eco);
+  if (!own) keptKernels.set(eco, (own = { crowd: e.wasmCrowd, members: e.wasmMembers }));
+  if (use.crowd !== undefined) e.wasmCrowd = use.crowd ? own.crowd : null;
+  if (use.members !== undefined) e.wasmMembers = use.members ? own.members : null;
 }

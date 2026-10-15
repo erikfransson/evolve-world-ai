@@ -7,6 +7,9 @@ import type { WasmBrainBank } from "./brainKernel.ts";
 import { HIT_CREATURE } from "../types.ts";
 import { SENSE_BYTES, compiled } from "./loader.ts";
 import { ROCK_CELL } from "../terrain.ts";
+import type { WasmFiller } from "./fillKernel.ts";
+import { LAYOUT as L } from "./layout.ts";
+import { Region, growRegion } from "./resident.ts";
 
 // The whole Ecosystem sense in one WebAssembly call per batch (sense.wat): ray directions, item and wall rays in f64 with the
 // JS candidate order, crowd rays in f32 as rays.wat, and the ray features written into the brain's input vector in place.
@@ -15,17 +18,10 @@ import { ROCK_CELL } from "../terrain.ts";
 // creature given as detail (the selected one), whose rays are read back for the UI.
 
 export const MAX_RAYS = 64;
-const P_BYTES = 192;
 const SCRATCH_BYTES = 2816;
-const REC_BYTES = 64;
 
 interface SenseExports extends WebAssembly.Exports {
   sense(p: number): void;
-}
-
-class Region {
-  ptr = -1;
-  cap = 0;
 }
 
 export class WasmSenser {
@@ -37,6 +33,7 @@ export class WasmSenser {
   private rItems = new Region();
   private rItemXY = new Region();
   private rItemKinds = new Region();
+  private rItemIds = new Region();
   private rCStart = new Region();
   private rSx = new Region();
   private rSy = new Region();
@@ -63,8 +60,7 @@ export class WasmSenser {
   private pStart = 0;
   private pXY = 0;
   private pKinds = 0;
-  private place = new Int32Array(64);
-  private rowCount = new Int32Array(0);
+  private pIds = 0;
 
   private constructor(bank: WasmBrainBank, exports: SenseExports) {
     this.bank = bank;
@@ -88,6 +84,7 @@ export class WasmSenser {
     this.rItems = new Region();
     this.rItemXY = new Region();
     this.rItemKinds = new Region();
+    this.rItemIds = new Region();
     this.rCStart = new Region();
     this.rSx = new Region();
     this.rSy = new Region();
@@ -109,6 +106,7 @@ export class WasmSenser {
     this.pStart = 0;
     this.pXY = 0;
     this.pKinds = 0;
+    this.pIds = 0;
   }
 
   // Stores the creature's ray offset cos and sin tables for its slot; call when the slot's brain is set.
@@ -131,14 +129,14 @@ export class WasmSenser {
     }
   }
 
+  // The address of the ray offset tables stored for the slot.
+  offsetsAt(slot: number): number {
+    return this.offPtr[slot]!;
+  }
+
   // The pointer of region r holding at least bytes, allocated or moved to a larger block when needed (contents are not kept).
   private grow(r: Region, bytes: number): number {
-    if (bytes > r.cap) {
-      if (r.ptr >= 0) this.bank.free(r.ptr, r.cap);
-      r.cap = Math.ceil(bytes * 1.25);
-      r.ptr = this.bank.alloc(r.cap);
-    }
-    return r.ptr;
+    return growRegion(this.bank, r, bytes);
   }
 
   // The views of the memory as it is now; take them after the last allocation of a call, as allocating may grow the memory.
@@ -150,6 +148,12 @@ export class WasmSenser {
     this.i32 = new Int32Array(buffer);
     this.f64 = new Float64Array(buffer);
     this.u8 = new Uint8Array(buffer);
+  }
+
+  // The packed item rows for kernels that look items up (step.wat), or null when they do not match the world's items right now (changed since the last sync).
+  itemTables(world: World): { start: number; xy: number; ids: number; cols: number } | null {
+    if (this.synced !== world || world.dirtyCells === null || world.dirtyCells.length > 0) return null;
+    return { start: this.pStart, xy: this.pXY, ids: this.pIds, cols: world.cols };
   }
 
   // Brings the packed item rows up to date: every row the first time, then each changed cell patched in place.
@@ -173,6 +177,7 @@ export class WasmSenser {
       this.pStart = this.grow(this.rItems, rows * (cols + 1) * 4);
       this.pXY = this.grow(this.rItemXY, rows * this.rowCap * 8);
       this.pKinds = this.grow(this.rItemKinds, rows * this.rowCap);
+      this.pIds = this.grow(this.rItemIds, rows * this.rowCap * 4);
       this.views();
       const start = this.i32;
       const sB = this.pStart >> 2;
@@ -210,6 +215,7 @@ export class WasmSenser {
       if (end + delta > (row + 1) * this.rowCap) return false;
       xy.copyWithin(xB + 2 * (at + n), xB + 2 * start[s + 1]!, xB + 2 * end);
       kd.copyWithin(this.pKinds + at + n, this.pKinds + start[s + 1]!, this.pKinds + end);
+      start.copyWithin((this.pIds >> 2) + at + n, (this.pIds >> 2) + start[s + 1]!, (this.pIds >> 2) + end);
       for (let j = s + 1; j <= last; j++) start[j] += delta;
     }
     this.writeCell(world, c, at);
@@ -223,7 +229,10 @@ export class WasmSenser {
     const kd = this.u8;
     const xB = this.pXY >> 2;
     const kB = this.pKinds;
+    const ids = this.i32;
+    const idB = this.pIds >> 2;
     for (let i = cellHead[c]!; i >= 0; i = nextItem[i]!) {
+      ids[idB + p] = i;
       xy[xB + 2 * p] = xs[i]!;
       xy[xB + 2 * p + 1] = ys[i]!;
       kd[kB + p++] = kinds[i]!;
@@ -231,48 +240,32 @@ export class WasmSenser {
     return p;
   }
 
-  // Where each creature's record goes: creatures sorted by item grid row (counting sort, stable), so the kernel walks the rows of the
-  // item grid in order and the few rows around the current one stay in cache. Results do not depend on the order.
-  private placeByRow(world: World, creatures: readonly Creature[], n: number): Int32Array {
-    if (this.place.length < n) this.place = new Int32Array(Math.max(n, 2 * this.place.length));
-    const { rows } = world;
-    const place = this.place;
-    const count = this.rowCount.length >= rows + 1 ? this.rowCount.fill(0) : (this.rowCount = new Int32Array(rows + 1));
-    const inv = 1 / world.cell;
-    for (let k = 0; k < n; k++) {
-      const v = Math.floor(creatures[k]!.state.y * inv);
-      const row = v >= 0 ? Math.min(rows - 1, v) : 0; // NaN and negative go to row 0
-      place[k] = row;
-      count[row + 1]!++;
-    }
-    for (let r = 0; r < rows; r++) count[r + 1] += count[r]!;
-    for (let k = 0; k < n; k++) place[k] = count[place[k]!]!++;
-    return place;
-  }
-
-  // Senses the batch and writes each creature's complete brain input (rays, extras, memory) at its slot.
-  run(world: World, crowd: Crowd, creatures: readonly Creature[], slots: Int32Array, selves: Int32Array, n: number, stride: number, startEnergy: number, detail: Creature | null = null): void {
+  // Senses the batch of resident rows and writes each creature's complete brain input at its slot: the fill kernel builds the records and the body inputs
+  // from the rows, and writes the brain slot list at slotsAt. selves[k] is the crowd index of batch member k.
+  run(world: World, crowd: Crowd, n: number, selves: Int32Array, stride: number, startEnergy: number, detail: Creature | null, filler: WasmFiller, rows: Int32Array, slotsAt: number): void {
     this.syncItems(world);
     const count = crowd.count;
     const ccells = crowd.cols * crowd.rows;
     const rock = world.terrain;
-    const pCStart = this.grow(this.rCStart, (ccells + 1) * 4);
+    const kernel = crowd.kernel; // the grid is already in this memory: the kernel packs the f32 columns and the rest is read in place
+    const grid = kernel?.at;
+    const pCStart = grid ? grid.start : this.grow(this.rCStart, (ccells + 1) * 4);
     const pSx = this.grow(this.rSx, count * 4 + 16);
     const pSy = this.grow(this.rSy, count * 4 + 16);
-    const pOwn = this.grow(this.rOwn, count * 4 + 16);
+    const pOwn = grid ? grid.owners : this.grow(this.rOwn, count * 4 + 16);
     const pSig = this.grow(this.rSig, count * 4 + 16);
-    const pSpecies = this.grow(this.rSpecies, count * 4 + 16);
-    const pRec = this.grow(this.rRec, n * REC_BYTES);
+    const pSpecies = grid ? grid.species : this.grow(this.rSpecies, count * 4 + 16);
+    const pRec = this.grow(this.rRec, n * L.REC_BYTES);
     const pCand = this.grow(this.rCand, Math.max((world.count + rock.rockCount) * 32, count * 16) + 64);
     const pRockStart = this.grow(this.rRockStart, rock.rockStart.length * 4);
     const pRockOrder = this.grow(this.rRockOrder, rock.rockCount * 4 + 4);
     const pRockXYR = this.grow(this.rRockXYR, rock.rockCount * 24 + 8);
     const pScr = this.grow(this.rScratch, SCRATCH_BYTES);
     const pDetail = this.grow(this.rDetail, 16 * MAX_RAYS);
-    const pP = this.grow(this.rP, P_BYTES);
+    const pP = this.grow(this.rP, L.S_BYTES);
     this.views(); // after the last allocation
-    const { f32, i32, f64 } = this;
-    i32.set(crowd.cellStart, pCStart >> 2);
+    let { f32, i32, f64 } = this;
+    if (!kernel) i32.set(crowd.cellStart, pCStart >> 2);
     if (this.rockSynced !== rock) {
       i32.set(rock.rockStart, pRockStart >> 2);
       i32.set(rock.rockOrder, pRockOrder >> 2);
@@ -291,70 +284,48 @@ export class WasmSenser {
     const species = pSpecies >> 2;
     const { xs, ys, owners, energies } = crowd;
     const crowdSpecies = crowd.species;
-    for (let k = 0; k < count; k++) {
+    if (kernel) kernel.pack(startEnergy, pSx, pSy, pSig);
+    else for (let k = 0; k < count; k++) {
       f32[sx + k] = xs[k]!;
       f32[sy + k] = ys[k]!;
       i32[own + k] = owners[k]!;
       i32[species + k] = crowdSpecies[k]!;
       f32[sig + k] = energySignal(energies[k]!, startEnergy);
     }
-    const rec = pRec >> 3; // record fields as f64 and as i32 indices
-    const recI = pRec >> 2;
-    const place = this.placeByRow(world, creatures, n);
-    for (let k = 0; k < n; k++) {
-      const c = creatures[k]!;
-      const s = c.state;
-      const q = place[k]!;
-      const o = rec + q * 8;
-      const slot = slots[k]!;
-      const rays = c.plan.rayCount;
-      f64[o] = s.x;
-      f64[o + 1] = s.y;
-      f64[o + 2] = c.heading.cos;
-      f64[o + 3] = c.heading.sin;
-      f64[o + 4] = c.plan.rayLength;
-      const w = recI + q * 16;
-      i32[w + 10] = selves[k]!;
-      i32[w + 11] = rays;
-      i32[w + 12] = this.offPtr[slot]!;
-      const inFloat = this.bank.inputAt(slot);
-      i32[w + 13] = inFloat * 4;
-      i32[w + 14] = c === detail ? pDetail : 0;
-      c.writeBodyInputs(f32, inFloat + rays * stride);
-    }
-    const P = pP >> 3;
-    const PF = pP >> 2;
-    f64[P] = world.width;
-    f64[P + 1] = world.height;
-    f64[P + 2] = world.itemRadius;
-    f64[P + 3] = 1 / world.cell;
-    f32[PF + 8] = 1 / crowd.cell;
-    f32[PF + 9] = crowd.radius;
-    i32[PF + 10] = world.cols;
-    i32[PF + 11] = world.rows;
-    i32[PF + 12] = this.pStart;
-    i32[PF + 14] = this.pXY;
-    i32[PF + 16] = this.pKinds;
-    i32[PF + 17] = crowd.cols;
-    i32[PF + 18] = crowd.rows;
-    i32[PF + 19] = pCStart;
-    i32[PF + 20] = pSx;
-    i32[PF + 21] = pSy;
-    i32[PF + 22] = pOwn;
-    i32[PF + 23] = pSig;
-    i32[PF + 24] = pRec;
-    i32[PF + 25] = n;
-    i32[PF + 26] = stride;
-    i32[PF + 27] = pCand;
-    i32[PF + 28] = pScr;
-    i32[PF + 29] = pSpecies;
-    f64[P + 16] = rock.maxRockR;
-    f64[P + 17] = 1 / ROCK_CELL;
-    i32[PF + 36] = rock.rockCount > 0 ? rock.cols : 0;
-    i32[PF + 37] = rock.rows;
-    i32[PF + 38] = pRockStart;
-    i32[PF + 39] = pRockOrder;
-    i32[PF + 40] = pRockXYR;
+    filler.fill(rows, selves, n, world, pRec, slotsAt, pDetail, detail, stride);
+    this.views(); // fill may have grown the memory
+    ({ f32, i32, f64 } = this);
+    f64[(pP + L.S_WORLD_W) >> 3] = world.width;
+    f64[(pP + L.S_WORLD_H) >> 3] = world.height;
+    f64[(pP + L.S_ITEM_R) >> 3] = world.itemRadius;
+    f64[(pP + L.S_INV_ITEM_CELL) >> 3] = 1 / world.cell;
+    f32[(pP + L.S_INV_CROWD_CELL) >> 2] = 1 / crowd.cell;
+    f32[(pP + L.S_CROWD_R) >> 2] = crowd.radius;
+    i32[(pP + L.S_ITEM_COLS) >> 2] = world.cols;
+    i32[(pP + L.S_ITEM_ROWS) >> 2] = world.rows;
+    i32[(pP + L.S_ITEM_START) >> 2] = this.pStart;
+    i32[(pP + L.S_ITEM_XY) >> 2] = this.pXY;
+    i32[(pP + L.S_ITEM_KIND) >> 2] = this.pKinds;
+    i32[(pP + L.S_CROWD_COLS) >> 2] = crowd.cols;
+    i32[(pP + L.S_CROWD_ROWS) >> 2] = crowd.rows;
+    i32[(pP + L.S_CROWD_START) >> 2] = pCStart;
+    i32[(pP + L.S_SX) >> 2] = pSx;
+    i32[(pP + L.S_SY) >> 2] = pSy;
+    i32[(pP + L.S_OWN) >> 2] = pOwn;
+    i32[(pP + L.S_SIG) >> 2] = pSig;
+    i32[(pP + L.S_REC) >> 2] = pRec;
+    i32[(pP + L.S_N) >> 2] = n;
+    i32[(pP + L.S_STRIDE) >> 2] = stride;
+    i32[(pP + L.S_CAND) >> 2] = pCand;
+    i32[(pP + L.S_SCRATCH) >> 2] = pScr;
+    i32[(pP + L.S_SPECIES) >> 2] = pSpecies;
+    f64[(pP + L.S_ROCK_MAX_R) >> 3] = rock.maxRockR;
+    f64[(pP + L.S_INV_ROCK_CELL) >> 3] = 1 / ROCK_CELL;
+    i32[(pP + L.S_ROCK_COLS) >> 2] = rock.rockCount > 0 ? rock.cols : 0;
+    i32[(pP + L.S_ROCK_ROWS) >> 2] = rock.rows;
+    i32[(pP + L.S_ROCK_START) >> 2] = pRockStart;
+    i32[(pP + L.S_ROCK_ORDER) >> 2] = pRockOrder;
+    i32[(pP + L.S_ROCK_XYR) >> 2] = pRockXYR;
     this.exports.sense(pP);
   }
 

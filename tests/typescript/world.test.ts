@@ -190,6 +190,18 @@ describe("World", () => {
     expect(w.eatAt(302, 300, c.creature.radius, cache)).toBe(3);
   });
 
+  it("touchedBatch stores what eatAt finds, by owner", () => {
+    const c = cfg();
+    const w = scattered(c, testRng(5));
+    const r = c.creature.radius;
+    const px = Float64Array.from({ length: 60 }, (_, i) => (i * 97) % c.world.width);
+    const py = Float64Array.from({ length: 60 }, (_, i) => (i * 61) % c.world.height);
+    const owners = Int32Array.from({ length: 60 }, (_, i) => 59 - i);
+    const out = new Int32Array(60);
+    w.touchedBatch(px, py, owners, 60, r, out);
+    for (let k = 0; k < 60; k++) expect(out[owners[k]!]).toBe(w.eatAt(px[k]!, py[k]!, r, new RayCache()));
+  });
+
   it("addItem reuses the most recently freed slot and skips slots taken by setItem", () => {
     const w = new World(cfg(), 4);
     w.scatter(2, 0, testRng(1));

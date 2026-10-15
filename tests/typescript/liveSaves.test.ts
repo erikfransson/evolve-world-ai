@@ -1,14 +1,18 @@
 // @vitest-environment node
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, symlinkSync, truncateSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, symlinkSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gzipSync } from "node:zlib";
 import { LIMITS } from "../../server/src/config.ts";
 import { LiveWorld } from "../../server/src/liveWorld.ts";
-import { Saves } from "../../server/src/saves.ts";
+import { Saves, openWorld } from "../../server/src/saves.ts";
+import { loadFounders } from "../../server/src/founders.ts";
+import { loadOverrides } from "../../server/src/admin.ts";
 import { StateStore, readRegularFile, saveName } from "../../server/src/state.ts";
 import { smallConfig } from "./liveHelpers.ts";
+
+const FOUNDERS = new URL("../../src/typescript/public/live-founders.json", import.meta.url);
 
 const tmp = (): string => mkdtempSync(join(tmpdir(), "evolve-saves-"));
 const DAY = 24 * 3600 * 1000;
@@ -177,7 +181,7 @@ describe("saves", () => {
     expect(live.eco.fingerprint()).toBe(fp);
   });
 
-  it("startup falls back past a corrupted or truncated save to an older one, then to a fresh world", async () => {
+  it("startup falls back past a corrupted or truncated save to an older one, and never starts over on top of unreadable saves", async () => {
     const dir = tmp();
     const store = new StateStore(dir);
     const good = world(15);
@@ -196,9 +200,87 @@ describe("saves", () => {
     truncateSync(join(dir, saveName(at(3))), 40);
     const fresh = new LiveWorld(smallConfig(), null);
     const out: string[] = [];
-    await new Saves(fresh, store).restoreNewest((l) => out.push(l));
+    expect(await new Saves(fresh, store).restoreNewest((l) => out.push(l))).toBe("unreadable");
     expect(fresh.eco.tick).toBe(0);
-    expect(out.at(-1)).toMatch(/fresh world/);
+    expect(out.some((l) => /fresh world/.test(l))).toBe(false);
+  });
+
+  it("startup tries at most 3 saves of this world, and never takes saves the listing hides for an empty store", async () => {
+    const dir = tmp();
+    const store = new StateStore(dir);
+    const good = world(5);
+    for (let d = 1; d <= 4; d++) await store.write(json(good), meta(good), at(d));
+    for (let d = 1; d <= 4; d++) writeFileSync(join(dir, saveName(at(d))), "garbage");
+    const lines: string[] = [];
+    expect(await new Saves(new LiveWorld(smallConfig(), null), store).restoreNewest((l) => lines.push(l))).toBe("unreadable");
+    expect(lines.filter((l) => l.startsWith("cannot restore"))).toHaveLength(3);
+
+    const ahead = tmp(); // a clock an hour behind at boot: every real save looks stamped in the future
+    const later = new StateStore(ahead);
+    await later.write(json(good), meta(good), new Date(Date.now() + 3_600_000));
+    expect(later.list()).toEqual([]);
+    const out: string[] = [];
+    expect(await new Saves(new LiveWorld(smallConfig(), null), later).restoreNewest((l) => out.push(l))).toBe("unreadable");
+    expect(out.at(-1)).toMatch(/not listed/);
+
+    // The newest listed save is of an earlier world (a recent move to a new map) while this world's saves are hidden: still no fresh world.
+    const other = new LiveWorld(smallConfig(), null);
+    other.config.world.width = 2100;
+    other.eco.config.world.width = 2100;
+    await later.write(JSON.stringify(other.saveState()), meta(good), at(5));
+    expect(later.list()).toHaveLength(1);
+    expect(await new Saves(new LiveWorld(smallConfig(), null), later).restoreNewest(() => {})).toBe("unreadable");
+
+    // A save of this world that fails, then one of an earlier world: the failed one may be the running world's.
+    const mixed = tmp();
+    const both = new StateStore(mixed);
+    await both.write(JSON.stringify(other.saveState()), meta(good), at(2));
+    await both.write(json(good), meta(good), at(1));
+    writeFileSync(join(mixed, saveName(at(1))), "garbage");
+    expect(await new Saves(new LiveWorld(smallConfig(), null), both).restoreNewest(() => {})).toBe("unreadable");
+  }, 120_000); // a dozen parse workers
+
+  it("a restore keeps a birth reserve below the population cap, so births can go on", () => {
+    const w = world(5);
+    const state = w.saveState();
+    state.config.eco.maxPopulation = 50;
+    state.config.eco.birthReserve = 50;
+    const live = new LiveWorld(smallConfig(), null);
+    live.restoreState(JSON.parse(JSON.stringify(state)));
+    expect([live.eco.config.eco.maxPopulation, live.eco.config.eco.birthReserve]).toEqual([50, 49]);
+  });
+
+  it("admin overrides that no longer apply are ignored loudly and kept aside, not lost", () => {
+    const dir = tmp();
+    const bad = { "eco.maxPopulation": 50, "eco.birthReserve": 50 };
+    writeFileSync(join(dir, "admin-overrides.json"), JSON.stringify(bad));
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect(loadOverrides(dir, new LiveWorld(smallConfig(), null))).toEqual({});
+      expect(err).toHaveBeenCalledWith(expect.stringMatching(/^OVERRIDES IGNORED/));
+    } finally {
+      err.mockRestore();
+    }
+    expect(JSON.parse(readFileSync(join(dir, "admin-overrides.ignored.json"), "utf8"))).toEqual(bad);
+  });
+
+  it("a save of this world that fails to restore (a worker out of memory, a timeout) seeds, saves and retires nothing: startup throws", async () => {
+    const dir = tmp();
+    const store = new StateStore(dir);
+    const good = world(15);
+    await store.write(json(good), meta(good), at(1));
+    writeFileSync(join(dir, "admin-overrides.json"), JSON.stringify({ speed: 2 }));
+    const names = store.list().map((s) => s.name);
+    const live = new LiveWorld(smallConfig(), null);
+    vi.spyOn(store, "read").mockRejectedValue(new Error("save parse worker ran out of memory"));
+    try {
+      await expect(openWorld(new Saves(live, store), live, dir, loadFounders(FOUNDERS.pathname), () => {})).rejects.toThrow(/none restores/);
+    } finally {
+      vi.restoreAllMocks();
+    }
+    expect(store.list().map((s) => s.name)).toEqual(names);
+    expect(existsSync(join(dir, "admin-overrides.json"))).toBe(true);
+    expect(live.eco.tick).toBe(0);
   });
 
   it("rejects a gzip bomb by the unzipped size cap", async () => {
@@ -251,5 +333,13 @@ describe("save parsing", () => {
     const state = (await parseSave(gzipSync(JSON.stringify(crafted)), LIMITS.maxSaveJsonBytes)) as unknown as Record<string, unknown>;
     expect(state.junk).toBeUndefined();
     expect(Object.keys(state).sort()).toEqual(Object.keys(JSON.parse(json(w))).sort());
+  });
+
+  it("in verify-only mode checks the same and sends no state back", async () => {
+    const { parseSave } = await import("../../server/src/saveParse.ts");
+    const good = json(world(5));
+    await expect(parseSave(gzipSync(good), LIMITS.maxSaveJsonBytes, true)).resolves.toBeUndefined();
+    const bad = { ...JSON.parse(good), lineages: null };
+    await expect(parseSave(gzipSync(JSON.stringify(bad)), LIMITS.maxSaveJsonBytes, true)).rejects.toThrow();
   });
 });

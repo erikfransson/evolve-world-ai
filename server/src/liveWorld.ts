@@ -4,16 +4,24 @@ import type { CreatureFrame as EngineFrame } from "../../src/typescript/src/sim/
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { PoolEntry } from "../../src/typescript/src/sim/seedPool.ts";
 import { MAX_DELTA_EVENTS, MAX_DELTA_OPS, MAX_ITEM_SLOTS, PROTOCOL_VERSION, encodeCreatures, encodeDeltaChunk, encodeItems, itemsBytes } from "../../src/typescript/src/live/protocol.ts";
-import type { Hello, ItemOp, Stats, WireEvent } from "../../src/typescript/src/live/protocol.ts";
+import type { Hello, ItemOp, Stats, WireEvent, WireMap } from "../../src/typescript/src/live/protocol.ts";
 import { encodeDetail, encodeGenome } from "../../src/typescript/src/live/detail.ts";
 import { ITEM_REMOVE, ITEM_SET } from "../../src/typescript/src/sim/world.ts";
 import type { World } from "../../src/typescript/src/sim/world.ts";
 import { EVENT_STRIDE } from "../../src/typescript/src/sim/ecosystem.ts";
 import { TokenBucket } from "./budget.ts";
+import { addingOn } from "./adds.ts";
 import { Chronicle } from "./chronicle.ts";
 import { restoreState, saveState } from "../../src/typescript/src/sim/ecoState.ts";
 import type { EcoState } from "../../src/typescript/src/sim/ecoState.ts";
-import { ITEM_HEADROOM, LIMITS, LIVE, MAX_POPULATION } from "./config.ts";
+import { LIMITS, LIVE, MAX_POPULATION, MAX_SEED_FOUNDERS, SEED_COPIES, itemHeadroom } from "./config.ts";
+import type { SeedFounder } from "./founders.ts";
+import { mapRegions } from "../../src/typescript/src/live/mapRegions.ts";
+import { mapVersion } from "../../src/typescript/src/sim/maps/index.ts";
+import { OtherWorld, otherWorldReason } from "./saveParse.ts";
+import type { Home } from "./saveParse.ts";
+import { BLANKED, STARTER_MARK, wireName } from "../../src/typescript/src/live/add.ts";
+import type { AddRequest, AddRules } from "../../src/typescript/src/live/add.ts";
 import { fullEnergy } from "../../src/typescript/src/sim/species.ts";
 import type { ThinkPool } from "../../src/typescript/src/worker/ecoPool.ts";
 
@@ -25,6 +33,8 @@ interface Capture {
   offsets: Float32Array;
   inputs: Float32Array;
 }
+
+// A save of another world (size or map) than the one this server runs, e.g. after the server moved to a new map.
 
 // The shared world: one Ecosystem stepped against the clock, on this thread or with helper threads that sense and think.
 // With helpers a tick awaits them, so everything else that reads or changes the world goes through whenIdle, between ticks.
@@ -38,8 +48,12 @@ export class LiveWorld {
   private speedSince = performance.now();
   paused = false; // admin pause: no ticks run and no time is owed afterwards
   speed = 0; // simulated seconds per real second achieved, over the last second (below LIVE.speed when the machine cannot keep up)
+  private speedKnown = false; // a full second was measured since the start or the last resume
+  private speedFresh = true; // the next unpaused advance starts a new measuring window (after a slow restore, or a pause)
   readonly startedAt = Date.now();
   private restarts = 0;
+  private reseedStuck = false; // a reseed gave an empty world: no more until the world has creatures again
+  founders: readonly SeedFounder[] = []; // what a reseed seeds a world built empty with (openWorld sets them)
   failedTicks = 0; // consecutive ticks that threw; a world that keeps failing is not saved (saves.ts) and the server exits (main.ts)
   onReseed: (() => void) | null = null; // the world was replaced, viewers need a fresh hello
 
@@ -58,11 +72,15 @@ export class LiveWorld {
   private readonly captures = new Map<number, Capture>();
   private readonly refreshes: TokenBucket;
   readonly chronicle = new Chronicle();
+  private added = new Set<number>(); // ids of visitor-added creatures that may still live (pruned in aliveAdded)
+  private map: WireMap = { ground: { normal: 1, mud: 0, firm: 0, rock: 0 }, regions: [] };
+  private readonly home: { width: number; height: number; map: string }; // the world this server runs; a save of another is not restored
 
   // helpers: a pool of helper threads, owned from here on (close() closes it), or null to run on this thread.
   constructor(config: EcoConfig, pool: readonly PoolEntry[] | null, helpers: ThinkPool | null = null) {
     this.pool = pool;
     this.helpers = helpers;
+    this.home = { width: config.world.width, height: config.world.height, map: config.world.map ?? "" };
     this.eco = this.build(config);
     this.refreshes = new TokenBucket(LIMITS.detailRefreshesPerSecond, LIMITS.detailRefreshesPerSecond);
     this.attach();
@@ -80,6 +98,11 @@ export class LiveWorld {
     this.captures.clear();
     this.chronicle.reset(this.eco);
     this.eco.drainEvents();
+    const name = this.config.world.map || undefined;
+    this.map = { ...(name ? { name, version: mapVersion(name) } : {}), ground: groundShares(this.eco), regions: mapRegions(name) };
+    // Added creatures found named lineages (late rows of the lineage table, kept in saves); the living founders among them count.
+    // The starter founders a fresh world was seeded with (seedFounders, names behind STARTER_MARK) are no visitor adds.
+    this.added = new Set(this.eco.lineageTable.toState().late.filter((r) => r[5] !== "" && !r[5].startsWith(STARTER_MARK) && this.eco.get(r[0])).map((r) => r[0]));
     if (this.helpers) {
       const starting = this.helpers.start(this.eco);
       this.starting = starting;
@@ -223,9 +246,10 @@ export class LiveWorld {
     if (!cap) return null;
     const c = m.creature;
     const s = c.state;
+    const founder = wireName(e.lineageName(m.founderId));
     return encodeDetail(e.tick, id, {
       x: s.x, y: s.y, heading: s.heading, energy: s.energy, age: m.ageTicks * this.config.dt, children: m.children, eaten: m.eaten, depth: m.depth, parentId: m.parentId,
-      founderId: m.founderId, founderPool: e.lineages.fromPool(m.founderId), founderHue: e.lineages.colour(m.founderId), hue: m.hue, upkeep: c.upkeep, drain: c.drain,
+      founderId: m.founderId, founderPool: e.lineages.fromPool(m.founderId), founderName: founder.name, founderStarter: founder.starter, founderHue: e.lineages.colour(m.founderId), hue: m.hue, upkeep: c.upkeep, drain: c.drain,
       birthEnergy: m.birth.energy, birthCost: m.birth.cost, birthCooldown: m.birth.cooldown, plan: c.plan, rayKinds: cap.kinds, rayCloseness: cap.closeness, rayOffsets: cap.offsets, inputs: cap.inputs,
     });
   }
@@ -241,11 +265,12 @@ export class LiveWorld {
     return this.eco.config;
   }
 
-  // Item slots are sized from the caps at construction, so build with room (ITEM_HEADROOM) and then retune to the caps in force.
+  // Item slots are sized from the caps at construction, so build with room (itemHeadroom) and then retune to the caps in force.
   private build(config: EcoConfig): Ecosystem {
     const caps = { foodMaxDensity: config.eco.foodMaxDensity, poisonMaxDensity: config.eco.poisonMaxDensity };
-    config.eco.foodMaxDensity = Math.max(caps.foodMaxDensity, ITEM_HEADROOM.foodMaxDensity);
-    config.eco.poisonMaxDensity = Math.max(caps.poisonMaxDensity, ITEM_HEADROOM.poisonMaxDensity);
+    const room = itemHeadroom(config.world, caps);
+    config.eco.foodMaxDensity = room.foodMaxDensity;
+    config.eco.poisonMaxDensity = room.poisonMaxDensity;
     const eco = new Ecosystem(config, this.pool, { journal: this.helpers !== null });
     const r = eco.retune({ eco: caps });
     if (!r.ok) throw new Error(`cannot set the item caps: ${r.reason}`);
@@ -263,9 +288,14 @@ export class LiveWorld {
     if (this.paused) {
       this.lastAt = now;
       this.speed = 0;
+      this.speedKnown = false;
+      this.speedFresh = true;
+      return 100;
+    }
+    if (this.speedFresh) {
+      this.speedFresh = false;
       this.speedTicks = 0;
       this.speedSince = now;
-      return 100;
     }
     this.owed = Math.min(this.owed + ((now - this.lastAt) / dtMs) * LIVE.speed, LIMITS.maxCatchUpS / this.config.dt);
     this.lastAt = now;
@@ -278,16 +308,23 @@ export class LiveWorld {
     const t = performance.now();
     if (t - this.speedSince >= 1000) {
       this.speed = (this.speedTicks * this.config.dt * 1000) / (t - this.speedSince);
+      this.speedKnown = true;
       this.speedTicks = 0;
       this.speedSince = t;
     }
     return this.owed >= 1 ? 0 : Math.max(1, ((1 - this.owed) * dtMs) / LIVE.speed);
   }
 
+  // The speed the add caps judge "busy" by: the set speed until a full second was measured, so a start or a resume is not taken for a busy world.
+  speedForAdds(): number {
+    return this.speedKnown ? this.speed : LIVE.speed;
+  }
+
   // One tick on this thread, for tests and tools; the server's loop uses advance.
   step(): void {
     if (this.helpers) throw new Error("step runs without helpers only");
-    if (this.eco.extinct) this.reseed();
+    this.maybeReseed();
+    if (this.eco.extinct) return; // stays as it is until an add, the same with and without helpers
     this.eco.detail = null; // with a detail creature the WebAssembly sense costs several times more
     this.eco.step();
     this.collectOps();
@@ -296,7 +333,11 @@ export class LiveWorld {
   // One tick, with the helpers when there are any, and the item changes recorded. Work queued by whenIdle runs after it.
   async tick(): Promise<void> {
     try {
-      if (this.eco.extinct) this.reseed();
+      this.maybeReseed();
+      if (this.eco.extinct) {
+        this.failedTicks = 0; // nothing to step, so nothing failed: the helpers never see an empty world, and finally still runs outside work
+        return;
+      }
       this.eco.detail = null;
       const eco = this.eco;
       if (this.helpers && this.starting) {
@@ -334,12 +375,27 @@ export class LiveWorld {
     }
   }
 
-  // An extinct world starts over with a new seed, so visitors never watch an empty board.
+  // With LIVE.reseed on, an extinct world starts over with a new seed and the founders; off, it stays empty (the engine's step does
+  // nothing) until an add. A reseed that still gives an empty world is not tried again until the world has creatures, so it never
+  // rebuilds every tick.
+  private maybeReseed(): void {
+    if (!this.eco.extinct) this.reseedStuck = false;
+    else if (LIVE.reseed && !this.reseedStuck) this.reseed();
+  }
+
   private reseed(): void {
     this.config.seed += 1;
     this.restarts++;
     this.eco = this.build(this.config);
     this.attach();
+    if (this.eco.population === 0 && this.founders.length) {
+      try {
+        this.seedFounders(this.founders);
+      } catch (e) {
+        console.error(`reseed: founders not seeded: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+    this.reseedStuck = this.eco.extinct;
     console.log(`world extinct, restarted with seed ${this.config.seed} (restart ${this.restarts})`);
     this.onReseed?.();
   }
@@ -356,8 +412,10 @@ export class LiveWorld {
       frameHz: 5,
       dt: this.config.dt,
       itemSlots: this.eco.world.count,
-      summary: { initialPopulation: eco.initialPopulation, maxPopulation: eco.maxPopulation, collisionDamage: eco.collisionDamage, seasons: eco.seasons },
+      summary: { initialPopulation: eco.initialPopulation, maxPopulation: eco.maxPopulation, collisionDamage: eco.collisionDamage, seasons: eco.seasons, ...(eco.initialPopulation === 0 ? { seedCopies: SEED_COPIES } : {}) },
       maxViewers,
+      add: this.currentAddRules(),
+      map: this.map,
       serverVersion: VERSION,
     };
   }
@@ -406,9 +464,93 @@ export class LiveWorld {
     return encodeItems(this.eco.tick, { xs: w.xs, ys: w.ys, kinds: w.kinds, slots: w.count }, this.config.world);
   }
 
-  // TODO(L1): insert a visitor's creatures at random places. Waiting for the engine hook (#22/#31).
-  insertCreature(_genome: Float32Array, _plan: unknown, _name: string, _colour: number): never {
-    throw new Error("insertCreature: waiting for the engine hook (#22/#31)");
+  // Visitor-added creatures alive now (the inserted ones, not their children).
+  aliveAdded(): number {
+    for (const id of this.added) if (!this.eco.get(id)) this.added.delete(id);
+    return this.added.size;
+  }
+
+  // What an add may ask for: the world's birth trait ranges and the costs behind energy per second.
+  addRules(): AddRules {
+    const { eco, creature } = this.config;
+    const pair = (r: number[]): [number, number] => [r[0]!, r[1]!];
+    return { maxCopies: LIVE.add.maxCopies, everyS: LIVE.add.socketEveryS, birth: { energy: pair(eco.birthEnergyRange), cost: pair(eco.birthCostRange), cooldown: pair(eco.birthCooldownRange) }, costs: { living: creature.livingCost, ray: creature.rayCost, neuron: creature.neuronCost } };
+  }
+
+  // The rules for the hello and the rules message: null while adding is off.
+  currentAddRules(): AddRules | null {
+    return addingOn() ? this.addRules() : null;
+  }
+
+  // Up to n random spots inside the walls, clear of rock and of creatures, from the given draws (at most 40 tries a spot).
+  private freeSpots(n: number, random: () => number): { x: number; y: number; heading: number }[] {
+    const e = this.eco;
+    const { width, height } = this.config.world;
+    const r = this.config.creature.radius;
+    const margin = 4 * r;
+    const crowded = (x: number, y: number, taken: readonly { x: number; y: number }[]): boolean => {
+      for (const p of taken) if ((p.x - x) ** 2 + (p.y - y) ** 2 < (4 * r) ** 2) return true;
+      for (const m of e.members) if ((m.creature.state.x - x) ** 2 + (m.creature.state.y - y) ** 2 < (3 * r) ** 2) return true;
+      return false;
+    };
+    const spots: { x: number; y: number; heading: number }[] = [];
+    for (let tries = 0; spots.length < n && tries < 40 * n; tries++) {
+      const x = margin + random() * (width - 2 * margin);
+      const y = margin + random() * (height - 2 * margin);
+      if (!(e.world as World).terrain.touchesRock(x, y, 2 * r) && !crowded(x, y, spots)) spots.push({ x, y, heading: random() * 2 * Math.PI });
+    }
+    return spots;
+  }
+
+  // Seeds a fresh world (no tick run, nobody in it) with SEED_COPIES of each founder at random open spots, each copy the founder of a
+  // lineage with the founder's name (behind STARTER_MARK), each founder its own hue. Not visitor adds: they count toward no add cap (see attach).
+  // random: the server's own draws. Throws when the world is not fresh or a founder does not go in.
+  seedFounders(founders: readonly SeedFounder[], random: () => number = Math.random): number {
+    const e = this.eco;
+    if (e.tick !== 0 || e.population !== 0 || e.lineageTable.toState().late.length !== 0) throw new Error("only a fresh, empty world is seeded");
+    if (founders.length < 1 || founders.length > MAX_SEED_FOUNDERS) throw new Error(`1 to ${MAX_SEED_FOUNDERS} founders are seeded`);
+    const n = founders.length * SEED_COPIES;
+    if (n > e.config.eco.maxPopulation) throw new Error("more founders than the world has room for");
+    const spots = this.freeSpots(n, random);
+    if (spots.length < n) throw new Error("no room to seed the founders");
+    const hue0 = random() * 360;
+    for (let i = 0; i < n; i++) {
+      const k = Math.floor(i / SEED_COPIES);
+      const f = founders[k]!;
+      const p = spots[i]!;
+      const res = e.insertCreature({ genome: f.genome, plan: f.plan, x: p.x, y: p.y, heading: p.heading, hue: (hue0 + (360 * k) / founders.length) % 360, name: STARTER_MARK + f.name, ...(f.birth ? { birth: f.birth } : {}) }); // the start energy of a pool founder; its own birth traits or the range middles
+      if (!res.ok) throw new Error(`founder ${f.name} could not be seeded: ${res.reason}`);
+    }
+    return n;
+  }
+
+  // Blanks a visitor's name (as viewers see it, without the starter mark) on every family that carries it, for an admin who finds it
+  // unfit; the families live on unnamed. Stats, details and the next save carry the change. Call between ticks (whenIdle).
+  // The name becomes BLANKED (or STARTER_MARK + BLANKED), which viewers see as no name, so a visitor family still counts as added.
+  blankName(name: string): number {
+    return this.eco.lineageTable.renameWhere((n) => wireName(n).name === name, (n) => (n.startsWith(STARTER_MARK) ? STARTER_MARK : "") + BLANKED);
+  }
+
+  // Inserts a checked add request (live/add.ts parseAdd) as `copies` founders of new named lineages at random free spots, through the
+  // engine's insertCreature, so a save keeps them. Call between ticks (whenIdle). random: the server's own draws, never the engine's.
+  // Returns the ids, or a reason and nothing inserted.
+  addCreatures(req: AddRequest, random: () => number = Math.random): { ids: number[] } | { reason: string } {
+    const e = this.eco;
+    if (e.population + req.copies > e.config.eco.maxPopulation) return { reason: "the world is full, try again later" };
+    const spots = this.freeSpots(req.copies, random);
+    if (spots.length < req.copies) return { reason: "no free spot found, try again" };
+    const ids: number[] = [];
+    for (const p of spots) {
+      const res = e.insertCreature({ genome: req.genome, plan: req.plan, x: p.x, y: p.y, heading: p.heading, hue: req.hue, name: req.name, birth: req.birth, energy: LIVE.add.startEnergy }); // tunables.ts bounds it
+      if (!res.ok) return ids.length ? { ids } : { reason: res.reason }; // checked up front, so a refusal after the first is not expected
+      // Birth hold: the engine lets a creature give birth once tick - lastBirthTick >= cooldownTicks, so a last birth placed in the future
+      // holds the first one back for birthHoldS. Saves keep lastBirthTick; children are spawned without it.
+      const m = e.get(res.id)!;
+      m.lastBirthTick = e.tick + Math.round(LIVE.add.birthHoldS / e.config.dt) - m.cooldownTicks;
+      ids.push(res.id);
+      this.added.add(res.id);
+    }
+    return { ids };
   }
 
   // The full world as plain data, to be written out by the caller.
@@ -416,17 +558,52 @@ export class LiveWorld {
     return saveState(this.eco);
   }
 
+  // The world this server runs, as a save must match it (saveParse.ts otherWorldReason).
+  homeWorld(): Home {
+    const h = this.home;
+    return { ...h, mapVersion: h.map ? mapVersion(h.map) : "" };
+  }
+
   // Replaces the world with the saved one. Throws, and leaves the running world alone, if the state is invalid
   // or needs WebAssembly kernels this machine lacks. Viewers then need a fresh hello.
   restoreState(state: EcoState): void {
+    // A save of another size, map or map data is of another world, so startup starts fresh instead of retrying it.
+    const other = otherWorldReason(state, this.homeWorld());
+    if (other) throw new OtherWorld(other);
     const eco = restoreState(state, this.pool, { journal: this.helpers !== null });
-    const r = eco.retune({ eco: { maxPopulation: Math.min(eco.config.eco.maxPopulation, MAX_POPULATION) } }); // older saves allowed more
+    const maxPopulation = Math.min(eco.config.eco.maxPopulation, MAX_POPULATION); // older saves allowed more
+    const birthReserve = Math.min(eco.config.eco.birthReserve, Math.max(0, maxPopulation - 1)); // a reserve at the cap would stop every birth
+    const r = eco.retune({ eco: { maxPopulation, birthReserve } });
     if (!r.ok) throw new Error(`cannot cap the population: ${r.reason}`);
     this.eco = eco;
     this.owed = 0;
     this.attach();
     this.onReseed?.();
   }
+}
+
+// Shares of the world's area that are normal ground, mud, firm ground and rock, from a grid of samples (about 40000, once per world).
+export function groundShares(eco: Ecosystem, cols = 256): WireMap["ground"] {
+  const { width, height } = eco.config.world;
+  const terrain = (eco.world as World).terrain;
+  const rows = Math.max(1, Math.round((cols * height) / width));
+  const n = { normal: 0, mud: 0, firm: 0, rock: 0 };
+  for (let j = 0; j < rows; j++) {
+    for (let i = 0; i < cols; i++) {
+      const x = ((i + 0.5) / cols) * width;
+      const y = ((j + 0.5) / rows) * height;
+      if (terrain.touchesRock(x, y, 0)) n.rock++;
+      else {
+        const v = terrain.valueAt(x, y);
+        if (v < 0) n.mud++;
+        else if (v > 0) n.firm++;
+        else n.normal++;
+      }
+    }
+  }
+  const all = cols * rows;
+  const r = (v: number): number => Math.round((v / all) * 1000) / 1000;
+  return { normal: r(n.normal), mud: r(n.mud), firm: r(n.firm), rock: r(n.rock) };
 }
 
 // The server's tick loop: advance, then again when the next tick is due. After maxFailures consecutive failed ticks it calls fatal

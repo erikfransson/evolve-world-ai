@@ -1,7 +1,7 @@
 # Suggested world maps
 
 Design drafts for the Live World map (GitHub #36), kept so ideas survive later iterations.
-Nothing here is built unless noted; files are dated and numbered by draft round.
+Only The Inland Sea is built; files are dated and numbered by draft round.
 
 | File                                   | What                                                                  |
 |----------------------------------------|-----------------------------------------------------------------------|
@@ -11,4 +11,4 @@ Nothing here is built unless noted; files are dated and numbered by draft round.
 | `2026-10-12-draft3-notes.md`           | Region tables, expected behaviours, engine plan, size trade-off        |
 | `tools/`                               | Generator (`gen.mjs`, `specs.mjs`), renderer (`render.js`) and layer specs (`map-F*.json`) |
 
-Chosen for the live server (2026-10-12): The Inland Sea, after the terrain and obstacle look is polished.
+Chosen and built for the live server: The Inland Sea, scaled to 30000 x 18750 (detail as at 40000 wide) into `src/typescript/src/sim/maps/inlandSea.ts` by `tools/to-engine.mjs`.

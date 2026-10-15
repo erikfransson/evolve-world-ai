@@ -32,6 +32,11 @@ import { LiveScene } from "./live/scene.ts";
 import { serverUrl } from "./live/serverUrl.ts";
 import { HISTORY_FIELDS, LINEAGE_FIELDS, MAX_HISTORY, MAX_LINEAGE_HISTORY } from "./live/protocol.ts";
 import type { Hello, Season, Stats } from "./live/protocol.ts";
+import { AddPanel } from "./live/addPanel.ts";
+import { parseFounders } from "./live/founders.ts";
+import { renderMapInfo } from "./live/mapInfo.ts";
+import { MapCache } from "./live/mapTerrain.ts";
+import { mapVersion } from "./sim/maps/index.ts";
 
 // TODO(L6): admin panel. `?admin` opens a second socket to the owner's loopback admin port (ws://127.0.0.1:8788), sends {t:"auth", token}
 // with a token the owner pastes in, then {t:"get-config"} and {t:"set-config", changes}. See server/src/admin.ts.
@@ -44,6 +49,7 @@ const ZOOM_STEP = 1.6;
 const UI_INTERVAL_MS = 100;
 const BRAIN_INTERVAL_MS = 25;
 const STORE = "evolve.live.card";
+const ENTRY_KEY = "evolve.live.entry"; // sessionStorage: the entry card was answered this visit
 const SEASON_COLORS: Record<string, string> = { Summer: "#fbbf24", Autumn: "#fb923c", Winter: "#93c5fd", Spring: "#4ade80" };
 
 const canvas = $<HTMLCanvasElement>("view");
@@ -89,12 +95,16 @@ let season: Season | null = null;
 let retryTimer: ReturnType<typeof setInterval> | undefined;
 let highlight = -1; // founder whose family is lit, -1 for none
 let samples: number[] = []; // population history, HISTORY_FIELDS each
+let names = new Map<number, string>(); // founder id -> name, for the named lineages
+let starters = new Set<number>(); // the named ones that are starter founders, not visitor adds
 let lineageHistory: number[] = [];
 
 // The followed creature: its latest details (from the timeline), the genome once it came, and a brain built from both.
 interface Selection {
   id: number;
   last: SelectedDetails | null; // while alive
+  founderName: string; // "" for none
+  founderStarter: boolean;
   died: boolean;
   genome: Float32Array | null;
   brain: SelectedBrain | null;
@@ -121,9 +131,15 @@ function fmtUptime(s: number): string {
 function onState(state: LinkState, retryInS: number): void {
   clearInterval(retryTimer);
   $("offline").hidden = state !== "offline";
+  if (state !== "live") {
+    addPanel.disconnected();
+    $("emptyNote").hidden = true;
+    $("entryLive").textContent = state === "connecting" ? "Connecting to the world" : state === "full" ? "Full of viewers right now" : state === "updating" ? "The world is being updated, back soon" : state === "outdated" ? "This page is out of date, reload it" : "The world is offline right now";
+  }
   if (state === "connecting") setChip(state, "Connecting");
-  else if (state === "full") setChip(state, `Full of viewers, retrying in ${retryInS} s`);
-  else if (state === "outdated") setChip(state, "Page out of date, reload");
+  else if (state === "full") setChip(state, "Full of viewers", `, retrying in ${retryInS} s`);
+  else if (state === "updating") setChip(state, "Updating", ", back soon");
+  else if (state === "outdated") setChip(state, "Reload", " for the new version");
   else if (state === "live") {
     chip.dataset.state = "live";
     renderStats();
@@ -155,18 +171,38 @@ function renderStats(): void {
     setTile("statSpeed", s.speed.toFixed(1), " ×");
     setTile("statUptime", fmtUptime(s.uptimeS));
     $("statSeasonTile").hidden = !s.season;
-    if (s.season) setTile("statSeason", seasonName(seasonEco(s.season), s.simSeconds), ` ·\u00a0food\u00a0${seasonFactor(seasonEco(s.season), s.simSeconds).toFixed(2)}×`);
+    if (s.season) showSeason(seasonName(seasonEco(s.season), s.simSeconds), `food\u00a0${seasonFactor(seasonEco(s.season), s.simSeconds).toFixed(2)}×`);
   }
-  if (chip.dataset.state === "live") setChip("live", "Live", s ? ` · ${nf.format(s.viewers)} watching` : "");
+  if (chip.dataset.state === "live") setChip("live", mapStale ? "Map updating" : "Live", s ? ` · ${nf.format(s.viewers)} watching` : "");
+  if (s && chip.dataset.state === "live") $("entryLive").textContent = s.population > 0 ? `${nf.format(s.population)} creatures alive · ${nf.format(s.viewers)} watching` : `No creatures right now, add one to start the world again · ${nf.format(s.viewers)} watching`;
+  $("emptyNote").hidden = !(s && chip.dataset.state === "live" && s.population === 0);
+}
+
+// The season and its food factor; the separator between them is CSS, so a wrapped factor starts its line clean.
+function showSeason(name: string, food: string): void {
+  const dd = $("statSeason");
+  dd.dataset.unit = "";
+  const wrap = document.createElement("span");
+  wrap.className = "s-wrap";
+  const a = document.createElement("span");
+  a.className = "s-name";
+  a.textContent = name;
+  const b = document.createElement("span");
+  b.className = "s-food";
+  b.textContent = food;
+  wrap.append(a, b);
+  dd.replaceChildren(wrap);
 }
 
 function onHello(h: Hello): void {
   hello = h;
+  mapStale = false;
   versionEl.textContent = versionLabel(h.serverVersion);
   scene.reset();
   scene.fullEnergy = h.fullEnergy;
   scene.dt = h.dt;
   draw = { worldW: h.world.width, worldH: h.world.height, radius: h.radius, itemRadius: h.itemRadius, species: [{ fullEnergy: h.fullEnergy, hunter: false }], winter: 0 };
+  showMap(h);
   camera.setWorld(h.world.width, h.world.height);
   births.reset();
   impacts.reset();
@@ -178,6 +214,26 @@ function onHello(h: Hello): void {
   leaderPanel ??= new LeaderPanel(leaderCard, [], h.radius);
   leaderPanel.clear();
   clearSelection();
+  names = new Map();
+  starters = new Set();
+  addPanel.setRules(h.add);
+  renderMapInfo($("info"), h);
+}
+
+// The ground and rock of a hand-designed map, built from its name on a worker (once per map and size); plain ground meanwhile.
+const maps = new MapCache();
+let mapStale = false;
+function showMap(h: Hello): void {
+  const name = h.map.name;
+  if (!name) return;
+  const d = draw;
+  // The server runs another design of this map than this page has: plain ground, and the pill says so, until the page is updated.
+  mapStale = h.map.version !== undefined && h.map.version !== mapVersion(name);
+  renderStats();
+  if (mapStale) return;
+  void maps.get(name, h.world.width, h.world.height).then((t) => {
+    if (t && draw === d) d!.map = t; // a newer hello has its own
+  });
 }
 
 // Population samples for the graph, shifted to start near time 0 (historyAxis).
@@ -245,7 +301,7 @@ function followSelected(): void {
 // Follows creature id: asks the server for its details and zooms in once it is on screen.
 function select(id: number): void {
   if (selection?.id === id) return;
-  selection = { id, last: null, died: false, genome: null, brain: null, zoomed: false };
+  selection = { id, last: null, founderName: "", founderStarter: false, died: false, genome: null, brain: null, zoomed: false };
   link.select(id); // replaces the last one on the server: one message per click, so the select rate is not spent on letting go
   $("selectedCard").classList.add("has-sel");
   $("brainCard").hidden = false;
@@ -292,13 +348,16 @@ camera.onClick = (wx, wy) => {
   else clearSelection();
 };
 
-function onDetail(d: SelectedDetails): void {
+function onDetail(d: SelectedDetails, founderName: string, founderStarter: boolean): void {
   const s = selection;
   if (!s || d.id !== s.id) return;
   if (!d.alive) {
     s.died = true;
+    followNextCopy(s.id);
     return;
   }
+  s.founderName = founderName;
+  s.founderStarter = founderStarter;
   const replan = s.last && formatPlan(s.last.plan) !== formatPlan(d.plan);
   s.last = d;
   if (replan) s.brain = null;
@@ -342,16 +401,21 @@ function updateSelectedCard(): void {
   $("selBase").textContent = d.upkeep.toFixed(2);
   $("selDrain").textContent = s.died ? "-" : d.drain.toFixed(2);
   $("selFounderSw").style.background = lineageColor(d.founderHue);
-  $("selFounderText").textContent = `Founder #${d.founderId} · ${d.founderPool ? "trained pool" : "random"}`;
+  const named = s.founderName;
+  $("selFounderText").textContent = named ? `${named} · founder #${d.founderId} · ${s.founderStarter ? "starter" : "added"}` : `Founder #${d.founderId} · ${d.founderPool ? "trained pool" : "random"}`;
   syncFamily();
 }
 
+// The family toggle on the selected card. When one founder's family is the whole world, lighting it dims nobody, so it says so.
 function syncFamily(): void {
-  const on = highlight >= 0 && selection?.last?.founderId === highlight;
+  const f = selection?.last?.founderId;
+  const on = highlight >= 0 && f === highlight;
   const b = $("selFounder");
   b.classList.toggle("on", on);
   b.setAttribute("aria-pressed", String(on));
-  $("selFamilyLabel").textContent = on ? "Family lit" : "Highlight family";
+  const size = lastStats?.lineages?.find((l) => l.founder === f)?.count ?? 0;
+  const everyone = !!lastStats && lastStats.population > 0 && size >= lastStats.population;
+  $("selFamilyLabel").textContent = everyone ? (on ? "Everyone shares this founder" : "Everyone's founder") : on ? "Family lit" : "Highlight family";
 }
 
 // The records card, with each living entry clickable to follow it. Cells come out of LeaderPanel in BOARD_SPECS order.
@@ -406,7 +470,18 @@ function onStats(s: Stats): void {
     if (lineageHistory.length > MAX_LINEAGE_HISTORY * LINEAGE_FIELDS) lineageHistory.splice(0, LINEAGE_FIELDS);
   }
   if (s.sample || s.lineageSample || seasonChanged) showHistory();
-  if (s.lineages) lineages.setLineages(s.lineages.map((l): Lineage => ({ ...l, species: 0 })), s.population);
+  if (s.lineages) {
+    for (const l of s.lineages) {
+      // Each listed lineage carries its name every time, so a missing one (an admin cleared it) clears the page's copy.
+      if (l.name) names.set(l.founder, l.name);
+      else names.delete(l.founder);
+      if (l.starter) starters.add(l.founder);
+      else starters.delete(l.founder);
+    }
+    if (starters.size > 200) starters = new Set([...starters].slice(-100));
+    if (names.size > 200) names = new Map([...names].slice(-100)); // only the listed ones matter; old ones go
+    lineages.setLineages(s.lineages.map((l): Lineage => ({ founder: l.founder, hue: l.hue, pool: l.pool, count: l.count, species: 0 })), s.population, names, starters);
+  }
   if (s.records) setRecords(s.records);
   $<HTMLButtonElement>("pickAge").disabled = !s.best;
   $<HTMLButtonElement>("pickChildren").disabled = !s.best;
@@ -447,13 +522,13 @@ function frame(now: number): void {
   const dpr = syncCanvas();
   const ctx = canvas.getContext("2d")!;
   camera.update(now);
-  if (!draw || !scene.views.count) {
+  if (!draw) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = "#0b1d16";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    if (scene.views.count === 0) scene.sample(now);
     return;
   }
+  // An empty world is still drawn: its ground and food stay in view until creatures are added again.
   if (scene.sample(now)) births.observe(scene.views, now);
   zoomToSelection();
   syncFollow();
@@ -473,7 +548,7 @@ function frame(now: number): void {
 
 scene.handlers = {
   onEvents: (events) => impacts.add(events, performance.now()),
-  onDetail: (d) => onDetail(d.details),
+  onDetail: (d) => onDetail(d.details, d.founderName, d.founderStarter),
 };
 
 const link = new LiveLink(url, {
@@ -489,6 +564,8 @@ const link = new LiveLink(url, {
     buildBrain();
   },
   onStats,
+  onAdd: (r) => addPanel.reply(r),
+  onRules: (r) => addPanel.setRules(r),
   onHistory(h) {
     samples = h.samples.slice();
     lineageHistory = h.lineage.slice();
@@ -528,6 +605,78 @@ $("selFounder").addEventListener("click", () => {
 });
 $("pickAge").addEventListener("click", () => { if (lastStats?.best) select(lastStats.best.age); });
 $("pickChildren").addEventListener("click", () => { if (lastStats?.best) select(lastStats.best.children); });
+
+// The visitor's last added copies: when the followed one dies, the page moves on to a living copy and lights its family.
+let myCopies: number[] = [];
+function followNextCopy(dead: number): void {
+  if (!myCopies.includes(dead)) return;
+  myCopies = myCopies.filter((i) => i !== dead);
+  const next = myCopies.find((i) => scene.slotOf(i) >= 0);
+  if (next === undefined) return;
+  setTimeout(() => {
+    if (selection?.id !== dead || scene.slotOf(next) < 0) return; // the visitor picked something else meanwhile
+    select(next);
+    highlight = next;
+    lineages.setHighlight(next);
+    syncFamily();
+  }, 1500);
+}
+
+// Entry card and "Add your creature". The card shows once a visit; its answer is kept in sessionStorage.
+const addPanel = new AddPanel($("addPanel"), {
+  send: (req) => link.add(req),
+  added(r) {
+    addPanel.close();
+    $("addPeek").hidden = true;
+    myCopies = r.ids.slice();
+    const id = r.ids[0]!; // an added creature founds its own lineage: its id is the family's founder
+    select(id);
+    highlight = id;
+    lineages.setHighlight(id);
+    syncFamily();
+  },
+  minimised: (on) => ($("addPeek").hidden = !on),
+});
+function remember(): void {
+  try {
+    sessionStorage.setItem(ENTRY_KEY, "1");
+  } catch {
+    // storage blocked: the card shows again on the next load
+  }
+}
+function openAdd(): void {
+  $("entry").hidden = true;
+  remember();
+  addPanel.open();
+}
+$("entryWatch").addEventListener("click", () => {
+  $("entry").hidden = true;
+  remember();
+  canvas.focus({ preventScroll: true });
+});
+$("entryAdd").addEventListener("click", openAdd);
+$("openAdd").addEventListener("click", openAdd);
+$("emptyAdd").addEventListener("click", openAdd);
+$("addPeek").addEventListener("click", () => addPanel.open());
+let answered = false;
+try {
+  answered = sessionStorage.getItem(ENTRY_KEY) === "1";
+} catch {
+  // storage blocked: show the card
+}
+if (new URLSearchParams(location.search).has("add")) openAdd();
+else if (!answered) {
+  $("entry").hidden = false;
+  $("entryAdd").focus({ preventScroll: true });
+}
+void fetch(new URL("../live-founders.json", document.baseURI).href)
+  .then((r) => (r.ok ? r.json() : null))
+  .then((data) => addPanel.setFounders(parseFounders(data)))
+  .catch(() => addPanel.setFounders([]));
+
+// The world view fills the window below the banner; the page scrolls on to the info section.
+const banner = document.querySelector<HTMLElement>(".banner")!;
+new ResizeObserver(() => document.documentElement.style.setProperty("--banner-h", `${banner.offsetHeight}px`)).observe(banner);
 
 new ResizeObserver(() => syncCanvas()).observe(canvas);
 link.start();

@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { LIMITS, LIVE } from "../../server/src/config.ts";
+import { LIMITS, LIVE, liveConfig } from "../../server/src/config.ts";
 import { TokenBucket } from "../../server/src/budget.ts";
 import { ItemFeed } from "../../server/src/itemFeed.ts";
 import { LiveWorld } from "../../server/src/liveWorld.ts";
@@ -8,6 +8,7 @@ import { ItemMirror } from "../../src/typescript/src/live/items.ts";
 import { LiveScene } from "../../src/typescript/src/live/scene.ts";
 import { MAX_DETAIL_BYTES, MAX_GENOME, MAX_INPUTS, RAY_FEATURES, decodeDetail, decodeGenome, encodeDetail, encodeGenome, genomeBytes } from "../../src/typescript/src/live/detail.ts";
 import type { DetailSource } from "../../src/typescript/src/live/detail.ts";
+import { NAME_MAX } from "../../src/typescript/src/live/add.ts";
 import {
   HISTORY_FIELDS, LINEAGE_FIELDS, MAX_DELTAS, MAX_DELTA_OPS, MAX_HISTORY, MAX_ID, MAX_LINEAGE_HISTORY, MSG_DELTA, decodeCreatures, decodeDelta, decodeItems, deltaMessage, encodeDeltaChunk, parseClientMessage,
 } from "../../src/typescript/src/live/protocol.ts";
@@ -17,6 +18,11 @@ import { EXTRA_INPUTS, inputLayout } from "../../src/typescript/src/sim/sensors.
 import { genomeLength, layerSizes } from "../../src/typescript/src/sim/brain.ts";
 import { PLAN_LIMITS } from "../../src/typescript/src/sim/rl/validate.ts";
 import { smallConfig } from "./liveHelpers.ts";
+
+// These small worlds die out within the test; they check the viewer across a restart, so the world starts over as with reseed on.
+const RESEED = LIVE.reseed;
+beforeAll(() => void (LIVE.reseed = 1));
+afterAll(() => void (LIVE.reseed = RESEED));
 
 const world = { width: 2000, height: 1300 };
 const QX = world.width / 65535;
@@ -145,7 +151,7 @@ describe("item deltas", () => {
         expectSame(scene.items, live);
       }
       expect(fulls).toBe(2 + reseeds); // the first frame, the resync after the stall, and one per new world
-    });
+    }, 90_000); // deterministic, but about 5 s of simulation and checks at stride 1 that a loaded machine stretches past the default
   }
 
   // Across seeds, so it does not hang on one random stream. A frame in which the world died out and started over is skipped.
@@ -277,16 +283,17 @@ describe("timeline", () => {
 
 describe("selected creature on the wire", () => {
   const source = (rays: number, inputs: number): DetailSource => ({
-    x: 10, y: 20, heading: 1, energy: 123.4, age: 99.5, children: 3, eaten: 17, depth: 4, parentId: 77, founderId: 9, founderPool: true, founderHue: 120, hue: 200, upkeep: 2.5, drain: 3.5,
+    x: 10, y: 20, heading: 1, energy: 123.4, age: 99.5, children: 3, eaten: 17, depth: 4, parentId: 77, founderId: 9, founderPool: true, founderName: "", founderHue: 120, hue: 200, upkeep: 2.5, drain: 3.5,
     birthEnergy: 150, birthCost: 60, birthCooldown: 10, plan: { rayCount: rays, raySpread: 2, rayLength: 250, hiddenLayers: [32, 32, 32, 32], memoryShort: 8, memoryLong: 8 },
     rayKinds: Uint8Array.from({ length: rays }, (_, i) => i % 5), rayCloseness: Float32Array.from({ length: rays }, (_, i) => i / rays), rayOffsets: Float32Array.from({ length: rays }, (_, i) => -1 + i / rays), inputs: Float32Array.from({ length: inputs }, (_, i) => Math.sin(i)),
   });
 
   it("round-trips the largest detail within its bound and decodes into SelectedDetails", () => {
-    const bytes = encodeDetail(55, 1234, source(16, 16 * RAY_FEATURES + EXTRA_INPUTS + 16));
+    const bytes = encodeDetail(55, 1234, { ...source(16, 16 * RAY_FEATURES + EXTRA_INPUTS + 16), founderName: "Abcdefgh12345678" });
     expect(bytes.length).toBe(MAX_DETAIL_BYTES);
     const { tick, id, details: d } = decodeDetail(bytes);
     expect([tick, id, d.alive, d.children, d.depth, d.parentId, d.founderId, d.founderPool]).toEqual([55, 1234, true, 3, 4, 77, 9, true]);
+    expect(decodeDetail(bytes).founderName).toBe("Abcdefgh12345678");
     expect(d.energy).toBeCloseTo(123.4, 3);
     expect(d.birthCooldown).toBe(10);
     expect(d.plan.hiddenLayers).toEqual([32, 32, 32, 32]);
@@ -314,7 +321,7 @@ describe("selected creature on the wire", () => {
     live.step();
     live.refreshWatched();
     const bytes = live.detail(m.id)!;
-    expect(bytes.length).toBe(MAX_DETAIL_BYTES);
+    expect(bytes.length).toBe(MAX_DETAIL_BYTES - NAME_MAX); // a pool founder has no name
     const d = decodeDetail(bytes).details;
     const engineInputs = m.creature.brain.layerActivations()[0]!;
     expect(d.inputs.length).toBe(engineInputs.length);
@@ -331,7 +338,7 @@ describe("selected creature on the wire", () => {
     new DataView(nan.buffer).setFloat32(10, NaN, true);
     expect(() => decodeDetail(nan)).toThrow();
     const plan = good.slice();
-    plan[75] = 17; // rayCount past the plan limit
+    plan[76] = 17; // rayCount past the plan limit
     expect(() => decodeDetail(plan)).toThrow(/plan/);
     const dead = decodeDetail(encodeDetail(5, 9, null));
     expect(dead.details.alive).toBe(false);
@@ -413,16 +420,17 @@ describe("history and records", () => {
       const kids = s.records!.find((r) => r.board === "children")?.entries ?? [];
       expect(kids[0]?.value ?? 0).toBeGreaterThanOrEqual(parent.children);
       expect(s.lineages!.length).toBeLessThanOrEqual(8);
-      expect(s.season).toEqual({ yearMinutes: 40, winterFood: 0.4 });
+      expect(s.season).toEqual({ yearMinutes: liveConfig.eco.yearMinutes, winterFood: liveConfig.eco.winterFood });
     });
   }
 });
 
 describe("selection cost", () => {
   // 100 viewers each following a different creature: the server's per-frame work for them (refreshing their rays and brain inputs,
-  // encoding 100 details a frame and each genome once) stays under 10% of the time the ticks take. Timed inside one run, interleaved
-  // with the ticks, so other load on the machine affects both alike.
-  it("100 viewers following different creatures add less than 10% to the tick time", () => {
+  // encoding 100 details a frame and each genome once) stays under an absolute bound per viewer and frame. An absolute bound, not a
+  // share of the tick, since the selection work does not shrink when the engine gets faster. Measured near 0.07 ms on a laptop, while
+  // re-sending every genome each frame (0.14 ms) or unlimited refreshes (0.18 ms) go over it.
+  it("100 viewers following different creatures cost under 0.12 ms each per frame", () => {
     const c = smallConfig();
     c.world.width = 6000;
     c.world.height = 4000;
@@ -455,7 +463,8 @@ describe("selection cost", () => {
     let ticking = 0;
     let selecting = 0;
     // A fixed number of ticks, not a fixed time: the same world each run (it thins out from about 600 ticks on and later starts over).
-    for (let frame = 0; frame < 20; frame++) {
+    const frames = 20;
+    for (let frame = 0; frame < frames; frame++) {
       let t0 = cpuMs();
       for (let t = 0; t < 24; t++, ticks++) live.step(); // a frame every 24 ticks, as at 4x
       ticking += cpuMs() - t0;
@@ -472,10 +481,10 @@ describe("selection cost", () => {
       }
       selecting += cpuMs() - t0;
     }
-    const share = selecting / ticking;
-    console.log(`${ticks} ticks at ${(ticking / ticks).toFixed(3)} ms, following 100 adds ${(selecting / ticks).toFixed(4)} ms a tick, ${(100 * share).toFixed(2)}%, population ${live.eco.population}`);
+    const perViewerFrame = selecting / frames / ids.length;
+    console.log(`${ticks} ticks at ${(ticking / ticks).toFixed(3)} ms, following 100 adds ${(selecting / ticks).toFixed(4)} ms a tick (${(100 * selecting / ticking).toFixed(2)}%), ${perViewerFrame.toFixed(4)} ms per viewer and frame, population ${live.eco.population}`);
     expect(live.eco.population).toBeGreaterThan(100);
-    expect(share).toBeLessThan(0.1);
+    expect(perViewerFrame).toBeLessThan(0.12);
   });
 });
 
@@ -503,5 +512,21 @@ describe("helper threads", () => {
     expect(prints[1]![0]).toBe(prints[0]![0]);
     expect(prints[1]![1]).toBe(prints[0]![1]);
     expect(prints[1]![2]).toBe(2);
+  });
+
+  it("leave an extinct world still, as one thread does, when reseed is off", async () => {
+    const { createNodeThinkPool } = await import("../../src/typescript/src/worker/nodePool.ts");
+    LIVE.reseed = 0;
+    const config = smallConfig();
+    config.eco.initialPopulation = 0;
+    const live = new LiveWorld(config, null, createNodeThinkPool(1));
+    try {
+      const tick = live.eco.tick;
+      for (let t = 0; t < 5; t++) await live.tick();
+      expect([live.eco.tick, live.threads, live.failedTicks]).toEqual([tick, 1, 0]);
+    } finally {
+      LIVE.reseed = 1;
+      live.close();
+    }
   });
 });

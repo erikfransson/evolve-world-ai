@@ -14,19 +14,20 @@ export const lineageColor = (hue: number): string => creatureStyle(hue, 0);
 export interface LineageRow {
   founder: number; // -1 for the creatures outside the listed lineages
   label: string;
-  origin: string; // "pool", "random" or ""
+  origin: string; // "pool", "random", "added", "starter" or ""
   share: number; // 0 to 1
   count: number;
   color: string;
 }
 
-// The listed lineages and one row for everyone else, as shares of population.
-export function lineageRows(lineages: readonly Lineage[], population: number): LineageRow[] {
+// The listed lineages and one row for everyone else, as shares of population. names: named founders (Live World), starters: the
+// named ones that are starter founders rather than visitor adds.
+export function lineageRows(lineages: readonly Lineage[], population: number, names?: ReadonlyMap<number, string>, starters?: ReadonlySet<number>): LineageRow[] {
   const total = Math.max(1, population);
   const rows: LineageRow[] = lineages.map((l) => ({
     founder: l.founder,
-    label: `#${l.founder}`,
-    origin: l.pool ? "pool" : "random",
+    label: names?.get(l.founder) ?? `#${l.founder}`,
+    origin: names?.has(l.founder) ? (starters?.has(l.founder) ? "starter" : "added") : l.pool ? "pool" : "random",
     share: l.count / total,
     count: l.count,
     color: lineageColor(l.hue),
@@ -148,9 +149,9 @@ export class LineagePanel {
     e.classList.toggle("on", on);
   }
 
-  setLineages(lineages: readonly Lineage[], population: number): void {
-    const rows = lineageRows(lineages, population);
-    const signature = rows.map((r) => `${r.founder}:${r.count}`).join(",") + `|${this.picked}`;
+  setLineages(lineages: readonly Lineage[], population: number, names?: ReadonlyMap<number, string>, starters?: ReadonlySet<number>): void {
+    const rows = lineageRows(lineages, population, names, starters);
+    const signature = rows.map((r) => `${r.founder}:${r.count}:${r.label}`).join(",") + `|${this.picked}`;
     if (signature === this.signature) return;
     this.signature = signature;
     this.bar.hidden = rows.length === 0;

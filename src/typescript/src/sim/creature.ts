@@ -12,6 +12,7 @@ import { RayCache } from "./world.ts";
 import type { World } from "./world.ts";
 import type { Crowd } from "./crowd.ts";
 import type { SenseKernels } from "./wasm/senseKernels.ts";
+import type { ResidentState } from "./wasm/resident.ts";
 import type { PhaseTimer } from "./profile.ts";
 
 let created = 0; // objects made so far in this process
@@ -26,21 +27,24 @@ const IDLE_CACHE = new RayCache();
 // rays, rayOffsets, memory and brain sizes follow the plan, which only reset changes.
 export class Creature {
   readonly state: CreatureState;
+  readonly resident: ResidentState | null; // the state and heading when the body lives in WASM memory (see wasm/resident.ts), else null
   readonly slot = created++; // construction order, which follows heap order; SenseBatch sorts by it
   private rayList: RayHit[] | null = null; // made on first use, since the WebAssembly sense only fills the detail creature's
   readonly brain: Brain;
-  readonly heading: Heading = { cos: 0, sin: 0 };
+  readonly heading: Heading;
   aging: Aging | null = null; // old-age upkeep, set by the owner
-  brainVersion = 0; // bumped whenever reset changes the genome or plan, so a copy of the brain elsewhere (WASM) knows to refresh
   kernelSlot = -1; // this creature's brain slot in kernelOwner, the SenseKernels that last ran it
   kernelOwner: SenseKernels | null = null;
 
   private readonly ownPlan: BodyPlan; // this creature's own copy
   private offsets = new Float32Array(0);
-  private units = new Float64Array(0);
+  private ownUnits = new Float64Array(0);
   private energyUpkeep = 0;
   private readonly config: EngineConfig;
   private readonly terrain: Terrain;
+  private groundX = NaN; // the ground value last read and where, so sensing and moving from one spot read it once
+  private groundY = NaN;
+  private groundValue = 0;
   private readonly decays: Decays;
   private input = new Float32Array(0);
   private output = new Float32Array(0);
@@ -53,18 +57,31 @@ export class Creature {
   private inputLength = 0;
   private cache: RayCache | null = null; // made by the JS sense path only
 
-  // plan defaults to the config's; genome must be sized for it.
-  constructor(config: EngineConfig, genome: Genome, x: number, y: number, heading: number, plan: PlanView = planOf(config)) {
+  // plan defaults to the config's; genome must be sized for it. With kernels the body is a resident row of their memory, of the species with this index there,
+  // and the kernels hold its brain from now on (attach); reset keeps them current.
+  constructor(config: EngineConfig, genome: Genome, x: number, y: number, heading: number, plan: PlanView = planOf(config), kernels: SenseKernels | null = null, species = 0) {
     this.config = config;
+    const res = (this.resident = kernels ? kernels.store.add() : null);
+    this.heading = res ?? { cos: 0, sin: 0 };
     this.terrain = terrainOf(config);
     this.ownPlan = { ...plan, hiddenLayers: plan.hiddenLayers.slice() };
     const sizes = layerSizes(config, this.ownPlan);
     this.brain = new Brain(sizes, genome);
     this.decays = decaysFor(config);
     this.fitPlan(sizes);
-    this.state = { x, y, heading, vx: 0, vy: 0, turnRate: 0, energy: config.creature.startEnergy, alive: true, ticksAlive: 0 };
+    this.state = res ?? { x, y, heading, vx: 0, vy: 0, turnRate: 0, energy: config.creature.startEnergy, alive: true, ticksAlive: 0 };
+    if (res) {
+      res.x = x;
+      res.y = y;
+      res.heading = heading;
+      res.energy = config.creature.startEnergy;
+    }
     this.heading.cos = Math.cos(heading);
     this.heading.sin = Math.sin(heading);
+    if (kernels) {
+      res!.species = species;
+      kernels.attach(this);
+    }
   }
 
   // One hit per ray, as of the last sense on the JS path (or as detail on the WebAssembly path).
@@ -89,6 +106,22 @@ export class Creature {
     return this.units;
   }
 
+  private get units(): Float64Array {
+    return this.resident ? this.resident.units : this.ownUnits;
+  }
+
+  // The terrain value under the creature (0 on a map without ground), read again only after it moved.
+  private ground(): number {
+    const s = this.state;
+    if (s.x !== this.groundX || s.y !== this.groundY) {
+      this.groundX = s.x;
+      this.groundY = s.y;
+      this.groundValue = this.terrain.empty ? 0 : this.terrain.valueAt(s.x, s.y);
+    }
+    return this.groundValue;
+  }
+
+  // (Resident creatures get the same values from prepareRows in wasm/residentStep.ts, which must stay in step with this.)
   // Writes the brain input that does not come from rays (extras, then memory units) at f32[at], where at is the first extra's index.
   writeBodyInputs(f32: Float32Array, at: number): void {
     const c = this.config.creature;
@@ -99,7 +132,8 @@ export class Creature {
     f32[at + 1] = ((s.vx * cos + s.vy * sin) * c.drag) / c.maxThrust;
     f32[at + 2] = ((s.vy * cos - s.vx * sin) * c.drag) / c.maxThrust;
     f32[at + 3] = s.turnRate / c.maxTurnRate;
-    f32[at + EXTRA_TERRAIN] = this.terrain.empty ? 0 : this.terrain.valueAt(s.x, s.y);
+    const ground = this.ground();
+    f32[at + EXTRA_TERRAIN] = ground;
     const u = this.units;
     for (let i = 0; i < u.length; i++) f32[at + EXTRA_TERRAIN + 1 + i] = u[i]!;
   }
@@ -126,13 +160,17 @@ export class Creature {
     this.output = refit(this.output, sizes[sizes.length - 1]!);
     this.outBank = null;
     this.outAt = 0;
-    this.units = refit(this.units, plan.memoryShort + plan.memoryLong);
-    this.units.fill(0);
+    if (this.resident) this.resident.fitUnits(plan.memoryShort + plan.memoryLong, plan.memoryShort);
+    else {
+      this.ownUnits = refit(this.ownUnits, plan.memoryShort + plan.memoryLong);
+      this.ownUnits.fill(0);
+    }
     this.offsets = refit(this.offsets, n);
     rayAngleOffsets(plan, this.offsets);
     this.trigFresh = false;
     if (this.rayList) this.fitRays();
     this.energyUpkeep = planUpkeep(plan, this.config);
+    if (this.resident) this.resident.upkeep = this.energyUpkeep;
   }
 
   private fitRays(): void {
@@ -149,7 +187,6 @@ export class Creature {
     const sizes = layerSizes(this.config, this.ownPlan);
     this.brain.load(sizes, genome);
     this.fitPlan(sizes);
-    this.brainVersion++;
     const s = this.state;
     s.x = x;
     s.y = y;
@@ -169,6 +206,7 @@ export class Creature {
       ray.energy = 0;
       ray.species = 0;
     }
+    this.kernelOwner?.attach(this);
   }
 
   // Casts the rays from the current pose into this.rays without advancing the simulation.
@@ -237,6 +275,7 @@ export class Creature {
   adoptOutput(bank: { readonly f32: Float32Array }, at: number): void {
     this.outBank = bank;
     this.outAt = at;
+    if (this.resident) this.resident.outPtr = at * 4;
   }
 
   // Overwrites the memory units with from[at ..], e.g. with a coordinator's published values.
@@ -272,7 +311,7 @@ export class Creature {
   // The brain's input from the last sensed rays, the body and the memory; also what brain.layerActivations()[0] shows.
   encode(): Float32Array {
     const input = this.inputBuffer();
-    encodeInputs(this.state, this.rays, this.config, input, this.heading.cos, this.heading.sin, this.terrain.empty ? 0 : this.terrain.valueAt(this.state.x, this.state.y));
+    encodeInputs(this.state, this.rays, this.config, input, this.heading.cos, this.heading.sin, this.ground());
     input.set(this.units, this.memoryAt);
     this.brain.showInput(input);
     return input;
@@ -298,7 +337,7 @@ export class Creature {
   // Motion and energy costs from the last think, without eating or death; touches only this creature.
   steer(output: Float32Array = this.outView()): void {
     const upkeep = this.energyUpkeep * agingFactor(this.aging, this.state.ticksAlive);
-    stepBody(this.state, output[this.outAt + OUT_TURN], thrustCommand(output[this.outAt + OUT_THRUST], this.config.creature.brakeThreshold), this.config, this.decays, this.heading, upkeep, this.terrain);
+    stepBody(this.state, output[this.outAt + OUT_TURN], thrustCommand(output[this.outAt + OUT_THRUST], this.config.creature.brakeThreshold), this.config, this.decays, this.heading, upkeep, this.terrain, this.ground());
   }
 
   // The first item this creature touches at its position, or -1; changes nothing.
@@ -320,7 +359,7 @@ export class Creature {
 
   // One tick of motion, eating and energy. Returns what eat returns.
   move(world: World, turn: number, thrust: number): number {
-    stepBody(this.state, turn, thrust, this.config, this.decays, this.heading, this.energyUpkeep, this.terrain);
+    stepBody(this.state, turn, thrust, this.config, this.decays, this.heading, this.energyUpkeep, this.terrain, this.ground());
     const eaten = this.eat(world);
     settle(this.state);
     return eaten;
@@ -380,13 +419,11 @@ export class SenseBatch {
   }
 }
 
-// Sense and think for a whole batch; writes only each creature's rays and outputs. The one boundary for the per-tick
-// creature work, used by Ecosystem.sensePhase and the helper threads (ecoShare.ts). With kernels, the crowd rays and the
-// brains run in WebAssembly (f32); every owner of creatures (an Ecosystem, a helper) has its own kernels.
-export function senseThinkBatch(world: World, crowd: Crowd, batch: SenseBatch, kernels: SenseKernels | null = null, prof: PhaseTimer | null = null): void {
+// Sense and think for a whole batch on the JS path; writes only each creature's rays and outputs. The one boundary for the per-tick
+// creature work without kernels, used by Ecosystem.sensePhase and the helper threads (ecoShare.ts); resident creatures go through SenseKernels.runRows.
+export function senseThinkBatch(world: World, crowd: Crowd, batch: SenseBatch, prof: PhaseTimer | null = null): void {
   batch.sortBySlot();
   prof?.lap("sort batch");
-  if (kernels) return kernels.run(world, crowd, batch, prof);
   const { creatures, selves } = batch;
   for (let k = 0; k < batch.count; k++) creatures[k]!.senseThink(world, crowd, selves[k]!);
   prof?.lap("js sense and think");

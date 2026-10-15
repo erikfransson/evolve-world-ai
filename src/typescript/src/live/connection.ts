@@ -3,8 +3,11 @@ import type { CreatureFrame, Delta, Hello, History, ItemsSnapshot, ServerText, S
 import { decodeDetail, decodeGenome } from "./detail.ts";
 import type { Detail } from "./detail.ts";
 import { retryDelayS } from "./serverUrl.ts";
+import { cleanAddReply, cleanAddRules, encodeAdd, validName } from "./add.ts";
+import type { AddRequest, AddRules, Added, Refused } from "./add.ts";
+import { cleanMap } from "./mapInfo.ts";
 
-export type LinkState = "connecting" | "live" | "offline" | "full" | "outdated";
+export type LinkState = "connecting" | "live" | "offline" | "full" | "updating" | "outdated";
 
 export interface LinkHandlers {
   onState(state: LinkState, retryInS: number): void;
@@ -16,12 +19,15 @@ export interface LinkHandlers {
   onGenome(id: number, genome: Float32Array): void;
   onStats(stats: Stats): void;
   onHistory(history: History): void;
+  onAdd?(reply: Added | Refused): void;
+  onRules?(rules: AddRules | null): void;
 }
 
 const PING_EVERY_MS = 20_000;
 export const HIDDEN_CLOSE_MS = 3 * 60_000; // a tab hidden this long lets go of its viewer slot, and connects again when shown
 const STALE_MS = 15_000; // no message for this long counts as a dead link
 const OFFLINE_AFTER_FAILURES = 2; // the first try is "connecting", later failed ones "offline"
+const UPDATING_RETRY_S = 60; // while the server runs an older protocol (plus up to 25% jitter)
 
 const n = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : 0);
 const MAX_COUNT = 1e9; // creatures, births, items: far past any real world, short enough for a tile
@@ -64,7 +70,7 @@ export function cleanStats(s: Stats): Stats {
     out.lineages = s.lineages.slice(0, LINEAGE_TOP).filter(isObj).map((l) => {
       const c = Math.min(left, count(l.count));
       left -= c;
-      return { founder: id(l.founder), hue: n(l.hue), pool: l.pool === true, count: c };
+      return { founder: id(l.founder), hue: n(l.hue), pool: l.pool === true, count: c, ...(validName(l.name) ? { name: l.name, ...(l.starter === true ? { starter: true } : {}) } : {}) };
     });
   }
   if (Array.isArray(s.records)) {
@@ -91,9 +97,12 @@ export function historyAxis(first: number, last: number, yearS: number): { shift
 }
 
 // A hello with sane numbers, or null.
-function cleanHello(h: Hello): Hello | null {
+export function cleanHello(h: Hello): Hello | null {
   const ok = isObj(h.world) && n(h.world.width) > 0 && n(h.world.height) > 0 && n(h.radius) > 0 && n(h.dt) > 0 && n(h.fullEnergy) > 0 && int(h.itemSlots, 0, MAX_ITEM_SLOTS);
-  return ok ? h : null;
+  const s: Record<string, unknown> = isObj(h.summary) ? h.summary : {};
+  const seedCopies = int(s.seedCopies, 1, 100) ? (s.seedCopies as number) : undefined;
+  const summary = { initialPopulation: count(s.initialPopulation), maxPopulation: count(s.maxPopulation), collisionDamage: s.collisionDamage === true, seasons: s.seasons === true, ...(seedCopies ? { seedCopies } : {}) };
+  return ok ? { ...h, summary, add: cleanAddRules(h.add), map: cleanMap(h.map) } : null;
 }
 
 // One WebSocket to the world server that reconnects with backoff.
@@ -113,6 +122,7 @@ export class LiveLink {
   private selected: number | null = null;
   private failures = 0;
   private full = false; // the server said it has no room, until the next hello
+  private updating = false; // the server runs an older protocol than this page: it is being updated, keep retrying
   private timer: ReturnType<typeof setTimeout> | undefined;
   private lastMessage = 0;
   private readonly url: string;
@@ -160,6 +170,13 @@ export class LiveLink {
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ t: "select", id }));
   }
 
+  // Sends an add (live/add.ts); the reply comes to onAdd. False when not connected.
+  add(req: AddRequest): boolean {
+    if (this.ws?.readyState !== WebSocket.OPEN || !this.world) return false;
+    this.ws.send(encodeAdd(req));
+    return true;
+  }
+
   // Hidden for long: close without a reconnect, so the server's viewer slot is free for someone watching.
   private sleep(): void {
     this.asleep = true;
@@ -171,6 +188,7 @@ export class LiveLink {
 
   private open(): void {
     this.full = false; // a busy reply on this try sets it again
+    this.updating = false;
     let ws: WebSocket;
     try {
       ws = new WebSocket(this.url);
@@ -189,8 +207,10 @@ export class LiveLink {
 
   private lost(): void {
     this.ws = null;
-    const wait = retryDelayS(this.failures++);
-    this.h.onState(this.full ? "full" : this.failures >= OFFLINE_AFTER_FAILURES ? "offline" : "connecting", Math.ceil(wait));
+    // An older server costs it a full connect per try, so while it is being updated the page asks only about once a minute.
+    const wait = this.updating ? UPDATING_RETRY_S * (1 + 0.25 * Math.random()) : retryDelayS(this.failures);
+    this.failures++;
+    this.h.onState(this.full ? "full" : this.updating ? "updating" : this.failures >= OFFLINE_AFTER_FAILURES ? "offline" : "connecting", Math.ceil(wait));
     this.timer = setTimeout(() => this.open(), wait * 1000);
   }
 
@@ -217,6 +237,12 @@ export class LiveLink {
 
   private text(msg: ServerText): void {
     if (msg.t === "hello") {
+      if (typeof msg.version === "number" && msg.version < PROTOCOL_VERSION) {
+        // The page was released before the server was: retry with backoff until it runs the new version.
+        this.updating = true;
+        this.ws?.close();
+        return;
+      }
       if (msg.version !== PROTOCOL_VERSION) {
         clearTimeout(this.timer);
         this.outdated = true;
@@ -225,16 +251,21 @@ export class LiveLink {
         ws?.close();
         return this.h.onState("outdated", 0);
       }
-      if (!cleanHello(msg)) throw new Error("bad hello");
+      const hello = cleanHello(msg);
+      if (!hello) throw new Error("bad hello");
       this.full = false;
       this.world = msg.world;
       this.slots = msg.itemSlots;
       this.selected = null; // a new world: the server forgot the selection
       this.failures = 0;
-      this.h.onHello(msg);
+      this.h.onHello(hello);
       this.h.onState("live", 0);
     } else if (msg.t === "stats") this.h.onStats(cleanStats(msg));
     else if (msg.t === "history") this.h.onHistory(cleanHistory(msg));
+    else if (msg.t === "added" || msg.t === "refused") {
+      const r = cleanAddReply(msg);
+      if (r) this.h.onAdd?.(r);
+    } else if (msg.t === "rules") this.h.onRules?.(cleanAddRules(msg.add));
     else if (msg.t === "busy") this.full = true; // the server closes next, lost() reports it with the retry time
   }
 }

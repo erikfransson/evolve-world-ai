@@ -13,7 +13,6 @@ import type { PoolEntry } from "../seedPool.ts";
 import { energySignal, planOf } from "../sensors.ts";
 import type { BodyPlan, PlanView } from "../sensors.ts";
 import { speciesList, speciesRanges } from "../species.ts";
-import type { Species } from "../species.ts";
 import type { Genome } from "../types.ts";
 import { plainText } from "./validate.ts";
 import { envById } from "./envs.ts";
@@ -21,7 +20,7 @@ import { LAYOUT_KINDS, placeLayout } from "./layouts.ts";
 import type { Layout } from "./layouts.ts";
 
 // RL environments (#27): short episodes on the Ecosystem engine, so a creature trained here acts exactly as it would in the
-// Ecosystem or The Great Hunt. An environment is plain data: a small world, the learner's species, rivals, and reward weights.
+// Ecosystem or the two-species hunt world. An environment is plain data: a small world, the learner's species, rivals, and reward weights.
 
 export type EnvWorld = "ecosystem" | "hunt"; // the input layout: one species, or prey (0) and predators (1)
 export { PREDATOR, PREY } from "./envs.ts";
@@ -83,6 +82,15 @@ export interface EpisodeResult {
 }
 
 const BIRTHLESS = 1e9; // birth energy no creature reaches
+export const RAM_MIN_ENERGY = 1; // a rival with less energy the tick before it died was starving, not rammed
+
+// Whether a rival's death in a collision-damage world counts as the learner's ram: the learner is alive and touching it, the rival
+// still had energy the tick before (so it did not starve), no other rival touches it (so it is no rival-on-rival kill), and no one in the
+// world ate poison this tick (so a poison death beside the learner does not pay; a real ram on such a tick goes unpaid too). The learner's own energy cannot tell: a kill hands over the
+// rival's energy from before the hit, at most the damage both took, so it never rises.
+export function isRam(c: { learnerAlive: boolean; touchesLearner: boolean; energyBefore: number; touchesOtherRival: boolean; poisonEatenThisTick: boolean }): boolean {
+  return c.learnerAlive && c.touchesLearner && c.energyBefore > RAM_MIN_ENERGY && !c.touchesOtherRival && !c.poisonEatenThisTick;
+}
 
 // WebAssembly kernels for an episode's sense and brain phase (false keeps the JS path). With compiled modules cached they are
 // faster for every brain size. Their f32 arithmetic differs slightly from the JS path, but each creature's result depends only
@@ -90,7 +98,7 @@ const BIRTHLESS = 1e9; // birth energy no creature reaches
 export const RL_WASM = true;
 const useWasm = (env: EnvSpec): boolean => RL_WASM && env.foodVisibleFor === undefined; // hidden food needs the JS sense path
 
-// The engine config of an env: its world on the base of the Ecosystem or The Great Hunt, no births, no structural change.
+// The engine config of an env: its world on the base of the Ecosystem or the hunt world, no births, no structural change.
 export function envConfig(env: EnvSpec, seed: number): EcoConfig {
   const base = structuredClone(env.world === "hunt" ? DEFAULT_PREDATOR_CONFIG : DEFAULT_ECO_CONFIG);
   const [width, height] = env.size;
@@ -220,7 +228,6 @@ export function castFor(env: EnvSpec, config: EcoConfig, learner: Learner, seed:
 // Walls whose far side the learner reached: its centre a full body above the wall line.
 const crossed = (walls: readonly number[], minY: number, radius: number): number => walls.filter((y) => minY < y - radius).length;
 
-const learnerStartEnergy = (env: EnvSpec, species: readonly Species[]): number => env.learnerEnergy ?? species[env.role]!.startEnergy;
 
 // One kernel set per thread, reused by successive episodes (building one costs about 9% of a small episode).
 let spareKernels: SenseKernels | null = null;
@@ -248,14 +255,24 @@ export function runEpisode(
   const reach = 2 * config.creature.radius + 2; // bumping distance, for crediting a ram
   const ticks = Math.round(env.seconds / config.dt);
   const out: EpisodeResult = { reward: 0, food: 0, kills: 0, rams: 0, seconds: 0, energy: 0 };
+  const rivalEnergy = new Map<number, number>(); // each rival's energy after the previous tick, for crediting rams
+  if (env.collisionDamage) for (const m of eco.members) if (m.id !== 0) rivalEnergy.set(m.id, m.creature.state.energy); // so a death on the first tick is judged too
+  let poisonBefore = eco.poisonEaten; // the world's poison count before the tick, to skip poison deaths
   // The learner's last tick counts too: what it ate before it died; a dead learner ends with no energy.
   eco.onDeath = (m) => {
     if (m.id !== 0) {
-      // A rival dying in contact with the living learner in a collision-damage world was rammed by it.
+      if (!env.collisionDamage) return;
       const me = eco.get(0)?.creature.state;
       const s = m.creature.state;
-      // It must also hand the learner its energy this tick, so a rival starving next to it does not count.
-      if (env.collisionDamage && me?.alive && me.energy > lastEnergy && (me.x - s.x) ** 2 + (me.y - s.y) ** 2 <= reach * reach) out.rams++;
+      const near = (o: { x: number; y: number }): boolean => (o.x - s.x) ** 2 + (o.y - s.y) ** 2 <= reach * reach;
+      const ram = isRam({
+        learnerAlive: me?.alive === true,
+        touchesLearner: me !== undefined && near(me),
+        energyBefore: rivalEnergy.get(m.id) ?? 0,
+        touchesOtherRival: eco.members.some((o) => o.id !== 0 && o.id !== m.id && o.creature.state.alive && near(o.creature.state)),
+        poisonEatenThisTick: eco.poisonEaten > poisonBefore,
+      });
+      if (ram) out.rams++;
       return;
     }
     out.food = m.eaten;
@@ -263,25 +280,26 @@ export function runEpisode(
     out.energy = 0;
   };
   let cleared = 0; // seconds left when the learner ate the last food
-  let lastEnergy = learnerStartEnergy(env, eco.species); // the learner's energy after the previous tick
   let minY = Infinity; // the learner's highest point (walls run across, the food lies above them)
   // Only speed-scored envs without regrowth end early, and only when the learner itself ate every item (not a rival).
   const clearable = env.reward.fast !== undefined && env.food > 0 && env.foodRegrow === 0;
   const hideAt = env.foodVisibleFor === undefined ? Infinity : Math.round(env.foodVisibleFor / config.dt);
   for (let t = 0; t < ticks; t++) {
     if (t === hideAt) eco.setFoodHidden(true);
+    poisonBefore = eco.poisonEaten;
     if (act) {
       eco.prepareTick();
-      eco.sensePhase(0, eco.members.length);
+      eco.sensePhase();
       act(eco.get(0)!.creature);
       eco.finishTick();
     } else eco.step();
     onTick?.(eco);
+    if (env.collisionDamage) for (const m of eco.members) if (m.id !== 0) rivalEnergy.set(m.id, m.creature.state.energy);
     const me = eco.get(0);
     if (!me) break;
     out.food = me.eaten;
     out.kills = me.kills;
-    out.energy = lastEnergy = me.creature.state.energy;
+    out.energy = me.creature.state.energy;
     minY = Math.min(minY, me.creature.state.y);
     out.seconds = (t + 1) * config.dt;
     if (clearable && me.eaten === env.food) {

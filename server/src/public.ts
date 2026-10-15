@@ -2,13 +2,17 @@ import { createServer } from "node:http";
 import type { IncomingMessage, Server } from "node:http";
 import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
-import { MAX_CLIENT_MESSAGE_BYTES, parseClientMessage } from "../../src/typescript/src/live/protocol.ts";
-import type { ServerText } from "../../src/typescript/src/live/protocol.ts";
+import { parseClientMessage } from "../../src/typescript/src/live/protocol.ts";
+import { ADD_PREFIX, MAX_ADD_BYTES, parseAdd } from "../../src/typescript/src/live/add.ts";
+import type { Added, Refused } from "../../src/typescript/src/live/add.ts";
+import { AddGate, AddPolicy, visitorKey } from "./adds.ts";
+import type { AddPace } from "./adds.ts";
+import type { Rules, ServerText } from "../../src/typescript/src/live/protocol.ts";
 import { MAX_STRIDE, RESYNC_S, RESYNC_SHARE, TokenBucket, fits, frameBudget, gets, sendStride } from "./budget.ts";
 import { dropReason } from "./clients.ts";
 import { ItemFeed } from "./itemFeed.ts";
 import type { ClientState } from "./clients.ts";
-import { LIMITS } from "./config.ts";
+import { LIMITS, TRUST_FORWARDED } from "./config.ts";
 import type { LiveWorld } from "./liveWorld.ts";
 
 const PING_MIN_MS = 200;
@@ -33,14 +37,44 @@ interface Viewer {
   details: TokenBucket; // bytes of details and genomes
   selects: TokenBucket;
   historySent: boolean;
+  pace: AddPace; // the connection's add rate and strikes (adds.ts)
+  visitor: string | null; // address key for the per-visitor add cap, null when unknown
+  adding: boolean; // an add waits for the tick in flight
 }
 
-// The public side: an http server that only upgrades to WebSocket, the viewers, the frame and stats loops and the heartbeat.
-// limits: LIMITS, or a variant in tests.
-export function startPublic(host: string, port: number, live: LiveWorld, limits: typeof LIMITS = LIMITS): PublicServer {
+// The public side: an http server that upgrades to WebSocket (and answers GET /stats), the viewers, the frame and stats loops and the heartbeat.
+// limits: LIMITS, or a variant in tests. gate: the add caps (a test clock in tests). trustForwarded: key visitors on X-Forwarded-For.
+export function startPublic(host: string, port: number, live: LiveWorld, limits: typeof LIMITS = LIMITS, gate = new AddGate(), trustForwarded = TRUST_FORWARDED): PublicServer {
   // A socket that never finishes its request (the WebSocket upgrade) is closed after headersTimeoutMs, checked every second.
   const timeouts = { headersTimeout: limits.headersTimeoutMs, requestTimeout: limits.headersTimeoutMs, connectionsCheckingInterval: 1000 };
-  const http = createServer(timeouts, (_req, res) => res.writeHead(426, { connection: "close" }).end());
+  // Besides the upgrade, only GET /stats: two small numbers for the landing page, public, rebuilt at most once a statsEveryMs, never the request body.
+  const statsGets = new TokenBucket(limits.statsGetsPerSecond, limits.statsGetBurst);
+  let statsBody = "";
+  let statsAt = -Infinity;
+  const http = createServer(timeouts, (req, res) => {
+    if (req.method !== "GET" || req.url !== "/stats") return void res.writeHead(426, { connection: "close" }).end();
+    if (!statsGets.take(1)) return void res.writeHead(503, { connection: "close", "retry-after": "10" }).end();
+    const now = performance.now(); // monotonic, so a clock step cannot freeze the numbers
+    try {
+      if (now - statsAt >= limits.statsEveryMs) {
+        statsBody = JSON.stringify({ creatures: live.eco.population, viewers: viewers.size });
+        statsAt = now;
+      }
+    } catch (e) {
+      console.error("stats:", e instanceof Error ? e.message : e);
+      return void res.writeHead(503, { connection: "close" }).end();
+    }
+    res
+      .writeHead(200, {
+        connection: "close",
+        "content-type": "application/json",
+        "content-length": Buffer.byteLength(statsBody),
+        "cache-control": "public, max-age=10",
+        "access-control-allow-origin": "*",
+        "x-content-type-options": "nosniff",
+      })
+      .end(statsBody);
+  });
   http.on("error", (e) => {
     console.error(`public port ${port}: ${e.message}`);
     process.exit(1);
@@ -48,8 +82,9 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
 
   const viewers = new Map<WebSocket, Viewer>(); // registered viewers only, not sockets about to be refused
   const accepts = new TokenBucket(limits.acceptsPerSecond, limits.acceptBurst);
-  const connectBytes = new TokenBucket(limits.connectBytesPerSecond, limits.connectBytesPerSecond); // full item sets and history for new or lagging viewers
+  const connectBytes = new TokenBucket(limits.connectBytesPerSecond, Math.max(limits.connectBytesPerSecond, limits.connectBurstBytes)); // full item sets and history for new or lagging viewers
   const budget = frameBudget(limits);
+  const policy = new AddPolicy(limits, gate);
   const sent = { frames: 0, items: 0, details: 0, text: 0 };
   let lastCreatures: Uint8Array | null = null;
   let lastFrameNo = -1;
@@ -63,7 +98,7 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
   // Floods past the accept rate get a cheap 503 before the upgrade; a visitor at the cap is upgraded and told "busy", which a browser can show.
   const verifyClient = (_info: { req: IncomingMessage }, done: (ok: boolean, code?: number) => void): void => (accepts.take(1) ? done(true) : done(false, 503));
   // autoPong off: the page's keep-alive is the text "ping", and a flood of ws ping frames must not queue replies.
-  const wss = new WebSocketServer({ server: http, maxPayload: MAX_CLIENT_MESSAGE_BYTES, perMessageDeflate: false, autoPong: false, verifyClient });
+  const wss = new WebSocketServer({ server: http, maxPayload: MAX_ADD_BYTES, perMessageDeflate: false, autoPong: false, verifyClient });
   wss.on("error", (e) => console.warn("websocket server error:", e.message));
   const send = (ws: WebSocket, data: Uint8Array | string, kind: keyof typeof sent): void => {
     ws.send(data);
@@ -95,10 +130,39 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
     send(ws, h, "text");
   };
 
-  wss.on("connection", (ws) => {
+  // An add: per connection a burst of 2, then one per add.socketEveryS (checked in the message handler); parsed only while the global
+  // attempt rate allows; inserted between ticks if the caps (adds.ts) allow. Every outcome gets an added or refused reply.
+  const add = (ws: WebSocket, v: Viewer, text: string): void => {
+    const reply = (m: Added | Refused): void => {
+      if (ws.readyState === ws.OPEN) sendText(ws, m);
+    };
+    if (v.adding) return reply({ t: "refused", reason: "the last add is still going in" });
+    const no = policy.admit();
+    if (no) return reply(no);
+    const req = parseAdd(text, live.addRules());
+    if (typeof req === "string") return reply({ t: "refused", reason: req });
+    v.adding = true;
+    void live
+      .whenIdle(() => {
+        const e = live.eco;
+        const no = policy.gate.check(v.visitor, req.copies, { aliveAdded: live.aliveAdded(), population: e.population, speed: live.speedForAdds(), paused: live.paused });
+        if (no) return no;
+        const r = live.addCreatures(req);
+        if ("reason" in r) return { t: "refused", reason: r.reason, retryS: 10 } satisfies Refused;
+        policy.gate.record(v.visitor, r.ids.length);
+        return { t: "added", ids: r.ids, name: req.name } satisfies Added;
+      })
+      .then(reply, (e: unknown) => {
+        console.error("add:", e instanceof Error ? e.message : e);
+        reply({ t: "refused", reason: "the world could not take it, try again later", retryS: 60 });
+      })
+      .finally(() => (v.adding = false));
+  };
+
+  wss.on("connection", (ws, req) => {
     ws.on("error", () => ws.terminate());
     if (!room()) return refuse(ws);
-    const now = Date.now();
+    const now = performance.now();
     const v: Viewer = {
       c: { alive: true, lastMessageAt: now, overSince: 0, windowAt: now, windowCount: 0 },
       ready: false,
@@ -109,6 +173,9 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
       details: new TokenBucket(limits.detailBytesPerViewer, limits.detailBurstBytes),
       selects: new TokenBucket(limits.selectsPerSecond, limits.selectBurst),
       historySent: false,
+      pace: policy.connection(),
+      visitor: visitorKey(req.headers["x-forwarded-for"], trustForwarded),
+      adding: false,
     };
     viewers.set(ws, v);
     ws.on("close", () => forget(ws));
@@ -128,11 +195,11 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
       }
       sendHistory(ws, v);
     }).catch(() => ws.terminate());
-    let lastPing = 0;
+    let lastPing = -Infinity;
     const c = v.c;
     // Every frame from the client, of any kind, counts against the message rate.
     const counted = (): void => {
-      const t = Date.now();
+      const t = performance.now();
       if (t - c.windowAt >= 1000) {
         c.windowAt = t;
         c.windowCount = 0;
@@ -147,11 +214,19 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
     ws.on("message", (data, isBinary) => {
       try {
         counted();
-        c.lastMessageAt = Date.now();
-        const msg = isBinary ? null : parseClientMessage(data.toString());
+        c.lastMessageAt = performance.now();
+        const text = isBinary ? null : data.toString();
+        if (text?.startsWith(ADD_PREFIX)) {
+          if (!v.ready) return void ws.terminate(); // the page waits for its hello
+          const paced = policy.pace(v.pace);
+          if (paced === "cut") return void ws.terminate();
+          if (paced) return sendText(ws, paced);
+          return add(ws, v, text);
+        }
+        const msg = text === null ? null : parseClientMessage(text);
         if (!msg) return void ws.terminate(); // anything but a ping or a well-formed select
         if (msg.t === "ping") {
-          const t = Date.now();
+          const t = performance.now();
           if (t - lastPing < PING_MIN_MS) return;
           lastPing = t;
           return sendText(ws, { t: "pong" });
@@ -168,9 +243,9 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
   });
 
   // Once a second: drop clients that are far behind, silent, or did not answer the last heartbeat.
-  let lastHeartbeat = Date.now();
+  let lastHeartbeat = performance.now();
   const heartbeat = setInterval(() => {
-    const now = Date.now();
+    const now = performance.now();
     const beat = now - lastHeartbeat >= limits.heartbeatMs;
     if (beat) lastHeartbeat = now;
     for (const [ws, v] of viewers) {
@@ -311,12 +386,19 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
   }, FRAME_MS);
   let statsNo = 0;
   let statsPending = false;
+  let rulesJson = JSON.stringify(live.currentAddRules());
   const statsLoop = setInterval(() => {
     if (statsPending) return;
     statsPending = true;
     void live.whenIdle(() => {
       try {
         broadcastText(live.stats(viewers.size, statsNo++ % limits.recordsEveryS === 0));
+        const add = live.currentAddRules();
+        const json = JSON.stringify(add);
+        if (json !== rulesJson) {
+          rulesJson = json;
+          broadcastText({ t: "rules", add } satisfies Rules, true);
+        }
       } catch (e) {
         console.error("stats loop:", e instanceof Error ? e.message : e);
       }

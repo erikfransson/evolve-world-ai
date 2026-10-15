@@ -1,5 +1,7 @@
 # The Great Hunt cost (predators)
 
+Note: the Great Hunt page was removed in 0.1.1. The two-species engine it measures stays (`ecoBench --predators`).
+
 Branch `worktree-agent-a680a8b1fc4ef00ba`, 2026-10-11, based on main at 8d5fff1. Load 16 to 27 during runs, so wall-clock phase times are inflated; shares of the tick are the usable numbers.
 
 | Idea | Before | After | Speedup | Exact? | Peak RSS change | Lines added | Verdict |

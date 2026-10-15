@@ -17,6 +17,7 @@ import type { DeepPartial } from "./sim/config.ts";
 import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "./sim/ecoConfig.ts";
 import type { EcoConfig } from "./sim/ecoConfig.ts";
 import { Ecosystem } from "./sim/ecosystem.ts";
+import "./sim/maps/index.ts"; // for --preset inland-sea
 import { PhaseTimer } from "./sim/profile.ts";
 import { ECO_PRESETS, PREDATOR_PRESETS, withEcoPreset } from "./sim/presets.ts";
 import { parsePool } from "./sim/seedPool.ts";
@@ -158,9 +159,10 @@ const t0 = performance.now();
 const warm = Math.floor(ticks / 4); // steadyMsPerTick leaves out these first ticks (JIT warm-up, helper start)
 let tWarm = t0;
 let cpuWarm = process.cpuUsage();
+let mainWarm = process.threadCpuUsage(); // this thread alone: with helpers, the coordinator's share of the critical path
 let steadyCreatureTicks = 0;
 while (eco.tick < ticks && !eco.extinct) {
-  if (eco.tick === warm) { tWarm = performance.now(); cpuWarm = process.cpuUsage(); prof?.reset(); }
+  if (eco.tick === warm) { tWarm = performance.now(); cpuWarm = process.cpuUsage(); mainWarm = process.threadCpuUsage(); prof?.reset(); }
   creatureTicks += eco.population;
   if (eco.tick >= warm) steadyCreatureTicks += eco.population;
   if (helpers) await helpers.step(eco);
@@ -181,6 +183,7 @@ while (eco.tick < ticks && !eco.extinct) {
   }
 }
 const t1 = performance.now();
+const mainCpu = ((u) => u.user + u.system)(process.threadCpuUsage(mainWarm));
 const wall = (t1 - t0) / 1000;
 helpers?.close();
 console.log(JSON.stringify({
@@ -194,6 +197,7 @@ console.log(JSON.stringify({
   ticksPerSecond: +(eco.tick / wall).toFixed(1),
   msPerTick: +((1000 * wall) / Math.max(1, eco.tick)).toFixed(2),
   cpuMsPerTick: +(process.cpuUsage(cpuWarm).user / 1000 / Math.max(1, eco.tick - warm)).toFixed(2), // user CPU of all threads, steadier than wall under load
+  mainCpuMsPerTick: +(mainCpu / 1000 / Math.max(1, eco.tick - warm)).toFixed(2),
   cpuPercent: +((100 * (process.cpuUsage(cpuWarm).user + process.cpuUsage(cpuWarm).system)) / 1000 / (t1 - tWarm)).toFixed(0), // all threads, steady part; 100 = one core
   steadyMsPerTick: +((t1 - tWarm) / Math.max(1, eco.tick - warm)).toFixed(2),
   meanPopulation: Math.round(creatureTicks / Math.max(1, eco.tick)),

@@ -2,6 +2,7 @@ import type { EcoCreature, Ecosystem } from "../../src/typescript/src/sim/ecosys
 import { Leaderboard, boardValue } from "../../src/typescript/src/sim/leaderboard.ts";
 import { HISTORY_FIELDS, LINEAGE_FIELDS, LINEAGE_TOP, MAX_HISTORY, MAX_LINEAGE_HISTORY, MAX_RECORDS, RECORD_BOARDS } from "../../src/typescript/src/live/protocol.ts";
 import type { History, RecordBoard, Stats, WireLineage, WireRecord } from "../../src/typescript/src/live/protocol.ts";
+import { wireName } from "../../src/typescript/src/live/add.ts";
 
 export const SAMPLE_EVERY_S = 20; // simulated seconds between population samples: MAX_HISTORY of them span 6 simulated hours
 export const LINEAGE_EVERY_S = 120; // and between lineage samples, the same 6 hours
@@ -40,7 +41,9 @@ export class Chronicle {
     if (this.watched !== eco) this.reset(eco);
     const t = eco.tick * eco.config.dt;
     const top = eco.lineages.top(LINEAGE_TOP);
-    if (t >= this.nextSample) {
+    // An extinct world's clock stops (no ticks), so its 0 is sampled at once, or the graph would end on the last living count.
+    const diedOut = eco.extinct && this.samples.length > 0 && this.samples[this.samples.length - 2] !== 0;
+    if (t >= this.nextSample || diedOut) {
       this.nextSample = t + SAMPLE_EVERY_S;
       stats.sample = [Math.round(t), eco.population, eco.food];
       this.samples.push(...stats.sample);
@@ -61,7 +64,10 @@ export class Chronicle {
       if (this.lineage.length > MAX_LINEAGE_HISTORY * LINEAGE_FIELDS) this.lineage.splice(0, LINEAGE_FIELDS);
       this.historyJson = null;
     }
-    stats.lineages = top.map((l): WireLineage => ({ founder: l.founder, hue: Math.round(l.hue), pool: l.pool, count: l.count }));
+    stats.lineages = top.map((l): WireLineage => {
+      const { name, starter } = wireName(eco.lineageName(l.founder));
+      return { founder: l.founder, hue: Math.round(l.hue), pool: l.pool, count: l.count, ...(name ? { name, ...(starter ? { starter } : {}) } : {}) };
+    });
     let oldest: EcoCreature | null = null;
     let parent: EcoCreature | null = null;
     let depth = 0;

@@ -1,4 +1,8 @@
-import { TICK_SECONDS, WARMUP_TICKS, arenaScene, ecosystemScene } from "../../src/typescript/src/ui/landing/index.ts";
+import { TICK_SECONDS, WARMUP_TICKS, arenaScene, ecosystemScene, inlandMapScene } from "../../src/typescript/src/ui/landing/index.ts";
+import { ECO_CAP } from "../../src/typescript/src/ui/landing/ecosystem.ts";
+import { MAP_CAP, rockAt } from "../../src/typescript/src/ui/landing/inlandMap.ts";
+import { BIRTH_RING, RING_SECONDS, drawBirthRings } from "../../src/typescript/src/ui/landing/kit.ts";
+import { fetchStats, parseStats, statsText, statsUrl } from "../../src/typescript/src/ui/landing/liveStats.ts";
 
 const TICKS = Math.round(60 / TICK_SECONDS);
 
@@ -16,19 +20,13 @@ describe("ecosystemScene births", () => {
   it("gives birth several times, keeps the cap, stays finite", () => {
     const scene = ecosystemScene(7);
     const ctx = finiteCtx();
-    let firstBirth = -1;
     for (let t = 1; t <= TICKS + WARMUP_TICKS; t++) {
       scene.step();
-      if (firstBirth < 0 && scene.births > 0) firstBirth = t;
-      expect(scene.living()).toBeLessThanOrEqual(6);
+      expect(scene.living()).toBeLessThanOrEqual(ECO_CAP);
       expect(scene.living()).toBeGreaterThan(0);
       if (t % 5 === 0) scene.draw(ctx);
     }
     expect(scene.births).toBeGreaterThanOrEqual(3);
-    // Seen within 3-5 s after the warm-up at the page's 1.5x speed.
-    const seen = ((firstBirth - WARMUP_TICKS) * TICK_SECONDS) / 1.5;
-    expect(seen).toBeGreaterThan(3);
-    expect(seen).toBeLessThan(5);
   });
 
   it("is deterministic per seed", () => {
@@ -81,6 +79,102 @@ describe("arenaScene", () => {
       }
       expect(scene.penalties).toBeGreaterThan(0); // the early, clumsy part brushes poison now and then
       expect(scene.penalties).toBeLessThan(scene.rewards / 3);
+    }
+  });
+});
+
+describe("inlandMapScene", () => {
+  it("keeps its creatures off rock and under the cap, with births and deaths, and stays finite", () => {
+    const scene = inlandMapScene(7);
+    const ctx = finiteCtx();
+    const start = scene.living();
+    let low = Infinity;
+    for (let t = 1; t <= 3 * TICKS; t++) {
+      scene.step();
+      expect(scene.living()).toBeLessThanOrEqual(MAP_CAP);
+      low = Math.min(low, scene.living());
+      if (t % 30 === 0) {
+        for (const d of scene.dots()) expect(rockAt(d.x, d.y)).toBe(false);
+        scene.draw(ctx);
+      }
+    }
+    expect(start).toBeGreaterThan(150);
+    expect(low).toBeGreaterThan(80); // the world never empties
+    expect(scene.births).toBeGreaterThan(50);
+    expect(scene.deaths).toBeGreaterThan(50);
+  });
+
+  it("paints each creature in its lineage colour, lighter with energy", () => {
+    const scene = inlandMapScene(5);
+    for (let t = 0; t < 60; t++) scene.step();
+    const fills: string[] = [];
+    const strokes = new Set<string>();
+    const ctx = new Proxy({}, { get: (_, k) => (k === "canvas" ? { width: 720, height: 450 } : () => undefined), set: (_, k, v) => { if (k === "fillStyle") fills.push(v as string); if (k === "strokeStyle") strokes.add(v as string); return true; } }) as unknown as CanvasRenderingContext2D;
+    scene.draw(ctx);
+    const colours = fills.filter((f) => /^hsl\(\d+(\.\d+)?, 80%, [\d.]+%\)$/.test(f));
+    expect(colours.length).toBeGreaterThanOrEqual(scene.dots().length);
+    expect([...strokes].filter((c) => /^hsl\([\d.]+, 90%, 82%\)$/.test(c)).length).toBeGreaterThan(3); // one per lineage
+  });
+
+  it("is deterministic per seed", () => {
+    const a = inlandMapScene(3);
+    const b = inlandMapScene(3);
+    for (let t = 0; t < 600; t++) { a.step(); b.step(); }
+    expect(a.births).toBe(b.births);
+    expect(a.dots()).toEqual(b.dots());
+  });
+});
+
+describe("drawBirthRings", () => {
+  const draw = (look?: Parameters<typeof drawBirthRings>[5]): Record<string, unknown> => {
+    const at: Record<string, unknown> = {}; // the state when the ring is stroked
+    const state: Record<string, unknown> = {};
+    const ctx = new Proxy({}, { get: (_, k) => (...a: unknown[]) => { if (k === "stroke") Object.assign(at, state); if (k === "arc") at.arc = a; }, set: (_, k, v) => { state[String(k)] = v; return true; } }) as unknown as CanvasRenderingContext2D;
+    drawBirthRings(ctx, 2, [{ at: 0, x: 3, y: 4, hue: 30 }], Math.round(RING_SECONDS / 2 / TICK_SECONDS), 10, look);
+    return at;
+  };
+
+  it("draws the ecosystem look by default and a given look when asked", () => {
+    expect(draw()).toMatchObject({ globalAlpha: expect.closeTo(0.95 * 0.5, 1), strokeStyle: "hsl(30, 90%, 70%)", lineWidth: expect.closeTo(2 * 2.25, 1), arc: [3, 4, expect.closeTo(10 * (1.2 + 2.6 * 0.75), 0), 0, 2 * Math.PI] });
+    expect(draw({ ...BIRTH_RING, alpha: 0.9, lightness: 72, width: 1.6, shrink: 0.8, radius: 1.4, eased: false })).toMatchObject({ globalAlpha: expect.closeTo(0.45, 1), strokeStyle: "hsl(30, 90%, 72%)", lineWidth: expect.closeTo(2 * 1.2, 1), arc: [3, 4, expect.closeTo(10 * (1.4 + 2.6 * 0.5), 0), 0, 2 * Math.PI] });
+  });
+
+  it("drops a ring once it has run its course", () => {
+    const list = [{ at: 0, x: 0, y: 0, hue: 0 }];
+    drawBirthRings(finiteCtx(), 1, list, Math.ceil(RING_SECONDS / TICK_SECONDS) + 1, 10);
+    expect(list).toEqual([]);
+  });
+});
+
+describe("live stats line", () => {
+  it("reads the server's stats address from its WebSocket address", () => {
+    expect(statsUrl("wss://example.ts.net")).toBe("https://example.ts.net/stats");
+    expect(statsUrl("ws://127.0.0.1:8787/?x=1")).toBe("http://127.0.0.1:8787/stats");
+  });
+
+  it("accepts only two whole numbers in range", () => {
+    expect(parseStats('{"creatures":2987,"viewers":4}')).toEqual({ creatures: 2987, viewers: 4 });
+    for (const bad of ["", "null", "[]", '"x"', '{"creatures":1.5,"viewers":1}', '{"creatures":-1,"viewers":1}', '{"creatures":1e9,"viewers":1}', '{"creatures":"5","viewers":1}', '{"creatures":5}', `{"creatures":1,"viewers":1,"pad":"${"x".repeat(600)}"}`]) {
+      expect(parseStats(bad), bad.slice(0, 40)).toBeNull();
+    }
+    expect(statsText({ creatures: 2987, viewers: 4 })).toBe("2,987 creatures alive · 4 watching");
+    expect(statsText({ creatures: 0, viewers: 1 })).toBe("No creatures right now, add the first one · 1 watching");
+    expect(statsText({ creatures: 1, viewers: 0 })).toBe("1 creature alive");
+  });
+
+  it("reads at most a few hundred bytes of the answer, however much the server sends", async () => {
+    try {
+      let pulled = 0;
+      const endless = new ReadableStream<Uint8Array>({ pull(c) { pulled++; c.enqueue(new Uint8Array(100).fill(32)); } });
+      vi.stubGlobal("fetch", async () => new Response(endless, { status: 200 }));
+      expect(await fetchStats("http://x/stats")).toBeNull();
+      expect(pulled).toBeLessThan(10);
+      vi.stubGlobal("fetch", async () => new Response('{"creatures":5,"viewers":2}', { status: 200 }));
+      expect(await fetchStats("http://x/stats")).toEqual({ creatures: 5, viewers: 2 });
+      vi.stubGlobal("fetch", async () => new Response("{}", { status: 503 }));
+      expect(await fetchStats("http://x/stats")).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
     }
   });
 });

@@ -5,6 +5,7 @@ import { restoreState, saveState } from "../../src/typescript/src/sim/ecoState.t
 import type { EcoState } from "../../src/typescript/src/sim/ecoState.ts";
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
 import { MAP_DENSITY_MAX, MAX_DISCS_PER_PIECE, MAX_PIECES, PATCH_SIZE_RANGE, terrainOf } from "../../src/typescript/src/sim/terrain.ts";
+import { groundBodies } from "../../src/typescript/src/ui/groundOutline.ts";
 
 const small = (): EcoConfig => {
   const c = structuredClone(DEFAULT_ECO_CONFIG);
@@ -12,6 +13,8 @@ const small = (): EcoConfig => {
   c.eco = { ...c.eco, wasm: false, initialPopulation: 10 };
   return c;
 };
+// CPU ms since t (from process.cpuUsage()): time bounds here catch runaway loops, and CPU time does not grow with machine load the way wall time does.
+const cpuMs = (t: NodeJS.CpuUsage): number => { const u = process.cpuUsage(t); return (u.user + u.system) / 1000; };
 const saved = (): EcoState => JSON.parse(JSON.stringify(saveState(new Ecosystem(small())))) as EcoState;
 
 describe("map densities from outside", () => {
@@ -19,9 +22,9 @@ describe("map densities from outside", () => {
     for (const [key, bad] of [["slowDensity", 1e9], ["stoneDensity", 1e9], ["fastDensity", MAP_DENSITY_MAX.fastDensity * 1.01], ["ridgeDensity", -0.1]] as const) {
       const state = saved();
       (state.config.world as unknown as Record<string, number>)[key] = bad;
-      const t = performance.now();
+      const t = process.cpuUsage();
       expect(() => restoreState(state)).toThrow(new RegExp(key));
-      expect(performance.now() - t).toBeLessThan(500);
+      expect(cpuMs(t)).toBeLessThan(500);
     }
   });
 
@@ -53,32 +56,39 @@ describe("map densities from outside", () => {
     const big = empty();
     big.config.world.stoneDensity = 0.2;
     big.config.creature.radius = 440; // once restored, the first extinction reseeded forever
-    const t = performance.now();
+    const t = process.cpuUsage();
     expect(() => restoreState(big)).toThrow(/radius/);
     const tiny = empty();
     tiny.config.world.width = 70;
     tiny.config.world.height = 70;
     expect(() => restoreState(tiny)).toThrow(/world size/);
-    expect(performance.now() - t).toBeLessThan(500);
+    expect(cpuMs(t)).toBeLessThan(500);
   });
 
   it("placing founders among rock the creature cannot fit between ends within the try caps", () => {
     const c = small();
     Object.assign(c.world, { stoneDensity: 0.2, ridgeDensity: 0.15 });
     c.creature.radius = 440;
-    const t = performance.now();
+    const t = process.cpuUsage();
     expect(new Ecosystem({ ...c, eco: { ...c.eco, initialPopulation: 5 } }).population).toBe(5);
-    expect(performance.now() - t).toBeLessThan(10_000);
-  }, 20_000);
+    expect(cpuMs(t)).toBeLessThan(10_000);
+  }, 60_000);
 
   it("clearing poison from a founder whose disc covers the whole world ends", () => {
     const c = small();
     Object.assign(c.world, { width: 70, height: 70, foodDensity: 0, poisonDensity: 1e4 });
     c.creature.radius = 40;
-    const t = performance.now();
+    const t = process.cpuUsage();
     expect(new Ecosystem({ ...c, eco: { ...c.eco, initialPopulation: 3 } }).population).toBe(3);
-    expect(performance.now() - t).toBeLessThan(10_000);
-  }, 20_000);
+    expect(cpuMs(t)).toBeLessThan(10_000);
+  }, 60_000);
+
+  it("keeps the ground raster to about half a megabyte in the largest and the longest allowed worlds", () => {
+    for (const [width, height] of [[50_000, 50_000], [50_000, 500], [500, 50_000], [500, 500]] as const) {
+      const map = terrainOf({ seed: 3, world: { width, height, stoneDensity: 0, ridgeDensity: 0, slowDensity: 0.3, fastDensity: 0.3 } });
+      expect(map.ground!.bytes).toBeLessThanOrEqual(520_000);
+    }
+  }, 60_000); // builds four maps; slow on a loaded machine
 
   it("the form maxima themselves are accepted", () => {
     const state = saved();
@@ -94,10 +104,10 @@ describe("map densities from outside", () => {
   });
 
   it("an absurd density that gets past the checks builds at most the piece cap, in bounded time", () => {
-    const t = performance.now();
+    const t = process.cpuUsage();
     const map = terrainOf({ seed: 77, world: { width: 50_000, height: 50_000, stoneDensity: 1e9, ridgeDensity: 1e9, slowDensity: 1e9, fastDensity: 1e9, slowSize: 1e9, fastSize: -5 } });
-    expect(performance.now() - t).toBeLessThan(20_000);
-    expect(map.patchX.length).toBeLessThanOrEqual(2 * MAX_PIECES * 6);
+    expect(cpuMs(t)).toBeLessThan(20_000);
+    expect(groundBodies(map, 1).length).toBeLessThanOrEqual(2 * MAX_PIECES); // patches merge, never more than the blob cap per kind
     expect(map.rockCount).toBeLessThanOrEqual(2 * MAX_PIECES * MAX_DISCS_PER_PIECE);
-  });
+  }, 60_000); // the CPU bound above is the check; wall time under a loaded machine can exceed the default 5 s
 });

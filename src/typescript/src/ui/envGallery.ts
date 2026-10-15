@@ -1,11 +1,11 @@
 import type { EnvSpec } from "../sim/rl/env.ts";
+import { FOLDED_GROUPS } from "../sim/rl/envs.ts";
 import type { Recording } from "../sim/rl/recording.ts";
 import { drawArena, frameAt } from "./arenaScene.ts";
 import { fitCanvas } from "./canvas.ts";
 import { envFacts, galleryGroups, pickedIn } from "./envSelect.ts";
 
 const CLIP_SPEED = 3; // clip seconds per real second
-const COLLAPSED = new Set(["Advanced"]); // groups folded until opened
 
 export interface GalleryHandlers {
   toggle: (id: string) => void;
@@ -114,7 +114,7 @@ export class EnvGallery {
     this.body.replaceChildren(
       ...galleryGroups(envs).map(({ group, envs: list }) => {
         const details = el("details", "gallery-group");
-        details.open = !COLLAPSED.has(group) || list.some((e) => picked.has(e.id)) || (open.get(list.map((e) => e.id).join()) ?? false);
+        details.open = !FOLDED_GROUPS.has(group) || list.some((e) => picked.has(e.id)) || (open.get(list.map((e) => e.id).join()) ?? false);
         const sum = el("summary");
         const name = el("span", "group-name", group);
         const count = el("span", "group-count");

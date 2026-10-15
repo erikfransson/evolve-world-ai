@@ -5,6 +5,8 @@ import "./arena.css";
 import { layerSizes, randomGenome } from "./sim/brain.ts";
 import { createRng } from "./sim/rng.ts";
 import { loadPool } from "./sim/seedPool.ts";
+import { parseFounders } from "./live/founders.ts";
+import type { Founder } from "./live/founders.ts";
 import type { PoolEntry } from "./sim/seedPool.ts";
 import { layoutConfig, libraryFits, poolLearner } from "./sim/rl/env.ts";
 import type { EnvSpec, Learner, Rivals } from "./sim/rl/env.ts";
@@ -39,15 +41,17 @@ import { initTooltips } from "./ui/tooltip.ts";
 
 // public/pool.json and rl/library.json sit at the site root, one level above this page.
 const POOL_URL = new URL("../pool.json", document.baseURI).href;
+const FOUNDERS_URL = new URL("../live-founders.json", document.baseURI).href;
 const LIBRARY_URL = new URL("../rl/library.json", document.baseURI).href;
 const DECAY = 0.005;
 
 type RunState = "idle" | "running" | "paused";
-type Source = "design" | "pool" | "import" | "saved";
+type Source = "design" | "founders" | "pool" | "import" | "saved";
 
 let state: RunState = "idle";
 let worker: Worker | null = null;
 let pool: PoolEntry[] = [];
+let founders: Founder[] = []; // the Live World's starter founders (#39), foragers like ARENA_KIND
 let imported: CreatureFile | null = null;
 let favourites: CreatureFile[] = [];
 const customs: EnvSpec[] = [];
@@ -108,9 +112,14 @@ function resolveStart(): { learner: Learner; from: string } | string {
     const rng = createRng(DESIGN_SEED); // one random brain per page load, so the preview holds still while sliders move and Start trains it
     return { learner: { plan, genome: randomGenome(layerSizes(worldConfig(k), plan), rng) }, from: "designed" };
   }
+  if (src === "founders") {
+    const f = founders[Number(input("liveFounder").value)];
+    if (!f) return "The founders are not available.";
+    return { learner: { plan: f.plan, genome: Float32Array.from(f.genome) }, from: `founder ${f.name}` };
+  }
   if (src === "pool") {
-    const entry = pool[Number(input("founder").value)];
-    return entry ? { learner: poolLearner({ world }, entry), from: `pool #${Number(input("founder").value) + 1}` } : "The seed pool is not available.";
+    const entry = pool[Number(input("poolEntry").value)];
+    return entry ? { learner: poolLearner({ world }, entry), from: `pool #${Number(input("poolEntry").value) + 1}` } : "The seed pool is not available.";
   }
   const file = src === "import" ? imported : favourites[Number(input("saved").value)];
   if (!file) return src === "import" ? "Choose a creature file." : "No creature saved in this browser yet.";
@@ -122,7 +131,7 @@ function resolveStart(): { learner: Learner; from: string } | string {
 function showStart(): void {
   const k = kind();
   $("kindDesc").textContent = KINDS[k].label;
-  for (const s of ["pool", "import", "saved"]) $(`src${s[0]!.toUpperCase()}${s.slice(1)}`).hidden = source() !== s;
+  for (const s of ["founders", "pool", "import", "saved"]) $(`src${s[0]!.toUpperCase()}${s.slice(1)}`).hidden = source() !== s;
   $("designForm").hidden = source() !== "design";
   const r = resolveStart();
   const note = $("startNote");
@@ -222,10 +231,21 @@ function drawPreview(): void {
 }
 window.addEventListener("resize", drawPreview);
 
-function fillFounders(): void {
-  const sel = $<HTMLSelectElement>("founder");
+function fillPoolEntries(): void {
+  const sel = $<HTMLSelectElement>("poolEntry");
   sel.replaceChildren(...pool.map((p, i) => new Option(`#${i + 1} · ${p.plan.rayCount} rays, hidden ${p.plan.hiddenLayers.join("+")} · fitness ${p.fitness.toFixed(0)}`, String(i))));
   if (pool.length) sel.value = String(bestFounder(pool)); // the strongest founder shows learning soonest
+  showStart();
+}
+
+function fillLiveFounders(): void {
+  const sel = $<HTMLSelectElement>("liveFounder");
+  sel.replaceChildren(...founders.map((f, i) => new Option(`${f.name} · ${f.plan.rayCount} rays, hidden ${f.plan.hiddenLayers.join("+")}`, String(i)))); // Option text, never HTML
+  showFounderBlurb();
+}
+
+function showFounderBlurb(): void {
+  $("founderBlurb").textContent = founders[Number(input("liveFounder").value)]?.blurb ?? "";
   showStart();
 }
 
@@ -634,7 +654,8 @@ $("unsave").addEventListener("click", () => {
   fillSaved();
 });
 $("importFile").addEventListener("change", () => void importFile());
-$("founder").addEventListener("change", showStart);
+$("poolEntry").addEventListener("change", showStart);
+$("liveFounder").addEventListener("change", showFounderBlurb);
 $("saved").addEventListener("change", showStart);
 designForm.init($<HTMLFormElement>("setup"), showStart);
 runForm.init($<HTMLFormElement>("setup"), () => render());
@@ -688,7 +709,12 @@ showCustom();
 render();
 setState("idle");
 requestAnimationFrame(draw);
+void fetch(FOUNDERS_URL)
+  .then((r) => (r.ok ? r.json() : null))
+  .then((data) => (founders = parseFounders(data)))
+  .catch(() => (founders = []))
+  .then(fillLiveFounders);
 void loadPool(POOL_URL).then((p) => {
   pool = p ?? [];
-  fillFounders();
+  fillPoolEntries();
 });

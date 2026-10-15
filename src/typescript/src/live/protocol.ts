@@ -1,15 +1,16 @@
-// Live World wire protocol, shared by server/ and the live/ page. Version 2.
+// Live World wire protocol, shared by server/ and the live/ page. Version 4 (4: founder u32 in CREATURES, names, add; see docs/live-plan.md).
 //
-// Client to server, text only, at most MAX_CLIENT_MESSAGE_BYTES: "ping", or {"t":"select","id":<integer 0..MAX_ID>|null} (parseClientMessage).
-// Anything else gets the client cut off.
+// Client to server, text only, at most MAX_CLIENT_MESSAGE_BYTES: "ping", or {"t":"select","id":<integer 0..MAX_ID>|null} (parseClientMessage),
+// or an add of at most MAX_ADD_BYTES (live/add.ts). Anything else gets the client cut off.
 //
-// Server to client, text: JSON objects with a "t" field (Hello, Stats, History, Pong, Busy below).
+// Server to client, text: JSON objects with a "t" field (Hello, Stats, History, Pong, Busy below; Added, Refused in live/add.ts).
+
 // Server to client, binary: little-endian, the first byte is the type. All x, y are u16 over the world width / height.
 //
 // CREATURES (1), 5 Hz shared between viewers:  u8 type | u32 tick | u32 count | count x record
-//   record, 17 bytes: u32 id | u16 x | u16 y | u16 heading | u8 radius | u8 energy | u8 age | u16 hue | u16 founder
+//   record, 19 bytes: u32 id | u16 x | u16 y | u16 heading | u8 radius | u8 energy | u8 age | u16 hue | u32 founder
 //   heading: 0..65535 over 0..2pi. radius: units of 0.25. energy: 0..255 as a share of Hello.fullEnergy, 255 means full or more.
-//   age: whole seconds, capped at 255. hue: 0..65535 over 0..360 degrees. founder: founder id, capped at 65535.
+//   age: whole seconds, capped at 255. hue: 0..65535 over 0..360 degrees. founder: founder id (an added creature founds a lineage with its own id).
 // ITEMS (2), a full item set, on connect and when a viewer has fallen too far behind for deltas:
 //   u8 type | u32 tick | u32 slots | u32 n | ceil(slots / 4) bytes of 2-bit kinds by slot (0 free, 1 food, 2 poison) | n x (u16 x, u16 y) in slot order
 // DELTA (5), item changes and collision events, sent with each creature frame a viewer gets: u8 type | u8 n | n x delta
@@ -23,8 +24,9 @@
 // screen matches the simulation at that tick.
 
 import { HIT_FOOD, HIT_POISON } from "../sim/types.ts";
+import type { AddRules, Added, Refused } from "./add.ts";
 
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 4;
 export const MSG_CREATURES = 1;
 export const MSG_ITEMS = 2;
 export const MSG_DETAIL = 3;
@@ -32,13 +34,14 @@ export const MSG_GENOME = 4;
 export const MSG_DELTA = 5;
 export const PING = "ping";
 export const CREATURE_HEADER = 9;
-export const CREATURE_RECORD = 17;
+export const CREATURE_RECORD = 19;
 export const ITEMS_HEADER = 13;
 export const FRAME_HZ = 5;
 export const MAX_AGE_S = 255; // ages at or above this are sent as this
 export const MAX_CLIENT_MESSAGE_BYTES = 256;
 export const MAX_ID = 0xffffffff; // ids are u32 on the wire
 export const MAX_ITEM_SLOTS = 1 << 18; // slot field of an op
+export const MAX_FRAME_CREATURES = 20_000; // creatures in one frame the page takes, the most a world holds (ecoState MAX_CREATURES); the server caps at 3000
 export const MAX_BACK_TICKS = (1 << 12) - 1; // back field of an op
 export const MAX_DELTA_OPS = 4096; // per server frame; more and the frame counts as too big, viewers get the full set instead
 export const MAX_DELTA_EVENTS = 32; // per server frame, the engine's EVENT_CAP
@@ -67,10 +70,28 @@ export interface Hello {
   frameHz: number;
   dt: number; // simulated seconds per tick
   itemSlots: number; // item slot capacity, at most MAX_ITEM_SLOTS
-  summary: { initialPopulation: number; maxPopulation: number; collisionDamage: boolean; seasons: boolean };
+  summary: { initialPopulation: number; maxPopulation: number; collisionDamage: boolean; seasons: boolean; seedCopies?: number }; // seedCopies: a fresh world starts with this many of each starter founder
   maxViewers: number;
+  add: AddRules | null; // what an add may ask for, null while adding is off
+  map: WireMap; // what the page's info section says about the ground
   serverVersion?: string; // the server's release (src/typescript/src/version.ts), may differ from the page's during a deploy
 }
+
+// The map: its name, which the page builds the ground and rock from (sim/maps), and for the info section the ground shares and named regions.
+export interface WireRegion {
+  name: string;
+  food: number; // the map's weight, plain food is 1
+  poison: number; // the map's weight, 0 for none
+  ground: string;
+  role: string;
+}
+export interface WireMap {
+  name?: string; // a hand-designed map (sim/maps/index.ts MAPS) of the world's size, absent for the random map
+  version?: string; // with a name: the server's mapVersion of it ("<8 hex>-<MAP_BUILD>"), so a page built with another design or builder can tell
+  ground: { normal: number; mud: number; firm: number; rock: number }; // shares of the area, 0 to 1
+  regions: WireRegion[];
+}
+export const MAX_REGIONS = 16;
 
 export interface Season {
   yearMinutes: number;
@@ -82,6 +103,8 @@ export interface WireLineage {
   hue: number;
   pool: boolean;
   count: number;
+  name?: string; // the name an added founder was given (letters and digits), absent for none
+  starter?: boolean; // a starter founder the world was seeded with, not a visitor's add
 }
 
 export type RecordBoard = "age" | "children" | "eaten";
@@ -132,7 +155,12 @@ export interface Busy {
   t: "busy"; // sent before closing when the viewer cap is reached
   maxViewers: number;
 }
-export type ServerText = Hello | Stats | History | Pong | Busy;
+// The add rules again after an admin change (add.* settings, birth ranges or costs), so an open page keeps to them.
+export interface Rules {
+  t: "rules";
+  add: AddRules | null;
+}
+export type ServerText = Hello | Stats | History | Pong | Busy | Added | Refused | Rules;
 
 export type ClientMessage = { t: "ping" } | { t: "select"; id: number | null };
 
@@ -210,7 +238,7 @@ export function encodeCreatures(tick: number, src: CreatureSource, world: WorldS
     dv.setUint8(o + 11, clamp(Math.round((src.energy[i]! / fullEnergy) * 255), 255));
     dv.setUint8(o + 12, clamp(Math.floor(src.age[i]!), MAX_AGE_S));
     dv.setUint16(o + 13, q16(src.hue[i]! % 360, 360), true);
-    dv.setUint16(o + 15, clamp(src.founder[i]!, U16), true);
+    dv.setUint32(o + 15, clamp(src.founder[i]!, MAX_ID), true);
   }
   return out;
 }
@@ -224,7 +252,7 @@ export function decodeCreatures(buf: ArrayBuffer | Uint8Array, world: WorldSize)
   const dv = view(buf);
   if (dv.byteLength < CREATURE_HEADER || dv.getUint8(0) !== MSG_CREATURES) throw new Error("not a creature frame");
   const count = dv.getUint32(5, true);
-  if (dv.byteLength !== creatureFrameBytes(count)) throw new Error("bad creature frame size");
+  if (count > MAX_FRAME_CREATURES || dv.byteLength !== creatureFrameBytes(count)) throw new Error("bad creature frame size");
   const f: CreatureFrame = {
     tick: dv.getUint32(1, true),
     count,
@@ -247,7 +275,7 @@ export function decodeCreatures(buf: ArrayBuffer | Uint8Array, world: WorldSize)
     f.energyShare[i] = dv.getUint8(o + 11) / 255;
     f.age[i] = dv.getUint8(o + 12);
     f.hue[i] = (dv.getUint16(o + 13, true) / U16) * 360;
-    f.founder[i] = dv.getUint16(o + 15, true);
+    f.founder[i] = dv.getUint32(o + 15, true) | 0; // founder ids past 2^31 wrap negative, like the views' ids; compare them as i32
   }
   return f;
 }
