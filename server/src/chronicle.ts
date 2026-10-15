@@ -17,7 +17,7 @@ interface Group {
   others: number[]; // the group's other founders
 }
 
-// The k largest families, with every family of the same visible name (the 10 seeded copies of a starter, a visitor's 1 to 3 copies)
+// The k largest families, with every family of the same visible name (the 10 seeded copies of a starter, a visitor's 1 to 10 copies)
 // counted as one; unnamed families stand alone. From the lineage table's kept counts, O(living families) per call.
 export function namedTop(eco: Ecosystem, k: number): Group[] {
   const groups = new Map<string, Group>();
