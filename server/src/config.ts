@@ -122,7 +122,6 @@ export const LIMITS = {
   heartbeatMs: 30_000, // ws ping, a client that misses the pong is dropped
   idleDropMs: 60_000, // no message from the client for this long: dropped (the page pings every 20 s)
   maxClientMessagesPerSecond: 20,
-  maxLateLineages: 15_000, // lineage rows of added founders; no adds past this, well under what a save may hold (saves.ts SAVE_MAX_LATE)
   addAttemptsPerSecond: 2, // add messages parsed per second, all viewers together; past it they are refused unread
   addAttemptBurst: 5,
 };

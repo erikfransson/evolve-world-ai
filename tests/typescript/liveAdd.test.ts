@@ -5,7 +5,7 @@ import { AddGate, visitorKey } from "../../server/src/adds.ts";
 import { loadFounders } from "../../server/src/founders.ts";
 import { LIMITS, LIVE } from "../../server/src/config.ts";
 import { LiveWorld, groundShares } from "../../server/src/liveWorld.ts";
-import { SAVE_MAX_LATE, Saves } from "../../server/src/saves.ts";
+import { Saves } from "../../server/src/saves.ts";
 import { StateStore } from "../../server/src/state.ts";
 import { cleanHello } from "../../src/typescript/src/live/connection.ts";
 import { mkdtempSync, readdirSync } from "node:fs";
@@ -28,6 +28,7 @@ const seq = (seed: number): (() => number) => {
   let s = seed;
   return () => ((s = (s * 1103515245 + 12345) % 2 ** 31) / 2 ** 31);
 };
+const MAX_LATE_ROWS = 20_000; // lineage rows a restore accepts (MAX_CREATURES in ecoState.ts)
 const FOUNDERS = new URL("../../src/typescript/public/live-founders.json", import.meta.url);
 const RESEED_DEFAULT = LIVE.reseed;
 afterEach(() => {
@@ -341,21 +342,6 @@ describe("adding to the world (LiveWorld)", () => {
     expect(child.lastBirthTick).toBe(-Infinity);
   });
 
-  it("refuses adds once the lineage rows of added founders reach the cap, inserting nothing", () => {
-    const cap = LIMITS.maxLateLineages;
-    LIMITS.maxLateLineages = 5;
-    try {
-      const w = new LiveWorld(smallConfig(), null);
-      expect("ids" in w.addCreatures(request({ copies: 3 }), seq(1))).toBe(true);
-      expect("ids" in w.addCreatures(request({ copies: 2 }), seq(2))).toBe(true);
-      const late = w.eco.lineageTable.toState().late.length;
-      expect(w.addCreatures(request({ copies: 1 }), seq(3))).toEqual({ reason: "the world is full of families, adding is paused until old ones are cleared" });
-      expect(w.eco.lineageTable.toState().late.length).toBe(late);
-    } finally {
-      LIMITS.maxLateLineages = cap;
-    }
-  });
-
   it("never writes a save that would not restore: too many lineage rows, or a row the restore refuses", async () => {
     const err = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
@@ -367,8 +353,8 @@ describe("adding to the world (LiveWorld)", () => {
       const dir = mkdtempSync(join(tmpdir(), "evolve-add-saves-"));
       const saves = new Saves(w, new StateStore(dir));
       // As if the rows had piled up: distinct founders, each with a living member, so the table keeps them.
-      table.load({ ...good, late: Array.from({ length: SAVE_MAX_LATE + 1 }, (_, k) => [good.founders + k, 1, 0, 0, 0, "Pile"] as (typeof good.late)[0]) });
-      await expect(saves.save()).rejects.toThrow(/not saved.*lineage rows/);
+      table.load({ ...good, late: Array.from({ length: MAX_LATE_ROWS + 1 }, (_, k) => [good.founders + k, 1, 0, 0, 0, "Pile"] as (typeof good.late)[0]) });
+      await expect(saves.save()).rejects.toThrow(/not saved.*would not restore/);
       table.load({ ...good, late: [[...good.late[0]!.slice(0, 5), "x".repeat(40)] as (typeof good.late)[0]] }); // a name restore refuses
       await expect(saves.save()).rejects.toThrow(/not saved.*would not restore/);
       expect(err).toHaveBeenCalledWith("SAVE REFUSED: it would not restore, the last good save is kept");

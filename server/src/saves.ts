@@ -8,7 +8,6 @@ import type { LiveWorld } from "./liveWorld.ts";
 import type { StateStore } from "./state.ts";
 
 const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
-export const SAVE_MAX_LATE = 20_000; // late lineage rows restoreState accepts (MAX_CREATURES in ecoState.ts)
 const UNREADABLE = "SAVE REFUSED: it would not restore, the last good save is kept";
 
 // Saving and restoring the live world. Jobs run one at a time. Only saveState and JSON.stringify block the tick loop, the gzip runs on a worker thread.
@@ -34,10 +33,6 @@ export class Saves {
       if (this.live.failedTicks > 0) throw new Error(`its ticks are failing (${this.live.failedTicks} in a row), the last good save is kept`);
       const t0 = performance.now();
       const state = await this.live.whenIdle(() => this.live.saveState());
-      if (state.lineages.late.length > SAVE_MAX_LATE) {
-        console.error(UNREADABLE);
-        throw new Error(`the world has ${state.lineages.late.length} lineage rows, more than a restore accepts (${SAVE_MAX_LATE})`);
-      }
       const json = JSON.stringify(state);
       const bytes = Buffer.byteLength(json);
       if (bytes > LIMITS.maxSaveJsonBytes) {

@@ -514,7 +514,6 @@ export class LiveWorld {
   addCreatures(req: AddRequest, random: () => number = Math.random): { ids: number[] } | { reason: string } {
     const e = this.eco;
     if (e.population + req.copies > e.config.eco.maxPopulation) return { reason: "the world is full, try again later" };
-    if (e.lineageTable.toState().late.length + req.copies > LIMITS.maxLateLineages) return { reason: "the world is full of families, adding is paused until old ones are cleared" };
     const spots = this.freeSpots(req.copies, random);
     if (spots.length < req.copies) return { reason: "no free spot found, try again" };
     const ids: number[] = [];
