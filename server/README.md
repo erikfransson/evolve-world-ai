@@ -21,3 +21,4 @@ The wire format is in `src/typescript/src/live/protocol.ts`.
 ## Development
 `npm ci`, then `npm start` (ports and paths via `LIVE_PORT`, `LIVE_ADMIN_PORT`, `LIVE_STATE_DIR`, `LIVE_WEB_ROOT`).
 `npm run admin -- <command>` talks to the admin channel; run it without arguments for the command list.
+`blank-name <name>` clears an unfit visitor name from every family that carries it; the families live on unnamed.

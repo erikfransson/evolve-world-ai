@@ -5,6 +5,7 @@ import { extname, join, normalize, sep } from "node:path";
 import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
 import type { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
+import { validName } from "../../src/typescript/src/live/add.ts";
 import type { SaveInfo } from "./state.ts";
 import { applyTunables, readTunables, tunableLimits } from "./tunables.ts";
 import type { Value } from "./tunables.ts";
@@ -71,6 +72,7 @@ export interface AdminCommands {
   listSaves(): SaveInfo[];
   loadSave(name: string): Promise<string>; // saves the running world, then restores; rejects with the reason and keeps the running world
   stop(): void | Promise<void>; // save, then exit with code 0
+  blankName(name: string): Promise<number>; // families whose visitor name was cleared
 }
 
 const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".wasm": "application/wasm", ".ico": "image/x-icon" };
@@ -102,7 +104,8 @@ function serveStatic(root: string): ReturnType<typeof createServer> {
 
 // Admin channel on its own port, bound to loopback and never put behind the tunnel. The first message must be {t:"auth", token}.
 // Then: {t:"get-config"} -> {t:"config", values, limits, paused}; {t:"set-config", changes:{key:value}} -> {t:"config", ...} or {t:"error", message};
-// {t:"pause"} / {t:"resume"} -> {t:"config", ...}; {t:"save-now"} -> {t:"saved", message}; {t:"list-saves"} -> {t:"saves", saves}; {t:"load-save", name} -> {t:"loaded", message} or {t:"error", message}; {t:"stop"} -> {t:"stopping"}, then the server saves and exits 0.
+// {t:"pause"} / {t:"resume"} -> {t:"config", ...}; {t:"save-now"} -> {t:"saved", message}; {t:"list-saves"} -> {t:"saves", saves}; {t:"load-save", name} -> {t:"loaded", message} or {t:"error", message}; {t:"stop"} -> {t:"stopping"}, then the server saves and exits 0;
+// {t:"blank-name", name} -> {t:"blanked", message}: the name is cleared from every family that carries it.
 // The same port serves the built page (webRoot) over http.
 export function startAdmin(host: string, port: number, token: string, world: AdminWorld, stateDir: string, webRoot: string, saved: Record<string, Value>, commands: AdminCommands): { wss: WebSocketServer; close(): void } {
   const http = serveStatic(webRoot);
@@ -179,6 +182,10 @@ export function startAdmin(host: string, port: number, token: string, world: Adm
           ),
           (e) => reply(ws, { t: "error", message: why(e) }),
         );
+      }
+      if (msg.t === "blank-name") {
+        if (!validName(msg.name)) return reply(ws, { t: "error", message: "name must be 1 to 16 letters or digits, as viewers see it" });
+        return void commands.blankName(msg.name).then((n) => reply(ws, { t: "blanked", message: `cleared the name from ${n} ${n === 1 ? "family" : "families"}` }), (e) => reply(ws, { t: "error", message: why(e) }));
       }
       if (msg.t === "stop") {
         reply(ws, { t: "stopping" });

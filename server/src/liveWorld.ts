@@ -508,6 +508,12 @@ export class LiveWorld {
     return n;
   }
 
+  // Blanks a visitor's name (as viewers see it, without the starter mark) on every family that carries it, for an admin who finds it
+  // unfit; the families live on unnamed. Stats, details and the next save carry the change. Call between ticks (whenIdle).
+  blankName(name: string): number {
+    return this.eco.lineageTable.clearNames((n) => wireName(n).name === name);
+  }
+
   // Inserts a checked add request (live/add.ts parseAdd) as `copies` founders of new named lineages at random free spots, through the
   // engine's insertCreature, so a save keeps them. Call between ticks (whenIdle). random: the server's own draws, never the engine's.
   // Returns the ids, or a reason and nothing inserted.

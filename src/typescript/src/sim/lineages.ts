@@ -82,6 +82,18 @@ export class Lineages {
     return f >= 0 && (f < this.founders || this.late.has(f));
   }
 
+  // Clears the name tag of every runtime lineage whose name passes `match`; returns how many were cleared.
+  clearNames(match: (name: string) => boolean): number {
+    let n = 0;
+    for (const l of this.late.values()) {
+      if (l.name && match(l.name)) {
+        l.name = "";
+        n++;
+      }
+    }
+    return n;
+  }
+
   // The name tag given at insertion, "" for none.
   name(f: number): string {
     return this.late.get(f)?.name ?? "";
