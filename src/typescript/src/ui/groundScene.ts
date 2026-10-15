@@ -13,7 +13,7 @@ import type { View } from "./terrainScene.ts";
 // smoothly (alpha falls as the field value rises from the edge value to its full value), so it is a true gradient that follows the contour and costs no strokes.
 // Cost: a patch is a clip, a fill and a few dozen strokes of a long path, too much per frame for a whole world. From afar each patch is painted once
 // into a bitmap (at the next scale tier up, so it is only ever shrunk) and drawn as an image, a patch larger than MAX_BITMAP_PX as tiles of that size made when first in view;
-// close up only the patches in view are painted live. A map keeps the bitmaps of every tier it was viewed at, within MAX_BAKED_PX pixels in all.
+// close up only the patches in view are painted live. A map keeps the bitmaps of every tier it was viewed at, within MAX_BAKED_PX pixels in all. A frame makes at most BAKES_PER_FRAME of them, patches still waiting are painted live meanwhile.
 
 export const FEATHER_UNITS = 4; // widest the fade into the floor reaches inside the edge, world units: a slight softening, the edge stays crisp
 const FLOOR = "#10291f";
@@ -25,7 +25,8 @@ const EDGE_PX = 1.1; // device px of the dark line inside the contour
 const SHOULDER_PX = 1.6; // device px of the pale line just inside that
 const TIERS = [0.02, 0.04, 0.08, 0.16, 0.32]; // bitmap scales; a view at a scale up to the largest draws bitmaps of the next tier up
 const MAX_BITMAP_PX = 640; // longest side of a bitmap; larger patches are cut into tiles of this size
-const MAX_BAKED_PX = 16_000_000; // pixels of bitmaps kept per map over all tiers (64 MB of RGBA), beyond that patches are painted live
+const MAX_BAKED_PX = 8_000_000; // pixels of bitmaps kept per map over all tiers (32 MB of RGBA, enough for the Inland Sea whole at tiers 0.02 to 0.16), beyond that patches are painted live
+const BAKES_PER_FRAME = 1; // bitmaps one drawGround call makes at most, so a new tier costs a few frames and not one long one (a bitmap costs 20 to 60 ms to raster, whatever its size); a patch still waiting is painted live
 const BAKE_PAD = 4; // px around a bitmap
 interface Style {
   flat: string;
@@ -239,7 +240,7 @@ function paintPatch(ctx: CanvasRenderingContext2D, { body, path, rim, field }: P
 }
 
 // A patch at a tier scale is one bitmap, or a grid of bitmaps of at most MAX_BITMAP_PX when it is larger. A tile's bitmap carries BAKE_PAD px of its neighbours' content
-// around the part it shows, and tiles are made when first in view.
+// around the part it shows, and tiles are made when first in view (a few frames).
 interface Tile {
   image: OffscreenCanvas | HTMLCanvasElement;
   sx: number; // the shown part of the image, px
@@ -261,6 +262,7 @@ interface Grid {
   tiles: (Tile | undefined)[];
 }
 interface TierStore {
+  tier: number;
   grids: Map<Patch, Grid>;
   pixels: number;
 }
@@ -284,8 +286,16 @@ function gridOf(tier: number, patch: Patch): Grid {
   return { ox: b.x0 - BAKE_PAD / tier, oy: b.y0 - BAKE_PAD / tier, px, py, cols, rows, tiles: new Array<Tile | undefined>(cols * rows) };
 }
 
-// Paints tile (i, j) of a patch once, or returns null when the map's bitmap budget cannot hold it even after dropping the other tiers.
-function bake(store: Baked, tier: number, ts: TierStore, g: Grid, patch: Patch, i: number, j: number): Tile | null {
+let probe: CanvasRenderingContext2D | null | undefined;
+// A canvas rasters its paint when it is first drawn from. Drawing a new bitmap into a 1 px canvas makes that happen in the frame that made it, not for all the waiting tiles at once when the last one completes the patch.
+function rasterNow(image: Canvas): void {
+  if (probe === undefined) probe = context2d(makeCanvas(1, 1));
+  probe?.drawImage(image as CanvasImageSource, 0, 0, 1, 1);
+}
+
+// Paints tile (i, j) of a patch once. Null when this call has baked its share, or when the budget cannot hold the tile even after dropping every other tier (which are then kept).
+function bake(store: Baked, ts: TierStore, g: Grid, patch: Patch, i: number, j: number, left: { n: number }): Tile | null {
+  const tier = ts.tier;
   const whole = g.cols === 1 && g.rows === 1;
   const x0 = whole ? 0 : i * TILE_BODY; // the tile's own part, in patch bitmap px
   const y0 = whole ? 0 : j * TILE_BODY;
@@ -294,33 +304,38 @@ function bake(store: Baked, tier: number, ts: TierStore, g: Grid, patch: Patch, 
   const pad = whole ? 0 : BAKE_PAD;
   const w = sw + 2 * pad;
   const h = sh + 2 * pad;
+  if (left.n <= 0 || ts.pixels + w * h > MAX_BAKED_PX) return null;
   for (const [t, other] of store.tiers) {
     if (store.pixels + w * h <= MAX_BAKED_PX) break;
-    if (t === tier) continue;
+    if (other === ts) continue;
     store.tiers.delete(t);
     store.pixels -= other.pixels;
   }
-  if (store.pixels + w * h > MAX_BAKED_PX) return null;
   const image = makeCanvas(w, h);
   const c = context2d(image);
   if (!image || !c) return null;
+  left.n--;
   store.pixels += w * h;
   ts.pixels += w * h;
   const b = patch.body;
   c.setTransform(tier, 0, 0, tier, pad - x0 + BAKE_PAD - b.x0 * tier, pad - y0 + BAKE_PAD - b.y0 * tier);
   c.lineJoin = "round";
   paintPatch(c, patch, tier);
+  rasterNow(image);
   return { image, sx: pad, sy: pad, sw, sh, x: g.ox + x0 / tier, y: g.oy + y0 / tier, w: sw / tier, h: sh / tier };
 }
 
-// Draws the tiles of a patch that are in view, baking those not yet made. False when the budget is spent, then the caller paints the patch live.
-function drawBaked(ctx: CanvasRenderingContext2D, store: Baked, tier: number, patch: Patch, view: View): boolean {
-  let ts = store.tiers.get(tier);
-  if (!ts) store.tiers.set(tier, (ts = { grids: new Map(), pixels: 0 }));
-  else if (store.tiers.keys().next().value !== tier) {
-    store.tiers.delete(tier);
-    store.tiers.set(tier, ts);
-  }
+// The store of a tier, made the most recently used.
+function touch(store: Baked, tier: number): TierStore {
+  const ts = store.tiers.get(tier) ?? { tier, grids: new Map(), pixels: 0 };
+  store.tiers.delete(tier);
+  store.tiers.set(tier, ts);
+  return ts;
+}
+
+// Draws the tiles of a patch that are in view, baking those not yet made while left allows. False when a tile in view is missing, then the caller paints the patch live.
+function drawBaked(ctx: CanvasRenderingContext2D, store: Baked, ts: TierStore, patch: Patch, view: View, left: { n: number }): boolean {
+  const tier = ts.tier;
   let g = ts.grids.get(patch);
   if (!g) ts.grids.set(patch, (g = gridOf(tier, patch)));
   const tiled = g.cols * g.rows > 1;
@@ -333,7 +348,7 @@ function drawBaked(ctx: CanvasRenderingContext2D, store: Baked, tier: number, pa
         if (x > view.x1 || y > view.y1 || x + TILE_BODY / tier < view.x0 || y + TILE_BODY / tier < view.y0) continue;
       }
       const k = j * g.cols + i;
-      const tile = g.tiles[k] ?? (g.tiles[k] = bake(store, tier, ts, g, patch, i, j) ?? undefined);
+      const tile = g.tiles[k] ?? (g.tiles[k] = bake(store, ts, g, patch, i, j, left) ?? undefined);
       if (!tile) return false;
       wanted.push(tile);
     }
@@ -378,7 +393,9 @@ export function drawGround(ctx: CanvasRenderingContext2D, t: Terrain, scale: num
   } else {
     let store = baked.get(t);
     if (!store) baked.set(t, (store = { tiers: new Map(), pixels: 0 }));
-    for (const patch of shown) if (!drawBaked(ctx, store, tier, patch, view)) paintPatch(ctx, patch, scale);
+    const ts = touch(store, tier);
+    const left = { n: BAKES_PER_FRAME };
+    for (const patch of shown) if (!drawBaked(ctx, store, ts, patch, view, left)) paintPatch(ctx, patch, scale);
   }
   ctx.restore();
 }

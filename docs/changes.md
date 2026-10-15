@@ -6,11 +6,11 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
-- Maps drawn from afar (the Inland Sea at scales 0.04 to 0.16): the biggest ground patch is now cut into 640 px bitmap tiles made when first in view, and every zoom tier keeps its own bitmaps, so a frame costs about 15 ms instead of 150 ms and zooming back is instant. The ground looks the same up to resampling at tile edges.
+- Maps drawn from afar (the Inland Sea at scales 0.04 and up): the biggest ground patches are cut into 640 px bitmap tiles made when first in view, one bitmap per frame while the rest is painted live, and every zoom tier keeps its own bitmaps (up to 32 MB per map, least recently used tier dropped first). A frame at those scales costs about 15 ms instead of 120 ms, and zooming back is instant. The ground looks the same up to resampling at the edge line.
 - RL Arena envs, after a review of all of them (three bodies, two seeds, every trained creature scored on every env): two new memory envs, Glimpse (a food patch shown for 1.5 s) and Truffles (food never visible), and Flash now has 5 bites, so the Memory group has three envs that each need memory over 6 seeds. Wait for it joins Energy. Zigzag and Busy meadow are gone, as near-copies of Four rooms with Fence and of Live patch. Brawl moves to Fight, and the four Advanced foragers to Find food, Avoid, Compete and Energy; Advanced keeps only the hunt envs.
 - RL rams: a rival that starves, is killed by another rival, or dies of poison beside the learner no longer pays a ram (no ram pays on a tick when any creature ate poison), and one dying on its first tick is judged too; a test for each rule. Aggressor and Brawl re-measured, the five Bigger envs measured (`docs/rl-envs.md`). Env grouping is decided only in `envs.ts` (the unused `envGroups` is gone, the gallery's folded groups come from `FOLDED_GROUPS`), the Bigger envs use a typed `bigger()` helper, and the Arena's seed pool select is `poolEntry`, apart from the Live founders.
 
-## 0.2.0 (2026-10-14)
+## 0.2.0 (not released yet)
 
 ### Live World
 - Landing page polish: a hero with buttons to watch the Live World or create your own, a Live World card that shows the real Inland Sea from above with six lineages grazing, giving birth and dying, its live numbers (creatures alive, people watching) from the server, a busier Ecosystem card, a short "How it works" (sense, think, evolve), a fuller footer, and share previews (description, Open Graph and Twitter tags, a 1200 x 630 image). The Trials card's rays no longer reach past the arena wall.
