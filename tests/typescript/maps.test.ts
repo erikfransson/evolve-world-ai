@@ -7,6 +7,7 @@ import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
 import { createRng } from "../../src/typescript/src/sim/rng.ts";
 import { MAPS, builtMap, mapVersion } from "../../src/typescript/src/sim/maps/index.ts";
 import { buildMap } from "../../src/typescript/src/sim/maps/mapBuild.ts";
+import { MAX_MAP_DISC_R } from "../../src/typescript/src/sim/maps/mapParts.ts";
 import { CAP_CELL, discsBlocked, MapWeights, WEIGHT_UNIT } from "../../src/typescript/src/sim/maps/weights.ts";
 import type { MapSpec } from "../../src/typescript/src/sim/maps/mapBuild.ts";
 import { withEcoPreset } from "../../src/typescript/src/sim/presets.ts";
@@ -117,6 +118,12 @@ describe("The Inland Sea map", () => {
       expect(sea.valueAt(x, y)).toBe(drawnKind(x, y));
     }
     expect(checked).toBeGreaterThan(5000);
+  });
+
+  it("refuses at build time a rock disc that another thread's unpackMap would refuse", () => {
+    const stones = SEA.rock.find((r) => r.kind !== "massif")!; // emitted stones are a share (at least about half) of the spec radius
+    const wide: MapSpec = { ...SEA, layers: [], rock: [{ ...stones, cover: 0.3, r: [4 * MAX_MAP_DISC_R, 4 * MAX_MAP_DISC_R + 10] }] };
+    expect(() => buildMap(wide)).toThrow(/wider than/);
   });
 
   it("is the same map on a second build", () => {

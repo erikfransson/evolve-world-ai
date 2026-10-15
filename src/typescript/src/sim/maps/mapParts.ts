@@ -13,7 +13,7 @@ export interface MapParts {
 }
 
 export const MAX_MAP_DISCS = 8000; // the most rock discs a map has, which mapBuild enforces
-export const MAX_MAP_DISC_R = 400; // the widest disc: stones reach 380 and massif discs 300
+export const MAX_MAP_DISC_R = 400; // the widest disc a map may have (mapBuild checks it); the Inland Sea's widest is about 340
 
 // The arrays of a map's Terrain, shared with it (postMessage clones them, or transfers them when asked); null when it is not a hand-designed map.
 export function packMap(t: Pick<Terrain, "rockCount" | "rockX" | "rockY" | "rockR" | "ground" | "weights">): MapParts | null {

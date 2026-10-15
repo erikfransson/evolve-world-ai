@@ -3,7 +3,7 @@ import { CUBIC_FADE, GROUND_PAD, GroundField, hash, oneKindPerNode, valueNoise a
 import { createRng } from "../rng.ts";
 import { discsBlocked, MapWeights, WEIGHT_UNIT } from "./weights.ts";
 import type { Disc } from "./weights.ts";
-import { MAX_MAP_DISCS } from "./mapParts.ts";
+import { MAX_MAP_DISC_R, MAX_MAP_DISCS } from "./mapParts.ts";
 
 // Builds the ground, the food and poison weights and the rock of a hand-designed map (docs/world-maps/) from its spec. Port of the draft generator
 // docs/world-maps/tools/gen.mjs, evaluated on the nodes of the ground raster. The result depends on the spec alone, so every thread builds the same map.
@@ -472,6 +472,8 @@ export function buildMap(spec: MapSpec): BuiltMap {
     }
   });
   if (rock.length > LIMITS.discs) throw new Error(`map "${spec.name}": ${rock.length} rock discs, the limit is ${LIMITS.discs}`);
+  // The same bounds unpackMap holds the arrays to, so a map that builds can always be handed to another thread.
+  for (const d of rock) if (!(d.r > 0 && d.r <= MAX_MAP_DISC_R) || d.x < -d.r || d.x > W + d.r || d.y < -d.r || d.y > H + d.r) throw new Error(`map "${spec.name}": a rock disc at ${d.x}, ${d.y} with radius ${d.r} is outside the world or wider than ${MAX_MAP_DISC_R}`);
 
   let rockArea = 0;
   for (const d of rock) rockArea += Math.PI * d.r * d.r;
