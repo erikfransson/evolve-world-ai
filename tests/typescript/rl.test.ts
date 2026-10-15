@@ -230,15 +230,23 @@ describe("env groups", () => {
   it("file every built-in env under a group, the small ones outside Advanced", () => {
     for (const e of ENVS) expect(ENV_GROUPS).toContain(groupOf(e));
     expect(groupOf(envById("fence")!)).toBe("Avoid and find a way");
-    expect(groupOf(envById("brawl")!)).toBe("Compete");
+    expect(groupOf(envById("brawl")!)).toBe("Fight");
     expect(groupOf(envById("aggressor")!)).toBe("Fight");
-    expect(groupOf(envById("poison-field")!)).toBe("Advanced");
+    expect(groupOf(envById("poison-field")!)).toBe("Avoid and find a way");
+    expect(groupOf(envById("glimpse")!)).toBe("Memory");
+    expect(groupOf(envById("hunt-grazers")!)).toBe("Advanced");
     expect(groupOf(envById("live-patch")!)).toBe("Bigger");
+  });
+
+  it("gives every forager group at least three envs", () => {
+    const count = new Map<string, number>();
+    for (const e of ENVS) if (e.tags.includes("forager")) count.set(groupOf(e), (count.get(groupOf(e)) ?? 0) + 1);
+    for (const g of ENV_GROUPS) if (g !== "Advanced" && g !== "Custom") expect(count.get(g) ?? 0).toBeGreaterThanOrEqual(3);
   });
 
   it("keeps every Bigger env within the custom env limits", () => {
     const bigger = ENVS.filter((e) => groupOf(e) === "Bigger");
-    expect(bigger.length).toBeGreaterThanOrEqual(5);
+    expect(bigger.length).toBeGreaterThanOrEqual(4);
     for (const e of bigger) expect(typeof checkEnv(JSON.parse(JSON.stringify(e)), "ecosystem", 0)).not.toBe("string");
   });
 });

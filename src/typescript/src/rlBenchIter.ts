@@ -21,7 +21,7 @@ const { values } = parseArgs({
 
 const SMALL = { rayCount: 5, raySpread: (120 * Math.PI) / 180, rayLength: 180, hiddenLayers: [12], memoryShort: 2, memoryLong: 2 };
 const BIG = { rayCount: 16, raySpread: (180 * Math.PI) / 180, rayLength: 250, hiddenLayers: [64, 64], memoryShort: 8, memoryLong: 8 };
-const TEN = ["nibble", "corridor", "far-food", "patch", "minefield", "fence", "maze", "rooms", "islands", "lean-times"];
+const TEN = ["nibble", "corridor", "far-food", "patch", "minefield", "fence", "rooms", "islands", "sprint", "lean-times"];
 
 const SETUPS = {
   small: { envs: ["nibble"], plan: SMALL, pop: 100 }, // the Arena default

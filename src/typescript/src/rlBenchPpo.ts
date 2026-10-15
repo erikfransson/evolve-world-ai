@@ -12,7 +12,7 @@ import { createNodeRlPool } from "./worker/nodePool.ts";
 const { values } = parseArgs({ options: { only: { type: "string" }, iters: { type: "string", default: "5" }, episodes: { type: "string", default: "16" }, threads: { type: "string", default: "0" } } });
 const SMALL = { rayCount: 5, raySpread: (120 * Math.PI) / 180, rayLength: 180, hiddenLayers: [12], memoryShort: 2, memoryLong: 2 };
 const BIG = { rayCount: 16, raySpread: Math.PI, rayLength: 250, hiddenLayers: [64, 64], memoryShort: 8, memoryLong: 8 };
-const TEN = ["nibble", "corridor", "far-food", "patch", "minefield", "fence", "maze", "rooms", "islands", "lean-times"];
+const TEN = ["nibble", "corridor", "far-food", "patch", "minefield", "fence", "rooms", "islands", "sprint", "lean-times"];
 const SETUPS = {
   small: { envs: ["nibble"], plan: SMALL },
   big: { envs: ["nibble"], plan: BIG },

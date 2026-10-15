@@ -6,7 +6,7 @@ export const PREDATOR = 1;
 // The environment index. Ids are stable: keep an env's id when tuning it, add a new one for a new task.
 
 // Small, quick tasks first: one idea each, a few items, short episodes. Each takes milliseconds, so a population of hundreds
-// can train for thousands of iterations; the bigger "advanced" envs and the Live-like "bigger" ones come after.
+// can train for thousands of iterations; slower foragers, the hunt envs and the Live-like "bigger" ones come after.
 const small = (o: Pick<EnvSpec, "id" | "name" | "description" | "size" | "food" | "poison" | "seconds"> & Partial<EnvSpec> & { tags: string[] }): EnvSpec => ({
   world: "ecosystem",
   role: PREY,
@@ -38,7 +38,6 @@ export const ENVS: readonly EnvSpec[] = [
   // Avoiding poison and finding a way round
   small({ id: "minefield", name: "Minefield", description: "Four food hidden among twelve poison. One wrong bite ends it.", size: [300, 300], food: 4, poison: 12, seconds: 25, tags: ["caution"] }),
   small({ id: "fence", name: "Fence", description: "A wall of stinging poison with one gap. The food is on the other side.", size: [400, 400], food: 6, poison: 0, seconds: 30, layout: { kind: "fence", gap: 110, near: 2 }, poisonDamage: 25, reward: { food: 1, fast: 0.1, cross: 1 }, tags: ["navigate"] }),
-  small({ id: "maze", name: "Zigzag", description: "Two walls of stinging poison with gaps at opposite ends. Weave through to the food.", size: [450, 450], food: 5, poison: 0, seconds: 40, layout: { kind: "maze", gap: 60, near: 2 }, poisonDamage: 25, reward: { food: 1, fast: 0.1, cross: 1 }, tags: ["navigate"] }),
   small({ id: "rooms", name: "Four rooms", description: "A cross of stinging walls makes four rooms with a door in each wall. The food is in the other rooms.", size: [400, 400], food: 6, poison: 0, seconds: 40, layout: { kind: "rooms", gap: 70, near: 1 }, poisonDamage: 25, tags: ["navigate"] }),
   small({ id: "islands", name: "Islands", description: "Food on three small islands, stinging poison in the water between them. Hop from island to island.", size: [500, 500], food: 9, poison: 22, seconds: 35, layout: { kind: "islands", radius: 35 }, poisonDamage: 30, tags: ["search", "caution"] }),
   small({ id: "ring-road", name: "Ring road", description: "Food along a circular lane between two rings of stinging poison. Follow the curve; never cut across.", size: [450, 450], food: 8, poison: 0, seconds: 40, layout: { kind: "ring", lane: 64 }, poisonDamage: 30, reward: { food: 1, fast: 0.1, survive: 0.02 }, tags: ["navigate"] }),
@@ -57,7 +56,10 @@ export const ENVS: readonly EnvSpec[] = [
     tags: ["navigate"],
   }),
   // Memory: what it saw a moment ago decides where to go now
-  small({ id: "flash", name: "Flash", description: "Three bites show for two seconds, then go dark but stay there. A creature can head for one; finding the others means remembering where they were.", size: [600, 600], food: 3, poison: 0, seconds: 12, foodVisibleFor: 2, layout: { kind: "flash" }, tags: ["memory"] }),
+  // Each kept because the same body with memory beats it without over 6 seeds (docs/rl-envs.md); reward food only, as measured.
+  small({ id: "flash", name: "Flash", description: "Five bites all around show for two seconds, then go dark but stay there. A creature can head for one; finding the others means remembering where they were.", size: [600, 600], food: 5, poison: 0, seconds: 15, foodVisibleFor: 2, layout: { kind: "flash" }, reward: { food: 1 }, tags: ["memory"] }),
+  small({ id: "glimpse", name: "Glimpse", description: "A patch of food shows for a moment, then goes dark. Remember where it was and go there.", size: [500, 500], food: 12, poison: 0, seconds: 25, foodVisibleFor: 1.5, layout: { kind: "patch", radius: 60 }, reward: { food: 1 }, tags: ["memory"] }),
+  small({ id: "truffles", name: "Truffles", description: "Food you can never see, packed in one patch. A bite is felt, not seen: stay and search close by.", size: [500, 500], food: 12, poison: 0, seconds: 30, foodVisibleFor: 0, layout: { kind: "patch", radius: 60 }, reward: { food: 1 }, tags: ["memory"] }),
   // Energy
   small({
     id: "lean-times",
@@ -100,6 +102,7 @@ export const ENVS: readonly EnvSpec[] = [
     reward: { food: 1, energy: 2 },
     tags: ["energy"],
   }),
+  small({ id: "wait", name: "Wait for it", description: "A small room where food grows back slowly, and little energy to start. Rushing about burns it; staying calm and taking each bite as it comes pays.", size: [260, 260], food: 3, poison: 0, foodRegrow: 0.4, seconds: 60, learnerEnergy: 60, reward: { energy: 2, survive: 0.05 }, tags: ["energy"] }),
   // Fighting
   small({
     id: "aggressor",
@@ -172,8 +175,9 @@ export const ENVS: readonly EnvSpec[] = [
     collisionDamage: true,
     rivals: [{ species: PREY, count: 3, source: "self" }],
     reward: { food: 1, ram: 1, survive: 0.02 },
-    tags: ["compete", "fight", "self-play"],
+    tags: ["fight", "self-play"],
   }),
+  // Bigger, slower forager envs, filed with the groups above by their tags
   {
     id: "forage-sparse",
     name: "Sparse plains",
@@ -187,7 +191,7 @@ export const ENVS: readonly EnvSpec[] = [
     seconds: 60,
     rivals: [],
     reward: { food: 1 },
-    tags: ["forager", "search", "advanced"],
+    tags: ["forager", "search"],
   },
   {
     id: "poison-field",
@@ -202,7 +206,7 @@ export const ENVS: readonly EnvSpec[] = [
     seconds: 45,
     rivals: [],
     reward: { food: 1, survive: 0.05 },
-    tags: ["forager", "caution", "advanced"],
+    tags: ["forager", "caution"],
   },
   {
     id: "rivals",
@@ -217,7 +221,7 @@ export const ENVS: readonly EnvSpec[] = [
     seconds: 60,
     rivals: [{ species: PREY, count: 6, source: "pool" }],
     reward: { food: 1 },
-    tags: ["forager", "competition", "advanced"],
+    tags: ["forager", "compete"],
   },
   {
     id: "endurance",
@@ -232,8 +236,9 @@ export const ENVS: readonly EnvSpec[] = [
     seconds: 120,
     rivals: [],
     reward: { survive: 0.1, energy: 4 },
-    tags: ["forager", "thrift", "advanced"],
+    tags: ["forager", "energy"],
   },
+  // Advanced: hunters and prey (hidden while the Arena trains foragers only)
   {
     id: "hunt-wanderers",
     name: "Hunt: wanderers",
@@ -297,7 +302,6 @@ export const ENVS: readonly EnvSpec[] = [
   // Bigger: patches of the Live World (regrowing food, lethal poison, seed pool crowds, bumps hurt), starting at a visitor's 300 energy.
   bigger({ id: "live-patch", name: "Live patch", description: "A slice of the Live World: regrowing food, lethal poison and a crowd of trained foragers. Bumps hurt.", size: [1200, 1200], food: 60, poison: 20, foodRegrow: 2, rivals: 20, reward: { food: 1, survive: 0.03 } }),
   bigger({ id: "live-famine", name: "Feast and famine", description: "A wide, thinly fed land with a few rivals. Range far to find the food before it runs out.", size: [2200, 2200], food: 35, poison: 15, foodRegrow: 0.3, rivals: 8, reward: { food: 1, survive: 0.03 } }),
-  bigger({ id: "live-meadow", name: "Busy meadow", description: "Food keeps growing back among many foragers. Wait, watch and keep your energy high.", size: [1000, 1000], food: 70, poison: 15, foodRegrow: 4, rivals: 25, reward: { food: 0.5, energy: 1, survive: 0.03 } }),
   bigger({ id: "live-poison", name: "Poison country", description: "More poison than food over a big land, with rivals. Tell the two apart or die.", size: [1500, 1500], food: 40, poison: 90, foodRegrow: 1, rivals: 12, reward: { food: 1, survive: 0.05 } }),
   bigger({ id: "live-commons", name: "Crowded commons", description: "Little food and many weak foragers. Ramming them pays.", size: [1000, 1000], food: 20, poison: 10, foodRegrow: 0.5, rivals: 25, rivalEnergy: 25, reward: { food: 0.5, ram: 2, survive: 0.02 } }),
 ];
