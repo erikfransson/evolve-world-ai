@@ -11,4 +11,4 @@ Only The Inland Sea is built; files are dated and numbered by draft round.
 | `2026-10-12-draft3-notes.md`           | Region tables, expected behaviours, engine plan, size trade-off        |
 | `tools/`                               | Generator (`gen.mjs`, `specs.mjs`), renderer (`render.js`) and layer specs (`map-F*.json`) |
 
-Chosen and built for the live server: The Inland Sea, scaled to 40000 x 25000 into `src/typescript/src/sim/maps/inlandSea.ts` by `tools/to-engine.mjs`.
+Chosen and built for the live server: The Inland Sea, scaled to 30000 x 18750 (detail as at 40000 wide) into `src/typescript/src/sim/maps/inlandSea.ts` by `tools/to-engine.mjs`.

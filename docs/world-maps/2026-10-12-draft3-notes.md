@@ -1,6 +1,6 @@
 # Live World map candidates, final set
 
-Four maps at 54000 x 33600 (10.3x today's area): F1 Realms, F2 Three Rivers, F3 Oases in the Dry, F4 The Inland Sea. Images: `2026-10-12-draft3-*.jpg` in this folder; layer specs `tools/map-F1.json` to `tools/map-F4.json`. Design proposal for GitHub #36. Only F4 is built, at 40000 x 25000 (`src/typescript/src/sim/maps/inlandSea.ts`).
+Four maps at 54000 x 33600 (10.3x today's area): F1 Realms, F2 Three Rivers, F3 Oases in the Dry, F4 The Inland Sea. Images: `2026-10-12-draft3-*.jpg` in this folder; layer specs `tools/map-F1.json` to `tools/map-F4.json`. Design proposal for GitHub #36. Only F4 is built, at 30000 x 18750 (first 40000 x 25000) (`src/typescript/src/sim/maps/inlandSea.ts`).
 Food and poison values are relative to a plain 1.0. "no poison" means poison 0. Normal ground is the area with no mud, firm ground or rock (poison and food zones on plain ground count as normal). Massif disc counts are estimates (large discs of radius 120 to 300 filling the massif mask), stones are clusters of 1 to 6 discs.
 
 ## F1 Realms (89% normal, mud 4.6, firm 2.2, rock 3.9; about 1770 discs)
@@ -69,5 +69,5 @@ Optional later: region-offset seasons, per-region founder seeding, a slower mire
 ## Population and size
 The designs are scale-free (shapes are fractions of the map, the generator takes the world size).
 At 54000 x 33600 with about 1800 creatures the mean spacing is about 850 units while rays reach 50 to 250, so most creatures rarely meet.
-The Inland Sea was built at 5.5x (40000 x 25000), keeping the spacing near 600, with 10x as a later option if creatures still meet often.
+The Inland Sea was built at 5.5x (40000 x 25000, cut to 3.1x, 30000 x 18750, on 2026-10-15), keeping the spacing near 600, with 10x as a later option if creatures still meet often.
 Regrowth and cap values measured on it are in `docs/status.md` (A5, A7).
