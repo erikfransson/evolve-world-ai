@@ -207,13 +207,14 @@ describe("founders file", () => {
     expect(cleanStats(JSON.parse(JSON.stringify({ ...wire, lineages: [{ ...row, founders: [3, -1, 1.5, "x", 7] }] }))).lineages![0]!.founders).toEqual([3, 7]);
   });
 
-  it("refuses a rename onto a living family's name (any case) unless forced, and matches the old name in any case", () => {
+  it("refuses a rename onto a living family's name (any case) unless forced; the old name is matched exactly", () => {
     const live = freshSmall();
     const founders = loadFounders(FOUNDERS.pathname);
     live.seedFounders(founders, seq(4));
     const [a, b] = [founders[0]!.name, founders[1]!.name];
     expect(live.renameName(a, b.toUpperCase())).toMatch(/name of a living family/);
-    expect(live.renameName(a.toLowerCase(), "Fresh")).toBe(SEED_COPIES);
+    expect(live.renameName(a.toLowerCase(), "Fresh")).toBe(0); // as viewers see it, not another case
+    expect(live.renameName(a, "Fresh")).toBe(SEED_COPIES);
     expect(live.renameName("Fresh", b, true)).toBe(SEED_COPIES); // forced: the two merge on the list
     expect(namedTop(live.eco, 8).find((g) => g.name === b)?.count).toBe(2 * SEED_COPIES);
   });

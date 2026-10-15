@@ -111,7 +111,7 @@ function serveStatic(root: string): ReturnType<typeof createServer> {
 // Then: {t:"get-config"} -> {t:"config", values, limits, paused}; {t:"set-config", changes:{key:value}} -> {t:"config", ...} or {t:"error", message};
 // {t:"pause"} / {t:"resume"} -> {t:"config", ...}; {t:"save-now"} -> {t:"saved", message}; {t:"list-saves"} -> {t:"saves", saves}; {t:"load-save", name} -> {t:"loaded", message} or {t:"error", message}; {t:"stop"} -> {t:"stopping"}, then the server saves and exits 0;
 // {t:"blank-name", name} -> {t:"blanked", message}: the name is cleared from every family that carries it;
-// {t:"rename", name, to, force?} -> {t:"renamed", message}: every family named `name` (any case) is named `to` (starters stay starters);
+// {t:"rename", name, to, force?} -> {t:"renamed", message}: every family named exactly `name` is named `to` (starters stay starters);
 // a `to` another living family carries is refused unless force.
 // The same port serves the built page (webRoot) over http.
 export function startAdmin(host: string, port: number, token: string, world: AdminWorld, stateDir: string, webRoot: string, saved: Record<string, Value>, commands: AdminCommands): { wss: WebSocketServer; close(): void } {
