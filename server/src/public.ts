@@ -5,18 +5,17 @@ import type { WebSocket } from "ws";
 import { parseClientMessage } from "../../src/typescript/src/live/protocol.ts";
 import { ADD_PREFIX, MAX_ADD_BYTES, parseAdd } from "../../src/typescript/src/live/add.ts";
 import type { Added, Refused } from "../../src/typescript/src/live/add.ts";
-import { AddGate, visitorKey } from "./adds.ts";
+import { AddGate, AddPolicy, visitorKey } from "./adds.ts";
+import type { AddPace } from "./adds.ts";
 import type { Rules, ServerText } from "../../src/typescript/src/live/protocol.ts";
 import { MAX_STRIDE, RESYNC_S, RESYNC_SHARE, TokenBucket, fits, frameBudget, gets, sendStride } from "./budget.ts";
 import { dropReason } from "./clients.ts";
 import { ItemFeed } from "./itemFeed.ts";
 import type { ClientState } from "./clients.ts";
-import { LIMITS, LIVE, TRUST_FORWARDED } from "./config.ts";
+import { LIMITS, TRUST_FORWARDED } from "./config.ts";
 import type { LiveWorld } from "./liveWorld.ts";
 
 const PING_MIN_MS = 200;
-const ADD_BURST = 2;
-const ADD_STRIKES = 3; // adds past the rate a connection may send (one more each minute) before it counts as a flood: a page with stale rules stays
 export const FRAME_MS = 200;
 const FRAME_HZ = 1000 / FRAME_MS;
 
@@ -38,9 +37,7 @@ interface Viewer {
   details: TokenBucket; // bytes of details and genomes
   selects: TokenBucket;
   historySent: boolean;
-  addTokens: number; // adds this connection may send now: a burst of ADD_BURST, refilled at one per add.socketEveryS (read live, so an admin change applies at once)
-  addAt: number; // ms, when addTokens was last brought up to date
-  strikes: TokenBucket; // adds sent past the connection's rate; when these run out the connection is cut off as a flood
+  pace: AddPace; // the connection's add rate and strikes (adds.ts)
   visitor: string | null; // address key for the per-visitor add cap, null when unknown
   adding: boolean; // an add waits for the tick in flight
 }
@@ -87,7 +84,7 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
   const accepts = new TokenBucket(limits.acceptsPerSecond, limits.acceptBurst);
   const connectBytes = new TokenBucket(limits.connectBytesPerSecond, Math.max(limits.connectBytesPerSecond, limits.connectBurstBytes)); // full item sets and history for new or lagging viewers
   const budget = frameBudget(limits);
-  const addAttempts = new TokenBucket(limits.addAttemptsPerSecond, limits.addAttemptBurst); // add messages parsed, for all viewers together
+  const policy = new AddPolicy(limits, gate);
   const sent = { frames: 0, items: 0, details: 0, text: 0 };
   let lastCreatures: Uint8Array | null = null;
   let lastFrameNo = -1;
@@ -140,20 +137,19 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
       if (ws.readyState === ws.OPEN) sendText(ws, m);
     };
     if (v.adding) return reply({ t: "refused", reason: "the last add is still going in" });
-    if (!addAttempts.take(1)) return reply({ t: "refused", reason: "the world is busy, try again in 5 s", retryS: 5 });
-    const rules = live.addRules();
-    if (LIVE.add.perWindow <= 0 || LIVE.add.aliveShare <= 0) return reply({ t: "refused", reason: "adding is off right now" });
-    const req = parseAdd(text, rules);
+    const no = policy.admit();
+    if (no) return reply(no);
+    const req = parseAdd(text, live.addRules());
     if (typeof req === "string") return reply({ t: "refused", reason: req });
     v.adding = true;
     void live
       .whenIdle(() => {
         const e = live.eco;
-        const no = gate.check(v.visitor, req.copies, { aliveAdded: live.aliveAdded(), population: e.population, speed: live.speed, paused: live.paused });
+        const no = policy.gate.check(v.visitor, req.copies, { aliveAdded: live.aliveAdded(), population: e.population, speed: live.speed, paused: live.paused });
         if (no) return no;
         const r = live.addCreatures(req);
         if ("reason" in r) return { t: "refused", reason: r.reason, retryS: 10 } satisfies Refused;
-        gate.record(v.visitor, r.ids.length);
+        policy.gate.record(v.visitor, r.ids.length);
         return { t: "added", ids: r.ids, name: req.name } satisfies Added;
       })
       .then(reply, (e: unknown) => {
@@ -177,9 +173,7 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
       details: new TokenBucket(limits.detailBytesPerViewer, limits.detailBurstBytes),
       selects: new TokenBucket(limits.selectsPerSecond, limits.selectBurst),
       historySent: false,
-      addTokens: ADD_BURST,
-      addAt: now,
-      strikes: new TokenBucket(1 / 60, ADD_STRIKES),
+      pace: policy.connection(),
       visitor: visitorKey(req.headers["x-forwarded-for"], trustForwarded),
       adding: false,
     };
@@ -224,15 +218,9 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
         const text = isBinary ? null : data.toString();
         if (text?.startsWith(ADD_PREFIX)) {
           if (!v.ready) return void ws.terminate(); // the page waits for its hello
-          const t = performance.now();
-          v.addTokens = Math.min(ADD_BURST, v.addTokens + (t - v.addAt) / (1000 * LIVE.add.socketEveryS));
-          v.addAt = t;
-          if (v.addTokens < 1) {
-            // Past the rate: refused unread with the wait, as a page with stale rules might; a flood past the strikes is cut off.
-            if (!v.strikes.take(1)) return void ws.terminate();
-            return sendText(ws, { t: "refused", reason: "adding too fast on this connection", retryS: Math.ceil((1 - v.addTokens) * LIVE.add.socketEveryS) });
-          }
-          v.addTokens -= 1;
+          const paced = policy.pace(v.pace);
+          if (paced === "cut") return void ws.terminate();
+          if (paced) return sendText(ws, paced);
           return add(ws, v, text);
         }
         const msg = text === null ? null : parseClientMessage(text);

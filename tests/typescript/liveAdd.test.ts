@@ -1,7 +1,7 @@
 // @vitest-environment node
 // @ts-expect-error the web tsconfig finds no types for the server's ws
 import { WebSocket } from "../../server/node_modules/ws/wrapper.mjs";
-import { AddGate, visitorKey } from "../../server/src/adds.ts";
+import { AddGate, AddPolicy, visitorKey } from "../../server/src/adds.ts";
 import { loadFounders } from "../../server/src/founders.ts";
 import { LIMITS, LIVE } from "../../server/src/config.ts";
 import { LiveWorld, groundShares } from "../../server/src/liveWorld.ts";
@@ -184,6 +184,28 @@ describe("add caps (adds.ts)", () => {
     } finally {
       clock.mockRestore();
     }
+  });
+
+  it("the policy: a connection's burst, then refusals with the wait, then a cut; the global read rate; adding off", () => {
+    const policy = new AddPolicy({ addAttemptsPerSecond: 1, addAttemptBurst: 2 });
+    const pace = policy.connection();
+    expect([policy.pace(pace), policy.pace(pace)]).toEqual([null, null]);
+    const r = policy.pace(pace);
+    expect(r).toMatchObject({ t: "refused", reason: "adding too fast on this connection" });
+    expect((r as { retryS: number }).retryS).toBeGreaterThan(LIVE.add.socketEveryS - 1);
+    expect([policy.pace(pace), policy.pace(pace)].every((x) => x !== "cut")).toBe(true);
+    expect(policy.pace(pace)).toBe("cut");
+    expect([policy.admit(), policy.admit()]).toEqual([null, null]);
+    expect(policy.admit()).toMatchObject({ reason: expect.stringMatching(/busy/) });
+    LIVE.add.perWindow = 0;
+    expect(new AddPolicy({ addAttemptsPerSecond: 1, addAttemptBurst: 2 }).admit()).toMatchObject({ reason: "adding is off right now" });
+  });
+
+  it("copies past a cap get a reason that says so, not that adding is off", () => {
+    const gate = new AddGate(clock().now);
+    LIVE.add.perVisitor = 2;
+    LIVE.add.maxCopies = 3;
+    expect(gate.check("v", 3, fresh)?.reason).toMatch(/at most 2 creatures per visitor/);
   });
 
   it("per visitor: 3 creatures per window per address, other addresses unaffected, unknown address not limited per visitor", () => {

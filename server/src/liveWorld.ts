@@ -10,6 +10,7 @@ import { ITEM_REMOVE, ITEM_SET } from "../../src/typescript/src/sim/world.ts";
 import type { World } from "../../src/typescript/src/sim/world.ts";
 import { EVENT_STRIDE } from "../../src/typescript/src/sim/ecosystem.ts";
 import { TokenBucket } from "./budget.ts";
+import { addingOn } from "./adds.ts";
 import { Chronicle } from "./chronicle.ts";
 import { restoreState, saveState } from "../../src/typescript/src/sim/ecoState.ts";
 import type { EcoState } from "../../src/typescript/src/sim/ecoState.ts";
@@ -464,7 +465,7 @@ export class LiveWorld {
 
   // The rules for the hello and the rules message: null while adding is off.
   currentAddRules(): AddRules | null {
-    return LIVE.add.perWindow > 0 && LIVE.add.aliveShare > 0 ? this.addRules() : null;
+    return addingOn() ? this.addRules() : null;
   }
 
   // Up to n random spots inside the walls, clear of rock and of creatures, from the given draws (at most 40 tries a spot).
@@ -526,13 +527,12 @@ export class LiveWorld {
     if (spots.length < req.copies) return { reason: "no free spot found, try again" };
     const ids: number[] = [];
     for (const p of spots) {
-      const energy = Math.min(1000, Math.max(10, LIVE.add.startEnergy)); // the admin's setting, within the tunable range
-      const res = e.insertCreature({ genome: req.genome, plan: req.plan, x: p.x, y: p.y, heading: p.heading, hue: req.hue, name: req.name, birth: req.birth, energy });
+      const res = e.insertCreature({ genome: req.genome, plan: req.plan, x: p.x, y: p.y, heading: p.heading, hue: req.hue, name: req.name, birth: req.birth, energy: LIVE.add.startEnergy }); // tunables.ts bounds it
       if (!res.ok) return ids.length ? { ids } : { reason: res.reason }; // checked up front, so a refusal after the first is not expected
       // Birth hold: the engine lets a creature give birth once tick - lastBirthTick >= cooldownTicks, so a last birth placed in the future
       // holds the first one back for birthHoldS. Saves keep lastBirthTick; children are spawned without it.
       const m = e.get(res.id)!;
-      m.lastBirthTick = e.tick + Math.round(Math.min(600, Math.max(0, LIVE.add.birthHoldS)) / e.config.dt) - m.cooldownTicks;
+      m.lastBirthTick = e.tick + Math.round(LIVE.add.birthHoldS / e.config.dt) - m.cooldownTicks;
       ids.push(res.id);
       this.added.add(res.id);
     }
