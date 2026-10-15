@@ -123,7 +123,7 @@ export class WasmCrowd {
   rebuild(rowAt: Int32Array, n: number, species?: Int32Array): void {
     const { store, crowd, region: r } = this;
     const bytes = n * 4;
-    const touched = store.grow(r.touched, bytes);
+    store.grow(r.touched, bytes); // where touch writes
     const rowAtAt = store.grow(r.rowAt, bytes);
     const cellOf = store.grow(r.cellOf, bytes);
     const perm = store.grow(r.perm, bytes);

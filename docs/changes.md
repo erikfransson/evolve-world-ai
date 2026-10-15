@@ -32,7 +32,7 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ### Speed
 - Speed: The Inland Sea at 10k creatures on one thread went from about 70 to about 41 ms CPU per tick under load (about 35 ms or less on a quiet machine), with results bit-identical:
-  - The engine's per-creature work runs in WebAssembly over the resident rows: the physics step (with the engine's own Math.sin and cos), the crowd grid, the collision pair search, the item lookup, and the settle and birth scans. About 1.13x per tick (the coordinator 1.20x with 3 helpers). The JS versions stay as the reference and the fallback, with parity, fuzz and mutation-checked tests.
+  - The engine's per-creature work runs in WebAssembly over the resident rows: the physics step (with the engine's own Math.sin and cos), the crowd grid, the collision pair search, the item lookup, and the settle and birth scans. About 1.13x per tick (the coordinator 1.20x with 3 helpers). The Creature code is the reference, and parity, fuzz and mutation-checked tests compare the WebAssembly versions with it bit for bit.
   - Helper threads use the resident creature rows too: with 3 helpers the CPU per tick drops about 1.3x and the coordinator's share from about 37 to 24 ms at 10k creatures on The Inland Sea, results unchanged.
   - Eating walks only the creatures that touch an item and the crowd rebuild skips a species copy: about 1.04x per tick on The Inland Sea, results unchanged.
   - Creature body state lives in rows in WASM memory: about 1.15x per tick on big worlds, results unchanged, about 7% less memory.

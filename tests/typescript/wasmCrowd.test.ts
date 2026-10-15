@@ -6,8 +6,6 @@ import type { EcoState } from "../../src/typescript/src/sim/ecoState.ts";
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
 import { ECO_PRESETS, withEcoPreset } from "../../src/typescript/src/sim/presets.ts";
 import { createRng } from "../../src/typescript/src/sim/rng.ts";
-import { dropSpareKernels, randomLearner, runEpisode } from "../../src/typescript/src/sim/rl/env.ts";
-import { envById } from "../../src/typescript/src/sim/rl/envs.ts";
 import { energySignal } from "../../src/typescript/src/sim/sensors.ts";
 import { wasmAvailable } from "../../src/typescript/src/sim/wasm/loader.ts";
 import { Region } from "../../src/typescript/src/sim/wasm/resident.ts";
@@ -239,7 +237,7 @@ describe.skipIf(!wasmAvailable())("the WebAssembly item lookup equals World.touc
   });
 });
 
-// The collision sweep's pairs: the kernel finds them (crowd.wat sweep) in the order of the loops of Ecosystem.collideAll. The pairs are compared with no bump in
+// The collision sweep's pairs: the kernel finds them (crowd.wat sweep) in the order of the loops of Contacts.collideAll. The pairs are compared with no bump in
 // between, so the arrays stay as they are; the whole-run tests below cover the bumps.
 describe.skipIf(!wasmAvailable())("the WebAssembly collision sweep finds the pairs of the JS sweep, in order", () => {
   function jsPairs(crowd: Crowd, reach2: number): [number, number][] {
