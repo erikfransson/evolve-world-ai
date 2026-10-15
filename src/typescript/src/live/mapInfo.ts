@@ -17,7 +17,7 @@ export function cleanMap(m: unknown): WireMap {
   const ground = g ? { normal: share(g.normal), mud: share(g.mud), firm: share(g.firm), rock: share(g.rock) } : { normal: 1, mud: 0, firm: 0, rock: 0 };
   const regions = isObj(m) && Array.isArray(m.regions) ? m.regions.slice(0, MAX_REGIONS).filter(isObj).map((r): WireRegion => ({ name: text(r.name, 40), food: rel(r.food), poison: rel(r.poison), ground: text(r.ground, 60), role: text(r.role, 60) })).filter((r) => r.name) : [];
   const name = isObj(m) && typeof m.name === "string" && mapSpec(m.name) ? m.name : undefined;
-  const version = name && isObj(m) && typeof m.version === "string" && /^[0-9a-f]{1,16}$/.test(m.version) ? m.version : undefined;
+  const version = name && isObj(m) && typeof m.version === "string" && /^[0-9a-f]{8}-[0-9]{1,6}$/.test(m.version) ? m.version : undefined;
   return { ...(name ? { name } : {}), ...(version ? { version } : {}), ground, regions };
 }
 

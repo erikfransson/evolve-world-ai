@@ -36,7 +36,7 @@ import { AddPanel } from "./live/addPanel.ts";
 import { parseFounders } from "./live/founders.ts";
 import { renderMapInfo } from "./live/mapInfo.ts";
 import { MapCache } from "./live/mapTerrain.ts";
-import { specVersion } from "./live/specVersion.ts";
+import { mapVersion } from "./sim/maps/index.ts";
 
 // TODO(L6): admin panel. `?admin` opens a second socket to the owner's loopback admin port (ws://127.0.0.1:8788), sends {t:"auth", token}
 // with a token the owner pastes in, then {t:"get-config"} and {t:"set-config", changes}. See server/src/admin.ts.
@@ -228,7 +228,7 @@ function showMap(h: Hello): void {
   if (!name) return;
   const d = draw;
   // The server runs another design of this map than this page has: plain ground, and the pill says so, until the page is updated.
-  mapStale = h.map.version !== undefined && h.map.version !== specVersion(name);
+  mapStale = h.map.version !== undefined && h.map.version !== mapVersion(name);
   renderStats();
   if (mapStale) return;
   void maps.get(name, h.world.width, h.world.height).then((t) => {

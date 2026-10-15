@@ -17,7 +17,6 @@ import { StateStore } from "../../server/src/state.ts";
 import { applyTunables } from "../../server/src/tunables.ts";
 import { MAX_ITEM_SLOTS } from "../../src/typescript/src/live/protocol.ts";
 import { cleanMap } from "../../src/typescript/src/live/mapInfo.ts";
-import { specVersion } from "../../src/typescript/src/live/specVersion.ts";
 import { STARTER_MARK, encodeAdd, parseAdd, wireName } from "../../src/typescript/src/live/add.ts";
 import { decodeDetail } from "../../src/typescript/src/live/detail.ts";
 import { cleanStats } from "../../src/typescript/src/live/connection.ts";
@@ -26,7 +25,7 @@ import { genomeLengthFor } from "../../src/typescript/src/sim/rl/creatureFile.ts
 import { MAP_TIMEOUT_MS, MAX_OUTLINE_LOOPS, MAX_OUTLINE_POINTS, MapCache, checkOutlines, loadMapTerrain, terrainFromParts } from "../../src/typescript/src/live/mapTerrain.ts";
 import { rockBodies, rockGeometry } from "../../src/typescript/src/ui/rockOutline.ts";
 import type { RockGeometry } from "../../src/typescript/src/ui/rockOutline.ts";
-import { builtMap } from "../../src/typescript/src/sim/maps/index.ts";
+import { builtMap, mapVersion } from "../../src/typescript/src/sim/maps/index.ts";
 import { terrainOf } from "../../src/typescript/src/sim/terrain.ts";
 import type { Terrain } from "../../src/typescript/src/sim/terrain.ts";
 import { smallConfig } from "./liveHelpers.ts";
@@ -87,9 +86,10 @@ describe("item slots of the live world", () => {
       ["The Shallows", 1.6, 0], ["Isles", 1.5, 0], ["Ashfall Shore", 1.8, 3.5], ["Dune Coast", 0.65, 0.15], ["Drowned Town", 1.2, 0.15], ["Cliff Coast", 1, 0.15], ["Open plain", 1, 0.15],
     ]);
     expect(cleanMap(JSON.parse(JSON.stringify(map)))).toEqual(map);
-    expect(map.version).toBe(specVersion("inland-sea")); // the page compares it with its own bundle's design
-    expect(specVersion("inland-sea")).toMatch(/^[0-9a-f]{8}$/);
-    expect(specVersion("nowhere")).toBe("");
+    // The page compares it with its own bundle's mapVersion; the wire form survives cleanMap, so server and page agree.
+    expect(map.version).toBe(mapVersion("inland-sea"));
+    expect(map.version).toMatch(/^[0-9a-f]{8}-[0-9]+$/);
+    expect(cleanMap(JSON.parse(JSON.stringify(live.hello(1).map))).version).toBe(mapVersion("inland-sea"));
     expect(cleanMap({ ...map, version: "<b>" }).version).toBeUndefined();
     expect(cleanMap({ ...map, name: undefined, version: map.version }).version).toBeUndefined();
     expect(live.hello(1).summary).toMatchObject({ initialPopulation: 0, seedCopies: SEED_COPIES });

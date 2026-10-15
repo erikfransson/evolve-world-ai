@@ -18,7 +18,6 @@ import { LIMITS, LIVE, MAX_POPULATION, MAX_SEED_FOUNDERS, SEED_COPIES, itemHeadr
 import type { SeedFounder } from "./founders.ts";
 import { mapRegions } from "../../src/typescript/src/live/mapRegions.ts";
 import { mapVersion } from "../../src/typescript/src/sim/maps/index.ts";
-import { specVersion } from "../../src/typescript/src/live/specVersion.ts";
 import { OtherWorld, otherWorldReason } from "./saveParse.ts";
 import type { Home } from "./saveParse.ts";
 import { BLANKED, STARTER_MARK, wireName } from "../../src/typescript/src/live/add.ts";
@@ -100,7 +99,7 @@ export class LiveWorld {
     this.chronicle.reset(this.eco);
     this.eco.drainEvents();
     const name = this.config.world.map || undefined;
-    this.map = { ...(name ? { name, version: specVersion(name) } : {}), ground: groundShares(this.eco), regions: mapRegions(name) };
+    this.map = { ...(name ? { name, version: mapVersion(name) } : {}), ground: groundShares(this.eco), regions: mapRegions(name) };
     // Added creatures found named lineages (late rows of the lineage table, kept in saves); the living founders among them count.
     // The starter founders a fresh world was seeded with (seedFounders, names behind STARTER_MARK) are no visitor adds.
     this.added = new Set(this.eco.lineageTable.toState().late.filter((r) => r[5] !== "" && !r[5].startsWith(STARTER_MARK) && this.eco.get(r[0])).map((r) => r[0]));
