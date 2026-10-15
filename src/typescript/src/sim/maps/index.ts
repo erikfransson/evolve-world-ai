@@ -18,3 +18,22 @@ export function builtMap(name: string): BuiltMap {
   if (!b) built.set(name, (b = buildMap(spec)));
   return b;
 }
+
+const versions = new Map<string, string>();
+
+// A hash of the built rock, ground and weights, so a save can tell that the map data changed under the same name. Pinned in maps.test.ts.
+export function mapVersion(name: string): string {
+  let v = versions.get(name);
+  if (v === undefined) {
+    const b = builtMap(name);
+    let h = 0x811c9dc5;
+    const feed = (a: Uint8Array): void => {
+      for (let i = 0; i < a.length; i++) h = Math.imul(h ^ a[i]!, 0x01000193);
+    };
+    const rock = new Float64Array(b.rock.length * 3);
+    b.rock.forEach((d, i) => rock.set([d.x, d.y, d.r], 3 * i));
+    for (const a of [b.ground.data, b.weights.food, b.weights.poison, new Uint8Array(rock.buffer)]) feed(a);
+    versions.set(name, (v = (h >>> 0).toString(16).padStart(8, "0")));
+  }
+  return v;
+}

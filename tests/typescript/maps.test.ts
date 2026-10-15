@@ -5,7 +5,7 @@ import { restoreState, saveState } from "../../src/typescript/src/sim/ecoState.t
 import type { EcoState } from "../../src/typescript/src/sim/ecoState.ts";
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
 import { createRng } from "../../src/typescript/src/sim/rng.ts";
-import { MAPS, builtMap } from "../../src/typescript/src/sim/maps/index.ts";
+import { MAPS, builtMap, mapVersion } from "../../src/typescript/src/sim/maps/index.ts";
 import { buildMap, CAP_CELL, WEIGHT_UNIT } from "../../src/typescript/src/sim/maps/mapBuild.ts";
 import type { MapSpec } from "../../src/typescript/src/sim/maps/mapBuild.ts";
 import { withEcoPreset } from "../../src/typescript/src/sim/presets.ts";
@@ -42,6 +42,11 @@ describe("The Inland Sea map", () => {
     expect(map.stats.mud).toBeGreaterThan(0.05);
     expect(map.stats.firm).toBeGreaterThan(0.02);
     expect(map.ground.bytes + w.bytes).toBeLessThan(1_100_000);
+  });
+
+  // Red when inlandSea.ts changes the built rock, ground or weights; update the pin, which makes older Live saves refuse to restore.
+  it("has a pinned version", () => {
+    expect(mapVersion("inland-sea")).toBe("2dbc735a");
   });
 
   it("has the regions: no poison in the sea, more on the north shore, poor food on the dunes, rich food in the shallows", () => {
@@ -242,6 +247,16 @@ describe("a world with a named map", () => {
     expect(() => restoreState(bad((w) => { w.map = 5; }))).toThrow(/world\.map/);
     expect(() => restoreState(bad((w) => { w.width = 30000; }))).toThrow(/needs a world of 40000 x 25000/);
     expect(() => terrainOf({ seed: 1, world: { ...seaConfig().world, map: "atlantis" } })).toThrow(/unknown map/);
+  });
+
+  it("saves the map version, refuses another one and still reads a save without it", () => {
+    const state = JSON.parse(JSON.stringify(saveState(new Ecosystem(seaConfig())))) as EcoState;
+    expect(state.mapVersion).toBe(mapVersion("inland-sea"));
+    expect(() => restoreState(structuredClone(state))).not.toThrow();
+    expect(() => restoreState({ ...structuredClone(state), mapVersion: "00000000" })).toThrow(/another version of the map/);
+    const old = structuredClone(state);
+    delete old.mapVersion;
+    expect(restoreState(old).members.length).toBe(state.creatures.count);
   });
 
   it("founders start where the food weight accepts them and the random map is untouched", () => {
