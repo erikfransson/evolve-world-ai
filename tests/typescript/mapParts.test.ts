@@ -1,7 +1,7 @@
 import { MAPS } from "../../src/typescript/src/sim/maps/index.ts";
 import { buildMap } from "../../src/typescript/src/sim/maps/mapBuild.ts";
 import type { MapSpec } from "../../src/typescript/src/sim/maps/mapBuild.ts";
-import { MAX_MAP_DISCS, packMap, unpackMap } from "../../src/typescript/src/sim/maps/mapParts.ts";
+import { MAX_MAP_DISCS, MAX_MAP_DISC_R, packMap, unpackMap } from "../../src/typescript/src/sim/maps/mapParts.ts";
 import { Terrain } from "../../src/typescript/src/sim/terrain.ts";
 
 const SEA = MAPS["inland-sea"]!;
@@ -36,6 +36,13 @@ describe("the map codec", () => {
     bad({ rock: Float64Array.from([1, NaN, 3]) });
     bad({ rock: new Float64Array(3 * (MAX_MAP_DISCS + 1)) });
     bad({ food: Array.from(parts.food) });
+    const disc = (x: number, y: number, r: number): Float64Array => Float64Array.from([x, y, r]);
+    bad({ rock: disc(100, 100, MAX_MAP_DISC_R + 1) }); // wider than any disc the builder makes
+    bad({ rock: disc(100, 100, 0) });
+    bad({ rock: disc(100, 100, -5) });
+    bad({ rock: disc(small.width + 500, 100, 300) }); // centre outside the world by more than its radius
+    bad({ rock: disc(100, -301, 300) });
+    expect(() => unpackMap(small.width, small.height, { ...parts, rock: disc(100, 100, MAX_MAP_DISC_R) })).not.toThrow();
     expect(() => unpackMap(small.width + 1000, small.height, parts)).toThrow();
   });
 });

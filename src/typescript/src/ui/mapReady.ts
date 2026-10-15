@@ -9,11 +9,11 @@ export interface MapReady {
   width: number;
   height: number;
   parts: MapParts;
-  outlines: RockGeometry;
+  outlines: RockGeometry | null; // none when the map came from the simulation worker, which does not trace rock: the drawing side traces it
 }
 
 // Makes terrainOf return this map in this thread without building it.
 export function applyMap(m: MapReady): void {
   seedMapTerrain(m.name, m.width, m.height, m.parts);
-  useRockGeometry(mapTerrain(m.name, m.width, m.height), m.outlines);
+  if (m.outlines) useRockGeometry(mapTerrain(m.name, m.width, m.height), m.outlines);
 }

@@ -62,7 +62,8 @@ export function checkMapSettings(world: object): void {
   checkMapDensities(world);
   const { map, width, height } = world as { map?: unknown; width?: unknown; height?: unknown };
   if (map !== undefined && map !== "") {
-    const spec = typeof map === "string" ? maps?.spec(map) : undefined;
+    if (!maps) throw new Error(`config "world.map" is set but no maps are registered (import sim/maps/index.ts)`);
+    const spec = typeof map === "string" ? maps.spec(map) : undefined;
     if (!spec) throw new Error(`config "world.map" must be "" or the name of a map`);
     if (width !== spec.width || height !== spec.height) throw new Error(`config "world.map" ${map} needs a world of ${spec.width} x ${spec.height}`);
   }
@@ -451,6 +452,8 @@ export function mapPartsOf(config: TerrainSettings): MapParts | null {
 
 // Makes terrainOf use these arrays for a named map instead of building it, unless this thread already has the map. Throws when they do not fit the map's raster.
 export function seedMapTerrain(name: string, width: number, height: number, parts: MapParts): void {
+  const spec = maps?.spec(name); // a thread without the registry trusts the arrays' fit to the raster
+  if (maps && (!spec || spec.width !== width || spec.height !== height)) throw new Error(`unknown map "${name}" or a world of the wrong size`);
   const map = unpackMap(width, height, parts);
   if (!mapTerrains.has(name)) mapTerrains.set(name, new Terrain(map.rock, map.ground, width, height, map.weights));
 }

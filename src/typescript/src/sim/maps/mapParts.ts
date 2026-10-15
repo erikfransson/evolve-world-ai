@@ -13,6 +13,7 @@ export interface MapParts {
 }
 
 export const MAX_MAP_DISCS = 8000; // the most rock discs a map has, which mapBuild enforces
+export const MAX_MAP_DISC_R = 400; // the widest disc: stones reach 380 and massif discs 300
 
 // The arrays of a map's Terrain, shared with it (postMessage clones them, or transfers them when asked); null when it is not a hand-designed map.
 export function packMap(t: Pick<Terrain, "rockCount" | "rockX" | "rockY" | "rockR" | "ground" | "weights">): MapParts | null {
@@ -30,6 +31,10 @@ export function unpackMap(width: number, height: number, parts: MapParts): { roc
   if (!(parts.ground instanceof Uint8Array) || parts.ground.length !== ground.data.length) throw new Error("ground does not fit the map");
   if (!(food instanceof Uint8Array) || !(poison instanceof Uint8Array) || food.length !== nodes || poison.length !== nodes) throw new Error("weights do not fit the map");
   if (!(rock instanceof Float64Array) || rock.length % 3 !== 0 || rock.length > 3 * MAX_MAP_DISCS || !rock.every(Number.isFinite)) throw new Error("rock does not fit the map");
+  for (let i = 0; i < rock.length; i += 3) {
+    const r = rock[i + 2]!;
+    if (!(r > 0 && r <= MAX_MAP_DISC_R) || rock[i]! < -r || rock[i]! > width + r || rock[i + 1]! < -r || rock[i + 1]! > height + r) throw new Error("rock does not fit the map");
+  }
   ground.data.set(parts.ground);
   const discs = Array.from({ length: rock.length / 3 }, (_, i) => ({ x: rock[3 * i]!, y: rock[3 * i + 1]!, r: rock[3 * i + 2]! }));
   return { rock: discs, ground, weights: new MapWeights(ground, food, poison, discsBlocked(discs, width)) };

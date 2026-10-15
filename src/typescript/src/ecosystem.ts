@@ -101,15 +101,20 @@ function send(msg: EcoInMessage, transfer: Transferable[] = []): void {
 
 const pageMaps = new PageMaps();
 let mapKey = ""; // the named map asked for
+let mapShown = false; // the drawing side has it, from the page's worker or the simulation worker
 // A named map is built once, on a worker. Whoever draws and the next run take its arrays, so nobody builds it a second time or freezes the page doing so.
 function loadMap(): void {
   const { map, width, height } = config.world;
   const key = map ? `${map}|${width}|${height}` : "";
   if (!map || key === mapKey) return;
   mapKey = key;
+  mapShown = false;
   void ready.then(() => pageMaps.load(map, width, height)).then((m) => {
-    if (!m) mapKey = ""; // not built: the next change asks again
-    else if (host) {
+    if (!m) {
+      mapKey = ""; // not built: the next change asks again, and a run sends the map from its own worker
+      if (!mapShown && !active) view.setNote("The map could not be built in the background. It shows once a run starts.");
+    } else if (host && !mapShown) {
+      mapShown = true;
       host.useMap(m);
       drawIdle();
     }
@@ -173,6 +178,13 @@ function clearSelection(): void {
 
 function onSnapshot(e: MessageEvent<EcoOutMessage>): void {
   const msg = e.data;
+  if (msg.type === "map") {
+    if (!mapShown) {
+      mapShown = true;
+      host?.useMap({ name: msg.name, width: msg.width, height: msg.height, parts: msg.parts, outlines: null });
+    }
+    return;
+  }
   if (msg.type === "error") {
     active = false;
     view.setPhase("idle");

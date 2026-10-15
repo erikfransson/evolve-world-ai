@@ -96,7 +96,16 @@ export interface EcoErrorMessage {
   message: string;
 }
 
-export type EcoOutMessage = EcoSnapshot | EcoErrorMessage;
+// A named map's arrays, sent once when the run started without them (the page could not build the map), for whoever draws.
+export interface EcoMapMessage {
+  type: "map";
+  name: string;
+  width: number;
+  height: number;
+  parts: MapParts;
+}
+
+export type EcoOutMessage = EcoSnapshot | EcoErrorMessage | EcoMapMessage;
 
 export interface SnapshotViews {
   count: number;

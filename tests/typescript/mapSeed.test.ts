@@ -27,8 +27,16 @@ describe("seeding a map into another thread", () => {
     const parts = mapPartsOf(settings)!;
     expect(() => seedMapTerrain("inland-sea", world.width, world.height, { ...parts, food: new Uint8Array(3) })).toThrow();
     expect(() => seedMapTerrain("nope", 10, 10, parts)).toThrow();
+    expect(() => seedMapTerrain("nope", world.width, world.height, parts)).toThrow(); // fits the raster, but is no map here
+    expect(() => seedMapTerrain("inland-sea", world.width + 50, world.height, parts)).toThrow(); // not the map's size
     expect(mapPartsOf({ seed: 1, world: DEFAULT_ECO_CONFIG.world })).toBeNull();
   }, 180_000);
+  it("a thread without the map registry says so when a config names a map", async () => {
+    vi.resetModules();
+    const fresh = await import("../../src/typescript/src/sim/terrain.ts");
+    expect(() => fresh.checkMapSettings(world)).toThrow(/no maps are registered/);
+    expect(() => fresh.checkMapSettings({ ...world, map: "" })).not.toThrow();
+  });
   it("a helper's init with the map seeds its terrain and never builds the map", async () => {
     const parts = mapPartsOf(settings)!;
     vi.resetModules();

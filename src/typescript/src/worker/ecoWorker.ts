@@ -6,7 +6,6 @@ import { ThinkPool, defaultHelpers } from "./ecoPool.ts";
 import { gentleController } from "./pacer.ts";
 import type { DutyController } from "./pacer.ts";
 import { loadPool } from "../sim/seedPool.ts";
-import { seedMapTerrain } from "../sim/terrain.ts";
 import type { PoolEntry } from "../sim/seedPool.ts";
 
 let renderPort: MessagePort | null = null; // set when a render worker draws: snapshot buffers go to it, the page gets the rest
@@ -74,13 +73,6 @@ async function receive(msg: EcoInMessage): Promise<void> {
       runner.seedPool = await (seedPool ??= msg.poolUrl ? loadPool(msg.poolUrl) : Promise.resolve(null));
       if (!runner.seedPool) seedPool = undefined; // a failed load is tried again on the next start
       runner.useHelpers(helpersFor(msg));
-      if (msg.map && msg.config.world.map) {
-        try {
-          seedMapTerrain(msg.config.world.map, msg.config.world.width, msg.config.world.height, msg.map);
-        } catch {
-          // the arrays do not fit: the runner builds the map itself
-        }
-      }
     }
     runner.handle(msg);
   } catch (error) {
