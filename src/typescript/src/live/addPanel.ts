@@ -225,11 +225,14 @@ export class AddPanel {
     this.founder = i;
     const f = this.founders[i];
     if (!f) return;
-    // The founder's own birth traits, within this world's ranges, else the ones set before.
+    // The founder's own birth traits on the sliders' steps and within this world's ranges, else the range middles, as its seeded starters have.
     const r = this.rules?.birth;
-    const fit = (v: number, range: [number, number] | undefined): number => (range ? Math.min(range[1], Math.max(range[0], v)) : v); // the rules clamp again when they come
-    const own = f.birth ? { energy: fit(f.birth.energy, r?.energy), cost: fit(f.birth.cost, r?.cost), cooldown: fit(f.birth.cooldown ?? this.defaultBirth().cooldown, r?.cooldown) } : null;
-    this.t = tunedOf(f.plan, own ?? this.t?.birth ?? this.defaultBirth());
+    const fit = (v: number, step: number, range: [number, number] | undefined): number => {
+      const s = Math.round(v / step) * step;
+      return range ? Math.min(range[1], Math.max(range[0], s)) : s; // the rules clamp again when they come
+    };
+    const d = this.defaultBirth();
+    this.t = tunedOf(f.plan, f.birth ? { energy: fit(f.birth.energy, 1, r?.energy), cost: fit(f.birth.cost, 1, r?.cost), cooldown: fit(f.birth.cooldown ?? d.cooldown, 0.5, r?.cooldown) } : d);
     const name = this.$<HTMLInputElement>("addName");
     if (!name.value || name.dataset.auto === "1") {
       name.value = f.lineage; // the starters' own lineage name, so a copy carries the same
