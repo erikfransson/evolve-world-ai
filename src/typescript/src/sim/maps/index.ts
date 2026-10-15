@@ -1,5 +1,6 @@
 import { INLAND_SEA } from "./inlandSea.ts";
-import { registerMaps } from "../terrain.ts";
+import { registerMaps, Terrain } from "../terrain.ts";
+import { packMap } from "./mapParts.ts";
 import { buildMap } from "./mapBuild.ts";
 import type { BuiltMap, MapSpec } from "./mapBuild.ts";
 
@@ -27,13 +28,13 @@ export function mapVersion(name: string): string {
   let v = versions.get(name);
   if (v === undefined) {
     const b = builtMap(name);
+    const spec = mapSpec(name)!;
     let h = 0x811c9dc5;
     const feed = (a: Uint8Array): void => {
       for (let i = 0; i < a.length; i++) h = Math.imul(h ^ a[i]!, 0x01000193);
     };
-    const rock = new Float64Array(b.rock.length * 3);
-    b.rock.forEach((d, i) => rock.set([d.x, d.y, d.r], 3 * i));
-    for (const a of [b.ground.data, b.weights.food, b.weights.poison, new Uint8Array(rock.buffer)]) feed(a);
+    const parts = packMap(new Terrain(b.rock, b.ground, spec.width, spec.height, b.weights))!;
+    for (const a of [parts.ground, parts.food, parts.poison, new Uint8Array(parts.rock.buffer)]) feed(a);
     versions.set(name, (v = (h >>> 0).toString(16).padStart(8, "0")));
   }
   return v;

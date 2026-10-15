@@ -84,10 +84,12 @@ export class WasmCrowd {
     const C = this.pC;
     const { i32, f64 } = this.store;
     const outAt = this.region.touched.ptr;
-    const ints: [number, number][] = [
-      [L.C_ITEM_START, tables.start], [L.C_ITEM_XY, tables.xy], [L.C_ITEM_IDS, tables.ids], [L.C_ITEM_COLS, tables.cols], [L.C_ITEM_ROWS, rows], [L.C_TOUCH_OUT, outAt],
-    ];
-    for (const [off, v] of ints) i32[(C + off) >> 2] = v;
+    i32[(C + L.C_ITEM_START) >> 2] = tables.start;
+    i32[(C + L.C_ITEM_XY) >> 2] = tables.xy;
+    i32[(C + L.C_ITEM_IDS) >> 2] = tables.ids;
+    i32[(C + L.C_ITEM_COLS) >> 2] = tables.cols;
+    i32[(C + L.C_ITEM_ROWS) >> 2] = rows;
+    i32[(C + L.C_TOUCH_OUT) >> 2] = outAt;
     f64[(C + L.C_INV_ITEM_CELL) >> 3] = invCell;
     f64[(C + L.C_ITEM_REACH) >> 3] = reach;
     this.exports.touch(C);
@@ -102,7 +104,11 @@ export class WasmCrowd {
     const C = this.pC;
     this.store.f64[(C + L.C_REACH2) >> 3] = reach2;
     const i32 = this.store.i32;
-    for (const off of [L.C_SW_O, L.C_SW_S, L.C_SW_PHASE, L.C_SW_T, L.C_SW_RESUME]) i32[(C + off) >> 2] = 0;
+    i32[(C + L.C_SW_O) >> 2] = 0;
+    i32[(C + L.C_SW_S) >> 2] = 0;
+    i32[(C + L.C_SW_PHASE) >> 2] = 0;
+    i32[(C + L.C_SW_T) >> 2] = 0;
+    i32[(C + L.C_SW_RESUME) >> 2] = 0;
   }
 
   sweepNext(): boolean {

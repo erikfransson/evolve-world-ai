@@ -1,4 +1,4 @@
-;; The crowd grid from resident rows (twin of Crowd.rebuildRows and rebuildFrom in crowd.ts, which stay the reference and the fallback): the cell key of each creature,
+;; The crowd grid from resident rows (twin of rebuildFrom in crowd.ts, which stay the reference and the fallback): the cell key of each creature,
 ;; a stable LSD radix sort of the creature indices by key, then the arrays sorted by cell (x, y, energy, species, owner), cellStart and the occupied cells, read
 ;; straight from the rows. Same arithmetic, same order, so the arrays equal the JS ones bit for bit. Offsets are layout.ts's (double-brace tokens).
 ;; Keep this and crowd.ts in step: tests/typescript/wasmCrowd.test.ts compares them.
