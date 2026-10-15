@@ -1,6 +1,6 @@
 import type { Aging, Body, Decays } from "../physics.ts";
 import { agingFactor, decaysFor, keepInside } from "../physics.ts";
-import { OUTPUT_SIZE, energySignal, thrustCommand } from "../sensors.ts";
+import { EXTRA_TERRAIN, OUTPUT_SIZE, energySignal, thrustCommand } from "../sensors.ts";
 import { Terrain } from "../terrain.ts";
 import type { World } from "../world.ts";
 import { refit } from "../brain.ts";
@@ -35,7 +35,7 @@ export function prepareRows(store: ResidentStore, rows: Int32Array, n: number, t
     f[e + 2] = ((vy * cos - vx * sin) * c.drag) / c.maxThrust;
     f[e + 3] = f[o + F.turn]! / c.maxTurnRate;
     const ground = empty ? 0 : terrain.valueAt(f[o + F.x]!, f[o + F.y]!);
-    f[e + 4] = ground;
+    f[e + EXTRA_TERRAIN] = ground;
     f[o + F.groundFactor] = empty ? 1 : Terrain.factor(ground);
   }
 }

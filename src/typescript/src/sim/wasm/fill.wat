@@ -3,7 +3,7 @@
 ;; brain slot list of the batch. Creatures are counting-sorted by item grid row (stable), which is the order sense.wat walks. Only moves data:
 ;; the extras are computed in JS (residentStep.ts) and stored in the row as f64.
 ;; Memory is the brain bank's (imported).
-;; Record, 64 bytes (sense.wat): f64 x y cos sin rayLength, i32 self@40 rays@44 offsets@48 input@52 detail@56.
+;; The record is layout.ts's REC_* (sense.wat reads it).
 (module
   (import "brain" "mem" (memory 1))
 
@@ -54,25 +54,25 @@
       (local.set $at (i32.add (local.get $count) (i32.shl (i32.load (i32.add (local.get $place) (i32.shl (local.get $k) (i32.const 2)))) (i32.const 2))))
       (local.set $q (i32.load (local.get $at)))
       (i32.store (local.get $at) (i32.add (local.get $q) (i32.const 1)))
-      (local.set $rec (i32.add (i32.load offset={{F_REC}} (local.get $F)) (i32.shl (local.get $q) (i32.const 6))))
+      (local.set $rec (i32.add (i32.load offset={{F_REC}} (local.get $F)) (i32.shl (local.get $q) (i32.const {{REC_SHIFT}}))))
       (local.set $nR (i32.load offset={{R_RAYS}} (local.get $row)))
-      (f64.store (local.get $rec) (f64.load offset={{R_X}} (local.get $row)))
-      (f64.store offset=8 (local.get $rec) (f64.load offset={{R_Y}} (local.get $row)))
-      (f64.store offset=16 (local.get $rec) (f64.load offset={{R_COS}} (local.get $row)))
-      (f64.store offset=24 (local.get $rec) (f64.load offset={{R_SIN}} (local.get $row)))
-      (f64.store offset=32 (local.get $rec) (f64.load offset={{R_RAY_LENGTH}} (local.get $row)))
-      (i32.store offset=40 (local.get $rec) (i32.load (i32.add (i32.load offset={{F_SELVES}} (local.get $F)) (i32.shl (local.get $k) (i32.const 2)))))
-      (i32.store offset=44 (local.get $rec) (local.get $nR))
-      (i32.store offset=48 (local.get $rec) (i32.load offset={{R_OFFSETS}} (local.get $row)))
+      (f64.store offset={{REC_X}} (local.get $rec) (f64.load offset={{R_X}} (local.get $row)))
+      (f64.store offset={{REC_Y}} (local.get $rec) (f64.load offset={{R_Y}} (local.get $row)))
+      (f64.store offset={{REC_COS}} (local.get $rec) (f64.load offset={{R_COS}} (local.get $row)))
+      (f64.store offset={{REC_SIN}} (local.get $rec) (f64.load offset={{R_SIN}} (local.get $row)))
+      (f64.store offset={{REC_RAY_LENGTH}} (local.get $rec) (f64.load offset={{R_RAY_LENGTH}} (local.get $row)))
+      (i32.store offset={{REC_SELF}} (local.get $rec) (i32.load (i32.add (i32.load offset={{F_SELVES}} (local.get $F)) (i32.shl (local.get $k) (i32.const 2)))))
+      (i32.store offset={{REC_RAYS}} (local.get $rec) (local.get $nR))
+      (i32.store offset={{REC_OFFSETS}} (local.get $rec) (i32.load offset={{R_OFFSETS}} (local.get $row)))
       (local.set $in (i32.load offset={{R_INPUT}} (local.get $row)))
-      (i32.store offset=52 (local.get $rec) (local.get $in))
-      (i32.store offset=56 (local.get $rec) (select (i32.load offset={{F_DETAIL_PTR}} (local.get $F)) (i32.const 0) (i32.eq (local.get $row) (local.get $detailRow))))
+      (i32.store offset={{REC_INPUT}} (local.get $rec) (local.get $in))
+      (i32.store offset={{REC_DETAIL}} (local.get $rec) (select (i32.load offset={{F_DETAIL_PTR}} (local.get $F)) (i32.const 0) (i32.eq (local.get $row) (local.get $detailRow))))
       (i32.store (i32.add (i32.load offset={{F_SLOTS}} (local.get $F)) (i32.shl (local.get $k) (i32.const 2))) (i32.load offset={{R_SLOT}} (local.get $row)))
       ;; brain input extras at input + 4 * rays * stride, then the memory units
       (local.set $at (i32.add (local.get $in) (i32.shl (i32.mul (local.get $nR) (i32.load offset={{F_STRIDE}} (local.get $F))) (i32.const 2))))
       (local.set $x (i32.const 0))
       (block $xd (loop $xl
-        (br_if $xd (i32.ge_s (local.get $x) (i32.const 5)))
+        (br_if $xd (i32.ge_s (local.get $x) (i32.const {{EXTRAS}})))
         (f32.store (i32.add (local.get $at) (i32.shl (local.get $x) (i32.const 2)))
           (f32.demote_f64 (f64.load offset={{R_EXTRAS}} (i32.add (local.get $row) (i32.shl (local.get $x) (i32.const 3))))))
         (local.set $x (i32.add (local.get $x) (i32.const 1)))
@@ -82,7 +82,7 @@
       (local.set $up (i32.load offset={{R_UNITS}} (local.get $row)))
       (block $ud (loop $ul
         (br_if $ud (i32.ge_s (local.get $u) (local.get $units)))
-        (f32.store offset=20 (i32.add (local.get $at) (i32.shl (local.get $u) (i32.const 2)))
+        (f32.store offset={{UNITS_AT}} (i32.add (local.get $at) (i32.shl (local.get $u) (i32.const 2)))
           (f32.demote_f64 (f64.load (i32.add (local.get $up) (i32.shl (local.get $u) (i32.const 3))))))
         (local.set $u (i32.add (local.get $u) (i32.const 1)))
         (br $ul)))

@@ -2,6 +2,8 @@
 // read the offsets from here, and scripts/wasmAssemble.ts substitutes them for the {{NAME}} tokens of fill.wat, so the two sides cannot drift apart.
 // Offsets are in bytes from the start of the row or block.
 
+import { EXTRA_INPUTS } from "../sensors.ts";
+
 export const LAYOUT = {
   ROW_BYTES: 192,
   // f64 fields of a row
@@ -19,7 +21,7 @@ export const LAYOUT = {
   R_GROUND_FACTOR: 88, // speed factor of the ground under the creature, set with the sense inputs and used by the step
   R_RAY_LENGTH: 96,
   // the brain input extras the fill kernel copies (as f32) after the ray features: energy signal, forward and sideways speed, turn rate, ground value
-  R_EXTRAS: 104, // five f64, to 144
+  R_EXTRAS: 104, // EXTRAS f64, to R_OUT
   // i32 fields of a row
   R_OUT: 144, // byte address of the brain outputs: turn, thrust, then one target per memory unit
   R_SPECIES: 148,
@@ -30,6 +32,23 @@ export const LAYOUT = {
   R_OFFSETS: 168, // byte address of the ray offset cos and sin tables
   R_INPUT: 172, // byte address of the brain input vector
   R_SLOT: 176, // brain slot
+  // brain input extras: how many, and the byte offset of the first memory unit from the first extra
+  EXTRAS: EXTRA_INPUTS,
+  UNITS_AT: 4 * EXTRA_INPUTS,
+  // sense record, 64 bytes (fill.wat writes it, sense.wat reads it; senser.ts reads the same offsets): f64 x y cos sin ray length, i32 crowd index of the creature, rays,
+  // byte address of its ray offset tables, byte address of its brain input, and where to write its rays for the UI (0 for none)
+  REC_BYTES: 64,
+  REC_SHIFT: 6, // log2 of REC_BYTES
+  REC_X: 0,
+  REC_Y: 8,
+  REC_COS: 16,
+  REC_SIN: 24,
+  REC_RAY_LENGTH: 32,
+  REC_SELF: 40,
+  REC_RAYS: 44,
+  REC_OFFSETS: 48,
+  REC_INPUT: 52,
+  REC_DETAIL: 56,
   // call block of fill (i32 unless noted)
   F_N: 0,
   F_ROWS: 4,

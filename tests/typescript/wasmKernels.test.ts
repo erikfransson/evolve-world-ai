@@ -4,8 +4,9 @@ import { Crowd } from "../../src/typescript/src/sim/crowd.ts";
 import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { createRng } from "../../src/typescript/src/sim/rng.ts";
 import { terrainOf } from "../../src/typescript/src/sim/terrain.ts";
-import { inputLayout, planOf } from "../../src/typescript/src/sim/sensors.ts";
+import { EXTRA_INPUTS, EXTRA_TERRAIN, inputLayout, planOf } from "../../src/typescript/src/sim/sensors.ts";
 import { HIT_CREATURE, HIT_FOOD, HIT_NONE, HIT_POISON, HIT_WALL } from "../../src/typescript/src/sim/types.ts";
+import { LAYOUT as L } from "../../src/typescript/src/sim/wasm/layout.ts";
 import { WasmBrainBank } from "../../src/typescript/src/sim/wasm/brainKernel.ts";
 import { setWasmDisabled, wasmAvailable } from "../../src/typescript/src/sim/wasm/loader.ts";
 import { speciesEngine, speciesList } from "../../src/typescript/src/sim/species.ts";
@@ -22,6 +23,20 @@ describe("wasm toolchain", () => {
   it("kernels.generated.ts matches the .wat sources (run `npm run wasm` after editing them)", async () => {
     const committed = readFileSync(new URL("../../src/typescript/src/sim/wasm/kernels.generated.ts", import.meta.url), "utf8");
     expect(await generatedSource()).toBe(committed);
+  });
+
+  it("the layout fits the sense record, the brain input extras and the row", () => {
+    const f64 = [L.REC_X, L.REC_Y, L.REC_COS, L.REC_SIN, L.REC_RAY_LENGTH];
+    const i32 = [L.REC_SELF, L.REC_RAYS, L.REC_OFFSETS, L.REC_INPUT, L.REC_DETAIL];
+    expect(L.REC_BYTES).toBe(1 << L.REC_SHIFT);
+    expect(f64.map((o, i) => o - 8 * i)).toEqual([0, 0, 0, 0, 0]); // consecutive f64
+    expect(i32[0]).toBeGreaterThanOrEqual(8 * f64.length);
+    expect(i32.map((o, i) => o - 4 * i - i32[0]!)).toEqual([0, 0, 0, 0, 0]);
+    expect(L.REC_DETAIL + 4).toBeLessThanOrEqual(L.REC_BYTES);
+    expect(L.EXTRAS).toBe(EXTRA_INPUTS);
+    expect(L.UNITS_AT).toBe(4 * EXTRA_INPUTS); // the memory units follow the f32 extras
+    expect(L.R_OUT).toBe(L.R_EXTRAS + 8 * EXTRA_INPUTS); // the f64 extras end where the i32 fields begin
+    expect(EXTRA_TERRAIN).toBe(EXTRA_INPUTS - 1);
   });
 
   it("detects WebAssembly SIMD here", () => {

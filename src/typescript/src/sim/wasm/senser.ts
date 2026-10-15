@@ -8,6 +8,7 @@ import { HIT_CREATURE } from "../types.ts";
 import { SENSE_BYTES, compiled } from "./loader.ts";
 import { ROCK_CELL } from "../terrain.ts";
 import type { WasmFiller } from "./fillKernel.ts";
+import { LAYOUT as L, f64At, i32At } from "./layout.ts";
 
 // The whole Ecosystem sense in one WebAssembly call per batch (sense.wat): ray directions, item and wall rays in f64 with the
 // JS candidate order, crowd rays in f32 as rays.wat, and the ray features written into the brain's input vector in place.
@@ -18,7 +19,6 @@ import type { WasmFiller } from "./fillKernel.ts";
 export const MAX_RAYS = 64;
 const P_BYTES = 192;
 const SCRATCH_BYTES = 2816;
-const REC_BYTES = 64;
 
 interface SenseExports extends WebAssembly.Exports {
   sense(p: number): void;
@@ -287,7 +287,7 @@ export class WasmSenser {
     const pOwn = grid ? grid.owners : this.grow(this.rOwn, count * 4 + 16);
     const pSig = this.grow(this.rSig, count * 4 + 16);
     const pSpecies = grid ? grid.species : this.grow(this.rSpecies, count * 4 + 16);
-    const pRec = this.grow(this.rRec, n * REC_BYTES);
+    const pRec = this.grow(this.rRec, n * L.REC_BYTES);
     const pCand = this.grow(this.rCand, Math.max((world.count + rock.rockCount) * 32, count * 16) + 64);
     const pRockStart = this.grow(this.rRockStart, rock.rockStart.length * 4);
     const pRockOrder = this.grow(this.rRockOrder, rock.rockCount * 4 + 4);
@@ -337,21 +337,21 @@ export class WasmSenser {
         const c = creatures[k]!;
         const s = c.state;
         const q = place[k]!;
-        const o = rec + q * 8;
+        const o = rec + q * f64At(L.REC_BYTES);
         const slot = slots[k]!;
         const rays = c.plan.rayCount;
-        f64[o] = s.x;
-        f64[o + 1] = s.y;
-        f64[o + 2] = c.heading.cos;
-        f64[o + 3] = c.heading.sin;
-        f64[o + 4] = c.plan.rayLength;
-        const w = recI + q * 16;
-        i32[w + 10] = selves[k]!;
-        i32[w + 11] = rays;
-        i32[w + 12] = this.offPtr[slot]!;
+        f64[o + f64At(L.REC_X)] = s.x;
+        f64[o + f64At(L.REC_Y)] = s.y;
+        f64[o + f64At(L.REC_COS)] = c.heading.cos;
+        f64[o + f64At(L.REC_SIN)] = c.heading.sin;
+        f64[o + f64At(L.REC_RAY_LENGTH)] = c.plan.rayLength;
+        const w = recI + q * i32At(L.REC_BYTES);
+        i32[w + i32At(L.REC_SELF)] = selves[k]!;
+        i32[w + i32At(L.REC_RAYS)] = rays;
+        i32[w + i32At(L.REC_OFFSETS)] = this.offPtr[slot]!;
         const inFloat = this.bank.inputAt(slot);
-        i32[w + 13] = inFloat * 4;
-        i32[w + 14] = c === detail ? pDetail : 0;
+        i32[w + i32At(L.REC_INPUT)] = inFloat * 4;
+        i32[w + i32At(L.REC_DETAIL)] = c === detail ? pDetail : 0;
         c.writeBodyInputs(f32, inFloat + rays * stride);
       }
     }
