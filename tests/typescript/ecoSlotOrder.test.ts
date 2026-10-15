@@ -8,13 +8,21 @@ import type { BodyPlan } from "../../src/typescript/src/sim/sensors.ts";
 
 const PLAN: BodyPlan = { rayCount: 5, raySpread: 2, rayLength: 90, hiddenLayers: [7], memoryShort: 2, memoryLong: 1 };
 
-// bySlot is private; the batch order and finishTick rely on it matching the member list.
+// The member table is private; the batch order and finishTick rely on bySlot matching the member list, and the hot loops on every column matching it too.
 function check(eco: Ecosystem): void {
-  const bySlot = (eco as unknown as { bySlot: Ecosystem["members"] }).bySlot;
+  const { bySlot, states, kinds, birthEnergies, byId } = (eco as unknown as { table: { bySlot: Ecosystem["members"]; states: unknown[]; kinds: Int32Array; birthEnergies: Float64Array; byId: Map<number, unknown> } }).table;
   const sorted = [...eco.members].sort((a, b) => a.creature.slot - b.creature.slot);
   expect(bySlot.length).toBe(sorted.length);
   expect(bySlot.every((m, i) => m === sorted[i])).toBe(true);
   expect(eco.members.every((m, i) => m.index === i)).toBe(true);
+  expect(states.length).toBe(eco.members.length);
+  expect(byId.size).toBe(eco.members.length);
+  eco.members.forEach((m, i) => {
+    expect(states[i]).toBe(m.creature.state);
+    expect(kinds[i]).toBe(m.species);
+    expect(birthEnergies[i]).toBe(m.birth.energy);
+    expect(byId.get(m.id)).toBe(m);
+  });
 }
 
 describe("members in slot order", () => {

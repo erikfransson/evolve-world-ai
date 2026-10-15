@@ -30,7 +30,7 @@ function capture(e: Any, n: number): Float64Array[] {
   const store = e.resident;
   const out: Float64Array[] = [];
   for (let k = 0; k < n; k++) {
-    const o = e.slotRows[k] >> 3;
+    const o = e.table.slotRows[k] >> 3;
     out.push(store.f64.slice(o, o + ROW_F));
     const b = (o << 1) + L.R_UNITS / 4;
     const at = store.i32[b] >> 3;
@@ -41,7 +41,7 @@ function capture(e: Any, n: number): Float64Array[] {
 function restore(e: Any, n: number, saved: Float64Array[]): void {
   const store = e.resident;
   for (let k = 0; k < n; k++) {
-    const o = e.slotRows[k] >> 3;
+    const o = e.table.slotRows[k] >> 3;
     store.f64.set(saved[2 * k]!, o);
     store.f64.set(saved[2 * k + 1]!, store.i32[(o << 1) + L.R_UNITS / 4] >> 3);
   }
@@ -54,7 +54,7 @@ const differences = (a: Float64Array[], b: Float64Array[]): number => {
 
 // The Creature code's memory and motion for every member.
 function stepCreatures(eco: Ecosystem): void {
-  for (const m of (eco as Any).bySlot) {
+  for (const m of (eco as Any).table.bySlot) {
     m.creature.remember();
     m.creature.steer();
   }
@@ -65,7 +65,7 @@ function stepBoth(eco: Ecosystem): number {
   const e = eco as Any;
   const n = eco.members.length;
   const start = capture(e, n);
-  e.kernels.stepper.step(e.slotRows, n, e.aging, e.items.terrain);
+  e.kernels.stepper.step(e.table.slotRows, n, e.aging, e.items.terrain);
   const wasm = capture(e, n);
   restore(e, n, start);
   stepCreatures(eco);
@@ -179,7 +179,7 @@ describe.skipIf(!wasmAvailable())("the WebAssembly step equals the Creature code
   });
 
   // The f32 brain outputs of the row at batch position k, as an index into the f32 view.
-  const outAt = (e: Any, k: number): number => e.resident.i32[((e.slotRows[k] >> 3) << 1) + L.R_OUT / 4] >> 2;
+  const outAt = (e: Any, k: number): number => e.resident.i32[((e.table.slotRows[k] >> 3) << 1) + L.R_OUT / 4] >> 2;
 
   it("on a creature exactly on a rock centre, which must leave along +x", () => {
     const eco = make(inland, 300);
@@ -187,7 +187,7 @@ describe.skipIf(!wasmAvailable())("the WebAssembly step equals the Creature code
     for (let t = 0; t < 3; t++) eco.step();
     const rock = e.items.terrain;
     for (let k = 0; k < 12; k++) {
-      const c = e.bySlot[k].creature;
+      const c = e.table.bySlot[k].creature;
       c.state.x = rock.rockX[k * 3];
       c.state.y = rock.rockY[k * 3];
       c.state.vx = c.state.vy = 0;
@@ -200,7 +200,7 @@ describe.skipIf(!wasmAvailable())("the WebAssembly step equals the Creature code
       f32[outAt(e, k) + 1] = -1; // brake from rest: the body stays where it is
     }
     expect(stepBoth(eco)).toBe(0);
-    expect(e.bySlot[0].creature.state.x).not.toBe(rock.rockX[0]); // and was pushed out
+    expect(e.table.bySlot[0].creature.state.x).not.toBe(rock.rockX[0]); // and was pushed out
   });
 
   it("on NaN rows in a world with rock in the first grid cell, where the NaN distance reaches a disc", () => {
@@ -218,7 +218,7 @@ describe.skipIf(!wasmAvailable())("the WebAssembly step equals the Creature code
     eco!.prepareTick();
     eco!.sensePhase();
     expect(stepBoth(eco!)).toBe(0);
-    expect(e.bySlot.some((m: Any) => Number.isFinite(m.creature.state.x))).toBe(true); // JS and WebAssembly both leave along +x from a disc, so some come out finite
+    expect(e.table.bySlot.some((m: Any) => Number.isFinite(m.creature.state.x))).toBe(true); // JS and WebAssembly both leave along +x from a disc, so some come out finite
   });
 
   it("on NaN, negative zero and infinite brain outputs", () => {

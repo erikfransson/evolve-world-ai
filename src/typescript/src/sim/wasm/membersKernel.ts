@@ -11,9 +11,6 @@ interface MembersExports extends WebAssembly.Exports {
   birthCandidates(m: number): void;
 }
 
-// The first n elements, for lists that may be longer than the batch.
-const head = (a: ArrayLike<number>, n: number): ArrayLike<number> => (a.length === n ? a : Array.prototype.slice.call(a, 0, n) as number[]);
-
 export class WasmMembers {
   private readonly store: ResidentStore;
   private readonly exports: MembersExports;
@@ -38,14 +35,14 @@ export class WasmMembers {
     }
   }
 
-  private run(call: "settle" | "birthCandidates", rowAt: ArrayLike<number>, n: number, thresholds: ArrayLike<number> | null, first: number): Int32Array {
+  private run(call: "settle" | "birthCandidates", rowAt: Int32Array, n: number, thresholds: Float64Array | null, first: number): Int32Array {
     const { store } = this;
     const rowAtAt = store.grow(this.rRowAt, n * 4);
     const outAt = store.grow(this.rOut, n * 4);
     const thresholdsAt = thresholds ? store.grow(this.rThresholds, n * 8) : 0;
     const { i32, f64 } = store; // after the last allocation
-    i32.set(head(rowAt, n), rowAtAt >> 2);
-    if (thresholds) f64.set(head(thresholds, n), thresholdsAt >> 3);
+    i32.set(rowAt.subarray(0, n), rowAtAt >> 2);
+    if (thresholds) f64.set(thresholds.subarray(0, n), thresholdsAt >> 3);
     const M = this.pM;
     i32[(M + L.M_N) >> 2] = n;
     i32[(M + L.M_ROW_AT) >> 2] = rowAtAt;
@@ -61,12 +58,12 @@ export class WasmMembers {
 
   // Counts a tick alive for each of the n members (rowAt[i]: f64 index of member i's row) with energy left; returns the others' indices, highest first.
   // Valid until the next call.
-  settle(rowAt: ArrayLike<number>, n: number): Int32Array {
+  settle(rowAt: Int32Array, n: number): Int32Array {
     return this.run("settle", rowAt, n, null, 0);
   }
 
   // The members, from index first round the list once, whose energy is not below thresholds[i]. Valid until the next call.
-  birthCandidates(rowAt: ArrayLike<number>, n: number, thresholds: ArrayLike<number>, first: number): Int32Array {
+  birthCandidates(rowAt: Int32Array, n: number, thresholds: Float64Array, first: number): Int32Array {
     return this.run("birthCandidates", rowAt, n, thresholds, first);
   }
 }

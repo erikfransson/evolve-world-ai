@@ -616,11 +616,7 @@ export class ShareHelper {
     const units = plan.memoryShort + plan.memoryLong;
     let c = this.spare[species]!.pop();
     if (c) c.reset(genome, 0, 0, 0, 0, plan);
-    else c = new Creature(this.engines[species]!, genome, 0, 0, 0, plan, this.store);
-    if (this.store) {
-      this.kernels!.attach(c);
-      c.resident!.species = species;
-    }
+    else c = new Creature(this.engines[species]!, genome, 0, 0, 0, plan, this.kernels, species);
     c.setMemory(genomes, this.genomeAt);
     this.genomeAt += units;
     c.aging = this.aging;

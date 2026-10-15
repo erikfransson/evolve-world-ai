@@ -79,8 +79,8 @@ export class SenseKernels {
     return this.brains.f32;
   }
 
-  // Gives a resident creature (see ResidentStore) its brain slot and tells its row where the kernels find it. Call after each new Creature
-  // and each reset; the creature's brain then stays in its slot and a tick needs no per-creature slot work.
+  // Gives a resident creature (see ResidentStore) its brain slot and tells its row where the kernels find it. The Creature calls it when made and on each
+  // reset; the creature's brain then stays in its slot and a tick needs no per-creature slot work.
   attach(c: Creature): void {
     if (c.kernelOwner !== this) {
       c.kernelOwner = this;

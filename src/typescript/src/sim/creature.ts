@@ -12,7 +12,7 @@ import { RayCache } from "./world.ts";
 import type { World } from "./world.ts";
 import type { Crowd } from "./crowd.ts";
 import type { SenseKernels } from "./wasm/senseKernels.ts";
-import type { ResidentState, ResidentStore } from "./wasm/resident.ts";
+import type { ResidentState } from "./wasm/resident.ts";
 import type { PhaseTimer } from "./profile.ts";
 
 let created = 0; // objects made so far in this process
@@ -33,7 +33,7 @@ export class Creature {
   readonly brain: Brain;
   readonly heading: Heading;
   aging: Aging | null = null; // old-age upkeep, set by the owner
-  brainVersion = 0; // bumped whenever reset changes the genome or plan, so a copy of the brain elsewhere (WASM) knows to refresh
+  brainVersion = 0; // counts resets
   kernelSlot = -1; // this creature's brain slot in kernelOwner, the SenseKernels that last ran it
   kernelOwner: SenseKernels | null = null;
 
@@ -58,10 +58,11 @@ export class Creature {
   private inputLength = 0;
   private cache: RayCache | null = null; // made by the JS sense path only
 
-  // plan defaults to the config's; genome must be sized for it. With a store the body is a resident row of it.
-  constructor(config: EngineConfig, genome: Genome, x: number, y: number, heading: number, plan: PlanView = planOf(config), store: ResidentStore | null = null) {
+  // plan defaults to the config's; genome must be sized for it. With kernels the body is a resident row of their memory, of the species with this index there,
+  // and the kernels hold its brain from now on (attach); reset keeps them current.
+  constructor(config: EngineConfig, genome: Genome, x: number, y: number, heading: number, plan: PlanView = planOf(config), kernels: SenseKernels | null = null, species = 0) {
     this.config = config;
-    const res = (this.resident = store ? store.add() : null);
+    const res = (this.resident = kernels ? kernels.store.add() : null);
     this.heading = res ?? { cos: 0, sin: 0 };
     this.terrain = terrainOf(config);
     this.ownPlan = { ...plan, hiddenLayers: plan.hiddenLayers.slice() };
@@ -78,6 +79,10 @@ export class Creature {
     }
     this.heading.cos = Math.cos(heading);
     this.heading.sin = Math.sin(heading);
+    if (kernels) {
+      res!.species = species;
+      kernels.attach(this);
+    }
   }
 
   // One hit per ray, as of the last sense on the JS path (or as detail on the WebAssembly path).
@@ -203,6 +208,7 @@ export class Creature {
       ray.energy = 0;
       ray.species = 0;
     }
+    this.kernelOwner?.attach(this);
   }
 
   // Casts the rays from the current pose into this.rays without advancing the simulation.

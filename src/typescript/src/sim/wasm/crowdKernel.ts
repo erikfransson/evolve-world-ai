@@ -15,8 +15,6 @@ interface CrowdExports extends WebAssembly.Exports {
 }
 
 const REGIONS = ["touched", "rowAt", "cellOf", "perm", "permB", "count", "start", "occupied", "speciesIn", "xs", "ys", "energies", "species", "owners"] as const;
-// The first n elements, for lists that may be longer than the batch.
-const head = (a: ArrayLike<number>, n: number): ArrayLike<number> => (a.length === n ? a : Array.prototype.slice.call(a, 0, n) as number[]);
 
 export class WasmCrowd {
   private readonly store: ResidentStore;
@@ -122,7 +120,7 @@ export class WasmCrowd {
   }
 
   // Grids the n creatures whose rows are at f64 indices rowAt[0 .. n-1], with species[i] for creature i (all 0 without).
-  rebuild(rowAt: ArrayLike<number>, n: number, species?: ArrayLike<number>): void {
+  rebuild(rowAt: Int32Array, n: number, species?: Int32Array): void {
     const { store, crowd, region: r } = this;
     const bytes = n * 4;
     const touched = store.grow(r.touched, bytes);
@@ -140,8 +138,8 @@ export class WasmCrowd {
     const speciesOut = store.grow(r.species, bytes);
     const owners = store.grow(r.owners, bytes);
     const { i32, f64 } = store; // after the last allocation
-    i32.set(head(rowAt, n), rowAtAt >> 2);
-    if (species) i32.set(head(species, n), speciesIn >> 2);
+    i32.set(rowAt.subarray(0, n), rowAtAt >> 2);
+    if (species) i32.set(species.subarray(0, n), speciesIn >> 2);
     const C = this.pC;
     i32[(C + L.C_N) >> 2] = n;
     i32[(C + L.C_ROW_AT) >> 2] = rowAtAt;

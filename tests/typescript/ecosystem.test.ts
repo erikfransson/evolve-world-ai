@@ -306,9 +306,9 @@ describe("Ecosystem collision damage", () => {
     const [a, b] = e.members.map((m) => m.creature.state) as [CreatureState, CreatureState];
     Object.assign(a, { x: 500, y: 500, vx: va, vy: 0, energy: ea });
     Object.assign(b, { x: 520, y: 500, vx: vb, vy: 0, energy: eb });
-    const inner = e as unknown as { collideAll(): void; crowd: { rebuild(s: readonly CreatureState[], n: number): void }; states: CreatureState[] };
+    const inner = e as unknown as { collideAll(): void; crowd: { rebuild(s: readonly CreatureState[], n: number): void }; table: { states: CreatureState[] } };
     const bump = () => {
-      inner.crowd.rebuild(inner.states, inner.states.length); // sharedPhase grids the moved positions before collideAll
+      inner.crowd.rebuild(inner.table.states, inner.table.states.length); // sharedPhase grids the moved positions before collideAll
       inner.collideAll();
     };
     return { e, a, b, bump };

@@ -40,8 +40,8 @@ describe.skipIf(!wasmAvailable())("the WebAssembly scans equal the loops", () =>
       const f = e.resident.f64;
       const wantTicks = eco.members.map((m) => m.creature.state.ticksAlive + (m.creature.state.energy > 0 ? 1 : 0));
       const wantList: number[] = [];
-      for (let i = n - 1; i >= 0; i--) if (!(f[e.rowAt[i] + F.energy] > 0)) wantList.push(i);
-      const got = Array.from(e.wasmMembers.settle(e.rowAt, n));
+      for (let i = n - 1; i >= 0; i--) if (!(f[e.table.rowAt[i] + F.energy] > 0)) wantList.push(i);
+      const got = Array.from(e.wasmMembers.settle(e.table.rowAt, n));
       expect(got).toEqual(wantList);
       expect(eco.members.map((m) => m.creature.state.ticksAlive)).toEqual(wantTicks);
     }
@@ -54,7 +54,7 @@ describe.skipIf(!wasmAvailable())("the WebAssembly scans equal the loops", () =>
     const rng = createRng(9);
     for (let round = 0; round < 30; round++) {
       const n = eco.members.length;
-      const thresholds = eco.members.map(() => [10, 100, 1e6][rng.int(3)]!);
+      const thresholds = Float64Array.from(eco.members, () => [10, 100, 1e6][rng.int(3)]!);
       eco.members.forEach((m, i) => {
         m.creature.state.energy = [thresholds[i]! - 1e-9, thresholds[i]!, thresholds[i]! + 1e-9, NaN, 0, Infinity][rng.int(6)]!;
       });
@@ -63,18 +63,18 @@ describe.skipIf(!wasmAvailable())("the WebAssembly scans equal the loops", () =>
       const want: number[] = [];
       for (let k = 0; k < n; k++) {
         const at = (first + k) % n;
-        if (!(f[e.rowAt[at] + F.energy] < thresholds[at]!)) want.push(at);
+        if (!(f[e.table.rowAt[at] + F.energy] < thresholds[at]!)) want.push(at);
       }
-      expect(Array.from(e.wasmMembers.birthCandidates(e.rowAt, n, thresholds, first))).toEqual(want);
+      expect(Array.from(e.wasmMembers.birthCandidates(e.table.rowAt, n, thresholds, first))).toEqual(want);
     }
   });
 
   it("with no members and with one", () => {
     const one = make((c) => c, 1);
     const e = one as Any;
-    expect(Array.from(e.wasmMembers.birthCandidates(e.rowAt, 1, [0], 0))).toEqual([0]);
-    expect(Array.from(e.wasmMembers.birthCandidates(e.rowAt, 0, [], 0))).toEqual([]);
-    expect(Array.from(e.wasmMembers.settle(e.rowAt, 0))).toEqual([]);
+    expect(Array.from(e.wasmMembers.birthCandidates(e.table.rowAt, 1, new Float64Array([0]), 0))).toEqual([0]);
+    expect(Array.from(e.wasmMembers.birthCandidates(e.table.rowAt, 0, new Float64Array(0), 0))).toEqual([]);
+    expect(Array.from(e.wasmMembers.settle(e.table.rowAt, 0))).toEqual([]);
   });
 });
 

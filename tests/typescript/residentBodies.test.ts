@@ -26,7 +26,7 @@ function checkedTick(eco: Ecosystem): number {
   const e = eco as Any;
   eco.prepareTick();
   eco.sensePhase();
-  const creatures = e.bySlot.map((m: Any) => m.creature);
+  const creatures = e.table.bySlot.map((m: Any) => m.creature);
   const kernels = e.kernels;
   const f32 = kernels.f32;
   const scratch = new Float32Array(256);
@@ -38,7 +38,7 @@ function checkedTick(eco: Ecosystem): number {
     for (let i = 0; i < 5 + c.memory.length; i++) if (!Object.is(scratch[i], f32[at + i])) bad++;
   }
   const before = creatures.map(grab);
-  kernels.stepper.step(e.slotRows, creatures.length, e.aging, e.items.terrain);
+  kernels.stepper.step(e.table.slotRows, creatures.length, e.aging, e.items.terrain);
   const got = creatures.map(grab);
   creatures.forEach((c: Any, k: number) => {
     const s = c.state;
@@ -106,13 +106,13 @@ describe.skipIf(!wasmAvailable())("resident bodies", () => {
       eco.step();
       if (t % 5 !== 0) continue;
       const n = eco.members.length;
-      expect(e.rowAt.length).toBe(n);
-      expect(e.bySlot.length).toBe(n);
-      for (let i = 0; i < n; i++) expect(e.rowAt[i]).toBe(eco.members[i]!.creature.resident!.o);
+      expect(e.table.length).toBe(n);
+      expect(e.table.bySlot.length).toBe(n);
+      for (let i = 0; i < n; i++) expect(e.table.rowAt[i]).toBe(eco.members[i]!.creature.resident!.o);
       for (let k = 0; k < n; k++) {
-        const m = e.bySlot[k];
-        expect(e.slotRows[k]).toBe(m.creature.resident.ptr);
-        expect(e.slotSelves[k]).toBe(m.index);
+        const m = e.table.bySlot[k];
+        expect(e.table.slotRows[k]).toBe(m.creature.resident.ptr);
+        expect(e.table.slotSelves[k]).toBe(m.index);
       }
     }
     expect(eco.births).toBeGreaterThan(0);

@@ -247,8 +247,7 @@ describe("sense.wat (SenseKernels)", () => {
     kernels.store.species.push(eng); // the config the rows' species index 0 stands for
     const kernel = o.creatures.map(([x, y, h]) => {
       const g = randomGenome(layerSizes(cfg, planOf(cfg)), rng);
-      const c = new Creature(eng, g, x, y, h, undefined, kernels.store); // resident, as in an Ecosystem
-      kernels.attach(c);
+      const c = new Creature(eng, g, x, y, h, undefined, kernels); // resident, as in an Ecosystem
       return c;
     });
     const reference = o.creatures.map(([x, y, h], k) => new Creature(eng, kernel[k]!.brain.genome.slice(), x, y, h));
@@ -477,6 +476,24 @@ describe("sense.wat (SenseKernels)", () => {
       expect(Array.from(c.outputs)).toEqual(before[k]);
       expect(Number.isFinite(c.drain)).toBe(true);
     });
+  });
+
+  it("runs a creature reset with a new genome and plan as that one, without the caller attaching it again", () => {
+    const { cfg, world, kernels, kernel } = build({ rays: 6, spread: 1.5, creatures: [[300, 300, 0.3]], items });
+    const c = kernel[0]!;
+    const plan = { ...c.plan, rayCount: 4, raySpread: 1, hiddenLayers: [5, 3] };
+    const genome = randomGenome(layerSizes(cfg, plan), createRng(8));
+    c.reset(genome, 320, 310, 1.1, 50, plan);
+    const reference = new Creature(cfg, genome.slice(), 320, 310, 1.1, plan);
+    reference.state.energy = 50;
+    const crowd = new Crowd(cfg);
+    crowd.rebuild([c.state], 1);
+    const batch = new SenseBatch();
+    batch.add(c, 0);
+    run(kernels, world, crowd, batch);
+    reference.senseThink(world, crowd, 0);
+    expect(c.outputs.length).toBe(reference.outputs.length);
+    c.outputs.forEach((v, i) => expect(Math.abs(v - reference.outputs[i]!)).toBeLessThan(1e-4));
   });
 
   it("keeps the rays of non-detail creatures untouched and needs no detail", () => {

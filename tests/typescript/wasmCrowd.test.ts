@@ -33,7 +33,7 @@ function crowdDifferences(eco: Ecosystem): number {
   const n = eco.members.length;
   const got: Crowd = e.crowd;
   const want = new Crowd(eco.config, 64);
-  want.rebuild(e.states, n, e.multi ? e.kinds : undefined);
+  want.rebuild(e.table.states, n, e.multi ? e.table.kinds : undefined);
   let bad = 0;
   const same = (a: ArrayLike<number>, b: ArrayLike<number>, len: number): void => {
     for (let i = 0; i < len; i++) if (!Object.is(a[i], b[i])) bad++;
@@ -91,7 +91,7 @@ describe.skipIf(!wasmAvailable())("the WebAssembly crowd grid equals Crowd.rebui
         eco.step();
         if (eco.members.length < 2) break;
         const back = t % 2 === 0 ? scatter(eco, 50 + t) : () => {};
-        e.gridCrowd(eco.members.length, e.multi ? e.kinds : undefined);
+        e.gridCrowd(eco.members.length, e.multi ? e.table.kinds : undefined);
         bad += crowdDifferences(eco);
         back();
       }
@@ -113,7 +113,7 @@ describe.skipIf(!wasmAvailable())("the WebAssembly crowd grid equals Crowd.rebui
       for (let t = 0; t < 8 && eco.members.length > 0; t++) {
         eco.step();
         const back = t % 2 === 0 ? scatter(eco, seed * 10 + t) : () => {};
-        e.gridCrowd(eco.members.length, e.multi ? e.kinds : undefined);
+        e.gridCrowd(eco.members.length, e.multi ? e.table.kinds : undefined);
         bad += crowdDifferences(eco);
         back();
       }
@@ -212,7 +212,7 @@ describe.skipIf(!wasmAvailable())("the WebAssembly item lookup equals World.touc
         eco.prepareTick();
         eco.sensePhase(); // brings the packed item rows up to date
         const back = scatter(eco, seed * 7 + t);
-        e.gridCrowd(eco.members.length, e.multi ? e.kinds : undefined);
+        e.gridCrowd(eco.members.length, e.multi ? e.table.kinds : undefined);
         bad += compare(eco);
         hits += lookups(eco)[1].filter((v) => v >= 0).length;
         back();
@@ -280,7 +280,7 @@ describe.skipIf(!wasmAvailable())("the WebAssembly collision sweep finds the pai
       }, [14, 80, 500][rng.int(3)]!, seed, seed % 2 ? DEFAULT_PREDATOR_CONFIG : DEFAULT_ECO_CONFIG);
       const e = eco as Any;
       const back = scatter(eco, seed);
-      e.gridCrowd(eco.members.length, e.multi ? e.kinds : undefined);
+      e.gridCrowd(eco.members.length, e.multi ? e.table.kinds : undefined);
       const crowd: Crowd = e.crowd;
       const reach2 = (2 * eco.config.creature.radius) ** 2;
       const want = jsPairs(crowd, reach2);
