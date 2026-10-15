@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { drawArena, frameAt, learnerAlive, loopSeconds } from "../../src/typescript/src/ui/arenaScene.ts";
 import { drawRewardGraph, thin } from "../../src/typescript/src/ui/rewardGraph.ts";
-import { ARENA_KIND, bestFounder, change, customEnv, envGroups, envsForKind, kindRejection, planSummary } from "../../src/typescript/src/ui/arenaPick.ts";
+import { ARENA_KIND, bestFounder, change, customEnv, envsForKind, kindRejection, planSummary } from "../../src/typescript/src/ui/arenaPick.ts";
 import type { CustomEnvForm } from "../../src/typescript/src/ui/arenaPick.ts";
 import { DEFAULT_SPEED, FAVOURITES_KEY, MAX_FAVOURITES, SPEED_KEY, addFavourite, loadFavourites, loadSpeed, removeFavourite, saveSpeed } from "../../src/typescript/src/ui/arenaStore.ts";
 import { DEFAULT_DESIGN, designPlan, planDesign } from "../../src/typescript/src/ui/arenaForm.ts";
@@ -250,16 +250,6 @@ describe("reward graph at 5000 iterations", () => {
     drawRewardGraph(ctx, its, 0, 800, 300);
     expect(badCoordinateCalls(calls)).toEqual([]);
     expect(named(calls, "lineTo")).toBeLessThan(3 * 800 + 20);
-  });
-});
-
-describe("envGroups", () => {
-  it("puts the small and custom worlds first and the advanced ones apart", () => {
-    const { quick, advanced } = envGroups(envsForKind(ENVS, "forager"));
-    expect(quick.every((e) => e.tags.includes("small"))).toBe(true);
-    expect(quick.some((e) => e.id === "nibble")).toBe(true);
-    expect(advanced.length).toBeGreaterThan(0);
-    expect(advanced.every((e) => e.tags.includes("advanced") || e.tags.includes("bigger"))).toBe(true);
   });
 });
 

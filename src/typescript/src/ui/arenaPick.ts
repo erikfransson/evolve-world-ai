@@ -7,11 +7,6 @@ import type { PlanView } from "../sim/sensors.ts";
 // The envs a creature kind can train in: those of its world with its species as the learner.
 export const envsForKind = (envs: readonly EnvSpec[], kind: CreatureKind): EnvSpec[] => envs.filter((e) => e.world === KINDS[kind].world && e.role === KINDS[kind].role);
 
-// The checklist groups: Quick (small worlds and custom ones) and Advanced (the bigger, slower ones, Bigger included).
-export function envGroups(envs: readonly EnvSpec[]): { quick: EnvSpec[]; advanced: EnvSpec[] } {
-  return { quick: envs.filter((e) => !e.tags.includes("advanced") && !e.tags.includes("bigger")), advanced: envs.filter((e) => e.tags.includes("advanced") || e.tags.includes("bigger")) };
-}
-
 // One line on a body plan: rays, sight, brain layers and memory.
 export function planSummary(plan: PlanView): string {
   const layers = plan.hiddenLayers.length ? plan.hiddenLayers.join("+") : "none";

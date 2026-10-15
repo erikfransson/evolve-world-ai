@@ -118,8 +118,8 @@ function resolveStart(): { learner: Learner; from: string } | string {
     return { learner: { plan: f.plan, genome: Float32Array.from(f.genome) }, from: `founder ${f.name}` };
   }
   if (src === "pool") {
-    const entry = pool[Number(input("founder").value)];
-    return entry ? { learner: poolLearner({ world }, entry), from: `pool #${Number(input("founder").value) + 1}` } : "The seed pool is not available.";
+    const entry = pool[Number(input("poolEntry").value)];
+    return entry ? { learner: poolLearner({ world }, entry), from: `pool #${Number(input("poolEntry").value) + 1}` } : "The seed pool is not available.";
   }
   const file = src === "import" ? imported : favourites[Number(input("saved").value)];
   if (!file) return src === "import" ? "Choose a creature file." : "No creature saved in this browser yet.";
@@ -231,8 +231,8 @@ function drawPreview(): void {
 }
 window.addEventListener("resize", drawPreview);
 
-function fillFounders(): void {
-  const sel = $<HTMLSelectElement>("founder");
+function fillPoolEntries(): void {
+  const sel = $<HTMLSelectElement>("poolEntry");
   sel.replaceChildren(...pool.map((p, i) => new Option(`#${i + 1} · ${p.plan.rayCount} rays, hidden ${p.plan.hiddenLayers.join("+")} · fitness ${p.fitness.toFixed(0)}`, String(i))));
   if (pool.length) sel.value = String(bestFounder(pool)); // the strongest founder shows learning soonest
   showStart();
@@ -654,7 +654,7 @@ $("unsave").addEventListener("click", () => {
   fillSaved();
 });
 $("importFile").addEventListener("change", () => void importFile());
-$("founder").addEventListener("change", showStart);
+$("poolEntry").addEventListener("change", showStart);
 $("liveFounder").addEventListener("change", showFounderBlurb);
 $("saved").addEventListener("change", showStart);
 designForm.init($<HTMLFormElement>("setup"), showStart);
@@ -716,5 +716,5 @@ void fetch(FOUNDERS_URL)
   .then(fillLiveFounders);
 void loadPool(POOL_URL).then((p) => {
   pool = p ?? [];
-  fillFounders();
+  fillPoolEntries();
 });

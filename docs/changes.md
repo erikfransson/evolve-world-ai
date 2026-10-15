@@ -6,6 +6,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- RL rams: a rival that starves, is killed by another rival, or dies of poison beside the learner no longer pays a ram (no ram pays on a tick when any creature ate poison), and one dying on its first tick is judged too; a test for each rule. Aggressor and Brawl re-measured, the five Bigger envs measured (`docs/rl-envs.md`). Env grouping is decided only in `envs.ts` (the unused `envGroups` is gone, the gallery's folded groups come from `FOLDED_GROUPS`), the Bigger envs use a typed `bigger()` helper, and the Arena's seed pool select is `poolEntry`, apart from the Live founders.
+
 ## 0.2.0 (2026-10-14)
 
 ### Live World

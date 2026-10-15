@@ -28,16 +28,24 @@ Self-play envs (Melee, Brawl) score against the learner's own league, so their h
 | Sprint (sprint)     | Energy               | 600 x 120 strip, food at the far end, 100 energy    | 0.00 -> 4.08   | PPO 0        |
 | Toll road           | Energy               | a closed belt of mild poison, most food behind it   | not measured   |              |
 | Lean times          | Energy               | low energy, slow regrowth, stinging poison          | 0.91 -> 0.92 (200 it) | 0.94 -> 2.05 (200 it); PPO 60 s: 0.94 -> 5.99 |
-| Aggressor           | Fight                | 200 energy among weak grazers, collision damage     | 1.37 -> 1.62   | 1.21 -> 1.80 |
-| Escape              | Fight                | graze while 2 trained aggressors hunt you           | 0.79 -> 1.24   | 0.66 -> 1.04 |
+| Aggressor           | Fight                | 200 energy among weak grazers, collision damage     | 1.43 -> 1.31 (2026-10-15) | 1.11 -> 1.35 (2026-10-15) |
+| Escape              | Fight                | graze while 2 trained aggressors hunt you           | 0.79 -> 1.24 (no ram reward, so unchanged by the ram fix) | 0.66 -> 1.04 |
 | Duel (duel)         | Compete              | one seed-pool rival                                 | 0.09 -> 2.20   | 1.81 -> 3.08 |
 | Melee (melee)       | Compete              | 4 self-play rivals, regrowing food                  | 0.00 -> 2.03   | 0.63 -> 0.91 |
-| Brawl (brawl)       | Compete              | Melee with collision damage, rams pay               | 0.54 -> 1.94   | 0.72 -> 1.05 |
+| Brawl (brawl)       | Compete              | Melee with collision damage, rams pay               | 0.50 -> 1.66 (2026-10-15) | 0.66 -> 1.25 (2026-10-15) |
 | Crowd (crowd)       | Compete              | many rivals on regrowing food                       | ES beats PPO   |              |
 
 Advanced (bigger, slower): forage-sparse, poison-field, rivals, endurance; hunters and prey (hidden while the Arena trains foragers only).
 
-Bigger (Live-like, 90 s, start energy 300, lethal poison, bumps hurt, seed pool crowds): live-patch, live-famine, live-meadow, live-poison, live-commons.
+Bigger (Live-like, 90 s, start energy 300, lethal poison, bumps hurt, seed pool crowds). Measured differently from the table above, as they are too slow for population 200: ES at population 100 for 200 iterations, held-out on 16 seeds, from random genomes of three bodies (5 to 12 rays, hidden 8 to 24+24, memory 0 to 8 units), 2 seeds each; mean over the 6 runs and the best run.
+
+| Env (id)                       | Idea                                           | Random 0 -> 200, mean of 6        | Best run |
+| ------------------------------ | ---------------------------------------------- | --------------------------------- | -------- |
+| Live patch (live-patch)        | 1200 x 1200, 60 food, 20 rivals                | 2.92 -> 19.52                     | 29.42    |
+| Feast and famine (live-famine) | 2200 x 2200, 35 food, slow regrowth, 8 rivals  | 2.64 -> 7.57                      | 8.99     |
+| Busy meadow (live-meadow)      | 1000 x 1000, 70 food, fast regrowth, 25 rivals | 3.15 -> 16.41                     | 23.25    |
+| Poison country (live-poison)   | 1500 x 1500, 40 food, 90 poison, 12 rivals     | 3.41 -> 5.06                      | 6.41     |
+| Crowded commons (live-commons) | 20 food, 25 weak rivals, rams pay 2            | 2.23 -> 6.73 (before the ram fix) | 7.79     |
 
 ## Notes
 
@@ -46,4 +54,5 @@ Bigger (Live-like, 90 s, start energy 300, lethal poison, bumps hurt, seed pool 
 - Fence and Zigzag learned the near food but not the gap (200 iterations: 1.47 and 1.0, under the 2 near items); with +1 per wall crossed they reach 1.84 and 1.41. Lean times stayed flat from random even with stinging poison: one lethal bite or quick starvation made rewards all-or-nothing; a pool founder learns it.
 - Backprop RL (PPO, `docs/rl-grad-notes.md`) learns faster than ES in wall time on every env tried, by far on Lean times (random 0.91 -> 2.91, pool 0.94 -> 5.99 in 60 s on one thread).
 - 2026-10-12: Memory group. Each memory env is checked with the same body with memory 4+4 vs 0+0 (ES, pop 100, 400 iterations, 3 seeds); only an env with a clear gap ships. Flash passes (1.60 vs 1.11). Signal door (a T-maze: cue bite left or right, corridor, one room in the time) shows no gap (3.84 vs 3.82) and is held back; its `cuedoor` layout stays for custom envs. Three arms never got past one corridor and was dropped, as was Patience.
+- 2026-10-15: a ram no longer pays for a rival that starves, is killed by another rival, or dies of poison beside the learner (`isRam` in `env.ts`; no ram pays on a tick when any creature ate poison), and a rival dying on its first tick is judged too. Aggressor and Brawl were re-measured after the change. Aggressor from random did not gain in this one 60-iteration run (1.43 -> 1.31, before 1.37 -> 1.62); one seed cannot tell the fix from noise.
 - Population: at equal episodes, pop 100 learned most (Nibble 3.20, Minefield 1.00) against 50 (2.48, 0.69) and 500 (2.78, 0.56); the Arena default is 100.

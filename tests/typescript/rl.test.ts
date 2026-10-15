@@ -1,6 +1,6 @@
 import { genomeLength, layerSizes } from "../../src/typescript/src/sim/brain.ts";
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
-import { castFor, checkEnv, envConfig, randomLearner, runEpisode } from "../../src/typescript/src/sim/rl/env.ts";
+import { castFor, checkEnv, envConfig, isRam, RAM_MIN_ENERGY, randomLearner, runEpisode } from "../../src/typescript/src/sim/rl/env.ts";
 import { recordEpisode } from "../../src/typescript/src/sim/rl/recording.ts";
 import { wasmAvailable } from "../../src/typescript/src/sim/wasm/loader.ts";
 import { creatureFile, parseCreatureFile } from "../../src/typescript/src/sim/rl/creatureFile.ts";
@@ -289,5 +289,16 @@ describe("rams", () => {
       rams += runEpisode(env, randomLearner(env, seed), seed, null, undefined, (e) => (eco = e), charge as never).rams;
     }
     expect(rams).toBeGreaterThan(0);
+  });
+
+  // Each clause of the rule on its own: a ram, then the same death with one condition changed.
+  const ram = { learnerAlive: true, touchesLearner: true, energyBefore: 5, touchesOtherRival: false, poisonEatenThisTick: false };
+  it("credits a rival with energy left that dies touching only the living learner", () => expect(isRam(ram)).toBe(true));
+  it("does not credit a rival that starved next to the learner", () => expect(isRam({ ...ram, energyBefore: RAM_MIN_ENERGY })).toBe(false));
+  it("does not credit a rival killed by another rival", () => expect(isRam({ ...ram, touchesOtherRival: true })).toBe(false));
+  it("does not credit a poison death beside the learner", () => expect(isRam({ ...ram, poisonEatenThisTick: true })).toBe(false));
+  it("does not credit a death away from the learner or after it died", () => {
+    expect(isRam({ ...ram, touchesLearner: false })).toBe(false);
+    expect(isRam({ ...ram, learnerAlive: false })).toBe(false);
   });
 });

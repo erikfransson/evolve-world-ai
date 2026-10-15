@@ -82,6 +82,15 @@ export interface EpisodeResult {
 }
 
 const BIRTHLESS = 1e9; // birth energy no creature reaches
+export const RAM_MIN_ENERGY = 1; // a rival with less energy the tick before it died was starving, not rammed
+
+// Whether a rival's death in a collision-damage world counts as the learner's ram: the learner is alive and touching it, the rival
+// still had energy the tick before (so it did not starve), no other rival touches it (so it is no rival-on-rival kill), and no one in the
+// world ate poison this tick (so a poison death beside the learner does not pay; a real ram on such a tick goes unpaid too). The learner's own energy cannot tell: a kill hands over the
+// rival's energy from before the hit, at most the damage both took, so it never rises.
+export function isRam(c: { learnerAlive: boolean; touchesLearner: boolean; energyBefore: number; touchesOtherRival: boolean; poisonEatenThisTick: boolean }): boolean {
+  return c.learnerAlive && c.touchesLearner && c.energyBefore > RAM_MIN_ENERGY && !c.touchesOtherRival && !c.poisonEatenThisTick;
+}
 
 // WebAssembly kernels for an episode's sense and brain phase (false keeps the JS path). With compiled modules cached they are
 // faster for every brain size. Their f32 arithmetic differs slightly from the JS path, but each creature's result depends only
@@ -247,17 +256,23 @@ export function runEpisode(
   const ticks = Math.round(env.seconds / config.dt);
   const out: EpisodeResult = { reward: 0, food: 0, kills: 0, rams: 0, seconds: 0, energy: 0 };
   const rivalEnergy = new Map<number, number>(); // each rival's energy after the previous tick, for crediting rams
+  if (env.collisionDamage) for (const m of eco.members) if (m.id !== 0) rivalEnergy.set(m.id, m.creature.state.energy); // so a death on the first tick is judged too
+  let poisonBefore = eco.poisonEaten; // the world's poison count before the tick, to skip poison deaths
   // The learner's last tick counts too: what it ate before it died; a dead learner ends with no energy.
   eco.onDeath = (m) => {
     if (m.id !== 0) {
-      // A rival dying in contact with the living learner in a collision-damage world was rammed by it.
+      if (!env.collisionDamage) return;
       const me = eco.get(0)?.creature.state;
       const s = m.creature.state;
-      // It must have had energy left last tick, so a rival starving next to it does not count, and no other rival may touch it, so a
-      // rival-on-rival kill does not count. (The learner's own energy cannot tell: a kill hands over the rival's energy from before the
-      // hit, at most the damage both took, so it never rises.) Approximate: a rival eating poison while touching the learner counts too.
       const near = (o: { x: number; y: number }): boolean => (o.x - s.x) ** 2 + (o.y - s.y) ** 2 <= reach * reach;
-      if (env.collisionDamage && me?.alive && (rivalEnergy.get(m.id) ?? 0) > 1 && near(me) && !eco.members.some((o) => o.id !== 0 && o.id !== m.id && o.creature.state.alive && near(o.creature.state))) out.rams++;
+      const ram = isRam({
+        learnerAlive: me?.alive === true,
+        touchesLearner: me !== undefined && near(me),
+        energyBefore: rivalEnergy.get(m.id) ?? 0,
+        touchesOtherRival: eco.members.some((o) => o.id !== 0 && o.id !== m.id && o.creature.state.alive && near(o.creature.state)),
+        poisonEatenThisTick: eco.poisonEaten > poisonBefore,
+      });
+      if (ram) out.rams++;
       return;
     }
     out.food = m.eaten;
@@ -271,6 +286,7 @@ export function runEpisode(
   const hideAt = env.foodVisibleFor === undefined ? Infinity : Math.round(env.foodVisibleFor / config.dt);
   for (let t = 0; t < ticks; t++) {
     if (t === hideAt) eco.setFoodHidden(true);
+    poisonBefore = eco.poisonEaten;
     if (act) {
       eco.prepareTick();
       eco.sensePhase(0, eco.members.length);
