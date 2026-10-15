@@ -1,4 +1,4 @@
-import { GROUND_HALF } from "../../src/typescript/src/sim/groundField.ts";
+import { GROUND_HALF, oneKindPerNode } from "../../src/typescript/src/sim/groundField.ts";
 import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { restoreState, saveState } from "../../src/typescript/src/sim/ecoState.ts";
@@ -126,6 +126,29 @@ describe("The Inland Sea map", () => {
     expect(a.weights.food).toEqual(b.weights.food);
     expect(a.rock).toEqual(b.rock);
   }, 60000);
+});
+
+describe("one kind per ground node", () => {
+  const overlaps = (data: Uint8Array): number => data.reduce((n, _, k) => (k % 2 === 0 && data[k]! + data[k + 1]! > 255 ? n + 1 : n), 0);
+
+  it("caps the loser at what the winner leaves, and leaves other nodes alone", () => {
+    const mk = () => Uint8Array.from([200, 100, 100, 100, 30, 250]);
+    const mud = mk();
+    oneKindPerNode(mud, 0);
+    expect(Array.from(mud)).toEqual([200, 55, 100, 100, 30, 225]);
+    const firm = mk();
+    oneKindPerNode(firm, 1);
+    expect(Array.from(firm)).toEqual([155, 100, 100, 100, 5, 250]);
+  });
+
+  it("holds on the Inland Sea and on a random map, which both builders share", () => {
+    expect(overlaps(builtMap("inland-sea").ground.data)).toBe(0);
+    const c = structuredClone(DEFAULT_ECO_CONFIG);
+    c.world = { ...c.world, width: 4000, height: 3000, slowDensity: 0.3, fastDensity: 0.3 };
+    const t = terrainOf(c);
+    expect(t.ground).not.toBeNull();
+    expect(overlaps(t.ground!.data)).toBe(0);
+  });
 });
 
 describe("weighted items and local caps", () => {

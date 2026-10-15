@@ -1,4 +1,4 @@
-import { GROUND_PAD, GroundField, hash } from "../groundField.ts";
+import { GROUND_PAD, GroundField, hash, oneKindPerNode } from "../groundField.ts";
 import { createRng } from "../rng.ts";
 
 // Builds the ground, the food and poison weights and the rock of a hand-designed map (docs/world-maps/) from its spec. Port of the draft generator
@@ -543,21 +543,24 @@ export function buildMap(spec: MapSpec): BuiltMap {
   const { cols, rows, cell } = ground;
   const food = new Uint8Array(cols * rows);
   const poison = new Uint8Array(cols * rows);
-  let mudNodes = 0;
-  let firmNodes = 0;
   for (let j = GROUND_PAD; j < rows - GROUND_PAD; j++) {
     for (let i = GROUND_PAD; i < cols - GROUND_PAD; i++) {
       field((i - GROUND_PAD) * cell, (j - GROUND_PAD) * cell);
       const n = j * cols + i;
       const mud = Math.round(out.mud * 255);
       const firm = Math.round(out.firm * 255);
-      ground.data[2 * n] = firm > 127 ? Math.min(mud, 255 - firm) : mud; // one kind per point: firm ground wins over mud
+      ground.data[2 * n] = mud;
       ground.data[2 * n + 1] = firm;
       food[n] = Math.round(clamp(out.food * WEIGHT_UNIT, 0, 255));
       poison[n] = Math.round(clamp(out.poison * WEIGHT_UNIT, 0, 255));
-      if (ground.data[2 * n]! > 127) mudNodes++;
-      if (firm > 127) firmNodes++;
     }
+  }
+  oneKindPerNode(ground.data, 1); // firm ground wins over mud
+  let mudNodes = 0;
+  let firmNodes = 0;
+  for (let k = 0; k < ground.data.length; k += 2) {
+    if (ground.data[k]! > 127) mudNodes++;
+    if (ground.data[k + 1]! > 127) firmNodes++;
   }
 
   // Massifs: each a mask on a 50 unit grid (with its passes cut out), filled with discs from the widest inside outwards.

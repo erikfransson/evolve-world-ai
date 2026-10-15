@@ -16,6 +16,11 @@ export const GROUND_MAX_CELLS = 250_000; // cells (about nodes) of any map, whic
 export const GROUND_HALF = 127.5; // a layer value at or above this is of the layer's kind
 export const GROUND_PAD = 1; // nodes beyond the world on each side, held at 0 so every outline closes inside the raster
 
+// Keeps mud + firm <= 255 at every node of interleaved ground data by capping the other layer at what the winner (0 mud, 1 firm) leaves. Both builders use it.
+export function oneKindPerNode(data: Uint8Array, winner: 0 | 1): void {
+  for (let k = 0; k < data.length; k += 2) if (data[k]! + data[k + 1]! > 255) data[k + 1 - winner] = 255 - data[k + winner]!;
+}
+
 export interface BlobSpec {
   density: number; // share of the world area to cover
   size: number; // multiple of the standard patch
@@ -274,7 +279,6 @@ export function buildGroundField(width: number, height: number, specs: readonly 
     for (let pass = 0; pass < BLUR && m.length > 0; pass++) m = blur(f, m);
     for (let k = 0; k < m.length; k++) f.data[2 * k + layer] = Math.round(255 * Math.min(1, Math.max(0, 0.5 + SLOPE * m[k]!)));
   });
-  const d = f.data;
-  for (let k = 0; k < d.length; k += 2) if (d[k]! + d[k + 1]! > 255) d[k + 1] = 255 - d[k]!; // one kind per point
+  oneKindPerNode(f.data, 0);
   return f;
 }
