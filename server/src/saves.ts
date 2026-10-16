@@ -1,34 +1,29 @@
-import { existsSync, readdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { LIMITS, SEED_COPIES, seedRoom } from "./config.ts";
+import { LIMITS, SEED_COPIES, mostCopies, seedRoom } from "./config.ts";
 import { IGNORED_OVERRIDES, OVERRIDES, PREVIOUS_OVERRIDES, loadOverrides, retireOverrides } from "./admin.ts";
 import type { SeedFounder } from "./founders.ts";
 import type { Value } from "./tunables.ts";
 import { parseSave } from "./saveParse.ts";
 import { OtherWorld } from "./saveParse.ts";
 import type { LiveWorld } from "./liveWorld.ts";
-import { readRegularFile } from "./state.ts";
+import { SEED_FILE } from "./state.ts";
 import type { StateStore } from "./state.ts";
 
 const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 const RESTORE_TRIES = 3; // saves of this world tried at startup before giving up, so a failing start exits in minutes and systemd stops retrying
 const UNREADABLE = "SAVE REFUSED: it would not restore, the last good save is kept";
-export const SEED_FILE = "seed-copies"; // copies of each founder the world was seeded with; an admin reset writes the next world's
-export const RESET_DIR = /^before-reset-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z$/; // where a reset keeps the world before it
 export const MAX_KEPT_RESETS = 3; // reset folders kept before a reset is refused: each holds the saves of the last 4 days (about 1 GB at 40 MB a save), outside the disk cap
 
 // The copies a reset may ask for: whole, at least 1, and the founders all fit below the birth reserve. The reason when not.
-export function copiesProblem(copies: unknown, founders: number, eco: { maxPopulation: number; birthReserve: number }): string | null {
-  const most = Math.floor(seedRoom(eco) / Math.max(1, founders));
-  return Number.isInteger(copies) && (copies as number) >= 1 && (copies as number) <= most ? null : `copies must be a whole number from 1 to ${most} (${founders} founders, room for ${seedRoom(eco)} below the birth reserve)`;
+export function copiesProblem(copies: number, founders: number, eco: { maxPopulation: number; birthReserve: number }): string | null {
+  const most = mostCopies(founders, eco);
+  return Number.isInteger(copies) && copies >= 1 && copies <= most ? null : `copies must be a whole number from 1 to ${most} (${founders} founders, room for ${seedRoom(eco)} below the birth reserve)`;
 }
 
 // The copies in the seed file, or SEED_COPIES when there is none or it does not hold a valid count (logged).
-export function readSeedCopies(stateDir: string, founders: number, eco: { maxPopulation: number; birthReserve: number }, log: (line: string) => void = console.log): number {
-  const file = join(stateDir, SEED_FILE);
-  if (!existsSync(file)) return SEED_COPIES;
+export function readSeedCopies(store: StateStore, founders: number, eco: { maxPopulation: number; birthReserve: number }, log: (line: string) => void = console.log): number {
   try {
-    const n = Number(readRegularFile(file, 64).toString("utf8").trim());
+    const n = store.seedCopies();
+    if (n === null) return SEED_COPIES;
     const bad = copiesProblem(n, founders, eco);
     if (!bad) return n;
     log(`${SEED_FILE} ignored: ${bad}`);
@@ -42,7 +37,7 @@ export function readSeedCopies(stateDir: string, founders: number, eco: { maxPop
 export class Saves {
   private queue: Promise<unknown> = Promise.resolve();
   private readonly live: LiveWorld;
-  private readonly store: StateStore;
+  readonly store: StateStore;
   private resetting = false; // set once a reset moved the saves aside: nothing more is saved next to the kept world, the server exits
 
   constructor(live: LiveWorld, store: StateStore) {
@@ -90,11 +85,11 @@ export class Saves {
   // (kept, never listed, rotated or restored), and writes the copies of each founder the next world starts with. Saving then stays
   // off, so the caller exits and the next start seeds a fresh world. Any failure before the move keeps the running world as it was;
   // a failure while moving keeps it running too (the newest saves move last, so a restart restores the newest left).
-  reset(stateDir: string, copies: number, founders: number, at = new Date()): Promise<string> {
+  reset(copies: number, founders: number, at = new Date()): Promise<string> {
     return this.exclusive(async () => {
       const bad = copiesProblem(copies, founders, this.live.freshEco);
       if (bad) throw new Error(bad);
-      const kept = readdirSync(stateDir).filter((n) => RESET_DIR.test(n)).length;
+      const kept = this.store.keptResets();
       if (kept >= MAX_KEPT_RESETS) throw new Error(`${kept} before-reset folders are kept in the state directory: move or delete the old ones first`);
       if (this.resetting) throw new Error("the world is being reset");
       const saved = await this.saveNow();
@@ -111,7 +106,7 @@ export class Saves {
       }
       const moved = `${saved}; ${n} saves and the admin settings moved to ${sub}`;
       try {
-        writeFileSync(join(stateDir, SEED_FILE), `${copies}\n`, { mode: 0o600 });
+        this.store.writeSeedCopies(copies);
       } catch (e) {
         return `${moved}; ${SEED_FILE} could not be written (${errText(e)}), so the next start seeds ${SEED_COPIES} of each founder`; // the reset goes on: the saves are moved already
       }
@@ -169,16 +164,21 @@ export class Saves {
 // Throws when saves of this world are there but none restores (main exits 1 and systemd tries again; a fresh world's save would
 // otherwise become the newest and rotation would delete the real world's), and when seeding fails.
 export async function openWorld(saves: Saves, live: LiveWorld, stateDir: string, founders: readonly SeedFounder[], log: (line: string) => void = console.log): Promise<Record<string, Value>> {
+  const store = saves.store;
   live.founders = founders;
   const found = await saves.restoreNewest(log);
-  live.seedCopies = readSeedCopies(stateDir, founders.length, live.freshEco, log);
+  live.seedCopies = readSeedCopies(store, founders.length, live.freshEco, log);
   if (found === "restored") return loadOverrides(stateDir, live);
   if (found === "unreadable") throw new Error("saves of this world are there but none restores: not starting a fresh world over them");
   const retired = retireOverrides(stateDir);
   if (retired) log(retired);
   const copies = live.seedCopies;
   const n = live.seedFounders(founders, Math.random, copies);
-  writeFileSync(join(stateDir, SEED_FILE), `${copies}\n`, { mode: 0o600 });
+  try {
+    store.writeSeedCopies(copies);
+  } catch (e) {
+    log(`${SEED_FILE} not written (${errText(e)}): the page shows the default count after a restart`); // as with a failed save, the world runs on
+  }
   log(`fresh world seeded with ${n} creatures, ${copies} of each of ${founders.map((f) => f.name).join(", ")}`);
   // Saved at once, so a crash before the first 4-hourly save restores this world instead of starting yet another (and retiring its overrides).
   // A failed save is logged and the world runs on, as with any save.

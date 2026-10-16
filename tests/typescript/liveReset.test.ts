@@ -1,14 +1,15 @@
 // @vitest-environment node
 // @ts-expect-error the web tsconfig finds no types for the server's ws
 import { WebSocket } from "../../server/node_modules/ws/wrapper.mjs";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startAdmin } from "../../server/src/admin.ts";
 import { loadFounders } from "../../server/src/founders.ts";
 import { LiveWorld } from "../../server/src/liveWorld.ts";
-import { MAX_KEPT_RESETS, SEED_FILE, Saves, openWorld } from "../../server/src/saves.ts";
-import { StateStore } from "../../server/src/state.ts";
+import { MAX_KEPT_RESETS, Saves, openWorld } from "../../server/src/saves.ts";
+import { SEED_FILE, StateStore } from "../../server/src/state.ts";
+
 import { smallConfig } from "./liveHelpers.ts";
 
 const FOUNDERS = loadFounders(new URL("../../src/typescript/public/live-founders.json", import.meta.url).pathname);
@@ -38,7 +39,7 @@ describe("admin reset", () => {
     const { live, saves, store } = await running(dir);
     const before = store.list().map((s) => s.name);
     expect(before.length).toBe(2); // the fresh world's first save and one more
-    const line = await saves.reset(dir, 25, FOUNDERS.length, new Date("2026-10-16T08:00:00.000Z"));
+    const line = await saves.reset(25, FOUNDERS.length, new Date("2026-10-16T08:00:00.000Z"));
     expect(line).toMatch(/3 saves and the admin settings moved to before-reset-2026-10-16T08-00-00-000Z; the next start seeds 25 of each founder/);
     const kept = join(dir, "before-reset-2026-10-16T08-00-00-000Z");
     expect(readdirSync(kept).filter((n) => n.endsWith(".json.gz")).length).toBe(3); // the two before, and the one the reset saved
@@ -76,7 +77,7 @@ describe("admin reset", () => {
     const { saves, store } = await running(dir);
     const n = FOUNDERS.length;
     const most = Math.floor((3000 - 100) / n);
-    for (const bad of [0, -1, 1.5, Number.NaN, most + 1, 1e9]) await expect(saves.reset(dir, bad, n), String(bad)).rejects.toThrow(`copies must be a whole number from 1 to ${most}`);
+    for (const bad of [0, -1, 1.5, Number.NaN, most + 1, 1e9]) await expect(saves.reset(bad, n), String(bad)).rejects.toThrow(`copies must be a whole number from 1 to ${most}`);
     expect(store.list().length).toBe(2);
     expect(readdirSync(dir).some((f) => f.startsWith("before-reset-"))).toBe(false);
     await expect(saves.save()).resolves.toMatch(/^saved /);
@@ -89,7 +90,7 @@ describe("admin reset", () => {
       for (const s of store.list()) renameSync(join(dir, s.name), join(dir, `moved-${s.name}`)); // out of the listing, as a part-way move leaves them
       throw new Error(`disk trouble in ${sub}`);
     });
-    await expect(saves.reset(dir, 25, FOUNDERS.length)).rejects.toThrow(/reset stopped part-way, the world runs on, saved world-.*disk trouble/);
+    await expect(saves.reset(25, FOUNDERS.length)).rejects.toThrow(/reset stopped part-way, the world runs on, saved world-.*disk trouble/);
     const listed = store.list();
     expect(listed).toHaveLength(1);
     expect(listed[0]!.tick).toBe(live.eco.tick);
@@ -117,8 +118,19 @@ describe("admin reset", () => {
   it(`refuses a reset while ${MAX_KEPT_RESETS} reset folders are kept, so resets cannot fill the disk`, async () => {
     const dir = tmp();
     const { saves } = await running(dir);
-    for (let k = 0; k < MAX_KEPT_RESETS; k++) await saves.reset(dir, 10, FOUNDERS.length, new Date(Date.UTC(2026, 9, 16, 8, k))).then(() => (saves as unknown as { resetting: boolean }).resetting = false);
-    await expect(saves.reset(dir, 10, FOUNDERS.length, new Date(Date.UTC(2026, 9, 16, 9)))).rejects.toThrow(/before-reset folders are kept/);
+    for (let k = 0; k < MAX_KEPT_RESETS; k++) await saves.reset(10, FOUNDERS.length, new Date(Date.UTC(2026, 9, 16, 8, k))).then(() => (saves as unknown as { resetting: boolean }).resetting = false);
+    await expect(saves.reset(10, FOUNDERS.length, new Date(Date.UTC(2026, 9, 16, 9)))).rejects.toThrow(/before-reset folders are kept/);
+  });
+
+  it("a fresh start whose seed file cannot be written runs on with a log line, not a crash loop", async () => {
+    const dir = tmp();
+    mkdirSync(join(dir, SEED_FILE)); // neither readable as a count nor writable as a file
+    const live = new LiveWorld(freshConfig(), null);
+    const lines: string[] = [];
+    await openWorld(new Saves(live, new StateStore(dir)), live, dir, FOUNDERS, (l) => lines.push(l));
+    expect(live.eco.population).toBe(10 * FOUNDERS.length);
+    expect(lines.some((l) => /seed-copies not written/.test(l))).toBe(true);
+    expect(lines.some((l) => /^saved /.test(l))).toBe(true);
   });
 
   it("a seed file that is not a valid count is ignored at the next fresh start: the default copies, with a log line", async () => {

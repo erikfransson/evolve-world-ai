@@ -14,7 +14,7 @@ import { addingOn } from "./adds.ts";
 import { Chronicle } from "./chronicle.ts";
 import { restoreState, saveState } from "../../src/typescript/src/sim/ecoState.ts";
 import type { EcoState } from "../../src/typescript/src/sim/ecoState.ts";
-import { LIMITS, LIVE, MAX_POPULATION, MAX_SEED_FOUNDERS, SEED_COPIES, itemHeadroom, seedRoom } from "./config.ts";
+import { LIMITS, LIVE, MAX_POPULATION, MAX_SEED_FOUNDERS, SEED_COPIES, itemHeadroom, mostCopies, seedRoom } from "./config.ts";
 import type { SeedFounder } from "./founders.ts";
 import { mapRegions } from "../../src/typescript/src/live/mapRegions.ts";
 import { mapVersion } from "../../src/typescript/src/sim/maps/index.ts";
@@ -393,7 +393,8 @@ export class LiveWorld {
     this.attach();
     if (this.eco.population === 0 && this.founders.length) {
       try {
-        this.seedFounders(this.founders, Math.random, Math.max(1, Math.min(this.seedCopies, Math.floor(seedRoom(this.eco.config.eco) / this.founders.length)))); // the admin may have lowered the room since
+        const copies = Math.max(1, Math.min(this.seedCopies, mostCopies(this.founders.length, this.eco.config.eco))); // the admin may have lowered the room since
+        this.seedFounders(this.founders, Math.random, copies);
       } catch (e) {
         console.error(`reseed: founders not seeded: ${e instanceof Error ? e.message : String(e)}`);
       }

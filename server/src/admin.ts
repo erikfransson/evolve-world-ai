@@ -88,7 +88,7 @@ export interface AdminCommands {
   stop(): void | Promise<void>; // save, then exit with code 0
   blankName(name: string): Promise<number>; // families whose visitor name was cleared
   renameName(from: string, to: string, force: boolean): Promise<number | string>; // families renamed, or why not
-  reset(copies: number): Promise<string>; // saves, moves the saves and settings aside, then exits 0 for a fresh world on the next start; rejects with the reason and keeps the world
+  reset(copies: number): Promise<string>; // saves, moves the saves and settings aside, then exits 75, on which the unit starts it again with a fresh world (0, staying down, when a stop came meanwhile); rejects with the reason and keeps the world
 }
 
 const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".wasm": "application/wasm", ".ico": "image/x-icon" };
@@ -124,7 +124,7 @@ function serveStatic(root: string): ReturnType<typeof createServer> {
 // {t:"blank-name", name} -> {t:"blanked", message}: the name is cleared from every family that carries it;
 // {t:"rename", name, to, force?} -> {t:"renamed", message}: every family named exactly `name` is named `to` (starters stay starters);
 // a `to` another living family carries is refused unless force;
-// {t:"reset", copies?} -> {t:"resetting", message}, then the server exits 0 and its next start seeds a fresh world with `copies` (default
+// {t:"reset", copies?} -> {t:"resetting", message}, then the server exits 75, the unit starts it again, and that start seeds a fresh world with `copies` (default
 // SEED_COPIES) of each founder; the world before is kept in before-reset-<time>/ in the state directory.
 // The same port serves the built page (webRoot) over http.
 export function startAdmin(host: string, port: number, token: string, world: AdminWorld, stateDir: string, webRoot: string, saved: Record<string, Value>, commands: AdminCommands): { wss: WebSocketServer; close(): void } {
@@ -213,8 +213,8 @@ export function startAdmin(host: string, port: number, token: string, world: Adm
       }
       if (msg.t === "reset") {
         const copies = msg.copies === undefined ? SEED_COPIES : msg.copies; // absent: the default; null and anything else not whole is refused
-        if (!Number.isInteger(copies)) return reply(ws, { t: "error", message: "copies must be a whole number" });
-        return void commands.reset(copies as number).then((message) => reply(ws, { t: "resetting", message }), (e) => reply(ws, { t: "error", message: why(e) }));
+        if (typeof copies !== "number" || !Number.isInteger(copies)) return reply(ws, { t: "error", message: "copies must be a whole number" });
+        return void commands.reset(copies).then((message) => reply(ws, { t: "resetting", message }), (e) => reply(ws, { t: "error", message: why(e) }));
       }
       if (msg.t === "stop") {
         reply(ws, { t: "stopping" });

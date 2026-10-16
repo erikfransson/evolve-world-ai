@@ -1,9 +1,9 @@
-import { TerrainCache } from "../../src/typescript/src/ui/terrainCache.ts"; // vi.mock is hoisted above this import
+import { TerrainCache, cacheStep } from "../../src/typescript/src/ui/terrainCache.ts"; // vi.mock is hoisted above this import
 
 const draws: { scale: number; view: { x0: number; x1: number; y0: number; y1: number } }[] = [];
 vi.mock("../../src/typescript/src/ui/terrainScene.ts", () => ({ drawTerrain: (_g: unknown, _t: unknown, scale: number, view: (typeof draws)[number]["view"]) => draws.push({ scale, view }) }));
 vi.mock("../../src/typescript/src/ui/groundScene.ts", () => ({
-  makeCanvas: (width: number, height: number) => ({ width, height }),
+  makeCanvas: (width: number, height: number) => ({ width, height, addEventListener() {} }),
   context2d: () => ({ setTransform() {}, clearRect() {}, save() {}, restore() {}, beginPath() {}, rect() {}, clip() {} }),
 }));
 
@@ -40,8 +40,7 @@ describe("TerrainCache", () => {
     const c = new TerrainCache();
     transform = { a: 0.2, b: 0, c: 0, d: 0.2, e: -1999.6, f: -999.3 };
     const view = { x0: 10000, x1: 15000, y0: 5000, y1: 8000 };
-    c.draw(ctx, terrain, 0.2, view, false, later());
-    c.draw(ctx, terrain, 0.2, view, false, later());
+    c.draw(ctx, terrain, 0.2, view, false, later()); // the first frame builds and already copies unscaled
     const [sx, sy, sw, sh, dx, dy, dw, dh] = blits.at(-1)!;
     expect([sx, sy, dw, dh]).toEqual([0, 0, sw, sh]);
     expect(Number.isInteger(dx) && Number.isInteger(dy)).toBe(true);
@@ -93,5 +92,41 @@ describe("TerrainCache", () => {
     const c = new TerrainCache();
     expect(c.draw(ctx, terrain, 0.2, whole, false, later())).toBe(false); // 6000 x 3750 = 22.5 M px
     expect(draws).toHaveLength(0);
+  });
+});
+
+describe("cacheStep, the rebuild policy", () => {
+  const world = { width: 30000, height: 18750 };
+  const view = { x0: 10000, x1: 15000, y0: 5000, y1: 8000 };
+  const area = { x0: 8750, x1: 16250, y0: 4250, y1: 8750 };
+  const memo = (o: Partial<Parameters<typeof cacheStep>[0]> = {}) => ({ ready: true, zoom: 0.2, area, builtAt: 0, lastZoom: 0.2, lastX: view.x0, lastY: view.y0, lastCovered: true, ...o });
+  const step = (o: Partial<Parameters<typeof cacheStep>[0]>, v = view, zoom = 0.2, animating = false, now = 10_000) => cacheStep(memo(o), world, zoom, v, animating, now).step;
+
+  it("copies a bitmap that covers the view at its zoom, and builds one when there is none", () => {
+    expect(step({})).toBe("cached");
+    expect(step({ ready: false })).toBe("rebuild");
+  });
+
+  it("while the zoom changes: stretches a bitmap within 2x, draws directly past it; rebuilds once the zoom holds", () => {
+    expect(cacheStep(memo({ zoom: 0.15, lastZoom: 0.17 }), world, 0.18, view, false, 10_000).step).toBe("cached"); // stretched
+    expect(cacheStep(memo({ zoom: 0.05, lastZoom: 0.17 }), world, 0.18, view, false, 10_000).step).toBe("direct"); // past 2x
+    expect(cacheStep(memo({ zoom: 0.15, lastZoom: 0.18 }), world, 0.18, view, false, 10_000).step).toBe("rebuild"); // settled
+    expect(cacheStep(memo({ zoom: 0.15, lastZoom: 0.18 }), world, 0.18, view, true, 10_000).step).toBe("cached"); // an animation still running: stretched
+  });
+
+  it("a pan out of the cached area rebuilds on its first frame out or once still, at most every 250 ms, and draws directly between", () => {
+    const out = { x0: 15000, x1: 20000, y0: 5000, y1: 8000 };
+    expect(step({ lastCovered: true }, out)).toBe("rebuild"); // first frame out
+    expect(step({ lastCovered: true, builtAt: 9_900 }, out)).toBe("direct"); // too soon after the last rebuild
+    expect(step({ lastCovered: false, lastX: 14000 }, out)).toBe("direct"); // still moving, already out
+    expect(step({ lastCovered: false, lastX: out.x0 }, out)).toBe("rebuild"); // held still
+  });
+
+  it("counts the view as covered at the world edge despite float error in the area", () => {
+    const whole = { x0: 0, x1: 30000, y0: 0, y1: 18750 };
+    const z = 0.035;
+    const a = { x0: 0, x1: Math.ceil(30000 * z) / z, y0: 0, y1: Math.ceil(18750 * z) / z };
+    expect(a.x1).toBeLessThan(30000);
+    expect(cacheStep(memo({ zoom: z, lastZoom: z, area: a, lastX: 0, lastY: 0 }), world, z, whole, false, 10_000)).toEqual({ step: "cached", covered: true });
   });
 });

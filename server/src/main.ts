@@ -19,6 +19,7 @@ const poolFile = fileURLToPath(new URL("../../src/typescript/public/pool.json", 
 const foundersFile = process.env.LIVE_FOUNDERS_FILE ?? fileURLToPath(new URL("../../src/typescript/public/live-founders.json", import.meta.url)); // seeds a fresh world
 const threads = Number(process.env.LIVE_THREADS ?? HELPER_THREADS);
 const webRoot = process.env.LIVE_WEB_ROOT ?? fileURLToPath(new URL("../../src/typescript/dist", import.meta.url)); // npm run build in src/typescript
+const RESET_EXIT = 75; // after an admin reset: the unit restarts on it (RestartForceExitStatus), and the next start seeds the fresh world
 
 const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 // A startup step that fails exits with code 1, so systemd restarts the server (from the last good save) instead of serving half a world.
@@ -61,15 +62,19 @@ async function loadSave(name: string): Promise<string> {
   return line;
 }
 
+// The one way out under way. A stop saves and exits 0. A reset keeps the world aside and exits RESET_EXIT, so the unit starts the fresh
+// world; a stop asked meanwhile wins: the reset then exits 0 and the server stays down (or, the reset failed, the stop runs).
+const exit: { way: "stop" | "reset" | null; stopAsked: boolean } = { way: null, stopAsked: false };
+
 // Save, then exit. Used by the admin stop and by SIGTERM and SIGINT.
-let stopping = false;
-let stopAsked = false; // a stop that came while a reset ran: done if the reset fails
 async function stop(): Promise<void> {
-  if (stopping) {
-    stopAsked = true;
+  if (exit.way === "reset") {
+    exit.stopAsked = true;
+    console.log("stop asked during a reset: the server stays down after it");
     return;
   }
-  stopping = true;
+  if (exit.way === "stop") return;
+  exit.way = "stop";
   try {
     console.log(await saveNow());
   } catch (e) {
@@ -89,16 +94,16 @@ const admin = startAdmin(HOST, adminPort, token, live, stateDir, webRoot, savedO
   blankName: (name) => live.whenIdle(() => live.blankName(name)),
   renameName: (from, to, force) => live.whenIdle(() => live.renameName(from, to, force)),
   reset: async (copies) => {
-    if (stopping) throw new Error("the server is stopping");
-    stopping = true; // no stop save lands next to the kept world
+    if (exit.way) throw new Error(exit.way === "stop" ? "the server is stopping" : "a reset is under way");
+    exit.way = "reset"; // a stop now saves nothing next to the kept world
     try {
-      const line = await saves.reset(stateDir, copies, founders.length);
+      const line = await saves.reset(copies, founders.length);
       console.log(`reset: ${line}`);
-      setTimeout(() => shutdown(RESET_EXIT), 500); // the reply goes out first
-      return line;
+      setTimeout(() => shutdown(exit.stopAsked ? 0 : RESET_EXIT), 500); // the reply goes out first
+      return exit.stopAsked ? `${line}; a stop came meanwhile, so the server stays down until started` : line;
     } catch (e) {
-      stopping = false;
-      if (stopAsked) void stop();
+      exit.way = null;
+      if (exit.stopAsked) void stop();
       throw e;
     }
   },
@@ -111,7 +116,6 @@ runTicks(live, LIMITS.maxTickFailures, (why) => {
 console.log(`${live.threads} helper threads`);
 console.log(`live world on ws://${HOST}:${publicPort}, admin on ws://${HOST}:${adminPort} (token in ${stateDir}/admin-token)`);
 
-const RESET_EXIT = 75; // the unit restarts on it (RestartForceExitStatus), and the next start seeds the fresh world
 function shutdown(code = 0): void {
   live.close();
   pub.close();
