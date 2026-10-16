@@ -49,3 +49,32 @@ export function distance(inside: Uint8Array, w: number, h: number): Float32Array
   return out;
 }
 
+
+// The inside of closed outlines (flat x, y lists, even-odd) on a grid of w x h pixels of `cell` world units from (ox, oy): 1 where the pixel centre is inside.
+export function fillLoops(loops: readonly number[][], ox: number, oy: number, cell: number, w: number, h: number): Uint8Array {
+  const out = new Uint8Array(w * h);
+  const rows: number[][] = Array.from({ length: h }, () => []);
+  for (const loop of loops) {
+    const n = loop.length / 2;
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      const x1 = loop[2 * i]!;
+      const y1 = (loop[2 * i + 1]! - oy) / cell - 0.5; // in pixel rows, centres at integers
+      const x2 = loop[2 * j]!;
+      const y2 = (loop[2 * j + 1]! - oy) / cell - 0.5;
+      if (y1 === y2) continue;
+      const lo = Math.max(0, Math.ceil(Math.min(y1, y2)));
+      const hi = Math.min(h - 1, Math.ceil(Math.max(y1, y2)) - 1); // a row centre y counts for an edge when min <= y < max
+      for (let r = lo; r <= hi; r++) rows[r]!.push(x1 + ((r - y1) * (x2 - x1)) / (y2 - y1));
+    }
+  }
+  for (let r = 0; r < h; r++) {
+    const xs = rows[r]!.sort((a, b) => a - b);
+    for (let k = 0; k + 1 < xs.length; k += 2) {
+      const a = Math.max(0, Math.ceil((xs[k]! - ox) / cell - 0.5));
+      const b = Math.min(w - 1, Math.ceil((xs[k + 1]! - ox) / cell - 0.5) - 1);
+      for (let x = a; x <= b; x++) out[r * w + x] = 1;
+    }
+  }
+  return out;
+}

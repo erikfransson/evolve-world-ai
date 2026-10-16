@@ -1,6 +1,6 @@
 import type { Terrain } from "../sim/terrain.ts";
 import { makeCanvas } from "./canvas.ts";
-import { distance } from "./edt.ts";
+import { distance, fillLoops } from "./edt.ts";
 import { canvasOfPixels, fbm, ROCK_TILE_UNITS, rockCrustTile, rockPitTile, smooth, valueNoise } from "./noiseTex.ts";
 import { rockBodies, traceLoop } from "./rockOutline.ts";
 import type { RockBody } from "./rockOutline.ts";
@@ -108,16 +108,8 @@ function buildRaster(item: Item, cell: number): Raster | null {
   const oy = Math.floor(b.y0 / cell) * cell - 2 * cell;
   const w = Math.ceil((b.x1 - ox) / cell) + 3;
   const h = Math.ceil((b.y1 - oy) / cell) + 3;
-  const mask = makeCanvas(w, h);
-  const mg = mask?.getContext("2d", { willReadFrequently: true }) as CanvasRenderingContext2D | null;
-  if (!mask || !mg || typeof Path2D === "undefined") return null;
-  mg.setTransform(1 / cell, 0, 0, 1 / cell, -ox / cell, -oy / cell);
-  mg.fillStyle = "#fff";
-  mg.fill(item.outline, "evenodd");
-  const alpha = mg.getImageData(0, 0, w, h).data;
   const n = w * h;
-  const inside = new Uint8Array(n);
-  for (let k = 0; k < n; k++) inside[k] = alpha[4 * k + 3]! >= 128 ? 1 : 0;
+  const inside = fillLoops(b.loops, ox, oy, cell, w, h);
   const dist = distance(inside, w, h);
   // distance to the edge in world units, smoothed a little so the height has no staircase
   const d0 = new Float32Array(n);
@@ -203,16 +195,9 @@ function buildHalo(item: Item, cell: number): Raster | null {
   const oy = Math.floor(b.y0 / cell) * cell - m * cell;
   const w = Math.ceil((b.x1 - ox) / cell) + m + 1;
   const h = Math.ceil((b.y1 - oy) / cell) + m + 1;
-  const mask = makeCanvas(w, h);
-  const mg = mask?.getContext("2d", { willReadFrequently: true }) as CanvasRenderingContext2D | null;
-  if (!mask || !mg || typeof Path2D === "undefined") return null;
-  mg.setTransform(1 / cell, 0, 0, 1 / cell, -ox / cell, -oy / cell);
-  mg.fillStyle = "#fff";
-  mg.fill(item.outline, "evenodd");
-  const alpha = mg.getImageData(0, 0, w, h).data;
   const n = w * h;
-  const outside = new Uint8Array(n); // the distance transform runs from the pixels that are not "inside" it, so hand it the body as the outside
-  for (let k = 0; k < n; k++) outside[k] = alpha[4 * k + 3]! >= 128 ? 0 : 1;
+  const outside = fillLoops(b.loops, ox, oy, cell, w, h); // the distance transform runs from the pixels that are not "inside" it, so the body is the outside
+  for (let k = 0; k < n; k++) outside[k] = outside[k] ? 0 : 1;
   const dist = distance(outside, w, h);
   const px = new Uint8ClampedArray(4 * n);
   const down = Math.round((HALO.shift * item.size) / cell);
