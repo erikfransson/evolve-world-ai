@@ -6,13 +6,11 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
-### Live World
-- "Add your creature" adds up to 10 copies (1, 2, 3, 5 or 10; was 1 to 3), #42. The other caps let a full add in: 20 creatures per 5 minutes for everyone (two adds of 10), 10 per visitor once the tunnel's address is checked, at least 20 added creatures alive however small the world.
-  Release order: the site first, then `./live promote`; a page from before this version shows adding as off against the new server until it is reloaded.
-
 ## 0.2.1 (2026-10-16)
 
 ### Live World
+- "Add your creature" adds up to 10 copies (1, 2, 3, 5 or 10; was 1 to 3), #42. The other caps let a full add in: 20 creatures per 5 minutes for everyone (two adds of 10), 10 per visitor once the tunnel's address is checked, at least 20 added creatures alive however small the world.
+  Release order: the site first, then `./live promote`; a page from before this version shows adding as off against the new server until it is reloaded.
 - Poison is no longer lethal on Live: a bite costs 50 energy (one food's worth); admin-tunable as `world.poisonDamage` (100 or more kills, `./live get` says so).
 - Upgrading a running Live world: a world restored from a 0.2.0 save keeps its saved settings (lethal poison, birth ranges 100-225, 50-110, 5-20, the old starter names); only a fresh world starts with the new values. To bring a running world in line, after the promote: `./live set world.poisonDamage=50 eco.birthEnergyRange=100,500 eco.birthCostRange=50,250 eco.birthCooldownRange=5,40`, `./live rename Pathfinder Explorer` and `./live rename GentleGrazer Grazer` (each should report 10 families, fewer if some died out; add `--force` only if a visitor family already carries the new name). Pages already open show the new poison text after a reload.
 - "Add your creature": birth energy up to 500, cost up to 250, cooldown up to 40 s (the Live world's own ranges, so children drift within them too), and a mutation strength slider (×0.25 to ×4, its family inherits it).
