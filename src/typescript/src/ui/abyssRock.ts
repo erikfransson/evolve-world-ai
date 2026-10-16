@@ -22,8 +22,8 @@ const BUDGET_CELLS = 8_000_000; // pixels of images kept over all bodies (32 MB)
 const BASE: readonly number[] = [52, 68, 73]; // basalt albedo
 const CRUST: readonly number[] = [184, 194, 178];
 const LIGHT = { x: -0.55, y: -0.7, z: 0.5 }; // towards the light: above, and a little from the upper left
-const HALO_COLOR = "2, 9, 12";
-const HALO = [{ blur: 10, alpha: 0.8, shift: 0.25 }, { blur: 44, alpha: 0.55, shift: 0.3 }] as const; // blur in world units (scaled up for big bodies, at least 1.5 screen px), over the body's size
+const HALO_RGB = [2, 9, 12] as const;
+const HALO = { near: 0.55, near_s: 4, far_a: 0.4, far: 22, shift: 6 }; // alpha and decay length (world units) of the tight and the wide falloff; a stone's own, a massif's up to 3 times; lower by shift
 const PITS_FROM = 0.35; // scale (device px per world unit) from which the pit tile is drawn, full from PITS_FROM + 0.45
 const CRUST_FROM = 0.45;
 const CRUST_BANDS = [{ width: 5, alpha: 0.55 }, { width: 11, alpha: 0.3 }] as const; // world units inwards from the edge
@@ -193,18 +193,58 @@ function buildRaster(item: Item, cell: number): Raster | null {
   return image ? { image, ox, oy, w, h, cell } : null;
 }
 
+// The silt shadow around a body as an alpha-only image (a pixel per cell, margin around the box), from the distance outside the edge: a tight dark falloff and a wide faint one,
+// lying a little lower than the body.
+function buildHalo(item: Item, cell: number): Raster | null {
+  const b = item.body;
+  const reach = HALO.far * 3.2 * item.size;
+  const m = Math.ceil(reach / cell) + 2;
+  const ox = Math.floor(b.x0 / cell) * cell - m * cell;
+  const oy = Math.floor(b.y0 / cell) * cell - m * cell;
+  const w = Math.ceil((b.x1 - ox) / cell) + m + 1;
+  const h = Math.ceil((b.y1 - oy) / cell) + m + 1;
+  const mask = makeCanvas(w, h);
+  const mg = mask?.getContext("2d", { willReadFrequently: true }) as CanvasRenderingContext2D | null;
+  if (!mask || !mg || typeof Path2D === "undefined") return null;
+  mg.setTransform(1 / cell, 0, 0, 1 / cell, -ox / cell, -oy / cell);
+  mg.fillStyle = "#fff";
+  mg.fill(item.outline, "evenodd");
+  const alpha = mg.getImageData(0, 0, w, h).data;
+  const n = w * h;
+  const outside = new Uint8Array(n); // the distance transform runs from the pixels that are not "inside" it, so hand it the body as the outside
+  for (let k = 0; k < n; k++) outside[k] = alpha[4 * k + 3]! >= 128 ? 0 : 1;
+  const dist = distance(outside, w, h);
+  const px = new Uint8ClampedArray(4 * n);
+  const down = Math.round((HALO.shift * item.size) / cell);
+  const [r, g, bl] = HALO_RGB;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const d = Math.max(0, dist[Math.max(0, y - down) * w + x]! - 0.5) * cell;
+      const f = item.size;
+      const a = Math.min(0.85, HALO.near * Math.exp(-d / (HALO.near_s * f)) + HALO.far_a * Math.exp(-d / (HALO.far * f))) * (1 - smooth(0.7 * reach, reach, d));
+      const k = 4 * (y * w + x);
+      px[k] = r;
+      px[k + 1] = g;
+      px[k + 2] = bl;
+      px[k + 3] = 255 * a;
+    }
+  }
+  const image = canvasOfPixels(w, h, px);
+  return image ? { image, ox, oy, w, h, cell } : null;
+}
+
 const rasters = new Map<string, Raster | null>(); // least recently used first
 let rasterCells = 0;
 
-function rasterOf(item: Item, cell: number): Raster | null {
-  const key = `${item.id}:${cell}`;
+function rasterOf(item: Item, cell: number, halo = false): Raster | null {
+  const key = `${item.id}:${cell}${halo ? "h" : ""}`;
   let r = rasters.get(key);
   if (r !== undefined) {
     rasters.delete(key);
     rasters.set(key, r);
     return r;
   }
-  r = buildRaster(item, cell);
+  r = halo ? buildHalo(item, cell) : buildRaster(item, cell);
   rasters.set(key, r);
   if (r) {
     rasterCells += r.w * r.h;
@@ -251,7 +291,7 @@ function patternsOf(ctx: CanvasRenderingContext2D) {
 export function drawRock(ctx: CanvasRenderingContext2D, t: Terrain, scale: number, view: View, quick: boolean): void {
   if (t.rockCount === 0) return;
   const px = 1 / scale;
-  const pad = 160 + 4 * px; // the widest halo
+  const pad = 220 + 4 * px; // the widest halo
   const shown = itemsOf(t).filter(({ body: b }) => b.x1 + pad >= view.x0 && b.x0 - pad <= view.x1 && b.y1 + pad >= view.y0 && b.y0 - pad <= view.y1);
   if (quick || typeof Path2D === "undefined") {
     ctx.fillStyle = FLAT_BODY;
@@ -259,25 +299,15 @@ export function drawRock(ctx: CanvasRenderingContext2D, t: Terrain, scale: numbe
     return;
   }
   ctx.lineJoin = "round";
-  // Halos first, so a body never lies under the shadow of a neighbour: a tight and a wide soft shadow of silt around the foot, a little more below. The shape itself is
-  // painted over by the body.
-  ctx.fillStyle = `rgb(${HALO_COLOR})`;
-  for (const { blur, alpha, shift } of HALO) {
-    ctx.shadowColor = `rgba(${HALO_COLOR}, ${alpha})`;
-    for (const { outline, size } of shown) {
-      const b = Math.max(blur * size, 1.5 * px);
-      ctx.shadowBlur = b * scale;
-      ctx.shadowOffsetY = shift * b * scale;
-      ctx.fill(outline, "evenodd");
-    }
-  }
-  ctx.shadowColor = "rgba(0, 0, 0, 0)";
-  ctx.shadowBlur = 0;
-  ctx.shadowOffsetY = 0;
   const smoothing = ctx.imageSmoothingEnabled;
   const quality = ctx.imageSmoothingQuality;
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
+  // Halos first, so a body never lies under the shadow of a neighbour.
+  for (const item of shown) {
+    const hr = rasterOf(item, Math.max(6, cellFor(scale, item.body)), true);
+    if (hr) ctx.drawImage(hr.image as CanvasImageSource, 0, 0, hr.w, hr.h, hr.ox, hr.oy, hr.w * hr.cell, hr.h * hr.cell);
+  }
   const pitAlpha = smooth(PITS_FROM, PITS_FROM + 0.45, scale);
   const crustAlpha = smooth(CRUST_FROM, CRUST_FROM + 0.5, scale);
   const pats = pitAlpha > 0 ? patternsOf(ctx) : null;
