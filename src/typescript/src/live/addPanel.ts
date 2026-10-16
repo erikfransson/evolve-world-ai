@@ -496,8 +496,7 @@ export class AddPanel {
       this.say("Not connected to the world right now. Try again when it is back.", "error");
       return this.refresh();
     }
-    this.waiting = true;
-    this.lock(this.rules?.everyS ?? 10);
+    this.waiting = true; // the next add waits for this reply; past the connection's burst the server refuses with retryS, which locks
     this.say("Sending…");
     this.refresh();
   }
