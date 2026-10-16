@@ -73,8 +73,20 @@ describe("TerrainCache", () => {
     c.draw(ctx, terrain, 0.2, { x0: 0, x1: 5000, y0: 5000, y1: 8000 }, false, t);
     let direct = 0;
     for (let k = 1; k <= 24; k++) if (!c.draw(ctx, terrain, 0.2, { x0: 1000 * k, x1: 5000 + 1000 * k, y0: 5000, y1: 8000 }, false, (t += 16))) direct++;
-    expect(draws.length).toBeLessThanOrEqual(1 + Math.ceil((24 * 16) / 250));
-    expect(direct).toBeGreaterThan(0);
+    expect(draws.length).toBeLessThanOrEqual(2); // the first frame out of the cached area rebuilds; the frames after it, still uncovered, draw directly
+    expect(direct).toBeGreaterThan(20);
+    c.draw(ctx, terrain, 0.2, { x0: 30000, x1: 35000, y0: 5000, y1: 8000 }, false, (t += 16)); // the pan stops
+    expect(c.draw(ctx, terrain, 0.2, { x0: 30000, x1: 35000, y0: 5000, y1: 8000 }, false, (t += 16))).toBe(true); // held still: cached again
+  });
+
+  it("a zoom that settles while the view keeps moving (following a creature) rebuilds the cache", () => {
+    const c = new TerrainCache();
+    let t = later();
+    c.draw(ctx, terrain, 0.2, { x0: 10000, x1: 15000, y0: 5000, y1: 8000 }, false, t);
+    c.draw(ctx, terrain, 0.2, { x0: 10000, x1: 15000, y0: 5000, y1: 8000 }, false, (t += 16));
+    expect(c.draw(ctx, terrain, 0.035, { x0: 0, x1: 30000, y0: 0, y1: 18750 }, true, (t += 16))).toBe(false);
+    for (let k = 1; k <= 30; k++) c.draw(ctx, terrain, 0.035, { x0: k, x1: 30000 + k, y0: 0, y1: 18750 }, false, (t += 16));
+    expect(draws.at(-1)!.scale).toBe(0.035);
   });
 
   it("a bitmap past 8 million pixels is never made: the caller draws the map directly", () => {
