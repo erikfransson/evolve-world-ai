@@ -17,7 +17,7 @@ import type { GrainLook, GroundLook, RippleLook } from "./noiseTex.ts";
 // close up only the patches in view are painted live. A map keeps the bitmaps of every tier it was viewed at, within MAX_BAKED_PX pixels in all. A frame makes at most BAKES_PER_FRAME of them, patches still waiting are painted live meanwhile.
 
 export const FEATHER_UNITS = 4; // widest the fade into the floor reaches inside the edge, world units: a slight softening, the edge stays crisp
-const FLOOR = "#0a1c21";
+const FLOOR = "#0c2128";
 export const FEATHER_BANDS = [1, 0.7, 0.45, 0.22].map((k, i) => ({ width: FEATHER_UNITS * k, alpha: 0.2 + 0.07 * i })); // floor-coloured bands from the edge inwards
 const FEATHER_COARSE = [{ width: FEATHER_UNITS, alpha: 0.5 }];
 const COARSE_BELOW = 0.1; // scale (device px per world unit)
@@ -32,7 +32,7 @@ const BAKE_PAD = 4; // px around a bitmap
 interface Style {
   flat: string; // the colour from afar and in previews
   look: GroundLook; // the smooth colour tile
-  ripples: RippleLook; // the ripple marks over it
+  ripples: RippleLook | null; // the ripple marks over it, none on mud
   grain: GrainLook; // the grain tile over that
   rimColor: number[]; // the pale shallows along the edge, fading into the ground further in
   rimAlpha: number; // their opacity at the edge
@@ -46,29 +46,29 @@ interface Style {
 // Mud: a pale silty shelf, lighter in the shallows and darker towards the deep middle. Firm ground: pale coarse sand with shell grit.
 const STYLE: Record<number, Style> = {
   [TERRAIN_SLOW]: {
-    flat: "#4d4a40",
-    look: { base: [72, 69, 60], mottle: 0.09, seed: 21 },
-    ripples: { light: [190, 176, 140], dark: [10, 10, 8], lightAlpha: 0.045, darkAlpha: 0.14, stripes: [34, 11], bend: 1.5, seed: 24 },
-    grain: { light: [196, 184, 150], dark: [18, 16, 12], fine: 0.012, coarse: 0.0006, shell: 0.00005, seed: 25 },
-    rimColor: [182, 172, 142],
-    rimAlpha: 0.5,
-    rimReach: 70,
-    deepColor: [22, 26, 26],
+    flat: "#3f4d3f",
+    look: { base: [60, 76, 62], mottle: 0.16, seed: 21 },
+    ripples: null,
+    grain: { light: [150, 168, 140], dark: [10, 18, 14], fine: 0.006, coarse: 0, shell: 0, seed: 25 },
+    rimColor: [126, 146, 118],
+    rimAlpha: 0.45,
+    rimReach: 80,
+    deepColor: [18, 28, 26],
     deepAlpha: 0.5,
     deepFrom: 120,
     deepSpan: 600,
-    edge: "rgba(6, 10, 10, 0.1)",
+    edge: "rgba(6, 12, 10, 0.1)",
   },
   [TERRAIN_FAST]: {
     flat: "#85806a",
-    look: { base: [124, 118, 98], mottle: 0.07, seed: 22 },
-    ripples: { light: [222, 214, 180], dark: [30, 26, 16], lightAlpha: 0.07, darkAlpha: 0.15, stripes: [26, 15], bend: 1.2, seed: 26 },
-    grain: { light: [236, 228, 196], dark: [40, 34, 20], fine: 0.03, coarse: 0.004, shell: 0.0004, seed: 27 },
-    rimColor: [214, 206, 172],
+    look: { base: [128, 121, 100], mottle: 0.07, seed: 22 },
+    ripples: { light: [222, 214, 180], dark: [30, 26, 16], lightAlpha: 0.04, darkAlpha: 0.1, stripes: [26, 15], bend: 2.6, seed: 26 },
+    grain: { light: [236, 228, 196], dark: [40, 34, 20], fine: 0.03, coarse: 0.004, shell: 0.0003, seed: 27 },
+    rimColor: [216, 208, 174],
     rimAlpha: 0.25,
     rimReach: 60,
     deepColor: [40, 40, 34],
-    deepAlpha: 0.22,
+    deepAlpha: 0.2,
     deepFrom: 120,
     deepSpan: 500,
     edge: "rgba(6, 10, 10, 0.08)",
@@ -78,8 +78,8 @@ const SHADOW = [{ units: 2.5, alpha: 0.3 }, { units: 7, alpha: 0.16 }] as const;
 const SHADOW_MAX_PX = 3;
 const SHELF_CELL = 25; // world units a pixel of the shelf image covers
 const SHELF_MAX_CELLS = 600_000;
-const GRAIN_FROM = 0.25; // scale from which the grain tile is drawn, full at GRAIN_FROM + 0.35
-const RIPPLES_FROM = 0.12; // the same for the ripple marks, full at RIPPLES_FROM + 0.2
+const GRAIN_FROM = 0.45; // scale from which the grain tile is drawn, full at GRAIN_FROM + 0.35
+const RIPPLES_FROM = 0.6; // the same for the ripple marks, full at RIPPLES_FROM + 0.5
 const TEXTURE_FROM = 0.03; // scale (device px per world unit) from which textures and rims are drawn, below it a patch is one flat fill
 const VIEW_PAD = 80; // world units past a patch that still draw
 
@@ -115,7 +115,7 @@ function patternsFor(ctx: CanvasRenderingContext2D, kind: number): Pats {
     p = {
       base: make("base", () => groundBaseTile(style.look), GROUND_BASE_UNITS),
       get ripples() {
-        return ripples === undefined ? (ripples = make("ripples", () => groundRippleTile(style.ripples), GROUND_BASE_UNITS)) : ripples;
+        return ripples === undefined ? (ripples = style.ripples ? make("ripples", () => groundRippleTile(style.ripples!), GROUND_BASE_UNITS) : null) : ripples;
       },
       get grain() {
         return grain === undefined ? (grain = make("grain", () => groundGrainTile(style.grain), GROUND_GRAIN_UNITS)) : grain;
@@ -231,7 +231,7 @@ function paintPatch(ctx: CanvasRenderingContext2D, patch: Patch, scale: number):
   ctx.fillStyle = pats?.base ?? style.flat;
   ctx.fill(path, "evenodd");
   if (pats) {
-    const ripples = smooth(RIPPLES_FROM, RIPPLES_FROM + 0.2, scale);
+    const ripples = smooth(RIPPLES_FROM, RIPPLES_FROM + 0.5, scale);
     const ripplePattern = ripples > 0 ? pats.ripples : null;
     if (ripplePattern) {
       ctx.globalAlpha = ripples;

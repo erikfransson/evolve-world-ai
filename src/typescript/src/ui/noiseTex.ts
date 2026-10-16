@@ -92,7 +92,7 @@ export function ripple(u: number, v: number, kx: number, ky: number, bend: numbe
 // ---- Floor: one image over the whole world, large soft patches of silt, a few percent in lightness ----
 
 const floorImages = new Map<string, Canvas | null>();
-export const FLOOR_RGB = [10, 28, 33] as const;
+export const FLOOR_RGB = [12, 33, 40] as const;
 export const FLOOR_CELL = 80; // world units per pixel of the floor image, at most
 
 export function floorImage(width: number, height: number): { image: Canvas | null; cell: number } {
@@ -135,7 +135,7 @@ let floorRipples: Canvas | null | undefined;
 export function floorRippleTile(): Canvas | null {
   if (floorRipples === undefined) {
     floorRipples = pixelTile(384, (u, v, out) => {
-      const r = ripple(u, v, 28, 9, 1.6, 31);
+      const r = ripple(u, v, 28, 9, 3.2, 31);
       const m = 0.5 + 0.5 * fbm(u * 3, v * 3, 33, 2, 3); // ripples come and go in patches
       const a = Math.min(1, Math.abs(r) * m * smooth(0.3, 0.8, m));
       if (r > 0) {
@@ -284,53 +284,22 @@ export function rockPitTile(): Canvas | null {
       g.fillRect(px - r, py - r, 2 * r, 2 * r);
     });
   }
-  // pits: a dark hollow with a thin pale lip on the lower right, where it catches the light from above left
-  for (let i = 0; i < 2200; i++) {
+  // vesicles: a dark hollow with a bright lip on the lower right, where it catches the light from above left, and a few big ones
+  for (let i = 0; i < 1300; i++) {
     const x = rng.range(0, N);
     const y = rng.range(0, N);
-    const r = rng.next() < 0.88 ? rng.range(0.5, 1.3) : rng.range(1.3, 2.6);
-    const a = rng.range(0.3, 0.65);
+    const r = i < 70 ? rng.range(2.6, 5) : rng.range(1.1, 2.4);
+    const a = rng.range(0.4, 0.8);
     wrapped(x, y, r, (px, py) => {
-      g.fillStyle = `rgba(150, 190, 190, ${(a * 0.28).toFixed(3)})`;
+      g.fillStyle = `rgba(170, 205, 210, ${(a * 0.5).toFixed(3)})`;
       g.beginPath();
-      g.arc(px + 0.45 * r, py + 0.55 * r, r, 0, Math.PI * 2);
+      g.arc(px + 0.4 * r, py + 0.5 * r, r, 0, Math.PI * 2);
       g.fill();
       g.fillStyle = `rgba(0, 5, 8, ${a.toFixed(3)})`;
       g.beginPath();
-      g.arc(px, py, r, 0, Math.PI * 2);
+      g.arc(px - 0.1 * r, py - 0.12 * r, r, 0, Math.PI * 2);
       g.fill();
     });
-  }
-  return c;
-}
-
-// Pale encrusting speckle (sponge, coral, barnacle), clustered in patches: used through a band along the rock edge.
-export function rockCrustTile(): Canvas | null {
-  const N = 512;
-  const c = makeCanvas(N, N);
-  const g = c?.getContext("2d") as CanvasRenderingContext2D | null;
-  if (!c || !g) return null;
-  const rng = createRng(73);
-  const TONES = ["226, 220, 196", "206, 214, 200", "214, 188, 176", "190, 206, 214"];
-  for (let i = 0; i < 9000; i++) {
-    const x = rng.range(0, N);
-    const y = rng.range(0, N);
-    const density = smooth(0.18, 0.5, 0.5 + 0.5 * fbm(x / N * 5, y / N * 5, 77, 3, 5)); // clumps of crust and bare rock between
-    if (rng.next() > density) continue;
-    const r = rng.next() < 0.8 ? rng.range(0.7, 1.6) : rng.range(1.6, 3.2);
-    const tone = TONES[Math.floor(rng.next() * TONES.length)]!;
-    const a = rng.range(0.3, 0.75);
-    for (const dx of [-N, 0, N]) {
-      for (const dy of [-N, 0, N]) {
-        const px = x + dx;
-        const py = y + dy;
-        if (px < -r || px > N + r || py < -r || py > N + r) continue;
-        g.fillStyle = `rgba(${tone}, ${a.toFixed(3)})`;
-        g.beginPath();
-        g.arc(px, py, r, 0, Math.PI * 2);
-        g.fill();
-      }
-    }
   }
   return c;
 }

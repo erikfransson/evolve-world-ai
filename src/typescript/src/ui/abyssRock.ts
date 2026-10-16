@@ -1,16 +1,16 @@
 import type { Terrain } from "../sim/terrain.ts";
 import { makeCanvas } from "./canvas.ts";
 import { distance, fillLoops } from "./edt.ts";
-import { canvasOfPixels, fbm, ROCK_TILE_UNITS, rockCrustTile, rockPitTile, smooth, valueNoise } from "./noiseTex.ts";
+import { canvasOfPixels, fbm, ROCK_TILE_UNITS, rockPitTile, smooth, valueNoise } from "./noiseTex.ts";
 import { rockBodies, traceLoop } from "./rockOutline.ts";
 import type { RockBody } from "./rockOutline.ts";
 import type { View } from "./terrainScene.ts";
 
 // Rock of the abyssal look: basalt lumps and ridges sitting in the silt. Each body (a connected lump of rock discs) gets a small shaded image,
 // a pixel per CELL world units: a height profile made from the distance to its edge (rounded at the foot, a gentle crest along the
-// middle), lit softly from above left, darkened where it meets the silt, mottled and with pale encrusting patches along its edge.
+// middle), lit softly from above left, darkened where it meets the silt, mottled, with a cool rim light on lit edges and sparse soft pale encrustations in its lee.
 // The image is drawn clipped to the exact outline, so the edge is where creatures bounce (the outline strays from the disc union by about a unit and its corners are rounded
-// over CORNER units: under 3 in all). Over it go a tiled pit texture and a speckle of pale crust close to the edge, from about half zoom up,
+// over CORNER units: under 3 in all). Over it goes a tiled texture of pits with lit lips, from about a third zoom up,
 // and under it a soft dark halo of silt. No outline stroke. Images are made when first in view, per resolution level, and kept within a budget.
 
 const CORNER = 5; // world units a corner is rounded over, on each side
@@ -19,14 +19,13 @@ const PX_PER_CELL = 4;
 const MIN_PX_ACROSS = 14; // pixels across the narrower side of a body's box, at least
 const MAX_CELLS = 700_000; // pixels of one body's image, beyond that the next coarser resolution is used
 const BUDGET_CELLS = 8_000_000; // pixels of images kept over all bodies (32 MB), the least recently used go first
-const BASE: readonly number[] = [52, 68, 73]; // basalt albedo
-const CRUST: readonly number[] = [184, 194, 178];
+const BASE: readonly number[] = [68, 88, 95]; // basalt albedo
+const RIM: readonly number[] = [46, 84, 96]; // cool rim light added on lit edges
+const CRUST: readonly number[] = [176, 182, 166];
 const LIGHT = { x: -0.55, y: -0.7, z: 0.5 }; // towards the light: above, and a little from the upper left
 const HALO_RGB = [2, 9, 12] as const;
-const HALO = { near: 0.55, near_s: 4, far_a: 0.4, far: 22, shift: 6 }; // alpha and decay length (world units) of the tight and the wide falloff; a stone's own, a massif's up to 3 times; lower by shift
+const HALO = { near: 0.8, near_s: 5, far_a: 0.55, far: 24, shift: 9 }; // alpha and decay length (world units) of the tight and the wide falloff; a stone's own, a massif's up to 3 times; lower by shift
 const PITS_FROM = 0.35; // scale (device px per world unit) from which the pit tile is drawn, full from PITS_FROM + 0.45
-const CRUST_FROM = 0.45;
-const CRUST_BANDS = [{ width: 5, alpha: 0.55 }, { width: 11, alpha: 0.3 }] as const; // world units inwards from the edge
 const FLAT_BODY = "#2f3f43"; // quick drawing
 
 type Canvas = OffscreenCanvas | HTMLCanvasElement;
@@ -128,15 +127,19 @@ function buildRaster(item: Item, cell: number): Raster | null {
   const crest = 0.26 * smooth(40, 180, dmax); // slope of the gentle rise towards the middle of a big body
   const height = new Float32Array(n);
   for (let k = 0; k < n; k++) height[k] = 0.7 * wd * (1 - Math.exp(-d[k]! / wd)) + crest * d[k]!;
-  // a rough grain in the height, so big smooth bodies still catch the light in small patches (a wavelength of at least four pixels)
-  const lam = Math.max(26, 4 * cell);
+  // crisp relief in the height: sharp-crested ridges (strata and cracks) at two scales, the finer only where the pixels are small enough to hold it
+  const ridged = (x: number, y: number, lam: number, seed: number): number => {
+    const v = 1 - Math.abs(fbm(x / lam, y / lam, seed, 2));
+    return v * v;
+  };
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       const k = y * w + x;
       if (!inside[k]) continue;
       const wx = ox + (x + 0.5) * cell;
       const wy = oy + (y + 0.5) * cell;
-      height[k] += (0.9 * lam / 26) * fbm(wx / lam, wy / lam, 59, 3) * smooth(0, 12, d[k]!);
+      let v = cell <= 6 ? 3 * ridged(wx, wy, 64, 59) + 1.1 * ridged(wx, wy, 21, 61) : 4 * fbm(wx / 80, wy / 80, 59, 3);
+      height[k] += v * smooth(0, 10, d[k]!);
     }
   }
   const ao = 14 + 6 * item.size; // units over which the silt shadow at the foot fades out
@@ -154,7 +157,7 @@ function buildRaster(item: Item, cell: number): Raster | null {
       const nl = (-hx * lx - hy * ly + lz) / Math.sqrt(hx * hx + hy * hy + 1);
       const dd = d[k]!;
       const rise = 1 - Math.exp(-dd / reach);
-      const lum = (0.3 + 1.0 * nl) * (0.7 + 0.62 * rise) * (0.66 + 0.34 * smooth(0, ao, dd));
+      const lum = (0.34 + 1.15 * nl) * (0.7 + 0.8 * rise) * (0.5 + 0.5 * smooth(0, ao, dd));
       const wx = ox + (x + 0.5) * cell;
       const wy = oy + (y + 0.5) * cell;
       const m1 = fbm(wx / 170, wy / 170, 41, 3);
@@ -166,11 +169,17 @@ function buildRaster(item: Item, cell: number): Raster | null {
       r *= lum;
       g *= lum;
       bl *= lum;
-      // pale encrusting patches, only close to the edge and only where a second noise lets them
-      const e = dd < 26 && inside[k] ? smooth(0.52, 0.72, valueNoise(wx / 24, wy / 24, 51)) * smooth(0.35, 0.62, 0.5 + 0.5 * fbm(wx / 260, wy / 260, 53, 2)) * (1 - smooth(2, 26, dd)) : 0;
+      // a cool rim light along the edges that face the light
+      const rim = (1 - smooth(1.5, 9, dd)) * smooth(0.6, 1.0, nl) * (inside[k] ? 1 : 0);
+      r += rim * RIM[0]!;
+      g += rim * RIM[1]!;
+      bl += rim * RIM[2]!;
+      // pale encrustation: sparse soft clusters in the lee of the body (the side away from the light), granular within
+      const lee = 1 - smooth(0.3, 0.8, nl);
+      const e = dd < 40 && dd > 1 && inside[k] ? smooth(0.64, 0.8, valueNoise(wx / 44, wy / 44, 51)) * lee * (1 - smooth(5, 40, dd)) * (0.55 + 0.45 * valueNoise(wx / 5, wy / 5, 55)) : 0;
       if (e > 0) {
-        const f = 0.62 * e;
-        const shade = 0.55 + 0.45 * Math.min(1.15, lum);
+        const f = 0.55 * e;
+        const shade = 0.5 + 0.5 * Math.min(1.1, lum);
         r += (CRUST[0]! * shade - r) * f;
         g += (CRUST[1]! * shade - g) * f;
         bl += (CRUST[2]! * shade - bl) * f;
@@ -253,21 +262,19 @@ function cellFor(scale: number, body: RockBody): number {
 
 // ---- Patterns ----
 
-const patterns = new WeakMap<CanvasRenderingContext2D, { pits: CanvasPattern | null; crust: CanvasPattern | null }>();
+const patterns = new WeakMap<CanvasRenderingContext2D, { pits: CanvasPattern | null }>();
 let pitTile: Canvas | null | undefined;
-let crustTile: Canvas | null | undefined;
 
 function patternsOf(ctx: CanvasRenderingContext2D) {
   let p = patterns.get(ctx);
   if (!p) {
     if (pitTile === undefined) pitTile = rockPitTile();
-    if (crustTile === undefined) crustTile = rockCrustTile();
     const make = (tile: Canvas | null): CanvasPattern | null => {
       const pattern = tile ? ctx.createPattern(tile as CanvasImageSource, "repeat") : null;
       pattern?.setTransform(new DOMMatrix().scale(ROCK_TILE_UNITS / 512));
       return pattern;
     };
-    patterns.set(ctx, (p = { pits: make(pitTile), crust: make(crustTile) }));
+    patterns.set(ctx, (p = { pits: make(pitTile) }));
   }
   return p;
 }
@@ -294,7 +301,6 @@ export function drawRock(ctx: CanvasRenderingContext2D, t: Terrain, scale: numbe
     if (hr) ctx.drawImage(hr.image as CanvasImageSource, 0, 0, hr.w, hr.h, hr.ox, hr.oy, hr.w * hr.cell, hr.h * hr.cell);
   }
   const pitAlpha = smooth(PITS_FROM, PITS_FROM + 0.45, scale);
-  const crustAlpha = smooth(CRUST_FROM, CRUST_FROM + 0.5, scale);
   const pats = pitAlpha > 0 ? patternsOf(ctx) : null;
   for (const item of shown) {
     const { outline, body } = item;
@@ -311,14 +317,6 @@ export function drawRock(ctx: CanvasRenderingContext2D, t: Terrain, scale: numbe
       ctx.globalAlpha = pitAlpha;
       ctx.fillStyle = pats.pits;
       ctx.fill(outline, "evenodd");
-    }
-    if (pats?.crust && crustAlpha > 0) {
-      ctx.strokeStyle = pats.crust;
-      for (const { width, alpha } of CRUST_BANDS) {
-        ctx.globalAlpha = crustAlpha * alpha;
-        ctx.lineWidth = 2 * width;
-        ctx.stroke(outline);
-      }
     }
     ctx.restore();
   }
