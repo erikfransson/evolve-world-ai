@@ -88,6 +88,15 @@ describe("TerrainCache", () => {
     expect(draws.at(-1)!.scale).toBe(0.035);
   });
 
+  it("another map (a map switch) rebuilds at once, never showing the old one", () => {
+    const c = new TerrainCache();
+    const other = { width: 30000, height: 18750 } as never;
+    c.draw(ctx, terrain, 0.035, whole, false, later());
+    c.draw(ctx, terrain, 0.035, whole, false, later());
+    expect(c.draw(ctx, other, 0.035, whole, false, later())).toBe(true);
+    expect(draws).toHaveLength(2);
+  });
+
   it("a bitmap past 8 million pixels is never made: the caller draws the map directly", () => {
     const c = new TerrainCache();
     expect(c.draw(ctx, terrain, 0.2, whole, false, later())).toBe(false); // 6000 x 3750 = 22.5 M px
@@ -112,6 +121,7 @@ describe("cacheStep, the rebuild policy", () => {
     expect(cacheStep(memo({ zoom: 0.05, lastZoom: 0.17 }), world, 0.18, view, false, 10_000).step).toBe("direct"); // past 2x
     expect(cacheStep(memo({ zoom: 0.15, lastZoom: 0.18 }), world, 0.18, view, false, 10_000).step).toBe("rebuild"); // settled
     expect(cacheStep(memo({ zoom: 0.15, lastZoom: 0.18 }), world, 0.18, view, true, 10_000).step).toBe("cached"); // an animation still running: stretched
+    expect(cacheStep(memo({ zoom: 0.15, lastZoom: 0.18, builtAt: 9_900 }), world, 0.18, view, false, 10_000).step).toBe("direct"); // settled, but within 250 ms of the last rebuild
   });
 
   it("a pan out of the cached area rebuilds on its first frame out or once still, at most every 250 ms, and draws directly between", () => {
