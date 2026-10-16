@@ -79,7 +79,6 @@ const SHELF_CELL = 25; // world units a pixel of the shelf image covers
 const SHELF_MAX_CELLS = 600_000;
 const GRAIN_FROM = 0.25; // scale from which the grain tile is drawn, full at GRAIN_FROM + 0.35
 const RIPPLES_FROM = 0.12; // the same for the ripple marks, full at RIPPLES_FROM + 0.2
-const TILE_PX = 512;
 const TEXTURE_FROM = 0.03; // scale (device px per world unit) from which textures and rims are drawn, below it a patch is one flat fill
 const VIEW_PAD = 80; // world units past a patch that still draw
 
@@ -91,8 +90,8 @@ export const context2d = (c: OffscreenCanvas | HTMLCanvasElement | null): Canvas
 const tiles = new Map<string, OffscreenCanvas | HTMLCanvasElement | null>(); // tiles are shared by every canvas
 interface Pats {
   base: CanvasPattern | null;
-  ripples: CanvasPattern | null;
-  grain: CanvasPattern | null;
+  readonly ripples: CanvasPattern | null; // made when first asked for, as from afar they are not drawn
+  readonly grain: CanvasPattern | null;
 }
 const patterns = new WeakMap<CanvasRenderingContext2D, Map<number, Pats>>();
 
@@ -107,13 +106,19 @@ function patternsFor(ctx: CanvasRenderingContext2D, kind: number): Pats {
       if (!tiles.has(key)) tiles.set(key, build());
       const c = tiles.get(key);
       const pattern = c ? ctx.createPattern(c as CanvasImageSource, "repeat") : null;
-      pattern?.setTransform(new DOMMatrix().scale(units / TILE_PX));
+      pattern?.setTransform(new DOMMatrix().scale(units / c!.width));
       return pattern;
     };
+    let ripples: CanvasPattern | null | undefined;
+    let grain: CanvasPattern | null | undefined;
     p = {
       base: make("base", () => groundBaseTile(style.look), GROUND_BASE_UNITS),
-      ripples: make("ripples", () => groundRippleTile(style.ripples), GROUND_BASE_UNITS),
-      grain: make("grain", () => groundGrainTile(style.grain), GROUND_GRAIN_UNITS),
+      get ripples() {
+        return ripples === undefined ? (ripples = make("ripples", () => groundRippleTile(style.ripples), GROUND_BASE_UNITS)) : ripples;
+      },
+      get grain() {
+        return grain === undefined ? (grain = make("grain", () => groundGrainTile(style.grain), GROUND_GRAIN_UNITS)) : grain;
+      },
     };
     m.set(kind, p);
   }
@@ -226,15 +231,17 @@ function paintPatch(ctx: CanvasRenderingContext2D, patch: Patch, scale: number):
   ctx.fill(path, "evenodd");
   if (pats) {
     const ripples = smooth(RIPPLES_FROM, RIPPLES_FROM + 0.2, scale);
-    if (pats.ripples && ripples > 0) {
+    const ripplePattern = ripples > 0 ? pats.ripples : null;
+    if (ripplePattern) {
       ctx.globalAlpha = ripples;
-      ctx.fillStyle = pats.ripples;
+      ctx.fillStyle = ripplePattern;
       ctx.fill(path, "evenodd");
     }
     const grain = smooth(GRAIN_FROM, GRAIN_FROM + 0.35, scale);
-    if (pats.grain && grain > 0) {
+    const grainPattern = grain > 0 ? pats.grain : null;
+    if (grainPattern) {
       ctx.globalAlpha = grain;
-      ctx.fillStyle = pats.grain;
+      ctx.fillStyle = grainPattern;
       ctx.fill(path, "evenodd");
     }
     ctx.globalAlpha = 1;
@@ -243,7 +250,7 @@ function paintPatch(ctx: CanvasRenderingContext2D, patch: Patch, scale: number):
   if (shelf) {
     const smoothing = ctx.imageSmoothingEnabled;
     ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = "high";
+    ctx.imageSmoothingQuality = "low";
     ctx.drawImage(shelf.image as CanvasImageSource, shelf.ox, shelf.oy, shelf.w * shelf.cell, shelf.h * shelf.cell);
     ctx.imageSmoothingEnabled = smoothing;
   }

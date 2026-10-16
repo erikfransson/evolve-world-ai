@@ -21,16 +21,23 @@ const floorPatterns = new WeakMap<CanvasRenderingContext2D, CanvasPattern | null
 function drawFloor(ctx: CanvasRenderingContext2D, t: Terrain, scale: number, view: View): void {
   const { image, cell } = floorImage(t.width, t.height);
   if (image) {
-    const smoothing = ctx.imageSmoothingEnabled;
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = "high";
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(0, 0, t.width, t.height);
-    ctx.clip();
-    ctx.drawImage(image as CanvasImageSource, -0.5 * cell, -0.5 * cell, image.width * cell, image.height * cell);
-    ctx.restore();
-    ctx.imageSmoothingEnabled = smoothing;
+    // only the part in view: pixel i of the image is centred on world i * cell
+    const i0 = Math.max(0, Math.floor(view.x0 / cell) - 1);
+    const j0 = Math.max(0, Math.floor(view.y0 / cell) - 1);
+    const i1 = Math.min(image.width, Math.ceil(view.x1 / cell) + 2);
+    const j1 = Math.min(image.height, Math.ceil(view.y1 / cell) + 2);
+    if (i1 > i0 && j1 > j0) {
+      const smoothing = ctx.imageSmoothingEnabled;
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "low";
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, t.width, t.height);
+      ctx.clip();
+      ctx.drawImage(image as CanvasImageSource, i0, j0, i1 - i0, j1 - j0, (i0 - 0.5) * cell, (j0 - 0.5) * cell, (i1 - i0) * cell, (j1 - j0) * cell);
+      ctx.restore();
+      ctx.imageSmoothingEnabled = smoothing;
+    }
   }
   const a = smooth(RIPPLES_FROM, RIPPLES_FROM + 0.7, scale);
   if (a <= 0 || typeof DOMMatrix === "undefined") return;
@@ -38,7 +45,7 @@ function drawFloor(ctx: CanvasRenderingContext2D, t: Terrain, scale: number, vie
   if (pattern === undefined) {
     const tile = floorRippleTile();
     pattern = tile ? ctx.createPattern(tile as CanvasImageSource, "repeat") : null;
-    pattern?.setTransform(new DOMMatrix().scale(RIPPLE_UNITS / 512));
+    pattern?.setTransform(new DOMMatrix().scale(RIPPLE_UNITS / tile!.width));
     floorPatterns.set(ctx, pattern);
   }
   if (!pattern) return;

@@ -134,7 +134,7 @@ export const RIPPLE_UNITS = 1200;
 let floorRipples: Canvas | null | undefined;
 export function floorRippleTile(): Canvas | null {
   if (floorRipples === undefined) {
-    floorRipples = pixelTile(512, (u, v, out) => {
+    floorRipples = pixelTile(384, (u, v, out) => {
       const r = ripple(u, v, 28, 9, 1.6, 31);
       const m = 0.5 + 0.5 * fbm(u * 3, v * 3, 33, 2, 3); // ripples come and go in patches
       const a = Math.min(1, Math.abs(r) * m * smooth(0.3, 0.8, m));
@@ -178,7 +178,7 @@ export interface RippleLook {
 }
 
 export function groundBaseTile(look: GroundLook): Canvas | null {
-  return pixelTile(512, (u, v, out) => {
+  return pixelTile(256, (u, v, out) => {
     const l = 1 + look.mottle * (0.65 * fbm(u * 3, v * 3, look.seed, 4, 3) + 0.35 * fbm(u * 9, v * 9, look.seed + 8, 2, 9));
     out[0] = look.base[0]! * l;
     out[1] = look.base[1]! * l;
@@ -188,7 +188,7 @@ export function groundBaseTile(look: GroundLook): Canvas | null {
 
 // Ripple marks as a transparent tile: pale crests and dark troughs in patches.
 export function groundRippleTile(look: RippleLook): Canvas | null {
-  return pixelTile(512, (u, v, out) => {
+  return pixelTile(384, (u, v, out) => {
     const r = ripple(u, v, look.stripes[0], look.stripes[1], look.bend, look.seed);
     const patch = smooth(-0.15, 0.45, fbm(u * 2, v * 2, look.seed + 5, 2, 2)); // ripples come and go
     const a = Math.min(1, Math.abs(r)) * patch;

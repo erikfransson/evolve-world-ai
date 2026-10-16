@@ -16,7 +16,7 @@ import type { View } from "./terrainScene.ts";
 const CORNER = 5; // world units a corner is rounded over, on each side
 const CELLS = [3, 6, 12, 24, 48]; // image resolutions, world units per pixel; the coarsest one with at most PX_PER_CELL screen px per pixel is used
 const PX_PER_CELL = 4;
-const MIN_PX_ACROSS = 24; // pixels across the narrower side of a body's box, at least
+const MIN_PX_ACROSS = 14; // pixels across the narrower side of a body's box, at least
 const MAX_CELLS = 700_000; // pixels of one body's image, beyond that the next coarser resolution is used
 const BUDGET_CELLS = 8_000_000; // pixels of images kept over all bodies (32 MB), the least recently used go first
 const BASE: readonly number[] = [52, 68, 73]; // basalt albedo
@@ -302,7 +302,7 @@ export function drawRock(ctx: CanvasRenderingContext2D, t: Terrain, scale: numbe
   const smoothing = ctx.imageSmoothingEnabled;
   const quality = ctx.imageSmoothingQuality;
   ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = "high";
+  ctx.imageSmoothingQuality = "low"; // images are smooth and drawn enlarged; "high" only where an image is shrunk (below)
   // Halos first, so a body never lies under the shadow of a neighbour.
   for (const item of shown) {
     const hr = rasterOf(item, Math.max(6, cellFor(scale, item.body)), true);
@@ -316,6 +316,7 @@ export function drawRock(ctx: CanvasRenderingContext2D, t: Terrain, scale: numbe
     const r = rasterOf(item, cellFor(scale, body));
     ctx.save();
     ctx.clip(outline, "evenodd");
+    ctx.imageSmoothingQuality = r && r.cell * scale < 1 ? "high" : "low";
     if (r) ctx.drawImage(r.image as CanvasImageSource, 0, 0, r.w, r.h, r.ox, r.oy, r.w * r.cell, r.h * r.cell);
     else {
       ctx.fillStyle = FLAT_BODY;
