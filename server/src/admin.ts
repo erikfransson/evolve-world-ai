@@ -60,11 +60,21 @@ export function loadOverrides(stateDir: string, world: { eco: Ecosystem }): Reco
     }
     if (!applyTunables(world.eco, kept)) applied = kept;
     else {
-      for (const [k, v] of Object.entries(kept)) {
-        const err = applyTunables(world.eco, { [k]: v });
-        if (err) skipped.push(`${k} skipped: ${err}`);
-        else applied[k] = v;
+      // One key at a time, in passes until none more goes in: a pair valid only together (a lower cap with a lower reserve) gets in
+      // once its partner has. At most one pass per key.
+      let pending = Object.entries(kept);
+      const why = new Map<string, string>();
+      for (let more = true; more && pending.length; ) {
+        more = false;
+        pending = pending.filter(([k, v]) => {
+          const err = applyTunables(world.eco, { [k]: v });
+          if (err) return why.set(k, err), true;
+          applied[k] = v;
+          more = true;
+          return false;
+        });
       }
+      for (const [k] of pending) skipped.push(`${k} skipped: ${why.get(k)}`);
     }
   } catch (e) {
     skipped.push(`not read: ${e instanceof Error ? e.message : e}`);
@@ -78,6 +88,19 @@ export function loadOverrides(stateDir: string, world: { eco: Ecosystem }): Reco
     console.error(`OVERRIDES: could not keep a copy: ${e instanceof Error ? e.message : e}`);
   }
   return applied;
+}
+
+// The keys of the overrides file this version does not know (written by a newer one before a rollback), kept when the admin changes a
+// setting, so rolling forward again finds them. Empty when there is no readable file.
+function carriedKeys(file: string): Record<string, unknown> {
+  try {
+    const saved: unknown = JSON.parse(readFileSync(file, "utf8"));
+    if (!saved || typeof saved !== "object" || Array.isArray(saved)) return {};
+    const known = tunableLimits();
+    return Object.fromEntries(Object.entries(saved).filter(([k]) => !Object.hasOwn(known, k) && !DROPPED.includes(k)));
+  } catch {
+    return {};
+  }
 }
 
 function sameToken(given: unknown, token: string): boolean {
@@ -192,7 +215,7 @@ export function startAdmin(host: string, port: number, token: string, world: Adm
           Object.assign(overrides, changes);
           try {
             const file = join(stateDir, OVERRIDES);
-            writeFileSync(file + ".tmp", JSON.stringify(overrides, null, 2), { mode: 0o600 });
+            writeFileSync(file + ".tmp", JSON.stringify({ ...carriedKeys(file), ...overrides }, null, 2), { mode: 0o600 });
             renameSync(file + ".tmp", file);
           } catch (e) {
             return reply(ws, { t: "error", message: `applied, but could not save: ${e instanceof Error ? e.message : e}` });

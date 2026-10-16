@@ -285,6 +285,19 @@ describe("saves", () => {
     expect(JSON.parse(readFileSync(join(dir, "admin-overrides.ignored.json"), "utf8"))).toEqual(bad);
   });
 
+  it("settings valid only together get in when one bad key sends the load to key by key: a lower cap with a lower reserve", () => {
+    const dir = tmp();
+    writeFileSync(join(dir, "admin-overrides.json"), JSON.stringify({ "eco.maxPopulation": 80, "eco.birthReserve": 50, "add.perWindow": 99999 }));
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const w = new LiveWorld(smallConfig(), null);
+    try {
+      expect(loadOverrides(dir, w)).toEqual({ "eco.birthReserve": 50, "eco.maxPopulation": 80 }); // the cap alone failed against the reserve of 100
+      expect([w.eco.config.eco.maxPopulation, w.eco.config.eco.birthReserve]).toEqual([80, 50]);
+    } finally {
+      err.mockRestore();
+    }
+  });
+
   it("a rollback past a setting keeps the standing ones: an unknown key is skipped with a log line, a valid key still applies", () => {
     const dir = tmp();
     const file = { "eco.someFutureSetting": 3, "add.aliveMax": 20, "eco.hueDrift": 10, "add.perWindow": 99999 };
