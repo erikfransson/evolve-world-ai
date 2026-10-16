@@ -5,7 +5,7 @@ import type { View } from "./terrainScene.ts";
 
 const CACHE_MAX_PIXELS = 8_000_000; // the cached map's bitmap, about 32 MB; a larger one draws directly instead
 const MARGIN = 0.25; // of the view's width and height, cached past each side so a pan redraws only once it leaves the margin
-const STALE_ZOOM = 2; // while the camera animates, a cached map up to this factor off the zoom is stretched instead of redrawn
+const STALE_ZOOM = 2; // while the zoom changes, a cached map up to this factor off the zoom is stretched instead of redrawn
 
 // The map around the view drawn once at the current zoom and copied each frame. Zoomed out, a frame would otherwise stroke every rock
 // outline again, which costs a mid laptop's GPU about 130 ms at whole-world view.
@@ -14,17 +14,20 @@ export class TerrainCache {
   private terrain: Terrain | null = null;
   private zoom = 0;
   private area: View = { x0: 0, x1: 0, y0: 0, y1: 0 }; // world units the bitmap covers
+  private lastZoom = 0; // the previous frame's zoom: a wheel or pinch changes it without an animation
 
   // Draws t into ctx (in world units) for the view, from the cache, rebuilding it after a zoom or when the view leaves the cached area;
   // false when the bitmap would be too large, and then the caller draws the map directly.
   draw(ctx: CanvasRenderingContext2D, t: Terrain, zoom: number, view: View, animating: boolean): boolean {
     if (t.empty) return true;
+    const moving = animating || zoom !== this.lastZoom;
+    this.lastZoom = zoom;
     const off = zoom / this.zoom;
     const a = this.area;
-    const stale = off !== 1 && !(animating && off < STALE_ZOOM && off > 1 / STALE_ZOOM);
+    const stale = off !== 1 && !(moving && off < STALE_ZOOM && off > 1 / STALE_ZOOM);
     const covered = Math.max(0, view.x0) >= a.x0 && Math.min(t.width, view.x1) <= a.x1 && Math.max(0, view.y0) >= a.y0 && Math.min(t.height, view.y1) <= a.y1;
     if (t !== this.terrain || !this.canvas || stale || !covered) {
-      if (animating && this.canvas) return false; // a camera move would redraw the larger bitmap every frame: draw directly until it settles
+      if (moving && this.canvas) return false; // a zoom in progress would redraw the larger bitmap every frame: draw directly until it settles
       if (!this.build(t, zoom, view)) return false;
     }
     const b = this.area;

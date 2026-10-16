@@ -24,7 +24,8 @@ describe("TerrainCache", () => {
     expect(draws).toHaveLength(1);
     expect(blits).toHaveLength(5);
     const view = { x0: 10000, x1: 15000, y0: 5000, y1: 8000 };
-    c.draw(ctx, terrain, 0.2, view, false);
+    expect(c.draw(ctx, terrain, 0.2, view, false)).toBe(false); // the zoom just changed: drawn directly
+    c.draw(ctx, terrain, 0.2, view, false); // held for a frame: cached
     c.draw(ctx, terrain, 0.2, { x0: 10500, x1: 15500, y0: 5200, y1: 8200 }, false); // inside the 25% margin
     expect(draws).toHaveLength(2);
     expect(draws[1]!.view).toEqual({ x0: 8750, x1: 16250, y0: 4250, y1: 8750 });
@@ -39,6 +40,15 @@ describe("TerrainCache", () => {
     expect(c.draw(ctx, terrain, 0.2, { x0: 10000, x1: 15000, y0: 5000, y1: 8000 }, true)).toBe(false); // too far off: drawn directly
     expect(draws).toHaveLength(1);
     expect(c.draw(ctx, terrain, 0.2, { x0: 10000, x1: 15000, y0: 5000, y1: 8000 }, false)).toBe(true);
+    expect(draws).toHaveLength(2);
+  });
+
+  it("a wheel or pinch zoom (no animation) stretches or draws directly while the zoom changes, and redraws the cache one frame after it stops", () => {
+    const c = new TerrainCache();
+    c.draw(ctx, terrain, 0.035, whole, false);
+    for (const z of [0.04, 0.045, 0.05, 0.06]) expect(c.draw(ctx, terrain, z, whole, false)).toBe(true);
+    expect(draws).toHaveLength(1);
+    c.draw(ctx, terrain, 0.06, whole, false);
     expect(draws).toHaveLength(2);
   });
 
