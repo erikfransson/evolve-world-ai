@@ -5,6 +5,8 @@ import type { CreatureFrame, Delta, ItemsSnapshot, WireEvent } from "./protocol.
 
 const MIN_SPAN_MS = 100;
 const MAX_SPAN_MS = 1200; // frames can be up to 5 apart (1 s) when the server shares its upload
+const SPAN_SLACK = 1.3; // a frame's motion is spread over this much of the usual gap, so one arriving a little late finds the creatures still moving
+const SPAN_EASE = 0.3; // weight of the newest gap in the usual one, both ways: a single late frame or a burst after a stall moves it a little, and after a stretch of slow frames the lag shrinks back within a few frames
 const MAX_QUEUE = 4096; // timeline entries waiting for their tick; past this the oldest apply at once
 const MAX_AHEAD_S = 60; // an entry this many simulated seconds past the latest frame applies at once (frames are at most 5 s apart, 20 s at 4x)
 const U32 = 2 ** 32;
@@ -37,6 +39,7 @@ export class LiveScene {
   private ghosts: { id: number; x: number; y: number; heading: number; energy: number; hue: number; age: number; founder: number; until: number }[] = [];
   private t0 = 0;
   private span = 200;
+  private gap = 0; // ms between frames as they usually arrive (an average weighted to the recent ones), 0 before the second frame
   private queue: Entry[] = [];
   private itemsTick = -Infinity; // tick of the last full item set applied: older item changes are already in it
   private shownKey = -1; // membership signature of the last sample, to tell callers when creatures appeared
@@ -76,6 +79,7 @@ export class LiveScene {
   // A new world: ids start over, so nothing carries across.
   reset(): void {
     this.to = null;
+    this.gap = 0;
     this.ghosts = [];
     this.queue = [];
     this.itemsTick = -Infinity;
@@ -156,7 +160,11 @@ export class LiveScene {
     this.sample(nowMs); // the views may be old (a hidden tab draws nothing), so bring them to now before they become the start
     const prev = this.to;
     const v = this.views;
-    this.span = prev ? Math.min(MAX_SPAN_MS, Math.max(MIN_SPAN_MS, nowMs - this.t0)) : MIN_SPAN_MS;
+    if (prev) {
+      const gap = Math.min(MAX_SPAN_MS, Math.max(MIN_SPAN_MS, nowMs - this.t0));
+      this.gap = this.gap ? this.gap + SPAN_EASE * (gap - this.gap) : gap;
+    }
+    this.span = prev ? Math.min(MAX_SPAN_MS, SPAN_SLACK * this.gap) : MIN_SPAN_MS;
     this.fromTick = prev ? Math.min(this.displayTick, f.tick) : f.tick;
     if (this.fromX.length < f.count) {
       const size = Math.max(f.count, 2 * this.fromX.length);

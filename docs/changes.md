@@ -6,6 +6,15 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+## 0.2.2 (2026-10-16)
+
+- RL envs (#44): duels against a scripted charger (hit it when it is weak, dodge it when it is strong), per-episode augmentation of energies, rival counts, items and sizes, fast ground, and a kill bonus. New engine setting `eco.killEnergy` (bonus energy for a kill, default 0, so worlds are unchanged).
+- Live and Ecosystem: smoother motion and fewer slow frames (#49). Creatures keep moving through a server frame that arrives late (each frame's motion spans 1.3x the usual gap, which is now an average over recent frames instead of the last one alone): while following one, the frame-to-frame change in camera speed halves under real tunnel jitter. Creature dots are stamped from one bitmap atlas, at whole device pixels with quarter-pixel placement, instead of filled as paths of a thousand circles: at whole-world view, frames over 25 ms drop from 6-38% to 0-5% on an Iris Xe.
+- Trials: "Save best creature" downloads the best creature of the newest generation as a creature file (`trials-gen42-fitness123.json`) that loads in Live's "Add your creature" and the RL Arena's "Start from"; it behaves as it did in Trials (#47).
+- Live: "Add your creature" says under the training toggles that more advanced RL training can be done in the RL Arena, with a link (#45).
+- Live admin: `npm run admin -- reset [--copies N]` (`./live reset` in the admin wrapper; the server exits 75 and the unit starts it again) starts a fresh world with N copies of each founder (default 10, at most 725 for 4 founders), keeping the old world's saves and settings in a `before-reset-<time>` folder that is never restored. The page shows the seed count up to 3000.
+- The map is drawn once per zoom around the view and copied each frame, instead of drawing every rock outline again each frame. On a mid laptop (Iris Xe) the Live page at whole-world view goes from about 5 to 20-60 frames a second (the rest is the creature dots and items), and at 2x zoom from 12-20 to 60; the Ecosystem page gains the same way.
+
 ## 0.2.1 (2026-10-16)
 
 ### Live World

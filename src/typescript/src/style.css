@@ -210,6 +210,8 @@ fieldset:disabled .tip { cursor: help; }
 }
 
 .skip { width: 100%; margin-top: 12px; }
+.save-note { margin: 6px 0 0; font-size: 0.75rem; color: var(--muted); }
+.save-note:empty { display: none; }
 
 /* copy and paste dialog */
 .io-scrim { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 16px; background: rgba(5, 15, 10, 0.55); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }

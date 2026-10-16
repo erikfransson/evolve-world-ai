@@ -22,3 +22,4 @@ The wire format is in `src/typescript/src/live/protocol.ts`.
 `npm ci`, then `npm start` (ports and paths via `LIVE_PORT`, `LIVE_ADMIN_PORT`, `LIVE_STATE_DIR`, `LIVE_WEB_ROOT`).
 `npm run admin -- <command>` talks to the admin channel; run it without arguments for the command list.
 `blank-name <name>` clears an unfit visitor name from every family that carries it; the families live on unnamed.
+`reset [--copies N]` saves the world, moves every save, the admin settings and the seed file into `before-reset-<time>/` in the state directory (kept, never listed, rotated or restored; at most 3 such folders, then a reset is refused until old ones are moved), and exits 75, on which the unit starts it again; that start seeds a fresh world with N (default 10) copies of each founder, N at most the room below the birth reserve over the founders (725 for 4 founders). `seed-copies` in the state directory keeps N for later fresh starts and the page.

@@ -22,6 +22,7 @@ export const BIG_IMPACT = 15;
 // member table, crowd grid and items; the counters of eaten items stay with the Ecosystem, which reads them off eatAt.
 export class Contacts {
   private readonly slain = new Set<CreatureState>(); // killed by a bump or a hunt this tick
+  onBumpKill: ((survivor: CreatureState, victim: CreatureState) => void) | null = null; // each lethal bump with one survivor (analysis tools)
   private readonly config: EcoConfig;
   private readonly items: World;
   private readonly crowd: Crowd;
@@ -177,7 +178,7 @@ export class Contacts {
     if (!collide(a, b, radius, e, this.contact)) return;
     if (eco.collisionDamage) {
       const fresh = a.energy > 0 && b.energy > 0 && this.contact.speed > 0; // else hurt does nothing
-      hurt(a, b, this.contact.speed, eco.damagePerSpeed);
+      hurt(a, b, this.contact.speed, eco.damagePerSpeed, eco.killEnergy);
       if (fresh) this.noteHurt(a, b, eco.damagePerSpeed * this.contact.speed);
     }
     this.confine(a);
@@ -196,6 +197,7 @@ export class Contacts {
     if (loss >= BIG_IMPACT) this.report(EVENT_IMPACT, (a.x + b.x) / 2, (a.y + b.y) / 2, loss);
     if (a.energy <= 0) this.slain.add(a);
     if (b.energy <= 0) this.slain.add(b);
+    if (this.onBumpKill && a.energy <= 0 !== b.energy <= 0) this.onBumpKill(a.energy > 0 ? a : b, a.energy > 0 ? b : a);
   }
 
   private report(kind: number, x: number, y: number, value: number): void {

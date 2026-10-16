@@ -24,7 +24,7 @@ describe("admin overrides", () => {
     writeFileSync(join(dir, "admin-overrides.json"), JSON.stringify({ "eco.hueDrift": 10 }));
     const world = new LiveWorld(smallConfig(), null);
     const saved = loadOverrides(dir, world);
-    const admin = startAdmin("127.0.0.1", 62517, "tok", world, dir, dir, saved, { pause() {}, resume() {}, paused: () => false, saveNow: async () => "", listSaves: () => [], loadSave: async () => "", stop() {}, blankName: async () => 0, renameName: async () => 0 });
+    const admin = startAdmin("127.0.0.1", 62517, "tok", world, dir, dir, saved, { pause() {}, resume() {}, paused: () => false, saveNow: async () => "", listSaves: () => [], loadSave: async () => "", stop() {}, blankName: async () => 0, renameName: async () => 0, reset: async () => "" });
     const ws = new WebSocket("ws://127.0.0.1:62517/");
     const replies: { t: string }[] = [];
     ws.on("message", (d: Buffer) => replies.push(JSON.parse(d.toString())));
@@ -50,7 +50,7 @@ describe("admin blank-name", () => {
     };
     const rude = add("Rude", 3);
     const kind = add("Kind", 1);
-    const admin = startAdmin("127.0.0.1", 62521, "tok", world, dir, dir, {}, { pause() {}, resume() {}, paused: () => false, saveNow: async () => "", listSaves: () => [], loadSave: async () => "", stop() {}, blankName: async (n) => world.blankName(n), renameName: async (a, b, f) => world.renameName(a, b, f) });
+    const admin = startAdmin("127.0.0.1", 62521, "tok", world, dir, dir, {}, { pause() {}, resume() {}, paused: () => false, saveNow: async () => "", listSaves: () => [], loadSave: async () => "", stop() {}, blankName: async (n) => world.blankName(n), renameName: async (a, b, f) => world.renameName(a, b, f), reset: async () => "" });
     const ws = new WebSocket("ws://127.0.0.1:62521/");
     const replies: { t: string; message?: string }[] = [];
     ws.on("message", (d: Buffer) => replies.push(JSON.parse(d.toString())));

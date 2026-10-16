@@ -7,6 +7,7 @@ import type { WebSocket } from "ws";
 import type { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
 import { validName } from "../../src/typescript/src/live/add.ts";
 import type { SaveInfo } from "./state.ts";
+import { SEED_COPIES } from "./config.ts";
 import { applyTunables, readTunables, tunableLimits } from "./tunables.ts";
 import type { Value } from "./tunables.ts";
 
@@ -87,6 +88,7 @@ export interface AdminCommands {
   stop(): void | Promise<void>; // save, then exit with code 0
   blankName(name: string): Promise<number>; // families whose visitor name was cleared
   renameName(from: string, to: string, force: boolean): Promise<number | string>; // families renamed, or why not
+  reset(copies: number): Promise<string>; // saves, moves the saves and settings aside, then exits 75, on which the unit starts it again with a fresh world (0, staying down, when a stop came meanwhile); rejects with the reason and keeps the world
 }
 
 const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".wasm": "application/wasm", ".ico": "image/x-icon" };
@@ -121,7 +123,9 @@ function serveStatic(root: string): ReturnType<typeof createServer> {
 // {t:"pause"} / {t:"resume"} -> {t:"config", ...}; {t:"save-now"} -> {t:"saved", message}; {t:"list-saves"} -> {t:"saves", saves}; {t:"load-save", name} -> {t:"loaded", message} or {t:"error", message}; {t:"stop"} -> {t:"stopping"}, then the server saves and exits 0;
 // {t:"blank-name", name} -> {t:"blanked", message}: the name is cleared from every family that carries it;
 // {t:"rename", name, to, force?} -> {t:"renamed", message}: every family named exactly `name` is named `to` (starters stay starters);
-// a `to` another living family carries is refused unless force.
+// a `to` another living family carries is refused unless force;
+// {t:"reset", copies?} -> {t:"resetting", message}, then the server exits 75, the unit starts it again, and that start seeds a fresh world with `copies` (default
+// SEED_COPIES) of each founder; the world before is kept in before-reset-<time>/ in the state directory.
 // The same port serves the built page (webRoot) over http.
 export function startAdmin(host: string, port: number, token: string, world: AdminWorld, stateDir: string, webRoot: string, saved: Record<string, Value>, commands: AdminCommands): { wss: WebSocketServer; close(): void } {
   const http = serveStatic(webRoot);
@@ -153,7 +157,7 @@ export function startAdmin(host: string, port: number, token: string, world: Adm
       }
     });
     const handle = (data: import("ws").RawData, isBinary: boolean): void => {
-      let msg: { t?: unknown; token?: unknown; changes?: unknown; name?: unknown; to?: unknown; force?: unknown };
+      let msg: { t?: unknown; token?: unknown; changes?: unknown; name?: unknown; to?: unknown; force?: unknown; copies?: unknown };
       try {
         if (isBinary) throw new Error("binary");
         msg = JSON.parse(data.toString());
@@ -206,6 +210,11 @@ export function startAdmin(host: string, port: number, token: string, world: Adm
       if (msg.t === "rename") {
         if (!validName(msg.name) || !validName(msg.to)) return reply(ws, { t: "error", message: "both names must be 1 to 16 letters or digits" });
         return void commands.renameName(msg.name, msg.to, msg.force === true).then((n) => reply(ws, typeof n === "string" ? { t: "error", message: n } : { t: "renamed", message: `renamed ${n} ${n === 1 ? "family" : "families"}` }), (e) => reply(ws, { t: "error", message: why(e) }));
+      }
+      if (msg.t === "reset") {
+        const copies = msg.copies === undefined ? SEED_COPIES : msg.copies; // absent: the default; null and anything else not whole is refused
+        if (typeof copies !== "number" || !Number.isInteger(copies)) return reply(ws, { t: "error", message: "copies must be a whole number" });
+        return void commands.reset(copies).then((message) => reply(ws, { t: "resetting", message }), (e) => reply(ws, { t: "error", message: why(e) }));
       }
       if (msg.t === "stop") {
         reply(ws, { t: "stopping" });

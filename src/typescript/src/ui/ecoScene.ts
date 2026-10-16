@@ -8,6 +8,8 @@ import { readyTerrainOf } from "../sim/terrain.ts";
 import type { Terrain } from "../sim/terrain.ts";
 import type { TerrainSettings } from "../sim/terrain.ts";
 import { BACKGROUND, FLOOR, FOOD, POISON, RAY_COLORS, WALL } from "./scene.ts";
+import { DotAtlas } from "./dotAtlas.ts";
+import { TerrainCache } from "./terrainCache.ts";
 import { drawTerrain } from "./terrainScene.ts";
 
 export interface EcoDrawConfig {
@@ -44,7 +46,8 @@ const TINY_ITEM = 1.5; // device px; items smaller than this are drawn as small 
 const SOLID_ITEM = 4; // device px radius from which items are drawn fully opaque
 const ITEM_DIM = 0.75; // item opacity at the smallest size, so the creatures stand out
 const DOT_RADIUS = 2.4; // CSS px; creatures never draw smaller than this when drawn as dots
-const DOT_OUTLINE = "rgba(6, 12, 9, 0.75)";
+const DOT_OUTLINE = "rgb(6, 12, 9)"; // drawn at OUTLINE_ALPHA, laid down once, so overlapping outlines do not darken
+const OUTLINE_ALPHA = 0.75;
 
 // Bright and saturated when young, lighter touch of grey-green when old.
 const STYLES: string[] = [];
@@ -70,6 +73,8 @@ export class EcoRenderer {
   private order = new Int32Array(1024);
   private seen = new Int32Array(1024); // snapshot indices of the visible items
   private readonly counts = new Int32Array(DIM_BUCKET + 2);
+  private readonly terrainCache = new TerrainCache();
+  private readonly dots = new DotAtlas();
 
   // highlight: a founder id whose descendants stay bright while everyone else is dimmed, or -1 for none.
   draw(ctx: CanvasRenderingContext2D, cam: Camera, cfg: EcoDrawConfig, v: SnapshotViews, selected: SelectedDetails | null, showRays: boolean, dpr: number, highlight = -1, births: BirthRings | null = null, now = 0, impacts: ImpactEffects | null = null): void {
@@ -98,13 +103,14 @@ export class EcoRenderer {
       ctx.fillRect(0, 0, cfg.worldW, cfg.worldH);
     }
     const terrain = cfg.map ?? (cfg.terrain ? readyTerrainOf(cfg.terrain) : null); // none while a named map is on its way
-    if (terrain) drawTerrain(ctx, terrain, z, { x0: tl.x, x1: br.x, y0: tl.y, y1: br.y });
+    const view = { x0: tl.x, x1: br.x, y0: tl.y, y1: br.y };
+    if (terrain && !this.terrainCache.draw(ctx, terrain, z, view, cam.animating)) drawTerrain(ctx, terrain, z, view);
     ctx.strokeStyle = WALL;
     ctx.lineWidth = Math.max(2, 1.5 * dpr) * dev;
     ctx.strokeRect(0, 0, cfg.worldW, cfg.worldH);
 
     this.drawItems(ctx, cfg, v, x0, x1, y0, y1, dev, z);
-    this.drawCreatures(ctx, cfg, v, x0, x1, y0, y1, css, z / dpr, highlight);
+    this.drawCreatures(ctx, cfg, v, x0, x1, y0, y1, css, z, dpr, highlight);
     births?.draw(ctx, now, cfg.radius, css, z / dpr);
     impacts?.draw(ctx, now, cfg.radius, css, z / dpr);
     if (selected?.alive) this.drawSelected(ctx, cfg, selected, showRays, css);
@@ -156,7 +162,8 @@ export class EcoRenderer {
     ctx.globalAlpha = 1;
   }
 
-  private drawCreatures(ctx: CanvasRenderingContext2D, cfg: EcoDrawConfig, v: SnapshotViews, x0: number, x1: number, y0: number, y1: number, css: number, cssZoom: number, highlight: number): void {
+  private drawCreatures(ctx: CanvasRenderingContext2D, cfg: EcoDrawConfig, v: SnapshotViews, x0: number, x1: number, y0: number, y1: number, css: number, z: number, dpr: number, highlight: number): void {
+    const cssZoom = z / dpr;
     if (this.vis.length < v.count) {
       const size = Math.max(v.count, 2 * this.vis.length);
       this.vis = new Int32Array(size);
@@ -188,39 +195,58 @@ export class EcoRenderer {
     // Round dots at least DOT_RADIUS big, over a dark outline pass, so creatures stand out from the small dim items.
     const dotR = Math.max(R, DOT_RADIUS * css);
     const outline = dotR + 0.9 * css;
+    this.dots.frame(`${Math.round(dotR * z * 4)} ${Math.round(outline * z * 4)}`);
     const hunter = (i: number): boolean => cfg.species[v.species[i]!]!.hunter;
     // Creatures outside the highlighted lineage come first, faint and without outline, so the lineage is drawn over them.
     const dimAt = counts[DIM_BUCKET - 1]!;
     const dimEnd = counts[DIM_BUCKET]!;
-    if (dimEnd > dimAt) {
-      ctx.globalAlpha = DIM_ALPHA;
-      ctx.fillStyle = DIM_STYLE;
+    const m = this.dots.stamping ? ctx.getTransform() : null;
+    // Stamps a pass into g (hunters keep their pointed path), or false when it must be drawn as a path.
+    const stamp = (g: CanvasRenderingContext2D, from: number, to: number, style: string, r: number): boolean => {
+      if (!m || !this.dots.stamp(g, m, v.x, v.y, order, from, to, style, r * z, hunter)) return false;
+      let hunters = false;
+      for (let at = from; at < to && !hunters; at++) hunters = hunter(order[at]!);
+      if (hunters) {
+        g.fillStyle = style;
+        g.beginPath();
+        for (let at = from; at < to; at++) if (hunter(order[at]!)) bodyPath(g, v.x[order[at]!]!, v.y[order[at]!]!, r, v.heading[order[at]!]!, true);
+        g.fill();
+      }
+      return true;
+    };
+    // One pass in one colour: stamped where it can be, else one path and fill. A pass at partial opacity is stamped opaque into a layer laid
+    // down once at that opacity, as the path's one fill is, so overlapping dots do not stack darker.
+    const pass = (from: number, to: number, style: string, r: number, alpha = 1): void => {
+      if (to <= from) return;
+      if (alpha === 1 && stamp(ctx, from, to, style, r)) return;
+      if (alpha < 1 && m) {
+        const g = this.dots.layerFor(ctx.canvas.width, ctx.canvas.height);
+        if (g && stamp(g, from, to, style, r)) {
+          ctx.save();
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+          ctx.globalAlpha = alpha;
+          ctx.drawImage(this.dots.layerCanvas!, 0, 0);
+          ctx.restore();
+          return;
+        }
+      }
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = style;
       ctx.beginPath();
-      for (let at = dimAt; at < dimEnd; at++) {
+      for (let at = from; at < to; at++) {
         const i = order[at]!;
-        bodyPath(ctx, v.x[i]!, v.y[i]!, dotR, v.heading[i]!, hunter(i));
+        bodyPath(ctx, v.x[i]!, v.y[i]!, r, v.heading[i]!, hunter(i));
       }
       ctx.fill();
       ctx.globalAlpha = 1;
-    }
-    ctx.fillStyle = DOT_OUTLINE;
-    ctx.beginPath();
-    for (let k = 0; k < dimAt; k++) {
-      const i = order[k]!;
-      bodyPath(ctx, v.x[i]!, v.y[i]!, outline, v.heading[i]!, hunter(i));
-    }
-    ctx.fill();
+    };
+    pass(dimAt, dimEnd, DIM_STYLE, dotR, DIM_ALPHA);
+    pass(0, dimAt, DOT_OUTLINE, outline, OUTLINE_ALPHA);
     let at = 0;
     for (let b = 0; b < BUCKETS; b++) {
       const end = counts[b]!;
-      if (end === at) continue;
-      ctx.fillStyle = STYLES[b]!;
-      ctx.beginPath();
-      for (; at < end; at++) {
-        const i = order[at]!;
-        bodyPath(ctx, v.x[i]!, v.y[i]!, dotR, v.heading[i]!, hunter(i));
-      }
-      ctx.fill();
+      pass(at, end, STYLES[b]!, dotR);
+      at = end;
     }
   }
 

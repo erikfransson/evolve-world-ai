@@ -1,6 +1,6 @@
 import type { PoolEntry } from "../seedPool.ts";
 import { HIT_NONE } from "../types.ts";
-import { runEpisode } from "./env.ts";
+import { runEpisode, variantFor } from "./env.ts";
 import type { EnvSpec, EpisodeResult, Learner, Library } from "./env.ts";
 
 // One episode as flat arrays, for the Arena to play back: frame f's items are itemData[3 * itemStart[f] ..] (x, y, kind),
@@ -64,9 +64,10 @@ export function recordEpisode(env: EnvSpec, learner: Learner, seed: number, pool
     }
     for (let r = 0; r < rayCount; r++) rays.push(me?.creature.rays[r]?.closeness ?? 0, me?.creature.rays[r]?.kind ?? HIT_NONE);
   });
+  const [width, height] = variantFor(env, seed).size; // the sides the episode played, an augmented env's included
   return {
-    width: env.size[0],
-    height: env.size[1],
+    width,
+    height,
     creatureRadius,
     itemRadius,
     dt,

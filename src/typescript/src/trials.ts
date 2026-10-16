@@ -22,6 +22,8 @@ import { initRunSession, renderRunControls } from "./ui/runSession.ts";
 import { buildForm } from "./ui/settingsForm.ts";
 import { TRIALS_FORM } from "./ui/trialsForm.ts";
 import { TickClock } from "./ui/tickClock.ts";
+import { downloadJson } from "./ui/download.ts";
+import { trialsCreatureFile, trialsFileName } from "./ui/trialsSave.ts";
 import { $, durationText, formatDuration, setTile } from "./ui/page.ts";
 import { initTooltips } from "./ui/tooltip.ts";
 import { bindGentle, readGentle } from "./ui/gentle.ts";
@@ -34,6 +36,8 @@ const startBtn = $<HTMLButtonElement>("start");
 const pauseBtn = $<HTMLButtonElement>("pause");
 const resetBtn = $<HTMLButtonElement>("reset");
 const skipBtn = $<HTMLButtonElement>("skip");
+const saveBtn = $<HTMLButtonElement>("saveBest");
+const saveNote = $("saveNote");
 const setupForm = $<HTMLFormElement>("setup");
 const form = buildForm(settings, TRIALS_FORM);
 const { read: readConfig, fill: fillForm } = form;
@@ -107,7 +111,7 @@ function send(msg: InMessage): void {
 function renderControls(): void {
   const idle = run.phase === "idle";
   renderRunControls({ start: startBtn, pause: pauseBtn, reset: resetBtn, settings, form: setupForm }, run.phase);
-  skipBtn.disabled = run.latest === null;
+  skipBtn.disabled = saveBtn.disabled = run.latest === null;
   note.textContent = run.error ?? (!idle && run.latest === null ? "Computing generation 0..." : "");
 }
 
@@ -191,6 +195,7 @@ function onMessage(e: MessageEvent<OutMessage>): void {
   graph.setData(history.stats, history.keptGenerations);
   const now = performance.now();
   run.latest = e.data;
+  saveNote.textContent = ""; // it names the generation saved, which is no longer the newest
   session.record(e.data.bestEver);
   run.computeSeconds = (now - run.lastMessageAt) / 1000;
   run.lastMessageAt = now;
@@ -198,7 +203,16 @@ function onMessage(e: MessageEvent<OutMessage>): void {
   else loadReplay();
 }
 
+// The best creature of the newest generation as a creature file, for the RL Arena's "Start from" and Live's "Add your creature".
+function saveBest(): void {
+  const m = run.latest;
+  if (!m) return;
+  downloadJson(trialsFileName(m), trialsCreatureFile(run.config, m));
+  saveNote.textContent = `Saved the best of generation ${m.result.generation} (${durationText(m.result.bestFitness)}).`;
+}
+
 function clearHistory(): void {
+  saveNote.textContent = "";
   history.clear();
   graph.setData([], []);
   watching = null;
@@ -273,6 +287,7 @@ function frame(now: number): void {
 startBtn.onclick = start;
 resetBtn.onclick = reset;
 skipBtn.onclick = watchLatest;
+saveBtn.onclick = saveBest;
 watchLatestBtn.onclick = watchLatest;
 pauseBtn.onclick = togglePause;
 bindGentle($<HTMLInputElement>("gentle"), (gentle) => send({ type: "gentle", gentle }));

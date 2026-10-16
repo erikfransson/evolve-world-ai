@@ -27,6 +27,7 @@ const TIERS = [0.02, 0.04, 0.08, 0.16, 0.32]; // bitmap scales; a view at a scal
 const MAX_BITMAP_PX = 640; // longest side of a bitmap; larger patches are cut into tiles of this size
 const MAX_BAKED_PX = 8_000_000; // pixels of bitmaps kept per map over all tiers (32 MB of RGBA, enough for the Inland Sea whole at tiers 0.02 to 0.16), beyond that patches are painted live
 const BAKES_PER_FRAME = 1; // bitmaps one drawGround call makes at most, so a new tier costs a few frames and not one long one (a bitmap costs 20 to 60 ms to raster, whatever its size); a patch still waiting is painted live
+const PREPARE_BAKES = 2; // bitmaps prepareGround makes per call
 const BAKE_PAD = 4; // px around a bitmap
 interface Style {
   flat: string;
@@ -45,10 +46,8 @@ const TILE_PX = 256;
 const TEXTURE_FROM = 0.03; // scale (device px per world unit) from which textures and rims are drawn, below it a patch is one flat fill
 const VIEW_PAD = 80; // world units past a patch that still draw
 
-import { makeCanvas } from "./canvas.ts";
-export { makeCanvas };
-
-export const context2d = (c: OffscreenCanvas | HTMLCanvasElement | null): CanvasRenderingContext2D | null => (c ? (c.getContext("2d") as CanvasRenderingContext2D | null) : null);
+import { context2d, makeCanvas } from "./canvas.ts";
+export { context2d, makeCanvas };
 
 type Wrapped = (draw: (dx: number, dy: number) => void) => void;
 type Painter = (g: CanvasRenderingContext2D, wrapped: Wrapped, rng: ReturnType<typeof createRng>) => void;
@@ -359,11 +358,13 @@ function tilesIn(store: Baked, ts: TierStore, patch: Patch, view: View, left: { 
 }
 
 // Draws a patch from its bitmaps at this tier, baking what is missing while left allows. While a tile in view is still missing it is drawn, scaled, from the most recently used other tier
-// that has all of its tiles in view (on a zoom in, the tier just left), and only when none has does this return false and the caller paints the patch live.
-function drawBaked(ctx: CanvasRenderingContext2D, store: Baked, ts: TierStore, patch: Patch, view: View, left: { n: number }): boolean {
+// that has all of its tiles in view (on a zoom in, the tier just left), and only when none has does the caller paint the patch live.
+// Returns "live" when the caller must paint the patch, "tier" when it drew it from its own tier, "stand-in" when from another one.
+function drawBaked(ctx: CanvasRenderingContext2D, store: Baked, ts: TierStore, patch: Patch, view: View, left: { n: number }): "live" | "tier" | "stand-in" {
   let wanted = tilesIn(store, ts, patch, view, left);
+  const own = wanted !== null;
   if (!wanted) for (const other of [...store.tiers.values()].reverse()) if (other !== ts && (wanted = tilesIn(store, other, patch, view, null))) break;
-  if (!wanted) return false;
+  if (!wanted) return "live";
   const m = wanted.some((t) => !t.whole) ? ctx.getTransform() : null;
   for (const t of wanted) {
     if (t.whole || !m || m.b !== 0 || m.c !== 0) ctx.drawImage(t.image as CanvasImageSource, t.sx, t.sy, t.sw, t.sh, t.x, t.y, t.w, t.h);
@@ -380,7 +381,7 @@ function drawBaked(ctx: CanvasRenderingContext2D, store: Baked, ts: TierStore, p
       ctx.restore();
     }
   }
-  return true;
+  return own ? "tier" : "stand-in";
 }
 
 const patchesIn = (t: Terrain, tier: number | undefined, scale: number, view: View): Patch[] =>
@@ -398,11 +399,24 @@ function bakeCoarser(t: Terrain, store: Baked, tier: number, view: View, left: {
   for (const patch of patchesIn(t, coarser, coarser, wide)) if (left.n > 0) tilesIn(store, ts, patch, wide, left);
 }
 
-// quick: the coarse outline with flat fills, for the settings preview that redraws while sliders move.
-export function drawGround(ctx: CanvasRenderingContext2D, t: Terrain, scale: number, view: View, quick: boolean): void {
-  if (t.ground === null || typeof Path2D === "undefined") return;
+// Makes the bitmaps of the tier a view at this scale draws from that are still missing, without drawing, a couple per call. True when none is waiting for a later call.
+export function prepareGround(t: Terrain, scale: number, view: View): boolean {
+  const tier = TIERS.find((s) => s >= scale);
+  const store = baked.get(t);
+  if (tier === undefined || !store || t.ground === null) return true;
+  const ts = touch(store, tier);
+  const left = { n: PREPARE_BAKES };
+  for (const patch of patchesIn(t, tier, scale, view)) if (left.n > 0) tilesIn(store, ts, patch, view, left);
+  return left.n > 0; // a call that used up its bakes may have left more; one that did not has done them all, or the budget refused the rest
+}
+
+// quick: the coarse outline with flat fills, for the settings preview that redraws while sliders move. False while a patch is drawn from another tier for want of its own bitmaps
+// (draw again, or prepareGround), so a cache does not keep the stand-in.
+export function drawGround(ctx: CanvasRenderingContext2D, t: Terrain, scale: number, view: View, quick: boolean): boolean {
+  if (t.ground === null || typeof Path2D === "undefined") return true;
   const tier = quick ? undefined : TIERS.find((s) => s >= scale);
   const shown = patchesIn(t, tier, quick ? 0 : scale, view);
+  let complete = true;
   ctx.save();
   ctx.beginPath();
   ctx.rect(0, 0, t.width, t.height);
@@ -420,9 +434,16 @@ export function drawGround(ctx: CanvasRenderingContext2D, t: Terrain, scale: num
     if (!store) baked.set(t, (store = { tiers: new Map(), pixels: 0 }));
     const ts = touch(store, tier);
     const left = { n: BAKES_PER_FRAME };
-    for (const patch of shown) if (!drawBaked(ctx, store, ts, patch, view, left)) paintPatch(ctx, patch, scale);
+    let standIn = false;
+    for (const patch of shown) {
+      const how = drawBaked(ctx, store, ts, patch, view, left);
+      if (how === "live") paintPatch(ctx, patch, scale);
+      else if (how === "stand-in") standIn = true;
+    }
+    complete = !standIn || left.n > 0; // a stand-in with bakes to spare means the budget refused the tier: nothing more will come
     bakeCoarser(t, store, tier, view, left);
     touch(store, tier); // the coarser tier is the older one
   }
   ctx.restore();
+  return complete;
 }

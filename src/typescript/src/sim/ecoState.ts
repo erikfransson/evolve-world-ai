@@ -1,7 +1,7 @@
 import { genomeLength, layerSizes, upgradeGenome } from "./brain.ts";
 import { ITEM_RADIUS_RANGE, overrideConfig } from "./config.ts";
 import type { DeepPartial } from "./config.ts";
-import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "./ecoConfig.ts";
+import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG, MAX_KILL_ENERGY } from "./ecoConfig.ts";
 import type { EcoConfig } from "./ecoConfig.ts";
 import { MUTATION_SCALE_RANGE } from "./ecoInsert.ts";
 import { Ecosystem } from "./ecosystem.ts";
@@ -215,6 +215,7 @@ function checkedConfig(raw: unknown): EcoConfig {
   if (!(world.itemRadius >= ITEM_RADIUS_RANGE[0] && world.itemRadius <= ITEM_RADIUS_RANGE[1])) invalid("world.itemRadius is out of bounds");
   if (!(config.dt > 0 && config.dt <= 1)) invalid("dt is out of bounds");
   if (!(creature.radius > 0 && creature.radius <= MAX_BODY_RADIUS && creature.rayLength > 0 && creature.rayLength <= 5000)) invalid("creature radius or ray length is out of bounds");
+  if (!(eco.killEnergy >= 0 && eco.killEnergy <= MAX_KILL_ENERGY)) invalid("eco.killEnergy is out of bounds");
   whole(eco.maxPopulation, 0, MAX_CREATURES, "eco.maxPopulation");
   whole(eco.birthReserve, 0, MAX_CREATURES, "eco.birthReserve");
   whole(eco.initialPopulation, 0, MAX_CREATURES, "eco.initialPopulation");

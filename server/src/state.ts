@@ -1,4 +1,4 @@
-import { closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, readSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { gzip, gzipSync } from "node:zlib";
 import { promisify } from "node:util";
@@ -14,6 +14,9 @@ const SAVE = new RegExp(`^world-(${STAMP})\\.json\\.gz$`);
 const META = new RegExp(`^world-(${STAMP})\\.meta\\.json$`);
 const TMP = new RegExp(`^world-${STAMP}\\.(json\\.gz|meta\\.json)\\.tmp$`);
 const MAX_META_BYTES = 4096;
+
+export const SEED_FILE = "seed-copies"; // copies of each founder the world was seeded with; an admin reset writes the next world's
+export const RESET_DIR = /^before-reset-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z$/; // where a reset keeps the world before it
 
 export const isSaveName = (name: unknown): name is string => typeof name === "string" && SAVE.test(name);
 const stampOf = (name: string): string => SAVE.exec(name)![1]!;
@@ -149,6 +152,34 @@ export class StateStore {
   hiddenSaves(): number {
     const listed = new Set(this.list().map((s) => s.name));
     return readdirSync(this.dir).filter((n) => isSaveName(n) && !listed.has(n)).length;
+  }
+
+  // Moves every save and sidecar into the new subdirectory `sub` (kept: listing, rotation and the disk cap read only this directory's own
+  // files), oldest first, so a failure part-way leaves the newest saves in place for a restart. Then the extra state files named in
+  // `also` that exist. Returns how many saves moved. Throws when `sub` exists.
+  moveAside(sub: string, also: readonly string[] = []): number {
+    const to = join(this.dir, sub);
+    if (existsSync(to)) throw new Error(`${sub} exists already`);
+    mkdirSync(to, { mode: 0o700 });
+    const names = readdirSync(this.dir).filter((n) => SAVE.test(n) || META.test(n)).sort();
+    for (const n of [...names, ...also.filter((n) => existsSync(join(this.dir, n)))]) renameSync(join(this.dir, n), join(to, n));
+    return names.filter((n) => SAVE.test(n)).length;
+  }
+
+  // Folders an admin reset kept the world before it in.
+  keptResets(): number {
+    return readdirSync(this.dir).filter((n) => RESET_DIR.test(n)).length;
+  }
+
+  // The count in the seed file: null when there is none; throws when it is not a small regular file.
+  seedCopies(): number | null {
+    const file = join(this.dir, SEED_FILE);
+    return existsSync(file) ? Number(readRegularFile(file, 64).toString("utf8").trim()) : null;
+  }
+
+  // Through a temp file and a rename, like a save: whatever was at the name (a symlink, a FIFO) is replaced, never written through.
+  writeSeedCopies(copies: number): void {
+    this.put(SEED_FILE, Buffer.from(`${copies}\n`));
   }
 
   // The checked state of a save, parsed on a worker (saveParse.ts). The name must be one the listing shows (pattern, regular file, not from the future),

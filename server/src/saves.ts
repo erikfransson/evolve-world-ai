@@ -1,21 +1,44 @@
-import { LIMITS, SEED_COPIES } from "./config.ts";
-import { loadOverrides, retireOverrides } from "./admin.ts";
+import { LIMITS, SEED_COPIES, mostCopies, seedRoom } from "./config.ts";
+import { IGNORED_OVERRIDES, OVERRIDES, PREVIOUS_OVERRIDES, loadOverrides, retireOverrides } from "./admin.ts";
 import type { SeedFounder } from "./founders.ts";
 import type { Value } from "./tunables.ts";
 import { parseSave } from "./saveParse.ts";
 import { OtherWorld } from "./saveParse.ts";
 import type { LiveWorld } from "./liveWorld.ts";
+import { SEED_FILE } from "./state.ts";
 import type { StateStore } from "./state.ts";
 
 const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 const RESTORE_TRIES = 3; // saves of this world tried at startup before giving up, so a failing start exits in minutes and systemd stops retrying
 const UNREADABLE = "SAVE REFUSED: it would not restore, the last good save is kept";
+export const MAX_KEPT_RESETS = 3; // reset folders kept before a reset is refused: each holds the saves of the last 4 days (about 1 GB at 40 MB a save), outside the disk cap
+
+// The copies a reset may ask for: whole, at least 1, and the founders all fit below the birth reserve. The reason when not.
+export function copiesProblem(copies: number, founders: number, eco: { maxPopulation: number; birthReserve: number }): string | null {
+  const most = mostCopies(founders, eco);
+  return Number.isInteger(copies) && copies >= 1 && copies <= most ? null : `copies must be a whole number from 1 to ${most} (${founders} founders, room for ${seedRoom(eco)} below the birth reserve)`;
+}
+
+// The copies in the seed file, or SEED_COPIES when there is none or it does not hold a valid count (logged).
+export function readSeedCopies(store: StateStore, founders: number, eco: { maxPopulation: number; birthReserve: number }, log: (line: string) => void = console.log): number {
+  try {
+    const n = store.seedCopies();
+    if (n === null) return SEED_COPIES;
+    const bad = copiesProblem(n, founders, eco);
+    if (!bad) return n;
+    log(`${SEED_FILE} ignored: ${bad}`);
+  } catch (e) {
+    log(`${SEED_FILE} ignored: ${errText(e)}`);
+  }
+  return SEED_COPIES;
+}
 
 // Saving and restoring the live world. Jobs run one at a time. Only saveState and JSON.stringify block the tick loop, the gzip runs on a worker thread.
 export class Saves {
   private queue: Promise<unknown> = Promise.resolve();
   private readonly live: LiveWorld;
-  private readonly store: StateStore;
+  readonly store: StateStore;
+  private resetting = false; // set once a reset moved the saves aside: nothing more is saved next to the kept world, the server exits
 
   constructor(live: LiveWorld, store: StateStore) {
     this.live = live;
@@ -30,7 +53,13 @@ export class Saves {
 
   // A short line saying what was saved; rejects with the reason when nothing was.
   save(): Promise<string> {
-    return this.exclusive(async () => {
+    return this.exclusive(() => this.saveNow()).catch((e: unknown) => {
+      throw new Error(`not saved: ${errText(e)}`);
+    });
+  }
+
+  private async saveNow(): Promise<string> {
+      if (this.resetting) throw new Error("the world is being reset");
       if (this.live.failedTicks > 0) throw new Error(`its ticks are failing (${this.live.failedTicks} in a row), the last good save is kept`);
       const t0 = performance.now();
       const state = await this.live.whenIdle(() => this.live.saveState());
@@ -50,8 +79,38 @@ export class Saves {
         });
       const name = await this.store.write(json, { population: this.live.eco.population, tick: this.live.eco.tick }, new Date(), true, verify);
       return `saved ${name} (${Math.round(json.length / 1e6)} MB json, ${stallMs} ms tick stall)`;
-    }).catch((e: unknown) => {
-      throw new Error(`not saved: ${errText(e)}`);
+  }
+
+  // An admin reset: saves the running world, then moves every save, the admin overrides and the seed file into before-reset-<time>/
+  // (kept, never listed, rotated or restored), and writes the copies of each founder the next world starts with. Saving then stays
+  // off, so the caller exits and the next start seeds a fresh world. Any failure before the move keeps the running world as it was;
+  // a failure while moving keeps it running too (the newest saves move last, so a restart restores the newest left).
+  reset(copies: number, founders: number, at = new Date()): Promise<string> {
+    return this.exclusive(async () => {
+      const bad = copiesProblem(copies, founders, this.live.freshEco);
+      if (bad) throw new Error(bad);
+      const kept = this.store.keptResets();
+      if (kept >= MAX_KEPT_RESETS) throw new Error(`${kept} before-reset folders are kept in the state directory: move or delete the old ones first`);
+      if (this.resetting) throw new Error("the world is being reset");
+      const saved = await this.saveNow();
+      const sub = `before-reset-${at.toISOString().replace(/[:.]/g, "-")}`;
+      this.resetting = true;
+      let n: number;
+      try {
+        n = this.store.moveAside(sub, [OVERRIDES, PREVIOUS_OVERRIDES, IGNORED_OVERRIDES, SEED_FILE]);
+      } catch (e) {
+        this.resetting = false;
+        // Saves or settings may be in the folder already: a save now puts the running world back in place for a restart.
+        const again = await this.saveNow().then((l) => `, ${l}`, (s: unknown) => `, and saving again failed too: ${errText(s)}`);
+        throw new Error(`reset stopped part-way, the world runs on${again}; check ${sub} before trying again (its admin settings no longer apply after a restart): ${errText(e)}`);
+      }
+      const moved = `${saved}; ${n} saves and the admin settings moved to ${sub}`;
+      try {
+        this.store.writeSeedCopies(copies);
+      } catch (e) {
+        return `${moved}; ${SEED_FILE} could not be written (${errText(e)}), so the next start seeds ${SEED_COPIES} of each founder`; // the reset goes on: the saves are moved already
+      }
+      return `${moved}; the next start seeds ${copies} of each founder`;
     });
   }
 
@@ -105,14 +164,22 @@ export class Saves {
 // Throws when saves of this world are there but none restores (main exits 1 and systemd tries again; a fresh world's save would
 // otherwise become the newest and rotation would delete the real world's), and when seeding fails.
 export async function openWorld(saves: Saves, live: LiveWorld, stateDir: string, founders: readonly SeedFounder[], log: (line: string) => void = console.log): Promise<Record<string, Value>> {
+  const store = saves.store;
   live.founders = founders;
   const found = await saves.restoreNewest(log);
+  live.seedCopies = readSeedCopies(store, founders.length, live.freshEco, log);
   if (found === "restored") return loadOverrides(stateDir, live);
   if (found === "unreadable") throw new Error("saves of this world are there but none restores: not starting a fresh world over them");
   const retired = retireOverrides(stateDir);
   if (retired) log(retired);
-  const n = live.seedFounders(founders);
-  log(`fresh world seeded with ${n} creatures, ${SEED_COPIES} of each of ${founders.map((f) => f.name).join(", ")}`);
+  const copies = live.seedCopies;
+  const n = live.seedFounders(founders, Math.random, copies);
+  try {
+    store.writeSeedCopies(copies);
+  } catch (e) {
+    log(`${SEED_FILE} not written (${errText(e)}): the page shows the default count after a restart`); // as with a failed save, the world runs on
+  }
+  log(`fresh world seeded with ${n} creatures, ${copies} of each of ${founders.map((f) => f.name).join(", ")}`);
   // Saved at once, so a crash before the first 4-hourly save restores this world instead of starting yet another (and retiring its overrides).
   // A failed save is logged and the world runs on, as with any save.
   await saves.save().then(log, (e: unknown) => log(errText(e)));

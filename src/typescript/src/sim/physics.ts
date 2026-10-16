@@ -152,9 +152,9 @@ export function settle(s: CreatureState): void {
 }
 
 // Collision damage: both lose damagePerSpeed x the approach speed. If exactly one would die, the survivor also gains the
-// dead one's energy from just before the hit, and the dead one is left at 0 for settle. If both die nobody gains.
+// dead one's energy from just before the hit plus killEnergy, and the dead one is left at 0 for settle. If both die nobody gains.
 // Creatures already at 0 energy (dying this tick) are left alone.
-export function hurt(a: CreatureState, b: CreatureState, speed: number, damagePerSpeed: number): void {
+export function hurt(a: CreatureState, b: CreatureState, speed: number, damagePerSpeed: number, killEnergy = 0): void {
   const beforeA = a.energy;
   const beforeB = b.energy;
   if (speed <= 0 || beforeA <= 0 || beforeB <= 0) return;
@@ -163,8 +163,8 @@ export function hurt(a: CreatureState, b: CreatureState, speed: number, damagePe
   b.energy -= damage;
   const aDead = a.energy <= 0;
   const bDead = b.energy <= 0;
-  if (aDead && !bDead) b.energy += beforeA;
-  else if (bDead && !aDead) a.energy += beforeB;
+  if (aDead && !bDead) b.energy += beforeA + killEnergy;
+  else if (bDead && !aDead) a.energy += beforeB + killEnergy;
   if (aDead) a.energy = 0;
   if (bDead) b.energy = 0;
 }
