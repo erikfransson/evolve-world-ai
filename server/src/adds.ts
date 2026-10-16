@@ -3,7 +3,6 @@ import type { Refused } from "../../src/typescript/src/live/add.ts";
 import { TokenBucket } from "./budget.ts";
 import { LIVE } from "./config.ts";
 
-const ADD_BURST = 2; // adds a connection may send at once, then one per add.socketEveryS
 const ADD_STRIKES = 3; // adds past the rate a connection may send (one more each minute) before it counts as a flood: a page with stale rules stays
 
 // "per 5 minutes", "per 90 s": the window as a visitor reads it.
@@ -11,7 +10,7 @@ const per = (windowS: number): string => (windowS % 60 === 0 ? `per ${windowS / 
 
 // Adding is off while the admin set no room for it: no creatures per window, or no added creatures alive (neither a share nor a floor).
 // The hello and rules then carry no rules.
-export const addingOn = (): boolean => LIVE.add.perWindow > 0 && (LIVE.add.aliveShare > 0 || LIVE.add.aliveFloor > 0);
+export const addingOn = (): boolean => LIVE.add.perWindow > 0 && LIVE.add.aliveMax > 0;
 
 // A connection's add rate: a burst, refilled at the admin's socket rate (read live), and the strikes past it.
 export interface AddPace {
@@ -31,7 +30,7 @@ export class AddPolicy {
   }
 
   connection(): AddPace {
-    return { tokens: new TokenBucket(() => 1 / LIVE.add.socketEveryS, ADD_BURST), strikes: new TokenBucket(1 / 60, ADD_STRIKES) };
+    return { tokens: new TokenBucket(() => 1 / LIVE.add.socketEveryS, LIVE.add.burst), strikes: new TokenBucket(1 / 60, ADD_STRIKES) }; // add.burst as the connection opens
   }
 
   // An add message on a connection, before it is read: null to read it; past the rate a refusal with the wait (as a page with stale
@@ -50,8 +49,8 @@ export class AddPolicy {
   }
 }
 
-// The caps on visitor adds (LIVE.add, admin-tunable): creatures per window for everyone together and per visitor address, the share of
-// added creatures alive, and a world that cannot keep up. Only adds that went in count. The clock is monotonic (a wall clock step back
+// The caps on visitor adds (LIVE.add, admin-tunable): creatures per window for everyone together and per visitor, the visitor-added
+// creatures alive at once, and a world that cannot keep up. Only adds that went in count. The clock is monotonic (a wall clock step back
 // would stretch the window) and injectable for tests.
 export class AddGate {
   private global: { at: number; n: number }[] = []; // successful adds in the window, oldest first
@@ -89,7 +88,10 @@ export class AddGate {
     if (copies > a.maxCopies) return { t: "refused", reason: `at most ${a.maxCopies} copies` };
     if (world.paused) return { t: "refused", reason: "the world is paused, try again later", retryS: 60 };
     if (world.speed < a.minSpeed) return { t: "refused", reason: "the world is busy, try again in 30 s", retryS: 30 };
-    if (world.aliveAdded + copies > Math.max(a.aliveFloor, Math.floor(a.aliveShare * world.population))) return { t: "refused", reason: "enough added creatures are alive right now, try again in a few minutes", retryS: 120 };
+    if (world.aliveAdded + copies > a.aliveMax) {
+      const room = a.aliveMax - world.aliveAdded;
+      return room > 0 ? { t: "refused", reason: `only ${room} more visitor ${room === 1 ? "creature fits" : "creatures fit"} right now, ask for ${room === 1 ? "1 copy" : `${room} copies or fewer`}` } : { t: "refused", reason: `${a.aliveMax} visitor creatures are alive already; try again when some have died`, retryS: 120 };
+    }
     const g = this.wait(this.global, a.perWindow, copies, windowMs);
     if (g) return Number.isFinite(g) ? { t: "refused", reason: `the world is busy with new creatures, try again in ${g} s`, retryS: g } : { t: "refused", reason: a.perWindow > 0 ? `at most ${a.perWindow} creatures go in ${per(a.windowS)}, ask for fewer copies` : "adding is off right now" };
     if (visitor !== null) {

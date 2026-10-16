@@ -45,7 +45,7 @@ import { mapVersion } from "./sim/maps/index.ts";
 const MAX_CREATURE_PX = 60; // CSS px radius of a creature at the closest zoom
 const PICK_RADII = 3; // click reach in creature radii
 const PICK_MIN_PX = 14; // click reach never below this many CSS px
-const SELECT_RAY_LENGTHS = 3; // follow zoom: this many ray lengths across the free part of the view
+const SELECT_RAY_LENGTHS = 4.5; // follow zoom for every jump to a creature: this many ray lengths across the free part of the view (Erik: 1.5x further out than 3)
 const ZOOM_STEP = 1.6;
 const UI_INTERVAL_MS = 100;
 const BRAIN_INTERVAL_MS = 25;

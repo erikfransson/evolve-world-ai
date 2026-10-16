@@ -38,7 +38,7 @@ interface Viewer {
   selects: TokenBucket;
   historySent: boolean;
   pace: AddPace; // the connection's add rate and strikes (adds.ts)
-  visitor: string | null; // address key for the per-visitor add cap, null when unknown
+  visitor: string; // key for the per-visitor add cap: the address when trusted, else this connection
   adding: boolean; // an add waits for the tick in flight
 }
 
@@ -85,6 +85,7 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
   const connectBytes = new TokenBucket(limits.connectBytesPerSecond, Math.max(limits.connectBytesPerSecond, limits.connectBurstBytes)); // full item sets and history for new or lagging viewers
   const budget = frameBudget(limits);
   const policy = new AddPolicy(limits, gate);
+  let connections = 0; // numbers the connections for their own visitor key
   const sent = { frames: 0, items: 0, details: 0, text: 0 };
   let lastCreatures: Uint8Array | null = null;
   let lastFrameNo = -1;
@@ -174,7 +175,9 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
       selects: new TokenBucket(limits.selectsPerSecond, limits.selectBurst),
       historySent: false,
       pace: policy.connection(),
-      visitor: visitorKey(req.headers["x-forwarded-for"], trustForwarded),
+      // Without a trusted address each connection counts as a visitor of its own (perVisitor a window); a new connection costs an
+      // accept (accepts per second) and a hello wait.
+      visitor: visitorKey(req.headers["x-forwarded-for"], trustForwarded) ?? `conn:${++connections}`,
       adding: false,
     };
     viewers.set(ws, v);

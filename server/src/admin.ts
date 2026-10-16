@@ -24,6 +24,7 @@ export function loadAdminToken(stateDir: string): string {
 export const OVERRIDES = "admin-overrides.json";
 export const PREVIOUS_OVERRIDES = "admin-overrides.previous-world.json";
 export const IGNORED_OVERRIDES = "admin-overrides.ignored.json";
+const DROPPED = ["add.aliveShare", "add.aliveFloor"]; // settings an older version had; skipped in a saved overrides file, the rest still applies
 
 // A fresh world starts from liveConfig: the overrides of the world before are moved aside (one copy kept, an older one replaced),
 // so a later restart that restores the fresh world's save does not apply them. Returns the line to log, or null when there were none.
@@ -40,6 +41,12 @@ export function loadOverrides(stateDir: string, world: { eco: Ecosystem }): Reco
   if (!existsSync(file)) return {};
   try {
     const saved = JSON.parse(readFileSync(file, "utf8"));
+    for (const k of DROPPED) {
+      if (saved && typeof saved === "object" && Object.hasOwn(saved, k)) {
+        delete saved[k];
+        console.log(`${OVERRIDES}: ${k} is no longer a setting (0.2.1: add.aliveMax), skipped`);
+      }
+    }
     const err = applyTunables(world.eco, saved);
     if (!err) return saved;
     console.error(`OVERRIDES IGNORED: ${OVERRIDES}: ${err}`);

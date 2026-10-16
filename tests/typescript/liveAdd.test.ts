@@ -172,6 +172,7 @@ describe("add caps (adds.ts)", () => {
   };
 
   it("global window: 20 creatures per 5 minutes for everyone, then a wait until the oldest leaves the window", () => {
+    LIVE.add.perWindow = 20; // the mechanism, at a window smaller than the default 50
     const c = clock();
     const gate = new AddGate(c.now);
     for (let i = 0; i < 6; i++) {
@@ -202,14 +203,14 @@ describe("add caps (adds.ts)", () => {
     }
   });
 
-  it("an alive floor with no share still lets visitors add, capped at the floor (whichever is more)", () => {
-    LIVE.add.aliveShare = 0;
-    LIVE.add.aliveFloor = 50;
-    expect(addingOn()).toBe(true);
-    expect(new LiveWorld(smallConfig(), null).currentAddRules()).not.toBeNull();
-    expect(new AddGate(clock().now).check(null, 1, { ...fresh, aliveAdded: 49 })).toBeNull();
-    expect(new AddGate(clock().now).check(null, 2, { ...fresh, aliveAdded: 49 })?.reason).toMatch(/enough added creatures/);
-    LIVE.add.aliveFloor = 0;
+  it("visitor creatures alive are capped at add.aliveMax (50), whatever the population; an add past the room is told what fits", () => {
+    const gate = new AddGate(clock().now);
+    expect(LIVE.add.aliveMax).toBe(50);
+    for (const population of [0, 40, 850, 3000]) expect(gate.check(null, 10, { ...fresh, population, aliveAdded: 40 })).toBeNull();
+    expect(gate.check(null, 10, { ...fresh, population: 3000, aliveAdded: 45 })?.reason).toBe("only 5 more visitor creatures fit right now, ask for 5 copies or fewer");
+    expect(gate.check(null, 2, { ...fresh, aliveAdded: 49 })?.reason).toBe("only 1 more visitor creature fits right now, ask for 1 copy");
+    expect(gate.check(null, 1, { ...fresh, aliveAdded: 50 })).toMatchObject({ reason: "50 visitor creatures are alive already; try again when some have died", retryS: 120 });
+    LIVE.add.aliveMax = 0;
     expect(addingOn()).toBe(false);
   });
 
@@ -226,7 +227,7 @@ describe("add caps (adds.ts)", () => {
   it("the policy: a connection's burst, then refusals with the wait, then a cut; the global read rate; adding off", () => {
     const policy = new AddPolicy({ addAttemptsPerSecond: 1, addAttemptBurst: 2 });
     const pace = policy.connection();
-    expect([policy.pace(pace), policy.pace(pace)]).toEqual([null, null]);
+    expect([policy.pace(pace), policy.pace(pace), policy.pace(pace)]).toEqual([null, null, null]); // add.burst: three full adds back to back
     const r = policy.pace(pace);
     expect(r).toMatchObject({ t: "refused", reason: "adding too fast on this connection" });
     expect((r as { retryS: number }).retryS).toBeGreaterThan(LIVE.add.socketEveryS - 1);
@@ -257,23 +258,6 @@ describe("add caps (adds.ts)", () => {
     expect(gate.check(null, 3, fresh)).toBeNull();
     c.t += 301_000;
     expect(gate.check("1.2.3.4", 3, fresh)).toBeNull();
-  });
-
-  it("alive share: added creatures alive stay at most 10% of the population", () => {
-    const gate = new AddGate();
-    expect(gate.check(null, 3, { ...fresh, aliveAdded: 97 })).toBeNull();
-    expect(gate.check(null, 3, { ...fresh, aliveAdded: 98 })?.reason).toMatch(/enough added creatures/);
-    LIVE.add.aliveFloor = 0;
-    expect(gate.check(null, 1, { ...fresh, population: 9 })?.reason).toMatch(/enough added creatures/); // floor(0.9) = 0
-  });
-
-  it("alive floor: an empty or small world takes up to 20 added creatures alive, past the 10% share", () => {
-    const gate = new AddGate();
-    const empty = { ...fresh, population: 0 };
-    expect(gate.check(null, 3, empty)).toBeNull();
-    expect(gate.check(null, 3, { ...empty, aliveAdded: 17 })).toBeNull();
-    expect(gate.check(null, 1, { ...empty, aliveAdded: 20 })?.reason).toMatch(/enough added creatures/);
-    expect(gate.check(null, 3, { ...fresh, population: 1000, aliveAdded: 97 })).toBeNull(); // 10% of 1000 is past the floor
   });
 
   it("copies past the admin's max, a busy world and a paused world are refused", () => {
@@ -308,7 +292,8 @@ describe("add caps (adds.ts)", () => {
     expect(f.eco.population).toBeGreaterThan(0);
     expect(applyTunables(v.eco, { reseed: 0 })).toBeNull();
     expect(applyTunables(v.eco, { reseed: 0.5 })).toMatch(/whole/);
-    expect(applyTunables(v.eco, { "add.aliveFloor": 5000 })).toMatch(/add.aliveFloor/);
+    expect(applyTunables(v.eco, { "add.aliveMax": 5000 })).toMatch(/add.aliveMax/);
+    expect(applyTunables(v.eco, { "add.aliveFloor": 20 })).toMatch(/not a live setting/); // dropped in 0.2.1
   });
 
   it("an extinct world does not step, still runs queued work, and its graph gets a 0 sample at once", async () => {
@@ -333,8 +318,9 @@ describe("add caps (adds.ts)", () => {
 
   it("the caps are admin settings with limits", () => {
     const eco = new LiveWorld(smallConfig(), null).eco;
-    expect(applyTunables(eco, { "add.perWindow": 5, "add.aliveShare": 0.2 })).toBeNull();
-    expect([LIVE.add.perWindow, LIVE.add.aliveShare]).toEqual([5, 0.2]);
+    expect(applyTunables(eco, { "add.perWindow": 5, "add.aliveMax": 20, "add.burst": 2 })).toBeNull();
+    expect([LIVE.add.perWindow, LIVE.add.aliveMax, LIVE.add.burst]).toEqual([5, 20, 2]);
+    expect(applyTunables(eco, { "add.burst": 0 })).toMatch(/add.burst/);
     expect(readTunables(eco)["add.perWindow"]).toBe(5);
     expect(applyTunables(eco, { "add.maxCopies": 11 })).toMatch(/add.maxCopies/);
     expect(applyTunables(eco, { "add.perWindow": 2.5 })).toMatch(/whole/);
@@ -472,21 +458,24 @@ describe("adding to the world (LiveWorld)", () => {
     expect("ids" in w.addCreatures(request({ copies: 1, name: "Kiwi" }), seq(5))).toBe(true);
   });
 
-  it("a full add of 10 copies goes in on a fresh small world, two fit the global window, an 11th copy never does (#42)", () => {
+  it("a visitor adds three full adds of 10 back to back (30 a window), the shared 50 leaves 20 for others, and an 11th copy never goes in (#42)", () => {
     const gate = new AddGate(() => 0);
-    const world = { aliveAdded: 0, population: 40, speed: 3, paused: false }; // a fresh world: the alive floor (20) applies
-    expect(gate.check(null, 10, world)).toBeNull();
-    gate.record(null, 10);
-    expect(gate.check(null, 10, { ...world, aliveAdded: 10 })).toBeNull();
-    gate.record(null, 10);
-    expect(gate.check(null, 1, { ...world, aliveAdded: 20 })?.reason).toMatch(/enough added creatures|busy with new creatures/);
-    expect(gate.check("v", 10, world)?.reason).toMatch(/busy with new creatures/); // the window is spent
-    expect(new AddGate(() => 0).check("v", 11, world)?.reason).toMatch(/at most 10 copies/);
+    const world = { aliveAdded: 0, population: 40, speed: 3, paused: false };
+    for (let k = 0; k < 3; k++) {
+      expect(gate.check("conn:1", 10, { ...world, aliveAdded: 10 * k })).toBeNull();
+      gate.record("conn:1", 10);
+    }
+    expect(gate.check("conn:1", 1, { ...world, aliveAdded: 30 })?.reason).toMatch(/a moment ago|per visitor/); // perVisitor 30 spent
+    expect(gate.check("conn:2", 10, { ...world, aliveAdded: 30 })).toBeNull(); // another visitor still gets in
+    gate.record("conn:2", 10);
+    expect(gate.check("conn:3", 10, { ...world, aliveAdded: 40 })).toBeNull(); // 40 + 10 = 50, the shared window and the alive cap
+    gate.record("conn:3", 10);
+    expect(gate.check("conn:4", 1, { ...world, aliveAdded: 0 })?.reason).toMatch(/busy with new creatures/); // the window, not the alive cap
+    expect(new AddGate(() => 0).check(null, 11, world)?.reason).toMatch(/at most 10 copies/);
     const w = new LiveWorld(smallConfig(), null);
     const r = w.addCreatures(request({ copies: 10 }), seq(7));
     if (!("ids" in r)) throw new Error(r.reason);
     expect(r.ids).toHaveLength(10);
-    expect(parseAdd(encodeAdd(request({ copies: 10 })), w.addRules())).toMatchObject({ copies: 10 });
     expect(parseAdd(encodeAdd(request({ copies: 11 })), w.addRules())).toMatch(/copies must be 1 to 10/);
   });
 
@@ -505,7 +494,7 @@ afterEach(() => {
 });
 async function serve(port: number, change: Partial<typeof LIMITS> = {}, trust = false): Promise<LiveWorld> {
   LIVE.add.minSpeed = 0; // the test world does not run its clock
-  LIVE.add.aliveShare = 1;
+  LIVE.add.aliveMax = 3000;
   const world = new LiveWorld(smallConfig(), null);
   for (let i = 0; i < 10; i++) world.step();
   const pub = startPublic("127.0.0.1", port, world, { ...LIMITS, ...change }, new AddGate(), trust);
@@ -563,11 +552,11 @@ describe("add on the public server", () => {
     await serve(61403);
     const c = client(61403);
     await c.hello;
-    for (let i = 1; i <= 3; i++) {
+    for (let i = 1; i <= LIVE.add.burst + 1; i++) {
       c.ws.send(encodeAdd(request({ copies: 1 })));
       await vi.waitFor(() => expect(c.replies).toHaveLength(i));
     }
-    expect(c.replies.filter((r) => r.t === "added"), JSON.stringify(c.replies)).toHaveLength(2);
+    expect(c.replies.filter((r) => r.t === "added"), JSON.stringify(c.replies)).toHaveLength(LIVE.add.burst);
     expect(c.replies.find((r) => r.t === "refused")).toMatchObject({ reason: "adding too fast on this connection", retryS: expect.any(Number) });
     expect(c.ws.readyState).toBe(WebSocket.OPEN);
     for (let i = 0; i < 3; i++) c.ws.send(encodeAdd(request({ copies: 1 }))); // two more strikes, then the fourth past the rate

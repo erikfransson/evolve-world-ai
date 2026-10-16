@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, symlinkSync, trunca
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gzipSync } from "node:zlib";
-import { LIMITS } from "../../server/src/config.ts";
+import { LIMITS, LIVE } from "../../server/src/config.ts";
 import { LiveWorld } from "../../server/src/liveWorld.ts";
 import { Saves, openWorld } from "../../server/src/saves.ts";
 import { loadFounders } from "../../server/src/founders.ts";
@@ -248,6 +248,21 @@ describe("saves", () => {
     const live = new LiveWorld(smallConfig(), null);
     live.restoreState(JSON.parse(JSON.stringify(state)));
     expect([live.eco.config.eco.maxPopulation, live.eco.config.eco.birthReserve]).toEqual([50, 49]);
+  });
+
+  it("an overrides file from 0.2.0 with the dropped alive share and floor still applies its other settings, with a log line", () => {
+    const dir = tmp();
+    writeFileSync(join(dir, "admin-overrides.json"), JSON.stringify({ "add.aliveShare": 0.2, "add.aliveFloor": 30, "add.perWindow": 40 }));
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const before = LIVE.add.perWindow;
+    try {
+      expect(loadOverrides(dir, new LiveWorld(smallConfig(), null))).toEqual({ "add.perWindow": 40 });
+      expect(LIVE.add.perWindow).toBe(40);
+      expect(log).toHaveBeenCalledWith(expect.stringMatching(/add.aliveShare is no longer a setting/));
+    } finally {
+      log.mockRestore();
+      LIVE.add.perWindow = before;
+    }
   });
 
   it("admin overrides that no longer apply are ignored loudly and kept aside, not lost", () => {
