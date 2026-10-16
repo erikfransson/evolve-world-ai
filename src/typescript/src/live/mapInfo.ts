@@ -75,7 +75,6 @@ const weight = (v: number): string => (v >= 1 ? v.toFixed(1) : String(Math.round
 
 // The world's rules as label and text, for the info section.
 export function worldFacts(hello: Hello): [string, string][] {
-  const nf = new Intl.NumberFormat("en-US");
   const s = hello.summary;
   return [
     ["Size", `${nf.format(hello.world.width)} × ${nf.format(hello.world.height)} units`],

@@ -449,7 +449,9 @@ export class AddPanel {
     this.$("addTrainText").textContent = `${what} · ${Math.max(0, Math.ceil((1 - p.share) * TRAIN_SECONDS))} s left · step ${p.iter}${score}`;
   }
 
-  private async trainAll(plan: BodyPlan, genome: Float32Array): Promise<Float32Array | null> {
+  // The trained genome, null when cancelled; away: a run ended because the tab stayed hidden, so the kinds after it are skipped and the
+  // add waits for the visitor to press Add again.
+  private async trainAll(plan: BodyPlan, genome: Float32Array): Promise<{ genome: Float32Array; away: boolean } | null> {
     const kinds: TrainKind[] = [];
     if (this.$<HTMLInputElement>("addPretrain").checked) kinds.push("pretrain");
     if (this.$<HTMLInputElement>("addFinetune").checked) kinds.push("finetune");
@@ -466,8 +468,9 @@ export class AddPanel {
       if (failed) this.say(`Training stopped (${failed}); adding it as it is.`, "error");
       if (cancelled) return null;
       if (out) g = out;
+      if (job.stoppedHidden) return { genome: g, away: true };
     }
-    return g;
+    return { genome: g, away: false };
   }
 
   private async go(): Promise<void> {
@@ -487,8 +490,12 @@ export class AddPanel {
         this.say("Training cancelled. Nothing was added.");
         return this.refresh();
       }
-      genome = trained;
+      genome = trained.genome;
       if (kinds) this.trained = { ...key, genome };
+      if (trained.away) { // never add while the visitor is away: the result waits for them
+        this.say("Training stopped while this tab was hidden. Its result is kept: press Add to the world to add it.");
+        return this.refresh();
+      }
     }
     const scale = Math.min(MUTATION_SCALE_RANGE[1], Math.max(MUTATION_SCALE_RANGE[0], 2 ** this.t.mutation));
     const req: AddRequest = { plan, genome, birth: { ...this.t.birth }, name, hue: this.hue, copies: this.copies, ...(scale !== 1 ? { mutationScale: scale } : {}) };

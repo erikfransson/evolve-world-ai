@@ -73,4 +73,29 @@ describe("in-browser training", () => {
     expect(ended).toBe(true);
     expect(FakeWorker.last!.terminated).toBe(true);
   });
+
+  it("counts every hidden stretch toward the ten minutes, and says the run ended because the tab stayed hidden", async () => {
+    const plan = { rayCount: 3, raySpread: 1, rayLength: 100, hiddenLayers: [4], memoryShort: 0, memoryLong: 0 };
+    let ended = false;
+    const job = train("pretrain", plan, new Float32Array(10), () => {}, () => {}, 10);
+    void job.done.then(() => (ended = true));
+    for (let k = 0; k < 3; k++) { // hidden 4 min, shown 1 s, three times: 12 min hidden in all
+      setHidden(true);
+      vi.advanceTimersByTime(4 * 60_000);
+      setHidden(false);
+      vi.advanceTimersByTime(1000);
+    }
+    await Promise.resolve();
+    expect(ended).toBe(true);
+    expect(job.stoppedHidden).toBe(true);
+    expect(FakeWorker.last!.terminated).toBe(true);
+  });
+
+  it("does not call a run that ran out of visible time stopped by hiding", async () => {
+    const plan = { rayCount: 3, raySpread: 1, rayLength: 100, hiddenLayers: [4], memoryShort: 0, memoryLong: 0 };
+    const job = train("pretrain", plan, new Float32Array(10), () => {}, () => {}, 10);
+    vi.advanceTimersByTime(11_000);
+    await job.done;
+    expect(job.stoppedHidden).toBe(false);
+  });
 });

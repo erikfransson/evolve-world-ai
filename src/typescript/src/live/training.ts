@@ -10,7 +10,7 @@ export type TrainKind = "pretrain" | "finetune";
 export const TRAIN_ENVS: Record<TrainKind, readonly string[]> = { pretrain: ["far-food", "patch", "minefield"], finetune: ["crowd", "rivals"] };
 export const TRAIN_SECONDS = 30; // per kind
 const HELPERS = 3; // helper threads at most: about 50 MB each in Chrome, so a small device keeps its memory
-const HIDDEN_MAX_MS = 10 * 60_000; // hidden longer than this, a run ends with its best so far and frees the worker
+const HIDDEN_MAX_MS = 10 * 60_000; // hidden this long in all (every hidden stretch of the run counts), it ends with its best so far and frees the worker
 const OPTIONS = { pairs: 24, sigma: 0.05, lr: 0.02, decay: 0.005, episodes: 1, iterations: 100_000 }; // smaller steps than the Arena: polish, not relearn
 
 export interface TrainProgress {
@@ -24,6 +24,7 @@ export interface TrainProgress {
 export interface TrainJob {
   done: Promise<Float32Array | null>; // the best genome on held-out layouts, null when cancelled or nothing beat the start
   cancel(): void;
+  readonly stoppedHidden: boolean; // ended by HIDDEN_MAX_MS: the visitor is away, so nothing should follow until they are back
 }
 
 // Trains genome for `seconds` of visible-tab time, reporting progress; ends early with the best result so far on cancel.
@@ -39,21 +40,30 @@ export function train(kind: TrainKind, plan: BodyPlan, genome: Float32Array, onP
   let finish: (g: Float32Array | null) => void = () => {};
   const done = new Promise<Float32Array | null>((resolve) => (finish = resolve));
   let used = 0; // visible ms before the current stretch
+  let hiddenSince = 0; // start of the current hidden stretch
   let since: number | null = performance.now(); // start of the current visible stretch, null while hidden
   let ticker: ReturnType<typeof setInterval> | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let cancelled = false;
   let ended = false;
+  let hiddenUsed = 0; // hidden ms before the current hidden stretch
+  let stoppedHidden = false;
   const onVisibility = (): void => {
     if (ended) return;
     if (document.hidden && since !== null) {
-      used += performance.now() - since;
+      const now = performance.now();
+      used += now - since;
       since = null;
+      hiddenSince = now;
       clearTimeout(timer);
-      timer = setTimeout(end, HIDDEN_MAX_MS);
+      timer = setTimeout(() => {
+        stoppedHidden = true;
+        end();
+      }, Math.max(0, HIDDEN_MAX_MS - hiddenUsed));
       worker?.postMessage({ type: "pause" } satisfies RlInMessage);
     } else if (!document.hidden && since === null) {
       since = performance.now();
+      hiddenUsed += since - hiddenSince;
       clearTimeout(timer);
       timer = setTimeout(end, Math.max(0, seconds * 1000 - used));
       worker?.postMessage({ type: "resume" } satisfies RlInMessage);
@@ -75,7 +85,7 @@ export function train(kind: TrainKind, plan: BodyPlan, genome: Float32Array, onP
   } catch (e) {
     onError(e instanceof Error ? e.message : String(e));
     queueMicrotask(end);
-    return { done, cancel: () => {} };
+    return { done, cancel: () => {}, stoppedHidden: false };
   }
   worker.onmessage = (ev: MessageEvent<RlOutMessage>) => {
     const m = ev.data;
@@ -122,6 +132,9 @@ export function train(kind: TrainKind, plan: BodyPlan, genome: Float32Array, onP
     cancel: () => {
       cancelled = true;
       end();
+    },
+    get stoppedHidden() {
+      return stoppedHidden;
     },
   };
 }
