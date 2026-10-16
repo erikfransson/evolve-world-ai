@@ -63,8 +63,12 @@ async function loadSave(name: string): Promise<string> {
 
 // Save, then exit. Used by the admin stop and by SIGTERM and SIGINT.
 let stopping = false;
+let stopAsked = false; // a stop that came while a reset ran: done if the reset fails
 async function stop(): Promise<void> {
-  if (stopping) return;
+  if (stopping) {
+    stopAsked = true;
+    return;
+  }
   stopping = true;
   try {
     console.log(await saveNow());
@@ -90,10 +94,11 @@ const admin = startAdmin(HOST, adminPort, token, live, stateDir, webRoot, savedO
     try {
       const line = await saves.reset(stateDir, copies, founders.length);
       console.log(`reset: ${line}`);
-      setTimeout(shutdown, 500); // the reply goes out first
+      setTimeout(() => shutdown(RESET_EXIT), 500); // the reply goes out first
       return line;
     } catch (e) {
       stopping = false;
+      if (stopAsked) void stop();
       throw e;
     }
   },
@@ -106,11 +111,12 @@ runTicks(live, LIMITS.maxTickFailures, (why) => {
 console.log(`${live.threads} helper threads`);
 console.log(`live world on ws://${HOST}:${publicPort}, admin on ws://${HOST}:${adminPort} (token in ${stateDir}/admin-token)`);
 
-function shutdown(): void {
+export const RESET_EXIT = 75; // the unit restarts on it (RestartForceExitStatus), and the next start seeds the fresh world
+function shutdown(code = 0): void {
   live.close();
   pub.close();
   admin.close();
-  process.exit(0);
+  process.exit(code);
 }
 // A promise nobody handled is a bug: log it and exit, systemd restarts from the last good save.
 process.on("unhandledRejection", (e) => {

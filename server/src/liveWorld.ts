@@ -393,7 +393,7 @@ export class LiveWorld {
     this.attach();
     if (this.eco.population === 0 && this.founders.length) {
       try {
-        this.seedFounders(this.founders);
+        this.seedFounders(this.founders, Math.random, this.seedCopies);
       } catch (e) {
         console.error(`reseed: founders not seeded: ${e instanceof Error ? e.message : String(e)}`);
       }

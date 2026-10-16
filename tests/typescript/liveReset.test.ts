@@ -1,7 +1,7 @@
 // @vitest-environment node
 // @ts-expect-error the web tsconfig finds no types for the server's ws
 import { WebSocket } from "../../server/node_modules/ws/wrapper.mjs";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startAdmin } from "../../server/src/admin.ts";
@@ -80,6 +80,27 @@ describe("admin reset", () => {
     expect(store.list().length).toBe(2);
     expect(readdirSync(dir).some((f) => f.startsWith("before-reset-"))).toBe(false);
     await expect(saves.save()).resolves.toMatch(/^saved /);
+  });
+
+  it("a reset that fails after some saves moved saves the running world again at once, so a restart restores it and not a fresh world", async () => {
+    const dir = tmp();
+    const { live, saves, store } = await running(dir);
+    vi.spyOn(store, "moveAside").mockImplementation((sub) => {
+      for (const s of store.list()) renameSync(join(dir, s.name), join(dir, `moved-${s.name}`)); // out of the listing, as a part-way move leaves them
+      throw new Error(`disk trouble in ${sub}`);
+    });
+    await expect(saves.reset(dir, 25, FOUNDERS.length)).rejects.toThrow(/reset stopped part-way, the world runs on, saved world-.*disk trouble/);
+    const listed = store.list();
+    expect(listed).toHaveLength(1);
+    expect(listed[0]!.tick).toBe(live.eco.tick);
+    await expect(saves.save()).resolves.toMatch(/^saved /); // saving goes on
+  });
+
+  it("seedFounders itself keeps the founders below the birth reserve, whatever the caller checked", () => {
+    const live = new LiveWorld(freshConfig(), null);
+    const room = live.eco.config.eco.maxPopulation - live.eco.config.eco.birthReserve;
+    expect(() => live.seedFounders(FOUNDERS, Math.random, Math.floor(room / FOUNDERS.length) + 1)).toThrow(/do not fit below the birth reserve/);
+    expect(live.eco.population).toBe(0);
   });
 
   it(`refuses a reset while ${MAX_KEPT_RESETS} reset folders are kept, so resets cannot fill the disk`, async () => {

@@ -24,6 +24,8 @@ CPUQuota=50%
 TasksMax=64
 Restart=on-failure
 RestartSec=5
+# An admin reset exits 75 once the old world is kept aside: systemd starts the server again, which seeds the fresh world.
+RestartForceExitStatus=75
 
 # Sandbox. Home is hidden except the repo (read-only), node, and the state dir.
 # Checked under systemd 249 --user: no X11, D-Bus or ibus sockets (no AF_UNIX), empty /dev/shm, no SysV shared memory, home and checkout unwritable.

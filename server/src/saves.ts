@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { LIMITS, SEED_COPIES, seedRoom } from "./config.ts";
 import { IGNORED_OVERRIDES, OVERRIDES, PREVIOUS_OVERRIDES, loadOverrides, retireOverrides } from "./admin.ts";
@@ -7,6 +7,7 @@ import type { Value } from "./tunables.ts";
 import { parseSave } from "./saveParse.ts";
 import { OtherWorld } from "./saveParse.ts";
 import type { LiveWorld } from "./liveWorld.ts";
+import { readRegularFile } from "./state.ts";
 import type { StateStore } from "./state.ts";
 
 const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
@@ -14,7 +15,7 @@ const RESTORE_TRIES = 3; // saves of this world tried at startup before giving u
 const UNREADABLE = "SAVE REFUSED: it would not restore, the last good save is kept";
 export const SEED_FILE = "seed-copies"; // copies of each founder the world was seeded with; an admin reset writes the next world's
 export const RESET_DIR = /^before-reset-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z$/; // where a reset keeps the world before it
-export const MAX_KEPT_RESETS = 5; // reset folders kept before a reset is refused (each holds up to about 7 saves, 40 MB apiece, outside the disk cap)
+export const MAX_KEPT_RESETS = 3; // reset folders kept before a reset is refused: each holds the saves of the last 4 days (about 1 GB at 40 MB a save), outside the disk cap
 
 // The copies a reset may ask for: whole, at least 1, and the founders all fit below the birth reserve. The reason when not.
 export function copiesProblem(copies: unknown, founders: number, eco: { maxPopulation: number; birthReserve: number }): string | null {
@@ -27,7 +28,7 @@ export function readSeedCopies(stateDir: string, founders: number, eco: { maxPop
   const file = join(stateDir, SEED_FILE);
   if (!existsSync(file)) return SEED_COPIES;
   try {
-    const n = Number(readFileSync(file, "utf8").trim().slice(0, 16));
+    const n = Number(readRegularFile(file, 64).toString("utf8").trim());
     const bad = copiesProblem(n, founders, eco);
     if (!bad) return n;
     log(`${SEED_FILE} ignored: ${bad}`);
@@ -99,14 +100,22 @@ export class Saves {
       const saved = await this.saveNow();
       const sub = `before-reset-${at.toISOString().replace(/[:.]/g, "-")}`;
       this.resetting = true;
+      let n: number;
       try {
-        const n = this.store.moveAside(sub, [OVERRIDES, PREVIOUS_OVERRIDES, IGNORED_OVERRIDES, SEED_FILE]);
-        writeFileSync(join(stateDir, SEED_FILE), `${copies}\n`, { mode: 0o600 });
-        return `${saved}; ${n} saves and the admin settings moved to ${sub}; the next start seeds ${copies} of each founder`;
+        n = this.store.moveAside(sub, [OVERRIDES, PREVIOUS_OVERRIDES, IGNORED_OVERRIDES, SEED_FILE]);
       } catch (e) {
         this.resetting = false;
-        throw new Error(`reset stopped part-way, the world runs on: ${errText(e)}`);
+        // Saves or settings may be in the folder already: a save now puts the running world back in place for a restart.
+        const again = await this.saveNow().then((l) => `, ${l}`, (s: unknown) => `, and saving again failed too: ${errText(s)}`);
+        throw new Error(`reset stopped part-way, the world runs on${again}; check ${sub} before trying again (its admin settings no longer apply after a restart): ${errText(e)}`);
       }
+      const moved = `${saved}; ${n} saves and the admin settings moved to ${sub}`;
+      try {
+        writeFileSync(join(stateDir, SEED_FILE), `${copies}\n`, { mode: 0o600 });
+      } catch (e) {
+        return `${moved}; ${SEED_FILE} could not be written (${errText(e)}), so the next start seeds ${SEED_COPIES} of each founder`; // the reset goes on: the saves are moved already
+      }
+      return `${moved}; the next start seeds ${copies} of each founder`;
     });
   }
 
