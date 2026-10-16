@@ -73,6 +73,18 @@ const pct = (v: number): string => (v > 0 && v < 0.01 ? "<1%" : `${Math.round(v 
 const nf = new Intl.NumberFormat("en-US");
 const weight = (v: number): string => (v >= 1 ? v.toFixed(1) : String(Math.round(v * 100) / 100)); // 1.6, 0.65, 0.15
 
+// The world's rules as label and text, for the info section.
+export function worldFacts(hello: Hello): [string, string][] {
+  const s = hello.summary;
+  return [
+    ["Size", `${nf.format(hello.world.width)} × ${nf.format(hello.world.height)} units`],
+    ["Started with", s.initialPopulation === 0 && s.seedCopies ? `${s.seedCopies} of each starter founder` : `${nf.format(s.initialPopulation)} creatures`],
+    ["Room for", `${nf.format(s.maxPopulation)} creatures`],
+    ["Bumps", s.collisionDamage ? `cost energy, and a kill takes the loser's energy${s.killEnergy ? ` plus ${nf.format(s.killEnergy)}` : ""}` : "harmless"],
+    ["Seasons", s.seasons ? "on: lean winters with less food" : "off"],
+  ];
+}
+
 export function renderMapInfo(root: HTMLElement, hello: Hello): void {
   const map = hello.map;
   const g = map.ground;
@@ -143,16 +155,8 @@ export function renderMapInfo(root: HTMLElement, hello: Hello): void {
     regions.replaceChildren(wrap, el("p", "info-note", "Food and poison: how much grows there and how much it holds, against 1.0 for plain food."));
   }
 
-  const s = hello.summary;
-  const facts: [string, string][] = [
-    ["Size", `${nf.format(hello.world.width)} × ${nf.format(hello.world.height)} units`],
-    ["Started with", s.initialPopulation === 0 && s.seedCopies ? `${s.seedCopies} of each starter founder` : `${nf.format(s.initialPopulation)} creatures`],
-    ["Room for", `${nf.format(s.maxPopulation)} creatures`],
-    ["Bumps", s.collisionDamage ? "cost energy, and a kill takes the loser's energy" : "harmless"],
-    ["Seasons", s.seasons ? "on: lean winters with less food" : "off"],
-  ];
   $("infoWorld").replaceChildren(
-    ...facts.map(([k, v]) => {
+    ...worldFacts(hello).map(([k, v]) => {
       const d = el("div");
       d.append(el("dt", "", k), el("dd", "", v));
       return d;

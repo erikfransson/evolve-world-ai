@@ -6,6 +6,13 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+## 0.2.3 (2026-10-16)
+
+- Live admin: the saved settings (`admin-overrides.json`) load key by key instead of all or nothing. A key this version does not know (after a rollback past the version that added it) is skipped with a log line, a refused value is skipped on its own with its reason, and the rest still apply, so a rollback never silently drops standing settings such as `add.aliveMax`. The file is copied to `admin-overrides.ignored.json` whenever anything was skipped.
+- Live founders: the Grazer is the 2026-10-16 retrain (b3's grazer-vj, same body and name), trained 3 h against the other founders in Live-like envs; without a kill bonus it beats the shipped Juggernaut in 4 of 4 seeds at 180 min while the Juggernaut survives, and it survived 3 of 3 three-founder seeds at bonus 25. A restored world keeps its creatures; the new Grazer seeds the next fresh world (reset or new map).
+- Training in Add your creature waits while the tab is hidden (and ends with its best result after 10 min hidden in all, counting every hidden stretch) and uses at most 3 helper threads. A run that ended because the tab stayed hidden never adds on its own: the result is kept, the remaining training is skipped, and the add goes in when the visitor presses Add again.
+- Live: a kill gives 25 energy on top of the loser's (`eco.killEnergy` 25, was 0), so hunting pays a little. The world rules say so, and the admin can change it live (`eco.killEnergy`, 0 to 300). A restored world keeps its saved value until the admin sets it.
+
 ## 0.2.2 (2026-10-16)
 
 - RL envs (#44): duels against a scripted charger (hit it when it is weak, dodge it when it is strong), per-episode augmentation of energies, rival counts, items and sizes, fast ground, and a kill bonus. New engine setting `eco.killEnergy` (bonus energy for a kill, default 0, so worlds are unchanged).

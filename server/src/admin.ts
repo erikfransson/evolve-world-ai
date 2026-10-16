@@ -36,33 +36,71 @@ export function retireOverrides(stateDir: string): string | null {
   return `fresh world: ${OVERRIDES} of the world before moved to ${PREVIOUS_OVERRIDES}, not applied`;
 }
 
-// Re-applies the settings the admin changed before the last restart and returns them, so later changes are merged into them.
+// Re-applies the settings the admin changed before the last restart and returns those applied, so later changes are merged into them.
+// Never all or nothing: a key this version does not know (a rollback past the version that added it) is skipped with a log line, the
+// known ones are applied together, and if they are refused together each is tried alone, a refused one skipped with its reason. So a
+// rollback never silently drops standing settings such as add.aliveMax. When anything is skipped the file is copied to IGNORED_OVERRIDES.
 export function loadOverrides(stateDir: string, world: { eco: Ecosystem }): Record<string, Value> {
   const file = join(stateDir, OVERRIDES);
   if (!existsSync(file)) return {};
+  const skipped: string[] = [];
+  let applied: Record<string, Value> = {};
   try {
-    const saved = JSON.parse(readFileSync(file, "utf8"));
+    const saved: unknown = JSON.parse(readFileSync(file, "utf8"));
+    if (!saved || typeof saved !== "object" || Array.isArray(saved)) throw new Error("not an object of settings");
+    const all = saved as Record<string, Value>;
     // 0.2.0 turned adding off with both alive keys at 0; keep it off rather than reopen it with the new aliveMax default.
-    if (saved && typeof saved === "object" && saved["add.aliveShare"] === 0 && saved["add.aliveFloor"] === 0 && !Object.hasOwn(saved, "add.aliveMax")) saved["add.aliveMax"] = 0;
-    for (const k of DROPPED) {
-      if (saved && typeof saved === "object" && Object.hasOwn(saved, k)) {
-        delete saved[k];
-        console.log(`${OVERRIDES}: ${k} is no longer a setting (0.2.1: add.aliveMax), skipped`);
-      }
+    if (all["add.aliveShare"] === 0 && all["add.aliveFloor"] === 0 && !Object.hasOwn(all, "add.aliveMax")) all["add.aliveMax"] = 0;
+    const known = tunableLimits();
+    const kept: Record<string, Value> = {};
+    for (const [k, v] of Object.entries(all)) {
+      if (Object.hasOwn(known, k)) kept[k] = v;
+      else if (DROPPED.includes(k)) console.log(`${OVERRIDES}: ${k} is no longer a setting (0.2.1: add.aliveMax), skipped`);
+      else skipped.push(`${k} is not a setting of this version, skipped`);
     }
-    const err = applyTunables(world.eco, saved);
-    if (!err) return saved;
-    console.error(`OVERRIDES IGNORED: ${OVERRIDES}: ${err}`);
+    if (!applyTunables(world.eco, kept)) applied = kept;
+    else {
+      // One key at a time, in passes until none more goes in: a pair valid only together (a lower cap with a lower reserve) gets in
+      // once its partner has. At most one pass per key.
+      let pending = Object.entries(kept);
+      const why = new Map<string, string>();
+      for (let more = true; more && pending.length; ) {
+        more = false;
+        pending = pending.filter(([k, v]) => {
+          const err = applyTunables(world.eco, { [k]: v });
+          if (err) return why.set(k, err), true;
+          applied[k] = v;
+          more = true;
+          return false;
+        });
+      }
+      for (const [k] of pending) skipped.push(`${k} skipped: ${why.get(k)}`);
+    }
   } catch (e) {
-    console.error(`OVERRIDES IGNORED: ${OVERRIDES}: ${e instanceof Error ? e.message : e}`);
+    skipped.push(`not read: ${e instanceof Error ? e.message : e}`);
   }
+  if (!skipped.length) return applied;
+  for (const line of skipped) console.error(`OVERRIDES: ${OVERRIDES}: ${line}`);
   try {
     copyFileSync(file, join(stateDir, IGNORED_OVERRIDES)); // kept aside, as the next admin change writes the file anew
-    console.error(`OVERRIDES IGNORED: a copy is in ${IGNORED_OVERRIDES}`);
+    console.error(`OVERRIDES: a copy of ${OVERRIDES} is in ${IGNORED_OVERRIDES}`);
   } catch (e) {
-    console.error(`OVERRIDES IGNORED: could not keep a copy: ${e instanceof Error ? e.message : e}`);
+    console.error(`OVERRIDES: could not keep a copy: ${e instanceof Error ? e.message : e}`);
   }
-  return {};
+  return applied;
+}
+
+// The keys of the overrides file this version does not know (written by a newer one before a rollback), kept when the admin changes a
+// setting, so rolling forward again finds them. Empty when there is no readable file.
+function carriedKeys(file: string): Record<string, unknown> {
+  try {
+    const saved: unknown = JSON.parse(readFileSync(file, "utf8"));
+    if (!saved || typeof saved !== "object" || Array.isArray(saved)) return {};
+    const known = tunableLimits();
+    return Object.fromEntries(Object.entries(saved).filter(([k]) => !Object.hasOwn(known, k) && !DROPPED.includes(k)));
+  } catch {
+    return {};
+  }
 }
 
 function sameToken(given: unknown, token: string): boolean {
@@ -177,7 +215,7 @@ export function startAdmin(host: string, port: number, token: string, world: Adm
           Object.assign(overrides, changes);
           try {
             const file = join(stateDir, OVERRIDES);
-            writeFileSync(file + ".tmp", JSON.stringify(overrides, null, 2), { mode: 0o600 });
+            writeFileSync(file + ".tmp", JSON.stringify({ ...carriedKeys(file), ...overrides }, null, 2), { mode: 0o600 });
             renameSync(file + ".tmp", file);
           } catch (e) {
             return reply(ws, { t: "error", message: `applied, but could not save: ${e instanceof Error ? e.message : e}` });

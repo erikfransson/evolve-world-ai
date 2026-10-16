@@ -1,3 +1,4 @@
+import { MAX_KILL_ENERGY } from "./ecoConfig.ts";
 import type { EcoConfig } from "./ecoConfig.ts";
 
 // Settings Ecosystem.retune may change in a running world, by section and kind of value. Anything else (body, costs, ray and
@@ -10,7 +11,7 @@ export const LIVE_FIELDS = {
     birthEnergyRange: "posrange", birthCostRange: "posrange", birthCooldownRange: "range", // new founders and drift use the new range
     birthDrift: "nonneg", birthSpeed: "nonneg", hueDrift: "nonneg", planDrift: "nonneg", structuralRate: "unit",
     aging: "bool", agingStart: "nonneg", agingRate: "nonneg",
-    collisions: "bool", collisionDamage: "bool", damagePerSpeed: "nonneg", maxPopulation: "count", birthReserve: "count",
+    collisions: "bool", collisionDamage: "bool", damagePerSpeed: "nonneg", killEnergy: "nonneg", maxPopulation: "count", birthReserve: "count",
   },
   world: { foodEnergy: "nonneg", poisonDamage: "nonneg" },
   mutation: { rate: "unit", std: "nonneg" },
@@ -20,7 +21,7 @@ export const LIVE_FIELDS = {
 export const LIVE_MAX: Record<string, number> = {
   "eco.foodRegrow": 1, "eco.poisonRegrow": 1, "eco.foodMaxDensity": 10, "eco.poisonMaxDensity": 10, "eco.yearMinutes": 600,
   "eco.birthDrift": 0.5, "eco.birthSpeed": 200, "eco.hueDrift": 45, "eco.planDrift": 0.1, "eco.structuralRate": 0.2,
-  "eco.agingStart": 3600, "eco.agingRate": 2, "eco.damagePerSpeed": 1, "eco.maxPopulation": 10000, "eco.birthReserve": 1000,
+  "eco.agingStart": 3600, "eco.agingRate": 2, "eco.damagePerSpeed": 1, "eco.killEnergy": MAX_KILL_ENERGY, "eco.maxPopulation": 10000, "eco.birthReserve": 1000,
   "eco.birthEnergyRange": 10000, "eco.birthCostRange": 10000, "eco.birthCooldownRange": 600,
   "world.foodEnergy": 10000, "world.poisonDamage": 10000, "mutation.std": 1,
 };

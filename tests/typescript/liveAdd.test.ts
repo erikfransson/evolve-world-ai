@@ -11,11 +11,11 @@ import { cleanHello } from "../../src/typescript/src/live/connection.ts";
 import { mkdtempSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { cleanMap } from "../../src/typescript/src/live/mapInfo.ts";
+import { cleanMap, worldFacts } from "../../src/typescript/src/live/mapInfo.ts";
 import { reshapeGenome } from "../../src/typescript/src/live/reshape.ts";
 import { startPublic } from "../../server/src/public.ts";
 import type { PublicServer } from "../../server/src/public.ts";
-import { applyTunables, readTunables } from "../../server/src/tunables.ts";
+import { applyTunables, readTunables, tunableLimits } from "../../server/src/tunables.ts";
 import { MAX_ADD_BYTES, MAX_ADD_GENOME, cleanAddReply, cleanAddRules, encodeAdd, parseAdd, upkeepOf } from "../../src/typescript/src/live/add.ts";
 import type { AddRequest, AddRules } from "../../src/typescript/src/live/add.ts";
 import { genomeLengthFor } from "../../src/typescript/src/sim/rl/creatureFile.ts";
@@ -143,6 +143,21 @@ describe("add message: encode and parse", () => {
     const h = new LiveWorld(smallConfig(), null).hello(5);
     expect(cleanHello({ ...h, summary: undefined as never })!.summary).toEqual({ initialPopulation: 0, maxPopulation: 0, collisionDamage: false, seasons: false });
     expect(cleanHello({ ...h, summary: { initialPopulation: "x", maxPopulation: -5, collisionDamage: 1, seasons: true } as never })!.summary).toEqual({ initialPopulation: 0, maxPopulation: 0, collisionDamage: false, seasons: true });
+  });
+
+  it("the kill bonus: 25 on Live, carried in the hello and its rules line, changed live by the admin within the engine's bound", () => {
+    const w = new LiveWorld(smallConfig(), null);
+    expect(w.eco.config.eco.killEnergy).toBe(25);
+    const h = w.hello(5);
+    expect(h.summary.killEnergy).toBe(25);
+    expect(cleanHello(h)!.summary.killEnergy).toBe(25);
+    for (const bad of [-1, 301, Number.NaN, "25", 1e9]) expect(cleanHello({ ...h, summary: { ...h.summary, killEnergy: bad } as never })!.summary.killEnergy, String(bad)).toBeUndefined();
+    expect(worldFacts(cleanHello(h)!).find(([k]) => k === "Bumps")?.[1]).toBe("cost energy, and a kill takes the loser's energy plus 25");
+    expect(applyTunables(w.eco, { "eco.killEnergy": 60 })).toBeNull();
+    expect(w.eco.config.eco.killEnergy).toBe(60);
+    for (const bad of [301, -5, Number.POSITIVE_INFINITY, "60", true]) expect(applyTunables(w.eco, { "eco.killEnergy": bad }), String(bad)).toMatch(/killEnergy/);
+    expect(w.eco.config.eco.killEnergy).toBe(60);
+    expect(tunableLimits()["eco.killEnergy"]).toEqual({ min: 0, max: 300 });
   });
 
   it("names in the stats lineages pass the name filter, as in the details", () => {

@@ -107,6 +107,10 @@ Live ran `world.poisonDamage` 100 (POISON_LETHAL). Server-path settle runs, the 
 
 Chosen: 50, one food's worth (`foodEnergy` 50). Poison still matters (a bite halves a young creature's energy) without wiping lineages. One seed per value, so the order between 25 and 50 is not settled.
 
+## Live kill bonus (2026-10-16)
+Live ran `eco.killEnergy` 0: a kill paid only the loser's energy. Erik chose 25 for 0.2.3: the survivor gains the loser's energy plus 25, less the damage the bump did to it (a head-on hit at top speed costs 48), so a kill pays a little more than before. It is an admin tunable (0 to 300, the engine's MAX_KILL_ENERGY), set on the running world after the release.
+The Grazer swap ships in 0.2.3 on checks without the bonus (the Grazer survived 3 of 3 three-founder seeds at 25). The Juggernaut swap waits: an aggression-trained Juggernaut (b3's jaug) wiped out the other founders in one 180-min Live-rules seed, and b3's 4-seed check of the full set at bonus 25 is running.
+
 ## Ideas not yet tried
 - Evaluate each creature on two layouts to reduce layout luck.
 - Tournament with a larger size (5 to 7).

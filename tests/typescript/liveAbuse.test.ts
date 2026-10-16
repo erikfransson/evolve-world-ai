@@ -38,6 +38,29 @@ describe("admin overrides", () => {
   });
 });
 
+describe("admin overrides after a rollback", () => {
+  it("keep the keys this version does not know when the admin changes a setting, so rolling forward finds them", async () => {
+    const dir = tmp();
+    writeFileSync(join(dir, "admin-overrides.json"), JSON.stringify({ "eco.someFutureSetting": 3, "eco.hueDrift": 10 }));
+    const world = new LiveWorld(smallConfig(), null);
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const saved = loadOverrides(dir, world);
+    err.mockRestore();
+    expect(saved).toEqual({ "eco.hueDrift": 10 });
+    const admin = startAdmin("127.0.0.1", 62532, "tok", world, dir, dir, saved, { pause() {}, resume() {}, paused: () => false, saveNow: async () => "", listSaves: () => [], loadSave: async () => "", stop() {}, blankName: async () => 0, renameName: async () => 0, reset: async () => "" });
+    const ws = new WebSocket("ws://127.0.0.1:62532/");
+    const replies: { t: string }[] = [];
+    ws.on("message", (d: Buffer) => replies.push(JSON.parse(d.toString())));
+    await new Promise((r) => ws.on("open", r));
+    ws.send(JSON.stringify({ t: "auth", token: "tok" }));
+    ws.send(JSON.stringify({ t: "set-config", changes: { "mutation.rate": 0.1 } }));
+    await vi.waitFor(() => expect(replies.map((m) => m.t)).toEqual(["authed", "config"]));
+    expect(JSON.parse(readFileSync(join(dir, "admin-overrides.json"), "utf8"))).toEqual({ "eco.someFutureSetting": 3, "eco.hueDrift": 10, "mutation.rate": 0.1 });
+    ws.close();
+    admin.close();
+  });
+});
+
 describe("admin blank-name", () => {
   it("clears a visitor's name from every family that carries it, starters and other names untouched; a bad name is refused", async () => {
     const dir = tmp();
