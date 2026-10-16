@@ -40,6 +40,17 @@ describe("Trials best creature file", () => {
     expect(KINDS[parsed.kind].world).toBe("ecosystem");
   });
 
+  it("keeps the source text within what a load keeps, even for the longest settings", async () => {
+    const m = await run();
+    const big = withOverrides(config, { seed: 2 ** 31, world: { foodDensity: 0.123456789, poisonDensity: 0.987654321 } });
+    const file = trialsCreatureFile(big, { ...m, populationSize: 2000, result: { ...m.result, generation: 99999, bestFitness: 99999.94 } });
+    const parsed = parseCreatureFile(JSON.stringify(file));
+    if (typeof parsed === "string") throw new Error(parsed);
+    expect(file.training.from.length).toBeLessThanOrEqual(80);
+    expect(parsed.training.from).toBe(file.training.from);
+    expect(file.training.from).toMatch(/^Trials gen 99999, 99999\.9 s, seed 2147483648/);
+  });
+
   it("decides like the Trials creature for the same inputs, whatever the creature features hold", async () => {
     const m = await run();
     const file = trialsCreatureFile(config, m);

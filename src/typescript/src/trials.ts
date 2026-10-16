@@ -22,7 +22,8 @@ import { initRunSession, renderRunControls } from "./ui/runSession.ts";
 import { buildForm } from "./ui/settingsForm.ts";
 import { TRIALS_FORM } from "./ui/trialsForm.ts";
 import { TickClock } from "./ui/tickClock.ts";
-import { downloadJson, trialsCreatureFile, trialsFileName } from "./ui/trialsSave.ts";
+import { downloadJson } from "./ui/download.ts";
+import { trialsCreatureFile, trialsFileName } from "./ui/trialsSave.ts";
 import { $, durationText, formatDuration, setTile } from "./ui/page.ts";
 import { initTooltips } from "./ui/tooltip.ts";
 import { bindGentle, readGentle } from "./ui/gentle.ts";
@@ -194,6 +195,7 @@ function onMessage(e: MessageEvent<OutMessage>): void {
   graph.setData(history.stats, history.keptGenerations);
   const now = performance.now();
   run.latest = e.data;
+  saveNote.textContent = ""; // it names the generation saved, which is no longer the newest
   session.record(e.data.bestEver);
   run.computeSeconds = (now - run.lastMessageAt) / 1000;
   run.lastMessageAt = now;

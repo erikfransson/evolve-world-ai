@@ -35,6 +35,7 @@ import type { PreviewIn, PreviewOut } from "./worker/envPreviewWorker.ts";
 import { $, durationText } from "./ui/page.ts";
 import { buildForm } from "./ui/settingsForm.ts";
 import { RewardGraph } from "./ui/rewardGraph.ts";
+import { downloadJson } from "./ui/download.ts";
 import { bindGentle } from "./ui/gentle.ts";
 import { siteUpdated } from "./ui/staleSite.ts";
 import { initTooltips } from "./ui/tooltip.ts";
@@ -600,11 +601,7 @@ function currentFile(): CreatureFile | null {
 function saveFile(): void {
   const f = currentFile();
   if (!f) return;
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(new Blob([JSON.stringify(f)], { type: "application/json" }));
-  a.download = `${f.name.replace(/[^a-z0-9-]+/gi, "-").toLowerCase() || "creature"}.json`;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000); // revoking at once can cancel the download in some browsers
+  downloadJson(`${f.name.replace(/[^a-z0-9-]+/gi, "-").toLowerCase() || "creature"}.json`, f);
   $("saveMsg").textContent = `Saved ${f.name} at iteration ${f.training.iterations}.`;
 }
 
