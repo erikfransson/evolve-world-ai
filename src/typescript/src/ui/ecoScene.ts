@@ -8,6 +8,7 @@ import { readyTerrainOf } from "../sim/terrain.ts";
 import type { Terrain } from "../sim/terrain.ts";
 import type { TerrainSettings } from "../sim/terrain.ts";
 import { BACKGROUND, FLOOR, FOOD, POISON, RAY_COLORS, WALL } from "./scene.ts";
+import { TerrainCache } from "./terrainCache.ts";
 import { drawTerrain } from "./terrainScene.ts";
 
 export interface EcoDrawConfig {
@@ -70,6 +71,7 @@ export class EcoRenderer {
   private order = new Int32Array(1024);
   private seen = new Int32Array(1024); // snapshot indices of the visible items
   private readonly counts = new Int32Array(DIM_BUCKET + 2);
+  private readonly terrainCache = new TerrainCache();
 
   // highlight: a founder id whose descendants stay bright while everyone else is dimmed, or -1 for none.
   draw(ctx: CanvasRenderingContext2D, cam: Camera, cfg: EcoDrawConfig, v: SnapshotViews, selected: SelectedDetails | null, showRays: boolean, dpr: number, highlight = -1, births: BirthRings | null = null, now = 0, impacts: ImpactEffects | null = null): void {
@@ -98,7 +100,8 @@ export class EcoRenderer {
       ctx.fillRect(0, 0, cfg.worldW, cfg.worldH);
     }
     const terrain = cfg.map ?? (cfg.terrain ? readyTerrainOf(cfg.terrain) : null); // none while a named map is on its way
-    if (terrain) drawTerrain(ctx, terrain, z, { x0: tl.x, x1: br.x, y0: tl.y, y1: br.y });
+    const view = { x0: tl.x, x1: br.x, y0: tl.y, y1: br.y };
+    if (terrain && !this.terrainCache.draw(ctx, terrain, z, view, cam.animating)) drawTerrain(ctx, terrain, z, view);
     ctx.strokeStyle = WALL;
     ctx.lineWidth = Math.max(2, 1.5 * dpr) * dev;
     ctx.strokeRect(0, 0, cfg.worldW, cfg.worldH);
