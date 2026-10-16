@@ -177,8 +177,9 @@ export class StateStore {
     return existsSync(file) ? Number(readRegularFile(file, 64).toString("utf8").trim()) : null;
   }
 
+  // Through a temp file and a rename, like a save: whatever was at the name (a symlink, a FIFO) is replaced, never written through.
   writeSeedCopies(copies: number): void {
-    writeFileSync(join(this.dir, SEED_FILE), `${copies}\n`, { mode: 0o600 });
+    this.put(SEED_FILE, Buffer.from(`${copies}\n`));
   }
 
   // The checked state of a save, parsed on a worker (saveParse.ts). The name must be one the listing shows (pattern, regular file, not from the future),

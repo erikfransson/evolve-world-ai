@@ -1,7 +1,8 @@
 // @vitest-environment node
 // @ts-expect-error the web tsconfig finds no types for the server's ws
 import { WebSocket } from "../../server/node_modules/ws/wrapper.mjs";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startAdmin } from "../../server/src/admin.ts";
@@ -132,6 +133,22 @@ describe("admin reset", () => {
     expect(lines.some((l) => /seed-copies not written/.test(l))).toBe(true);
     expect(lines.some((l) => /^saved /.test(l))).toBe(true);
   });
+
+  it("a FIFO or a symlink at the seed file is replaced at a fresh start, never written through or waited on", async () => {
+    const dir = tmp();
+    execFileSync("mkfifo", [join(dir, SEED_FILE)]);
+    const live = new LiveWorld(freshConfig(), null);
+    await openWorld(new Saves(live, new StateStore(dir)), live, dir, FOUNDERS, quiet); // a write that opened the FIFO would block here
+    expect(readFileSync(join(dir, SEED_FILE), "utf8")).toBe("10\n");
+    const dir2 = tmp();
+    const target = join(tmp(), "elsewhere");
+    writeFileSync(target, "keep");
+    symlinkSync(target, join(dir2, SEED_FILE));
+    const live2 = new LiveWorld(freshConfig(), null);
+    await openWorld(new Saves(live2, new StateStore(dir2)), live2, dir2, FOUNDERS, quiet);
+    expect(readFileSync(target, "utf8")).toBe("keep");
+    expect(lstatSync(join(dir2, SEED_FILE)).isFile()).toBe(true);
+  }, 30_000);
 
   it("a seed file that is not a valid count is ignored at the next fresh start: the default copies, with a log line", async () => {
     const dir = tmp();
