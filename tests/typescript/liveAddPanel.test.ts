@@ -44,8 +44,20 @@ describe("add panel after training stopped in a hidden tab", () => {
       await go(); // the visitor is back and presses Add
       expect(runs).toEqual(["pretrain"]); // the kept result, not trained again
       expect(sent).toHaveLength(1);
+      // A run that ends another way (a worker error) while the tab is hidden waits too.
+      spy.mockImplementation((kind, _plan, genome) => {
+        runs.push(kind);
+        return { done: Promise.resolve(Float32Array.from(genome)), cancel() {}, stoppedHidden: false };
+      });
+      panel.reply({ t: "refused", reason: "busy" }); // the server answered the add
+      (document.getElementById("addPretrain") as HTMLInputElement).checked = false; // another set of kinds: trained afresh
+      Object.defineProperty(document, "hidden", { configurable: true, get: () => true });
+      await go();
+      expect(runs).toEqual(["pretrain", "finetune"]);
+      expect(sent).toHaveLength(1);
     } finally {
       spy.mockRestore();
+      Object.defineProperty(document, "hidden", { configurable: true, get: () => false });
     }
   });
 });

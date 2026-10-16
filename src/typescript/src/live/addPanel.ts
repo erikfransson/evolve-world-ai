@@ -468,7 +468,7 @@ export class AddPanel {
       if (failed) this.say(`Training stopped (${failed}); adding it as it is.`, "error");
       if (cancelled) return null;
       if (out) g = out;
-      if (job.stoppedHidden) return { genome: g, away: true };
+      if (job.stoppedHidden || document.hidden) return { genome: g, away: true }; // hidden: also a run that failed or finished while away
     }
     return { genome: g, away: false };
   }
