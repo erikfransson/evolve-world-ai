@@ -6,9 +6,9 @@ import { context2d, makeCanvas } from "./groundScene.ts";
 // A soft wash over the floor of a map with food and poison weights, so its regions read at a glance: a murky violet haze where poison is rich, a faint silt-pale tone where
 // food is poor, a bioluminescent green haze where food is plentiful. One small image (a pixel per raster node) drawn scaled up smoothly under the ground and rock.
 
-export const POISON_TINT = { rgb: [118, 70, 160], from: 1, span: 2.5, alpha: 0.2 } as const;
+export const POISON_TINT = { rgb: [150, 70, 150], from: 1, span: 2.5, alpha: 0.16 } as const;
 export const DRY_TINT = { rgb: [150, 138, 100], from: 0.8, span: 0.3, alpha: 0.12 } as const; // applies below `from`
-export const RICH_TINT = { rgb: [40, 200, 140], from: 1.3, span: 0.5, alpha: 0.17 } as const;
+export const RICH_TINT = { rgb: [40, 200, 140], from: 1.3, span: 0.5, alpha: 0.11 } as const;
 
 // The weight above which a tint (not the dry one) is strong enough to see: its wash reaches this alpha. The legend shows a tint row from here.
 const VISIBLE_ALPHA = 0.05;

@@ -16,6 +16,7 @@ import type { View } from "./terrainScene.ts";
 const CORNER = 5; // world units a corner is rounded over, on each side
 const CELLS = [3, 6, 12, 24, 48]; // image resolutions, world units per pixel; the coarsest one with at most PX_PER_CELL screen px per pixel is used
 const PX_PER_CELL = 4;
+const MIN_PX_ACROSS = 24; // pixels across the narrower side of a body's box, at least
 const MAX_CELLS = 700_000; // pixels of one body's image, beyond that the next coarser resolution is used
 const BUDGET_CELLS = 8_000_000; // pixels of images kept over all bodies (32 MB), the least recently used go first
 const BASE: readonly number[] = [52, 68, 73]; // basalt albedo
@@ -128,7 +129,7 @@ function buildRaster(item: Item, cell: number): Raster | null {
     if (d0[k]! > dmax) dmax = d0[k]!;
   }
   const at = (a: Float32Array, x: number, y: number): number => a[Math.min(h - 1, Math.max(0, y)) * w + Math.min(w - 1, Math.max(0, x))]!;
-  boxBlur(d, w, h, Math.round(Math.min(40, Math.max(6, 0.1 * dmax)) / (2.2 * cell))); // the broader the body, the softer its profile, so no creases show along its middle
+  boxBlur(d, w, h, Math.max(2, Math.round(Math.min(40, Math.max(6, 0.1 * dmax)) / (2.2 * cell)))); // at least 2 px, or the pixel steps of a small stone show as ribs // the broader the body, the softer its profile, so no creases show along its middle
   dmax = 0;
   for (let k = 0; k < n; k++) if (d[k]! > dmax) dmax = d[k]!;
   const wd = Math.min(70, Math.max(8, 0.45 * dmax)); // how wide the rounded foot is
@@ -218,8 +219,9 @@ function rasterOf(item: Item, cell: number): Raster | null {
 
 // The resolution for a scale: the coarsest with at most PX_PER_CELL screen px per pixel, coarser still while the body would be too many pixels.
 function cellFor(scale: number, body: RockBody): number {
+  const fine = Math.min(body.x1 - body.x0, body.y1 - body.y0) / MIN_PX_ACROSS; // a small stone keeps a fine image whatever the scale, or its profile turns to wedges
   let cell = CELLS[0]!;
-  for (const c of CELLS) if (c * scale <= PX_PER_CELL) cell = c;
+  for (const c of CELLS) if (c * scale <= PX_PER_CELL && c <= fine) cell = c;
   while (((body.x1 - body.x0) / cell + 6) * ((body.y1 - body.y0) / cell + 6) > MAX_CELLS) cell *= 2;
   return cell;
 }
