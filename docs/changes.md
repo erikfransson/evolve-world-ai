@@ -6,6 +6,20 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+## 0.2.1 (2026-10-16)
+
+### Live World
+- "Add your creature" adds up to 10 copies (1, 2, 3, 5 or 10; was 1 to 3), #42. A visitor may add three full adds back to back (`add.burst` 3), at most 30 creatures per 5 minutes (`add.perVisitor`; per connection until the tunnel's address is checked), 50 for everyone together (`add.perWindow`), and at most 50 visitor-added creatures alive at once (`add.aliveMax`, which replaces the 10% share and the floor of 20; an older overrides file's `add.aliveShare` and `add.aliveFloor` are skipped with a log line). An add past the room is told how many copies still fit. Until the tunnel's visitor address is checked (`LIVE_TRUST_FORWARDED=1`), one client with two connections can take the whole 50 of a window and fill the 50 alive, shutting others out until those creatures die; all of these are admin-tunable, to tighten when traffic grows. Jumping to a creature zooms in 1.5x less close.
+  Release order: the site first, then `./live promote`; a page from before this version shows adding as off against the new server until it is reloaded.
+- Poison is no longer lethal on Live: a bite costs 50 energy (one food's worth); admin-tunable as `world.poisonDamage` (100 or more kills, `./live get` says so).
+- Upgrading a running Live world: a world restored from a 0.2.0 save keeps its saved settings (lethal poison, birth ranges 100-225, 50-110, 5-20, the old starter names); only a fresh world starts with the new values. To bring a running world in line, after the promote: `./live set world.poisonDamage=50 eco.birthEnergyRange=100,500 eco.birthCostRange=50,250 eco.birthCooldownRange=5,40`, `./live rename Pathfinder Explorer` and `./live rename GentleGrazer Grazer` (each should report 10 families, fewer if some died out; add `--force` only if a visitor family already carries the new name). Pages already open show the new poison text after a reload.
+- "Add your creature": birth energy up to 500, cost up to 250, cooldown up to 40 s (the Live world's own ranges, so children drift within them too), and a mutation strength slider (×0.25 to ×4, its family inherits it).
+- The lineage list counts all families of one name as one row (the 10 seeded copies of a starter, a visitor's copies), and lighting it lights all of them. A name a living family carries, or a starter's, is refused for a new add. Admin `rename <from> <to>` (the old name exactly as shown; a new name another living family carries, in any case, is refused unless `--force`). Starters renamed Explorer and Grazer.
+- Legend: grouped (ground, regions, items, creatures) with swatches cut from the map itself and the effect of each, with numbers; the Ecosystem and Trials legends use the same swatches.
+- Folded cards shrink to small chips at the edge, so with everything folded the whole world is in view.
+- Camera: with the side cards' offset (after selecting a creature) every edge of the world can be dragged into view.
+- Ecosystem creatures carry a mutation factor (`mutationScale`, default 1, 0.25 to 4 on insert) that multiplies the mutation std when they have children; children inherit it unchanged. Saves hold it only for creatures that differ from 1, older saves restore as 1. Runs at the default 1 are bit-identical.
+
 ## 0.2.0 (2026-10-15)
 
 ### Live World

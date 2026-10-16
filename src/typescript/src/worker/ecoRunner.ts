@@ -465,7 +465,7 @@ export class EcoRunner {
     this.sendGenome = false;
     return {
       id: m.id, alive: true, x: s.x, y: s.y, heading: s.heading, energy: s.energy, age: m.ageTicks * eco.config.dt,
-      children: m.children, eaten: m.eaten, kills: m.kills, species: m.species, depth: m.depth, parentId: m.parentId, hue: m.hue, founderId: m.founderId, founderPool: eco.lineages.fromPool(m.founderId), founderHue: eco.lineages.colour(m.founderId), plan: { ...c.plan, hiddenLayers: c.plan.hiddenLayers.slice() }, upkeep: c.upkeep, drain: c.drain, birthEnergy: m.birth.energy, birthCost: m.birth.cost, birthCooldown: m.birth.cooldown, ...sc, genome,
+      children: m.children, eaten: m.eaten, kills: m.kills, species: m.species, depth: m.depth, parentId: m.parentId, hue: m.hue, founderId: m.founderId, founderPool: eco.lineages.fromPool(m.founderId), founderHue: eco.lineages.colour(m.founderId), plan: { ...c.plan, hiddenLayers: c.plan.hiddenLayers.slice() }, upkeep: c.upkeep, drain: c.drain, birthEnergy: m.birth.energy, birthCost: m.birth.cost, birthCooldown: m.birth.cooldown, mutationScale: m.mutationScale, ...sc, genome,
     };
   }
 }

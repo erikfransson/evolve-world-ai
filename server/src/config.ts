@@ -3,6 +3,7 @@ import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { itemsPerDensity } from "../../src/typescript/src/sim/config.ts";
 import { MAX_ITEM_SLOTS, creatureFrameBytes, itemsBytes } from "../../src/typescript/src/live/protocol.ts";
 import { MAX_FOUNDERS } from "../../src/typescript/src/live/founders.ts";
+import { LIVE_BIRTH, MAX_COPIES } from "../../src/typescript/src/live/add.ts";
 
 // Also the admin's upper limit (tunables.ts). At 3000 a creature frame is 57 kB: room() lets in about 23 to 38 viewers at the full
 // population (fewer while items change fast), a save is about 29 MB of JSON, and a save and admin load peak near 720 MB (2500: 687 MB, 5000: 857 MB).
@@ -17,6 +18,7 @@ liveConfig.world.map = "inland-sea";
 liveConfig.world.width = 30000;
 liveConfig.world.height = 18750;
 liveConfig.world.foodEnergy = 50;
+liveConfig.world.poisonDamage = 50; // a bite costs one food's worth, not the life (POISON_LETHAL is 100); see docs/tuning-notes.md
 liveConfig.world.poisonDensity = 0.01; // start counts stay at or below the caps (foodDensity 0.5 is 28 125 items)
 liveConfig.eco.initialPopulation = 0; // a fresh world is seeded with the founders file instead (founders.ts)
 liveConfig.eco.foodRegrow = 0.003;
@@ -29,6 +31,9 @@ liveConfig.eco.birthReserve = 100; // births stop 100 below the cap, so visitors
 liveConfig.eco.seasons = true;
 liveConfig.eco.yearMinutes = 60;
 liveConfig.eco.winterFood = 0.4;
+liveConfig.eco.birthEnergyRange = [...LIVE_BIRTH.energy]; // wider than the Ecosystem's, for visitors' adds and their descendants' drift
+liveConfig.eco.birthCostRange = [...LIVE_BIRTH.cost];
+liveConfig.eco.birthCooldownRange = [...LIVE_BIRTH.cooldown];
 liveConfig.eco.hueDrift = 3; // degrees (Ecosystem 8): families keep their colour longer, so the view reads as lineages
 
 // A fresh world gets this many copies of each founder in the founders file, at random open spots.
@@ -68,13 +73,13 @@ export const LIVE = {
   reseed: 0, // 1: an extinct world starts over with a new seed; 0 (Erik's choice): it stays empty until visitors add creatures
   // Visitor adds ("Add your creature"), all admin-tunable as "add.<field>" (tunables.ts); adds.ts enforces them.
   add: {
-    perWindow: 20, // creatures added by all visitors together per window
+    perWindow: 50, // creatures added by all visitors together per window (Erik): five full adds every 5 minutes
     windowS: 300,
-    maxCopies: 3, // copies per add (the protocol allows at most 3)
-    aliveShare: 0.1, // added creatures alive (the inserted ones, not their children) at most this share of the population
-    aliveFloor: 20, // ... or at most this many, whichever is more, so an empty or small world can still be populated
-    perVisitor: 3, // creatures per visitor address per window; needs trustForwardedFor
-    socketEveryS: 10, // one add per this many seconds on one connection (burst 2); faster is refused with retryS, and 3 strikes (one back per minute) cut the connection
+    maxCopies: MAX_COPIES, // copies per add (10); each copy is one insert and one free-spot search of at most 40 tries
+    aliveMax: 50, // visitor-added creatures alive at once (the inserted ones, not their children), whatever the population (Erik)
+    perVisitor: 30, // creatures per visitor per window, three full adds: per address with trustForwardedFor (then at least 20 of perWindow stay for others), else per connection, where one client with two connections can take the whole window and fill aliveMax
+    burst: 3, // adds a connection may send back to back (three full adds without waiting), then one per socketEveryS
+    socketEveryS: 10, // one add per this many seconds on one connection after the burst; faster is refused with retryS, and 3 strikes (one back per minute) cut the connection
     minSpeed: 0.5, // simulated seconds per real second: below this the world counts as busy and adds wait
     startEnergy: 300, // energy an added creature starts with (the visitor never sets it)
     birthHoldS: 60, // simulated seconds after insertion before an added creature may first give birth; its children start without it

@@ -1,6 +1,9 @@
 import type { EngineConfig } from "../sim/config.ts";
 import { mapSpec } from "../sim/maps/index.ts";
 import { POISON_TINT, RICH_TINT, visibleFrom } from "./mapTint.ts";
+import { FAST_FACTOR, SLOW_FACTOR } from "../sim/terrain.ts";
+import type { Terrain } from "../sim/terrain.ts";
+import { mapSwatch } from "./mapSwatch.ts";
 
 // Legend rows for the map (terrain.ts), shared by the Trials and Ecosystem pages. A row shows only while the world has that kind.
 export const SWATCHES = {
@@ -12,15 +15,30 @@ export const SWATCHES = {
 };
 
 const ROWS = [
-  { id: "legendRock", swatch: SWATCHES.rock, label: "Rock: creatures bounce off, rays stop" },
-  { id: "legendSlow", swatch: SWATCHES.slow, label: "Mud: half speed" },
-  { id: "legendFast", swatch: SWATCHES.fast, label: "Firm ground: 175% speed" },
-  { id: "legendPoison", swatch: SWATCHES.poison, label: "Purple tint: poisoned region" },
-  { id: "legendRich", swatch: SWATCHES.rich, label: "Green tint: rich food region" },
+  { id: "legendRock", kind: "rock", swatch: SWATCHES.rock, label: "Rock: creatures bounce off, rays stop" },
+  { id: "legendSlow", kind: "mud", swatch: SWATCHES.slow, label: `Mud: half speed (×${SLOW_FACTOR})` },
+  { id: "legendFast", kind: "firm", swatch: SWATCHES.fast, label: `Firm ground: faster (×${FAST_FACTOR})` },
+  { id: "legendPoison", kind: "poison", swatch: SWATCHES.poison, label: "Purple wash: poison grows here" },
+  { id: "legendRich", kind: "rich", swatch: SWATCHES.rich, label: "Green wash: more food grows here" },
 ] as const;
 
 // The rows as list items, hidden until syncTerrainLegend shows them.
-export const terrainLegendHtml = (): string => ROWS.map((r) => `<li id="${r.id}" hidden><svg viewBox="0 0 20 20" aria-hidden="true">${r.swatch}</svg>${r.label}</li>`).join("");
+export const terrainLegendHtml = (): string => ROWS.map((r) => `<li id="${r.id}" hidden><span class="lg-tile lg-small"><svg viewBox="0 0 20 20" aria-hidden="true">${r.swatch}</svg></span>${r.label}</li>`).join("");
+
+// Puts swatches cut from the world itself (ui/mapSwatch.ts) in the rows, so mud in the legend looks like the mud on the map; the drawn
+// icons stay where the world has none of a kind, or before it is built. Repaints only for a new Terrain.
+let painted: Terrain | null = null;
+export function paintTerrainLegend(t: Terrain | null): void {
+  if (!t || t === painted || typeof document === "undefined") return;
+  painted = t;
+  for (const r of ROWS) {
+    const tile = document.querySelector<HTMLElement>(`#${r.id} .lg-tile`);
+    if (!tile) continue;
+    const c = mapSwatch(t, r.kind, 30, 20);
+    if (c) tile.replaceChildren(c);
+    else tile.innerHTML = `<svg viewBox="0 0 20 20" aria-hidden="true">${r.swatch}</svg>`; // this world has none: the drawn icon, not the last world's swatch
+  }
+}
 
 // Which rows the world has, in ROWS order. A hand-designed map is read from its spec (the densities are 0 there), the random map from its densities.
 export function terrainKinds(world: Pick<EngineConfig["world"], "stoneDensity" | "ridgeDensity" | "slowDensity" | "fastDensity" | "map">): boolean[] {

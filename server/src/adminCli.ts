@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { WebSocket } from "ws";
 
-// Usage: npm run admin -- status | get | pause | resume | save | saves | load <name> | blank-name <name> | stop | speed <x> | set key=value [key=value ...]
+// Usage: npm run admin -- status | get | pause | resume | save | saves | load <name> | blank-name <name> | rename <from> <to> [--force] | stop | speed <x> | set key=value [key=value ...]
 const port = Number(process.env.LIVE_ADMIN_PORT ?? 8788);
 const stateDir = process.env.LIVE_STATE_DIR ?? fileURLToPath(new URL("../state", import.meta.url));
 const TIMEOUT_MS = 60_000; // a save or load of a big world takes seconds
@@ -17,11 +17,12 @@ function request(): object {
   if (cmd === "saves") return { t: "list-saves" };
   if (cmd === "load" && args.length === 1) return { t: "load-save", name: args[0] };
   if (cmd === "blank-name" && args.length === 1) return { t: "blank-name", name: args[0] };
+  if (cmd === "rename" && (args.length === 2 || (args.length === 3 && args[2] === "--force"))) return { t: "rename", name: args[0], to: args[1], force: args.length === 3 };
   if (cmd === "speed" && args.length === 1) return { t: "set-config", changes: { speed: parse(args[0]!) } };
   if (cmd === "set" && args.length > 0 && args.every((a) => a.includes("="))) {
     return { t: "set-config", changes: Object.fromEntries(args.map((a) => [a.slice(0, a.indexOf("=")), parse(a.slice(a.indexOf("=") + 1))])) };
   }
-  console.error("usage: npm run admin -- status | get | pause | resume | save | saves | load <name> | blank-name <name> | stop | speed <x> | set key=value [key=value ...]");
+  console.error("usage: npm run admin -- status | get | pause | resume | save | saves | load <name> | blank-name <name> | rename <from> <to> [--force] | stop | speed <x> | set key=value [key=value ...]");
   return process.exit(2);
 }
 
@@ -31,7 +32,8 @@ function show(msg: { t: string; [k: string]: unknown }): void {
     console.log(msg.paused ? "paused" : "running");
     const limits = msg.limits as Record<string, { min: number; max: number }>;
     const shown = cmd === "get" ? Object.keys(values) : cmd === "set" ? args.map((a) => a.split("=")[0]!) : cmd === "speed" ? ["speed"] : [];
-    for (const k of shown) console.log(`${k.padEnd(24)} ${String(values[k]).padEnd(8)} (${limits[k]!.min} to ${limits[k]!.max ?? "any"})`);
+    const note = (k: string): string => (k === "world.poisonDamage" ? `  ${Number(values[k]) >= 100 ? "lethal: one bite kills" : "energy a bite takes; 100 or more kills"}` : "");
+    for (const k of shown) console.log(`${k.padEnd(24)} ${String(values[k]).padEnd(8)} (${limits[k]!.min} to ${limits[k]!.max ?? "any"})${note(k)}`);
   } else if (msg.t === "saves") {
     const saves = msg.saves as { name: string; bytes: number; population?: number; tick?: number }[];
     if (saves.length === 0) console.log("no saves");

@@ -38,7 +38,7 @@ interface Viewer {
   selects: TokenBucket;
   historySent: boolean;
   pace: AddPace; // the connection's add rate and strikes (adds.ts)
-  visitor: string | null; // address key for the per-visitor add cap, null when unknown
+  visitor: string; // key for the per-visitor add cap: the address when trusted, else this connection
   adding: boolean; // an add waits for the tick in flight
 }
 
@@ -85,6 +85,7 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
   const connectBytes = new TokenBucket(limits.connectBytesPerSecond, Math.max(limits.connectBytesPerSecond, limits.connectBurstBytes)); // full item sets and history for new or lagging viewers
   const budget = frameBudget(limits);
   const policy = new AddPolicy(limits, gate);
+  let connections = 0; // numbers the connections for their own visitor key
   const sent = { frames: 0, items: 0, details: 0, text: 0 };
   let lastCreatures: Uint8Array | null = null;
   let lastFrameNo = -1;
@@ -130,7 +131,7 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
     send(ws, h, "text");
   };
 
-  // An add: per connection a burst of 2, then one per add.socketEveryS (checked in the message handler); parsed only while the global
+  // An add: per connection a burst of add.burst, then one per add.socketEveryS (checked in the message handler); parsed only while the global
   // attempt rate allows; inserted between ticks if the caps (adds.ts) allow. Every outcome gets an added or refused reply.
   const add = (ws: WebSocket, v: Viewer, text: string): void => {
     const reply = (m: Added | Refused): void => {
@@ -148,7 +149,7 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
         const no = policy.gate.check(v.visitor, req.copies, { aliveAdded: live.aliveAdded(), population: e.population, speed: live.speedForAdds(), paused: live.paused });
         if (no) return no;
         const r = live.addCreatures(req);
-        if ("reason" in r) return { t: "refused", reason: r.reason, retryS: 10 } satisfies Refused;
+        if ("reason" in r) return { t: "refused", reason: r.reason, ...(r.now === false ? {} : { retryS: 10 }) } satisfies Refused;
         policy.gate.record(v.visitor, r.ids.length);
         return { t: "added", ids: r.ids, name: req.name } satisfies Added;
       })
@@ -174,7 +175,9 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
       selects: new TokenBucket(limits.selectsPerSecond, limits.selectBurst),
       historySent: false,
       pace: policy.connection(),
-      visitor: visitorKey(req.headers["x-forwarded-for"], trustForwarded),
+      // Without a trusted address each connection counts as a visitor of its own (perVisitor a window); a new connection costs an
+      // accept (accepts per second) and a hello wait.
+      visitor: visitorKey(req.headers["x-forwarded-for"], trustForwarded) ?? `conn:${++connections}`,
       adding: false,
     };
     viewers.set(ws, v);

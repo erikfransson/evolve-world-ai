@@ -1,22 +1,27 @@
 // "Add your creature" on the wire (Live World protocol 4, see protocol.ts), shared by the page and the server.
 //
-// Client to server, text: {"t":"add","plan":Plan,"genome":<base64>,"birth":{"energy","cost","cooldown"},"name":<1-16 letters or digits>,"hue":<0..360>,"copies":<1..3>}
+// Client to server, text: {"t":"add","plan":Plan,"genome":<base64>,"birth":{"energy","cost","cooldown"},"name":<1-16 letters or digits>,"hue":<0..360>,"copies":<1..10>[,"mutationScale":<0.25..4>]}
 //   plan: exactly the six creature-file plan fields within PLAN_LIMITS. genome: little-endian float32 weights in the forager (Ecosystem)
 //   layout for the plan, base64, every weight finite and within the creature-file bound. Exact keys everywhere; anything else is refused.
 // Server to client, text: Added {"t":"added","ids":[...],"name"} or Refused {"t":"refused","reason","retryS"?}.
 
+import { MUTATION_SCALE_RANGE } from "../sim/ecoInsert.ts";
 import { PLAN_LIMITS, checkGenome, checkPlan } from "../sim/rl/validate.ts";
 import { genomeLengthFor } from "../sim/rl/creatureFile.ts";
 import type { BodyPlan } from "../sim/sensors.ts";
 
 export const NAME_MAX = 16;
 export const NAME_RE = /^[A-Za-z0-9]{1,16}$/;
-export const MAX_COPIES = 3;
+export const MAX_COPIES = 10; // copies per add the protocol allows; the server's add.maxCopies may hold it lower
 const L = PLAN_LIMITS;
 // The largest forager genome PLAN_LIMITS allow, and the add message that carries it (base64 of 4 bytes a weight, plus room for the rest).
 export const MAX_ADD_GENOME = genomeLengthFor("forager", { rayCount: L.rayCount[1], raySpread: 1, rayLength: 100, hiddenLayers: Array<number>(L.layers[1]).fill(L.neurons[1]), memoryShort: L.memory[1], memoryLong: L.memory[1] });
 export const MAX_ADD_BYTES = Math.ceil((MAX_ADD_GENOME * 4) / 3) * 4 + 1024;
 export const ADD_PREFIX = '{"t":"add",'; // encodeAdd puts t first; the server reads no longer message that does not start so
+
+// The Live World's birth trait ranges (wider than the Ecosystem's 100-225, 50-110, 5-20), so a visitor can make a creature that waits
+// for far more energy before a child. The server's world uses them (config.ts), the add panel falls back to them before the hello.
+export const LIVE_BIRTH = { energy: [100, 500], cost: [50, 250], cooldown: [5, 40] } as const satisfies Record<string, readonly [number, number]>;
 
 export interface Birth {
   energy: number;
@@ -31,12 +36,13 @@ export interface AddRequest {
   name: string;
   hue: number;
   copies: number;
+  mutationScale?: number; // how strongly its descendants' brains change, MUTATION_SCALE_RANGE; missing is 1 (a page from before 0.2.1)
 }
 
 // What the server allows, sent in the hello (null while adding is off): copies, birth trait ranges and the costs behind energy per second.
 export interface AddRules {
   maxCopies: number;
-  everyS: number; // a connection may add once per this many seconds (after a burst of 2); faster gets it cut off
+  everyS: number; // a connection may add once per this many seconds (after a burst of the server's add.burst); one sent before a refusal's retryS is a strike, and strikes cut it off
   birth: { energy: [number, number]; cost: [number, number]; cooldown: [number, number] };
   costs: { living: number; ray: number; neuron: number }; // planUpkeep's livingCost, rayCost (per 100 units of ray), neuronCost
 }
@@ -103,7 +109,7 @@ function fromBase64(s: unknown, n: number): Float32Array | null {
 
 export function encodeAdd(r: AddRequest): string {
   const plan = { rayCount: r.plan.rayCount, raySpread: r.plan.raySpread, rayLength: r.plan.rayLength, hiddenLayers: r.plan.hiddenLayers.slice(), memoryShort: r.plan.memoryShort, memoryLong: r.plan.memoryLong };
-  return JSON.stringify({ t: "add", plan, genome: toBase64(r.genome), birth: { energy: r.birth.energy, cost: r.birth.cost, cooldown: r.birth.cooldown }, name: r.name, hue: r.hue, copies: r.copies });
+  return JSON.stringify({ t: "add", plan, genome: toBase64(r.genome), birth: { energy: r.birth.energy, cost: r.birth.cost, cooldown: r.birth.cooldown }, name: r.name, hue: r.hue, copies: r.copies, ...(r.mutationScale !== undefined ? { mutationScale: r.mutationScale } : {}) });
 }
 
 const isPlain = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v) && Object.getPrototypeOf(v) === Object.prototype;
@@ -125,7 +131,8 @@ export function parseAdd(data: string, rules: AddRules): AddRequest | string {
   } catch {
     return "not JSON";
   }
-  if (!isPlain(m) || !exactKeys(m, ["t", "plan", "genome", "birth", "name", "hue", "copies"]) || m.t !== "add") return "wrong fields";
+  const keys = ["t", "plan", "genome", "birth", "name", "hue", "copies"];
+  if (!isPlain(m) || !(exactKeys(m, keys) || exactKeys(m, [...keys, "mutationScale"])) || m.t !== "add") return "wrong fields";
   if (!isPlain(m.plan) || !exactKeys(m.plan, PLAN_KEYS)) return "wrong plan fields";
   if (!Array.isArray(m.plan.hiddenLayers) || m.plan.hiddenLayers.length > L.layers[1]) return "hiddenLayers must be 1 to 4 layers of 1 to 32";
   const plan = checkPlan(m.plan);
@@ -142,7 +149,8 @@ export function parseAdd(data: string, rules: AddRules): AddRequest | string {
   if (!validName(m.name)) return `name must be 1 to ${NAME_MAX} letters or digits`;
   if (!inRange(m.hue, [0, 360])) return "hue must be 0 to 360";
   if (!Number.isInteger(m.copies) || !inRange(m.copies, [1, Math.min(MAX_COPIES, rules.maxCopies)])) return `copies must be 1 to ${Math.min(MAX_COPIES, rules.maxCopies)}`;
-  return { plan, genome: Float32Array.from(genome), birth: { energy: m.birth.energy, cost: m.birth.cost, cooldown: m.birth.cooldown }, name: m.name, hue: m.hue, copies: m.copies };
+  if (m.mutationScale !== undefined && !inRange(m.mutationScale, MUTATION_SCALE_RANGE)) return `mutationScale must be a number from ${MUTATION_SCALE_RANGE[0]} to ${MUTATION_SCALE_RANGE[1]}`;
+  return { plan, genome: Float32Array.from(genome), birth: { energy: m.birth.energy, cost: m.birth.cost, cooldown: m.birth.cooldown }, name: m.name, hue: m.hue, copies: m.copies, ...(m.mutationScale !== undefined ? { mutationScale: m.mutationScale as number } : {}) };
 }
 
 // Replies from the wire with sane values, or null.

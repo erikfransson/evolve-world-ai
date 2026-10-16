@@ -3,6 +3,7 @@ import { ITEM_RADIUS_RANGE, overrideConfig } from "./config.ts";
 import type { DeepPartial } from "./config.ts";
 import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "./ecoConfig.ts";
 import type { EcoConfig } from "./ecoConfig.ts";
+import { MUTATION_SCALE_RANGE } from "./ecoInsert.ts";
 import { Ecosystem } from "./ecosystem.ts";
 import type { EcoCore, MemberRecord } from "./ecosystem.ts";
 import { mapSpec, mapVersion } from "./maps/index.ts";
@@ -35,6 +36,7 @@ export interface EcoState {
     plans: number[][]; // per creature: rayCount, raySpread, rayLength, memoryShort, memoryLong, genome length, ...hidden layers
     genomes: string; // float32, all creatures one after the other
     memory: string; // float64, the same
+    mutationScales?: [number, number][]; // [position in the list, mutationScale] of the creatures whose scale is not 1; absent when all are 1
   };
 }
 
@@ -88,6 +90,10 @@ export function saveState(eco: Ecosystem): EcoState {
     u += c.memory.length;
   });
   const w = (eco.world as World).snapshot();
+  const mutationScales: [number, number][] = [];
+  members.forEach((m, i) => {
+    if (m.mutationScale !== 1) mutationScales.push([i, m.mutationScale]);
+  });
   return {
     version: STATE_VERSION,
     ...(config.world.map ? { mapVersion: mapVersion(config.world.map) } : {}),
@@ -95,7 +101,7 @@ export function saveState(eco: Ecosystem): EcoState {
     core: eco.exportCore(),
     items: { xs: pack(w.xs), ys: pack(w.ys), kinds: pack(w.kinds), nextItem: pack(w.nextItem), cellHead: pack(w.cellHead), freeSlots: pack(w.freeSlots), freeCount: w.freeCount },
     lineages: eco.lineageTable.toState(),
-    creatures: { count: n, scalars: pack(scalars), plans, genomes: pack(genomes), memory: pack(memory) },
+    creatures: { count: n, scalars: pack(scalars), plans, genomes: pack(genomes), memory: pack(memory), ...(mutationScales.length ? { mutationScales } : {}) },
   };
 }
 
@@ -123,6 +129,21 @@ function allFinite(value: unknown, path: string): void {
     if (!Number.isFinite(value)) invalid(`${path} is not a finite number`);
   } else if (Array.isArray(value)) value.forEach((v, i) => allFinite(v, `${path}[${i}]`));
   else if (isObject(value)) for (const [k, v] of Object.entries(value)) allFinite(v, `${path}.${k}`);
+}
+
+// The saved mutation scales as a map from list position; an absent column (older saves) is all 1.
+function checkMutationScales(raw: unknown, n: number): Map<number, number> {
+  const scales = new Map<number, number>();
+  if (raw === undefined) return scales;
+  if (!Array.isArray(raw) || raw.length > n) return invalid("creatures.mutationScales is malformed");
+  for (const pair of raw) {
+    if (!Array.isArray(pair) || pair.length !== 2) return invalid("creatures.mutationScales is malformed");
+    const at = whole(pair[0], 0, n - 1, "mutationScales position");
+    const v: unknown = pair[1];
+    if (typeof v !== "number" || !(v >= MUTATION_SCALE_RANGE[0] && v <= MUTATION_SCALE_RANGE[1])) return invalid(`creature ${at} has a mutation scale outside ${MUTATION_SCALE_RANGE[0]} to ${MUTATION_SCALE_RANGE[1]}`);
+    scales.set(at, v);
+  }
+  return scales;
 }
 
 // The lineage table's columns and late rows hold the types Lineages.load expects: whole counts, finite hues, species in range, names as short plain text.
@@ -298,6 +319,7 @@ export function restoreState(state: EcoState, pool: readonly PoolEntry[] | null 
   const { plans, genomes } = currentGenomes(state.version, config, cr.plans as number[][], saved);
   const memory = unpack(Float64Array, cr.memory, memoryTotal, "creatures.memory");
   if (!memory.every(Number.isFinite)) invalid("a genome or memory holds a number that is not finite");
+  const scales = checkMutationScales(cr.mutationScales, n);
   const at = (name: (typeof SCALARS)[number]): number => SCALARS.indexOf(name);
   const ids = new Set<number>();
   const perFounder = new Map<number, number>();
@@ -344,7 +366,7 @@ export function restoreState(state: EcoState, pool: readonly PoolEntry[] | null 
     const record: MemberRecord = {
       id: v("id"), parentId: v("parentId"), depth: v("depth"), birthTick: v("birthTick"), children: v("children"), eaten: v("eaten"), kills: v("kills"),
       species: v("species"), hue: v("hue"), founderId: v("founderId"), lastBirthTick: v("lastBirthTick"),
-      birthEnergy: v("birthEnergy"), birthCost: v("birthCost"), birthCooldown: v("birthCooldown"), cooldownTicks: v("cooldownTicks"),
+      birthEnergy: v("birthEnergy"), birthCost: v("birthCost"), birthCooldown: v("birthCooldown"), cooldownTicks: v("cooldownTicks"), mutationScale: scales.get(i),
       x: v("x"), y: v("y"), heading: v("heading"), vx: v("vx"), vy: v("vy"), turnRate: v("turnRate"), energy: v("energy"), ticksAlive: v("ticksAlive"), cos: v("cos"), sin: v("sin"),
       plan: { rayCount: p[0]!, raySpread: p[1]!, rayLength: p[2]!, memoryShort: p[3]!, memoryLong: p[4]!, hiddenLayers: p.slice(6) },
       genome: genomes.subarray(g, g + p[5]!),

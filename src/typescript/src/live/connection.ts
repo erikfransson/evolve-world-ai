@@ -1,4 +1,4 @@
-import { HISTORY_FIELDS, LINEAGE_FIELDS, LINEAGE_TOP, MAX_HISTORY, MAX_ITEM_SLOTS, MAX_LINEAGE_HISTORY, MAX_RECORDS, PING, PROTOCOL_VERSION, RECORD_BOARDS, decodeCreatures, decodeDelta, decodeItems, frameType, MSG_CREATURES, MSG_DELTA, MSG_DETAIL, MSG_GENOME, MSG_ITEMS } from "./protocol.ts";
+import { HISTORY_FIELDS, LINEAGE_FIELDS, LINEAGE_TOP, MAX_HISTORY, MAX_ITEM_SLOTS, MAX_LINEAGE_HISTORY, MAX_RECORDS, PING, PROTOCOL_VERSION, RECORD_BOARDS, decodeCreatures, decodeDelta, decodeItems, frameType, MSG_CREATURES, MSG_DELTA, MSG_DETAIL, MSG_GENOME, MSG_ITEMS, MAX_GROUP_FOUNDERS } from "./protocol.ts";
 import type { CreatureFrame, Delta, Hello, History, ItemsSnapshot, ServerText, Stats, WireRecord } from "./protocol.ts";
 import { decodeDetail, decodeGenome } from "./detail.ts";
 import type { Detail } from "./detail.ts";
@@ -70,7 +70,8 @@ export function cleanStats(s: Stats): Stats {
     out.lineages = s.lineages.slice(0, LINEAGE_TOP).filter(isObj).map((l) => {
       const c = Math.min(left, count(l.count));
       left -= c;
-      return { founder: id(l.founder), hue: n(l.hue), pool: l.pool === true, count: c, ...(validName(l.name) ? { name: l.name, ...(l.starter === true ? { starter: true } : {}) } : {}) };
+      const others = Array.isArray(l.founders) ? l.founders.slice(0, MAX_GROUP_FOUNDERS).filter((f) => Number.isSafeInteger(f) && (f as number) >= 0) as number[] : [];
+      return { founder: id(l.founder), hue: n(l.hue), pool: l.pool === true, count: c, ...(validName(l.name) ? { name: l.name, ...(l.starter === true ? { starter: true } : {}) } : {}), ...(others.length ? { founders: others } : {}) };
     });
   }
   if (Array.isArray(s.records)) {
@@ -101,7 +102,10 @@ export function cleanHello(h: Hello): Hello | null {
   const ok = isObj(h.world) && n(h.world.width) > 0 && n(h.world.height) > 0 && n(h.radius) > 0 && n(h.dt) > 0 && n(h.fullEnergy) > 0 && int(h.itemSlots, 0, MAX_ITEM_SLOTS);
   const s: Record<string, unknown> = isObj(h.summary) ? h.summary : {};
   const seedCopies = int(s.seedCopies, 1, 100) ? (s.seedCopies as number) : undefined;
-  const summary = { initialPopulation: count(s.initialPopulation), maxPopulation: count(s.maxPopulation), collisionDamage: s.collisionDamage === true, seasons: s.seasons === true, ...(seedCopies ? { seedCopies } : {}) };
+  const energy = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 10_000 ? v : undefined);
+  const foodEnergy = energy(s.foodEnergy);
+  const poisonDamage = energy(s.poisonDamage);
+  const summary = { initialPopulation: count(s.initialPopulation), maxPopulation: count(s.maxPopulation), collisionDamage: s.collisionDamage === true, seasons: s.seasons === true, ...(seedCopies ? { seedCopies } : {}), ...(foodEnergy !== undefined ? { foodEnergy } : {}), ...(poisonDamage !== undefined ? { poisonDamage } : {}) };
   return ok ? { ...h, summary, add: cleanAddRules(h.add), map: cleanMap(h.map) } : null;
 }
 

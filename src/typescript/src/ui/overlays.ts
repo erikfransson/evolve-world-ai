@@ -18,6 +18,7 @@ export function initCard(root: HTMLElement, storageKey: string, startMinimised: 
 
   const apply = (): void => {
     body.hidden = !expanded;
+    root.classList.toggle("min", !expanded); // a folded card shrinks to its title chip (style.css), so it covers little of the world
     button.textContent = expanded ? "−" : "+";
     button.setAttribute("aria-expanded", String(expanded));
     const verb = expanded ? "Minimise" : "Maximise";

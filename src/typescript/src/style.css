@@ -153,6 +153,10 @@ fieldset:disabled .tip { cursor: help; }
 .ov[hidden] { display: none; }
 .ov-stack { position: absolute; z-index: 1; top: 10px; left: 10px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; max-width: calc(100% - 20px); max-height: calc(100% - 20px); overflow-y: auto; scrollbar-width: none; pointer-events: none; }
 .ov-stack > .ov { position: static; flex: none; max-width: 100%; pointer-events: auto; }
+/* A folded card is a small chip with its title and the + to open it again, not a full-width bar over the world. */
+.ov-stack > .ov.min { width: auto; border-radius: 999px; }
+.ov.min .ov-head { gap: 0.25rem; padding: 0.1rem 0.15rem 0.1rem 0.65rem; }
+.ov.min .ov-head h2 { font-size: 0.64rem; }
 .ov-head { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; padding: 0.25rem 0.3rem 0.25rem 0.7rem; }
 .ov-head h2 { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.09em; color: var(--accent); }
 .ov-toggle { width: 1.5rem; height: 1.5rem; padding: 0; display: grid; place-items: center; background: transparent; border: 1px solid transparent; border-radius: 6px; color: var(--muted); font-size: 1rem; line-height: 1; }
@@ -162,6 +166,8 @@ fieldset:disabled .tip { cursor: help; }
 .legend li { display: flex; align-items: center; gap: 0.45em; }
 .legend li[hidden] { display: none; }
 .legend svg { flex: none; width: 1.1em; height: 1.1em; }
+.legend .lg-small { flex: none; display: grid; place-items: center; width: 30px; height: 20px; border-radius: 4px; overflow: hidden; background: #10291f; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1); } /* a swatch cut from the map (ui/mapSwatch.ts), or the drawn icon until then */
+.legend .lg-small canvas { display: block; width: 30px; height: 20px; }
 .ov-legend { background: var(--card); } /* solid, so the world border does not show through */
 .ov-brain { background: color-mix(in srgb, var(--card) 95%, transparent); }
 .ov-brain .ov-body { padding: 0 0.4rem 0.4rem; }
@@ -189,6 +195,7 @@ fieldset:disabled .tip { cursor: help; }
   .note { top: calc(37.5cqw - 0.7em); }
   .ov-stack { position: static; max-width: none; max-height: none; overflow: visible; align-items: stretch; pointer-events: auto; }
   .ov-stack > .ov { background: var(--card); backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .ov-stack > .ov.min { width: auto; border-radius: 12px; } /* below the world on a phone: a full-width row, as before */
   .ov-legend .ov-head { display: none; }
   .ov-legend .ov-body[hidden] { display: flex; }
   .legend { flex-direction: row; flex-wrap: wrap; gap: 0.3rem 0.9rem; padding: 0.5rem 0.7rem; font-size: 12px; }

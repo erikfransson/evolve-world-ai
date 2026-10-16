@@ -70,7 +70,9 @@ export interface Hello {
   frameHz: number;
   dt: number; // simulated seconds per tick
   itemSlots: number; // item slot capacity, at most MAX_ITEM_SLOTS
-  summary: { initialPopulation: number; maxPopulation: number; collisionDamage: boolean; seasons: boolean; seedCopies?: number }; // seedCopies: a fresh world starts with this many of each starter founder
+  // seedCopies: a fresh world starts with this many of each starter founder. foodEnergy, poisonDamage: energy a bite of each gives or
+  // takes (poisonDamage POISON_LETHAL or more kills), for the legend.
+  summary: { initialPopulation: number; maxPopulation: number; collisionDamage: boolean; seasons: boolean; seedCopies?: number; foodEnergy?: number; poisonDamage?: number };
   maxViewers: number;
   add: AddRules | null; // what an add may ask for, null while adding is off
   map: WireMap; // what the page's info section says about the ground
@@ -105,7 +107,9 @@ export interface WireLineage {
   count: number;
   name?: string; // the name an added founder was given (letters and digits), absent for none
   starter?: boolean; // a starter founder the world was seeded with, not a visitor's add
+  founders?: number[]; // the other founders of the same name counted in this row (the seeded copies of a starter), at most MAX_GROUP_FOUNDERS
 }
+export const MAX_GROUP_FOUNDERS = 32;
 
 export type RecordBoard = "age" | "children" | "eaten";
 export const RECORD_BOARDS: readonly RecordBoard[] = ["age", "children", "eaten"];

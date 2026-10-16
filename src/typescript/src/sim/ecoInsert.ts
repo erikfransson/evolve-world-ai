@@ -15,6 +15,7 @@ export const MAX_INSERT_LAYERS = PLAN_LIMITS.layers[1];
 export const MAX_INSERT_NEURONS = PLAN_LIMITS.neurons[1];
 export const MAX_INSERT_ENERGY = 100000;
 export const MAX_NAME_LENGTH = 24;
+export const MUTATION_SCALE_RANGE = [0.25, 4] as const; // what an inserted creature's mutationScale may be
 
 export interface InsertSpec {
   genome: ArrayLike<number>; // sized for plan
@@ -26,6 +27,7 @@ export interface InsertSpec {
   name: string; // short tag of the new lineage
   heading?: number; // default 0
   energy?: number; // default the species' start energy
+  mutationScale?: number; // default 1: multiplies the mutation std of its descendants' genomes, within MUTATION_SCALE_RANGE
   birth?: Partial<BirthTraits>; // a missing trait takes the middle of the species' range (log scale, linear for a range from 0); all are clamped into the range
 }
 export type InsertResult = { ok: true; id: number } | { ok: false; reason: string };
@@ -41,7 +43,7 @@ export interface InsertWorld {
   population: number;
   terrain: Terrain;
 }
-export type InsertCheck = { ok: true; genome: Float32Array; sp: number; heading: number; energy: number } | { ok: false; reason: string };
+export type InsertCheck = { ok: true; genome: Float32Array; sp: number; heading: number; energy: number; mutationScale: number } | { ok: false; reason: string };
 
 // Checks a runtime insert without changing anything; on success the birth traits of the newcomer are in traits and its genome is copied.
 export function checkInsert(spec: InsertSpec, w: InsertWorld, traits: BirthTraits): InsertCheck {
@@ -65,6 +67,8 @@ export function checkInsert(spec: InsertSpec, w: InsertWorld, traits: BirthTrait
   const energy = spec.energy ?? w.species[sp]!.startEnergy;
   if (!finite(energy) || energy <= 0 || energy > MAX_INSERT_ENERGY) return bad(`energy must be above 0 and at most ${MAX_INSERT_ENERGY}`);
   if (typeof spec.name !== "string" || spec.name.length > MAX_NAME_LENGTH || /[\u0000-\u001f\u007f]/.test(spec.name)) return bad(`name must be text of at most ${MAX_NAME_LENGTH} characters without control characters`);
+  const mutationScale = spec.mutationScale ?? 1;
+  if (!finite(mutationScale) || mutationScale < MUTATION_SCALE_RANGE[0] || mutationScale > MUTATION_SCALE_RANGE[1]) return bad(`mutationScale must be a number from ${MUTATION_SCALE_RANGE[0]} to ${MUTATION_SCALE_RANGE[1]}`);
   const ranges = w.ranges[sp]!;
   traits.energy = spec.birth?.energy ?? middle(ranges.birthEnergyRange);
   traits.cost = spec.birth?.cost ?? middle(ranges.birthCostRange);
@@ -78,5 +82,5 @@ export function checkInsert(spec: InsertSpec, w: InsertWorld, traits: BirthTrait
   if (given !== need) return bad(`genome has ${String(given)} numbers, the plan needs ${need}`);
   const genome = Float32Array.from(spec.genome);
   if (!genome.every(Number.isFinite)) return bad("genome must hold finite numbers");
-  return { ok: true, genome, sp, heading, energy };
+  return { ok: true, genome, sp, heading, energy, mutationScale };
 }

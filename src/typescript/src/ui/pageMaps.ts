@@ -1,4 +1,5 @@
 import { MapCache } from "../live/mapTerrain.ts";
+import type { Terrain } from "../sim/terrain.ts";
 import { packMap } from "../sim/maps/mapParts.ts";
 import type { MapParts } from "../sim/maps/mapParts.ts";
 import type { MapReady } from "./mapReady.ts";
@@ -9,6 +10,7 @@ import { rockGeometryOf } from "./rockOutline.ts";
 export class PageMaps {
   private readonly cache: MapCache;
   private current: MapReady | null = null;
+  terrain: Terrain | null = null; // the last map built, for the legend's swatches
 
   constructor(load?: ConstructorParameters<typeof MapCache>[0]) {
     this.cache = new MapCache(load);
@@ -20,6 +22,7 @@ export class PageMaps {
     const parts = t && packMap(t);
     const outlines = t && rockGeometryOf(t);
     if (!parts || !outlines) return null;
+    this.terrain = t;
     return (this.current = { name, width, height, parts, outlines });
   }
 

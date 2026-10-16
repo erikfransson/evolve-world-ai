@@ -1,3 +1,5 @@
+import { Terrain, readyTerrainOf } from "./sim/terrain.ts";
+import { unpackMap } from "./sim/maps/mapParts.ts";
 import "./base.css";
 import "./style.css";
 import "./ecosystem.css";
@@ -13,7 +15,7 @@ import { buildSelectedBrain } from "./ui/ecoBrain.ts";
 import type { SelectedBrain } from "./ui/ecoBrain.ts";
 import { bindGentle, readGentle } from "./ui/gentle.ts";
 import { createEcoView } from "./ui/ecoPage.ts";
-import { syncTerrainLegend } from "./ui/terrainLegend.ts";
+import { paintTerrainLegend, syncTerrainLegend } from "./ui/terrainLegend.ts";
 import { ECOSYSTEM_PAGE, openingConfig } from "./ui/ecoModes.ts";
 import { ecoBody } from "./ui/ecoMarkup.ts";
 import { PageMaps } from "./ui/pageMaps.ts";
@@ -118,9 +120,23 @@ function loadMap(): void {
     } else if (host && !mapShown) {
       host.useMap(m);
       mapShown = true; // after useMap: when it throws, a run's map message gets another go
+      paintTerrainLegend(pageMaps.terrain);
       drawIdle();
     }
   });
+}
+
+// Legend swatches cost up to about 150 ms on this thread (a map's ground outlines), so they wait for an idle moment.
+function idle(fn: () => void): void {
+  if (typeof requestIdleCallback === "function") requestIdleCallback(fn, { timeout: 3000 });
+  else setTimeout(fn, 200);
+}
+
+// A random map's legend swatches, from its terrain (cached by its settings), a moment after a change so a form drag stays smooth.
+function paintRandomLegend(c: EcoConfig): void {
+  if (c.world.map) return;
+  // Building a random map costs 80 to 180 ms on this thread (the render worker has its own), so it waits for an idle moment.
+  idle(() => void (config === c && paintTerrainLegend(readyTerrainOf(c))));
 }
 
 let species = speciesList(config); // the config's species, resolved
@@ -128,6 +144,7 @@ function setConfig(c: EcoConfig): void {
   config = c;
   species = speciesList(c);
   syncTerrainLegend(c);
+  paintRandomLegend(c);
   loadMap();
 }
 
@@ -185,6 +202,16 @@ function onSnapshot(e: MessageEvent<EcoOutMessage>): void {
     if (!mapShown && host && msg.name === map && msg.width === width && msg.height === height) {
       host.useMap({ name: msg.name, width: msg.width, height: msg.height, parts: msg.parts, outlines: null });
       mapShown = true;
+      idle(() => {
+        const w = config.world;
+        if (w.map !== msg.name || w.width !== msg.width || w.height !== msg.height) return; // another map was chosen meanwhile
+        try {
+          const m = unpackMap(msg.width, msg.height, msg.parts); // checked like the page's own build; rock outlines trace lazily, only the swatch's
+          paintTerrainLegend(new Terrain(m.rock, m.ground, msg.width, msg.height, m.weights));
+        } catch {
+          // arrays that do not fit: the legend keeps its drawn icons
+        }
+      });
     }
     return;
   }
@@ -437,6 +464,7 @@ showRays = view.showRays();
 bindGentle(document.getElementById("gentle") as HTMLInputElement, (gentle) => send({ type: "gentle", gentle }));
 view.fillConfig(NORMAL);
 syncTerrainLegend(NORMAL);
+paintRandomLegend(NORMAL);
 new ResizeObserver(drawIdle).observe(view.canvas);
 drawIdle();
 requestAnimationFrame(frame);

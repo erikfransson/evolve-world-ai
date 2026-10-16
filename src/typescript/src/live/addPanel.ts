@@ -1,10 +1,11 @@
 import { MAX_FILE_BYTES, parseCreatureFile } from "../sim/rl/creatureFile.ts";
+import { MUTATION_SCALE_RANGE } from "../sim/ecoInsert.ts";
 import { lineageName } from "./founders.ts";
 import type { Founder } from "./founders.ts";
 import { PLAN_LIMITS } from "../sim/rl/validate.ts";
 import { lineageColor } from "../ui/lineagePanel.ts";
 import type { BodyPlan } from "../sim/sensors.ts";
-import { NAME_MAX, NAME_RE, upkeepOf } from "./add.ts";
+import { LIVE_BIRTH, NAME_MAX, NAME_RE, upkeepOf } from "./add.ts";
 import type { AddRequest, AddRules, Added, Birth, Refused } from "./add.ts";
 import { reshapeGenome } from "./reshape.ts";
 import { TRAIN_SECONDS, train } from "./training.ts";
@@ -28,6 +29,7 @@ interface Tuned {
   memShort: number;
   memLong: number;
   birth: Birth;
+  mutation: number; // log2 of the mutation scale: 0 is ×1, -2 is ×0.25, 2 is ×4
 }
 
 const SVG = "http://www.w3.org/2000/svg";
@@ -68,7 +70,7 @@ export function planGlyph(plan: Pick<BodyPlan, "rayCount" | "raySpread" | "rayLe
 }
 
 const deg = (r: number): number => Math.round((r * 180) / Math.PI);
-const tunedOf = (plan: BodyPlan, birth: Birth): Tuned => ({ rays: plan.rayCount, spreadDeg: deg(plan.raySpread), length: Math.round(plan.rayLength), neurons: Math.max(...plan.hiddenLayers), neuronsSet: false, memShort: plan.memoryShort, memLong: plan.memoryLong, birth: { ...birth } });
+const tunedOf = (plan: BodyPlan, birth: Birth): Tuned => ({ rays: plan.rayCount, spreadDeg: deg(plan.raySpread), length: Math.round(plan.rayLength), neurons: Math.max(...plan.hiddenLayers), neuronsSet: false, memShort: plan.memoryShort, memLong: plan.memoryLong, birth: { ...birth }, mutation: 0 });
 const planOf = (base: BodyPlan, t: Tuned): BodyPlan => ({
   rayCount: t.rays,
   raySpread: Math.max(1, t.spreadDeg) * (Math.PI / 180),
@@ -218,7 +220,7 @@ export class AddPanel {
   }
 
   private defaultBirth(): Birth {
-    const b = this.rules?.birth ?? { energy: [100, 225], cost: [50, 110], cooldown: [5, 20] };
+    const b = this.rules?.birth ?? { energy: [...LIVE_BIRTH.energy], cost: [...LIVE_BIRTH.cost], cooldown: [...LIVE_BIRTH.cooldown] };
     // The middles insertCreature gives (log scale, linear for a range from 0), on the sliders' steps.
     const mid = ([lo, hi]: [number, number]): number => (lo > 0 ? Math.sqrt(lo * hi) : (lo + hi) / 2);
     return { energy: Math.round(mid(b.energy)), cost: Math.round(mid(b.cost)), cooldown: Math.round(mid(b.cooldown) * 2) / 2 };
@@ -238,7 +240,7 @@ export class AddPanel {
     this.t = tunedOf(f.plan, f.birth ? { energy: fit(f.birth.energy, 1, r?.energy), cost: fit(f.birth.cost, 1, r?.cost), cooldown: fit(f.birth.cooldown ?? d.cooldown, 0.5, r?.cooldown) } : d);
     const name = this.$<HTMLInputElement>("addName");
     if (!name.value || name.dataset.auto === "1") {
-      name.value = f.lineage; // the starters' own lineage name, so a copy carries the same
+      name.value = `My${f.lineage}`.slice(0, NAME_MAX); // the starters keep their own names (the server refuses those), so a copy starts as the visitor's own
       name.dataset.auto = "1";
     }
     for (const b of this.root.querySelectorAll<HTMLElement>(".founder")) b.setAttribute("aria-checked", String(Number(b.dataset.index) === i));
@@ -368,15 +370,17 @@ export class AddPanel {
     });
     this.slider(brain, "memShort", "Short memory", "Memory units that fade fast.", L.memory[0], L.memory[1], 1, (v) => String(v), (v) => (t().memShort = v));
     this.slider(brain, "memLong", "Long memory", "Memory units that fade slowly.", L.memory[0], L.memory[1], 1, (v) => String(v), (v) => (t().memLong = v));
-    this.slider(birth, "birthEnergy", "Birth at energy", "It has a child when its energy reaches this.", 100, 225, 1, (v) => String(Math.round(v)), (v) => (t().birth.energy = v));
-    this.slider(birth, "birthCost", "Birth cost", "Energy it gives its child, who starts with it.", 50, 110, 1, (v) => String(Math.round(v)), (v) => (t().birth.cost = v));
-    this.slider(birth, "birthCooldown", "Birth cooldown", "Seconds before it can have another child.", 5, 20, 0.5, (v) => `${v} s`, (v) => (t().birth.cooldown = v));
+    this.slider(birth, "birthEnergy", "Birth at energy", "It has a child when its energy reaches this.", LIVE_BIRTH.energy[0], LIVE_BIRTH.energy[1], 1, (v) => String(Math.round(v)), (v) => (t().birth.energy = v));
+    this.slider(birth, "birthCost", "Birth cost", "Energy it gives its child, who starts with it.", LIVE_BIRTH.cost[0], LIVE_BIRTH.cost[1], 1, (v) => String(Math.round(v)), (v) => (t().birth.cost = v));
+    this.slider(birth, "birthCooldown", "Birth cooldown", "Seconds before it can have another child.", LIVE_BIRTH.cooldown[0], LIVE_BIRTH.cooldown[1], 0.5, (v) => `${v} s`, (v) => (t().birth.cooldown = v));
+    // Log scale: each step doubles or halves at the ends, ×1 in the middle; its children inherit it exactly.
+    this.slider(birth, "mutation", "Mutation strength", "How strongly its children's brains change. Higher explores faster but loses good traits more easily.", Math.log2(MUTATION_SCALE_RANGE[0]), Math.log2(MUTATION_SCALE_RANGE[1]), 0.25, (v) => `×${Number((2 ** v).toPrecision(2))}`, (v) => (t().mutation = v));
   }
 
   private syncSliders(): void {
     const t = this.t;
     if (!t) return;
-    const values: Record<string, number> = { rays: t.rays, spread: t.spreadDeg, length: t.length, neurons: t.neurons, memShort: t.memShort, memLong: t.memLong, birthEnergy: t.birth.energy, birthCost: t.birth.cost, birthCooldown: t.birth.cooldown };
+    const values: Record<string, number> = { rays: t.rays, spread: t.spreadDeg, length: t.length, neurons: t.neurons, memShort: t.memShort, memLong: t.memLong, birthEnergy: t.birth.energy, birthCost: t.birth.cost, birthCooldown: t.birth.cooldown, mutation: t.mutation };
     for (const [id, v] of Object.entries(values)) this.sliders.get(id)?.set(v);
     const b = this.base();
     this.$("addLayers").textContent = b ? `${b.plan.hiddenLayers.length} hidden ${b.plan.hiddenLayers.length === 1 ? "layer" : "layers"}` : "";
@@ -486,13 +490,13 @@ export class AddPanel {
       genome = trained;
       if (kinds) this.trained = { ...key, genome };
     }
-    const req: AddRequest = { plan, genome, birth: { ...this.t.birth }, name, hue: this.hue, copies: this.copies };
+    const scale = Math.min(MUTATION_SCALE_RANGE[1], Math.max(MUTATION_SCALE_RANGE[0], 2 ** this.t.mutation));
+    const req: AddRequest = { plan, genome, birth: { ...this.t.birth }, name, hue: this.hue, copies: this.copies, ...(scale !== 1 ? { mutationScale: scale } : {}) };
     if (!this.hooks.send(req)) {
       this.say("Not connected to the world right now. Try again when it is back.", "error");
       return this.refresh();
     }
-    this.waiting = true;
-    this.lock(this.rules?.everyS ?? 10);
+    this.waiting = true; // the next add waits for this reply; past the connection's burst the server refuses with retryS, which locks
     this.say("Sending…");
     this.refresh();
   }
