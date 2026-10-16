@@ -285,11 +285,11 @@ export function rockPitTile(): Canvas | null {
     });
   }
   // pits: a dark hollow with a thin pale lip on the lower right, where it catches the light from above left
-  for (let i = 0; i < 1500; i++) {
+  for (let i = 0; i < 2200; i++) {
     const x = rng.range(0, N);
     const y = rng.range(0, N);
-    const r = rng.next() < 0.85 ? rng.range(0.9, 2.2) : rng.range(2.2, 4.4);
-    const a = rng.range(0.25, 0.6);
+    const r = rng.next() < 0.88 ? rng.range(0.5, 1.3) : rng.range(1.3, 2.6);
+    const a = rng.range(0.3, 0.65);
     wrapped(x, y, r, (px, py) => {
       g.fillStyle = `rgba(150, 190, 190, ${(a * 0.28).toFixed(3)})`;
       g.beginPath();

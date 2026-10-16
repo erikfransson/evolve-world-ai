@@ -61,7 +61,7 @@ const STYLE: Record<number, Style> = {
   [TERRAIN_FAST]: {
     flat: "#85806a",
     look: { base: [124, 118, 98], mottle: 0.07, seed: 22 },
-    ripples: { light: [222, 214, 180], dark: [30, 26, 16], lightAlpha: 0.05, darkAlpha: 0.12, stripes: [26, 15], bend: 1.2, seed: 26 },
+    ripples: { light: [222, 214, 180], dark: [30, 26, 16], lightAlpha: 0.09, darkAlpha: 0.2, stripes: [26, 15], bend: 1.2, seed: 26 },
     grain: { light: [236, 228, 196], dark: [40, 34, 20], fine: 0.03, coarse: 0.004, shell: 0.0004, seed: 27 },
     rimColor: [214, 206, 172],
     rimAlpha: 0.25,

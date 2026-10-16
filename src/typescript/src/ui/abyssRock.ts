@@ -22,11 +22,10 @@ const BASE: readonly number[] = [52, 68, 73]; // basalt albedo
 const CRUST: readonly number[] = [184, 194, 178];
 const LIGHT = { x: -0.55, y: -0.7, z: 0.5 }; // towards the light: above, and a little from the upper left
 const HALO_COLOR = "2, 9, 12";
-const HALO = [3, 5.5, 9, 14, 21, 31, 45].map((grow, i) => ({ grow, alpha: 0.15 - 0.017 * i })); // layers stepping out from the foot // world units outwards from the edge, per stacked layer
-const HALO_MIN_PX = 0.9; // screen px the first layer grows at least, each further layer one more
+const HALO = [{ blur: 10, alpha: 0.8, shift: 0.25 }, { blur: 44, alpha: 0.55, shift: 0.3 }] as const; // blur in world units (scaled up for big bodies, at least 1.5 screen px), over the body's size
 const PITS_FROM = 0.35; // scale (device px per world unit) from which the pit tile is drawn, full from PITS_FROM + 0.45
 const CRUST_FROM = 0.45;
-const CRUST_BANDS = [{ width: 5, alpha: 0.7 }, { width: 11, alpha: 0.4 }] as const; // world units inwards from the edge
+const CRUST_BANDS = [{ width: 5, alpha: 0.55 }, { width: 11, alpha: 0.3 }] as const; // world units inwards from the edge
 const FLAT_BODY = "#2f3f43"; // quick drawing
 
 type Canvas = OffscreenCanvas | HTMLCanvasElement;
@@ -74,6 +73,32 @@ function itemsOf(t: Terrain): Item[] {
   return list;
 }
 
+// Three passes of a box blur of radius r pixels along each axis, edges clamped: close to a gaussian of sigma about 1.1 r.
+function boxBlur(a: Float32Array, w: number, h: number, r: number): void {
+  if (r < 1) return;
+  const line = new Float32Array(Math.max(w, h) + 2 * r + 1);
+  const pass = (n: number, stride: number, count: number, step: number): void => {
+    for (let c = 0; c < count; c++) {
+      const base = c * step;
+      for (let i = 0; i < n; i++) line[i + r] = a[base + i * stride]!;
+      for (let i = 0; i < r; i++) {
+        line[i] = a[base]!;
+        line[n + r + i] = a[base + (n - 1) * stride]!;
+      }
+      let sum = 0;
+      for (let i = 0; i <= 2 * r; i++) sum += line[i]!;
+      for (let i = 0; i < n; i++) {
+        a[base + i * stride] = sum / (2 * r + 1);
+        sum += line[i + 2 * r + 1]! - line[i]!;
+      }
+    }
+  };
+  for (let k = 0; k < 3; k++) {
+    pass(w, 1, h, w);
+    pass(h, w, w, 1);
+  }
+}
+
 // ---- The shaded image of one body ----
 
 function buildRaster(item: Item, cell: number): Raster | null {
@@ -97,21 +122,30 @@ function buildRaster(item: Item, cell: number): Raster | null {
   const d0 = new Float32Array(n);
   let dmax = 0;
   for (let k = 0; k < n; k++) if (inside[k]) d0[k] = Math.max(0, dist[k]! - 0.5) * cell;
-  const d1 = new Float32Array(n);
   const d = new Float32Array(n);
+  for (let k = 0; k < n; k++) {
+    d[k] = d0[k]!;
+    if (d0[k]! > dmax) dmax = d0[k]!;
+  }
   const at = (a: Float32Array, x: number, y: number): number => a[Math.min(h - 1, Math.max(0, y)) * w + Math.min(w - 1, Math.max(0, x))]!;
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) d1[y * w + x] = 0.25 * at(d0, x - 1, y) + 0.5 * at(d0, x, y) + 0.25 * at(d0, x + 1, y);
+  boxBlur(d, w, h, Math.round(Math.min(40, Math.max(6, 0.1 * dmax)) / (2.2 * cell))); // the broader the body, the softer its profile, so no creases show along its middle
+  dmax = 0;
+  for (let k = 0; k < n; k++) if (d[k]! > dmax) dmax = d[k]!;
+  const wd = Math.min(70, Math.max(8, 0.45 * dmax)); // how wide the rounded foot is
+  const crest = 0.26 * smooth(40, 180, dmax); // slope of the gentle rise towards the middle of a big body
+  const height = new Float32Array(n);
+  for (let k = 0; k < n; k++) height[k] = 0.7 * wd * (1 - Math.exp(-d[k]! / wd)) + crest * d[k]!;
+  // a rough grain in the height, so big smooth bodies still catch the light in small patches (a wavelength of at least four pixels)
+  const lam = Math.max(26, 4 * cell);
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
-      const v = 0.25 * at(d1, x, y - 1) + 0.5 * at(d1, x, y) + 0.25 * at(d1, x, y + 1);
-      d[y * w + x] = v;
-      if (v > dmax) dmax = v;
+      const k = y * w + x;
+      if (!inside[k]) continue;
+      const wx = ox + (x + 0.5) * cell;
+      const wy = oy + (y + 0.5) * cell;
+      height[k] += (0.9 * lam / 26) * fbm(wx / lam, wy / lam, 59, 3) * smooth(0, 12, d[k]!);
     }
   }
-  const wd = Math.min(70, Math.max(8, 0.45 * dmax)); // how wide the rounded foot is
-  const crest = 0.5 * smooth(40, 180, dmax); // slope of the gentle rise towards the middle of a big body
-  const height = new Float32Array(n);
-  for (let k = 0; k < n; k++) height[k] = 0.8 * wd * (1 - Math.exp(-d[k]! / wd)) + crest * d[k]!;
   const ao = 14 + 6 * item.size; // units over which the silt shadow at the foot fades out
   const norm = Math.hypot(LIGHT.x, LIGHT.y, LIGHT.z);
   const lx = LIGHT.x / norm;
@@ -127,15 +161,15 @@ function buildRaster(item: Item, cell: number): Raster | null {
       const nl = (-hx * lx - hy * ly + lz) / Math.sqrt(hx * hx + hy * hy + 1);
       const dd = d[k]!;
       const rise = 1 - Math.exp(-dd / reach);
-      const lum = (0.3 + 1.0 * nl) * (0.72 + 0.5 * rise) * (0.66 + 0.34 * smooth(0, ao, dd));
+      const lum = (0.3 + 1.0 * nl) * (0.7 + 0.62 * rise) * (0.66 + 0.34 * smooth(0, ao, dd));
       const wx = ox + (x + 0.5) * cell;
       const wy = oy + (y + 0.5) * cell;
       const m1 = fbm(wx / 170, wy / 170, 41, 3);
       const m2 = valueNoise(wx / 38, wy / 38, 43) - 0.5;
       const m3 = fbm(wx / 520, wy / 520, 47, 2);
-      let r = (BASE[0]! + 7 * m3) * (1 + 0.08 * m1 + 0.08 * m2);
-      let g = (BASE[1]! - 1 * m3) * (1 + 0.08 * m1 + 0.08 * m2);
-      let bl = (BASE[2]! - 7 * m3) * (1 + 0.08 * m1 + 0.08 * m2);
+      let r = (BASE[0]! + 7 * m3) * (1 + 0.05 * m1 + 0.08 * m2);
+      let g = (BASE[1]! - 1 * m3) * (1 + 0.05 * m1 + 0.08 * m2);
+      let bl = (BASE[2]! - 7 * m3) * (1 + 0.05 * m1 + 0.08 * m2);
       r *= lum;
       g *= lum;
       bl *= lum;
@@ -223,20 +257,21 @@ export function drawRock(ctx: CanvasRenderingContext2D, t: Terrain, scale: numbe
     return;
   }
   ctx.lineJoin = "round";
-  // Halos first, so a body never lies under the shadow of a neighbour: layers of silt shadow stepping out from the foot, a little more below.
-  HALO.forEach(({ grow, alpha }, i) => {
-    ctx.strokeStyle = `rgba(${HALO_COLOR}, ${alpha})`;
-    ctx.fillStyle = ctx.strokeStyle;
+  // Halos first, so a body never lies under the shadow of a neighbour: a tight and a wide soft shadow of silt around the foot, a little more below. The shape itself is
+  // painted over by the body.
+  ctx.fillStyle = `rgb(${HALO_COLOR})`;
+  for (const { blur, alpha, shift } of HALO) {
+    ctx.shadowColor = `rgba(${HALO_COLOR}, ${alpha})`;
     for (const { outline, size } of shown) {
-      const g = Math.max(grow * size, (HALO_MIN_PX + i * 0.45) * px);
-      ctx.save();
-      ctx.translate(0.12 * g, 0.3 * g);
-      ctx.lineWidth = 2 * g;
+      const b = Math.max(blur * size, 1.5 * px);
+      ctx.shadowBlur = b * scale;
+      ctx.shadowOffsetY = shift * b * scale;
       ctx.fill(outline, "evenodd");
-      ctx.stroke(outline);
-      ctx.restore();
     }
-  });
+  }
+  ctx.shadowColor = "rgba(0, 0, 0, 0)";
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetY = 0;
   const smoothing = ctx.imageSmoothingEnabled;
   const quality = ctx.imageSmoothingQuality;
   ctx.imageSmoothingEnabled = true;
