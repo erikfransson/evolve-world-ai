@@ -393,7 +393,7 @@ export class LiveWorld {
     this.attach();
     if (this.eco.population === 0 && this.founders.length) {
       try {
-        this.seedFounders(this.founders, Math.random, this.seedCopies);
+        this.seedFounders(this.founders, Math.random, Math.max(1, Math.min(this.seedCopies, Math.floor(seedRoom(this.eco.config.eco) / this.founders.length)))); // the admin may have lowered the room since
       } catch (e) {
         console.error(`reseed: founders not seeded: ${e instanceof Error ? e.message : String(e)}`);
       }

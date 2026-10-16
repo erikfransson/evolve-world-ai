@@ -96,6 +96,17 @@ describe("admin reset", () => {
     await expect(saves.save()).resolves.toMatch(/^saved /); // saving goes on
   });
 
+  it("an extinct world's reseed seeds the reset's count, cut to the room the admin left below the birth reserve", () => {
+    const c = freshConfig();
+    c.eco.maxPopulation = 300;
+    c.eco.birthReserve = 100; // room for 200
+    const live = new LiveWorld(c, null);
+    live.founders = FOUNDERS;
+    live.seedCopies = 200;
+    (live as unknown as { reseed(): void }).reseed();
+    expect(live.eco.population).toBe(Math.floor(200 / FOUNDERS.length) * FOUNDERS.length);
+  });
+
   it("seedFounders itself keeps the founders below the birth reserve, whatever the caller checked", () => {
     const live = new LiveWorld(freshConfig(), null);
     const room = live.eco.config.eco.maxPopulation - live.eco.config.eco.birthReserve;

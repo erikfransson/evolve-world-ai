@@ -111,7 +111,7 @@ runTicks(live, LIMITS.maxTickFailures, (why) => {
 console.log(`${live.threads} helper threads`);
 console.log(`live world on ws://${HOST}:${publicPort}, admin on ws://${HOST}:${adminPort} (token in ${stateDir}/admin-token)`);
 
-export const RESET_EXIT = 75; // the unit restarts on it (RestartForceExitStatus), and the next start seeds the fresh world
+const RESET_EXIT = 75; // the unit restarts on it (RestartForceExitStatus), and the next start seeds the fresh world
 function shutdown(code = 0): void {
   live.close();
   pub.close();
