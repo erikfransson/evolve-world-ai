@@ -6,6 +6,7 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- Live founders: the Grazer is the 2026-10-16 retrain (b3's grazer-vj, same body and name), trained 3 h against the other founders in Live-like envs; without a kill bonus it beats the shipped Juggernaut in 4 of 4 seeds at 180 min while the Juggernaut survives, and it survived 3 of 3 three-founder seeds at bonus 25. A restored world keeps its creatures; the new Grazer seeds the next fresh world (reset or new map).
 - Live founders: the Grazer is the 2026-10-16 retrain (b3's grazer-vj, same body and name), trained 3 h against the other founders in Live-like envs; it beats the shipped Juggernaut in 4 of 4 seeds at 180 min while the Juggernaut survives. A restored world keeps its creatures; the new Grazer seeds the next fresh world (reset or new map).
 - Training in Add your creature waits while the tab is hidden (and ends with its best result after 10 min hidden) and uses at most 3 helper threads.
 - Live: a kill gives 25 energy on top of the loser's (`eco.killEnergy` 25, was 0), so hunting pays a little. The world rules say so, and the admin can change it live (`eco.killEnergy`, 0 to 300). A restored world keeps its saved value until the admin sets it.
