@@ -19,12 +19,14 @@ const PX_PER_CELL = 4;
 const MIN_PX_ACROSS = 14; // pixels across the narrower side of a body's box, at least
 const MAX_CELLS = 700_000; // pixels of one body's image, beyond that the next coarser resolution is used
 const BUDGET_CELLS = 8_000_000; // pixels of images kept over all bodies (32 MB), the least recently used go first
-const BASE: readonly number[] = [68, 88, 95]; // basalt albedo
-const RIM: readonly number[] = [46, 84, 96]; // cool rim light added on lit edges
+const BASE: readonly number[] = [80, 90, 91]; // basalt albedo
+const RIM: readonly number[] = [52, 70, 74]; // cool rim light added on lit edges
 const CRUST: readonly number[] = [176, 182, 166];
 const LIGHT = { x: -0.55, y: -0.7, z: 0.5 }; // towards the light: above, and a little from the upper left
 const HALO_RGB = [2, 9, 12] as const;
 const HALO = { near: 0.8, near_s: 5, far_a: 0.55, far: 24, shift: 9 }; // alpha and decay length (world units) of the tight and the wide falloff; a stone's own, a massif's up to 3 times; lower by shift
+const EDGE_LINE = "rgba(3, 11, 14, 0.6)";
+const EDGE_PX = 1.1; // screen px of the dark edge line (world units: scaled by 1 / scale)
 const PITS_FROM = 0.35; // scale (device px per world unit) from which the pit tile is drawn, full from PITS_FROM + 0.45
 const FLAT_BODY = "#2f3f43"; // quick drawing
 
@@ -99,6 +101,12 @@ function boxBlur(a: Float32Array, w: number, h: number, r: number): void {
   }
 }
 
+const hash2 = (x: number, y: number, seed: number): number => {
+  let h = (Math.imul(x, 374761393) + Math.imul(y, 668265263) + Math.imul(seed + 1, 1274126177)) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+};
+
 // ---- The shaded image of one body ----
 
 function buildRaster(item: Item, cell: number): Raster | null {
@@ -124,7 +132,7 @@ function buildRaster(item: Item, cell: number): Raster | null {
   dmax = 0;
   for (let k = 0; k < n; k++) if (d[k]! > dmax) dmax = d[k]!;
   const wd = Math.min(70, Math.max(8, 0.45 * dmax)); // how wide the rounded foot is
-  const crest = 0.26 * smooth(40, 180, dmax); // slope of the gentle rise towards the middle of a big body
+  const crest = 0.12 * smooth(40, 180, dmax); // slope of the gentle rise towards the middle of a big body
   const height = new Float32Array(n);
   for (let k = 0; k < n; k++) height[k] = 0.7 * wd * (1 - Math.exp(-d[k]! / wd)) + crest * d[k]!;
   // crisp relief in the height: sharp-crested ridges (strata and cracks) at two scales, the finer only where the pixels are small enough to hold it
@@ -157,7 +165,7 @@ function buildRaster(item: Item, cell: number): Raster | null {
       const nl = (-hx * lx - hy * ly + lz) / Math.sqrt(hx * hx + hy * hy + 1);
       const dd = d[k]!;
       const rise = 1 - Math.exp(-dd / reach);
-      const lum = (0.34 + 1.15 * nl) * (0.7 + 0.8 * rise) * (0.5 + 0.5 * smooth(0, ao, dd));
+      const lum = (0.34 + 1.15 * nl) * (0.74 + 0.5 * rise) * (0.5 + 0.5 * smooth(0, ao, dd));
       const wx = ox + (x + 0.5) * cell;
       const wy = oy + (y + 0.5) * cell;
       const m1 = fbm(wx / 170, wy / 170, 41, 3);
@@ -166,11 +174,12 @@ function buildRaster(item: Item, cell: number): Raster | null {
       let r = (BASE[0]! + 7 * m3) * (1 + 0.05 * m1 + 0.08 * m2);
       let g = (BASE[1]! - 1 * m3) * (1 + 0.05 * m1 + 0.08 * m2);
       let bl = (BASE[2]! - 7 * m3) * (1 + 0.05 * m1 + 0.08 * m2);
-      r *= lum;
-      g *= lum;
-      bl *= lum;
+      const grain = 1 + 0.09 * (hash2(x, y, item.id) - 0.5) * 2 * smooth(0, 5, dd); // stone grain a cell across, which stays visible when the image is enlarged
+      r *= lum * grain;
+      g *= lum * grain;
+      bl *= lum * grain;
       // a cool rim light along the edges that face the light
-      const rim = (1 - smooth(1.5, 9, dd)) * smooth(0.6, 1.0, nl) * (inside[k] ? 1 : 0);
+      const rim = (1 - smooth(1, 6, dd)) * smooth(0.6, 1.0, nl) * (inside[k] ? 1 : 0);
       r += rim * RIM[0]!;
       g += rim * RIM[1]!;
       bl += rim * RIM[2]!;
@@ -318,6 +327,10 @@ export function drawRock(ctx: CanvasRenderingContext2D, t: Terrain, scale: numbe
       ctx.fillStyle = pats.pits;
       ctx.fill(outline, "evenodd");
     }
+    ctx.globalAlpha = 1; // a thin dark line just inside the edge, so the outline stays defined whatever the zoom
+    ctx.strokeStyle = EDGE_LINE;
+    ctx.lineWidth = 2 * Math.max(EDGE_PX * px, 0.8);
+    ctx.stroke(outline);
     ctx.restore();
   }
   ctx.imageSmoothingEnabled = smoothing;

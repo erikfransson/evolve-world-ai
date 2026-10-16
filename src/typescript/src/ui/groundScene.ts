@@ -22,7 +22,7 @@ export const FEATHER_BANDS = [1, 0.7, 0.45, 0.22].map((k, i) => ({ width: FEATHE
 const FEATHER_COARSE = [{ width: FEATHER_UNITS, alpha: 0.5 }];
 const COARSE_BELOW = 0.1; // scale (device px per world unit)
 const FINE_FROM = 0.05; // scale from which the outline is the fine one; coarser views use the cheap coarse one
-const EDGE_PX = 0.8; // device px of the faint line inside the contour
+const EDGE_PX = 1.3; // device px of the faint line inside the contour
 const TIERS = [0.02, 0.04, 0.08, 0.16, 0.32]; // bitmap scales; a view at a scale up to the largest draws bitmaps of the next tier up
 const MAX_BITMAP_PX = 640; // longest side of a bitmap; larger patches are cut into tiles of this size
 const MAX_BAKED_PX = 8_000_000; // pixels of bitmaps kept per map over all tiers (32 MB of RGBA, enough for the Inland Sea whole at tiers 0.02 to 0.16), beyond that patches are painted live
@@ -46,18 +46,18 @@ interface Style {
 // Mud: a pale silty shelf, lighter in the shallows and darker towards the deep middle. Firm ground: pale coarse sand with shell grit.
 const STYLE: Record<number, Style> = {
   [TERRAIN_SLOW]: {
-    flat: "#3f4d3f",
-    look: { base: [60, 76, 62], mottle: 0.16, seed: 21 },
+    flat: "#36432f",
+    look: { base: [46, 60, 46], mottle: 0.16, seed: 21 },
     ripples: null,
     grain: { light: [150, 168, 140], dark: [10, 18, 14], fine: 0.006, coarse: 0, shell: 0, seed: 25 },
-    rimColor: [126, 146, 118],
-    rimAlpha: 0.45,
+    rimColor: [92, 110, 84],
+    rimAlpha: 0.3,
     rimReach: 80,
-    deepColor: [18, 28, 26],
-    deepAlpha: 0.5,
+    deepColor: [12, 20, 18],
+    deepAlpha: 0.55,
     deepFrom: 120,
     deepSpan: 600,
-    edge: "rgba(6, 12, 10, 0.1)",
+    edge: "rgba(4, 10, 8, 0.4)",
   },
   [TERRAIN_FAST]: {
     flat: "#85806a",

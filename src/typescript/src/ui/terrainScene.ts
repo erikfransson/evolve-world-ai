@@ -14,7 +14,7 @@ export interface View {
   y1: number;
 }
 
-const RIPPLES_FROM = 0.7; // scale (device px per world unit) from which the floor shows ripples, full at RIPPLES_FROM + 0.8
+const RIPPLES_FROM = 50; // scale (device px per world unit) from which the floor shows ripples, full at RIPPLES_FROM + 0.8
 const floorPatterns = new WeakMap<CanvasRenderingContext2D, CanvasPattern | null>();
 
 // Over the plain floor colour: the world-sized image of silt drifts, and close up faint ripples.
