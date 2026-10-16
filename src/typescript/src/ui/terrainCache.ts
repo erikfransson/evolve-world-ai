@@ -63,7 +63,10 @@ export class TerrainCache {
     m.lastCovered = covered;
     if (step === "direct") return false;
     if (step === "rebuild") {
-      if (!this.build(t, zoom, view)) return false;
+      if (!this.build(t, zoom, view)) {
+        this.unfinished = false; // no retry every frame: the next zoom or pan tries again
+        return false;
+      }
       m.builtAt = now;
     }
     const c = this.canvas;
