@@ -6,7 +6,7 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
-- The map is drawn once per zoom around the view and copied each frame, instead of drawing every rock outline again each frame. On a mid laptop (Iris Xe) the Live page at whole-world view goes from 5 to 60 frames a second, and at 2x zoom from 12 to 60; the Ecosystem page gains the same way.
+- The map is drawn once per zoom around the view and copied each frame, instead of drawing every rock outline again each frame. On a mid laptop (Iris Xe) the Live page at whole-world view goes from about 5 to 20-60 frames a second (the rest is the creature dots and items), and at 2x zoom from 12-20 to 60; the Ecosystem page gains the same way.
 
 ## 0.2.1 (2026-10-16)
 
