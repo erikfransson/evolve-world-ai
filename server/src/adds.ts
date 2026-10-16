@@ -16,6 +16,7 @@ export const addingOn = (): boolean => LIVE.add.perWindow > 0 && LIVE.add.aliveM
 export interface AddPace {
   tokens: TokenBucket;
   strikes: TokenBucket;
+  notBefore: number; // ms (monotonic): the retryS this connection was last told ends here; an add before it is a strike
 }
 
 // The add policy in one place: per connection the pace, for everyone the rate of add messages read, and the caps (AddGate) on what
@@ -30,15 +31,18 @@ export class AddPolicy {
   }
 
   connection(): AddPace {
-    return { tokens: new TokenBucket(() => 1 / LIVE.add.socketEveryS, LIVE.add.burst), strikes: new TokenBucket(1 / 60, ADD_STRIKES) }; // add.burst as the connection opens
+    return { tokens: new TokenBucket(() => 1 / LIVE.add.socketEveryS, LIVE.add.burst), strikes: new TokenBucket(1 / 60, ADD_STRIKES), notBefore: 0 }; // add.burst as the connection opens
   }
 
-  // An add message on a connection, before it is read: null to read it; past the rate a refusal with the wait (as a page with stale
-  // rules might send), or "cut" once the strikes are used up (a flood).
-  pace(p: AddPace): Refused | "cut" | null {
+  // An add message on a connection, before it is read: null to read it; past the rate a refusal with the wait, or "cut" once the strikes
+  // are used up (a flood). Only an add sent before the wait it was told counts as a strike, so a page that keeps to retryS is never cut,
+  // however often its visitor clicks.
+  pace(p: AddPace, now = performance.now()): Refused | "cut" | null {
     if (p.tokens.take(1)) return null;
-    if (!p.strikes.take(1)) return "cut";
-    return { t: "refused", reason: "adding too fast on this connection", retryS: Math.ceil(p.tokens.waitS(1)) };
+    if (now < p.notBefore && !p.strikes.take(1)) return "cut";
+    const retryS = Math.ceil(p.tokens.waitS(1));
+    p.notBefore = now + retryS * 1000;
+    return { t: "refused", reason: "adding too fast on this connection", retryS };
   }
 
   // Before parsing: the rate of add messages read for all viewers together, and whether adding is on.

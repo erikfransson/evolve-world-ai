@@ -231,12 +231,26 @@ describe("add caps (adds.ts)", () => {
     const r = policy.pace(pace);
     expect(r).toMatchObject({ t: "refused", reason: "adding too fast on this connection" });
     expect((r as { retryS: number }).retryS).toBeGreaterThan(LIVE.add.socketEveryS - 1);
-    expect([policy.pace(pace), policy.pace(pace)].every((x) => x !== "cut")).toBe(true);
+    expect([policy.pace(pace), policy.pace(pace), policy.pace(pace)].every((x) => x !== "cut")).toBe(true); // sent before the retryS: 3 strikes
     expect(policy.pace(pace)).toBe("cut");
     expect([policy.admit(), policy.admit()]).toEqual([null, null]);
     expect(policy.admit()).toMatchObject({ reason: expect.stringMatching(/busy/) });
     LIVE.add.perWindow = 0;
     expect(new AddPolicy({ addAttemptsPerSecond: 1, addAttemptBurst: 2 }).admit()).toMatchObject({ reason: "adding is off right now" });
+  });
+
+  it("a page that keeps to retryS is never cut, however often its visitor clicks; one that ignores it is", () => {
+    const policy = new AddPolicy({ addAttemptsPerSecond: 100, addAttemptBurst: 100 });
+    const kept = policy.connection();
+    let t = 0;
+    for (let k = 0; k < 200; k++) {
+      const r = policy.pace(kept, t);
+      expect(r).not.toBe("cut");
+      t += r && r !== "cut" && r.retryS ? r.retryS * 1000 : 1; // waits as told, else clicks again at once
+    }
+    const rude = policy.connection();
+    const out = Array.from({ length: LIVE.add.burst + 5 }, () => policy.pace(rude, 0));
+    expect(out).toContain("cut");
   });
 
   it("copies past a cap get a reason that says so, not that adding is off", () => {
@@ -559,9 +573,9 @@ describe("add on the public server", () => {
     expect(c.replies.filter((r) => r.t === "added"), JSON.stringify(c.replies)).toHaveLength(LIVE.add.burst);
     expect(c.replies.find((r) => r.t === "refused")).toMatchObject({ reason: "adding too fast on this connection", retryS: expect.any(Number) });
     expect(c.ws.readyState).toBe(WebSocket.OPEN);
-    for (let i = 0; i < 3; i++) c.ws.send(encodeAdd(request({ copies: 1 }))); // two more strikes, then the fourth past the rate
+    for (let i = 0; i < 4; i++) c.ws.send(encodeAdd(request({ copies: 1 }))); // sent before the retryS it was told: three strikes, then the fourth is cut
     expect(await c.closed).toBe(1006);
-    expect(c.replies.filter((r) => r.reason === "adding too fast on this connection")).toHaveLength(3);
+    expect(c.replies.filter((r) => r.reason === "adding too fast on this connection")).toHaveLength(4);
   });
 
   it("a wall clock step back does not turn the next add into a strike (the add limits run on the monotonic clock)", async () => {

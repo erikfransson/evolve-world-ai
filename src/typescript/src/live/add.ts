@@ -42,7 +42,7 @@ export interface AddRequest {
 // What the server allows, sent in the hello (null while adding is off): copies, birth trait ranges and the costs behind energy per second.
 export interface AddRules {
   maxCopies: number;
-  everyS: number; // a connection may add once per this many seconds (after a burst of 2); faster gets it cut off
+  everyS: number; // a connection may add once per this many seconds (after a burst of the server's add.burst); one sent before a refusal's retryS is a strike, and strikes cut it off
   birth: { energy: [number, number]; cost: [number, number]; cooldown: [number, number] };
   costs: { living: number; ray: number; neuron: number }; // planUpkeep's livingCost, rayCost (per 100 units of ray), neuronCost
 }
