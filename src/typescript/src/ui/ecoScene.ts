@@ -327,7 +327,7 @@ export class EcoRenderer {
         }
       }
       ctx.globalAlpha = alpha;
-      ctx.fillStyle = style;
+      ctx.fillStyle = solid; // its opacity comes from alpha, once
       ctx.beginPath();
       for (let at = from; at < to; at++) {
         const i = order[at]!;

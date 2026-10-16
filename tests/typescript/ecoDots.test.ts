@@ -93,6 +93,7 @@ describe("dim and outline passes", () => {
     }
     const laid: { alpha: number; layer: boolean }[] = [];
     const stamps: { alpha: number }[] = [];
+    const fills: { alpha: number; style: string }[] = [];
     let alpha = 1;
     let transform = { a: 0.1, b: 0, c: 0, d: 0.1, e: 0, f: 0 }; // zoomed out: flat dots, not detailed bodies
     const ctx = {
@@ -102,15 +103,18 @@ describe("dim and outline passes", () => {
       fillStyle: "",
       getTransform: () => transform,
       setTransform: (...m: unknown[]) => void (transform = m.length === 6 ? { a: m[0], b: m[1], c: m[2], d: m[3], e: m[4], f: m[5] } as typeof transform : (m[0] as typeof transform)),
-      save() {}, restore() { alpha = 1; }, beginPath() {}, fill() {}, moveTo() {}, arc() {},
+      save() {}, restore() { alpha = 1; }, beginPath() {}, moveTo() {}, arc() {},
+      fill: () => void fills.push({ alpha, style: (ctx as unknown as { fillStyle: string }).fillStyle }),
       drawImage: (img: { width: number }, ...r: number[]) => (r.length === 2 ? laid.push({ alpha, layer: img.width === 400 }) : stamps.push({ alpha })),
     } as unknown as CanvasRenderingContext2D;
     const cfg = { worldW: 4000, worldH: 2500, radius: 12, itemRadius: 4, species: [{ fullEnergy: 150, hunter: false }] };
     const r = new EcoRenderer() as unknown as { drawCreatures(...a: unknown[]): void };
-    for (let frame = 0; frame < 2; frame++) { // the first frame sets the size, the second stamps
+    for (let frame = 0; frame < 2; frame++) { // the first frame sets the size and draws paths, the second stamps
       laid.length = 0;
       stamps.length = 0;
+      fills.length = 0;
       r.drawCreatures(ctx, cfg, v, 0, 4000, 0, 2500, 10, 0.1, 1, 0);
+      if (frame === 0) expect(fills.slice(0, 2)).toEqual([{ alpha: 0.3, style: "hsl(150, 12%, 55%)" }, { alpha: 0.75, style: "rgb(6, 12, 9)" }]); // the paths: each opacity once
     }
     expect(laid).toEqual([{ alpha: 0.3, layer: true }, { alpha: 0.75, layer: true }]); // the dim pass, then the outline pass
     expect(stamps.length).toBe(3); // the lit creatures' fills, straight onto the canvas
