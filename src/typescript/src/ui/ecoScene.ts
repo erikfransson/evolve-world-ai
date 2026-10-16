@@ -8,6 +8,7 @@ import { readyTerrainOf } from "../sim/terrain.ts";
 import type { Terrain } from "../sim/terrain.ts";
 import type { TerrainSettings } from "../sim/terrain.ts";
 import { BACKGROUND, FLOOR, FOOD, POISON, RAY_COLORS, WALL } from "./scene.ts";
+import { context2d, makeCanvas } from "./groundScene.ts";
 import { TerrainCache } from "./terrainCache.ts";
 import { drawTerrain } from "./terrainScene.ts";
 
@@ -46,6 +47,7 @@ const SOLID_ITEM = 4; // device px radius from which items are drawn fully opaqu
 const ITEM_DIM = 0.75; // item opacity at the smallest size, so the creatures stand out
 const DOT_RADIUS = 2.4; // CSS px; creatures never draw smaller than this when drawn as dots
 const DOT_OUTLINE = "rgba(6, 12, 9, 0.75)";
+const ATLAS_PX = 1024; // side of the dot atlas (4 MB): room for over 500 colours and sizes of 4 x 4 dots each
 
 // Bright and saturated when young, lighter touch of grey-green when old.
 const STYLES: string[] = [];
@@ -72,6 +74,84 @@ export class EcoRenderer {
   private seen = new Int32Array(1024); // snapshot indices of the visible items
   private readonly counts = new Int32Array(DIM_BUCKET + 2);
   private readonly terrainCache = new TerrainCache();
+  private readonly dots = new Map<string, { x: number; y: number; size: number }>(); // atlas blocks of dots per radius and colour, stamped per creature
+  private atlas: OffscreenCanvas | HTMLCanvasElement | null = null;
+  private atlasCtx: CanvasRenderingContext2D | null = null;
+  private readonly shelf = { x: 0, y: 0, h: 0 }; // where the next block goes: rows of blocks, left to right
+
+  // Where the dots of this colour and device px radius sit in the atlas: a block of 4 x 4 cells of `size` px, the cell at (fx, fy) holding
+  // the dot with its centre fx, fy quarter pixels past the cell's middle, so a stamp on whole pixels lands it where the path would have,
+  // with the same edge. One atlas, so the GPU draws all stamps from one texture. Null where no canvas can be made.
+  private dot(style: string, r: number): { x: number; y: number; size: number } | null {
+    const key = `${r} ${style}`;
+    let at = this.dots.get(key);
+    if (at !== undefined) return at;
+    const size = 2 * Math.ceil(r + 1);
+    const block = 4 * size;
+    if (block > ATLAS_PX) return null;
+    if (!this.atlas) {
+      this.atlas = makeCanvas(ATLAS_PX, ATLAS_PX);
+      this.atlasCtx = context2d(this.atlas);
+    }
+    const g = this.atlasCtx;
+    if (!g) return null;
+    const a = this.shelf;
+    if (a.x + block > ATLAS_PX) Object.assign(a, { x: 0, y: a.y + a.h, h: 0 });
+    if (a.y + block > ATLAS_PX) { // full: start over, the dots in use come back on the next frames
+      g.clearRect(0, 0, ATLAS_PX, ATLAS_PX);
+      this.dots.clear();
+      Object.assign(a, { x: 0, y: 0, h: 0 });
+    }
+    at = { x: a.x, y: a.y, size };
+    a.x += block;
+    a.h = Math.max(a.h, block);
+    g.fillStyle = style;
+    for (let fy = 0; fy < 4; fy++) {
+      for (let fx = 0; fx < 4; fx++) {
+        g.beginPath();
+        g.arc(at.x + fx * size + size / 2 + fx / 4, at.y + fy * size + size / 2 + fy / 4, r, 0, Math.PI * 2);
+        g.fill();
+      }
+    }
+    this.dots.set(key, at);
+    return at;
+  }
+
+  // One pass of round dots in one colour, stamped from bitmaps on whole device pixels: a path of a thousand circles costs the GPU tens of
+  // ms a frame, the stamps a few. Hunters keep their pointed path. False when no bitmap could be made or the view is rotated, and then
+  // the caller draws the path.
+  private stampDots(ctx: CanvasRenderingContext2D, v: SnapshotViews, order: Int32Array, from: number, to: number, style: string, r: number, z: number, hunter: (i: number) => boolean): boolean {
+    const rd = Math.round(r * z * 4) / 4; // device px
+    const blk = this.dot(style, rd);
+    if (!blk) return false;
+    const m = ctx.getTransform();
+    if (m.b !== 0 || m.c !== 0) return false;
+    const atlas = this.atlas as CanvasImageSource;
+    const size = blk.size;
+    const half = size / 2;
+    let hunters = false;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    for (let at = from; at < to; at++) {
+      const i = order[at]!;
+      if (hunter(i)) {
+        hunters = true;
+        continue;
+      }
+      const qx = Math.round((m.a * v.x[i]! + m.e) * 4); // the centre in quarter device px
+      const qy = Math.round((m.d * v.y[i]! + m.f) * 4);
+      const ix = qx >> 2;
+      const iy = qy >> 2;
+      ctx.drawImage(atlas, blk.x + (qx & 3) * size, blk.y + (qy & 3) * size, size, size, ix - half, iy - half, size, size);
+    }
+    ctx.setTransform(m);
+    if (hunters) {
+      ctx.fillStyle = style;
+      ctx.beginPath();
+      for (let at = from; at < to; at++) if (hunter(order[at]!)) bodyPath(ctx, v.x[order[at]!]!, v.y[order[at]!]!, r, v.heading[order[at]!]!, true);
+      ctx.fill();
+    }
+    return true;
+  }
 
   // highlight: a founder id whose descendants stay bright while everyone else is dimmed, or -1 for none.
   draw(ctx: CanvasRenderingContext2D, cam: Camera, cfg: EcoDrawConfig, v: SnapshotViews, selected: SelectedDetails | null, showRays: boolean, dpr: number, highlight = -1, births: BirthRings | null = null, now = 0, impacts: ImpactEffects | null = null): void {
@@ -107,7 +187,7 @@ export class EcoRenderer {
     ctx.strokeRect(0, 0, cfg.worldW, cfg.worldH);
 
     this.drawItems(ctx, cfg, v, x0, x1, y0, y1, dev, z);
-    this.drawCreatures(ctx, cfg, v, x0, x1, y0, y1, css, z / dpr, highlight);
+    this.drawCreatures(ctx, cfg, v, x0, x1, y0, y1, css, z, dpr, highlight);
     births?.draw(ctx, now, cfg.radius, css, z / dpr);
     impacts?.draw(ctx, now, cfg.radius, css, z / dpr);
     if (selected?.alive) this.drawSelected(ctx, cfg, selected, showRays, css);
@@ -159,7 +239,8 @@ export class EcoRenderer {
     ctx.globalAlpha = 1;
   }
 
-  private drawCreatures(ctx: CanvasRenderingContext2D, cfg: EcoDrawConfig, v: SnapshotViews, x0: number, x1: number, y0: number, y1: number, css: number, cssZoom: number, highlight: number): void {
+  private drawCreatures(ctx: CanvasRenderingContext2D, cfg: EcoDrawConfig, v: SnapshotViews, x0: number, x1: number, y0: number, y1: number, css: number, z: number, dpr: number, highlight: number): void {
+    const cssZoom = z / dpr;
     if (this.vis.length < v.count) {
       const size = Math.max(v.count, 2 * this.vis.length);
       this.vis = new Int32Array(size);
@@ -195,35 +276,28 @@ export class EcoRenderer {
     // Creatures outside the highlighted lineage come first, faint and without outline, so the lineage is drawn over them.
     const dimAt = counts[DIM_BUCKET - 1]!;
     const dimEnd = counts[DIM_BUCKET]!;
-    if (dimEnd > dimAt) {
-      ctx.globalAlpha = DIM_ALPHA;
-      ctx.fillStyle = DIM_STYLE;
+    // One pass in one colour: stamped where it can be, else one path and fill.
+    const pass = (from: number, to: number, style: string, r: number): void => {
+      if (to <= from || this.stampDots(ctx, v, order, from, to, style, r, z, hunter)) return;
+      ctx.fillStyle = style;
       ctx.beginPath();
-      for (let at = dimAt; at < dimEnd; at++) {
+      for (let at = from; at < to; at++) {
         const i = order[at]!;
-        bodyPath(ctx, v.x[i]!, v.y[i]!, dotR, v.heading[i]!, hunter(i));
+        bodyPath(ctx, v.x[i]!, v.y[i]!, r, v.heading[i]!, hunter(i));
       }
       ctx.fill();
+    };
+    if (dimEnd > dimAt) {
+      ctx.globalAlpha = DIM_ALPHA;
+      pass(dimAt, dimEnd, DIM_STYLE, dotR);
       ctx.globalAlpha = 1;
     }
-    ctx.fillStyle = DOT_OUTLINE;
-    ctx.beginPath();
-    for (let k = 0; k < dimAt; k++) {
-      const i = order[k]!;
-      bodyPath(ctx, v.x[i]!, v.y[i]!, outline, v.heading[i]!, hunter(i));
-    }
-    ctx.fill();
+    pass(0, dimAt, DOT_OUTLINE, outline);
     let at = 0;
     for (let b = 0; b < BUCKETS; b++) {
       const end = counts[b]!;
-      if (end === at) continue;
-      ctx.fillStyle = STYLES[b]!;
-      ctx.beginPath();
-      for (; at < end; at++) {
-        const i = order[at]!;
-        bodyPath(ctx, v.x[i]!, v.y[i]!, dotR, v.heading[i]!, hunter(i));
-      }
-      ctx.fill();
+      pass(at, end, STYLES[b]!, dotR);
+      at = end;
     }
   }
 

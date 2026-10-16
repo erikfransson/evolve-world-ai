@@ -240,14 +240,14 @@ describe("timeline", () => {
     const s = new LiveScene();
     s.dt = 0.1; // 10 ticks a second
     s.push(frame(100, [1, 2], [0, 50]), 0);
-    s.push(frame(120, [1, 3], [10, 60], [100, 1]), 1000); // 2 died, 3 was born 1 s (10 ticks) before tick 120; the span is 1000 ms
+    s.push(frame(120, [1, 3], [10, 60], [100, 1]), 1000); // 2 died, 3 was born 1 s (10 ticks) before tick 120; the span is 1200 ms (a 1000 ms gap, SPAN_SLACK, held to MAX_SPAN_MS)
     expect(s.slotOf(2)).toBeGreaterThanOrEqual(0); // still drawn where it was
     expect(s.slotOf(3)).toBe(-1);
-    s.sample(1000 + 0.6 * 1000); // tick 112: past 3's birth (110), before 2's death shows (120)
+    s.sample(1000 + 0.6 * 1200); // tick 112: past 3's birth (110), before 2's death shows (120)
     expect(s.displayTick).toBeCloseTo(112, 5);
     expect(s.slotOf(3)).toBeGreaterThanOrEqual(0);
     expect(s.slotOf(2)).toBeGreaterThanOrEqual(0);
-    s.sample(2000);
+    s.sample(2200);
     expect(s.slotOf(2)).toBe(-1);
   });
 

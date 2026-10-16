@@ -330,11 +330,24 @@ describe("page timeline", () => {
     s.addDetail(detail(110));
     s.addDetail(detail(124));
     s.addDeltas([{ tick: 124, ops: Array.from({ length: 24 }, (_, k) => ({ slot: k + 1, kind: 0, x: 0, y: 0, tick: 101 + k })), events: [] }]);
-    s.push(frame(124, [1], [10]), 1000); // span 1000 ms for 24 ticks
-    s.sample(1000 + 210); // tick 105
+    s.push(frame(124, [1], [10]), 1000); // a gap of 1000 ms: 24 ticks spread over 1200 ms (SPAN_SLACK, held to MAX_SPAN_MS)
+    s.sample(1000 + 252); // tick 105
     expect(s.displayTick).toBeCloseTo(105.04, 2);
     for (let slot = 1; slot <= 5; slot++) expect(s.items.kindAt(slot)).toBe(0);
     expect(s.items.kindAt(6)).toBe(1);
+  });
+
+  // Red with the span set by the last gap alone: a frame 200 ms late after steady ones left the creature standing still while it waited.
+  it("keeps creatures moving through a late frame: the motion spans a little more than the usual gap", () => {
+    const s = new LiveScene();
+    s.dt = 1;
+    for (let k = 0; k <= 10; k++) s.push(frame(100 + k, [1], [10 * k]), 200 * k); // steady, 200 ms apart
+    const x = (t: number): number => (s.sample(t), s.views.x[0]!);
+    expect(x(2000 + 150)).toBeLessThan(x(2000 + 200)); // the usual gap: still moving
+    expect(x(2000 + 200)).toBeLessThan(x(2000 + 250)); // the next frame is late: still moving
+    expect(x(2000 + 250)).toBeLessThan(100);
+    s.push(frame(111, [1], [110]), 2400); // arrives 200 ms late
+    expect(x(2400)).toBeGreaterThan(99); // picks up from where it is drawn, no jump back
   });
 
   // Red without the guard: an entry far past the timeline held everything after it.
@@ -361,10 +374,10 @@ describe("page timeline", () => {
     s.push(frame(top - 10, [1], [0]), 0);
     s.addDetail(detail(4)); // tick 2^32 + 4 on the wire
     s.push(frame(14, [1], [10]), 1000);
-    s.sample(1000 + 400); // tick 2^32 - 0.4
+    s.sample(1000 + 480); // tick 2^32 - 0.4 (24 ticks over 1200 ms)
     expect(s.displayTick).toBeGreaterThan(top - 10);
     expect(got).toEqual([]);
-    s.sample(1000 + 600); // past 2^32 + 4
+    s.sample(1000 + 780); // past 2^32 + 4
     expect(got).toEqual([4]);
     const world = { width: 2000, height: 1300 };
     const [d] = decodeDelta(deltaMessage([encodeDeltaChunk(top + 5, [{ slot: 1, kind: 0, x: 0, y: 0, tick: top - 5 }], [], world)!]), world);

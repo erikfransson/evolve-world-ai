@@ -6,6 +6,7 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- Live and Ecosystem: smoother motion and fewer slow frames (#49). Creatures keep moving through a server frame that arrives late (each frame's motion spans 1.3x the usual gap, which is now an average over recent frames instead of the last one alone): while following one, the frame-to-frame change in camera speed halves under real tunnel jitter. Creature dots are stamped from one bitmap atlas, at whole device pixels with quarter-pixel placement, instead of filled as paths of a thousand circles: at whole-world view, frames over 25 ms drop from 6-38% to 0-5% on an Iris Xe.
 ## 0.2.2 (2026-10-16)
 
 - Live: "Add your creature" says under the training toggles that more advanced RL training can be done in the RL Arena, with a link (#45).
