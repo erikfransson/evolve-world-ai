@@ -1,4 +1,4 @@
-import { closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, readSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { gzip, gzipSync } from "node:zlib";
 import { promisify } from "node:util";
@@ -149,6 +149,18 @@ export class StateStore {
   hiddenSaves(): number {
     const listed = new Set(this.list().map((s) => s.name));
     return readdirSync(this.dir).filter((n) => isSaveName(n) && !listed.has(n)).length;
+  }
+
+  // Moves every save and sidecar into the new subdirectory `sub` (kept: listing, rotation and the disk cap read only this directory's own
+  // files), oldest first, so a failure part-way leaves the newest saves in place for a restart. Then the extra state files named in
+  // `also` that exist. Returns how many saves moved. Throws when `sub` exists.
+  moveAside(sub: string, also: readonly string[] = []): number {
+    const to = join(this.dir, sub);
+    if (existsSync(to)) throw new Error(`${sub} exists already`);
+    mkdirSync(to, { mode: 0o700 });
+    const names = readdirSync(this.dir).filter((n) => SAVE.test(n) || META.test(n)).sort();
+    for (const n of [...names, ...also.filter((n) => existsSync(join(this.dir, n)))]) renameSync(join(this.dir, n), join(to, n));
+    return names.filter((n) => SAVE.test(n)).length;
   }
 
   // The checked state of a save, parsed on a worker (saveParse.ts). The name must be one the listing shows (pattern, regular file, not from the future),

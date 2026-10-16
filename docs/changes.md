@@ -6,6 +6,7 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- Live admin: `./live reset [--copies N]` starts a fresh world with N copies of each founder (default 10, at most 725 for 4 founders), keeping the old world's saves and settings in a `before-reset-<time>` folder that is never restored. The page shows the seed count up to 3000.
 - The map is drawn once per zoom around the view and copied each frame, instead of drawing every rock outline again each frame. On a mid laptop (Iris Xe) the Live page at whole-world view goes from about 5 to 20-60 frames a second (the rest is the creature dots and items), and at 2x zoom from 12-20 to 60; the Ecosystem page gains the same way.
 
 ## 0.2.1 (2026-10-16)

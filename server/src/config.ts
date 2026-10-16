@@ -36,8 +36,10 @@ liveConfig.eco.birthCostRange = [...LIVE_BIRTH.cost];
 liveConfig.eco.birthCooldownRange = [...LIVE_BIRTH.cooldown];
 liveConfig.eco.hueDrift = 3; // degrees (Ecosystem 8): families keep their colour longer, so the view reads as lineages
 
-// A fresh world gets this many copies of each founder in the founders file, at random open spots.
+// A fresh world gets this many copies of each founder in the founders file, at random open spots; an admin reset may ask for more,
+// up to the room below the birth reserve (seedRoom).
 export const SEED_COPIES = 10;
+export const seedRoom = (eco: { maxPopulation: number; birthReserve: number }): number => eco.maxPopulation - eco.birthReserve;
 export const MAX_SEED_FOUNDERS = MAX_FOUNDERS; // the same bound as the pages (live/founders.ts)
 export const MAX_FOUNDERS_FILE_BYTES = 512 * 1024; // 4 trained founders are 57 kB; 8 of the largest genomes an add allows (7538 weights, about 60 kB each) fit
 

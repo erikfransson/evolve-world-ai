@@ -84,6 +84,19 @@ const admin = startAdmin(HOST, adminPort, token, live, stateDir, webRoot, savedO
   stop,
   blankName: (name) => live.whenIdle(() => live.blankName(name)),
   renameName: (from, to, force) => live.whenIdle(() => live.renameName(from, to, force)),
+  reset: async (copies) => {
+    if (stopping) throw new Error("the server is stopping");
+    stopping = true; // no stop save lands next to the kept world
+    try {
+      const line = await saves.reset(stateDir, copies, founders.length);
+      console.log(`reset: ${line}`);
+      setTimeout(shutdown, 500); // the reply goes out first
+      return line;
+    } catch (e) {
+      stopping = false;
+      throw e;
+    }
+  },
 });
 
 runTicks(live, LIMITS.maxTickFailures, (why) => {

@@ -276,7 +276,7 @@ describe("admin load", () => {
     const unhandled = vi.fn();
     process.on("unhandledRejection", unhandled);
     const flaky = { eco: world.eco, whenIdle: <T>(_fn: () => T): Promise<T> => Promise.reject(new Error("idle failed")) };
-    const admin = startAdmin("127.0.0.1", 62520, "tok", flaky, dir, dir, {}, { pause() {}, resume() {}, paused: () => false, saveNow: async () => "", listSaves: () => [], loadSave: async () => "loaded x", stop() {}, blankName: async () => 0, renameName: async () => 0 });
+    const admin = startAdmin("127.0.0.1", 62520, "tok", flaky, dir, dir, {}, { pause() {}, resume() {}, paused: () => false, saveNow: async () => "", listSaves: () => [], loadSave: async () => "loaded x", stop() {}, blankName: async () => 0, renameName: async () => 0, reset: async () => "" });
     try {
       const ws = new WebSocket("ws://127.0.0.1:62520/");
       sockets.push(ws);

@@ -14,7 +14,7 @@ import { addingOn } from "./adds.ts";
 import { Chronicle } from "./chronicle.ts";
 import { restoreState, saveState } from "../../src/typescript/src/sim/ecoState.ts";
 import type { EcoState } from "../../src/typescript/src/sim/ecoState.ts";
-import { LIMITS, LIVE, MAX_POPULATION, MAX_SEED_FOUNDERS, SEED_COPIES, itemHeadroom } from "./config.ts";
+import { LIMITS, LIVE, MAX_POPULATION, MAX_SEED_FOUNDERS, SEED_COPIES, itemHeadroom, seedRoom } from "./config.ts";
 import type { SeedFounder } from "./founders.ts";
 import { mapRegions } from "../../src/typescript/src/live/mapRegions.ts";
 import { mapVersion } from "../../src/typescript/src/sim/maps/index.ts";
@@ -72,12 +72,15 @@ export class LiveWorld {
   private readonly captures = new Map<number, Capture>();
   private readonly refreshes: TokenBucket;
   readonly chronicle = new Chronicle();
+  readonly freshEco: { maxPopulation: number; birthReserve: number }; // a fresh world's caps (the config this server starts from), bounding its seed
+  seedCopies = SEED_COPIES; // of each founder this world was seeded with (saves.ts SEED_FILE), for the hello
   private added = new Set<number>(); // ids of visitor-added creatures that may still live (pruned in aliveAdded)
   private map: WireMap = { ground: { normal: 1, mud: 0, firm: 0, rock: 0 }, regions: [] };
   private readonly home: { width: number; height: number; map: string }; // the world this server runs; a save of another is not restored
 
   // helpers: a pool of helper threads, owned from here on (close() closes it), or null to run on this thread.
   constructor(config: EcoConfig, pool: readonly PoolEntry[] | null, helpers: ThinkPool | null = null) {
+    this.freshEco = { maxPopulation: config.eco.maxPopulation, birthReserve: config.eco.birthReserve };
     this.pool = pool;
     this.helpers = helpers;
     this.home = { width: config.world.width, height: config.world.height, map: config.world.map ?? "" };
@@ -412,7 +415,7 @@ export class LiveWorld {
       frameHz: 5,
       dt: this.config.dt,
       itemSlots: this.eco.world.count,
-      summary: { initialPopulation: eco.initialPopulation, maxPopulation: eco.maxPopulation, collisionDamage: eco.collisionDamage, seasons: eco.seasons, ...(eco.initialPopulation === 0 ? { seedCopies: SEED_COPIES } : {}), foodEnergy: this.eco.config.world.foodEnergy, poisonDamage: this.eco.config.world.poisonDamage },
+      summary: { initialPopulation: eco.initialPopulation, maxPopulation: eco.maxPopulation, collisionDamage: eco.collisionDamage, seasons: eco.seasons, ...(eco.initialPopulation === 0 ? { seedCopies: this.seedCopies } : {}), foodEnergy: this.eco.config.world.foodEnergy, poisonDamage: this.eco.config.world.poisonDamage },
       maxViewers,
       add: this.currentAddRules(),
       map: this.map,
@@ -502,20 +505,21 @@ export class LiveWorld {
     return spots;
   }
 
-  // Seeds a fresh world (no tick run, nobody in it) with SEED_COPIES of each founder at random open spots, each copy the founder of a
+  // Seeds a fresh world (no tick run, nobody in it) with `copies` (SEED_COPIES unless an admin reset asked for more) of each founder at random open spots, each copy the founder of a
   // lineage with the founder's name (behind STARTER_MARK), each founder its own hue. Not visitor adds: they count toward no add cap (see attach).
   // random: the server's own draws. Throws when the world is not fresh or a founder does not go in.
-  seedFounders(founders: readonly SeedFounder[], random: () => number = Math.random): number {
+  seedFounders(founders: readonly SeedFounder[], random: () => number = Math.random, copies = SEED_COPIES): number {
     const e = this.eco;
     if (e.tick !== 0 || e.population !== 0 || e.lineageTable.toState().late.length !== 0) throw new Error("only a fresh, empty world is seeded");
     if (founders.length < 1 || founders.length > MAX_SEED_FOUNDERS) throw new Error(`1 to ${MAX_SEED_FOUNDERS} founders are seeded`);
-    const n = founders.length * SEED_COPIES;
-    if (n > e.config.eco.maxPopulation) throw new Error("more founders than the world has room for");
+    if (!Number.isInteger(copies) || copies < 1) throw new Error("copies must be a whole number from 1");
+    const n = founders.length * copies;
+    if (n > seedRoom(e.config.eco)) throw new Error(`${n} founders do not fit below the birth reserve (${seedRoom(e.config.eco)})`);
     const spots = this.freeSpots(n, random);
     if (spots.length < n) throw new Error("no room to seed the founders");
     const hue0 = random() * 360;
     for (let i = 0; i < n; i++) {
-      const k = Math.floor(i / SEED_COPIES);
+      const k = Math.floor(i / copies);
       const f = founders[k]!;
       const p = spots[i]!;
       const res = e.insertCreature({ genome: f.genome, plan: f.plan, x: p.x, y: p.y, heading: p.heading, hue: (hue0 + (360 * k) / founders.length) % 360, name: STARTER_MARK + f.name, ...(f.birth ? { birth: f.birth } : {}) }); // the start energy of a pool founder; its own birth traits or the range middles
