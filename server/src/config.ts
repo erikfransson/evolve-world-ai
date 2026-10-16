@@ -77,7 +77,7 @@ export const LIVE = {
     windowS: 300,
     maxCopies: MAX_COPIES, // copies per add (10); each copy is one insert and one free-spot search of at most 40 tries
     aliveMax: 50, // visitor-added creatures alive at once (the inserted ones, not their children), whatever the population (Erik)
-    perVisitor: 30, // creatures per visitor per window, three full adds, so at least 20 of perWindow stay for others: per address with trustForwardedFor, else per connection
+    perVisitor: 30, // creatures per visitor per window, three full adds: per address with trustForwardedFor (then at least 20 of perWindow stay for others), else per connection, where one client with two connections can take the whole window and fill aliveMax
     burst: 3, // adds a connection may send back to back (three full adds without waiting), then one per socketEveryS
     socketEveryS: 10, // one add per this many seconds on one connection after the burst; faster is refused with retryS, and 3 strikes (one back per minute) cut the connection
     minSpeed: 0.5, // simulated seconds per real second: below this the world counts as busy and adds wait

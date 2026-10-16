@@ -259,9 +259,13 @@ describe("saves", () => {
       expect(loadOverrides(dir, new LiveWorld(smallConfig(), null))).toEqual({ "add.perWindow": 40 });
       expect(LIVE.add.perWindow).toBe(40);
       expect(log).toHaveBeenCalledWith(expect.stringMatching(/add.aliveShare is no longer a setting/));
+      writeFileSync(join(dir, "admin-overrides.json"), JSON.stringify({ "add.aliveShare": 0, "add.aliveFloor": 0 })); // adding was off
+      expect(loadOverrides(dir, new LiveWorld(smallConfig(), null))).toEqual({ "add.aliveMax": 0 });
+      expect(LIVE.add.aliveMax).toBe(0);
     } finally {
       log.mockRestore();
       LIVE.add.perWindow = before;
+      LIVE.add.aliveMax = 50;
     }
   });
 

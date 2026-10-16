@@ -41,6 +41,8 @@ export function loadOverrides(stateDir: string, world: { eco: Ecosystem }): Reco
   if (!existsSync(file)) return {};
   try {
     const saved = JSON.parse(readFileSync(file, "utf8"));
+    // 0.2.0 turned adding off with both alive keys at 0; keep it off rather than reopen it with the new aliveMax default.
+    if (saved && typeof saved === "object" && saved["add.aliveShare"] === 0 && saved["add.aliveFloor"] === 0 && !Object.hasOwn(saved, "add.aliveMax")) saved["add.aliveMax"] = 0;
     for (const k of DROPPED) {
       if (saved && typeof saved === "object" && Object.hasOwn(saved, k)) {
         delete saved[k];

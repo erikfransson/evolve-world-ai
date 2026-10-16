@@ -131,7 +131,7 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
     send(ws, h, "text");
   };
 
-  // An add: per connection a burst of 2, then one per add.socketEveryS (checked in the message handler); parsed only while the global
+  // An add: per connection a burst of add.burst, then one per add.socketEveryS (checked in the message handler); parsed only while the global
   // attempt rate allows; inserted between ticks if the caps (adds.ts) allow. Every outcome gets an added or refused reply.
   const add = (ws: WebSocket, v: Viewer, text: string): void => {
     const reply = (m: Added | Refused): void => {

@@ -8,7 +8,7 @@ const ADD_STRIKES = 3; // adds past the rate a connection may send (one more eac
 // "per 5 minutes", "per 90 s": the window as a visitor reads it.
 const per = (windowS: number): string => (windowS % 60 === 0 ? `per ${windowS / 60 === 1 ? "minute" : `${windowS / 60} minutes`}` : `per ${Math.round(windowS)} s`);
 
-// Adding is off while the admin set no room for it: no creatures per window, or no added creatures alive (neither a share nor a floor).
+// Adding is off while the admin set no room for it: no creatures per window, or no visitor creatures alive (aliveMax 0).
 // The hello and rules then carry no rules.
 export const addingOn = (): boolean => LIVE.add.perWindow > 0 && LIVE.add.aliveMax > 0;
 
