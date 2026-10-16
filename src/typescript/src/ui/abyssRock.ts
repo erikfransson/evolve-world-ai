@@ -167,7 +167,7 @@ function buildRaster(item: Item, cell: number): Raster | null {
       g *= lum;
       bl *= lum;
       // pale encrusting patches, only close to the edge and only where a second noise lets them
-      const e = smooth(0.52, 0.72, valueNoise(wx / 24, wy / 24, 51)) * smooth(0.35, 0.62, 0.5 + 0.5 * fbm(wx / 260, wy / 260, 53, 2)) * (1 - smooth(2, 26, dd)) * (inside[k] ? 1 : 0);
+      const e = dd < 26 && inside[k] ? smooth(0.52, 0.72, valueNoise(wx / 24, wy / 24, 51)) * smooth(0.35, 0.62, 0.5 + 0.5 * fbm(wx / 260, wy / 260, 53, 2)) * (1 - smooth(2, 26, dd)) : 0;
       if (e > 0) {
         const f = 0.62 * e;
         const shade = 0.55 + 0.45 * Math.min(1.15, lum);
