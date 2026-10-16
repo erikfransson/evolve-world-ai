@@ -31,7 +31,7 @@ describe("creature dots stamped from an atlas", () => {
     arcs.length = 0;
     const { ok, blits, transform } = stamp([100, 101], [40, 40.5]);
     expect(ok).toBe(true);
-    expect(arcs[0]![2]).toBe(2.5); // device px radius, quarter-rounded: 4.8 world units at zoom 0.5 is 2.4, then 2.5
+    expect(arcs[0]![2]).toBe(2.5); // the 2.4 device px handed in (4.8 world units at zoom 0.5), quarter-rounded
     expect(arcs).toHaveLength(16); // one block of 4 x 4 offsets
     // device centres: (60.3, 40.6) and (60.8, 40.85); quarters 241, 162 and 243, 163
     const size = 2 * Math.ceil(2.5 + 1);
@@ -111,6 +111,7 @@ describe("dim and outline passes", () => {
     } as unknown as CanvasRenderingContext2D;
     const cfg = { worldW: 4000, worldH: 2500, radius: 12, itemRadius: 4, species: [{ fullEnergy: 150, hunter: false }] };
     const r = new EcoRenderer() as unknown as { drawCreatures(...a: unknown[]): void };
+    arcs.length = 0;
     for (let frame = 0; frame < 2; frame++) { // the first frame sets the size and draws paths, the second stamps
       laid.length = 0;
       stamps.length = 0;
@@ -119,6 +120,8 @@ describe("dim and outline passes", () => {
       if (frame === 0) expect(fills.slice(0, 2)).toEqual([{ alpha: 0.3, style: "hsl(150, 12%, 55%)" }, { alpha: 0.75, style: "rgb(6, 12, 9)" }]); // the paths: each opacity once
     }
     expect(laid).toEqual([{ alpha: 0.3, layer: true }, { alpha: 0.75, layer: true }]); // the dim pass, then the outline pass
+    // World radii to device px, quarter-rounded: dots of 24 units (2.4 CSS px at 10 units a px) are 2.4 px, so 2.5; outlines 33 units, so 3.25
+    expect([...new Set(arcs.map((a) => a[2]))].sort()).toEqual([2.5, 3.25]);
     expect(stamps.length).toBe(3); // the lit creatures' fills, straight onto the canvas
     expect(stamps.every((st) => st.alpha === 1)).toBe(true);
   });
