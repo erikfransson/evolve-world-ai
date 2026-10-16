@@ -118,6 +118,8 @@
 .train-bar { height: 6px; border-radius: 3px; background: var(--border-hi); overflow: hidden; }
 .train-bar span { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.25s linear; }
 .train-row { display: flex; align-items: center; gap: 0.5rem; }
+.train-more { margin: 6px 0 0; }
+.train-more a { color: var(--accent); }
 .train-row .hint { flex: 1; font-variant-numeric: tabular-nums; }
 .addp .toggle label { font-size: 0.88rem; }
 input.text { width: 100%; padding: 0.5rem 0.7rem; background: var(--bg); color: var(--text); border: 1px solid var(--border-hi); border-radius: 8px; font: inherit; font-size: 0.95rem; }

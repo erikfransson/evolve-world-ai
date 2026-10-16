@@ -6,6 +6,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- Live: "Add your creature" says under the training toggles that more advanced RL training can be done in the RL Arena, with a link (#45).
+
 ## 0.2.2 (2026-10-16)
 
 - Live admin: `npm run admin -- reset [--copies N]` (`./live reset` in the admin wrapper; the server exits 75 and the unit starts it again) starts a fresh world with N copies of each founder (default 10, at most 725 for 4 founders), keeping the old world's saves and settings in a `before-reset-<time>` folder that is never restored. The page shows the seed count up to 3000.
