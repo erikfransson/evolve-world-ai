@@ -1,5 +1,9 @@
 import { charger, checkEnv, runEpisode, variantFor } from "../../src/typescript/src/sim/rl/env.ts";
 import type { EnvSpec } from "../../src/typescript/src/sim/rl/env.ts";
+import { recordEpisode } from "../../src/typescript/src/sim/rl/recording.ts";
+import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
+import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
+import { restoreState, saveState } from "../../src/typescript/src/sim/ecoState.ts";
 
 const duel = (le: number, re: number): EnvSpec => ({
   id: "d", name: "d", description: "d", world: "ecosystem", role: 0, size: [600, 600], food: 0, poison: 0, foodRegrow: 0, seconds: 6, rivals: [], collisionDamage: true,
@@ -40,6 +44,26 @@ describe("duel envs (#44)", () => {
     expect(calls[0]![1]).toBeLessThanOrEqual(0);
   });
 
+  it("start the charger its full distance away, also when the learner is drawn by a wall", () => {
+    const env: EnvSpec = { ...duel(250, 250), size: [400, 400], duel: { ...duel(250, 250).duel!, distance: [150, 150], bearing: [-Math.PI, Math.PI] } };
+    for (let seed = 1; seed <= 30; seed++) {
+      let gap = 0;
+      runEpisode(env, still, seed, null, {}, (eco) => {
+        if (gap) return;
+        const [a, b] = eco.members.map((m) => m.creature.state);
+        gap = Math.hypot(a!.x - b!.x, a!.y - b!.y);
+      });
+      expect(gap, `seed ${seed}`).toBeGreaterThan(145); // one tick of motion at most
+    }
+  });
+
+  it("keep the onBumpKill hook readable, so it can be chained", () => {
+    const eco = new Ecosystem({ ...structuredClone(DEFAULT_ECO_CONFIG), seed: 1 });
+    const f = () => {};
+    eco.onBumpKill = f;
+    expect(eco.onBumpKill).toBe(f);
+  });
+
   it("are checked like other custom envs", () => {
     const { id: _, ...v } = duel(10, 250);
     expect(checkEnv(v, "ecosystem", 0)).not.toBeTypeOf("string");
@@ -47,6 +71,11 @@ describe("duel envs (#44)", () => {
     expect(checkEnv({ ...v, duel: { ...v.duel, distance: [200, 100] } }, "ecosystem", 0)).toMatch(/distance/);
     expect(checkEnv({ ...v, duel: "x" }, "ecosystem", 0)).toBeTypeOf("string");
     expect(checkEnv({ ...v, augment: { energy: 0.3 } }, "ecosystem", 0)).toMatch(/augment/);
+    expect(checkEnv({ ...v, collisionDamage: false }, "ecosystem", 0)).toMatch(/collision damage/);
+    expect(checkEnv({ ...v, rivals: [{ species: 0, count: 2, source: "random" }] }, "ecosystem", 0)).toMatch(/instead of rivals/);
+    expect(checkEnv({ ...v, layout: { kind: "patch", radius: 60 } }, "ecosystem", 0)).toMatch(/no layout/);
+    expect(checkEnv({ ...v, duel: { ...v.duel, distance: [100, 290] } }, "ecosystem", 0)).toMatch(/distance/); // 600 wide: at most 270
+    expect(checkEnv({ ...v, duel: { ...v.duel, distance: [0, 100] } }, "ecosystem", 0)).toMatch(/distance/);
   });
 });
 
@@ -75,10 +104,32 @@ describe("augment (#44)", () => {
     for (let s = 1; s <= 30; s++) expect(variantFor(big, s).rivals.reduce((a, r) => a + r.count, 0)).toBeLessThanOrEqual(30);
   });
 
+  it("records the sides an augmented episode played, and refuses a size factor with a layout", () => {
+    const seed = 4;
+    expect(recordEpisode(env, still, seed, null, {}).width).toBe(variantFor(env, seed).size[0]);
+    expect(variantFor(env, seed).size[0]).not.toBe(env.size[0]);
+    const { id: _, ...v } = env;
+    expect(checkEnv({ ...v, layout: { kind: "patch", radius: 60 } }, "ecosystem", 0)).toMatch(/layout/);
+    expect(checkEnv({ ...v, layout: { kind: "patch", radius: 60 }, augment: { items: 0.3 } }, "ecosystem", 0)).not.toBeTypeOf("string");
+  });
+
   it("leaves an env without augment as it is, and rejects factors out of range", () => {
     const { augment: _, ...plain } = env;
     expect(variantFor(plain, 3)).toBe(plain);
     const { id: __, ...v } = env;
     expect(checkEnv({ ...v, augment: { size: 1.5 } }, "ecosystem", 0)).toMatch(/augment size/);
+  });
+});
+
+describe("eco.killEnergy in saves", () => {
+  it("is refused out of range when a save is restored", () => {
+    const eco = new Ecosystem({ ...structuredClone(DEFAULT_ECO_CONFIG), seed: 1, eco: { ...DEFAULT_ECO_CONFIG.eco, initialPopulation: 3 } });
+    const state = saveState(eco);
+    expect(() => restoreState(state)).not.toThrow();
+    for (const bad of [-1, 1e6]) {
+      const s = structuredClone(state);
+      (s.config as { eco: { killEnergy: number } }).eco.killEnergy = bad;
+      expect(() => restoreState(s), String(bad)).toThrow(/killEnergy/);
+    }
   });
 });

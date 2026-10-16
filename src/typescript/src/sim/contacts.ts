@@ -178,7 +178,7 @@ export class Contacts {
     if (!collide(a, b, radius, e, this.contact)) return;
     if (eco.collisionDamage) {
       const fresh = a.energy > 0 && b.energy > 0 && this.contact.speed > 0; // else hurt does nothing
-      hurt(a, b, this.contact.speed, eco.damagePerSpeed, eco.killEnergy ?? 0);
+      hurt(a, b, this.contact.speed, eco.damagePerSpeed, eco.killEnergy);
       if (fresh) this.noteHurt(a, b, eco.damagePerSpeed * this.contact.speed);
     }
     this.confine(a);

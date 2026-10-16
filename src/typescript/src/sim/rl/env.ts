@@ -1,6 +1,6 @@
 import { genomeLength, layerSizes, randomGenome } from "../brain.ts";
 import { itemsPerDensity } from "../config.ts";
-import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "../ecoConfig.ts";
+import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG, MAX_KILL_ENERGY } from "../ecoConfig.ts";
 import type { EcoConfig } from "../ecoConfig.ts";
 import { Ecosystem } from "../ecosystem.ts";
 import type { CastMember } from "../ecosystem.ts";
@@ -138,13 +138,19 @@ export function envConfig(env: EnvSpec, seed: number): EcoConfig {
   return base;
 }
 
-// The episode config of an env, built once and reused with the seed swapped (the engine only reads it); the key guards an env edited in place.
-const configs = new WeakMap<EnvSpec, { key: string; config: EcoConfig }>();
+// The episode config of an env, built once per distinct setup and reused with the seed swapped (the engine only reads it). The key
+// holds every field but those envConfig never reads, so an env edited in place or an augmented variant never meets a stale config.
+const CONFIG_CACHE_SIZE = 256;
+const configs = new Map<string, EcoConfig>();
 function episodeConfig(env: EnvSpec, seed: number): EcoConfig {
-  const key = `${env.world} ${env.size[0]} ${env.size[1]} ${env.food} ${env.poison} ${env.foodRegrow} ${env.collisionDamage} ${env.killEnergy} ${env.fast} ${env.poisonDamage} ${env.rivals.reduce((a, r) => a + r.count, 1)} ${env.foodVisibleFor}`; // foodVisibleFor sets eco.wasm
-  let c = configs.get(env);
-  if (c?.key !== key) configs.set(env, (c = { key, config: envConfig(env, 0) }));
-  return { ...c.config, seed };
+  const { id: _i, name: _n, description: _d, tags: _t, reward: _r, layout: _l, duel: _du, augment: _a, seconds: _s, learnerEnergy: _e, ...read } = env;
+  const key = JSON.stringify(read);
+  let c = configs.get(key);
+  if (!c) {
+    if (configs.size >= CONFIG_CACHE_SIZE) configs.delete(configs.keys().next().value!);
+    configs.set(key, (c = envConfig(env, 0)));
+  }
+  return { ...c, seed };
 }
 
 const converted: Record<EnvWorld, WeakMap<PoolEntry, Learner>> = { ecosystem: new WeakMap(), hunt: new WeakMap() };
@@ -186,13 +192,13 @@ export const BLANK_ENV: EnvSpec = { id: "", name: "", description: "", world: "e
 // every time, so their learners are kept for the last few episodes. Brains copy genomes and creatures copy plans, so
 // the cached learners are never changed.
 const RIVAL_CACHE_SIZE = 64;
-const rivalCache: { env: EnvSpec; seed: number; learners: Map<number, Learner> }[] = [];
+const rivalCache: { world: EnvWorld; seed: number; learners: Map<number, Learner> }[] = []; // by world, so an augmented env's variants share it
 
 function randomRival(env: EnvSpec, seed: number, role: number, rivalSeed: number): Learner {
-  let entry = rivalCache.find((e) => e.env === env && e.seed === seed);
+  let entry = rivalCache.find((e) => e.world === env.world && e.seed === seed);
   if (entry) rivalCache.splice(rivalCache.indexOf(entry), 1);
   else {
-    entry = { env, seed, learners: new Map() };
+    entry = { world: env.world, seed, learners: new Map() };
     if (rivalCache.length >= RIVAL_CACHE_SIZE) rivalCache.shift();
   }
   rivalCache.push(entry);
@@ -203,6 +209,7 @@ function randomRival(env: EnvSpec, seed: number, role: number, rivalSeed: number
 }
 
 // A brain that only thrusts at `speed` (0 to 1 of full thrust) and never turns: one ray, one silent neuron, a thrust bias.
+const DUEL_MARGIN = 30; // world units: the charger starts at least this far off, the learner at least distance plus this from the walls
 const CHARGER_PLAN: PlanView = { rayCount: 1, raySpread: 0, rayLength: 10, hiddenLayers: [1], memoryShort: 0, memoryLong: 0 };
 export function charger(world: EnvWorld, speed: number): Learner {
   const sizes = layerSizes(layoutConfig(world), CHARGER_PLAN);
@@ -255,8 +262,12 @@ export function castFor(env: EnvSpec, config: EcoConfig, learner: Learner, seed:
     me.energy = rng.range(d.learnerEnergy[0], d.learnerEnergy[1]);
     const dist = rng.range(d.distance[0], d.distance[1]);
     const at = me.heading + rng.range(d.bearing[0], d.bearing[1]);
-    const x = Math.min(w - r, Math.max(r, me.x + dist * Math.cos(at)));
-    const y = Math.min(h - r, Math.max(r, me.y + dist * Math.sin(at)));
+    // The learner kept at least dist + r from the walls (checkEnv bounds dist), so the charger starts dist away in any direction.
+    const inset = (v: number, side: number): number => r + dist + ((v - r) / (side - 2 * r)) * (side - 2 * r - 2 * dist);
+    me.x = inset(me.x, w);
+    me.y = inset(me.y, h);
+    const x = me.x + dist * Math.cos(at);
+    const y = me.y + dist * Math.sin(at);
     const c = charger(env.world, rng.range(d.speed[0], d.speed[1]));
     cast.push({ species: env.role, plan: c.plan, genome: c.genome, x, y, heading: Math.atan2(me.y - y, me.x - x) + rng.range(d.offset[0], d.offset[1]), hue: 0, energy: rng.range(d.rivalEnergy[0], d.rivalEnergy[1]) });
     return cast;
@@ -384,7 +395,7 @@ export function scoreLearner(env: EnvSpec, learner: Learner, seeds: readonly num
 
 // Bounds a custom env must keep, so a page or a shared file cannot ask for a world that stalls the browser.
 const MAX_RIVAL_GROUPS = 8;
-export const ENV_LIMITS = { side: [200, 3000], items: [0, 300], regrow: [0, 10], seconds: [5, 180], rivals: [0, 30], weight: [-10, 10], energy: [1, 500], layoutSize: [20, 400], poisonDamage: [1, 100], killEnergy: [0, 300], fast: [0, 0.3], augment: [0, 0.9], distance: [0, 1500], speed: [0, 1] } as const;
+export const ENV_LIMITS = { side: [200, 3000], items: [0, 300], regrow: [0, 10], seconds: [5, 180], rivals: [0, 30], weight: [-10, 10], energy: [1, 500], layoutSize: [20, 400], poisonDamage: [1, 100], killEnergy: [0, MAX_KILL_ENERGY], fast: [0, 0.3], augment: [0, 0.9], distance: [0, 1500], speed: [0, 1] } as const;
 
 // A custom env rebuilt from checked fields, for the learner's world and species, or a reason it is not valid.
 export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | string {
@@ -430,10 +441,16 @@ export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | s
     if (typeof d !== "object" || d === null) return "duel must be an object of ranges";
     for (const [k, lim] of Object.entries(lims)) if (!range(d[k], lim)) return `duel ${k} must be a range within ${lim[0]} to ${lim[1]}`;
     duel = Object.fromEntries(Object.keys(lims).map((k) => [k, (d[k] as number[]).slice()])) as EnvSpec["duel"];
+    const most = Math.min(size[0] as number, size[1] as number) / 2 - DUEL_MARGIN;
+    if (duel!.distance[0] < DUEL_MARGIN || duel!.distance[1] > most) return `duel distance must lie within ${DUEL_MARGIN} to ${Math.max(DUEL_MARGIN, Math.floor(most))} for this world`;
+    if (v.collisionDamage !== true) return "a duel needs collision damage, or the charger's hit costs nothing";
+    if (Array.isArray(v.rivals) && v.rivals.length > 0) return "a duel has its charger instead of rivals";
+    if (v.layout !== undefined) return "a duel places its own two creatures, so it takes no layout";
   }
   let augment: EnvSpec["augment"];
   if (v.augment !== undefined) {
     if (duel) return "augment does not apply to a duel (its ranges already vary every episode)";
+    if (v.layout !== undefined && (v.augment as Record<string, unknown> | null)?.size !== undefined) return "augment size does not apply with a layout, whose sizes are fixed";
     const a = v.augment as Record<string, unknown>;
     if (typeof a !== "object" || a === null) return "augment must be an object of factors";
     augment = {};

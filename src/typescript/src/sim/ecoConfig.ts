@@ -51,6 +51,8 @@ export interface EcoConfig extends EngineConfig {
 }
 
 // world.foodDensity and world.poisonDensity are the starting densities.
+export const MAX_KILL_ENERGY = 300; // eco.killEnergy at most, for saves and RL envs
+
 export const DEFAULT_ECO_CONFIG: EcoConfig = {
   seed: 1,
   dt: DEFAULT_CONFIG.dt,

@@ -194,6 +194,9 @@ export class Ecosystem {
   private aging: Aging | null;
   onDeath: ((m: EcoCreature) => void) | null = null; // called with each creature as it leaves, before its object is recycled
   // Called for each lethal bump that leaves one survivor, with both creature states (members' kills count hunts only).
+  get onBumpKill(): ((survivor: CreatureState, victim: CreatureState) => void) | null {
+    return this.contacts.onBumpKill;
+  }
   set onBumpKill(f: ((survivor: CreatureState, victim: CreatureState) => void) | null) {
     this.contacts.onBumpKill = f;
   }
