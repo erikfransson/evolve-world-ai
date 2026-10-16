@@ -269,18 +269,38 @@ describe("saves", () => {
     }
   });
 
-  it("admin overrides that no longer apply are ignored loudly and kept aside, not lost", () => {
+  it("admin overrides that no longer apply are skipped key by key, loudly, the rest applied, and the file kept aside", () => {
     const dir = tmp();
-    const bad = { "eco.maxPopulation": 50, "eco.birthReserve": 50 };
+    const bad = { "eco.maxPopulation": 50, "eco.birthReserve": 50 }; // refused together (the reserve would reach the cap)
     writeFileSync(join(dir, "admin-overrides.json"), JSON.stringify(bad));
     const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const w = new LiveWorld(smallConfig(), null);
     try {
-      expect(loadOverrides(dir, new LiveWorld(smallConfig(), null))).toEqual({});
-      expect(err).toHaveBeenCalledWith(expect.stringMatching(/^OVERRIDES IGNORED/));
+      expect(loadOverrides(dir, w)).toEqual({ "eco.birthReserve": 50 }); // alone it fits under the cap in force
+      expect(w.eco.config.eco.birthReserve).toBe(50);
+      expect(err).toHaveBeenCalledWith(expect.stringMatching(/eco.maxPopulation skipped: eco.birthReserve must be below eco.maxPopulation/));
     } finally {
       err.mockRestore();
     }
     expect(JSON.parse(readFileSync(join(dir, "admin-overrides.ignored.json"), "utf8"))).toEqual(bad);
+  });
+
+  it("a rollback past a setting keeps the standing ones: an unknown key is skipped with a log line, a valid key still applies", () => {
+    const dir = tmp();
+    const file = { "eco.someFutureSetting": 3, "add.aliveMax": 20, "eco.hueDrift": 10, "add.perWindow": 99999 };
+    writeFileSync(join(dir, "admin-overrides.json"), JSON.stringify(file));
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const w = new LiveWorld(smallConfig(), null);
+    try {
+      expect(loadOverrides(dir, w)).toEqual({ "add.aliveMax": 20, "eco.hueDrift": 10 });
+      expect([LIVE.add.aliveMax, w.eco.config.eco.hueDrift]).toEqual([20, 10]);
+      expect(err).toHaveBeenCalledWith(expect.stringMatching(/eco.someFutureSetting is not a setting of this version, skipped/));
+      expect(err).toHaveBeenCalledWith(expect.stringMatching(/add.perWindow skipped: add.perWindow must be a whole number from 0 to 1000/)); // out of range: refused on its own
+    } finally {
+      err.mockRestore();
+      LIVE.add.aliveMax = 50;
+    }
+    expect(JSON.parse(readFileSync(join(dir, "admin-overrides.ignored.json"), "utf8"))).toEqual(file);
   });
 
   it("a save of this world that fails to restore (a worker out of memory, a timeout) seeds, saves and retires nothing: startup throws", async () => {
