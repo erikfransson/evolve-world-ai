@@ -1,6 +1,6 @@
 import type { Terrain } from "../sim/terrain.ts";
 import { context2d, makeCanvas } from "./groundScene.ts";
-import { drawTerrain } from "./terrainScene.ts";
+import { drawTerrain, prepareTerrain } from "./terrainScene.ts";
 import type { View } from "./terrainScene.ts";
 
 const CACHE_MAX_PIXELS = 8_000_000; // the cached map's bitmap, about 32 MB; a larger one draws directly instead
@@ -44,6 +44,7 @@ export function cacheStep(m: CacheMemo, world: { width: number; height: number }
 export class TerrainCache {
   private canvas: OffscreenCanvas | HTMLCanvasElement | null = null; // grows only; the map sits in its top-left w x h pixels
   private terrain: Terrain | null = null;
+  private unfinished = false; // the cached map drew some ground from another tier's bitmaps while its own were made: made ready a few a frame (prepareTerrain), then redrawn
   private w = 0;
   private h = 0;
   private readonly memo: CacheMemo = { ready: false, zoom: 0, area: { x0: 0, x1: 0, y0: 0, y1: 0 }, builtAt: -Infinity, lastZoom: 0, lastX: NaN, lastY: NaN, lastCovered: false };
@@ -54,14 +55,18 @@ export class TerrainCache {
     if (t.empty) return true;
     const m = this.memo;
     m.ready = this.terrain === t && this.canvas !== null;
-    const { step, covered } = cacheStep(m, t, zoom, view, animating, now);
+    let { step, covered } = cacheStep(m, t, zoom, view, animating, now);
+    if (step === "cached" && this.unfinished && zoom === m.lastZoom && !animating && prepareTerrain(t, zoom, m.area)) step = "rebuild"; // the stand-in is replaced once every bitmap is there
     m.lastZoom = zoom;
     m.lastX = view.x0;
     m.lastY = view.y0;
     m.lastCovered = covered;
     if (step === "direct") return false;
     if (step === "rebuild") {
-      if (!this.build(t, zoom, view)) return false;
+      if (!this.build(t, zoom, view)) {
+        this.unfinished = false; // no retry every frame: the next zoom or pan tries again
+        return false;
+      }
       m.builtAt = now;
     }
     const c = this.canvas;
@@ -105,7 +110,7 @@ export class TerrainCache {
     g.clip();
     g.setTransform(zoom, 0, 0, zoom, -px0, -py0);
     const area = { x0: px0 / zoom, x1: (px0 + w) / zoom, y0: py0 / zoom, y1: (py0 + h) / zoom };
-    drawTerrain(g, t, zoom, area);
+    this.unfinished = !drawTerrain(g, t, zoom, area);
     g.restore();
     this.terrain = t;
     this.w = w;
