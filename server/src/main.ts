@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { parsePool } from "../../src/typescript/src/sim/seedPool.ts";
 import { loadAdminToken, startAdmin } from "./admin.ts";
 import { HELPER_THREADS, HOST, LIMITS, PORTS, liveConfig } from "./config.ts";
-import { loadFounders } from "./founders.ts";
+import { loadFounders, loadPools } from "./founders.ts";
 import type { Value } from "./tunables.ts";
 import { createNodeThinkPool } from "../../src/typescript/src/worker/nodePool.ts";
 import { LiveWorld, runTicks } from "./liveWorld.ts";
@@ -17,6 +17,7 @@ const adminPort = Number(process.env.LIVE_ADMIN_PORT ?? PORTS.admin);
 const stateDir = process.env.LIVE_STATE_DIR ?? fileURLToPath(new URL("../state", import.meta.url));
 const poolFile = fileURLToPath(new URL("../../src/typescript/public/pool.json", import.meta.url));
 const foundersFile = process.env.LIVE_FOUNDERS_FILE ?? fileURLToPath(new URL("../../src/typescript/public/live-founders.json", import.meta.url)); // seeds a fresh world
+const poolsFile = process.env.LIVE_FOUNDER_POOLS_FILE ?? fileURLToPath(new URL("../founder-pools.json", import.meta.url)); // trained variants the seeded copies are drawn from, if there is one
 const threads = Number(process.env.LIVE_THREADS ?? HELPER_THREADS);
 const webRoot = process.env.LIVE_WEB_ROOT ?? fileURLToPath(new URL("../../src/typescript/dist", import.meta.url)); // npm run build in src/typescript
 const RESET_EXIT = 75; // after an admin reset: the unit restarts on it (RestartForceExitStatus), and the next start seeds the fresh world
@@ -39,7 +40,8 @@ const store = new StateStore(stateDir);
 const token = loadAdminToken(stateDir);
 const pool = parsePool(JSON.parse(readFileSync(poolFile, "utf8"))).entries;
 if (!Number.isInteger(threads) || threads < 0 || threads > 16) throw new Error("LIVE_THREADS must be an integer from 0 to 16");
-const founders = startup("founders file checked", () => loadFounders(foundersFile)); // checked on every start, so a bad file shows at once
+const founders = startup("founders file checked", () => loadPools(poolsFile, loadFounders(foundersFile), process.env.LIVE_FOUNDER_POOLS_FILE !== undefined)); // checked on every start, so a bad file shows at once
+console.log(`founder pools: ${founders.some((f) => f.pool) ? founders.map((f) => `${f.name} ${f.pool?.length ?? 0}`).join(", ") : "none"} (${poolsFile})`);
 const live = startup(`world built (${liveConfig.world.map || "random map"}, ${liveConfig.world.width} x ${liveConfig.world.height})`, () => new LiveWorld(liveConfig, pool, threads > 0 ? createNodeThinkPool(threads) : null));
 
 const saves = new Saves(live, store);

@@ -6,6 +6,7 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- Live server: an optional founder pools file (`server/founder-pools.json`, server only) gives a fresh world's seeded copies trained variants of each founder instead of clones. No pools ship yet, so worlds seed as before.
 - Live: the kill bonus is 5 (`eco.killEnergy`, was 25 in 0.2.3): at 25 the Juggernaut took over the world. Already set on the running world; a fresh world now starts with it.
 - RL Arena: the reward graph moves to the top once training starts and stays after it ends. It has labelled axes (reward, iteration) with ticks, and the legend shows the latest train mean, best and held-out values.
 

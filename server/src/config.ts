@@ -43,6 +43,11 @@ export const SEED_COPIES = 10;
 export const seedRoom = (eco: { maxPopulation: number; birthReserve: number }): number => eco.maxPopulation - eco.birthReserve;
 export const mostCopies = (founders: number, eco: { maxPopulation: number; birthReserve: number }): number => Math.floor(seedRoom(eco) / Math.max(1, founders));
 export const MAX_SEED_FOUNDERS = MAX_FOUNDERS; // the same bound as the pages (live/founders.ts)
+// Founder pools (server/founder-pools.json, server only, so the pages never download them): trained variants of each founder that a fresh
+// world's copies are drawn from instead of clones.
+export const MAX_POOL = 30; // variants per founder
+export const MAX_POOL_WEIGHTS = 400_000; // in the whole pools file: 30 variants of the 4506-weight Oracle are 135 000
+export const MAX_POOLS_FILE_BYTES = 4 * 1024 * 1024; // 400 000 weights at 3 decimals are about 3 MB
 export const MAX_FOUNDERS_FILE_BYTES = 512 * 1024; // 4 trained founders are 57 kB; 8 of the largest genomes an add allows (7538 weights, about 60 kB each) fit
 
 // Item slots are fixed when a world is built, so it is built with room for admin to raise the food and poison caps (densities).

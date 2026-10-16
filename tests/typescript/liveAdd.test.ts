@@ -475,7 +475,7 @@ describe("adding to the world (LiveWorld)", () => {
 
   it("refuses a name a living family or a starter carries (any case), and frees it when that family dies out", () => {
     const w = new LiveWorld(smallConfig(), null);
-    w.founders = [{ name: "Juggernaut", plan, genome: genomeFor(plan) }];
+    w.founders = [{ id: "juggernaut", name: "Juggernaut", plan, genome: genomeFor(plan) }];
     LIVE.add.startEnergy = 10; // the Kiwi dies within seconds
     const first = w.addCreatures(request({ copies: 1, name: "Kiwi" }), seq(1));
     if (!("ids" in first)) throw new Error(first.reason);
