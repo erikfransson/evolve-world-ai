@@ -6,6 +6,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- RL envs (#44): duels against a scripted charger (hit it when it is weak, dodge it when it is strong), per-episode augmentation of energies, rival counts, items and sizes, fast ground, and a kill bonus. New engine setting `eco.killEnergy` (bonus energy for a kill, default 0, so worlds are unchanged).
+
 ## 0.2.2 (2026-10-16)
 
 - Live and Ecosystem: smoother motion and fewer slow frames (#49). Creatures keep moving through a server frame that arrives late (each frame's motion spans 1.3x the usual gap, which is now an average over recent frames instead of the last one alone): while following one, the frame-to-frame change in camera speed halves under real tunnel jitter. Creature dots are stamped from one bitmap atlas, at whole device pixels with quarter-pixel placement, instead of filled as paths of a thousand circles: at whole-world view, frames over 25 ms drop from 6-38% to 0-5% on an Iris Xe.

@@ -174,6 +174,21 @@ describe("hurt", () => {
     expect([c.energy, d.energy]).toEqual([80 + 15, 0]);
   });
 
+  it("adds killEnergy for the survivor of a kill, and only then", () => {
+    const a = cr(10);
+    const b = cr(100);
+    hurt(a, b, 40, 0.5, 50);
+    expect([a.energy, b.energy]).toEqual([0, 80 + 10 + 50]);
+    const c = cr(100);
+    const d = cr(100);
+    hurt(c, d, 40, 0.5, 50);
+    expect([c.energy, d.energy]).toEqual([80, 80]);
+    const e = cr(10);
+    const f = cr(15);
+    hurt(e, f, 40, 0.5, 50);
+    expect([e.energy, f.energy]).toEqual([0, 0]);
+  });
+
   it("gives nothing when both die, and ignores no contact or an already dead creature", () => {
     const a = cr(10);
     const b = cr(15);

@@ -32,7 +32,7 @@ import type { PoolEntry } from "./seedPool.ts";
 import { bandHue, founderCounts, seenEnergyScale, speciesEngine, speciesList, speciesRanges } from "./species.ts";
 import type { Species } from "./species.ts";
 import { HIT_FOOD, HIT_NONE, HIT_POISON } from "./types.ts";
-import type { Genome, HitKind, WorldView } from "./types.ts";
+import type { CreatureState, Genome, HitKind, WorldView } from "./types.ts";
 import { World } from "./world.ts";
 import { SenseKernels } from "./wasm/senseKernels.ts";
 import { MAX_RAYS } from "./wasm/senser.ts";
@@ -193,6 +193,10 @@ export class Ecosystem {
   readonly lineages: Lineages;
   private aging: Aging | null;
   onDeath: ((m: EcoCreature) => void) | null = null; // called with each creature as it leaves, before its object is recycled
+  // Called for each lethal bump that leaves one survivor, with both creature states (members' kills count hunts only).
+  set onBumpKill(f: ((survivor: CreatureState, victim: CreatureState) => void) | null) {
+    this.contacts.onBumpKill = f;
+  }
   profile: PhaseTimer | null = null; // per-phase CPU laps, set by ecoBench --profile
 
   // pool: trained founders (see seedPool.ts); without one, or at poolFraction 0, every founder is random.
