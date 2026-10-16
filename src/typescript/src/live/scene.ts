@@ -6,8 +6,7 @@ import type { CreatureFrame, Delta, ItemsSnapshot, WireEvent } from "./protocol.
 const MIN_SPAN_MS = 100;
 const MAX_SPAN_MS = 1200; // frames can be up to 5 apart (1 s) when the server shares its upload
 const SPAN_SLACK = 1.3; // a frame's motion is spread over this much of the usual gap, so one arriving a little late finds the creatures still moving
-const SPAN_EASE = 0.2; // weight of the newest gap in the usual one when frames come slower: a single late frame moves it a little
-const SPAN_EASE_FASTER = 0.5; // and when they come faster: after a hiccup or a stretch of slow frames the lag shrinks back within a few frames
+const SPAN_EASE = 0.3; // weight of the newest gap in the usual one, both ways: a single late frame or a burst after a stall moves it a little, and after a stretch of slow frames the lag shrinks back within a few frames
 const MAX_QUEUE = 4096; // timeline entries waiting for their tick; past this the oldest apply at once
 const MAX_AHEAD_S = 60; // an entry this many simulated seconds past the latest frame applies at once (frames are at most 5 s apart, 20 s at 4x)
 const U32 = 2 ** 32;
@@ -163,7 +162,7 @@ export class LiveScene {
     const v = this.views;
     if (prev) {
       const gap = Math.min(MAX_SPAN_MS, Math.max(MIN_SPAN_MS, nowMs - this.t0));
-      this.gap = this.gap ? this.gap + (gap < this.gap ? SPAN_EASE_FASTER : SPAN_EASE) * (gap - this.gap) : gap;
+      this.gap = this.gap ? this.gap + SPAN_EASE * (gap - this.gap) : gap;
     }
     this.span = prev ? Math.min(MAX_SPAN_MS, SPAN_SLACK * this.gap) : MIN_SPAN_MS;
     this.fromTick = prev ? Math.min(this.displayTick, f.tick) : f.tick;

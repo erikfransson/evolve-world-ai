@@ -360,6 +360,21 @@ describe("page timeline", () => {
     expect((s as unknown as { span: number }).span).toBeLessThan(1.3 * 300); // within 1.5 frames of the usual 200 ms after 6 frames
   });
 
+  // Red with a faster easing down than up: the burst pulled the usual gap down and the frames after it stopped short, a few ms each.
+  it("keeps moving through steady frames after a stall and the burst of frames that follows it", () => {
+    const s = new LiveScene();
+    s.dt = 1;
+    let t = 0;
+    let tick = 100;
+    for (let k = 0; k < 10; k++) s.push(frame(tick++, [1], [0]), (t += 200));
+    t += 1000; // a tunnel stall
+    for (let k = 0; k < 5; k++) s.push(frame(tick++, [1], [0]), (t += 5)); // the queued frames, together
+    for (let k = 0; k < 8; k++) {
+      s.push(frame(tick++, [1], [0]), (t += 200));
+      expect((s as unknown as { span: number }).span, `frame ${k} after the burst`).toBeGreaterThanOrEqual(200);
+    }
+  });
+
   // Red without the guard: an entry far past the timeline held everything after it.
   it("does not let an entry far ahead of the timeline hold the others back", () => {
     const s = new LiveScene();

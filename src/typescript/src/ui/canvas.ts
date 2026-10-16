@@ -16,6 +16,9 @@ export function graphFont(): string {
   return `${desktop ? 12.5 : 10}px system-ui, -apple-system, "Segoe UI", sans-serif`;
 }
 
+// The 2D context of a canvas from makeCanvas, null when there is no canvas or no context.
+export const context2d = (c: OffscreenCanvas | HTMLCanvasElement | null): CanvasRenderingContext2D | null => (c ? (c.getContext("2d") as CanvasRenderingContext2D | null) : null);
+
 // A canvas of w x h pixels for drawing off screen: an OffscreenCanvas where there is one, else a detached element, null in a worker without either.
 export function makeCanvas(w: number, h: number): OffscreenCanvas | HTMLCanvasElement | null {
   if (typeof OffscreenCanvas !== "undefined") return new OffscreenCanvas(w, h);

@@ -1,8 +1,10 @@
-import { EcoRenderer } from "../../src/typescript/src/ui/ecoScene.ts"; // vi.mock is hoisted above this import
+import { DotAtlas } from "../../src/typescript/src/ui/dotAtlas.ts"; // vi.mock is hoisted above these imports
+import { EcoRenderer } from "../../src/typescript/src/ui/ecoScene.ts";
 import { snapshotBytes, snapshotViews } from "../../src/typescript/src/worker/ecoProtocol.ts";
 
 const arcs: number[][] = [];
-vi.mock("../../src/typescript/src/ui/groundScene.ts", () => ({
+vi.mock("../../src/typescript/src/ui/canvas.ts", async (original) => ({
+  ...(await original<object>()),
   makeCanvas: (width: number, height: number) => ({ width, height, addEventListener() {} }),
   context2d: () => ({ fillStyle: "", beginPath() {}, moveTo() {}, fill() {}, clearRect() {}, setTransform() {}, drawImage() {}, arc: (x: number, y: number, r: number) => arcs.push([x, y, r]) }),
 }));
@@ -17,10 +19,10 @@ function stamp(xs: number[], ys: number[]) {
     drawImage: (_img: unknown, ...r: number[]) => blits.push(r),
   } as unknown as CanvasRenderingContext2D;
   const v = { x: Float32Array.from(xs), y: Float32Array.from(ys), heading: new Float32Array(xs.length), species: new Int32Array(xs.length) } as never;
-  const r = new EcoRenderer() as unknown as { stampDots(...a: unknown[]): boolean; atlasFor(sizes: string): void };
-  r.atlasFor("s");
-  r.atlasFor("s"); // the size held for a frame: stamping
-  const ok = r.stampDots(ctx, ctx.getTransform(), v, Int32Array.from(xs.map((_, i) => i)), 0, xs.length, "red", 4.8, 0.5, () => false);
+  const r = new DotAtlas();
+  r.frame("s");
+  r.frame("s"); // the size held for a frame: stamping
+  const ok = r.stamp(ctx, ctx.getTransform(), (v as { x: Float32Array }).x, (v as { y: Float32Array }).y, Int32Array.from(xs.map((_, i) => i)), 0, xs.length, "red", 4.8 * 0.5, () => false);
   return { ok, blits, transform };
 }
 
@@ -41,31 +43,31 @@ describe("creature dots stamped from an atlas", () => {
 
   it("a full atlas draws the remaining colours as paths, and is not cleared within a frame", () => {
     arcs.length = 0;
-    const r = new EcoRenderer() as unknown as { dot(style: string, r: number): unknown; atlasFor(sizes: string): void };
-    r.atlasFor("a");
-    r.atlasFor("a");
+    const r = new DotAtlas() as unknown as { block(style: string, r: number): unknown; frame(sizes: string): void };
+    r.frame("a");
+    r.frame("a");
     const blocks: unknown[] = [];
-    for (let k = 0; k < 700; k++) blocks.push(r.dot(`hsl(${k}, 50%, 50%)`, 9.75)); // blocks of 4 x 22 px: 121 fit in 1024 px
+    for (let k = 0; k < 700; k++) blocks.push(r.block(`hsl(${k}, 50%, 50%)`, 9.75)); // blocks of 4 x 22 px: 121 fit in 1024 px
     expect(blocks.filter((b) => b !== null)).toHaveLength(121);
-    expect(r.dot("hsl(0, 50%, 50%)", 9.75)).toBe(blocks[0]); // the first ones stay
-    r.atlasFor("a");
-    expect(r.dot("hsl(0, 50%, 50%)", 9.75)).toBe(blocks[0]);
-    r.atlasFor("b");
-    r.atlasFor("b"); // another size, held: starts over
-    expect(r.dot("hsl(699, 50%, 50%)", 9.75)).not.toBeNull();
+    expect(r.block("hsl(0, 50%, 50%)", 9.75)).toBe(blocks[0]); // the first ones stay
+    r.frame("a");
+    expect(r.block("hsl(0, 50%, 50%)", 9.75)).toBe(blocks[0]);
+    r.frame("b");
+    r.frame("b"); // another size, held: starts over
+    expect(r.block("hsl(699, 50%, 50%)", 9.75)).not.toBeNull();
   });
 
   it("draws paths, not stamps, while the dot size changes (a zoom), so the atlas is not redrawn every frame", () => {
-    const r = new EcoRenderer() as unknown as { stampDots(...a: unknown[]): boolean; atlasFor(sizes: string): void };
+    const r = new DotAtlas() as unknown as { stamp(...a: unknown[]): boolean; frame(sizes: string): void };
     const m = { a: 0.5, b: 0, c: 0, d: 0.5, e: 0, f: 0 };
     const v = { x: Float32Array.of(1), y: Float32Array.of(1), heading: new Float32Array(1), species: new Int32Array(1) };
     const ctx = { drawImage() {}, setTransform() {} };
     for (const size of ["1", "2", "3"]) {
-      r.atlasFor(size);
-      expect(r.stampDots(ctx, m, v, Int32Array.of(0), 0, 1, "red", 4.8, 0.5, () => false)).toBe(false);
+      r.frame(size);
+      expect(r.stamp(ctx, m, v.x, v.y, Int32Array.of(0), 0, 1, "red", 2.4, () => false)).toBe(false);
     }
-    r.atlasFor("3");
-    expect(r.stampDots(ctx, m, v, Int32Array.of(0), 0, 1, "red", 4.8, 0.5, () => false)).toBe(true);
+    r.frame("3");
+    expect(r.stamp(ctx, m, v.x, v.y, Int32Array.of(0), 0, 1, "red", 2.4, () => false)).toBe(true);
   });
 
   it("skips a creature at a NaN position instead of stamping it at the corner", () => {
@@ -75,8 +77,8 @@ describe("creature dots stamped from an atlas", () => {
 
   it("reuses the block for the same colour and size", () => {
     arcs.length = 0;
-    const r = new EcoRenderer() as unknown as { dot(style: string, r: number): unknown };
-    expect(r.dot("red", 2.5)).toBe(r.dot("red", 2.5));
+    const r = new DotAtlas() as unknown as { block(style: string, r: number): unknown };
+    expect(r.block("red", 2.5)).toBe(r.block("red", 2.5));
     expect(arcs).toHaveLength(16);
   });
 });
