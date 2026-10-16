@@ -45,7 +45,7 @@ self.onmessage = (e: MessageEvent<RlInMessage>) => {
     if (!msg.envs.length) return report("choose at least one environment");
     void loadAssets(msg.poolUrl, msg.libraryUrl)
       .then((loaded) => {
-        const r = (run = new ArenaRun(msg, loaded, (setup) => createBrowserRlPool(setup, gentleThreads(msg.gentle ?? false)), post));
+        const r = (run = new ArenaRun(msg, loaded, (setup) => createBrowserRlPool(setup, Math.min(gentleThreads(msg.gentle ?? false), msg.helpers ?? Infinity)), post));
         for (const m of early) apply(m);
         early = [];
         return r.run().catch((error) => {

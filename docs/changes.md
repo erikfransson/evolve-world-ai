@@ -6,6 +6,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- Training in Add your creature waits while the tab is hidden (and ends with its best result after 10 min hidden) and uses at most 3 helper threads.
+
 ## 0.2.2 (2026-10-16)
 
 - RL envs (#44): duels against a scripted charger (hit it when it is weak, dodge it when it is strong), per-episode augmentation of energies, rival counts, items and sizes, fast ground, and a kill bonus. New engine setting `eco.killEnergy` (bonus energy for a kill, default 0, so worlds are unchanged).

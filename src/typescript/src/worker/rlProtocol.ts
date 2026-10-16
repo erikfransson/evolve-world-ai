@@ -27,6 +27,7 @@ export type RlInMessage =
       libraryUrl: string;
       playback?: boolean; // false (Max speed): no shows except the last one, see the "playback" message; default true
       gentle?: boolean; // Gentle on CPU: fewer helpers and idle time after each step (pacing only, same results)
+      helpers?: number; // at most this many helper threads (each holds its own copy of the envs, pool and library), default from the cores
     }
   | { type: "envs"; envs: EnvSpec[] } // while paused: train on these from the next step on (checked like start's)
   | { type: "show" } // record the latest best candidate at the next step's end (the page asks when its tiles finished playing)
