@@ -47,7 +47,7 @@ const SOLID_ITEM = 4; // device px radius from which items are drawn fully opaqu
 const ITEM_DIM = 0.75; // item opacity at the smallest size, so the creatures stand out
 const DOT_RADIUS = 2.4; // CSS px; creatures never draw smaller than this when drawn as dots
 const DOT_OUTLINE = "rgba(6, 12, 9, 0.75)";
-const ATLAS_PX = 1024; // side of the dot atlas (4 MB): room for over 500 colours and sizes of 4 x 4 dots each
+const ATLAS_PX = 1024; // side of the dot atlas (4 MB): 4 x 4 dots of each colour, about 1000 colours at DPR 1, 200 at DPR 3 (the rest draw as paths)
 
 // Bright and saturated when young, lighter touch of grey-green when old.
 const STYLES: string[] = [];
@@ -78,6 +78,16 @@ export class EcoRenderer {
   private atlas: OffscreenCanvas | HTMLCanvasElement | null = null;
   private atlasCtx: CanvasRenderingContext2D | null = null;
   private readonly shelf = { x: 0, y: 0, h: 0 }; // where the next block goes: rows of blocks, left to right
+  private atlasSizes = ""; // the device px radii the atlas holds dots of; another size (a zoom) starts it over
+
+  // Starts the atlas over when the dot sizes changed, never within a frame, so a full atlas cannot be cleared and refilled every frame.
+  private atlasFor(sizes: string): void {
+    if (sizes === this.atlasSizes) return;
+    this.atlasSizes = sizes;
+    this.atlasCtx?.clearRect(0, 0, ATLAS_PX, ATLAS_PX);
+    this.dots.clear();
+    Object.assign(this.shelf, { x: 0, y: 0, h: 0 });
+  }
 
   // Where the dots of this colour and device px radius sit in the atlas: a block of 4 x 4 cells of `size` px, the cell at (fx, fy) holding
   // the dot with its centre fx, fy quarter pixels past the cell's middle, so a stamp on whole pixels lands it where the path would have,
@@ -97,11 +107,7 @@ export class EcoRenderer {
     if (!g) return null;
     const a = this.shelf;
     if (a.x + block > ATLAS_PX) Object.assign(a, { x: 0, y: a.y + a.h, h: 0 });
-    if (a.y + block > ATLAS_PX) { // full: start over, the dots in use come back on the next frames
-      g.clearRect(0, 0, ATLAS_PX, ATLAS_PX);
-      this.dots.clear();
-      Object.assign(a, { x: 0, y: 0, h: 0 });
-    }
+    if (a.y + block > ATLAS_PX) return null; // full (many colours on a high-DPR screen): the rest draw as paths until the dot size changes
     at = { x: a.x, y: a.y, size };
     a.x += block;
     a.h = Math.max(a.h, block);
@@ -139,6 +145,7 @@ export class EcoRenderer {
       }
       const qx = Math.round((m.a * v.x[i]! + m.e) * 4); // the centre in quarter device px
       const qy = Math.round((m.d * v.y[i]! + m.f) * 4);
+      if (!Number.isFinite(qx) || !Number.isFinite(qy)) continue; // NaN would land at the corner
       const ix = qx >> 2;
       const iy = qy >> 2;
       ctx.drawImage(atlas, blk.x + (qx & 3) * size, blk.y + (qy & 3) * size, size, size, ix - half, iy - half, size, size);
@@ -272,6 +279,7 @@ export class EcoRenderer {
     // Round dots at least DOT_RADIUS big, over a dark outline pass, so creatures stand out from the small dim items.
     const dotR = Math.max(R, DOT_RADIUS * css);
     const outline = dotR + 0.9 * css;
+    this.atlasFor(`${Math.round(dotR * z * 4)} ${Math.round(outline * z * 4)}`);
     const hunter = (i: number): boolean => cfg.species[v.species[i]!]!.hunter;
     // Creatures outside the highlighted lineage come first, faint and without outline, so the lineage is drawn over them.
     const dimAt = counts[DIM_BUCKET - 1]!;

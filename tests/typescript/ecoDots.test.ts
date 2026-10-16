@@ -35,6 +35,25 @@ describe("creature dots stamped from an atlas", () => {
     expect(transform).toMatchObject({ a: 0.5, e: 10.3, f: 20.6 });
   });
 
+  it("a full atlas draws the remaining colours as paths, and is not cleared within a frame", () => {
+    arcs.length = 0;
+    const r = new EcoRenderer() as unknown as { dot(style: string, r: number): unknown; atlasFor(sizes: string): void };
+    r.atlasFor("a");
+    const blocks: unknown[] = [];
+    for (let k = 0; k < 700; k++) blocks.push(r.dot(`hsl(${k}, 50%, 50%)`, 9.75)); // blocks of 4 x 22 px: 121 fit in 1024 px
+    expect(blocks.filter((b) => b !== null)).toHaveLength(121);
+    expect(r.dot("hsl(0, 50%, 50%)", 9.75)).toBe(blocks[0]); // the first ones stay
+    r.atlasFor("a");
+    expect(r.dot("hsl(0, 50%, 50%)", 9.75)).toBe(blocks[0]);
+    r.atlasFor("b"); // another size: starts over
+    expect(r.dot("hsl(699, 50%, 50%)", 9.75)).not.toBeNull();
+  });
+
+  it("skips a creature at a NaN position instead of stamping it at the corner", () => {
+    const { blits } = stamp([Number.NaN, 100], [40, 40]);
+    expect(blits).toHaveLength(1);
+  });
+
   it("reuses the block for the same colour and size", () => {
     arcs.length = 0;
     const r = new EcoRenderer() as unknown as { dot(style: string, r: number): unknown };
