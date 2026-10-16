@@ -47,6 +47,8 @@ const SOLID_ITEM = 4; // device px radius from which items are drawn fully opaqu
 const ITEM_DIM = 0.75; // item opacity at the smallest size, so the creatures stand out
 const DOT_RADIUS = 2.4; // CSS px; creatures never draw smaller than this when drawn as dots
 const DOT_OUTLINE = "rgba(6, 12, 9, 0.75)";
+const DOT_OUTLINE_SOLID = "rgb(6, 12, 9)"; // the same, stamped opaque and laid down at OUTLINE_ALPHA, so overlaps do not darken
+const OUTLINE_ALPHA = 0.75;
 const ATLAS_PX = 1024; // side of the dot atlas (4 MB): 4 x 4 dots of each colour, about 1000 colours at DPR 1, 200 at DPR 3 (the rest draw as paths)
 
 // Bright and saturated when young, lighter touch of grey-green when old.
@@ -79,14 +81,34 @@ export class EcoRenderer {
   private atlasCtx: CanvasRenderingContext2D | null = null;
   private readonly shelf = { x: 0, y: 0, h: 0 }; // where the next block goes: rows of blocks, left to right
   private atlasSizes = ""; // the device px radii the atlas holds dots of; another size (a zoom) starts it over
+  private lastSizes = ""; // the previous frame's dot sizes
+  private stamping = false; // this frame stamps dots; while the size changes (a zoom) they draw as paths, so the atlas is not redrawn every frame
+  private layer: OffscreenCanvas | HTMLCanvasElement | null = null; // a pass drawn at partial opacity is stamped here opaque, then laid down once
+  private layerCtx: CanvasRenderingContext2D | null = null;
 
-  // Starts the atlas over when the dot sizes changed, never within a frame, so a full atlas cannot be cleared and refilled every frame.
+  // Stamps only once the dot sizes held for a frame, and starts the atlas over then (never within a frame, so a full atlas cannot be
+  // cleared and refilled every frame).
   private atlasFor(sizes: string): void {
-    if (sizes === this.atlasSizes) return;
+    this.stamping = sizes === this.lastSizes;
+    this.lastSizes = sizes;
+    if (!this.stamping || sizes === this.atlasSizes) return;
     this.atlasSizes = sizes;
     this.atlasCtx?.clearRect(0, 0, ATLAS_PX, ATLAS_PX);
     this.dots.clear();
     Object.assign(this.shelf, { x: 0, y: 0, h: 0 });
+  }
+
+  // A clear canvas the size of the target, for a pass laid down at partial opacity. Null where none can be made.
+  private layerFor(w: number, h: number): CanvasRenderingContext2D | null {
+    if (!this.layer || this.layer.width !== w || this.layer.height !== h) {
+      this.layer = makeCanvas(w, h);
+      this.layerCtx = context2d(this.layer);
+    }
+    const g = this.layerCtx;
+    if (!g) return null;
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.clearRect(0, 0, w, h);
+    return g;
   }
 
   // Where the dots of this colour and device px radius sit in the atlas: a block of 4 x 4 cells of `size` px, the cell at (fx, fy) holding
@@ -102,6 +124,7 @@ export class EcoRenderer {
     if (!this.atlas) {
       this.atlas = makeCanvas(ATLAS_PX, ATLAS_PX);
       this.atlasCtx = context2d(this.atlas);
+      for (const lost of ["contextlost", "contextrestored"]) this.atlas?.addEventListener(lost, () => (this.atlasSizes = "")); // the pixels are gone: drawn again next frame
     }
     const g = this.atlasCtx;
     if (!g) return null;
@@ -112,26 +135,28 @@ export class EcoRenderer {
     a.x += block;
     a.h = Math.max(a.h, block);
     g.fillStyle = style;
+    g.beginPath();
     for (let fy = 0; fy < 4; fy++) {
       for (let fx = 0; fx < 4; fx++) {
-        g.beginPath();
-        g.arc(at.x + fx * size + size / 2 + fx / 4, at.y + fy * size + size / 2 + fy / 4, r, 0, Math.PI * 2);
-        g.fill();
+        const cx = at.x + fx * size + size / 2 + fx / 4;
+        const cy = at.y + fy * size + size / 2 + fy / 4;
+        g.moveTo(cx + r, cy);
+        g.arc(cx, cy, r, 0, Math.PI * 2);
       }
     }
+    g.fill();
     this.dots.set(key, at);
     return at;
   }
 
-  // One pass of round dots in one colour, stamped from bitmaps on whole device pixels: a path of a thousand circles costs the GPU tens of
-  // ms a frame, the stamps a few. Hunters keep their pointed path. False when no bitmap could be made or the view is rotated, and then
-  // the caller draws the path.
-  private stampDots(ctx: CanvasRenderingContext2D, v: SnapshotViews, order: Int32Array, from: number, to: number, style: string, r: number, z: number, hunter: (i: number) => boolean): boolean {
+  // One pass of round dots in one colour, stamped into g from bitmaps on whole device pixels: a path of a thousand circles costs the GPU
+  // tens of ms a frame, the stamps a few. m: the world-to-device transform, which g is left in. Hunters keep their pointed path. False when
+  // no bitmap could be made or the view is rotated, and then the caller draws the path.
+  private stampDots(ctx: CanvasRenderingContext2D, m: DOMMatrix, v: SnapshotViews, order: Int32Array, from: number, to: number, style: string, r: number, z: number, hunter: (i: number) => boolean): boolean {
+    if (!this.stamping || m.b !== 0 || m.c !== 0) return false;
     const rd = Math.round(r * z * 4) / 4; // device px
     const blk = this.dot(style, rd);
     if (!blk) return false;
-    const m = ctx.getTransform();
-    if (m.b !== 0 || m.c !== 0) return false;
     const atlas = this.atlas as CanvasImageSource;
     const size = blk.size;
     const half = size / 2;
@@ -284,9 +309,24 @@ export class EcoRenderer {
     // Creatures outside the highlighted lineage come first, faint and without outline, so the lineage is drawn over them.
     const dimAt = counts[DIM_BUCKET - 1]!;
     const dimEnd = counts[DIM_BUCKET]!;
-    // One pass in one colour: stamped where it can be, else one path and fill.
-    const pass = (from: number, to: number, style: string, r: number): void => {
-      if (to <= from || this.stampDots(ctx, v, order, from, to, style, r, z, hunter)) return;
+    // One pass in one colour: stamped where it can be, else one path and fill. A pass at partial opacity is stamped opaque (solid) into a
+    // layer laid down once at that opacity, as the path's one fill was, so overlapping dots do not stack darker.
+    const m = this.stamping ? ctx.getTransform() : null;
+    const pass = (from: number, to: number, style: string, r: number, alpha = 1, solid = style): void => {
+      if (to <= from) return;
+      if (m && alpha === 1 && this.stampDots(ctx, m, v, order, from, to, style, r, z, hunter)) return;
+      if (m && alpha < 1) {
+        const g = this.layerFor(ctx.canvas.width, ctx.canvas.height);
+        if (g && this.stampDots(g, m, v, order, from, to, solid, r, z, hunter)) {
+          ctx.save();
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+          ctx.globalAlpha = alpha;
+          ctx.drawImage(this.layer as CanvasImageSource, 0, 0);
+          ctx.restore();
+          return;
+        }
+      }
+      ctx.globalAlpha = alpha;
       ctx.fillStyle = style;
       ctx.beginPath();
       for (let at = from; at < to; at++) {
@@ -294,13 +334,10 @@ export class EcoRenderer {
         bodyPath(ctx, v.x[i]!, v.y[i]!, r, v.heading[i]!, hunter(i));
       }
       ctx.fill();
-    };
-    if (dimEnd > dimAt) {
-      ctx.globalAlpha = DIM_ALPHA;
-      pass(dimAt, dimEnd, DIM_STYLE, dotR);
       ctx.globalAlpha = 1;
-    }
-    pass(0, dimAt, DOT_OUTLINE, outline);
+    };
+    pass(dimAt, dimEnd, DIM_STYLE, dotR, DIM_ALPHA);
+    pass(0, dimAt, DOT_OUTLINE, outline, OUTLINE_ALPHA, DOT_OUTLINE_SOLID);
     let at = 0;
     for (let b = 0; b < BUCKETS; b++) {
       const end = counts[b]!;

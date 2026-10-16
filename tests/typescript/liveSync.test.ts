@@ -350,6 +350,16 @@ describe("page timeline", () => {
     expect(x(2400)).toBeGreaterThan(99); // picks up from where it is drawn, no jump back
   });
 
+  it("shrinks the lag back within a few frames once slow frames give way to quick ones", () => {
+    const s = new LiveScene();
+    s.dt = 1;
+    let t = 0;
+    let tick = 100;
+    for (let k = 0; k < 6; k++) s.push(frame(tick++, [1], [0]), (t += 1000)); // the server sharing its upload: 1 s apart
+    for (let k = 0; k < 6; k++) s.push(frame(tick++, [1], [0]), (t += 200)); // back to 5 a second
+    expect((s as unknown as { span: number }).span).toBeLessThan(1.3 * 300); // within 1.5 frames of the usual 200 ms after 6 frames
+  });
+
   // Red without the guard: an entry far past the timeline held everything after it.
   it("does not let an entry far ahead of the timeline hold the others back", () => {
     const s = new LiveScene();
