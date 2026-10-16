@@ -6,6 +6,7 @@ import { retryDelayS } from "./serverUrl.ts";
 import { cleanAddReply, cleanAddRules, encodeAdd, validName } from "./add.ts";
 import type { AddRequest, AddRules, Added, Refused } from "./add.ts";
 import { cleanMap } from "./mapInfo.ts";
+import { MAX_KILL_ENERGY } from "../sim/ecoConfig.ts";
 
 export type LinkState = "connecting" | "live" | "offline" | "full" | "updating" | "outdated";
 
@@ -105,7 +106,8 @@ export function cleanHello(h: Hello): Hello | null {
   const energy = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 10_000 ? v : undefined);
   const foodEnergy = energy(s.foodEnergy);
   const poisonDamage = energy(s.poisonDamage);
-  const summary = { initialPopulation: count(s.initialPopulation), maxPopulation: count(s.maxPopulation), collisionDamage: s.collisionDamage === true, seasons: s.seasons === true, ...(seedCopies ? { seedCopies } : {}), ...(foodEnergy !== undefined ? { foodEnergy } : {}), ...(poisonDamage !== undefined ? { poisonDamage } : {}) };
+  const killEnergy = typeof s.killEnergy === "number" && Number.isFinite(s.killEnergy) && s.killEnergy > 0 && s.killEnergy <= MAX_KILL_ENERGY ? s.killEnergy : undefined;
+  const summary = { initialPopulation: count(s.initialPopulation), maxPopulation: count(s.maxPopulation), collisionDamage: s.collisionDamage === true, ...(killEnergy !== undefined ? { killEnergy } : {}), seasons: s.seasons === true, ...(seedCopies ? { seedCopies } : {}), ...(foodEnergy !== undefined ? { foodEnergy } : {}), ...(poisonDamage !== undefined ? { poisonDamage } : {}) };
   return ok ? { ...h, summary, add: cleanAddRules(h.add), map: cleanMap(h.map) } : null;
 }
 

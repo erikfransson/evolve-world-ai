@@ -7,6 +7,7 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 ## Unreleased
 
 - Training in Add your creature waits while the tab is hidden (and ends with its best result after 10 min hidden) and uses at most 3 helper threads.
+- Live: a kill gives 25 energy on top of the loser's (`eco.killEnergy` 25, was 0), so hunting pays a little. The world rules say so, and the admin can change it live (`eco.killEnergy`, 0 to 300). A restored world keeps its saved value until the admin sets it.
 
 ## 0.2.2 (2026-10-16)
 
