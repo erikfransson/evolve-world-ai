@@ -1,7 +1,11 @@
 import { TerrainCache, cacheStep } from "../../src/typescript/src/ui/terrainCache.ts"; // vi.mock is hoisted above this import
 
 const draws: { scale: number; view: { x0: number; x1: number; y0: number; y1: number } }[] = [];
-vi.mock("../../src/typescript/src/ui/terrainScene.ts", () => ({ drawTerrain: (_g: unknown, _t: unknown, scale: number, view: (typeof draws)[number]["view"]) => draws.push({ scale, view }) }));
+const ground = vi.hoisted(() => ({ complete: true, ready: false, prepares: 0 })); // what the mocked drawTerrain and prepareTerrain report
+vi.mock("../../src/typescript/src/ui/terrainScene.ts", () => ({
+  drawTerrain: (_g: unknown, _t: unknown, scale: number, view: (typeof draws)[number]["view"]) => (draws.push({ scale, view }), ground.complete),
+  prepareTerrain: () => (ground.prepares++, ground.ready),
+}));
 vi.mock("../../src/typescript/src/ui/groundScene.ts", () => ({
   makeCanvas: (width: number, height: number) => ({ width, height, addEventListener() {} }),
   context2d: () => ({ setTransform() {}, clearRect() {}, save() {}, restore() {}, beginPath() {}, rect() {}, clip() {} }),
@@ -86,6 +90,20 @@ describe("TerrainCache", () => {
     expect(c.draw(ctx, terrain, 0.035, { x0: 0, x1: 30000, y0: 0, y1: 18750 }, true, (t += 16))).toBe(false);
     for (let k = 1; k <= 30; k++) c.draw(ctx, terrain, 0.035, { x0: k, x1: 30000 + k, y0: 0, y1: 18750 }, false, (t += 16));
     expect(draws.at(-1)!.scale).toBe(0.035);
+  });
+
+  it("a map drawn with stand-in ground is not kept: its bitmaps are prepared while it shows, then it is drawn again once, complete", () => {
+    const c = new TerrainCache();
+    Object.assign(ground, { complete: false, ready: false, prepares: 0 });
+    c.draw(ctx, terrain, 0.035, whole, false, later()); // built with a stand-in
+    for (let k = 0; k < 3; k++) expect(c.draw(ctx, terrain, 0.035, whole, false, later())).toBe(true);
+    expect(draws).toHaveLength(1);
+    expect(ground.prepares).toBe(3);
+    Object.assign(ground, { complete: true, ready: true });
+    c.draw(ctx, terrain, 0.035, whole, false, later()); // all there: redrawn
+    expect(draws).toHaveLength(2);
+    for (let k = 0; k < 3; k++) c.draw(ctx, terrain, 0.035, whole, false, later());
+    expect([draws.length, ground.prepares]).toEqual([2, 4]); // complete now: nothing more prepared or drawn
   });
 
   it("another map (a map switch) rebuilds at once, never showing the old one", () => {

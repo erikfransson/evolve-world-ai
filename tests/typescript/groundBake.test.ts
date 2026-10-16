@@ -22,12 +22,14 @@ async function inlandSea() {
   await import("../../src/typescript/src/sim/maps/index.ts");
   const { terrainOf } = await import("../../src/typescript/src/sim/terrain.ts");
   const { fineOf, groundBodies } = await import("../../src/typescript/src/ui/groundOutline.ts");
-  const { bakedPixels, drawGround } = await import("../../src/typescript/src/ui/groundScene.ts");
+  const { bakedPixels, drawGround, prepareGround } = await import("../../src/typescript/src/ui/groundScene.ts");
   const terrain = terrainOf({ seed: 1, world: ECO_PRESETS.find((p) => p.id === "inland-sea")!.world });
   const big = groundBodies(terrain, fineOf(terrain)).reduce((a, b) => ((b.x1 - b.x0) * (b.y1 - b.y0) > (a.x1 - a.x0) * (a.y1 - a.y0) ? b : a));
   const cx = (big.x0 + big.x1) / 2;
   const cy = (big.y0 + big.y1) / 2;
-  const frame = (scale: number): void => drawGround(mainCtx(scale), terrain, scale, { x0: cx - 800 / scale, x1: cx + 800 / scale, y0: cy - 450 / scale, y1: cy + 450 / scale }, false);
+  const view = (scale: number) => ({ x0: cx - 800 / scale, x1: cx + 800 / scale, y0: cy - 450 / scale, y1: cy + 450 / scale });
+  const frame = (scale: number): boolean => drawGround(mainCtx(scale), terrain, scale, view(scale), false);
+  const prepare = (scale: number): boolean => prepareGround(terrain, scale, view(scale));
   // Frames at one scale until one makes no new bitmap, as the page does while it is looked at. Returns the frames it took.
   const settle = (scale: number): number => {
     let frames = 0;
@@ -37,7 +39,7 @@ async function inlandSea() {
     }
     return frames;
   };
-  return { big, frame, settle, pixels: () => bakedPixels(terrain) };
+  return { big, frame, settle, prepare, pixels: () => bakedPixels(terrain) };
 }
 
 describe("ground bitmaps of a patch larger than one bitmap", () => {
@@ -86,6 +88,19 @@ describe("ground bitmaps of a patch larger than one bitmap", () => {
     const made = bitmaps.length;
     for (let i = 0; i < 4; i++) frame(0.1); // tier 0.16, not yet baked
     expect([paints(), bitmaps.length - made]).toEqual([0, 4]);
+  });
+
+  it("says when a stand-in tier drew, so a cache does not keep it; prepareGround makes the missing bitmaps, then the draw is complete", async () => {
+    const { frame, settle, prepare } = await inlandSea();
+    settle(0.05); // tier 0.08
+    expect(frame(0.1)).toBe(false); // tier 0.16 not yet baked: drawn from 0.08
+    let calls = 0;
+    while (!prepare(0.1) && calls < 100) calls++;
+    expect(calls).toBeGreaterThan(0);
+    drawn.length = 0;
+    const made = bitmaps.length;
+    expect(frame(0.1)).toBe(true);
+    expect([paints(), bitmaps.length - made]).toEqual([0, 0]);
   });
 
   it("on a zoom out finds the next coarser tier ready, and paints live only what no tier covers", async () => {

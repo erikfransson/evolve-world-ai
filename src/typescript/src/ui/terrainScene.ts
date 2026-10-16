@@ -1,6 +1,6 @@
 import { createRng } from "../sim/rng.ts";
 import type { Terrain } from "../sim/terrain.ts";
-import { context2d, drawGround, makeCanvas } from "./groundScene.ts";
+import { context2d, drawGround, makeCanvas, prepareGround } from "./groundScene.ts";
 import { rockBodies, traceLoop } from "./rockOutline.ts";
 import type { RockBody } from "./rockOutline.ts";
 import { drawTint } from "./mapTint.ts";
@@ -287,10 +287,15 @@ function drawRock(ctx: CanvasRenderingContext2D, t: Terrain, scale: number, view
 }
 
 // Draws the ground, then the rock, in world coordinates. scale: device pixels per world unit. view: the visible world rectangle.
-// quick: rock as plain discs without building outlines, for previews that redraw while settings change.
-export function drawTerrain(ctx: CanvasRenderingContext2D, t: Terrain, scale: number, view: View = { x0: 0, x1: t.width, y0: 0, y1: t.height }, quick = false): void {
-  if (t.empty) return;
+// quick: rock as plain discs without building outlines, for previews that redraw while settings change. Returns false while ground bitmaps
+// are still being made and a stand-in drew in their place (draw again, or prepareTerrain first).
+export function drawTerrain(ctx: CanvasRenderingContext2D, t: Terrain, scale: number, view: View = { x0: 0, x1: t.width, y0: 0, y1: t.height }, quick = false): boolean {
+  if (t.empty) return true;
   if (!quick) drawTint(ctx, t);
-  drawGround(ctx, t, scale, view, quick);
+  const ground = drawGround(ctx, t, scale, view, quick);
   drawRock(ctx, t, scale, view, quick);
+  return ground;
 }
+
+// Makes a couple of the bitmaps drawTerrain at this scale and view still waits for, without drawing. True when none is waiting.
+export const prepareTerrain = (t: Terrain, scale: number, view: View): boolean => prepareGround(t, scale, view);
