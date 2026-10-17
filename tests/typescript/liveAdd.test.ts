@@ -145,14 +145,14 @@ describe("add message: encode and parse", () => {
     expect(cleanHello({ ...h, summary: { initialPopulation: "x", maxPopulation: -5, collisionDamage: 1, seasons: true } as never })!.summary).toEqual({ initialPopulation: 0, maxPopulation: 0, collisionDamage: false, seasons: true });
   });
 
-  it("the kill bonus: 25 on Live, carried in the hello and its rules line, changed live by the admin within the engine's bound", () => {
+  it("the kill bonus: 5 on Live, carried in the hello and its rules line, changed live by the admin within the engine's bound", () => {
     const w = new LiveWorld(smallConfig(), null);
-    expect(w.eco.config.eco.killEnergy).toBe(25);
+    expect(w.eco.config.eco.killEnergy).toBe(5);
     const h = w.hello(5);
-    expect(h.summary.killEnergy).toBe(25);
-    expect(cleanHello(h)!.summary.killEnergy).toBe(25);
+    expect(h.summary.killEnergy).toBe(5);
+    expect(cleanHello(h)!.summary.killEnergy).toBe(5);
     for (const bad of [-1, 301, Number.NaN, "25", 1e9]) expect(cleanHello({ ...h, summary: { ...h.summary, killEnergy: bad } as never })!.summary.killEnergy, String(bad)).toBeUndefined();
-    expect(worldFacts(cleanHello(h)!).find(([k]) => k === "Bumps")?.[1]).toBe("cost energy, and a kill takes the loser's energy plus 25");
+    expect(worldFacts(cleanHello(h)!).find(([k]) => k === "Bumps")?.[1]).toBe("cost energy, and a kill takes the loser's energy plus 5");
     expect(applyTunables(w.eco, { "eco.killEnergy": 60 })).toBeNull();
     expect(w.eco.config.eco.killEnergy).toBe(60);
     for (const bad of [301, -5, Number.POSITIVE_INFINITY, "60", true]) expect(applyTunables(w.eco, { "eco.killEnergy": bad }), String(bad)).toMatch(/killEnergy/);

@@ -6,6 +6,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- Live: the kill bonus is 5 (`eco.killEnergy`, was 25 in 0.2.3): at 25 the Juggernaut took over the world. Already set on the running world; a fresh world now starts with it.
+
 ## 0.2.3 (2026-10-16)
 
 - Live admin: the saved settings (`admin-overrides.json`) load key by key instead of all or nothing. A key this version does not know (after a rollback past the version that added it) is skipped with a log line, a refused value is skipped on its own with its reason, and the rest still apply, so a rollback never silently drops standing settings such as `add.aliveMax`. The file is copied to `admin-overrides.ignored.json` whenever anything was skipped.

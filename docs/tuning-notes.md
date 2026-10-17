@@ -110,6 +110,7 @@ Chosen: 50, one food's worth (`foodEnergy` 50). Poison still matters (a bite hal
 ## Live kill bonus (2026-10-16)
 Live ran `eco.killEnergy` 0: a kill paid only the loser's energy. Erik chose 25 for 0.2.3: the survivor gains the loser's energy plus 25, less the damage the bump did to it (a head-on hit at top speed costs 48), so a kill pays a little more than before. It is an admin tunable (0 to 300, the engine's MAX_KILL_ENERGY), set on the running world after the release.
 The Grazer swap ships in 0.2.3 on checks without the bonus (the Grazer survived 3 of 3 three-founder seeds at 25). The Juggernaut swap waits: an aggression-trained Juggernaut (b3's jaug) wiped out the other founders in one 180-min Live-rules seed, and b3's 4-seed check of the full set at bonus 25 is running.
+b3's 180-min checks of the founders with the shipped Juggernaut: at bonus 25 the Grazer ended at 21 and 49 while the Juggernaut reached about 1100; at bonus 0 the Grazer held about 950 and the Juggernaut about 300, coexisting. Erik chose 5 on 2026-10-17 (set on the running world, the liveConfig default from 0.2.4).
 
 ## Ideas not yet tried
 - Evaluate each creature on two layouts to reduce layout luck.
