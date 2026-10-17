@@ -6,7 +6,7 @@ export const TRAIN_COLOR = OTHER;
 export const BEST_COLOR = "#fbbf24";
 export const HELD_COLOR = "#3ddc97";
 const GRID_COLOR = "rgba(143, 174, 159, 0.15)";
-const PAD = { left: 44, right: 10, top: 14, bottom: 20 }; // CSS px
+const PAD = { left: 52, right: 12, top: 12, bottom: 36 }; // CSS px
 
 const nice = (v: number): string => (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(1));
 
@@ -32,6 +32,14 @@ export function thin(pts: readonly Point[], max: number): Point[] {
     out.push({ iter: it / (to - from), v: v / (to - from) });
   }
   return out;
+}
+
+// The latest value of each curve for the legend: held-out falls back to the start value before the first check.
+export function latestValues(its: readonly RlIteration[], start: number | null): { train: number | null; best: number | null; held: number | null } {
+  const last = its[its.length - 1];
+  let held = start;
+  for (let i = its.length - 1; i >= 0; i--) if (its[i]!.held !== null) { held = its[i]!.held; break; }
+  return { train: last?.train ?? null, best: last?.best ?? null, held };
 }
 
 const DOT_LIMIT = 150; // more held-out checks than this and the dots would blur into a band, so only the line is drawn
@@ -81,13 +89,21 @@ export function drawRewardGraph(ctx: CanvasRenderingContext2D, its: readonly RlI
   ctx.fillStyle = LABEL;
   ctx.textAlign = "right";
   ctx.textBaseline = "middle";
-  ctx.fillText(nice(hi), x0 - 5, py(hi));
-  ctx.fillText(nice(lo), x0 - 5, py(lo));
+  for (const v of [lo, (lo + hi) / 2, hi]) ctx.fillText(nice(v), x0 - 5, py(v));
   ctx.textBaseline = "top";
-  ctx.textAlign = "left";
-  ctx.fillText("iteration 0", x0, PAD.top + h + 4);
-  ctx.textAlign = "right";
-  ctx.fillText(`${last}`, x0 + w, PAD.top + h + 4);
+  const ticks = w >= 240 ? 4 : 2;
+  for (let k = 0; k <= ticks; k++) {
+    ctx.textAlign = k === 0 ? "left" : k === ticks ? "right" : "center";
+    ctx.fillText(`${Math.round((last * k) / ticks)}`, x0 + (w * k) / ticks, PAD.top + h + 4);
+  }
+  ctx.textAlign = "center";
+  ctx.fillText("iteration", x0 + w / 2, cssH - 14);
+  ctx.save();
+  ctx.translate(11, PAD.top + h / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.textBaseline = "middle";
+  ctx.fillText("reward", 0, 0);
+  ctx.restore();
 
   const line = (all: readonly Point[], color: string, width: number, dots: boolean): void => {
     if (all.length === 0) return;

@@ -92,7 +92,9 @@ details.more > summary { color: var(--text); font-weight: 500; font-size: 0.85re
 .key.best { color: #fbbf24; }
 .key.held { color: #3ddc97; }
 .key.held::before { height: 4px; border-radius: 2px; }
-#rewardView { display: block; width: 100%; height: 190px; }
+.graph-card[hidden] { display: none; }
+#rewardView { display: block; width: 100%; height: 240px; }
+@media (max-width: 700px) { #rewardView { height: 200px; } }
 .env-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; font-variant-numeric: tabular-nums; }
 .env-table[hidden] { display: none; }
 .env-table th { padding: 0.2rem 0.4rem; color: var(--muted); font-weight: 500; text-align: right; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; }
