@@ -19,6 +19,7 @@ Work here is iterative and nothing is fixed; update or delete lines as soon as t
 - B1 Speed: round 3 done (about 1.35x at 50000 wide, bit-identical); write-ups in `docs/perf-explore/`.
 - D1 Founder balance (Erik 2026-10-15, after 0.2.0): in a 3 h server run at 30000 x 18750 Juggernaut takes over completely (Oracle and Explorer gone by about 38 min, Grazer by about 88 min; at poison 50 Grazer and Juggernaut both last 2 h). Balance the starters or give them niches. Production on 2026-10-16 (0.2.1 promote): only Juggernaut is left (1196 of 1241). The cap stays 3000: the population settles at about 850 (500-1200 with the seasons) and reaches it only in the first boom.
 - D2 Live tuning (Erik 2026-10-16): kill bonus `eco.killEnergy` 25 (a kill takes the loser's energy plus 25), poison 50, birth ranges 100-500, 50-250, 5-40; the world was reset on 2026-10-16 with 200 of each founder (`./live reset --copies 200`). Ultra train (10 min in-browser training) failed its production check and waits for a second attempt; terrain looks rounds run in `lookbook/` with Erik's ranking on GitHub (#50).
+- D3 Open (2026-10-17): the kill bonus 25 makes Juggernaut take over in checks (bonus 0: Grazer and Juggernaut coexist); Erik to choose 0 or a middle value. RL Arena: a live training graph and an investigation of why the backprop learner learns little are in progress.
 
 ## Decisions
 - 2026-10-12: `main` is the release, all work goes to `development`, releases are pull requests (CLAUDE.md, Git). Versions start at 0.1.0.
