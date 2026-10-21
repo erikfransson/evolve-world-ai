@@ -1,3 +1,4 @@
+import { wrapAngle } from "./angle.ts";
 import { genomeLength, layerSizes, randomGenome, refit } from "./brain.ts";
 import { itemCounts } from "./config.ts";
 import type { EngineConfig } from "./config.ts";
@@ -722,7 +723,7 @@ export class Ecosystem {
       frame.ids[i] = m.id;
       frame.x[i] = s.x;
       frame.y[i] = s.y;
-      frame.heading[i] = s.heading;
+      frame.heading[i] = wrapAngle(s.heading);
       frame.energy[i] = s.energy;
       frame.hue[i] = m.hue;
       frame.founder[i] = m.founderId;

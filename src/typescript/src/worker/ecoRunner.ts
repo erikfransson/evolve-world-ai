@@ -1,3 +1,4 @@
+import { wrapAngle } from "../sim/angle.ts";
 import type { EcoConfig } from "../sim/ecoConfig.ts";
 import "../sim/maps/index.ts"; // the coordinator builds a named map for the world and its helpers
 import { planOf } from "../sim/sensors.ts";
@@ -471,7 +472,7 @@ export class EcoRunner {
     const genome = this.sendGenome ? c.brain.genome.slice() : null;
     this.sendGenome = false;
     return {
-      id: m.id, alive: true, x: s.x, y: s.y, heading: s.heading, energy: s.energy, age: m.ageTicks * eco.config.dt,
+      id: m.id, alive: true, x: s.x, y: s.y, heading: wrapAngle(s.heading), energy: s.energy, age: m.ageTicks * eco.config.dt,
       children: m.children, eaten: m.eaten, kills: boardValue(m, "kills"), species: m.species, depth: m.depth, parentId: m.parentId, hue: m.hue, founderId: m.founderId, founderPool: eco.lineages.fromPool(m.founderId), founderHue: eco.lineages.colour(m.founderId), plan: { ...c.plan, hiddenLayers: c.plan.hiddenLayers.slice() }, upkeep: c.upkeep, drain: c.drain, birthEnergy: m.birth.energy, birthCost: m.birth.cost, birthCooldown: m.birth.cooldown, mutationScale: m.mutationScale, ...sc, genome,
     };
   }

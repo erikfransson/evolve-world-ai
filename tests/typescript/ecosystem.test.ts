@@ -626,6 +626,16 @@ describe("Ecosystem lineages and aging", () => {
       expect(eco.lineages.top(10).map((l) => l.pool)).toEqual([true, true, true, true, true, false, false, false, false, false]);
     });
 
+    it("the frame heading stays precise for a creature that has spun for a long time", () => {
+      const eco = busy();
+      eco.step();
+      const raw = 259200.123; // a day at maxTurnRate 3 rad/s, where a float32 is coarser than 0.01 rad
+      eco.get(eco.readCreatures().ids[0]!)!.creature.state.heading = raw;
+      const frame = eco.readCreatures();
+      const wrapped = raw - 2 * Math.PI * Math.round(raw / (2 * Math.PI));
+      expect(Math.abs(frame.heading[0]! - wrapped)).toBeLessThan(1e-5);
+    });
+
     it("the frame carries each creature's founder", () => {
       const eco = busy();
       for (let t = 0; t < 600; t++) eco.step();
