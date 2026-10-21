@@ -112,6 +112,19 @@ Live ran `eco.killEnergy` 0: a kill paid only the loser's energy. Erik chose 25 
 The Grazer swap ships in 0.2.3 on checks without the bonus (the Grazer survived 3 of 3 three-founder seeds at 25). The Juggernaut swap waits: an aggression-trained Juggernaut (b3's jaug) wiped out the other founders in one 180-min Live-rules seed, and b3's 4-seed check of the full set at bonus 25 is running.
 b3's 180-min checks of the founders with the shipped Juggernaut: at bonus 25 the Grazer ended at 21 and 49 while the Juggernaut reached about 1100; at bonus 0 the Grazer held about 950 and the Juggernaut about 300, coexisting. Erik chose 5 on 2026-10-17 (set on the running world, the liveConfig default from 0.2.4).
 
+## Training caps raised (issue #60)
+The Arena and Trials form caps were set by caution, not by the engine. Raised; Live World and server limits untouched:
+| setting                       | old   | new    |
+| ----------------------------- | ----- | ------ |
+| Arena iterations              | 20000 | 200000 |
+| Arena population              | 1000  | 5000   |
+| Arena episodes per candidate  | 4     | 40     |
+| Arena episodes per update     | 64    | 320    |
+| Trials population             | 2000  | 10000  |
+Arena population got 5x: the largest Arena genome is 6514 floats, and 10000 candidates plus the ES noise and spare buffers (`sim/rl/es.ts`) and the scoring task objects (`sim/rl/trainer.ts`) pass 1 GB in one worker.
+Trials population got 5x: 10000 of the largest brains are already about 260 MB per generation, about 520 MB with parent and child alive, and more with the helper slices (`worker/simWorker.ts`, `worker/evalPool.ts`). Episodes per update got 5x because backprop keeps every episode of an update in memory.
+These four sliders (Arena population, iterations, episodes per update, Trials population) are logarithmic so the common values stay easy to set. The shown and saved value is the real number, and settings and URLs round-trip exactly. Arena has no seed field, so episodes per candidate is the seeds-per-iteration knob.
+
 ## Ideas not yet tried
 - Evaluate each creature on two layouts to reduce layout luck.
 - Tournament with a larger size (5 to 7).

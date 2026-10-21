@@ -103,6 +103,7 @@ type Outcome = { ok: false; message: string } | { ok: true; message: string | nu
 
 function clampRanges(): void {
   for (const r of document.querySelectorAll<HTMLInputElement>('input[type="range"]')) {
+    if (r.dataset.log !== undefined) continue; // fill clamps these itself
     const v = r.valueAsNumber;
     if (Number.isFinite(v)) r.value = String(Math.min(Number(r.max), Math.max(Number(r.min), v)));
   }

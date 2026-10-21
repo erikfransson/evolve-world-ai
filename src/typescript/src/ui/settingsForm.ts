@@ -17,6 +17,7 @@ export interface Range<C> extends Base<C> {
   min: number;
   max: number;
   step: number;
+  log?: boolean; // the slider is logarithmic between min and max (wide ranges), the value stays the real number
   fmt?: string; // key of FORMATS
   hint?: (c: C) => string; // live text next to the value
   get: (c: C) => number;
@@ -108,13 +109,42 @@ export const FORMATS: Record<string, (v: number) => string> = {
   poison: (v) => (v >= POISON_LETHAL ? "Lethal" : `${v}`),
 };
 
+// Logarithmic sliders: the input holds a position 0..LOG_STEPS, data-v keeps the exact value so a saved or typed setting round-trips unchanged.
+export const LOG_STEPS = 1000;
+export const logPosition = (v: number, lo: number, hi: number): number => Math.round((Math.log(v / lo) / Math.log(hi / lo)) * LOG_STEPS);
+// A dragged position as a clean number: three significant digits, a multiple of step, within [lo, hi].
+export function logValue(pos: number, lo: number, hi: number, step: number): number {
+  const raw = lo * (hi / lo) ** (pos / LOG_STEPS);
+  const unit = 10 ** Math.max(0, Math.floor(Math.log10(raw)) - 2);
+  return Math.min(hi, Math.max(lo, Math.round((Math.round(raw / unit) * unit) / step) * step));
+}
+// The real value of a range input (its number, or the exact value behind a logarithmic slider's position).
+export function sliderValue(input: HTMLInputElement): number {
+  if (input.dataset.log === undefined) return input.valueAsNumber;
+  const lo = Number(input.dataset.lo);
+  const hi = Number(input.dataset.hi);
+  const exact = Number(input.dataset.v);
+  if (Number.isFinite(exact) && logPosition(exact, lo, hi) === input.valueAsNumber) return exact;
+  const v = logValue(input.valueAsNumber, lo, hi, Number(input.dataset.step));
+  input.dataset.v = String(v);
+  return v;
+}
+export function setSliderValue(input: HTMLInputElement, v: number): void {
+  if (input.dataset.log === undefined) { input.value = String(v); return; }
+  const lo = Number(input.dataset.lo);
+  const hi = Number(input.dataset.hi);
+  const exact = Number.isFinite(v) ? Math.min(hi, Math.max(lo, Math.round(v))) : lo;
+  input.dataset.v = String(exact);
+  input.value = String(logPosition(exact, lo, hi));
+}
+
 // Filled slider track and value badge.
 export function syncSlider(input: HTMLInputElement): void {
   const lo = Number(input.min);
   const hi = Number(input.max);
   input.style.setProperty("--p", `${((input.valueAsNumber - lo) / (hi - lo)) * 100}%`);
   const out = document.querySelector<HTMLOutputElement>(`output[for="${input.id}"]`);
-  if (out) out.textContent = (FORMATS[out.dataset.fmt ?? ""] ?? String)(input.valueAsNumber);
+  if (out) out.textContent = (FORMATS[out.dataset.fmt ?? ""] ?? String)(sliderValue(input));
 }
 
 const label = <C>(f: Base<C>): string =>
@@ -131,7 +161,7 @@ function fieldHtml<C>(f: Field<C>): string {
   }
   const fmt = f.fmt ? ` data-fmt="${f.fmt}"` : "";
   const hint = f.hint ? `<span class="hint" id="${f.id}Hint"></span>` : "";
-  return `<div class="field"><div class="row">${label(f)}<span class="vals">${hint}<output for="${f.id}"${fmt}></output></span></div><input id="${f.id}" type="range" min="${f.min}" max="${f.max}" step="${f.step}" /></div>`;
+  return `<div class="field"><div class="row">${label(f)}<span class="vals">${hint}<output for="${f.id}"${fmt}></output></span></div><input id="${f.id}" type="range" ${f.log ? `min="0" max="${LOG_STEPS}" step="1" data-log data-lo="${f.min}" data-hi="${f.max}" data-step="${f.step}"` : `min="${f.min}" max="${f.max}" step="${f.step}"`} /></div>`;
 }
 
 function sectionHtml<C>(s: Section<C>, index = 0): string {
@@ -177,7 +207,7 @@ export function buildForm<C extends object>(container: HTMLElement, spec: FormSp
     for (const f of fields) {
       const input = el(f.id, HTMLElement) as HTMLInputElement; // a select shares .value
       if (f.kind === "toggle") f.set(c, input.checked);
-      else if (f.kind === "range") f.set(c, input.valueAsNumber);
+      else if (f.kind === "range") f.set(c, sliderValue(input));
       else if (f.kind === "choice") { if (f.options.some(([value]) => value === input.value)) f.set(c, input.value); }
       else if (Number.isFinite(input.valueAsNumber)) (c as { seed: number }).seed = Math.min(2 ** 31, Math.max(0, Math.round(input.valueAsNumber)));
     }
@@ -188,6 +218,7 @@ export function buildForm<C extends object>(container: HTMLElement, spec: FormSp
       const input = el(f.id, HTMLElement) as HTMLInputElement; // a select shares .value
       if (f.kind === "toggle") input.checked = f.get(c);
       else if (f.kind === "seed") input.value = String((c as { seed: number }).seed);
+      else if (f.kind === "range") setSliderValue(input, f.get(c));
       else input.value = String(f.get(c));
     }
     container.querySelectorAll<HTMLInputElement>('input[type="range"]').forEach(syncSlider);
