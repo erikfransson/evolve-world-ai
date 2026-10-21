@@ -62,7 +62,11 @@ const held = (): number => scoreLearner(env, { plan: learner.plan, genome: ppo.t
 const start = held();
 console.log(`env ${env.id}, from ${values.from}, sizes ${sizes.join("-")}; held-out ${start.toFixed(3)} on ${seeds.length} seeds`);
 const curve: { iter: number; episodes: number; seconds: number; train: number; held?: number }[] = [{ iter: 0, episodes: 0, seconds: 0, train: NaN, held: start }];
-const [switchAt, switchTo] = values["repeat-then"] ? values["repeat-then"].split(":").map(Number) : [Infinity, 0];
+const [switchAt, switchTo] = values["repeat-then"] ? values["repeat-then"].split(":").map(Number) : [Infinity, 1];
+if (!(switchAt! >= 0) || !Number.isInteger(switchTo) || switchTo! < 1) {
+  console.error("error: --repeat-then must be S:N, seconds S >= 0 and repeat N a positive integer");
+  process.exit(1);
+}
 let busy = 0;
 while (ppo.iter < num("iters") && busy < num("seconds") * 1000) {
   if (busy >= switchAt! * 1000 && ppo.options.repeat !== switchTo) ppo.setRepeat(switchTo!);
