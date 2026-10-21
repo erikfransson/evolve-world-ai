@@ -37,6 +37,7 @@ export interface EcoState {
     genomes: string; // float32, all creatures one after the other
     memory: string; // float64, the same
     mutationScales?: [number, number][]; // [position in the list, mutationScale] of the creatures whose scale is not 1; absent when all are 1
+    bumpKills?: [number, number][]; // [position in the list, bump kills] of the creatures with any; absent when none has
   };
 }
 
@@ -94,6 +95,10 @@ export function saveState(eco: Ecosystem): EcoState {
   members.forEach((m, i) => {
     if (m.mutationScale !== 1) mutationScales.push([i, m.mutationScale]);
   });
+  const bumpKills: [number, number][] = [];
+  members.forEach((m, i) => {
+    if (m.bumpKills > 0) bumpKills.push([i, m.bumpKills]);
+  });
   return {
     version: STATE_VERSION,
     ...(config.world.map ? { mapVersion: mapVersion(config.world.map) } : {}),
@@ -101,7 +106,7 @@ export function saveState(eco: Ecosystem): EcoState {
     core: eco.exportCore(),
     items: { xs: pack(w.xs), ys: pack(w.ys), kinds: pack(w.kinds), nextItem: pack(w.nextItem), cellHead: pack(w.cellHead), freeSlots: pack(w.freeSlots), freeCount: w.freeCount },
     lineages: eco.lineageTable.toState(),
-    creatures: { count: n, scalars: pack(scalars), plans, genomes: pack(genomes), memory: pack(memory), ...(mutationScales.length ? { mutationScales } : {}) },
+    creatures: { count: n, scalars: pack(scalars), plans, genomes: pack(genomes), memory: pack(memory), ...(mutationScales.length ? { mutationScales } : {}), ...(bumpKills.length ? { bumpKills } : {}) },
   };
 }
 
@@ -144,6 +149,18 @@ function checkMutationScales(raw: unknown, n: number): Map<number, number> {
     scales.set(at, v);
   }
   return scales;
+}
+
+// The saved bump kills as a map from list position; an absent column (older saves) is all 0.
+function checkBumpKills(raw: unknown, n: number): Map<number, number> {
+  const kills = new Map<number, number>();
+  if (raw === undefined) return kills;
+  if (!Array.isArray(raw) || raw.length > n) return invalid("creatures.bumpKills is malformed");
+  for (const pair of raw) {
+    if (!Array.isArray(pair) || pair.length !== 2) return invalid("creatures.bumpKills is malformed");
+    kills.set(whole(pair[0], 0, n - 1, "bumpKills position"), whole(pair[1], 0, 0xffffffff, "bumpKills count"));
+  }
+  return kills;
 }
 
 // The lineage table's columns and late rows hold the types Lineages.load expects: whole counts, finite hues, species in range, names as short plain text.
@@ -321,6 +338,7 @@ export function restoreState(state: EcoState, pool: readonly PoolEntry[] | null 
   const memory = unpack(Float64Array, cr.memory, memoryTotal, "creatures.memory");
   if (!memory.every(Number.isFinite)) invalid("a genome or memory holds a number that is not finite");
   const scales = checkMutationScales(cr.mutationScales, n);
+  const bumpKills = checkBumpKills(cr.bumpKills, n);
   const at = (name: (typeof SCALARS)[number]): number => SCALARS.indexOf(name);
   const ids = new Set<number>();
   const perFounder = new Map<number, number>();
@@ -367,7 +385,7 @@ export function restoreState(state: EcoState, pool: readonly PoolEntry[] | null 
     const record: MemberRecord = {
       id: v("id"), parentId: v("parentId"), depth: v("depth"), birthTick: v("birthTick"), children: v("children"), eaten: v("eaten"), kills: v("kills"),
       species: v("species"), hue: v("hue"), founderId: v("founderId"), lastBirthTick: v("lastBirthTick"),
-      birthEnergy: v("birthEnergy"), birthCost: v("birthCost"), birthCooldown: v("birthCooldown"), cooldownTicks: v("cooldownTicks"), mutationScale: scales.get(i),
+      birthEnergy: v("birthEnergy"), birthCost: v("birthCost"), birthCooldown: v("birthCooldown"), cooldownTicks: v("cooldownTicks"), mutationScale: scales.get(i), bumpKills: bumpKills.get(i),
       x: v("x"), y: v("y"), heading: v("heading"), vx: v("vx"), vy: v("vy"), turnRate: v("turnRate"), energy: v("energy"), ticksAlive: v("ticksAlive"), cos: v("cos"), sin: v("sin"),
       plan: { rayCount: p[0]!, raySpread: p[1]!, rayLength: p[2]!, memoryShort: p[3]!, memoryLong: p[4]!, hiddenLayers: p.slice(6) },
       genome: genomes.subarray(g, g + p[5]!),

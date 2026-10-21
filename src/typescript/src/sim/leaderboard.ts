@@ -1,10 +1,11 @@
 import type { BodyPlan } from "./sensors.ts";
 
-// A run's records: the creatures with the longest life, most children, most food and most prey eaten, dead ones included.
+// A run's records: the creatures with the longest life, most children, most food and most kills, dead ones included.
 export type Board = "age" | "children" | "eaten" | "kills";
 export const BOARDS: readonly Board[] = ["age", "children", "eaten", "kills"];
-// A creature's value on a board; age is in seconds when dt is the tick length.
-export const boardValue = (m: { ageTicks: number; children: number; eaten: number; kills: number }, board: Board, dt = 1): number => (board === "age" ? m.ageTicks * dt : m[board]);
+// A creature's value on a board; age is in seconds when dt is the tick length. Kills are hunts and lethal bumps it survived.
+export const boardValue = (m: { ageTicks: number; children: number; eaten: number; kills: number; bumpKills: number }, board: Board, dt = 1): number =>
+  board === "age" ? m.ageTicks * dt : board === "kills" ? m.kills + m.bumpKills : m[board];
 
 export interface LeaderEntry {
   id: number;

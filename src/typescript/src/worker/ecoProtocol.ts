@@ -18,6 +18,7 @@ export type EcoInMessage =
   | { type: "speed"; speed: EcoSpeedSetting }
   | { type: "select"; id: number | null }
   | { type: "selectBest"; by: Board; request: number } // selects the living creature with the highest value, ties to the lowest id
+  | { type: "highlight"; founder: number } // the lineage the page lights, -1 for none; its living count rides with the lineages
   | { type: "refill"; buffer: ArrayBuffer } // a render worker hands a buffer back for reuse; only the page's acknowledgement counts as keeping up
   | { type: "recycle"; buffer?: ArrayBuffer; run?: number }; // the page acknowledges a consumed snapshot of run, handing its buffer back unless a render worker holds it; only current-run acks count
 
@@ -32,7 +33,7 @@ export interface SelectedDetails {
   age: number; // seconds
   children: number;
   eaten: number; // food items eaten
-  kills: number; // prey eaten
+  kills: number; // creatures it killed: hunts and lethal bumps it survived
   species: number; // index into the config's species
   depth: number;
   parentId: number;
@@ -83,6 +84,7 @@ export interface EcoSnapshot {
   // Lineages, sent about once a second (and with the first and last snapshot of a run). With several species, each
   // species has its own: lineages lists each species' in turn, and each history sample holds one block per species.
   lineages?: Lineage[]; // the LINEAGE_TOP largest living lineages, biggest first
+  lit?: { founder: number; count: number }; // with the lineages while the page lights one: its living members, so the page can let go of a family that died out
   leaders?: Leaders[]; // the run's records per species, with the lineages
   traits?: (TraitHistogram[] | null)[]; // body plan histograms of each species' living creatures (TRAITS order), null for none alive, with the lineages
   lineageHistory?: Float64Array; // LINEAGE_STRIDE numbers per sample and species, at the times of `history`, only when it changed

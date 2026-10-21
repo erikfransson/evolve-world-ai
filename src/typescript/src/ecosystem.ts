@@ -234,6 +234,11 @@ function onSnapshot(e: MessageEvent<EcoOutMessage>): void {
   if (msg.traits) view.setTraits(msg.traits);
   if (msg.leaders) view.setLeaders(msg.leaders);
   if (msg.lineages) view.setLineages(msg.lineages, msg.population);
+  if (msg.lit && msg.lit.founder === highlight && msg.lit.count === 0) {
+    highlight = -1; // the lit family died out: everyone gets their colour back
+    view.unlight();
+    send({ type: "highlight", founder: -1 });
+  }
   const d = msg.selected;
   if (pendingBest && msg.bestRequest === pendingBest) {
     pendingBest = 0;
@@ -362,7 +367,7 @@ function updateUi(): void {
   view.setStats({ population: m.population, births: m.births, deaths: m.deaths, food: m.food, poison: m.poison, simTime: m.simTime, oldestDepth: m.oldestDepth, speed: m.speed > 0 ? m.speed : null, helpers: m.helpers, wasm: m.wasm, season: config.eco.seasons ? { name: seasonName(config.eco, m.simTime), factor: seasonFactor(config.eco, m.simTime) } : null });
   const d = selection?.last;
   if (selection && d) {
-    view.setSelected({ id: d.id, energy: d.energy, fullEnergy: d.birthEnergy, age: d.age, children: d.children, eaten: d.eaten, depth: d.depth, plan: d.plan, upkeep: d.upkeep, drain: d.drain, birth: { energy: d.birthEnergy, cost: d.birthCost, cooldown: d.birthCooldown }, founderId: d.founderId, founderPool: d.founderPool, founderHue: d.founderHue, died: selection.died });
+    view.setSelected({ id: d.id, energy: d.energy, fullEnergy: d.birthEnergy, age: d.age, children: d.children, kills: d.kills, eaten: d.eaten, depth: d.depth, plan: d.plan, upkeep: d.upkeep, drain: d.drain, birth: { energy: d.birthEnergy, cost: d.birthCost, cooldown: d.birthCooldown }, founderId: d.founderId, founderPool: d.founderPool, founderHue: d.founderHue, died: selection.died });
     view.setFollowing(following);
   }
 }
@@ -441,7 +446,10 @@ const view = createEcoView({
     camera.animateToFit();
   },
   onShowRays: (show) => { showRays = show; },
-  onHighlight: (founder) => { highlight = founder ?? -1; },
+  onHighlight(founder) {
+    highlight = founder ?? -1;
+    send({ type: "highlight", founder: highlight });
+  },
   onConfigChange(c) {
     setConfig(c);
     scheduleIdle();

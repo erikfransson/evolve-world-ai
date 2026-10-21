@@ -1,11 +1,22 @@
 import { LINEAGE_STRIDE, LINEAGE_TOP } from "../../src/typescript/src/worker/ecoProtocol.ts";
-import { lineageRows, stackHistory } from "../../src/typescript/src/ui/lineagePanel.ts";
+import { lineageRows, rowLiving, stackHistory } from "../../src/typescript/src/ui/lineagePanel.ts";
 
 const sample = (time: number, others: number, entries: [number, number, number][]): number[] => {
   const row = [time, others];
   for (let k = 0; k < LINEAGE_TOP; k++) row.push(...(entries[k] ?? [-1, 0, 0]));
   return row;
 };
+
+describe("rowLiving (#57)", () => {
+  it("says whether any creature is counted in a lineage row, named groups through rowOf", () => {
+    const founders = Int32Array.from([3, 5, 9, 3]);
+    const rowOf = (f: number): number => (f === 9 ? 2 : f);
+    expect(rowLiving(founders, 4, 5, rowOf)).toBe(true);
+    expect(rowLiving(founders, 4, 2, rowOf)).toBe(true); // founder 9 is counted in row 2
+    expect(rowLiving(founders, 4, 9, rowOf)).toBe(false);
+    expect(rowLiving(founders, 1, 5, rowOf)).toBe(false); // only the first count entries are living
+  });
+});
 
 describe("lineageRows", () => {
   it("gives each lineage its share and one row for the rest", () => {

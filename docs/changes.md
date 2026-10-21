@@ -9,6 +9,9 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 - Live server: an optional founder pools file (`server/founder-pools.json`, server only) gives a fresh world's seeded copies trained variants of each founder instead of clones. No pools ship yet, so worlds seed as before.
 - RL Arena and Trials: the training caps are much higher for long runs. Arena iterations 20000 to 200000, population 1000 to 5000, episodes per candidate 4 to 40, episodes per update 64 to 320. Trials population 2000 to 10000. Live World limits are unchanged.
 - Live: the kill bonus is 5 (`eco.killEnergy`, was 25 in 0.2.3): at 25 the Juggernaut took over the world. Already set on the running world; a fresh world now starts with it.
+- Live and Ecosystem: the selected creature's card shows its kills (creatures that died in a collision it survived, #52). Saves keep the count; older saves read as 0. Protocol 5 (kills in DETAIL and `best`).
+- Live and Ecosystem: "Highlight family" turns itself off when the lit family dies out, so the world gets its colours back (#57).
+- Live and Ecosystem: a "Most kills" pick next to Oldest and Most children (#61).
 - RL Arena: the reward graph moves to the top once training starts and stays after it ends. It has labelled axes (reward, iteration) with ticks, and the legend shows the latest train mean, best and held-out values.
 
 ## 0.2.3 (2026-10-16)

@@ -13,6 +13,7 @@ import { TokenBucket } from "./budget.ts";
 import { addingOn } from "./adds.ts";
 import { Chronicle } from "./chronicle.ts";
 import { restoreState, saveState } from "../../src/typescript/src/sim/ecoState.ts";
+import { boardValue } from "../../src/typescript/src/sim/leaderboard.ts";
 import type { EcoState } from "../../src/typescript/src/sim/ecoState.ts";
 import { LIMITS, LIVE, MAX_POPULATION, MAX_SEED_FOUNDERS, SEED_COPIES, itemHeadroom, mostCopies, seedRoom } from "./config.ts";
 import type { SeedFounder } from "./founders.ts";
@@ -251,7 +252,7 @@ export class LiveWorld {
     const s = c.state;
     const founder = wireName(e.lineageName(m.founderId));
     return encodeDetail(e.tick, id, {
-      x: s.x, y: s.y, heading: s.heading, energy: s.energy, age: m.ageTicks * this.config.dt, children: m.children, eaten: m.eaten, depth: m.depth, parentId: m.parentId,
+      x: s.x, y: s.y, heading: s.heading, energy: s.energy, age: m.ageTicks * this.config.dt, children: m.children, eaten: m.eaten, kills: boardValue(m, "kills"), depth: m.depth, parentId: m.parentId,
       founderId: m.founderId, founderPool: e.lineages.fromPool(m.founderId), founderName: founder.name, founderStarter: founder.starter, founderHue: e.lineages.colour(m.founderId), hue: m.hue, upkeep: c.upkeep, drain: c.drain,
       birthEnergy: m.birth.energy, birthCost: m.birth.cost, birthCooldown: m.birth.cooldown, plan: c.plan, rayKinds: cap.kinds, rayCloseness: cap.closeness, rayOffsets: cap.offsets, inputs: cap.inputs,
     });

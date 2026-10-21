@@ -41,6 +41,7 @@ export class EcoRunner {
   private selectedId: number | null = null;
   private sendGenome = false;
   private bestRequest = 0;
+  private lit = -1; // founder of the lineage the page lights, -1 for none
   private debt = 0; // ticks owed to the clock
   private last = 0;
   private lastPost = 0;
@@ -84,6 +85,10 @@ export class EcoRunner {
       case "reset":
         this.eco = null;
         this.selectedId = null;
+        this.lit = -1;
+        break;
+      case "highlight":
+        this.lit = msg.founder;
         break;
       case "speed":
         this.speed = msg.speed;
@@ -244,6 +249,7 @@ export class EcoRunner {
     this.starting = this.helpers?.start(this.eco) ?? null;
     this.starting?.catch(() => {}); // handled by the next pumpAsync
     this.run = run;
+    this.lit = -1;
     this.inFlight = 0;
     this.paused = false;
     this.selectedId = null;
@@ -384,6 +390,7 @@ export class EcoRunner {
       this.lineagePostedAt = now;
       msg.lineages = this.blocks > 1 ? eco.species.flatMap((_, s) => eco.lineages.top(LINEAGE_TOP, s)) : eco.lineages.top(LINEAGE_TOP);
       msg.lineageHistory = Float64Array.from(this.lineageSamples);
+      if (this.lit >= 0) msg.lit = { founder: this.lit, count: eco.lineages.size(this.lit) };
       for (const m of eco.members) this.offerRecord(eco, m, true);
       msg.leaders = this.board.snapshot();
       msg.traits = eco.species.map((_, s) => {
@@ -465,7 +472,7 @@ export class EcoRunner {
     this.sendGenome = false;
     return {
       id: m.id, alive: true, x: s.x, y: s.y, heading: s.heading, energy: s.energy, age: m.ageTicks * eco.config.dt,
-      children: m.children, eaten: m.eaten, kills: m.kills, species: m.species, depth: m.depth, parentId: m.parentId, hue: m.hue, founderId: m.founderId, founderPool: eco.lineages.fromPool(m.founderId), founderHue: eco.lineages.colour(m.founderId), plan: { ...c.plan, hiddenLayers: c.plan.hiddenLayers.slice() }, upkeep: c.upkeep, drain: c.drain, birthEnergy: m.birth.energy, birthCost: m.birth.cost, birthCooldown: m.birth.cooldown, mutationScale: m.mutationScale, ...sc, genome,
+      children: m.children, eaten: m.eaten, kills: boardValue(m, "kills"), species: m.species, depth: m.depth, parentId: m.parentId, hue: m.hue, founderId: m.founderId, founderPool: eco.lineages.fromPool(m.founderId), founderHue: eco.lineages.colour(m.founderId), plan: { ...c.plan, hiddenLayers: c.plan.hiddenLayers.slice() }, upkeep: c.upkeep, drain: c.drain, birthEnergy: m.birth.energy, birthCost: m.birth.cost, birthCooldown: m.birth.cooldown, mutationScale: m.mutationScale, ...sc, genome,
     };
   }
 }

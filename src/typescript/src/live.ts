@@ -19,7 +19,7 @@ import type { SelectedBrain } from "./ui/ecoBrain.ts";
 import { BrainView } from "./ui/brainView.ts";
 import { PopulationGraph } from "./ui/populationGraph.ts";
 import type { PopulationSample } from "./ui/populationGraph.ts";
-import { LineagePanel, lineageColor } from "./ui/lineagePanel.ts";
+import { LineagePanel, lineageColor, rowLiving } from "./ui/lineagePanel.ts";
 import { BOARD_SPECS, LeaderPanel } from "./ui/leaderPanel.ts";
 import { formatBirth, formatPlan } from "./ui/ecoPage.ts";
 import { initCard } from "./ui/overlays.ts";
@@ -415,6 +415,7 @@ function updateSelectedCard(): void {
   $("selEnergy").textContent = s.died ? "died" : `${Math.round(d.energy)} / ${Math.round(full)}`;
   $("selAge").textContent = durationText(d.age);
   $("selChildren").textContent = nf.format(d.children);
+  $("selKills").textContent = nf.format(d.kills);
   $("selEaten").textContent = nf.format(d.eaten);
   $("selDepth").textContent = nf.format(d.depth);
   $("selId").textContent = `#${d.id}`;
@@ -513,12 +514,19 @@ function onStats(s: Stats): void {
         syncFamily();
       }
     }
+    // A lit family that died out lets go, so everyone gets their colour back (the views still hold its fading ghosts for a moment).
+    if (highlight >= 0 && scene.views.count > 0 && !rowLiving(scene.views.founder, scene.views.count, highlight, rowOf)) {
+      highlight = -1;
+      lineages.setHighlight(null);
+      syncFamily();
+    }
     lastLineages = s.lineages;
     lineages.setLineages(s.lineages.map((l): Lineage => ({ founder: l.founder, hue: l.hue, pool: l.pool, count: l.count, species: 0 })), s.population, names, starters);
   }
   if (s.records) setRecords(s.records);
   $<HTMLButtonElement>("pickAge").disabled = !s.best;
   $<HTMLButtonElement>("pickChildren").disabled = !s.best;
+  $<HTMLButtonElement>("pickKills").disabled = !s.best;
   renderStats();
 }
 
@@ -639,6 +647,7 @@ $("selFounder").addEventListener("click", () => {
 });
 $("pickAge").addEventListener("click", () => { if (lastStats?.best) select(lastStats.best.age); });
 $("pickChildren").addEventListener("click", () => { if (lastStats?.best) select(lastStats.best.children); });
+$("pickKills").addEventListener("click", () => { if (lastStats?.best) select(lastStats.best.kills); });
 
 // The visitor's last added copies: when the followed one dies, the page moves on to a living copy and lights its family.
 let myCopies: number[] = [];

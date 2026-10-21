@@ -163,23 +163,26 @@ export class Contacts {
   // bump for the creatures at sorted slots s and t of the crowd, then their positions back into its arrays.
   private bumpSlots(s: number, t: number, radius: number): void {
     const { owners, xs, ys } = this.crowd;
-    const a = this.table.states[owners[s]!]!;
-    const b = this.table.states[owners[t]!]!;
-    this.bump(a, b, radius, 1);
+    const i = owners[s]!;
+    const j = owners[t]!;
+    const a = this.table.states[i]!;
+    const b = this.table.states[j]!;
+    this.bump(i, j, a, b, radius, 1);
     xs[s] = a.x;
     ys[s] = a.y;
     xs[t] = b.x;
     ys[t] = b.y;
   }
 
-  private bump(a: CreatureState, b: CreatureState, radius: number, e: number): void {
+  // a and b are the states of members i and j.
+  private bump(i: number, j: number, a: CreatureState, b: CreatureState, radius: number, e: number): void {
     const eco = this.config.eco;
     if (!a.alive || !b.alive) return; // an eaten prey; everyone else is alive until settle
     if (!collide(a, b, radius, e, this.contact)) return;
     if (eco.collisionDamage) {
       const fresh = a.energy > 0 && b.energy > 0 && this.contact.speed > 0; // else hurt does nothing
       hurt(a, b, this.contact.speed, eco.damagePerSpeed, eco.killEnergy);
-      if (fresh) this.noteHurt(a, b, eco.damagePerSpeed * this.contact.speed);
+      if (fresh) this.noteHurt(i, j, a, b, eco.damagePerSpeed * this.contact.speed);
     }
     this.confine(a);
     this.confine(b);
@@ -193,11 +196,14 @@ export class Contacts {
     this.items.terrain.keepOut(s, radius, wallBounce);
   }
 
-  private noteHurt(a: CreatureState, b: CreatureState, loss: number): void {
+  // A bump between members i and j (states a and b) that hurt both; a lethal one with one survivor counts as its kill.
+  private noteHurt(i: number, j: number, a: CreatureState, b: CreatureState, loss: number): void {
     if (loss >= BIG_IMPACT) this.report(EVENT_IMPACT, (a.x + b.x) / 2, (a.y + b.y) / 2, loss);
     if (a.energy <= 0) this.slain.add(a);
     if (b.energy <= 0) this.slain.add(b);
-    if (this.onBumpKill && a.energy <= 0 !== b.energy <= 0) this.onBumpKill(a.energy > 0 ? a : b, a.energy > 0 ? b : a);
+    if (a.energy <= 0 === b.energy <= 0) return;
+    this.table.members[a.energy > 0 ? i : j]!.bumpKills++;
+    this.onBumpKill?.(a.energy > 0 ? a : b, a.energy > 0 ? b : a);
   }
 
   private report(kind: number, x: number, y: number, value: number): void {

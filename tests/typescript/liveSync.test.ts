@@ -436,7 +436,7 @@ describe("page stats and history", () => {
     expect([s.tick, s.speed, s.births, s.deaths, s.food, s.uptimeS]).toEqual([0, 0, 0, 1e9, 2, 0]);
     expect(s.simSeconds).toBeLessThanOrEqual(1e10);
     expect(s.season).toEqual({ yearMinutes: 1e6, winterFood: 1 });
-    expect(s.best).toEqual({ age: 0, children: 0xffffffff });
+    expect(s.best).toEqual({ age: 0, children: 0xffffffff, kills: 0 }); // a missing id reads 0
     expect(s.lineages!.map((l) => l.count)).toEqual([0, 8, 2]);
   });
 

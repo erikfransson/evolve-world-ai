@@ -70,7 +70,8 @@ export class EcoCreature {
   birthTick = 0;
   children = 0;
   eaten = 0; // food items eaten, poison not counted
-  kills = 0; // prey eaten
+  kills = 0; // prey eaten (hunts only, so an RL kill reward never pays a bump)
+  bumpKills = 0; // creatures that died in a bump it survived (collision damage)
   species = 0; // index into the config's species; children keep their parent's
   hue = 0; // degrees
   founderId = 0; // id of the founder this family descends from; a founder is its own
@@ -125,6 +126,7 @@ export interface MemberRecord {
   id: number; parentId: number; depth: number; birthTick: number; children: number; eaten: number; kills: number; species: number; hue: number;
   founderId: number; lastBirthTick: number; birthEnergy: number; birthCost: number; birthCooldown: number; cooldownTicks: number;
   mutationScale?: number; // 1 when left out
+  bumpKills?: number; // 0 when left out
   x: number; y: number; heading: number; vx: number; vy: number; turnRate: number; energy: number; ticksAlive: number; cos: number; sin: number;
   plan: PlanView; genome: Float32Array; memory: ArrayLike<number>;
 }
@@ -672,6 +674,7 @@ export class Ecosystem {
     m.children = 0;
     m.eaten = 0;
     m.kills = 0;
+    m.bumpKills = 0;
     m.lastBirthTick = -Infinity;
     m.birth.energy = birth.energy;
     m.birth.cost = birth.cost;
@@ -791,7 +794,7 @@ export class Ecosystem {
     c.heading.cos = r.cos; c.heading.sin = r.sin;
     c.setMemory(r.memory, 0);
     c.aging = this.aging;
-    m.id = r.id; m.parentId = r.parentId; m.depth = r.depth; m.birthTick = r.birthTick; m.children = r.children; m.eaten = r.eaten; m.kills = r.kills;
+    m.id = r.id; m.parentId = r.parentId; m.depth = r.depth; m.birthTick = r.birthTick; m.children = r.children; m.eaten = r.eaten; m.kills = r.kills; m.bumpKills = r.bumpKills ?? 0;
     m.species = r.species; m.hue = r.hue; m.founderId = r.founderId; m.lastBirthTick = r.lastBirthTick;
     m.birth.energy = r.birthEnergy; m.birth.cost = r.birthCost; m.birth.cooldown = r.birthCooldown; m.cooldownTicks = r.cooldownTicks; m.mutationScale = r.mutationScale ?? 1;
     this.journal?.born.push(m.id);
