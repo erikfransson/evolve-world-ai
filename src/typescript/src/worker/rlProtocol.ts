@@ -10,8 +10,9 @@ export interface RlRunOptions extends Omit<EsOptions, "shaping">, Partial<Pick<E
   episodes: number; // seeds per candidate and env each iteration
   iterations: number; // the run stops after this many
   backprop?: Partial<Pick<PpoOptions, "lr" | "episodes">>; // with method "backprop"; the ES fields above then do not apply
-  vary?: number; // run-wide world variation (see varied in env.ts), 0 to VARY_MAX; 0 when left out
 }
+
+export const ARENA_HELD_SEEDS = 12; // held-out seeds per env the Arena page asks for (#54); Live visitor training keeps the default 4
 
 export type TrainMethod = "es" | "backprop"; // evolution strategies (Trainer) or PPO (BackpropTrainer)
 
@@ -22,7 +23,8 @@ export type RlInMessage =
       learner: StoredLearner;
       method: TrainMethod;
       options: RlRunOptions;
-      tiles: number; // episodes shown per iteration, 1 to 12; tile k plays envs[k % envs.length]
+      tiles: number;
+      held?: number; // held-out seeds per env (the fixed set heldSeeds(held)), 1 to 32; 4 when left out (Live visitor training) // episodes shown per iteration, 1 to 12; tile k plays envs[k % envs.length]
       seed: number;
       poolUrl: string;
       libraryUrl: string;

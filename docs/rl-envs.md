@@ -62,6 +62,18 @@ E6 (energy reward) does not apply; E7 holds by design.
 | Race (race)          | 300 x 300, 15 s, one pool rival eats too       | 3.59   | 0.15               | 1.00          | 13               | 29%              | 6.0      |
 
 Training from fresh designs (ES pop 100, 150 iterations, 1 episode, `randomLearner` bodies 1 to 3, final genome on 64 held-out seeds): Fading food 0.13 -> 4.76 (sd over runs 2.00), Stings 0.14 -> 4.76 (1.90), Race 0.32 -> 4.53 (1.05); curves rise steadily, though body 1 stops near 2.6 in both fading envs.
+Speed check (C1 review): mean learner speed (world units per second while alive) on 32 held-out seeds, mean of the same 3 bodies, each trained 150 iterations at pop 100; reward in brackets.
+Untrained bodies move at 0 to 7.
+
+| Trained on  | Own env     | Nibble      | Far food    |
+| ----------- | ----------- | ----------- | ----------- |
+| Fading food | 69.7 (4.73) | 64.4 (3.25) | 69.2 (1.84) |
+| Race        | 68.9 (4.49) | 65.8 (2.65) | 69.6 (1.20) |
+| Nibble      | 65.5 (3.50) | (own)       | 63.6 (1.33) |
+
+The time-pressure creatures are not clearly faster: about 5 to 9% faster than the Nibble one in Far food and its equal in Nibble, within the spread between bodies (57.6 to 67.7 for Nibble in Far food).
+At this budget every trained creature already moves at 60 to 72, the speed of Live survivors (63 to 77), so in these small worlds speed is not what separates the envs; the slow lean founders in Live need another explanation.
+Each claim needs 3 to 5 training seeds or bodies: the spread between runs is larger than the held-out noise.
 Dropped after the same checks: Dash (5 food, clear-all bonus, fails E7), Hot box (tight room with stings, run spread 2.3 to 4.5), Mudflats (slow and fast ground, seed cv up to 0.99, the random ground makes layouts too unequal), and lab variants Fading wide, Fading regrow and Race two (all pass, but lower SNR and more seeds needed than the three above).
 
 ## Notes

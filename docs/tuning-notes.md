@@ -130,8 +130,8 @@ These four sliders (Arena population, iterations, episodes per update, Trials po
 ES pop 100, 150 iterations, fresh designs (3 bodies), final genome on 64 held-out seeds.
 - The last step's best candidate scores 1.5 to 2.5 x the mean on its own training episode, but on held-out seeds it scores the same as the mean genome (Fading food 8.0 -> 4.9 vs mean genome 4.8; Race 7.6 -> 4.4 vs 4.5; Dash 6.6 -> 3.3 vs 3.5). The Arena's best line is selection on one noisy episode, not a better creature.
 - Episodes per candidate 3 instead of 1 (Fading food): held 4.93 vs 4.76 at 3 x the cost; the best line drops closer to the mean.
-- World variation 0.2 in training, judged on the plain env (Fading food): 4.50 vs 4.76, within the spread over runs (1.6 to 2.0). No gain shown, so the Arena default stays 0.
-- Arena held-out checks now use 12 seeds per env (was 4).
+- World variation 0.2 in training, judged on the plain env (Fading food): 4.50 vs 4.76, within the spread over runs (1.6 to 2.0). No gain shown, so it stays a CLI option (`rlTrain --vary`).
+- Arena held-out checks now use a fixed set of 12 seeds per env (was 4; Live visitor training keeps 4). Changing the set moved one genome from 3.87 to 5.70 in a C1 probe.
 
 ## Ideas not yet tried
 - Evaluate each creature on two layouts to reduce layout luck.

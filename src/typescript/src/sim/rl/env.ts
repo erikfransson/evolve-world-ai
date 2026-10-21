@@ -9,7 +9,6 @@ import { SenseKernels } from "../wasm/senseKernels.ts";
 import { randomPlan } from "../planMutation.ts";
 import { createRng, deriveSeed } from "../rng.ts";
 import { trialsToEcoGenome } from "../seedPool.ts";
-import { PATCH_SIZE_RANGE } from "../terrain.ts";
 import type { PoolEntry } from "../seedPool.ts";
 import { OUT_THRUST, energySignal, planOf } from "../sensors.ts";
 import type { BodyPlan, PlanView } from "../sensors.ts";
@@ -58,8 +57,6 @@ export interface EnvSpec {
   learnerEnergy?: number; // the learner's start energy, the species' when left out
   poisonDamage?: number; // energy one poison item drains; lethal when left out (POISON_LETHAL)
   fast?: number; // share of the world under fast patches (terrain: 175% speed, so harder bumps)
-  slow?: number; // share of the world under slow patches (terrain: half speed)
-  patchSize?: number; // size of the slow and fast patches, a multiple of the standard one (small worlds want small patches)
   // Duel (#44): instead of the rivals, one scripted charger that moves straight at a fixed speed, starting `distance` away at
   // `bearing` radians off the learner's facing and heading at the learner plus `offset` (0 charges, pi/2 crosses, pi moves away).
   // Each episode draws every value from its range, energies too, so the learner must read them to hit or dodge.
@@ -118,7 +115,7 @@ export function envConfig(env: EnvSpec, seed: number): EcoConfig {
   const base = structuredClone(env.world === "hunt" ? DEFAULT_PREDATOR_CONFIG : DEFAULT_ECO_CONFIG);
   const [width, height] = env.size;
   base.seed = seed;
-  base.world = { ...base.world, width, height, ...(env.poisonDamage === undefined ? {} : { poisonDamage: env.poisonDamage }), ...(env.fast === undefined ? {} : { fastDensity: env.fast }), ...(env.slow === undefined ? {} : { slowDensity: env.slow }), ...(env.patchSize === undefined ? {} : { slowSize: env.patchSize, fastSize: env.patchSize }) };
+  base.world = { ...base.world, width, height, ...(env.poisonDamage === undefined ? {} : { poisonDamage: env.poisonDamage }), ...(env.fast === undefined ? {} : { fastDensity: env.fast }) };
   const per = itemsPerDensity(base);
   base.world.foodDensity = env.food / per;
   base.world.poisonDensity = env.poison / per;
@@ -246,8 +243,8 @@ export function variantFor(env: EnvSpec, seed: number): EnvSpec {
   return out;
 }
 
-// The env with run-wide variation f (#54): every augment factor f (sides f / 2, none with a layout), so each episode plays another
-// version of it. Duels and envs with their own augment stay as they are.
+// The env with run-wide variation f (#54, rlTrain --vary): every augment factor f (sides f / 2, none with a layout), so each episode
+// plays another version of it. Duels and envs with their own augment stay as they are.
 export function varied(env: EnvSpec, f: number): EnvSpec {
   if (!(f > 0) || env.duel || env.augment) return env;
   const a = Math.min(f, ENV_LIMITS.augment[1]);
@@ -450,8 +447,6 @@ export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | s
   if (v.learnerEnergy !== undefined && !n(v.learnerEnergy, L.energy)) return `start energy must be ${L.energy[0]} to ${L.energy[1]}`;
   if (v.poisonDamage !== undefined && !n(v.poisonDamage, L.poisonDamage)) return `poison damage must be ${L.poisonDamage[0]} to ${L.poisonDamage[1]}`;
   if (v.fast !== undefined && !n(v.fast, L.fast)) return `fast patches must cover ${L.fast[0]} to ${L.fast[1]}`;
-  if (v.slow !== undefined && !n(v.slow, L.fast)) return `slow patches must cover ${L.fast[0]} to ${L.fast[1]}`;
-  if (v.patchSize !== undefined && !n(v.patchSize, PATCH_SIZE_RANGE)) return `patch size must be ${PATCH_SIZE_RANGE[0]} to ${PATCH_SIZE_RANGE[1]}`;
   const range = (x: unknown, lim: readonly [number, number]): x is Range => Array.isArray(x) && x.length === 2 && n(x[0], lim) && n(x[1], lim) && x[0] <= x[1];
   let duel: EnvSpec["duel"];
   if (v.duel !== undefined) {
@@ -521,8 +516,6 @@ export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | s
     ...(v.poisonDamage === undefined ? {} : { poisonDamage: v.poisonDamage as number }),
     ...(v.killEnergy === undefined ? {} : { killEnergy: v.killEnergy as number }),
     ...(v.fast === undefined ? {} : { fast: v.fast as number }),
-    ...(v.slow === undefined ? {} : { slow: v.slow as number }),
-    ...(v.patchSize === undefined ? {} : { patchSize: v.patchSize as number }),
     ...(duel ? { duel } : {}),
     ...(augment ? { augment } : {}),
     ...(v.foodVisibleFor === undefined ? {} : { foodVisibleFor: v.foodVisibleFor as number }),

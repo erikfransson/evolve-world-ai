@@ -7,8 +7,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 ## Unreleased
 
 - RL Arena: a Time pressure group with three envs, Fading food, Stings and Race (#56). A new reward, early, pays each bite by the share of the episode still left.
-- RL Arena: a World variation setting (default 0, off) plays every episode, held-out checks included, on a varied version of each env: food, poison, rival counts, start energies and, without a layout, the world size (#54). Held-out checks use 12 seeds per env instead of 4. `rlTrain --vary` does the same in the CLI.
-- RL Arena: slow and fast ground (custom env fields `slow`, `fast`, `patchSize`) is drawn in the replay tiles.
+- RL Arena: held-out checks use a fixed set of 12 seeds per env instead of 4 (#54); Live visitor training keeps 4. The graph's best line is now "luckiest candidate" (or episode): on held-out worlds that candidate scores about like the current brain.
+- `rlTrain --vary F` trains and checks on varied versions of the env (food, poison, rival counts, start energies, world size), for experiments.
 
 - Live server: an optional founder pools file (`server/founder-pools.json`, server only) gives a fresh world's seeded copies trained variants of each founder instead of clones. No pools ship yet, so worlds seed as before.
 - RL Arena and Trials: the training caps are much higher for long runs. Arena iterations 20000 to 200000, population 1000 to 5000, episodes per candidate 4 to 40, episodes per update 64 to 320. Trials population 2000 to 10000. Live World limits are unchanged.

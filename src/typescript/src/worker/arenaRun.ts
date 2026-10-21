@@ -1,6 +1,5 @@
 import { deriveSeed } from "../sim/rng.ts";
 import type { PoolEntry } from "../sim/seedPool.ts";
-import { varied } from "../sim/rl/env.ts";
 import type { EnvSpec, Library } from "../sim/rl/env.ts";
 import { serialiseLearner } from "../sim/rl/library.ts";
 import { recordingBuffers } from "../sim/rl/recording.ts";
@@ -16,8 +15,6 @@ import type { RlInMessage, RlOutMessage } from "./rlProtocol.ts";
 // candidate whenever the page asks. Pause waits between steps; envs sent while paused apply at the next step.
 // Kept apart from the worker's messaging so it runs and is tested in Node with an in-process pool.
 
-const HELD_SEEDS = heldSeeds(12); // per env (4 until #54), so a held-out check depends less on a few layouts
-export const VARY_MAX = 0.5;
 const HELD_EVERY = 5;
 
 export type Start = Extract<RlInMessage, { type: "start" }>;
@@ -35,7 +32,7 @@ export class ArenaRun {
   private readonly pool: RlPool;
   private readonly assets: { pool: PoolEntry[] | null; library: Library };
   private envs: EnvSpec[];
-  private readonly vary: number;
+  private readonly heldSeeds: number[]; // a fixed set, the same whatever the run seed, so held-out scores compare across runs
   private gate: { wait: Promise<void>; open: () => void } | null = null; // set while paused
   private nextEnvs: EnvSpec[] | null = null;
   private showWanted = false; // the page asked for a new show; steps run much faster than the page plays them
@@ -47,12 +44,12 @@ export class ArenaRun {
   constructor(start: Start, assets: { pool: PoolEntry[] | null; library: Library }, makePool: (setup: RlSetup) => RlPool, post: Post) {
     this.start = start;
     this.post = post;
-    this.vary = clamp(start.options.vary, 0, VARY_MAX, 0);
-    this.envs = start.envs.map((e) => varied(e, this.vary)); // the varied envs everywhere: training, held-out checks and shows
+    this.envs = start.envs;
+    this.heldSeeds = heldSeeds(Math.round(clamp(start.held, 1, 32, 4)));
     this.playback = start.playback !== false;
     this.assets = assets;
     if (start.gentle) this.setGentle(true);
-    this.pool = makePool({ envs: this.envs, plan: start.learner.plan, pool: assets.pool, library: assets.library });
+    this.pool = makePool({ envs: start.envs, plan: start.learner.plan, pool: assets.pool, library: assets.library });
   }
 
   pause(): void {
@@ -68,7 +65,7 @@ export class ArenaRun {
   }
 
   setEnvs(envs: EnvSpec[]): void {
-    if (envs.length) this.nextEnvs = envs.map((e) => varied(e, this.vary));
+    if (envs.length) this.nextEnvs = envs;
   }
 
   setGentle(on: boolean): void {
@@ -102,7 +99,7 @@ export class ArenaRun {
         : new Trainer(genome, options, this.pool, this.envs.length, options.episodes, this.start.seed);
     const t0 = performance.now();
     let lastBest: Float32Array | null = null; // the latest step's best candidate
-    const start = await trainer.held(HELD_SEEDS);
+    const start = await trainer.held(this.heldSeeds);
     if (this.stopped) return;
     this.post({ type: "ready", held: start.mean, perEnv: start.perEnv });
     if (this.playback) await this.show(tiles, 0, trainer.theta);
@@ -115,7 +112,7 @@ export class ArenaRun {
         this.nextEnvs = null;
         this.pool.setEnvs(this.envs);
         trainer.setEnvs(this.pool, this.envs);
-        const held = await trainer.held(HELD_SEEDS);
+        const held = await trainer.held(this.heldSeeds);
         this.post({ type: "rebased", iter: trainer.iter, held: held.mean, perEnv: held.perEnv });
         this.showWanted = true;
       }
@@ -123,7 +120,7 @@ export class ArenaRun {
       const began = performance.now();
       const step = await trainer.step();
       lastBest = step.bestGenome;
-      const held = step.iter % HELD_EVERY === 0 ? await trainer.held(HELD_SEEDS) : null;
+      const held = step.iter % HELD_EVERY === 0 ? await trainer.held(this.heldSeeds) : null;
       this.post({ type: "iteration", it: { iter: step.iter, train: step.train, best: step.best, held: held?.mean ?? null, perEnv: held?.perEnv ?? null, seconds: (performance.now() - t0) / 1000 } });
       if (held) this.post({ type: "learner", iter: step.iter, learner: serialiseLearner({ plan, genome: trainer.theta }) });
       if (this.showWanted && this.playback) {
