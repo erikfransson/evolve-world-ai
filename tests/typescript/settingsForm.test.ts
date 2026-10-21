@@ -2,7 +2,7 @@
 import { pageBody } from "./pageLoader.ts";
 import { DEFAULT_CONFIG, withOverrides } from "../../src/typescript/src/sim/config.ts";
 import type { DeepPartial, SimConfig } from "../../src/typescript/src/sim/config.ts";
-import { buildForm, el, rangePair, range, syncSlider } from "../../src/typescript/src/ui/settingsForm.ts";
+import { buildForm, el, rangePair, range, syncSlider, logPosition, logValue, LOG_STEPS } from "../../src/typescript/src/ui/settingsForm.ts";
 import type { FormHandle, FormSpec } from "../../src/typescript/src/ui/settingsForm.ts";
 import { ECO_SECTIONS } from "../../src/typescript/src/ui/ecoSettingsForm.ts";
 import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
@@ -164,5 +164,41 @@ describe("Ecosystem form with a map", () => {
       expect(f.enabledWhen!(plain)).toBe(true);
       expect(f.enabledWhen!(mapped)).toBe(false);
     }
+  });
+});
+
+describe("logarithmic sliders", () => {
+  const input = (): HTMLInputElement => el("popSize", HTMLInputElement);
+  beforeAll(() => {
+    document.body.innerHTML = pageBody("trials");
+    form = buildForm(document.getElementById("settings")!, TRIALS_FORM);
+  });
+  it("keep the default, the ends and any integer exactly through fill and read", () => {
+    for (const size of [4, 150, 1234, 2000, 9999, 10000]) {
+      fillForm(withOverrides(DEFAULT_CONFIG, { population: { size } }));
+      expect(readConfig().population.size).toBe(size);
+      expect(input().value).toBe(String(logPosition(size, 4, 10000)));
+    }
+  });
+  it("show the real value and put the default well inside the track", () => {
+    fillForm(DEFAULT_CONFIG);
+    expect(document.querySelector("output[for=popSize]")!.textContent).toBe("150");
+    expect(Number(input().value) / LOG_STEPS).toBeGreaterThan(0.25);
+  });
+  it("clamp a value outside the range", () => {
+    fillForm(withOverrides(DEFAULT_CONFIG, { population: { size: 99999 } }));
+    expect(readConfig().population.size).toBe(10000);
+  });
+  it("turn a dragged position into a clean number within the range", () => {
+    expect(logValue(0, 4, 10000, 1)).toBe(4);
+    expect(logValue(LOG_STEPS, 4, 10000, 1)).toBe(10000);
+    expect(logValue(LOG_STEPS / 2, 100, 200000, 100) % 100).toBe(0);
+    fillForm(DEFAULT_CONFIG);
+    input().value = "500";
+    input().dispatchEvent(new Event("input", { bubbles: true }));
+    const v = readConfig().population.size;
+    expect(v).toBe(logValue(500, 4, 10000, 1));
+    expect(v).toBeGreaterThan(4);
+    expect(v).toBeLessThan(10000);
   });
 });

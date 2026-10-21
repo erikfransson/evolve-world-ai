@@ -117,11 +117,13 @@ The Arena and Trials form caps were set by caution, not by the engine. Raised; L
 | setting                       | old   | new    |
 | ----------------------------- | ----- | ------ |
 | Arena iterations              | 20000 | 200000 |
-| Arena population              | 1000  | 10000  |
+| Arena population              | 1000  | 5000   |
 | Arena episodes per candidate  | 4     | 40     |
 | Arena episodes per update     | 64    | 320    |
 | Trials population             | 2000  | 10000  |
-Episodes per update and Trials population got 5x, not 10x: a Trials generation is one flat Float32 buffer (two alive while breeding), so 20000 large brains would be several hundred MB in one tab, and backprop keeps every episode of an update in memory. Arena has no seed field, so episodes per candidate is the seeds-per-iteration knob.
+Arena population got 5x: the largest Arena genome is 6514 floats, and 10000 candidates plus the ES noise and spare buffers (`sim/rl/es.ts`) and the scoring task objects (`sim/rl/trainer.ts`) pass 1 GB in one worker.
+Trials population got 5x: 10000 of the largest brains are already about 260 MB per generation, about 520 MB with parent and child alive, and more with the helper slices (`worker/simWorker.ts`, `worker/evalPool.ts`). Episodes per update got 5x because backprop keeps every episode of an update in memory.
+These four sliders (Arena population, iterations, episodes per update, Trials population) are logarithmic so the common values stay easy to set. The shown and saved value is the real number, and settings and URLs round-trip exactly. Arena has no seed field, so episodes per candidate is the seeds-per-iteration knob.
 
 ## Ideas not yet tried
 - Evaluate each creature on two layouts to reduce layout luck.
