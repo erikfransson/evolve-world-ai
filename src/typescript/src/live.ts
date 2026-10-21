@@ -95,6 +95,8 @@ let lastStats: Stats | null = null;
 let season: Season | null = null;
 let retryTimer: ReturnType<typeof setInterval> | undefined;
 let highlight = -1; // founder whose family is lit (a row's founder), -1 for none
+let litOf = -1; // the highlight the stats handler last saw, and since when (performance.now): a fresh highlight is never let go at once
+let litAt = 0;
 let familyOf = new Map<number, number>(); // founder -> the founder of the lineage row it is counted in, from the latest stats
 let lastLineages: readonly { founder: number; name?: string }[] = []; // the rows of the last stats, to follow a lit group
 const rowOf = (f: number): number => familyOf.get(f) ?? f;
@@ -515,7 +517,10 @@ function onStats(s: Stats): void {
       }
     }
     // A lit family that died out lets go, so everyone gets their colour back (the views still hold its fading ghosts for a moment).
-    if (highlight >= 0 && scene.views.count > 0 && !rowLiving(scene.views.founder, scene.views.count, highlight, rowOf)) {
+    // A family lit in the last 3 s is kept: a visitor's new copies reach the views a frame and a motion span after the add's reply.
+    const now = performance.now();
+    if (highlight !== litOf) [litOf, litAt] = [highlight, now];
+    if (highlight >= 0 && now - litAt > 3000 && scene.views.count > 0 && !rowLiving(scene.views.founder, scene.views.count, highlight, rowOf)) {
       highlight = -1;
       lineages.setHighlight(null);
       syncFamily();

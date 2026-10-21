@@ -38,7 +38,7 @@ export const ECOSYSTEM_COPY: PageCopy = {
     pickAge: ["Oldest", "Select the oldest living creature"],
     pickChildren: ["Most children", "Select the living creature with the most children"],
     pickEaten: ["Most food", "Select the living creature that has eaten the most food"],
-    pickKills: ["Most kills", "Select the living creature that has killed the most others in collisions"],
+    pickKills: ["Most kills", "Select the living creature that has killed the most others, by hunting or in collisions"],
   },
   eatenLabel: "Food eaten",
   popKeys: `<span class="key pop">creatures</span><span class="key food">food</span>`,
