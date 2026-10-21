@@ -581,9 +581,9 @@ function frame(now: number): void {
   syncFollow();
   const views = scene.views;
   const i = selection ? scene.slotOf(selection.id) : -1;
-  // Rays and the ring at the creature as drawn now; its rays from the latest details on the timeline.
+  // The ring at the creature as drawn now; its rays from the latest details on the timeline, at the heading they were sensed at (the lengths belong to those angles, not to the body's turn since).
   const d = selection?.last;
-  const selected = i >= 0 && !selection!.died ? ({ ...(d ?? { rayKinds: new Uint8Array(0), rayCloseness: new Float32Array(0), rayOffsets: new Float32Array(0), plan: { rayLength: 0 } }), alive: true, x: views.x[i]!, y: views.y[i]!, heading: views.heading[i]! } as SelectedDetails) : null;
+  const selected = i >= 0 && !selection!.died ? ({ ...(d ?? { rayKinds: new Uint8Array(0), rayCloseness: new Float32Array(0), rayOffsets: new Float32Array(0), plan: { rayLength: 0 } }), alive: true, x: views.x[i]!, y: views.y[i]!, heading: views.heading[i]!, rayHeading: d?.heading } as SelectedDetails) : null;
   renderer.draw(ctx, camera, drawConfig(), litViews(views), selected, true, dpr, highlight, births, now, impacts);
   if (now - lastUiAt >= UI_INTERVAL_MS) {
     lastUiAt = now;

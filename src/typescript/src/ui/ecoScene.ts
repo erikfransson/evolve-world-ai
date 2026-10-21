@@ -327,7 +327,7 @@ export class EcoRenderer {
       for (let i = 0; i < s.rayKinds.length; i++) {
         const kind = s.rayKinds[i]!;
         const d = kind === HIT_NONE ? rayLength : rayLength * (1 - s.rayCloseness[i]!);
-        const a = s.heading + s.rayOffsets[i]!;
+        const a = (s.rayHeading ?? s.heading) + s.rayOffsets[i]!;
         ctx.strokeStyle = RAY_COLORS[kind]!;
         ctx.globalAlpha = kind === HIT_NONE ? 0.6 : 0.9;
         ctx.beginPath();

@@ -29,6 +29,7 @@ export interface SelectedDetails {
   x: number;
   y: number;
   heading: number;
+  rayHeading?: number; // the heading the rays were sensed at, when the body is drawn at another moment (Live World); rays are drawn from it
   energy: number;
   age: number; // seconds
   children: number;

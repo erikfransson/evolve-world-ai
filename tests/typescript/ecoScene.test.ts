@@ -128,4 +128,12 @@ describe("EcoRenderer", () => {
     expect(kept).toHaveLength(poison); // poison is never thinned
     expect(frame()[0]).toEqual(food); // the same food dots next frame
   });
+
+  it("draws the rays at the heading they were sensed at, not the body's", () => {
+    const { ctx, calls } = fakeCtx(1000, 700);
+    new EcoRenderer().draw(ctx, new Camera(cfg.worldW, cfg.worldH, 1000, 700, 20), cfg, views(3), { ...selected, heading: 2.5, rayHeading: 1 }, true, 1);
+    // the middle ray has offset 0 and no hit, so it ends a full ray length out along the sensed heading
+    const ends = calls.filter((c) => c.name === "lineTo").map((c) => c.args as number[]);
+    expect(ends.some(([x, y]) => Math.abs(x! - (211 + Math.cos(1) * 100)) < 1e-6 && Math.abs(y! - (373 + Math.sin(1) * 100)) < 1e-6)).toBe(true);
+  });
 });
