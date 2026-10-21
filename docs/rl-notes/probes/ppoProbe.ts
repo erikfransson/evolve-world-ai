@@ -31,6 +31,9 @@ const { values } = parseArgs({
     every: { type: "string", default: "10" },
     seed: { type: "string", default: "1" },
     check: { type: "boolean", default: false },
+    "every-tick": { type: "boolean", default: false },
+    "target-kl": { type: "string", default: "0" },
+    "repeat-then": { type: "string" }, // S:N, repeat N after S seconds of training
     desat: { type: "string", default: "1" }, // divides the turn and thrust rows of the output layer (weights and bias) by this
   },
 });
@@ -83,7 +86,8 @@ if (values.check) {
   process.exit(0);
 }
 
-const ppo = new Ppo([env], learner, sizes, { episodes: num("episodes"), epochs: num("epochs"), lr: num("lr"), criticLr: num("criticLr"), logStd: num("logstd"), entropy: num("entropy"), repeat: num("repeat") }, num("seed"), pool);
+const ppo = new Ppo([env], learner, sizes, { episodes: num("episodes"), epochs: num("epochs"), lr: num("lr"), criticLr: num("criticLr"), logStd: num("logstd"), entropy: num("entropy"), repeat: num("repeat"), everyTick: values["every-tick"], targetKl: num("target-kl") }, num("seed"), pool);
+const [switchAt, switchTo] = values["repeat-then"] ? values["repeat-then"].split(":").map(Number) : [Infinity, 0];
 const opts = ppo.options;
 
 // Plays with lambda 1 (MC returns) to read the critic, then rebuilds the GAE(lambda) advantages the trainer would have used.
@@ -144,7 +148,7 @@ function klClip(): { kl: number; clip: number } {
 function heldStoch(): number {
   let s = 0;
   for (const [k, seed] of seeds.entries()) {
-    const task: RolloutTask = { env: 0, seed, noiseSeed: 777 + k, theta: ppo.theta, critic: (ppo as unknown as { critic: Float32Array }).critic, logStd: ppo.logStd, repeat: opts.repeat, gamma: opts.gamma, lambda: opts.lambda, criticHidden: opts.criticHidden };
+    const task: RolloutTask = { env: 0, seed, noiseSeed: 777 + k, theta: ppo.theta, critic: (ppo as unknown as { critic: Float32Array }).critic, logStd: ppo.logStd, repeat: opts.repeat, everyTick: opts.everyTick, gamma: opts.gamma, lambda: opts.lambda, criticHidden: opts.criticHidden };
     s += playRollout(env, learner.plan, task, pool, {}).reward / seeds.length;
   }
   return s;
@@ -157,13 +161,14 @@ console.log(JSON.stringify({ env: env.id, from: values.from, sizes, opts: { ...o
 let busy = 0;
 let trainAvg = 0, trainN = 0;
 while (busy < num("seconds") * 1000) {
+  if (busy >= switchAt! * 1000 && opts.repeat !== switchTo) ppo.setRepeat(switchTo!);
   const t0 = performance.now();
   const s = await ppo.stepWith({ rollouts });
   busy += performance.now() - t0;
   trainAvg += s.train; trainN++;
   if (s.iter % num("every") === 0) {
     const { kl, clip } = klClip();
-    console.log(JSON.stringify({ iter: s.iter, ep: ppo.episodesPlayed, sec: +(busy / 1000).toFixed(1), train: +(trainAvg / trainN).toFixed(3), heldDet: +heldDet().toFixed(3), heldStoch: +heldStoch().toFixed(3), ev: +diag.ev.toFixed(3), mc: +diag.mcMean.toFixed(3), v: +diag.vMean.toFixed(3), kl: +kl.toFixed(4), clip: +clip.toFixed(3), std: s.std.map((x) => +x.toFixed(3)) }));
+    console.log(JSON.stringify({ iter: s.iter, ep: ppo.episodesPlayed, sec: +(busy / 1000).toFixed(1), train: +(trainAvg / trainN).toFixed(3), heldDet: +heldDet().toFixed(3), heldStoch: +heldStoch().toFixed(3), ev: +diag.ev.toFixed(3), mc: +diag.mcMean.toFixed(3), v: +diag.vMean.toFixed(3), kl: +kl.toFixed(4), epochs: ppo.lastEpochs, clip: +clip.toFixed(3), std: s.std.map((x) => +x.toFixed(3)) }));
     trainAvg = 0; trainN = 0;
   }
 }
