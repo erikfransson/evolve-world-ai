@@ -23,8 +23,8 @@ export type RlInMessage =
       learner: StoredLearner;
       method: TrainMethod;
       options: RlRunOptions;
-      tiles: number;
-      held?: number; // held-out seeds per env (the fixed set heldSeeds(held)), 1 to 32; 4 when left out (Live visitor training) // episodes shown per iteration, 1 to 12; tile k plays envs[k % envs.length]
+      tiles: number; // episodes shown per iteration, 1 to 12; tile k plays envs[k % envs.length]
+      held?: number; // held-out seeds per env (the fixed set heldSeeds(held)), 1 to 32; 4 when left out (Live visitor training)
       seed: number;
       poolUrl: string;
       libraryUrl: string;
