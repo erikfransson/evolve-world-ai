@@ -70,7 +70,8 @@ export interface EnvSpec {
   // starting food itself (without regrowth the episode then ends early, the learner counting as alive to the end).
   // ram: per rival that dies touching the learner while collision damage is on.
   // cross: per poison wall of the layout the learner got past (at any moment), a first reward on the way to food beyond it.
-  reward: { food?: number; kill?: number; survive?: number; energy?: number; fast?: number; ram?: number; cross?: number };
+  // early: per item, times the share of the episode still left at the bite (1 at the start, 0 at the end).
+  reward: { food?: number; kill?: number; survive?: number; energy?: number; fast?: number; ram?: number; cross?: number; early?: number };
   tags: string[];
 }
 
@@ -242,6 +243,14 @@ export function variantFor(env: EnvSpec, seed: number): EnvSpec {
   return out;
 }
 
+// The env with run-wide variation f (#54, rlTrain --vary): every augment factor f (sides f / 2, none with a layout), so each episode
+// plays another version of it. Duels and envs with their own augment stay as they are.
+export function varied(env: EnvSpec, f: number): EnvSpec {
+  if (!(f > 0) || env.duel || env.augment) return env;
+  const a = Math.min(f, ENV_LIMITS.augment[1]);
+  return { ...env, augment: { energy: a, count: a, items: a, ...(env.layout ? {} : { size: a / 2 }) } };
+}
+
 // The learner (founder id 0) and the rivals of one episode, placed at random from the seed.
 export function castFor(env: EnvSpec, config: EcoConfig, learner: Learner, seed: number, pool: readonly PoolEntry[] | null, library: Library, start?: { x: number; y: number; heading?: number }): CastMember[] {
   const rng = createRng(deriveSeed(seed, 0xca57));
@@ -326,6 +335,8 @@ export function runEpisode(
   const rivalEnergy = new Map<number, number>(); // each rival's energy after the previous tick, for crediting rams
   if (env.collisionDamage) for (const m of eco.members) if (m.id !== 0) rivalEnergy.set(m.id, m.creature.state.energy); // so a death on the first tick is judged too
   let poisonBefore = eco.poisonEaten; // the world's poison count before the tick, to skip poison deaths
+  let early = 0; // bites weighted by the share of the episode left at each
+  let tick = 0; // ticks done when the current one ends
   // The learner's last tick counts too: what it ate before it died; a dead learner ends with no energy.
   eco.onDeath = (m) => {
     if (m.id !== 0) {
@@ -343,6 +354,7 @@ export function runEpisode(
       if (ram) out.rams++;
       return;
     }
+    early += (m.eaten - out.food) * (1 - tick / ticks); // bites on the dying tick
     out.food = m.eaten;
     out.kills = m.kills;
     out.energy = 0;
@@ -355,6 +367,7 @@ export function runEpisode(
   for (let t = 0; t < ticks; t++) {
     if (t === hideAt) eco.setFoodHidden(true);
     poisonBefore = eco.poisonEaten;
+    tick = t + 1;
     if (act) {
       eco.prepareTick();
       eco.sensePhase();
@@ -365,6 +378,7 @@ export function runEpisode(
     if (env.collisionDamage) for (const m of eco.members) if (m.id !== 0) rivalEnergy.set(m.id, m.creature.state.energy);
     const me = eco.get(0);
     if (!me) break;
+    early += (me.eaten - out.food) * (1 - tick / ticks);
     out.food = me.eaten;
     out.kills = me.kills;
     out.energy = me.creature.state.energy;
@@ -378,7 +392,7 @@ export function runEpisode(
   }
   const w = env.reward;
   const startEnergy = eco.species[env.role]!.startEnergy;
-  out.reward = (w.food ?? 0) * out.food + (w.kill ?? 0) * out.kills + (w.survive ?? 0) * out.seconds + (w.energy ?? 0) * energySignal(out.energy, startEnergy) + (w.fast ?? 0) * cleared + (w.ram ?? 0) * out.rams + (w.cross ?? 0) * crossed(placed?.walls ?? [], minY, config.creature.radius);
+  out.reward = (w.food ?? 0) * out.food + (w.kill ?? 0) * out.kills + (w.survive ?? 0) * out.seconds + (w.energy ?? 0) * energySignal(out.energy, startEnergy) + (w.fast ?? 0) * cleared + (w.ram ?? 0) * out.rams + (w.cross ?? 0) * crossed(placed?.walls ?? [], minY, config.creature.radius) + (w.early ?? 0) * early;
   if (kernels) spareKernels = kernels; // an episode that throws just drops them
   return out;
 }
@@ -425,7 +439,7 @@ export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | s
   if (rivals.reduce((a, r) => a + r.count, 0) > L.rivals[1]) return `at most ${L.rivals[1]} rivals`;
   const w = (v.reward ?? {}) as Record<string, unknown>;
   const reward: EnvSpec["reward"] = {};
-  for (const k of ["food", "kill", "survive", "energy", "fast", "ram", "cross"] as const) {
+  for (const k of ["food", "kill", "survive", "energy", "fast", "ram", "cross", "early"] as const) {
     if (w[k] === undefined) continue;
     if (!n(w[k], L.weight)) return `reward ${k} must be ${L.weight[0]} to ${L.weight[1]}`;
     reward[k] = w[k] as number;

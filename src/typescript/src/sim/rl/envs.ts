@@ -35,6 +35,10 @@ export const ENVS: readonly EnvSpec[] = [
   small({ id: "corridor", name: "Corridor", description: "A long, narrow room with food along it. Turn around at the ends.", size: [600, 150], food: 4, poison: 2, seconds: 25, tags: ["seek", "shape"] }),
   small({ id: "far-food", name: "Far food", description: "Three pieces of food somewhere in a bigger room. Search.", size: [400, 400], food: 3, poison: 0, seconds: 30, tags: ["search"] }),
   small({ id: "patch", name: "Patch", description: "All the food lies in one patch across the room. Find it, then clear it.", size: [450, 450], food: 10, poison: 4, seconds: 30, layout: { kind: "patch", radius: 70 }, tags: ["search"] }),
+  // Time pressure (#56): every bite pays by the share of the episode left, so speed is paid per bite (a clear-all bonus is much noisier)
+  small({ id: "fading", name: "Fading food", description: "Each bite is worth less as the clock runs down: two points at the start, nothing at the end. Eat early.", size: [400, 400], food: 8, poison: 0, seconds: 20, reward: { early: 2 }, tags: ["speed"] }),
+  small({ id: "stings", name: "Stings", description: "Fading food among stinging poison. Hurry, but a careless bite costs energy.", size: [400, 400], food: 8, poison: 4, seconds: 20, poisonDamage: 20, reward: { early: 2 }, tags: ["speed"] }),
+  small({ id: "race", name: "Race", description: "A trained rival eats from the same small box, and each bite is worth more the sooner you take it.", size: [300, 300], food: 8, poison: 0, seconds: 15, rivals: [{ species: PREY, count: 1, source: "pool" }], reward: { early: 2 }, tags: ["speed"] }),
   // Avoiding poison and finding a way round
   small({ id: "minefield", name: "Minefield", description: "Four food hidden among twelve poison. One wrong bite ends it.", size: [300, 300], food: 4, poison: 12, seconds: 25, tags: ["caution"] }),
   small({ id: "fence", name: "Fence", description: "A wall of stinging poison with one gap. The food is on the other side.", size: [400, 400], food: 6, poison: 0, seconds: 30, layout: { kind: "fence", gap: 110, near: 2 }, poisonDamage: 25, reward: { food: 1, fast: 0.1, cross: 1 }, tags: ["navigate"] }),
@@ -309,7 +313,7 @@ export const ENVS: readonly EnvSpec[] = [
 export const envById = (id: string): EnvSpec | undefined => ENVS.find((e) => e.id === id);
 
 // Categories for choosing envs, in display order; groupOf files an env under one by its tags.
-export const ENV_GROUPS = ["Find food", "Avoid and find a way", "Memory", "Energy", "Fight", "Compete", "Advanced", "Bigger", "Custom"] as const;
+export const ENV_GROUPS = ["Find food", "Time pressure", "Avoid and find a way", "Memory", "Energy", "Fight", "Compete", "Advanced", "Bigger", "Custom"] as const;
 export type EnvGroup = (typeof ENV_GROUPS)[number];
 export const FOLDED_GROUPS: ReadonlySet<EnvGroup> = new Set(["Advanced", "Bigger"]); // the slow ones, folded in the gallery until opened
 
@@ -318,6 +322,7 @@ export function groupOf(env: Pick<EnvSpec, "tags">): EnvGroup {
   if (t.has("custom")) return "Custom";
   if (t.has("bigger")) return "Bigger";
   if (t.has("advanced")) return "Advanced";
+  if (t.has("speed")) return "Time pressure";
   if (t.has("compete")) return "Compete";
   if (t.has("fight")) return "Fight";
   if (t.has("energy")) return "Energy";
