@@ -4,9 +4,11 @@ import { DEFAULT_CONFIG, withOverrides } from "../../src/typescript/src/sim/conf
 import type { DeepPartial, SimConfig } from "../../src/typescript/src/sim/config.ts";
 import { buildForm, el, rangePair, range, syncSlider, logPosition, logValue, LOG_STEPS } from "../../src/typescript/src/ui/settingsForm.ts";
 import type { FormHandle, FormSpec } from "../../src/typescript/src/ui/settingsForm.ts";
-import { ECO_SECTIONS } from "../../src/typescript/src/ui/ecoSettingsForm.ts";
+import { ECO_RAY_LENGTH_MIN, ECO_SECTIONS } from "../../src/typescript/src/ui/ecoSettingsForm.ts";
+import { World } from "../../src/typescript/src/sim/world.ts";
 import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
-import { TRIALS_FORM } from "../../src/typescript/src/ui/trialsForm.ts";
+import { TRIALS_FORM, TRIALS_SECTIONS } from "../../src/typescript/src/ui/trialsForm.ts";
+import { DESIGN_FORM } from "../../src/typescript/src/ui/arenaForm.ts";
 
 const deg = (d: number): number => (d * Math.PI) / 180;
 
@@ -24,15 +26,15 @@ const configs: Record<string, DeepPartial<SimConfig>> = {
   "slider minimums": {
     seed: 0,
     world: { width: 200, height: 200, foodDensity: 0, poisonDensity: 0, poisonDamage: 0 },
-    creature: { rayCount: 1, raySpread: deg(10), rayLength: 40 },
-    brain: { hiddenLayers: [4], memory: 0 },
+    creature: { rayCount: 1, raySpread: deg(10), rayLength: 10 },
+    brain: { hiddenLayers: [1], memory: 0 },
     population: { size: 4 },
     ga: { mutationRate: 0 },
   },
   "slider maximums": {
     seed: 999999,
     world: { width: 4000, height: 3000, foodDensity: 1, poisonDensity: 1, respawn: true },
-    creature: { rayCount: 16, raySpread: deg(360), rayLength: 300 },
+    creature: { rayCount: 16, raySpread: deg(360), rayLength: 400 },
     brain: { hiddenLayers: [32, 32, 32, 32], memory: 1 },
     population: { size: 2000 },
     ga: { mutationRate: 0.5, selection: "proportional" },
@@ -200,5 +202,27 @@ describe("logarithmic sliders", () => {
     expect(v).toBe(logValue(500, 4, 10000, 1));
     expect(v).toBeGreaterThan(4);
     expect(v).toBeLessThan(10000);
+  });
+});
+
+describe("plan fields", () => {
+  // Issue 58: Trials, Ecosystem and Arena show the same creature and brain sliders, with the same limits.
+  it("are the same on every page", () => {
+    const shape = (sections: readonly { title: string; fields: readonly object[] }[]) =>
+      sections.filter((s) => s.title === "Creature" || s.title === "Brain").map((s) => ({ title: s.title, fields: s.fields.map((f) => JSON.stringify(f)) }));
+    const arena = shape(DESIGN_FORM.sections);
+    expect(arena.map((s) => s.fields.length)).toEqual([3, 3]);
+    expect(shape(TRIALS_SECTIONS)).toEqual(arena);
+    const eco = shape(ECO_SECTIONS);
+    eco[0]!.fields[2] = eco[0]!.fields[2]!.replace(`"min":${ECO_RAY_LENGTH_MIN}`, '"min":10');
+    expect(eco).toEqual(arena);
+  });
+
+  // The Ecosystem's grids take their cell size from the ray setting, while founders cast rays of up to 250 whatever it says.
+  it("keep the Ecosystem's shortest vision range from shrinking the grid cells", () => {
+    const field = ECO_SECTIONS.flatMap((s) => s.fields).find((f) => f.id === "rayLength") as { min: number };
+    expect(field.min).toBe(40);
+    const config = { ...DEFAULT_ECO_CONFIG, creature: { ...DEFAULT_ECO_CONFIG.creature, rayLength: field.min } };
+    expect(new World(config, 16).cell).toBeGreaterThanOrEqual(40);
   });
 });

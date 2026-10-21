@@ -2,11 +2,10 @@ import { MEMORY_UNITS, memoryUnits } from "../sim/config.ts";
 import { PLAN_LIMITS } from "../sim/rl/creatureFile.ts";
 import type { BodyPlan } from "../sim/sensors.ts";
 import type { TrainMethod } from "../worker/rlProtocol.ts";
-import { range } from "./settingsForm.ts";
+import { planFields, range } from "./settingsForm.ts";
 import type { FormSpec, Section } from "./settingsForm.ts";
 
 // Arena settings, built by buildForm in settingsForm.ts like the other pages': the creature design and the run.
-const toDeg = (rad: number): number => Math.round((rad * 180) / Math.PI);
 
 export interface DesignConfig {
   rayCount: number;
@@ -27,7 +26,7 @@ export function designPlan(d: DesignConfig): BodyPlan {
 
 // The design a plan comes closest to (uneven layers become their first width).
 export function planDesign(p: BodyPlan): DesignConfig {
-  const [lo, hi] = [1, 4];
+  const [lo, hi] = PLAN_LIMITS.layers;
   return {
     rayCount: p.rayCount,
     raySpread: p.raySpread,
@@ -38,25 +37,11 @@ export function planDesign(p: BodyPlan): DesignConfig {
   };
 }
 
-const L = PLAN_LIMITS;
-const r = range<DesignConfig>;
+const key = <K extends keyof DesignConfig>(k: K) => ({ get: (c: DesignConfig) => c[k], set: (c: DesignConfig, v: number) => { c[k] = v; } });
+const plan = planFields<DesignConfig>({ rayCount: key("rayCount"), raySpread: key("raySpread"), rayLength: key("rayLength"), layers: key("layers"), neurons: key("neurons"), memory: key("memory") });
 const DESIGN_SECTIONS: readonly Section<DesignConfig>[] = [
-  {
-    title: "Creature",
-    fields: [
-      r({ id: "rayCount", label: "Vision rays", tip: "How many laser rays the creature sees with. More rays give a finer view and more inputs to the brain.", min: L.rayCount[0], max: L.rayCount[1], step: 1, get: (c) => c.rayCount, set: (c, v) => { c.rayCount = v; } }),
-      r({ id: "raySpread", label: "Vision angle", tip: "Total width of the fan of rays, centred on where the creature faces. 360 looks all around.", min: 10, max: 360, step: 5, fmt: "deg", get: (c) => toDeg(c.raySpread), set: (c, v) => { c.raySpread = (v * Math.PI) / 180; } }),
-      r({ id: "rayLength", label: "Sight length", tip: "How far each ray reaches, in world units. Longer sight costs more energy per second.", min: L.rayLength[0], max: L.rayLength[1], step: 10, fmt: "size", get: (c) => c.rayLength, set: (c, v) => { c.rayLength = v; } }),
-    ],
-  },
-  {
-    title: "Brain",
-    fields: [
-      r({ id: "layers", label: "Hidden layers", tip: "How many layers of neurons sit between the creature's eyes and its muscles.", min: L.layers[0], max: L.layers[1], step: 1, get: (c) => c.layers, set: (c, v) => { c.layers = v; } }),
-      r({ id: "neurons", label: "Neurons per layer", tip: "Neurons in each hidden layer. More can learn richer behaviour and cost more energy per second.", min: L.neurons[0], max: L.neurons[1], step: 1, get: (c) => c.neurons, set: (c, v) => { c.neurons = v; } }),
-      r({ id: "memory", label: "Memory", tip: "Short- and long-term memory the brain can write to and read back on the next moment, so it can remember what it saw. 0 is none, 0.5 gives 4 short-term and 4 long-term memory units, 1 gives 8 of each.", min: 0, max: 1, step: 0.05, fmt: "dens", get: (c) => c.memory, set: (c, v) => { c.memory = v; } }),
-    ],
-  },
+  { title: "Creature", fields: plan.creature },
+  { title: "Brain", fields: plan.brain },
 ];
 export const DESIGN_FORM: FormSpec<DesignConfig> = { sections: DESIGN_SECTIONS, defaults: DEFAULT_DESIGN };
 
