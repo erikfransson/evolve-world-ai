@@ -88,17 +88,17 @@ export function mapFields<C extends Sized>(): Range<C>[] {
 }
 
 // The body plan fields every page shows (Creature and Brain), with one set of labels, tips and PLAN_LIMITS ranges.
-// raySpread is in radians in the config and in degrees on the slider; memory is 0 to 1 (memoryUnits).
+// raySpread is in radians in the config and in degrees on the slider; memory is 0 to 1 (memoryUnits). rayLengthMin raises the vision range floor.
 type PlanKey = "rayCount" | "raySpread" | "rayLength" | "layers" | "neurons" | "memory";
 export type PlanAccess<C> = Record<PlanKey, { get: (c: C) => number; set: (c: C, v: number) => void }>;
-export function planFields<C>(a: PlanAccess<C>): { creature: Range<C>[]; brain: Range<C>[] } {
+export function planFields<C>(a: PlanAccess<C>, rayLengthMin: number = PLAN_LIMITS.rayLength[0]): { creature: Range<C>[]; brain: Range<C>[] } {
   const L = PLAN_LIMITS;
   const deg = Math.round((L.raySpread[1] * 180) / Math.PI);
   return {
     creature: [
       range<C>({ id: "rayCount", label: "Vision rays", tip: "How many laser rays each creature sees with. More rays give a finer view and more inputs to the brain.", min: L.rayCount[0], max: L.rayCount[1], step: 1, ...a.rayCount }),
       range<C>({ id: "raySpread", label: "Vision angle", tip: "Total width of the fan of rays, centred on where the creature faces. 360 looks all around.", min: 10, max: deg, step: 1, fmt: "deg", get: (c) => Math.round((a.raySpread.get(c) * 180) / Math.PI), set: (c, v) => { a.raySpread.set(c, (v * Math.PI) / 180); } }),
-      range<C>({ id: "rayLength", label: "Vision range", tip: "How far each vision ray reaches, in world units. Longer sight costs more energy per second.", min: L.rayLength[0], max: L.rayLength[1], step: 1, fmt: "size", ...a.rayLength }),
+      range<C>({ id: "rayLength", label: "Vision range", tip: "How far each vision ray reaches, in world units. Longer sight costs more energy per second.", min: rayLengthMin, max: L.rayLength[1], step: 1, fmt: "size", ...a.rayLength }),
     ],
     brain: [
       range<C>({ id: "layers", label: "Hidden layers", tip: "How many layers of neurons sit between the creature's eyes and its muscles.", min: L.layers[0], max: L.layers[1], step: 1, ...a.layers }),
@@ -110,7 +110,7 @@ export function planFields<C>(a: PlanAccess<C>): { creature: Range<C>[]; brain: 
 
 // The plan fields of a Trials or Ecosystem config (creature and brain; every hidden layer as wide as the first).
 type PlanConfig = Pick<EngineConfig, "creature" | "brain">;
-export function configPlanFields<C extends PlanConfig>(defaultNeurons: number): { creature: Range<C>[]; brain: Range<C>[] } {
+export function configPlanFields<C extends PlanConfig>(defaultNeurons: number, rayLengthMin?: number): { creature: Range<C>[]; brain: Range<C>[] } {
   return planFields<C>({
     rayCount: { get: (c) => c.creature.rayCount, set: (c, v) => { c.creature.rayCount = v; } },
     raySpread: { get: (c) => c.creature.raySpread, set: (c, v) => { c.creature.raySpread = v; } },
@@ -118,7 +118,7 @@ export function configPlanFields<C extends PlanConfig>(defaultNeurons: number): 
     layers: { get: (c) => c.brain.hiddenLayers.length, set: (c, v) => { c.brain.hiddenLayers = new Array<number>(v).fill(c.brain.hiddenLayers[0] ?? defaultNeurons); } },
     neurons: { get: (c) => c.brain.hiddenLayers[0] ?? defaultNeurons, set: (c, v) => { c.brain.hiddenLayers.fill(v); } },
     memory: { get: (c) => c.brain.memory, set: (c, v) => { c.brain.memory = v; } },
-  });
+  }, rayLengthMin);
 }
 
 export function el<T extends HTMLElement>(id: string, kind: new () => T): T {

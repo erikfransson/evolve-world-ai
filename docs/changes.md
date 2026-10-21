@@ -6,7 +6,7 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
-- Trials, Ecosystem and RL Arena share one set of creature and brain sliders (#58): vision range 10 to 400 everywhere (Trials and Ecosystem were 40 to 300), neurons per layer 1 to 32 (were 4 to 32), vision angle and range in steps of 1 (Arena and Trials were 5 and 10), Arena "Sight length" is now "Vision range". Trials item size and mutation rate use the Ecosystem's steps (0.1 and 0.5%). Defaults are unchanged.
+- Trials, Ecosystem and RL Arena share one set of creature and brain sliders (#58): vision range up to 400 (was 300), from 10 in Trials and Arena and from 40 in the Ecosystem, whose grid cells are the ray setting wide, neurons per layer 1 to 32 (were 4 to 32), vision angle and range in steps of 1 (Arena and Trials were 5 and 10), Arena "Sight length" is now "Vision range". Trials item size and mutation rate use the Ecosystem's steps (0.1 and 0.5%). Defaults are unchanged.
 - Live server: an optional founder pools file (`server/founder-pools.json`, server only) gives a fresh world's seeded copies trained variants of each founder instead of clones. No pools ship yet, so worlds seed as before.
 - RL Arena and Trials: the training caps are much higher for long runs. Arena iterations 20000 to 200000, population 1000 to 5000, episodes per candidate 4 to 40, episodes per update 64 to 320. Trials population 2000 to 10000. Live World limits are unchanged.
 - Live: the kill bonus is 5 (`eco.killEnergy`, was 25 in 0.2.3): at 25 the Juggernaut took over the world. Already set on the running world; a fresh world now starts with it.

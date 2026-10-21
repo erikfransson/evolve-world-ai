@@ -4,7 +4,8 @@ import { DEFAULT_CONFIG, withOverrides } from "../../src/typescript/src/sim/conf
 import type { DeepPartial, SimConfig } from "../../src/typescript/src/sim/config.ts";
 import { buildForm, el, rangePair, range, syncSlider, logPosition, logValue, LOG_STEPS } from "../../src/typescript/src/ui/settingsForm.ts";
 import type { FormHandle, FormSpec } from "../../src/typescript/src/ui/settingsForm.ts";
-import { ECO_SECTIONS } from "../../src/typescript/src/ui/ecoSettingsForm.ts";
+import { ECO_RAY_LENGTH_MIN, ECO_SECTIONS } from "../../src/typescript/src/ui/ecoSettingsForm.ts";
+import { World } from "../../src/typescript/src/sim/world.ts";
 import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { TRIALS_FORM, TRIALS_SECTIONS } from "../../src/typescript/src/ui/trialsForm.ts";
 import { DESIGN_FORM } from "../../src/typescript/src/ui/arenaForm.ts";
@@ -212,6 +213,16 @@ describe("plan fields", () => {
     const arena = shape(DESIGN_FORM.sections);
     expect(arena.map((s) => s.fields.length)).toEqual([3, 3]);
     expect(shape(TRIALS_SECTIONS)).toEqual(arena);
-    expect(shape(ECO_SECTIONS)).toEqual(arena);
+    const eco = shape(ECO_SECTIONS);
+    eco[0]!.fields[2] = eco[0]!.fields[2]!.replace(`"min":${ECO_RAY_LENGTH_MIN}`, '"min":10');
+    expect(eco).toEqual(arena);
+  });
+
+  // The Ecosystem's grids take their cell size from the ray setting, while founders cast rays of up to 250 whatever it says.
+  it("keep the Ecosystem's shortest vision range from shrinking the grid cells", () => {
+    const field = ECO_SECTIONS.flatMap((s) => s.fields).find((f) => f.id === "rayLength") as { min: number };
+    expect(field.min).toBe(40);
+    const config = { ...DEFAULT_ECO_CONFIG, creature: { ...DEFAULT_ECO_CONFIG.creature, rayLength: field.min } };
+    expect(new World(config, 16).cell).toBeGreaterThanOrEqual(40);
   });
 });

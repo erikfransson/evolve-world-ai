@@ -7,7 +7,9 @@ import type { FormSpec, Section } from "./settingsForm.ts";
 
 // Ecosystem settings, built by buildForm in settingsForm.ts.
 const defaultNeurons = DEFAULT_ECO_CONFIG.brain.hiddenLayers[0]!;
-const plan = configPlanFields<EcoConfig>(defaultNeurons);
+// The item and crowd grid cells are the ray setting wide while varied founders cast rays of 50 to 250, so a shorter setting multiplies the cells each look scans.
+export const ECO_RAY_LENGTH_MIN = 40;
+const plan = configPlanFields<EcoConfig>(defaultNeurons, ECO_RAY_LENGTH_MIN);
 
 export const ECO_SECTIONS: readonly Section<EcoConfig>[] = [
   {
