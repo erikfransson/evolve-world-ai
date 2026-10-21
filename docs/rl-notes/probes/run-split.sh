@@ -7,6 +7,6 @@ while read -r env from seed; do
   [ -z "$env" ] && continue
   for pe in "50 1" "25 2" "10 5"; do
     set -- $pe
-    flock /home/erik/progs/evolve-world-ai/.claude/heavy.lock nice -n 19 ionice -c3 chrt --idle 0 node src/rlTrain.ts --env $env --from $from --seed $seed --iters 60 --pairs $1 --episodes $2 --eval 32 --every 20 --threads 2 > $L/split-$env-${from/:/}-s$seed-p$1e$2.log 2>&1
+    flock "${HEAVY_LOCK:-/tmp/heavy.lock}" nice -n 19 ionice -c3 chrt --idle 0 node src/rlTrain.ts --env $env --from $from --seed $seed --iters 60 --pairs $1 --episodes $2 --eval 32 --every 20 --threads 2 > $L/split-$env-${from/:/}-s$seed-p$1e$2.log 2>&1
   done
 done

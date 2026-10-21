@@ -5,5 +5,5 @@ L=../../docs/rl-notes/probes/logs
 while read -r env from seed extra; do
   [ -z "$env" ] && continue
   name="luck-$env-${from/:/}-s$seed${extra:+-x}"
-  flock /home/erik/progs/evolve-world-ai/.claude/heavy.lock nice -n 19 ionice -c3 chrt --idle 0 node ../../docs/rl-notes/probes/es-luck.ts --env $env --from $from --seed $seed $extra > $L/$name.log 2>&1
+  flock "${HEAVY_LOCK:-/tmp/heavy.lock}" nice -n 19 ionice -c3 chrt --idle 0 node ../../docs/rl-notes/probes/es-luck.ts --env $env --from $from --seed $seed $extra > $L/$name.log 2>&1
 done

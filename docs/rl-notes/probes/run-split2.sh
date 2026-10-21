@@ -5,7 +5,7 @@ cd "$(dirname "$0")/../../../src/typescript"
 L=../../docs/rl-notes/probes/logs
 # One lock hold per seed (9 runs, a few minutes), since the shared lock queues each acquisition for minutes; finished runs are skipped.
 for seed in 1 2 3 4; do
-  SEED=$seed flock /home/erik/progs/evolve-world-ai/.claude/heavy.lock nice -n 19 ionice -c3 chrt --idle 0 bash -c '
+  SEED=$seed flock "${HEAVY_LOCK:-/tmp/heavy.lock}" nice -n 19 ionice -c3 chrt --idle 0 bash -c '
     L=../../docs/rl-notes/probes/logs
     for env in far-food minefield corridor; do for pe in "50 1" "10 5" "5 10"; do
       set -- $pe

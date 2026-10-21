@@ -1,5 +1,6 @@
 import json,glob,re,statistics as st,collections
-T='/tmp/claude-1000/-home-erik-progs-evolve-world-ai/9b5abbad-4dc2-4d80-9b43-9341a2efeec2/scratchpad/t1/'
+import sys
+T=sys.argv[1].rstrip('/')+'/'  # directory with the F-*.txt probe outputs
 g=collections.defaultdict(list)
 for f in sorted(glob.glob(T+'F-*.txt')):
     m=re.match(r'F-(.*)-s(\d)\.txt',f.split('/')[-1]); key=m.group(1)
