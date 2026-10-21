@@ -47,7 +47,7 @@ export const TRIALS_SECTIONS: readonly Section<SimConfig>[] = [
   {
     title: "Evolution",
     fields: [
-      r({ id: "popSize", label: "Population", tip: "How many creatures are tested in each generation.", min: 4, max: 2000, step: 1, get: (c) => c.population.size, set: (c, v) => { c.population.size = v; } }),
+      r({ id: "popSize", label: "Population", tip: "How many creatures are tested in each generation.", min: 4, max: 10000, step: 1, get: (c) => c.population.size, set: (c, v) => { c.population.size = v; } }),
       r({ id: "mutationRate", label: "Mutation rate", tip: "Chance that each number in a child's brain is randomly nudged. If a whole generation scores the same, the next one mutates three times as hard until selection has a signal again.", min: 0, max: 0.5, step: 0.01, fmt: "pct", get: (c) => c.ga.mutationRate, set: (c, v) => { c.ga.mutationRate = v; } }),
       r({ id: "immigrants", label: "Newcomers", tip: "Share of each generation that is brand new random creatures. They help when the population is stuck.", min: 0, max: 0.2, step: 0.01, fmt: "pct", get: (c) => c.ga.immigrantFraction, set: (c, v) => { c.ga.immigrantFraction = v; } }),
       r({ id: "bigMutations", label: "Wild children", tip: "Share of children that get a large mutation, some numbers flipping sign. Rarely better, but can break out of a rut.", min: 0, max: 0.2, step: 0.01, fmt: "pct", get: (c) => c.ga.bigMutationFraction, set: (c, v) => { c.ga.bigMutationFraction = v; } }),

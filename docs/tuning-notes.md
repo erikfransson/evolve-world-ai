@@ -112,6 +112,17 @@ Live ran `eco.killEnergy` 0: a kill paid only the loser's energy. Erik chose 25 
 The Grazer swap ships in 0.2.3 on checks without the bonus (the Grazer survived 3 of 3 three-founder seeds at 25). The Juggernaut swap waits: an aggression-trained Juggernaut (b3's jaug) wiped out the other founders in one 180-min Live-rules seed, and b3's 4-seed check of the full set at bonus 25 is running.
 b3's 180-min checks of the founders with the shipped Juggernaut: at bonus 25 the Grazer ended at 21 and 49 while the Juggernaut reached about 1100; at bonus 0 the Grazer held about 950 and the Juggernaut about 300, coexisting. Erik chose 5 on 2026-10-17 (set on the running world, the liveConfig default from 0.2.4).
 
+## Training caps raised (issue #60)
+The Arena and Trials form caps were set by caution, not by the engine. Raised; Live World and server limits untouched:
+| setting                       | old   | new    |
+| ----------------------------- | ----- | ------ |
+| Arena iterations              | 20000 | 200000 |
+| Arena population              | 1000  | 10000  |
+| Arena episodes per candidate  | 4     | 40     |
+| Arena episodes per update     | 64    | 320    |
+| Trials population             | 2000  | 10000  |
+Episodes per update and Trials population got 5x, not 10x: a Trials generation is one flat Float32 buffer (two alive while breeding), so 20000 large brains would be several hundred MB in one tab, and backprop keeps every episode of an update in memory. Arena has no seed field, so episodes per candidate is the seeds-per-iteration knob.
+
 ## Ideas not yet tried
 - Evaluate each creature on two layouts to reduce layout luck.
 - Tournament with a larger size (5 to 7).

@@ -24,7 +24,7 @@ export type Post = (msg: RlOutMessage, transfer?: Transferable[]) => void;
 // The page's backprop settings kept within the form's ranges, so a bad message cannot stall or blow up training.
 const clamp = (v: unknown, lo: number, hi: number, fallback: number): number => (typeof v === "number" && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : fallback);
 function backpropOptions(o: { lr?: number; episodes?: number } | undefined): { lr: number; episodes: number } {
-  return { lr: clamp(o?.lr, 0.0005, 0.01, 0.003), episodes: Math.round(clamp(o?.episodes, 4, 64, 16)) };
+  return { lr: clamp(o?.lr, 0.0005, 0.01, 0.003), episodes: Math.round(clamp(o?.episodes, 4, 320, 16)) };
 }
 
 export class ArenaRun {
