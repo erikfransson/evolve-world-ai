@@ -36,6 +36,7 @@ import { AddPanel } from "./live/addPanel.ts";
 import { parseFounders } from "./live/founders.ts";
 import { renderMapInfo } from "./live/mapInfo.ts";
 import { MapCache } from "./live/mapTerrain.ts";
+import { recastRays } from "./live/rayRecast.ts";
 import { paintMapLegend } from "./live/mapLegend.ts";
 import { mapVersion } from "./sim/maps/index.ts";
 
@@ -371,6 +372,9 @@ camera.onClick = (wx, wy) => {
   else clearSelection();
 };
 
+let rayKinds = new Uint8Array(0); // the selected creature's rays cast this frame (recastRays)
+let rayCloseness = new Float32Array(0);
+
 function onDetail(d: SelectedDetails, founderName: string, founderStarter: boolean): void {
   const s = selection;
   if (!s || d.id !== s.id) return;
@@ -581,9 +585,21 @@ function frame(now: number): void {
   syncFollow();
   const views = scene.views;
   const i = selection ? scene.slotOf(selection.id) : -1;
-  // The ring at the creature as drawn now; its rays from the latest details on the timeline, at the heading they were sensed at (the lengths belong to those angles, not to the body's turn since).
+  // The ring at the creature as drawn now. Its rays are cast again each frame at that heading against what is drawn (so they turn with the body and end at
+  // their hits), once the map's rock is known; until then, and when the page's map design is stale, the latest details' rays at the heading they were sensed at.
   const d = selection?.last;
   const selected = i >= 0 && !selection!.died ? ({ ...(d ?? { rayKinds: new Uint8Array(0), rayCloseness: new Float32Array(0), rayOffsets: new Float32Array(0), plan: { rayLength: 0 } }), alive: true, x: views.x[i]!, y: views.y[i]!, heading: views.heading[i]!, rayHeading: d?.heading } as SelectedDetails) : null;
+  if (selected && d && d.plan.rayLength > 0 && draw && hello && (!hello.map.name || (draw.map && !mapStale))) {
+    const n = d.rayKinds.length;
+    if (rayKinds.length !== n) {
+      rayKinds = new Uint8Array(n);
+      rayCloseness = new Float32Array(n);
+    }
+    recastRays({ width: draw.worldW, height: draw.worldH, itemRadius: draw.itemRadius, radius: draw.radius, terrain: draw.map ?? null, items: scene.items, creatures: views, self: i }, selected.x, selected.y, selected.heading, d.rayOffsets, d.plan.rayLength, rayKinds, rayCloseness);
+    selected.rayKinds = rayKinds;
+    selected.rayCloseness = rayCloseness;
+    selected.rayHeading = undefined;
+  }
   renderer.draw(ctx, camera, drawConfig(), litViews(views), selected, true, dpr, highlight, births, now, impacts);
   if (now - lastUiAt >= UI_INTERVAL_MS) {
     lastUiAt = now;
