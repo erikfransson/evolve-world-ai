@@ -48,6 +48,22 @@ Bigger (Live-like, 90 s, start energy 300, lethal poison, bumps hurt, seed pool 
 | Poison country (live-poison)   | 1500 x 1500, 40 food, 90 poison, 12 rivals     | 3.41 -> 5.06                      | 6.41     |
 | Crowded commons (live-commons) | 20 food, 25 weak rivals, rams pay 2            | 2.23 -> 6.73 (before the ram fix) | 7.79     |
 
+## Time pressure (#56)
+
+Every bite pays 2 x the share of the episode still left (reward `early`), so speed is paid per bite and the gradient is there from the first lucky bite.
+A clear-all bonus (Nibble's `fast`) only pays a perfect run, and tripled the seeds needed in the C1 probe.
+Checked against the C1b env criteria E1-E8 with `docs/rl-notes/probes/t3-snr.ts` (rl-notes 17f9b8d, 64 held-out seeds): all three pass.
+E6 (energy reward) does not apply; E7 holds by design.
+
+| Env (id)             | Idea                                          | E1 SNR | E2 scripted / best | E3 best alive | E4 seeds for 25% | E5 random scores | E8 ms/ep |
+| -------------------- | --------------------------------------------- | ------ | ------------------ | ------------- | ---------------- | ---------------- | -------- |
+| Fading food (fading) | 8 food in 400 x 400, 20 s                      | 4.78   | 0.08               | 1.00          | 8                | 19%              | 5.1      |
+| Stings (stings)      | Fading food with 4 stinging poison (20 energy) | 3.83   | 0.08               | 0.95          | 15               | 16%              | 4.6      |
+| Race (race)          | 300 x 300, 15 s, one pool rival eats too       | 3.59   | 0.15               | 1.00          | 13               | 29%              | 6.0      |
+
+Training from fresh designs (ES pop 100, 150 iterations, 1 episode, `randomLearner` bodies 1 to 3, final genome on 64 held-out seeds): Fading food 0.13 -> 4.76 (sd over runs 2.00), Stings 0.14 -> 4.76 (1.90), Race 0.32 -> 4.53 (1.05); curves rise steadily, though body 1 stops near 2.6 in both fading envs.
+Dropped after the same checks: Dash (5 food, clear-all bonus, fails E7), Hot box (tight room with stings, run spread 2.3 to 4.5), Mudflats (slow and fast ground, seed cv up to 0.99, the random ground makes layouts too unequal), and lab variants Fading wide, Fading regrow and Race two (all pass, but lower SNR and more seeds needed than the three above).
+
 ## Notes
 
 - 2026-10-11: dropped near-duplicates (forage-box, box, box-poison, nibble-poison, scatter). Fence and Zigzag with lethal walls never learned (no candidate got through); walls now sting (25 energy) and 2 food lie on the learner's side as a first step. Lean times showed no signal at 25-30 energy; raised to 40 energy, 8 food, food reward 0.5.

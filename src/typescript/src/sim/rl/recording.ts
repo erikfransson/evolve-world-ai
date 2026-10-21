@@ -1,4 +1,5 @@
 import type { PoolEntry } from "../seedPool.ts";
+import type { TerrainSettings } from "../terrain.ts";
 import { HIT_NONE } from "../types.ts";
 import { runEpisode, variantFor } from "./env.ts";
 import type { EnvSpec, EpisodeResult, Learner, Library } from "./env.ts";
@@ -25,6 +26,7 @@ export interface Recording {
   inputSize: number; // 0 unless recorded with inputs
   inputs: Float32Array; // the learner's brain input per frame (inputSize each), to replay its brain; zeros after it dies
   result: EpisodeResult;
+  terrain?: TerrainSettings | null; // the episode's slow and fast ground, rebuilt by terrainOf to draw it; null without
 }
 
 // Plays the episode like runEpisode and keeps every `every`-th tick.
@@ -42,7 +44,12 @@ export function recordEpisode(env: EnvSpec, learner: Learner, seed: number, pool
   let offsets = new Float32Array(rayCount);
   const inputs: number[] = [];
   let inputSize = 0;
+  let terrain: TerrainSettings | null = null;
   const result = runEpisode(env, learner, seed, pool, library, (eco) => {
+    if (tick === 0) {
+      const { seed, world: w } = eco.config;
+      if (w.slowDensity > 0 || w.fastDensity > 0) terrain = { seed, world: { width: w.width, height: w.height, stoneDensity: 0, ridgeDensity: 0, slowDensity: w.slowDensity, fastDensity: w.fastDensity, slowSize: w.slowSize, fastSize: w.fastSize } };
+    }
     if (tick++ % every !== 0) return;
     dt = eco.config.dt * every;
     creatureRadius = eco.config.creature.radius;
@@ -83,6 +90,7 @@ export function recordEpisode(env: EnvSpec, learner: Learner, seed: number, pool
     inputSize,
     inputs: Float32Array.from(inputs),
     result,
+    terrain,
   };
 }
 

@@ -1,6 +1,9 @@
 import { HIT_NONE } from "../sim/types.ts";
 import { CREATURE_FIELDS } from "../sim/rl/recording.ts";
 import type { Recording } from "../sim/rl/recording.ts";
+import { terrainOf } from "../sim/terrain.ts";
+import type { Terrain, TerrainSettings } from "../sim/terrain.ts";
+import { drawTerrain } from "./terrainScene.ts";
 import { BACKGROUND, FLOOR, FOOD, POISON, RAY_COLORS, WALL } from "./scene.ts";
 import { SPECIES_COLORS, hunterPath } from "./speciesStyle.ts";
 
@@ -16,6 +19,14 @@ export const frameAt = (rec: Recording, seconds: number): number => (rec.frames 
 // Length of one loop in seconds.
 export const loopSeconds = (rec: Recording): number => rec.frames * rec.dt;
 
+// One Terrain per recording: terrainOf keeps only a few, and a dozen tiles of different seeds would rebuild them every frame.
+const terrains = new WeakMap<TerrainSettings, Terrain>();
+function terrainFor(settings: TerrainSettings): Terrain {
+  let t = terrains.get(settings);
+  if (!t) terrains.set(settings, (t = terrainOf(settings)));
+  return t;
+}
+
 // Draws frame `f` of a recording, fitted and centred in a cssW x cssH canvas (ctx already scaled to CSS pixels).
 export function drawArena(ctx: CanvasRenderingContext2D, rec: Recording, f: number, cssW: number, cssH: number, showRays = true): void {
   ctx.fillStyle = BACKGROUND;
@@ -28,6 +39,7 @@ export function drawArena(ctx: CanvasRenderingContext2D, rec: Recording, f: numb
   ctx.scale(scale, scale);
   ctx.fillStyle = FLOOR;
   ctx.fillRect(0, 0, rec.width, rec.height);
+  if (rec.terrain) drawTerrain(ctx, terrainFor(rec.terrain), scale, undefined, true); // flat fills, cheap enough for a dozen tiles
   ctx.strokeStyle = WALL;
   ctx.lineWidth = 2 / scale;
   ctx.strokeRect(0, 0, rec.width, rec.height);

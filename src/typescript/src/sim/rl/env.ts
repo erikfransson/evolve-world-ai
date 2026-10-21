@@ -9,6 +9,7 @@ import { SenseKernels } from "../wasm/senseKernels.ts";
 import { randomPlan } from "../planMutation.ts";
 import { createRng, deriveSeed } from "../rng.ts";
 import { trialsToEcoGenome } from "../seedPool.ts";
+import { PATCH_SIZE_RANGE } from "../terrain.ts";
 import type { PoolEntry } from "../seedPool.ts";
 import { OUT_THRUST, energySignal, planOf } from "../sensors.ts";
 import type { BodyPlan, PlanView } from "../sensors.ts";
@@ -57,6 +58,8 @@ export interface EnvSpec {
   learnerEnergy?: number; // the learner's start energy, the species' when left out
   poisonDamage?: number; // energy one poison item drains; lethal when left out (POISON_LETHAL)
   fast?: number; // share of the world under fast patches (terrain: 175% speed, so harder bumps)
+  slow?: number; // share of the world under slow patches (terrain: half speed)
+  patchSize?: number; // size of the slow and fast patches, a multiple of the standard one (small worlds want small patches)
   // Duel (#44): instead of the rivals, one scripted charger that moves straight at a fixed speed, starting `distance` away at
   // `bearing` radians off the learner's facing and heading at the learner plus `offset` (0 charges, pi/2 crosses, pi moves away).
   // Each episode draws every value from its range, energies too, so the learner must read them to hit or dodge.
@@ -70,7 +73,8 @@ export interface EnvSpec {
   // starting food itself (without regrowth the episode then ends early, the learner counting as alive to the end).
   // ram: per rival that dies touching the learner while collision damage is on.
   // cross: per poison wall of the layout the learner got past (at any moment), a first reward on the way to food beyond it.
-  reward: { food?: number; kill?: number; survive?: number; energy?: number; fast?: number; ram?: number; cross?: number };
+  // early: per item, times the share of the episode still left at the bite (1 at the start, 0 at the end).
+  reward: { food?: number; kill?: number; survive?: number; energy?: number; fast?: number; ram?: number; cross?: number; early?: number };
   tags: string[];
 }
 
@@ -114,7 +118,7 @@ export function envConfig(env: EnvSpec, seed: number): EcoConfig {
   const base = structuredClone(env.world === "hunt" ? DEFAULT_PREDATOR_CONFIG : DEFAULT_ECO_CONFIG);
   const [width, height] = env.size;
   base.seed = seed;
-  base.world = { ...base.world, width, height, ...(env.poisonDamage === undefined ? {} : { poisonDamage: env.poisonDamage }), ...(env.fast === undefined ? {} : { fastDensity: env.fast }) };
+  base.world = { ...base.world, width, height, ...(env.poisonDamage === undefined ? {} : { poisonDamage: env.poisonDamage }), ...(env.fast === undefined ? {} : { fastDensity: env.fast }), ...(env.slow === undefined ? {} : { slowDensity: env.slow }), ...(env.patchSize === undefined ? {} : { slowSize: env.patchSize, fastSize: env.patchSize }) };
   const per = itemsPerDensity(base);
   base.world.foodDensity = env.food / per;
   base.world.poisonDensity = env.poison / per;
@@ -242,6 +246,14 @@ export function variantFor(env: EnvSpec, seed: number): EnvSpec {
   return out;
 }
 
+// The env with run-wide variation f (#54): every augment factor f (sides f / 2, none with a layout), so each episode plays another
+// version of it. Duels and envs with their own augment stay as they are.
+export function varied(env: EnvSpec, f: number): EnvSpec {
+  if (!(f > 0) || env.duel || env.augment) return env;
+  const a = Math.min(f, ENV_LIMITS.augment[1]);
+  return { ...env, augment: { energy: a, count: a, items: a, ...(env.layout ? {} : { size: a / 2 }) } };
+}
+
 // The learner (founder id 0) and the rivals of one episode, placed at random from the seed.
 export function castFor(env: EnvSpec, config: EcoConfig, learner: Learner, seed: number, pool: readonly PoolEntry[] | null, library: Library, start?: { x: number; y: number; heading?: number }): CastMember[] {
   const rng = createRng(deriveSeed(seed, 0xca57));
@@ -326,6 +338,8 @@ export function runEpisode(
   const rivalEnergy = new Map<number, number>(); // each rival's energy after the previous tick, for crediting rams
   if (env.collisionDamage) for (const m of eco.members) if (m.id !== 0) rivalEnergy.set(m.id, m.creature.state.energy); // so a death on the first tick is judged too
   let poisonBefore = eco.poisonEaten; // the world's poison count before the tick, to skip poison deaths
+  let early = 0; // bites weighted by the share of the episode left at each
+  let tick = 0; // ticks done when the current one ends
   // The learner's last tick counts too: what it ate before it died; a dead learner ends with no energy.
   eco.onDeath = (m) => {
     if (m.id !== 0) {
@@ -343,6 +357,7 @@ export function runEpisode(
       if (ram) out.rams++;
       return;
     }
+    early += (m.eaten - out.food) * (1 - tick / ticks); // bites on the dying tick
     out.food = m.eaten;
     out.kills = m.kills;
     out.energy = 0;
@@ -355,6 +370,7 @@ export function runEpisode(
   for (let t = 0; t < ticks; t++) {
     if (t === hideAt) eco.setFoodHidden(true);
     poisonBefore = eco.poisonEaten;
+    tick = t + 1;
     if (act) {
       eco.prepareTick();
       eco.sensePhase();
@@ -365,6 +381,7 @@ export function runEpisode(
     if (env.collisionDamage) for (const m of eco.members) if (m.id !== 0) rivalEnergy.set(m.id, m.creature.state.energy);
     const me = eco.get(0);
     if (!me) break;
+    early += (me.eaten - out.food) * (1 - tick / ticks);
     out.food = me.eaten;
     out.kills = me.kills;
     out.energy = me.creature.state.energy;
@@ -378,7 +395,7 @@ export function runEpisode(
   }
   const w = env.reward;
   const startEnergy = eco.species[env.role]!.startEnergy;
-  out.reward = (w.food ?? 0) * out.food + (w.kill ?? 0) * out.kills + (w.survive ?? 0) * out.seconds + (w.energy ?? 0) * energySignal(out.energy, startEnergy) + (w.fast ?? 0) * cleared + (w.ram ?? 0) * out.rams + (w.cross ?? 0) * crossed(placed?.walls ?? [], minY, config.creature.radius);
+  out.reward = (w.food ?? 0) * out.food + (w.kill ?? 0) * out.kills + (w.survive ?? 0) * out.seconds + (w.energy ?? 0) * energySignal(out.energy, startEnergy) + (w.fast ?? 0) * cleared + (w.ram ?? 0) * out.rams + (w.cross ?? 0) * crossed(placed?.walls ?? [], minY, config.creature.radius) + (w.early ?? 0) * early;
   if (kernels) spareKernels = kernels; // an episode that throws just drops them
   return out;
 }
@@ -425,7 +442,7 @@ export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | s
   if (rivals.reduce((a, r) => a + r.count, 0) > L.rivals[1]) return `at most ${L.rivals[1]} rivals`;
   const w = (v.reward ?? {}) as Record<string, unknown>;
   const reward: EnvSpec["reward"] = {};
-  for (const k of ["food", "kill", "survive", "energy", "fast", "ram", "cross"] as const) {
+  for (const k of ["food", "kill", "survive", "energy", "fast", "ram", "cross", "early"] as const) {
     if (w[k] === undefined) continue;
     if (!n(w[k], L.weight)) return `reward ${k} must be ${L.weight[0]} to ${L.weight[1]}`;
     reward[k] = w[k] as number;
@@ -433,6 +450,8 @@ export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | s
   if (v.learnerEnergy !== undefined && !n(v.learnerEnergy, L.energy)) return `start energy must be ${L.energy[0]} to ${L.energy[1]}`;
   if (v.poisonDamage !== undefined && !n(v.poisonDamage, L.poisonDamage)) return `poison damage must be ${L.poisonDamage[0]} to ${L.poisonDamage[1]}`;
   if (v.fast !== undefined && !n(v.fast, L.fast)) return `fast patches must cover ${L.fast[0]} to ${L.fast[1]}`;
+  if (v.slow !== undefined && !n(v.slow, L.fast)) return `slow patches must cover ${L.fast[0]} to ${L.fast[1]}`;
+  if (v.patchSize !== undefined && !n(v.patchSize, PATCH_SIZE_RANGE)) return `patch size must be ${PATCH_SIZE_RANGE[0]} to ${PATCH_SIZE_RANGE[1]}`;
   const range = (x: unknown, lim: readonly [number, number]): x is Range => Array.isArray(x) && x.length === 2 && n(x[0], lim) && n(x[1], lim) && x[0] <= x[1];
   let duel: EnvSpec["duel"];
   if (v.duel !== undefined) {
@@ -502,6 +521,8 @@ export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | s
     ...(v.poisonDamage === undefined ? {} : { poisonDamage: v.poisonDamage as number }),
     ...(v.killEnergy === undefined ? {} : { killEnergy: v.killEnergy as number }),
     ...(v.fast === undefined ? {} : { fast: v.fast as number }),
+    ...(v.slow === undefined ? {} : { slow: v.slow as number }),
+    ...(v.patchSize === undefined ? {} : { patchSize: v.patchSize as number }),
     ...(duel ? { duel } : {}),
     ...(augment ? { augment } : {}),
     ...(v.foodVisibleFor === undefined ? {} : { foodVisibleFor: v.foodVisibleFor as number }),

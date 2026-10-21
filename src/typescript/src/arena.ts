@@ -447,7 +447,7 @@ function begin(): void {
   if (typeof start === "string" || envs.length === 0) return;
   const cfg = runForm.read();
   const tiles = Number(cfg.tiles);
-  const options = { pairs: Math.round(cfg.population / 2), sigma: cfg.sigma, lr: cfg.lr, decay: DECAY, episodes: cfg.episodes, iterations: cfg.iterations, backprop: { lr: cfg.bpLr, episodes: cfg.bpEpisodes } };
+  const options = { pairs: Math.round(cfg.population / 2), sigma: cfg.sigma, lr: cfg.lr, decay: DECAY, episodes: cfg.episodes, iterations: cfg.iterations, backprop: { lr: cfg.bpLr, episodes: cfg.bpEpisodes }, vary: cfg.vary };
   const seed = Math.floor(Math.random() * 0x7fffffff);
   run = { kind: kind(), method: cfg.method, envs, plan: { ...start.learner.plan, hiddenLayers: start.learner.plan.hiddenLayers.slice() }, from: start.from, iterations: options.iterations, its: [], startHeld: null, startPerEnv: null, latest: null, nextEnvs: null };
   worker?.terminate();

@@ -1,5 +1,6 @@
 import { deriveSeed } from "../sim/rng.ts";
 import type { PoolEntry } from "../sim/seedPool.ts";
+import { varied } from "../sim/rl/env.ts";
 import type { EnvSpec, Library } from "../sim/rl/env.ts";
 import { serialiseLearner } from "../sim/rl/library.ts";
 import { recordingBuffers } from "../sim/rl/recording.ts";
@@ -15,7 +16,8 @@ import type { RlInMessage, RlOutMessage } from "./rlProtocol.ts";
 // candidate whenever the page asks. Pause waits between steps; envs sent while paused apply at the next step.
 // Kept apart from the worker's messaging so it runs and is tested in Node with an in-process pool.
 
-const HELD_SEEDS = heldSeeds(4); // per env
+const HELD_SEEDS = heldSeeds(12); // per env (4 until #54), so a held-out check depends less on a few layouts
+export const VARY_MAX = 0.5;
 const HELD_EVERY = 5;
 
 export type Start = Extract<RlInMessage, { type: "start" }>;
@@ -33,6 +35,7 @@ export class ArenaRun {
   private readonly pool: RlPool;
   private readonly assets: { pool: PoolEntry[] | null; library: Library };
   private envs: EnvSpec[];
+  private readonly vary: number;
   private gate: { wait: Promise<void>; open: () => void } | null = null; // set while paused
   private nextEnvs: EnvSpec[] | null = null;
   private showWanted = false; // the page asked for a new show; steps run much faster than the page plays them
@@ -44,11 +47,12 @@ export class ArenaRun {
   constructor(start: Start, assets: { pool: PoolEntry[] | null; library: Library }, makePool: (setup: RlSetup) => RlPool, post: Post) {
     this.start = start;
     this.post = post;
-    this.envs = start.envs;
+    this.vary = clamp(start.options.vary, 0, VARY_MAX, 0);
+    this.envs = start.envs.map((e) => varied(e, this.vary)); // the varied envs everywhere: training, held-out checks and shows
     this.playback = start.playback !== false;
     this.assets = assets;
     if (start.gentle) this.setGentle(true);
-    this.pool = makePool({ envs: start.envs, plan: start.learner.plan, pool: assets.pool, library: assets.library });
+    this.pool = makePool({ envs: this.envs, plan: start.learner.plan, pool: assets.pool, library: assets.library });
   }
 
   pause(): void {
@@ -64,7 +68,7 @@ export class ArenaRun {
   }
 
   setEnvs(envs: EnvSpec[]): void {
-    if (envs.length) this.nextEnvs = envs;
+    if (envs.length) this.nextEnvs = envs.map((e) => varied(e, this.vary));
   }
 
   setGentle(on: boolean): void {

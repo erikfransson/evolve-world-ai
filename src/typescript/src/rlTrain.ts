@@ -1,15 +1,15 @@
 // Fine-tunes one creature in an RL environment (#27) with evolution strategies, on worker threads.
 // Usage: node src/rlTrain.ts --env nibble [--from pool:39 | random:1 | file:creature.json] [--iters 60] [--pairs 16] [--sigma 0.08]
-//        [--lr 0.02] [--episodes 2] [--eval 16] [--every 10] [--threads N] [--seed 1] [--out learner.json] [--library public/rl/library.json] [--save]
+//        [--lr 0.02] [--episodes 2] [--eval 16] [--every 10] [--vary 0] [--threads N] [--seed 1] [--out learner.json] [--library public/rl/library.json] [--save]
 // Each iteration scores 2 x pairs perturbed genomes on `episodes` fresh seeds; every `every` iterations the current genome is scored
-// on `eval` held-out seeds no iteration trains on. --save appends the result to the library under the env id, as a rival for later envs.
+// on `eval` held-out seeds no iteration trains on. --vary F plays every episode, held-out ones too, on a varied env (varied in env.ts). --save appends the result to the library under the env id, as a rival for later envs.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { parsePool } from "./sim/seedPool.ts";
 import type { PoolEntry } from "./sim/seedPool.ts";
-import { poolLearner, randomLearner } from "./sim/rl/env.ts";
+import { poolLearner, randomLearner, varied } from "./sim/rl/env.ts";
 import type { Learner, Library } from "./sim/rl/env.ts";
 import { envById } from "./sim/rl/envs.ts";
 import { KINDS, fileLearner, parseCreatureFile } from "./sim/rl/creatureFile.ts";
@@ -29,6 +29,7 @@ const { values } = parseArgs({
     episodes: { type: "string", default: "2" },
     eval: { type: "string", default: "16" },
     every: { type: "string", default: "10" },
+    vary: { type: "string", default: "0" },
     threads: { type: "string" }, // default: the machine's cores less one, as the other CLIs
     seed: { type: "string", default: "1" },
     pool: { type: "string", default: "public/pool.json" },
@@ -59,6 +60,11 @@ const int = (k: "iters" | "pairs" | "episodes" | "eval" | "every" | "seed", min:
 };
 const [iters, pairs, episodes, evalCount, every] = (["iters", "pairs", "episodes", "eval", "every"] as const).map((k) => int(k, 1));
 const seed = int("seed", 0);
+const vary = num("vary");
+if (!(vary >= 0 && vary <= 0.9)) {
+  console.error("error: --vary must be 0 to 0.9");
+  process.exit(1);
+}
 for (const k of ["sigma", "lr"] as const) {
   if (!(num(k) > 0) || !Number.isFinite(num(k))) {
     console.error(`error: --${k} must be a positive number`);
@@ -86,7 +92,7 @@ else {
   process.exit(1);
 }
 
-const helpers = createNodeRlPool({ envs: [env], plan: learner.plan, pool, library }, threads);
+const helpers = createNodeRlPool({ envs: [varied(env, vary)], plan: learner.plan, pool, library }, threads);
 const trainer = new Trainer(Float32Array.from(learner.genome), { pairs, sigma: num("sigma"), lr: num("lr") }, helpers, 1, episodes, seed);
 const evalSeeds = heldSeeds(evalCount);
 const t0 = performance.now();

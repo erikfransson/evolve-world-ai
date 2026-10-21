@@ -10,6 +10,7 @@ export interface RlRunOptions extends Omit<EsOptions, "shaping">, Partial<Pick<E
   episodes: number; // seeds per candidate and env each iteration
   iterations: number; // the run stops after this many
   backprop?: Partial<Pick<PpoOptions, "lr" | "episodes">>; // with method "backprop"; the ES fields above then do not apply
+  vary?: number; // run-wide world variation (see varied in env.ts), 0 to VARY_MAX; 0 when left out
 }
 
 export type TrainMethod = "es" | "backprop"; // evolution strategies (Trainer) or PPO (BackpropTrainer)
