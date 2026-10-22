@@ -15,6 +15,7 @@ Append-only: mark items done, do not rewrite. Track files in `docs/rl-notes/` ar
 | C1c | ES split from founders | 10 pairs x 5 episodes beats 50 x 1 (far-food 0.87 vs 0.61 in 4 of 4 seeds, corridor 1.45 vs 1.26); minefield stuck at 0.5 | t2-es.md, 128 fresh seeds |
 | C1c | RL score predicts Live? | No (dying lean 4.63, survivors 3.74). Lab pools rank noise (rank vs fresh score r -0.33 to 0.16) | t4-recipe.md, t2-es.md |
 | C1c | speed | Arena envs teach speed 60 to 72 (rl-54-56 bfe0375); slow lean founders came from the lean lab recipe. lg4 (fast, v 73 in Live) wins Live at bonus 10 (1283, 1286 at +60) while slow lg8v2 died. Speed decides survival, so the lean recipe must keep it | l10-lg4-*.log in agg runs/agg |
+| C2  | learning beyond luck | Yes on nibble, far-food and fading from fresh designs, ES and PPO: every gain and slope 95% CI above 0, 3 of 3 runs (e.g. fading PPO 0.13 to 4.52, +4.39 [3.31, 5.37]; far-food weakest, one PPO run +0.19). Run-to-run spread is large; PPO last iterate can drop | t5-proof.md, src/rlProof.ts, 64 paired seeds |
 
 ## Questions
 
@@ -30,3 +31,4 @@ Tracks: T1 backprop diagnosis, T2 ES learner quality, T3 env trainability, T4 re
 - 2026-10-21. rl-54-56 speed check (bfe0375) narrows T4's speed claim. Creatures trained on Fading, Race or Nibble move at 60 to 72 in their own env, in Nibble and in Far food (untrained 0 to 7), as fast as Live survivors (63 to 77). So Arena envs in general do not teach slow play. T4's slow lean founders (lg8, lg8v2, la6 at 17 to 43 in envs) come from the lean lab recipe (lean-grazer and lean-aggr env sets, rivals, from random), not from envs in general. lg4 (63 to 65 in envs) is the test of whether speed alone decides Live (l10lg4, queued).
 - 2026-10-22. All four tracks reported (see table). lg4 screen: fast lean Grazer takes over Live in 60 min, so speed matters and balance is now the open problem. Recipe draft: backprop (everyTick, targetKl 0.02) or ES 100x1 from random for basics; ES 10x5 with sigma 0.08 to fine-tune founders; judge on 64+ paired held-out seeds of envs not trained on; a speed gate; then a short Live screen. Pools: pick by Live screen survival, not by env held-out rank.
 - 2026-10-22. Raw probe logs live in the lab worktree, agg/src/typescript/runs/agg/rl-notes-logs/.
+- 2026-10-22. Round 2 (C2 to C5) started on Erik's brief: T5 proof protocol, T6 learner ceiling, T7 env ceiling, T8 efficiency. T5 done: rlProof.ts shows learning beyond luck on all three envs with both learners.
