@@ -40,6 +40,20 @@ describe("recastRays", () => {
     expect(cast(world(), 30, 500, Math.PI, [0]).kinds).toEqual([HIT_WALL]);
   });
 
+  // Red with items collected first: past the candidate cap the rock was dropped and the ray went through it.
+  it("still ends at rock when more items lie in reach than the candidate cap takes", () => {
+    const terrain = new Terrain([{ x: 560, y: 500, r: 20 }], null, 1000, 1000);
+    const n = 5000;
+    const items = { x: new Float32Array(n), y: new Float32Array(n), kind: new Uint8Array(n).fill(HIT_FOOD), count: n };
+    for (let i = 0; i < n; i++) {
+      items.x[i] = 440 + (i % 100) * 1.2; // a block within one ray length, all of it beside the ray, none on it
+      items.y[i] = 420 + Math.floor(i / 100) * 1.4;
+    }
+    const r = cast(world({ terrain, items }), 500, 500, 0, [0]);
+    expect(r.kinds).toEqual([HIT_WALL]);
+    expect(r.closeness[0]).toBeCloseTo(1 - 40 / 100, 6);
+  });
+
   it("matches the engine's own sense on a scattered world", () => {
     const counts = itemCounts(cfg);
     const eng = new World(cfg, counts.food + counts.poison);

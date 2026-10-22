@@ -1,4 +1,5 @@
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
+import { wrapAngle } from "../../src/typescript/src/sim/angle.ts";
 import { VERSION } from "../../src/typescript/src/version.ts";
 import type { CreatureFrame as EngineFrame } from "../../src/typescript/src/sim/ecosystem.ts";
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
@@ -252,7 +253,7 @@ export class LiveWorld {
     const s = c.state;
     const founder = wireName(e.lineageName(m.founderId));
     return encodeDetail(e.tick, id, {
-      x: s.x, y: s.y, heading: s.heading, energy: s.energy, age: m.ageTicks * this.config.dt, children: m.children, eaten: m.eaten, kills: boardValue(m, "kills"), depth: m.depth, parentId: m.parentId,
+      x: s.x, y: s.y, heading: wrapAngle(s.heading), energy: s.energy, age: m.ageTicks * this.config.dt, children: m.children, eaten: m.eaten, kills: boardValue(m, "kills"), depth: m.depth, parentId: m.parentId,
       founderId: m.founderId, founderPool: e.lineages.fromPool(m.founderId), founderName: founder.name, founderStarter: founder.starter, founderHue: e.lineages.colour(m.founderId), hue: m.hue, upkeep: c.upkeep, drain: c.drain,
       birthEnergy: m.birth.energy, birthCost: m.birth.cost, birthCooldown: m.birth.cooldown, plan: c.plan, rayKinds: cap.kinds, rayCloseness: cap.closeness, rayOffsets: cap.offsets, inputs: cap.inputs,
     });

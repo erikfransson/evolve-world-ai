@@ -38,10 +38,7 @@ export function recastRays(w: RayWorld, x: number, y: number, heading: number, o
     cc[n] = d2 - r * r;
     ck[n++] = kind;
   };
-  const it = w.items;
-  for (let i = 0; i < it.count; i++) add(it.x[i]!, it.y[i]!, w.itemRadius, it.kind[i]!);
-  const cr = w.creatures;
-  for (let i = 0; i < cr.count; i++) if (i !== w.self) add(cr.x[i]!, cr.y[i]!, w.radius, HIT_CREATURE);
+  // Rock first, then creatures, then items: if the cap is ever reached, what is dropped is what a ray can see through least.
   const t = w.terrain;
   if (t && t.rockCount > 0) {
     t.cellRange(x, y, far0, range);
@@ -52,6 +49,10 @@ export function recastRays(w: RayWorld, x: number, y: number, heading: number, o
       }
     }
   }
+  const cr = w.creatures;
+  for (let i = 0; i < cr.count; i++) if (i !== w.self) add(cr.x[i]!, cr.y[i]!, w.radius, HIT_CREATURE);
+  const it = w.items;
+  for (let i = 0; i < it.count; i++) add(it.x[i]!, it.y[i]!, w.itemRadius, it.kind[i]!);
   const m = length * (1 + 1e-6);
   const walls = x < m || w.width - x < m || y < m || w.height - y < m;
   const count = Math.min(kinds.length, closeness.length, offsets.length);
