@@ -42,7 +42,7 @@ export interface EcoState {
 }
 
 // Per-creature numbers of the scalars column, in order.
-const SCALARS = [
+export const SCALARS = [
   "id", "parentId", "depth", "birthTick", "children", "eaten", "kills", "species", "hue", "founderId", "lastBirthTick",
   "birthEnergy", "birthCost", "birthCooldown", "cooldownTicks", "x", "y", "heading", "vx", "vy", "turnRate", "energy", "ticksAlive", "cos", "sin",
 ] as const;

@@ -2,13 +2,15 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parsePool } from "../../src/typescript/src/sim/seedPool.ts";
 import { loadAdminToken, startAdmin } from "./admin.ts";
-import { HELPER_THREADS, HOST, LIMITS, PORTS, liveConfig } from "./config.ts";
+import { HELPER_THREADS, HOST, LIMITS, PORTS, liveConfig, seedRoom } from "./config.ts";
 import { loadFounders, loadPools } from "./founders.ts";
+import { checkCarry, oldestInWorld } from "./carry.ts";
+import type { CarryOrder } from "./carry.ts";
 import type { Value } from "./tunables.ts";
 import { createNodeThinkPool } from "../../src/typescript/src/worker/nodePool.ts";
 import { LiveWorld, runTicks } from "./liveWorld.ts";
 import { startPublic } from "./public.ts";
-import { Saves, openWorld } from "./saves.ts";
+import { Saves, copiesProblem, openWorld } from "./saves.ts";
 import { StateStore } from "./state.ts";
 
 // parameters
@@ -95,11 +97,23 @@ const admin = startAdmin(HOST, adminPort, token, live, stateDir, webRoot, savedO
   stop,
   blankName: (name) => live.whenIdle(() => live.blankName(name)),
   renameName: (from, to, force) => live.whenIdle(() => live.renameName(from, to, force)),
-  reset: async (copies) => {
+  reset: async (copies, ask) => {
     if (exit.way) throw new Error(exit.way === "stop" ? "the server is stopping" : "a reset is under way");
+    // The creature to carry, picked now: from the listed save asked for (another world's too), else the running world.
+    let carry: CarryOrder | undefined;
+    const badCopies = copiesProblem(copies, founders.length, live.freshEco); // first, so the carry's room is not reported from a bad count
+    if (badCopies) throw new Error(badCopies);
+    if (ask) {
+      const creature = ask.from ? await store.readCarry(ask.from) : await live.whenIdle(() => oldestInWorld(live.eco));
+      if (!creature) throw new Error(`no living creature to carry in ${ask.from ?? "the running world"}`);
+      const order = checkCarry({ version: 1, name: ask.name, copies: ask.copies, creature }, live.addRules(), seedRoom(live.freshEco) - copies * founders.length, founders.map((f) => f.name));
+      if (typeof order === "string") throw new Error(order);
+      carry = order;
+    }
+    if (exit.way) throw new Error(exit.way === "stop" ? "the server is stopping" : "a reset is under way"); // asked again while the save was read
     exit.way = "reset"; // a stop now saves nothing next to the kept world
     try {
-      const line = await saves.reset(copies, founders.length);
+      const line = await saves.reset(copies, founders.length, new Date(), carry);
       console.log(`reset: ${line}`);
       setTimeout(() => shutdown(exit.stopAsked ? 0 : RESET_EXIT), 500); // the reply goes out first
       return exit.stopAsked ? `${line}; a stop came meanwhile, so the server stays down until started` : line;

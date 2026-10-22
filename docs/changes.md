@@ -6,6 +6,7 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- Live admin: `reset --carry-oldest K --carry-name NAME [--carry-from SAVE]` carries K copies of the oldest living creature (of the running world or a listed save) into the fresh world as a starter family, checked as an upload is. `saves` shows the world each save is of.
 - Live: the Inland Sea is 50000 x 31250 (was 30000 x 18750), with slightly bigger and fuller slow (mud) and fast (firm) ground, fewer islands in the mud and fewer holes in the dunes (#53, draft `docs/world-maps/tools/map-F5.json`). The food cap is 1.4 (was 1.5) so the items fit the wire. Stones no longer fill the cliff passes. The world starts fresh, since saves of the old map are refused.
 - Live and Ecosystem: a far view of a map with very many items draws at most 90 000 food dots a frame (a fixed share, a little denser), and the ground keeps up to 48 MB of baked bitmaps (was 32 MB), so the bigger Inland Sea zooms as smoothly as the old one.
 - Live server: a viewer gets a full item set only when its send queue has room for it, and one too slow to ever take its set is dropped after 10 s instead of holding back everyone's frames. The frame-skip level is 1.5 MB (was 1 MB), above a join's full set.

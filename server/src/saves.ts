@@ -6,6 +6,8 @@ import { parseSave } from "./saveParse.ts";
 import { OtherWorld } from "./saveParse.ts";
 import type { LiveWorld } from "./liveWorld.ts";
 import { SEED_FILE } from "./state.ts";
+import { CARRY_FILE, MAX_CARRY_FILE_BYTES, NEXT_CARRY, REFUSED_CARRY, USED_CARRY, carryFounder, carryLine, checkCarry } from "./carry.ts";
+import type { CarryOrder } from "./carry.ts";
 import type { StateStore } from "./state.ts";
 
 const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
@@ -77,7 +79,9 @@ export class Saves {
           console.error(UNREADABLE);
           throw new Error(`it would not restore: ${errText(e)}`);
         });
-      const name = await this.store.write(json, { population: this.live.eco.population, tick: this.live.eco.tick }, new Date(), true, verify);
+      const h = this.live.homeWorld();
+      const world = `${h.map || "random"} ${h.width}x${h.height}${h.mapVersion ? ` ${h.mapVersion}` : ""}`; // so the listing tells this world's saves from another's
+      const name = await this.store.write(json, { population: this.live.eco.population, tick: this.live.eco.tick, world }, new Date(), true, verify);
       return `saved ${name} (${Math.round(json.length / 1e6)} MB json, ${stallMs} ms tick stall)`;
   }
 
@@ -85,32 +89,48 @@ export class Saves {
   // (kept, never listed, rotated or restored), and writes the copies of each founder the next world starts with. Saving then stays
   // off, so the caller exits and the next start seeds a fresh world. Any failure before the move keeps the running world as it was;
   // a failure while moving keeps it running too (the newest saves move last, so a restart restores the newest left).
-  reset(copies: number, founders: number, at = new Date()): Promise<string> {
+  // carry: a checked order (carry.ts) the next start seeds with the founders; it must fit below the birth reserve with them.
+  reset(copies: number, founders: number, at = new Date(), carry?: CarryOrder): Promise<string> {
     return this.exclusive(async () => {
       const bad = copiesProblem(copies, founders, this.live.freshEco);
       if (bad) throw new Error(bad);
+      const room = seedRoom(this.live.freshEco) - copies * founders;
+      if (carry && carry.copies > room) throw new Error(`${carry.copies} carried copies do not fit: ${room} places are left below the birth reserve after ${copies} of each founder`);
+      const carryText = carry ? JSON.stringify(carry) : "";
+      if (carryText.length > MAX_CARRY_FILE_BYTES) throw new Error(`the carry order is ${carryText.length} bytes, over the ${MAX_CARRY_FILE_BYTES} the next start reads`);
       const kept = this.store.keptResets();
       if (kept >= MAX_KEPT_RESETS) throw new Error(`${kept} before-reset folders are kept in the state directory: move or delete the old ones first`);
       if (this.resetting) throw new Error("the world is being reset");
       const saved = await this.saveNow();
       const sub = `before-reset-${at.toISOString().replace(/[:.]/g, "-")}`;
+      if (carry) this.store.writeFile(NEXT_CARRY, carryText); // before anything moves: a failure here keeps the world as it was
       this.resetting = true;
       let n: number;
       try {
-        n = this.store.moveAside(sub, [OVERRIDES, PREVIOUS_OVERRIDES, IGNORED_OVERRIDES, SEED_FILE]);
+        n = this.store.moveAside(sub, [OVERRIDES, PREVIOUS_OVERRIDES, IGNORED_OVERRIDES, SEED_FILE, CARRY_FILE, USED_CARRY, REFUSED_CARRY]);
       } catch (e) {
+        if (carry) this.store.remove(NEXT_CARRY); // the world runs on, so no later fresh start may carry it
         this.resetting = false;
         // Saves or settings may be in the folder already: a save now puts the running world back in place for a restart.
         const again = await this.saveNow().then((l) => `, ${l}`, (s: unknown) => `, and saving again failed too: ${errText(s)}`);
         throw new Error(`reset stopped part-way, the world runs on${again}; check ${sub} before trying again (its admin settings no longer apply after a restart): ${errText(e)}`);
       }
       const moved = `${saved}; ${n} saves and the admin settings moved to ${sub}`;
+      let carried = "";
+      if (carry) {
+        try {
+          this.store.rename(NEXT_CARRY, CARRY_FILE);
+          carried = ` and ${carryLine(carry, this.live.config.dt)}`;
+        } catch (e) {
+          carried = `, carrying nothing: ${NEXT_CARRY} could not be renamed to ${CARRY_FILE} (${errText(e)}), so the fresh world starts without it`;
+        }
+      }
       try {
         this.store.writeSeedCopies(copies);
       } catch (e) {
-        return `${moved}; ${SEED_FILE} could not be written (${errText(e)}), so the next start seeds ${SEED_COPIES} of each founder`; // the reset goes on: the saves are moved already
+        return `${moved}; ${SEED_FILE} could not be written (${errText(e)}), so the next start seeds ${SEED_COPIES} of each founder${carried}`; // the reset goes on: the saves are moved already
       }
-      return `${moved}; the next start seeds ${copies} of each founder`;
+      return `${moved}; the next start seeds ${copies} of each founder${carried}`;
     });
   }
 
@@ -173,7 +193,48 @@ export async function openWorld(saves: Saves, live: LiveWorld, stateDir: string,
   const retired = retireOverrides(stateDir);
   if (retired) log(retired);
   const copies = live.seedCopies;
-  const n = live.seedFounders(founders, Math.random, copies);
+  // A reset's carry order, checked again as an upload is: a bad or unreadable one is set aside and the world starts without it.
+  let carry: CarryOrder | null = null;
+  let refused = "";
+  try {
+    const raw = store.readJson(CARRY_FILE, MAX_CARRY_FILE_BYTES);
+    const order = raw === null ? null : checkCarry(raw, live.addRules(), seedRoom(live.freshEco) - copies * founders.length, founders.map((f) => f.name));
+    if (typeof order === "string") refused = order;
+    else carry = order;
+  } catch (e) {
+    refused = errText(e);
+  }
+  if (refused) {
+    log(`${CARRY_FILE} refused, nothing carried: ${refused}`);
+    try {
+      store.rename(CARRY_FILE, REFUSED_CARRY);
+    } catch (e) {
+      log(`${CARRY_FILE} not moved aside: ${errText(e)}`);
+    }
+  }
+  let n: number;
+  try {
+    n = live.seedFounders(founders, Math.random, copies, carry ? { founder: carryFounder(carry), copies: carry.copies } : undefined);
+  } catch (e) {
+    if (!carry) throw e;
+    // A carry that does not go in (no room left on the map, an insert refused) must not stop every restart: it is set aside instead.
+    log(`${CARRY_FILE} refused, nothing carried: seeding with it failed (${errText(e)})`);
+    carry = null;
+    try {
+      store.rename(CARRY_FILE, REFUSED_CARRY);
+    } catch (m) {
+      log(`${CARRY_FILE} not moved aside: ${errText(m)}`);
+    }
+    n = live.seedFounders(founders, Math.random, copies); // seedFounders checks before it inserts, so the world is still empty
+  }
+  if (carry) {
+    log(`carried ${carryLine(carry, live.config.dt)}`);
+    try {
+      store.rename(CARRY_FILE, USED_CARRY); // carried once: a later fresh start does not carry it again
+    } catch (e) {
+      log(`${CARRY_FILE} not moved to ${USED_CARRY} (${errText(e)}): remove it before the next fresh start`);
+    }
+  }
   try {
     store.writeSeedCopies(copies);
   } catch (e) {

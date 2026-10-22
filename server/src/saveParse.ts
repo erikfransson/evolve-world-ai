@@ -1,5 +1,6 @@
 import { Worker } from "node:worker_threads";
 import type { EcoState } from "../../src/typescript/src/sim/ecoState.ts";
+import type { Carried } from "./carry.ts";
 
 // Unzips, parses and checks a save on a worker thread with its own small heap, so a crafted save (deep or many tiny JSON values)
 // can at worst kill that worker, never the server. Resolves with a state restoreState accepted there, rejects with the reason otherwise.
@@ -39,7 +40,7 @@ export function parseSave(gz: Uint8Array, maxJsonBytes: number, verifyOnly?: fal
 export function parseSave(gz: Uint8Array, maxJsonBytes: number, verifyOnly: true, home?: Home): Promise<undefined>;
 export function parseSave(gz: Uint8Array, maxJsonBytes: number, verifyOnly = false, home?: Home): Promise<EcoState | undefined> {
   return new Promise((resolve, reject) => {
-    const worker = new Worker(WORKER, { workerData: { gz, maxJsonBytes, verifyOnly, home: home ?? null }, resourceLimits: { maxOldGenerationSizeMb: PARSE_HEAP_MB, maxYoungGenerationSizeMb: 32 }, stdout: false, stderr: false });
+    const worker = new Worker(WORKER, { workerData: { gz, maxJsonBytes, verifyOnly, home: home ?? null, carryFrom: null }, resourceLimits: { maxOldGenerationSizeMb: PARSE_HEAP_MB, maxYoungGenerationSizeMb: 32 }, stdout: false, stderr: false });
     let settled = false;
     const finish = (err: Error | null, state?: EcoState | null): void => {
       if (settled) return;
@@ -51,6 +52,27 @@ export function parseSave(gz: Uint8Array, maxJsonBytes: number, verifyOnly = fal
     };
     const timer = setTimeout(() => finish(new Error("parsing the save took too long")), verifyOnly ? VERIFY_TIMEOUT_MS : PARSE_TIMEOUT_MS);
     worker.on("message", (m: { ok: true; state: EcoState | null } | { ok: false; reason: string; other?: boolean }) => finish(m.ok ? null : m.other ? new OtherWorld(m.reason) : new Error(m.reason), m.ok ? m.state : undefined));
+    worker.on("error", (e: Error) => finish(new Error(`save parser failed: ${e.message}`)));
+    worker.on("exit", (code) => finish(new Error(`save parser stopped (exit ${code})`)));
+  });
+}
+
+// The oldest living creature of a save (carry.ts), parsed on the same capped worker but never restored: the save may be of another map
+// or map version. Null when the save holds none; rejects with the reason when the save is broken. The caller checks the creature as an upload.
+export function parseCarry(gz: Uint8Array, maxJsonBytes: number, from: string): Promise<Carried | null> {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(WORKER, { workerData: { gz, maxJsonBytes, verifyOnly: false, home: null, carryFrom: from }, resourceLimits: { maxOldGenerationSizeMb: PARSE_HEAP_MB, maxYoungGenerationSizeMb: 32 }, stdout: false, stderr: false });
+    let settled = false;
+    const finish = (err: Error | null, carried?: Carried | null): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      void worker.terminate();
+      if (err) reject(err);
+      else resolve(carried ?? null);
+    };
+    const timer = setTimeout(() => finish(new Error("parsing the save took too long")), PARSE_TIMEOUT_MS);
+    worker.on("message", (m: { ok: true; carried: Carried | null } | { ok: false; reason: string }) => finish(m.ok ? null : new Error(m.reason), m.ok ? m.carried : undefined));
     worker.on("error", (e: Error) => finish(new Error(`save parser failed: ${e.message}`)));
     worker.on("exit", (code) => finish(new Error(`save parser stopped (exit ${code})`)));
   });

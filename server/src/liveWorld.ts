@@ -511,13 +511,16 @@ export class LiveWorld {
   // lineage with the founder's name (behind STARTER_MARK), each founder its own hue. Not visitor adds: they count toward no add cap (see attach).
   // A founder with a pool gives each copy a genome from [genome, ...pool], in a shuffled order cycled through, so every variant is used once
   // before any repeats, and each fresh world draws its own subset when there are fewer copies than variants.
+  // extra: one more founder with its own count (a reset's carried creature, carry.ts), its hue between the first two founders'.
   // random: the server's own draws (spots, hues, variant order). Throws when the world is not fresh or a founder does not go in.
-  seedFounders(founders: readonly SeedFounder[], random: () => number = Math.random, copies = SEED_COPIES): number {
+  seedFounders(founders: readonly SeedFounder[], random: () => number = Math.random, copies = SEED_COPIES, extra?: { founder: SeedFounder; copies: number }): number {
     const e = this.eco;
     if (e.tick !== 0 || e.population !== 0 || e.lineageTable.toState().late.length !== 0) throw new Error("only a fresh, empty world is seeded");
     if (founders.length < 1 || founders.length > MAX_SEED_FOUNDERS) throw new Error(`1 to ${MAX_SEED_FOUNDERS} founders are seeded`);
     if (!Number.isInteger(copies) || copies < 1) throw new Error("copies must be a whole number from 1");
-    const n = founders.length * copies;
+    if (extra && (!Number.isInteger(extra.copies) || extra.copies < 1)) throw new Error("extra copies must be a whole number from 1");
+    const own = founders.length * copies;
+    const n = own + (extra?.copies ?? 0);
     if (n > seedRoom(e.config.eco)) throw new Error(`${n} founders do not fit below the birth reserve (${seedRoom(e.config.eco)})`);
     const spots = this.freeSpots(n, random);
     if (spots.length < n) throw new Error("no room to seed the founders");
@@ -530,7 +533,13 @@ export class LiveWorld {
       }
       return all;
     });
-    for (let i = 0; i < n; i++) {
+    for (let i = own; i < n; i++) {
+      const f = extra!.founder;
+      const p = spots[i]!;
+      const res = e.insertCreature({ genome: f.genome, plan: f.plan, x: p.x, y: p.y, heading: p.heading, hue: (hue0 + 180 / founders.length) % 360, name: STARTER_MARK + f.name, ...(f.birth ? { birth: f.birth } : {}) });
+      if (!res.ok) throw new Error(`${f.name} could not be seeded: ${res.reason}`);
+    }
+    for (let i = 0; i < own; i++) {
       const k = Math.floor(i / copies);
       const f = founders[k]!;
       const p = spots[i]!;
