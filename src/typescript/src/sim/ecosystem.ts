@@ -39,6 +39,8 @@ import { SenseKernels } from "./wasm/senseKernels.ts";
 import { MAX_RAYS } from "./wasm/senser.ts";
 import type { PhaseTimer } from "./profile.ts";
 
+const SMALL_SCAN = 32; // up to this many members the settle and birth scans run in JS: RL episodes have 1-31 creatures, so the kernel pays only for crowds
+
 export { BIG_IMPACT, EVENT_CAP, EVENT_DEATH, EVENT_IMPACT, EVENT_STRIDE } from "./contacts.ts";
 export { MAX_INSERT_ENERGY, MAX_INSERT_LAYERS, MAX_INSERT_MEMORY, MAX_INSERT_NEURONS, MAX_INSERT_RAYS, MAX_INSERT_RAY_LENGTH, MAX_NAME_LENGTH, MUTATION_SCALE_RANGE } from "./ecoInsert.ts";
 export type { InsertResult, InsertSpec } from "./ecoInsert.ts";
@@ -522,7 +524,7 @@ export class Ecosystem {
     if (eco.collisions) this.contacts.collideAll();
     prof?.lap("collisions");
 
-    const scan = this.wasmMembers;
+    const scan = n > SMALL_SCAN ? this.wasmMembers : null; // a kernel call costs about 0.4 us, the loops below 0.01 us a member
     if (scan) {
       // the scan counts the tick for everyone with energy left and lists the others, highest first
       const dying = scan.settle(this.table.rowAt, n);
