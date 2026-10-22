@@ -6,7 +6,7 @@ import type { StatefulRng } from "../rng.ts";
 import type { PoolEntry } from "../seedPool.ts";
 import { OUTPUT_SIZE } from "../sensors.ts";
 import type { Rng } from "../types.ts";
-import { layoutConfig, runEpisode } from "./env.ts";
+import { earlyWeight, layoutConfig, runEpisode } from "./env.ts";
 import type { EnvSpec, Learner, Library } from "./env.ts";
 import { HELD_BASE, scoreGenomes } from "./trainer.ts";
 import type { RlTrainer, Score, Scorer, StepResult } from "./trainer.ts";
@@ -485,7 +485,7 @@ export function playRollout(env: EnvSpec, plan: Learner["plan"], task: RolloutTa
   const result = runEpisode(env, { plan, genome: theta }, task.seed, pool, library, (eco) => {
     const me = eco.get(0);
     if (!me) return;
-    rewards[n - 1]! += ((w.food ?? 0) + (w.early ?? 0) * (1 - t / ticks)) * (me.eaten - eaten) + (w.kill ?? 0) * (me.kills - kills) + (w.survive ?? 0) * DT;
+    rewards[n - 1]! += ((w.food ?? 0) + (w.early ?? 0) * earlyWeight(t, ticks)) * (me.eaten - eaten) + (w.kill ?? 0) * (me.kills - kills) + (w.survive ?? 0) * DT;
     eaten = me.eaten;
     kills = me.kills;
   }, act);
