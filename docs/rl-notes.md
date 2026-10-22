@@ -16,6 +16,7 @@ Append-only: mark items done, do not rewrite. Track files in `docs/rl-notes/` ar
 | C1c | RL score predicts Live? | No (dying lean 4.63, survivors 3.74). Lab pools rank noise (rank vs fresh score r -0.33 to 0.16) | t4-recipe.md, t2-es.md |
 | C1c | speed | Arena envs teach speed 60 to 72 (rl-54-56 bfe0375); slow lean founders came from the lean lab recipe. lg4 (fast, v 73 in Live) wins Live at bonus 10 (1283, 1286 at +60) while slow lg8v2 died. Speed decides survival, so the lean recipe must keep it | l10-lg4-*.log in agg runs/agg |
 | C2  | learning beyond luck | Yes on nibble, far-food and fading from fresh designs, ES and PPO: every gain and slope 95% CI above 0, 3 of 3 runs (e.g. fading PPO 0.13 to 4.52, +4.39 [3.31, 5.37]; far-food weakest, one PPO run +0.19). Run-to-run spread is large; PPO last iterate can drop | t5-proof.md, src/rlProof.ts, 64 paired seeds |
+| C4  | efficiency | Small envs 3 to 5.5 ms per episode (E8 met), Live-like 14 to 26 ms (rivals take 9 in 10 sense and brain calls). Settle and birth scans in JS for worlds of at most 32 members: rlBench -12% (fading -28%), fingerprints unchanged, big worlds not slower. Successive halving lost to fixed 10x5 in 7 of 8 seeds (far-food 0.0247 vs 0.0116 held-out gain per CPU s) | t8-efficiency.md, 7158909 |
 
 ## Questions
 
