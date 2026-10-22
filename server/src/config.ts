@@ -3,11 +3,20 @@ import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { itemsPerDensity } from "../../src/typescript/src/sim/config.ts";
 import { MAX_ITEM_SLOTS, creatureFrameBytes, itemsBytes } from "../../src/typescript/src/live/protocol.ts";
 import { MAX_FOUNDERS } from "../../src/typescript/src/live/founders.ts";
-import { LIVE_BIRTH, MAX_COPIES } from "../../src/typescript/src/live/add.ts";
+import { LIVE_BIRTH, MAX_ADD_GENOME, MAX_COPIES } from "../../src/typescript/src/live/add.ts";
 
 // Also the admin's upper limit (tunables.ts). At 3000 a creature frame is 57 kB: room() lets in about 23 to 38 viewers at the full
 // population (fewer while items change fast), a save is about 29 MB of JSON, and a save and admin load peak near 720 MB (2500: 687 MB, 5000: 857 MB).
 export const MAX_POPULATION = 3000;
+// Genome weights the living world may hold, so every save can be written and read back inside the unit's MemoryMax of 1 GB. Measured at
+// 2900 creatures on the 50000 x 31250 world (2026-10-22): a save is about 7 MB plus 5.4 MB per million weights; writing one peaks at 543 MB
+// of RSS at 36 MB of JSON and 926 MB at 77 MB, reading one back at 686 MB and 1234 MB. 7 million keeps a save near 45 MB (about 800 MB
+// to read back); the four founders at 725 copies each hold 5.4 million. Measured without helper threads (HELPER_THREADS 0, the unit's
+// default): helpers keep their own copies of the brains, so measure again under MemoryMax before setting LIVE_THREADS.
+// Births stop WEIGHT_RESERVE short of it, as at the birth reserve, so visitors' adds still fit; adds past it are refused.
+export const MAX_LIVE_WEIGHTS = 7_000_000;
+export const WEIGHT_RESERVE = 100 * MAX_ADD_GENOME; // 100 of the largest brains an add allows, the birth reserve's 100 places
+export const BIRTH_WEIGHT_CAP = MAX_LIVE_WEIGHTS - WEIGHT_RESERVE - MAX_ADD_GENOME; // a child has at most MAX_ADD_GENOME (the plan ranges are within the add limits)
 
 // The one world this server runs: The Inland Sea map (src/sim/maps/inlandSea.ts) with the Ecosystem rules, collision damage on.
 // The admin channel (admin.ts) edits this object in place for the settings the engine reads every tick.

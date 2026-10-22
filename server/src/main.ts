@@ -106,7 +106,7 @@ const admin = startAdmin(HOST, adminPort, token, live, stateDir, webRoot, savedO
     if (ask) {
       const creature = ask.from ? await store.readCarry(ask.from) : await live.whenIdle(() => oldestInWorld(live.eco));
       if (!creature) throw new Error(`no living creature to carry in ${ask.from ?? "the running world"}`);
-      const order = checkCarry({ version: 1, name: ask.name, copies: ask.copies, creature }, live.addRules(), seedRoom(live.freshEco) - copies * founders.length, founders.map((f) => f.name));
+      const order = checkCarry({ version: 1, name: ask.name, copies: ask.copies, creature }, live.freshAddRules(), seedRoom(live.freshEco) - copies * founders.length, founders.map((f) => f.name));
       if (typeof order === "string") throw new Error(order);
       carry = order;
     }

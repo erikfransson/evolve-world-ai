@@ -143,6 +143,19 @@ describe("the creature a reset carries", () => {
     expect(JSON.stringify(ok).length).toBeLessThanOrEqual(MAX_CARRY_FILE_BYTES);
   });
 
+  it("is checked against a fresh world's birth ranges, not the admin's, at the reset and the start alike", () => {
+    const live = aged();
+    const fresh = live.freshAddRules().birth;
+    live.config.eco.birthEnergyRange = [fresh.energy[0], fresh.energy[0] + 1]; // an admin narrowed it on the running world
+    expect(live.freshAddRules().birth).toEqual(fresh);
+    expect(live.addRules().birth.energy).toEqual([fresh.energy[0], fresh.energy[0] + 1]);
+  });
+
+  it("names broken columns as broken, whatever their byte length", () => {
+    const cols = { creatures: { count: 1, scalars: Buffer.alloc(12).toString("base64"), plans: [[1, 1, 10, 0, 0, 3, 1]], genomes: Buffer.alloc(12).toString("base64") }, lineages: { late: [] } };
+    expect(() => oldestInState(cols as never, "x")).toThrow(/broken/);
+  });
+
   it("is asked for in the admin message with checked fields", () => {
     expect(carryAsk(undefined)).toBeNull();
     expect(carryAsk({ copies: 50, name: "Ancient", from: "world-2026-10-22T07-00-00-000Z.json.gz" })).toEqual({ copies: 50, name: "Ancient", from: "world-2026-10-22T07-00-00-000Z.json.gz" });
@@ -245,6 +258,31 @@ describe("a reset with a carried creature", () => {
     expect(live.eco.population).toBe(10 * FOUNDERS.length);
     expect(lines.some((l) => /refused, nothing carried: seeding with it failed/.test(l))).toBe(true);
     expect([existsSync(join(dir, CARRY_FILE)), existsSync(join(dir, REFUSED_CARRY))]).toEqual([false, true]);
+  });
+
+  // Red without best effort: a refused insert part-way through the carry left the world non-empty, and the fallback seed threw.
+  it("seeds the founders whole and as many carried copies as go in when an insert is refused part-way", async () => {
+    const dir = tmp();
+    writeFileSync(join(dir, CARRY_FILE), JSON.stringify(order(aged())));
+    const { Ecosystem } = await import("../../src/typescript/src/sim/ecosystem.ts");
+    const insert = Ecosystem.prototype.insertCreature;
+    let carried = 0;
+    vi.spyOn(Ecosystem.prototype, "insertCreature").mockImplementation(function (this: InstanceType<typeof Ecosystem>, spec) {
+      if (spec.name === STARTER_MARK + "Ancient" && ++carried > 2) return { ok: false, reason: "refused for the test" };
+      return insert.call(this, spec);
+    });
+    const { live, lines } = await start(dir);
+    vi.restoreAllMocks();
+    expect(live.eco.population).toBe(10 * FOUNDERS.length + 2);
+    expect(lines.some((l) => /CARRY SHORT: only 2 of 5/.test(l))).toBe(true);
+  });
+
+  it("never carries a carry.next.json a reset left behind", async () => {
+    const dir = tmp();
+    writeFileSync(join(dir, NEXT_CARRY), JSON.stringify(order(aged())));
+    const { live } = await start(dir);
+    expect(named(live, "Ancient")).toBe(0);
+    expect(existsSync(join(dir, NEXT_CARRY))).toBe(false);
   });
 
   it("lists each save with the world it is of", async () => {

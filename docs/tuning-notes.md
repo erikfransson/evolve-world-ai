@@ -140,6 +140,13 @@ Slow ground covers 10.8% of the map (was 7.0%), fast 4.5% (was 3.0%).
 Bench, 2900 seeded founders, one thread, load 5-12: tick 15.0 ms at 30k, 15.9 at 40k, 16.4 at 50k; stats with records about 14 ms at all three; RSS about 210 MB. Cost follows the population, not the area.
 `eco.foodMaxDensity` 1.4 (was 1.5): at 156 250 items per density unit, 1.5 plus poison 0.01 passes the wire's 0.9 x 262144 item slots.
 
+## Live brain-weight budget (2026-10-22, release review S1)
+
+At 2900 creatures on the 50000 x 31250 world, under `systemd-run --scope -p MemoryMax=1G` like the unit: the founder mix (5.4 M weights) saves 36 MB of JSON, peaks at 543 MB writing and 686 MB reading back; 2900 Oracles (13 M weights, 77 MB) and 2900 of the largest upload brains (22 M, 124 MB) were OOM-killed (2 GB cap: 926 MB writing, 1234 MB reading back for the Oracles).
+A save is about 7 MB plus 5.4 MB per million weights; reading back costs about 13 MB of RSS per MB of JSON.
+The budget is global: births of every family wait while the world is at it, so a world of maximum-size brains holds about 830 creatures (6.25 M / 7538 under the birth cap); that is the design, not a stall. Births stop at 7 M less a reserve of 100 maximum-size brains (754 k), so visitors' adds still fit, as at the 100-place birth reserve.
+`MAX_LIVE_WEIGHTS` 7 M: the worst world under it (7.02 M weights, 2900 creatures, items at the admin's largest caps) saves 45 MB, peaks at 604 MB writing and 813 MB reading back under the 1 GB cap.
+
 ## Ideas not yet tried
 - Evaluate each creature on two layouts to reduce layout luck.
 - Tournament with a larger size (5 to 7).

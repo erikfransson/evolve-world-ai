@@ -61,8 +61,11 @@ export function oldestInState(state: EcoState, from: string): Carried | null {
   if (c.count === 0) return null;
   const K = SCALARS.length;
   const at = (name: (typeof SCALARS)[number]): number => SCALARS.indexOf(name);
-  const s = new Float64Array(unpack(c.scalars.length % 4 === 0 ? c.scalars : bad()));
-  const g = new Float32Array(unpack(c.genomes.length % 4 === 0 ? c.genomes : bad()));
+  const sBytes = unpack(c.scalars);
+  const gBytes = unpack(c.genomes);
+  if (sBytes.byteLength % 8 !== 0 || gBytes.byteLength % 4 !== 0) bad(); // else a typed array view throws a bare RangeError
+  const s = new Float64Array(sBytes);
+  const g = new Float32Array(gBytes);
   if (s.length !== c.count * K) bad();
   for (const row of c.plans) if (!Array.isArray(row) || row.length < 7 || !row.every((v) => typeof v === "number" && Number.isFinite(v)) || !Number.isSafeInteger(row[5]) || row[5]! < 1) bad();
   let best = -1;

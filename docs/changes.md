@@ -6,6 +6,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- Live: the first start of 0.2.4 begins a fresh world. Every save of the old 30000 x 18750 map counts as another world's and is kept on disk but not restored, and the old world's admin settings are set aside (`admin-overrides.previous-world.json`).
+- Live: the world holds at most 7 million brain weights (`MAX_LIVE_WEIGHTS`), so every save stays near 45 MB and can be written and read back inside the server's 1 GB memory cap. Births wait at it as at the birth reserve, an add past it is refused with the reason, and a reset that would seed past it is refused. The four founders at the most copies a reset allows hold 5.4 million.
 - Live admin: `reset --carry-oldest K --carry-name NAME [--carry-from SAVE]` carries K copies of the oldest living creature (of the running world or a listed save) into the fresh world as a starter family, checked as an upload is. `saves` shows the world each save is of.
 - Live: the Inland Sea is 50000 x 31250 (was 30000 x 18750), with slightly bigger and fuller slow (mud) and fast (firm) ground, fewer islands in the mud and fewer holes in the dunes (#53, draft `docs/world-maps/tools/map-F5.json`). The food cap is 1.4 (was 1.5) so the items fit the wire. Stones no longer fill the cliff passes. The world starts fresh, since saves of the old map are refused.
 - Live and Ecosystem: a far view of a map with very many items draws at most 90 000 food dots a frame (a fixed share, a little denser), and the ground keeps up to 48 MB of baked bitmaps (was 32 MB), so the bigger Inland Sea zooms as smoothly as the old one.
