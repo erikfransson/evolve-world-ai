@@ -94,6 +94,9 @@ export interface EpisodeResult {
 }
 
 const BIRTHLESS = 1e9; // birth energy no creature reaches
+
+// The early reward per bite at the end of tick `tick` of `ticks`: the share of the episode left (1 at the start, 0 at the end).
+export const earlyWeight = (tick: number, ticks: number): number => 1 - tick / ticks;
 export const RAM_MIN_ENERGY = 1; // a rival with less energy the tick before it died was starving, not rammed
 
 // Whether a rival's death in a collision-damage world counts as the learner's ram: the learner is alive and touching it, the rival
@@ -354,7 +357,7 @@ export function runEpisode(
       if (ram) out.rams++;
       return;
     }
-    early += (m.eaten - out.food) * (1 - tick / ticks); // bites on the dying tick
+    early += (m.eaten - out.food) * earlyWeight(tick, ticks); // bites on the dying tick
     out.food = m.eaten;
     out.kills = m.kills;
     out.energy = 0;
@@ -378,7 +381,7 @@ export function runEpisode(
     if (env.collisionDamage) for (const m of eco.members) if (m.id !== 0) rivalEnergy.set(m.id, m.creature.state.energy);
     const me = eco.get(0);
     if (!me) break;
-    early += (me.eaten - out.food) * (1 - tick / ticks);
+    early += (me.eaten - out.food) * earlyWeight(tick, ticks);
     out.food = me.eaten;
     out.kills = me.kills;
     out.energy = me.creature.state.energy;
