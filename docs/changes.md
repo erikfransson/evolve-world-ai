@@ -4,6 +4,11 @@ What changed in each version, newest first, so release notes for any range (say 
 Each release is a pull request from `development` into `main`, tagged `vX.Y.Z` on `main`.
 Add notes under "Unreleased" as work lands on `development`, and turn that heading into the version number at release time.
 
+## Unreleased
+
+- RL: `node src/rlProof.ts` trains several runs and scores each run's last weights on fixed paired held-out seeds against the pre-training copy, random designs and trivial policies, with bootstrap 95% intervals (docs/rl-notes.md).
+- RL: episodes in worlds of 32 creatures or fewer run about 12% faster (the settle and birth scans skip the WASM call there); results are unchanged.
+
 ## 0.2.4 (2026-10-22)
 
 - Live: the first start of 0.2.4 begins a fresh world. Every save of the old 30000 x 18750 map counts as another world's and is kept on disk but not restored, and the old world's admin settings are set aside (`admin-overrides.previous-world.json`).
