@@ -128,6 +128,40 @@ describe("public server: order and item sets", () => {
     expect(cs.every((c) => sameItems(c.mirror, world))).toBe(true);
   }, 30_000);
 
+  // Red without the guard in sendFrames: a full set on top of a backed-up queue passed hardBufferedBytes, so a slow viewer that fell
+  // behind was dropped instead of resynced. Here any set passes the level, so after a reload the viewer gets frames and waits for its set.
+  it("sends no full item set that would take a viewer's queue past the drop level", async () => {
+    const port = 62455;
+    const world = grown();
+    await serve(port, { hardBufferedBytes: world.itemsSize(), maxBufferedBytes: 10_000_000 }, world);
+    await wait(300);
+    const c = client(port, world);
+    await c.open;
+    await vi.waitFor(() => expect(c.log).toContain("bin1"), { timeout: 4000, interval: 50 });
+    c.log.length = 0;
+    world.onReseed!();
+    for (let i = 0; i < 6; i++) {
+      world.step();
+      await wait(200);
+    }
+    expect(c.log).toContain("bin1");
+    expect(c.log).not.toContain("bin2");
+    expect(c.ws.readyState).toBe(c.ws.OPEN);
+  });
+
+  // Red without the drop: a reader too slow to ever take its set stayed connected on creature frames for good.
+  it("drops a viewer that cannot take the item set it needs for longer than slowDropMs", async () => {
+    const port = 62456;
+    const world = grown();
+    await serve(port, { hardBufferedBytes: world.itemsSize(), maxBufferedBytes: 10_000_000, slowDropMs: 600 }, world);
+    await wait(300);
+    const c = client(port, world);
+    await c.open;
+    await vi.waitFor(() => expect(c.log).toContain("bin1"), { timeout: 4000, interval: 50 });
+    world.onReseed!();
+    await vi.waitFor(() => expect(c.ws.readyState).toBe(c.ws.CLOSED), { timeout: 5000, interval: 100 });
+  });
+
   it("sizes the full item set without encoding it", () => {
     const world = grown();
     for (let i = 0; i < 60; i++) {

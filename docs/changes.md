@@ -6,6 +6,9 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- Live: the Inland Sea is 50000 x 31250 (was 30000 x 18750), with slightly bigger and fuller slow (mud) and fast (firm) ground, fewer islands in the mud and fewer holes in the dunes (#53, draft `docs/world-maps/tools/map-F5.json`). The food cap is 1.4 (was 1.5) so the items fit the wire. Stones no longer fill the cliff passes. The world starts fresh, since saves of the old map are refused.
+- Live and Ecosystem: a far view of a map with very many items draws at most 90 000 food dots a frame (a fixed share, a little denser), and the ground keeps up to 48 MB of baked bitmaps (was 32 MB), so the bigger Inland Sea zooms as smoothly as the old one.
+- Live server: a viewer gets a full item set only when its send queue has room for it, and one too slow to ever take its set is dropped after 10 s instead of holding back everyone's frames. The frame-skip level is 1.5 MB (was 1 MB), above a join's full set.
 - Trials, Ecosystem and RL Arena share one set of creature and brain sliders (#58): vision range up to 400 (was 300), from 10 in Trials and Arena and from 40 in the Ecosystem, whose grid cells are the ray setting wide, neurons per layer 1 to 32 (were 4 to 32), vision angle and range in steps of 1 (Arena and Trials were 5 and 10), Arena "Sight length" is now "Vision range". Trials item size and mutation rate use the Ecosystem's steps (0.1 and 0.5%). Defaults are unchanged.
 - RL Arena: a Time pressure group with three envs, Fading food, Stings and Race (#56). A new reward, early, pays each bite by the share of the episode still left.
 - RL Arena: held-out checks use a fixed set of 12 seeds per env instead of 4 (#54); Live visitor training keeps 4. The graph's best line is now "luckiest candidate" (or episode): on held-out worlds that candidate scores about like the current brain.

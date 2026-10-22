@@ -133,6 +133,13 @@ ES pop 100, 150 iterations, fresh designs (3 bodies), final genome on 64 held-ou
 - World variation 0.2 in training, judged on the plain env (Fading food): 4.50 vs 4.76, within the spread over runs (1.6 to 2.0). No gain shown, so it stays a CLI option (`rlTrain --vary`).
 - Arena held-out checks now use a fixed set of 12 seeds per env (was 4; Live visitor training keeps 4). Changing the set moved one genome from 3.87 to 5.70 in a C1 probe.
 
+## Inland Sea 50000 x 31250 (#53, 2026-10-22)
+
+Erik chose 50000 x 31250 and patch variant v2 (dunes grown 1.12 with firm coverage 0.97 at 1.4x texture scale, mud sea grown 1.1, islands 0.7) from a 4-variant contact sheet.
+Slow ground covers 10.8% of the map (was 7.0%), fast 4.5% (was 3.0%).
+Bench, 2900 seeded founders, one thread, load 5-12: tick 15.0 ms at 30k, 15.9 at 40k, 16.4 at 50k; stats with records about 14 ms at all three; RSS about 210 MB. Cost follows the population, not the area.
+`eco.foodMaxDensity` 1.4 (was 1.5): at 156 250 items per density unit, 1.5 plus poison 0.01 passes the wire's 0.9 x 262144 item slots.
+
 ## Ideas not yet tried
 - Evaluate each creature on two layouts to reduce layout luck.
 - Tournament with a larger size (5 to 7).

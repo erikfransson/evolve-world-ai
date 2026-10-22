@@ -40,6 +40,7 @@ interface Viewer {
   pace: AddPace; // the connection's add rate and strikes (adds.ts)
   visitor: string; // key for the per-visitor add cap: the address when trusted, else this connection
   adding: boolean; // an add waits for the tick in flight
+  setBlockedSince: number; // when it first needed a full item set its send queue had no room for, 0 when not
 }
 
 // The public side: an http server that upgrades to WebSocket (and answers GET /stats), the viewers, the frame and stats loops and the heartbeat.
@@ -168,6 +169,7 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
       c: { alive: true, lastMessageAt: now, overSince: 0, windowAt: now, windowCount: 0 },
       ready: false,
       lastFrame: -1,
+      setBlockedSince: 0,
       selected: null,
       want: undefined,
       genomeSent: false,
@@ -252,8 +254,8 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
     const beat = now - lastHeartbeat >= limits.heartbeatMs;
     if (beat) lastHeartbeat = now;
     for (const [ws, v] of viewers) {
-      if (dropReason(ws.bufferedAmount, v.c, now)) {
-        ws.terminate();
+      if (dropReason(ws.bufferedAmount, v.c, now) || (v.setBlockedSince && now - v.setBlockedSince > limits.slowDropMs)) {
+        ws.terminate(); // the second: a reader too slow to ever take the set it needs
         continue;
       }
       if (!beat) continue;
@@ -282,8 +284,9 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
   // until then it gets creature frames on its turn.
   function sendFrames(creatures: Uint8Array, frameNo: number): void {
     const fullSize = live.itemsSize();
+    const setFits = (ws: WebSocket): boolean => ws.bufferedAmount + fullSize + creatures.length <= limits.hardBufferedBytes; // a set past it would get the viewer dropped
     let waiting = 0;
-    for (const v of viewers.values()) if (v.ready && v.lastFrame < 0) waiting++;
+    for (const [ws, v] of viewers) if (v.ready && v.lastFrame < 0 && setFits(ws)) waiting++; // one that has no room holds no share of the budget
     const reserve = waiting ? Math.min(RESYNC_SHARE * budget, (waiting * (fullSize + creatures.length)) / RESYNC_S) : 0;
     resync = waiting ? Math.min(resync + reserve / FRAME_HZ, fullSize + creatures.length + reserve / FRAME_HZ) : 0;
     const stride = sendStride(viewers.size, strided(), unstrided(), budget - reserve, fullSize * FRAME_HZ);
@@ -307,8 +310,10 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
         v.lastFrame = -1; // too far behind for changes: it needs the full set
       }
       const cost = fullSize + (due ? 0 : creatures.length); // off its turn the creature frame that goes with the set is extra
-      let full = connectBytes.take(cost);
-      if (!full && resync >= cost) {
+      const fits = setFits(ws); // else it waits for its queue to drain, and is dropped when that takes longer than slowDropMs
+      v.setBlockedSince = fits ? 0 : v.setBlockedSince || performance.now();
+      let full = fits && connectBytes.take(cost);
+      if (fits && !full && resync >= cost) {
         resync -= cost;
         full = true;
       }

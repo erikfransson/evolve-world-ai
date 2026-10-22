@@ -33,7 +33,7 @@ describe("The Inland Sea map", () => {
 
   it("is built once per name and fits the world and the bounds", () => {
     expect(builtMap("inland-sea")).toBe(map);
-    expect([SEA.width, SEA.height]).toEqual([30000, 18750]);
+    expect([SEA.width, SEA.height]).toEqual([50000, 31250]);
     expect(map.rock.length).toBeGreaterThan(500);
     expect(map.rock.length).toBeLessThanOrEqual(8000);
     for (const d of map.rock) {
@@ -51,10 +51,10 @@ describe("The Inland Sea map", () => {
   // The built data per MAP_BUILD: entries are only ever added, never edited. builtHash red after a change to the builder or its output: bump
   // MAP_BUILD in mapBuild.ts and add an entry (older Live saves then count as another world's). Red after a Node or engine upgrade alone
   // (sin, cos and hypot may differ by an ulp): the saves are still valid, so only correct the current entry. mapVersion changes with the spec.
-  const BUILT: Record<number, string> = { 1: "cd938f9e" };
+  const BUILT: Record<number, string> = { 1: "cd938f9e", 2: "2b29312d" };
   it("has a pinned version and pinned built data", () => {
     expect(builtHash("inland-sea")).toBe(BUILT[MAP_BUILD]);
-    expect(mapVersion("inland-sea")).toBe("d09e9129-1");
+    expect(mapVersion("inland-sea")).toBe("57ab5ef0-2");
   });
 
   it("versions a map by its spec and MAP_BUILD, not by floating point results", () => {
@@ -66,8 +66,8 @@ describe("The Inland Sea map", () => {
     let mud = 0;
     let mudFood = 0;
     let mudPoison = 0;
-    for (let x = 750; x < 29250; x += 190) {
-      for (let y = 750; y < 18000; y += 190) {
+    for (let x = 1250; x < 48750; x += 317) {
+      for (let y = 1250; y < 30000; y += 317) {
         if (sea.valueAt(x, y) !== TERRAIN_SLOW) continue;
         mud++;
         mudFood += w.byteAt(0, x, y) / WEIGHT_UNIT;
@@ -77,11 +77,11 @@ describe("The Inland Sea map", () => {
     expect(mud).toBeGreaterThan(1000);
     expect(mudFood / mud).toBeGreaterThan(1.3);
     expect(mudPoison / mud / WEIGHT_UNIT).toBeLessThan(0.15); // almost none: only the fringe where the sea's edge fades
-    expect(w.byteAt(1, 16500, 4875) / WEIGHT_UNIT).toBeGreaterThan(1.7); // the ash shore
-    expect(w.byteAt(0, 16500, 4875) / WEIGHT_UNIT).toBeGreaterThan(1.5);
+    expect(w.byteAt(1, 27500, 8125) / WEIGHT_UNIT).toBeGreaterThan(1.7); // the ash shore
+    expect(w.byteAt(0, 27500, 8125) / WEIGHT_UNIT).toBeGreaterThan(1.5);
     let firm = 0;
     let firmFood = 0;
-    for (let x = 750; x < 29250; x += 190) for (let y = 750; y < 18000; y += 190) if (sea.valueAt(x, y) === TERRAIN_FAST) { firm++; firmFood += w.byteAt(0, x, y) / WEIGHT_UNIT; }
+    for (let x = 1250; x < 48750; x += 317) for (let y = 1250; y < 30000; y += 317) if (sea.valueAt(x, y) === TERRAIN_FAST) { firm++; firmFood += w.byteAt(0, x, y) / WEIGHT_UNIT; }
     expect(firm).toBeGreaterThan(300);
     expect(firmFood / firm).toBeLessThan(0.8);
     expect(w.maxFood / WEIGHT_UNIT).toBeLessThan(3.9);
@@ -132,7 +132,7 @@ describe("The Inland Sea map", () => {
 
   it("is what to-engine.mjs makes from the draft, apart from the hand edits listed in inlandSea.ts", () => {
     const draft = fileURLToPath(new URL("../../docs/world-maps/tools/", import.meta.url));
-    const text = execFileSync("node", [`${draft}to-engine.mjs`, `${draft}map-F4.json`, String(SEA.width), String(SEA.height), SEA.name, SEA.title, "40000"], { encoding: "utf8" });
+    const text = execFileSync("node", [`${draft}to-engine.mjs`, `${draft}map-F5.json`, String(SEA.width), String(SEA.height), SEA.name, SEA.title, "40000"], { encoding: "utf8" });
     const made = JSON.parse(text.slice(text.indexOf("{", text.indexOf("INLAND_SEA")), text.lastIndexOf("}") + 1)) as MapSpec;
     const unedited = (s: MapSpec): unknown => ({ ...s, basePoison: undefined, layers: s.layers.map((l) => (l.id === "karst" || l.id === "ash" ? { ...l, poison: undefined } : l)) });
     expect(JSON.parse(JSON.stringify(unedited(SEA)))).toEqual(JSON.parse(JSON.stringify(unedited(made))));
@@ -152,9 +152,10 @@ describe("The Inland Sea map", () => {
   });
 
   it("is the same map on a second build", () => {
-    const small: MapSpec = { ...SEA, width: 12000, height: 8000, layers: SEA.layers.slice(0, 2), rock: SEA.rock.slice(0, 1) };
+    const small: MapSpec = { ...SEA, width: 20000, height: 22000, layers: SEA.layers.slice(0, 2), rock: SEA.rock.slice(0, 1) }; // holds the karst and its outcrops
     const a = buildMap(small);
     const b = buildMap(small);
+    expect(a.rock.length).toBeGreaterThan(0);
     expect(a.ground.data).toEqual(b.ground.data);
     expect(a.weights.food).toEqual(b.weights.food);
     expect(a.rock).toEqual(b.rock);
@@ -243,8 +244,8 @@ describe("weighted items and local caps", () => {
   it("puts poison on the shore: its limits dwarf those of the open sea, which stay near zero", () => {
     const w = builtMap("inland-sea").weights;
     const poison = w.limits(1, 0.01, (SEA.width * SEA.height) / 100 ** 2);
-    const shore = w.capIndex(16500, 4875);
-    const elsewhere = w.capIndex(22500, 15000);
+    const shore = w.capIndex(27500, 8125);
+    const elsewhere = w.capIndex(37500, 25000);
     expect(poison[shore]!).toBeGreaterThanOrEqual(3);
     expect(poison[elsewhere]!).toBeLessThanOrEqual(1);
   });
@@ -261,7 +262,7 @@ describe("weighted items and local caps", () => {
     const world = new World(seaConfig(), 400);
     const w = world.terrain.weights!;
     const cells = w.capCols * w.capRows;
-    const open = w.capIndex(16875, 4875); // on the ash shore, where poison is likely to be drawn
+    const open = w.capIndex(28125, 8125); // on the ash shore, where poison is likely to be drawn
     const poisonLimit = new Int32Array(cells);
     poisonLimit[open] = 1; // one poison fits in that cell and none anywhere else
     world.setCapLimits(new Int32Array(cells), poisonLimit);
@@ -300,7 +301,7 @@ describe("a world with a named map", () => {
     for (let t = 0; t < 60; t++) eco.step();
     const state = JSON.parse(JSON.stringify(saveState(eco))) as EcoState;
     expect(state.config.world.map).toBe("inland-sea");
-    expect(JSON.stringify(state).length).toBeLessThan(5_000_000); // the map itself is not stored
+    expect(JSON.stringify(state).length).toBeLessThan(7_000_000); // the map itself is not stored
     const copy = restoreState(state);
     for (let t = 0; t < 120; t++) {
       eco.step();
@@ -319,7 +320,7 @@ describe("a world with a named map", () => {
     };
     expect(() => restoreState(bad((w) => { w.map = "atlantis"; }))).toThrow(/world\.map/);
     expect(() => restoreState(bad((w) => { w.map = 5; }))).toThrow(/world\.map/);
-    expect(() => restoreState(bad((w) => { w.width = 40000; }))).toThrow(/needs a world of 30000 x 18750/);
+    expect(() => restoreState(bad((w) => { w.width = 40000; }))).toThrow(/needs a world of 50000 x 31250/);
     expect(() => terrainOf({ seed: 1, world: { ...seaConfig().world, map: "atlantis" } })).toThrow(/unknown map/);
   });
 

@@ -366,7 +366,7 @@ describe("EcoRunner and a named map", () => {
     expect(maps).toHaveLength(1);
     const m = maps[0]!;
     if (m.type !== "map") throw new Error("not a map message");
-    expect([m.name, m.width, m.height]).toEqual(["inland-sea", 30000, 18750]);
+    expect([m.name, m.width, m.height]).toEqual(["inland-sea", 50000, 31250]);
     expect(m.parts.rock.length).toBeGreaterThan(0);
     sent.length = 0;
     runner.handle({ type: "start", config: inland(), run: 2, map: mapPartsOf(inland())! });
