@@ -58,6 +58,11 @@ const int = (k: "runs" | "iters" | "checks" | "held" | "pairs" | "episodes" | "r
   const v = Number(values[k]);
   return Number.isInteger(v) && v >= 1 ? v : fail(`--${k} must be a positive integer`);
 };
+const real = (k: "sigma" | "lr" | "ppo-lr" | "target-kl", zeroOk = false): number => {
+  const v = Number(values[k]);
+  return Number.isFinite(v) && (v > 0 || (zeroOk && v === 0)) ? v : fail(`--${k} must be a finite number above 0${zeroOk ? " (or 0 for off)" : ""}`);
+};
+const [sigma, lr, ppoLr, targetKl] = [real("sigma"), real("lr"), real("ppo-lr"), real("target-kl", true)];
 const [runs, iters, checks, heldCount, randoms, boot] = (["runs", "iters", "checks", "held", "randoms", "boot"] as const).map(int);
 if (values.learner !== "es" && values.learner !== "ppo") fail("--learner must be es or ppo");
 const threads = parseThreads(values.threads);
@@ -97,7 +102,7 @@ async function train(run: number): Promise<{ iters: number[]; curve: number[][] 
   const curve = [perSeed(learner)];
   if (values.learner === "es") {
     const helpers = createNodeRlPool({ envs: [env], plan: learner.plan, pool, library }, threads);
-    const trainer = new Trainer(Float32Array.from(learner.genome), { pairs: int("pairs"), sigma: Number(values.sigma), lr: Number(values.lr) }, helpers, 1, int("episodes"), run);
+    const trainer = new Trainer(Float32Array.from(learner.genome), { pairs: int("pairs"), sigma, lr }, helpers, 1, int("episodes"), run);
     for (const target of at.slice(1)) {
       while (trainer.iter < target) await trainer.step();
       curve.push(perSeed({ plan: learner.plan, genome: trainer.theta }));
@@ -105,7 +110,7 @@ async function train(run: number): Promise<{ iters: number[]; curve: number[][] 
     helpers.close();
   } else {
     const sizes = layerSizes(layoutConfig(env.world), learner.plan);
-    const ppo = new Ppo([env], learner, sizes, { lr: Number(values["ppo-lr"]), repeat: int("repeat"), everyTick: values["every-tick"], targetKl: Number(values["target-kl"]) }, run, pool, library);
+    const ppo = new Ppo([env], learner, sizes, { lr: ppoLr, repeat: int("repeat"), everyTick: values["every-tick"], targetKl }, run, pool, library);
     for (const target of at.slice(1)) {
       while (ppo.iter < target) ppo.step();
       curve.push(perSeed({ plan: learner.plan, genome: ppo.theta }));
