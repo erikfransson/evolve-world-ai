@@ -4,7 +4,7 @@ What changed in each version, newest first, so release notes for any range (say 
 Each release is a pull request from `development` into `main`, tagged `vX.Y.Z` on `main`.
 Add notes under "Unreleased" as work lands on `development`, and turn that heading into the version number at release time.
 
-## Unreleased
+## 0.2.4 (2026-10-22)
 
 - Live: the first start of 0.2.4 begins a fresh world. Every save of the old 30000 x 18750 map counts as another world's and is kept on disk but not restored, and the old world's admin settings are set aside (`admin-overrides.previous-world.json`).
 - Live: the world holds at most 7 million brain weights (`MAX_LIVE_WEIGHTS`), so every save stays near 45 MB and can be written and read back inside the server's 1 GB memory cap. Births wait at it as at the birth reserve, an add past it is refused with the reason, and a reset that would seed past it is refused. The four founders at the most copies a reset allows hold 5.4 million.
