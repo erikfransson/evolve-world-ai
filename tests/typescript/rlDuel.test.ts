@@ -57,6 +57,19 @@ describe("duel envs (#44)", () => {
     }
   });
 
+  it("count a lethal bump as the survivor's bump kill, kept apart from hunts and through a save (#52)", () => {
+    let eco: Ecosystem | null = null;
+    let kills: [number, number] = [-1, -1];
+    runEpisode(duel(250, 30), still, 1, null, {}, (e) => {
+      eco = e;
+      const me = e.get(0);
+      if (me) kills = [me.bumpKills, me.kills];
+    });
+    expect(kills).toEqual([1, 0]);
+    const back = restoreState(saveState(eco!));
+    expect(back.get(0)!.bumpKills).toBe(1);
+  });
+
   it("keep the onBumpKill hook readable, so it can be chained", () => {
     const eco = new Ecosystem({ ...structuredClone(DEFAULT_ECO_CONFIG), seed: 1 });
     const f = () => {};
@@ -118,6 +131,24 @@ describe("augment (#44)", () => {
     expect(variantFor(plain, 3)).toBe(plain);
     const { id: __, ...v } = env;
     expect(checkEnv({ ...v, augment: { size: 1.5 } }, "ecosystem", 0)).toMatch(/augment size/);
+  });
+});
+
+describe("bump kills in saves", () => {
+  it("come back 0 from a save without them and are refused when malformed", () => {
+    const eco = new Ecosystem({ ...structuredClone(DEFAULT_ECO_CONFIG), seed: 1, eco: { ...DEFAULT_ECO_CONFIG.eco, initialPopulation: 3 } });
+    eco.members[1]!.bumpKills = 4;
+    const state = saveState(eco);
+    expect(state.creatures.bumpKills).toEqual([[1, 4]]);
+    expect(restoreState(state).members.map((m) => m.bumpKills)).toEqual([0, 4, 0]);
+    const old = structuredClone(state);
+    old.creatures.bumpKills = undefined;
+    expect(restoreState(old).members.map((m) => m.bumpKills)).toEqual([0, 0, 0]);
+    for (const bad of [[[1, -1]], [[1, 1.5]], [[3, 1]], [[1, Number.NaN]], [[1, 2 ** 32]], [[1]], "x", [[0, 1], [1, 1], [2, 1], [0, 1]]]) {
+      const s = structuredClone(state);
+      (s.creatures as { bumpKills: unknown }).bumpKills = bad;
+      expect(() => restoreState(s), JSON.stringify(bad)).toThrow(/bumpKills/);
+    }
   });
 });
 

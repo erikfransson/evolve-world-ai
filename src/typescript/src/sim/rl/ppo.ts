@@ -29,9 +29,11 @@ export interface PpoOptions {
   entropy: number; // bonus per unit of log-std
   criticHidden: number;
   repeat: number; // ticks one sampled action is held
+  everyTick: boolean; // the brain acts every tick and only the sampled noise is held `repeat` ticks, as an offset (founders steer every tick)
+  targetKl: number; // stop the update's epochs when a minibatch's approx KL passes 1.5 x this; 0 never stops
 }
 
-export const PPO_DEFAULTS: PpoOptions = { episodes: 16, epochs: 2, minibatch: 256, lr: 3e-3, criticLr: 3e-3, clip: 0.2, gamma: 0.995, lambda: 0.95, logStd: -0.5, entropy: 0, criticHidden: 32, repeat: 3 };
+export const PPO_DEFAULTS: PpoOptions = { episodes: 16, epochs: 2, minibatch: 256, lr: 3e-3, criticLr: 3e-3, clip: 0.2, gamma: 0.995, lambda: 0.95, logStd: -0.5, entropy: 0, criticHidden: 32, repeat: 3, everyTick: false, targetKl: 0 };
 
 const ACTIONS = OUTPUT_SIZE; // turn, thrust
 const LOG_2PI = Math.log(2 * Math.PI);
@@ -408,6 +410,7 @@ export interface RolloutTask {
   critic: Float32Array;
   logStd: Float64Array;
   repeat: number;
+  everyTick?: boolean; // as PpoOptions.everyTick
   gamma: number;
   lambda: number;
   criticHidden: number;
@@ -438,7 +441,8 @@ export function playRollout(env: EnvSpec, plan: Learner["plan"], task: RolloutTa
   const z = new Float64Array(cap * ACTIONS);
   const logp = new Float64Array(cap);
   const rewards = new Float64Array(cap);
-  const held = new Float64Array(ACTIONS);
+  const held = new Float64Array(ACTIONS); // the held action, or with everyTick the held noise
+  const everyTick = task.everyTick === true;
   const std = Float64Array.from(logStd, Math.exp);
   let n = 0;
   let t = 0;
@@ -446,29 +450,34 @@ export function playRollout(env: EnvSpec, plan: Learner["plan"], task: RolloutTa
   let kills = 0;
   const act = (c: Creature): void => {
     const out = c.outputs;
-    if (t % repeat === 0) {
+    const sample = t % repeat === 0;
+    if (sample || everyTick) {
       const input = c.brain.layerActivations()[0]!;
-      const at = n * stride;
-      obs.set(input, at);
-      obs[at + d] = 1 - t / ticks;
       const u = policyNet.forward(theta, input);
-      let lp = 0;
-      for (let a = 0; a < ACTIONS; a++) {
-        const eps = rng.normal();
-        held[a] = u[a]! + std[a]! * eps;
-        lp += -0.5 * eps * eps - logStd[a]! - 0.5 * LOG_2PI;
-        z[n * ACTIONS + a] = held[a]!;
+      if (sample) {
+        const at = n * stride;
+        obs.set(input, at);
+        obs[at + d] = 1 - t / ticks;
+        let lp = 0;
+        for (let a = 0; a < ACTIONS; a++) {
+          const eps = rng.normal();
+          held[a] = everyTick ? std[a]! * eps : u[a]! + std[a]! * eps;
+          lp += -0.5 * eps * eps - logStd[a]! - 0.5 * LOG_2PI;
+          z[n * ACTIONS + a] = u[a]! + std[a]! * eps;
+        }
+        logp[n++] = lp;
       }
-      logp[n++] = lp;
+      // With everyTick the logp covers the sample's own tick only; the later ticks of the hold reuse its noise on fresh means (an approximation).
+      if (everyTick) for (let a = 0; a < ACTIONS; a++) out[a] = Math.tanh(u[a]! + held[a]!);
     }
-    for (let a = 0; a < ACTIONS; a++) out[a] = Math.tanh(held[a]!);
+    if (!everyTick) for (let a = 0; a < ACTIONS; a++) out[a] = Math.tanh(held[a]!);
     t++;
   };
   const w = env.reward;
   const result = runEpisode(env, { plan, genome: theta }, task.seed, pool, library, (eco) => {
     const me = eco.get(0);
     if (!me) return;
-    rewards[n - 1]! += (w.food ?? 0) * (me.eaten - eaten) + (w.kill ?? 0) * (me.kills - kills) + (w.survive ?? 0) * DT;
+    rewards[n - 1]! += ((w.food ?? 0) + (w.early ?? 0) * (1 - t / ticks)) * (me.eaten - eaten) + (w.kill ?? 0) * (me.kills - kills) + (w.survive ?? 0) * DT;
     eaten = me.eaten;
     kills = me.kills;
   }, act);
@@ -504,7 +513,10 @@ export interface PpoStep {
 export class Ppo {
   readonly theta: Float32Array; // the brain's genome
   readonly logStd: Float64Array;
-  readonly options: PpoOptions;
+  readonly options: PpoOptions; // repeat changes with setRepeat
+  lastKl = 0; // mean approx KL of the last minibatch the last update looked at
+  lastEpochs = 0; // epochs the last update ran, fewer than options.epochs when targetKl stopped it
+  private klSum = 0;
   iter = 0;
   episodesPlayed = 0;
   private readonly critic: Float32Array; // Float32 like the genome, so the Mlp loops see one array type
@@ -543,6 +555,12 @@ export class Ppo {
     this.criticAdam = new Adam(this.critic.length, this.options.criticLr);
   }
 
+  // Holds each sample for n ticks from the next update on (a schedule, e.g. 3 to explore from a fresh design, then 1).
+  setRepeat(n: number): void {
+    if (!Number.isInteger(n) || n < 1) throw new Error("repeat must be a positive integer");
+    this.options.repeat = n;
+  }
+
   // Trains on other envs from the next update on (of the same world); the weights carry on.
   setEnvs(envs: readonly EnvSpec[]): void {
     this.envs = envs;
@@ -573,6 +591,7 @@ export class Ppo {
       critic: this.critic,
       logStd: this.logStd,
       repeat: o.repeat,
+      everyTick: o.everyTick,
       gamma: o.gamma,
       lambda: o.lambda,
       criticHidden: o.criticHidden,
@@ -623,6 +642,7 @@ export class Ppo {
       lp += -0.5 * eps * eps - this.logStd[a]! - 0.5 * LOG_2PI;
     }
     const ratio = Math.exp(lp - b.logp[i]!);
+    this.klSum += ratio - 1 - (lp - b.logp[i]!); // k3 estimator of KL(old, new)
     const A = b.adv[i]!;
     const clipped = (A > 0 && ratio > 1 + o.clip) || (A < 0 && ratio < 1 - o.clip);
     const dLp = clipped ? 0 : -ratio * A; // d(loss)/d(log prob), loss = -min(r A, clip(r) A)
@@ -646,10 +666,14 @@ export class Ppo {
     const dV = new Float64Array(1);
     const dV2 = new Float64Array(1);
     const order = Array.from({ length: b.n }, (_, i) => i);
-    for (let epoch = 0; epoch < o.epochs; epoch++) {
+    let stop = false;
+    this.lastEpochs = 0;
+    for (let epoch = 0; epoch < o.epochs && !stop; epoch++) {
       shuffle(order, this.rng);
+      this.lastEpochs++;
       for (let start = 0; start < b.n; start += o.minibatch) {
         const end = Math.min(b.n, start + o.minibatch);
+        this.klSum = 0;
         gPol.fill(0);
         gStd.fill(0);
         gCrit.fill(0);
@@ -676,6 +700,12 @@ export class Ppo {
           }
         }
         const m = end - start;
+        this.lastKl = this.klSum / m;
+        // The policy moved too far from the one that played: no step from this minibatch and no more epochs.
+        if (o.targetKl > 0 && this.lastKl > 1.5 * o.targetKl) {
+          stop = true;
+          break;
+        }
         // A non-finite gradient (a numeric blow-up) would poison the weights for good through Adam, so that minibatch is skipped.
         if (!clipNorm(gPol, m) || !clipNorm(gStd, m) || !clipNorm(gCrit, m)) continue;
         this.policyAdam.step(this.theta, gPol);

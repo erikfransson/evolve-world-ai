@@ -44,6 +44,7 @@ const DETAIL_MIN_RADIUS = 3; // CSS px; smaller creatures are drawn as flat dots
 const DETAIL_MAX_COUNT = 800; // more visible creatures than this are drawn as flat dots too
 const TINY_ITEM = 1.5; // device px; items smaller than this are drawn as small dim squares
 const SOLID_ITEM = 4; // device px radius from which items are drawn fully opaque
+export const MAX_TINY_ITEMS = 90_000; // tiny food items drawn at most per frame: past it a fixed share by slot is drawn, denser, so a far view of a big map costs as one of 84 000 items
 const ITEM_DIM = 0.75; // item opacity at the smallest size, so the creatures stand out
 const DOT_RADIUS = 2.4; // CSS px; creatures never draw smaller than this when drawn as dots
 const DOT_OUTLINE = "rgb(6, 12, 9)"; // drawn at OUTLINE_ALPHA, laid down once, so overlapping outlines do not darken
@@ -72,6 +73,7 @@ export class EcoRenderer {
   private visBucket = new Int32Array(1024);
   private order = new Int32Array(1024);
   private seen = new Int32Array(1024); // snapshot indices of the visible items
+  private tinyKeep = 1; // share of tiny food items drawn, from the last tiny frame's count
   private readonly counts = new Int32Array(DIM_BUCKET + 2);
   private readonly terrainCache = new TerrainCache();
   private readonly dots = new DotAtlas();
@@ -132,18 +134,25 @@ export class EcoRenderer {
     const cap = seen.length;
     let nFood = 0;
     let nPoison = 0;
+    let inView = 0;
+    // Kept by a hash of the slot, so the same items stay drawn from frame to frame while the count drifts.
+    const keep = tiny ? this.tinyKeep * 2 ** 32 : 2 ** 32;
     for (let i = 0; i < n; i++) {
       const kind = v.itemKind[i]!;
       if (kind !== 1 && kind !== 2) continue;
       const x = v.itemX[i]!;
       const y = v.itemY[i]!;
       if (x < x0 || x > x1 || y < y0 || y > y1) continue;
+      if (kind === 1 && (inView++, Math.imul(i, 0x9e3779b1) >>> 0 >= keep)) continue; // food only: poison is scarce and drawn whole
       if (kind === 1) seen[nFood++] = i;
       else seen[cap - 1 - nPoison++] = i;
     }
+    const share = this.tinyKeep;
+    this.tinyKeep = tiny && inView > MAX_TINY_ITEMS ? MAX_TINY_ITEMS / inView : 1;
     for (const [kind, color, boost] of [[1, FOOD, 0], [2, POISON, 0.15]] as const) {
       ctx.fillStyle = color;
-      ctx.globalAlpha = Math.min(1, ITEM_DIM + boost + (1 - ITEM_DIM - boost) * solid) * (dense && kind === 1 ? 0.5 + 0.5 * solid : 1);
+      const alpha = Math.min(1, ITEM_DIM + boost + (1 - ITEM_DIM - boost) * solid) * (dense && kind === 1 ? 0.5 + 0.5 * solid : 1);
+      ctx.globalAlpha = kind === 1 && tiny && share < 1 ? 1 - (1 - alpha) ** (1 / share) : alpha; // a drawn food dot stands for 1 / share of them
       ctx.beginPath();
       const count = kind === 1 ? nFood : nPoison;
       for (let k = 0; k < count; k++) {
@@ -318,7 +327,7 @@ export class EcoRenderer {
       for (let i = 0; i < s.rayKinds.length; i++) {
         const kind = s.rayKinds[i]!;
         const d = kind === HIT_NONE ? rayLength : rayLength * (1 - s.rayCloseness[i]!);
-        const a = s.heading + s.rayOffsets[i]!;
+        const a = (s.rayHeading ?? s.heading) + s.rayOffsets[i]!;
         ctx.strokeStyle = RAY_COLORS[kind]!;
         ctx.globalAlpha = kind === HIT_NONE ? 0.6 : 0.9;
         ctx.beginPath();

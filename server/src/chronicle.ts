@@ -97,15 +97,22 @@ export class Chronicle {
     stats.lineages = top.map((l): WireLineage => ({ founder: l.founder, hue: Math.round(l.hue), pool: l.pool, count: l.count, ...(l.name ? { name: l.name, ...(l.starter ? { starter: true } : {}) } : {}), ...(l.others.length ? { founders: l.others.sort((a, b) => a - b).slice(0, MAX_GROUP_FOUNDERS) } : {}) }));
     let oldest: EcoCreature | null = null;
     let parent: EcoCreature | null = null;
+    let killer: EcoCreature | null = null;
+    let kills = 0;
     let depth = 0;
     for (const m of eco.members) {
       this.offer(eco, m, true);
       if (!oldest || m.ageTicks > oldest.ageTicks || (m.ageTicks === oldest.ageTicks && m.id < oldest.id)) oldest = m;
       if (!parent || m.children > parent.children || (m.children === parent.children && m.id < parent.id)) parent = m;
+      const k = boardValue(m, "kills");
+      if (!killer || k > kills || (k === kills && m.id < killer.id)) {
+        killer = m;
+        kills = k;
+      }
       if (m.depth > depth) depth = m.depth;
     }
     stats.depth = depth;
-    stats.best = oldest && parent ? { age: oldest.id, children: parent.id } : null;
+    stats.best = oldest && parent && killer ? { age: oldest.id, children: parent.id, kills: killer.id } : null;
     if (records) {
       stats.records = this.board
         .snapshot()

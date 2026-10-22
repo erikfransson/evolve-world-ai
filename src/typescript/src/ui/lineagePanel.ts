@@ -90,6 +90,12 @@ export function stackHistory(h: Float64Array): Stack {
   return stack;
 }
 
+// Whether any of the first count creatures (their founders) is counted in the lineage row `row`; rowOf maps a founder to its row.
+export function rowLiving(founders: ArrayLike<number>, count: number, row: number, rowOf: (f: number) => number): boolean {
+  for (let i = 0; i < count; i++) if (rowOf(founders[i]!) === row) return true;
+  return false;
+}
+
 // The Lineages card: stacked bar of current shares, a legend that picks a lineage to highlight, and the shares over time.
 export class LineagePanel {
   private readonly bar: HTMLElement;

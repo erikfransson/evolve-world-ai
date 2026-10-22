@@ -1,9 +1,10 @@
-import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readSync, readdirSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { gzip, gzipSync } from "node:zlib";
 import { promisify } from "node:util";
 import { LIMITS } from "./config.ts";
-import { parseSave } from "./saveParse.ts";
+import { parseCarry, parseSave } from "./saveParse.ts";
+import type { Carried } from "./carry.ts";
 import type { Home } from "./saveParse.ts";
 import type { EcoState } from "../../src/typescript/src/sim/ecoState.ts";
 
@@ -33,6 +34,7 @@ export interface SaveInfo {
   bytes: number;
   population?: number;
   tick?: number;
+  world?: string; // the world it is of (map, size, map version), absent in saves before 0.2.4
 }
 
 export const KEEP_NEWEST = 6; // saves kept whatever their age, so a host that was off for days still has its recent history
@@ -98,7 +100,7 @@ export class StateStore {
   // Writes the gzipped JSON through a .tmp file and a rename, then rotates. Throws, writing nothing, when the directory is over the cap.
   // asyncGzip: compress off the main thread, so only the caller's own JSON work blocks.
   // verify: rejects, so nothing is written, when the gzipped save would not be read back.
-  async write(json: string, meta: { population: number; tick: number }, at = new Date(), asyncGzip = true, verify?: (gz: Uint8Array) => Promise<unknown>): Promise<string> {
+  async write(json: string, meta: { population: number; tick: number; world?: string }, at = new Date(), asyncGzip = true, verify?: (gz: Uint8Array) => Promise<unknown>): Promise<string> {
     const used = this.dirBytes();
     if (used > LIMITS.maxStateDirBytes) throw new Error(`state directory holds ${Math.round(used / 1e6)} MB, over the ${LIMITS.maxStateDirBytes / 1e6} MB cap: not saving`);
     const data = asyncGzip ? await gzipAsync(json) : gzipSync(json);
@@ -139,6 +141,7 @@ export class StateStore {
             const m = JSON.parse(readRegularFile(join(this.dir, meta), MAX_META_BYTES).toString("utf8"));
             if (Number.isSafeInteger(m.population)) info.population = m.population;
             if (Number.isSafeInteger(m.tick)) info.tick = m.tick;
+            if (typeof m.world === "string" && /^[A-Za-z0-9 .:x-]{1,80}$/.test(m.world)) info.world = m.world;
           }
           return [info];
         } catch {
@@ -182,6 +185,33 @@ export class StateStore {
     this.put(SEED_FILE, Buffer.from(`${copies}\n`));
   }
 
+  // A small state file by its fixed name (never a caller's path), written like the seed file. The carry order of a reset (carry.ts).
+  writeFile(name: string, text: string): void {
+    this.put(name, Buffer.from(text));
+  }
+
+  // The JSON of a small state file, or null when there is none. Throws when it is not a regular file of at most maxBytes, or not JSON.
+  readJson(name: string, maxBytes: number): unknown {
+    const file = join(this.dir, name);
+    try {
+      lstatSync(file);
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === "ENOENT") return null; // a dangling link is not "none": readRegularFile refuses it below
+      throw e;
+    }
+    return JSON.parse(readRegularFile(file, maxBytes).toString("utf8"));
+  }
+
+  // Removes a state file by its fixed name, if it is there.
+  remove(name: string): void {
+    rmSync(join(this.dir, name), { force: true });
+  }
+
+  // Renames a state file by its fixed name, replacing what is at `to`.
+  rename(name: string, to: string): void {
+    renameSync(join(this.dir, name), join(this.dir, to));
+  }
+
   // The checked state of a save, parsed on a worker (saveParse.ts). The name must be one the listing shows (pattern, regular file, not from the future),
   // never a path from the caller. Rejects on a missing, special or oversized file, a gzip that unpacks past the cap, bad JSON or an invalid state.
   // home: a save of another world rejects with OtherWorld (saveParse.ts) before the engine's checks.
@@ -189,5 +219,12 @@ export class StateStore {
     if (!isSaveName(name)) throw new Error("not a save name");
     if (!this.list().some((s) => s.name === name)) throw new Error("no such save");
     return parseSave(readRegularFile(join(this.dir, name), LIMITS.maxSaveJsonBytes), LIMITS.maxSaveJsonBytes, false, home);
+  }
+
+  // The oldest living creature of a listed save, of any world (carry.ts, saveParse.ts parseCarry), null when it holds none.
+  async readCarry(name: unknown): Promise<Carried | null> {
+    if (!isSaveName(name)) throw new Error("not a save name");
+    if (!this.list().some((s) => s.name === name)) throw new Error("no such save");
+    return parseCarry(readRegularFile(join(this.dir, name), LIMITS.maxSaveJsonBytes), LIMITS.maxSaveJsonBytes, name);
   }
 }

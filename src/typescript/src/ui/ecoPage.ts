@@ -43,6 +43,7 @@ export interface EcoSelected {
   fullEnergy: number; // energy at which the bar is full (the birth threshold)
   age: number; // seconds
   children: number;
+  kills: number; // hunts and lethal bumps it survived
   eaten: number; // food items eaten
   depth: number; // lineage depth, founders are 0
   plan: BodyPlan;
@@ -91,6 +92,7 @@ export interface EcoView {
   setLineages(lineages: readonly Lineage[], population: number): void;
   setLineageHistory(history: Float64Array): void;
   clearLineages(): void;
+  unlight(): void; // the lit lineage died out: nothing is lit, the toggle shows off
   setTraits(traits: readonly (readonly TraitHistogram[] | null)[]): void; // body plan histograms per species
   setLeaders(leaders: readonly Leaders[]): void; // the run's records
   clearStatistics(): void; // traits and records, at a new run
@@ -251,6 +253,7 @@ export function createEcoView(handlers: EcoHandlers, page: ModePage): EcoView {
       $("selEnergy").textContent = sel.died ? "died" : `${Math.round(sel.energy)} / ${Math.round(sel.fullEnergy)}`;
       $("selAge").textContent = durationText(sel.age);
       $("selChildren").textContent = nf.format(sel.children);
+      $("selKills").textContent = nf.format(sel.kills);
       $("selEaten").textContent = nf.format(sel.eaten);
       $("selDepth").textContent = nf.format(sel.depth);
       $("selId").textContent = `#${sel.id}`;
@@ -271,6 +274,10 @@ export function createEcoView(handlers: EcoHandlers, page: ModePage): EcoView {
     setLineages: (l, population) => lineages.setLineages(l, population),
     setLineageHistory: (h) => lineages.setHistory(h),
     clearLineages: () => lineages.reset(),
+    unlight() {
+      lineages.setHighlight(null);
+      setFounderButton();
+    },
     setTraits: (traits) => traitPanel.set(traits),
     setLeaders: (leaders) => leaderPanel.set(leaders),
     clearStatistics() {

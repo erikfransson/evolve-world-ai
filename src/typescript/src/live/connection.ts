@@ -60,7 +60,7 @@ export function cleanStats(s: Stats): Stats {
     t: "stats", tick: within(s.tick, 0, 0xffffffff), simSeconds: seconds(s.simSeconds), speed: within(s.speed, 0, 1000), population: count(s.population), births: count(s.births), deaths: count(s.deaths), food: count(s.food), poison: count(s.poison), viewers: count(s.viewers), uptimeS: seconds(s.uptimeS),
     depth: count(s.depth),
     season: isObj(s.season) && n(s.season.yearMinutes) > 0 ? { yearMinutes: within(s.season.yearMinutes, 1, 1e6), winterFood: within(s.season.winterFood, 0, 1) } : null,
-    best: isObj(s.best) ? { age: id(s.best.age), children: id(s.best.children) } : null,
+    best: isObj(s.best) ? { age: id(s.best.age), children: id(s.best.children), kills: id(s.best.kills) } : null,
   };
   const sample = numbers(s.sample, HISTORY_FIELDS, 1);
   if (sample.length) out.sample = sample;

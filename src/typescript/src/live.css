@@ -32,7 +32,7 @@
 .lead-cell.following { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
 .sel-id { margin-right: auto; color: var(--muted); font-size: 0.75rem; font-variant-numeric: tabular-nums; }
 .ov-selected:not(.has-sel) .sel-id { display: none; }
-.live .sel-facts { grid-template-columns: repeat(4, auto); }
+.live .sel-facts { grid-template-columns: repeat(5, auto); }
 .brain-wait { text-align: center; padding: 1rem 0; }
 .brain-wait[hidden] { display: none; }
 
@@ -41,7 +41,7 @@
   .banner .back { min-width: 1.6rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } /* the back link gives way, so the status reads in full */
   .chip-more { display: none; }
   .about { display: none; }
-  .live .sel-facts { grid-template-columns: repeat(2, auto); }
+  .live .sel-facts { grid-template-columns: repeat(3, auto); }
 }
 /* Season tile: a narrow tile wraps the food factor under the name. The separator dot sits left of the factor, in the gap after the
    name; on a line of its own it falls left of the tile's edge and is clipped. */

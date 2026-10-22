@@ -1,7 +1,7 @@
 // The selected creature on the wire (Live World protocol, see protocol.ts), decoded into the Ecosystem's SelectedDetails so its panels draw it as is.
 //
 // DETAIL (3): u8 type | u32 tick | u32 id | u8 alive | when alive:
-//   f32 x | f32 y | f32 heading | f32 energy | f32 age | u32 children | u32 eaten | u32 depth | i32 parentId | u32 founderId | u8 founder kind (1 pool, 2 starter, else 0)
+//   f32 x | f32 y | f32 heading | f32 energy | f32 age | u32 children | u32 eaten | u32 kills | u32 depth | i32 parentId | u32 founderId | u8 founder kind (1 pool, 2 starter, else 0)
 //   | u8 n | n bytes founder name (letters and digits, n <= NAME_MAX; 0 for none)
 //   | u16 founderHue | u16 hue | f32 upkeep | f32 drain | f32 birthEnergy | f32 birthCost | f32 birthCooldown
 //   | plan: u8 rayCount | f32 raySpread | f32 rayLength | u8 layers | layers x u8 neurons | u8 memoryShort | u8 memoryLong
@@ -25,7 +25,7 @@ const L = PLAN_LIMITS;
 export const MAX_INPUTS = L.rayCount[1] * RAY_FEATURES + EXTRA_INPUTS + 2 * L.memory[1];
 export const MAX_GENOME = genomeLength([MAX_INPUTS, ...Array<number>(L.layers[1]).fill(L.neurons[1]), OUTPUTS + 2 * L.memory[1]]);
 export const genomeBytes = (n: number): number => 13 + 2 * n;
-const FIXED = 10 + 4 * 5 + 4 * 5 + 1 + 1 + 4 + 4 * 5 + 1 + 8 + 3 + 2; // header, five f32, five u32, pool, name length, hues, five f32, plan scalars, memory, input count
+const FIXED = 10 + 4 * 5 + 4 * 6 + 1 + 1 + 4 + 4 * 5 + 1 + 8 + 3 + 2; // header, five f32, six u32, pool, name length, hues, five f32, plan scalars, memory, input count
 export const MAX_DETAIL_BYTES = FIXED + NAME_MAX + L.layers[1] + 5 * L.rayCount[1] + 2 * MAX_INPUTS;
 
 // What the server reads off a living creature.
@@ -37,6 +37,7 @@ export interface DetailSource {
   age: number;
   children: number;
   eaten: number;
+  kills: number; // hunts and lethal bumps it survived
   depth: number;
   parentId: number;
   founderId: number;
@@ -88,7 +89,7 @@ export function encodeDetail(tick: number, id: number, d: DetailSource | null): 
   w32(id);
   u8(1);
   fl(d.x); fl(d.y); fl(d.heading); fl(d.energy); fl(d.age);
-  w32(u32(d.children)); w32(u32(d.eaten)); w32(u32(d.depth));
+  w32(u32(d.children)); w32(u32(d.eaten)); w32(u32(d.kills)); w32(u32(d.depth));
   dv.setInt32(p, Number.isSafeInteger(d.parentId) ? Math.max(-1, Math.min(0x7fffffff, d.parentId)) : -1, true); p += 4;
   w32(u32(d.founderId));
   u8(d.founderPool ? 1 : d.founderStarter ? 2 : 0);
@@ -151,7 +152,7 @@ export function decodeDetail(buf: ArrayBuffer | Uint8Array): Detail {
     return v;
   };
   const x = fl(), y = fl(), heading = fl(), energy = fl(), age = fl();
-  const children = r32(), eaten = r32(), depth = r32();
+  const children = r32(), eaten = r32(), kills = r32(), depth = r32();
   need(4);
   const parentId = dv.getInt32(p, true);
   p += 4;
@@ -196,7 +197,7 @@ export function decodeDetail(buf: ArrayBuffer | Uint8Array): Detail {
   return {
     tick,
     id,
-    details: { id, alive: true, x, y, heading, energy, age, children, eaten, kills: 0, species: 0, depth, parentId, hue, founderId, founderPool, founderHue, plan, upkeep, drain, birthEnergy, birthCost, birthCooldown, rayKinds, rayCloseness, rayEnergy: new Float32Array(rayCount), rayOffsets, inputs, genome: null },
+    details: { id, alive: true, x, y, heading, energy, age, children, eaten, kills, species: 0, depth, parentId, hue, founderId, founderPool, founderHue, plan, upkeep, drain, birthEnergy, birthCost, birthCooldown, rayKinds, rayCloseness, rayEnergy: new Float32Array(rayCount), rayOffsets, inputs, genome: null },
     founderName,
     founderStarter: kind === 2,
   };

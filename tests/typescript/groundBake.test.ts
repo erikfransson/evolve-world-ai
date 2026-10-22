@@ -1,6 +1,6 @@
 // Canvas stand-ins that count what is painted: the bitmaps made and the fills and strokes the main canvas receives.
 const bitmaps: { w: number; h: number }[] = [];
-const MAX_PX = 8_000_000; // MAX_BAKED_PX in groundScene.ts
+const MAX_PX = 12_000_000; // MAX_BAKED_PX in groundScene.ts
 class FakeOffscreen {
   constructor(width: number, height: number) {
     bitmaps.push({ w: width, h: height });

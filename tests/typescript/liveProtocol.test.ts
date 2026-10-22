@@ -157,6 +157,7 @@ describe("live server helpers", () => {
   it("cleans stats fields", () => {
     const s = cleanStats({ t: "stats", tick: 5, population: "x" as unknown as number, births: NaN, deaths: Infinity, viewers: 3 } as Stats);
     expect(s).toMatchObject({ tick: 5, population: 0, births: 0, deaths: 0, viewers: 3, uptimeS: 0 });
+    for (const bad of [-1, NaN, "7", 2 ** 40, null]) expect(cleanStats({ t: "stats", best: { age: 1, children: 2, kills: bad } } as unknown as Stats).best, String(bad)).toEqual({ age: 1, children: 2, kills: Math.max(0, Math.min(0xffffffff, typeof bad === "number" && bad > 0 ? bad : 0)) });
   });
 
   it("backs off up to 30 s", () => {

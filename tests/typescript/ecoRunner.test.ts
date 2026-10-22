@@ -296,6 +296,31 @@ describe("EcoRunner", () => {
     runner.handle({ type: "selectBest", by: "eaten", request: 3 });
     expect(last().selected).toMatchObject({ id: 12, eaten: 8 });
     expect(last().bestRequest).toBe(3);
+    members.find((c) => c.id === 7)!.bumpKills = 2; // #61: kills are bump kills and hunts
+    members.find((c) => c.id === 9)!.kills = 1;
+    runner.handle({ type: "selectBest", by: "kills", request: 4 });
+    expect(last().selected).toMatchObject({ id: 7, kills: 2 });
+  });
+
+  it("reports the lit lineage's living count with the lineages, so the page can let go of a family that died out (#57)", () => {
+    const { runner, clock, last } = setup();
+    runner.handle({ type: "start", config: cfg(), run: 1 });
+    const eco = runner.ecosystem!;
+    const f = eco.members[0]!.founderId;
+    runner.handle({ type: "highlight", founder: f });
+    clock.t = 1100;
+    runner.handle({ type: "select", id: null }); // a snapshot with the lineages
+    expect(last().lit).toEqual({ founder: f, count: 1 });
+    eco.members[0]!.creature.state.energy = 0; // the founder dies alone at the next tick
+    runner.handle({ type: "speed", speed: 1 });
+    clock.t = 1150;
+    runner.pump();
+    clock.t = 2300;
+    runner.handle({ type: "select", id: null });
+    expect(eco.get(f)).toBeUndefined();
+    expect(last().lit).toEqual({ founder: f, count: 0 });
+    runner.handle({ type: "start", config: cfg(), run: 2 });
+    expect(last().lit).toBeUndefined();
   });
 });
 
@@ -341,7 +366,7 @@ describe("EcoRunner and a named map", () => {
     expect(maps).toHaveLength(1);
     const m = maps[0]!;
     if (m.type !== "map") throw new Error("not a map message");
-    expect([m.name, m.width, m.height]).toEqual(["inland-sea", 30000, 18750]);
+    expect([m.name, m.width, m.height]).toEqual(["inland-sea", 50000, 31250]);
     expect(m.parts.rock.length).toBeGreaterThan(0);
     sent.length = 0;
     runner.handle({ type: "start", config: inland(), run: 2, map: mapPartsOf(inland())! });

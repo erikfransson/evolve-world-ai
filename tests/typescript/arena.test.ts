@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { drawArena, frameAt, learnerAlive, loopSeconds } from "../../src/typescript/src/ui/arenaScene.ts";
-import { drawRewardGraph, thin } from "../../src/typescript/src/ui/rewardGraph.ts";
+import { drawRewardGraph, latestValues, thin } from "../../src/typescript/src/ui/rewardGraph.ts";
 import { ARENA_KIND, bestFounder, change, customEnv, envsForKind, kindRejection, planSummary } from "../../src/typescript/src/ui/arenaPick.ts";
 import type { CustomEnvForm } from "../../src/typescript/src/ui/arenaPick.ts";
 import { DEFAULT_SPEED, FAVOURITES_KEY, MAX_FAVOURITES, SPEED_KEY, addFavourite, loadFavourites, loadSpeed, removeFavourite, saveSpeed } from "../../src/typescript/src/ui/arenaStore.ts";
@@ -92,6 +92,13 @@ describe("drawRewardGraph", () => {
     const { ctx, calls } = fakeCtx(400, 170);
     drawRewardGraph(ctx, [step(1, 2, null), step(5, 3, 4)], 1, 400, 170);
     expect(named(calls, "arc")).toBe(2);
+  });
+
+  it("reports the latest value of each curve for the legend", () => {
+    expect(latestValues([], null)).toEqual({ train: null, best: null, held: null });
+    expect(latestValues([], 3).held).toBe(3);
+    expect(latestValues([step(1, 2, 5), step(2, 4, null)], 1)).toEqual({ train: 4, best: 5, held: 5 });
+    expect(latestValues([step(1, 2, null)], 1).held).toBe(1);
   });
 
   it("does nothing when the canvas is too small", () => {

@@ -4,7 +4,28 @@ What changed in each version, newest first, so release notes for any range (say 
 Each release is a pull request from `development` into `main`, tagged `vX.Y.Z` on `main`.
 Add notes under "Unreleased" as work lands on `development`, and turn that heading into the version number at release time.
 
-## Unreleased
+## 0.2.4 (2026-10-22)
+
+- Live: the first start of 0.2.4 begins a fresh world. Every save of the old 30000 x 18750 map counts as another world's and is kept on disk but not restored, and the old world's admin settings are set aside (`admin-overrides.previous-world.json`).
+- Live: the world holds at most 7 million brain weights (`MAX_LIVE_WEIGHTS`), so every save stays near 45 MB and can be written and read back inside the server's 1 GB memory cap. Births wait at it as at the birth reserve, an add past it is refused with the reason, and a reset that would seed past it is refused. The four founders at the most copies a reset allows hold 5.4 million.
+- Live admin: `reset --carry-oldest K --carry-name NAME [--carry-from SAVE]` carries K copies of the oldest living creature (of the running world or a listed save) into the fresh world as a starter family, checked as an upload is. `saves` shows the world each save is of.
+- Live: the Inland Sea is 50000 x 31250 (was 30000 x 18750), with slightly bigger and fuller slow (mud) and fast (firm) ground, fewer islands in the mud and fewer holes in the dunes (#53, draft `docs/world-maps/tools/map-F5.json`). The food cap is 1.4 (was 1.5) so the items fit the wire. Stones no longer fill the cliff passes. The world starts fresh, since saves of the old map are refused.
+- Live and Ecosystem: a far view of a map with very many items draws at most 90 000 food dots a frame (a fixed share, a little denser), and the ground keeps up to 48 MB of baked bitmaps (was 32 MB), so the bigger Inland Sea zooms as smoothly as the old one.
+- Live server: a viewer gets a full item set only when its send queue has room for it, and one too slow to ever take its set is dropped after 10 s instead of holding back everyone's frames. The frame-skip level is 1.5 MB (was 1 MB), above a join's full set.
+- Trials, Ecosystem and RL Arena share one set of creature and brain sliders (#58): vision range up to 400 (was 300), from 10 in Trials and Arena and from 40 in the Ecosystem, whose grid cells are the ray setting wide, neurons per layer 1 to 32 (were 4 to 32), vision angle and range in steps of 1 (Arena and Trials were 5 and 10), Arena "Sight length" is now "Vision range". Trials item size and mutation rate use the Ecosystem's steps (0.1 and 0.5%). Defaults are unchanged.
+- RL Arena: a Time pressure group with three envs, Fading food, Stings and Race (#56). A new reward, early, pays each bite by the share of the episode still left.
+- RL Arena: held-out checks use a fixed set of 12 seeds per env instead of 4 (#54); Live visitor training keeps 4. The graph's best line is now "luckiest candidate" (or episode): on held-out worlds that candidate scores about like the current brain.
+- `rlTrain --vary F` trains and checks on varied versions of the env (food, poison, rival counts, start energies, world size), for experiments.
+- Live World (#55): the selected creature's rays are drawn at the heading they were sensed at. They were drawn at the body's smoothly turning heading while their lengths came from the last detail (up to 0.2 s old), so a fast spinner showed rays whose lengths belonged to other angles and ended off the walls and rock.
+- Live World (#55): the selected creature's rays are cast again every frame at its smoothly turning heading against the items, creatures and rock the page draws (`live/rayRecast.ts`, the engine's geometry), so they turn with the body and end where they hit. They were drawn at that heading with lengths from the last detail (up to 0.2 s old), so a fast spinner showed rays whose lengths belonged to other angles. Until the map's rock is known, and with a stale map design, the detail's rays are drawn at the heading they were sensed at.
+- Ecosystem and Live World (#55): the heading sent to the renderer is wrapped to [-pi, pi). A creature that spins for a long time had an ever larger heading, and a float32 of it got coarse (about 0.01 rad after a day), so its body tick, nose and rays jittered. Simulation unchanged.
+- Live server: an optional founder pools file (`server/founder-pools.json`, server only) gives a fresh world's seeded copies trained variants of each founder instead of clones. No pools ship yet, so worlds seed as before.
+- RL Arena and Trials: the training caps are much higher for long runs. Arena iterations 20000 to 200000, population 1000 to 5000, episodes per candidate 4 to 40, episodes per update 64 to 320. Trials population 2000 to 10000. Live World limits are unchanged.
+- Live: the kill bonus is 5 (`eco.killEnergy`, was 25 in 0.2.3): at 25 the Juggernaut took over the world. Already set on the running world; a fresh world now starts with it.
+- Live and Ecosystem: the selected creature's card shows its kills (creatures that died in a collision it survived, #52). Saves keep the count; older saves read as 0. Protocol 5 (kills in DETAIL and `best`).
+- Live and Ecosystem: "Highlight family" turns itself off when the lit family dies out, so the world gets its colours back (#57).
+- Live and Ecosystem: a "Most kills" pick next to Oldest and Most children (#61).
+- RL Arena: the reward graph moves to the top once training starts and stays after it ends. It has labelled axes (reward, iteration) with ticks, and the legend shows the latest train mean, best and held-out values.
 
 ## 0.2.3 (2026-10-16)
 

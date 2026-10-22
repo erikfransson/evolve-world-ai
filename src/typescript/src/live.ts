@@ -19,7 +19,7 @@ import type { SelectedBrain } from "./ui/ecoBrain.ts";
 import { BrainView } from "./ui/brainView.ts";
 import { PopulationGraph } from "./ui/populationGraph.ts";
 import type { PopulationSample } from "./ui/populationGraph.ts";
-import { LineagePanel, lineageColor } from "./ui/lineagePanel.ts";
+import { LineagePanel, lineageColor, rowLiving } from "./ui/lineagePanel.ts";
 import { BOARD_SPECS, LeaderPanel } from "./ui/leaderPanel.ts";
 import { formatBirth, formatPlan } from "./ui/ecoPage.ts";
 import { initCard } from "./ui/overlays.ts";
@@ -36,6 +36,7 @@ import { AddPanel } from "./live/addPanel.ts";
 import { parseFounders } from "./live/founders.ts";
 import { renderMapInfo } from "./live/mapInfo.ts";
 import { MapCache } from "./live/mapTerrain.ts";
+import { recastRays } from "./live/rayRecast.ts";
 import { paintMapLegend } from "./live/mapLegend.ts";
 import { mapVersion } from "./sim/maps/index.ts";
 
@@ -95,6 +96,8 @@ let lastStats: Stats | null = null;
 let season: Season | null = null;
 let retryTimer: ReturnType<typeof setInterval> | undefined;
 let highlight = -1; // founder whose family is lit (a row's founder), -1 for none
+let litOf = -1; // the highlight the stats handler last saw, and since when (performance.now): a fresh highlight is never let go at once
+let litAt = 0;
 let familyOf = new Map<number, number>(); // founder -> the founder of the lineage row it is counted in, from the latest stats
 let lastLineages: readonly { founder: number; name?: string }[] = []; // the rows of the last stats, to follow a lit group
 const rowOf = (f: number): number => familyOf.get(f) ?? f;
@@ -369,6 +372,9 @@ camera.onClick = (wx, wy) => {
   else clearSelection();
 };
 
+let rayKinds = new Uint8Array(0); // the selected creature's rays cast this frame (recastRays)
+let rayCloseness = new Float32Array(0);
+
 function onDetail(d: SelectedDetails, founderName: string, founderStarter: boolean): void {
   const s = selection;
   if (!s || d.id !== s.id) return;
@@ -415,6 +421,7 @@ function updateSelectedCard(): void {
   $("selEnergy").textContent = s.died ? "died" : `${Math.round(d.energy)} / ${Math.round(full)}`;
   $("selAge").textContent = durationText(d.age);
   $("selChildren").textContent = nf.format(d.children);
+  $("selKills").textContent = nf.format(d.kills);
   $("selEaten").textContent = nf.format(d.eaten);
   $("selDepth").textContent = nf.format(d.depth);
   $("selId").textContent = `#${d.id}`;
@@ -513,12 +520,22 @@ function onStats(s: Stats): void {
         syncFamily();
       }
     }
+    // A lit family that died out lets go, so everyone gets their colour back (the views still hold its fading ghosts for a moment).
+    // A family lit in the last 3 s is kept: a visitor's new copies reach the views a frame and a motion span after the add's reply.
+    const now = performance.now();
+    if (highlight !== litOf) [litOf, litAt] = [highlight, now];
+    if (highlight >= 0 && now - litAt > 3000 && scene.views.count > 0 && !rowLiving(scene.views.founder, scene.views.count, highlight, rowOf)) {
+      highlight = -1;
+      lineages.setHighlight(null);
+      syncFamily();
+    }
     lastLineages = s.lineages;
     lineages.setLineages(s.lineages.map((l): Lineage => ({ founder: l.founder, hue: l.hue, pool: l.pool, count: l.count, species: 0 })), s.population, names, starters);
   }
   if (s.records) setRecords(s.records);
   $<HTMLButtonElement>("pickAge").disabled = !s.best;
   $<HTMLButtonElement>("pickChildren").disabled = !s.best;
+  $<HTMLButtonElement>("pickKills").disabled = !s.best;
   renderStats();
 }
 
@@ -568,9 +585,21 @@ function frame(now: number): void {
   syncFollow();
   const views = scene.views;
   const i = selection ? scene.slotOf(selection.id) : -1;
-  // Rays and the ring at the creature as drawn now; its rays from the latest details on the timeline.
+  // The ring at the creature as drawn now. Its rays are cast again each frame at that heading against what is drawn (so they turn with the body and end at
+  // their hits), once the map's rock is known; until then, and when the page's map design is stale, the latest details' rays at the heading they were sensed at.
   const d = selection?.last;
-  const selected = i >= 0 && !selection!.died ? ({ ...(d ?? { rayKinds: new Uint8Array(0), rayCloseness: new Float32Array(0), rayOffsets: new Float32Array(0), plan: { rayLength: 0 } }), alive: true, x: views.x[i]!, y: views.y[i]!, heading: views.heading[i]! } as SelectedDetails) : null;
+  const selected = i >= 0 && !selection!.died ? ({ ...(d ?? { rayKinds: new Uint8Array(0), rayCloseness: new Float32Array(0), rayOffsets: new Float32Array(0), plan: { rayLength: 0 } }), alive: true, x: views.x[i]!, y: views.y[i]!, heading: views.heading[i]!, rayHeading: d?.heading } as SelectedDetails) : null;
+  if (selected && d && d.plan.rayLength > 0 && draw && hello && (!hello.map.name || (draw.map && !mapStale))) {
+    const n = d.rayKinds.length;
+    if (rayKinds.length !== n) {
+      rayKinds = new Uint8Array(n);
+      rayCloseness = new Float32Array(n);
+    }
+    recastRays({ width: draw.worldW, height: draw.worldH, itemRadius: draw.itemRadius, radius: draw.radius, terrain: draw.map ?? null, items: scene.items, creatures: views, self: i }, selected.x, selected.y, selected.heading, d.rayOffsets, d.plan.rayLength, rayKinds, rayCloseness);
+    selected.rayKinds = rayKinds;
+    selected.rayCloseness = rayCloseness;
+    selected.rayHeading = undefined;
+  }
   renderer.draw(ctx, camera, drawConfig(), litViews(views), selected, true, dpr, highlight, births, now, impacts);
   if (now - lastUiAt >= UI_INTERVAL_MS) {
     lastUiAt = now;
@@ -639,6 +668,7 @@ $("selFounder").addEventListener("click", () => {
 });
 $("pickAge").addEventListener("click", () => { if (lastStats?.best) select(lastStats.best.age); });
 $("pickChildren").addEventListener("click", () => { if (lastStats?.best) select(lastStats.best.children); });
+$("pickKills").addEventListener("click", () => { if (lastStats?.best) select(lastStats.best.kills); });
 
 // The visitor's last added copies: when the followed one dies, the page moves on to a living copy and lights its family.
 let myCopies: number[] = [];

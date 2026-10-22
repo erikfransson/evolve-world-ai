@@ -283,7 +283,7 @@ describe("timeline", () => {
 
 describe("selected creature on the wire", () => {
   const source = (rays: number, inputs: number): DetailSource => ({
-    x: 10, y: 20, heading: 1, energy: 123.4, age: 99.5, children: 3, eaten: 17, depth: 4, parentId: 77, founderId: 9, founderPool: true, founderName: "", founderHue: 120, hue: 200, upkeep: 2.5, drain: 3.5,
+    x: 10, y: 20, heading: 1, energy: 123.4, age: 99.5, children: 3, eaten: 17, kills: 5, depth: 4, parentId: 77, founderId: 9, founderPool: true, founderName: "", founderHue: 120, hue: 200, upkeep: 2.5, drain: 3.5,
     birthEnergy: 150, birthCost: 60, birthCooldown: 10, plan: { rayCount: rays, raySpread: 2, rayLength: 250, hiddenLayers: [32, 32, 32, 32], memoryShort: 8, memoryLong: 8 },
     rayKinds: Uint8Array.from({ length: rays }, (_, i) => i % 5), rayCloseness: Float32Array.from({ length: rays }, (_, i) => i / rays), rayOffsets: Float32Array.from({ length: rays }, (_, i) => -1 + i / rays), inputs: Float32Array.from({ length: inputs }, (_, i) => Math.sin(i)),
   });
@@ -292,7 +292,7 @@ describe("selected creature on the wire", () => {
     const bytes = encodeDetail(55, 1234, { ...source(16, 16 * RAY_FEATURES + EXTRA_INPUTS + 16), founderName: "Abcdefgh12345678" });
     expect(bytes.length).toBe(MAX_DETAIL_BYTES);
     const { tick, id, details: d } = decodeDetail(bytes);
-    expect([tick, id, d.alive, d.children, d.depth, d.parentId, d.founderId, d.founderPool]).toEqual([55, 1234, true, 3, 4, 77, 9, true]);
+    expect([tick, id, d.alive, d.children, d.kills, d.depth, d.parentId, d.founderId, d.founderPool]).toEqual([55, 1234, true, 3, 5, 4, 77, 9, true]);
     expect(decodeDetail(bytes).founderName).toBe("Abcdefgh12345678");
     expect(d.energy).toBeCloseTo(123.4, 3);
     expect(d.birthCooldown).toBe(10);
@@ -338,11 +338,16 @@ describe("selected creature on the wire", () => {
     new DataView(nan.buffer).setFloat32(10, NaN, true);
     expect(() => decodeDetail(nan)).toThrow();
     const plan = good.slice();
-    plan[76] = 17; // rayCount past the plan limit
+    plan[80] = 17; // rayCount past the plan limit
     expect(() => decodeDetail(plan)).toThrow(/plan/);
     const dead = decodeDetail(encodeDetail(5, 9, null));
     expect(dead.details.alive).toBe(false);
     expect(dead.id).toBe(9);
+  });
+
+  it("sends a kill count that is no whole u32 as the nearest one (#52)", () => {
+    const kills = (k: number): number => decodeDetail(encodeDetail(1, 1, { ...source(4, 4 * RAY_FEATURES + EXTRA_INPUTS + 16), kills: k })).details.kills;
+    expect([kills(Number.NaN), kills(-3), kills(Infinity), kills(1e12), kills(2.6)]).toEqual([0, 0, 0, 0xffffffff, 3]);
   });
 
   it("round-trips a genome to 1/32767 of its largest weight and bounds its size", () => {
@@ -412,7 +417,8 @@ describe("history and records", () => {
       const members = live.eco.members;
       const oldest = members.reduce((a, b) => (b.ageTicks > a.ageTicks || (b.ageTicks === a.ageTicks && b.id < a.id) ? b : a));
       const parent = members.reduce((a, b) => (b.children > a.children || (b.children === a.children && b.id < a.id) ? b : a));
-      expect(s.best).toEqual({ age: oldest.id, children: parent.id });
+      const killer = members.reduce((a, b) => (b.bumpKills > a.bumpKills || (b.bumpKills === a.bumpKills && b.id < a.id) ? b : a));
+      expect(s.best).toEqual({ age: oldest.id, children: parent.id, kills: killer.id });
       const age = s.records!.find((r) => r.board === "age")!.entries;
       expect(age.length).toBe(3);
       expect(age[0]!.value).toBeGreaterThanOrEqual(Math.round(Math.max(oldest.ageTicks * live.config.dt, ...deadAges)) - 1);

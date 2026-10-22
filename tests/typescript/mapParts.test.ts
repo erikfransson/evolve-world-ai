@@ -5,7 +5,7 @@ import { MAX_MAP_DISCS, MAX_MAP_DISC_R, packMap, unpackMap } from "../../src/typ
 import { Terrain } from "../../src/typescript/src/sim/terrain.ts";
 
 const SEA = MAPS["inland-sea"]!;
-const small: MapSpec = { ...SEA, width: 12000, height: 8000, layers: SEA.layers.slice(0, 2), rock: SEA.rock.slice(0, 1) };
+const small: MapSpec = { ...SEA, width: 20000, height: 22000, layers: SEA.layers.slice(0, 2), rock: SEA.rock.slice(0, 1) }; // holds the karst and its outcrops
 
 describe("the map codec", () => {
   const b = buildMap(small);
@@ -28,6 +28,7 @@ describe("the map codec", () => {
 
   it("refuses arrays that do not fit the world, are not typed arrays or hold rock that is not finite", () => {
     const parts = packMap(t)!;
+    expect(parts.rock.length).toBeGreaterThan(0);
     const bad = (change: object): void => expect(() => unpackMap(small.width, small.height, { ...parts, ...change })).toThrow();
     bad({ ground: parts.ground.subarray(1) });
     bad({ food: new Uint8Array(3) });

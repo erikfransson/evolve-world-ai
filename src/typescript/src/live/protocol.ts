@@ -26,7 +26,7 @@
 import { HIT_FOOD, HIT_POISON } from "../sim/types.ts";
 import type { AddRules, Added, Refused } from "./add.ts";
 
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 5;
 export const MSG_CREATURES = 1;
 export const MSG_ITEMS = 2;
 export const MSG_DETAIL = 3;
@@ -138,7 +138,7 @@ export interface Stats {
   uptimeS: number; // seconds since the server started
   depth: number; // deepest lineage alive
   season: Season | null; // null when seasons are off
-  best: { age: number; children: number } | null; // ids of the oldest living creature and the living one with the most children
+  best: { age: number; children: number; kills: number } | null; // ids of the oldest living creature and the living ones with the most children and most kills
   sample?: number[]; // a new population sample, HISTORY_FIELDS numbers
   lineageSample?: number[]; // a new lineage sample, LINEAGE_FIELDS numbers
   lineages?: WireLineage[]; // the largest living lineages, at most LINEAGE_TOP

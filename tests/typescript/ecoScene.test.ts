@@ -1,6 +1,6 @@
 import { HIT_FOOD, HIT_WALL } from "../../src/typescript/src/sim/types.ts";
 import { Camera } from "../../src/typescript/src/ui/camera.ts";
-import { EcoRenderer, creatureBucket, creatureStyle } from "../../src/typescript/src/ui/ecoScene.ts";
+import { EcoRenderer, MAX_TINY_ITEMS, creatureBucket, creatureStyle } from "../../src/typescript/src/ui/ecoScene.ts";
 import type { EcoDrawConfig } from "../../src/typescript/src/ui/ecoScene.ts";
 import { planOf } from "../../src/typescript/src/sim/sensors.ts";
 import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
@@ -97,5 +97,43 @@ describe("EcoRenderer", () => {
     const near = draw(20, 3000).filter((c) => c.name === "rect" || c.name === "arc").length;
     expect(wide).toBeGreaterThan(1000);
     expect(near).toBeLessThan(40);
+  });
+  // A far view of the 50000 wide Inland Sea holds up to about 220 000 items: red without the cap, every one is a path rect each frame.
+  it("draws at most about MAX_TINY_ITEMS tiny items a frame, the same ones from frame to frame", () => {
+    const items = 200_000;
+    const big = { ...cfg, worldW: 50000, worldH: 31250 };
+    const v = views(10, items);
+    for (let i = 0; i < items; i++) {
+      v.itemX[i] = (i * 7919) % 50000;
+      v.itemY[i] = (i * 104729) % 31250;
+      v.itemKind[i] = i % 50 ? 1 : 2;
+    }
+    const r = new EcoRenderer();
+    // The rects of each item path (food first, then poison), as the frame drew them.
+    const frame = (): unknown[][][] => {
+      const { ctx, calls } = fakeCtx(1000, 700);
+      r.draw(ctx, new Camera(big.worldW, big.worldH, 1000, 700, 20), big, v, null, false, 1);
+      const paths: unknown[][][] = [];
+      for (const c of calls) {
+        if (c.name === "beginPath") paths.push([]);
+        else if (c.name === "rect") paths[paths.length - 1]!.push(c.args);
+      }
+      return paths.filter((p) => p.length > 0);
+    };
+    const poison = items / 50;
+    expect(frame().map((p) => p.length)).toEqual([items - poison, poison]); // the first far frame has no count yet
+    const [food, kept] = frame();
+    expect(food!.length).toBeLessThan(1.05 * MAX_TINY_ITEMS);
+    expect(food!.length).toBeGreaterThan(0.95 * MAX_TINY_ITEMS);
+    expect(kept).toHaveLength(poison); // poison is never thinned
+    expect(frame()[0]).toEqual(food); // the same food dots next frame
+  });
+
+  it("draws the rays at the heading they were sensed at, not the body's", () => {
+    const { ctx, calls } = fakeCtx(1000, 700);
+    new EcoRenderer().draw(ctx, new Camera(cfg.worldW, cfg.worldH, 1000, 700, 20), cfg, views(3), { ...selected, heading: 2.5, rayHeading: 1 }, true, 1);
+    // the middle ray has offset 0 and no hit, so it ends a full ray length out along the sensed heading
+    const ends = calls.filter((c) => c.name === "lineTo").map((c) => c.args as number[]);
+    expect(ends.some(([x, y]) => Math.abs(x! - (211 + Math.cos(1) * 100)) < 1e-6 && Math.abs(y! - (373 + Math.sin(1) * 100)) < 1e-6)).toBe(true);
   });
 });

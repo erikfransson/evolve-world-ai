@@ -1,6 +1,7 @@
 // Trains one creature in an RL environment with backprop RL (PPO on its own brain), on the main thread; a prototype to compare with rlTrain (ES).
 // Usage: node src/rlGrad.ts --env nibble [--from random:1 | pool:0] [--seconds 60] [--iters 1000] [--episodes 16] [--epochs 2] [--lr 0.003]
-//        [--logstd -0.5] [--repeat 3] [--gamma 0.995] [--eval 32] [--every 5] [--seed 1] [--out learner.json]
+//        [--logstd=-0.5] [--repeat 3] [--every-tick] [--repeat-then 30:1] [--target-kl 0.02] [--gamma 0.995] [--eval 32] [--every 5] [--seed 1] [--out learner.json]
+// --repeat-then S:N switches to repeat N after S seconds of training; --every-tick holds only the noise while the brain acts every tick.
 // Held-out: the mean action (the brain as it is) on HELD_BASE + k, as rlTrain. Time excludes the held-out checks.
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -27,6 +28,9 @@ const { values } = parseArgs({
     logstd: { type: "string", default: "-0.5" },
     entropy: { type: "string", default: "0" },
     repeat: { type: "string", default: "3" },
+    "every-tick": { type: "boolean", default: false },
+    "repeat-then": { type: "string" },
+    "target-kl": { type: "string", default: "0" },
     gamma: { type: "string", default: "0.995" },
     eval: { type: "string", default: "32" },
     every: { type: "string", default: "5" },
@@ -51,15 +55,21 @@ if (!learner) {
 }
 const sizes = layerSizes(layoutConfig(env.world), learner.plan);
 const ppo = new Ppo([env], learner, sizes, {
-  episodes: num("episodes"), epochs: num("epochs"), minibatch: num("minibatch"), lr: num("lr"), logStd: num("logstd"), entropy: num("entropy"), repeat: num("repeat"), gamma: num("gamma"),
+  episodes: num("episodes"), epochs: num("epochs"), minibatch: num("minibatch"), lr: num("lr"), logStd: num("logstd"), entropy: num("entropy"), repeat: num("repeat"), gamma: num("gamma"), everyTick: values["every-tick"], targetKl: num("target-kl"),
 }, num("seed"), pool);
 const seeds = heldSeeds(num("eval"));
 const held = (): number => scoreLearner(env, { plan: learner.plan, genome: ppo.theta }, seeds, pool).reward;
 const start = held();
 console.log(`env ${env.id}, from ${values.from}, sizes ${sizes.join("-")}; held-out ${start.toFixed(3)} on ${seeds.length} seeds`);
 const curve: { iter: number; episodes: number; seconds: number; train: number; held?: number }[] = [{ iter: 0, episodes: 0, seconds: 0, train: NaN, held: start }];
+const [switchAt, switchTo] = values["repeat-then"] ? values["repeat-then"].split(":").map(Number) : [Infinity, 1];
+if (!(switchAt! >= 0) || !Number.isInteger(switchTo) || switchTo! < 1) {
+  console.error("error: --repeat-then must be S:N, seconds S >= 0 and repeat N a positive integer");
+  process.exit(1);
+}
 let busy = 0;
 while (ppo.iter < num("iters") && busy < num("seconds") * 1000) {
+  if (busy >= switchAt! * 1000 && ppo.options.repeat !== switchTo) ppo.setRepeat(switchTo!);
   const t = performance.now();
   const step = ppo.step();
   busy += performance.now() - t;

@@ -1,3 +1,4 @@
+import { wrapAngle } from "./angle.ts";
 import { genomeLength, layerSizes, randomGenome, refit } from "./brain.ts";
 import { itemCounts } from "./config.ts";
 import type { EngineConfig } from "./config.ts";
@@ -70,7 +71,8 @@ export class EcoCreature {
   birthTick = 0;
   children = 0;
   eaten = 0; // food items eaten, poison not counted
-  kills = 0; // prey eaten
+  kills = 0; // prey eaten (hunts only, so an RL kill reward never pays a bump)
+  bumpKills = 0; // creatures that died in a bump it survived (collision damage)
   species = 0; // index into the config's species; children keep their parent's
   hue = 0; // degrees
   founderId = 0; // id of the founder this family descends from; a founder is its own
@@ -125,6 +127,7 @@ export interface MemberRecord {
   id: number; parentId: number; depth: number; birthTick: number; children: number; eaten: number; kills: number; species: number; hue: number;
   founderId: number; lastBirthTick: number; birthEnergy: number; birthCost: number; birthCooldown: number; cooldownTicks: number;
   mutationScale?: number; // 1 when left out
+  bumpKills?: number; // 0 when left out
   x: number; y: number; heading: number; vx: number; vy: number; turnRate: number; energy: number; ticksAlive: number; cos: number; sin: number;
   plan: PlanView; genome: Float32Array; memory: ArrayLike<number>;
 }
@@ -158,6 +161,10 @@ export class Ecosystem {
   readonly species: readonly Species[];
   // Living creatures in list order.
   readonly members: EcoCreature[];
+  // Genome weights of all living creatures, and the most births may bring it to: a birth waits while weights is above birthWeightCap.
+  // Not a setting and not saved: Live World sets the cap so every save stays small enough to write and read back (server/src/config.ts).
+  weights = 0;
+  birthWeightCap = Infinity;
   // Id of a creature whose rays and brain input must be current after each tick (the selected one); the WASM sense leaves everyone else's stale.
   detail: number | null = null;
   // With the journal option: changes not yet drained by a helper coordinator (ecoShare.ts). born and died hold ids, items World.log records.
@@ -531,11 +538,11 @@ export class Ecosystem {
     if (scan) {
       // only the members with energy for a child, in the order of the walk from first; births change no one else's energy
       const ready = scan.birthCandidates(this.table.rowAt, n, this.table.birthEnergies, first);
-      for (let k = 0; k < ready.length && members.length < birthCap; k++) {
+      for (let k = 0; k < ready.length && members.length < birthCap && this.weights <= this.birthWeightCap; k++) {
         const parent = members[ready[k]!]!;
         if (this.tick - parent.lastBirthTick >= parent.cooldownTicks) this.giveBirth(parent);
       }
-    } else for (let k = 0; k < n && members.length < birthCap; k++) {
+    } else for (let k = 0; k < n && members.length < birthCap && this.weights <= this.birthWeightCap; k++) {
       const at = (first + k) % n;
       if (this.table.states[at]!.energy < this.table.birthEnergies[at]!) continue;
       const parent = members[at]!;
@@ -672,12 +679,14 @@ export class Ecosystem {
     m.children = 0;
     m.eaten = 0;
     m.kills = 0;
+    m.bumpKills = 0;
     m.lastBirthTick = -Infinity;
     m.birth.energy = birth.energy;
     m.birth.cost = birth.cost;
     m.birth.cooldown = birth.cooldown;
     m.cooldownTicks = Math.round(birth.cooldown / this.config.dt);
     m.mutationScale = mutationScale;
+    this.weights += m.creature.brain.genome.length;
     this.journal?.born.push(m.id);
     this.table.admit(m);
     return m;
@@ -686,6 +695,7 @@ export class Ecosystem {
   // Swap-removes members[i].
   private remove(i: number): void {
     const m = this.table.swapRemove(i);
+    this.weights -= m.creature.brain.genome.length;
     this.onDeath?.(m);
     this.lineages.died(m.founderId);
     this.journal?.died.push(m.id);
@@ -719,7 +729,7 @@ export class Ecosystem {
       frame.ids[i] = m.id;
       frame.x[i] = s.x;
       frame.y[i] = s.y;
-      frame.heading[i] = s.heading;
+      frame.heading[i] = wrapAngle(s.heading);
       frame.energy[i] = s.energy;
       frame.hue[i] = m.hue;
       frame.founder[i] = m.founderId;
@@ -791,9 +801,10 @@ export class Ecosystem {
     c.heading.cos = r.cos; c.heading.sin = r.sin;
     c.setMemory(r.memory, 0);
     c.aging = this.aging;
-    m.id = r.id; m.parentId = r.parentId; m.depth = r.depth; m.birthTick = r.birthTick; m.children = r.children; m.eaten = r.eaten; m.kills = r.kills;
+    m.id = r.id; m.parentId = r.parentId; m.depth = r.depth; m.birthTick = r.birthTick; m.children = r.children; m.eaten = r.eaten; m.kills = r.kills; m.bumpKills = r.bumpKills ?? 0;
     m.species = r.species; m.hue = r.hue; m.founderId = r.founderId; m.lastBirthTick = r.lastBirthTick;
     m.birth.energy = r.birthEnergy; m.birth.cost = r.birthCost; m.birth.cooldown = r.birthCooldown; m.cooldownTicks = r.cooldownTicks; m.mutationScale = r.mutationScale ?? 1;
+    this.weights += c.brain.genome.length;
     this.journal?.born.push(m.id);
     this.table.admit(m);
     return m;

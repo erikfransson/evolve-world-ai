@@ -110,6 +110,42 @@ Chosen: 50, one food's worth (`foodEnergy` 50). Poison still matters (a bite hal
 ## Live kill bonus (2026-10-16)
 Live ran `eco.killEnergy` 0: a kill paid only the loser's energy. Erik chose 25 for 0.2.3: the survivor gains the loser's energy plus 25, less the damage the bump did to it (a head-on hit at top speed costs 48), so a kill pays a little more than before. It is an admin tunable (0 to 300, the engine's MAX_KILL_ENERGY), set on the running world after the release.
 The Grazer swap ships in 0.2.3 on checks without the bonus (the Grazer survived 3 of 3 three-founder seeds at 25). The Juggernaut swap waits: an aggression-trained Juggernaut (b3's jaug) wiped out the other founders in one 180-min Live-rules seed, and b3's 4-seed check of the full set at bonus 25 is running.
+b3's 180-min checks of the founders with the shipped Juggernaut: at bonus 25 the Grazer ended at 21 and 49 while the Juggernaut reached about 1100; at bonus 0 the Grazer held about 950 and the Juggernaut about 300, coexisting. Erik chose 5 on 2026-10-17 (set on the running world, the liveConfig default from 0.2.4).
+
+## Training caps raised (issue #60)
+The Arena and Trials form caps were set by caution, not by the engine. Raised; Live World and server limits untouched:
+| setting                       | old   | new    |
+| ----------------------------- | ----- | ------ |
+| Arena iterations              | 20000 | 200000 |
+| Arena population              | 1000  | 5000   |
+| Arena episodes per candidate  | 4     | 40     |
+| Arena episodes per update     | 64    | 320    |
+| Trials population             | 2000  | 10000  |
+Arena population got 5x: the largest Arena genome is 6514 floats, and 10000 candidates plus the ES noise and spare buffers (`sim/rl/es.ts`) and the scoring task objects (`sim/rl/trainer.ts`) pass 1 GB in one worker.
+Trials population got 5x: 10000 of the largest brains are already about 260 MB per generation, about 520 MB with parent and child alive, and more with the helper slices (`worker/simWorker.ts`, `worker/evalPool.ts`). Episodes per update got 5x because backprop keeps every episode of an update in memory.
+These four sliders (Arena population, iterations, episodes per update, Trials population) are logarithmic so the common values stay easy to set. The shown and saved value is the real number, and settings and URLs round-trip exactly. Arena has no seed field, so episodes per candidate is the seeds-per-iteration knob.
+
+## RL best vs held-out, time pressure (#54, #56, 2026-10-21)
+
+ES pop 100, 150 iterations, fresh designs (3 bodies), final genome on 64 held-out seeds.
+- The last step's best candidate scores 1.5 to 2.5 x the mean on its own training episode, but on held-out seeds it scores the same as the mean genome (Fading food 8.0 -> 4.9 vs mean genome 4.8; Race 7.6 -> 4.4 vs 4.5; Dash 6.6 -> 3.3 vs 3.5). The Arena's best line is selection on one noisy episode, not a better creature.
+- Episodes per candidate 3 instead of 1 (Fading food): held 4.93 vs 4.76 at 3 x the cost; the best line drops closer to the mean.
+- World variation 0.2 in training, judged on the plain env (Fading food): 4.50 vs 4.76, within the spread over runs (1.6 to 2.0). No gain shown, so it stays a CLI option (`rlTrain --vary`).
+- Arena held-out checks now use a fixed set of 12 seeds per env (was 4; Live visitor training keeps 4). Changing the set moved one genome from 3.87 to 5.70 in a C1 probe.
+
+## Inland Sea 50000 x 31250 (#53, 2026-10-22)
+
+Erik chose 50000 x 31250 and patch variant v2 (dunes grown 1.12 with firm coverage 0.97 at 1.4x texture scale, mud sea grown 1.1, islands 0.7) from a 4-variant contact sheet.
+Slow ground covers 10.8% of the map (was 7.0%), fast 4.5% (was 3.0%).
+Bench, 2900 seeded founders, one thread, load 5-12: tick 15.0 ms at 30k, 15.9 at 40k, 16.4 at 50k; stats with records about 14 ms at all three; RSS about 210 MB. Cost follows the population, not the area.
+`eco.foodMaxDensity` 1.4 (was 1.5): at 156 250 items per density unit, 1.5 plus poison 0.01 passes the wire's 0.9 x 262144 item slots.
+
+## Live brain-weight budget (2026-10-22, release review S1)
+
+At 2900 creatures on the 50000 x 31250 world, under `systemd-run --scope -p MemoryMax=1G` like the unit: the founder mix (5.4 M weights) saves 36 MB of JSON, peaks at 543 MB writing and 686 MB reading back; 2900 Oracles (13 M weights, 77 MB) and 2900 of the largest upload brains (22 M, 124 MB) were OOM-killed (2 GB cap: 926 MB writing, 1234 MB reading back for the Oracles).
+A save is about 7 MB plus 5.4 MB per million weights; reading back costs about 13 MB of RSS per MB of JSON.
+The budget is global: births of every family wait while the world is at it, so a world of maximum-size brains holds about 830 creatures (6.25 M / 7538 under the birth cap); that is the design, not a stall. Births stop at 7 M less a reserve of 100 maximum-size brains (754 k), so visitors' adds still fit, as at the 100-place birth reserve.
+`MAX_LIVE_WEIGHTS` 7 M: the worst world under it (7.02 M weights, 2900 creatures, items at the admin's largest caps) saves 45 MB, peaks at 604 MB writing and 813 MB reading back under the 1 GB cap.
 
 ## Ideas not yet tried
 - Evaluate each creature on two layouts to reduce layout luck.

@@ -95,6 +95,14 @@
             <button id="reset" class="secondary" type="button" disabled>Reset</button>
           </div>
         </div>
+        <section id="graphCard" class="card graph-card" hidden>
+          <header class="graph-head">
+            <h2>Reward per iteration</h2>
+            <span class="fit-foot"><span class="key train" id="keyTrain">train mean</span><span class="key best" id="keyBest">best candidate</span><span class="key held" id="keyHeld">held-out</span></span>
+          </header>
+          <canvas id="rewardView" aria-label="Train mean, best and held-out reward against iteration"></canvas>
+          <table id="envTable" class="env-table" hidden><thead><tr><th>Environment</th><th>Start</th><th>Now</th><th>Change</th></tr></thead><tbody></tbody></table>
+        </section>
         <dl class="stats">
           <div class="tile accent"><dt>Held-out reward<span class="tip" tabindex="0" role="img" aria-label="Mean reward of the current brain over the chosen environments on worlds it never trains on, checked every 5 iterations. The change is against the starting brain." data-tip="Mean reward of the current brain over the chosen environments on worlds it never trains on, checked every 5 iterations. The change is against the starting brain.">ⓘ</span></dt><dd id="statHeld" class="empty">—</dd></div>
           <div class="tile "><dt>Start reward<span class="tip" tabindex="0" role="img" aria-label="Held-out reward of the brain before any training." data-tip="Held-out reward of the brain before any training.">ⓘ</span></dt><dd id="statStart" class="empty">—</dd></div>
@@ -147,14 +155,6 @@
             <canvas id="brainView" aria-label="The shown candidate's brain, live"></canvas>
           </section>
         </div>
-        <section class="card graph-card">
-          <header class="graph-head">
-            <h2>Reward per iteration</h2>
-            <span class="fit-foot"><span class="key train">train mean</span><span class="key best" id="keyBest">best candidate</span><span class="key held">held-out</span></span>
-          </header>
-          <canvas id="rewardView" aria-label="Train mean, best and held-out reward against iteration"></canvas>
-          <table id="envTable" class="env-table" hidden><thead><tr><th>Environment</th><th>Start</th><th>Now</th><th>Change</th></tr></thead><tbody></tbody></table>
-        </section>
         <section class="card save-card">
           <h2>Save</h2>
           <div class="field"><div class="row"><span class="lbl"><label class="name" for="saveName">Name</label></span></div><input id="saveName" type="text" maxlength="60" value="My creature" /></div>

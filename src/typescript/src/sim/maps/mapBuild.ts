@@ -71,7 +71,7 @@ export interface BuiltMap {
 }
 
 // Bump when a change here alters any built map: saves record it with the spec (mapVersion), and maps.test.ts pins the built data to catch a missed bump.
-export const MAP_BUILD = 1;
+export const MAP_BUILD = 2; // 2: stones keep out of every rock layer's passes
 
 const LIMITS = { layers: 64, points: 64, discs: MAX_MAP_DISCS, area: 2e9 }; // of a spec, and the world area it may cover
 
@@ -427,6 +427,7 @@ export function buildMap(spec: MapSpec): BuiltMap {
     return false;
   };
   let stones = 0;
+  const passes = spec.rock.flatMap((r) => r.passes ?? []); // every layer's: a talus beside a massif must not fill its passes
   spec.rock.forEach((rockLayer, ri) => {
     if (rockLayer.kind === "massif") return;
     const outline = makeShape(rockLayer, seed + 1977 + 31 * ri, k, kFine);
@@ -446,7 +447,7 @@ export function buildMap(spec: MapSpec): BuiltMap {
         const d = outline(px, py);
         if (d > feather / 2) continue;
         const m = clamp(0.5 - d / feather, 0, 1) ** pw;
-        if (rockLayer.passes?.some(([qx, qy, qr]) => Math.hypot(px - qx, py - qy) < qr)) continue;
+        if (passes.some(([qx, qy, qr]) => Math.hypot(px - qx, py - qy) < qr)) continue;
         const fade = rockLayer.fadeX ? 1 - smoothRange(rockLayer.fadeX[0], rockLayer.fadeX[1], px) : 1;
         const clump = rockLayer.clump ? smoothRange(lo, hi, fbm(px / rockLayer.clump, py / rockLayer.clump, seed + 500 + ri)) * 2.6 : 1;
         const p = Math.min(1, ((rockLayer.cover * g * g) / avgA) * m * clump * fade);

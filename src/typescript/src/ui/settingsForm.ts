@@ -1,5 +1,6 @@
 import { itemCounts, POISON_LETHAL } from "../sim/config.ts";
 import type { EngineConfig } from "../sim/config.ts";
+import { PLAN_LIMITS } from "../sim/rl/validate.ts";
 import { MAP_DENSITY_MAX, PATCH_SIZE_RANGE } from "../sim/terrain.ts";
 import { escapeAttr } from "./page.ts";
 
@@ -17,6 +18,7 @@ export interface Range<C> extends Base<C> {
   min: number;
   max: number;
   step: number;
+  log?: boolean; // the slider is logarithmic between min and max (wide ranges), the value stays the real number
   fmt?: string; // key of FORMATS
   hint?: (c: C) => string; // live text next to the value
   get: (c: C) => number;
@@ -85,6 +87,40 @@ export function mapFields<C extends Sized>(): Range<C>[] {
   ];
 }
 
+// The body plan fields every page shows (Creature and Brain), with one set of labels, tips and PLAN_LIMITS ranges.
+// raySpread is in radians in the config and in degrees on the slider; memory is 0 to 1 (memoryUnits). rayLengthMin raises the vision range floor.
+type PlanKey = "rayCount" | "raySpread" | "rayLength" | "layers" | "neurons" | "memory";
+export type PlanAccess<C> = Record<PlanKey, { get: (c: C) => number; set: (c: C, v: number) => void }>;
+export function planFields<C>(a: PlanAccess<C>, rayLengthMin: number = PLAN_LIMITS.rayLength[0]): { creature: Range<C>[]; brain: Range<C>[] } {
+  const L = PLAN_LIMITS;
+  const deg = Math.round((L.raySpread[1] * 180) / Math.PI);
+  return {
+    creature: [
+      range<C>({ id: "rayCount", label: "Vision rays", tip: "How many laser rays each creature sees with. More rays give a finer view and more inputs to the brain.", min: L.rayCount[0], max: L.rayCount[1], step: 1, ...a.rayCount }),
+      range<C>({ id: "raySpread", label: "Vision angle", tip: "Total width of the fan of rays, centred on where the creature faces. 360 looks all around.", min: 10, max: deg, step: 1, fmt: "deg", get: (c) => Math.round((a.raySpread.get(c) * 180) / Math.PI), set: (c, v) => { a.raySpread.set(c, (v * Math.PI) / 180); } }),
+      range<C>({ id: "rayLength", label: "Vision range", tip: "How far each vision ray reaches, in world units. Longer sight costs more energy per second.", min: rayLengthMin, max: L.rayLength[1], step: 1, fmt: "size", ...a.rayLength }),
+    ],
+    brain: [
+      range<C>({ id: "layers", label: "Hidden layers", tip: "How many layers of neurons sit between the creature's eyes and its muscles.", min: L.layers[0], max: L.layers[1], step: 1, ...a.layers }),
+      range<C>({ id: "neurons", label: "Neurons per layer", tip: "Neurons in each hidden layer. More can learn richer behaviour but cost more energy per second and learn more slowly.", min: L.neurons[0], max: L.neurons[1], step: 1, ...a.neurons }),
+      range<C>({ id: "memory", label: "Memory", tip: "Short- and long-term memory the brain can write to and read back on the next moment, so it can remember what it saw. 0 is none, 0.5 gives 4 short-term and 4 long-term memory units, 1 gives 8 of each.", min: 0, max: 1, step: 0.05, fmt: "dens", ...a.memory }),
+    ],
+  };
+}
+
+// The plan fields of a Trials or Ecosystem config (creature and brain; every hidden layer as wide as the first).
+type PlanConfig = Pick<EngineConfig, "creature" | "brain">;
+export function configPlanFields<C extends PlanConfig>(defaultNeurons: number, rayLengthMin?: number): { creature: Range<C>[]; brain: Range<C>[] } {
+  return planFields<C>({
+    rayCount: { get: (c) => c.creature.rayCount, set: (c, v) => { c.creature.rayCount = v; } },
+    raySpread: { get: (c) => c.creature.raySpread, set: (c, v) => { c.creature.raySpread = v; } },
+    rayLength: { get: (c) => c.creature.rayLength, set: (c, v) => { c.creature.rayLength = v; } },
+    layers: { get: (c) => c.brain.hiddenLayers.length, set: (c, v) => { c.brain.hiddenLayers = new Array<number>(v).fill(c.brain.hiddenLayers[0] ?? defaultNeurons); } },
+    neurons: { get: (c) => c.brain.hiddenLayers[0] ?? defaultNeurons, set: (c, v) => { c.brain.hiddenLayers.fill(v); } },
+    memory: { get: (c) => c.brain.memory, set: (c, v) => { c.brain.memory = v; } },
+  }, rayLengthMin);
+}
+
 export function el<T extends HTMLElement>(id: string, kind: new () => T): T {
   const e = document.getElementById(id);
   if (!(e instanceof kind)) throw new Error(`element #${id} is not a ${kind.name}`);
@@ -108,13 +144,42 @@ export const FORMATS: Record<string, (v: number) => string> = {
   poison: (v) => (v >= POISON_LETHAL ? "Lethal" : `${v}`),
 };
 
+// Logarithmic sliders: the input holds a position 0..LOG_STEPS, data-v keeps the exact value so a saved or typed setting round-trips unchanged.
+export const LOG_STEPS = 1000;
+export const logPosition = (v: number, lo: number, hi: number): number => Math.round((Math.log(v / lo) / Math.log(hi / lo)) * LOG_STEPS);
+// A dragged position as a clean number: three significant digits, a multiple of step, within [lo, hi].
+export function logValue(pos: number, lo: number, hi: number, step: number): number {
+  const raw = lo * (hi / lo) ** (pos / LOG_STEPS);
+  const unit = 10 ** Math.max(0, Math.floor(Math.log10(raw)) - 2);
+  return Math.min(hi, Math.max(lo, Math.round((Math.round(raw / unit) * unit) / step) * step));
+}
+// The real value of a range input (its number, or the exact value behind a logarithmic slider's position).
+export function sliderValue(input: HTMLInputElement): number {
+  if (input.dataset.log === undefined) return input.valueAsNumber;
+  const lo = Number(input.dataset.lo);
+  const hi = Number(input.dataset.hi);
+  const exact = Number(input.dataset.v);
+  if (Number.isFinite(exact) && logPosition(exact, lo, hi) === input.valueAsNumber) return exact;
+  const v = logValue(input.valueAsNumber, lo, hi, Number(input.dataset.step));
+  input.dataset.v = String(v);
+  return v;
+}
+export function setSliderValue(input: HTMLInputElement, v: number): void {
+  if (input.dataset.log === undefined) { input.value = String(v); return; }
+  const lo = Number(input.dataset.lo);
+  const hi = Number(input.dataset.hi);
+  const exact = Number.isFinite(v) ? Math.min(hi, Math.max(lo, Math.round(v))) : lo;
+  input.dataset.v = String(exact);
+  input.value = String(logPosition(exact, lo, hi));
+}
+
 // Filled slider track and value badge.
 export function syncSlider(input: HTMLInputElement): void {
   const lo = Number(input.min);
   const hi = Number(input.max);
   input.style.setProperty("--p", `${((input.valueAsNumber - lo) / (hi - lo)) * 100}%`);
   const out = document.querySelector<HTMLOutputElement>(`output[for="${input.id}"]`);
-  if (out) out.textContent = (FORMATS[out.dataset.fmt ?? ""] ?? String)(input.valueAsNumber);
+  if (out) out.textContent = (FORMATS[out.dataset.fmt ?? ""] ?? String)(sliderValue(input));
 }
 
 const label = <C>(f: Base<C>): string =>
@@ -131,7 +196,7 @@ function fieldHtml<C>(f: Field<C>): string {
   }
   const fmt = f.fmt ? ` data-fmt="${f.fmt}"` : "";
   const hint = f.hint ? `<span class="hint" id="${f.id}Hint"></span>` : "";
-  return `<div class="field"><div class="row">${label(f)}<span class="vals">${hint}<output for="${f.id}"${fmt}></output></span></div><input id="${f.id}" type="range" min="${f.min}" max="${f.max}" step="${f.step}" /></div>`;
+  return `<div class="field"><div class="row">${label(f)}<span class="vals">${hint}<output for="${f.id}"${fmt}></output></span></div><input id="${f.id}" type="range" ${f.log ? `min="0" max="${LOG_STEPS}" step="1" data-log data-lo="${f.min}" data-hi="${f.max}" data-step="${f.step}"` : `min="${f.min}" max="${f.max}" step="${f.step}"`} /></div>`;
 }
 
 function sectionHtml<C>(s: Section<C>, index = 0): string {
@@ -177,7 +242,7 @@ export function buildForm<C extends object>(container: HTMLElement, spec: FormSp
     for (const f of fields) {
       const input = el(f.id, HTMLElement) as HTMLInputElement; // a select shares .value
       if (f.kind === "toggle") f.set(c, input.checked);
-      else if (f.kind === "range") f.set(c, input.valueAsNumber);
+      else if (f.kind === "range") f.set(c, sliderValue(input));
       else if (f.kind === "choice") { if (f.options.some(([value]) => value === input.value)) f.set(c, input.value); }
       else if (Number.isFinite(input.valueAsNumber)) (c as { seed: number }).seed = Math.min(2 ** 31, Math.max(0, Math.round(input.valueAsNumber)));
     }
@@ -188,6 +253,7 @@ export function buildForm<C extends object>(container: HTMLElement, spec: FormSp
       const input = el(f.id, HTMLElement) as HTMLInputElement; // a select shares .value
       if (f.kind === "toggle") input.checked = f.get(c);
       else if (f.kind === "seed") input.value = String((c as { seed: number }).seed);
+      else if (f.kind === "range") setSliderValue(input, f.get(c));
       else input.value = String(f.get(c));
     }
     container.querySelectorAll<HTMLInputElement>('input[type="range"]').forEach(syncSlider);

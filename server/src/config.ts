@@ -3,11 +3,20 @@ import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { itemsPerDensity } from "../../src/typescript/src/sim/config.ts";
 import { MAX_ITEM_SLOTS, creatureFrameBytes, itemsBytes } from "../../src/typescript/src/live/protocol.ts";
 import { MAX_FOUNDERS } from "../../src/typescript/src/live/founders.ts";
-import { LIVE_BIRTH, MAX_COPIES } from "../../src/typescript/src/live/add.ts";
+import { LIVE_BIRTH, MAX_ADD_GENOME, MAX_COPIES } from "../../src/typescript/src/live/add.ts";
 
 // Also the admin's upper limit (tunables.ts). At 3000 a creature frame is 57 kB: room() lets in about 23 to 38 viewers at the full
 // population (fewer while items change fast), a save is about 29 MB of JSON, and a save and admin load peak near 720 MB (2500: 687 MB, 5000: 857 MB).
 export const MAX_POPULATION = 3000;
+// Genome weights the living world may hold, so every save can be written and read back inside the unit's MemoryMax of 1 GB. Measured at
+// 2900 creatures on the 50000 x 31250 world (2026-10-22): a save is about 7 MB plus 5.4 MB per million weights; writing one peaks at 543 MB
+// of RSS at 36 MB of JSON and 926 MB at 77 MB, reading one back at 686 MB and 1234 MB. 7 million keeps a save near 45 MB (about 800 MB
+// to read back); the four founders at 725 copies each hold 5.4 million. Measured without helper threads (HELPER_THREADS 0, the unit's
+// default): helpers keep their own copies of the brains, so measure again under MemoryMax before setting LIVE_THREADS.
+// Births stop WEIGHT_RESERVE short of it, as at the birth reserve, so visitors' adds still fit; adds past it are refused.
+export const MAX_LIVE_WEIGHTS = 7_000_000;
+export const WEIGHT_RESERVE = 100 * MAX_ADD_GENOME; // 100 of the largest brains an add allows, the birth reserve's 100 places
+export const BIRTH_WEIGHT_CAP = MAX_LIVE_WEIGHTS - WEIGHT_RESERVE - MAX_ADD_GENOME; // a child has at most MAX_ADD_GENOME (the plan ranges are within the add limits)
 
 // The one world this server runs: The Inland Sea map (src/sim/maps/inlandSea.ts) with the Ecosystem rules, collision damage on.
 // The admin channel (admin.ts) edits this object in place for the settings the engine reads every tick.
@@ -15,18 +24,18 @@ export const MAX_POPULATION = 3000;
 export const liveConfig: EcoConfig = structuredClone(DEFAULT_ECO_CONFIG);
 liveConfig.seed = 1;
 liveConfig.world.map = "inland-sea";
-liveConfig.world.width = 30000;
-liveConfig.world.height = 18750;
+liveConfig.world.width = 50000;
+liveConfig.world.height = 31250;
 liveConfig.world.foodEnergy = 50;
 liveConfig.world.poisonDamage = 50; // a bite costs one food's worth, not the life (POISON_LETHAL is 100); see docs/tuning-notes.md
-liveConfig.world.poisonDensity = 0.01; // start counts stay at or below the caps (foodDensity 0.5 is 28 125 items)
+liveConfig.world.poisonDensity = 0.01; // start counts stay at or below the caps (foodDensity 0.5 is 78 125 items)
 liveConfig.eco.initialPopulation = 0; // a fresh world is seeded with the founders file instead (founders.ts)
 liveConfig.eco.foodRegrow = 0.003;
-liveConfig.eco.foodMaxDensity = 1.5;
+liveConfig.eco.foodMaxDensity = 1.4; // 1.5 needs more item slots than the wire carries at 50000 x 31250 (itemHeadroom)
 liveConfig.eco.poisonRegrow = 0.0003;
 liveConfig.eco.poisonMaxDensity = 0.01;
 liveConfig.eco.collisionDamage = true;
-liveConfig.eco.killEnergy = 25; // a kill also gives this much energy, on top of the loser's: hunting pays a little (0.2.3, Erik)
+liveConfig.eco.killEnergy = 5; // a kill also gives this much energy, on top of the loser's (Erik, 2026-10-17: at 25 the Juggernaut took over, tuning-notes)
 liveConfig.eco.maxPopulation = MAX_POPULATION; // bounds the frame size, so the viewer budget holds
 liveConfig.eco.birthReserve = 100; // births stop 100 below the cap, so visitors can still add (insertCreature fills to maxPopulation)
 liveConfig.eco.seasons = true;
@@ -43,12 +52,17 @@ export const SEED_COPIES = 10;
 export const seedRoom = (eco: { maxPopulation: number; birthReserve: number }): number => eco.maxPopulation - eco.birthReserve;
 export const mostCopies = (founders: number, eco: { maxPopulation: number; birthReserve: number }): number => Math.floor(seedRoom(eco) / Math.max(1, founders));
 export const MAX_SEED_FOUNDERS = MAX_FOUNDERS; // the same bound as the pages (live/founders.ts)
+// Founder pools (server/founder-pools.json, server only, so the pages never download them): trained variants of each founder that a fresh
+// world's copies are drawn from instead of clones.
+export const MAX_POOL = 30; // variants per founder
+export const MAX_POOL_WEIGHTS = 400_000; // in the whole pools file: 30 variants of the 4506-weight Oracle are 135 000
+export const MAX_POOLS_FILE_BYTES = 4 * 1024 * 1024; // 400 000 weights at 3 decimals are about 3 MB
 export const MAX_FOUNDERS_FILE_BYTES = 512 * 1024; // 4 trained founders are 57 kB; 8 of the largest genomes an add allows (7538 weights, about 60 kB each) fit
 
 // Item slots are fixed when a world is built, so it is built with room for admin to raise the food and poison caps (densities).
 // Up to ITEM_HEADROOM where that fits (small worlds); else the slots are held to ITEM_SLOT_SHARE of the wire's MAX_ITEM_SLOTS:
 // poison gets POISON_ROOM times its cap (at most its ITEM_HEADROOM), food the rest, never below the caps in force.
-// The Inland Sea (56 250 items per density unit) gets the full headroom, food 3 and poison 1: 225 000 slots.
+// The Inland Sea (156 250 items per density unit) does not fit it: food 1.45 and poison 0.05, 234 376 slots.
 // Measured at about 1000 creatures on the old 17000 x 10600 world: caps 3 and 1 cost 20 MB more RSS at a save than 0.7 and 0.1.
 export const ITEM_HEADROOM = { foodMaxDensity: 3, poisonMaxDensity: 1 };
 export const ITEM_SLOT_SHARE = 0.9;
@@ -104,7 +118,7 @@ export const LIMITS = {
   connectBytesPerSecond: 300_000, // of the budget: catch-up frames for viewers that just connected, skipped when used up
   // The connect allowance holds this much at once: the largest full item set any world can have (all of the wire's MAX_ITEM_SLOTS in use)
   // plus a creature frame at MAX_POPULATION, about 1.17 MB, so a new viewer always gets its set from it, after a reseed or a load too.
-  // At the 300 kB burst that went with the rate, the Inland Sea's sets (up to about 720 kB) all came out of the frame budget's resync share.
+  // At the 300 kB burst that went with the rate, the Inland Sea's sets (now up to about 1 MB) all came out of the frame budget's resync share.
   connectBurstBytes: itemsBytes(MAX_ITEM_SLOTS, MAX_ITEM_SLOTS) + creatureFrameBytes(MAX_POPULATION),
   maxTickFailures: 50, // consecutive failed ticks before the server exits (code 1) for systemd to restart it from the last good save
   textBytesPerViewer: 2000, // of the budget, per viewer slot: stats (with lineages, records every few seconds), hello and pong
@@ -123,10 +137,10 @@ export const LIMITS = {
   stateEveryMs: 4 * 60 * 60 * 1000,
   keepStateMs: 4 * 24 * 60 * 60 * 1000, // saves older than this are deleted, except the newest six (state.ts)
   maxStateDirBytes: 2e9, // no save is written while the state directory holds more than this
-  maxSaveJsonBytes: 50e6, // a save may be at most this much JSON (Inland Sea: 24 MB at 2500 creatures, 42 MB at 5000, about 29 MB at the 3000 cap); parsing runs in a worker with its own heap cap (saveParse.ts)
+  maxSaveJsonBytes: 50e6, // a save may be at most this much JSON (Inland Sea at 30000 x 18750: 24 MB at 2500 creatures, 42 MB at 5000, about 29 MB at the 3000 cap; the 50000 wide one adds under 1 MB of items); parsing runs in a worker with its own heap cap (saveParse.ts)
   maxCatchUpS: 1, // after a stall longer than this the clock resyncs instead of racing to catch up
   sliceMs: 15, // simulation work per event-loop turn, so sockets stay served
-  maxBufferedBytes: 1_000_000, // a viewer with more queued than this is skipped for frames (slow link)
+  maxBufferedBytes: 1_500_000, // a viewer with more queued than this is skipped for frames (slow link); above a join's full item set (about 1 MB at the Inland Sea's largest caps)
   hardBufferedBytes: 2_000_000, // more than this queued: the client is dropped (100 viewers x 2 MB stays well inside the 1 GB unit cap)
   slowDropMs: 10_000, // a client above maxBufferedBytes for this long is dropped
   heartbeatMs: 30_000, // ws ping, a client that misses the pong is dropped

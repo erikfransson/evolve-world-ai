@@ -7,6 +7,8 @@ import type { WebSocket } from "ws";
 import type { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
 import { validName } from "../../src/typescript/src/live/add.ts";
 import type { SaveInfo } from "./state.ts";
+import { isSaveName } from "./state.ts";
+import { MAX_CARRY } from "./carry.ts";
 import { SEED_COPIES } from "./config.ts";
 import { applyTunables, readTunables, tunableLimits } from "./tunables.ts";
 import type { Value } from "./tunables.ts";
@@ -126,7 +128,26 @@ export interface AdminCommands {
   stop(): void | Promise<void>; // save, then exit with code 0
   blankName(name: string): Promise<number>; // families whose visitor name was cleared
   renameName(from: string, to: string, force: boolean): Promise<number | string>; // families renamed, or why not
-  reset(copies: number): Promise<string>; // saves, moves the saves and settings aside, then exits 75, on which the unit starts it again with a fresh world (0, staying down, when a stop came meanwhile); rejects with the reason and keeps the world
+  reset(copies: number, carry?: CarryAsk): Promise<string>; // carry: copies of the oldest creature of the running world or of a listed save; saves, moves the saves and settings aside, then exits 75, on which the unit starts it again with a fresh world (0, staying down, when a stop came meanwhile); rejects with the reason and keeps the world
+}
+
+// What a reset carries, as the admin asked: copies of the oldest creature, its family name, and the listed save to take it from (the
+// running world when absent). Checked here for shape; the creature itself is checked as an upload in carry.ts.
+export interface CarryAsk {
+  copies: number;
+  name: string;
+  from?: string;
+}
+
+// The carry of a reset message, null for none, or the reason it is refused.
+export function carryAsk(m: unknown): CarryAsk | null | string {
+  if (m === undefined) return null;
+  if (typeof m !== "object" || m === null || Array.isArray(m)) return "carry must be {copies, name, from?}";
+  const { copies, name, from } = m as Record<string, unknown>;
+  if (typeof copies !== "number" || !Number.isInteger(copies) || copies < 1 || copies > MAX_CARRY) return `carried copies must be a whole number from 1 to ${MAX_CARRY}`;
+  if (!validName(name)) return "the carried family's name must be 1 to 16 letters or digits";
+  if (from !== undefined && !isSaveName(from)) return "carry from must be the name of a listed save";
+  return { copies, name, ...(from !== undefined ? { from: from as string } : {}) };
 }
 
 const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".wasm": "application/wasm", ".ico": "image/x-icon" };
@@ -195,7 +216,7 @@ export function startAdmin(host: string, port: number, token: string, world: Adm
       }
     });
     const handle = (data: import("ws").RawData, isBinary: boolean): void => {
-      let msg: { t?: unknown; token?: unknown; changes?: unknown; name?: unknown; to?: unknown; force?: unknown; copies?: unknown };
+      let msg: { t?: unknown; token?: unknown; changes?: unknown; name?: unknown; to?: unknown; force?: unknown; copies?: unknown; carry?: unknown };
       try {
         if (isBinary) throw new Error("binary");
         msg = JSON.parse(data.toString());
@@ -252,7 +273,9 @@ export function startAdmin(host: string, port: number, token: string, world: Adm
       if (msg.t === "reset") {
         const copies = msg.copies === undefined ? SEED_COPIES : msg.copies; // absent: the default; null and anything else not whole is refused
         if (typeof copies !== "number" || !Number.isInteger(copies)) return reply(ws, { t: "error", message: "copies must be a whole number" });
-        return void commands.reset(copies).then((message) => reply(ws, { t: "resetting", message }), (e) => reply(ws, { t: "error", message: why(e) }));
+        const carry = carryAsk(msg.carry);
+        if (typeof carry === "string") return reply(ws, { t: "error", message: carry });
+        return void commands.reset(copies, carry ?? undefined).then((message) => reply(ws, { t: "resetting", message }), (e) => reply(ws, { t: "error", message: why(e) }));
       }
       if (msg.t === "stop") {
         reply(ws, { t: "stopping" });

@@ -15,7 +15,6 @@ import type { RlInMessage, RlOutMessage } from "./rlProtocol.ts";
 // candidate whenever the page asks. Pause waits between steps; envs sent while paused apply at the next step.
 // Kept apart from the worker's messaging so it runs and is tested in Node with an in-process pool.
 
-const HELD_SEEDS = heldSeeds(4); // per env
 const HELD_EVERY = 5;
 
 export type Start = Extract<RlInMessage, { type: "start" }>;
@@ -24,7 +23,7 @@ export type Post = (msg: RlOutMessage, transfer?: Transferable[]) => void;
 // The page's backprop settings kept within the form's ranges, so a bad message cannot stall or blow up training.
 const clamp = (v: unknown, lo: number, hi: number, fallback: number): number => (typeof v === "number" && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : fallback);
 function backpropOptions(o: { lr?: number; episodes?: number } | undefined): { lr: number; episodes: number } {
-  return { lr: clamp(o?.lr, 0.0005, 0.01, 0.003), episodes: Math.round(clamp(o?.episodes, 4, 64, 16)) };
+  return { lr: clamp(o?.lr, 0.0005, 0.01, 0.003), episodes: Math.round(clamp(o?.episodes, 4, 320, 16)) };
 }
 
 export class ArenaRun {
@@ -33,6 +32,7 @@ export class ArenaRun {
   private readonly pool: RlPool;
   private readonly assets: { pool: PoolEntry[] | null; library: Library };
   private envs: EnvSpec[];
+  private readonly heldSeeds: number[]; // a fixed set, the same whatever the run seed, so held-out scores compare across runs
   private gate: { wait: Promise<void>; open: () => void } | null = null; // set while paused
   private nextEnvs: EnvSpec[] | null = null;
   private showWanted = false; // the page asked for a new show; steps run much faster than the page plays them
@@ -45,6 +45,7 @@ export class ArenaRun {
     this.start = start;
     this.post = post;
     this.envs = start.envs;
+    this.heldSeeds = heldSeeds(Math.round(clamp(start.held, 1, 32, 4)));
     this.playback = start.playback !== false;
     this.assets = assets;
     if (start.gentle) this.setGentle(true);
@@ -98,7 +99,7 @@ export class ArenaRun {
         : new Trainer(genome, options, this.pool, this.envs.length, options.episodes, this.start.seed);
     const t0 = performance.now();
     let lastBest: Float32Array | null = null; // the latest step's best candidate
-    const start = await trainer.held(HELD_SEEDS);
+    const start = await trainer.held(this.heldSeeds);
     if (this.stopped) return;
     this.post({ type: "ready", held: start.mean, perEnv: start.perEnv });
     if (this.playback) await this.show(tiles, 0, trainer.theta);
@@ -111,7 +112,7 @@ export class ArenaRun {
         this.nextEnvs = null;
         this.pool.setEnvs(this.envs);
         trainer.setEnvs(this.pool, this.envs);
-        const held = await trainer.held(HELD_SEEDS);
+        const held = await trainer.held(this.heldSeeds);
         this.post({ type: "rebased", iter: trainer.iter, held: held.mean, perEnv: held.perEnv });
         this.showWanted = true;
       }
@@ -119,7 +120,7 @@ export class ArenaRun {
       const began = performance.now();
       const step = await trainer.step();
       lastBest = step.bestGenome;
-      const held = step.iter % HELD_EVERY === 0 ? await trainer.held(HELD_SEEDS) : null;
+      const held = step.iter % HELD_EVERY === 0 ? await trainer.held(this.heldSeeds) : null;
       this.post({ type: "iteration", it: { iter: step.iter, train: step.train, best: step.best, held: held?.mean ?? null, perEnv: held?.perEnv ?? null, seconds: (performance.now() - t0) / 1000 } });
       if (held) this.post({ type: "learner", iter: step.iter, learner: serialiseLearner({ plan, genome: trainer.theta }) });
       if (this.showWanted && this.playback) {

@@ -45,7 +45,7 @@ export const ECOSYSTEM_PAGE: ModePage = {
   presets: ECO_PRESETS,
   locked: ECO_LOCKED,
   store: "evolve.eco.card",
-  picks: [["pickAge", "age"], ["pickChildren", "children"], ["pickEaten", "eaten"]],
+  picks: [["pickAge", "age"], ["pickChildren", "children"], ["pickEaten", "eaten"], ["pickKills", "kills"]],
   tiles: [
     count("statPop", "Population", "Creatures alive now.", (s) => s.population, "tile accent"),
     count("statBirths", "Births", "Creatures born since the start.", (s) => s.births),

@@ -38,6 +38,7 @@ export const ECOSYSTEM_COPY: PageCopy = {
     pickAge: ["Oldest", "Select the oldest living creature"],
     pickChildren: ["Most children", "Select the living creature with the most children"],
     pickEaten: ["Most food", "Select the living creature that has eaten the most food"],
+    pickKills: ["Most kills", "Select the living creature that has killed the most others, by hunting or in collisions"],
   },
   eatenLabel: "Food eaten",
   popKeys: `<span class="key pop">creatures</span><span class="key food">food</span>`,
@@ -140,6 +141,7 @@ ${tiles.join("\n")}
               <dl class="sel-only sel-facts">
                 <div><dt>Age</dt><dd id="selAge">-</dd></div>
                 <div><dt>Children</dt><dd id="selChildren">-</dd></div>
+                <div><dt>Kills</dt><dd id="selKills">-</dd></div>
                 <div><dt>${c.eatenLabel}</dt><dd id="selEaten">-</dd></div>
                 <div><dt>Lineage depth</dt><dd id="selDepth">-</dd></div>
                 <div><dt>Id</dt><dd id="selId">-</dd></div>

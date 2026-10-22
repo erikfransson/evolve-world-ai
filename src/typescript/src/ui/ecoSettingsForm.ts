@@ -2,19 +2,22 @@ import { ITEM_RADIUS_RANGE, POISON_LETHAL } from "../sim/config.ts";
 import { DEFAULT_ECO_CONFIG } from "../sim/ecoConfig.ts";
 import type { EcoConfig } from "../sim/ecoConfig.ts";
 import { MAPS, mapSpec } from "../sim/maps/index.ts";
-import { items, mapFields, perSecond, range, rangePair } from "./settingsForm.ts";
+import { configPlanFields, items, mapFields, perSecond, range, rangePair } from "./settingsForm.ts";
 import type { FormSpec, Section } from "./settingsForm.ts";
 
 // Ecosystem settings, built by buildForm in settingsForm.ts.
 const defaultNeurons = DEFAULT_ECO_CONFIG.brain.hiddenLayers[0]!;
+// The item and crowd grid cells are the ray setting wide while varied founders cast rays of 50 to 250, so a shorter setting multiplies the cells each look scans.
+export const ECO_RAY_LENGTH_MIN = 40;
+const plan = configPlanFields<EcoConfig>(defaultNeurons, ECO_RAY_LENGTH_MIN);
 
 export const ECO_SECTIONS: readonly Section<EcoConfig>[] = [
   {
     title: "World",
     fields: [
       { kind: "seed", id: "seed", label: "Seed", tip: "Number that fixes all randomness. The same seed and settings give the same run." },
-      range({ id: "worldWidth", enabledWhen: (c) => !c.world.map, label: "World width", tip: "Size of the box the creatures live in. For scale, the default vision range is 100 units.", min: 500, max: 40000, step: 50, fmt: "size", get: (c) => c.world.width, set: (c, v) => { c.world.width = v; } }),
-      range({ id: "worldHeight", enabledWhen: (c) => !c.world.map, label: "World height", tip: "Size of the box the creatures live in. For scale, the default vision range is 100 units.", min: 500, max: 25000, step: 50, fmt: "size", get: (c) => c.world.height, set: (c, v) => { c.world.height = v; } }),
+      range({ id: "worldWidth", enabledWhen: (c) => !c.world.map, label: "World width", tip: "Size of the box the creatures live in. For scale, the default vision range is 100 units.", min: 500, max: 50000, step: 50, fmt: "size", get: (c) => c.world.width, set: (c, v) => { c.world.width = v; } }),
+      range({ id: "worldHeight", enabledWhen: (c) => !c.world.map, label: "World height", tip: "Size of the box the creatures live in. For scale, the default vision range is 100 units.", min: 500, max: 31250, step: 50, fmt: "size", get: (c) => c.world.height, set: (c, v) => { c.world.height = v; } }),
       range({ id: "foodDensity", label: "Start food", tip: "How much food lies around at the start. 1 means roughly one piece in every 100 × 100 area.", min: 0, max: 1, step: 0.005, fmt: "dens3", hint: (c) => items(c, c.world.foodDensity), get: (c) => c.world.foodDensity, set: (c, v) => { c.world.foodDensity = v; } }),
       range({ id: "poisonDensity", label: "Start poison", tip: "How much poison lies around at the start, on the same scale as food. 0 turns poison off.", min: 0, max: 1, step: 0.005, fmt: "dens3", hint: (c) => items(c, c.world.poisonDensity), get: (c) => c.world.poisonDensity, set: (c, v) => { c.world.poisonDensity = v; } }),
       { kind: "choice", id: "worldMap", label: "Map", tip: "A hand-designed map with its own ground, rock and richer and poorer regions, instead of random stones, mud and firm ground. It fixes the world size.", options: [["", "Random"], ...Object.values(MAPS).map((m): [string, string] => [m.name, m.title])], get: (c) => c.world.map ?? "", set: (c, v) => { c.world.map = v; const m = mapSpec(v); if (m) { c.world.width = m.width; c.world.height = m.height; } } },
@@ -67,19 +70,11 @@ export const ECO_SECTIONS: readonly Section<EcoConfig>[] = [
   },
   {
     title: "Creature",
-    fields: [
-      range({ id: "rayCount", label: "Vision rays", tip: "How many laser rays each creature sees with. More rays give a finer view and more inputs to the brain.", min: 1, max: 16, step: 1, get: (c) => c.creature.rayCount, set: (c, v) => { c.creature.rayCount = v; } }),
-      range({ id: "raySpread", label: "Vision angle", tip: "Total width of the fan of rays, centred on where the creature faces.", min: 10, max: 360, step: 1, fmt: "deg", get: (c) => Math.round((c.creature.raySpread * 180) / Math.PI), set: (c, v) => { c.creature.raySpread = (v * Math.PI) / 180; } }),
-      range({ id: "rayLength", label: "Vision range", tip: "How far each vision ray reaches, in world units.", min: 40, max: 300, step: 1, fmt: "size", get: (c) => c.creature.rayLength, set: (c, v) => { c.creature.rayLength = v; } }),
-    ],
+    fields: plan.creature,
   },
   {
     title: "Brain",
-    fields: [
-      range({ id: "layers", label: "Hidden layers", tip: "How many layers of neurons sit between the creature's eyes and its muscles.", min: 1, max: 4, step: 1, get: (c) => c.brain.hiddenLayers.length, set: (c, v) => { c.brain.hiddenLayers = new Array<number>(v).fill(c.brain.hiddenLayers[0] ?? defaultNeurons); } }),
-      range({ id: "neurons", label: "Neurons per layer", tip: "Neurons in each hidden layer. More can learn richer behaviour but evolve more slowly.", min: 4, max: 32, step: 1, get: (c) => c.brain.hiddenLayers[0] ?? defaultNeurons, set: (c, v) => { c.brain.hiddenLayers.fill(v); } }),
-      range({ id: "memory", label: "Memory", tip: "Short- and long-term memory the brain can write to and read back on the next moment, so it can remember what it saw. 0 is none, 0.5 gives 4 short-term and 4 long-term memory units, 1 gives 8 of each.", min: 0, max: 1, step: 0.05, fmt: "dens", get: (c) => c.brain.memory, set: (c, v) => { c.brain.memory = v; } }),
-    ],
+    fields: plan.brain,
   },
   {
     title: "Mutation",
