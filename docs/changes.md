@@ -6,6 +6,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+## 0.2.5 (2026-10-26)
+
 - RL: `node src/rlProof.ts` trains several runs and scores each run's last weights on fixed paired held-out seeds against the pre-training copy, random designs and trivial policies, with bootstrap 95% intervals (docs/rl-notes.md).
 - RL: episodes in worlds of 32 creatures or fewer run about 12% faster (the settle and birth scans skip the WASM call there); results are unchanged.
 
