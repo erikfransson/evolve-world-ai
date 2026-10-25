@@ -90,6 +90,24 @@ describe("Ppo", () => {
     expect(b.theta.every(Number.isFinite)).toBe(true);
   });
 
+  it("plays the same rollouts as before, with and without everyTick", async () => {
+    const hash = async (everyTick: boolean): Promise<number> => {
+      let h = 2166136261;
+      const ppo = new Ppo([env], learner, sizes, { episodes: 2, epochs: 1, everyTick }, 7);
+      await ppo.stepWith({
+        rollouts: async (tasks) => tasks.map((t) => {
+          const r = playRollout(env, learner.plan, t, null, {});
+          for (const a of [Float64Array.from(r.obs), r.z, r.logp, r.adv, r.ret, Float64Array.of(r.reward)]) {
+            for (const b of new Uint8Array(a.buffer, a.byteOffset, a.byteLength)) h = Math.imul(h ^ b, 16777619) >>> 0;
+          }
+          return r;
+        }),
+      });
+      return h;
+    };
+    expect([await hash(false), await hash(true)]).toEqual([1300386985, 943064064]);
+  });
+
   it("stops the epochs at the target KL before stepping on a far minibatch", () => {
     const one = new Ppo([env], learner, sizes, { episodes: 2, epochs: 1 }, 7);
     one.step();

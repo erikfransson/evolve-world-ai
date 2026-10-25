@@ -6,7 +6,7 @@ import type { StatefulRng } from "../rng.ts";
 import type { PoolEntry } from "../seedPool.ts";
 import { OUTPUT_SIZE } from "../sensors.ts";
 import type { Rng } from "../types.ts";
-import { layoutConfig, runEpisode } from "./env.ts";
+import { earlyWeight, layoutConfig, runEpisode } from "./env.ts";
 import type { EnvSpec, Learner, Library } from "./env.ts";
 import { HELD_BASE, scoreGenomes } from "./trainer.ts";
 import type { RlTrainer, Score, Scorer, StepResult } from "./trainer.ts";
@@ -442,42 +442,50 @@ export function playRollout(env: EnvSpec, plan: Learner["plan"], task: RolloutTa
   const logp = new Float64Array(cap);
   const rewards = new Float64Array(cap);
   const held = new Float64Array(ACTIONS); // the held action, or with everyTick the held noise
-  const everyTick = task.everyTick === true;
   const std = Float64Array.from(logStd, Math.exp);
   let n = 0;
   let t = 0;
   let eaten = 0;
   let kills = 0;
-  const act = (c: Creature): void => {
-    const out = c.outputs;
-    const sample = t % repeat === 0;
-    if (sample || everyTick) {
+  // Stores the sample for this tick's input and means, and leaves each action's noise (std * eps) in held.
+  const sampleAt = (input: Float32Array, u: Float64Array): void => {
+    const at = n * stride;
+    obs.set(input, at);
+    obs[at + d] = 1 - t / ticks;
+    let lp = 0;
+    for (let a = 0; a < ACTIONS; a++) {
+      const eps = rng.normal();
+      held[a] = std[a]! * eps;
+      lp += -0.5 * eps * eps - logStd[a]! - 0.5 * LOG_2PI;
+      z[n * ACTIONS + a] = u[a]! + std[a]! * eps;
+    }
+    logp[n++] = lp;
+  };
+  // The brain runs on sample ticks only and its sampled action is held.
+  const holdAction = (c: Creature): void => {
+    if (t % repeat === 0) {
       const input = c.brain.layerActivations()[0]!;
       const u = policyNet.forward(theta, input);
-      if (sample) {
-        const at = n * stride;
-        obs.set(input, at);
-        obs[at + d] = 1 - t / ticks;
-        let lp = 0;
-        for (let a = 0; a < ACTIONS; a++) {
-          const eps = rng.normal();
-          held[a] = everyTick ? std[a]! * eps : u[a]! + std[a]! * eps;
-          lp += -0.5 * eps * eps - logStd[a]! - 0.5 * LOG_2PI;
-          z[n * ACTIONS + a] = u[a]! + std[a]! * eps;
-        }
-        logp[n++] = lp;
-      }
-      // With everyTick the logp covers the sample's own tick only; the later ticks of the hold reuse its noise on fresh means (an approximation).
-      if (everyTick) for (let a = 0; a < ACTIONS; a++) out[a] = Math.tanh(u[a]! + held[a]!);
+      sampleAt(input, u);
+      for (let a = 0; a < ACTIONS; a++) held[a] = u[a]! + held[a]!;
     }
-    if (!everyTick) for (let a = 0; a < ACTIONS; a++) out[a] = Math.tanh(held[a]!);
+    for (let a = 0; a < ACTIONS; a++) c.outputs[a] = Math.tanh(held[a]!);
     t++;
   };
+  // The brain runs every tick and only the noise is held; the logp covers the sample's own tick only (an approximation).
+  const holdNoise = (c: Creature): void => {
+    const input = c.brain.layerActivations()[0]!;
+    const u = policyNet.forward(theta, input);
+    if (t % repeat === 0) sampleAt(input, u);
+    for (let a = 0; a < ACTIONS; a++) c.outputs[a] = Math.tanh(u[a]! + held[a]!);
+    t++;
+  };
+  const act = task.everyTick === true ? holdNoise : holdAction;
   const w = env.reward;
   const result = runEpisode(env, { plan, genome: theta }, task.seed, pool, library, (eco) => {
     const me = eco.get(0);
     if (!me) return;
-    rewards[n - 1]! += ((w.food ?? 0) + (w.early ?? 0) * (1 - t / ticks)) * (me.eaten - eaten) + (w.kill ?? 0) * (me.kills - kills) + (w.survive ?? 0) * DT;
+    rewards[n - 1]! += ((w.food ?? 0) + (w.early ?? 0) * earlyWeight(t, ticks)) * (me.eaten - eaten) + (w.kill ?? 0) * (me.kills - kills) + (w.survive ?? 0) * DT;
     eaten = me.eaten;
     kills = me.kills;
   }, act);
