@@ -5,14 +5,17 @@ import { MAX_ITEM_SLOTS, creatureFrameBytes, itemsBytes } from "../../src/typesc
 import { MAX_FOUNDERS } from "../../src/typescript/src/live/founders.ts";
 import { LIVE_BIRTH, MAX_ADD_GENOME, MAX_COPIES } from "../../src/typescript/src/live/add.ts";
 
-// Also the admin's upper limit (tunables.ts). At 3000 a creature frame is 57 kB: room() lets in about 23 to 38 viewers at the full
-// population (fewer while items change fast), a save is about 29 MB of JSON, and a save and admin load peak near 720 MB (2500: 687 MB, 5000: 857 MB).
-export const MAX_POPULATION = 3000;
-// Genome weights the living world may hold, so every save can be written and read back inside the unit's MemoryMax of 1 GB. Measured at
-// 2900 creatures on the 50000 x 31250 world (2026-10-22): a save is about 7 MB plus 5.4 MB per million weights; writing one peaks at 543 MB
-// of RSS at 36 MB of JSON and 926 MB at 77 MB, reading one back at 686 MB and 1234 MB. 7 million keeps a save near 45 MB (about 800 MB
-// to read back); the four founders at 725 copies each hold 5.4 million. Measured without helper threads (HELPER_THREADS 0, the unit's
-// default): helpers keep their own copies of the brains, so measure again under MemoryMax before setting LIVE_THREADS.
+// Also the admin's upper limit (tunables.ts). At 5000 a creature frame is 95 kB: room() lets in about 16 to 23 viewers at the full
+// population (fewer while items change fast). The save size and memory are bounded by MAX_LIVE_WEIGHTS below, not by this.
+export const MAX_POPULATION = 5000;
+// Genome weights the living world may hold, so every save can be written and read back inside the unit's MemoryMax of 1 GB. A save is
+// about 5.4 MB of JSON per million weights plus a few MB, nearly the same at 2900 and 5000 creatures. Measured at 2026-10-26 under
+// MemoryMax=1G and --max-old-space-size=768 like the unit, 50000 x 31250 world, items at the admin's largest caps, 7.02 M weights:
+// 2900 creatures save 45 MB, peak 605 MB writing, 556 MB at a start and 607 MB at an admin load over a full world; 5000 creatures
+// 45 MB, 623, 539 and 631 MB. Earlier (2026-10-22, 2 GB cap) 13 M weights were 77 MB of JSON and 1234 MB to read back.
+// The budget binds before the population for big brains: the four founders (1876 weights each on average) fill it near 3300 creatures,
+// the Juggernaut alone (1236) fits 5000. Measured without helper threads (HELPER_THREADS 0, the unit's default): helpers keep their
+// own copies of the brains, so measure again under MemoryMax before setting LIVE_THREADS.
 // Births stop WEIGHT_RESERVE short of it, as at the birth reserve, so visitors' adds still fit; adds past it are refused.
 export const MAX_LIVE_WEIGHTS = 7_000_000;
 export const WEIGHT_RESERVE = 100 * MAX_ADD_GENOME; // 100 of the largest brains an add allows, the birth reserve's 100 places
@@ -30,7 +33,7 @@ liveConfig.world.foodEnergy = 50;
 liveConfig.world.poisonDamage = 50; // a bite costs one food's worth, not the life (POISON_LETHAL is 100); see docs/tuning-notes.md
 liveConfig.world.poisonDensity = 0.01; // start counts stay at or below the caps (foodDensity 0.5 is 78 125 items)
 liveConfig.eco.initialPopulation = 0; // a fresh world is seeded with the founders file instead (founders.ts)
-liveConfig.eco.foodRegrow = 0.003;
+liveConfig.eco.foodRegrow = 0.00285;
 liveConfig.eco.foodMaxDensity = 1.4; // 1.5 needs more item slots than the wire carries at 50000 x 31250 (itemHeadroom)
 liveConfig.eco.poisonRegrow = 0.0003;
 liveConfig.eco.poisonMaxDensity = 0.01;
@@ -137,7 +140,7 @@ export const LIMITS = {
   stateEveryMs: 4 * 60 * 60 * 1000,
   keepStateMs: 4 * 24 * 60 * 60 * 1000, // saves older than this are deleted, except the newest six (state.ts)
   maxStateDirBytes: 2e9, // no save is written while the state directory holds more than this
-  maxSaveJsonBytes: 50e6, // a save may be at most this much JSON (Inland Sea at 30000 x 18750: 24 MB at 2500 creatures, 42 MB at 5000, about 29 MB at the 3000 cap; the 50000 wide one adds under 1 MB of items); parsing runs in a worker with its own heap cap (saveParse.ts)
+  maxSaveJsonBytes: 50e6, // a save may be at most this much JSON (Inland Sea at 30000 x 18750: 24 MB at 2500 creatures, 42 MB at 5000; the brain-weight budget keeps a full world near 45 MB); parsing runs in a worker with its own heap cap (saveParse.ts)
   maxCatchUpS: 1, // after a stall longer than this the clock resyncs instead of racing to catch up
   sliceMs: 15, // simulation work per event-loop turn, so sockets stay served
   maxBufferedBytes: 1_500_000, // a viewer with more queued than this is skipped for frames (slow link); above a join's full item set (about 1 MB at the Inland Sea's largest caps)

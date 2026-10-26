@@ -233,17 +233,17 @@ describe("public server: upload budget", () => {
 });
 
 describe("live world", () => {
-  it("holds the population to 3000: the world, the admin limit, and a restored older save", () => {
+  it("holds the population to 5000: the world, the admin limit, and a restored older save", () => {
     expect(liveConfig.eco.maxPopulation).toBe(MAX_POPULATION);
-    expect(MAX_POPULATION).toBe(3000);
+    expect(MAX_POPULATION).toBe(5000);
     const world = new LiveWorld(smallConfig(), null);
-    expect(tunableLimits()["eco.maxPopulation"]!.max).toBe(3000);
-    expect(applyTunables(world.eco, { "eco.maxPopulation": 3001 })).toMatch(/at most 3000/);
-    expect(applyTunables(world.eco, { "eco.maxPopulation": 3000 })).toBeNull();
+    expect(tunableLimits()["eco.maxPopulation"]!.max).toBe(5000);
+    expect(applyTunables(world.eco, { "eco.maxPopulation": 5001 })).toMatch(/at most 5000/);
+    expect(applyTunables(world.eco, { "eco.maxPopulation": 5000 })).toBeNull();
     const old = new LiveWorld(smallConfig(), null);
     old.eco.config.eco.maxPopulation = 10_000; // as saves made before the cap
     world.restoreState(JSON.parse(JSON.stringify(old.saveState())));
-    expect(world.config.eco.maxPopulation).toBe(3000);
+    expect(world.config.eco.maxPopulation).toBe(5000);
   });
 
   it("reports speed 0 while paused", async () => {

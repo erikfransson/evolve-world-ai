@@ -102,7 +102,7 @@ export function historyAxis(first: number, last: number, yearS: number): { shift
 export function cleanHello(h: Hello): Hello | null {
   const ok = isObj(h.world) && n(h.world.width) > 0 && n(h.world.height) > 0 && n(h.radius) > 0 && n(h.dt) > 0 && n(h.fullEnergy) > 0 && int(h.itemSlots, 0, MAX_ITEM_SLOTS);
   const s: Record<string, unknown> = isObj(h.summary) ? h.summary : {};
-  const seedCopies = int(s.seedCopies, 1, 3000) ? (s.seedCopies as number) : undefined; // up to MAX_POPULATION, an admin reset may seed many
+  const seedCopies = int(s.seedCopies, 1, 5000) ? (s.seedCopies as number) : undefined; // up to MAX_POPULATION, an admin reset may seed many
   const energy = (v: unknown, max = 10_000): number | undefined => (typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= max ? v : undefined);
   const foodEnergy = energy(s.foodEnergy);
   const poisonDamage = energy(s.poisonDamage);

@@ -145,7 +145,20 @@ Bench, 2900 seeded founders, one thread, load 5-12: tick 15.0 ms at 30k, 15.9 at
 At 2900 creatures on the 50000 x 31250 world, under `systemd-run --scope -p MemoryMax=1G` like the unit: the founder mix (5.4 M weights) saves 36 MB of JSON, peaks at 543 MB writing and 686 MB reading back; 2900 Oracles (13 M weights, 77 MB) and 2900 of the largest upload brains (22 M, 124 MB) were OOM-killed (2 GB cap: 926 MB writing, 1234 MB reading back for the Oracles).
 A save is about 7 MB plus 5.4 MB per million weights; reading back costs about 13 MB of RSS per MB of JSON.
 The budget is global: births of every family wait while the world is at it, so a world of maximum-size brains holds about 830 creatures (6.25 M / 7538 under the birth cap); that is the design, not a stall. Births stop at 7 M less a reserve of 100 maximum-size brains (754 k), so visitors' adds still fit, as at the 100-place birth reserve.
-`MAX_LIVE_WEIGHTS` 7 M: the worst world under it (7.02 M weights, 2900 creatures, items at the admin's largest caps) saves 45 MB, peaks at 604 MB writing and 813 MB reading back under the 1 GB cap.
+`MAX_LIVE_WEIGHTS` 7 M: the worst world under it (7.02 M weights, 2900 creatures, items at the admin's largest caps) saves 45 MB, peaks at 604 MB writing and 813 MB reading back under the 1 GB cap, measured without the heap cap (`--max-old-space-size`). With it, as in the unit, see the #63 numbers below (a re-measure under MemoryMax=1G: write 628, read 543, admin load 631 MB; read and load also pass at a 512 MB heap).
+
+## Live cap 5000 and food (#63, 2026-10-26)
+
+Erik raised `MAX_POPULATION` to 5000 (was 3000) and asked for slightly sparser food: `eco.foodRegrow` 0.00285 (was 0.003, 5% less).
+`MAX_LIVE_WEIGHTS` stays 7 M. Under MemoryMax=1G with items at the admin's largest caps, 5000 creatures at 7.02 M weights save 45 MB of JSON and peak at 623 MB writing, 539 MB restoring at a start and 631 MB at an admin load over a full world (2900 creatures: 45 MB, 605, 556, 607 MB). A save's size follows the weights, not the creature count. Raising the budget so 4900 seeded founders fit (about 10 M) would pass the 50 MB save limit, so it stays, and four-founder worlds wait at about 3300 creatures.
+Paired settle runs, the Live config seeded with 10 of each founder, seed 1, 60 sim-min:
+
+| foodRegrow | peak | mean after 15 min | low  | at 60 min |
+| ---------- | ---- | ----------------- | ---- | --------- |
+| 0.003      | 3560 | 2421              | 1338 | 3560      |
+| 0.00285    | 3247 | 2238              | 1278 | 3244      |
+
+About 8% fewer creatures on average. Both sit near 2900-3200 for the first 20 minutes, where the four founders fill the brain-weight budget.
 
 ## Ideas not yet tried
 - Evaluate each creature on two layouts to reduce layout luck.

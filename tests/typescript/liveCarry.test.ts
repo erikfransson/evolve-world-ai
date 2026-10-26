@@ -9,6 +9,7 @@ import { PLAN_LIMITS } from "../../src/typescript/src/sim/rl/validate.ts";
 import { SCALARS } from "../../src/typescript/src/sim/ecoState.ts";
 import type { CarryOrder } from "../../server/src/carry.ts";
 import { loadFounders } from "../../server/src/founders.ts";
+import { MAX_POPULATION } from "../../server/src/config.ts";
 import { LiveWorld } from "../../server/src/liveWorld.ts";
 import { Saves, openWorld } from "../../server/src/saves.ts";
 import { StateStore } from "../../server/src/state.ts";
@@ -204,7 +205,7 @@ describe("a reset with a carried creature", () => {
     const dir = tmp();
     const { live, saves, store } = await running(dir);
     const o = checkCarry(order(live, (x) => (x.copies = 200)), live.addRules(), 1000) as CarryOrder;
-    const most = Math.floor((3000 - 100) / FOUNDERS.length);
+    const most = Math.floor((MAX_POPULATION - 100) / FOUNDERS.length);
     await expect(saves.reset(most, FOUNDERS.length, new Date(), o)).rejects.toThrow(/carried copies do not fit/);
     expect(store.list().length).toBeGreaterThan(0);
     expect(existsSync(join(dir, CARRY_FILE))).toBe(false);
