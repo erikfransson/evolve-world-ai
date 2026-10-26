@@ -35,7 +35,7 @@ export interface PathSink {
 
 // Draws a closed outline as straight edges with each corner rounded over CORNER units (less on short edges), so stones stay angular
 // and the curve never strays more than about SIMPLIFY from the disc union.
-export function traceLoop(path: PathSink, pts: readonly number[]): void {
+export function traceLoop(path: PathSink, pts: readonly number[], corner = CORNER): void {
   const n = pts.length / 2;
   const at = (i: number): [number, number] => [pts[2 * ((i + n) % n)]!, pts[2 * ((i + n) % n) + 1]!];
   for (let i = 0; i < n; i++) {
@@ -44,8 +44,8 @@ export function traceLoop(path: PathSink, pts: readonly number[]): void {
     const [nx, ny] = at(i + 1);
     const l1 = Math.hypot(vx - px, vy - py) || 1;
     const l2 = Math.hypot(nx - vx, ny - vy) || 1;
-    const t1 = Math.min(CORNER, 0.4 * l1);
-    const t2 = Math.min(CORNER, 0.4 * l2);
+    const t1 = Math.min(corner, 0.4 * l1);
+    const t2 = Math.min(corner, 0.4 * l2);
     const ax = vx + ((px - vx) / l1) * t1;
     const ay = vy + ((py - vy) / l1) * t1;
     if (i === 0) path.moveTo(ax, ay);
