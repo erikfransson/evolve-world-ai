@@ -44,7 +44,7 @@ export function cacheStep(m: CacheMemo, world: { width: number; height: number }
 export class TerrainCache {
   private canvas: OffscreenCanvas | HTMLCanvasElement | null = null; // grows only; the map sits in its top-left w x h pixels
   private terrain: Terrain | null = null;
-  private unfinished = false; // the cached map drew some ground from another tier's bitmaps while its own were made: made ready a few a frame (prepareTerrain), then redrawn
+  private unfinished = false; // the cached map drew stand-ins (ground from another tier, rock at another resolution, no shelf) while its own images were made: made ready a few a frame (prepareTerrain), then redrawn
   private w = 0;
   private h = 0;
   private readonly memo: CacheMemo = { ready: false, zoom: 0, area: { x0: 0, x1: 0, y0: 0, y1: 0 }, builtAt: -Infinity, lastZoom: 0, lastX: NaN, lastY: NaN, lastCovered: false };

@@ -28,3 +28,21 @@ export function makeCanvas(w: number, h: number): OffscreenCanvas | HTMLCanvasEl
   c.height = h;
   return c;
 }
+
+// Pixels of images one draw call may build, so a new zoom level costs a few frames and not one long one. The first build of a call always goes ahead.
+export interface BuildBudget {
+  readonly limit: number;
+  left: number;
+  refused: boolean; // an image was put off: draw again (or prepare) to finish
+}
+export const buildBudget = (limit: number): BuildBudget => ({ limit, left: limit, refused: false });
+
+// Spends `cells` pixels and says yes, or marks the call unfinished and says no.
+export function spend(b: BuildBudget, cells: number): boolean {
+  if (b.left < b.limit && cells > b.left) {
+    b.refused = true;
+    return false;
+  }
+  b.left -= cells;
+  return true;
+}

@@ -17,6 +17,7 @@ export interface Spot {
 
 const GRID = 90; // sample points along the longer side when looking for a patch of mud or firm ground
 const PATCH_SPAN = 520; // world units a ground swatch spans: a patch edge with its rim and some texture
+const SWATCH_DRAWS = 4; // draws of a swatch at most
 const EDGE_SHARE = 0.6; // of the ring around a ground spot of the same kind, so the swatch shows the patch and its edge
 
 // The spot that shows kind best, or null when the world has none of it.
@@ -66,9 +67,12 @@ export function drawSwatch(canvas: HTMLCanvasElement, t: Terrain, spot: Spot, cs
   const scale = canvas.width / spanW;
   const view = { x0: spot.x - spanW / 2, x1: spot.x + spanW / 2, y0: spot.y - spanH / 2, y1: spot.y + spanH / 2 };
   ctx.setTransform(scale, 0, 0, scale, -view.x0 * scale, -view.y0 * scale);
-  ctx.fillStyle = FLOOR;
-  ctx.fillRect(view.x0, view.y0, spanW, spanH);
-  drawTerrain(ctx, t, scale, view);
+  // drawn once, so again until no image is put off for a later frame
+  for (let i = 0, done = false; i < SWATCH_DRAWS && !done; i++) {
+    ctx.fillStyle = FLOOR;
+    ctx.fillRect(view.x0, view.y0, spanW, spanH);
+    done = drawTerrain(ctx, t, scale, view);
+  }
   ctx.setTransform(1, 0, 0, 1, 0, 0);
 }
 

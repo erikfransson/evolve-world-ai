@@ -2,7 +2,7 @@ import type { CreatureState, EpisodeView, PlaybackState, WorldView } from "../si
 import { HIT_FOOD, HIT_NONE, HIT_POISON } from "../sim/types.ts";
 import type { SimConfig } from "../sim/config.ts";
 import { terrainOf } from "../sim/terrain.ts";
-import { BACKGROUND, FOOD, OTHER, POISON, RAY_NONE, RAY_WALL, WALL } from "./palette.ts";
+import { BACKGROUND, FLOOR, FOOD, OTHER, POISON, RAY_NONE, RAY_WALL, WALL } from "./palette.ts";
 import { drawTerrain } from "./terrainScene.ts";
 
 export interface ViewOptions {
@@ -27,8 +27,7 @@ export interface Frame extends Transform {
 }
 
 const MARGIN = 12; // canvas pixels around the world
-export const FLOOR = "#10291f";
-export { BACKGROUND, FOOD, OTHER, POISON, WALL };
+export { BACKGROUND, FLOOR, FOOD, OTHER, POISON, WALL };
 export const RAY_COLORS = [RAY_NONE, FOOD, POISON, RAY_WALL, OTHER]; // indexed by HIT_NONE, HIT_FOOD, HIT_POISON, HIT_WALL, HIT_CREATURE
 // Trials: the body is full at this many times the starting energy, so a newborn is one third full.
 export const TRIALS_FULL_AT = 3;

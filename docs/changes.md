@@ -7,6 +7,7 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 ## Unreleased
 
 - RL Arena: the reward graph draws the luckiest line in its own smaller panel below, so train mean and held-out get a y scale fitted to them and small held-out changes are visible (#54).
+- Live, Ecosystem and Trials: the terrain has the abyssal look (#50): a blue-black silt floor, top-lit basalt rock with an edge line, silt-shelf mud, pale sand firm ground and soft haze tints for rich, dry and poison regions (`noiseTex.ts`, `abyssRock.ts`). Drawn ground still equals sensed ground. The simulation is unchanged.
 
 ## 0.2.5 (2026-10-26)
 
