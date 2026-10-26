@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startAdmin } from "../../server/src/admin.ts";
 import { loadFounders } from "../../server/src/founders.ts";
+import { MAX_POPULATION } from "../../server/src/config.ts";
 import { LiveWorld } from "../../server/src/liveWorld.ts";
 import { MAX_KEPT_RESETS, Saves, openWorld } from "../../server/src/saves.ts";
 import { SEED_FILE, StateStore } from "../../server/src/state.ts";
@@ -77,7 +78,7 @@ describe("admin reset", () => {
     const dir = tmp();
     const { saves, store } = await running(dir);
     const n = FOUNDERS.length;
-    const most = Math.floor((3000 - 100) / n);
+    const most = Math.floor((MAX_POPULATION - 100) / n);
     for (const bad of [0, -1, 1.5, Number.NaN, most + 1, 1e9]) await expect(saves.reset(bad, n), String(bad)).rejects.toThrow(`copies must be a whole number from 1 to ${most}`);
     expect(store.list().length).toBe(2);
     expect(readdirSync(dir).some((f) => f.startsWith("before-reset-"))).toBe(false);
@@ -112,7 +113,8 @@ describe("admin reset", () => {
   it("seedFounders itself keeps the founders below the birth reserve, whatever the caller checked", () => {
     const live = new LiveWorld(freshConfig(), null);
     const room = live.eco.config.eco.maxPopulation - live.eco.config.eco.birthReserve;
-    expect(() => live.seedFounders(FOUNDERS, Math.random, Math.floor(room / FOUNDERS.length) + 1)).toThrow(/do not fit below the birth reserve/);
+    const jug = FOUNDERS.filter((f) => f.name === "Juggernaut"); // small enough brains that the room, not the weight budget, is what refuses
+    expect(() => live.seedFounders(jug, Math.random, room + 1)).toThrow(/do not fit below the birth reserve/);
     expect(live.eco.population).toBe(0);
   });
 

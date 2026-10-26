@@ -3,7 +3,7 @@
 import { WebSocket } from "../../server/node_modules/ws/wrapper.mjs";
 import { AddGate, AddPolicy, addingOn, visitorKey } from "../../server/src/adds.ts";
 import { loadFounders } from "../../server/src/founders.ts";
-import { LIMITS, LIVE } from "../../server/src/config.ts";
+import { LIMITS, LIVE, MAX_POPULATION } from "../../server/src/config.ts";
 import { LiveWorld, groundShares } from "../../server/src/liveWorld.ts";
 import { Saves } from "../../server/src/saves.ts";
 import { StateStore } from "../../server/src/state.ts";
@@ -143,6 +143,9 @@ describe("add message: encode and parse", () => {
     const h = new LiveWorld(smallConfig(), null).hello(5);
     expect(cleanHello({ ...h, summary: undefined as never })!.summary).toEqual({ initialPopulation: 0, maxPopulation: 0, collisionDamage: false, seasons: false });
     expect(cleanHello({ ...h, summary: { initialPopulation: "x", maxPopulation: -5, collisionDamage: 1, seasons: true } as never })!.summary).toEqual({ initialPopulation: 0, maxPopulation: 0, collisionDamage: false, seasons: true });
+    // An admin reset may seed up to the whole population (one founder, no birth reserve); the page shows that count and no more.
+    expect(cleanHello({ ...h, summary: { ...h.summary, seedCopies: MAX_POPULATION } })!.summary.seedCopies).toBe(MAX_POPULATION);
+    expect(cleanHello({ ...h, summary: { ...h.summary, seedCopies: MAX_POPULATION + 1 } })!.summary.seedCopies).toBeUndefined();
   });
 
   it("the kill bonus: 5 on Live, carried in the hello and its rules line, changed live by the admin within the engine's bound", () => {

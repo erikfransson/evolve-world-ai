@@ -2,7 +2,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { BIRTH_WEIGHT_CAP, MAX_LIVE_WEIGHTS, mostCopies } from "../../server/src/config.ts";
+import { BIRTH_WEIGHT_CAP, MAX_LIVE_WEIGHTS, SEED_COPIES, mostCopies } from "../../server/src/config.ts";
 import { MAX_ADD_GENOME, MAX_COPIES } from "../../src/typescript/src/live/add.ts";
 import { PLAN_LIMITS } from "../../src/typescript/src/sim/rl/validate.ts";
 import { SEED_FILE } from "../../server/src/state.ts";
@@ -70,8 +70,12 @@ describe("brain weights of the live world", () => {
     expect(new StateStore(dir).list().length).toBeGreaterThan(0); // nothing moved
   });
 
-  it("leave the founders room at any count a reset allows, and the live world its cap", () => {
-    expect(seedWeights(FOUNDERS, mostCopies(FOUNDERS.length, liveConfig.eco))).toBeLessThanOrEqual(BIRTH_WEIGHT_CAP);
+  // The budget binds before the population for big brains: the four founders fill it near 3300 creatures (a reset past it is refused,
+  // above), while a world of the Juggernaut alone, Live's usual lineage, fits the whole room below the birth reserve.
+  it("leave the founders room at the start count, a Juggernaut world the whole room, and the live world its cap", () => {
+    expect(seedWeights(FOUNDERS, SEED_COPIES)).toBeLessThanOrEqual(BIRTH_WEIGHT_CAP);
+    const jug = FOUNDERS.find((f) => f.name === "Juggernaut")!;
+    expect(seedWeights([jug], mostCopies(1, liveConfig.eco))).toBeLessThanOrEqual(BIRTH_WEIGHT_CAP);
     expect(new LiveWorld(structuredClone(liveConfig), null).eco.birthWeightCap).toBe(BIRTH_WEIGHT_CAP);
   });
 

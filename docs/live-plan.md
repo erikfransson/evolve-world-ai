@@ -22,9 +22,10 @@ No separate repo is needed.
 Hourly state stays out of git, since a world of about 1000 creatures is a few MB per save and would bloat the history; an occasional chosen snapshot can be committed by hand.
 
 ## Server
-- One world, Ecosystem rules: the Inland Sea map with collision damage on, room for 3000 creatures.
+- One world, Ecosystem rules: the Inland Sea map with collision damage on, room for 5000 creatures.
 - Runs as a `systemd --user` service: `Nice=19`, `MemoryMax`, `CPUQuota`, restart on crash, no access outside `server/state/`.
 - Streams compact binary frames (positions, angles, colours) at about 5 Hz and the page interpolates; caps viewers so upload bandwidth stays bounded.
+- `room()` in `public.ts` judges by the current frame size, so viewers let in at a low population stay as it grows: at 5000 the creature frames of 100 viewers use about 1.9 of the 2.2 MB/s frame budget. Accepted because send queues, frame skips and drops keep it bounded, and mixed worlds level near 3300 (brain-weight budget).
 - Admin: owner only. A separate admin port on loopback that the tunnel never exposes, plus a token kept on the host. It live-tunes world parameters, injects creatures, saves now, and loads a listed save to revert the world. Operations are documented privately.
 - Counter: worlds running is 1, plus current viewers and total creatures inserted, served by the same server.
 - Needs from the engine (owner: session 16): insert a creature at runtime, save and restore the full world state.
