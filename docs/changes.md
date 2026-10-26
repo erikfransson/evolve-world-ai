@@ -6,6 +6,10 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+## 0.2.7 (2026-10-26)
+
+- Live: the add panel starts at 3 copies instead of 1 (#65). Bounds are unchanged.
+
 ## 0.2.6 (2026-10-26)
 
 - RL Arena: the reward graph draws the luckiest line in its own smaller panel below, so train mean and held-out get a y scale fitted to them and small held-out changes are visible (#54).
