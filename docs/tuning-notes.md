@@ -145,7 +145,7 @@ Bench, 2900 seeded founders, one thread, load 5-12: tick 15.0 ms at 30k, 15.9 at
 At 2900 creatures on the 50000 x 31250 world, under `systemd-run --scope -p MemoryMax=1G` like the unit: the founder mix (5.4 M weights) saves 36 MB of JSON, peaks at 543 MB writing and 686 MB reading back; 2900 Oracles (13 M weights, 77 MB) and 2900 of the largest upload brains (22 M, 124 MB) were OOM-killed (2 GB cap: 926 MB writing, 1234 MB reading back for the Oracles).
 A save is about 7 MB plus 5.4 MB per million weights; reading back costs about 13 MB of RSS per MB of JSON.
 The budget is global: births of every family wait while the world is at it, so a world of maximum-size brains holds about 830 creatures (6.25 M / 7538 under the birth cap); that is the design, not a stall. Births stop at 7 M less a reserve of 100 maximum-size brains (754 k), so visitors' adds still fit, as at the 100-place birth reserve.
-`MAX_LIVE_WEIGHTS` 7 M: the worst world under it (7.02 M weights, 2900 creatures, items at the admin's largest caps) saves 45 MB, peaks at 604 MB writing and 813 MB reading back under the 1 GB cap.
+`MAX_LIVE_WEIGHTS` 7 M: the worst world under it (7.02 M weights, 2900 creatures, items at the admin's largest caps) saves 45 MB, peaks at 604 MB writing and 813 MB reading back under the 1 GB cap, measured without the heap cap (`--max-old-space-size`). With it, as in the unit, see the #63 numbers below (a re-measure under MemoryMax=1G: write 628, read 543, admin load 631 MB; read and load also pass at a 512 MB heap).
 
 ## Live cap 5000 and food (#63, 2026-10-26)
 
