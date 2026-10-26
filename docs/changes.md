@@ -6,6 +6,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- RL Arena: the reward graph draws the luckiest line in its own smaller panel below, so train mean and held-out get a y scale fitted to them and small held-out changes are visible (#54).
+
 ## 0.2.5 (2026-10-26)
 
 - RL: `node src/rlProof.ts` trains several runs and scores each run's last weights on fixed paired held-out seeds against the pre-training copy, random designs and trivial policies, with bootstrap 95% intervals (docs/rl-notes.md).
