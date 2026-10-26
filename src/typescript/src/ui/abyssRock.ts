@@ -291,10 +291,21 @@ function patternsOf(ctx: CanvasRenderingContext2D) {
 // quick: from-afar drawing without images, for the settings preview that redraws while sliders move.
 export function drawRock(ctx: CanvasRenderingContext2D, t: Terrain, scale: number, view: View, quick: boolean): void {
   if (t.rockCount === 0) return;
+  if (typeof Path2D === "undefined") {
+    // no outlines without Path2D (workers in old browsers, tests): plain discs
+    ctx.fillStyle = FLAT_BODY;
+    ctx.beginPath();
+    for (let i = 0; i < t.rockCount; i++) {
+      ctx.moveTo(t.rockX[i]! + t.rockR[i]!, t.rockY[i]!);
+      ctx.arc(t.rockX[i]!, t.rockY[i]!, t.rockR[i]!, 0, 2 * Math.PI);
+    }
+    ctx.fill();
+    return;
+  }
   const px = 1 / scale;
   const pad = 220 + 4 * px; // the widest halo
   const shown = itemsOf(t).filter(({ body: b }) => b.x1 + pad >= view.x0 && b.x0 - pad <= view.x1 && b.y1 + pad >= view.y0 && b.y0 - pad <= view.y1);
-  if (quick || typeof Path2D === "undefined") {
+  if (quick) {
     ctx.fillStyle = FLAT_BODY;
     for (const { outline } of shown) ctx.fill(outline, "evenodd");
     return;

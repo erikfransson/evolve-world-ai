@@ -6,6 +6,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- Live, Ecosystem and Trials: the terrain has the abyssal look (#50): a blue-black silt floor, top-lit basalt rock with an edge line, silt-shelf mud, pale sand firm ground and soft haze tints for rich, dry and poison regions (`noiseTex.ts`, `abyssRock.ts`). Drawn ground still equals sensed ground. The simulation is unchanged.
+
 ## 0.2.5 (2026-10-26)
 
 - RL: `node src/rlProof.ts` trains several runs and scores each run's last weights on fixed paired held-out seeds against the pre-training copy, random designs and trivial policies, with bootstrap 95% intervals (docs/rl-notes.md).

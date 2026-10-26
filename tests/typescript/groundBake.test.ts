@@ -57,13 +57,13 @@ describe("ground bitmaps of a patch larger than one bitmap", () => {
 
   it("bakes one bitmap per frame, then draws from bitmaps of at most 640 px and paints nothing on the canvas", async () => {
     const { frame, settle } = await inlandSea();
-    settle(0.05); // the textures, rim images and probe canvas, made once
+    settle(0.05); // the textures, shelf images and probe canvas, made once
     const from = bitmaps.length;
     frame(0.1);
     expect(bitmaps.length - from).toBe(1);
     expect(settle(0.1)).toBeGreaterThan(2);
     expect(bitmaps.slice(from).some((b) => b.w === 640 || b.h === 640)).toBe(true);
-    expect(bitmaps.every((b) => b.w <= 640 && b.h <= 640)).toBe(true);
+    expect(bitmaps.slice(from).every((b) => b.w <= 640 && b.h <= 640)).toBe(true); // the shelf images made before are coarse (25+ units a px) and may be larger
     drawn.length = 0;
     const made = bitmaps.length;
     frame(0.1);
