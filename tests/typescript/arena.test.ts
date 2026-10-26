@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { drawArena, frameAt, learnerAlive, loopSeconds } from "../../src/typescript/src/ui/arenaScene.ts";
-import { drawRewardGraph, latestValues, thin } from "../../src/typescript/src/ui/rewardGraph.ts";
+import { drawRewardGraph, fitRange, latestValues, thin } from "../../src/typescript/src/ui/rewardGraph.ts";
 import { ARENA_KIND, bestFounder, change, customEnv, envsForKind, kindRejection, planSummary } from "../../src/typescript/src/ui/arenaPick.ts";
 import type { CustomEnvForm } from "../../src/typescript/src/ui/arenaPick.ts";
 import { DEFAULT_SPEED, FAVOURITES_KEY, MAX_FAVOURITES, SPEED_KEY, addFavourite, loadFavourites, loadSpeed, removeFavourite, saveSpeed } from "../../src/typescript/src/ui/arenaStore.ts";
@@ -99,6 +99,26 @@ describe("drawRewardGraph", () => {
     expect(latestValues([], 3).held).toBe(3);
     expect(latestValues([step(1, 2, 5), step(2, 4, null)], 1)).toEqual({ train: 4, best: 5, held: 5 });
     expect(latestValues([step(1, 2, null)], 1).held).toBe(1);
+  });
+
+  it("fits a panel's range to its own values with a margin", () => {
+    expect(fitRange([])).toEqual({ lo: 0, hi: 1 });
+    const r = fitRange([9, 11, NaN]);
+    expect(r.lo).toBeLessThan(9);
+    expect(r.lo).toBeGreaterThan(8.5);
+    expect(r.hi).toBeGreaterThan(11);
+    expect(r.hi).toBeLessThan(11.5);
+    const flat = fitRange([5, 5]);
+    expect(flat.hi - flat.lo).toBeGreaterThan(0);
+  });
+
+  it("keeps held-out spread over its panel when the luckiest line is ten times higher", () => {
+    const { ctx, calls } = fakeCtx(400, 290);
+    const its = [10, 20, 30].map((i, k) => ({ iter: i, train: 9 + k, best: 100 + k, held: 9 + k, perEnv: null, seconds: i }));
+    drawRewardGraph(ctx, its, 9, 400, 290);
+    const ys = calls.filter((c) => c.name === "arc").map((c) => c.args[1] as number);
+    const mainH = 290 - 12 - 36 - 18 - Math.round((290 - 12 - 36 - 18) * 0.3);
+    expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(0.7 * mainH);
   });
 
   it("does nothing when the canvas is too small", () => {
