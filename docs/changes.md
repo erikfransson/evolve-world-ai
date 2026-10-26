@@ -6,6 +6,9 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- Live: room for 5000 creatures (was 3000, #63), births still stop 100 below it. The brain-weight budget stays at 7 million, so a world of big brains still waits for deaths before that. A full world fits fewer viewers (about 16 to 23).
+- Live: food regrows 5% slower (`eco.foodRegrow` 0.00285, was 0.003).
+
 ## 0.2.5 (2026-10-26)
 
 - RL: `node src/rlProof.ts` trains several runs and scores each run's last weights on fixed paired held-out seeds against the pre-training copy, random designs and trivial policies, with bootstrap 95% intervals (docs/rl-notes.md).
