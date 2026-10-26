@@ -82,7 +82,7 @@ function pixelTile(n: number, fill: (u: number, v: number, out: number[]) => voi
 
 // Sediment ripples across a tile: stripes along an integer lattice direction (so the tile repeats), their phase bent by noise.
 // kx, ky: stripe count across the tile along x and y; bend: how far the noise moves them, in stripes; returns -1..1.
-export function ripple(u: number, v: number, kx: number, ky: number, bend: number, seed: number): number {
+function ripple(u: number, v: number, kx: number, ky: number, bend: number, seed: number): number {
   const w = fbm(u * 4, v * 4, seed, 3, 4);
   const p = kx * u + ky * v + bend * w;
   const s = Math.sin(2 * Math.PI * p);
@@ -91,17 +91,18 @@ export function ripple(u: number, v: number, kx: number, ky: number, bend: numbe
 
 // ---- Floor: one image over the whole world, large soft patches of silt, a few percent in lightness ----
 
-const floorImages = new Map<string, Canvas | null>();
-export const FLOOR_RGB = [12, 33, 40] as const;
+const floorImages = new Map<string, Canvas | null>(); // least recently used first, at most FLOOR_IMAGES
+const FLOOR_IMAGES = 3;
 export const FLOOR_CELL = 80; // world units per pixel of the floor image, at most
 
 export function floorImage(width: number, height: number): { image: Canvas | null; cell: number } {
   const cell = Math.min(FLOOR_CELL, Math.max(8, Math.max(width, height) / 400));
   const w = Math.ceil(width / cell) + 1;
   const h = Math.ceil(height / cell) + 1;
-  const key = `${w}x${h}`;
+  const key = `${w}x${h}@${cell}`;
   let image = floorImages.get(key);
-  if (image === undefined) {
+  if (image !== undefined) floorImages.delete(key);
+  else {
     const px = new Uint8ClampedArray(4 * w * h);
     for (let j = 0; j < h; j++) {
       for (let i = 0; i < w; i++) {
@@ -124,42 +125,16 @@ export function floorImage(width: number, height: number): { image: Canvas | nul
       }
     }
     image = canvasOfPixels(w, h, px);
-    floorImages.set(key, image);
+    if (floorImages.size >= FLOOR_IMAGES) floorImages.delete(floorImages.keys().next().value!);
   }
+  floorImages.set(key, image);
   return { image, cell };
-}
-
-// Close up the floor shows the faintest ripples: an overlay tile (alpha only) of 1200 world units.
-export const RIPPLE_UNITS = 1200;
-let floorRipples: Canvas | null | undefined;
-export function floorRippleTile(): Canvas | null {
-  if (floorRipples === undefined) {
-    floorRipples = pixelTile(384, (u, v, out) => {
-      const r = ripple(u, v, 28, 9, 3.2, 31);
-      const m = 0.5 + 0.5 * fbm(u * 3, v * 3, 33, 2, 3); // ripples come and go in patches
-      const a = Math.min(1, Math.abs(r) * m * smooth(0.3, 0.8, m));
-      if (r > 0) {
-        out[0] = 120;
-        out[1] = 190;
-        out[2] = 190;
-        out[3] = Math.round(255 * 0.025 * a);
-      } else {
-        out[0] = 0;
-        out[1] = 6;
-        out[2] = 10;
-        out[3] = Math.round(255 * 0.06 * a);
-      }
-    });
-  }
-  return floorRipples;
 }
 
 // ---- Ground: a smooth colour tile (mottle and ripples) and a grain tile over it ----
 
 export const GROUND_BASE_UNITS = 1200;
 export const GROUND_GRAIN_UNITS = 320;
-
-const mix = (a: number, b: number, t: number): number => a + (b - a) * t;
 
 export interface GroundLook {
   base: readonly number[]; // rgb
@@ -252,7 +227,7 @@ export function groundGrainTile(look: GrainLook): Canvas | null {
   return c;
 }
 
-// ---- Rock: pits and pale crust as transparent tiles ----
+// ---- Rock: pits as a transparent tile ----
 
 export const ROCK_TILE_UNITS = 360;
 
@@ -303,5 +278,3 @@ export function rockPitTile(): Canvas | null {
   }
   return c;
 }
-
-export const mixColor = (a: readonly number[], b: readonly number[], t: number): number[] => [mix(a[0]!, b[0]!, t), mix(a[1]!, b[1]!, t), mix(a[2]!, b[2]!, t)];

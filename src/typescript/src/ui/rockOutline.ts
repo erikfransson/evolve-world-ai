@@ -1,12 +1,11 @@
 import { marchingSquares, simplifyClosed } from "../geom/contour.ts";
-import { createRng } from "../sim/rng.ts";
 import type { Terrain } from "../sim/terrain.ts";
 
 // What the geometry needs of a map: its rock discs and the grid over them.
 export type RockInput = Pick<Terrain, "rockX" | "rockY" | "rockR" | "rockCount" | "rockStart" | "rockOrder" | "cols" | "rows" | "maxRockR" | "cellRange">;
 
 // Turns the rock discs of a map into drawable bodies: one per connected lump of rock, each with a smooth outline that follows the
-// exact union of its discs (so what creatures bounce off is what is drawn), facets for shading and a few cracks. Built once per map.
+// exact union of its discs (so what creatures bounce off is what is drawn). Built once per map.
 
 export interface RockBody {
   x0: number;
@@ -14,17 +13,13 @@ export interface RockBody {
   x1: number;
   y1: number;
   readonly loops: number[][]; // made when first read; closed outlines as flat x, y lists, simplified to straight edges; draw them with traceLoop
-  shading(): { facets: number[][][]; cracks: number[][] }; // facets per tone class (see TONES) as polygons, cracks as polylines, all flat x, y lists
 }
 
-export const TONES = 4; // facet tone classes, darkest first: dark 2, dark 1, light 1, light 2
 const CELL = 6; // world units of the contour grid
 const SIMPLIFY = 0.9; // world units a simplified outline may stray from the contour, so round lumps become angular stones
 const CORNER = 2; // world units a corner is rounded over, on each side
 const BLOCK = 3; // log2 of the nodes along a block of the contour grid
 const FLAT = 10; // the field deeper inside than this is stored as this (see lumpField)
-const FACET = 110; // world units between facet seeds
-export const LIGHT = { x: -0.6, y: -0.8 }; // direction towards the light, upper left
 
 export interface PathSink {
   moveTo(x: number, y: number): void;
@@ -83,62 +78,6 @@ function lumps(t: RockInput): number[][] {
     else groups.set(root, [i]);
   }
   return [...groups.values()];
-}
-
-// The facet polygons of a lump: the Voronoi cells of jittered seeds (one per FACET square of the lump box from (gx0, gy0), at 0.1 .. 0.9 of it),
-// each cut out of the box by the bisectors to the other seeds, taken nearest square first until none further out can cut any more.
-function facets(seeds: number[][], box: number[], gx0: number, gy0: number, light: (sx: number, sy: number) => number, rand: () => number): number[][][] {
-  const tones: number[][][] = Array.from({ length: TONES }, () => []);
-  const stride = Math.ceil((box[2]! - gx0) / FACET) + 2;
-  const squareOf = (s: number[]): [number, number] => [Math.floor((s[0]! - gx0) / FACET), Math.floor((s[1]! - gy0) / FACET)];
-  const grid = new Map<number, number>();
-  const maxRing = stride + Math.ceil((box[3]! - gy0) / FACET) + 2;
-  for (let a = 0; a < seeds.length; a++) {
-    const [cx, cy] = squareOf(seeds[a]!);
-    grid.set(cy * stride + cx, a);
-  }
-  for (let a = 0; a < seeds.length; a++) {
-    const [sx, sy] = seeds[a] as [number, number];
-    const [cx, cy] = squareOf(seeds[a]!);
-    let poly: number[][] = [[box[0]!, box[1]!], [box[2]!, box[1]!], [box[2]!, box[3]!], [box[0]!, box[3]!]];
-    const cut = (b: number): void => {
-      const [qx, qy] = seeds[b] as [number, number];
-      const nx = qx - sx;
-      const ny = qy - sy;
-      const m = (nx * (sx + qx) + ny * (sy + qy)) / 2; // keep points with n . p <= m
-      const out: number[][] = [];
-      for (let k = 0; k < poly.length; k++) {
-        const p = poly[k]!;
-        const q = poly[(k + 1) % poly.length]!;
-        const dp = nx * p[0]! + ny * p[1]! - m;
-        const dq = nx * q[0]! + ny * q[1]! - m;
-        if (dp <= 0) out.push(p);
-        if (dp <= 0 !== dq <= 0) {
-          const s = dp / (dp - dq);
-          out.push([p[0]! + s * (q[0]! - p[0]!), p[1]! + s * (q[1]! - p[1]!)]);
-        }
-      }
-      poly = out;
-    };
-    for (let ring = 0; ring <= maxRing && poly.length > 0; ring++) {
-      // a seed in a square `ring` away is at least (ring - 0.8) squares off, and its bisector at half that: past the farthest corner it cuts nothing
-      let far = 0;
-      for (const p of poly) far = Math.max(far, Math.hypot(p[0]! - sx, p[1]! - sy));
-      if (ring > 1 && ((ring - 0.8) * FACET) / 2 > far) break;
-      for (let dy = -ring; dy <= ring; dy++) {
-        const step = Math.abs(dy) === ring ? 1 : 2 * ring;
-        for (let dx = -ring; dx <= ring; dx += step) {
-          const b = grid.get((cy + dy) * stride + cx + dx);
-          if (b !== undefined && b !== a && cx + dx >= 0 && cx + dx < stride) cut(b);
-        }
-      }
-    }
-    if (poly.length < 3) continue;
-    const v = 0.6 * (2 * rand() - 1) + 0.8 * light(sx, sy);
-    const tone = v > 0.45 ? 3 : v > 0.12 ? 2 : v < -0.45 ? 0 : v < -0.12 ? 1 : -1;
-    if (tone >= 0) tones[tone]!.push(poly.flat());
-  }
-  return tones;
 }
 
 const SNAP_REUSE = 12; // a candidate list is reused for points this close to where it was made
@@ -223,8 +162,6 @@ interface Lump {
   y0: number;
   x1: number;
   y1: number;
-  cx: number; // centre of the discs
-  cy: number;
 }
 
 // The lumps of a map's rock with their boxes, and for each disc the lump it belongs to. Cheap (grid lookups), kept for the life of the map.
@@ -238,18 +175,14 @@ function layoutOf(t: RockInput): { lumps: Lump[]; lumpOf: Int32Array } {
       let y0 = Infinity;
       let x1 = -Infinity;
       let y1 = -Infinity;
-      let cx = 0;
-      let cy = 0;
       for (const i of members) {
         lumpOf[i] = id;
         x0 = Math.min(x0, t.rockX[i]! - t.rockR[i]!);
         y0 = Math.min(y0, t.rockY[i]! - t.rockR[i]!);
         x1 = Math.max(x1, t.rockX[i]! + t.rockR[i]!);
         y1 = Math.max(y1, t.rockY[i]! + t.rockR[i]!);
-        cx += t.rockX[i]!;
-        cy += t.rockY[i]!;
       }
-      return { id, members, x0, y0, x1, y1, cx: cx / members.length, cy: cy / members.length };
+      return { id, members, x0, y0, x1, y1 };
     });
     layouts.set(t, (l = { lumps: list, lumpOf }));
   }
@@ -343,45 +276,6 @@ function lumpLoops(t: RockInput, lump: Lump, lumpOf: Int32Array): number[][] {
     .map((l) => simplifyOutline(snap(t, lump.members, lumpOf, lump.id, l))).filter((l) => l.length >= 6);
 }
 
-// Facets and cracks of a lump, made on first use: a body seen from afar, or in a settings preview, never needs them.
-function lumpShading(t: RockInput, lump: Lump): { facets: number[][][]; cracks: number[][] } {
-  const rng = createRng(0x51ac + lump.members[0]!);
-  const { f, w, h, ox, oy } = lumpField(t, lump);
-  const { x0, y0, x1, y1, cx, cy } = lump;
-  const box = [x0 - 2 * CELL, y0 - 2 * CELL, x1 + 2 * CELL, y1 + 2 * CELL];
-  const inside = (x: number, y: number): boolean => {
-    const k = Math.round((x - ox) / CELL);
-    const j = Math.round((y - oy) / CELL);
-    return k >= 0 && k < w && j >= 0 && j < h && f[j * w + k]! > 0;
-  };
-  const radius = Math.max(x1 - x0, y1 - y0) / 2;
-  const seeds: number[][] = [];
-  for (let gy = y0; gy < y1; gy += FACET) {
-    for (let gx = x0; gx < x1; gx += FACET) {
-      const sx = gx + rng.range(0.1, 0.9) * FACET;
-      const sy = gy + rng.range(0.1, 0.9) * FACET;
-      if (inside(sx, sy)) seeds.push([sx, sy]);
-    }
-  }
-  const lit = (sx: number, sy: number): number => Math.max(-1, Math.min(1, ((sx - cx) * LIGHT.x + (sy - cy) * LIGHT.y) / radius));
-  const cracks: number[][] = [];
-  for (let c = 0, count = 1 + rng.int(2); c < count && seeds.length > 0; c++) {
-    const [sx, sy] = seeds[rng.int(seeds.length)] as [number, number];
-    let a = rng.range(0, 2 * Math.PI);
-    const line = [sx, sy];
-    for (let k = 0; k < 5; k++) {
-      a += rng.range(-0.5, 0.5);
-      const len = rng.range(24, 55);
-      const nx = line[line.length - 2]! + len * Math.cos(a);
-      const ny = line[line.length - 1]! + len * Math.sin(a);
-      if (!inside(nx, ny)) break;
-      line.push(nx, ny);
-    }
-    if (line.length >= 4) cracks.push(line);
-  }
-  return { facets: facets(seeds, box, x0, y0, lit, rng.next), cracks };
-}
-
 const geometries = new WeakMap<object, RockGeometry>();
 
 // The loops of body b out of packed geometry.
@@ -395,7 +289,6 @@ function loopsFrom(g: RockGeometry, b: number): number[][] {
 
 function bodyOf(t: RockInput, lump: Lump, lumpOf: Int32Array): RockBody {
   let made: number[][] | null = null;
-  let shaded: { facets: number[][][]; cracks: number[][] } | null = null;
   return {
     x0: lump.x0 - 2 * CELL,
     y0: lump.y0 - 2 * CELL,
@@ -406,7 +299,6 @@ function bodyOf(t: RockInput, lump: Lump, lumpOf: Int32Array): RockBody {
       const g = geometries.get(t);
       return (made = g ? loopsFrom(g, lump.id) : lumpLoops(t, lump, lumpOf));
     },
-    shading: () => (shaded ??= lumpShading(t, lump)),
   };
 }
 
@@ -457,8 +349,7 @@ export function rockGeometry(t: RockInput): RockGeometry {
 // The geometry a map was handed by useRockGeometry, if any.
 export const rockGeometryOf = (t: RockInput): RockGeometry | null => geometries.get(t) ?? null;
 
-// Hands a map the geometry built elsewhere (a worker): bodies not drawn yet take their outlines from it instead of tracing them. Facets and
-// cracks are still made here, on first use.
+// Hands a map the geometry built elsewhere (a worker): bodies not drawn yet take their outlines from it instead of tracing them.
 export function useRockGeometry(t: RockInput, g: RockGeometry): void {
   if (layoutOf(t).lumps.length !== g.bodyLoops.length) throw new Error("rock geometry does not belong to this map");
   geometries.set(t, g);

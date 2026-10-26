@@ -4,6 +4,7 @@ import { fineOf, groundBodies, traceSmooth } from "./groundOutline.ts";
 import type { GroundBody } from "./groundOutline.ts";
 import type { View } from "./terrainScene.ts";
 import { distance } from "./edt.ts";
+import { FLOOR, SILT_SHADOW } from "./palette.ts";
 import { canvasOfPixels, fbm, GROUND_BASE_UNITS, GROUND_GRAIN_UNITS, groundBaseTile, groundGrainTile, groundRippleTile, smooth } from "./noiseTex.ts";
 import type { GrainLook, GroundLook, RippleLook } from "./noiseTex.ts";
 
@@ -17,7 +18,6 @@ import type { GrainLook, GroundLook, RippleLook } from "./noiseTex.ts";
 // close up only the patches in view are painted live. A map keeps the bitmaps of every tier it was viewed at, within MAX_BAKED_PX pixels in all. A frame makes at most BAKES_PER_FRAME of them, patches still waiting are painted live meanwhile.
 
 export const FEATHER_UNITS = 4; // widest the fade into the floor reaches inside the edge, world units: a slight softening, the edge stays crisp
-const FLOOR = "#0c2128";
 export const FEATHER_BANDS = [1, 0.7, 0.45, 0.22].map((k, i) => ({ width: FEATHER_UNITS * k, alpha: 0.2 + 0.07 * i })); // floor-coloured bands from the edge inwards
 const FEATHER_COARSE = [{ width: FEATHER_UNITS, alpha: 0.5 }];
 const COARSE_BELOW = 0.1; // scale (device px per world unit)
@@ -76,14 +76,18 @@ const STYLE: Record<number, Style> = {
 };
 const SHADOW = [{ units: 2.5, alpha: 0.3 }, { units: 7, alpha: 0.16 }] as const; // silt shadow outside the edge, at most SHADOW_MAX_PX screen px wide (the bitmap pad holds it)
 const SHADOW_MAX_PX = 3;
+const SHADOW_RGB = SILT_SHADOW.join(", ");
 const SHELF_CELL = 25; // world units a pixel of the shelf image covers
 const SHELF_MAX_CELLS = 600_000;
+const SHELF_BUDGET_CELLS = 8_000_000; // pixels of shelf images kept over all patches (32 MB), the least recently used go first
+const SHELF_BUILD_CELLS = 150_000; // pixels of shelf images one draw or prepare builds at most (always one); a patch still waiting is drawn without its shelf
 const GRAIN_FROM = 0.45; // scale from which the grain tile is drawn, full at GRAIN_FROM + 0.35
 const RIPPLES_FROM = 0.6; // the same for the ripple marks, full at RIPPLES_FROM + 0.5
 const TEXTURE_FROM = 0.03; // scale (device px per world unit) from which textures and rims are drawn, below it a patch is one flat fill
 const VIEW_PAD = 80; // world units past a patch that still draw
 
-import { context2d, makeCanvas } from "./canvas.ts";
+import { buildBudget, context2d, makeCanvas, spend } from "./canvas.ts";
+import type { BuildBudget } from "./canvas.ts";
 export { context2d, makeCanvas };
 
 const tiles = new Map<string, OffscreenCanvas | HTMLCanvasElement | null>(); // tiles are shared by every canvas
@@ -140,11 +144,18 @@ interface Shelf {
   h: number;
   cell: number;
 }
-const shelves = new WeakMap<Patch, Shelf | null>();
+// Module-wide, not per map: the shelves of a map left behind stay until newer ones push them out of SHELF_BUDGET_CELLS.
+const shelves = new Map<Patch, Shelf | null>(); // least recently used first
+let shelfCells = 0;
 
-function shelfOf(patch: Patch): Shelf | null {
+// The shelf of a patch, built now if budget allows; undefined when it was put off.
+function shelfOf(patch: Patch, budget: BuildBudget): Shelf | null | undefined {
   let shelf = shelves.get(patch);
-  if (shelf !== undefined) return shelf;
+  if (shelf !== undefined) {
+    shelves.delete(patch);
+    shelves.set(patch, shelf);
+    return shelf;
+  }
   shelf = null;
   const { body, path } = patch;
   const style = STYLE[body.kind]!;
@@ -154,6 +165,7 @@ function shelfOf(patch: Patch): Shelf | null {
   const oy = Math.floor(body.y0 / cell) * cell - 2 * cell;
   const w = Math.ceil((body.x1 - ox) / cell) + 3;
   const h = Math.ceil((body.y1 - oy) / cell) + 3;
+  if (!spend(budget, w * h)) return undefined;
   const mask = makeCanvas(w, h);
   const mg = mask?.getContext("2d", { willReadFrequently: true }) as CanvasRenderingContext2D | null;
   if (mask && mg && typeof ImageData !== "undefined") {
@@ -189,6 +201,14 @@ function shelfOf(patch: Patch): Shelf | null {
     if (image) shelf = { image, ox, oy, w, h, cell };
   }
   shelves.set(patch, shelf);
+  if (shelf) {
+    shelfCells += shelf.w * shelf.h;
+    for (const [p, old] of shelves) {
+      if (shelfCells <= SHELF_BUDGET_CELLS || p === patch) break;
+      shelves.delete(p);
+      if (old) shelfCells -= old.w * old.h;
+    }
+  }
   return shelf;
 }
 const cached = new WeakMap<Terrain, Map<number, Patch[]>>();
@@ -210,8 +230,8 @@ function patchesOf(t: Terrain, level: number): Patch[] {
 }
 
 // Paints one patch under the current transform: silt shadow outside the edge, then clipped to the patch the colour tile, ripples, grain, the lighter shallow rim,
-// and the feather into the floor. scale is device px per world unit.
-function paintPatch(ctx: CanvasRenderingContext2D, patch: Patch, scale: number): void {
+// and the feather into the floor. scale is device px per world unit. A shelf the budget puts off is left out (budget.refused tells).
+function paintPatch(ctx: CanvasRenderingContext2D, patch: Patch, scale: number, budget: BuildBudget): void {
   const { body, path } = patch;
   const style = STYLE[body.kind]!;
   const textured = scale >= TEXTURE_FROM;
@@ -219,7 +239,7 @@ function paintPatch(ctx: CanvasRenderingContext2D, patch: Patch, scale: number):
   const px = 1 / scale;
   SHADOW.forEach(({ units, alpha }, i) => {
     ctx.globalAlpha = 1;
-    ctx.strokeStyle = `rgba(2, 9, 12, ${alpha})`;
+    ctx.strokeStyle = `rgba(${SHADOW_RGB}, ${alpha})`;
     ctx.lineWidth = 2 * Math.min(units, Math.max(SHADOW_MAX_PX * px * (i + 1) / SHADOW.length, 0.8 * px));
     ctx.stroke(path);
   });
@@ -245,7 +265,7 @@ function paintPatch(ctx: CanvasRenderingContext2D, patch: Patch, scale: number):
     }
     ctx.globalAlpha = 1;
   }
-  const shelf = textured ? shelfOf(patch) : null;
+  const shelf = textured ? shelfOf(patch, budget) : null;
   if (shelf) {
     const smoothing = ctx.imageSmoothingEnabled;
     ctx.imageSmoothingEnabled = true;
@@ -324,8 +344,9 @@ function rasterNow(image: Canvas): void {
 }
 
 // Paints tile (i, j) of a patch once. Null when this call has baked its share, or when the budget cannot hold the tile even after dropping every other tier (which are then kept).
-function bake(store: Baked, ts: TierStore, g: Grid, patch: Patch, i: number, j: number, left: { n: number }): Tile | null {
+function bake(store: Baked, ts: TierStore, g: Grid, patch: Patch, i: number, j: number, left: { n: number }, budget: BuildBudget): Tile | null {
   const tier = ts.tier;
+  if (left.n <= 0 || (tier >= TEXTURE_FROM && shelfOf(patch, budget) === undefined)) return null; // a bitmap is never baked without its shelf
   const whole = g.cols === 1 && g.rows === 1;
   const x0 = whole ? 0 : i * TILE_BODY; // the tile's own part, in patch bitmap px
   const y0 = whole ? 0 : j * TILE_BODY;
@@ -350,7 +371,7 @@ function bake(store: Baked, ts: TierStore, g: Grid, patch: Patch, i: number, j: 
   const b = patch.body;
   c.setTransform(tier, 0, 0, tier, pad - x0 + BAKE_PAD - b.x0 * tier, pad - y0 + BAKE_PAD - b.y0 * tier);
   c.lineJoin = "round";
-  paintPatch(c, patch, tier);
+  paintPatch(c, patch, tier, budget);
   rasterNow(image);
   return { image, sx: pad, sy: pad, sw, sh, x: g.ox + x0 / tier, y: g.oy + y0 / tier, w: sw / tier, h: sh / tier, whole };
 }
@@ -364,7 +385,7 @@ function touch(store: Baked, tier: number): TierStore {
 }
 
 // The tiles of a patch in view at a tier, baking those not yet made while left allows (never with left null, then a missing grid counts as a missing tile). Null when one is missing.
-function tilesIn(store: Baked, ts: TierStore, patch: Patch, view: View, left: { n: number } | null): Tile[] | null {
+function tilesIn(store: Baked, ts: TierStore, patch: Patch, view: View, left: { n: number } | null, budget: BuildBudget): Tile[] | null {
   const tier = ts.tier;
   let g = ts.grids.get(patch);
   if (!g && left) ts.grids.set(patch, (g = gridOf(tier, patch)));
@@ -379,7 +400,7 @@ function tilesIn(store: Baked, ts: TierStore, patch: Patch, view: View, left: { 
         if (x > view.x1 || y > view.y1 || x + TILE_BODY / tier < view.x0 || y + TILE_BODY / tier < view.y0) continue;
       }
       const k = j * g.cols + i;
-      const tile = g.tiles[k] ?? (left ? (g.tiles[k] = bake(store, ts, g, patch, i, j, left) ?? undefined) : undefined);
+      const tile = g.tiles[k] ?? (left ? (g.tiles[k] = bake(store, ts, g, patch, i, j, left, budget) ?? undefined) : undefined);
       if (!tile) return null;
       wanted.push(tile);
     }
@@ -390,10 +411,10 @@ function tilesIn(store: Baked, ts: TierStore, patch: Patch, view: View, left: { 
 // Draws a patch from its bitmaps at this tier, baking what is missing while left allows. While a tile in view is still missing it is drawn, scaled, from the most recently used other tier
 // that has all of its tiles in view (on a zoom in, the tier just left), and only when none has does the caller paint the patch live.
 // Returns "live" when the caller must paint the patch, "tier" when it drew it from its own tier, "stand-in" when from another one.
-function drawBaked(ctx: CanvasRenderingContext2D, store: Baked, ts: TierStore, patch: Patch, view: View, left: { n: number }): "live" | "tier" | "stand-in" {
-  let wanted = tilesIn(store, ts, patch, view, left);
+function drawBaked(ctx: CanvasRenderingContext2D, store: Baked, ts: TierStore, patch: Patch, view: View, left: { n: number }, budget: BuildBudget): "live" | "tier" | "stand-in" {
+  let wanted = tilesIn(store, ts, patch, view, left, budget);
   const own = wanted !== null;
-  if (!wanted) for (const other of [...store.tiers.values()].reverse()) if (other !== ts && (wanted = tilesIn(store, other, patch, view, null))) break;
+  if (!wanted) for (const other of [...store.tiers.values()].reverse()) if (other !== ts && (wanted = tilesIn(store, other, patch, view, null, budget))) break;
   if (!wanted) return "live";
   const m = wanted.some((t) => !t.whole) ? ctx.getTransform() : null;
   for (const t of wanted) {
@@ -418,7 +439,7 @@ const patchesIn = (t: Terrain, tier: number | undefined, scale: number, view: Vi
   patchesOf(t, (tier ?? scale) >= FINE_FROM ? fineOf(t) : 1).filter(({ body: b }) => b.x1 + VIEW_PAD >= view.x0 && b.x0 - VIEW_PAD <= view.x1 && b.y1 + VIEW_PAD >= view.y0 && b.y0 - VIEW_PAD <= view.y1);
 
 // With the frame's bake unused, makes the bitmaps of the next coarser tier for a view twice as wide, so a zoom out finds them ready. Never when a bitmap might push a tier out.
-function bakeCoarser(t: Terrain, store: Baked, tier: number, view: View, left: { n: number }): void {
+function bakeCoarser(t: Terrain, store: Baked, tier: number, view: View, left: { n: number }, budget: BuildBudget): void {
   const coarser = TIERS[TIERS.indexOf(tier) - 1];
   if (coarser === undefined || left.n <= 0 || store.pixels + MAX_BITMAP_PX * MAX_BITMAP_PX > MAX_BAKED_PX) return;
   const ts = store.tiers.get(coarser) ?? { tier: coarser, grids: new Map(), pixels: 0 };
@@ -426,18 +447,24 @@ function bakeCoarser(t: Terrain, store: Baked, tier: number, view: View, left: {
   const w = (view.x1 - view.x0) / 2;
   const h = (view.y1 - view.y0) / 2;
   const wide = { x0: view.x0 - w, x1: view.x1 + w, y0: view.y0 - h, y1: view.y1 + h };
-  for (const patch of patchesIn(t, coarser, coarser, wide)) if (left.n > 0) tilesIn(store, ts, patch, wide, left);
+  for (const patch of patchesIn(t, coarser, coarser, wide)) if (left.n > 0 && !budget.refused) tilesIn(store, ts, patch, wide, left, budget);
 }
 
 // Makes the bitmaps of the tier a view at this scale draws from that are still missing, without drawing, a couple per call. True when none is waiting for a later call.
 export function prepareGround(t: Terrain, scale: number, view: View): boolean {
+  if (t.ground === null || typeof Path2D === "undefined") return true;
   const tier = TIERS.find((s) => s >= scale);
+  const budget = buildBudget(SHELF_BUILD_CELLS);
+  if (tier === undefined) {
+    for (const patch of patchesIn(t, tier, scale, view)) shelfOf(patch, budget); // close up only the shelves are made ahead
+    return !budget.refused;
+  }
   const store = baked.get(t);
-  if (tier === undefined || !store || t.ground === null) return true;
+  if (!store) return true;
   const ts = touch(store, tier);
   const left = { n: PREPARE_BAKES };
-  for (const patch of patchesIn(t, tier, scale, view)) if (left.n > 0) tilesIn(store, ts, patch, view, left);
-  return left.n > 0; // a call that used up its bakes may have left more; one that did not has done them all, or the budget refused the rest
+  for (const patch of patchesIn(t, tier, scale, view)) if (left.n > 0) tilesIn(store, ts, patch, view, left, budget);
+  return left.n > 0 && !budget.refused; // a call that used up its bakes or shelves may have left more; one that did not has done them all, or the pixel budget refused the rest
 }
 
 // quick: the coarse outline with flat fills, for the settings preview that redraws while sliders move. False while a patch is drawn from another tier for want of its own bitmaps
@@ -447,6 +474,7 @@ export function drawGround(ctx: CanvasRenderingContext2D, t: Terrain, scale: num
   const tier = quick ? undefined : TIERS.find((s) => s >= scale);
   const shown = patchesIn(t, tier, quick ? 0 : scale, view);
   let complete = true;
+  const budget = buildBudget(SHELF_BUILD_CELLS);
   ctx.save();
   ctx.beginPath();
   ctx.rect(0, 0, t.width, t.height);
@@ -458,7 +486,7 @@ export function drawGround(ctx: CanvasRenderingContext2D, t: Terrain, scale: num
       for (const { body, path } of shown) if (body.kind === kind) ctx.fill(path, "evenodd");
     }
   } else if (tier === undefined) {
-    for (const patch of shown) paintPatch(ctx, patch, scale); // close up: live, only what is in view
+    for (const patch of shown) paintPatch(ctx, patch, scale, budget); // close up: live, only what is in view
   } else {
     let store = baked.get(t);
     if (!store) baked.set(t, (store = { tiers: new Map(), pixels: 0 }));
@@ -466,14 +494,14 @@ export function drawGround(ctx: CanvasRenderingContext2D, t: Terrain, scale: num
     const left = { n: BAKES_PER_FRAME };
     let standIn = false;
     for (const patch of shown) {
-      const how = drawBaked(ctx, store, ts, patch, view, left);
-      if (how === "live") paintPatch(ctx, patch, scale);
+      const how = drawBaked(ctx, store, ts, patch, view, left, budget);
+      if (how === "live") paintPatch(ctx, patch, scale, budget);
       else if (how === "stand-in") standIn = true;
     }
     complete = !standIn || left.n > 0; // a stand-in with bakes to spare means the budget refused the tier: nothing more will come
-    bakeCoarser(t, store, tier, view, left);
+    bakeCoarser(t, store, tier, view, left, budget);
     touch(store, tier); // the coarser tier is the older one
   }
   ctx.restore();
-  return complete;
+  return complete && !budget.refused;
 }

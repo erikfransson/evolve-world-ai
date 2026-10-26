@@ -2,6 +2,7 @@ import { GROUND_PAD } from "../sim/groundField.ts";
 import { WEIGHT_UNIT } from "../sim/maps/weights.ts";
 import type { Terrain } from "../sim/terrain.ts";
 import { context2d, makeCanvas } from "./groundScene.ts";
+import { boxBlur } from "./edt.ts";
 import { fbm } from "./noiseTex.ts";
 
 // A soft wash over the floor of a map with food and poison weights, so its regions read at a glance: a murky violet haze where poison is rich, a faint silt-pale tone where
@@ -16,31 +17,6 @@ const VISIBLE_ALPHA = 0.05;
 export const visibleFrom = (t: { from: number; span: number; alpha: number }): number => t.from + (t.span * VISIBLE_ALPHA) / t.alpha;
 
 const images = new WeakMap<Terrain, OffscreenCanvas | HTMLCanvasElement | null>();
-
-// A separable box blur of radius r nodes, three times over (close to a gaussian), edges clamped.
-function blur(a: Float32Array, cols: number, rows: number, r: number): void {
-  const line = new Float32Array(Math.max(cols, rows) + 2 * r + 1);
-  const pass = (n: number, stride: number, count: number, step: number): void => {
-    for (let c = 0; c < count; c++) {
-      const base = c * step;
-      for (let i = 0; i < n; i++) line[i + r] = a[base + i * stride]!;
-      for (let i = 0; i < r; i++) {
-        line[i] = a[base]!;
-        line[n + r + i] = a[base + (n - 1) * stride]!;
-      }
-      let sum = 0;
-      for (let i = 0; i <= 2 * r; i++) sum += line[i]!;
-      for (let i = 0; i < n; i++) {
-        a[base + i * stride] = sum / (2 * r + 1);
-        sum += line[i + 2 * r + 1]! - line[i]!;
-      }
-    }
-  };
-  for (let k = 0; k < 3; k++) {
-    pass(cols, 1, rows, cols);
-    pass(rows, cols, cols, 1);
-  }
-}
 
 const BLUR_UNITS = 140; // world units the wash is softened over: a haze, not a stamp
 const WISP_UNITS = 700; // size of the soft plumes that thin and thicken the haze
@@ -63,7 +39,7 @@ function build(t: Terrain): OffscreenCanvas | HTMLCanvasElement | null {
     layers[2]![k] = clamp01((food - RICH_TINT.from) / RICH_TINT.span) * RICH_TINT.alpha;
   }
   const r = Math.max(1, Math.round(BLUR_UNITS / w.cell / 2));
-  for (const layer of layers) blur(layer, w.cols, w.rows, r);
+  for (const layer of layers) boxBlur(layer, w.cols, w.rows, r);
   for (let k = 0; k < n; k++) {
     const x = ((k % w.cols) - GROUND_PAD) * w.cell;
     const y = (Math.floor(k / w.cols) - GROUND_PAD) * w.cell;

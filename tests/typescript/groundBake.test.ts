@@ -1,12 +1,26 @@
-// Canvas stand-ins that count what is painted: the bitmaps made and the fills and strokes the main canvas receives.
-const bitmaps: { w: number; h: number }[] = [];
+// Canvas stand-ins that count what is painted: the bitmaps made and the fills and strokes the main canvas receives. A canvas is a "mask" (read back, for a shelf),
+// an "image" (filled from pixels: a shelf or a texture tile) or a "bitmap" (painted: a baked tile, the grain tile, the probe).
+const bitmaps: { w: number; h: number; kind: "bitmap" | "mask" | "image" }[] = [];
 const MAX_PX = 12_000_000; // MAX_BAKED_PX in groundScene.ts
+const SHELF_MAX_CELLS = 600_000; // in groundScene.ts
+const SHELF_BUILD_CELLS = 150_000; // in groundScene.ts
 class FakeOffscreen {
+  private readonly rec: (typeof bitmaps)[number];
   constructor(width: number, height: number) {
-    bitmaps.push({ w: width, h: height });
+    this.rec = { w: width, h: height, kind: "bitmap" };
+    bitmaps.push(this.rec);
   }
-  getContext = (): unknown => new Proxy({}, { get: (_, k) => (k === "createRadialGradient" ? () => ({ addColorStop: () => undefined }) : k === "createPattern" ? () => ({ setTransform: () => undefined }) : () => undefined), set: () => true });
+  getContext = (_kind: string, options?: { willReadFrequently?: boolean }): unknown => {
+    const rec = this.rec;
+    if (options?.willReadFrequently) rec.kind = "mask";
+    return new Proxy({}, {
+      get: (_, k) =>
+        k === "putImageData" ? () => void (rec.kind = "image") : k === "getImageData" ? (_x: number, _y: number, w: number, h: number) => ({ data: new Uint8ClampedArray(4 * w * h) }) : k === "createRadialGradient" ? () => ({ addColorStop: () => undefined }) : k === "createPattern" ? () => ({ setTransform: () => undefined }) : () => undefined,
+      set: () => true,
+    });
+  };
 }
+const masks = (from = 0): (typeof bitmaps)[number][] => bitmaps.slice(from).filter((b) => b.kind === "mask");
 const drawn: string[] = [];
 const mainCtx = (scale: number): CanvasRenderingContext2D =>
   new Proxy({}, {
@@ -57,13 +71,14 @@ describe("ground bitmaps of a patch larger than one bitmap", () => {
 
   it("bakes one bitmap per frame, then draws from bitmaps of at most 640 px and paints nothing on the canvas", async () => {
     const { frame, settle } = await inlandSea();
-    settle(0.05); // the textures, shelf images and probe canvas, made once
+    settle(0.05); // the textures, shelves and probe canvas, made once
     const from = bitmaps.length;
     frame(0.1);
     expect(bitmaps.length - from).toBe(1);
     expect(settle(0.1)).toBeGreaterThan(2);
     expect(bitmaps.slice(from).some((b) => b.w === 640 || b.h === 640)).toBe(true);
-    expect(bitmaps.slice(from).every((b) => b.w <= 640 && b.h <= 640)).toBe(true); // the shelf images made before are coarse (25+ units a px) and may be larger
+    expect(bitmaps.filter((b) => b.kind === "bitmap").every((b) => b.w <= 640 && b.h <= 640)).toBe(true);
+    expect(bitmaps.filter((b) => b.kind !== "bitmap").every((b) => b.w * b.h <= SHELF_MAX_CELLS)).toBe(true); // shelves are coarse (25+ units a px) and bounded by their pixel count
     drawn.length = 0;
     const made = bitmaps.length;
     frame(0.1);
@@ -119,6 +134,23 @@ describe("ground bitmaps of a patch larger than one bitmap", () => {
     drawn.length = 0;
     frame(0.05);
     expect(paints()).toBe(0);
+  });
+
+  it("makes the shelves a frame's share at a time, says so while some wait, then draws complete", async () => {
+    const { frame } = await inlandSea();
+    const start = bitmaps.length;
+    const perFrame: { n: number; cells: number }[] = [];
+    let complete = false;
+    for (let i = 0; i < 300 && !complete; i++) {
+      const at = bitmaps.length;
+      complete = frame(0.05);
+      const made = masks(at);
+      perFrame.push({ n: made.length, cells: made.reduce((s, b) => s + b.w * b.h, 0) });
+    }
+    expect(complete).toBe(true);
+    expect(perFrame[0]!.n).toBeGreaterThan(0);
+    expect(perFrame[0]!.n).toBeLessThan(masks(start).length); // the first frame made only some
+    for (const f of perFrame) expect(f.n <= 1 || f.cells <= SHELF_BUILD_CELLS).toBe(true);
   });
 
   it("holds at most the pixel budget however the scale changes", async () => {

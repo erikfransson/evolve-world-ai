@@ -49,7 +49,6 @@ export function distance(inside: Uint8Array, w: number, h: number): Float32Array
   return out;
 }
 
-
 // The inside of closed outlines (flat x, y lists, even-odd) on a grid of w x h pixels of `cell` world units from (ox, oy): 1 where the pixel centre is inside.
 export function fillLoops(loops: readonly number[][], ox: number, oy: number, cell: number, w: number, h: number): Uint8Array {
   const out = new Uint8Array(w * h);
@@ -77,4 +76,30 @@ export function fillLoops(loops: readonly number[][], ox: number, oy: number, ce
     }
   }
   return out;
+}
+
+// Three passes of a box blur of radius r pixels along each axis, edges clamped: close to a gaussian of sigma about 1.1 r.
+export function boxBlur(a: Float32Array, w: number, h: number, r: number): void {
+  if (r < 1) return;
+  const line = new Float32Array(Math.max(w, h) + 2 * r + 1);
+  const pass = (n: number, stride: number, count: number, step: number): void => {
+    for (let c = 0; c < count; c++) {
+      const base = c * step;
+      for (let i = 0; i < n; i++) line[i + r] = a[base + i * stride]!;
+      for (let i = 0; i < r; i++) {
+        line[i] = a[base]!;
+        line[n + r + i] = a[base + (n - 1) * stride]!;
+      }
+      let sum = 0;
+      for (let i = 0; i <= 2 * r; i++) sum += line[i]!;
+      for (let i = 0; i < n; i++) {
+        a[base + i * stride] = sum / (2 * r + 1);
+        sum += line[i + 2 * r + 1]! - line[i]!;
+      }
+    }
+  };
+  for (let k = 0; k < 3; k++) {
+    pass(w, 1, h, w);
+    pass(h, w, w, 1);
+  }
 }

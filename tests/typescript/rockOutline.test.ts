@@ -78,17 +78,4 @@ describe("rockBodies", () => {
     c.world = { ...c.world, width: 3000, height: 2000, stoneDensity: 0.02, ridgeDensity: 0, slowDensity: 0, fastDensity: 0 };
     expect(() => useRockGeometry(terrainOf(c), g)).toThrow();
   });
-
-  it("keeps the facets inside the body box", () => {
-    const b = rockBodies(map()).sort((p, q) => q.x1 - q.x0 - (p.x1 - p.x0))[0]!;
-    const { facets } = b.shading();
-    for (const poly of facets.flat()) {
-      for (let k = 0; k < poly.length; k += 2) {
-        expect(poly[k]!).toBeGreaterThanOrEqual(b.x0 - 1e-6);
-        expect(poly[k]!).toBeLessThanOrEqual(b.x1 + 1e-6);
-        expect(poly[k + 1]!).toBeGreaterThanOrEqual(b.y0 - 1e-6);
-        expect(poly[k + 1]!).toBeLessThanOrEqual(b.y1 + 1e-6);
-      }
-    }
-  });
 });
