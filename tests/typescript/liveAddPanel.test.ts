@@ -16,6 +16,17 @@ describe("add panel before the hello", () => {
   });
 });
 
+describe("add panel copies default", () => {
+  it("starts at 3 copies in the radio and in the request (#65)", () => {
+    const html = readFileSync(join(process.cwd(), "live/index.html"), "utf8");
+    document.body.innerHTML = html.slice(html.indexOf("<body>") + 6, html.indexOf("</body>"));
+    const panel = new AddPanel(document.getElementById("addPanel")!, { send: () => false, added() {}, minimised() {} });
+    const checked = [...document.querySelectorAll<HTMLInputElement>('#addPanel input[name="addCopies"]:checked')];
+    expect(checked.map((r) => r.value)).toEqual(["3"]);
+    expect((panel as unknown as { copies: number }).copies).toBe(3);
+  });
+});
+
 describe("add panel after training stopped in a hidden tab", () => {
   it("keeps the result and adds only when the visitor presses Add again", async () => {
     const training = await import("../../src/typescript/src/live/training.ts");

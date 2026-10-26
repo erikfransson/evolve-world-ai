@@ -103,7 +103,7 @@ export class AddPanel {
   private file: Base | null = null;
   private t: Tuned | null = null;
   private hue = Math.floor(Math.random() * 360);
-  private copies = 1;
+  private copies = 3; // matches the checked radio in live/index.html (#65)
   private job: TrainJob | null = null;
   // The last trained brain with what it was trained from, reused when an add is refused or fails and nothing changed since.
   private trained: { from: Float32Array; plan: string; kinds: string; genome: Float32Array } | null = null;
