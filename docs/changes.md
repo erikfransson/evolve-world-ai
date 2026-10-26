@@ -6,6 +6,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+## 0.2.6 (2026-10-26)
+
 - RL Arena: the reward graph draws the luckiest line in its own smaller panel below, so train mean and held-out get a y scale fitted to them and small held-out changes are visible (#54).
 - Live, Ecosystem and Trials: the terrain has the abyssal look (#50): a blue-black silt floor, top-lit basalt rock with an edge line, silt-shelf mud, pale sand firm ground and soft haze tints for rich, dry and poison regions (`noiseTex.ts`, `abyssRock.ts`). Drawn ground still equals sensed ground. The simulation is unchanged.
 - Live: room for 5000 creatures (was 3000, #63), births still stop 100 below it. The brain-weight budget stays at 7 million, so a world of big brains still waits for deaths before that. A full world fits fewer viewers (about 16 to 23).
