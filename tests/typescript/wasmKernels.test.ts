@@ -502,6 +502,27 @@ describe("sense.wat (SenseKernels)", () => {
     c.outputs.forEach((v, i) => expect(Math.abs(v - reference.outputs[i]!)).toBeLessThan(1e-4));
   });
 
+  it("shares ray offset tables between creatures with the same offsets, and frees a table when its last creature changes plan", () => {
+    const { cfg, kernels, kernel } = build({ rays: 6, spread: 1.5, creatures: [[300, 300, 0], [400, 300, 1], [500, 300, 2], [600, 300, 3]], items });
+    const tableOf = (c: Creature): number => new Int32Array(kernels.f32.buffer)[(c.resident!.ptr + L.R_OFFSETS) >> 2]!;
+    const [a, b, c, d] = kernel as [Creature, Creature, Creature, Creature];
+    expect(new Set(kernel.map(tableOf)).size).toBe(1);
+    const reset = (cr: Creature, spread: number): void => {
+      const plan = { ...cr.plan, raySpread: spread };
+      cr.reset(randomGenome(layerSizes(cfg, plan), createRng(5)), 300, 300, 0, 50, plan);
+    };
+    const shared = tableOf(a);
+    reset(d, 1.1);
+    expect(tableOf(d)).not.toBe(shared);
+    reset(c, 1.1);
+    expect(tableOf(c)).toBe(tableOf(d));
+    reset(a, 1.1);
+    reset(b, 1.1); // the last holder of the first table lets go, and the next new table takes its block
+    reset(a, 0.9);
+    expect(tableOf(a)).toBe(shared);
+    expect(tableOf(b)).toBe(tableOf(c));
+  });
+
   it("keeps the rays of non-detail creatures untouched and needs no detail", () => {
     const { kernel, world, crowd, kernels, batch } = check({ rays: 4, spread: 1, creatures: [[300, 300, 0], [320, 300, 3]], items }, false);
     kernel[1]!.rays[0]!.closeness = 0.123;
