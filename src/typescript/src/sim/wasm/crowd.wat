@@ -173,9 +173,13 @@
   )
 
   ;; For the sense kernel: the sorted positions as f32 and each creature's energy signal, 1 - exp(-energy / startEnergy) as f32 (energySignal in sensors.ts), with the engine's own exp.
+  ;; With C_SIG_ROWS set the signal also goes into the creature's row as its first brain input extra (the fill kernel narrows it to the same f32).
   (func (export "pack") (param $C i32)
-    (local $k i32) (local $n i32) (local $start f64)
+    (local $k i32) (local $n i32) (local $start f64) (local $sig f32) (local $toRows i32) (local $rowAt i32) (local $owners i32)
     (local.set $n (i32.load offset={{C_N}} (local.get $C)))
+    (local.set $toRows (i32.load offset={{C_SIG_ROWS}} (local.get $C)))
+    (local.set $rowAt (i32.load offset={{C_ROW_AT}} (local.get $C)))
+    (local.set $owners (i32.load offset={{C_OWNERS}} (local.get $C)))
     (local.set $start (f64.load offset={{C_START_ENERGY}} (local.get $C)))
     (block $done (loop $each
       (br_if $done (i32.ge_s (local.get $k) (local.get $n)))
@@ -183,9 +187,13 @@
         (f32.demote_f64 (f64.load (i32.add (i32.load offset={{C_XS}} (local.get $C)) (i32.shl (local.get $k) (i32.const 3))))))
       (f32.store (i32.add (i32.load offset={{C_SY}} (local.get $C)) (i32.shl (local.get $k) (i32.const 2)))
         (f32.demote_f64 (f64.load (i32.add (i32.load offset={{C_YS}} (local.get $C)) (i32.shl (local.get $k) (i32.const 3))))))
-      (f32.store (i32.add (i32.load offset={{C_SIG}} (local.get $C)) (i32.shl (local.get $k) (i32.const 2)))
-        (f32.demote_f64 (f64.sub (f64.const 1)
-          (call $exp (f64.div (f64.neg (f64.load (i32.add (i32.load offset={{C_ENERGIES}} (local.get $C)) (i32.shl (local.get $k) (i32.const 3))))) (local.get $start))))))
+      (local.set $sig (f32.demote_f64 (f64.sub (f64.const 1)
+        (call $exp (f64.div (f64.neg (f64.load (i32.add (i32.load offset={{C_ENERGIES}} (local.get $C)) (i32.shl (local.get $k) (i32.const 3))))) (local.get $start))))))
+      (f32.store (i32.add (i32.load offset={{C_SIG}} (local.get $C)) (i32.shl (local.get $k) (i32.const 2))) (local.get $sig))
+      (if (local.get $toRows)
+        (then (f64.store offset={{R_EXTRAS}}
+          (i32.shl (i32.load (i32.add (local.get $rowAt) (i32.shl (i32.load (i32.add (local.get $owners) (i32.shl (local.get $k) (i32.const 2)))) (i32.const 2)))) (i32.const 3))
+          (f64.promote_f32 (local.get $sig)))))
       (local.set $k (i32.add (local.get $k) (i32.const 1)))
       (br $each)))
   )

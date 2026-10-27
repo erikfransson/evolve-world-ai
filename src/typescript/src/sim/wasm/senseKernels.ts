@@ -26,7 +26,8 @@ export class SenseKernels {
   private readonly senser: WasmSenser;
   private readonly filler: WasmFiller;
   private stride: number; // ray features per ray in the brain input
-  private energyScale: number; // seen energies are squashed against this, the largest species start energy (speciesEngine's seenEnergyScale)
+  private sameStart!: boolean; // every species starts with the energyScale, so a creature's own energy signal is the one the crowd kernel packs for others
+  private energyScale!: number; // seen energies are squashed against this, the largest species start energy (speciesEngine's seenEnergyScale)
   private nextSlot = 0;
 
   private constructor(brains: WasmBrainBank, senser: WasmSenser, store: ResidentStore, filler: WasmFiller, stepper: WasmStepper, config: EcoConfig) {
@@ -36,7 +37,13 @@ export class SenseKernels {
     this.filler = filler;
     this.stepper = stepper;
     this.stride = inputLayout(config).rayFeatures;
-    this.energyScale = seenEnergyScale(speciesList(config));
+    this.setScale(config);
+  }
+
+  private setScale(config: EcoConfig): void {
+    const species = speciesList(config);
+    this.energyScale = seenEnergyScale(species);
+    this.sameStart = species.every((s) => s.startEnergy === this.energyScale);
   }
 
   // Null when WebAssembly SIMD is unavailable or disabled, when a kernel does not load, or when creatures may have more than MAX_RAYS rays (maxRays);
@@ -65,8 +72,13 @@ export class SenseKernels {
     this.nextSlot = 0;
     this.detail = null;
     this.stride = inputLayout(config).rayFeatures;
-    this.energyScale = seenEnergyScale(speciesList(config));
+    this.setScale(config);
     return this;
+  }
+
+  // Whether the crowd kernel's pack stores each creature's own energy signal into its row (run's last argument), so prepareRows can skip it.
+  packsOwnSignal(crowd: Crowd): boolean {
+    return this.sameStart && crowd.kernel !== null;
   }
 
   // The item tables the step kernel looks items up in, or null when stale (see WasmSenser.itemTables).
@@ -101,7 +113,7 @@ export class SenseKernels {
     if (n === 0) return;
     const slotsAt = this.brains.runRegion(n);
     prof?.lap("slots");
-    this.senser.run(world, crowd, n, selves, this.stride, this.energyScale, detail, this.filler, rows, slotsAt);
+    this.senser.run(world, crowd, n, selves, this.stride, this.energyScale, detail, this.filler, rows, slotsAt, this.packsOwnSignal(crowd));
     prof?.lap("senser");
     this.brains.forwardRun(n);
     prof?.lap("brain forward");

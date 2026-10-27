@@ -9,7 +9,8 @@ import { ECO_PRESETS, withEcoPreset } from "../../src/typescript/src/sim/presets
 import { createRng } from "../../src/typescript/src/sim/rng.ts";
 import { energySignal } from "../../src/typescript/src/sim/sensors.ts";
 import { wasmAvailable } from "../../src/typescript/src/sim/wasm/loader.ts";
-import { Region } from "../../src/typescript/src/sim/wasm/resident.ts";
+import { F, Region } from "../../src/typescript/src/sim/wasm/resident.ts";
+import { prepareRows } from "../../src/typescript/src/sim/wasm/residentStep.ts";
 import { useKernels } from "./helpers.ts";
 
 // The WebAssembly crowd grid (crowd.wat, crowdKernel.ts) against its JS twin Crowd.rebuild (crowd.ts): every array must be the same bit for bit,
@@ -138,6 +139,28 @@ describe.skipIf(!wasmAvailable())("the WebAssembly crowd grid equals Crowd.rebui
       if (!Object.is(f32[(sy! >> 2) + k], Math.fround(crowd.ys[k]!))) bad++;
       if (!Object.is(f32[(sig! >> 2) + k], Math.fround(energySignal(crowd.energies[k]!, start)))) bad++;
     }
+    expect(bad).toBe(0);
+  });
+
+  it("with toRows, in each creature's row as its first brain input extra, which prepareRows then leaves", () => {
+    const eco = make(inland, 400);
+    const e = eco as Any;
+    for (let t = 0; t < 5; t++) eco.step();
+    eco.prepareTick();
+    const crowd: Crowd = e.crowd;
+    const store = e.resident;
+    const [sx, sy, sig] = [new Region(), new Region(), new Region()].map((r) => store.grow(r, crowd.count * 4 + 16));
+    crowd.kernel!.pack(300, sx!, sy!, sig!, true);
+    const { rows, n } = eco.senseBatchRows();
+    const first = (k: number) => store.f64[(rows[k]! >> 3) + F.extras] as number;
+    let bad = 0;
+    for (let k = 0; k < crowd.count; k++) {
+      const row = e.table.rowAt[crowd.owners[k]!]!;
+      if (!Object.is(store.f64[row + F.extras], Math.fround(energySignal(crowd.energies[k]!, 300)))) bad++;
+    }
+    const kept = Array.from({ length: n }, (_, k) => first(k));
+    prepareRows(store, rows, n, e.items.terrain, true);
+    for (let k = 0; k < n; k++) if (!Object.is(first(k), kept[k])) bad++;
     expect(bad).toBe(0);
   });
 
