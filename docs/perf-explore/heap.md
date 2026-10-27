@@ -36,4 +36,8 @@ Population samples ring 1080 (258 at 1800 s, grows 129 per 900 s until full), li
 | MAX_SPARE | 249 MB   | 20 MB    | 36 MB        | 104 MB   | 248 MB     |
 
 - Speed, two alternating 60 s pairs (mixed, load about 15): base 13.85, 13.65 against 13.69, 14.23 ms per tick; within the pair spread. Births after a crash allocate fresh objects once the pool is empty, which is the only mechanism for a cost.
-- `ecoShare.ts` keeps the same unbounded pool at its lines 488 and 616 (helper threads only, 0 on the server); not changed.
+
+## Helper pools
+
+- `ShareHelper` in `ecoShare.ts` (browser page and tests, 0 helpers on the server) now bounds its dead-creature pool by the same `MAX_SPARE` per species; test "helper spare creature pool" in `ecoPool.test.ts` fails without it.
+- Bit-identical: only the number of kept spares changes, never which one a birth pops while the pool is non-empty beyond the cap; thinkEvery pin and helper-vs-serial cases unchanged.

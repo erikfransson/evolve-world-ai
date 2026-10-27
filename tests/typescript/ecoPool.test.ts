@@ -1,8 +1,8 @@
 import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
-import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
+import { Ecosystem, MAX_SPARE } from "../../src/typescript/src/sim/ecosystem.ts";
 import { restoreState, saveState } from "../../src/typescript/src/sim/ecoState.ts";
-import { ShareCoordinator, fittedCaps, packetBytes, packetViews, publishedBytes } from "../../src/typescript/src/sim/ecoShare.ts";
+import { ShareCoordinator, ShareHelper, fittedCaps, packetBytes, packetViews, publishedBytes } from "../../src/typescript/src/sim/ecoShare.ts";
 import { ThinkPool, defaultHelpers, serveHelper, tickTimeoutMs } from "../../src/typescript/src/worker/ecoPool.ts";
 import type { HelperIn, HelperOut, HelperPort } from "../../src/typescript/src/worker/ecoPool.ts";
 import { EcoRunner } from "../../src/typescript/src/worker/ecoRunner.ts";
@@ -487,5 +487,23 @@ describe("helper packets", () => {
     } finally {
       pool.close();
     }
+  });
+});
+
+describe("helper spare creature pool", () => {
+  it("stays within MAX_SPARE per species after a crash", () => {
+    const helper = new ShareHelper(cfg(), 10, 0);
+    const internal = helper as unknown as { mine: Map<number, unknown>; speciesOf: Map<number, number>; spare: unknown[][]; apply(d: Float64Array, g: Float64Array, n: number): void };
+    const n = MAX_SPARE + 40;
+    const deaths = new Float64Array(2 * n);
+    for (let i = 0; i < n; i++) {
+      internal.mine.set(i, {});
+      internal.speciesOf.set(i, 0);
+      deaths[2 * i] = 3; // DIED
+      deaths[2 * i + 1] = i;
+    }
+    internal.apply(deaths, new Float64Array(0), deaths.length);
+    expect(internal.mine.size).toBe(0);
+    expect(internal.spare[0]!.length).toBe(MAX_SPARE);
   });
 });

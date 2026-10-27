@@ -5,6 +5,7 @@ import type { EngineConfig } from "./config.ts";
 import type { EcoConfig } from "./ecoConfig.ts";
 import { agingOf } from "./physics.ts";
 import type { Aging } from "./physics.ts";
+import { MAX_SPARE } from "./ecosystem.ts";
 import type { Ecosystem } from "./ecosystem.ts";
 import { OUTPUT_SIZE } from "./sensors.ts";
 import type { BodyPlan } from "./sensors.ts";
@@ -485,7 +486,7 @@ export class ShareHelper {
   private readonly batch = new SenseBatch();
   private readonly thinkBatch = new SenseBatch();
   private readonly every: number; // eco.thinkEvery
-  private readonly spare: Creature[][]; // per species
+  private readonly spare: Creature[][]; // per species, at most MAX_SPARE each
   private genome = new Float32Array(0);
   private genomeAt = 0; // words of the packet's genomes read so far
   private readonly plan: BodyPlan = { rayCount: 0, raySpread: 0, rayLength: 0, hiddenLayers: [], memoryShort: 0, memoryLong: 0 };
@@ -613,7 +614,8 @@ export class ShareHelper {
         const c = this.mine.get(id);
         if (c) {
           this.mine.delete(id);
-          this.spare[this.speciesOf.get(id)!]!.push(c);
+          const pool = this.spare[this.speciesOf.get(id)!]!;
+          if (pool.length < MAX_SPARE) pool.push(c);
           this.speciesOf.delete(id);
         }
       } else if (code === BORN) {
