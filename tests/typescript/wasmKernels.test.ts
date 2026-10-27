@@ -11,6 +11,7 @@ import { WasmBrainBank } from "../../src/typescript/src/sim/wasm/brainKernel.ts"
 import { setWasmDisabled, wasmAvailable } from "../../src/typescript/src/sim/wasm/loader.ts";
 import { speciesEngine, speciesList } from "../../src/typescript/src/sim/species.ts";
 import { prepareRows } from "../../src/typescript/src/sim/wasm/residentStep.ts";
+import { rockLowerBound } from "../../src/typescript/src/sim/wasm/senser.ts";
 import { SenseKernels } from "../../src/typescript/src/sim/wasm/senseKernels.ts";
 import type { SimConfig } from "../../src/typescript/src/sim/config.ts";
 import { Creature, SenseBatch } from "../../src/typescript/src/sim/creature.ts";
@@ -521,6 +522,27 @@ describe("sense.wat (SenseKernels)", () => {
     reset(a, 0.9);
     expect(tableOf(a)).toBe(shared);
     expect(tableOf(b)).toBe(tableOf(c));
+  });
+
+  it("bounds the distance to the nearest rock edge from below for every point of a cell", () => {
+    const rng = createRng(21);
+    const cols = 9;
+    const rows = 7;
+    const cell = 300;
+    const n = 40;
+    const x = Float64Array.from({ length: n }, () => rng.range(0, cols * cell));
+    const y = Float64Array.from({ length: n }, () => rng.range(0, rows * cell));
+    const r = Float64Array.from({ length: n }, () => rng.range(10, 380));
+    const lb = rockLowerBound(cols, rows, cell, x, y, r, n);
+    for (let t = 0; t < 4000; t++) {
+      const px = rng.range(0, cols * cell);
+      const py = rng.range(0, rows * cell);
+      let edge = Infinity;
+      for (let d = 0; d < n; d++) edge = Math.min(edge, Math.hypot(px - x[d]!, py - y[d]!) - r[d]!);
+      const bound = lb[Math.floor(py / cell) * cols + Math.floor(px / cell)]!;
+      expect(bound).toBeLessThanOrEqual(Math.max(0, edge));
+    }
+    expect(Math.max(...lb)).toBeGreaterThan(0);
   });
 
   it("keeps the rays of non-detail creatures untouched and needs no detail", () => {

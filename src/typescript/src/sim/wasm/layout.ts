@@ -81,6 +81,7 @@ export const LAYOUT = {
   S_ROCK_START: 152,
   S_ROCK_ORDER: 156,
   S_ROCK_XYR: 160,
+  S_ROCK_LB: 168, // f32 per rock cell, a lower bound of the distance to the nearest disc edge (rockLowerBound)
   S_BYTES: 192,
   // call block of fill (i32 unless noted)
   F_N: 0,

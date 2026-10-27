@@ -18,10 +18,32 @@ import { Region, growRegion } from "./resident.ts";
 // creature given as detail (the selected one), whose rays are read back for the UI.
 
 export const MAX_RAYS = 64;
+const ROCK_BOUND_CAP = 2048; // distances past this are not told apart; a ray longer than this walks the rock anyway
 const SCRATCH_BYTES = 2816;
 
 interface SenseExports extends WebAssembly.Exports {
   sense(p: number): void;
+}
+
+// Per cell of the rock grid, a lower bound of the distance from any point of the cell to the nearest disc edge (ROCK_BOUND_CAP when none is nearer),
+// shrunk by 1e-6 relative so f32 rounding cannot raise it. A ray of that length or less from a point in the cell cannot reach a disc.
+export function rockLowerBound(cols: number, rows: number, cell: number, x: ArrayLike<number>, y: ArrayLike<number>, r: ArrayLike<number>, count: number): Float32Array {
+  const out = new Float32Array(cols * rows).fill(ROCK_BOUND_CAP);
+  for (let d = 0; d < count; d++) {
+    const reach = ROCK_BOUND_CAP + r[d]!;
+    const cx1 = Math.min(cols - 1, Math.floor((x[d]! + reach) / cell));
+    const cy1 = Math.min(rows - 1, Math.floor((y[d]! + reach) / cell));
+    for (let cy = Math.max(0, Math.floor((y[d]! - reach) / cell)); cy <= cy1; cy++) {
+      const dy = Math.max(cy * cell - y[d]!, 0, y[d]! - (cy + 1) * cell);
+      for (let cx = Math.max(0, Math.floor((x[d]! - reach) / cell)); cx <= cx1; cx++) {
+        const dx = Math.max(cx * cell - x[d]!, 0, x[d]! - (cx + 1) * cell);
+        const edge = Math.max(0, Math.hypot(dx, dy) - r[d]!);
+        if (edge < out[cy * cols + cx]!) out[cy * cols + cx] = edge;
+      }
+    }
+  }
+  for (let i = 0; i < out.length; i++) out[i] *= 1 - 1e-6;
+  return out;
 }
 
 interface OffsetTable {
@@ -56,6 +78,7 @@ export class WasmSenser {
   private rRockStart = new Region();
   private rRockOrder = new Region();
   private rRockXYR = new Region();
+  private rRockLB = new Region();
   // Views of the whole linear memory, valid while buffer is the memory's current buffer (growth replaces it).
   private buffer: ArrayBuffer | null = null;
   private f32 = new Float32Array(0);
@@ -107,6 +130,7 @@ export class WasmSenser {
     this.rRockStart = new Region();
     this.rRockOrder = new Region();
     this.rRockXYR = new Region();
+    this.rRockLB = new Region();
     this.rockSynced = null;
     this.buffer = null;
     this.synced = null;
@@ -275,6 +299,7 @@ export class WasmSenser {
     const pRockStart = this.grow(this.rRockStart, rock.rockStart.length * 4);
     const pRockOrder = this.grow(this.rRockOrder, rock.rockCount * 4 + 4);
     const pRockXYR = this.grow(this.rRockXYR, rock.rockCount * 24 + 8);
+    const pRockLB = this.grow(this.rRockLB, rock.cols * rock.rows * 4 + 4);
     const pScr = this.grow(this.rScratch, SCRATCH_BYTES);
     const pDetail = this.grow(this.rDetail, 16 * MAX_RAYS);
     const pP = this.grow(this.rP, L.S_BYTES);
@@ -290,6 +315,7 @@ export class WasmSenser {
         f64[xyr + 3 * d + 1] = rock.rockY[d]!;
         f64[xyr + 3 * d + 2] = rock.rockR[d]!;
       }
+      f32.set(rockLowerBound(rock.cols, rock.rows, ROCK_CELL, rock.rockX, rock.rockY, rock.rockR, rock.rockCount), pRockLB >> 2);
       this.rockSynced = rock;
     }
     const sx = pSx >> 2;
@@ -341,6 +367,7 @@ export class WasmSenser {
     i32[(pP + L.S_ROCK_START) >> 2] = pRockStart;
     i32[(pP + L.S_ROCK_ORDER) >> 2] = pRockOrder;
     i32[(pP + L.S_ROCK_XYR) >> 2] = pRockXYR;
+    i32[(pP + L.S_ROCK_LB) >> 2] = pRockLB;
     this.exports.sense(pP);
   }
 

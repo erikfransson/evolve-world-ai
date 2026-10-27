@@ -32,7 +32,7 @@
     (local $ps i32) (local $base i32) (local $sigp i32) (local $cStart i32) (local $ccols i32) (local $crows i32)
     ;; rock
     (local $rcols i32) (local $rrows i32) (local $rstart i32) (local $rorder i32) (local $rxyr i32) (local $rmax f64) (local $rinv f64)
-    (local $rext f64) (local $rr f64) (local $rfar f64) (local $di i32)
+    (local $rext f64) (local $rr f64) (local $rfar f64) (local $di i32) (local $rlb i32) (local $skip i32)
     (local.set $n (i32.load offset={{S_N}} (local.get $P)))
     (local.set $stride (i32.load offset={{S_STRIDE}} (local.get $P)))
     (local.set $cand (i32.load offset={{S_CAND}} (local.get $P)))
@@ -62,6 +62,7 @@
     (local.set $rstart (i32.load offset={{S_ROCK_START}} (local.get $P)))
     (local.set $rorder (i32.load offset={{S_ROCK_ORDER}} (local.get $P)))
     (local.set $rxyr (i32.load offset={{S_ROCK_XYR}} (local.get $P)))
+    (local.set $rlb (i32.load offset={{S_ROCK_LB}} (local.get $P)))
     (local.set $ist (i32.load offset={{S_ITEM_START}} (local.get $P)))
     (local.set $ixy (i32.load offset={{S_ITEM_XY}} (local.get $P)))
     (local.set $ikd (i32.load offset={{S_ITEM_KIND}} (local.get $P)))
@@ -151,7 +152,14 @@
         (br $cyl)))
       (local.set $cim (local.get $cp))  ;; the items end here; the rock discs follow
       ;; rock discs after the items, as wall candidates in grid order; a disc is far past length + radius
-      (if (i32.gt_s (local.get $rcols) (i32.const 0)) (then
+      ;; none can be near when the cell holding the creature is farther from every disc edge (rockLowerBound) than the ray length, with a margin far above the rounding
+      (local.set $skip (i32.const 0))
+      (local.set $cx (i32.trunc_sat_f64_s (f64.floor (f64.mul (local.get $x) (local.get $rinv)))))
+      (local.set $cy (i32.trunc_sat_f64_s (f64.floor (f64.mul (local.get $y) (local.get $rinv)))))
+      (if (i32.and (i32.lt_u (local.get $cx) (local.get $rcols)) (i32.lt_u (local.get $cy) (local.get $rrows))) (then
+        (local.set $skip (f64.gt (f64.promote_f32 (f32.load (i32.add (local.get $rlb) (i32.shl (i32.add (i32.mul (local.get $cy) (local.get $rcols)) (local.get $cx)) (i32.const 2)))))
+          (f64.add (f64.mul (local.get $L) (f64.const 1.000001)) (f64.const 0.001))))))
+      (if (i32.and (i32.gt_s (local.get $rcols) (i32.const 0)) (i32.eqz (local.get $skip))) (then
         (local.set $rext (f64.add (f64.mul (local.get $L) (f64.add (f64.const 1) (f64.const 1e-9))) (local.get $rmax)))
         (local.set $cx0 (i32.trunc_sat_f64_s (f64.floor (f64.mul (f64.sub (local.get $x) (local.get $rext)) (local.get $rinv)))))
         (local.set $cx0 (select (i32.const 0) (local.get $cx0) (i32.lt_s (local.get $cx0) (i32.const 0))))
