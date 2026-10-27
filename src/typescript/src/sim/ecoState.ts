@@ -52,6 +52,7 @@ export const SCALARS = [
 type Typed = Float32Array | Float64Array | Int32Array | Uint8Array;
 
 function pack(a: Typed): string {
+  if (typeof Buffer === "function") return Buffer.from(a.buffer, a.byteOffset, a.byteLength).toString("base64"); // no rope of chunks, same text
   const bytes = new Uint8Array(a.buffer, a.byteOffset, a.byteLength);
   let text = "";
   for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode(...bytes.subarray(i, i + 0x8000));

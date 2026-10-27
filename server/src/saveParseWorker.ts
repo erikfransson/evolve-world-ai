@@ -11,14 +11,18 @@ import type { Home } from "./saveParse.ts";
 // of millions of tiny values ("[{},{},...]") makes JSON.parse allocate far more than its size and grind near the heap cap; it is refused unparsed.
 const MAX_JSON_TOKENS = 1_000_000;
 const { gz, maxJsonBytes, verifyOnly, home, carryFrom } = workerData as { gz: Uint8Array; maxJsonBytes: number; verifyOnly: boolean; home: Home | null; carryFrom: string | null };
-try {
+// Its own function, so the gunzipped bytes and their text are garbage before restoreState builds the world.
+function parseJson(): EcoState {
   const json = gunzipSync(gz, { maxOutputLength: maxJsonBytes });
   let tokens = 0;
   for (let i = 0; i < json.length; i++) {
     const c = json[i];
     if ((c === 0x2c || c === 0x5b || c === 0x7b) && ++tokens > MAX_JSON_TOKENS) throw new Error("save has too many JSON values");
   }
-  const state = JSON.parse(json.toString("utf8")) as EcoState;
+  return JSON.parse(json.toString("utf8")) as EcoState;
+}
+try {
+  const state = parseJson();
   const other = home ? otherWorldReason(state, home) : null;
   // A reset's carry: only the oldest creature, read from the columns without building the world, so a save of an older map version works too.
   if (carryFrom !== null) parentPort!.postMessage({ ok: true, carried: oldestInState(state, carryFrom) });
