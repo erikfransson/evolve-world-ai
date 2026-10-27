@@ -53,6 +53,7 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 | 20 | Item and crowd grid cell size (100 today, plans see 170) 1.25-3x | small | at best 1-2% of the tick; item cell factors change the fingerprint (tie-break of multi-touch eats, 0.3% of touching creature-ticks) | no (tie-breaks) | Rejected (`cell.md`) |
 | 21 | Sense per-ray passes two rays wide (f64x2 directions, closeness) | small | kernel -2%, tick 0.3-0.8%: the passes are bound by stores and loop overhead, not arithmetic | yes | Rejected (`rays2.md`) |
 | 19 | Brains run in weight-block address order (sorted slot list kept in the bank) | small | 60 s bench 1.005x, but the order drifts as the world ages: brain phase 1.12x and tick 1.04-1.10x at 600 s; nothing for a single-shape world | yes | Merged (`brainorder.md`): the live world runs for days |
+| 22 | Save off the tick loop: main thread snapshots typed arrays, a worker packs, stringifies, gzips | server | tick stall per save 3.2-6.0 s to 0.04-0.19 s, peak RSS during a save 796 to 597 MB, JSON byte-identical | yes | Merged (`savestall.md`); server code, needs the Live push gate reviews |
 | 7 | prepareRows (slots phase, 7%) into the fill kernel | small | no exact variant over 1%: ground lookup is at most 0.6 ms, exp 0.33, rest 0.45 | yes | Rejected (`prep.md`) |
 
 ## Log
@@ -82,3 +83,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-27 13:50 Idea 20 rejected: wider cells cut loop entries but scan more items, net 1-2%, and not exact.
 - 2026-10-27 13:56 Idea 21 rejected (under 1%). The sense kernel's remaining cost is memory and loop overhead; no exact arithmetic cut is left there.
 - 2026-10-27 14:25 Idea 19 merged (58 lines in brainKernel.ts). The 60 s bench understates it; the gain grows with the world's age.
+- 2026-10-27 14:50 Idea 22 merged: the 4-hourly save no longer freezes the world for seconds, and the save-time memory peak drops about 180 MB.
