@@ -32,6 +32,7 @@ Fingerprint equal means bit-identical results.
 | 2026-10-27 15:20 | 4 founders x 800, 1800 s (2 runs each, `aging.md`) | 10.73, 10.88 | 9.22, 9.10 | 1.18x (exact) | 299 / 373 MB (V8 heap slack, not a leak, `mem.md`) |
 | 2026-10-27 17:12 | Juggernaut x 4900 (cap), 7200 s, saves every 1800 s (1 run each) | 8.84 | 8.36 | 1.06x (exact; population 2225 by then, mostly senser) | 751 / 533 MB: the saves set the peak; the 4 saves stalled the tick 1.9-3.7 s on base, 0.02-0.16 s on perf-live |
 | 2026-10-27 17:50 | after batch 5 (ideas 27-29, all rejected, nothing merged) | 15.24 | 13.07 | 1.17x (unchanged) | 219 / 219 MB |
+| 2026-10-27 18:40 | after batch 6 (idea 33 merged; mixed base from 2 runs, one row lost) | 15.19 / 18.40 (cap) | 12.72 / 15.68 (cap) | 1.19x mixed, 1.17x cap (exact) | 220 / 235 MB mixed (one-off), 255 / 258 cap |
 
 Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54, brain forward 5.23 / 5.17, slots (prepareRows) 1.04 / 1.52, memory and steer 1.26 / 1.59, eat 1.05 / 1.35, crowd grid 0.51 / 0.67, collisions 0.18 / 0.27, rest under 0.2. Server frame encoding adds 0.57 ms per tick at 5 Hz. Speed achieved unpaced on this loaded machine: 2.0x and 1.7x real time (the set speed is 3x).
 
@@ -123,3 +124,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-27 18:03 Idea 30 rejected: below the bar and within noise. Lesson: the 'cold excess' of the senser harness (32 MB sweep) overstates what the real tick leaves cold; three ideas built on it (29, 30, 31 in part) all lost.
 - 2026-10-27 18:25 Idea 33 merged (8de4ebb): the first keeper since batch 4. Patching the grid for births and deaths (step 2) is not worth 100 lines of wat for about 1% at the cap. Factor run for batch 6 started.
 - 2026-10-27 18:27 Idea 34 started: the audit angle that found idea 33, applied to the whole tick. Factor run for batch 6 in progress (one base mixed row lost to a duplicate start I stopped; medians from the rest).
+- 2026-10-27 18:33 Factor after batch 6: 1.19x mixed (15.07, 15.31 vs 12.72, 12.82 and a fast-machine 9.78), 1.17x at the cap (18.71, 18.40, 16.55 vs 15.68, 15.65, 15.68), fingerprints equal, peak RSS flat.
