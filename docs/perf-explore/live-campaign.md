@@ -38,6 +38,14 @@ Fingerprint equal means bit-identical results.
 
 Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54, brain forward 5.23 / 5.17, slots (prepareRows) 1.04 / 1.52, memory and steer 1.26 / 1.59, eat 1.05 / 1.35, crowd grid 0.51 / 0.67, collisions 0.18 / 0.27, rest under 0.2. Server frame encoding adds 0.57 ms per tick at 5 Hz. Speed achieved unpaced on this loaded machine: 2.0x and 1.7x real time (the set speed is 3x).
 
+## Scout candidates (2026-10-27 21:30 round, to rank into batch 9)
+
+| Scout | Candidate | Kind | Expected | Confidence |
+|-------|-----------|------|----------|------------|
+| server | `--max-old-space-size=256` instead of 768 in the unit (mem.md: 80 gave -110 MB at the same speed); needs a restore test of a cap-size save under the cap | memory, no code | -75 to -110 MB steady and peak | 4 |
+| server | `MALLOC_ARENA_MAX=2` and a fixed `MALLOC_MMAP_THRESHOLD_` in the unit, so the save workers' 25-60 MB buffers are unmapped after a save instead of fragmenting arenas | memory, no code | -100 to -200 MB retained after saves (guess until measured) | 3 |
+| server | drop the 40 MB JSON copies held through the workers' parse and stringify (`let` plus null, one Buffer reused) | memory, server code | -40 MB at the save peak | 2 |
+
 ## Ideas
 
 | # | Idea | Kind | Effect | Exact | Verdict |
