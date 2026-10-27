@@ -281,7 +281,7 @@ export class WasmSenser {
 
   // Senses the batch of resident rows and writes each creature's complete brain input at its slot: the fill kernel builds the records and the body inputs
   // from the rows, and writes the brain slot list at slotsAt. selves[k] is the crowd index of batch member k.
-  run(world: World, crowd: Crowd, n: number, selves: Int32Array, stride: number, startEnergy: number, detail: Creature | null, filler: WasmFiller, rows: Int32Array, slotsAt: number): void {
+  run(world: World, crowd: Crowd, n: number, selves: Int32Array, stride: number, startEnergy: number, detail: Creature | null, filler: WasmFiller, rows: Int32Array, slotsAt: number, signalToRows = false): void {
     this.syncItems(world);
     const count = crowd.count;
     const ccells = crowd.cols * crowd.rows;
@@ -325,7 +325,7 @@ export class WasmSenser {
     const species = pSpecies >> 2;
     const { xs, ys, owners, energies } = crowd;
     const crowdSpecies = crowd.species;
-    if (kernel) kernel.pack(startEnergy, pSx, pSy, pSig);
+    if (kernel) kernel.pack(startEnergy, pSx, pSy, pSig, signalToRows);
     else for (let k = 0; k < count; k++) {
       f32[sx + k] = xs[k]!;
       f32[sy + k] = ys[k]!;

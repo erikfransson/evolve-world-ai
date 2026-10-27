@@ -68,13 +68,14 @@ export class WasmCrowd {
     return { start: r.start.ptr, owners: r.owners.ptr, species: r.species.ptr };
   }
 
-  // For the sense kernel: the sorted positions as f32 at sx and sy and each creature's energy signal as f32 at sig (twin of the loop in WasmSenser.run).
-  pack(startEnergy: number, sx: number, sy: number, sig: number): void {
+  // For the sense kernel: the sorted positions as f32 at sx and sy and each creature's energy signal as f32 at sig (twin of the loop in WasmSenser.run), and into the rows when toRows.
+  pack(startEnergy: number, sx: number, sy: number, sig: number, toRows = false): void {
     const C = this.pC;
     const i32 = this.store.i32;
     i32[(C + L.C_SX) >> 2] = sx;
     i32[(C + L.C_SY) >> 2] = sy;
     i32[(C + L.C_SIG) >> 2] = sig;
+    i32[(C + L.C_SIG_ROWS) >> 2] = toRows ? 1 : 0;
     this.store.f64[(C + L.C_START_ENERGY) >> 3] = startEnergy;
     this.exports.pack(C);
   }

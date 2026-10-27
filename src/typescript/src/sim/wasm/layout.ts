@@ -159,6 +159,7 @@ export const LAYOUT = {
   C_SW_RESUME: 168,
   C_HIT_S: 172, // out: the pair found, as sorted slots
   C_HIT_T: 176,
+  C_SIG_ROWS: 180, // pack's input: nonzero also stores each energy signal into its row's first extra (as f64)
   C_BYTES: 184,
   // call block of members (i32)
   M_N: 0,
