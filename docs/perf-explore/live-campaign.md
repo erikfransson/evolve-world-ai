@@ -79,4 +79,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-27 12:31 Idea 17 merged (28 lines of brain.wat). Finding: per brain 1047 ns in the live mix vs 500 ns from L1, so the brain kernel is about half memory stall; bursts and list-driven touches lose, only a sequential stream of touches wins.
 - 2026-10-27 13:05 Factor after batch 3 (stepk, senseempty, brain3 added): 1.17x in both cases, bit-identical. Idea 18 rejected: stale rays alone change the dynamics; every variant of thinking or sensing less often does.
 - 2026-10-27 13:50 Idea 20 rejected: wider cells cut loop entries but scan more items, net 1-2%, and not exact.
-- 2026-10-27 14:40 Idea 21 rejected (under 1%). The sense kernel's remaining cost is memory and loop overhead; no exact arithmetic cut is left there.
+- 2026-10-27 13:56 Idea 21 rejected (under 1%). The sense kernel's remaining cost is memory and loop overhead; no exact arithmetic cut is left there.
