@@ -11,7 +11,7 @@
     (local $n i32) (local $i i32) (local $k i32) (local $g i32) (local $rowAt i32) (local $row i32) (local $cellOf i32) (local $from i32) (local $to i32) (local $swap i32)
     (local $cols i32) (local $cell f64) (local $maxX f64) (local $maxY f64) (local $cx f64) (local $cy f64)
     (local $bits i32) (local $mask i32) (local $passes i32) (local $pass i32) (local $shift i32) (local $count i32) (local $b i32) (local $sum i32) (local $c i32) (local $j i32) (local $slot i32)
-    (local $prev i32) (local $m i32) (local $start i32) (local $occupied i32) (local $species i32) (local $sp i32)
+    (local $prev i32) (local $m i32) (local $start i32) (local $occupied i32) (local $species i32) (local $sp i32) (local $fill v128)
     (local.set $n (i32.load offset={{C_N}} (local.get $C)))
     (local.set $rowAt (i32.load offset={{C_ROW_AT}} (local.get $C)))
     (local.set $cellOf (i32.load offset={{C_CELL_OF}} (local.get $C)))
@@ -103,6 +103,12 @@
       (if (i32.ne (local.get $c) (local.get $prev))
         (then
           (local.set $g (i32.add (local.get $prev) (i32.const 1)))
+          (local.set $fill (i32x4.splat (local.get $k)))
+          (block $gapVecDone (loop $gapVecLoop ;; four cells a store while four are left
+            (br_if $gapVecDone (i32.gt_s (i32.add (local.get $g) (i32.const 3)) (local.get $c)))
+            (v128.store (i32.add (local.get $start) (i32.shl (local.get $g) (i32.const 2))) (local.get $fill))
+            (local.set $g (i32.add (local.get $g) (i32.const 4)))
+            (br $gapVecLoop)))
           (block $gapDone (loop $gapLoop
             (br_if $gapDone (i32.gt_s (local.get $g) (local.get $c)))
             (i32.store (i32.add (local.get $start) (i32.shl (local.get $g) (i32.const 2))) (local.get $k))
@@ -115,6 +121,12 @@
       (br $sortedLoop)))
     ;; the cells after the last occupied one start at n
     (local.set $g (i32.add (local.get $prev) (i32.const 1)))
+    (local.set $fill (i32x4.splat (local.get $n)))
+    (block $tailVecDone (loop $tailVecLoop
+      (br_if $tailVecDone (i32.gt_s (i32.add (local.get $g) (i32.const 3)) (i32.mul (local.get $cols) (i32.load offset={{C_ROWS}} (local.get $C)))))
+      (v128.store (i32.add (local.get $start) (i32.shl (local.get $g) (i32.const 2))) (local.get $fill))
+      (local.set $g (i32.add (local.get $g) (i32.const 4)))
+      (br $tailVecLoop)))
     (block $tailDone (loop $tailLoop
       (br_if $tailDone (i32.gt_s (local.get $g) (i32.mul (local.get $cols) (i32.load offset={{C_ROWS}} (local.get $C)))))
       (i32.store (i32.add (local.get $start) (i32.shl (local.get $g) (i32.const 2))) (local.get $n))
