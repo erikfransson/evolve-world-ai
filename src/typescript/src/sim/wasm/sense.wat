@@ -12,6 +12,85 @@
 (module
   (import "brain" "mem" (memory 1))
 
+  ;; Per-ray passes two rays per step as f64x2, the same per-lane operations as the scalar loops of $sense below, so the results are bit-identical.
+  ;; Each pair helper returns the rays it did (nR rounded down to even); the scalar loop after the call does the odd last ray.
+  ;; $dirsPairs: ray directions by angle addition.
+  (func $dirsPairs (param $scr i32) (param $off i32) (param $nR i32) (param $hc f64) (param $hs f64) (result i32)
+    (local $i i32) (local $hcv v128) (local $hsv v128) (local $c v128) (local $s v128) (local $p i32)
+    (local.set $hcv (f64x2.splat (local.get $hc)))
+    (local.set $hsv (f64x2.splat (local.get $hs)))
+    (block $d (loop $l
+      (br_if $d (i32.gt_s (i32.add (local.get $i) (i32.const 2)) (local.get $nR)))
+      (local.set $c (v128.load (i32.add (local.get $off) (i32.shl (local.get $i) (i32.const 3)))))
+      (local.set $s (v128.load (i32.add (local.get $off) (i32.shl (i32.add (local.get $nR) (local.get $i)) (i32.const 3)))))
+      (local.set $p (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 3))))
+      (v128.store (local.get $p) (f64x2.sub (f64x2.mul (local.get $hcv) (local.get $c)) (f64x2.mul (local.get $hsv) (local.get $s))))
+      (v128.store offset=512 (local.get $p) (f64x2.add (f64x2.mul (local.get $hsv) (local.get $c)) (f64x2.mul (local.get $hcv) (local.get $s))))
+      (local.set $i (i32.add (local.get $i) (i32.const 2)))
+      (br $l)))
+    (local.get $i))
+
+  ;; $initPairs: with no wall in range the wall pass leaves every ray at best = L, kind 0.
+  (func $initPairs (param $scr i32) (param $L f64) (param $nR i32) (result i32)
+    (local $i i32) (local $Lv v128)
+    (local.set $Lv (f64x2.splat (local.get $L)))
+    (block $d (loop $l
+      (br_if $d (i32.gt_s (i32.add (local.get $i) (i32.const 2)) (local.get $nR)))
+      (v128.store offset=1024 (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 3))) (local.get $Lv))
+      (i64.store offset=1536 (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 2))) (i64.const 0))
+      (local.set $i (i32.add (local.get $i) (i32.const 2)))
+      (br $l)))
+    (local.get $i))
+
+  ;; $closePairs: closeness (0 for kind 0, else 1 - best / L) per ray, and the f32 direction and start distance the crowd rays read.
+  (func $closePairs (param $scr i32) (param $L f64) (param $nR i32) (result i32)
+    (local $i i32) (local $Lv v128) (local $one v128) (local $z v128) (local $clo v128) (local $p8 i32) (local $p4 i32)
+    (local.set $Lv (f64x2.splat (local.get $L)))
+    (local.set $one (f64x2.splat (f64.const 1)))
+    (block $d (loop $l
+      (br_if $d (i32.gt_s (i32.add (local.get $i) (i32.const 2)) (local.get $nR)))
+      (local.set $p8 (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 3))))
+      (local.set $p4 (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 2))))
+      (local.set $z (i64x2.eq (i64x2.extend_low_i32x4_s (v128.load64_zero offset=1536 (local.get $p4))) (v128.const i64x2 0 0)))
+      (local.set $clo (v128.andnot (f64x2.sub (local.get $one) (f64x2.div (v128.load offset=1024 (local.get $p8)) (local.get $Lv))) (local.get $z)))
+      (v128.store offset=1024 (local.get $p8) (local.get $clo))
+      (v128.store64_lane offset=1792 0 (local.get $p4) (f32x4.demote_f64x2_zero (v128.load (local.get $p8))))
+      (v128.store64_lane offset=2048 0 (local.get $p4) (f32x4.demote_f64x2_zero (v128.load offset=512 (local.get $p8))))
+      (v128.store64_lane offset=2304 0 (local.get $p4)
+        (f32x4.demote_f64x2_zero (v128.bitselect (local.get $Lv) (f64x2.mul (f64x2.sub (local.get $one) (local.get $clo)) (local.get $Lv)) (local.get $z))))
+      (local.set $i (i32.add (local.get $i) (i32.const 2)))
+      (br $l)))
+    (local.get $i))
+
+  ;; $unseen: 1 when none of the nR rays hit a creature (crowd hit -1 in every real lane, the padding lanes of the last group do not count).
+  (func $unseen (param $scr i32) (param $nR i32) (result i32)
+    (local $i i32) (local $v v128) (local $rem i32)
+    (block $d (loop $l
+      (br_if $d (i32.ge_s (local.get $i) (local.get $nR)))
+      (local.set $v (v128.load offset=2560 (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 2)))))
+      (local.set $rem (i32.sub (local.get $nR) (local.get $i)))
+      (if (i32.lt_s (local.get $rem) (i32.const 4)) (then
+        (local.set $v (v128.or (local.get $v) (v128.not (i32x4.gt_s (i32x4.splat (local.get $rem)) (v128.const i32x4 0 1 2 3)))))))
+      (if (v128.any_true (v128.not (local.get $v))) (then (return (i32.const 0))))
+      (local.set $i (i32.add (local.get $i) (i32.const 4)))
+      (br $l)))
+    (i32.const 1))
+
+  ;; $emit: the features of nR rays that saw no creature: closeness and the one-hot of food, poison and wall, then zeros (species flags and seen energy).
+  (func $emit (param $scr i32) (param $base i32) (param $nR i32) (param $stride i32)
+    (local $i i32)
+    (block $d (loop $l
+      (br_if $d (i32.ge_s (local.get $i) (local.get $nR)))
+      (v128.store (local.get $base) (f32x4.replace_lane 0
+        (v128.and (i32x4.eq (i32x4.splat (i32.load offset=1536 (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 2))))) (v128.const i32x4 -1 1 2 3)) (f32x4.splat (f32.const 1)))
+        (f32.demote_f64 (f64.load offset=1024 (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 3)))))))
+      (if (i32.eq (local.get $stride) (i32.const 6)) (then (i64.store offset=16 (local.get $base) (i64.const 0)))
+        (else (if (i32.gt_s (local.get $stride) (i32.const 4)) (then
+          (memory.fill (i32.add (local.get $base) (i32.const 16)) (i32.const 0) (i32.shl (i32.sub (local.get $stride) (i32.const 4)) (i32.const 2)))))))
+      (local.set $base (i32.add (local.get $base) (i32.shl (local.get $stride) (i32.const 2))))
+      (local.set $i (i32.add (local.get $i) (i32.const 1)))
+      (br $l))))
+
   (func (export "sense") (param $P i32)
     (local $j i32) (local $n i32) (local $q i32) (local $nR i32) (local $i i32) (local $stride i32)
     (local $x f64) (local $y f64) (local $hc f64) (local $hs f64) (local $L f64) (local $self i32) (local $off i32) (local $inp i32)
@@ -241,6 +320,7 @@
         (br $jn))
       ;; directions by angle addition
       (local.set $i (i32.const 0))
+      (local.set $i (call $dirsPairs (local.get $scr) (local.get $off) (local.get $nR) (local.get $hc) (local.get $hs)))
       (block $dd (loop $dl
         (br_if $dd (i32.ge_s (local.get $i) (local.get $nR)))
         (local.set $oc (f64.load (i32.add (local.get $off) (i32.shl (local.get $i) (i32.const 3)))))
@@ -253,6 +333,7 @@
         (br $dl)))
       ;; trace each ray: wall, then candidates
       (local.set $i (i32.const 0))
+      (if (i32.eqz (local.get $walls)) (then (local.set $i (call $initPairs (local.get $scr) (local.get $L) (local.get $nR)))))
       (block $rd (loop $rl
         (br_if $rd (i32.ge_s (local.get $i) (local.get $nR)))
         (local.set $dx (f64.load (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 3)))))
@@ -329,6 +410,7 @@
       (br $ploop)))
       ;; closeness, and the crowd rays' inputs
       (local.set $i (i32.const 0))
+      (local.set $i (call $closePairs (local.get $scr) (local.get $L) (local.get $nR)))
       (block $rd2 (loop $rl2
         (br_if $rd2 (i32.ge_s (local.get $i) (local.get $nR)))
         (local.set $dx (f64.load (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 3)))))
@@ -438,6 +520,9 @@
       (local.set $i (i32.const 0))
       (local.set $sb (i32.shl (local.get $stride) (i32.const 2)))
       (local.set $base (local.get $inp))
+      ;; no creature seen and no detail record: every ray's features are closeness, the one-hot and zeros
+      (if (i32.eqz (local.get $det)) (then (if (call $unseen (local.get $scr) (local.get $nR))
+        (then (call $emit (local.get $scr) (local.get $base) (local.get $nR) (local.get $stride)) (local.set $i (local.get $nR))))))
       (block $wd (loop $wl
         (br_if $wd (i32.ge_s (local.get $i) (local.get $nR)))
         (local.set $ps (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 2))))
