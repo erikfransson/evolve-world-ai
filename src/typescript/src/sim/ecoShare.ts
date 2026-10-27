@@ -1,18 +1,19 @@
 import { refit } from "./brain.ts";
-import { Creature, SenseBatch, senseThinkBatch } from "./creature.ts";
+import { Creature, SenseBatch, senseThinkBatch, thinkersOf } from "./creature.ts";
 import { Crowd } from "./crowd.ts";
 import type { EngineConfig } from "./config.ts";
 import type { EcoConfig } from "./ecoConfig.ts";
 import { agingOf } from "./physics.ts";
 import type { Aging } from "./physics.ts";
 import type { Ecosystem } from "./ecosystem.ts";
+import { OUTPUT_SIZE } from "./sensors.ts";
 import type { BodyPlan } from "./sensors.ts";
 import { seenEnergyScale, speciesEngine, speciesList } from "./species.ts";
 import type { HitKind } from "./types.ts";
 import { ITEM_REMOVE, ITEM_SET, World } from "./world.ts";
 import { F, I } from "./wasm/resident.ts";
 import type { ResidentStore } from "./wasm/resident.ts";
-import { advanceBodies, prepareRows } from "./wasm/residentStep.ts";
+import { advanceBodies, senseThinkRows } from "./wasm/residentStep.ts";
 import { SenseKernels } from "./wasm/senseKernels.ts";
 
 // Sense and think on helper threads. Each tick the coordinator, which owns the Ecosystem, publishes a packet:
@@ -27,7 +28,7 @@ import { SenseKernels } from "./wasm/senseKernels.ts";
 // The packet is a plain buffer, so it travels by postMessage (one copy per helper).
 
 const DIED = 3; // delta record: DIED, id
-const BORN = 4; // delta record: BORN, id, owner, species, rayCount, raySpread, rayLength, memoryShort, memoryLong, hidden layers, ...sizes, genome length (the genome itself, then the memory units, go only to its owner, in Packet.genomes)
+const BORN = 4; // delta record: BORN, id, owner, species, rayCount, raySpread, rayLength, memoryShort, memoryLong, hidden layers, ...sizes, genome length (the genome itself, then the memory units and with eco.thinkEvery above 1 the brain outputs, go only to its owner, in Packet.genomes)
 
 // Header slots (Int32).
 const H_COUNT = 0;
@@ -37,6 +38,8 @@ const H_DELTA_CAP = 3;
 const H_DELTA_LENGTH = 4;
 const H_GENOME_CAP = 5;
 const H_STRIDE = 12; // memory units reserved per creature in memoryOut (after the aging rule, which takes bytes 24 to 47)
+const H_TICK = 13; // Ecosystem.tick of this packet, for eco.thinkEvery
+const H_OUTPUT_CAP = 14;
 const AGING_AT = 24; // byte offset in the header after the six int32 fields, 8-aligned
 const HEADER_BYTES = 64;
 
@@ -45,6 +48,7 @@ export interface Caps {
   memory: number; // Float64 words of memory units in a packet: creatures times the stride
   delta: number; // Float64 words of changes
   genome: number; // Float64 words of genomes, per helper packet: only those of its own new creatures
+  outputs: number; // Float32 words of brain outputs: creatures times (OUTPUT_SIZE + memory stride) with eco.thinkEvery above 1, else 0
 }
 
 // Typed views over one packet buffer. Outputs come last, so the bytes before outputAt are the published state.
@@ -73,6 +77,7 @@ export interface Packet {
   after: Record<"x" | "y" | "vx" | "vy" | "turnRate" | "energy" | "angle" | "cos" | "sin", Float64Array>;
   memoryOut: Float64Array; // stride units per creature, creature i's from i * stride (header slot H_STRIDE)
   touched: Int32Array;
+  outputs: Float32Array; // with eco.thinkEvery above 1, creature i's brain outputs after this tick, from i * (OUTPUT_SIZE + stride), as its owner keeps them between thinks
   outputAt: number; // byte offset of the outputs
 }
 
@@ -133,7 +138,7 @@ function layout(caps: Caps): { f64At: number; outputAt: number; bytes: number } 
   const ints = HEADER_BYTES + 4 * 3 * caps.creatures;
   const f64At = Math.ceil(ints / 8) * 8;
   const outputAt = f64At + 8 * (10 * caps.creatures + caps.delta + caps.genome);
-  return { f64At, outputAt, bytes: outputAt + 8 * (9 * caps.creatures + caps.memory) + 4 * caps.creatures };
+  return { f64At, outputAt, bytes: outputAt + 8 * (9 * caps.creatures + caps.memory) + 4 * caps.creatures + 4 * caps.outputs };
 }
 
 export function packetBytes(caps: Caps): number {
@@ -148,7 +153,8 @@ export function packetViews(buffer: ArrayBufferLike, caps?: Caps): Packet {
     header[H_MEMORY_CAP] = caps.memory;
     header[H_DELTA_CAP] = caps.delta;
     header[H_GENOME_CAP] = caps.genome;
-  } else caps = { creatures: header[H_CREATURE_CAP]!, memory: header[H_MEMORY_CAP]!, delta: header[H_DELTA_CAP]!, genome: header[H_GENOME_CAP]! };
+    header[H_OUTPUT_CAP] = caps.outputs;
+  } else caps = { creatures: header[H_CREATURE_CAP]!, memory: header[H_MEMORY_CAP]!, delta: header[H_DELTA_CAP]!, genome: header[H_GENOME_CAP]!, outputs: header[H_OUTPUT_CAP]! };
   const C = caps.creatures;
   const { f64At, outputAt } = layout(caps);
   let at = f64At;
@@ -190,6 +196,7 @@ export function packetViews(buffer: ArrayBufferLike, caps?: Caps): Packet {
     },
     memoryOut: f64(caps.memory),
     touched: new Int32Array(buffer, at, C),
+    outputs: new Float32Array(buffer, at + 4 * C, caps.outputs),
     outputAt,
   };
 }
@@ -204,10 +211,10 @@ export function publishedBytes(p: Packet): number {
 export function fittedCaps(have: Caps | null, need: Caps): Caps | null {
   const big = (h: number, n: number): boolean => h > 4 * n + 65536;
   const oversized = have !== null && (big(have.delta, need.delta) || big(have.genome, need.genome));
-  if (have && need.creatures <= have.creatures && need.memory <= have.memory && need.delta <= have.delta && need.genome <= have.genome && !oversized) return null;
+  if (have && need.creatures <= have.creatures && need.memory <= have.memory && need.delta <= have.delta && need.genome <= have.genome && need.outputs <= have.outputs && !oversized) return null;
   const up = (n: number, h: number): number => (have && n <= h ? h : Math.ceil(n * 1.5) + 64);
   const shrink = (n: number, h: number): number => (big(h, n) ? Math.ceil(n * 1.5) + 4096 : up(n, h));
-  return { creatures: up(need.creatures, have?.creatures ?? 0), memory: up(need.memory, have?.memory ?? 0), delta: shrink(need.delta, have?.delta ?? 0), genome: shrink(need.genome, have?.genome ?? 0) };
+  return { creatures: up(need.creatures, have?.creatures ?? 0), memory: up(need.memory, have?.memory ?? 0), delta: shrink(need.delta, have?.delta ?? 0), genome: shrink(need.genome, have?.genome ?? 0), outputs: need.outputs > 0 ? up(need.outputs, have?.outputs ?? 0) : 0 };
 }
 
 // Coordinator side: assigns each new creature to the least loaded thread, writes packets and reads the outputs back.
@@ -235,17 +242,19 @@ export class ShareCoordinator {
   // As a side effect it raises this.stride to the largest memory of any creature born so far; the stride never shrinks within a run.
   need(eco: Ecosystem): Caps {
     const j = eco.journal!;
+    const carry = eco.config.eco.thinkEvery > 1;
     let delta = j.items.length + 2 * j.died.length;
     let genome = 0;
     for (const id of j.born) {
       const c = eco.get(id)?.creature;
       if (!c) continue;
       const plan = c.plan;
+      const units = plan.memoryShort + plan.memoryLong;
       delta += 11 + plan.hiddenLayers.length;
-      genome += c.brain.genome.length + plan.memoryShort + plan.memoryLong;
-      this.stride = Math.max(this.stride, plan.memoryShort + plan.memoryLong);
+      genome += c.brain.genome.length + units + (carry ? OUTPUT_SIZE + units : 0);
+      this.stride = Math.max(this.stride, units);
     }
-    return { creatures: eco.population, memory: eco.population * this.stride, delta, genome };
+    return { creatures: eco.population, memory: eco.population * this.stride, delta, genome, outputs: carry ? eco.population * (OUTPUT_SIZE + this.stride) : 0 };
   }
 
   // Writes the tick-start state and drains the journal into p, whose caps must cover need(eco). Each new helper
@@ -298,11 +307,16 @@ export class ShareCoordinator {
         for (let g = 0; g < genome.length; g++) to[at++] = genome[g]!;
         const memory = c.memory; // a restored creature has memory already; the helper keeps it from here on
         for (let u = 0; u < memory.length; u++) to[at++] = memory[u]!;
+        if (eco.config.eco.thinkEvery > 1) {
+          const out = c.outputs; // also its outputs, which it keeps until its next think
+          for (let u = 0; u < out.length; u++) to[at++] = out[u]!;
+        }
         genomeAt[owner] = at;
       }
     }
     eco.drainJournal();
     p.header[H_DELTA_LENGTH] = k;
+    p.header[H_TICK] = eco.tick;
     const rule = eco.agingRule;
     p.aging[0] = rule ? 1 : 0;
     p.aging[1] = rule?.startTicks ?? 0;
@@ -418,6 +432,15 @@ export class ShareCoordinator {
   collect(eco: Ecosystem, home: Packet, packets: readonly Packet[]): void {
     const members = eco.members;
     const stride = home.header[H_STRIDE]!;
+    if (home.caps.outputs > 0) {
+      const os = OUTPUT_SIZE + stride;
+      for (let i = 0; i < members.length; i++) {
+        const owner = home.owner[i]!;
+        if (owner === this.helpers) continue;
+        const out = members[i]!.creature.outputs;
+        out.set(packets[owner]!.outputs.subarray(i * os, i * os + out.length));
+      }
+    }
     const rows = eco.residentRows();
     if (rows) {
       const f = rows.store.f64;
@@ -460,6 +483,8 @@ export class ShareHelper {
   private readonly mine = new Map<number, Creature>();
   private readonly speciesOf = new Map<number, number>();
   private readonly batch = new SenseBatch();
+  private readonly thinkBatch = new SenseBatch();
+  private readonly every: number; // eco.thinkEvery
   private readonly spare: Creature[][]; // per species
   private genome = new Float32Array(0);
   private genomeAt = 0; // words of the packet's genomes read so far
@@ -480,6 +505,7 @@ export class ShareHelper {
     this.engines = species.map((sp) => speciesEngine(config, sp, scale));
     this.spare = this.engines.map(() => []);
     this.index = index;
+    this.every = config.eco.thinkEvery;
     this.aging = agingOf(config.eco, config.dt);
     this.world = new World(config, worldCapacity);
     this.crowd = new Crowd(config);
@@ -509,7 +535,7 @@ export class ShareHelper {
       c.state.ticksAlive = p.ticks[i]!;
       batch.add(c, i);
     }
-    senseThinkBatch(this.world, this.crowd, batch);
+    senseThinkBatch(this.world, this.crowd, thinkersOf(batch, this.thinkBatch, p.header[H_TICK]!, this.every, (self) => p.ids[self]!));
     const a = p.after;
     const stride = p.header[H_STRIDE]!;
     for (let k = 0; k < batch.count; k++) {
@@ -522,6 +548,7 @@ export class ShareHelper {
       const memory = c.memory;
       const at = i * stride;
       for (let u = 0; u < memory.length; u++) p.memoryOut[at + u] = memory[u]!;
+      if (this.every > 1) p.outputs.set(c.outputs, i * (OUTPUT_SIZE + stride));
     }
   }
 
@@ -545,8 +572,7 @@ export class ShareHelper {
       rows[m] = r.ptr;
       selves[m++] = i;
     }
-    prepareRows(store, rows, m, this.world.terrain);
-    kernels.runRows(this.world, this.crowd, rows, selves, m, null);
+    senseThinkRows(kernels, this.world, this.crowd, rows, selves, m, p.header[H_TICK]!, this.every, (self) => p.ids[self]!, null);
     advanceBodies(kernels, rows, selves, m, this.aging, this.world, this.engines[0]!.creature.radius, p.touched);
     const a = p.after;
     const stride = p.header[H_STRIDE]!;
@@ -561,6 +587,7 @@ export class ShareHelper {
       const count = g[b + I.unitCount]!;
       const at = i * stride;
       for (let u = 0; u < count; u++) p.memoryOut[at + u] = f[u0 + u]!;
+      if (this.every > 1) p.outputs.set(this.mine.get(p.ids[i]!)!.outputs, i * (OUTPUT_SIZE + stride));
     }
   }
 
@@ -619,6 +646,10 @@ export class ShareHelper {
     else c = new Creature(this.engines[species]!, genome, 0, 0, 0, plan, this.kernels, species);
     c.setMemory(genomes, this.genomeAt);
     this.genomeAt += units;
+    if (this.every > 1) {
+      const out = c.outputs;
+      for (let u = 0; u < out.length; u++) out[u] = genomes[this.genomeAt++]!;
+    }
     c.aging = this.aging;
     this.mine.set(id, c);
     this.speciesOf.set(id, species);

@@ -419,6 +419,21 @@ export class SenseBatch {
   }
 }
 
+// eco.thinkEvery: whether a creature senses and thinks this tick. Every every-th tick, staggered by id, and on its first tick, when its outputs are not yet its own.
+export function thinksNow(tick: number, every: number, id: number, ticksAlive: number): boolean {
+  return ticksAlive === 0 || (tick + id) % every === 0;
+}
+
+// The members of batch that think this tick (thinksNow), in into; batch itself when every creature thinks every tick. idOf gives the id of crowd index self.
+export function thinkersOf(batch: SenseBatch, into: SenseBatch, tick: number, every: number, idOf: (self: number) => number): SenseBatch {
+  if (every <= 1) return batch;
+  into.clear();
+  const { creatures, selves } = batch;
+  for (let k = 0; k < batch.count; k++) if (thinksNow(tick, every, idOf(selves[k]!), creatures[k]!.state.ticksAlive)) into.add(creatures[k]!, selves[k]!);
+  into.sorted = batch.sorted;
+  return into;
+}
+
 // Sense and think for a whole batch on the JS path; writes only each creature's rays and outputs. The one boundary for the per-tick
 // creature work without kernels, used by Ecosystem.sensePhase and the helper threads (ecoShare.ts); resident creatures go through SenseKernels.runRows.
 export function senseThinkBatch(world: World, crowd: Crowd, batch: SenseBatch, prof: PhaseTimer | null = null): void {

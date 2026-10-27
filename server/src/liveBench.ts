@@ -1,10 +1,11 @@
 // Live World benchmark: the server's LiveWorld (liveConfig, The Inland Sea) seeded with the live founders, stepped headless on this thread.
 // Prints CPU ms per steady tick, the phase profile, peak RSS and a fingerprint (equal runs give equal fingerprints).
 // Usage (in server/): node src/liveBench.ts [--seconds 60] [--copies 800] [--seed 1] [--founders ../src/typescript/public/live-founders.json]
-//   [--only juggernaut,grazer] [--frames] [--profile] [--every 10]
+//   [--only juggernaut,grazer] [--frames] [--profile] [--every 10] [--think 1]
 // --copies: copies of each founder seeded (4 founders x 800 = 3200 creatures, 6 M brain weights, under the birth weight cap).
 // --only: seed these founder ids only (so --only juggernaut --copies 4900 fills the 5000 cap with small brains).
 // --frames: also encode the creature frame and item delta at the server's 5 Hz (FRAME_MS), as the public loop does for viewers.
+// --think: eco.thinkEvery instead of liveConfig's (1 is every tick).
 // --profile: CPU ms per engine phase per steady tick (the first quarter of the ticks is warm-up and left out of every steady number).
 
 import { parseArgs } from "node:util";
@@ -26,6 +27,7 @@ const { values } = parseArgs({
     frames: { type: "boolean" },
     profile: { type: "boolean" },
     every: { type: "string", default: "10" }, // seconds between population samples
+    think: { type: "string" },
   },
 });
 
@@ -44,6 +46,7 @@ function mulberry32(seed: number): () => number {
 const seed = Number(values.seed);
 const config = structuredClone(liveConfig);
 config.seed = seed;
+if (values.think) config.eco.thinkEvery = Number(values.think);
 let founders = loadFounders(values.founders!);
 if (values.only) {
   const ids = new Set(values.only.split(","));
@@ -96,6 +99,7 @@ const perTick = prof ? [...prof.ms].map(([k, v]) => [k, +(v / steadyTicks).toFix
 console.log(JSON.stringify({
   seed,
   seconds,
+  thinkEvery: config.eco.thinkEvery,
   founders: founders.map((f) => f.id),
   copies,
   seeded,

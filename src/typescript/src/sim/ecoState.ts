@@ -1,7 +1,7 @@
 import { genomeLength, layerSizes, upgradeGenome } from "./brain.ts";
 import { ITEM_RADIUS_RANGE, overrideConfig } from "./config.ts";
 import type { DeepPartial } from "./config.ts";
-import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG, MAX_KILL_ENERGY } from "./ecoConfig.ts";
+import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG, MAX_KILL_ENERGY, MAX_THINK_EVERY } from "./ecoConfig.ts";
 import type { EcoConfig } from "./ecoConfig.ts";
 import { MUTATION_SCALE_RANGE } from "./ecoInsert.ts";
 import { Ecosystem } from "./ecosystem.ts";
@@ -9,6 +9,7 @@ import type { EcoCore, MemberRecord } from "./ecosystem.ts";
 import { mapSpec, mapVersion } from "./maps/index.ts";
 import type { LineageState } from "./lineages.ts";
 import type { PoolEntry } from "./seedPool.ts";
+import { OUTPUT_SIZE } from "./sensors.ts";
 import { checkRanges, mergeSpeciesList } from "./species.ts";
 import type { World, WorldSnapshot } from "./world.ts";
 
@@ -36,6 +37,7 @@ export interface EcoState {
     plans: number[][]; // per creature: rayCount, raySpread, rayLength, memoryShort, memoryLong, genome length, ...hidden layers
     genomes: string; // float32, all creatures one after the other
     memory: string; // float64, the same
+    outputs?: string; // float32, the brain outputs (OUTPUT_SIZE plus memory units each) in list order; only with eco.thinkEvery above 1, which keeps them between thinks
     mutationScales?: [number, number][]; // [position in the list, mutationScale] of the creatures whose scale is not 1; absent when all are 1
     bumpKills?: [number, number][]; // [position in the list, bump kills] of the creatures with any; absent when none has
   };
@@ -72,6 +74,7 @@ export function saveState(eco: Ecosystem): EcoState {
   }
   const genomes = new Float32Array(genomeTotal);
   const memory = new Float64Array(memoryTotal);
+  const outputs = config.eco.thinkEvery > 1 ? new Float32Array(n * OUTPUT_SIZE + memoryTotal) : null;
   let g = 0;
   let u = 0;
   members.forEach((m, i) => {
@@ -87,6 +90,7 @@ export function saveState(eco: Ecosystem): EcoState {
     plans.push([p.rayCount, p.raySpread, p.rayLength, p.memoryShort, p.memoryLong, genome.length, ...p.hiddenLayers]);
     genomes.set(genome, g);
     g += genome.length;
+    outputs?.set(c.outputs, i * OUTPUT_SIZE + u);
     memory.set(c.memory, u);
     u += c.memory.length;
   });
@@ -106,7 +110,7 @@ export function saveState(eco: Ecosystem): EcoState {
     core: eco.exportCore(),
     items: { xs: pack(w.xs), ys: pack(w.ys), kinds: pack(w.kinds), nextItem: pack(w.nextItem), cellHead: pack(w.cellHead), freeSlots: pack(w.freeSlots), freeCount: w.freeCount },
     lineages: eco.lineageTable.toState(),
-    creatures: { count: n, scalars: pack(scalars), plans, genomes: pack(genomes), memory: pack(memory), ...(mutationScales.length ? { mutationScales } : {}), ...(bumpKills.length ? { bumpKills } : {}) },
+    creatures: { count: n, scalars: pack(scalars), plans, genomes: pack(genomes), memory: pack(memory), ...(outputs ? { outputs: pack(outputs) } : {}), ...(mutationScales.length ? { mutationScales } : {}), ...(bumpKills.length ? { bumpKills } : {}) },
   };
 }
 
@@ -236,6 +240,7 @@ function checkedConfig(raw: unknown): EcoConfig {
   whole(eco.maxPopulation, 0, MAX_CREATURES, "eco.maxPopulation");
   whole(eco.birthReserve, 0, MAX_CREATURES, "eco.birthReserve");
   whole(eco.initialPopulation, 0, MAX_CREATURES, "eco.initialPopulation");
+  whole(eco.thinkEvery, 1, MAX_THINK_EVERY, "eco.thinkEvery");
   return config;
 }
 
@@ -337,6 +342,8 @@ export function restoreState(state: EcoState, pool: readonly PoolEntry[] | null 
   const { plans, genomes } = currentGenomes(state.version, config, cr.plans as number[][], saved);
   const memory = unpack(Float64Array, cr.memory, memoryTotal, "creatures.memory");
   if (!memory.every(Number.isFinite)) invalid("a genome or memory holds a number that is not finite");
+  const outputs = config.eco.thinkEvery > 1 && cr.outputs !== undefined ? unpack(Float32Array, cr.outputs, n * OUTPUT_SIZE + memoryTotal, "creatures.outputs") : null;
+  if (outputs && !outputs.every((x) => Math.abs(x) <= 1)) invalid("a brain output is not a number from -1 to 1");
   const scales = checkMutationScales(cr.mutationScales, n);
   const bumpKills = checkBumpKills(cr.bumpKills, n);
   const at = (name: (typeof SCALARS)[number]): number => SCALARS.indexOf(name);
@@ -391,7 +398,8 @@ export function restoreState(state: EcoState, pool: readonly PoolEntry[] | null 
       genome: genomes.subarray(g, g + p[5]!),
       memory: memory.subarray(u, u + units),
     };
-    eco.restoreMember(record);
+    const out = eco.restoreMember(record).creature.outputs;
+    if (outputs) out.set(outputs.subarray(i * OUTPUT_SIZE + u, i * OUTPUT_SIZE + u + out.length));
     g += p[5]!;
     u += units;
   }
