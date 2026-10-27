@@ -36,6 +36,7 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 | 10 | Eat phase: crowd `cellStart` fill four cells per v128 store (both rebuilds per tick) | small | crowd grid 0.55 to 0.42 ms, eat 1.14 to 1.00 ms, about 1.7% of the tick; the eat loop itself is 0.07 ms (33 eaters a tick) | yes | Merged (`eatlive.md`) |
 | 12 | Node and V8 flags for the server process (semi-space, liftoff, wasm tiering, gc) | small | none beats baseline by over 3%; GC is about 2% | yes | Rejected (`flagslive.md`) |
 | 15 | Step kernel: clear-of-rock raster one bit per square (8x smaller lookup) | small | memory and steer phase -8% in every pair, about 0.7% of the tick; sin and cos host calls are 36% of the phase, not removable exactly across engines | yes | Merged (17 lines, less memory) (`stepk.md`) |
+| 14 | Sense early-out: creatures with no candidate of any kind get their zero ray features by one fill, per-ray passes skipped | small | senser -0.17 ms (1.3%), tick pairs 2.0-2.5%; applies to 15-32% of creatures here, more in the sparse live world | yes | Merged (`senseempty.md`) |
 | 7 | prepareRows (slots phase, 7%) into the fill kernel | small | no exact variant over 1%: ground lookup is at most 0.6 ms, exp 0.33, rest 0.45 | yes | Rejected (`prep.md`) |
 
 ## Log
@@ -55,3 +56,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-27 19:30 Idea 8 merged (+138/-34, exact, about 5%).
 - 2026-10-27 20:30 Idea 15 merged (small but consistent, smaller raster). Note from the agent: identical code ran 0.8 ms slower in one worktree than another, so pairs must run from one checkout (base = HEAD, yours = patch).
 - 2026-10-27 20:45 Factor after batch 2 (brainblock, eat, sensecuts; stepk merged after the run): 1.10x mixed, 1.09x at the cap, bit-identical, memory flat. liveBench got `--threads` for the helper-thread check (idea 6).
+- 2026-10-27 21:30 Idea 14 merged (+87/-16 in sense.wat, exact, equality test with poisoned inputs).
