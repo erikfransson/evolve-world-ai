@@ -1,7 +1,7 @@
 import "../../src/typescript/src/sim/maps/index.ts"; // the Inland Sea cases build the map
 import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
-import { Crowd } from "../../src/typescript/src/sim/crowd.ts";
+import { Crowd, SMALL_SORT as SMALL } from "../../src/typescript/src/sim/crowd.ts";
 import { restoreState, saveState } from "../../src/typescript/src/sim/ecoState.ts";
 import type { EcoState } from "../../src/typescript/src/sim/ecoState.ts";
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
@@ -154,6 +154,44 @@ describe.skipIf(!wasmAvailable())("the WebAssembly crowd grid equals Crowd.rebui
       eco.step();
       e.kernels.brains.alloc(16 * 1024 * 1024);
       expect(crowdDifferences(eco)).toBe(0);
+    }
+  });
+
+  it("when the tick start reuses the grid of the shared phase, through births, deaths, eating, hunting and bumps", () => {
+    const worlds: [string, () => Ecosystem][] = [
+      ["bumps with damage", () => make((c) => damage({ ...c, world: { ...c.world, width: 1500, height: 1000 }, eco: { ...c.eco, birthEnergyRange: [60, 80], birthCostRange: [20, 30], birthCooldownRange: [1, 2] } }), 300)],
+      ["hunting", () => new Ecosystem(structuredClone(DEFAULT_PREDATOR_CONFIG), null)],
+    ];
+    for (const [name, build] of worlds) {
+      const eco = build();
+      const e = eco as Any;
+      let reused = 0;
+      let rebuilt = 0;
+      let bad = 0;
+      const refresh = e.wasmCrowd.refresh.bind(e.wasmCrowd);
+      e.wasmCrowd.refresh = (...a: unknown[]): boolean => {
+        const ok = refresh(...a);
+        if (ok) reused++;
+        return ok;
+      };
+      const rebuild = e.wasmCrowd.rebuild.bind(e.wasmCrowd);
+      e.wasmCrowd.rebuild = (...a: unknown[]): void => {
+        rebuilt++;
+        rebuild(...a);
+      };
+      const births = eco.births;
+      for (let t = 0; t < 300 && eco.members.length > SMALL; t++) {
+        eco.step();
+        // what the next tick start sees, after edits between ticks: energies only, or a move into another cell
+        if (t % 7 === 3) eco.members[t % eco.members.length]!.creature.state.energy *= 0.5;
+        if (t % 11 === 5) eco.members[t % eco.members.length]!.creature.state.x += 2 * e.crowd.cell;
+        eco.prepareTick();
+        bad += crowdDifferences(eco);
+      }
+      expect(bad, name).toBe(0);
+      expect(reused, name).toBeGreaterThan(20);
+      expect(rebuilt - 300, name).toBeGreaterThan(20); // the shared phase rebuilds every tick, the tick start after births, deaths and cell changes
+      expect(eco.births - births, name).toBeGreaterThan(0);
     }
   });
 
