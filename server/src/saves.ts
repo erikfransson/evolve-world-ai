@@ -2,7 +2,7 @@ import { BIRTH_WEIGHT_CAP, LIMITS, SEED_COPIES, mostCopies, seedRoom } from "./c
 import { IGNORED_OVERRIDES, OVERRIDES, PREVIOUS_OVERRIDES, loadOverrides, retireOverrides } from "./admin.ts";
 import type { SeedFounder } from "./founders.ts";
 import type { Value } from "./tunables.ts";
-import { parseSave } from "./saveParse.ts";
+import { TooBig, packSave, parseSave } from "./saveParse.ts";
 import { OtherWorld } from "./saveParse.ts";
 import type { LiveWorld } from "./liveWorld.ts";
 import { seedWeights } from "./liveWorld.ts";
@@ -36,7 +36,7 @@ export function readSeedCopies(store: StateStore, founders: number, eco: { maxPo
   return SEED_COPIES;
 }
 
-// Saving and restoring the live world. Jobs run one at a time. Only saveState and JSON.stringify block the tick loop, the gzip runs on a worker thread.
+// Saving and restoring the live world. Jobs run one at a time. Only the snapshot of a save blocks the tick loop, a worker packs and gzips it.
 export class Saves {
   private queue: Promise<unknown> = Promise.resolve();
   private readonly live: LiveWorld;
@@ -64,16 +64,19 @@ export class Saves {
   private async saveNow(): Promise<string> {
       if (this.resetting) throw new Error("the world is being reset");
       if (this.live.failedTicks > 0) throw new Error(`its ticks are failing (${this.live.failedTicks} in a row), the last good save is kept`);
-      const t0 = performance.now();
-      const state = await this.live.whenIdle(() => this.live.saveState());
-      const json = JSON.stringify(state);
-      const bytes = Buffer.byteLength(json);
-      if (bytes > LIMITS.maxSaveJsonBytes) {
-        const why = `the world is ${Math.round(bytes / 1e6)} MB of JSON, over the ${LIMITS.maxSaveJsonBytes / 1e6} MB a save may hold (it could not be read back)`;
+      let stallMs = 0;
+      const packed = this.live.whenIdle(() => {
+        const t0 = performance.now();
+        const run = packSave(this.live.saveSnapshot(), LIMITS.maxSaveJsonBytes);
+        stallMs = Math.round(performance.now() - t0);
+        return run;
+      });
+      const { gz, bytes } = await packed.catch((e: unknown) => {
+        if (!(e instanceof TooBig)) throw e;
+        const why = `the world is ${Math.round(e.bytes / 1e6)} MB of JSON, over the ${LIMITS.maxSaveJsonBytes / 1e6} MB a save may hold (it could not be read back)`;
         console.error(`SAVE REFUSED: ${why}`);
         throw new Error(why);
-      }
-      const stallMs = Math.round(performance.now() - t0);
+      });
       // The same parse and checks as a restore, on the worker with its heap cap; a save that fails them is never written.
       const verify = (gz: Uint8Array): Promise<unknown> =>
         parseSave(gz, LIMITS.maxSaveJsonBytes, true).catch((e: unknown) => {
@@ -82,8 +85,8 @@ export class Saves {
         });
       const h = this.live.homeWorld();
       const world = `${h.map || "random"} ${h.width}x${h.height}${h.mapVersion ? ` ${h.mapVersion}` : ""}`; // so the listing tells this world's saves from another's
-      const name = await this.store.write(json, { population: this.live.eco.population, tick: this.live.eco.tick, world }, new Date(), true, verify);
-      return `saved ${name} (${Math.round(json.length / 1e6)} MB json, ${stallMs} ms tick stall)`;
+      const name = await this.store.writeGzipped(gz, { population: this.live.eco.population, tick: this.live.eco.tick, world }, new Date(), verify);
+      return `saved ${name} (${Math.round(bytes / 1e6)} MB json, ${stallMs} ms tick stall)`;
   }
 
   // An admin reset: saves the running world, then moves every save, the admin overrides and the seed file into before-reset-<time>/

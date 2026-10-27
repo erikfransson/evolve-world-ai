@@ -8,7 +8,7 @@
 // --think: eco.thinkEvery instead of liveConfig's (1 is every tick).
 // --threads: helper threads that sense and think (createNodeThinkPool), as LIVE_THREADS on the server; speedAchieved then shows the wall gain.
 // --save: save every this many simulated seconds through the server's Saves into a temporary state directory, and report per save the
-//   main-thread time it took between ticks (blockMs, longest single block maxBlockMs) and its log line.
+//   main-thread time it took between ticks (blockMs wall, cpuMs this thread's CPU, longest single block maxBlockMs) and its log line.
 // --profile: CPU ms per engine phase per steady tick (the first quarter of the ticks is warm-up and left out of every steady number).
 
 import { mkdtempSync, rmSync } from "node:fs";
@@ -90,19 +90,22 @@ let creatureTicks = 0;
 const saveEvery = values.save ? Math.max(1, Math.round(Number(values.save) / dt)) : 0;
 const saveDir = saveEvery ? mkdtempSync(join(tmpdir(), "liveBench-save-")) : "";
 const saves = saveEvery ? new Saves(live, new StateStore(saveDir)) : null;
-const saveRuns: { tick: number; blockMs: number; maxBlockMs: number; wallMs: number; line: string }[] = [];
-type SaveRun = { tick: number; blockMs: number; maxBlockMs: number; t0: number; done: string | null };
+const saveRuns: { tick: number; blockMs: number; cpuMs: number; maxBlockMs: number; wallMs: number; line: string }[] = [];
+type SaveRun = { tick: number; blockMs: number; cpuMs: number; maxBlockMs: number; t0: number; done: string | null };
 let saving: SaveRun | null = null;
 // One yield to the event loop, timing what the save does on this thread meanwhile (its continuations run inside the await).
-async function saveStep(): Promise<void> {
+async function saveStep(waitMs = -1): Promise<void> {
   const b0 = performance.now();
-  await new Promise((r) => setImmediate(r));
+  const c0 = process.threadCpuUsage();
+  await new Promise((r) => (waitMs < 0 ? setImmediate(r) : setTimeout(r, waitMs)));
   const b = performance.now() - b0;
+  const c = process.threadCpuUsage(c0);
   const run = saving!;
   run.blockMs += b;
+  run.cpuMs += (c.user + c.system) / 1000;
   run.maxBlockMs = Math.max(run.maxBlockMs, b);
   if (run.done === null) return;
-  saveRuns.push({ tick: run.tick, blockMs: Math.round(run.blockMs), maxBlockMs: Math.round(run.maxBlockMs), wallMs: Math.round(performance.now() - run.t0), line: run.done });
+  saveRuns.push({ tick: run.tick, blockMs: Math.round(run.blockMs), cpuMs: Math.round(run.cpuMs), maxBlockMs: Math.round(run.maxBlockMs), wallMs: Math.round(performance.now() - run.t0), line: run.done });
   saving = null;
 }
 const t0 = performance.now();
@@ -127,13 +130,13 @@ while (eco.tick < ticks && !eco.extinct) {
   }
   if (eco.tick % every === 0) population.push(eco.population);
   if (saves && !saving && eco.tick % saveEvery === 0) {
-    const run: SaveRun = { tick: eco.tick, blockMs: 0, maxBlockMs: 0, t0: performance.now(), done: null };
+    const run: SaveRun = { tick: eco.tick, blockMs: 0, cpuMs: 0, maxBlockMs: 0, t0: performance.now(), done: null };
     saving = run;
     void saves.save().then((l) => { run.done = l; }, (e: unknown) => { run.done = String(e); });
   }
   if (saving) await saveStep(); // with a save running, yield between ticks
 }
-while (saving) await saveStep(); // the last save finishes before the numbers
+while (saving) await saveStep(10); // the last save finishes before the numbers, without spinning this thread (its blockMs then counts the waits)
 if (saveDir) rmSync(saveDir, { recursive: true, force: true });
 const t1 = performance.now();
 const steadyTicks = Math.max(1, eco.tick - warm);

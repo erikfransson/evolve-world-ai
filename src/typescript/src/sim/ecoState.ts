@@ -58,7 +58,29 @@ function pack(a: Typed): string {
   return btoa(text);
 }
 
+// An EcoState whose binary columns are still typed arrays (fresh copies, never the world's own), so it can go to a worker that packs them.
+type Unpacked<T> = { [K in keyof T]: Exclude<T[K], undefined> extends string ? Typed : T[K] };
+export type EcoSnapshot = Omit<EcoState, "items" | "creatures"> & { items: Unpacked<EcoState["items"]>; creatures: Unpacked<EcoState["creatures"]> };
+
 export function saveState(eco: Ecosystem): EcoState {
+  return packState(snapshotState(eco));
+}
+
+// The keys keep their order, so JSON.stringify(packState(snapshotState(eco))) is the same text as JSON.stringify(saveState(eco)).
+export function packState(s: EcoSnapshot): EcoState {
+  const it = s.items;
+  const cr = s.creatures;
+  return {
+    ...s,
+    items: { xs: pack(it.xs), ys: pack(it.ys), kinds: pack(it.kinds), nextItem: pack(it.nextItem), cellHead: pack(it.cellHead), freeSlots: pack(it.freeSlots), freeCount: it.freeCount },
+    creatures: {
+      count: cr.count, scalars: pack(cr.scalars), plans: cr.plans, genomes: pack(cr.genomes), memory: pack(cr.memory), ...(cr.outputs ? { outputs: pack(cr.outputs) } : {}),
+      ...(cr.mutationScales ? { mutationScales: cr.mutationScales } : {}), ...(cr.bumpKills ? { bumpKills: cr.bumpKills } : {}),
+    },
+  };
+}
+
+export function snapshotState(eco: Ecosystem): EcoSnapshot {
   const config = structuredClone(eco.config);
   config.eco.wasm = eco.wasm;
   const members = eco.members;
@@ -108,9 +130,9 @@ export function saveState(eco: Ecosystem): EcoState {
     ...(config.world.map ? { mapVersion: mapVersion(config.world.map) } : {}),
     config,
     core: eco.exportCore(),
-    items: { xs: pack(w.xs), ys: pack(w.ys), kinds: pack(w.kinds), nextItem: pack(w.nextItem), cellHead: pack(w.cellHead), freeSlots: pack(w.freeSlots), freeCount: w.freeCount },
+    items: { xs: w.xs, ys: w.ys, kinds: w.kinds, nextItem: w.nextItem, cellHead: w.cellHead, freeSlots: w.freeSlots, freeCount: w.freeCount },
     lineages: eco.lineageTable.toState(),
-    creatures: { count: n, scalars: pack(scalars), plans, genomes: pack(genomes), memory: pack(memory), ...(outputs ? { outputs: pack(outputs) } : {}), ...(mutationScales.length ? { mutationScales } : {}), ...(bumpKills.length ? { bumpKills } : {}) },
+    creatures: { count: n, scalars, plans, genomes, memory, ...(outputs ? { outputs } : {}), ...(mutationScales.length ? { mutationScales } : {}), ...(bumpKills.length ? { bumpKills } : {}) },
   };
 }
 

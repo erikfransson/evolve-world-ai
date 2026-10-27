@@ -1,5 +1,5 @@
 import { Worker } from "node:worker_threads";
-import type { EcoState } from "../../src/typescript/src/sim/ecoState.ts";
+import type { EcoSnapshot, EcoState } from "../../src/typescript/src/sim/ecoState.ts";
 import type { Carried } from "./carry.ts";
 
 // Unzips, parses and checks a save on a worker thread with its own small heap, so a crafted save (deep or many tiny JSON values)
@@ -10,6 +10,9 @@ const PARSE_TIMEOUT_MS = 120_000;
 // A save's own check must finish well inside the unit's TimeoutStopSec=60, so a slow one cannot cost the shutdown save; a real one takes 3 to 6 s.
 export const VERIFY_TIMEOUT_MS = 40_000;
 const WORKER = new URL("./saveParseWorker.ts", import.meta.url);
+const PACK_WORKER = new URL("./saveWriteWorker.ts", import.meta.url);
+// With the verify after it, a save still finishes inside TimeoutStopSec=60; a real pack takes 1 to 3 s.
+const PACK_TIMEOUT_MS = 15_000;
 
 // A save of another world: another size, map or map data. Startup starts a fresh world past it instead of retrying.
 export class OtherWorld extends Error {}
@@ -75,5 +78,39 @@ export function parseCarry(gz: Uint8Array, maxJsonBytes: number, from: string): 
     worker.on("message", (m: { ok: true; carried: Carried | null } | { ok: false; reason: string }) => finish(m.ok ? null : new Error(m.reason), m.ok ? m.carried : undefined));
     worker.on("error", (e: Error) => finish(new Error(`save parser failed: ${e.message}`)));
     worker.on("exit", (code) => finish(new Error(`save parser stopped (exit ${code})`)));
+  });
+}
+
+// A save of a snapshot (snapshotState) packed, stringified and gzipped on a worker with the parser's heap cap, so the tick loop only
+// pays for the snapshot. The worker takes the snapshot's typed arrays (transferred, they are copies). Resolves with the gzip and the
+// JSON's byte length; rejects with TooBig when the JSON is over maxJsonBytes, with the reason otherwise.
+export class TooBig extends Error {
+  readonly bytes: number;
+  constructor(bytes: number) {
+    super(`${bytes} bytes of JSON`);
+    this.bytes = bytes;
+  }
+}
+export function packSave(snap: EcoSnapshot, maxJsonBytes: number): Promise<{ gz: Uint8Array; bytes: number }> {
+  const it = snap.items;
+  const cr = snap.creatures;
+  const columns = [it.xs, it.ys, it.kinds, it.nextItem, it.cellHead, it.freeSlots, cr.scalars, cr.genomes, cr.memory, ...(cr.outputs ? [cr.outputs] : [])];
+  return new Promise((resolve, reject) => {
+    // The snapshot is cloned (its columns moved) here, before any later tick can change the world it came from.
+    const worker = new Worker(PACK_WORKER, { workerData: { snap, maxJsonBytes }, transferList: columns.map((a) => a.buffer as ArrayBuffer), resourceLimits: { maxOldGenerationSizeMb: PARSE_HEAP_MB, maxYoungGenerationSizeMb: 32 }, stdout: false, stderr: false });
+    let settled = false;
+    const finish = (err: Error | null, out?: { gz: Uint8Array; bytes: number }): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      void worker.terminate();
+      if (err) reject(err);
+      else resolve(out!);
+    };
+    const timer = setTimeout(() => finish(new Error("packing the save took too long")), PACK_TIMEOUT_MS);
+    worker.on("message", (m: { ok: true; gz: Uint8Array; bytes: number } | { ok: false; tooBig?: number; reason?: string }) =>
+      m.ok ? finish(null, { gz: m.gz, bytes: m.bytes }) : finish(m.tooBig !== undefined ? new TooBig(m.tooBig) : new Error(m.reason)));
+    worker.on("error", (e: Error) => finish(new Error(`save packer failed: ${e.message}`)));
+    worker.on("exit", (code) => finish(new Error(`save packer stopped (exit ${code})`)));
   });
 }
