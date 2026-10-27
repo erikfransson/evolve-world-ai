@@ -18,11 +18,11 @@ This run is not steady: population falls 3249 -> 1403 (the founders die off, bir
 | 1200-1500| 1749 | 17571 | 4.38  | 0.141 | 0.337 | 1.24   | 1.68  | 0.42      | 0.28  | 0.18   |
 | 1500-1800| 1403 | 17627 | 4.02  | 0.148 | 0.339 | 1.22   | 1.39  | 0.40      | 0.28  | 0.14   |
 
-(Window labels: the window ending at the second shown; the raw JSON labels it `toSec`.) Base, same table: total 4.45, 4.12, 4.55, 4.56, 4.94, 4.47; brain 1.60, 1.54, 1.73, 1.77, 1.95, 1.43; crowd 0.155, 0.148, 0.162, 0.163, 0.208, 0.230; senser 1.58, 1.36, 1.47, 1.42, 1.47, 1.34.
+Base, same windows: total 4.46, 4.12, 4.55, 4.56, 4.94, 4.47; brain 1.59, 1.54, 1.72, 1.72, 1.87, 1.50; crowd 0.154, 0.147, 0.162, 0.163, 0.208, 0.230; senser 1.58, 1.36, 1.47, 1.42, 1.47, 1.41.
 Run totals (cpuMsPerTick, cpuMsPerKilo, peak RSS MB): perf-live 9.22 / 9.10, 3.90 / 3.84, 373-375; base 10.73 / 10.88, 4.54 / 4.60, 299.
 
 ## Findings
-1. Aging in this world is small. Brain forward is the only phase that drifts: +6% from 0-300 s to 600-900 s on perf-live (1.33 -> 1.41), +8% on base (1.60 -> 1.73), consistent with the address-order drift in `brainorder.md` (which acts mostly in the first 1000 s here, then more founders die). Base minus perf-live at the same age is 0.27 ms/kilo at 0-300 s and 0.32 at 600-900 s, so brainorder's share is small compared with the other perf-live gains.
+1. Aging in this world is small. Brain forward is the only phase that drifts: +6% from 0-300 s to 600-900 s on perf-live (1.33 -> 1.41), +8% on base (1.59 -> 1.72), consistent with the address-order drift in `brainorder.md` (which acts mostly in the first 1000 s here, then more founders die). Base minus perf-live at the same age is 0.26 ms/kilo at 0-300 s and 0.31 at 600-900 s, so brainorder's share is small compared with the other perf-live gains.
 2. Crowd grid, slots (prepareRows), memory and steer, eat are flat from 0 to 1200 s (crowd 0.123, 0.122, 0.123, 0.118). So rows drifting out of batch order does not slow the fill, sense or step kernels measurably. The 5-9% faster crowd/senser/eat in the 600 s brainorder pairs is not aging, it is run-to-run noise (repeat spread here 1-4% in totals, up to 10% in single phases at load 9-16).
 3. Senser follows the food count, not age: 1.31 -> 1.03 ms/kilo while food falls 24.6k -> 13.9k, then 1.24 when food returns to 17.6k. This is the item grid size (cells hold fewer items), not `rowCap` growth. Not separated from population density by a counter.
 4. The late rise (1200-1800 s) is the population falling to 1400: per-tick fixed costs (crowd grid 0.12 -> 0.15, slots, regrow, births per capita 0.03 -> 0.14) spread over fewer creatures. Per-creature work (brain, eat, memory) does not rise beyond noise.
