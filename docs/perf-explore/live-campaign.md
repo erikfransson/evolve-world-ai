@@ -135,7 +135,7 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 | 59 | Cheaper births: reuse the parent's genome buffers and bank slot, avoid per-birth allocation | small | running; bound 1-2% late | yes | Batch 8 (`births.md`) |
 | 60 | sense.wat: the item and crowd gathers four entries per step | broad | exact (hash-equal), but every variant 2-4% slower in the kernel: rows hold 1.7 items and 1.5 crowd entries, so a 4-lane step replaces two one-cycle scalar iterations with 60 vector ops in a register-bound function | - (not built) | Rejected (`gather4.md`) |
 | 61 | Study: why the cost per creature rises 27% in aged worlds at the same population (clustering at food, age, brain mix, or the loaded machine), by comparing an aged saved state with a young population of the same size | study | running | - | Batch 8 (`aged.md`) |
-| 62 | sense.wat split into per-phase functions to cut register spills (spill count first) | small | running | yes | Batch 9 (`split.md`) |
+| 62 | sense.wat split into per-phase functions to cut register spills | small | not built: `--print-wasm-code` shows the hot loops have 0 stores and 0-2 stack loads; about 170 stack ops per creature in loop heads, an upper bound of 1.3% of the tick before call overhead; the C++ port's 8-12% is not spilling | - | Rejected (`split.md`) |
 | 63 | Dilated crowd occupancy gate (20 KB bit-planes built with the grid), one load skips both crowd walks for creatures alone in their window | small | running | yes | Batch 9 (`occgate.md`) |
 | 64 | The sense kernel emits the first-layer non-zero index list, brain.wat compacts only the tail | broad | running | yes | Batch 9 (`nzlist.md`) |
 | 65 | Run-ordered, 64-byte-aligned brain descriptor gather | small | running | yes | Batch 9 (`descs.md`) |
@@ -144,6 +144,7 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 | 68 | Process memory settings measured with saves: main heap cap 128 or 256, malloc env, restore transient | memory, no code | running | yes | Batch 9 (`memset.md`) |
 | 69 | Save-worker transient copies trimmed (verify worker's Buffer and string lifetimes, pack worker's double conversion) | memory, server code | running | yes | Batch 9 (`savepeak.md`) |
 | 70 | Deadband thinking: bench-only measurement of skip share against output error | study (lever) | running | - | Batch 9 (`deadband.md`) |
+| 71 | Two same-shape brains in lockstep (pairs of run-order neighbours with identical layer sizes share one 6-accumulator loop; per-output add order unchanged), microbench first | broad, exact | running | yes | Batch 9 (`pairs.md`) |
 | 7 | prepareRows (slots phase, 7%) into the fill kernel | small | no exact variant over 1%: ground lookup is at most 0.6 ms, exp 0.33, rest 0.45 | yes | Rejected (`prep.md`) |
 
 ## Log
@@ -233,3 +234,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-27 23:43 Idea 56 done: dt 1/20 is the better 1.5x lever for Erik than thinkEvery 2.
 - 2026-10-28 23:43 Moonshot scout in. Batch 9 ranked from the candidates: build the `$sense` split (62), the crowd occupancy gate (63), lockstep brain pairs (64), the descriptor gather (65), the step micro-cut bundle (66), the finer rock bound (67); memory: process settings measured with saves (68) and the save-worker peak trims (69); study: the deadband measurement script (70). Waiting: 39, 54 verification, 59, 61 and the two open-ended scouts.
 - 2026-10-28 23:47 All ten scouts reported (candidates table). Batch 9 launched: ideas 62-70. Held for the next refill: lockstep brain pairs (microbench first), array-of-structs gather records, the frame gather kernel (server). Running from before: 39, 54 verification, 59, 61.
+- 2026-10-28 23:49 Idea 62 rejected at the pre-check. Idea 71 (lockstep brain pairs) started in its slot.
