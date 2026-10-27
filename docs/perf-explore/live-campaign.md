@@ -38,6 +38,7 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 | 15 | Step kernel: clear-of-rock raster one bit per square (8x smaller lookup) | small | memory and steer phase -8% in every pair, about 0.7% of the tick; sin and cos host calls are 36% of the phase, not removable exactly across engines | yes | Merged (17 lines, less memory) (`stepk.md`) |
 | 14 | Sense early-out: creatures with no candidate of any kind get their zero ray features by one fill, per-ray passes skipped | small | senser -0.17 ms (1.3%), tick pairs 2.0-2.5%; applies to 15-32% of creatures here, more in the sparse live world | yes | Merged (`senseempty.md`) |
 | 16 | AOT-compile the existing .wat kernels with wasm2c into a server addon (no twin) | moonshot | bit-identical but 0.66-0.86x with bounds checks, 0.92-1.01x unchecked: TurboFan already emits the same inner loop; the native 1.8x needs a different (8-wide, prefetching) kernel | yes | Rejected (`aot.md`) |
+| 13 | thinkEvery 2 but every tick while another creature is in sensing range | broad | 1.36x; dynamics still outside the thinkEvery 1 spread (births +20-60%); with collisions off the churn still doubles, so the cause is the delayed feedback of the brain's own speed and turn inputs (turning +26%, eating -11%), not encounters | no | Rejected (`think3.md`) |
 | 7 | prepareRows (slots phase, 7%) into the fill kernel | small | no exact variant over 1%: ground lookup is at most 0.6 ms, exp 0.33, rest 0.45 | yes | Rejected (`prep.md`) |
 
 ## Log
@@ -60,3 +61,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-27 21:30 Idea 14 merged (+87/-16 in sense.wat, exact, equality test with poisoned inputs).
 - 2026-10-27 22:40 Idea 16 (moonshot 2) rejected: V8's code for the kernels is as good as gcc's from the same wat; only a hand-written wider kernel gains (idea 5, parked).
 - 2026-10-27 22:50 Idea 6 measured: helpers do not pay on this host (load 12-20); the server stays single-threaded.
+- 2026-10-28 00:10 Idea 13 rejected: the thinkEvery 2 churn comes from the brain's delayed self-feedback, not from encounters. Next variant (idea 18): sense every other tick but think every tick with fresh body inputs, so only the ray inputs are one tick stale.
