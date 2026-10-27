@@ -45,3 +45,4 @@ One write-up per exploration, with the tables of tried ideas and their verdicts.
 - `helpers2.md`: helpers now use the resident rows; 3 helpers cost 1.29x less CPU and the coordinator thread is about 1.5x shorter (merged).
 - B2 round 7 (no merge): `helpers3.md` (coordinator weight not measurable at load 10-14; balance would save under 3%), `onecall.md` (body inputs computed in fill.wat: 1.016x for +66 lines and a second copy of the ground lookup; rejected).
 - `wasmphys.md`: the per-creature step, the crowd grid, the item lookup, the collision pair search and the settle and birth scans in WASM over the resident rows, engine Math imported, bit-identical; Inland 10k 1.13x serial (47 to 41 ms), 1.11x total CPU with 3 helpers. The step and the crowd grid are the main gains, the other three are about 1% each.
+- `fma.md`: relaxed-SIMD fused multiply-add in brain and sense kernels, about 1.025x per tick but not bit-exact and machine-dependent; parked on branch `pl-fma`.
