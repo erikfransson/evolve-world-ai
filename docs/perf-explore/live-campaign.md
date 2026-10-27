@@ -139,7 +139,7 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 | 63 | Dilated crowd occupancy gate (20 KB bit-planes built with the grid), one load skips both crowd walks for creatures alone in their window | small | running | yes | Batch 9 (`occgate.md`) |
 | 64 | The sense kernel emits the first-layer non-zero index list, brain.wat compacts only the tail | broad | running | yes | Batch 9 (`nzlist.md`) |
 | 65 | Run-ordered, 64-byte-aligned brain descriptor gather | small | not built: a sequential aligned table runs the kernel within 1% of base (the misses are hidden by the next-descriptor load and the out-of-order window; descPtr was already 64-aligned), and the gather itself costs 3-5% of the kernel | - | Rejected (`descs.md`) |
-| 66 | Step micro-cut bundle: two-segment f64x2 memory-unit loop, power-of-two clear raster, step tail writes the cell key | small | running | yes | Batch 9 (`stepcuts.md`) |
+| 66 | Step micro-cut bundle | small | the f64x2 unit loop loses (+0.09 ms: 75% of creatures have 2 units), the power-of-two clear raster is exact but worth 0.03 ms (0.05-0.15% of the tick), the cell-key write was not built | yes | Rejected (`stepcuts.md`); the raster shift is a free 15-line change if a later merge wants every 0.03 ms |
 | 67 | Rock lower bound at item-cell resolution, one byte per cell | small | exact (hash-equal), cuts the residual rock walks from 377 to 237 of 3331 creatures, but the kernel is 0.08-0.12 ms slower even with the test switched off: the extra code in the register-bound kernel costs more than the walks saved | yes | Rejected (`rockfine.md`), 92 lines not merged |
 | 68 | Process memory settings measured with saves: main heap cap 128 or 256, malloc env, restore transient | memory, no code | running | yes | Batch 9 (`memset.md`) |
 | 69 | Save-worker transient copies trimmed (verify worker's Buffer and string lifetimes, pack worker's double conversion) | memory, server code | running | yes | Batch 9 (`savepeak.md`) |
@@ -241,3 +241,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-28 00:01 Idea 65 rejected at the pre-check. Brain-side memory placement is done (ideas 30, 52, 57, 65 all found the stream and the window already hide those misses).
 - 2026-10-28 00:06 Idea 67 rejected: the sense kernel punishes any added code path (same as 31, 41, 60).
 - 2026-10-28 00:07 Idea 71 rejected: the brain loop is throughput-bound, not latency-bound; the last exact brain idea is closed.
+- 2026-10-28 00:14 Idea 66 rejected. The step kernel is closed (ideas 12, 25, 44, 66).
