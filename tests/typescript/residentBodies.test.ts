@@ -4,6 +4,8 @@ import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
 import { ECO_PRESETS, withEcoPreset } from "../../src/typescript/src/sim/presets.ts";
 import { wasmAvailable } from "../../src/typescript/src/sim/wasm/loader.ts";
+import { F } from "../../src/typescript/src/sim/wasm/resident.ts";
+import { prepareRows } from "../../src/typescript/src/sim/wasm/residentStep.ts";
 
 // Creature bodies resident in the WebAssembly memory (wasm/resident.ts): the row code (fill kernel, residentStep.ts) must equal the
 // Creature code it replaces, bit for bit, on every tick.
@@ -75,6 +77,47 @@ describe.skipIf(!wasmAvailable())("resident bodies", () => {
       expect(bad).toBe(0);
     });
   }
+
+  it("the fill kernel's prepare equals prepareRows bit for bit, on ground, edges and outside the world", () => {
+    const eco = world((c) => withEcoPreset(c, "inland-sea", ECO_PRESETS), 600);
+    const e = eco as Any;
+    const kernels = e.kernels;
+    const store = kernels.store;
+    const terrain = e.items.terrain;
+    const n = eco.members.length;
+    const rows = Int32Array.from({ length: n }, (_, k) => eco.members[k]!.creature.resident!.ptr);
+    const w = e.world.width as number;
+    const h = e.world.height as number;
+    let seed = 12345;
+    const rnd = (): number => ((seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) / 4294967296);
+    let slow = 0;
+    let fast = 0;
+    for (let round = 0; round < 6; round++) {
+      eco.members.forEach((m, k) => {
+        const s = m.creature.state;
+        s.x = k % 9 === 0 ? (rnd() - 0.5) * 2 * w : rnd() * w;
+        s.y = k % 9 === 1 ? (rnd() - 0.5) * 2 * h : rnd() * h;
+        s.vx = (rnd() - 0.5) * 20;
+        s.vy = (rnd() - 0.5) * 20;
+        s.turnRate = (rnd() - 0.5) * 0.3;
+        s.energy = 1 + rnd() * 100;
+      });
+      const ex = (o: number): number[] => [1, 2, 3, 4].map((i) => store.f64[o + F.extras + i]!).concat(store.f64[o + F.groundFactor]!);
+      prepareRows(store, rows, n, terrain);
+      const want = Array.from(rows, (r) => ex(r >> 3));
+      const wanted = Array.from(rows, (r) => store.f64[(r >> 3) + F.groundFactor]!);
+      for (const r of rows) {
+        store.f64[(r >> 3) + F.groundFactor] = NaN;
+        for (let i = 1; i <= 4; i++) store.f64[(r >> 3) + F.extras + i] = NaN;
+      }
+      kernels.prepareRows(rows, n, terrain);
+      const got = Array.from(rows, (r) => ex(r >> 3));
+      for (let k = 0; k < n; k++) for (let i = 0; i < 5; i++) expect(Object.is(got[k]![i], want[k]![i])).toBe(true);
+      for (const v of wanted) if (v < 1) slow++; else if (v > 1) fast++;
+    }
+    expect(slow).toBeGreaterThan(0);
+    expect(fast).toBeGreaterThan(0);
+  });
 
   it("bodies survive the memory growing, and a long run stays equal to the JS", () => {
     const eco = world((c) => c, 200);
