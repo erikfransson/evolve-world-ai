@@ -450,7 +450,7 @@ export class LiveWorld {
       season: seasons ? { yearMinutes, winterFood } : null,
       best: null,
     };
-    this.chronicle.observe(e, s, records);
+    this.chronicle.observe(e, s, records, viewers > 0);
     return s;
   }
 

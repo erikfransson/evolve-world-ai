@@ -201,9 +201,9 @@ describe("founders file", () => {
       const r = live.eco.insertCreature({ genome: f.genome, plan: f.plan, x: 100 + 40 * (k % 40), y: 100 + 40 * Math.floor(k / 40), heading: 0, hue: 10, name: "Many" });
       if (!r.ok) throw new Error(r.reason);
     }
-    const row = live.stats(0).lineages!.find((l) => l.name === "Many")!;
+    const row = live.stats(1).lineages!.find((l) => l.name === "Many")!;
     expect([row.count, row.founders!.length]).toEqual([MAX_GROUP_FOUNDERS + 8, MAX_GROUP_FOUNDERS]);
-    const wire = { ...live.stats(0), lineages: [{ ...row, founders: [...Array(MAX_GROUP_FOUNDERS + 5).keys(), -1, 1.5, "x"] }] };
+    const wire = { ...live.stats(1), lineages: [{ ...row, founders: [...Array(MAX_GROUP_FOUNDERS + 5).keys(), -1, 1.5, "x"] }] };
     expect(cleanStats(JSON.parse(JSON.stringify(wire))).lineages![0]!.founders).toHaveLength(MAX_GROUP_FOUNDERS);
     expect(cleanStats(JSON.parse(JSON.stringify({ ...wire, lineages: [{ ...row, founders: [3, -1, 1.5, "x", 7] }] }))).lineages![0]!.founders).toEqual([3, 7]);
   });
@@ -316,7 +316,7 @@ describe("seeding a fresh world", () => {
     if (!("ids" in r)) throw new Error(r.reason);
     const seed = [...seeds][0]!;
     const check = (w: LiveWorld): void => {
-      const lineages = cleanStats(JSON.parse(JSON.stringify(w.stats(0)))).lineages!;
+      const lineages = cleanStats(JSON.parse(JSON.stringify(w.stats(1)))).lineages!;
       expect(lineages.length).toBeGreaterThan(0);
       for (const l of lineages) expect([l.name, l.starter === true]).toEqual(seeds.has(l.founder) ? [founders[0]!.name, true] : ["Kiwi", false]);
       const kiwi = { founder: r.ids[0]!, hue: 10, pool: false, count: 1, species: 0 };

@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import type { IncomingMessage, Server } from "node:http";
 import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
-import { parseClientMessage } from "../../src/typescript/src/live/protocol.ts";
+import { creatureFrameBytes, parseClientMessage } from "../../src/typescript/src/live/protocol.ts";
 import { ADD_PREFIX, MAX_ADD_BYTES, parseAdd } from "../../src/typescript/src/live/add.ts";
 import type { Added, Refused } from "../../src/typescript/src/live/add.ts";
 import { AddGate, AddPolicy, visitorKey } from "./adds.ts";
@@ -92,7 +92,8 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
   let lastFrameNo = -1;
   const feed = new ItemFeed();
   let deltaBytes = 0; // smoothed bytes of item changes per frame
-  const strided = (): number => (lastCreatures?.length ?? 0) * FRAME_HZ;
+  let skippedBytes = 0; // size the creature frame would have, while the frame loop skips encoding it for want of viewers
+  const strided = (): number => (lastCreatures?.length ?? skippedBytes) * FRAME_HZ;
   const unstrided = (): number => deltaBytes * FRAME_HZ;
   // Room for one more viewer: under the cap, and all of them at the slowest frame rate stay inside the budget.
   const room = (): boolean => viewers.size < limits.maxViewers && fits(viewers.size + 1, strided(), unstrided(), budget, MAX_STRIDE);
@@ -361,6 +362,7 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
     // New world: ids and items start over, so every viewer needs a fresh hello, the full item set and its history again.
     feed.clear();
     lastCreatures = null;
+    skippedBytes = 0;
     for (const v of viewers.values()) {
       select(v, null);
       v.want = undefined;
@@ -377,14 +379,20 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
     framePending = true;
     void live.whenIdle(() => {
       try {
-        lastCreatures = live.creatureFrame();
+        // Nobody connected: no creature frame is encoded (the next viewer gets one on the next tick through the lastCreatures === null
+        // path), the item changes are still drained and logged so the feed stays whole.
+        const watched = viewers.size > 0;
+        lastCreatures = watched ? live.creatureFrame() : null;
+        skippedBytes = watched ? 0 : creatureFrameBytes(live.eco.population);
         const delta = live.takeDelta();
         feed.push(frames, delta);
         deltaBytes = 0.8 * deltaBytes + 0.2 * (delta?.length ?? 0);
-        lastFrameNo = frames;
-        sendFrames(lastCreatures, frames);
-        sendDetails();
-        for (const [ws, v] of viewers) if (!v.historySent && open(ws)) sendHistory(ws, v);
+        if (lastCreatures) {
+          lastFrameNo = frames;
+          sendFrames(lastCreatures, frames);
+          sendDetails();
+          for (const [ws, v] of viewers) if (!v.historySent && open(ws)) sendHistory(ws, v);
+        } else resync = 0;
       } catch (e) {
         console.error("frame loop:", e instanceof Error ? e.message : e);
       } finally {
@@ -419,6 +427,7 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
     viewers: () => viewers.size,
     forgetFrames: () => {
       lastCreatures = null;
+      skippedBytes = 0;
       feed.clear();
       for (const v of viewers.values()) v.lastFrame = -1;
     },
