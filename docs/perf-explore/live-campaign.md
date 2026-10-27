@@ -91,11 +91,12 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 | 49 | Incremental shared-phase crowd grid: move only the creatures that changed cell after the step, full rebuild above a bound | broad | running; bound 0.2-0.3 ms | yes | Batch 8 (`gridmove.md`) |
 | 50 | Fuse back-to-back passes: crowd refresh with pack, fill's prepare with fill | small | running | yes | Batch 8 (`fuse.md`) |
 | 51 | Collisions phase (sweep kernel, contacts bookkeeping): profile by parts and cut what is exact | small | running | yes | Batch 8 (`collide3.md`) |
-| 52 | brain.wat: the prefetch stream skips the first-layer rows the next brain's nz list will not read | small | running | yes | Batch 8 (`pfrows.md`) |
+| 52 | brain.wat: the prefetch stream skips the first-layer rows the next brain's nz list will not read | small | 62% of touched bytes are dead rows, but jumping over them breaks the L2 streamer: kernel 4-7% slower even with a free gap list | - (not built) | Rejected (`pfrows.md`). Finding: the 5- and 6-vector column loops have no touches, so wide layers (9.6 of 13.1 MB read per tick in the mix) get no prefetch: idea 57 |
 | 53 | Study: JS hot spots and allocation at the cap and in a dense aged world; build the best exact cut above 1% | study | running | yes | Batch 8 (`capprof.md`) |
 | 54 | Study: what grows in the server's heap over hours (chronicle, lineages, history, saves), with exact bounds for each | study (memory) | running | - | Batch 8 (`heap.md`) |
 | 55 | Moonshot: brain forward on the laptop's integrated GPU, checked for bit-equality | moonshot | not run: the harness refused the native GPU package install; Erik can allow it | - | Blocked (`igpu`) |
 | 56 | Study for Erik: dt 1/20 or 1/25 (1.5x fewer ticks) measured on the ecology like `thinkEvery` was | study (parameter) | running | no by nature | Batch 8 (`dt20.md`) |
+| 57 | brain.wat: extend the brain3 touch stream to the 5- and 6-vector column loops, so layers wider than 16 are prefetched too | small | running; bound: the untouched 9.6 MB per tick at 3300 | yes | Batch 8 (`touch6.md`) |
 | 7 | prepareRows (slots phase, 7%) into the fill kernel | small | no exact variant over 1%: ground lookup is at most 0.6 ms, exp 0.33, rest 0.45 | yes | Rejected (`prep.md`) |
 
 ## Log
@@ -165,3 +166,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-27 19:47 Idea 40 rejected: the crowd grid phase is down to about 0.2 ms mixed; nothing left there.
 - 2026-10-27 19:55 Factor after ideas 34 and 44: 1.24x mixed (17.64, 17.64, 17.41 vs 14.24, 13.97, 14.43), 1.27x at the cap (21.77, 21.27, 22.05 vs 17.21, 16.57, 17.30), fingerprints equal, peak RSS flat. The absolute times are up because everything shares two cores now; the ratio is what counts.
 - 2026-10-27 20:05 Batch 8 (ideas 49-56) from a first-principles pass over the tick: incremental grid for moves, pass fusion, collisions, a prefetch stream that skips dead rows, cap-scale JS profile, server heap growth, the iGPU moonshot (blocked by the permission classifier), and a dt study for Erik. Pool 12 agents on the pinned cores.
+- 2026-10-27 20:21 Idea 52 rejected; its byte counter showed the wide-layer loops carry no prefetch stream at all. Idea 57 started on that.
