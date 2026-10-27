@@ -33,6 +33,7 @@ Fingerprint equal means bit-identical results.
 | 2026-10-27 17:12 | Juggernaut x 4900 (cap), 7200 s, saves every 1800 s (1 run each) | 8.84 | 8.36 | 1.06x (exact; population 2225 by then, mostly senser) | 751 / 533 MB: the saves set the peak; the 4 saves stalled the tick 1.9-3.7 s on base, 0.02-0.16 s on perf-live |
 | 2026-10-27 17:50 | after batch 5 (ideas 27-29, all rejected, nothing merged) | 15.24 | 13.07 | 1.17x (unchanged) | 219 / 219 MB |
 | 2026-10-27 18:40 | after batch 6 (idea 33 merged; mixed base from 2 runs, one row lost) | 15.19 / 18.40 (cap) | 12.72 / 15.68 (cap) | 1.19x mixed, 1.17x cap (exact) | 220 / 235 MB mixed (one-off), 255 / 258 cap |
+| 2026-10-27 19:55 | after batch 7 so far (ideas 34 and 44 merged; absolute ms inflated, both sides share two pinned cores with 7 agents) | 17.64 / 21.77 (cap) | 14.24 / 17.21 (cap) | 1.24x mixed, 1.27x cap (exact) | 220 / 217 MB mixed, 257 / 257 cap |
 
 Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54, brain forward 5.23 / 5.17, slots (prepareRows) 1.04 / 1.52, memory and steer 1.26 / 1.59, eat 1.05 / 1.35, crowd grid 0.51 / 0.67, collisions 0.18 / 0.27, rest under 0.2. Server frame encoding adds 0.57 ms per tick at 5 Hz. Speed achieved unpaced on this loaded machine: 2.0x and 1.7x real time (the set speed is 3x).
 
@@ -154,3 +155,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-27 19:36 Idea 44 merged. The slots phase is now 0.36 ms (from 1.04 at the campaign start). Factor run for ideas 34 and 44 started under the pin.
 - 2026-10-27 19:44 Idea 45 done: the bench is representative; peak RSS on the real server (787 MB over 11 h, from saves and long-lived lineages) is the one number the bench does not show, which idea 47 looks at. Idea 48 started from its finding.
 - 2026-10-27 19:47 Idea 40 rejected: the crowd grid phase is down to about 0.2 ms mixed; nothing left there.
+- 2026-10-27 19:55 Factor after ideas 34 and 44: 1.24x mixed (17.64, 17.64, 17.41 vs 14.24, 13.97, 14.43), 1.27x at the cap (21.77, 21.27, 22.05 vs 17.21, 16.57, 17.30), fingerprints equal, peak RSS flat. The absolute times are up because everything shares two cores now; the ratio is what counts.
