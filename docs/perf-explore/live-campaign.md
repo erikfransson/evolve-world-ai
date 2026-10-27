@@ -7,6 +7,13 @@ Benchmark: `node src/liveBench.ts` in `server/` (new, this campaign): the server
 Number to compare: `cpuMsPerTick` (user CPU per steady tick, after the first quarter), run as `nice -n 19 ionice -c3 chrt --idle 0`, several alternating pairs because the laptop is loaded (load 10-12).
 Fingerprint equal means bit-identical results.
 
+## Decisions for Erik
+
+- **Exact wins are merged** (1.17x after batch 3, bit-identical, memory flat); the branch is ready for review and merge into `development` any time.
+- **`eco.thinkEvery` 2 (1.5x more) is in the code but off in `liveConfig`.** It changes the ecology (births and deaths 1.5-1.9x, creatures turn more and eat less, from the brain's delayed self-feedback), see `think2.md`, `think3.md`, `sense2.md`. Say yes to turn it on, or no to leave it as a page option.
+- **Native AVX2 brain kernel** (`native.md`, branch `pl-native`): 1.15x more, bit-identical, server only, but a C++ twin of brain.wat, a g++ build at deploy and new attack surface under the Live push gate. Say yes to productionize it.
+- **Relaxed-SIMD FMA** (`fma.md`, branch `pl-fma`): 1.025x, not bit-exact across machines. Not recommended.
+
 ## Progress (development vs perf-live)
 
 | Date       | Case                                   | development ms/tick | perf-live ms/tick | Factor | Peak RSS dev / perf-live |
