@@ -44,3 +44,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-27 15:40 Ideas 1 and 9 merged into perf-live (c5b159a, 414b13e). thinkEvery stays 1 in liveConfig: the 1.5x is available by one config line once Erik accepts the dynamics change. Factor run batch1 (3 alternating pairs, both cases) and the full test suite started.
 - 2026-10-27 16:20 Idea 12 rejected: no Node flag helps (baseline spread alone 6%). GC about 2%.
 - 2026-10-27 16:30 Factor after batch 1: 1.03x mixed, 1.01x at the cap, bit-identical. The exact wins are small, as the earlier campaigns found; the big lever (think every other tick, 1.5x) waits for Erik's decision on the dynamics change.
+- 2026-10-27 17:00 Full suite on perf-live: 1215 of 1216 pass; the Inland Sea case of residentBodies.test.ts hits its 20 s timeout under load on perf-base too (both pass in 45 s with --testTimeout=180000), so not a regression.
