@@ -1,10 +1,12 @@
 // Live World benchmark: the server's LiveWorld (liveConfig, The Inland Sea) seeded with the live founders, stepped headless on this thread.
 // Prints CPU ms per steady tick, the phase profile, peak RSS and a fingerprint (equal runs give equal fingerprints).
 // Usage (in server/): node src/liveBench.ts [--seconds 60] [--copies 800] [--seed 1] [--founders ../src/typescript/public/live-founders.json]
-//   [--only juggernaut,grazer] [--frames] [--profile] [--profileEvery 300] [--every 10] [--threads 0] [--think 1] [--save 15]
+//   [--dt 0.0333] [--memcomp] [--only juggernaut,grazer] [--frames] [--profile] [--profileEvery 300] [--every 10] [--threads 0] [--think 1] [--save 15]
 // --copies: copies of each founder seeded (4 founders x 800 = 3200 creatures, 6 M brain weights, under the birth weight cap).
 // --only: seed these founder ids only (so --only juggernaut --copies 4900 fills the 5000 cap with small brains).
 // --frames: also encode the creature frame and item delta at the server's 5 Hz (FRAME_MS), as the public loop does for viewers.
+// --dt: seconds per tick instead of liveConfig's (1/30); --memcomp: with it, scale the memory rates so their time constants in seconds stay as at 1/30.
+// Per simulated minute the output also lists births, deaths, food and poison eaten, mean speed, mean absolute turn rate, mean energy and mean lifespan of the deaths (ecoWindows).
 // --think: eco.thinkEvery instead of liveConfig's (1 is every tick).
 // --threads: helper threads that sense and think (createNodeThinkPool), as LIVE_THREADS on the server; speedAchieved then shows the wall gain.
 // --save: save every this many simulated seconds through the server's Saves into a temporary state directory, and report per save the
@@ -43,6 +45,8 @@ const { values } = parseArgs({
     every: { type: "string", default: "10" }, // seconds between population samples
     threads: { type: "string", default: "0" },
     think: { type: "string" },
+    dt: { type: "string" },
+    memcomp: { type: "boolean" },
     save: { type: "string" },
     profileEvery: { type: "string" }, // with --profile: print the phase profile per this many simulated seconds
   },
@@ -63,6 +67,12 @@ function mulberry32(seed: number): () => number {
 const seed = Number(values.seed);
 const config = structuredClone(liveConfig);
 config.seed = seed;
+if (values.dt) config.dt = Number(values.dt);
+if (values.memcomp) {
+  const k = config.dt / liveConfig.dt;
+  config.brain.shortRate = 1 - (1 - config.brain.shortRate) ** k;
+  config.brain.longRate = 1 - (1 - config.brain.longRate) ** k;
+}
 if (values.think) config.eco.thinkEvery = Number(values.think);
 if (values.food) config.world.foodDensity = Number(values.food);
 let founders = loadFounders(values.founders!);
@@ -90,6 +100,33 @@ const prof = values.profile ? new PhaseTimer() : null;
 eco.profile = prof;
 
 const population: number[] = [eco.population];
+const ecoWindows: object[] = [];
+const minuteTicks = Math.max(1, Math.round(60 / dt));
+const sampleTicks = Math.max(1, Math.round(5 / dt)); // speed, turn and energy are sampled every 5 simulated seconds
+let wLast = { births: 0, deaths: 0, food: 0, poison: 0 };
+let wSum = { speed: 0, turn: 0, energy: 0, n: 0, lifeS: 0, died: 0 };
+eco.onDeath = (m) => { wSum.lifeS += m.ageTicks * dt; wSum.died++; };
+function ecoWindow(): void {
+  const mins = (eco.tick - (ecoWindows.length * minuteTicks)) / minuteTicks;
+  const n = Math.max(1, wSum.n);
+  ecoWindows.push({
+    min: ecoWindows.length + 1, pop: eco.population, births: Math.round((eco.births - wLast.births) / mins), deaths: Math.round((eco.deaths - wLast.deaths) / mins),
+    foodEaten: Math.round((eco.foodEaten - wLast.food) / mins), poisonEaten: Math.round((eco.poisonEaten - wLast.poison) / mins),
+    foodItems: eco.food, poisonItems: eco.poison, meanSpeed: +(wSum.speed / n).toFixed(2), meanAbsTurn: +(wSum.turn / n).toFixed(3), meanEnergy: +(wSum.energy / n).toFixed(1),
+    meanLifespanS: +(wSum.lifeS / Math.max(1, wSum.died)).toFixed(1),
+  });
+  wLast = { births: eco.births, deaths: eco.deaths, food: eco.foodEaten, poison: eco.poisonEaten };
+  wSum = { speed: 0, turn: 0, energy: 0, n: 0, lifeS: 0, died: 0 };
+}
+function ecoSample(): void {
+  for (const m of eco.members) {
+    const s = m.creature.state;
+    wSum.speed += Math.hypot(s.vx, s.vy);
+    wSum.turn += Math.abs(s.turnRate);
+    wSum.energy += s.energy;
+    wSum.n++;
+  }
+}
 const warm = Math.floor(ticks / 4);
 let frameBytes = 0;
 let frameMs = 0;
@@ -151,6 +188,8 @@ while (eco.tick < ticks && !eco.extinct) {
     winCpu = process.cpuUsage();
     winPop = 0;
   }
+  if (eco.tick % sampleTicks === 0) ecoSample();
+  if (eco.tick % minuteTicks === 0) ecoWindow();
   if (eco.tick % every === 0) population.push(eco.population);
   if (saves && !saving && eco.tick % saveEvery === 0) {
     const run: SaveRun = { tick: eco.tick, blockMs: 0, cpuMs: 0, maxBlockMs: 0, t0: performance.now(), done: null };
@@ -194,6 +233,9 @@ console.log(JSON.stringify({
   population,
   ...(saves ? { saves: saveRuns } : {}),
   ...(winTicks ? { windows } : {}),
+  dt,
+  memoryRates: [config.brain.shortRate, config.brain.longRate],
+  ecoWindows,
   fingerprint: eco.fingerprint(),
   ...(prof ? { phasesTotalMs: +perTick.reduce((a, [, v]) => a + v, 0).toFixed(3), phases: Object.fromEntries(perTick) } : {}),
 }));
