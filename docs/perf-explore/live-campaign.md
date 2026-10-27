@@ -12,6 +12,7 @@ Fingerprint equal means bit-identical results.
 - **Exact wins are merged** (1.17x at 60 s, 1.18x over 1800 s, bit-identical; peak memory over 7200 s with saves 533 MB against 751 MB on development); the branch is ready to merge into `development` (73 commits, 53 files, +2175/-149; one correctness review and the three Live push-gate reviews passed; `development` has not moved since the branch point). The exact pool is dry after 26 ideas: nothing runs outside the profiled phases (0.01 ms), and every phase has been cut or shown flat.
 - **`eco.thinkEvery` 2 (1.5x more) is in the code but off in `liveConfig`.** It changes the ecology (births and deaths 1.5-1.9x, creatures turn more and eat less, from the brain's delayed self-feedback), see `think2.md`, `think3.md`, `sense2.md`. Say yes to turn it on, or no to leave it as a page option.
 - **Native AVX2 brain kernel** (`native.md`, branch `pl-native`): 1.15x more, bit-identical, server only, but a C++ twin of brain.wat, a g++ build at deploy and new attack surface under the Live push gate. Say yes to productionize it.
+- **Newer Node** (untested): the server and the bench run Node 24.18 (V8 13.6), the only version installed; a newer V8 could change the wasm code, and the fingerprint would show whether Math.sin/cos/exp still agree. Say yes to install one under nvm for a bench pair.
 - **Relaxed-SIMD FMA** (`fma.md`, branch `pl-fma`): 1.025x, not bit-exact across machines. Not recommended.
 
 ## Progress (development vs perf-live)
@@ -107,3 +108,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-27 17:30 Idea 27 rejected: the reversed block order costs more in prefetch than it gains in L3 hits. Lesson for idea 29: keep every chunk ascending.
 - 2026-10-27 17:44 Idea 29 rejected: chunking never made the senser faster, so the 1.5x cold factor of senselive.md (32 MB sweep) does not describe the real tick; the brain stream needs its one ascending sweep. The memory-hierarchy angle is closed on the brain side (ideas 17, 19, 27, 29); idea 28 (ray cache) is the last open one on the senser side.
 - 2026-10-27 17:45 Idea 28 rejected: the item walk is cheap because the records are already sorted by grid row, so a cache cannot beat it. Batch 5 (ideas 27-29) all rejected, bit-identical each: the memory hierarchy is tuned out on both kernels. Factor stays 1.17x.
+- 2026-10-27 17:46 Checked for a newer Node to bench V8's wasm codegen: only 24.18 is installed, and an install writes outside the repo, so it is a decision item, not a measurement.
