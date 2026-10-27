@@ -99,6 +99,7 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 | 57 | brain.wat: extend the touch stream to the 5- and 6-vector column loops | small | nine variants, all 1-10% slower in the kernel: those loops are throughput-bound (6 loads, 6 mul, 6 add per iteration), the two touch loads plus compare cost about 11% in-core, more than the 8% stall they hide; only a real prefetch instruction (native) could cover the wide blocks | - (not built) | Rejected (`touch6.md`) |
 | 58 | Study: the fixed per-tick intercept (2.2-2.7 ms regardless of population): profile a 100-creature world with the live item count, find the constant costs per phase and cut what is exact | broad | running; bound 5-8% of a thin-world tick | yes | Batch 8 (`intercept.md`) |
 | 59 | Cheaper births: reuse the parent's genome buffers and bank slot, avoid per-birth allocation | small | running; bound 1-2% late | yes | Batch 8 (`births.md`) |
+| 60 | sense.wat: the item and crowd gathers scan four entries per step (f32x4 lanes, same tests, candidates appended in walk order) | broad | running; bound: the gathers are 37% of the kernel and scalar per item | yes | Batch 8 (`gather4.md`) |
 | 7 | prepareRows (slots phase, 7%) into the fill kernel | small | no exact variant over 1%: ground lookup is at most 0.6 ms, exp 0.33, rest 0.45 | yes | Rejected (`prep.md`) |
 
 ## Log
@@ -174,3 +175,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-27 20:48 Idea 35 rejected: the item walk's cost is the items, one cycle per gathered item, so moving work between the sense and touch walks is a wash. The eat phase keeps its two walks.
 - 2026-10-27 21:01 Idea 50 rejected. The tick-start passes are done (ideas 33, 34, 44, 50).
 - 2026-10-27 21:02 Idea 53 done: the JS side is flat; the cap differs from the mix only in kernel load. Idea 59 (births) still runs; its ceiling is the 1.1% of `mutate`.
+- 2026-10-27 21:03 Idea 60 started: with the per-ray passes vectorized (36), the scalar gathers are the senser's next floor.
