@@ -22,7 +22,7 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 |---|------|------|--------|-------|---------|
 | 1 | Think every other tick (`eco.thinkEvery` 2, staggered halves) | broad | running | no | |
 | 2 | FMA via relaxed SIMD in brain and sense kernels, fallback kernels | small | running | no (rounding) | |
-| 3 | bf16 brain weights (half the weight bandwidth) | small | running | no (rounding) | |
+| 3 | bf16 brain weights (half the weight bandwidth) | small | brain kernel 1.00x or worse (weights are 28% of kernel time, the widening costs 0.5 ms) | no (rounding) | Rejected (`bf16.md`) |
 | 4 | Sense kernel profile at the live setting (measurement) | study | running | - | |
 | 5 | Native N-API brain kernel with AVX2 and FMA (server only) | moonshot | running | no | |
 | 6 | Helper threads for the server at idle priority: wall speed on this laptop | ops | queued | yes | |
@@ -31,3 +31,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 ## Log
 - 2026-10-27 09:00 Campaign start. Prior campaigns (B1, B2, `docs/perf-explore/`) already moved sense, brains, physics, crowd grid, collisions and scans into WASM; their rejected ideas are not retried unless the live setting changes the picture.
 - 2026-10-27 09:40 `server/src/liveBench.ts` written; two runs at 400 seeded give the same fingerprint (260290661), so the bench is deterministic.
+- 2026-10-27 11:10 Idea 3 rejected: the brain kernel is about 72% compute or latency, only 28% weight traffic (cache-resident control 3.9 vs 5.3 ms); bf16 widening eats the saving. Write-up `bf16.md`.
