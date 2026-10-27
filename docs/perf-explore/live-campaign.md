@@ -17,6 +17,8 @@ Fingerprint equal means bit-identical results.
 | 2026-10-27 10:46 | Juggernaut x 4900 (3 pairs, medians)   | 19.66               | 19.41             | 1.01x (exact) | 257 / 254 MB |
 | 2026-10-27 11:37 | 4 founders x 800 (3 pairs, medians)    | 16.22               | 14.79             | 1.10x (exact); 1.5x more with `eco.thinkEvery` 2, Erik's call | 216 / 218 MB |
 | 2026-10-27 11:37 | Juggernaut x 4900 (3 pairs, medians)   | 19.90               | 18.19             | 1.09x (exact) | 252 / 256 MB |
+| 2026-10-27 12:50 | 4 founders x 800 (3 pairs, medians)    | 15.28               | 13.03             | 1.17x (exact); 1.5x more with `eco.thinkEvery` 2, Erik's call | 217 / 218 MB |
+| 2026-10-27 12:50 | Juggernaut x 4900 (3 pairs, medians)   | 18.58               | 15.85             | 1.17x (exact) | 256 / 256 MB |
 
 Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54, brain forward 5.23 / 5.17, slots (prepareRows) 1.04 / 1.52, memory and steer 1.26 / 1.59, eat 1.05 / 1.35, crowd grid 0.51 / 0.67, collisions 0.18 / 0.27, rest under 0.2. Server frame encoding adds 0.57 ms per tick at 5 Hz. Speed achieved unpaced on this loaded machine: 2.0x and 1.7x real time (the set speed is 3x).
 
@@ -40,6 +42,7 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 | 16 | AOT-compile the existing .wat kernels with wasm2c into a server addon (no twin) | moonshot | bit-identical but 0.66-0.86x with bounds checks, 0.92-1.01x unchecked: TurboFan already emits the same inner loop; the native 1.8x needs a different (8-wide, prefetching) kernel | yes | Rejected (`aot.md`) |
 | 13 | thinkEvery 2 but every tick while another creature is in sensing range | broad | 1.36x; dynamics still outside the thinkEvery 1 spread (births +20-60%); with collisions off the churn still doubles, so the cause is the delayed feedback of the brain's own speed and turn inputs (turning +26%, eating -11%), not encounters | no | Rejected (`think3.md`) |
 | 17 | brain.wat: stream-touch the next brain's weight block during the 1-4 vector column loops (software prefetch that rides the hardware streamer) | small | brain kernel 1.10x live mix, 1.19x Juggernaut; tick 1.04-1.05x; about half the kernel time is memory stall (24 MB of weights never fit L3) | yes | Merged (`brain3.md`); tuned on this CPU, worst case elsewhere a few extra loads |
+| 18 | Sense every other tick, think every tick with fresh body inputs (`eco.senseEvery`) | broad | 1.12x; births and food at 600 s outside the senseEvery 1 spread (closer than thinkEvery 2) | no at 2 (yes at 1) | Rejected, parked on `pl-sense2` (`sense2.md`) |
 | 7 | prepareRows (slots phase, 7%) into the fill kernel | small | no exact variant over 1%: ground lookup is at most 0.6 ms, exp 0.33, rest 0.45 | yes | Rejected (`prep.md`) |
 
 ## Log
@@ -65,3 +68,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-27 12:12 Idea 13 rejected: the thinkEvery 2 churn comes from the brain's delayed self-feedback, not from encounters. Next variant (idea 18): sense every other tick but think every tick with fresh body inputs, so only the ray inputs are one tick stale.
 - 2026-10-27 12:22 Independent review (Opus) of development...perf-live: no correctness bug; three low items, two fixed (thinkEvery bounded in pasted configs, helper packet tick stored mod 840 so the i32 header never wraps), one noted (per-tick subarray views in collect, only with thinkEvery above 1 and helpers; inactive on the server).
 - 2026-10-27 12:31 Idea 17 merged (28 lines of brain.wat). Finding: per brain 1047 ns in the live mix vs 500 ns from L1, so the brain kernel is about half memory stall; bursts and list-driven touches lose, only a sequential stream of touches wins.
+- 2026-10-27 13:05 Factor after batch 3 (stepk, senseempty, brain3 added): 1.17x in both cases, bit-identical. Idea 18 rejected: stale rays alone change the dynamics; every variant of thinking or sensing less often does.
