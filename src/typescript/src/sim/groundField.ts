@@ -34,7 +34,7 @@ export class GroundField {
   readonly cols: number; // nodes per row; node (i, j) sits at world ((i - GROUND_PAD) * cell, (j - GROUND_PAD) * cell)
   readonly rows: number;
   readonly data: Uint8Array; // two bytes per node, mud then firm, so one cache line serves both kinds
-  private readonly inv: number;
+  readonly inv: number; // 1 / cell
 
   constructor(width: number, height: number) {
     this.width = width;

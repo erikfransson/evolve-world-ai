@@ -1,11 +1,84 @@
 ;; The sense batch from resident creature rows (see resident.ts and layout.ts, whose offsets replace the double-brace tokens): per creature the 64-byte
 ;; sense record that sense.wat reads and the brain input extras (energy signal, speeds, turn, ground, then the memory units, as f32), and the
 ;; brain slot list of the batch. Creatures are counting-sorted by item grid row (stable), which is the order sense.wat walks. Only moves data:
-;; the extras are computed in JS (residentStep.ts) and stored in the row as f64.
+;; the extras are stored in the row as f64, by prepare (below) or, when the energy signal is not packed by the crowd kernel, by JS (residentStep.ts).
 ;; Memory is the brain bank's (imported).
 ;; The record is layout.ts's REC_* (sense.wat reads it).
 (module
   (import "brain" "mem" (memory 1))
+
+;; One layer of the ground field's bilinear blend at the node address p (stride bytes per raster row): 1 when it is of the layer's kind (GroundField.valueAt).
+  (func $hit (param $p i32) (param $stride i32) (param $tx f64) (param $ty f64) (result i32)
+    (local $a i32) (local $b i32) (local $c i32) (local $d i32) (local $fa f64) (local $fb f64) (local $fc f64)
+    (local.set $a (i32.load8_u (local.get $p)))
+    (local.set $b (i32.load8_u offset=2 (local.get $p)))
+    (local.set $p (i32.add (local.get $p) (local.get $stride)))
+    (local.set $c (i32.load8_u (local.get $p)))
+    (local.set $d (i32.load8_u offset=2 (local.get $p)))
+    ;; no corner at 128 or more: below one half whatever the blend
+    (if (i32.eqz (i32.and (i32.or (i32.or (local.get $a) (local.get $b)) (i32.or (local.get $c) (local.get $d))) (i32.const 128))) (then (return (i32.const 0))))
+    (local.set $fa (f64.convert_i32_u (local.get $a)))
+    (local.set $fb (f64.convert_i32_u (local.get $b)))
+    (local.set $fc (f64.convert_i32_u (local.get $c)))
+    (f64.ge
+      (f64.add
+        (f64.add
+          (f64.add (local.get $fa) (f64.mul (f64.sub (local.get $fb) (local.get $fa)) (local.get $tx)))
+          (f64.mul (f64.sub (local.get $fc) (local.get $fa)) (local.get $ty)))
+        (f64.mul
+          (f64.mul
+            (f64.add (f64.sub (f64.sub (local.get $fa) (local.get $fb)) (local.get $fc)) (f64.convert_i32_u (local.get $d)))
+            (local.get $tx))
+          (local.get $ty)))
+      (f64.const {{G_HALF}})))
+
+  ;; Twin of prepareRows in residentStep.ts with the energy signal left out (the crowd kernel's pack stores it): forward and sideways speed, turn rate and the
+  ;; ground value under the creature into the row's brain input extras, and the ground factor the step moves by; GroundField.valueAt for the value.
+  (func (export "prepare") (param $G i32)
+    (local $n i32) (local $k i32) (local $row i32) (local $sp i32) (local $raster i32) (local $stride i32) (local $empty i32)
+    (local $cos f64) (local $sin f64) (local $vx f64) (local $vy f64) (local $drag f64) (local $thrust f64)
+    (local $fx f64) (local $fy f64) (local $tx f64) (local $ty f64) (local $i i32) (local $j i32) (local $p i32) (local $value f64) (local $factor f64)
+    (local.set $n (i32.load offset={{G_N}} (local.get $G)))
+    (local.set $raster (i32.load offset={{G_RASTER}} (local.get $G)))
+    (local.set $stride (i32.load offset={{G_STRIDE}} (local.get $G)))
+    (local.set $empty (i32.load offset={{G_EMPTY}} (local.get $G)))
+    (block $d (loop $l
+      (br_if $d (i32.ge_s (local.get $k) (local.get $n)))
+      (local.set $row (i32.load (i32.add (i32.load offset={{G_ROWS}} (local.get $G)) (i32.shl (local.get $k) (i32.const 2)))))
+      (local.set $sp (i32.add (i32.load offset={{G_SPECIES}} (local.get $G)) (i32.mul (i32.load offset={{R_SPECIES}} (local.get $row)) (i32.const {{H_BYTES}}))))
+      (local.set $cos (f64.load offset={{R_COS}} (local.get $row)))
+      (local.set $sin (f64.load offset={{R_SIN}} (local.get $row)))
+      (local.set $vx (f64.load offset={{R_VX}} (local.get $row)))
+      (local.set $vy (f64.load offset={{R_VY}} (local.get $row)))
+      (local.set $drag (f64.load offset={{H_DRAG}} (local.get $sp)))
+      (local.set $thrust (f64.load offset={{H_MAX_THRUST}} (local.get $sp)))
+      (f64.store offset={{R_EXTRA_SPEED}} (local.get $row)
+        (f64.div (f64.mul (f64.add (f64.mul (local.get $vx) (local.get $cos)) (f64.mul (local.get $vy) (local.get $sin))) (local.get $drag)) (local.get $thrust)))
+      (f64.store offset={{R_EXTRA_SIDE}} (local.get $row)
+        (f64.div (f64.mul (f64.sub (f64.mul (local.get $vy) (local.get $cos)) (f64.mul (local.get $vx) (local.get $sin))) (local.get $drag)) (local.get $thrust)))
+      (f64.store offset={{R_EXTRA_TURN}} (local.get $row) (f64.div (f64.load offset={{R_TURN}} (local.get $row)) (f64.load offset={{H_MAX_TURN}} (local.get $sp))))
+      (local.set $value (f64.const 0))
+      (local.set $factor (f64.const 1))
+      (if (i32.and (i32.eqz (local.get $empty)) (i32.ne (local.get $raster) (i32.const 0))) (then
+        ;; the node (i, j) at or below the point, and the fractions tx, ty past it
+        (local.set $fx (f64.min (f64.load offset={{G_COL_MAX}} (local.get $G))
+          (f64.max (f64.const 0) (f64.add (f64.mul (f64.load offset={{R_X}} (local.get $row)) (f64.load offset={{G_INV}} (local.get $G))) (f64.const {{G_PAD}})))))
+        (local.set $fy (f64.min (f64.load offset={{G_ROW_MAX}} (local.get $G))
+          (f64.max (f64.const 0) (f64.add (f64.mul (f64.load offset={{R_Y}} (local.get $row)) (f64.load offset={{G_INV}} (local.get $G))) (f64.const {{G_PAD}})))))
+        (local.set $i (i32.trunc_sat_f64_s (local.get $fx)))
+        (local.set $j (i32.trunc_sat_f64_s (local.get $fy)))
+        (local.set $tx (f64.sub (local.get $fx) (f64.convert_i32_s (local.get $i))))
+        (local.set $ty (f64.sub (local.get $fy) (f64.convert_i32_s (local.get $j))))
+        (local.set $p (i32.add (local.get $raster) (i32.add (i32.mul (local.get $j) (local.get $stride)) (i32.shl (local.get $i) (i32.const 1)))))
+        (if (call $hit (local.get $p) (local.get $stride) (local.get $tx) (local.get $ty))
+          (then (local.set $value (f64.const -1)) (local.set $factor (f64.load offset={{G_SLOW}} (local.get $G))))
+          (else (if (call $hit (i32.add (local.get $p) (i32.const 1)) (local.get $stride) (local.get $tx) (local.get $ty))
+            (then (local.set $value (f64.const 1)) (local.set $factor (f64.load offset={{G_FAST}} (local.get $G)))))))))
+      (f64.store offset={{R_EXTRA_GROUND}} (local.get $row) (local.get $value))
+      (f64.store offset={{R_GROUND_FACTOR}} (local.get $row) (local.get $factor))
+      (local.set $k (i32.add (local.get $k) (i32.const 1)))
+      (br $l)))
+  )
 
   (func (export "fill") (param $F i32)
     (local $n i32) (local $k i32) (local $rows i32) (local $place i32) (local $count i32) (local $nrows i32) (local $r i32) (local $row i32) (local $q i32) (local $rec i32)
