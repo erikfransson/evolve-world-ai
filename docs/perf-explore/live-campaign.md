@@ -29,7 +29,7 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 | 3 | bf16 brain weights (half the weight bandwidth) | small | brain kernel 1.00x or worse (weights are 28% of kernel time, the widening costs 0.5 ms) | no (rounding) | Rejected (`bf16.md`) |
 | 4 | Sense kernel profile at the live setting (measurement) | study | kernel flat: per-ray passes 38%, item walk and tests 38%, crowd 14%, rock 10%; two exact cuts worth about 4% of the tick | - | Done (`senselive.md`), cuts queued as idea 8 |
 | 5 | Native N-API brain kernel with AVX2 (server only) | moonshot | brain forward 1.8x bit-identical (prefetch, 8-wide), whole tick 1.15-1.17x; FMA adds 2% | yes (exact variant) | Parked on branch `pl-native` (`native.md`): needs Erik's call on a C++ twin of brain.wat, a build step at deploy and the Live push gate (no bounds checks yet) |
-| 6 | Helper threads for the server at idle priority: wall speed on this laptop | ops | queued | yes | |
+| 6 | Helper threads for the server at idle priority on this laptop (`liveBench --threads`) | ops | wall ms per tick, 2 rounds: 0 helpers 17.2 / 15.3, 1: 16.7 / 22.4, 2: 13.3 / 24.2, 3: 26.9 / 26.5; CPU 1.4-1.7x, RSS +120-260 MB, fingerprints equal | yes | Rejected: no reliable wall gain under SCHED_IDLE on a loaded host; keep LIVE_THREADS 0 |
 | 8 | Sense: pooled ray-offset tables, rock lower-bound table (70 KB), v128 feature store | small | senser 5.2 to 4.5 ms, tick 1.05x in both cases; wall-loop skip rejected (0.8%) | yes | Merged (`sensecuts.md`) |
 | 9 | brain.wat: up to 6-vector column blocks (24-wide layers in one pass), tanh inlined per layer | small | brain kernel 1.10x (Oracle 1.17x, Juggernaut 1.05x), about 3% of the tick | yes | Merged (`brainblock.md`) |
 | 11 | Server frame encoding (byte writes, age without a Map lookup, leaderboard key) | small | frame work 0.64 to 0.50 ms per tick, 0.14 ms (under 1% of the tick); 81 lines in the gated server path | yes | Rejected (`frames.md`); the bench charged stats at 5 Hz instead of 1 Hz, fixed |
@@ -59,3 +59,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-27 20:45 Factor after batch 2 (brainblock, eat, sensecuts; stepk merged after the run): 1.10x mixed, 1.09x at the cap, bit-identical, memory flat. liveBench got `--threads` for the helper-thread check (idea 6).
 - 2026-10-27 21:30 Idea 14 merged (+87/-16 in sense.wat, exact, equality test with poisoned inputs).
 - 2026-10-27 22:40 Idea 16 (moonshot 2) rejected: V8's code for the kernels is as good as gcc's from the same wat; only a hand-written wider kernel gains (idea 5, parked).
+- 2026-10-27 22:50 Idea 6 measured: helpers do not pay on this host (load 12-20); the server stays single-threaded.
