@@ -143,8 +143,9 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 | 67 | Rock lower bound at item-cell resolution, one byte per cell | small | running | yes | Batch 9 (`rockfine.md`) |
 | 68 | Process memory settings measured with saves: main heap cap 128 or 256, malloc env, restore transient | memory, no code | running | yes | Batch 9 (`memset.md`) |
 | 69 | Save-worker transient copies trimmed (verify worker's Buffer and string lifetimes, pack worker's double conversion) | memory, server code | running | yes | Batch 9 (`savepeak.md`) |
-| 70 | Deadband thinking: bench-only measurement of skip share against output error | study (lever) | running | - | Batch 9 (`deadband.md`) |
+| 70 | Deadband thinking: bench-only measurement of skip share against output error | study (lever) | the gate fires for under 0.8% of creature-ticks at any eps up to 0.05 (where the turn error is already near the full range): the body extras and memory units change by more than 0.05 in 86-91% of ticks, ray features are unchanged in only 46-56%; projected gain 0.25% at most | - | Rejected (`deadband.md`); hook not merged |
 | 71 | Two same-shape brains in lockstep (pairs of run-order neighbours with identical layer sizes share one 6-accumulator loop; per-output add order unchanged), microbench first | broad, exact | running | yes | Batch 9 (`pairs.md`) |
+| 72 | Array-of-structs gather records for the item rows ({x, y, kind, id}) and the crowd entries ({sx, sy, sig, own}) so a row visit touches one line instead of two or three | small, exact | running | yes | Batch 9 (`aos.md`) |
 | 7 | prepareRows (slots phase, 7%) into the fill kernel | small | no exact variant over 1%: ground lookup is at most 0.6 ms, exp 0.33, rest 0.45 | yes | Rejected (`prep.md`) |
 
 ## Log
@@ -235,3 +236,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-28 23:43 Moonshot scout in. Batch 9 ranked from the candidates: build the `$sense` split (62), the crowd occupancy gate (63), lockstep brain pairs (64), the descriptor gather (65), the step micro-cut bundle (66), the finer rock bound (67); memory: process settings measured with saves (68) and the save-worker peak trims (69); study: the deadband measurement script (70). Waiting: 39, 54 verification, 59, 61 and the two open-ended scouts.
 - 2026-10-28 23:47 All ten scouts reported (candidates table). Batch 9 launched: ideas 62-70. Held for the next refill: lockstep brain pairs (microbench first), array-of-structs gather records, the frame gather kernel (server). Running from before: 39, 54 verification, 59, 61.
 - 2026-10-28 23:49 Idea 62 rejected at the pre-check. Idea 71 (lockstep brain pairs) started in its slot.
+- 2026-10-28 23:54 Idea 70 rejected: every input-gated thinking lever is dead (ideas 13, 18, 70); only tick-count levers (thinkEvery, dt) remain, and dt is the better one. Idea 72 started.
