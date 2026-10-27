@@ -12,6 +12,7 @@ import { loadFounders } from "../../server/src/founders.ts";
 import { loadOverrides } from "../../server/src/admin.ts";
 import { StateStore, readRegularFile, saveName } from "../../server/src/state.ts";
 import { smallConfig } from "./liveHelpers.ts";
+import { packState, snapshotState } from "../../src/typescript/src/sim/ecoState.ts";
 
 const FOUNDERS = new URL("../../src/typescript/public/live-founders.json", import.meta.url);
 
@@ -136,6 +137,27 @@ describe("saves", () => {
       }
       expect(b.eco.fingerprint()).toBe(w.eco.fingerprint()); // the snapshot's columns were copies: the world's own were not moved away
     }
+  });
+
+  it("packs every column to the same base64 as btoa over its bytes", () => {
+    const c = smallConfig();
+    c.eco.thinkEvery = 2;
+    const w = new LiveWorld(c, null);
+    for (let i = 0; i < 20; i++) w.eco.step();
+    const snap = snapshotState(w.eco);
+    const packed = packState(snap);
+    let columns = 0;
+    for (const [part, text] of [[snap.items, packed.items], [snap.creatures, packed.creatures]] as const) {
+      for (const [k, v] of Object.entries(part)) {
+        if (!ArrayBuffer.isView(v)) continue;
+        const bytes = new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
+        let raw = "";
+        for (let i = 0; i < bytes.length; i++) raw += String.fromCharCode(bytes[i]!);
+        expect((text as Record<string, unknown>)[k]).toBe(btoa(raw));
+        columns++;
+      }
+    }
+    expect(columns).toBe(10);
   });
 
   it("a save packer that takes too long is refused, its worker gone, and the next save goes through", async () => {
