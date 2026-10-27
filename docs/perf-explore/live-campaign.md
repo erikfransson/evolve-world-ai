@@ -62,6 +62,9 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 | brain | Run-ordered, 64-byte-aligned descriptor array gathered per forwardRun (today each brain start is a random load from a 212 KB table straddling two lines) | small, exact | 0.15-0.2 ms (1.2-1.5%) if the descriptor miss is exposed | 2 |
 | brain | The sense kernel emits the first-layer non-zero index list for the ray features, so `$compact` scans only the extras and memory tail | small, exact (zeros excluded as `f32x4.ne` does) | 0.7-1% | 2 |
 | brain | Rare-feature rows (poison, wall) in a tail pool outside the touch stream, addresses via a per-shape offset table; pool chosen from measured per-feature hit rates | study then build | 1.2-1.5% net if the extra address load stays free | 1-2 |
+| moonshot | Deadband thinking (`eco.thinkGate`): a creature skips its brain when its fresh input vector is within eps of the input at its last think and no ray feature changed, thinks at least every H ticks; held-output error bounded by L times eps; measure the skip share against output error first with a bench-only script, then the think2.md ecology protocol | non-exact lever | 1.1x at 30% skipped, 1.2x at 50% | 3 that it beats thinkEvery 2's ratio, 2 for 1.2x |
+| moonshot | Two same-shape brains in lockstep: pair run-order neighbours of identical layer sizes and run one 6-accumulator loop for both (small layers are add-latency bound at 3 accumulators; native.md's 4-brain interleave gained 1.08-1.18x); per-output add order unchanged; opportunistic for any shape | exact architectural | 4-5% (plus 2% if the senser emits the nz list) | 3 exact, 2 for the size |
+| moonshot | Price compute in the creatures' energy (`neuronCost` on weights, `rayCost` on length squared) so selection shrinks brains and fans over days | non-exact gameplay lever, Erik's | 1.15-1.2x after a population turnover | 1-2 |
 
 ## Ideas
 
@@ -214,3 +217,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-27 23:42 Idea 51 rejected: even a free collision sweep is worth 1.3%.
 - 2026-10-27 23:43 Idea 47 done: no arena leak. Brain scout in: the kernel is at its floor; three small ideas (descriptor gather, nz list from the senser, rare-row pool).
 - 2026-10-27 23:43 Idea 56 done: dt 1/20 is the better 1.5x lever for Erik than thinkEvery 2.
+- 2026-10-28 23:43 Moonshot scout in. Batch 9 ranked from the candidates: build the `$sense` split (62), the crowd occupancy gate (63), lockstep brain pairs (64), the descriptor gather (65), the step micro-cut bundle (66), the finer rock bound (67); memory: process settings measured with saves (68) and the save-worker peak trims (69); study: the deadband measurement script (70). Waiting: 39, 54 verification, 59, 61 and the two open-ended scouts.
