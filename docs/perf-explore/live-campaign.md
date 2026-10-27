@@ -74,6 +74,15 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 | 33 | Reuse the shared-phase crowd grid at the next tick's start: a `refresh` kernel re-reads positions, energies and species in grid order and falls back to a rebuild when anyone changed cell or the member table changed | broad | exact; refresh 0.09 ms against 0.40 for a rebuild, qualifies on 80% of ticks at 3300 and 59% at the cap; tick 2.4% / 1.7% | yes | Merged (`gridreuse.md`), +65 lines and a test, full suite green (1223) |
 | 34 | Per-tick redundancy audit; built: the crowd pack stores each creature's energy signal (f32, which the fill kernel narrows to anyway) into its row, so prepareRows skips its Math.exp when every species starts at the seen-energy scale | broad | exact; slots phase 0.30-0.45 ms lower (2.4% mixed by the phase, 1.9% at the cap by the tick); the audit found nothing else above 1% that repeats work | yes | Merged (`redo.md`, audit table), about 25 lines of code, full suite green (1224) |
 | 35 | Skip the touch kernel for creatures whose sense gather saw no item within reach plus one tick's displacement (least item distance recorded before the move) | broad | running; bound about 0.35 ms (2.7%) | yes | Batch 6 (`touchskip.md`) |
+| 36 | sense.wat: a specialised path for the 8-ray fan (75% of creatures, two ray vectors) without the generic per-vector loop | small | running | yes | Batch 7 (`rays8.md`) |
+| 37 | brain.wat: dense layers without the iota index indirection per input | small | running | yes | Batch 7 (`dense.md`) |
+| 38 | brain.wat: two inputs per iteration in the column loops (same add order per accumulator) | small | running | yes | Batch 7 (`unroll.md`) |
+| 39 | Node and V8 flag sweep on liveBench (liftoff, semi-space, wasm tiering), no code change | study | running | yes | Batch 7 (`flags2.md`) |
+| 40 | gridreuse step 2: patch the grid for births and deaths so the refresh covers the remaining 20-40% of ticks | small | running | yes | Batch 7 (`gridpatch.md`) |
+| 41 | sense.wat: early-out when candidates exist but none can hit any ray (fan and length pre-test), so the per-ray passes are skipped for the 44% all-zero creatures instead of the 15-32% with no candidates | broad | running | yes | Batch 7 (`missout.md`) |
+| 42 | Study: the live founders' layer widths against the kernel's 4-wide padding and 6-vector blocks; a specialised block for the common widths | study | running | yes | Batch 7 (`widths.md`) |
+| 43 | Study: phase profile of an aged cap world (7200 s, about 2200 Juggernauts) to see what dominates late and which ideas apply there | study | running | - | Batch 7 (`late.md`) |
+| 44 | prepareRows' arithmetic (speeds, turn, ground value) into the fill kernel, JS keeps only the terrain lookup | small | running | yes | Batch 7 (`prepfill.md`) |
 | 7 | prepareRows (slots phase, 7%) into the fill kernel | small | no exact variant over 1%: ground lookup is at most 0.6 ms, exp 0.33, rest 0.45 | yes | Rejected (`prep.md`) |
 
 ## Log
@@ -128,3 +137,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-27 18:33 Factor after batch 6: 1.19x mixed (15.07, 15.31 vs 12.72, 12.82 and a fast-machine 9.78), 1.17x at the cap (18.71, 18.40, 16.55 vs 15.68, 15.65, 15.68), fingerprints equal, peak RSS flat.
 - 2026-10-27 18:34 Idea 35 started: the sense kernel already sees every item near a creature before the move, so most creatures can skip the post-move touch walk if the displacement bound is rigorous.
 - 2026-10-27 18:47 Idea 34 merged (e8faf83). The audit table in redo.md lists every per-tick call with its self time; nothing else above 1% repeats work on unchanged data.
+- 2026-10-27 19:00 Erik: run 5-20 Sonnet agents at all times and spawn continuously. Batch 7 (ideas 36-44) launched as a rolling pool next to idea 35.
