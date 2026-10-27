@@ -28,7 +28,7 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 | 4 | Sense kernel profile at the live setting (measurement) | study | kernel flat: per-ray passes 38%, item walk and tests 38%, crowd 14%, rock 10%; two exact cuts worth about 4% of the tick | - | Done (`senselive.md`), cuts queued as idea 8 |
 | 5 | Native N-API brain kernel with AVX2 (server only) | moonshot | brain forward 1.8x bit-identical (prefetch, 8-wide), whole tick 1.15-1.17x; FMA adds 2% | yes (exact variant) | Parked on branch `pl-native` (`native.md`): needs Erik's call on a C++ twin of brain.wat, a build step at deploy and the Live push gate (no bounds checks yet) |
 | 6 | Helper threads for the server at idle priority: wall speed on this laptop | ops | queued | yes | |
-| 8 | Sense: shared ray-offset tables (273 distinct among 3331) and a rock lower-bound table, wall-loop skip | small | queued | yes | |
+| 8 | Sense: pooled ray-offset tables, rock lower-bound table (70 KB), v128 feature store | small | senser 5.2 to 4.5 ms, tick 1.05x in both cases; wall-loop skip rejected (0.8%) | yes | Merged (`sensecuts.md`) |
 | 9 | brain.wat: up to 6-vector column blocks (24-wide layers in one pass), tanh inlined per layer | small | brain kernel 1.10x (Oracle 1.17x, Juggernaut 1.05x), about 3% of the tick | yes | Merged (`brainblock.md`) |
 | 11 | Server frame encoding (byte writes, age without a Map lookup, leaderboard key) | small | frame work 0.64 to 0.50 ms per tick, 0.14 ms (under 1% of the tick); 81 lines in the gated server path | yes | Rejected (`frames.md`); the bench charged stats at 5 Hz instead of 1 Hz, fixed |
 | 10 | Eat phase: crowd `cellStart` fill four cells per v128 store (both rebuilds per tick) | small | crowd grid 0.55 to 0.42 ms, eat 1.14 to 1.00 ms, about 1.7% of the tick; the eat loop itself is 0.07 ms (33 eaters a tick) | yes | Merged (`eatlive.md`) |
@@ -49,3 +49,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-27 17:00 Full suite on perf-live: 1215 of 1216 pass; the Inland Sea case of residentBodies.test.ts hits its 20 s timeout under load on perf-base too (both pass in 45 s with --testTimeout=180000), so not a regression.
 - 2026-10-27 17:40 Idea 11 rejected: under 1% for 81 lines in server code under the push gate. liveBench now calls stats once a second as the server does.
 - 2026-10-27 18:00 Idea 10 merged (14 lines of crowd.wat). The second crowd rebuild cannot be skipped exactly (creatures cross cells every tick, in-cell order matters for collisions).
+- 2026-10-27 19:30 Idea 8 merged (+138/-34, exact, about 5%).
