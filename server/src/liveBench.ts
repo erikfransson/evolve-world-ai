@@ -59,6 +59,7 @@ const dt = config.dt;
 const ticks = Math.round(seconds / dt);
 const every = Math.max(1, Math.round(Number(values.every) / dt));
 const frameEvery = Math.max(1, Math.round(FRAME_MS / 1000 / dt * LIVE.speed)); // ticks per frame at the server's set speed
+const statsEvery = Math.max(1, Math.round(LIVE.speed / dt)); // the stats go out once a second (public.ts statsLoop)
 
 const tBuild = performance.now();
 const live = new LiveWorld(config, null, null);
@@ -86,6 +87,10 @@ while (eco.tick < ticks && !eco.extinct) {
     const f0 = performance.now();
     frameBytes += live.creatureFrame().length;
     frameBytes += live.takeDelta()?.length ?? 0;
+    frameMs += performance.now() - f0;
+  }
+  if (values.frames && eco.tick % statsEvery === 0) {
+    const f0 = performance.now();
     live.stats(1);
     frameMs += performance.now() - f0;
   }
