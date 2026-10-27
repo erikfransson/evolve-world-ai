@@ -147,6 +147,8 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 | 70 | Deadband thinking: bench-only measurement of skip share against output error | study (lever) | the gate fires for under 0.8% of creature-ticks at any eps up to 0.05 (where the turn error is already near the full range): the body extras and memory units change by more than 0.05 in 86-91% of ticks, ray features are unchanged in only 46-56%; projected gain 0.25% at most | - | Rejected (`deadband.md`); hook not merged |
 | 71 | Two same-shape brains in lockstep | broad, exact | microbench: the paired loop beats two sequential runs by only 0-3% (the column loop issues about 20 uops per input, 5 cycles at 4-wide, so the 4-cycle add latency is already covered) and the pairing structure costs 5-10%; 0.93-0.95x of base on the mix even with 98% pairable brains | - (not built) | Rejected (`pairs.md`) |
 | 72 | Array-of-structs gather records for the item rows | small | exact, but unique lines touched per call rise 7723 to 9383 (the shared 1-byte kind array was nearly free, the records double the xy footprint): senser 1.6-4.6% slower, tick 1.3% worse mixed, flat at the cap | yes | Rejected (`aos.md`) |
+| 73 | Validation: a 60 min soak of the perf-live server on loopback ports with a scripted viewer (speed, population, RSS, saves, log) | validation | running | - | Batch 9 (`soak.md`) |
+| 74 | The same spare-pool cap on the helper-thread side (ecoShare.ts) | memory hygiene | exact (fingerprint 708687555 with 2 helpers), 106 tests | yes | Merged (`heap.md` Helper pools) |
 | 7 | prepareRows (slots phase, 7%) into the fill kernel | small | no exact variant over 1%: ground lookup is at most 0.6 ms, exp 0.33, rest 0.45 | yes | Rejected (`prep.md`) |
 
 ## Log
@@ -248,3 +250,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-28 00:29 Idea 63 rejected. Batch 9 so far: 54 merged (memory), 62-67, 70-72 rejected; 68, 69 (memory) and 59 still running, 73 soak running.
 - 2026-10-28 00:37 Factor after batch 9: 1.29x both cases (17.84 vs 13.82 mixed, 21.59 vs 16.79 cap), fingerprints equal, RSS flat at 60 s; the spare-pool cap costs nothing measurable.
 - 2026-10-28 00:40 Idea 69 merged: the second memory fix, and a robustness gain (the pack timeout no longer trips under load).
+- 2026-10-28 00:45 Idea 74 merged. Running: 59 (births), 68 (memory settings), 73 (server soak), the full suite on perf-live.
