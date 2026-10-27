@@ -20,3 +20,35 @@ tsc is clean. The vitest suite was started but its pass count was not captured, 
 
 ## Verdict
 Not worth merging: about 150 lines, one new concept (rows plus a view class with instanceof branches), no measurable speedup, no RSS change. A real gain would need the movement/eat/collide loop to run in WASM over the columns (serial.md's kernel), which this store would feed, but serial.md measured only 1.05 to 1.08x for that.
+
+## Idea 32: struct-of-arrays at the live setting (3300 creatures, the Inland Sea)
+
+Branch `pl-soa` from `perf-live`. Stage 1 (study) only, since it fails the 3% bar (about 0.4 ms of a 13 to 15 ms tick).
+On perf-live the bodies already live in one flat array: resident rows of 192 B in WebAssembly memory, cache-line aligned, read as `f64[o + F.x]`. No phase walks JS objects per creature any more, so the pointer chasing this idea targets is mostly gone already.
+
+| Phase (ms per tick, `--profile`) | Total     | Part SoA would remove                                                                 | Part it keeps                                                                                             |
+|----------------------------------|-----------|---------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------|
+| slots (`prepareRows`)            | 1.0-1.1   | none: the column version measured 5% slower (below)                                  | ground lookup `valueAt` 0.49, `energySignal` (exp) 0.29, loop body (loads, arithmetic, stores) 0.49        |
+| eat                              | 1.0       | at most 0.03-0.07 (strided row reads in the crowd key loop, eatlive.md)              | crowd rebuild kernel twice about 0.5, `touch` kernel 0.41, JS eat loop 0.065                              |
+| births                           | 0.08      | about 0                                                                               | `birthCandidates` kernel scan, `giveBirth` (genome, brain set, allocation)                                |
+| settle and deaths                | 0.08      | about 0                                                                               | `settle` kernel scan                                                                                      |
+| collisions                       | 0.19      | about 0                                                                               | sweep kernel on the crowd's sorted columns (already struct-of-arrays), `bumpSlots` per hit pair            |
+| Sum                              | 2.4       | under 0.07 (0.5% of the tick)                                                         |                                                                                                           |
+
+Split of slots from the V8 CPU profiler (`--cpu-prof`, 200 us interval, 1800 ticks, self time, inflated about 15% by the profiler): `prepareRows` 0.49, `valueAt` 0.49, `energySignal` 0.29. The rest of the JS self time in the tick is under 0.1 ms a function (`sharedPhase` 0.09, `patchCell` 0.13, brain `set` 0.07).
+
+### Direct test of the layout
+A scratch copy of `prepareRows` reading x, y, vx, vy, energy, turn, cos, sin and species from columns indexed by batch position and writing 6 output columns, same arithmetic, ground lookup and exp.
+The columns were gathered from the rows after each call, so they sat in memory through the rest of the tick as real columns would. Both versions ran every tick, order swapped every tick, 1350 steady ticks a run, 3 runs, liveBench `--seconds 60 --copies 800`, nice 19, load 11 to 14.
+`threadCpuUsage` ticks in 1 ms steps here, so wall time per call was used for the quantiles (p25 is robust to preemption).
+
+| Run | Rows p25 / median (us) | Columns p25 / median (us) | CPU mean rows / columns (us) |
+|-----|------------------------|---------------------------|------------------------------|
+| 1   | 928 / 1014             | 996 / 1097                | 993 / 1083                   |
+| 2   | 949 / 1033             | 994 / 1086                | 1020 / 1068                  |
+| 3   | 913 / 1013             | 965 / 1075                | 978 / 1046                   |
+
+Columns are 4 to 8% slower: 15 streams against one sequential row stream that the prefetcher follows (rows are in slot order, which is construction order). 3300 rows are 634 KB and the loop is bound by the lookup and exp, not by loads. Fingerprint 708687555 in every run (the real `prepareRows` still wrote the results).
+
+### Verdict
+Reject without building stage 2. The resident rows already are the flat layout, the measured column variant is slower, and the other JS-side phases are kernels or under 0.1 ms. The scratch patch was not committed.

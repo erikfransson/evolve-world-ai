@@ -20,7 +20,7 @@ One write-up per exploration, with the tables of tried ideas and their verdicts.
 - `helpers2.md`: resident rows with helper threads (coordinator and helpers), memory units kept on the owner, bulk packet copies; Inland 10k with 3 helpers 97.7 to 75.7 CPU ms per tick, coordinator thread 24 ms against 45.6 serial, bit-identical.
 - `helpers.md`: genomes sent only to the owning helper (start-up RSS 1.37 to 1.0 GB at 50k with 4 helpers) and the start timeout for the first tick; merged. Messaging is near its floor, spatial split and overlap rejected.
 - `sense.md`: item trace with an f64x2 prefilter (kernel 1.24x) and the batch in item-grid row order (1.09x), whole tick 1.05x at 38000 and 1.15x at 50000, bit-identical; verdict merge.
-- `soa.md`: typed-array store for hot creature state, bit-identical but 1.00x; rejected.
+- `soa.md`: typed-array store for hot creature state, bit-identical but 1.00x; rejected. Idea 32 at the live setting: resident rows are already flat, columns measured 5% slower in `prepareRows`, under 0.07 ms removable; rejected after the study.
 - `sensecopy.md`: the per-batch copy of the item grid into WASM is under 1% of a tick even at 50k; rejected.
 - `hunt.md`: the hunt search of the two-species world (The Great Hunt, page since removed) is about 1.5% of a tick; nothing to gain.
 - `v8.md`: no JS-engine hot spot worth a change; WASM sense is about 46% of samples.
