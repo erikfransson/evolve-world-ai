@@ -182,3 +182,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-27 21:13 Idea 60 rejected. The sense kernel's remaining cost is rows, not arithmetic (ideas 20, 21, 31, 41, 60 agree); only a coarser grid could cut rows, and that is not exact (cell.md).
 - 2026-10-27 21:16 Idea 58 done: the fixed cost is small and spread; nothing to cut without a new data structure. Idea 61 started on the aged per-creature rise.
 - 2026-10-27 21:16 Idea 48 parked for Erik: real but small, and server code.
+- 2026-10-27 21:22 Erik: keep going across usage-limit resets. Session wakeups set: one at 23:43 tonight, then daily at 00:43, 04:43, 09:43, 14:43, 19:43 (max gap 5 h, 7-day expiry), each resuming the campaign from this log. The 6-hourly report cron stays. Memory is the limit on the pool now (3 GB available at 7 agents plus the factor run on the pinned cores), not the agent count; refill as agents finish.
