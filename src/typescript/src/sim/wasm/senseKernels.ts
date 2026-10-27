@@ -3,6 +3,7 @@ import type { EcoConfig } from "../ecoConfig.ts";
 import { inputLayout } from "../sensors.ts";
 import { seenEnergyScale, speciesList } from "../species.ts";
 import type { Crowd } from "../crowd.ts";
+import type { Terrain } from "../terrain.ts";
 import type { World } from "../world.ts";
 import { WasmBrainBank } from "./brainKernel.ts";
 import type { PhaseTimer } from "../profile.ts";
@@ -79,6 +80,11 @@ export class SenseKernels {
   // Whether the crowd kernel's pack stores each creature's own energy signal into its row (run's last argument), so prepareRows can skip it.
   packsOwnSignal(crowd: Crowd): boolean {
     return this.sameStart && crowd.kernel !== null;
+  }
+
+  // prepareRows without the energy signal, in the fill kernel (used when packsOwnSignal).
+  prepareRows(rows: Int32Array, n: number, terrain: Terrain): void {
+    this.filler.prepare(rows, n, terrain);
   }
 
   // The item tables the step kernel looks items up in, or null when stale (see WasmSenser.itemTables).

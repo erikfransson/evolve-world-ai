@@ -2,7 +2,8 @@
 // The TypeScript side reads the offsets from here, and scripts/wasmAssemble.ts substitutes them for the {{NAME}} tokens of the .wat files, so the two sides cannot drift apart.
 // Offsets are in bytes from the start of the row or block.
 
-import { EXTRA_INPUTS } from "../sensors.ts";
+import { GROUND_HALF, GROUND_PAD } from "../groundField.ts";
+import { EXTRA_INPUTS, EXTRA_TERRAIN } from "../sensors.ts";
 
 export const LAYOUT = {
   ROW_BYTES: 192,
@@ -22,6 +23,10 @@ export const LAYOUT = {
   R_RAY_LENGTH: 96,
   // the brain input extras the fill kernel copies (as f32) after the ray features: energy signal, forward and sideways speed, turn rate, ground value
   R_EXTRAS: 104, // EXTRAS f64, to R_OUT
+  R_EXTRA_SPEED: 112,
+  R_EXTRA_SIDE: 120,
+  R_EXTRA_TURN: 128,
+  R_EXTRA_GROUND: 104 + 8 * EXTRA_TERRAIN,
   // i32 fields of a row
   R_OUT: 144, // byte address of the brain outputs: turn, thrust, then one target per memory unit
   R_SPECIES: 148,
@@ -97,6 +102,25 @@ export const LAYOUT = {
   F_ITEM_ROWS: 40,
   F_INV_CELL: 48, // f64
   F_BYTES: 64,
+  // call block of prepare (fill.wat; i32 unless noted) and its species block (f64): the speeds, turn rate and ground under each creature as brain input extras, and the ground factor
+  G_N: 0,
+  G_ROWS: 4,
+  G_SPECIES: 8, // address of the species blocks
+  G_RASTER: 12, // address of the ground field's nodes (2 bytes each), 0 for none
+  G_STRIDE: 16, // bytes per raster row
+  G_EMPTY: 20, // 1 when the map has no rock and no patches
+  G_INV: 24, // f64: the field's 1 / cell
+  G_COL_MAX: 32, // f64: cols - 1.0001
+  G_ROW_MAX: 40, // f64: rows - 1.0001
+  G_SLOW: 48, // f64: speed factor on mud and on firm ground
+  G_FAST: 56, // f64
+  G_BYTES: 64,
+  G_PAD: GROUND_PAD, // the field's constants, as values for the wat
+  G_HALF: GROUND_HALF,
+  H_DRAG: 0,
+  H_MAX_THRUST: 8,
+  H_MAX_TURN: 16,
+  H_BYTES: 24,
   // call block of step (i32 unless noted)
   P_N: 0,
   P_ROWS: 4,
