@@ -316,7 +316,7 @@ export class ShareCoordinator {
     }
     eco.drainJournal();
     p.header[H_DELTA_LENGTH] = k;
-    p.header[H_TICK] = eco.tick;
+    p.header[H_TICK] = eco.tick % 840; // the stagger needs tick mod thinkEvery only; 840 is divisible by 1 to 8, and the i32 header never wraps
     const rule = eco.agingRule;
     p.aging[0] = rule ? 1 : 0;
     p.aging[1] = rule?.startTicks ?? 0;
