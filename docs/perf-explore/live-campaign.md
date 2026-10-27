@@ -45,6 +45,12 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 | server | `--max-old-space-size=256` instead of 768 in the unit (mem.md: 80 gave -110 MB at the same speed); needs a restore test of a cap-size save under the cap | memory, no code | -75 to -110 MB steady and peak | 4 |
 | server | `MALLOC_ARENA_MAX=2` and a fixed `MALLOC_MMAP_THRESHOLD_` in the unit, so the save workers' 25-60 MB buffers are unmapped after a save instead of fragmenting arenas | memory, no code | -100 to -200 MB retained after saves (guess until measured) | 3 |
 | server | drop the 40 MB JSON copies held through the workers' parse and stringify (`let` plus null, one Buffer reused) | memory, server code | -40 MB at the save peak | 2 |
+| sense | Dilated crowd occupancy gate: bit-planes per row ("at least 2 members" smeared by the window radius, about 20 KB, built with the grid) so a creature alone in its window skips both crowd walks with one load; additive to cellStart, exact superset test, radius from the real ray length | small, exact | about 0.2 ms net (1.5%); fires for 42-51% of creatures | 3 |
+| sense | Rock lower bound at item-cell resolution (one byte per 100-unit cell, floor(lb/2)), tighter than the 300-unit table, so fewer false-positive rock walks | small, exact | up to 0.15 ms (1.1%); count the residual walkers first | 2 |
+| sense | Sense creatures in crowd-grid cell order within tiles so neighbours share grid lines (order is free) | small, exact | 0.1-0.3 ms; layout.md found spatial order no better than random at 20k wide | 2 |
+| toolchain | Split the one 130-local `$sense` function into per-phase functions reloading invariants from the call block, to cut register spills (the exact C++ port beat V8 by 8-12% on this branchy code) | small, exact code motion | 1-2% if spills are the cause; count rsp-relative loads in the walks first | 3 |
+| toolchain | Branch hints (`metadata.code.branch_hint` custom section via wabt, `--experimental-wasm-branch-hinting` on the server) for the walks' rare paths | small, exact | 0-1% | 2 |
+| toolchain | V8 flags never swept: `--no-wasm-loop-peeling`, `--no-wasm-loop-unrolling`, `--no-wasm-inlining`, `--no-turboshaft-wasm-load-elimination` | flags | -2% to +2% on kernels | 2 (folded into idea 39) |
 
 ## Ideas
 
