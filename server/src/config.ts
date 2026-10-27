@@ -47,6 +47,7 @@ liveConfig.eco.winterFood = 0.4;
 liveConfig.eco.birthEnergyRange = [...LIVE_BIRTH.energy]; // wider than the Ecosystem's, for visitors' adds and their descendants' drift
 liveConfig.eco.birthCostRange = [...LIVE_BIRTH.cost];
 liveConfig.eco.birthCooldownRange = [...LIVE_BIRTH.cooldown];
+liveConfig.eco.thinkEvery = 2; // each creature senses and thinks every other tick, half of them on each (docs/perf-explore/think2.md)
 liveConfig.eco.hueDrift = 3; // degrees (Ecosystem 8): families keep their colour longer, so the view reads as lineages
 
 // A fresh world gets this many copies of each founder in the founders file, at random open spots; an admin reset may ask for more,

@@ -2,7 +2,7 @@ import { wrapAngle } from "./angle.ts";
 import { genomeLength, layerSizes, randomGenome, refit } from "./brain.ts";
 import { itemCounts } from "./config.ts";
 import type { EngineConfig } from "./config.ts";
-import { Creature, SenseBatch, senseThinkBatch } from "./creature.ts";
+import { Creature, SenseBatch, senseThinkBatch, thinkersOf } from "./creature.ts";
 import { Crowd } from "./crowd.ts";
 import { startRng } from "./ecoConfig.ts";
 import type { EcoConfig } from "./ecoConfig.ts";
@@ -15,7 +15,7 @@ import { SMALL_SORT } from "./crowd.ts";
 import { WasmCrowd } from "./wasm/crowdKernel.ts";
 import { WasmMembers } from "./wasm/membersKernel.ts";
 import type { ResidentStore } from "./wasm/resident.ts";
-import { advanceBodies, prepareRows } from "./wasm/residentStep.ts";
+import { advanceBodies, senseThinkRows } from "./wasm/residentStep.ts";
 import type { Aging } from "./physics.ts";
 import type { StatefulRng } from "./rng.ts";
 import { copyPlan, inputLayout, planOf } from "./sensors.ts";
@@ -176,6 +176,8 @@ export class Ecosystem {
   private readonly crowd: Crowd;
   private hits = new Int32Array(0); // members touching an item this tick, ascending
   private readonly batch = new SenseBatch();
+  private readonly thinkBatch = new SenseBatch(); // the part of a JS batch that thinks this tick (eco.thinkEvery)
+  private readonly idOf = (self: number): number => this.members[self]!.id;
   private readonly kernels: SenseKernels | null; // with eco.wasm when WebAssembly SIMD is available
   private readonly wasmCrowd: WasmCrowd | null; // the crowd grid built in WebAssembly from the rows (crowdKernel.ts), when the rows are resident
   private readonly wasmMembers: WasmMembers | null; // the settle and birth scans over the rows in WebAssembly (membersKernel.ts)
@@ -378,12 +380,11 @@ export class Ecosystem {
     return { rows: this.table.slotRows, selves: this.table.slotSelves, n: this.table.bySlot.length };
   }
 
-  // Phase 1a for the resident bodies at selves, after prepareTick.
+  // Phase 1a for the resident bodies at selves, after prepareTick: those of them that think this tick (eco.thinkEvery) sense and think.
   senseRows(rows: Int32Array, selves: Int32Array, n: number): void {
     const kernels = this.kernels!;
     kernels.detail = this.detail === null ? null : (this.table.byId.get(this.detail)?.creature ?? null);
-    prepareRows(this.resident!, rows, n, this.items.terrain);
-    kernels.runRows(this.items, this.crowd, rows, selves, n, kernels.detail, this.profile);
+    senseThinkRows(kernels, this.items, this.crowd, rows, selves, n, this.tick, this.config.eco.thinkEvery, this.idOf, kernels.detail, this.profile);
   }
 
   // Phase 1b for the resident bodies at selves: memory and motion, and the item each touches into touched[self].
@@ -420,11 +421,7 @@ export class Ecosystem {
     if (this.kernels) {
       // Resident bodies: the batch is the maintained row list, nothing to gather per creature.
       this.profile?.lap("batch build");
-      const kernels = this.kernels;
-      const n = this.members.length;
-      kernels.detail = this.detail === null ? null : (this.table.byId.get(this.detail)?.creature ?? null);
-      prepareRows(this.resident!, this.table.slotRows, n, this.items.terrain);
-      kernels.runRows(this.items, this.crowd, this.table.slotRows, this.table.slotSelves, n, kernels.detail, this.profile);
+      this.senseRows(this.table.slotRows, this.table.slotSelves, this.members.length);
       return;
     }
     const batch = this.batch;
@@ -446,9 +443,9 @@ export class Ecosystem {
     c.encode();
   }
 
-  // Phase 1a for a batch of members on the JS path, each at its list index, after prepareTick.
+  // Phase 1a for a batch of members on the JS path, each at its list index, after prepareTick: those that think this tick (eco.thinkEvery).
   senseBatch(batch: SenseBatch): void {
-    senseThinkBatch(this.items, this.crowd, batch, this.profile);
+    senseThinkBatch(this.items, this.crowd, thinkersOf(batch, this.thinkBatch, this.tick, this.config.eco.thinkEvery, this.idOf), this.profile);
   }
 
   // Phase 1b for one creature: memory and motion. Returns the item it touches there (Creature.touched), for finishTick.

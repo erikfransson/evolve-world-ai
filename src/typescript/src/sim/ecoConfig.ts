@@ -34,6 +34,7 @@ export interface EcoConfig extends EngineConfig {
     killEnergy: number; // extra energy for the survivor of a lethal bump, on top of the dead one's (a carcass); 0 makes a kill pay at most the damage taken
     damagePerSpeed: number; // energy each loses per unit/s of approach speed; 0.3 gives 48 for a head-on hit at top speed (160)
     wasm: boolean; // sense and think on the WebAssembly SIMD kernels in src/sim/wasm/ when available (f32, not bit-identical to JS)
+    thinkEvery: number; // each creature senses and thinks every this many ticks (staggered by id) and keeps its last outputs in between; 1 is every tick
     foundersVary: boolean; // founders draw their body plans from the ranges below, otherwise all get the config plan
     planDrift: number; // relative std of the change of a child's ray spread and length
     structuralRate: number; // chance per birth that the child gains or loses one ray, hidden neuron or memory unit
@@ -52,6 +53,7 @@ export interface EcoConfig extends EngineConfig {
 
 // world.foodDensity and world.poisonDensity are the starting densities.
 export const MAX_KILL_ENERGY = 300; // eco.killEnergy at most, for saves and RL envs
+export const MAX_THINK_EVERY = 8; // eco.thinkEvery at most, for saves
 
 export const DEFAULT_ECO_CONFIG: EcoConfig = {
   seed: 1,
@@ -85,6 +87,7 @@ export const DEFAULT_ECO_CONFIG: EcoConfig = {
     damagePerSpeed: 0.3,
     killEnergy: 0,
     wasm: true,
+    thinkEvery: 1,
     foundersVary: true,
     planDrift: 0.02,
     structuralRate: 0.02,

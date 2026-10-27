@@ -444,7 +444,7 @@ describe("ThinkPool message handling", () => {
 
 describe("helper packets", () => {
   it("fittedCaps grows for a bigger genome area, and the delta cap counts every word publish writes", () => {
-    const caps = { creatures: 10, memory: 10, delta: 100, genome: 100 };
+    const caps = { creatures: 10, memory: 10, delta: 100, genome: 100, outputs: 0 };
     expect(fittedCaps(caps, { ...caps, genome: 101 })).not.toBeNull();
     expect(fittedCaps(caps, caps)).toBeNull();
 
