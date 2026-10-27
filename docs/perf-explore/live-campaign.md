@@ -28,6 +28,7 @@ Fingerprint equal means bit-identical results.
 | 2026-10-27 12:50 | Juggernaut x 4900 (3 pairs, medians)   | 18.58               | 15.85             | 1.17x (exact) | 256 / 256 MB |
 | 2026-10-27 14:50 | 4 founders x 800 (3 pairs, medians)    | 15.24               | 13.07             | 1.17x (exact; more as the world ages, `brainorder.md`); saves stall 0.1 s instead of 3-6 s | 219 / 219 MB |
 | 2026-10-27 14:50 | Juggernaut x 4900 (3 pairs, medians)   | 18.48               | 15.97             | 1.16x (exact) | 254 / 258 MB |
+| 2026-10-27 15:20 | 4 founders x 800, 1800 s (2 runs each, `aging.md`) | 10.73, 10.88 | 9.22, 9.10 | 1.18x (exact) | 299 / 373 MB (idea 24 checks the gap) |
 
 Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54, brain forward 5.23 / 5.17, slots (prepareRows) 1.04 / 1.52, memory and steer 1.26 / 1.59, eat 1.05 / 1.35, crowd grid 0.51 / 0.67, collisions 0.18 / 0.27, rest under 0.2. Server frame encoding adds 0.57 ms per tick at 5 Hz. Speed achieved unpaced on this loaded machine: 2.0x and 1.7x real time (the set speed is 3x).
 
