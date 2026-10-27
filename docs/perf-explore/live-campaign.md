@@ -83,6 +83,8 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 | 42 | Study: the live founders' layer widths against the kernel's 4-wide padding and 6-vector blocks; a specialised block for the common widths | study | running | yes | Batch 7 (`widths.md`) |
 | 43 | Study: phase profile of an aged cap world (7200 s, about 2200 Juggernauts) to see what dominates late and which ideas apply there | study | running | - | Batch 7 (`late.md`) |
 | 44 | prepareRows' arithmetic (speeds, turn, ground value) into the fill kernel, JS keeps only the terrain lookup | small | running | yes | Batch 7 (`prepfill.md`) |
+| 45 | Study: does liveBench represent the production tick (frames, stats, pacing, viewers)? | study | running | - | Batch 7 (`prod.md`) |
+| 46 | Moonshot: native AVX2 sense kernel prototype (8 rays in one vector), bit-identical, to size the native option next to `pl-native` | moonshot | running | yes | Batch 7 (`nsense.md`) |
 | 7 | prepareRows (slots phase, 7%) into the fill kernel | small | no exact variant over 1%: ground lookup is at most 0.6 ms, exp 0.33, rest 0.45 | yes | Rejected (`prep.md`) |
 
 ## Log
@@ -138,3 +140,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-27 18:34 Idea 35 started: the sense kernel already sees every item near a creature before the move, so most creatures can skip the post-move touch walk if the displacement bound is rigorous.
 - 2026-10-27 18:47 Idea 34 merged (e8faf83). The audit table in redo.md lists every per-tick call with its self time; nothing else above 1% repeats work on unchanged data.
 - 2026-10-27 19:00 Erik: run 5-20 Sonnet agents at all times and spawn continuously. Batch 7 (ideas 36-44) launched as a rolling pool next to idea 35.
+- 2026-10-27 19:04 Pool at 12 agents (ideas 35-46). Load 20, 4 GB available; agents check free -g before each run.
