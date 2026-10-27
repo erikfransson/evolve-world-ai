@@ -253,3 +253,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-28 00:45 Idea 74 merged. Running: 59 (births), 68 (memory settings), 73 (server soak), the full suite on perf-live.
 - 2026-10-28 00:55 Full suite on perf-live after ideas 54 and 69: 121 files, 1227 tests, exit 0.
 - 2026-10-28 00:58 Idea 59 parked: a real per-birth gain that the tick does not feel. Running: 68, 73.
+- 2026-10-28 00:59 Review round 2 started (read-only, Opus): an engine correctness review of everything merged since the 12:22 review, and the three Live push-gate reviews for the server changes since the 15:03 round (save workers, pack base64, bench tooling). Findings get fixed before Erik decides on the merge. Still running: 68 (memory settings), 73 (server soak).
