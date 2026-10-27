@@ -549,6 +549,36 @@ describe("sense.wat (SenseKernels)", () => {
     expect(Math.max(...lb)).toBeGreaterThan(0);
   });
 
+  it("writes the same brain input for creatures that see nothing (early-out) as the full path of the detail creature, over any species count", () => {
+    for (const species of [0, 1, 3]) {
+      const rng = createRng(40 + species);
+      const spots: Spot[] = Array.from({ length: 60 }, () => [rng.range(-20, 1220), rng.range(-20, 820), rng.range(0, 7)]);
+      for (let i = 0; i < 6; i++) spots.push([300 + 30 * i, 300, i]); // a clump, so some see each other
+      const sparse = items.filter((_, i) => i % 6 === 0);
+      const { kernel, world, crowd, kernels, batch } = check({ rays: 8, spread: 1.5, length: 100, creatures: spots, items: sparse, species }, false);
+      const bank = (kernels as unknown as { brains: WasmBrainBank }).brains;
+      const inputView = (c: Creature): Float32Array => bank.f32.subarray(bank.inputAt(c.kernelSlot), bank.inputAt(c.kernelSlot) + c.brain.layerActivations()[0]!.length);
+      const inputOf = (c: Creature): number[] => Array.from(inputView(c));
+      const blank = (): void => kernel.forEach((c) => inputView(c).fill(NaN)); // only the sense kernel writes the ray part after the fill kernel's body inputs
+      let empty = 0;
+      kernel.forEach((c, k) => {
+        blank();
+        kernels.detail = c; // the full path for this creature, the early-out for any other that sees nothing
+        run(kernels, world, crowd, batch);
+        const full = inputOf(c);
+        blank();
+        kernels.detail = null;
+        run(kernels, world, crowd, batch);
+        expect(inputOf(c)).toEqual(full);
+        const rayPart = full.slice(0, c.rays.length * (5 + species));
+        if (rayPart.every((v) => v === 0)) empty++;
+        expect(Object.is(rayPart.find((v) => v === 0), -0)).toBe(false);
+      });
+      expect(empty).toBeGreaterThan(10);
+      expect(empty).toBeLessThan(kernel.length);
+    }
+  });
+
   it("keeps the rays of non-detail creatures untouched and needs no detail", () => {
     const { kernel, world, crowd, kernels, batch } = check({ rays: 4, spread: 1, creatures: [[300, 300, 0], [320, 300, 3]], items }, false);
     kernel[1]!.rays[0]!.closeness = 0.123;
