@@ -76,14 +76,14 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 | 35 | Skip the touch kernel for creatures whose sense gather saw no item within reach plus one tick's displacement (least item distance recorded before the move) | broad | running; bound about 0.35 ms (2.7%) | yes | Batch 6 (`touchskip.md`) |
 | 36 | sense.wat: a specialised path for the 8-ray fan (75% of creatures, two ray vectors) without the generic per-vector loop | small | resumed 19:15 under the pin | yes | Batch 7 (`rays8.md`) |
 | 37 | brain.wat: dense layers without the iota index indirection per input | small | exact, but the kernel is 2-5% slower (the sequential index load is an L1 hit that overlaps the weight loads; a second loop-carried pointer costs as much) | yes | Rejected (`dense.md`) |
-| 38 | brain.wat: two inputs per iteration in the column loops (same add order per accumulator) | small | resumed 19:15 under the pin | yes | Batch 7 (`unroll.md`) |
+| 38 | brain.wat: two inputs per iteration in the column loops (same add order per accumulator) | small | exact, brain forward 4% slower in every pair (TurboFan already unrolls by 4, as brainblock.md noted) | yes | Rejected (`unroll.md`) |
 | 39 | Node and V8 flag sweep on liveBench (liftoff, semi-space, wasm tiering), no code change | study | resumed 19:22 under the pin | yes | Batch 7 (`flags2.md`) |
 | 40 | gridreuse step 2: patch the grid for births and deaths so the refresh covers the remaining 20-40% of ticks | small | resumed 19:15 under the pin | yes | Batch 7 (`gridpatch.md`) |
 | 41 | sense.wat: early-out when candidates exist but none can hit any ray (fan and length pre-test), so the per-ray passes are skipped for the 44% all-zero creatures instead of the 15-32% with no candidates | broad | running | yes | Batch 7 (`missout.md`) |
 | 42 | Study: the live founders' layer widths against the kernel's blocks; a specialised block for the common widths | study | not run | - | Dropped: Erik's rule, no optimization for today's particular creatures |
 | 43 | Study: phase profile of an aged cap world (7200 s, about 2200 Juggernauts) to see what dominates late and which ideas apply there | study | resumed 19:27 under the pin (1800 s runs) | - | Batch 7 (`late.md`) |
 | 44 | prepareRows' arithmetic (speeds, turn, ground value) into the fill kernel, JS keeps only the terrain lookup | small | resumed 19:15 under the pin | yes | Batch 7 (`prepfill.md`) |
-| 45 | Study: does liveBench represent the production tick (frames, stats, pacing, viewers)? | study | paused 19:10 (laptop too slow), to re-run under the CPU cap | - | Batch 7 (`prod.md`) |
+| 45 | Study: does liveBench represent the production tick (frames, stats, pacing, viewers)? | study | resumed 19:32 under the pin | - | Batch 7 (`prod.md`) |
 | 46 | Moonshot: native AVX2 sense kernel prototype, bit-identical | moonshot | kernel 1.17-1.19x (the exact 4-wide C++ port alone is 1.08-1.12x over V8, widening adds 7%; branch-free walks and prefetch lose: scalar control flow binds), about 1.05x per tick projected | yes (inputs byte-equal) | Parked on `pl-nsense` (`nsense.md`, scripts/native-sense/): only worth it inside the native addon decision |
 | 7 | prepareRows (slots phase, 7%) into the fill kernel | small | no exact variant over 1%: ground lookup is at most 0.6 ms, exp 0.33, rest 0.45 | yes | Rejected (`prep.md`) |
 
@@ -147,3 +147,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-27 19:17 Idea 37 rejected: the brain kernel's inner loop is already at its instruction floor for 4-wide SIMD; removing the index load does not help.
 - 2026-10-27 19:20 Idea 46 parked: the native sense kernel is worth about 5% per tick, only as a rider on the native brain addon. The exact C++ port beating V8 by 10% says V8's wasm codegen leaves a little on the table for branchy code, unlike the brain kernel (aot.md).
 - 2026-10-27 19:23 Erik: keep the gains general (engine, physics, sensing, brains, behaviour), never tuned to today's founders (no Juggernaut-shaped paths). Idea 42 dropped; idea 36 must cover every ray count the plan allows or be rejected; the brief carries the rule.
+- 2026-10-27 19:31 Idea 38 rejected. The brain kernel's instruction stream is settled (ideas 9, 17, 19, 27, 37, 38): only wider lanes (native, parked) move it. Idea 45 resumed in the freed slot.
