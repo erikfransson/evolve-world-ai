@@ -1,11 +1,7 @@
 // Live World benchmark: the server's LiveWorld (liveConfig, The Inland Sea) seeded with the live founders, stepped headless on this thread.
 // Prints CPU ms per steady tick, the phase profile, peak RSS and a fingerprint (equal runs give equal fingerprints).
 // Usage (in server/): node src/liveBench.ts [--seconds 60] [--copies 800] [--seed 1] [--founders ../src/typescript/public/live-founders.json]
-<<<<<<< HEAD
-//   [--only juggernaut,grazer] [--frames] [--profile] [--every 10] [--threads 0] [--think 1] [--save 15]
-=======
-//   [--profileEvery 300] [--only juggernaut,grazer] [--frames] [--profile] [--every 10] [--threads 0] [--think 1]
->>>>>>> pl-aging
+//   [--only juggernaut,grazer] [--frames] [--profile] [--profileEvery 300] [--every 10] [--threads 0] [--think 1] [--save 15]
 // --copies: copies of each founder seeded (4 founders x 800 = 3200 creatures, 6 M brain weights, under the birth weight cap).
 // --only: seed these founder ids only (so --only juggernaut --copies 4900 fills the 5000 cap with small brains).
 // --frames: also encode the creature frame and item delta at the server's 5 Hz (FRAME_MS), as the public loop does for viewers.
@@ -43,11 +39,8 @@ const { values } = parseArgs({
     every: { type: "string", default: "10" }, // seconds between population samples
     threads: { type: "string", default: "0" },
     think: { type: "string" },
-<<<<<<< HEAD
     save: { type: "string" },
-=======
     profileEvery: { type: "string" }, // with --profile: print the phase profile per this many simulated seconds
->>>>>>> pl-aging
   },
 });
 
@@ -96,7 +89,6 @@ let frameBytes = 0;
 let frameMs = 0;
 let steadyCreatureTicks = 0;
 let creatureTicks = 0;
-<<<<<<< HEAD
 const saveEvery = values.save ? Math.max(1, Math.round(Number(values.save) / dt)) : 0;
 const saveDir = saveEvery ? mkdtempSync(join(tmpdir(), "liveBench-save-")) : "";
 const saves = saveEvery ? new Saves(live, new StateStore(saveDir)) : null;
@@ -118,13 +110,11 @@ async function saveStep(waitMs = -1): Promise<void> {
   saveRuns.push({ tick: run.tick, blockMs: Math.round(run.blockMs), cpuMs: Math.round(run.cpuMs), maxBlockMs: Math.round(run.maxBlockMs), wallMs: Math.round(performance.now() - run.t0), line: run.done });
   saving = null;
 }
-=======
 const winTicks = values.profileEvery ? Math.max(1, Math.round(Number(values.profileEvery) / dt)) : 0;
 let winSnap = new Map<string, number>();
 let winCpu = process.cpuUsage();
 let winPop = 0;
 const windows: object[] = [];
->>>>>>> pl-aging
 const t0 = performance.now();
 let tWarm = t0;
 let cpuWarm = process.cpuUsage();
@@ -196,11 +186,8 @@ console.log(JSON.stringify({
   food: eco.food,
   poison: eco.poison,
   population,
-<<<<<<< HEAD
   ...(saves ? { saves: saveRuns } : {}),
-=======
   ...(winTicks ? { windows } : {}),
->>>>>>> pl-aging
   fingerprint: eco.fingerprint(),
   ...(prof ? { phasesTotalMs: +perTick.reduce((a, [, v]) => a + v, 0).toFixed(3), phases: Object.fromEntries(perTick) } : {}),
 }));
