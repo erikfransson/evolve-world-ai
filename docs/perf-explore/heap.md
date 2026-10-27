@@ -24,3 +24,16 @@ Population samples ring 1080 (258 at 1800 s, grows 129 per 900 s until full), li
 
 - 7200 s run: run 1 died at its 3600 s save (10 s pack timeout under idle priority), run 2 died early; the 4 h save peak on the real cadence is not measured.
 - Measured effect of MAX_SPARE on RSS and speed, fingerprints 708687555 / 10334191 / 81047108: chain script was started, results not yet in this file.
+
+## Verification (orchestrator, 2026-10-28)
+
+- Exactness: fingerprints 708687555 (mixed) and 10334191 (juggernaut cap) unchanged; `thinkEvery ecoPool liveSaves residentBodies wasmStep ecosystem` 132 tests pass; `reset` leaves no field behind, so a reused spare equals a fresh creature.
+- Memory, `--seconds 1800 --copies 800` (population 3306 to 1351, the pool fills after the crash), fingerprint 847136415 on both:
+
+| Build     | peak RSS | heapUsed | arrayBuffers | external | RSS at end |
+|-----------|----------|----------|--------------|----------|------------|
+| perf-live | 293 MB   | 27 MB    | 62 MB        | 131 MB   | 293 MB     |
+| MAX_SPARE | 249 MB   | 20 MB    | 36 MB        | 104 MB   | 248 MB     |
+
+- Speed, two alternating 60 s pairs (mixed, load about 15): base 13.85, 13.65 against 13.69, 14.23 ms per tick; within the pair spread. Births after a crash allocate fresh objects once the pool is empty, which is the only mechanism for a cost.
+- `ecoShare.ts` keeps the same unbounded pool at its lines 488 and 616 (helper threads only, 0 on the server); not changed.
