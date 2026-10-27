@@ -11,7 +11,7 @@ Fingerprint equal means bit-identical results.
 
 - **Exact wins are merged** (1.17x at 60 s, 1.18x over 1800 s, bit-identical; peak memory over 7200 s with saves 533 MB against 751 MB on development); the branch is ready to merge into `development` (73 commits, 53 files, +2175/-149; one correctness review and the three Live push-gate reviews passed; `development` has not moved since the branch point). The exact pool is dry after 26 ideas: nothing runs outside the profiled phases (0.01 ms), and every phase has been cut or shown flat.
 - **`eco.thinkEvery` 2 (1.5x more) is in the code but off in `liveConfig`.** It changes the ecology (births and deaths 1.5-1.9x, creatures turn more and eat less, from the brain's delayed self-feedback), see `think2.md`, `think3.md`, `sense2.md`. Say yes to turn it on, or no to leave it as a page option.
-- **Native AVX2 brain kernel** (`native.md`, branch `pl-native`): 1.15x more, bit-identical, server only, but a C++ twin of brain.wat, a g++ build at deploy and new attack surface under the Live push gate. Say yes to productionize it.
+- **Native AVX2 kernels** (`native.md`, branch `pl-native`; `nsense.md`, branch `pl-nsense`): the brain kernel gives 1.15x more and the sense kernel about 1.05x more, both bit-identical, server only, but C++ twins of the wat kernels, a g++ build at deploy and new attack surface under the Live push gate. Say yes to productionize them (together about 1.2x on top of the exact branch).
 - **Newer Node** (untested): the server and the bench run Node 24.18 (V8 13.6), the only version installed; a newer V8 could change the wasm code, and the fingerprint would show whether Math.sin/cos/exp still agree. Say yes to install one under nvm for a bench pair.
 - **Relaxed-SIMD FMA** (`fma.md`, branch `pl-fma`): 1.025x, not bit-exact across machines. Not recommended.
 
@@ -84,7 +84,7 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 | 43 | Study: phase profile of an aged cap world (7200 s, about 2200 Juggernauts) to see what dominates late and which ideas apply there | study | paused 19:10 (laptop too slow), to re-run under the CPU cap | - | Batch 7 (`late.md`) |
 | 44 | prepareRows' arithmetic (speeds, turn, ground value) into the fill kernel, JS keeps only the terrain lookup | small | resumed 19:15 under the pin | yes | Batch 7 (`prepfill.md`) |
 | 45 | Study: does liveBench represent the production tick (frames, stats, pacing, viewers)? | study | paused 19:10 (laptop too slow), to re-run under the CPU cap | - | Batch 7 (`prod.md`) |
-| 46 | Moonshot: native AVX2 sense kernel prototype (8 rays in one vector), bit-identical, to size the native option next to `pl-native` | moonshot | running | yes | Batch 7 (`nsense.md`) |
+| 46 | Moonshot: native AVX2 sense kernel prototype, bit-identical | moonshot | kernel 1.17-1.19x (the exact 4-wide C++ port alone is 1.08-1.12x over V8, widening adds 7%; branch-free walks and prefetch lose: scalar control flow binds), about 1.05x per tick projected | yes (inputs byte-equal) | Parked on `pl-nsense` (`nsense.md`, scripts/native-sense/): only worth it inside the native addon decision |
 | 7 | prepareRows (slots phase, 7%) into the fill kernel | small | no exact variant over 1%: ground lookup is at most 0.6 ms, exp 0.33, rest 0.45 | yes | Rejected (`prep.md`) |
 
 ## Log
@@ -145,3 +145,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-27 19:11 Correction: the user cgroup has no cpu controller, so the slice quota did nothing. The cap is CPU pinning instead: every campaign job runs `taskset -c 2,3,6,7` (physical cores 2 and 3 with both threads) at nice 19 idle class, leaving cores 0 and 1 to Erik; running jobs were re-pinned.
 - 2026-10-27 19:13 Ideas 36, 38, 40, 44 resumed in their worktrees under the pin (8 agents: 35, 36, 37, 38, 40, 41, 44, 46). Studies 39, 42, 43, 45 wait for a free slot.
 - 2026-10-27 19:17 Idea 37 rejected: the brain kernel's inner loop is already at its instruction floor for 4-wide SIMD; removing the index load does not help.
+- 2026-10-27 19:20 Idea 46 parked: the native sense kernel is worth about 5% per tick, only as a rider on the native brain addon. The exact C++ port beating V8 by 10% says V8's wasm codegen leaves a little on the table for branchy code, unlike the brain kernel (aot.md).
