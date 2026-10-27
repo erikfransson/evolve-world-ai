@@ -38,6 +38,7 @@ Fingerprint equal means bit-identical results.
 | 2026-10-27 18:40 | after batch 6 (idea 33 merged; mixed base from 2 runs, one row lost) | 15.19 / 18.40 (cap) | 12.72 / 15.68 (cap) | 1.19x mixed, 1.17x cap (exact) | 220 / 235 MB mixed (one-off), 255 / 258 cap |
 | 2026-10-27 19:55 | after batch 7 so far (ideas 34 and 44 merged; absolute ms inflated, both sides share two pinned cores with 7 agents) | 17.64 / 21.77 (cap) | 14.24 / 17.21 (cap) | 1.24x mixed, 1.27x cap (exact) | 220 / 217 MB mixed, 257 / 257 cap |
 | 2026-10-27 23:40 | after batch 8 so far (idea 36 merged; two pinned cores shared with 7 agents) | 17.99 / 22.06 (cap) | 13.99 / 17.16 (cap) | 1.286x mixed, 1.286x cap (exact) | 219 / 221 MB mixed, 255 / 255 cap |
+| 2026-10-28 00:37 | after batch 9 (idea 54 merged; two pinned cores shared with 4 agents) | 17.84 / 21.59 (cap) | 13.82 / 16.79 (cap) | 1.29x mixed, 1.29x cap (exact) | 218 / 217 MB mixed, 258 / 257 cap |
 
 Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54, brain forward 5.23 / 5.17, slots (prepareRows) 1.04 / 1.52, memory and steer 1.26 / 1.59, eat 1.05 / 1.35, crowd grid 0.51 / 0.67, collisions 0.18 / 0.27, rest under 0.2. Server frame encoding adds 0.57 ms per tick at 5 Hz. Speed achieved unpaced on this loaded machine: 2.0x and 1.7x real time (the set speed is 3x).
 
@@ -245,3 +246,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-28 00:20 Idea 39 done: the runtime flags are already right; idea 68 measures the heap cap over 3600 s with saves, which the 60 s sweep cannot show.
 - 2026-10-28 00:26 Idea 54 merged (the one memory fix of the campaign so far). Ideas 64 and 72 rejected: the senser's cost is per unique line touched and per dependent chain, and both ideas added some. Factor run started.
 - 2026-10-28 00:29 Idea 63 rejected. Batch 9 so far: 54 merged (memory), 62-67, 70-72 rejected; 68, 69 (memory) and 59 still running, 73 soak running.
+- 2026-10-28 00:37 Factor after batch 9: 1.29x both cases (17.84 vs 13.82 mixed, 21.59 vs 16.79 cap), fingerprints equal, RSS flat at 60 s; the spare-pool cap costs nothing measurable.
