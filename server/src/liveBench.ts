@@ -9,6 +9,8 @@
 // --threads: helper threads that sense and think (createNodeThinkPool), as LIVE_THREADS on the server; speedAchieved then shows the wall gain.
 // --save: save every this many simulated seconds through the server's Saves into a temporary state directory, and report per save the
 //   main-thread time it took between ticks (blockMs wall, cpuMs this thread's CPU, longest single block maxBlockMs) and its log line.
+// --fixed: births stop at the seeded count (maxPopulation = seeded, no reserve), so the population cannot grow; with --profile the phases then give the cost per tick against the population (docs/perf-explore/intercept.md).
+// --food: world.foodDensity instead of liveConfig's (0.1 gives the 20-25k items of an aged world, the default about 85k).
 // --profile: CPU ms per engine phase per steady tick (the first quarter of the ticks is warm-up and left out of every steady number).
 // --profileEvery: with --profile, also print the phases per window of this many simulated seconds, ms per tick per 1000 creatures (the warm-up is then not left out of the phase totals).
 
@@ -36,6 +38,8 @@ const { values } = parseArgs({
     only: { type: "string" },
     frames: { type: "boolean" },
     profile: { type: "boolean" },
+    fixed: { type: "boolean" },
+    food: { type: "string" },
     every: { type: "string", default: "10" }, // seconds between population samples
     threads: { type: "string", default: "0" },
     think: { type: "string" },
@@ -60,6 +64,7 @@ const seed = Number(values.seed);
 const config = structuredClone(liveConfig);
 config.seed = seed;
 if (values.think) config.eco.thinkEvery = Number(values.think);
+if (values.food) config.world.foodDensity = Number(values.food);
 let founders = loadFounders(values.founders!);
 if (values.only) {
   const ids = new Set(values.only.split(","));
@@ -79,6 +84,7 @@ const threads = Number(values.threads);
 const live = new LiveWorld(config, null, threads > 0 ? createNodeThinkPool(threads) : null);
 const seeded = live.seedFounders(founders, mulberry32(seed), copies);
 const buildMs = performance.now() - tBuild;
+if (values.fixed) { config.eco.maxPopulation = seeded; config.eco.birthReserve = 0; }
 const eco = live.eco;
 const prof = values.profile ? new PhaseTimer() : null;
 eco.profile = prof;
