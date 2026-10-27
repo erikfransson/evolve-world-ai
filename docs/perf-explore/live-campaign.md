@@ -9,7 +9,7 @@ Fingerprint equal means bit-identical results.
 
 ## Decisions for Erik
 
-- **Exact wins are merged** (1.17x after batch 3, bit-identical, memory flat); the branch is ready for review and merge into `development` any time.
+- **Exact wins are merged** (1.17x at 60 s, 1.18x over 1800 s, bit-identical; peak memory over 7200 s with saves 533 MB against 751 MB on development); the branch is ready to merge into `development` (73 commits, 53 files, +2175/-149; one correctness review and the three Live push-gate reviews passed; `development` has not moved since the branch point). The exact pool is dry after 26 ideas: nothing runs outside the profiled phases (0.01 ms), and every phase has been cut or shown flat.
 - **`eco.thinkEvery` 2 (1.5x more) is in the code but off in `liveConfig`.** It changes the ecology (births and deaths 1.5-1.9x, creatures turn more and eat less, from the brain's delayed self-feedback), see `think2.md`, `think3.md`, `sense2.md`. Say yes to turn it on, or no to leave it as a page option.
 - **Native AVX2 brain kernel** (`native.md`, branch `pl-native`): 1.15x more, bit-identical, server only, but a C++ twin of brain.wat, a g++ build at deploy and new attack surface under the Live push gate. Say yes to productionize it.
 - **Relaxed-SIMD FMA** (`fma.md`, branch `pl-fma`): 1.025x, not bit-exact across machines. Not recommended.
@@ -99,3 +99,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-27 16:55 Idea 25 rejected: the step kernel's host-call cost was overstated; batching the trig makes the phase slower. The step kernel is done.
 - 2026-10-27 16:56 Idea 26 (weight-block sharing moonshot) rejected on paper: the per-gene mutation rate leaves too few shared blocks. No exact way to shrink the 24 MB weight stream remains; the brain kernel's remaining gain is the native kernel (parked).
 - 2026-10-27 17:15 7200 s cap run, base twin done: peak RSS 751 MB on development vs 533 MB on perf-live (both with four saves of 15-28 MB json), same fingerprint; the save stalls 1.9-3.7 s on development against 0.02-0.16 s. The speed gain at the cap shrinks to 1.06x once the population has fallen to about 2200 Juggernauts (small brains, the senser dominates), so the factor depends on the mix: 1.17x at 60 s on both bench cases, 1.18x over 1800 s mixed.
+- 2026-10-27 17:20 Profiled 60 s run on perf-live: cpuMsPerTick 10.49 against phases total 10.48, so nothing runs outside the phases (no GC or bookkeeping to cut). Shares: senser 36%, brain forward 33%, memory and steer 9%, slots 8%, eat 7%, crowd grid 3%. The exact campaign has converged; what remains needs Erik's decision (merge, `thinkEvery` 2, native kernel). The 6-hourly report cron stays on.
