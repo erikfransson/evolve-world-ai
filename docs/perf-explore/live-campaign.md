@@ -71,6 +71,7 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 | 31 | Skip the crowd walk when the crowd grid's prefix counts show the creature alone in its window | small | exact (hash-equal inputs), fires for 51% of creatures, but the kernel is 2-3% slower: the walk's cost is the per-row prefix loads, which the count pass repeats | yes | Rejected (`crowdcount.md`) |
 | 32 | Moonshot: struct-of-arrays for the per-creature state the JS phases read | moonshot | study: the JS phases already read one 192-byte cache-line-aligned resident row per creature; a column layout of prepareRows measured 4-8% slower (15 streams against one); at most 0.07 ms (0.5%) removable, in the eat kernel's strided reads | - | Rejected after the study (`soa.md`), nothing built |
 | 33 | Reuse the shared-phase crowd grid at the next tick's start: a `refresh` kernel re-reads positions, energies and species in grid order and falls back to a rebuild when anyone changed cell or the member table changed | broad | exact; refresh 0.09 ms against 0.40 for a rebuild, qualifies on 80% of ticks at 3300 and 59% at the cap; tick 2.4% / 1.7% | yes | Merged (`gridreuse.md`), +65 lines and a test, full suite green (1223) |
+| 34 | Per-tick redundancy audit (work repeated on unchanged data or computed twice per creature), starting with the energy signal exp done in both prepareRows and the crowd pack | broad | running | yes | Batch 6 (`redo.md`) |
 | 7 | prepareRows (slots phase, 7%) into the fill kernel | small | no exact variant over 1%: ground lookup is at most 0.6 ms, exp 0.33, rest 0.45 | yes | Rejected (`prep.md`) |
 
 ## Log
@@ -121,3 +122,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-27 18:00 Idea 33 started from the idea 32 profile: the crowd grid is built twice per tick and the second build repeats the first unless the member table changed.
 - 2026-10-27 18:03 Idea 30 rejected: below the bar and within noise. Lesson: the 'cold excess' of the senser harness (32 MB sweep) overstates what the real tick leaves cold; three ideas built on it (29, 30, 31 in part) all lost.
 - 2026-10-27 18:25 Idea 33 merged (8de4ebb): the first keeper since batch 4. Patching the grid for births and deaths (step 2) is not worth 100 lines of wat for about 1% at the cap. Factor run for batch 6 started.
+- 2026-10-27 18:27 Idea 34 started: the audit angle that found idea 33, applied to the whole tick. Factor run for batch 6 in progress (one base mixed row lost to a duplicate start I stopped; medians from the rest).
