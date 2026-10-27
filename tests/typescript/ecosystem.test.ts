@@ -5,7 +5,7 @@ import { Crowd } from "../../src/typescript/src/sim/crowd.ts";
 import { createRng } from "../../src/typescript/src/sim/rng.ts";
 import { DEFAULT_ECO_CONFIG, seasonFactor, seasonName } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
-import { EVENT_CAP, EVENT_DEATH, EVENT_IMPACT, EVENT_STRIDE, Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
+import { EVENT_CAP, EVENT_DEATH, EVENT_IMPACT, EVENT_STRIDE, Ecosystem, MAX_SPARE } from "../../src/typescript/src/sim/ecosystem.ts";
 import { trialsSizes } from "../../src/typescript/src/sim/seedPool.ts";
 import type { PoolEntry } from "../../src/typescript/src/sim/seedPool.ts";
 import { FEAT_CREATURE, FEAT_SEEN_ENERGY, energySignal, inputLayout } from "../../src/typescript/src/sim/sensors.ts";
@@ -679,5 +679,16 @@ describe("Ecosystem lineages and aging", () => {
       expect(losses[at]! / (2 * dt)).toBeCloseTo(1.06, 2);
       expect(losses.at(-1)!).toBeGreaterThan(losses[0]! + 1e-4);
     });
+  });
+});
+
+describe("spare creature pool", () => {
+  it("stays within MAX_SPARE per species after a crash", () => {
+    const d = structuredClone(DEFAULT_ECO_CONFIG);
+    const eco = new Ecosystem({ ...d, seed: 3, eco: { ...d.eco, wasm: false, initialPopulation: MAX_SPARE + 40 } });
+    const internal = eco as unknown as { remove(i: number): void; spare: unknown[][] };
+    while (eco.members.length > 0) internal.remove(0);
+    expect(internal.spare.every((p) => p.length <= MAX_SPARE)).toBe(true);
+    expect(internal.spare[0]!.length).toBe(MAX_SPARE);
   });
 });

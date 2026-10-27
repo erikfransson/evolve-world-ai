@@ -148,6 +148,7 @@ export interface EcoJournal {
 //    walk the creatures from a random start each tick, so no creature wins contested food, prey or the last free place by its list position.
 // With a species list every creature belongs to one species, with that species' body, costs, births and
 // diet; a hunter eats a touching creature of a species it preys on. Without one there is a single species with the shared settings.
+export const MAX_SPARE = 256; // dead creatures' storage kept per species for reuse by births; a crash would otherwise keep the old peak's brains for good
 const MAX_ROCK_TRIES = 200; // random founder spots tried before taking the nearest free one
 
 export class Ecosystem {
@@ -705,7 +706,7 @@ export class Ecosystem {
     this.onDeath?.(m);
     this.lineages.died(m.founderId);
     this.journal?.died.push(m.id);
-    this.spare[m.species]!.push(m);
+    if (this.spare[m.species]!.length < MAX_SPARE) this.spare[m.species]!.push(m);
     this.deaths++;
     const count = this.counts[m.species]!;
     count.population--;
