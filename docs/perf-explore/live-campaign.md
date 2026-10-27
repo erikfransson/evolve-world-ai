@@ -14,6 +14,7 @@ Fingerprint equal means bit-identical results.
 - **`eco.thinkEvery` 2 (1.5x more) is in the code but off in `liveConfig`.** It changes the ecology (births and deaths 1.5-1.9x, creatures turn more and eat less, from the brain's delayed self-feedback), see `think2.md`, `think3.md`, `sense2.md`. Say yes to turn it on, or no to leave it as a page option.
 - **Native AVX2 kernels** (`native.md`, branch `pl-native`; `nsense.md`, branch `pl-nsense`): the brain kernel gives 1.15x more and the sense kernel about 1.05x more, both bit-identical, server only, but C++ twins of the wat kernels, a g++ build at deploy and new attack surface under the Live push gate. Say yes to productionize them (together about 1.2x on top of the exact branch).
 - **No-viewer frame skip** (`noviewers.md`, branch `pl-noviewers`): 0.6-1.3% while nobody watches, server code under the push gate. Say yes to include it in the review round.
+- **Huge pages** (two scouts): `echo always > /sys/kernel/mm/transparent_hugepage/enabled` is a root, system-wide toggle; the kernel memory then gets 2 MB pages. Unknown gain (0.5-4%), exact. Say yes to set it for a bench pair; it only helps the server if it stays set.
 - **Newer Node** (untested): the server and the bench run Node 24.18 (V8 13.6), the only version installed; a newer V8 could change the wasm code, and the fingerprint would show whether Math.sin/cos/exp still agree. Say yes to install one under nvm for a bench pair.
 - **Relaxed-SIMD FMA** (`fma.md`, branch `pl-fma`): 1.025x, not bit-exact across machines. Not recommended.
 
@@ -65,6 +66,10 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 | moonshot | Deadband thinking (`eco.thinkGate`): a creature skips its brain when its fresh input vector is within eps of the input at its last think and no ray feature changed, thinks at least every H ticks; held-output error bounded by L times eps; measure the skip share against output error first with a bench-only script, then the think2.md ecology protocol | non-exact lever | 1.1x at 30% skipped, 1.2x at 50% | 3 that it beats thinkEvery 2's ratio, 2 for 1.2x |
 | moonshot | Two same-shape brains in lockstep: pair run-order neighbours of identical layer sizes and run one 6-accumulator loop for both (small layers are add-latency bound at 3 accumulators; native.md's 4-brain interleave gained 1.08-1.18x); per-output add order unchanged; opportunistic for any shape | exact architectural | 4-5% (plus 2% if the senser emits the nz list) | 3 exact, 2 for the size |
 | moonshot | Price compute in the creatures' energy (`neuronCost` on weights, `rayCost` on length squared) so selection shrinks brains and fans over days | non-exact gameplay lever, Erik's | 1.15-1.2x after a population turnover | 1-2 |
+| open-ended | The sense kernel emits the brain's non-zero input list (`$compact` is 17-21% of the brain kernel); same set, same ascending order, same f32 != 0 predicate | small, exact | 2.5-3% | 3 (two scouts) |
+| open-ended | Huge pages for the wasm memory: THP is in madvise mode and V8 never madvises, so the 57 MB kernel memory runs on 4 KB pages (6000 weight pages per tick against a 2048-entry STLB, the streamer restarts at every page edge); system-wide `THP=always` is a root toggle for Erik, an addon madvise would be native | ops, exact | 0.5-4%, unknown until measured | 3 that it helps, 2 for the size |
+| open-ended | Array-of-structs gather records for the item rows ({x, y, kind, id}) and the crowd entries ({sx, sy, sig, own}) so a row visit touches one line instead of two or three | small, exact | 0.1-0.2 ms (0.8-1.5%) | 2 |
+| open-ended | A frame gather kernel straight from the rows into wire bytes (today f64 rows to f32 arrays to u16 records through 3-4 objects per creature) | server, Erik's gate | 1.5-2% of the production tick with viewers, 0 without | 2 |
 
 ## Ideas
 
@@ -130,6 +135,15 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 | 59 | Cheaper births: reuse the parent's genome buffers and bank slot, avoid per-birth allocation | small | running; bound 1-2% late | yes | Batch 8 (`births.md`) |
 | 60 | sense.wat: the item and crowd gathers four entries per step | broad | exact (hash-equal), but every variant 2-4% slower in the kernel: rows hold 1.7 items and 1.5 crowd entries, so a 4-lane step replaces two one-cycle scalar iterations with 60 vector ops in a register-bound function | - (not built) | Rejected (`gather4.md`) |
 | 61 | Study: why the cost per creature rises 27% in aged worlds at the same population (clustering at food, age, brain mix, or the loaded machine), by comparing an aged saved state with a young population of the same size | study | running | - | Batch 8 (`aged.md`) |
+| 62 | sense.wat split into per-phase functions to cut register spills (spill count first) | small | running | yes | Batch 9 (`split.md`) |
+| 63 | Dilated crowd occupancy gate (20 KB bit-planes built with the grid), one load skips both crowd walks for creatures alone in their window | small | running | yes | Batch 9 (`occgate.md`) |
+| 64 | The sense kernel emits the first-layer non-zero index list, brain.wat compacts only the tail | broad | running | yes | Batch 9 (`nzlist.md`) |
+| 65 | Run-ordered, 64-byte-aligned brain descriptor gather | small | running | yes | Batch 9 (`descs.md`) |
+| 66 | Step micro-cut bundle: two-segment f64x2 memory-unit loop, power-of-two clear raster, step tail writes the cell key | small | running | yes | Batch 9 (`stepcuts.md`) |
+| 67 | Rock lower bound at item-cell resolution, one byte per cell | small | running | yes | Batch 9 (`rockfine.md`) |
+| 68 | Process memory settings measured with saves: main heap cap 128 or 256, malloc env, restore transient | memory, no code | running | yes | Batch 9 (`memset.md`) |
+| 69 | Save-worker transient copies trimmed (verify worker's Buffer and string lifetimes, pack worker's double conversion) | memory, server code | running | yes | Batch 9 (`savepeak.md`) |
+| 70 | Deadband thinking: bench-only measurement of skip share against output error | study (lever) | running | - | Batch 9 (`deadband.md`) |
 | 7 | prepareRows (slots phase, 7%) into the fill kernel | small | no exact variant over 1%: ground lookup is at most 0.6 ms, exp 0.33, rest 0.45 | yes | Rejected (`prep.md`) |
 
 ## Log
@@ -218,3 +232,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-27 23:43 Idea 47 done: no arena leak. Brain scout in: the kernel is at its floor; three small ideas (descriptor gather, nz list from the senser, rare-row pool).
 - 2026-10-27 23:43 Idea 56 done: dt 1/20 is the better 1.5x lever for Erik than thinkEvery 2.
 - 2026-10-28 23:43 Moonshot scout in. Batch 9 ranked from the candidates: build the `$sense` split (62), the crowd occupancy gate (63), lockstep brain pairs (64), the descriptor gather (65), the step micro-cut bundle (66), the finer rock bound (67); memory: process settings measured with saves (68) and the save-worker peak trims (69); study: the deadband measurement script (70). Waiting: 39, 54 verification, 59, 61 and the two open-ended scouts.
+- 2026-10-28 23:47 All ten scouts reported (candidates table). Batch 9 launched: ideas 62-70. Held for the next refill: lockstep brain pairs (microbench first), array-of-structs gather records, the frame gather kernel (server). Running from before: 39, 54 verification, 59, 61.
