@@ -77,7 +77,7 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 | 36 | sense.wat: a specialised path for the 8-ray fan (75% of creatures, two ray vectors) without the generic per-vector loop | small | resumed 19:15 under the pin | yes | Batch 7 (`rays8.md`) |
 | 37 | brain.wat: dense layers without the iota index indirection per input | small | exact, but the kernel is 2-5% slower (the sequential index load is an L1 hit that overlaps the weight loads; a second loop-carried pointer costs as much) | yes | Rejected (`dense.md`) |
 | 38 | brain.wat: two inputs per iteration in the column loops (same add order per accumulator) | small | resumed 19:15 under the pin | yes | Batch 7 (`unroll.md`) |
-| 39 | Node and V8 flag sweep on liveBench (liftoff, semi-space, wasm tiering), no code change | study | paused 19:10 (laptop too slow), to re-run under the CPU cap | yes | Batch 7 (`flags2.md`) |
+| 39 | Node and V8 flag sweep on liveBench (liftoff, semi-space, wasm tiering), no code change | study | resumed 19:22 under the pin | yes | Batch 7 (`flags2.md`) |
 | 40 | gridreuse step 2: patch the grid for births and deaths so the refresh covers the remaining 20-40% of ticks | small | resumed 19:15 under the pin | yes | Batch 7 (`gridpatch.md`) |
 | 41 | sense.wat: early-out when candidates exist but none can hit any ray (fan and length pre-test), so the per-ray passes are skipped for the 44% all-zero creatures instead of the 15-32% with no candidates | broad | running | yes | Batch 7 (`missout.md`) |
 | 42 | Study: the live founders' layer widths against the kernel's 4-wide padding and 6-vector blocks; a specialised block for the common widths | study | paused 19:10 (laptop too slow), to re-run under the CPU cap | yes | Batch 7 (`widths.md`) |
