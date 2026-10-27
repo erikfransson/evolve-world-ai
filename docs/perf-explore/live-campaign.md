@@ -26,6 +26,8 @@ Fingerprint equal means bit-identical results.
 | 2026-10-27 11:37 | Juggernaut x 4900 (3 pairs, medians)   | 19.90               | 18.19             | 1.09x (exact) | 252 / 256 MB |
 | 2026-10-27 12:50 | 4 founders x 800 (3 pairs, medians)    | 15.28               | 13.03             | 1.17x (exact); 1.5x more with `eco.thinkEvery` 2, Erik's call | 217 / 218 MB |
 | 2026-10-27 12:50 | Juggernaut x 4900 (3 pairs, medians)   | 18.58               | 15.85             | 1.17x (exact) | 256 / 256 MB |
+| 2026-10-27 14:50 | 4 founders x 800 (3 pairs, medians)    | 15.24               | 13.07             | 1.17x (exact; more as the world ages, `brainorder.md`); saves stall 0.1 s instead of 3-6 s | 219 / 219 MB |
+| 2026-10-27 14:50 | Juggernaut x 4900 (3 pairs, medians)   | 18.48               | 15.97             | 1.16x (exact) | 254 / 258 MB |
 
 Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54, brain forward 5.23 / 5.17, slots (prepareRows) 1.04 / 1.52, memory and steer 1.26 / 1.59, eat 1.05 / 1.35, crowd grid 0.51 / 0.67, collisions 0.18 / 0.27, rest under 0.2. Server frame encoding adds 0.57 ms per tick at 5 Hz. Speed achieved unpaced on this loaded machine: 2.0x and 1.7x real time (the set speed is 3x).
 
@@ -84,3 +86,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-27 13:56 Idea 21 rejected (under 1%). The sense kernel's remaining cost is memory and loop overhead; no exact arithmetic cut is left there.
 - 2026-10-27 14:25 Idea 19 merged (58 lines in brainKernel.ts). The 60 s bench understates it; the gain grows with the world's age.
 - 2026-10-27 14:50 Idea 22 merged: the 4-hourly save no longer freezes the world for seconds, and the save-time memory peak drops about 180 MB.
+- 2026-10-27 14:55 Factor after batch 4 (brainorder, savestall): 1.17x and 1.16x at 60 s, unchanged as expected; the brain order gain needs an aged world. Push-gate reviews of the server changes started.
