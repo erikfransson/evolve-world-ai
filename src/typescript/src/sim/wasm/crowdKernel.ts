@@ -12,6 +12,7 @@ interface CrowdExports extends WebAssembly.Exports {
   pack(c: number): void;
   touch(c: number): void;
   sweep(c: number): number;
+  refresh(c: number): number;
 }
 
 const REGIONS = ["touched", "rowAt", "cellOf", "perm", "permB", "count", "start", "occupied", "speciesIn", "xs", "ys", "energies", "species", "owners"] as const;
@@ -123,6 +124,19 @@ export class WasmCrowd {
   // The next rebuild is in JS: the views no longer stand for the crowd.
   drop(): void {
     this.n = 0;
+  }
+
+  // The last rebuild's grid for the same n creatures at the same rows (no one came or went since): re-reads positions, energies and species in grid order,
+  // equal to a rebuild bit for bit. False, with the grid to be rebuilt, when there is no grid of n or a creature changed cell.
+  refresh(rowAt: Int32Array, n: number, species?: Int32Array): boolean {
+    if (this.n !== n || this.crowd.kernel !== this) return false;
+    const { store, region: r } = this;
+    const { i32 } = store;
+    i32.set(rowAt.subarray(0, n), r.rowAt.ptr >> 2);
+    if (species) i32.set(species.subarray(0, n), r.speciesIn.ptr >> 2);
+    const C = this.pC;
+    i32[(C + L.C_SPECIES_IN) >> 2] = species ? r.speciesIn.ptr : 0;
+    return this.exports.refresh(C) !== 0;
   }
 
   // Grids the n creatures whose rows are at f64 indices rowAt[0 .. n-1], with species[i] for creature i (all 0 without).

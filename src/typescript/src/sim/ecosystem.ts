@@ -180,6 +180,7 @@ export class Ecosystem {
   private readonly idOf = (self: number): number => this.members[self]!.id;
   private readonly kernels: SenseKernels | null; // with eco.wasm when WebAssembly SIMD is available
   private readonly wasmCrowd: WasmCrowd | null; // the crowd grid built in WebAssembly from the rows (crowdKernel.ts), when the rows are resident
+  private gridVersion = -1; // table.version when wasmCrowd last built the grid
   private readonly wasmMembers: WasmMembers | null; // the settle and birth scans over the rows in WebAssembly (membersKernel.ts)
   private readonly resident: ResidentStore | null; // creature bodies as rows of the kernel memory, which the fill kernel reads
   private readonly table: MemberTable; // members and the columns kept with them
@@ -406,14 +407,20 @@ export class Ecosystem {
 
   private gridCrowd(n: number, species?: Int32Array): void {
     const wasm = this.wasmCrowd;
-    if (wasm && n > SMALL_SORT) wasm.rebuild(this.table.rowAt, n, species);
-    else this.crowd.rebuild(this.table.states, n, species);
+    if (wasm && n > SMALL_SORT) {
+      wasm.rebuild(this.table.rowAt, n, species);
+      this.gridVersion = this.table.version;
+    } else this.crowd.rebuild(this.table.states, n, species);
   }
 
   // Grids the creatures as they stand at the tick start, for sensePhase.
   prepareTick(): void {
     if (this.table.length < 2 && this.crowd.count < 2) return; // a lone creature, or none, only sees itself in a grid of at most itself
-    this.gridCrowd(this.table.length, this.multi ? this.table.kinds : undefined);
+    const n = this.table.length;
+    const species = this.multi ? this.table.kinds : undefined;
+    // No one came or went since the last WebAssembly grid (sharedPhase's): its order still holds unless someone changed cell, and the rest is re-read.
+    if (this.table.version === this.gridVersion && n > SMALL_SORT && this.wasmCrowd?.refresh(this.table.rowAt, n, species)) return;
+    this.gridCrowd(n, species);
   }
 
   // Phase 1a for every member, after prepareTick: sense and think into each creature's outputs.
