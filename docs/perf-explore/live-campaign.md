@@ -97,9 +97,10 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 | 55 | Moonshot: brain forward on the laptop's integrated GPU, checked for bit-equality | moonshot | not run: the harness refused the native GPU package install; Erik can allow it | - | Blocked (`igpu`) |
 | 56 | Study for Erik: dt 1/20 or 1/25 (1.5x fewer ticks) measured on the ecology like `thinkEvery` was | study (parameter) | running | no by nature | Batch 8 (`dt20.md`) |
 | 57 | brain.wat: extend the touch stream to the 5- and 6-vector column loops | small | nine variants, all 1-10% slower in the kernel: those loops are throughput-bound (6 loads, 6 mul, 6 add per iteration), the two touch loads plus compare cost about 11% in-core, more than the 8% stall they hide; only a real prefetch instruction (native) could cover the wide blocks | - (not built) | Rejected (`touch6.md`) |
-| 58 | Study: the fixed per-tick intercept (2.2-2.7 ms regardless of population): profile a 100-creature world with the live item count, find the constant costs per phase and cut what is exact | broad | running; bound 5-8% of a thin-world tick | yes | Batch 8 (`intercept.md`) |
+| 58 | Study: the fixed per-tick intercept | study | the truly fixed cost is about 0.6 ms per tick (11-12% at 1300 creatures): eat 0.18 (the cellStart fill over 156k cells plus the touch call), senser 0.16 (15 dirty item cells patched per tick), regrow 0.07, the rest JS wrappers cold after the weight stream; late.md's 2.2-2.7 ms was per-creature cost rising in aged runs, not fixed; two exact cuts tried (16-cell fill, patchCell in wat) were not faster | - | Done (`intercept.md`); bench gains `--fixed`, `--food` and kernelTimers.ts; follow-up idea 61 |
 | 59 | Cheaper births: reuse the parent's genome buffers and bank slot, avoid per-birth allocation | small | running; bound 1-2% late | yes | Batch 8 (`births.md`) |
 | 60 | sense.wat: the item and crowd gathers four entries per step | broad | exact (hash-equal), but every variant 2-4% slower in the kernel: rows hold 1.7 items and 1.5 crowd entries, so a 4-lane step replaces two one-cycle scalar iterations with 60 vector ops in a register-bound function | - (not built) | Rejected (`gather4.md`) |
+| 61 | Study: why the cost per creature rises 27% in aged worlds at the same population (clustering at food, age, brain mix, or the loaded machine), by comparing an aged saved state with a young population of the same size | study | running | - | Batch 8 (`aged.md`) |
 | 7 | prepareRows (slots phase, 7%) into the fill kernel | small | no exact variant over 1%: ground lookup is at most 0.6 ms, exp 0.33, rest 0.45 | yes | Rejected (`prep.md`) |
 
 ## Log
@@ -178,3 +179,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-27 21:03 Idea 60 started: with the per-ray passes vectorized (36), the scalar gathers are the senser's next floor.
 - 2026-10-27 21:06 Idea 49 rejected. The crowd grid is closed (ideas 33, 40, 49): one rebuild per tick stays.
 - 2026-10-27 21:13 Idea 60 rejected. The sense kernel's remaining cost is rows, not arithmetic (ideas 20, 21, 31, 41, 60 agree); only a coarser grid could cut rows, and that is not exact (cell.md).
+- 2026-10-27 21:16 Idea 58 done: the fixed cost is small and spread; nothing to cut without a new data structure. Idea 61 started on the aged per-creature rise.
