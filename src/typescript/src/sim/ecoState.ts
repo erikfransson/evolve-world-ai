@@ -83,6 +83,7 @@ export function packState(s: EcoSnapshot): EcoState {
 export function snapshotState(eco: Ecosystem): EcoSnapshot {
   const config = structuredClone(eco.config);
   config.eco.wasm = eco.wasm;
+  if (config.eco.thinkEvery === 1) delete (config.eco as Partial<typeof config.eco>).thinkEvery; // the default: left out, so saves read on servers from before the setting (restore fills it in)
   const members = eco.members;
   const n = members.length;
   const K = SCALARS.length;

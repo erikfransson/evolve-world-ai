@@ -92,6 +92,15 @@ describe("thinkEvery", () => {
     });
   }
 
+  it("the brain run order survives its stamp wrapping, with the same results", () => {
+    const eco = new Ecosystem(cfg(1));
+    const bank = (eco as unknown as { kernels: { brains: { stamp: number } } }).kernels.brains;
+    bank.stamp = 0x7fffffff - 2; // two ticks from the i32 limit of the per-slot marks
+    for (let t = 0; t < 300; t++) eco.step();
+    expect(bank.stamp).toBeLessThan(300);
+    expect(eco.fingerprint()).toBe(81047108);
+  });
+
   it("1 thinks for everyone every tick and gives the pinned WebAssembly run of ecoPool.test.ts", () => {
     const eco = new Ecosystem(cfg(1));
     let same = 0;

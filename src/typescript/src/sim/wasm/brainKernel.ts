@@ -201,12 +201,19 @@ export class WasmBrainBank {
     const i32 = this.kernel.i32;
     const at = this.runPtr >> 2;
     const mark = this.mark;
+    if (this.stamp === 0x7fffffff) { // mark is i32: start the stamps over before they wrap
+      mark.fill(0);
+      this.stamp = 0;
+    }
     const stamp = ++this.stamp;
     for (let k = 0; k < count; k++) mark[i32[at + k]!] = stamp;
-    for (let k = 0, j = at; j < at + count; k++) {
+    const end = at + count;
+    let j = at;
+    for (let k = 0, held = this.held; k < held && j < end; k++) {
       const s = this.order[k]!;
       if (mark[s] === stamp) i32[j++] = s;
     }
+    if (j !== end) throw new Error("brain run list holds a slot without a brain, or one twice");
     this.kernel.exports.forward(this.descPtr, this.runPtr, count, 0, SCRATCH_B, NZ_AT, IOTA_AT, TAB_AT);
   }
 

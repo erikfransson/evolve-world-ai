@@ -12,7 +12,7 @@ export const VERIFY_TIMEOUT_MS = 40_000;
 const WORKER = new URL("./saveParseWorker.ts", import.meta.url);
 const PACK_WORKER = new URL("./saveWriteWorker.ts", import.meta.url);
 // With the verify after it, a save still finishes inside TimeoutStopSec=60; a real pack takes 1 to 3 s.
-const PACK_TIMEOUT_MS = 15_000;
+const PACK_TIMEOUT_MS = 10_000; // with VERIFY_TIMEOUT_MS inside the unit's TimeoutStopSec of 60 s, room left for the stop's own save
 
 // A save of another world: another size, map or map data. Startup starts a fresh world past it instead of retrying.
 export class OtherWorld extends Error {}
@@ -91,7 +91,7 @@ export class TooBig extends Error {
     this.bytes = bytes;
   }
 }
-export function packSave(snap: EcoSnapshot, maxJsonBytes: number): Promise<{ gz: Uint8Array; bytes: number }> {
+export function packSave(snap: EcoSnapshot, maxJsonBytes: number, timeoutMs = PACK_TIMEOUT_MS): Promise<{ gz: Uint8Array; bytes: number }> {
   const it = snap.items;
   const cr = snap.creatures;
   const columns = [it.xs, it.ys, it.kinds, it.nextItem, it.cellHead, it.freeSlots, cr.scalars, cr.genomes, cr.memory, ...(cr.outputs ? [cr.outputs] : [])];
@@ -103,11 +103,10 @@ export function packSave(snap: EcoSnapshot, maxJsonBytes: number): Promise<{ gz:
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      void worker.terminate();
-      if (err) reject(err);
-      else resolve(out!);
+      const done = (): void => (err ? reject(err) : resolve(out!));
+      worker.terminate().then(done, done); // settled only once the packer is gone, so the verify worker never runs beside it
     };
-    const timer = setTimeout(() => finish(new Error("packing the save took too long")), PACK_TIMEOUT_MS);
+    const timer = setTimeout(() => finish(new Error("packing the save took too long")), timeoutMs);
     worker.on("message", (m: { ok: true; gz: Uint8Array; bytes: number } | { ok: false; tooBig?: number; reason?: string }) =>
       m.ok ? finish(null, { gz: m.gz, bytes: m.bytes }) : finish(m.tooBig !== undefined ? new TooBig(m.tooBig) : new Error(m.reason)));
     worker.on("error", (e: Error) => finish(new Error(`save packer failed: ${e.message}`)));

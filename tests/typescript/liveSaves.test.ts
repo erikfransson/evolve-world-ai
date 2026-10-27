@@ -7,6 +7,7 @@ import { gunzipSync, gzipSync } from "node:zlib";
 import { LIMITS, LIVE } from "../../server/src/config.ts";
 import { LiveWorld } from "../../server/src/liveWorld.ts";
 import { Saves, openWorld } from "../../server/src/saves.ts";
+import { packSave } from "../../server/src/saveParse.ts";
 import { loadFounders } from "../../server/src/founders.ts";
 import { loadOverrides } from "../../server/src/admin.ts";
 import { StateStore, readRegularFile, saveName } from "../../server/src/state.ts";
@@ -126,6 +127,7 @@ describe("saves", () => {
       const name = readdirSync(dir).find((n) => n.endsWith(".json.gz"))!;
       expect(line).toContain(name);
       expect(gunzipSync(readFileSync(join(dir, name))).toString("utf8")).toBe(json(w));
+      expect(json(w).includes('"thinkEvery"')).toBe(thinkEvery !== 1); // at 1 the key stays out, so the save reads on a server from before the setting
       const b = new LiveWorld(c, null);
       b.restoreState(await new StateStore(dir).read(name));
       for (let i = 0; i < 10; i++) {
@@ -134,6 +136,14 @@ describe("saves", () => {
       }
       expect(b.eco.fingerprint()).toBe(w.eco.fingerprint()); // the snapshot's columns were copies: the world's own were not moved away
     }
+  });
+
+  it("a save packer that takes too long is refused, its worker gone, and the next save goes through", async () => {
+    const w = new LiveWorld(smallConfig(), null);
+    for (let i = 0; i < 5; i++) w.eco.step();
+    await expect(packSave(w.saveSnapshot(), LIMITS.maxSaveJsonBytes, 0)).rejects.toThrow("took too long");
+    const { gz } = await packSave(w.saveSnapshot(), LIMITS.maxSaveJsonBytes);
+    expect(gunzipSync(gz).toString("utf8")).toBe(json(w));
   });
 
   it("refuses to write a save larger than it may read back, and says so loudly", async () => {

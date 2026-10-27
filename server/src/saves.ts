@@ -65,9 +65,12 @@ export class Saves {
       if (this.resetting) throw new Error("the world is being reset");
       if (this.live.failedTicks > 0) throw new Error(`its ticks are failing (${this.live.failedTicks} in a row), the last good save is kept`);
       let stallMs = 0;
+      let population = 0;
+      let tick = 0;
       const packed = this.live.whenIdle(() => {
         const t0 = performance.now();
         const run = packSave(this.live.saveSnapshot(), LIMITS.maxSaveJsonBytes);
+        ({ population, tick } = this.live.eco); // as of the snapshot, not of the world a few seconds on
         stallMs = Math.round(performance.now() - t0);
         return run;
       });
@@ -85,7 +88,7 @@ export class Saves {
         });
       const h = this.live.homeWorld();
       const world = `${h.map || "random"} ${h.width}x${h.height}${h.mapVersion ? ` ${h.mapVersion}` : ""}`; // so the listing tells this world's saves from another's
-      const name = await this.store.writeGzipped(gz, { population: this.live.eco.population, tick: this.live.eco.tick, world }, new Date(), verify);
+      const name = await this.store.writeGzipped(gz, { population, tick, world }, new Date(), verify);
       return `saved ${name} (${Math.round(bytes / 1e6)} MB json, ${stallMs} ms tick stall)`;
   }
 
