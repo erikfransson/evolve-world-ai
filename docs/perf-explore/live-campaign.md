@@ -80,7 +80,7 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 | 39 | Node and V8 flag sweep on liveBench (liftoff, semi-space, wasm tiering), no code change | study | resumed 19:22 under the pin | yes | Batch 7 (`flags2.md`) |
 | 40 | gridreuse step 2: patch the grid for births and deaths so the refresh covers the remaining 20-40% of ticks | small | resumed 19:15 under the pin | yes | Batch 7 (`gridpatch.md`) |
 | 41 | sense.wat: early-out when candidates exist but none can hit any ray (fan and length pre-test), so the per-ray passes are skipped for the 44% all-zero creatures instead of the 15-32% with no candidates | broad | running | yes | Batch 7 (`missout.md`) |
-| 42 | Study: the live founders' layer widths against the kernel's 4-wide padding and 6-vector blocks; a specialised block for the common widths | study | paused 19:10 (laptop too slow), to re-run under the CPU cap | yes | Batch 7 (`widths.md`) |
+| 42 | Study: the live founders' layer widths against the kernel's blocks; a specialised block for the common widths | study | not run | - | Dropped: Erik's rule, no optimization for today's particular creatures |
 | 43 | Study: phase profile of an aged cap world (7200 s, about 2200 Juggernauts) to see what dominates late and which ideas apply there | study | resumed 19:27 under the pin (1800 s runs) | - | Batch 7 (`late.md`) |
 | 44 | prepareRows' arithmetic (speeds, turn, ground value) into the fill kernel, JS keeps only the terrain lookup | small | resumed 19:15 under the pin | yes | Batch 7 (`prepfill.md`) |
 | 45 | Study: does liveBench represent the production tick (frames, stats, pacing, viewers)? | study | paused 19:10 (laptop too slow), to re-run under the CPU cap | - | Batch 7 (`prod.md`) |
@@ -146,3 +146,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-27 19:13 Ideas 36, 38, 40, 44 resumed in their worktrees under the pin (8 agents: 35, 36, 37, 38, 40, 41, 44, 46). Studies 39, 42, 43, 45 wait for a free slot.
 - 2026-10-27 19:17 Idea 37 rejected: the brain kernel's inner loop is already at its instruction floor for 4-wide SIMD; removing the index load does not help.
 - 2026-10-27 19:20 Idea 46 parked: the native sense kernel is worth about 5% per tick, only as a rider on the native brain addon. The exact C++ port beating V8 by 10% says V8's wasm codegen leaves a little on the table for branchy code, unlike the brain kernel (aot.md).
+- 2026-10-27 19:23 Erik: keep the gains general (engine, physics, sensing, brains, behaviour), never tuned to today's founders (no Juggernaut-shaped paths). Idea 42 dropped; idea 36 must cover every ray count the plan allows or be rejected; the brief carries the rule.
