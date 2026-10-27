@@ -24,9 +24,10 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 | 2 | FMA via relaxed SIMD in brain and sense kernels, fallback kernels | small | running | no (rounding) | |
 | 3 | bf16 brain weights (half the weight bandwidth) | small | brain kernel 1.00x or worse (weights are 28% of kernel time, the widening costs 0.5 ms) | no (rounding) | Rejected (`bf16.md`) |
 | 4 | Sense kernel profile at the live setting (measurement) | study | kernel flat: per-ray passes 38%, item walk and tests 38%, crowd 14%, rock 10%; two exact cuts worth about 4% of the tick | - | Done (`senselive.md`), cuts queued as idea 8 |
-| 5 | Native N-API brain kernel with AVX2 and FMA (server only) | moonshot | running | no | |
+| 5 | Native N-API brain kernel with AVX2 (server only) | moonshot | brain forward 1.8x bit-identical (prefetch, 8-wide), whole tick 1.15-1.17x; FMA adds 2% | yes (exact variant) | Parked on branch `pl-native` (`native.md`): needs Erik's call on a C++ twin of brain.wat, a build step at deploy and the Live push gate (no bounds checks yet) |
 | 6 | Helper threads for the server at idle priority: wall speed on this laptop | ops | queued | yes | |
 | 8 | Sense: shared ray-offset tables (273 distinct among 3331) and a rock lower-bound table, wall-loop skip | small | queued | yes | |
+| 9 | brain.wat: 24-wide layers in one register-blocked pass (the native study shows the WASM kernel is instruction-bound, 2206 vs 653-818 ns for the Oracle brain) | small | queued | yes | |
 | 7 | prepareRows (slots phase, 7%) into the fill kernel | small | no exact variant over 1%: ground lookup is at most 0.6 ms, exp 0.33, rest 0.45 | yes | Rejected (`prep.md`) |
 
 ## Log
@@ -35,3 +36,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-27 11:10 Idea 3 rejected: the brain kernel is about 72% compute or latency, only 28% weight traffic (cache-resident control 3.9 vs 5.3 ms); bf16 widening eats the saving. Write-up `bf16.md`.
 - 2026-10-27 11:30 Idea 7 rejected: the slots phase splits into ground lookup (at most 0.6 ms), Math.exp (0.33) and field traffic (0.45); nothing exact to cut. Write-up `prep.md`.
 - 2026-10-27 12:00 Idea 4 done: sense kernel cost is loop entry, branch misses and cold misses per grid row, not candidate counts (2.2 items, 0.2 rock, 0.1 crowd kept per creature). Exact cuts queued as idea 8. Write-up `senselive.md`.
+- 2026-10-27 13:10 Idea 5 (moonshot) measured: a native AVX2 brain kernel on the bank memory is bit-identical and 1.8x on the kernel, 1.15-1.17x per tick. Parked for Erik: it means a C++ twin of brain.wat, a g++ build at deploy, and attack surface (uploaded plans size the brains). Finding: the kernel cost is instructions and latency, not bandwidth, so brain.wat itself has headroom (idea 9).
