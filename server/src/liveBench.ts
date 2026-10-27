@@ -140,7 +140,7 @@ while (eco.tick < ticks && !eco.extinct) {
     const c = process.cpuUsage(winCpu);
     const k = 1000 / (winPop / winTicks); // ms per tick per 1000 creatures
     const ph = prof ? Object.fromEntries([...prof.ms].map(([n, v]) => [n, +(((v - (winSnap.get(n) ?? 0)) / winTicks) * k).toFixed(3)])) : {};
-    windows.push({ toSec: Math.round(eco.tick * dt), pop: Math.round(winPop / winTicks), food: eco.food, poison: eco.poison, cpuMsPerKilo: +(c.user / 1000 / winTicks * k).toFixed(3), phasesPerKilo: ph });
+    windows.push({ toSec: Math.round(eco.tick * dt), pop: Math.round(winPop / winTicks), weightsPerCreature: Math.round(eco.weights / Math.max(1, eco.population)), food: eco.food, poison: eco.poison, cpuMsPerKilo: +(c.user / 1000 / winTicks * k).toFixed(3), phasesPerKilo: ph });
     if (prof) winSnap = new Map(prof.ms);
     winCpu = process.cpuUsage();
     winPop = 0;
