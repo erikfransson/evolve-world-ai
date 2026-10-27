@@ -62,3 +62,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-27 22:40 Idea 16 (moonshot 2) rejected: V8's code for the kernels is as good as gcc's from the same wat; only a hand-written wider kernel gains (idea 5, parked).
 - 2026-10-27 22:50 Idea 6 measured: helpers do not pay on this host (load 12-20); the server stays single-threaded.
 - 2026-10-28 00:10 Idea 13 rejected: the thinkEvery 2 churn comes from the brain's delayed self-feedback, not from encounters. Next variant (idea 18): sense every other tick but think every tick with fresh body inputs, so only the ray inputs are one tick stale.
+- 2026-10-28 00:50 Independent review (Opus) of development...perf-live: no correctness bug; three low items, two fixed (thinkEvery bounded in pasted configs, helper packet tick stored mod 840 so the i32 header never wraps), one noted (per-tick subarray views in collect, only with thinkEvery above 1 and helpers; inactive on the server).
