@@ -470,6 +470,10 @@ describe("sense.wat (SenseKernels)", () => {
     expect(kernel[0]!.brain.layerActivations()[0]!.length).toBe(8 * (5 + 3) + 5 + 4);
     expect(bad).toBeLessThanOrEqual(2);
     check({ rays: 6, spread: 2, creatures: [[300, 300, 0], [900, 600, 2]], items, species: 2 }, true); // no creature in sight: flags all zero, exact
+    const one = check({ width: 600, height: 400, rays: 8, spread: 2, length: 120, creatures: spots, items: items.filter(([x, y]) => x < 600 && y < 400), species: 1 }, false); // one species: the single flag of a seen creature is 1
+    expect([...one.species]).toEqual([0]);
+    expect(one.kernel[0]!.brain.layerActivations()[0]!.length).toBe(8 * 6 + 5 + 4);
+    expect(one.bad).toBeLessThanOrEqual(2);
   });
 
   it("reads the outputs in place across a kernel memory growth", () => {
