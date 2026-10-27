@@ -20,7 +20,8 @@ senseEvery 1 is bit-identical (fingerprints 708687555 and 10334191). Senser phas
 | 2    | 1          | 4910   | 5099   | 19243 | 201        | 3011                |
 | 2    | 2          | 6541   | 6575   | 20074 | 235        | 3166                |
 | 3    | 1          | 5878   | 5976   | 18207 | 259        | 3102                |
+| 3    | 2          | 6405   | 6532   | 20416 | 215        | 3073                |
 
-Births and food at senseEvery 2 fall outside the senseEvery 1 range (births 4910-5878, food 18207-19243), though closer than thinkEvery 2 (8202-9147). Stale ray inputs alone already change the dynamics.
+Births and food at senseEvery 2 fall outside (all three seeds) the senseEvery 1 range (births 4910-5878, food 18207-19243), though closer than thinkEvery 2 (8202-9147). Stale ray inputs alone already change the dynamics.
 
 Verdict: rejected. 1.12x for 211 lines and a visible dynamics change. Parked on `pl-sense2` with thinkEvery 2 as options for Erik.
