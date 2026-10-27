@@ -33,6 +33,10 @@ export class WasmBrainBank {
   private descCap = 0;
   private runPtr = NO_SLOT; // slot numbers of one forwardSlots call
   private runCap = 0;
+  private order = new Int32Array(64); // the slots holding a brain, by block address, so forwardRun streams the weights in memory order
+  private held = 0;
+  private mark = new Int32Array(64); // per slot, the stamp of the forwardRun it is in
+  private stamp = 0;
 
   private constructor(kernel: Kernel<BrainExports>) {
     this.kernel = kernel;
@@ -69,6 +73,9 @@ export class WasmBrainBank {
     this.descCap = 0;
     this.runPtr = NO_SLOT;
     this.runCap = 0;
+    this.held = 0;
+    this.mark.fill(0);
+    this.stamp = 0;
     this.arena = new Arena(this.kernel, ARENA_START);
     const f32 = this.kernel.f32;
     f32.fill(0, 0, IOTA_AT / 4);
@@ -126,10 +133,14 @@ export class WasmBrainBank {
     this.ensureSlots(slot + 1);
     let ptr = this.blockPtr[slot]!;
     if (ptr === undefined || Arena.round(this.blockBytes[slot]!) !== Arena.round(bytes)) {
-      if (ptr !== undefined) this.arena.release(ptr, this.blockBytes[slot]!);
+      if (ptr !== undefined) {
+        this.arena.release(ptr, this.blockBytes[slot]!);
+        this.unorder(ptr);
+      }
       ptr = this.arena.alloc(bytes);
+      this.blockPtr[slot] = ptr;
+      this.reorder(slot, ptr);
     }
-    this.blockPtr[slot] = ptr;
     this.blockBytes[slot] = bytes;
     const f32 = this.kernel.f32;
     const base = ptr >> 2;
@@ -184,8 +195,47 @@ export class WasmBrainBank {
   }
 
   // forwardSlots for the slots a kernel wrote at runRegion (every one holds a brain: they come from creatures attached to this bank).
+  // The slots are run by block address instead of in the written order; each brain depends only on its own block, so the results are the same.
   forwardRun(count: number): void {
-    if (count > 0) this.kernel.exports.forward(this.descPtr, this.runPtr, count, 0, SCRATCH_B, NZ_AT, IOTA_AT, TAB_AT);
+    if (count <= 0) return;
+    const i32 = this.kernel.i32;
+    const at = this.runPtr >> 2;
+    const mark = this.mark;
+    const stamp = ++this.stamp;
+    for (let k = 0; k < count; k++) mark[i32[at + k]!] = stamp;
+    for (let k = 0, j = at; j < at + count; k++) {
+      const s = this.order[k]!;
+      if (mark[s] === stamp) i32[j++] = s;
+    }
+    this.kernel.exports.forward(this.descPtr, this.runPtr, count, 0, SCRATCH_B, NZ_AT, IOTA_AT, TAB_AT);
+  }
+
+  private unorder(ptr: number): void {
+    const k = this.find(ptr);
+    this.order.copyWithin(k, k + 1, this.held--);
+  }
+
+  private reorder(slot: number, ptr: number): void {
+    if (this.held === this.order.length) {
+      const grown = new Int32Array(2 * this.held);
+      grown.set(this.order);
+      this.order = grown;
+    }
+    const k = this.find(ptr);
+    this.order.copyWithin(k + 1, k, this.held++);
+    this.order[k] = slot;
+  }
+
+  // The first place in order whose block is at ptr or above.
+  private find(ptr: number): number {
+    let lo = 0;
+    let hi = this.held;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (this.blockPtr[this.order[mid]!]! < ptr) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
   }
 
   private ensureSlots(n: number): void {
@@ -201,5 +251,10 @@ export class WasmBrainBank {
     }
     this.descPtr = ptr;
     this.descCap = cap;
+    if (cap > this.mark.length) {
+      const grown = new Int32Array(cap);
+      grown.set(this.mark);
+      this.mark = grown;
+    }
   }
 }
