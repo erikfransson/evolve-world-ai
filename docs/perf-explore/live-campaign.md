@@ -29,7 +29,7 @@ Fingerprint equal means bit-identical results.
 | 2026-10-27 14:50 | 4 founders x 800 (3 pairs, medians)    | 15.24               | 13.07             | 1.17x (exact; more as the world ages, `brainorder.md`); saves stall 0.1 s instead of 3-6 s | 219 / 219 MB |
 | 2026-10-27 14:50 | Juggernaut x 4900 (3 pairs, medians)   | 18.48               | 15.97             | 1.16x (exact) | 254 / 258 MB |
 | 2026-10-27 15:20 | 4 founders x 800, 1800 s (2 runs each, `aging.md`) | 10.73, 10.88 | 9.22, 9.10 | 1.18x (exact) | 299 / 373 MB (V8 heap slack, not a leak, `mem.md`) |
-| 2026-10-27 15:52 | Juggernaut x 4900 (cap), 7200 s, saves every 1800 s | (base run started 16:39) | 8.36 | - | - / 533 MB; 4 saves stalled the tick 17-157 ms each (28 MB json), fingerprint 569699867 |
+| 2026-10-27 17:12 | Juggernaut x 4900 (cap), 7200 s, saves every 1800 s (1 run each) | 8.84 | 8.36 | 1.06x (exact; population 2225 by then, mostly senser) | 751 / 533 MB: the saves set the peak; the 4 saves stalled the tick 1.9-3.7 s on base, 0.02-0.16 s on perf-live |
 
 Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54, brain forward 5.23 / 5.17, slots (prepareRows) 1.04 / 1.52, memory and steer 1.26 / 1.59, eat 1.05 / 1.35, crowd grid 0.51 / 0.67, collisions 0.18 / 0.27, rest under 0.2. Server frame encoding adds 0.57 ms per tick at 5 Hz. Speed achieved unpaced on this loaded machine: 2.0x and 1.7x real time (the set speed is 3x).
 
@@ -98,3 +98,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-27 16:45 Idea 24 done: the 1800 s memory gap is V8 heap slack (old space grown before the 6th mark-compact, not returned), not a leak; nothing to fix. 7200 s cap run on perf-live: 8.36 ms/tick, peak RSS 533 MB with four saves of 15-28 MB json stalling the tick 17-157 ms; the base twin with the same saves runs now for the memory comparison.
 - 2026-10-27 16:55 Idea 25 rejected: the step kernel's host-call cost was overstated; batching the trig makes the phase slower. The step kernel is done.
 - 2026-10-27 16:56 Idea 26 (weight-block sharing moonshot) rejected on paper: the per-gene mutation rate leaves too few shared blocks. No exact way to shrink the 24 MB weight stream remains; the brain kernel's remaining gain is the native kernel (parked).
+- 2026-10-27 17:15 7200 s cap run, base twin done: peak RSS 751 MB on development vs 533 MB on perf-live (both with four saves of 15-28 MB json), same fingerprint; the save stalls 1.9-3.7 s on development against 0.02-0.16 s. The speed gain at the cap shrinks to 1.06x once the population has fallen to about 2200 Juggernauts (small brains, the senser dominates), so the factor depends on the mix: 1.17x at 60 s on both bench cases, 1.18x over 1800 s mixed.
