@@ -15,6 +15,8 @@ Fingerprint equal means bit-identical results.
 | 2026-10-27 09:00 | Juggernaut x 4900 (cap), 60 s          | 18.50               | 18.50             | 1.00x  | 253 / 253 MB             |
 | 2026-10-27 16:30 | 4 founders x 800 (3 pairs, medians)    | 16.03               | 15.51             | 1.03x (exact); 1.5x more with `eco.thinkEvery` 2, Erik's call | 249 / 248 MB |
 | 2026-10-27 16:30 | Juggernaut x 4900 (3 pairs, medians)   | 19.66               | 19.41             | 1.01x (exact) | 257 / 254 MB |
+| 2026-10-27 20:30 | 4 founders x 800 (3 pairs, medians)    | 16.22               | 14.79             | 1.10x (exact); 1.5x more with `eco.thinkEvery` 2, Erik's call | 216 / 218 MB |
+| 2026-10-27 20:30 | Juggernaut x 4900 (3 pairs, medians)   | 19.90               | 18.19             | 1.09x (exact) | 252 / 256 MB |
 
 Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54, brain forward 5.23 / 5.17, slots (prepareRows) 1.04 / 1.52, memory and steer 1.26 / 1.59, eat 1.05 / 1.35, crowd grid 0.51 / 0.67, collisions 0.18 / 0.27, rest under 0.2. Server frame encoding adds 0.57 ms per tick at 5 Hz. Speed achieved unpaced on this loaded machine: 2.0x and 1.7x real time (the set speed is 3x).
 
@@ -52,3 +54,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-27 18:00 Idea 10 merged (14 lines of crowd.wat). The second crowd rebuild cannot be skipped exactly (creatures cross cells every tick, in-cell order matters for collisions).
 - 2026-10-27 19:30 Idea 8 merged (+138/-34, exact, about 5%).
 - 2026-10-27 20:30 Idea 15 merged (small but consistent, smaller raster). Note from the agent: identical code ran 0.8 ms slower in one worktree than another, so pairs must run from one checkout (base = HEAD, yours = patch).
+- 2026-10-27 20:45 Factor after batch 2 (brainblock, eat, sensecuts; stepk merged after the run): 1.10x mixed, 1.09x at the cap, bit-identical, memory flat. liveBench got `--threads` for the helper-thread check (idea 6).
