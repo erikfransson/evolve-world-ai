@@ -32,7 +32,8 @@
     (local $ps i32) (local $base i32) (local $sigp i32) (local $cStart i32) (local $ccols i32) (local $crows i32)
     ;; rock
     (local $rcols i32) (local $rrows i32) (local $rstart i32) (local $rorder i32) (local $rxyr i32) (local $rmax f64) (local $rinv f64)
-    (local $rext f64) (local $rr f64) (local $rfar f64) (local $di i32)
+    (local $rext f64) (local $rr f64) (local $rfar f64) (local $di i32) (local $rlb i32) (local $skip i32)
+    (local $cc32 f32) (local $ks i32) (local $sb i32)
     (local.set $n (i32.load offset={{S_N}} (local.get $P)))
     (local.set $stride (i32.load offset={{S_STRIDE}} (local.get $P)))
     (local.set $cand (i32.load offset={{S_CAND}} (local.get $P)))
@@ -62,6 +63,7 @@
     (local.set $rstart (i32.load offset={{S_ROCK_START}} (local.get $P)))
     (local.set $rorder (i32.load offset={{S_ROCK_ORDER}} (local.get $P)))
     (local.set $rxyr (i32.load offset={{S_ROCK_XYR}} (local.get $P)))
+    (local.set $rlb (i32.load offset={{S_ROCK_LB}} (local.get $P)))
     (local.set $ist (i32.load offset={{S_ITEM_START}} (local.get $P)))
     (local.set $ixy (i32.load offset={{S_ITEM_XY}} (local.get $P)))
     (local.set $ikd (i32.load offset={{S_ITEM_KIND}} (local.get $P)))
@@ -151,7 +153,14 @@
         (br $cyl)))
       (local.set $cim (local.get $cp))  ;; the items end here; the rock discs follow
       ;; rock discs after the items, as wall candidates in grid order; a disc is far past length + radius
-      (if (i32.gt_s (local.get $rcols) (i32.const 0)) (then
+      ;; none can be near when the cell holding the creature is farther from every disc edge (rockLowerBound) than the ray length, with a margin far above the rounding
+      (local.set $skip (i32.const 0))
+      (local.set $cx (i32.trunc_sat_f64_s (f64.floor (f64.mul (local.get $x) (local.get $rinv)))))
+      (local.set $cy (i32.trunc_sat_f64_s (f64.floor (f64.mul (local.get $y) (local.get $rinv)))))
+      (if (i32.and (i32.lt_u (local.get $cx) (local.get $rcols)) (i32.lt_u (local.get $cy) (local.get $rrows))) (then
+        (local.set $skip (f64.gt (f64.promote_f32 (f32.load (i32.add (local.get $rlb) (i32.shl (i32.add (i32.mul (local.get $cy) (local.get $rcols)) (local.get $cx)) (i32.const 2)))))
+          (f64.add (f64.mul (local.get $L) (f64.const 1.000001)) (f64.const 0.001))))))
+      (if (i32.and (i32.gt_s (local.get $rcols) (i32.const 0)) (i32.eqz (local.get $skip))) (then
         (local.set $rext (f64.add (f64.mul (local.get $L) (f64.add (f64.const 1) (f64.const 1e-9))) (local.get $rmax)))
         (local.set $cx0 (i32.trunc_sat_f64_s (f64.floor (f64.mul (f64.sub (local.get $x) (local.get $rext)) (local.get $rinv)))))
         (local.set $cx0 (select (i32.const 0) (local.get $cx0) (i32.lt_s (local.get $cx0) (i32.const 0))))
@@ -372,32 +381,36 @@
         (br $gl)))
       ;; merge the crowd hits and write the features
       (local.set $i (i32.const 0))
+      (local.set $sb (i32.shl (local.get $stride) (i32.const 2)))
+      (local.set $base (local.get $inp))
       (block $wd (loop $wl
         (br_if $wd (i32.ge_s (local.get $i) (local.get $nR)))
         (local.set $ps (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 2))))
         (local.set $kind (i32.load offset=1536 (local.get $ps)))
         (local.set $clo (f64.load offset=1024 (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 3)))))
         (local.set $k (i32.load offset=2560 (local.get $ps)))
-        (local.set $cc (f64.const 0))
         (if (i32.ge_s (local.get $k) (i32.const 0)) (then
           (local.set $clo (f64.sub (f64.const 1) (f64.div (f64.promote_f32 (f32.load offset=2304 (local.get $ps))) (f64.promote_f32 (local.get $L32)))))
-          (local.set $kind (i32.const 4))
-          (local.set $cc (f64.promote_f32 (f32.load (i32.add (local.get $sigp) (i32.shl (local.get $k) (i32.const 2))))))))
+          (local.set $kind (i32.const 4))))
         (if (local.get $det) (then
           (f64.store (i32.add (local.get $det) (i32.shl (local.get $i) (i32.const 4))) (local.get $clo))
           (i32.store offset=8 (i32.add (local.get $det) (i32.shl (local.get $i) (i32.const 4))) (local.get $kind))
           (i32.store offset=12 (i32.add (local.get $det) (i32.shl (local.get $i) (i32.const 4))) (local.get $k))))
         ;; Crowd feature extension point: the seen creature is crowd slot $k (-1 for none); per-slot tables like sig are indexed by it here.
-        (local.set $base (i32.add (local.get $inp) (i32.mul (i32.shl (local.get $i) (i32.const 2)) (local.get $stride))))
-        (f32.store (local.get $base) (f32.demote_f64 (local.get $clo)))
-        (f32.store offset=4 (local.get $base) (select (f32.const 1) (f32.const 0) (i32.eq (local.get $kind) (i32.const 1))))
-        (f32.store offset=8 (local.get $base) (select (f32.const 1) (f32.const 0) (i32.eq (local.get $kind) (i32.const 2))))
-        (f32.store offset=12 (local.get $base) (select (f32.const 1) (f32.const 0) (i32.eq (local.get $kind) (i32.const 3))))
-        ;; creature features: one flag per species at offset 16 (S = stride - 5), then the squashed seen energy
-        (if (i32.gt_s (local.get $stride) (i32.const 4)) (then
-          (local.set $sp (i32.const -1))
-          (if (i32.eq (local.get $kind) (i32.const 4)) (then
-            (local.set $sp (i32.load (i32.add (local.get $spp) (i32.shl (local.get $k) (i32.const 2)))))))
+        ;; closeness, then the one-hot of food, poison and wall (kind 1 to 3) in one store
+        (v128.store (local.get $base)
+          (f32x4.replace_lane 0
+            (v128.and (i32x4.eq (i32x4.splat (local.get $kind)) (v128.const i32x4 -1 1 2 3)) (f32x4.splat (f32.const 1)))
+            (f32.demote_f64 (local.get $clo))))
+        ;; creature features: one flag per species at offset 16 (S = stride - 5), then the squashed seen energy; no branch on the seen creature, slot 0 stands in for none
+        (local.set $ks (select (local.get $k) (i32.const 0) (i32.ge_s (local.get $k) (i32.const 0))))
+        (local.set $cc32 (select (f32.load (i32.add (local.get $sigp) (i32.shl (local.get $ks) (i32.const 2)))) (f32.const 0) (i32.ge_s (local.get $k) (i32.const 0))))
+        (if (i32.eq (local.get $stride) (i32.const 6)) (then
+          (f32.store offset=16 (local.get $base)
+            (f32.convert_i32_u (i32.and (i32.ge_s (local.get $k) (i32.const 0)) (i32.eqz (i32.load (i32.add (local.get $spp) (i32.shl (local.get $ks) (i32.const 2))))))))
+          (f32.store offset=20 (local.get $base) (local.get $cc32)))
+        (else (if (i32.gt_s (local.get $stride) (i32.const 4)) (then
+          (local.set $sp (select (i32.load (i32.add (local.get $spp) (i32.shl (local.get $ks) (i32.const 2)))) (i32.const -1) (i32.ge_s (local.get $k) (i32.const 0))))
           (local.set $g (i32.const 0))
           (block $sd (loop $sl
             (br_if $sd (i32.ge_s (local.get $g) (i32.sub (local.get $stride) (i32.const 5))))
@@ -405,7 +418,8 @@
               (select (f32.const 1) (f32.const 0) (i32.eq (local.get $sp) (local.get $g))))
             (local.set $g (i32.add (local.get $g) (i32.const 1)))
             (br $sl)))
-          (f32.store offset=16 (i32.add (local.get $base) (i32.shl (i32.sub (local.get $stride) (i32.const 5)) (i32.const 2))) (f32.demote_f64 (local.get $cc)))))
+          (f32.store offset=16 (i32.add (local.get $base) (i32.shl (i32.sub (local.get $stride) (i32.const 5)) (i32.const 2))) (local.get $cc32))))))
+        (local.set $base (i32.add (local.get $base) (local.get $sb)))
         (local.set $i (i32.add (local.get $i) (i32.const 1)))
         (br $wl)))
       )

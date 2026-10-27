@@ -11,6 +11,7 @@ import { WasmBrainBank } from "../../src/typescript/src/sim/wasm/brainKernel.ts"
 import { setWasmDisabled, wasmAvailable } from "../../src/typescript/src/sim/wasm/loader.ts";
 import { speciesEngine, speciesList } from "../../src/typescript/src/sim/species.ts";
 import { prepareRows } from "../../src/typescript/src/sim/wasm/residentStep.ts";
+import { rockLowerBound } from "../../src/typescript/src/sim/wasm/senser.ts";
 import { SenseKernels } from "../../src/typescript/src/sim/wasm/senseKernels.ts";
 import type { SimConfig } from "../../src/typescript/src/sim/config.ts";
 import { Creature, SenseBatch } from "../../src/typescript/src/sim/creature.ts";
@@ -469,6 +470,10 @@ describe("sense.wat (SenseKernels)", () => {
     expect(kernel[0]!.brain.layerActivations()[0]!.length).toBe(8 * (5 + 3) + 5 + 4);
     expect(bad).toBeLessThanOrEqual(2);
     check({ rays: 6, spread: 2, creatures: [[300, 300, 0], [900, 600, 2]], items, species: 2 }, true); // no creature in sight: flags all zero, exact
+    const one = check({ width: 600, height: 400, rays: 8, spread: 2, length: 120, creatures: spots, items: items.filter(([x, y]) => x < 600 && y < 400), species: 1 }, false); // one species: the single flag of a seen creature is 1
+    expect([...one.species]).toEqual([0]);
+    expect(one.kernel[0]!.brain.layerActivations()[0]!.length).toBe(8 * 6 + 5 + 4);
+    expect(one.bad).toBeLessThanOrEqual(2);
   });
 
   it("reads the outputs in place across a kernel memory growth", () => {
@@ -500,6 +505,48 @@ describe("sense.wat (SenseKernels)", () => {
     reference.senseThink(world, crowd, 0);
     expect(c.outputs.length).toBe(reference.outputs.length);
     c.outputs.forEach((v, i) => expect(Math.abs(v - reference.outputs[i]!)).toBeLessThan(1e-4));
+  });
+
+  it("shares ray offset tables between creatures with the same offsets, and frees a table when its last creature changes plan", () => {
+    const { cfg, kernels, kernel } = build({ rays: 6, spread: 1.5, creatures: [[300, 300, 0], [400, 300, 1], [500, 300, 2], [600, 300, 3]], items });
+    const tableOf = (c: Creature): number => new Int32Array(kernels.f32.buffer)[(c.resident!.ptr + L.R_OFFSETS) >> 2]!;
+    const [a, b, c, d] = kernel as [Creature, Creature, Creature, Creature];
+    expect(new Set(kernel.map(tableOf)).size).toBe(1);
+    const reset = (cr: Creature, spread: number): void => {
+      const plan = { ...cr.plan, raySpread: spread };
+      cr.reset(randomGenome(layerSizes(cfg, plan), createRng(5)), 300, 300, 0, 50, plan);
+    };
+    const shared = tableOf(a);
+    reset(d, 1.1);
+    expect(tableOf(d)).not.toBe(shared);
+    reset(c, 1.1);
+    expect(tableOf(c)).toBe(tableOf(d));
+    reset(a, 1.1);
+    reset(b, 1.1); // the last holder of the first table lets go, and the next new table takes its block
+    reset(a, 0.9);
+    expect(tableOf(a)).toBe(shared);
+    expect(tableOf(b)).toBe(tableOf(c));
+  });
+
+  it("bounds the distance to the nearest rock edge from below for every point of a cell", () => {
+    const rng = createRng(21);
+    const cols = 9;
+    const rows = 7;
+    const cell = 300;
+    const n = 40;
+    const x = Float64Array.from({ length: n }, () => rng.range(0, cols * cell));
+    const y = Float64Array.from({ length: n }, () => rng.range(0, rows * cell));
+    const r = Float64Array.from({ length: n }, () => rng.range(10, 380));
+    const lb = rockLowerBound(cols, rows, cell, x, y, r, n);
+    for (let t = 0; t < 4000; t++) {
+      const px = rng.range(0, cols * cell);
+      const py = rng.range(0, rows * cell);
+      let edge = Infinity;
+      for (let d = 0; d < n; d++) edge = Math.min(edge, Math.hypot(px - x[d]!, py - y[d]!) - r[d]!);
+      const bound = lb[Math.floor(py / cell) * cols + Math.floor(px / cell)]!;
+      expect(bound).toBeLessThanOrEqual(Math.max(0, edge));
+    }
+    expect(Math.max(...lb)).toBeGreaterThan(0);
   });
 
   it("keeps the rays of non-detail creatures untouched and needs no detail", () => {

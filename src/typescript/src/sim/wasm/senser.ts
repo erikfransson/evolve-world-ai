@@ -18,17 +18,47 @@ import { Region, growRegion } from "./resident.ts";
 // creature given as detail (the selected one), whose rays are read back for the UI.
 
 export const MAX_RAYS = 64;
+const ROCK_BOUND_CAP = 2048; // distances past this are not told apart; a ray longer than this walks the rock anyway
 const SCRATCH_BYTES = 2816;
 
 interface SenseExports extends WebAssembly.Exports {
   sense(p: number): void;
 }
 
+// Per cell of the rock grid, a lower bound of the distance from any point of the cell to the nearest disc edge (ROCK_BOUND_CAP when none is nearer),
+// shrunk by 1e-6 relative so f32 rounding cannot raise it. A ray of that length or less from a point in the cell cannot reach a disc.
+export function rockLowerBound(cols: number, rows: number, cell: number, x: ArrayLike<number>, y: ArrayLike<number>, r: ArrayLike<number>, count: number): Float32Array {
+  const out = new Float32Array(cols * rows).fill(ROCK_BOUND_CAP);
+  for (let d = 0; d < count; d++) {
+    const reach = ROCK_BOUND_CAP + r[d]!;
+    const cx1 = Math.min(cols - 1, Math.floor((x[d]! + reach) / cell));
+    const cy1 = Math.min(rows - 1, Math.floor((y[d]! + reach) / cell));
+    for (let cy = Math.max(0, Math.floor((y[d]! - reach) / cell)); cy <= cy1; cy++) {
+      const dy = Math.max(cy * cell - y[d]!, 0, y[d]! - (cy + 1) * cell);
+      for (let cx = Math.max(0, Math.floor((x[d]! - reach) / cell)); cx <= cx1; cx++) {
+        const dx = Math.max(cx * cell - x[d]!, 0, x[d]! - (cx + 1) * cell);
+        const edge = Math.max(0, Math.hypot(dx, dy) - r[d]!);
+        if (edge < out[cy * cols + cx]!) out[cy * cols + cx] = edge;
+      }
+    }
+  }
+  for (let i = 0; i < out.length; i++) out[i] *= 1 - 1e-6;
+  return out;
+}
+
+interface OffsetTable {
+  key: string;
+  ptr: number;
+  bytes: number;
+  refs: number;
+}
+
 export class WasmSenser {
   private readonly bank: WasmBrainBank;
   private readonly exports: SenseExports;
-  private readonly offPtr: number[] = [];
-  private readonly offBytes: number[] = [];
+  // Ray offset tables are shared by content: a slot holds one table, a table is freed when its last slot lets go. So the tables in memory never outnumber the slots.
+  private readonly tables = new Map<string, OffsetTable>();
+  private readonly slotTable: OffsetTable[] = [];
   // Named regions of the shared memory, grown on demand (see grow); held in fields so a tick does no lookups.
   private rItems = new Region();
   private rItemXY = new Region();
@@ -48,6 +78,7 @@ export class WasmSenser {
   private rRockStart = new Region();
   private rRockOrder = new Region();
   private rRockXYR = new Region();
+  private rRockLB = new Region();
   // Views of the whole linear memory, valid while buffer is the memory's current buffer (growth replaces it).
   private buffer: ArrayBuffer | null = null;
   private f32 = new Float32Array(0);
@@ -79,8 +110,8 @@ export class WasmSenser {
 
   // Back to the state of a new senser (the bank must be reset too, its regions are gone).
   reset(): void {
-    this.offPtr.length = 0;
-    this.offBytes.length = 0;
+    this.tables.clear();
+    this.slotTable.length = 0;
     this.rItems = new Region();
     this.rItemXY = new Region();
     this.rItemKinds = new Region();
@@ -99,6 +130,7 @@ export class WasmSenser {
     this.rRockStart = new Region();
     this.rRockOrder = new Region();
     this.rRockXYR = new Region();
+    this.rRockLB = new Region();
     this.rockSynced = null;
     this.buffer = null;
     this.synced = null;
@@ -109,29 +141,36 @@ export class WasmSenser {
     this.pIds = 0;
   }
 
-  // Stores the creature's ray offset cos and sin tables for its slot; call when the slot's brain is set.
+  // Points the slot at the creature's ray offset cos and sin tables, made once per distinct set of offsets (compared by bits); call when the slot's brain is set.
   setOffsets(slot: number, c: Creature): void {
     const n = c.plan.rayCount;
     if (n > MAX_RAYS) throw new Error(`${n} rays exceed ${MAX_RAYS}`);
-    const bytes = 16 * n;
-    let ptr = this.offPtr[slot];
-    if (ptr === undefined || this.offBytes[slot] !== bytes) {
-      if (ptr !== undefined) this.bank.free(ptr, this.offBytes[slot]!);
-      ptr = this.bank.alloc(bytes);
-      this.offPtr[slot] = ptr;
-      this.offBytes[slot] = bytes;
-    }
-    const f64 = new Float64Array(this.bank.memory.buffer, ptr, 2 * n);
     const offsets = c.rayOffsets;
-    for (let i = 0; i < n; i++) {
-      f64[i] = Math.cos(offsets[i]!);
-      f64[n + i] = Math.sin(offsets[i]!);
+    const key = new Uint32Array(offsets.buffer, offsets.byteOffset, n).join(",");
+    const held = this.slotTable[slot];
+    if (held?.key === key) return;
+    let table = this.tables.get(key);
+    if (!table) {
+      const bytes = 16 * n;
+      table = { key, ptr: this.bank.alloc(bytes), bytes, refs: 0 };
+      this.tables.set(key, table);
+      const f64 = new Float64Array(this.bank.memory.buffer, table.ptr, 2 * n);
+      for (let i = 0; i < n; i++) {
+        f64[i] = Math.cos(offsets[i]!);
+        f64[n + i] = Math.sin(offsets[i]!);
+      }
+    }
+    table.refs++;
+    this.slotTable[slot] = table;
+    if (held && --held.refs === 0) {
+      this.tables.delete(held.key);
+      this.bank.free(held.ptr, held.bytes);
     }
   }
 
   // The address of the ray offset tables stored for the slot.
   offsetsAt(slot: number): number {
-    return this.offPtr[slot]!;
+    return this.slotTable[slot]!.ptr;
   }
 
   // The pointer of region r holding at least bytes, allocated or moved to a larger block when needed (contents are not kept).
@@ -260,6 +299,7 @@ export class WasmSenser {
     const pRockStart = this.grow(this.rRockStart, rock.rockStart.length * 4);
     const pRockOrder = this.grow(this.rRockOrder, rock.rockCount * 4 + 4);
     const pRockXYR = this.grow(this.rRockXYR, rock.rockCount * 24 + 8);
+    const pRockLB = this.grow(this.rRockLB, rock.cols * rock.rows * 4 + 4);
     const pScr = this.grow(this.rScratch, SCRATCH_BYTES);
     const pDetail = this.grow(this.rDetail, 16 * MAX_RAYS);
     const pP = this.grow(this.rP, L.S_BYTES);
@@ -275,6 +315,7 @@ export class WasmSenser {
         f64[xyr + 3 * d + 1] = rock.rockY[d]!;
         f64[xyr + 3 * d + 2] = rock.rockR[d]!;
       }
+      f32.set(rockLowerBound(rock.cols, rock.rows, ROCK_CELL, rock.rockX, rock.rockY, rock.rockR, rock.rockCount), pRockLB >> 2);
       this.rockSynced = rock;
     }
     const sx = pSx >> 2;
@@ -326,6 +367,7 @@ export class WasmSenser {
     i32[(pP + L.S_ROCK_START) >> 2] = pRockStart;
     i32[(pP + L.S_ROCK_ORDER) >> 2] = pRockOrder;
     i32[(pP + L.S_ROCK_XYR) >> 2] = pRockXYR;
+    i32[(pP + L.S_ROCK_LB) >> 2] = pRockLB;
     this.exports.sense(pP);
   }
 
