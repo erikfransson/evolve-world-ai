@@ -144,7 +144,7 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 | 68 | Process memory settings measured with saves: main heap cap 128 or 256, malloc env, restore transient | memory, no code | running | yes | Batch 9 (`memset.md`) |
 | 69 | Save-worker transient copies trimmed (verify worker's Buffer and string lifetimes, pack worker's double conversion) | memory, server code | running | yes | Batch 9 (`savepeak.md`) |
 | 70 | Deadband thinking: bench-only measurement of skip share against output error | study (lever) | the gate fires for under 0.8% of creature-ticks at any eps up to 0.05 (where the turn error is already near the full range): the body extras and memory units change by more than 0.05 in 86-91% of ticks, ray features are unchanged in only 46-56%; projected gain 0.25% at most | - | Rejected (`deadband.md`); hook not merged |
-| 71 | Two same-shape brains in lockstep (pairs of run-order neighbours with identical layer sizes share one 6-accumulator loop; per-output add order unchanged), microbench first | broad, exact | running | yes | Batch 9 (`pairs.md`) |
+| 71 | Two same-shape brains in lockstep | broad, exact | microbench: the paired loop beats two sequential runs by only 0-3% (the column loop issues about 20 uops per input, 5 cycles at 4-wide, so the 4-cycle add latency is already covered) and the pairing structure costs 5-10%; 0.93-0.95x of base on the mix even with 98% pairable brains | - (not built) | Rejected (`pairs.md`) |
 | 72 | Array-of-structs gather records for the item rows ({x, y, kind, id}) and the crowd entries ({sx, sy, sig, own}) so a row visit touches one line instead of two or three | small, exact | running | yes | Batch 9 (`aos.md`) |
 | 7 | prepareRows (slots phase, 7%) into the fill kernel | small | no exact variant over 1%: ground lookup is at most 0.6 ms, exp 0.33, rest 0.45 | yes | Rejected (`prep.md`) |
 
@@ -240,3 +240,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-28 23:55 Idea 61 done: no aged-world effect; the senser is per-ray bound even when creatures cluster. Lesson for the log: long runs under shared cores drift, so only alternating pairs count (already the rule).
 - 2026-10-28 00:01 Idea 65 rejected at the pre-check. Brain-side memory placement is done (ideas 30, 52, 57, 65 all found the stream and the window already hide those misses).
 - 2026-10-28 00:06 Idea 67 rejected: the sense kernel punishes any added code path (same as 31, 41, 60).
+- 2026-10-28 00:07 Idea 71 rejected: the brain loop is throughput-bound, not latency-bound; the last exact brain idea is closed.
