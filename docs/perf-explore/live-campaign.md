@@ -73,6 +73,7 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 | 32 | Moonshot: struct-of-arrays for the per-creature state the JS phases read | moonshot | study: the JS phases already read one 192-byte cache-line-aligned resident row per creature; a column layout of prepareRows measured 4-8% slower (15 streams against one); at most 0.07 ms (0.5%) removable, in the eat kernel's strided reads | - | Rejected after the study (`soa.md`), nothing built |
 | 33 | Reuse the shared-phase crowd grid at the next tick's start: a `refresh` kernel re-reads positions, energies and species in grid order and falls back to a rebuild when anyone changed cell or the member table changed | broad | exact; refresh 0.09 ms against 0.40 for a rebuild, qualifies on 80% of ticks at 3300 and 59% at the cap; tick 2.4% / 1.7% | yes | Merged (`gridreuse.md`), +65 lines and a test, full suite green (1223) |
 | 34 | Per-tick redundancy audit (work repeated on unchanged data or computed twice per creature), starting with the energy signal exp done in both prepareRows and the crowd pack | broad | running | yes | Batch 6 (`redo.md`) |
+| 35 | Skip the touch kernel for creatures whose sense gather saw no item within reach plus one tick's displacement (least item distance recorded before the move) | broad | running; bound about 0.35 ms (2.7%) | yes | Batch 6 (`touchskip.md`) |
 | 7 | prepareRows (slots phase, 7%) into the fill kernel | small | no exact variant over 1%: ground lookup is at most 0.6 ms, exp 0.33, rest 0.45 | yes | Rejected (`prep.md`) |
 
 ## Log
@@ -125,3 +126,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-27 18:25 Idea 33 merged (8de4ebb): the first keeper since batch 4. Patching the grid for births and deaths (step 2) is not worth 100 lines of wat for about 1% at the cap. Factor run for batch 6 started.
 - 2026-10-27 18:27 Idea 34 started: the audit angle that found idea 33, applied to the whole tick. Factor run for batch 6 in progress (one base mixed row lost to a duplicate start I stopped; medians from the rest).
 - 2026-10-27 18:33 Factor after batch 6: 1.19x mixed (15.07, 15.31 vs 12.72, 12.82 and a fast-machine 9.78), 1.17x at the cap (18.71, 18.40, 16.55 vs 15.68, 15.65, 15.68), fingerprints equal, peak RSS flat.
+- 2026-10-27 18:34 Idea 35 started: the sense kernel already sees every item near a creature before the move, so most creatures can skip the post-move touch walk if the displacement bound is rigorous.
