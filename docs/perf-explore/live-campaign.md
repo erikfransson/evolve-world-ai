@@ -138,7 +138,7 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 | 62 | sense.wat split into per-phase functions to cut register spills | small | not built: `--print-wasm-code` shows the hot loops have 0 stores and 0-2 stack loads; about 170 stack ops per creature in loop heads, an upper bound of 1.3% of the tick before call overhead; the C++ port's 8-12% is not spilling | - | Rejected (`split.md`) |
 | 63 | Dilated crowd occupancy gate (20 KB bit-planes built with the grid), one load skips both crowd walks for creatures alone in their window | small | running | yes | Batch 9 (`occgate.md`) |
 | 64 | The sense kernel emits the first-layer non-zero index list, brain.wat compacts only the tail | broad | running | yes | Batch 9 (`nzlist.md`) |
-| 65 | Run-ordered, 64-byte-aligned brain descriptor gather | small | running | yes | Batch 9 (`descs.md`) |
+| 65 | Run-ordered, 64-byte-aligned brain descriptor gather | small | not built: a sequential aligned table runs the kernel within 1% of base (the misses are hidden by the next-descriptor load and the out-of-order window; descPtr was already 64-aligned), and the gather itself costs 3-5% of the kernel | - | Rejected (`descs.md`) |
 | 66 | Step micro-cut bundle: two-segment f64x2 memory-unit loop, power-of-two clear raster, step tail writes the cell key | small | running | yes | Batch 9 (`stepcuts.md`) |
 | 67 | Rock lower bound at item-cell resolution, one byte per cell | small | running | yes | Batch 9 (`rockfine.md`) |
 | 68 | Process memory settings measured with saves: main heap cap 128 or 256, malloc env, restore transient | memory, no code | running | yes | Batch 9 (`memset.md`) |
@@ -238,3 +238,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-28 23:49 Idea 62 rejected at the pre-check. Idea 71 (lockstep brain pairs) started in its slot.
 - 2026-10-28 23:54 Idea 70 rejected: every input-gated thinking lever is dead (ideas 13, 18, 70); only tick-count levers (thinkEvery, dt) remain, and dt is the better one. Idea 72 started.
 - 2026-10-28 23:55 Idea 61 done: no aged-world effect; the senser is per-ray bound even when creatures cluster. Lesson for the log: long runs under shared cores drift, so only alternating pairs count (already the rule).
+- 2026-10-28 00:01 Idea 65 rejected at the pre-check. Brain-side memory placement is done (ideas 30, 52, 57, 65 all found the stream and the window already hide those misses).
