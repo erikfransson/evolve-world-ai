@@ -52,6 +52,7 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 | 18 | Sense every other tick, think every tick with fresh body inputs (`eco.senseEvery`) | broad | 1.12x; births and food at 600 s outside the senseEvery 1 spread (closer than thinkEvery 2) | no at 2 (yes at 1) | Rejected, parked on `pl-sense2` (`sense2.md`) |
 | 20 | Item and crowd grid cell size (100 today, plans see 170) 1.25-3x | small | at best 1-2% of the tick; item cell factors change the fingerprint (tie-break of multi-touch eats, 0.3% of touching creature-ticks) | no (tie-breaks) | Rejected (`cell.md`) |
 | 21 | Sense per-ray passes two rays wide (f64x2 directions, closeness) | small | kernel -2%, tick 0.3-0.8%: the passes are bound by stores and loop overhead, not arithmetic | yes | Rejected (`rays2.md`) |
+| 19 | Brains run in weight-block address order (sorted slot list kept in the bank) | small | 60 s bench 1.005x, but the order drifts as the world ages: brain phase 1.12x and tick 1.04-1.10x at 600 s; nothing for a single-shape world | yes | Merged (`brainorder.md`): the live world runs for days |
 | 7 | prepareRows (slots phase, 7%) into the fill kernel | small | no exact variant over 1%: ground lookup is at most 0.6 ms, exp 0.33, rest 0.45 | yes | Rejected (`prep.md`) |
 
 ## Log
@@ -80,3 +81,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-27 13:05 Factor after batch 3 (stepk, senseempty, brain3 added): 1.17x in both cases, bit-identical. Idea 18 rejected: stale rays alone change the dynamics; every variant of thinking or sensing less often does.
 - 2026-10-27 13:50 Idea 20 rejected: wider cells cut loop entries but scan more items, net 1-2%, and not exact.
 - 2026-10-27 13:56 Idea 21 rejected (under 1%). The sense kernel's remaining cost is memory and loop overhead; no exact arithmetic cut is left there.
+- 2026-10-27 15:10 Idea 19 merged (58 lines in brainKernel.ts). The 60 s bench understates it; the gain grows with the world's age.
