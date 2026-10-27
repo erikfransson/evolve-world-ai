@@ -13,9 +13,9 @@ import { EVENT_STRIDE } from "../../src/typescript/src/sim/ecosystem.ts";
 import { TokenBucket } from "./budget.ts";
 import { addingOn } from "./adds.ts";
 import { Chronicle } from "./chronicle.ts";
-import { restoreState, saveState } from "../../src/typescript/src/sim/ecoState.ts";
+import { restoreState, saveState, snapshotState } from "../../src/typescript/src/sim/ecoState.ts";
 import { boardValue } from "../../src/typescript/src/sim/leaderboard.ts";
-import type { EcoState } from "../../src/typescript/src/sim/ecoState.ts";
+import type { EcoSnapshot, EcoState } from "../../src/typescript/src/sim/ecoState.ts";
 import { BIRTH_WEIGHT_CAP, LIMITS, LIVE, MAX_LIVE_WEIGHTS, MAX_POPULATION, MAX_SEED_FOUNDERS, SEED_COPIES, itemHeadroom, mostCopies, seedRoom } from "./config.ts";
 import type { SeedFounder } from "./founders.ts";
 import { mapRegions } from "../../src/typescript/src/live/mapRegions.ts";
@@ -612,6 +612,11 @@ export class LiveWorld {
   // The full world as plain data, to be written out by the caller.
   saveState(): EcoState {
     return saveState(this.eco);
+  }
+
+  // The same with its binary columns as typed arrays (copies), for a worker to pack (saves.ts).
+  saveSnapshot(): EcoSnapshot {
+    return snapshotState(this.eco);
   }
 
   // The world this server runs, as a save must match it (saveParse.ts otherWorldReason).

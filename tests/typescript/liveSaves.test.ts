@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, symlinkSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { gzipSync } from "node:zlib";
+import { gunzipSync, gzipSync } from "node:zlib";
 import { LIMITS, LIVE } from "../../server/src/config.ts";
 import { LiveWorld } from "../../server/src/liveWorld.ts";
 import { Saves, openWorld } from "../../server/src/saves.ts";
@@ -111,6 +111,29 @@ describe("saves", () => {
     await expect(store.read(saveName(at(2)))).rejects.toThrow(/no such save/);
     expect(() => readRegularFile(join(dir, saveName(at(1))), 1e6)).toThrow(/regular file/);
     expect(() => readRegularFile(join(dir, saveName(at(2))), 1e6)).toThrow(/regular file/); // returns at once, no blocking open
+  });
+
+  it("packs a save on the worker into the same JSON as JSON.stringify(saveState()), byte for byte, and the world runs on", async () => {
+    for (const thinkEvery of [1, 2]) {
+      const c = smallConfig();
+      c.eco.thinkEvery = thinkEvery; // 2 adds the outputs column
+      const w = new LiveWorld(c, null);
+      for (let i = 0; i < 20; i++) w.eco.step();
+      w.eco.members[0]!.mutationScale = 0.5;
+      w.eco.members[1]!.bumpKills = 3;
+      const dir = tmp();
+      const line = await new Saves(w, new StateStore(dir)).save();
+      const name = readdirSync(dir).find((n) => n.endsWith(".json.gz"))!;
+      expect(line).toContain(name);
+      expect(gunzipSync(readFileSync(join(dir, name))).toString("utf8")).toBe(json(w));
+      const b = new LiveWorld(c, null);
+      b.restoreState(await new StateStore(dir).read(name));
+      for (let i = 0; i < 10; i++) {
+        w.eco.step();
+        b.eco.step();
+      }
+      expect(b.eco.fingerprint()).toBe(w.eco.fingerprint()); // the snapshot's columns were copies: the world's own were not moved away
+    }
   });
 
   it("refuses to write a save larger than it may read back, and says so loudly", async () => {
