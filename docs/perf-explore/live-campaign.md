@@ -251,3 +251,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-28 00:37 Factor after batch 9: 1.29x both cases (17.84 vs 13.82 mixed, 21.59 vs 16.79 cap), fingerprints equal, RSS flat at 60 s; the spare-pool cap costs nothing measurable.
 - 2026-10-28 00:40 Idea 69 merged: the second memory fix, and a robustness gain (the pack timeout no longer trips under load).
 - 2026-10-28 00:45 Idea 74 merged. Running: 59 (births), 68 (memory settings), 73 (server soak), the full suite on perf-live.
+- 2026-10-28 00:55 Full suite on perf-live after ideas 54 and 69: 121 files, 1227 tests, exit 0.
