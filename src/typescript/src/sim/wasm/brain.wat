@@ -29,7 +29,8 @@
 
   ;; One layer: dst[0..nPad) = tanh(bias + sum over list of src[i] * W[i][..]), the list holding cnt input indices, added in order.
   ;; Columns go in groups of up to six vectors (24 outputs, so a 24-wide layer is one pass over the inputs) that stay in registers across the input loop.
-  (func $layer (param $src i32) (param $list i32) (param $cnt i32) (param $w i32) (param $nIn i32) (param $nPad i32) (param $dst i32)
+  ;; The groups of up to four vectors also touch two lines at pf per input (pf moves 128 bytes while below pe) and return pf; see forward.
+  (func $layer (param $src i32) (param $list i32) (param $cnt i32) (param $w i32) (param $nIn i32) (param $nPad i32) (param $dst i32) (param $pf i32) (param $pe i32) (result i32)
     (local $jb i32) (local $stride i32) (local $bias i32) (local $left i32) (local $le i32) (local $lp i32) (local $i i32) (local $p i32) (local $b i32) (local $wj i32)
     (local $vs v128) (local $a0 v128) (local $a1 v128) (local $a2 v128) (local $a3 v128) (local $a4 v128) (local $a5 v128)
     (local $x v128) (local $x2 v128) (local $n v128) (local $d v128)
@@ -113,6 +114,9 @@
             (local.set $a2 (f32x4.add (local.get $a2) (f32x4.mul (v128.load offset=32 (local.get $p)) (local.get $vs))))
             (local.set $a3 (f32x4.add (local.get $a3) (f32x4.mul (v128.load offset=48 (local.get $p)) (local.get $vs))))
             (local.set $lp (i32.add (local.get $lp) (i32.const 4)))
+            (drop (i32.load (local.get $pf)))
+            (drop (i32.load offset=64 (local.get $pf)))
+            (local.set $pf (select (i32.add (local.get $pf) (i32.const 128)) (local.get $pf) (i32.lt_u (local.get $pf) (local.get $pe))))
             (br $il)))
           (local.set $b (i32.add (local.get $dst) (local.get $jb)))
           (v128.store offset=0 (local.get $b) (local.get $a0))
@@ -134,6 +138,9 @@
             (local.set $a1 (f32x4.add (local.get $a1) (f32x4.mul (v128.load offset=16 (local.get $p)) (local.get $vs))))
             (local.set $a2 (f32x4.add (local.get $a2) (f32x4.mul (v128.load offset=32 (local.get $p)) (local.get $vs))))
             (local.set $lp (i32.add (local.get $lp) (i32.const 4)))
+            (drop (i32.load (local.get $pf)))
+            (drop (i32.load offset=64 (local.get $pf)))
+            (local.set $pf (select (i32.add (local.get $pf) (i32.const 128)) (local.get $pf) (i32.lt_u (local.get $pf) (local.get $pe))))
             (br $il)))
           (local.set $b (i32.add (local.get $dst) (local.get $jb)))
           (v128.store offset=0 (local.get $b) (local.get $a0))
@@ -152,6 +159,9 @@
             (local.set $a0 (f32x4.add (local.get $a0) (f32x4.mul (v128.load offset=0 (local.get $p)) (local.get $vs))))
             (local.set $a1 (f32x4.add (local.get $a1) (f32x4.mul (v128.load offset=16 (local.get $p)) (local.get $vs))))
             (local.set $lp (i32.add (local.get $lp) (i32.const 4)))
+            (drop (i32.load (local.get $pf)))
+            (drop (i32.load offset=64 (local.get $pf)))
+            (local.set $pf (select (i32.add (local.get $pf) (i32.const 128)) (local.get $pf) (i32.lt_u (local.get $pf) (local.get $pe))))
             (br $il)))
           (local.set $b (i32.add (local.get $dst) (local.get $jb)))
           (v128.store offset=0 (local.get $b) (local.get $a0))
@@ -167,6 +177,9 @@
             (local.set $p (i32.add (local.get $wj) (i32.mul (local.get $i) (local.get $stride))))
             (local.set $a0 (f32x4.add (local.get $a0) (f32x4.mul (v128.load offset=0 (local.get $p)) (local.get $vs))))
             (local.set $lp (i32.add (local.get $lp) (i32.const 4)))
+            (drop (i32.load (local.get $pf)))
+            (drop (i32.load offset=64 (local.get $pf)))
+            (local.set $pf (select (i32.add (local.get $pf) (i32.const 128)) (local.get $pf) (i32.lt_u (local.get $pf) (local.get $pe))))
             (br $il)))
           (local.set $b (i32.add (local.get $dst) (local.get $jb)))
           (v128.store offset=0 (local.get $b) (local.get $a0))))))))))))))
@@ -192,19 +205,29 @@
         (f32x4.div (local.get $n) (local.get $d))
         (f32x4.ge (f32x4.abs (local.get $x)) (v128.const f32x4 4.97 4.97 4.97 4.97))))
       (local.set $p (i32.add (local.get $p) (i32.const 16)))
-      (br_if $tl (i32.lt_u (local.get $p) (local.get $b)))))
+      (br_if $tl (i32.lt_u (local.get $p) (local.get $b))))
+    (local.get $pf))
 
   ;; forward(desc, slots, n, scratchA, scratchB, nzList, iota, tab): creatures slots[0..n-1], each scratch buffer holds the widest padded layer.
   ;; The first layer adds only the non-zero inputs; the others use the identity index list iota. The last layer stores straight to the output.
+  ;; While a brain runs, its layers touch the next brain's weights in order, so the hardware prefetcher streams them in early (WASM has no prefetch).
   (func (export "forward") (param $desc i32) (param $slots i32) (param $n i32) (param $sa i32) (param $sb i32) (param $nz i32) (param $iota i32) (param $tab i32)
     (local $c i32) (local $d i32) (local $l i32) (local $layers i32) (local $nIn i32) (local $nOut i32) (local $nPad i32)
-    (local $w i32) (local $src i32) (local $dst i32) (local $list i32) (local $cnt i32)
+    (local $w i32) (local $src i32) (local $dst i32) (local $list i32) (local $cnt i32) (local $pf i32) (local $pe i32)
     (block $cd (loop $cl
       (br_if $cd (i32.ge_u (local.get $c) (local.get $n)))
       (local.set $d (i32.add (local.get $desc) (i32.shl (i32.load (i32.add (local.get $slots) (i32.shl (local.get $c) (i32.const 2)))) (i32.const 6))))
       (local.set $w (i32.load (local.get $d)))
       (local.set $src (i32.load offset=4 (local.get $d)))
       (local.set $layers (i32.sub (i32.load offset=12 (local.get $d)) (i32.const 1)))
+      ;; pf ends over 128 bytes before the next block's inputs (or stays at 0 when there is none), so every touch is in bounds.
+      (local.set $pf (i32.const 0))
+      (local.set $pe (i32.const 0))
+      (if (i32.lt_u (i32.add (local.get $c) (i32.const 1)) (local.get $n)) (then
+        (local.set $pe (i32.add (local.get $desc) (i32.shl (i32.load offset=4 (i32.add (local.get $slots) (i32.shl (local.get $c) (i32.const 2)))) (i32.const 6))))
+        (local.set $pf (i32.load (local.get $pe)))
+        (local.set $pe (i32.sub (i32.load offset=4 (local.get $pe)) (i32.const 256)))
+        (if (i32.lt_s (local.get $pe) (local.get $pf)) (then (local.set $pf (i32.const 0)) (local.set $pe (i32.const 0))))))
       (local.set $l (i32.const 0))
       (block $ld (loop $ll
         (br_if $ld (i32.ge_u (local.get $l) (local.get $layers)))
@@ -216,7 +239,7 @@
         (if (local.get $l)
           (then (local.set $list (local.get $iota)) (local.set $cnt (local.get $nIn)))
           (else (local.set $list (local.get $nz)) (local.set $cnt (call $compact (local.get $src) (local.get $nIn) (local.get $nz) (local.get $tab)))))
-        (call $layer (local.get $src) (local.get $list) (local.get $cnt) (local.get $w) (local.get $nIn) (local.get $nPad) (local.get $dst))
+        (local.set $pf (call $layer (local.get $src) (local.get $list) (local.get $cnt) (local.get $w) (local.get $nIn) (local.get $nPad) (local.get $dst) (local.get $pf) (local.get $pe)))
         (local.set $w (i32.add (local.get $w) (i32.shl (i32.mul (i32.add (local.get $nIn) (i32.const 1)) (local.get $nPad)) (i32.const 2))))
         (local.set $src (local.get $dst))
         (local.set $l (i32.add (local.get $l) (i32.const 1)))
