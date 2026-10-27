@@ -13,10 +13,10 @@ Fingerprint equal means bit-identical results.
 |------------|----------------------------------------|---------------------|-------------------|--------|--------------------------|
 | 2026-10-27 09:00 | 4 founders x 800 copies, 60 s (3300)   | 15.24               | 15.24             | 1.00x  | 214 / 214 MB             |
 | 2026-10-27 09:00 | Juggernaut x 4900 (cap), 60 s          | 18.50               | 18.50             | 1.00x  | 253 / 253 MB             |
-| 2026-10-27 16:30 | 4 founders x 800 (3 pairs, medians)    | 16.03               | 15.51             | 1.03x (exact); 1.5x more with `eco.thinkEvery` 2, Erik's call | 249 / 248 MB |
-| 2026-10-27 16:30 | Juggernaut x 4900 (3 pairs, medians)   | 19.66               | 19.41             | 1.01x (exact) | 257 / 254 MB |
-| 2026-10-27 20:30 | 4 founders x 800 (3 pairs, medians)    | 16.22               | 14.79             | 1.10x (exact); 1.5x more with `eco.thinkEvery` 2, Erik's call | 216 / 218 MB |
-| 2026-10-27 20:30 | Juggernaut x 4900 (3 pairs, medians)   | 19.90               | 18.19             | 1.09x (exact) | 252 / 256 MB |
+| 2026-10-27 10:46 | 4 founders x 800 (3 pairs, medians)    | 16.03               | 15.51             | 1.03x (exact); 1.5x more with `eco.thinkEvery` 2, Erik's call | 249 / 248 MB |
+| 2026-10-27 10:46 | Juggernaut x 4900 (3 pairs, medians)   | 19.66               | 19.41             | 1.01x (exact) | 257 / 254 MB |
+| 2026-10-27 11:37 | 4 founders x 800 (3 pairs, medians)    | 16.22               | 14.79             | 1.10x (exact); 1.5x more with `eco.thinkEvery` 2, Erik's call | 216 / 218 MB |
+| 2026-10-27 11:37 | Juggernaut x 4900 (3 pairs, medians)   | 19.90               | 18.19             | 1.09x (exact) | 252 / 256 MB |
 
 Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54, brain forward 5.23 / 5.17, slots (prepareRows) 1.04 / 1.52, memory and steer 1.26 / 1.59, eat 1.05 / 1.35, crowd grid 0.51 / 0.67, collisions 0.18 / 0.27, rest under 0.2. Server frame encoding adds 0.57 ms per tick at 5 Hz. Speed achieved unpaced on this loaded machine: 2.0x and 1.7x real time (the set speed is 3x).
 
@@ -44,24 +44,24 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 
 ## Log
 - 2026-10-27 09:00 Campaign start. Prior campaigns (B1, B2, `docs/perf-explore/`) already moved sense, brains, physics, crowd grid, collisions and scans into WASM; their rejected ideas are not retried unless the live setting changes the picture.
-- 2026-10-27 09:40 `server/src/liveBench.ts` written; two runs at 400 seeded give the same fingerprint (260290661), so the bench is deterministic.
-- 2026-10-27 11:10 Idea 3 rejected: the brain kernel is about 72% compute or latency, only 28% weight traffic (cache-resident control 3.9 vs 5.3 ms); bf16 widening eats the saving. Write-up `bf16.md`.
-- 2026-10-27 11:30 Idea 7 rejected: the slots phase splits into ground lookup (at most 0.6 ms), Math.exp (0.33) and field traffic (0.45); nothing exact to cut. Write-up `prep.md`.
-- 2026-10-27 12:00 Idea 4 done: sense kernel cost is loop entry, branch misses and cold misses per grid row, not candidate counts (2.2 items, 0.2 rock, 0.1 crowd kept per creature). Exact cuts queued as idea 8. Write-up `senselive.md`.
-- 2026-10-27 13:10 Idea 5 (moonshot) measured: a native AVX2 brain kernel on the bank memory is bit-identical and 1.8x on the kernel, 1.15-1.17x per tick. Parked for Erik: it means a C++ twin of brain.wat, a g++ build at deploy, and attack surface (uploaded plans size the brains). Finding: the kernel cost is instructions and latency, not bandwidth, so brain.wat itself has headroom (idea 9).
-- 2026-10-27 14:00 Idea 2 measured 1.025x; parked, not merged: relaxed_madd fuses only on CPUs with FMA, so saves would replay differently across hosts, and the gain is 0.4 ms. Erik can overrule.
-- 2026-10-27 15:40 Ideas 1 and 9 merged into perf-live (c5b159a, 414b13e). thinkEvery stays 1 in liveConfig: the 1.5x is available by one config line once Erik accepts the dynamics change. Factor run batch1 (3 alternating pairs, both cases) and the full test suite started.
-- 2026-10-27 16:20 Idea 12 rejected: no Node flag helps (baseline spread alone 6%). GC about 2%.
-- 2026-10-27 16:30 Factor after batch 1: 1.03x mixed, 1.01x at the cap, bit-identical. The exact wins are small, as the earlier campaigns found; the big lever (think every other tick, 1.5x) waits for Erik's decision on the dynamics change.
-- 2026-10-27 17:00 Full suite on perf-live: 1215 of 1216 pass; the Inland Sea case of residentBodies.test.ts hits its 20 s timeout under load on perf-base too (both pass in 45 s with --testTimeout=180000), so not a regression.
-- 2026-10-27 17:40 Idea 11 rejected: under 1% for 81 lines in server code under the push gate. liveBench now calls stats once a second as the server does.
-- 2026-10-27 18:00 Idea 10 merged (14 lines of crowd.wat). The second crowd rebuild cannot be skipped exactly (creatures cross cells every tick, in-cell order matters for collisions).
-- 2026-10-27 19:30 Idea 8 merged (+138/-34, exact, about 5%).
-- 2026-10-27 20:30 Idea 15 merged (small but consistent, smaller raster). Note from the agent: identical code ran 0.8 ms slower in one worktree than another, so pairs must run from one checkout (base = HEAD, yours = patch).
-- 2026-10-27 20:45 Factor after batch 2 (brainblock, eat, sensecuts; stepk merged after the run): 1.10x mixed, 1.09x at the cap, bit-identical, memory flat. liveBench got `--threads` for the helper-thread check (idea 6).
-- 2026-10-27 21:30 Idea 14 merged (+87/-16 in sense.wat, exact, equality test with poisoned inputs).
-- 2026-10-27 22:40 Idea 16 (moonshot 2) rejected: V8's code for the kernels is as good as gcc's from the same wat; only a hand-written wider kernel gains (idea 5, parked).
-- 2026-10-27 22:50 Idea 6 measured: helpers do not pay on this host (load 12-20); the server stays single-threaded.
-- 2026-10-28 00:10 Idea 13 rejected: the thinkEvery 2 churn comes from the brain's delayed self-feedback, not from encounters. Next variant (idea 18): sense every other tick but think every tick with fresh body inputs, so only the ray inputs are one tick stale.
-- 2026-10-28 00:50 Independent review (Opus) of development...perf-live: no correctness bug; three low items, two fixed (thinkEvery bounded in pasted configs, helper packet tick stored mod 840 so the i32 header never wraps), one noted (per-tick subarray views in collect, only with thinkEvery above 1 and helpers; inactive on the server).
-- 2026-10-28 02:20 Idea 17 merged (28 lines of brain.wat). Finding: per brain 1047 ns in the live mix vs 500 ns from L1, so the brain kernel is about half memory stall; bursts and list-driven touches lose, only a sequential stream of touches wins.
+- 2026-10-27 09:19 `server/src/liveBench.ts` written; two runs at 400 seeded give the same fingerprint (260290661), so the bench is deterministic.
+- 2026-10-27 09:24 Idea 3 rejected: the brain kernel is about 72% compute or latency, only 28% weight traffic (cache-resident control 3.9 vs 5.3 ms); bf16 widening eats the saving. Write-up `bf16.md`.
+- 2026-10-27 09:26 Idea 7 rejected: the slots phase splits into ground lookup (at most 0.6 ms), Math.exp (0.33) and field traffic (0.45); nothing exact to cut. Write-up `prep.md`.
+- 2026-10-27 09:40 Idea 4 done: sense kernel cost is loop entry, branch misses and cold misses per grid row, not candidate counts (2.2 items, 0.2 rock, 0.1 crowd kept per creature). Exact cuts queued as idea 8. Write-up `senselive.md`.
+- 2026-10-27 09:55 Idea 5 (moonshot) measured: a native AVX2 brain kernel on the bank memory is bit-identical and 1.8x on the kernel, 1.15-1.17x per tick. Parked for Erik: it means a C++ twin of brain.wat, a g++ build at deploy, and attack surface (uploaded plans size the brains). Finding: the kernel cost is instructions and latency, not bandwidth, so brain.wat itself has headroom (idea 9).
+- 2026-10-27 10:14 Idea 2 measured 1.025x; parked, not merged: relaxed_madd fuses only on CPUs with FMA, so saves would replay differently across hosts, and the gain is 0.4 ms. Erik can overrule.
+- 2026-10-27 10:25 Ideas 1 and 9 merged into perf-live (c5b159a, 414b13e). thinkEvery stays 1 in liveConfig: the 1.5x is available by one config line once Erik accepts the dynamics change. Factor run batch1 (3 alternating pairs, both cases) and the full test suite started.
+- 2026-10-27 10:45 Idea 12 rejected: no Node flag helps (baseline spread alone 6%). GC about 2%.
+- 2026-10-27 10:46 Factor after batch 1: 1.03x mixed, 1.01x at the cap, bit-identical. The exact wins are small, as the earlier campaigns found; the big lever (think every other tick, 1.5x) waits for Erik's decision on the dynamics change.
+- 2026-10-27 10:49 Full suite on perf-live: 1215 of 1216 pass; the Inland Sea case of residentBodies.test.ts hits its 20 s timeout under load on perf-base too (both pass in 45 s with --testTimeout=180000), so not a regression.
+- 2026-10-27 10:50 Idea 11 rejected: under 1% for 81 lines in server code under the push gate. liveBench now calls stats once a second as the server does.
+- 2026-10-27 10:50 Idea 10 merged (14 lines of crowd.wat). The second crowd rebuild cannot be skipped exactly (creatures cross cells every tick, in-cell order matters for collisions).
+- 2026-10-27 11:08 Idea 8 merged (+138/-34, exact, about 5%).
+- 2026-10-27 11:34 Idea 15 merged (small but consistent, smaller raster). Note from the agent: identical code ran 0.8 ms slower in one worktree than another, so pairs must run from one checkout (base = HEAD, yours = patch).
+- 2026-10-27 11:37 Factor after batch 2 (brainblock, eat, sensecuts; stepk merged after the run): 1.10x mixed, 1.09x at the cap, bit-identical, memory flat. liveBench got `--threads` for the helper-thread check (idea 6).
+- 2026-10-27 11:40 Idea 14 merged (+87/-16 in sense.wat, exact, equality test with poisoned inputs).
+- 2026-10-27 11:53 Idea 16 (moonshot 2) rejected: V8's code for the kernels is as good as gcc's from the same wat; only a hand-written wider kernel gains (idea 5, parked).
+- 2026-10-27 11:53 Idea 6 measured: helpers do not pay on this host (load 12-20); the server stays single-threaded.
+- 2026-10-27 12:12 Idea 13 rejected: the thinkEvery 2 churn comes from the brain's delayed self-feedback, not from encounters. Next variant (idea 18): sense every other tick but think every tick with fresh body inputs, so only the ray inputs are one tick stale.
+- 2026-10-27 12:22 Independent review (Opus) of development...perf-live: no correctness bug; three low items, two fixed (thinkEvery bounded in pasted configs, helper packet tick stored mod 840 so the i32 header never wraps), one noted (per-tick subarray views in collect, only with thinkEvery above 1 and helpers; inactive on the server).
+- 2026-10-27 12:31 Idea 17 merged (28 lines of brain.wat). Finding: per brain 1047 ns in the live mix vs 500 ns from L1, so the brain kernel is about half memory stall; bursts and list-driven touches lose, only a sequential stream of touches wins.
