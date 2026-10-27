@@ -45,8 +45,9 @@
           (i32.and (f64.ge (local.get $squareX) (f64.const 0)) (f64.lt (local.get $squareX) (f64.convert_i32_s (i32.load offset={{P_NEAR_COLS}} (local.get $P)))))
           (i32.and (f64.ge (local.get $squareY) (f64.const 0)) (f64.lt (local.get $squareY) (f64.convert_i32_s (i32.load offset={{P_NEAR_ROWS}} (local.get $P))))))
       (then
-        (if (i32.eqz (i32.load8_u (i32.add (i32.load offset={{Q_NEAR}} (local.get $sp))
-              (i32.add (i32.mul (i32.trunc_sat_f64_s (local.get $squareY)) (i32.load offset={{P_NEAR_COLS}} (local.get $P))) (i32.trunc_sat_f64_s (local.get $squareX))))))
+        (local.set $disc (i32.add (i32.mul (i32.trunc_sat_f64_s (local.get $squareY)) (i32.load offset={{P_NEAR_COLS}} (local.get $P))) (i32.trunc_sat_f64_s (local.get $squareX))))
+        ;; the raster is a bit per square
+        (if (i32.eqz (i32.and (i32.const 1) (i32.shr_u (i32.load8_u (i32.add (i32.load offset={{Q_NEAR}} (local.get $sp)) (i32.shr_u (local.get $disc) (i32.const 3)))) (i32.and (local.get $disc) (i32.const 7)))))
           (then (return)))))
     (local.set $cols (i32.load offset={{P_ROCK_COLS}} (local.get $P)))
     (local.set $rockStart (i32.load offset={{P_ROCK_START}} (local.get $P)))

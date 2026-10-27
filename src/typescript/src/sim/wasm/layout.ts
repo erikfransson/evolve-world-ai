@@ -185,7 +185,7 @@ export const LAYOUT = {
   Q_DECAY_TURN: 112,
   Q_DECAY_DRAG: 120,
   Q_DECAY_SIDE: 128,
-  Q_NEAR: 136, // i32: address of the clear-of-rock raster for this species' radius
+  Q_NEAR: 136, // i32: address of the clear-of-rock raster, a bit per square, for this species' radius
   Q_BYTES: 144,
 } as const;
 

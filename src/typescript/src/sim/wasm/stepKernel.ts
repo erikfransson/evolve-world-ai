@@ -22,7 +22,7 @@ export class WasmStepper {
   private readonly rRows = new Region(); // the row addresses of the batch
   private readonly rSpecies = new Region(); // one species block each
   private readonly rRock = [new Region(), new Region(), new Region()]; // rockStart, rockOrder, the discs as x, y, r
-  private nearRegions: Region[] = []; // per species, the clear-of-rock raster
+  private nearRegions: Region[] = []; // per species, the clear-of-rock raster, a bit per square
   private nearRadius: number[] = []; // the radius each raster was made for
   private terrain: Terrain | null = null; // the map whose rock is in wasm memory
   private pP = 0;
@@ -75,8 +75,10 @@ export class WasmStepper {
       if (this.nearRadius[s] === radius) continue;
       const raster = terrain.nearFor(radius);
       const region = (this.nearRegions[s] ??= new Region());
-      const at = store.grow(region, raster.length);
-      new Uint8Array(store.i32.buffer, at, raster.length).set(raster);
+      const at = store.grow(region, (raster.length + 7) >> 3);
+      const bits = new Uint8Array(store.i32.buffer, at, (raster.length + 7) >> 3);
+      bits.fill(0);
+      for (let i = 0; i < raster.length; i++) if (raster[i]) bits[i >> 3]! |= 1 << (i & 7);
       this.nearRadius[s] = radius;
     }
   }
