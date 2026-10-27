@@ -70,6 +70,7 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 | 30 | Brain inputs and outputs out of the weight blocks into compact slot-indexed arrays (the slots, senser and step phases touch them scattered across the 24 MB stream, cold misses every tick) | broad | running; bound 0.3-1 ms | yes | Batch 6 (`compactio.md`) |
 | 31 | Skip the crowd walk when the crowd grid's prefix counts show the creature alone in its window | small | exact (hash-equal inputs), fires for 51% of creatures, but the kernel is 2-3% slower: the walk's cost is the per-row prefix loads, which the count pass repeats | yes | Rejected (`crowdcount.md`) |
 | 32 | Moonshot: struct-of-arrays for the per-creature state the JS phases read | moonshot | study: the JS phases already read one 192-byte cache-line-aligned resident row per creature; a column layout of prepareRows measured 4-8% slower (15 streams against one); at most 0.07 ms (0.5%) removable, in the eat kernel's strided reads | - | Rejected after the study (`soa.md`), nothing built |
+| 33 | Reuse the shared-phase crowd grid at the next tick's start (nobody moves in between; refresh energies, skip or patch for births and deaths) instead of the second rebuild | broad | running; bound about 0.45 ms (3%) | yes | Batch 6 (`gridreuse.md`) |
 | 7 | prepareRows (slots phase, 7%) into the fill kernel | small | no exact variant over 1%: ground lookup is at most 0.6 ms, exp 0.33, rest 0.45 | yes | Rejected (`prep.md`) |
 
 ## Log
@@ -117,3 +118,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-27 17:51 Batch 6 started: the per-creature data that lives inside the weight blocks (idea 30), a cheaper crowd skip (31), and the struct-of-arrays moonshot as a study with a bar (32). The deferral of the refactor was mine, not Erik's; the goal licenses it.
 - 2026-10-27 17:58 Idea 31 rejected: every row-walk skip so far loses, because the walk is already the two prefix loads per row; only a structure that avoids touching the rows at all could help, and the box is 4-5 rows wide.
 - 2026-10-27 17:58 Idea 32 rejected at stage 1: layout.md's pointer chasing is gone since the resident rows. Its profile lists the eat phase rebuilding the crowd grid twice (about 0.5 ms): checked next.
+- 2026-10-27 18:00 Idea 33 started from the idea 32 profile: the crowd grid is built twice per tick and the second build repeats the first unless the member table changed.
