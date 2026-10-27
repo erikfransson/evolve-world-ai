@@ -4,11 +4,13 @@ import { Region } from "./resident.ts";
 import type { ResidentStore } from "./resident.ts";
 
 // The end-of-tick scans over the members' rows in WebAssembly (members.wat): settle (a tick alive for the living, a list of the others) and the birth candidates.
-// Twins of the loops in Ecosystem.sharedPhase, which stay the reference and the fallback; tests/typescript/wasmMembers.test.ts compares them.
+// Also the scan of ga.ts mutate (the genes that mutate, with their draws).
+// Twins of the loops in Ecosystem.sharedPhase and ga.ts mutate, which stay the reference and the fallback; tests/typescript/wasmMembers.test.ts compares them.
 
 interface MembersExports extends WebAssembly.Exports {
   settle(m: number): void;
   birthCandidates(m: number): void;
+  mutateScan(m: number): void;
 }
 
 export class WasmMembers {
@@ -17,6 +19,8 @@ export class WasmMembers {
   private readonly rRowAt = new Region();
   private readonly rOut = new Region();
   private readonly rThresholds = new Region();
+  private readonly rHits = new Region();
+  endState = 0; // the generator state after the last mutateHits scan
   private readonly pM: number;
   private list = new Int32Array(64); // the last result, in JS memory: acting on it may grow the kernel memory
 
@@ -65,5 +69,22 @@ export class WasmMembers {
   // The members, from index first round the list once, whose energy is not below thresholds[i]. Valid until the next call.
   birthCandidates(rowAt: Int32Array, n: number, thresholds: Float64Array, first: number): Int32Array {
     return this.run("birthCandidates", rowAt, n, thresholds, first);
+  }
+
+  // ga.ts mutate's scan of n genes from generator state `state`, where a gene mutates when its draw is below limit (0 < limit < 2^32):
+  // the gene index and the two draws of its normal, three i32 per mutated gene; endState is the state after the scan. Valid until the next call that allocates.
+  mutateHits(n: number, state: number, limit: number): Int32Array {
+    const { store } = this;
+    const outAt = store.grow(this.rHits, n * 12);
+    const { i32 } = store; // after the allocation
+    const M = this.pM;
+    i32[(M + L.M_N) >> 2] = n;
+    i32[(M + L.M_OUT) >> 2] = outAt;
+    i32[(M + L.M_SEED) >> 2] = state;
+    i32[(M + L.M_LIMIT) >> 2] = limit;
+    this.exports.mutateScan(M);
+    this.endState = i32[(M + L.M_SEED) >> 2]!;
+    const count = i32[(M + L.M_OUT_COUNT) >> 2]!;
+    return i32.subarray(outAt >> 2, (outAt >> 2) + 3 * count);
   }
 }

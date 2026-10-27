@@ -98,7 +98,7 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 | 56 | Study for Erik: dt 1/20 or 1/25 (1.5x fewer ticks) measured on the ecology like `thinkEvery` was | study (parameter) | running | no by nature | Batch 8 (`dt20.md`) |
 | 57 | brain.wat: extend the brain3 touch stream to the 5- and 6-vector column loops, so layers wider than 16 are prefetched too | small | running; bound: the untouched 9.6 MB per tick at 3300 | yes | Batch 8 (`touch6.md`) |
 | 58 | Study: the fixed per-tick intercept (2.2-2.7 ms regardless of population): profile a 100-creature world with the live item count, find the constant costs per phase and cut what is exact | broad | running; bound 5-8% of a thin-world tick | yes | Batch 8 (`intercept.md`) |
-| 59 | Cheaper births: reuse the parent's genome buffers and bank slot, avoid per-birth allocation | small | running; bound 1-2% late | yes | Batch 8 (`births.md`) |
+| 59 | Cheaper births: wasm scan of `mutate`, cheaper layer sizes and offset-table lookup, reuse a dead creature of the newborn's brain size | small | exact; a birth 0.43x, births phase -32% at 600 s (0.145 to 0.099 ms), tick 0.3-0.4% (births are 1.1% of it) | yes | Branch `pl-births` (`births.md`), merge suggested |
 | 7 | prepareRows (slots phase, 7%) into the fill kernel | small | no exact variant over 1%: ground lookup is at most 0.6 ms, exp 0.33, rest 0.45 | yes | Rejected (`prep.md`) |
 
 ## Log

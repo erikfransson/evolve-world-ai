@@ -118,19 +118,48 @@ export function bigMutate(child: Genome, rng: StatefulRng): void {
   }
 }
 
+// WasmMembers.mutateHits: the scan of mutate in WebAssembly.
+export interface MutateScan {
+  mutateHits(n: number, state: number, limit: number): Int32Array;
+  readonly endState: number;
+}
+const SCAN_MIN = 16; // genes; below this the loop is cheaper than the kernel call
+
 // Adds mutationStd normal noise to each gene with probability mutationRate, drawing from rng exactly as rng.next() calls would.
-export function mutate(child: Genome, rate: number, std: number, rng: StatefulRng): void {
+// The scan between hits is its own tight loop (or scan's kernel), and the hit's two draws (rng.normal) run inline, so no call splits the loop.
+export function mutate(child: Genome, rate: number, std: number, rng: StatefulRng, scan: MutateScan | null = null): void {
   const mutateBelow = rate * 4294967296; // next() < rate is next32 < rate * 2^32, exactly
-  let s = rng.state; // rng's mulberry32 stream, run inline for speed; synced around normal()
-  for (let g = 0; g < child.length; g++) {
-    s = (s + 0x6d2b79f5) | 0;
-    let t = Math.imul(s ^ (s >>> 15), 1 | s);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    if (((t ^ (t >>> 14)) >>> 0) < mutateBelow) {
-      rng.state = s;
-      child[g] += rng.normal() * std;
-      s = rng.state;
+  const n = child.length;
+  if (scan && n >= SCAN_MIN && mutateBelow > 0 && mutateBelow <= 4294967295) {
+    const hits = scan.mutateHits(n, rng.state, Math.ceil(mutateBelow)); // next32 < mutateBelow is next32 < ceil(mutateBelow) for an integer
+    for (let k = 0; k < hits.length; k += 3) {
+      const u1 = 1 - (hits[k + 1]! >>> 0) / 4294967296;
+      const u2 = (hits[k + 2]! >>> 0) / 4294967296;
+      child[hits[k]!] += Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2) * std;
     }
+    rng.state = scan.endState;
+    return;
+  }
+  let s = rng.state; // rng's mulberry32 stream, run inline for speed
+  let g = 0;
+  while (g < n) {
+    for (; g < n; g++) {
+      s = (s + 0x6d2b79f5) | 0;
+      let t = Math.imul(s ^ (s >>> 15), 1 | s);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      if (((t ^ (t >>> 14)) >>> 0) < mutateBelow) break;
+    }
+    if (g === n) break;
+    // normal(): u1 = 1 - next(), u2 = next()
+    s = (s + 0x6d2b79f5) | 0;
+    let a = Math.imul(s ^ (s >>> 15), 1 | s);
+    a = (a + Math.imul(a ^ (a >>> 7), 61 | a)) ^ a;
+    s = (s + 0x6d2b79f5) | 0;
+    let b = Math.imul(s ^ (s >>> 15), 1 | s);
+    b = (b + Math.imul(b ^ (b >>> 7), 61 | b)) ^ b;
+    const u1 = 1 - ((a ^ (a >>> 14)) >>> 0) / 4294967296;
+    const u2 = ((b ^ (b >>> 14)) >>> 0) / 4294967296;
+    child[g++] += Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2) * std;
   }
   rng.state = s;
 }

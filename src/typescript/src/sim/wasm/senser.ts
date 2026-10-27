@@ -47,17 +47,31 @@ export function rockLowerBound(cols: number, rows: number, cell: number, x: Arra
 }
 
 interface OffsetTable {
-  key: string;
+  bits: Uint32Array; // the offsets (f32 bits) the cos and sin at ptr were made from
+  hash: number; // of bits; tables with one hash form a chain
+  next: OffsetTable | undefined;
   ptr: number;
   bytes: number;
   refs: number;
 }
 
+const hashBits = (bits: Uint32Array): number => {
+  let h = bits.length;
+  for (let i = 0; i < bits.length; i++) h = Math.imul(h ^ bits[i]!, 0x9e3779b1) ^ (h >>> 15);
+  return h;
+};
+
+const sameBits = (a: Uint32Array, b: Uint32Array): boolean => {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+};
+
 export class WasmSenser {
   private readonly bank: WasmBrainBank;
   private readonly exports: SenseExports;
   // Ray offset tables are shared by content: a slot holds one table, a table is freed when its last slot lets go. So the tables in memory never outnumber the slots.
-  private readonly tables = new Map<string, OffsetTable>();
+  private readonly tables = new Map<number, OffsetTable>(); // by hash of the offsets, chained
   private readonly slotTable: OffsetTable[] = [];
   // Named regions of the shared memory, grown on demand (see grow); held in fields so a tick does no lookups.
   private rItems = new Region();
@@ -146,14 +160,16 @@ export class WasmSenser {
     const n = c.plan.rayCount;
     if (n > MAX_RAYS) throw new Error(`${n} rays exceed ${MAX_RAYS}`);
     const offsets = c.rayOffsets;
-    const key = new Uint32Array(offsets.buffer, offsets.byteOffset, n).join(",");
+    const bits = new Uint32Array(offsets.buffer, offsets.byteOffset, n);
     const held = this.slotTable[slot];
-    if (held?.key === key) return;
-    let table = this.tables.get(key);
+    if (held && sameBits(held.bits, bits)) return;
+    const hash = hashBits(bits);
+    let table = this.tables.get(hash);
+    while (table && !sameBits(table.bits, bits)) table = table.next;
     if (!table) {
       const bytes = 16 * n;
-      table = { key, ptr: this.bank.alloc(bytes), bytes, refs: 0 };
-      this.tables.set(key, table);
+      table = { bits: bits.slice(), hash, next: this.tables.get(hash), ptr: this.bank.alloc(bytes), bytes, refs: 0 };
+      this.tables.set(hash, table);
       const f64 = new Float64Array(this.bank.memory.buffer, table.ptr, 2 * n);
       for (let i = 0; i < n; i++) {
         f64[i] = Math.cos(offsets[i]!);
@@ -163,9 +179,21 @@ export class WasmSenser {
     table.refs++;
     this.slotTable[slot] = table;
     if (held && --held.refs === 0) {
-      this.tables.delete(held.key);
+      this.unlink(held);
       this.bank.free(held.ptr, held.bytes);
     }
+  }
+
+  private unlink(t: OffsetTable): void {
+    const head = this.tables.get(t.hash);
+    if (head === t) {
+      if (t.next) this.tables.set(t.hash, t.next);
+      else this.tables.delete(t.hash);
+      return;
+    }
+    let prev = head!;
+    while (prev.next !== t) prev = prev.next!;
+    prev.next = t.next;
   }
 
   // The address of the ray offset tables stored for the slot.

@@ -110,6 +110,22 @@ describe("mutate", () => {
   });
 });
 
+describe("mutate on a brain-sized genome", () => {
+  it("matches plain Rng calls over many hits, including one on the last gene", () => {
+    for (const seed of [1, 2, 3]) {
+      const parent = Float32Array.from({ length: 4000 }, (_, g) => Math.sin(g));
+      const child = parent.slice();
+      const rng = createRng(seed);
+      mutate(child, 0.05, 0.3, rng);
+      const expected = parent.slice();
+      const ref = createRng(seed);
+      for (let g = 0; g < expected.length; g++) if (ref.next() < 0.05) expected[g] += ref.normal() * 0.3;
+      expect(same(child, expected)).toBe(true);
+      expect(rng.next()).toBe(ref.next());
+    }
+  });
+});
+
 describe("immigrants and big mutations", () => {
   const ga = { ...base, eliteFraction: 0.1, immigrantFraction: 0.2, bigMutationFraction: 0.25, mutationRate: 0, crossover: false };
 
