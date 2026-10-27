@@ -27,6 +27,8 @@ import { loadFounders } from "./founders.ts";
 import { LiveWorld } from "./liveWorld.ts";
 import { Saves } from "./saves.ts";
 import { StateStore } from "./state.ts";
+import { SCALARS, type EcoState } from "../../src/typescript/src/sim/ecoState.ts";
+import type { World } from "../../src/typescript/src/sim/world.ts";
 import { FRAME_MS } from "./public.ts";
 import { createNodeThinkPool } from "../../src/typescript/src/worker/nodePool.ts";
 
@@ -48,6 +50,10 @@ const { values } = parseArgs({
     dt: { type: "string" },
     memcomp: { type: "boolean" },
     save: { type: "string" },
+    keep: { type: "string" }, // with --save: keep the saves in this directory
+    load: { type: "string" }, // restore the newest save of this directory instead of seeding
+    scatter: { type: "boolean" }, // with --load: scratch, scatter the creatures uniformly (study only)
+    reach: { type: "boolean" }, // scratch: print the creatures and items within each creature's ray length, at the start and end
     profileEvery: { type: "string" }, // with --profile: print the phase profile per this many simulated seconds
   },
 });
@@ -84,21 +90,84 @@ if (values.only) {
 const copies = Number(values.copies);
 const seconds = Number(values.seconds);
 const dt = config.dt;
-const ticks = Math.round(seconds / dt);
+let ticks = Math.round(seconds / dt);
 const every = Math.max(1, Math.round(Number(values.every) / dt));
 const frameEvery = Math.max(1, Math.round(FRAME_MS / 1000 / dt * LIVE.speed)); // ticks per frame at the server's set speed
 const statsEvery = Math.max(1, Math.round(LIVE.speed / dt)); // the stats go out once a second (public.ts statsLoop)
 
+// Scratch (study only): moves every creature of the state to a uniform random spot off the rock.
+function scatter(state: EcoState, lw: LiveWorld, rnd: () => number): void {
+  const { width, height } = config.world;
+  const cr = state.creatures as unknown as { scalars: string | Float64Array; count: number };
+  const sc = typeof cr.scalars === "string" ? new Float64Array(new Uint8Array(Buffer.from(cr.scalars, "base64")).buffer) : cr.scalars;
+  const K = SCALARS.length;
+  const xi = SCALARS.indexOf("x"), yi = SCALARS.indexOf("y");
+  const terrain = (lw.eco.world as World).terrain;
+  for (let i = 0; i < cr.count; i++) {
+    let x = 0, y = 0;
+    do { x = rnd() * width; y = rnd() * height; } while (terrain.touchesRock(x, y, config.creature.radius));
+    sc[i * K + xi] = x;
+    sc[i * K + yi] = y;
+  }
+  if (typeof cr.scalars === "string") cr.scalars = Buffer.from(sc.buffer, sc.byteOffset, sc.byteLength).toString("base64");
+}
+
+// Scratch (study only): per creature, the creatures and the items within its own ray length (a disc proxy of the sense candidates), plus plan means.
+function reach(label: string): void {
+  const items = (eco.world as World).snapshot();
+  const R = config.creature.rayLength;
+  const cell = Math.max(R, 1);
+  const cols = Math.ceil(config.world.width / cell) + 1;
+  const grid = (xs: ArrayLike<number>, ys: ArrayLike<number>, ok: (i: number) => boolean) => {
+    const m = new Map<number, number[]>();
+    for (let i = 0; i < xs.length; i++) if (ok(i)) { const k = Math.floor(ys[i]! / cell) * cols + Math.floor(xs[i]! / cell); (m.get(k) ?? m.set(k, []).get(k)!).push(i); }
+    return m;
+  };
+  const near = (m: Map<number, number[]>, xs: ArrayLike<number>, ys: ArrayLike<number>, x: number, y: number, r: number, self = -1): number => {
+    let n = 0;
+    const cx = Math.floor(x / cell), cy = Math.floor(y / cell);
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) for (const j of m.get((cy + dy) * cols + cx + dx) ?? []) if (j !== self && Math.hypot(xs[j]! - x, ys[j]! - y) <= r) n++;
+    return n;
+  };
+  const ms = eco.members;
+  const cx = ms.map((m) => m.creature.state.x), cy = ms.map((m) => m.creature.state.y);
+  const cg = grid(cx, cy, () => true);
+  const ig = grid(items.xs, items.ys, (i) => items.kinds[i]! > 0);
+  let c = 0, it = 0, rays = 0, mem = 0, len = 0, w = 0, empty = 0;
+  ms.forEach((m, i) => {
+    const r = m.creature.plan.rayLength;
+    const a = near(cg, cx, cy, cx[i]!, cy[i]!, r, i), b = near(ig, items.xs, items.ys, cx[i]!, cy[i]!, r);
+    c += a; it += b; if (a + b === 0) empty++;
+    rays += m.creature.plan.rayCount; mem += m.creature.memory.length; len += r; w += m.creature.brain.genome.length;
+  });
+  const n = Math.max(1, ms.length);
+  console.error(JSON.stringify({ reach: label, n: ms.length, tick: eco.tick, food: eco.food, poison: eco.poison, crowdPerCreature: +(c / n).toFixed(3), itemsPerCreature: +(it / n).toFixed(2), emptyShare: +(empty / n).toFixed(3), rays: +(rays / n).toFixed(2), memory: +(mem / n).toFixed(2), rayLength: +(len / n).toFixed(1), weights: Math.round(w / n), meanAgeTicks: +(ms.reduce((s, m) => s + m.creature.state.ticksAlive, 0) / n).toFixed(0), species: ms.reduce((o, m) => { o[m.species] = (o[m.species] ?? 0) + 1; return o; }, {} as Record<number, number>) }));
+}
+
 const tBuild = performance.now();
 const threads = Number(values.threads);
 const live = new LiveWorld(config, null, threads > 0 ? createNodeThinkPool(threads) : null);
-const seeded = live.seedFounders(founders, mulberry32(seed), copies);
+let seeded = 0;
+if (values.load) {
+  const store = new StateStore(values.load);
+  const newest = [...store.list()].sort((a, b) => (b.tick ?? 0) - (a.tick ?? 0))[0];
+  if (!newest) throw new Error(`--load ${values.load}: no save`);
+  const state = await store.read(newest.name, live.homeWorld());
+  if (values.scatter) scatter(state, live, mulberry32(seed + 7));
+  live.restoreState(state);
+  seeded = live.eco.population;
+  ticks += live.eco.tick;
+} else seeded = live.seedFounders(founders, mulberry32(seed), copies);
 const buildMs = performance.now() - tBuild;
-if (values.fixed) { config.eco.maxPopulation = seeded; config.eco.birthReserve = 0; }
+if (values.fixed) {
+  if (values.load) live.eco.retune({ eco: { maxPopulation: seeded, birthReserve: 0 } });
+  else { config.eco.maxPopulation = seeded; config.eco.birthReserve = 0; }
+}
 const eco = live.eco;
 const prof = values.profile ? new PhaseTimer() : null;
 eco.profile = prof;
 
+if (values.reach) reach("start");
 const population: number[] = [eco.population];
 const ecoWindows: object[] = [];
 const minuteTicks = Math.max(1, Math.round(60 / dt));
@@ -127,13 +196,13 @@ function ecoSample(): void {
     wSum.n++;
   }
 }
-const warm = Math.floor(ticks / 4);
+const warm = eco.tick + Math.floor((ticks - eco.tick) / 4);
 let frameBytes = 0;
 let frameMs = 0;
 let steadyCreatureTicks = 0;
 let creatureTicks = 0;
 const saveEvery = values.save ? Math.max(1, Math.round(Number(values.save) / dt)) : 0;
-const saveDir = saveEvery ? mkdtempSync(join(tmpdir(), "liveBench-save-")) : "";
+const saveDir = saveEvery ? (values.keep ?? mkdtempSync(join(tmpdir(), "liveBench-save-"))) : "";
 const saves = saveEvery ? new Saves(live, new StateStore(saveDir)) : null;
 const saveRuns: { tick: number; blockMs: number; cpuMs: number; maxBlockMs: number; wallMs: number; line: string }[] = [];
 type SaveRun = { tick: number; blockMs: number; cpuMs: number; maxBlockMs: number; t0: number; done: string | null };
@@ -199,7 +268,8 @@ while (eco.tick < ticks && !eco.extinct) {
   if (saving) await saveStep(); // with a save running, yield between ticks
 }
 while (saving) await saveStep(10); // the last save finishes before the numbers, without spinning this thread (its blockMs then counts the waits)
-if (saveDir) rmSync(saveDir, { recursive: true, force: true });
+if (saveDir && !values.keep) rmSync(saveDir, { recursive: true, force: true });
+if (values.reach) reach("end");
 const t1 = performance.now();
 const steadyTicks = Math.max(1, eco.tick - warm);
 const cpu = process.cpuUsage(cpuWarm);
