@@ -51,6 +51,7 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 | 17 | brain.wat: stream-touch the next brain's weight block during the 1-4 vector column loops (software prefetch that rides the hardware streamer) | small | brain kernel 1.10x live mix, 1.19x Juggernaut; tick 1.04-1.05x; about half the kernel time is memory stall (24 MB of weights never fit L3) | yes | Merged (`brain3.md`); tuned on this CPU, worst case elsewhere a few extra loads |
 | 18 | Sense every other tick, think every tick with fresh body inputs (`eco.senseEvery`) | broad | 1.12x; births and food at 600 s outside the senseEvery 1 spread (closer than thinkEvery 2) | no at 2 (yes at 1) | Rejected, parked on `pl-sense2` (`sense2.md`) |
 | 20 | Item and crowd grid cell size (100 today, plans see 170) 1.25-3x | small | at best 1-2% of the tick; item cell factors change the fingerprint (tie-break of multi-touch eats, 0.3% of touching creature-ticks) | no (tie-breaks) | Rejected (`cell.md`) |
+| 21 | Sense per-ray passes two rays wide (f64x2 directions, closeness) | small | kernel -2%, tick 0.3-0.8%: the passes are bound by stores and loop overhead, not arithmetic | yes | Rejected (`rays2.md`) |
 | 7 | prepareRows (slots phase, 7%) into the fill kernel | small | no exact variant over 1%: ground lookup is at most 0.6 ms, exp 0.33, rest 0.45 | yes | Rejected (`prep.md`) |
 
 ## Log
@@ -78,3 +79,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-27 12:31 Idea 17 merged (28 lines of brain.wat). Finding: per brain 1047 ns in the live mix vs 500 ns from L1, so the brain kernel is about half memory stall; bursts and list-driven touches lose, only a sequential stream of touches wins.
 - 2026-10-27 13:05 Factor after batch 3 (stepk, senseempty, brain3 added): 1.17x in both cases, bit-identical. Idea 18 rejected: stale rays alone change the dynamics; every variant of thinking or sensing less often does.
 - 2026-10-27 13:50 Idea 20 rejected: wider cells cut loop entries but scan more items, net 1-2%, and not exact.
+- 2026-10-27 14:40 Idea 21 rejected (under 1%). The sense kernel's remaining cost is memory and loop overhead; no exact arithmetic cut is left there.
