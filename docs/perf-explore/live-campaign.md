@@ -382,3 +382,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-28 14:20 factor batch14 on 6858a11: 1.57x / 1.52x but noisy (live runs 9.0-10.7 ms); batch13's clean 1.39x / 1.42x plus the five small merges (about 3-4%) predicts about 1.45x; rerun queued for the 15:23 report.
 - 2026-10-28 14:40 idea 106 merged (no drift, tsc clean). Review round 4 due for 96, 97, 106.
 - 2026-10-28 14:55 idea 109 parked (0.3% for 207 lines).
+- 2026-10-28 14:40 review round 4 (Opus, independent) of ideas 96, 97, 106: nothing to fix (demote lanes, the shift square's edges and non-finite positions, pmin/pmax against the JS clamps, the overshooting gap stores fit the +12 bytes on every grid size, refresh unchanged). Closed.
