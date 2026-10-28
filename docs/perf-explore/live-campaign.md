@@ -39,6 +39,7 @@ Fingerprint equal means bit-identical results.
 | 2026-10-27 19:55 | after batch 7 so far (ideas 34 and 44 merged; absolute ms inflated, both sides share two pinned cores with 7 agents) | 17.64 / 21.77 (cap) | 14.24 / 17.21 (cap) | 1.24x mixed, 1.27x cap (exact) | 220 / 217 MB mixed, 257 / 257 cap |
 | 2026-10-27 23:40 | after batch 8 so far (idea 36 merged; two pinned cores shared with 7 agents) | 17.99 / 22.06 (cap) | 13.99 / 17.16 (cap) | 1.286x mixed, 1.286x cap (exact) | 219 / 221 MB mixed, 255 / 255 cap |
 | 2026-10-28 00:37 | after batch 9 (idea 54 merged; two pinned cores shared with 4 agents) | 17.84 / 21.59 (cap) | 13.82 / 16.79 (cap) | 1.29x mixed, 1.29x cap (exact) | 218 / 217 MB mixed, 258 / 257 cap |
+| 2026-10-28 01:53 | after ideas 75 and 76 (load lighter, 2 agents) | 15.16 / 18.56 (cap) | 12.23 / 14.40 (cap) | 1.24x mixed, 1.29x cap (exact) | 251 / 218 MB mixed, 256 / 257 cap |
 
 Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54, brain forward 5.23 / 5.17, slots (prepareRows) 1.04 / 1.52, memory and steer 1.26 / 1.59, eat 1.05 / 1.35, crowd grid 0.51 / 0.67, collisions 0.18 / 0.27, rest under 0.2. Server frame encoding adds 0.57 ms per tick at 5 Hz. Speed achieved unpaced on this loaded machine: 2.0x and 1.7x real time (the set speed is 3x).
 
@@ -263,3 +264,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-28 01:16 Idea 76 merged. Waiting on 75 (the leak fix), 68, 73; then a push-gate re-review of 75 and 76.
 - 2026-10-28 01:34 Idea 73 done: the branch runs as a server for an hour without a mark against it (before ideas 75 and 76 landed).
 - 2026-10-28 01:46 Idea 75 merged: the review's leak is closed and kernel memory is bounded by the peak population again. Re-check review of 75 and 76 and a factor run started.
+- 2026-10-28 01:53 Factor after ideas 75 and 76: 1.24x mixed, 1.29x cap, fingerprints equal. The mixed ratio moves between 1.24x and 1.29x with the machine's load during the run (the script alternates sides per round, so drift inside a round shows); the cap case has stayed at 1.29x for three runs.
