@@ -164,6 +164,8 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 
 | 84 | sense.wat: touch (dummy load) the next creature's offset-table, item-row and crowd-row lines during the current creature | yes | Rejected (`sensepf.md`): every variant slower (kernel +2% to +25%, tick +4.5-5.4%); a wasm load that misses blocks retirement, the walks' own loads were already overlapped |
 
+| 87 | WebAssembly branch hints (`metadata.code.branch_hint` via wabt, `--experimental-wasm-branch-hinting`) on the kernels' rare paths | yes | Rejected (`hints.md`): supported on both sides, 50 annotations, -2.5% mixed inside the spread and +1.2% cap; would need an experimental flag in the unit |
+
 ## Log
 - 2026-10-27 09:00 Campaign start. Prior campaigns (B1, B2, `docs/perf-explore/`) already moved sense, brains, physics, crowd grid, collisions and scans into WASM; their rejected ideas are not retried unless the live setting changes the picture.
 - 2026-10-27 09:19 `server/src/liveBench.ts` written; two runs at 400 seeded give the same fingerprint (260290661), so the bench is deterministic.
@@ -294,3 +296,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-28 06:35 Correctness review of ideas 59 and 83: no bugs; two low notes (the brainLayout test does not pin the multi-species `layerSizes` case though it is correct by inspection; `takeSpare` matches on genome length rather than layer sizes, a lost saving only). The mutate scan's rng stream, the spare reuse independence, the offset-table chain with release, the skip path's scratch and the kind-at-hit paths were each checked. Branch merge-ready again. Running: 81 (6 h soak).
 - 2026-10-28 08:15 batch 11 started (Erik: the goal stays active): implementers 84 senser prefetch touch (`sensepf`), 85 sense in cell order (`cellorder`), 86 touch-kernel occupancy bitmap (`touchbit`), 87 wasm branch hints (`hints`); scouts: per-ray senser cost (Opus), the non-kernel 25% (Sonnet), brain weight stream moonshot (Opus), open-ended server tick path (Sonnet). Soak (81) at 2 h, RSS 441 MB.
 - 2026-10-28 08:40 idea 84 rejected (`sensepf.md`); idea 85 reported 1.018x mixed / 1.022x cap exact (senser 1.045x), net -9 lines, full suite running before the merge.
+- 2026-10-28 08:50 idea 87 rejected (`hints.md`).
