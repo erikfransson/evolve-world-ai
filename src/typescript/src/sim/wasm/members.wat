@@ -1,6 +1,7 @@
-;; The two scans over the members' rows at the end of a tick (twins of the loops in Ecosystem.sharedPhase, which stay the reference and the fallback):
-;; settle counts a tick alive for every creature with energy left and lists the others, and birthCandidates lists the first few members, in walk order, whose energy reaches their birth energy.
-;; Offsets are layout.ts's (double-brace tokens). Keep in step with ecosystem.ts: tests/typescript/wasmMembers.test.ts compares them.
+;; Three scans over the members' rows at the end of a tick. settle and birthCandidates twin the loops in Ecosystem.sharedPhase, mutateScan twins ga.ts mutate (the TypeScript stays the reference and the fallback):
+;; settle counts a tick alive for every creature with energy left and lists the others, birthCandidates lists the first few members, in walk order, whose energy reaches their birth energy,
+;; and mutateScan draws the mutation mask of a genome.
+;; Offsets are layout.ts's (double-brace tokens). Keep in step with ecosystem.ts and ga.ts: tests/typescript/wasmMembers.test.ts compares them.
 ;; Memory is the brain bank's (imported).
 (module
   (import "brain" "mem" (memory 1))
