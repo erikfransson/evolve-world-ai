@@ -229,6 +229,8 @@ Head phases 2026-10-28 14:50 (253f894, load 6-7, `scout-head.md`; ms per tick, 3
 
 | 95 | Moonshot: four same-shape brains per f32x4 lane set (`quadForward`, weights [in][out][4], layer 0 on the union nz list with -0 lanes, a quad bank with lane repacking) | yes | Parked on `pl-quad` (`quad.md`): brain forward 1.06x mixed / 1.20x cap (1.27x at thinkEvery 2, 1.23x on an aged save), tick inside noise mixed and about 1.05x cap, +760 lines mostly generated with lane-management state; the native kernel (1.55x on the kernel) beats it, so it goes with that decision |
 
+| 115 | Rock-adjacent sensing by parts (rock stage 12.5% of the sense kernel: lookup 0.08, walk 0.21, disc ray stage 0.16 ms; 40-65% of kept discs lie outside the ray wedge); built: a disc is kept only inside the wedge widened by its radius, as items are | yes | Merged as a free extra (`rockcost.md`): sense kernel -2% mixed / -2.4% cap, +10/-5 wat and a tangent-edge test; the walk is not miss bound (lists -0.05, prefetch +0.08) |
+
 ## Log
 - 2026-10-27 09:00 Campaign start. Prior campaigns (B1, B2, `docs/perf-explore/`) already moved sense, brains, physics, crowd grid, collisions and scans into WASM; their rejected ideas are not retried unless the live setting changes the picture.
 - 2026-10-27 09:19 `server/src/liveBench.ts` written; two runs at 400 seeded give the same fingerprint (260290661), so the bench is deterministic.
@@ -406,3 +408,4 @@ Head phases 2026-10-28 14:50 (253f894, load 6-7, `scout-head.md`; ms per tick, 3
 - 2026-10-28 15:30 patchItems fallback tests added (bb8d595), red on both mutants; review round 5 closed.
 - 2026-10-28 15:45 idea 95 parked (quad lanes); its residentBodies test fix taken into perf-live (the test read a typed-array view that the step's memory growth detaches, a pre-existing fragility).
 - 2026-10-28 15:40 full suite on eae5208 (ideas 100, the patchItems fallback tests, the residentBodies fix): 122 files, 1254 tests, exit 0. 6-hour report sent (1.47x / 1.62x noisy, 1.45-1.5x safe reading).
+- 2026-10-28 15:55 idea 115 merged (no drift); review round 6 due for 115 (and 116 when it lands).
