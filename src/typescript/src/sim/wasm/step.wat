@@ -1,12 +1,175 @@
 ;; The per-creature step of resident rows: memory units, turn, thrust, drag, ground, walls, rock and energy. Twin of Creature.remember and steer (physics.stepBody, the
 ;; reference): the same arithmetic in the same order, one f64 operation per JS operation and none fused, so the rows come out bit for bit alike. Math.sin and
-;; Math.cos are the engine's own, imported, so the results equal the JS path on every engine. Offsets are layout.ts's, substituted for the double-brace tokens.
+;; Math.cos are the engine's own, imported, and replaced by a port of V8's fdlibm only when the loader's start-up probe (stepKernel.ts) finds the port equal to them. Offsets are layout.ts's, substituted for the double-brace tokens.
 ;; Keep this and stepBody in step: tests/typescript/wasmStep.test.ts compares them.
 ;; Memory is the brain bank's (imported); a row's brain outputs are f32 in the same memory.
 (module
   (import "brain" "mem" (memory 1))
   (import "math" "sin" (func $sin (param f64) (result f64)))
   (import "math" "cos" (func $cos (param f64) (result f64)))
+
+  (global $port (export "port") (mut i32) (i32.const 0)) ;; 1 once the probe found $sincos equal to the host's Math.sin and Math.cos
+
+  (func $hi (param $x f64) (result i32)
+    (i32.wrap_i64 (i64.shr_u (i64.reinterpret_f64 (local.get $x)) (i64.const 32))))
+
+  (func $kcos (param $x f64) (param $y f64) (result f64)
+    (local $ix i32) (local $z f64) (local $r f64) (local $qx f64)
+    (local.set $ix (i32.and (call $hi (local.get $x)) (i32.const 0x7fffffff)))
+    (if (i32.lt_s (local.get $ix) (i32.const 0x3E400000))
+      (then (if (i32.eqz (i32.trunc_f64_s (local.get $x))) (then (return (f64.const 1))))))
+    (local.set $z (f64.mul (local.get $x) (local.get $x)))
+    (local.set $r
+      (f64.mul (local.get $z)
+        (f64.add (f64.const 4.16666666666666019037e-02)
+          (f64.mul (local.get $z)
+            (f64.add (f64.const -1.38888888888741095749e-03)
+              (f64.mul (local.get $z)
+                (f64.add (f64.const 2.48015872894767294178e-05)
+                  (f64.mul (local.get $z)
+                    (f64.add (f64.const -2.75573143513906633035e-07)
+                      (f64.mul (local.get $z)
+                        (f64.add (f64.const 2.08757232129817482790e-09)
+                          (f64.mul (local.get $z) (f64.const -1.13596475577881948265e-11)))))))))))))
+    (if (i32.lt_s (local.get $ix) (i32.const 0x3FD33333))
+      (then
+        ;; 1 - (0.5 z - (z r - x y))
+        (return (f64.sub (f64.const 1)
+          (f64.sub (f64.mul (f64.const 0.5) (local.get $z))
+            (f64.sub (f64.mul (local.get $z) (local.get $r)) (f64.mul (local.get $x) (local.get $y))))))))
+    (if (i32.gt_s (local.get $ix) (i32.const 0x3FE90000))
+      (then (local.set $qx (f64.const 0.28125)))
+      (else (local.set $qx (f64.reinterpret_i64 (i64.shl (i64.extend_i32_u (i32.sub (local.get $ix) (i32.const 0x00200000))) (i64.const 32))))))
+    ;; (1 - qx) - ((0.5 z - qx) - (z r - x y))
+    (f64.sub (f64.sub (f64.const 1) (local.get $qx))
+      (f64.sub (f64.sub (f64.mul (f64.const 0.5) (local.get $z)) (local.get $qx))
+        (f64.sub (f64.mul (local.get $z) (local.get $r)) (f64.mul (local.get $x) (local.get $y))))))
+
+  (func $ksin (param $x f64) (param $y f64) (param $iy i32) (result f64)
+    (local $ix i32) (local $z f64) (local $v f64) (local $r f64)
+    (local.set $ix (i32.and (call $hi (local.get $x)) (i32.const 0x7fffffff)))
+    (if (i32.lt_s (local.get $ix) (i32.const 0x3E400000))
+      (then (if (i32.eqz (i32.trunc_f64_s (local.get $x))) (then (return (local.get $x))))))
+    (local.set $z (f64.mul (local.get $x) (local.get $x)))
+    (local.set $v (f64.mul (local.get $z) (local.get $x)))
+    (local.set $r
+      (f64.add (f64.const 8.33333333332248946124e-03)
+        (f64.mul (local.get $z)
+          (f64.add (f64.const -1.98412698298579493134e-04)
+            (f64.mul (local.get $z)
+              (f64.add (f64.const 2.75573137070700676789e-06)
+                (f64.mul (local.get $z)
+                  (f64.add (f64.const -2.50507602534068634195e-08)
+                    (f64.mul (local.get $z) (f64.const 1.58969099521155010221e-10))))))))))
+    (if (i32.eqz (local.get $iy))
+      (then
+        ;; x + v (S1 + z r)
+        (return (f64.add (local.get $x)
+          (f64.mul (local.get $v) (f64.add (f64.const -1.66666666666666324348e-01) (f64.mul (local.get $z) (local.get $r))))))))
+    ;; x - ((z (0.5 y - v r) - y) - v S1)
+    (f64.sub (local.get $x)
+      (f64.sub
+        (f64.sub (f64.mul (local.get $z) (f64.sub (f64.mul (f64.const 0.5) (local.get $y)) (f64.mul (local.get $v) (local.get $r)))) (local.get $y))
+        (f64.mul (local.get $v) (f64.const -1.66666666666666324348e-01)))))
+
+  ;; fdlibm __ieee754_rem_pio2 for pi/4 < |x| <= 2^19 pi/2: returns n, y0, y1. n = 0x80000000 marks a larger finite |x|.
+  (func $rem (param $x f64) (result i32 f64 f64)
+    (local $hx i32) (local $ix i32) (local $z f64) (local $t f64) (local $n i32) (local $fn f64)
+    (local $r f64) (local $w f64) (local $y0 f64) (local $y1 f64) (local $j i32) (local $i i32) (local $big i32)
+    (local.set $hx (call $hi (local.get $x)))
+    (local.set $ix (i32.and (local.get $hx) (i32.const 0x7fffffff)))
+    (if (i32.lt_s (local.get $ix) (i32.const 0x4002D97C))
+      (then
+        (if (i32.gt_s (local.get $hx) (i32.const 0))
+          (then
+            (local.set $z (f64.sub (local.get $x) (f64.const 1.57079632673412561417e+00)))
+            (if (i32.ne (local.get $ix) (i32.const 0x3FF921FB))
+              (then
+                (local.set $y0 (f64.sub (local.get $z) (f64.const 6.07710050650619224932e-11)))
+                (local.set $y1 (f64.sub (f64.sub (local.get $z) (local.get $y0)) (f64.const 6.07710050650619224932e-11))))
+              (else
+                (local.set $z (f64.sub (local.get $z) (f64.const 6.07710050630396597660e-11)))
+                (local.set $y0 (f64.sub (local.get $z) (f64.const 2.02226624879595063154e-21)))
+                (local.set $y1 (f64.sub (f64.sub (local.get $z) (local.get $y0)) (f64.const 2.02226624879595063154e-21)))))
+            (return (i32.const 1) (local.get $y0) (local.get $y1)))
+          (else
+            (local.set $z (f64.add (local.get $x) (f64.const 1.57079632673412561417e+00)))
+            (if (i32.ne (local.get $ix) (i32.const 0x3FF921FB))
+              (then
+                (local.set $y0 (f64.add (local.get $z) (f64.const 6.07710050650619224932e-11)))
+                (local.set $y1 (f64.add (f64.sub (local.get $z) (local.get $y0)) (f64.const 6.07710050650619224932e-11))))
+              (else
+                (local.set $z (f64.add (local.get $z) (f64.const 6.07710050630396597660e-11)))
+                (local.set $y0 (f64.add (local.get $z) (f64.const 2.02226624879595063154e-21)))
+                (local.set $y1 (f64.add (f64.sub (local.get $z) (local.get $y0)) (f64.const 2.02226624879595063154e-21)))))
+            (return (i32.const -1) (local.get $y0) (local.get $y1))))))
+    (if (i32.gt_s (local.get $ix) (i32.const 0x413921FB))
+      (then (return (i32.const 0x80000000) (f64.const 0) (f64.const 0))))
+    ;; medium size
+    (local.set $t (f64.abs (local.get $x)))
+    (local.set $n (i32.trunc_f64_s (f64.add (f64.mul (local.get $t) (f64.const 6.36619772367581382433e-01)) (f64.const 0.5))))
+    (local.set $fn (f64.convert_i32_s (local.get $n)))
+    (local.set $r (f64.sub (local.get $t) (f64.mul (local.get $fn) (f64.const 1.57079632673412561417e+00))))
+    (local.set $w (f64.mul (local.get $fn) (f64.const 6.07710050650619224932e-11)))
+    ;; quick check: n < 32 and ix differs from the high word of n pi/2
+    (local.set $big
+      (if (result i32) (i32.lt_s (local.get $n) (i32.const 32))
+        (then (i32.ne (local.get $ix) (call $hi (f64.mul (f64.convert_i32_s (local.get $n)) (f64.const 1.5707963267948966)))))
+        (else (i32.const 0))))
+    (if (local.get $big)
+      (then (local.set $y0 (f64.sub (local.get $r) (local.get $w))))
+      (else
+        (local.set $j (i32.shr_s (local.get $ix) (i32.const 20)))
+        (local.set $y0 (f64.sub (local.get $r) (local.get $w)))
+        (local.set $i (i32.sub (local.get $j) (i32.and (i32.shr_u (call $hi (local.get $y0)) (i32.const 20)) (i32.const 0x7ff))))
+        (if (i32.gt_s (local.get $i) (i32.const 16))
+          (then
+            (local.set $t (local.get $r))
+            (local.set $w (f64.mul (local.get $fn) (f64.const 6.07710050630396597660e-11)))
+            (local.set $r (f64.sub (local.get $t) (local.get $w)))
+            (local.set $w (f64.sub (f64.mul (local.get $fn) (f64.const 2.02226624879595063154e-21))
+                                   (f64.sub (f64.sub (local.get $t) (local.get $r)) (local.get $w))))
+            (local.set $y0 (f64.sub (local.get $r) (local.get $w)))
+            (local.set $i (i32.sub (local.get $j) (i32.and (i32.shr_u (call $hi (local.get $y0)) (i32.const 20)) (i32.const 0x7ff))))
+            (if (i32.gt_s (local.get $i) (i32.const 49))
+              (then
+                (local.set $t (local.get $r))
+                (local.set $w (f64.mul (local.get $fn) (f64.const 2.02226624871116645580e-21)))
+                (local.set $r (f64.sub (local.get $t) (local.get $w)))
+                (local.set $w (f64.sub (f64.mul (local.get $fn) (f64.const 8.47842766036889956997e-32))
+                                       (f64.sub (f64.sub (local.get $t) (local.get $r)) (local.get $w))))
+                (local.set $y0 (f64.sub (local.get $r) (local.get $w)))))))))
+    (local.set $y1 (f64.sub (f64.sub (local.get $r) (local.get $y0)) (local.get $w)))
+    (if (i32.lt_s (local.get $hx) (i32.const 0))
+      (then (return (i32.sub (i32.const 0) (local.get $n)) (f64.neg (local.get $y0)) (f64.neg (local.get $y1)))))
+    (local.get $n) (local.get $y0) (local.get $y1))
+
+  ;; sin and cos of x as the engine's Math.sin and Math.cos compute them (fdlibm), or the imports where this port does not reach (|x| past 823549)
+  (func $sincos (param $x f64) (result f64 f64)
+    (local $ix i32) (local $n i32) (local $y0 f64) (local $y1 f64) (local $s f64) (local $c f64) (local $nan f64)
+    (local.set $ix (i32.and (call $hi (local.get $x)) (i32.const 0x7fffffff)))
+    (if (i32.le_s (local.get $ix) (i32.const 0x3FE921FB))
+      (then (return (call $ksin (local.get $x) (f64.const 0) (i32.const 0)) (call $kcos (local.get $x) (f64.const 0)))))
+    (if (i32.ge_s (local.get $ix) (i32.const 0x7FF00000))
+      (then (return (call $sin (local.get $x)) (call $cos (local.get $x)))))
+    (call $rem (local.get $x))
+    (local.set $y1) (local.set $y0) (local.set $n)
+    (if (i32.eq (local.get $n) (i32.const 0x80000000)) (then (return (call $sin (local.get $x)) (call $cos (local.get $x)))))
+    (local.set $s (call $ksin (local.get $y0) (local.get $y1) (i32.const 1)))
+    (local.set $c (call $kcos (local.get $y0) (local.get $y1)))
+    (block $done
+      (block $three (block $two (block $one
+        (br_table $done $one $two $three (i32.and (local.get $n) (i32.const 3))))
+        (return (local.get $c) (f64.neg (local.get $s))))
+        (return (f64.neg (local.get $s)) (f64.neg (local.get $c))))
+        (return (f64.neg (local.get $c)) (local.get $s)))
+    (local.get $s) (local.get $c))
+  (func (export "portSincos") (param $x f64) (result f64 f64) (call $sincos (local.get $x)))
+
+  (func $trig (param $x f64) (result f64 f64)
+    (if (result f64 f64) (global.get $port)
+      (then (call $sincos (local.get $x)))
+      (else (call $sin (local.get $x)) (call $cos (local.get $x)))))
 
   ;; Clamps one axis of a disc into [radius, size - radius] and reflects the velocity pointing into the wall, scaled by the restitution (physics.ts keepInside).
   (func $wall (param $pos i32) (param $vel i32) (param $radius f64) (param $size f64) (param $bounce f64)
@@ -163,8 +326,9 @@
       (f64.store offset={{R_TURN}} (local.get $row) (local.get $turn))
       (local.set $heading (f64.add (f64.load offset={{R_HEADING}} (local.get $row)) (f64.mul (local.get $turn) (local.get $dt))))
       (f64.store offset={{R_HEADING}} (local.get $row) (local.get $heading))
-      (local.set $cos (call $cos (local.get $heading)))
-      (local.set $sin (call $sin (local.get $heading)))
+      (call $trig (local.get $heading))
+      (local.set $cos)
+      (local.set $sin)
       (f64.store offset={{R_COS}} (local.get $row) (local.get $cos))
       (f64.store offset={{R_SIN}} (local.get $row) (local.get $sin))
       ;; velocity: forward speed toward the thrust's terminal speed (or braking), sideways speed decaying
