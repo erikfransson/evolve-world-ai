@@ -193,6 +193,8 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 
 | 104 | Newer Node A/B (measurement) | - | Closed: only Node 24.18 is installed (plus a system Node 12); installing one is Erik's call (decision list) |
 
+| 103 | Compact eat hit list from the touch kernel | - | Closed (`eatlist.md`): the JS already scans `touched[]` once (26 us) and calls eat only for the 33-58 hits; the eat cost is misses in eatAt, removeItem and the log |
+
 ## Log
 - 2026-10-27 09:00 Campaign start. Prior campaigns (B1, B2, `docs/perf-explore/`) already moved sense, brains, physics, crowd grid, collisions and scans into WASM; their rejected ideas are not retried unless the live setting changes the picture.
 - 2026-10-27 09:19 `server/src/liveBench.ts` written; two runs at 400 seeded give the same fingerprint (260290661), so the bench is deterministic.
@@ -345,3 +347,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-28 14:05 review of ideas 85, 88, 90, 92 (Opus, independent): 88, 90, 92 nothing to fix (odd ray lane, tie rule, bounds, the probe's branches and the browser fallback checked); 85 had a HIGH bug: a creature inserted into an empty world (one founder, a visitor's insert into an extinct world) was never gridded because prepareTick skipped lone creatures, and the fill kernel's new trap fired every tick. Fixed: prepareTick returns early only for an empty table; regression test added (red without the fix). 99 and 94 added to the review's range.
 - 2026-10-28 14:15 idea 93 merged (kernels regenerated from the merged sources), idea 102 rejected (study only).
 - 2026-10-28 14:20 idea 100 parked (0.7%).
+- 2026-10-28 14:35 ideas 103 and 104 closed (already so / nothing installed). Note to self: two closes in a row from my own misread of the eat path; read the code before briefing the next eat idea.
