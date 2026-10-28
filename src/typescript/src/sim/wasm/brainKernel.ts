@@ -152,7 +152,8 @@ export class WasmBrainBank {
       const outN = sizes[l + 1]!;
       const nPad = pad4(outN);
       for (let j = 0; j < outN; j++) {
-        for (let i = 0; i < inN; i++) f32[w + i * nPad + j] = genome[g + j * inN + i]!;
+        const from = g + j * inN;
+        for (let i = 0, to = w + j; i < inN; i++, to += nPad) f32[to] = genome[from + i]!;
       }
       g += inN * outN;
       w += inN * nPad;

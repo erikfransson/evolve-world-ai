@@ -40,6 +40,7 @@ import { MAX_RAYS } from "./wasm/senser.ts";
 import type { PhaseTimer } from "./profile.ts";
 
 const SMALL_SCAN = 32; // up to this many members the settle and birth scans run in JS: RL episodes have 1-31 creatures, so the kernel pays only for crowds
+const SPARE_LOOK = 16; // dead creatures looked at for one whose brain has the newborn's size
 
 export { BIG_IMPACT, EVENT_CAP, EVENT_DEATH, EVENT_IMPACT, EVENT_STRIDE } from "./contacts.ts";
 export { MAX_INSERT_ENERGY, MAX_INSERT_LAYERS, MAX_INSERT_MEMORY, MAX_INSERT_NEURONS, MAX_INSERT_RAYS, MAX_INSERT_RAY_LENGTH, MAX_NAME_LENGTH, MUTATION_SCALE_RANGE } from "./ecoInsert.ts";
@@ -625,7 +626,7 @@ export class Ecosystem {
     }
     const genome = (this.childGenome = refit(this.childGenome, source.length));
     genome.set(source);
-    mutate(genome, this.config.mutation.rate, this.config.mutation.std * parent.mutationScale, this.rng);
+    mutate(genome, this.config.mutation.rate, this.config.mutation.std * parent.mutationScale, this.rng, this.wasmMembers);
     const traits = this.traits;
     traits.energy = parent.birth.energy;
     traits.cost = parent.birth.cost;
@@ -666,9 +667,23 @@ export class Ecosystem {
     this.lineages.describe(i, c.hue, c.species, fromPool);
   }
 
+  // The most recent dead creature of this species among the last SPARE_LOOK whose brain has genomeLength genes (so its bank block and buffers fit as they are), else the latest one.
+  private takeSpare(species: number, genomeLength: number): EcoCreature | undefined {
+    const list = this.spare[species]!;
+    const top = list.length - 1;
+    for (let i = top; i >= 0 && i > top - SPARE_LOOK; i--) {
+      if (list[i]!.creature.brain.genome.length !== genomeLength) continue;
+      const m = list[i]!;
+      list[i] = list[top]!;
+      list.pop();
+      return m;
+    }
+    return list.pop();
+  }
+
   // Adds a creature with these birth traits, reusing a dead one's storage when there is one; genome and plan are copied.
   private spawn(genome: Genome, plan: PlanView, x: number, y: number, heading: number, energy: number, species: number, birth: BirthTraits, mutationScale = 1): EcoCreature {
-    let m = this.spare[species]!.pop();
+    let m = this.takeSpare(species, genome.length);
     if (m) m.creature.reset(genome, x, y, heading, energy, plan);
     else {
       m = new EcoCreature(new Creature(this.engines[species]!, genome, x, y, heading, plan, this.kernels, species));

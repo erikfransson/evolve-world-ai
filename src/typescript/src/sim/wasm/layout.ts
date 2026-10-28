@@ -192,7 +192,9 @@ export const LAYOUT = {
   M_OUT_COUNT: 12,
   M_THRESHOLDS: 16, // f64 per member
   M_FIRST: 20,
-  M_BYTES: 24,
+  M_SEED: 24, // mutateScan: the generator state in, and out after the last draw
+  M_LIMIT: 28, // mutateScan: a gene mutates when its draw is below this (unsigned)
+  M_BYTES: 32,
   // species block of step (f64 unless noted), one per species: the config values the step reads and the decay factors
   Q_DT: 0,
   Q_MAX_THRUST: 8,

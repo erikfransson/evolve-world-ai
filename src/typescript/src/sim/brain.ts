@@ -1,13 +1,13 @@
 import type { EngineConfig } from "./config.ts";
-import { inputLayout, planOf } from "./sensors.ts";
+import { EXTRA_INPUTS, OUTPUT_SIZE, inputLayout, planOf, rayFeatureCount } from "./sensors.ts";
 import type { PlanView } from "./sensors.ts";
 import type { Genome, Rng } from "./types.ts";
 
 // Genome layout, per layer in order: weights row-major [out][in], then biases [out].
 
 export function layerSizes(config: EngineConfig, plan: PlanView = planOf(config)): number[] {
-  const layout = inputLayout(config, plan);
-  return [layout.size, ...plan.hiddenLayers, layout.outputs];
+  const memory = plan.memoryShort + plan.memoryLong;
+  return [plan.rayCount * rayFeatureCount(config) + EXTRA_INPUTS + memory, ...plan.hiddenLayers, OUTPUT_SIZE + memory]; // inputLayout's size and outputs, without its label arrays
 }
 
 type Typed = Float32Array | Float64Array | Int32Array;
@@ -68,6 +68,12 @@ export function fastTanh(x: number): number {
   const x2 = x * x;
   const r = (x * (135135 + x2 * (17325 + x2 * (378 + x2)))) / (135135 + x2 * (62370 + x2 * (3150 + 28 * x2)));
   return r > 1 ? 1 : r < -1 ? -1 : r;
+}
+
+function sameSizes(a: readonly number[], b: readonly number[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
 }
 
 const NO_F32 = new Float32Array(0); // shared, never written: refit makes a new array before any write
@@ -158,7 +164,7 @@ export class Brain {
   load(sizes: readonly number[], genome: Genome): void {
     const length = genomeLength(sizes);
     if (genome.length !== length) throw new Error(`genome length ${genome.length} does not match expected ${length}`);
-    if (sizes.length === this.shape.length && sizes.every((n, i) => n === this.shape[i])) {
+    if (sameSizes(sizes, this.shape)) {
       this.weightsGenome.set(genome);
       if (this.ready) this.transposeFirstLayer();
       return;

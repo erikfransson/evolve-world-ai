@@ -736,3 +736,22 @@ describe("kernel resources of dropped creatures", () => {
     for (const s of sizes.slice(1)) expect(s).toEqual(sizes[0]);
   });
 });
+
+describe("reusing dead creatures", () => {
+  it("hands a newborn a dead creature with a brain of its size when one is among the latest, else the latest", () => {
+    const eco = new Ecosystem(ecoCfg({ eco: { foundersVary: true, initialPopulation: 80 } }), null);
+    const e = eco as unknown as { remove(i: number): void; takeSpare(species: number, genes: number): { creature: { brain: { genome: Float32Array } } } | undefined };
+    const lengths = eco.members.map((m) => m.creature.brain.genome.length);
+    const [a, b] = [...new Set(lengths)];
+    expect(b).toBeDefined(); // the founders differ in size
+    const lastOf = (len: number) => lengths.lastIndexOf(len);
+    // kill the last member of size a, then of size b: b is the latest dead, a one below
+    const ia = lastOf(a!);
+    e.remove(ia);
+    const ib = eco.members.findIndex((m) => m.creature.brain.genome.length === b);
+    e.remove(ib);
+    expect(e.takeSpare(0, a!)!.creature.brain.genome.length).toBe(a);
+    expect(e.takeSpare(0, a!)!.creature.brain.genome.length).toBe(b); // none of size a left: the latest
+    expect(e.takeSpare(0, a!)).toBeUndefined();
+  });
+});
