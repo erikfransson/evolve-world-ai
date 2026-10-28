@@ -40,6 +40,7 @@ import { MAX_RAYS } from "./wasm/senser.ts";
 import type { PhaseTimer } from "./profile.ts";
 
 const SMALL_SCAN = 32; // up to this many members the settle and birth scans run in JS: RL episodes have 1-31 creatures, so the kernel pays only for crowds
+const BIRTH_CHUNK = 8; // birth candidates fetched per kernel call: a tick has about one birth, so the walk ends within the first few
 const SPARE_LOOK = 16; // dead creatures looked at for one whose brain has the newborn's size
 
 export { BIG_IMPACT, EVENT_CAP, EVENT_DEATH, EVENT_IMPACT, EVENT_STRIDE } from "./contacts.ts";
@@ -544,11 +545,15 @@ export class Ecosystem {
     const birthCap = eco.maxPopulation - eco.birthReserve;
     // The energy test reads no creature object: table.states[i] is members[i].creature.state and table.birthEnergies[i] its birth energy. Births replace the table's arrays when they fill up.
     if (scan) {
-      // only the members with energy for a child, in the order of the walk from first; births change no one else's energy
-      const ready = scan.birthCandidates(this.table.rowAt, n, this.table.birthEnergies, first);
-      for (let k = 0; k < ready.length && members.length < birthCap && this.weights <= this.birthWeightCap; k++) {
-        const parent = members[ready[k]!]!;
-        if (this.tick - parent.lastBirthTick >= parent.cooldownTicks) this.giveBirth(parent);
+      // only the members with energy for a child, in the order of the walk from first, a few at a time as the walk ends at the caps; births change no one else's energy
+      if (members.length < birthCap && this.weights <= this.birthWeightCap) {
+        for (let ready = scan.birthCandidates(this.table.rowAt, n, this.table.birthEnergies, first, BIRTH_CHUNK); ; ready = scan.nextBirthCandidates(BIRTH_CHUNK)) {
+          for (let k = 0; k < ready.length && members.length < birthCap && this.weights <= this.birthWeightCap; k++) {
+            const parent = members[ready[k]!]!;
+            if (this.tick - parent.lastBirthTick >= parent.cooldownTicks) this.giveBirth(parent);
+          }
+          if (ready.length < BIRTH_CHUNK || members.length >= birthCap || this.weights > this.birthWeightCap) break;
+        }
       }
     } else for (let k = 0; k < n && members.length < birthCap && this.weights <= this.birthWeightCap; k++) {
       const at = (first + k) % n;

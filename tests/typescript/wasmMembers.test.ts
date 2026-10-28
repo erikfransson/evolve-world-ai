@@ -68,6 +68,18 @@ describe.skipIf(!wasmAvailable())("the WebAssembly scans equal the loops", () =>
         if (!(f[e.table.rowAt[at] + F.energy] < thresholds[at]!)) want.push(at);
       }
       expect(Array.from(e.wasmMembers.birthCandidates(e.table.rowAt, n, thresholds, first))).toEqual(want);
+      for (const chunk of [1, 3, 8]) {
+        // the walk in chunks, with a mutateHits call (which uses the same call block) between them
+        const got: number[] = [];
+        let part = e.wasmMembers.birthCandidates(e.table.rowAt, n, thresholds, first, chunk);
+        for (;;) {
+          got.push(...part);
+          if (part.length < chunk) break;
+          e.wasmMembers.mutateHits(200, 12345, 1 << 30);
+          part = e.wasmMembers.nextBirthCandidates(chunk);
+        }
+        expect(got).toEqual(want);
+      }
     }
   });
 
