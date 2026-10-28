@@ -166,6 +166,8 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 
 | 87 | WebAssembly branch hints (`metadata.code.branch_hint` via wabt, `--experimental-wasm-branch-hinting`) on the kernels' rare paths | yes | Rejected (`hints.md`): supported on both sides, 50 annotations, -2.5% mixed inside the spread and +1.2% cap; would need an experimental flag in the unit |
 
+| 86 | 1-bit item-cell occupancy bitmap as a touch-kernel pre-reject | yes | Rejected (`touchbit.md`): 56-62% of touch windows are empty but a window is 1.3 rows, the two start loads it replaces are hot; eat +0.05 ms in every pair, tick 1.002 / 0.992 |
+
 ## Log
 - 2026-10-27 09:00 Campaign start. Prior campaigns (B1, B2, `docs/perf-explore/`) already moved sense, brains, physics, crowd grid, collisions and scans into WASM; their rejected ideas are not retried unless the live setting changes the picture.
 - 2026-10-27 09:19 `server/src/liveBench.ts` written; two runs at 400 seeded give the same fingerprint (260290661), so the bench is deterministic.
@@ -299,3 +301,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-28 08:50 idea 87 rejected (`hints.md`).
 - 2026-10-28 09:00 scout-ray report: the sense kernel is instruction and branch bound, not miss bound (hot = cold); per-ray passes 15%, ray x candidate tests 17-19%, item rows 26-28%, emit 15%; prototype of three exact cuts (f64x2 exact test, inline zero fill, closeness fused into the no-crowd emit) gives senser -0.17 ms (1.5% of the tick); continued as idea 88 (`raytests.md`), cap pairs and tests pending.
 - 2026-10-28 09:10 scout-js report (`scout-js.md`): wasm is 92.6% of samples, plain JS 7.4% spread over 20 functions (largest patchCell 0.9%), 18 KB allocated per tick; the 25% outside the two kernels is flat. Leads: fdlibm sin/cos port inside step.wat (step -0.11 ms, exact on V8, probe for other engines) plus an exp port for pack (about 0.08 ms), together 1.5% for 250 lines; the crowd cellStart fill is 0.34 ms per tick (2.4%) of cold-table traffic, fewer bytes per entry would cut it. Spawned as ideas 89 (u16 cellStart) and 90 (trig and exp ports).
+- 2026-10-28 09:20 idea 86 rejected (`touchbit.md`), branch kept for reference.
