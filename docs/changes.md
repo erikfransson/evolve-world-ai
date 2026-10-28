@@ -6,6 +6,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- RL Arena: Fight group grows from 3 to 6 envs with Ambush, Turf war and Cull (all pass the E1 to E8 checks, `docs/rl-envs.md`). The `early` reward now also pays a ram by the share of the episode left; the existing early envs have no collision damage, so they are unchanged.
+
 ## 0.2.7 (2026-10-26)
 
 - Live: room for 5000 creatures (was 3000, #63), births still stop 100 below it. The brain-weight budget stays at 7 million, so a world of big brains still waits for deaths before that. A full world fits fewer viewers (about 16 to 23).

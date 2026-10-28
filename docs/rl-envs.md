@@ -35,6 +35,9 @@ Self-play envs (Melee, Brawl) score against the learner's own league, so their h
 | Duel (duel)         | Compete              | one seed-pool rival                                 | 0.09 -> 2.20   | 1.81 -> 3.08 |
 | Melee (melee)       | Compete              | 4 self-play rivals, regrowing food                  | 0.00 -> 2.03   | 0.63 -> 0.91 |
 | Brawl (brawl)       | Fight                | Melee with collision damage, rams pay               | 0.50 -> 1.66 (2026-10-15) | 0.66 -> 1.25 (2026-10-15) |
+| Ambush (ambush)     | Fight                | 4 weak pool foragers in a 360 x 360 room of food, 80 energy, kills pay 2 + 30 energy | 0.51 -> 2.69 (2026-10-28) | 1.66 -> 3.10 (2026-10-28) |
+| Turf war (turf-war) | Fight                | food regrows in one patch, 3 rivals want it, rams pay | 0.47 -> 3.80 (2026-10-28) | 3.97 -> 4.98 (2026-10-28) |
+| Cull (cull)         | Fight                | 5 weak foragers, little food, each kill and bite pays by the time left | 1.16 -> 3.40 (2026-10-28) | 2.61 -> 4.23 (2026-10-28) |
 | Crowd (crowd)       | Compete              | many rivals on regrowing food                       | ES beats PPO   |              |
 
 Slower foragers, filed by tag since 2026-10-15: Sparse plains (forage-sparse) in Find food, Poison field in Avoid and find a way, Rivals in Compete, Endurance in Energy. Advanced now holds only hunters and prey (hidden while the Arena trains foragers only). Poison field and Endurance hardly move from random genomes even in 600 iterations (gains 0.0 to 0.4) but do from a pool founder (0.37 -> 0.95 and 0.80 -> 2.02).
@@ -75,6 +78,33 @@ The time-pressure creatures are not clearly faster: about 5 to 9% faster than th
 At this budget every trained creature already moves at 60 to 72, the speed of Live survivors (63 to 77), so in these small worlds speed is not what separates the envs; the slow lean founders in Live need another explanation.
 Each claim needs 3 to 5 training seeds or bodies: the spread between runs is larger than the held-out noise.
 Dropped after the same checks: Dash (5 food, clear-all bonus, fails E7), Hot box (tight room with stings, run spread 2.3 to 4.5), Mudflats (slow and fast ground, seed cv up to 0.99, the random ground makes layouts too unequal), and lab variants Fading wide, Fading regrow and Race two (all pass, but lower SNR and more seeds needed than the three above).
+
+## More Fight envs (2026-10-28)
+
+Fight had three envs (Aggressor, Escape, Brawl) and Aggressor fails E1 to E3 (`docs/rl-notes/t3-envs.md`: free share 0.70, saturated energy term).
+Three new envs, all with collision damage and weak pool foragers as prey, none with a saturated term (start energy 80 to 120, no energy reward).
+`early` now also pays a ram by the share of the episode left (`env.ts`), which Cull uses; the other `early` envs have no collision damage, so their rewards are unchanged.
+Checked with `t3-snr.ts` (64 held-out seeds, 4 random designs, pool:0..1, Live founders; E6 does not apply, E7 holds for Cull by `early` and by short episodes for the others):
+
+| Env (id)  | E1 SNR | E2 scripted / best | E3 best alive | E4 seeds for 25% | E5 random scores | E8 ms/ep |
+| --------- | ------ | ------------------ | ------------- | ---------------- | ---------------- | -------- |
+| Ambush    | 3.08   | 0.21               | 0.96          | 23               | 51%              | 7.9      |
+| Turf war  | 3.23   | 0.05               | 0.94          | 31               | 34%              | 8.2      |
+| Cull      | 2.69   | 0.17               | 0.96          | 35               | 41%              | 5.8      |
+
+Training (ES pop 200, 60 iterations, 1 episode, 32 held-out seeds; one run each, so the spread between runs is not measured): rows above in the table.
+Rams and food of the same creatures on 64 held-out seeds (reward, rams per episode, food per episode):
+
+| Env      | pool:0 start      | trained from random:1 | trained from pool:0 |
+| -------- | ----------------- | --------------------- | ------------------- |
+| Ambush   | 1.93, 0.52, 3.00  | 2.45, 0.67, 3.70      | 2.76, 0.56, 5.45    |
+| Turf war | 4.10, 0.20, 3.80  | 4.08, 0.28, 3.66      | 4.91, 0.25, 4.53    |
+| Cull     | 2.76, 0.58, 0.97  | 2.79, 0.56, 0.97      | 4.30, 0.84, 1.69    |
+
+The gain is mostly food, as the best founders eat 3.6 to 11.8 items against 0.6 to 1.2 rams: the envs are fights over food, not pure hunts.
+Only Cull from pool:0 shows more rams (0.58 -> 0.84).
+Dropped after the screen (E1 to E3 with the same probe): pure ram rewards (6 weak pool foragers, no food: SNR 0.88, scripted 44% of best), a Cage (equal energies, no food: SNR 0.21, scripted 88%), a ram-only Cull (SNR 1.16, scripted 34%, alive 0.60), scripted-charger duels (Chase of a fleeing charger SNR 0.67, random designs never score; Hit and Read a charger of known or mixed energy SNR about 0: standing still already scores as the best founder, so no untrained reference shows headroom), Pick your fights (SNR 0.66, as in the 2026-10-15 note) and Aggressor with 100 energy, ram 1 + food 0.3 (passes but 17 ms per episode, over E8).
+Open: the duel envs need a trained reference creature before E1 can be judged; PPO ignores the ram reward (`ppo.ts`), so these envs train with ES only.
 
 ## Notes
 
