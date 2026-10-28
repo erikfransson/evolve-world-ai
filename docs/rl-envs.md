@@ -39,6 +39,7 @@ Self-play envs (Melee, Brawl) score against the learner's own league, so their h
 | Turf war (turf-war) | Fight                | 8 food start in one patch, 3 rivals race for it, slow regrowth round the room, rams pay | 0.27 -> 2.84 (2026-10-28) | 3.27 -> 3.34 (2026-10-28) |
 | Cull (cull)         | Fight                | 5 weak foragers, little food, each kill and bite pays by the time left | 1.16 -> 3.40 (2026-10-28) | 2.61 -> 4.23 (2026-10-28) |
 | Crowd (crowd)       | Compete              | many rivals on regrowing food                       | ES beats PPO   |              |
+| Patch war (patch-war) | Compete            | one regrowing patch, 5 pool rivals, bumps cost energy | 0.86 -> 9.01 (2026-10-28) | 5.65 -> 7.83 |
 
 Slower foragers, filed by tag since 2026-10-15: Sparse plains (forage-sparse) in Find food, Poison field in Avoid and find a way, Rivals in Compete, Endurance in Energy. Advanced now holds only hunters and prey (hidden while the Arena trains foragers only). Poison field and Endurance hardly move from random genomes even in 600 iterations (gains 0.0 to 0.4) but do from a pool founder (0.37 -> 0.95 and 0.80 -> 2.02).
 
@@ -49,6 +50,7 @@ Bigger (Live-like, 90 s, start energy 300, lethal poison, bumps hurt, seed pool 
 | Live patch (live-patch)        | 1200 x 1200, 60 food, 20 rivals                | 2.92 -> 19.52                     | 29.42    |
 | Feast and famine (live-famine) | 2200 x 2200, 35 food, slow regrowth, 8 rivals  | 2.64 -> 7.57                      | 8.99     |
 | Poison country (live-poison)   | 1500 x 1500, 40 food, 90 poison, 12 rivals     | 3.41 -> 5.06                      | 6.41     |
+| Live now (live-now)            | 1200 x 1200, 60 food regrowing 0.6, 20 rivals, sting 50, kill bonus 5 (Live's rules) | 3.50 -> 8.88 (60 it, pop 200, 1 run) | pool:0 5.87 -> 10.05 |
 | Crowded commons (live-commons) | 20 food, 25 weak rivals, rams pay 2            | 2.23 -> 6.73 (before the ram fix) | 7.79     |
 
 ## Time pressure (#56)
@@ -63,6 +65,10 @@ E6 (energy reward) does not apply; E7 holds by design.
 | Fading food (fading) | 8 food in 400 x 400, 20 s                      | 4.78   | 0.08               | 1.00          | 8                | 19%              | 5.1      |
 | Stings (stings)      | Fading food with 4 stinging poison (20 energy) | 3.83   | 0.08               | 0.95          | 15               | 16%              | 4.6      |
 | Race (race)          | 300 x 300, 15 s, one pool rival eats too       | 3.59   | 0.15               | 1.00          | 13               | 29%              | 6.0      |
+| Fading patch (fading-patch) | 10 food in one patch (450 x 450), start in the middle, 25 s | 2.41 | 0.06 | 0.91 | 24 | 94% | 5.1 |
+
+Fading patch was added 2026-10-28 and checked the same way (64 held-out seeds, E1 2.41, E2 scripted / best 0.06, E3 best alive 0.91, E4 24 seeds for 25% from n10 147, E5 random scores in 6% so it needs a few lucky bites, E8 5.1 ms).
+Training with the Measuring recipe: random:1 0.00 -> 3.71, random:2 0.00 -> 7.93 (sd large between bodies), pool:0 2.37 -> 2.91.
 
 Training from fresh designs (ES pop 100, 150 iterations, 1 episode, `randomLearner` bodies 1 to 3, final genome on 64 held-out seeds): Fading food 0.13 -> 4.76 (sd over runs 2.00), Stings 0.14 -> 4.76 (1.90), Race 0.32 -> 4.53 (1.05); curves rise steadily, though body 1 stops near 2.6 in both fading envs.
 Speed check (C1 review): mean learner speed (world units per second while alive) on 32 held-out seeds, mean of the same 3 bodies, each trained 150 iterations at pop 100; reward in brackets.
@@ -121,3 +127,8 @@ Open: the duel envs need a trained reference creature before E1 can be judged; P
 - Fight candidates, 2026-10-15: Pick your fights (ram 5 weak rivals, avoid 3 strong ones) learned from no start in 600 iterations, and Intercept (chase weak foragers over a bigger field) is learned better by Aggressor training than by its own, so neither shipped. Wait for it shipped in Energy.
 - Memory, 2026-10-15: each env is checked over 6 seeds, as 3 seeds overstated two gaps. Flash went from 3 to 5 bites (gap 1.02 against 0.66). Islands glimpse (2.52 vs 2.41), Glimpse with poison (1.47 vs 1.79), bigger or tighter patches, hidden poison (an engine option, reverted) and food at random distances showed no gap. A creature without memory units can carry a bit in its own speed and turn, which is why one-bit cue tasks such as Signal door do not need memory.
 - Population: at equal episodes, pop 100 learned most (Nibble 3.20, Minefield 1.00) against 50 (2.48, 0.69) and 500 (2.78, 0.56); the Arena default is 100.
+- 2026-10-28, new envs (env-more). Recipe as in Measuring (60 iterations, pop 200, 32 held-out seeds), plus a cross check: a creature trained on A, scored on B, as a share of B's own gain from the same random body (bodies random:1 and random:2, 32 seeds, 16 for Live).
+  - Shipped Fading patch (Time pressure). Its gain from Fading training is 79% and 29%, from Patch training 71% and 102%; Patch gets 145% and 92% from it. Patch is the nearest relative (mean 86% one way), so it is borderline distinct (it differs in the clock reward and 25 s). E5 fails from random alone but both runs learn.
+  - Shipped Patch war (Compete). Own gain 8.1 (random:1) and 12.8 (random:2). Others reach it at most 70% (Fading) in body 1, but in body 2 Rivals training reaches 101% and Fading patch 89%. It is the hard, crowded superset: its training lifts Patch (106% and 61%), Duel (131% and 94%) and Rivals (153% and 89%). E1 3.73, E2 0.06, n25 21.
+  - Shipped Live now (Bigger). Own gains 5.4 and 13.7. Live patch training reaches it 56% and 78%, Live now training reaches Live patch 146% and 37%. E1 4.33, free 0.12, alive 0.95, n25 17, 68 ms per episode.
+  - Failed. Fading fence (fence layout with `early` and cross): passes E1 to E5 but training on Fading reaches 91% of its gain and Fence 105% (duplicate). Grab (patch, 2 pool rivals, regrow): Fading patch, Fence and Patch training reach 105 to 157% of its gain, and E4 needs 84 seeds. Island duel (islands, 1 pool rival): Islands training reaches 94% and Duel 112%. Scramble (50 energy, 4 hungry rivals, energy reward): does not learn from random (1.15 -> 1.15) or a pool founder (0.88), E4 needs 145 seeds. Live flats (Live patch with 25% fast ground): E4 needs 86 seeds and Live patch training reaches 86% of its gain.
