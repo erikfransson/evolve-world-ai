@@ -49,6 +49,8 @@ Fingerprint equal means bit-identical results.
 
 Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54, brain forward 5.23 / 5.17, slots (prepareRows) 1.04 / 1.52, memory and steer 1.26 / 1.59, eat 1.05 / 1.35, crowd grid 0.51 / 0.67, collisions 0.18 / 0.27, rest under 0.2. Server frame encoding adds 0.57 ms per tick at 5 Hz. Speed achieved unpaced on this loaded machine: 2.0x and 1.7x real time (the set speed is 3x).
 
+Head phases 2026-10-28 14:50 (253f894, load 6-7, `scout-head.md`; ms per tick, 3300 mixed / 4900 Juggernaut): senser 3.88 / 4.73, brain forward 3.90 / 3.77, step 0.94 / 1.11, eat 0.86 / 1.07, slots 0.30 / 0.40, crowd grid 0.14 / 0.28, collisions 0.17 / 0.25, total 10.42 / 11.98 (baseline 15.24 / 18.50); wasm 94% of samples, GC 0.1-0.5%.
+
 ## Scout candidates (2026-10-27 21:30 round, to rank into batch 9)
 
 | Scout | Candidate | Kind | Expected | Confidence |
@@ -383,3 +385,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-28 14:40 idea 106 merged (no drift, tsc clean). Review round 4 due for 96, 97, 106.
 - 2026-10-28 14:55 idea 109 parked (0.3% for 207 lines).
 - 2026-10-28 14:40 review round 4 (Opus, independent) of ideas 96, 97, 106: nothing to fix (demote lanes, the shift square's edges and non-finite positions, pmin/pmax against the JS clamps, the overshooting gap stores fit the +12 bytes on every grid size, refresh unchanged). Closed.
+- 2026-10-28 14:50 scout-head (`scout-head.md`): the pool of single exact ideas at 1.5% or more is dry; left: a small-wins bundle (parked 100 and 109 plus forwardRun's stamp-and-walk moved into the forward export, about 1.5-1.7%), quad lanes (95, running), and the decisions. Rock walk is 14% of the sense kernel for the 10.6% of creatures near rock (a grid-order disc layout gained nothing). Spawned idea 112 (the bundle).
