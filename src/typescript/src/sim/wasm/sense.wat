@@ -6,9 +6,14 @@
 ;;   the candidate and ray scratch (cand, scr).
 ;; Rock (Terrain, as World.gatherRock): rockMaxR, invRockCell, rockCols (0 for no rock), rockRows, rockStart (cols*rows+1), rockOrder, rockXYR (f64 x y r per disc).
 ;;   Rock discs join the item candidates as kind 3 (wall), after the items, so a ray reports the nearest of wall, rock, item and creature.
+;; Candidate walks keep an item or disc only inside the ray distance and inside the wedge of the two outer rays widened by the radius (everything when the rays span 180 degrees or more); the crowd walk does the same in f32.
+;; Early-out: a creature with no item, rock disc or creature candidate, no wall in range and no detail record writes all-zero features and skips the ray passes.
+;; Otherwise each candidate is first tested against two rays at a time (f64x2) by the distance s of the ray to the centre, and only the rays that pass run the exact hit test, in candidate order.
+;; A creature with no creature candidate and no detail record takes the f64 results straight to features; the rest run the crowd rays (f32x4, four rays at a time) and merge the hits.
 ;; Creature record, 64 bytes (layout.ts REC_*, double-brace tokens below): f64 x y cos sin L; i32 self, rays, offsets (f64 cos[rays], then sin[rays]), input (byte address),
 ;;   detail (0, or the address where to also write each ray as f64 closeness, i32 kind, i32 crowd slot hit or -1, for the UI).
 ;; Ray scratch (max 64 rays): dx f64@0 dy f64@512 clo f64@1024 kind i32@1536 dxf f32@1792 dyf f32@2048 best f32@2304 hit i32@2560.
+;; patchItems (separate export): resizes the packed item cells of the item grid in place, one call per tick for all dirty cells, instead of a JS patch per cell.
 (module
   (import "brain" "mem" (memory 1))
 
@@ -108,28 +113,8 @@
     (i32.const 1))
 
   ;; $emit: the features of nR rays that saw no creature: closeness and the one-hot of food, poison and wall, then zeros (species flags and seen energy).
-  (func $emit (param $scr i32) (param $base i32) (param $nR i32) (param $stride i32)
-    (local $i i32) (local $z i32) (local $kinds v128) (local $ones v128)
-    ;; constants in locals: V8 rebuilds a v128 constant at each use inside a loop
-    (local.set $kinds (v128.const i32x4 -1 1 2 3))
-    (local.set $ones (v128.const f32x4 1 1 1 1))
-    (block $d (loop $l
-      (br_if $d (i32.ge_s (local.get $i) (local.get $nR)))
-      (v128.store (local.get $base) (f32x4.replace_lane 0
-        (v128.and (i32x4.eq (i32x4.splat (i32.load offset=1536 (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 2))))) (local.get $kinds)) (local.get $ones))
-        (f32.demote_f64 (f64.load offset=1024 (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 3)))))))
-      (if (i32.eq (local.get $stride) (i32.const 6)) (then (i64.store offset=16 (local.get $base) (i64.const 0)))
-        (else (local.set $z (i32.const 16)) (block $zd (loop $zl
-          (br_if $zd (i32.ge_s (local.get $z) (i32.shl (local.get $stride) (i32.const 2))))
-          (i32.store (i32.add (local.get $base) (local.get $z)) (i32.const 0))
-          (local.set $z (i32.add (local.get $z) (i32.const 4)))
-          (br $zl)))))
-      (local.set $base (i32.add (local.get $base) (i32.shl (local.get $stride) (i32.const 2))))
-      (local.set $i (i32.add (local.get $i) (i32.const 1)))
-      (br $l))))
-
-  ;; $emitClo: $emit with the closeness (0 for kind 0, else 1 - best / L) computed per ray from best and kind.
-  (func $emitClo (param $scr i32) (param $base i32) (param $nR i32) (param $stride i32) (param $L f64)
+  ;; Closeness is read from scratch when calc is 0, else computed per ray from best and kind (0 for kind 0, else 1 - best / L).
+  (func $emit (param $scr i32) (param $base i32) (param $nR i32) (param $stride i32) (param $L f64) (param $calc i32)
     (local $i i32) (local $kind i32) (local $clo f64) (local $z i32) (local $kinds v128) (local $ones v128)
     ;; constants in locals: V8 rebuilds a v128 constant at each use inside a loop
     (local.set $kinds (v128.const i32x4 -1 1 2 3))
@@ -137,8 +122,10 @@
     (block $d (loop $l
       (br_if $d (i32.ge_s (local.get $i) (local.get $nR)))
       (local.set $kind (i32.load offset=1536 (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 2)))))
-      (if (i32.eqz (local.get $kind)) (then (local.set $clo (f64.const 0)))
-        (else (local.set $clo (f64.sub (f64.const 1) (f64.div (f64.load offset=1024 (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 3)))) (local.get $L))))))
+      (local.set $clo (f64.load offset=1024 (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 3)))))
+      (if (local.get $calc) (then
+        (if (i32.eqz (local.get $kind)) (then (local.set $clo (f64.const 0)))
+          (else (local.set $clo (f64.sub (f64.const 1) (f64.div (local.get $clo) (local.get $L))))))))
       (v128.store (local.get $base) (f32x4.replace_lane 0
         (v128.and (i32x4.eq (i32x4.splat (local.get $kind)) (local.get $kinds)) (local.get $ones))
         (f32.demote_f64 (local.get $clo))))
@@ -156,7 +143,7 @@
     (local $kinds v128) (local $ones v128) (local $lane0 v128) (local $three v128) (local $j i32) (local $n i32) (local $q i32) (local $nR i32) (local $i i32) (local $stride i32)
     (local $x f64) (local $y f64) (local $hc f64) (local $hs f64) (local $L f64) (local $self i32) (local $off i32) (local $inp i32)
     (local $scr i32) (local $cand i32) (local $W f64) (local $H f64) (local $r f64) (local $r2 f64)
-    (local $far f64) (local $far2 f64) (local $margin f64) (local $nmargin f64) (local $open i32) (local $last i32)
+    (local $far f64) (local $far2 f64) (local $margin f64) (local $nmargin f64) (local $open i32) (local $openc i32) (local $last i32)
     (local $d0x f64) (local $d0y f64) (local $d1x f64) (local $d1y f64)
     (local $cx0 i32) (local $cx1 i32) (local $cy0 i32) (local $cy1 i32) (local $cx i32) (local $cy i32) (local $c i32)
     (local $it i32) (local $fx f64) (local $fy f64) (local $d2 f64) (local $cp i32) (local $ce i32) (local $inv f64) (local $cols i32) (local $rows i32)
@@ -172,7 +159,7 @@
     (local $ps i32) (local $base i32) (local $sigp i32) (local $cStart i32) (local $ccols i32) (local $crows i32)
     ;; rock
     (local $rcols i32) (local $rrows i32) (local $rstart i32) (local $rorder i32) (local $rxyr i32) (local $rmax f64) (local $rinv f64)
-    (local $rext f64) (local $rr f64) (local $rfar f64) (local $di i32) (local $rlb i32) (local $skip i32)
+    (local $rext f64) (local $rr f64) (local $rfar f64) (local $rm f64) (local $di i32) (local $rlb i32) (local $skip i32)
     (local $cc32 f32) (local $ks i32) (local $sb i32)
     (local.set $n (i32.load offset={{S_N}} (local.get $P)))
     (local.set $stride (i32.load offset={{S_STRIDE}} (local.get $P)))
@@ -318,41 +305,47 @@
             (local.set $rr (f64.load offset=16 (local.get $di)))
             (local.set $d2 (f64.add (f64.mul (local.get $fx) (local.get $fx)) (f64.mul (local.get $fy) (local.get $fy))))
             (local.set $rfar (f64.add (f64.add (local.get $L) (local.get $rr)) (f64.mul (f64.const 1e-9) (local.get $L))))
+            ;; kept only inside the distance and the ray wedge widened by the disc radius, as the items are; a disc outside it cannot be hit and must not force the busy path
             (if (f64.le (local.get $d2) (f64.mul (local.get $rfar) (local.get $rfar))) (then
-              (f64.store (local.get $cp) (local.get $fx))
-              (f64.store offset=8 (local.get $cp) (local.get $fy))
-              (f64.store offset=16 (local.get $cp) (f64.sub (local.get $d2) (f64.mul (local.get $rr) (local.get $rr))))
-              (local.set $cp (i32.add (local.get $cp) (i32.const 32)))))
+              (local.set $rm (f64.add (local.get $rr) (f64.mul (f64.const 1e-9) (local.get $L))))
+              (if (i32.or (local.get $open) (i32.and
+                  (f64.ge (f64.sub (f64.mul (local.get $d0x) (local.get $fy)) (f64.mul (local.get $d0y) (local.get $fx))) (f64.neg (local.get $rm)))
+                  (f64.le (f64.sub (f64.mul (local.get $d1x) (local.get $fy)) (f64.mul (local.get $d1y) (local.get $fx))) (local.get $rm)))) (then
+                (f64.store (local.get $cp) (local.get $fx))
+                (f64.store offset=8 (local.get $cp) (local.get $fy))
+                (f64.store offset=16 (local.get $cp) (f64.sub (local.get $d2) (f64.mul (local.get $rr) (local.get $rr))))
+                (local.set $cp (i32.add (local.get $cp) (i32.const 32)))))))
             (local.set $it (i32.add (local.get $it) (i32.const 1)))
             (br $ritl)))
           (local.set $cy (i32.add (local.get $cy) (i32.const 1)))
           (br $rcyl)))))
       (local.set $ce (local.get $cp))
+      ;; the f32 crowd window, shared by the early-out walk and the crowd rays
+      (local.set $x32 (f32.demote_f64 (local.get $x)))
+      (local.set $y32 (f32.demote_f64 (local.get $y)))
+      (local.set $L32 (f32.demote_f64 (local.get $L)))
+      (local.set $d0xf (f32.demote_f64 (local.get $d0x)))
+      (local.set $d0yf (f32.demote_f64 (local.get $d0y)))
+      (local.set $d1xf (f32.demote_f64 (local.get $d1x)))
+      (local.set $d1yf (f32.demote_f64 (local.get $d1y)))
+      (local.set $farc (f32.add (f32.add (local.get $L32) (local.get $rc)) (f32.mul (local.get $L32) (f32.const 1e-9))))
+      (local.set $far2c (f32.mul (local.get $farc) (local.get $farc)))
+      (local.set $marginc (f32.add (local.get $rc) (f32.mul (local.get $L32) (f32.const 1e-9))))
+      (local.set $nmarginc (f32.neg (local.get $marginc)))
+      (local.set $openc (i32.eqz (i32.and (i32.gt_s (local.get $nR) (i32.const 1))
+        (f32.gt (f32.sub (f32.mul (local.get $d0xf) (local.get $d1yf)) (f32.mul (local.get $d0yf) (local.get $d1xf))) (f32.const 1e-9)))))
+      (local.set $cx0 (i32.trunc_sat_f32_s (f32.floor (f32.mul (f32.sub (local.get $x32) (local.get $farc)) (local.get $invc)))))
+      (local.set $cx0 (select (i32.const 0) (local.get $cx0) (i32.lt_s (local.get $cx0) (i32.const 0))))
+      (local.set $cx1 (i32.trunc_sat_f32_s (f32.floor (f32.mul (f32.add (local.get $x32) (local.get $farc)) (local.get $invc)))))
+      (local.set $cx1 (select (i32.sub (local.get $ccols) (i32.const 1)) (local.get $cx1) (i32.ge_s (local.get $cx1) (local.get $ccols))))
+      (local.set $cy0 (i32.trunc_sat_f32_s (f32.floor (f32.mul (f32.sub (local.get $y32) (local.get $farc)) (local.get $invc)))))
+      (local.set $cy0 (select (i32.const 0) (local.get $cy0) (i32.lt_s (local.get $cy0) (i32.const 0))))
+      (local.set $cy1 (i32.trunc_sat_f32_s (f32.floor (f32.mul (f32.add (local.get $y32) (local.get $farc)) (local.get $invc)))))
+      (local.set $cy1 (select (i32.sub (local.get $crows) (i32.const 1)) (local.get $cy1) (i32.ge_s (local.get $cy1) (local.get $crows))))
+      (if (i32.gt_s (local.get $cx0) (local.get $cx1)) (then (local.set $cy1 (i32.sub (local.get $cy0) (i32.const 1)))))
       ;; early-out: nothing in sight (no item, rock disc or creature candidate, no wall in range, no detail record) means every ray reads "nothing", all features 0
       (block $busy
         (br_if $busy (i32.or (i32.ne (local.get $ce) (local.get $cand)) (i32.or (local.get $walls) (local.get $det))))
-        (local.set $x32 (f32.demote_f64 (local.get $x)))
-        (local.set $y32 (f32.demote_f64 (local.get $y)))
-        (local.set $L32 (f32.demote_f64 (local.get $L)))
-        (local.set $d0xf (f32.demote_f64 (local.get $d0x)))
-        (local.set $d0yf (f32.demote_f64 (local.get $d0y)))
-        (local.set $d1xf (f32.demote_f64 (local.get $d1x)))
-        (local.set $d1yf (f32.demote_f64 (local.get $d1y)))
-        (local.set $farc (f32.add (f32.add (local.get $L32) (local.get $rc)) (f32.mul (local.get $L32) (f32.const 1e-9))))
-        (local.set $far2c (f32.mul (local.get $farc) (local.get $farc)))
-        (local.set $marginc (f32.add (local.get $rc) (f32.mul (local.get $L32) (f32.const 1e-9))))
-        (local.set $nmarginc (f32.neg (local.get $marginc)))
-        (local.set $open (i32.eqz (i32.and (i32.gt_s (local.get $nR) (i32.const 1))
-          (f32.gt (f32.sub (f32.mul (local.get $d0xf) (local.get $d1yf)) (f32.mul (local.get $d0yf) (local.get $d1xf))) (f32.const 1e-9)))))
-        (local.set $cx0 (i32.trunc_sat_f32_s (f32.floor (f32.mul (f32.sub (local.get $x32) (local.get $farc)) (local.get $invc)))))
-        (local.set $cx0 (select (i32.const 0) (local.get $cx0) (i32.lt_s (local.get $cx0) (i32.const 0))))
-        (local.set $cx1 (i32.trunc_sat_f32_s (f32.floor (f32.mul (f32.add (local.get $x32) (local.get $farc)) (local.get $invc)))))
-        (local.set $cx1 (select (i32.sub (local.get $ccols) (i32.const 1)) (local.get $cx1) (i32.ge_s (local.get $cx1) (local.get $ccols))))
-        (local.set $cy0 (i32.trunc_sat_f32_s (f32.floor (f32.mul (f32.sub (local.get $y32) (local.get $farc)) (local.get $invc)))))
-        (local.set $cy0 (select (i32.const 0) (local.get $cy0) (i32.lt_s (local.get $cy0) (i32.const 0))))
-        (local.set $cy1 (i32.trunc_sat_f32_s (f32.floor (f32.mul (f32.add (local.get $y32) (local.get $farc)) (local.get $invc)))))
-        (local.set $cy1 (select (i32.sub (local.get $crows) (i32.const 1)) (local.get $cy1) (i32.ge_s (local.get $cy1) (local.get $crows))))
-        (if (i32.gt_s (local.get $cx0) (local.get $cx1)) (then (local.set $cy1 (i32.sub (local.get $cy0) (i32.const 1)))))
         ;; the crowd walk of the creature phase below without its writes: any other creature inside the distance and wedge
         (local.set $mk (i32.const 0))
         (local.set $cy (local.get $cy0))
@@ -368,7 +361,7 @@
             (local.set $mk (i32.or (local.get $mk) (i32.and (i32.and
               (i32.ne (i32.load (i32.add (local.get $own) (i32.shl (local.get $k) (i32.const 2)))) (local.get $self))
               (f32.le (f32.add (f32.mul (local.get $fxf) (local.get $fxf)) (f32.mul (local.get $fyf) (local.get $fyf))) (local.get $far2c)))
-              (i32.or (local.get $open)
+              (i32.or (local.get $openc)
                 (i32.and
                   (f32.ge (f32.sub (f32.mul (local.get $d0xf) (local.get $fyf)) (f32.mul (local.get $d0yf) (local.get $fxf))) (local.get $nmarginc))
                   (f32.le (f32.sub (f32.mul (local.get $d1xf) (local.get $fyf)) (f32.mul (local.get $d1yf) (local.get $fxf))) (local.get $marginc)))))))
@@ -388,7 +381,6 @@
           (local.set $i (i32.add (local.get $i) (i32.const 4))) (br $zl1)))
         (br $jn))
       ;; directions by angle addition
-      (local.set $i (i32.const 0))
       (local.set $i (call $dirsPairs (local.get $scr) (local.get $off) (local.get $nR) (local.get $hc) (local.get $hs)))
       (block $dd (loop $dl
         (br_if $dd (i32.ge_s (local.get $i) (local.get $nR)))
@@ -479,29 +471,7 @@
         (br $cl)))
       (local.set $pass (i32.add (local.get $pass) (i32.const 1)))
       (br $ploop)))
-      ;; crowd rays, f32 as rays.wat
-      (local.set $x32 (f32.demote_f64 (local.get $x)))
-      (local.set $y32 (f32.demote_f64 (local.get $y)))
-      (local.set $L32 (f32.demote_f64 (local.get $L)))
-      (local.set $d0xf (f32.demote_f64 (local.get $d0x)))
-      (local.set $d0yf (f32.demote_f64 (local.get $d0y)))
-      (local.set $d1xf (f32.demote_f64 (local.get $d1x)))
-      (local.set $d1yf (f32.demote_f64 (local.get $d1y)))
-      (local.set $farc (f32.add (f32.add (local.get $L32) (local.get $rc)) (f32.mul (local.get $L32) (f32.const 1e-9))))
-      (local.set $far2c (f32.mul (local.get $farc) (local.get $farc)))
-      (local.set $marginc (f32.add (local.get $rc) (f32.mul (local.get $L32) (f32.const 1e-9))))
-      (local.set $nmarginc (f32.neg (local.get $marginc)))
-      (local.set $open (i32.eqz (i32.and (i32.gt_s (local.get $nR) (i32.const 1))
-        (f32.gt (f32.sub (f32.mul (local.get $d0xf) (local.get $d1yf)) (f32.mul (local.get $d0yf) (local.get $d1xf))) (f32.const 1e-9)))))
-      (local.set $cx0 (i32.trunc_sat_f32_s (f32.floor (f32.mul (f32.sub (local.get $x32) (local.get $farc)) (local.get $invc)))))
-      (local.set $cx0 (select (i32.const 0) (local.get $cx0) (i32.lt_s (local.get $cx0) (i32.const 0))))
-      (local.set $cx1 (i32.trunc_sat_f32_s (f32.floor (f32.mul (f32.add (local.get $x32) (local.get $farc)) (local.get $invc)))))
-      (local.set $cx1 (select (i32.sub (local.get $ccols) (i32.const 1)) (local.get $cx1) (i32.ge_s (local.get $cx1) (local.get $ccols))))
-      (local.set $cy0 (i32.trunc_sat_f32_s (f32.floor (f32.mul (f32.sub (local.get $y32) (local.get $farc)) (local.get $invc)))))
-      (local.set $cy0 (select (i32.const 0) (local.get $cy0) (i32.lt_s (local.get $cy0) (i32.const 0))))
-      (local.set $cy1 (i32.trunc_sat_f32_s (f32.floor (f32.mul (f32.add (local.get $y32) (local.get $farc)) (local.get $invc)))))
-      (local.set $cy1 (select (i32.sub (local.get $crows) (i32.const 1)) (local.get $cy1) (i32.ge_s (local.get $cy1) (local.get $crows))))
-      (if (i32.gt_s (local.get $cx0) (local.get $cx1)) (then (local.set $cy1 (i32.sub (local.get $cy0) (i32.const 1)))))
+      ;; crowd rays (f32), over the window computed above
       (local.set $cp (local.get $cand))
       (local.set $cy (local.get $cy0))
       (block $cyd2 (loop $cyl2
@@ -523,7 +493,7 @@
             (i32.shl (i32.and (i32.and
               (i32.ne (i32.load (i32.add (local.get $own) (i32.shl (local.get $k) (i32.const 2)))) (local.get $self))
               (f32.le (local.get $d2f) (local.get $far2c)))
-              (i32.or (local.get $open)
+              (i32.or (local.get $openc)
                 (i32.and
                   (f32.ge (f32.sub (f32.mul (local.get $d0xf) (local.get $fyf)) (f32.mul (local.get $d0yf) (local.get $fxf))) (local.get $nmarginc))
                   (f32.le (f32.sub (f32.mul (local.get $d1xf) (local.get $fyf)) (f32.mul (local.get $d1yf) (local.get $fxf))) (local.get $marginc))))) (i32.const 4))))
@@ -534,10 +504,9 @@
       (local.set $ce (local.get $cp))
       ;; no creature candidate and no detail record: no ray can see a creature, so the features are closeness, the one-hot and zeros
       (if (i32.and (i32.eq (local.get $ce) (local.get $cand)) (i32.eqz (local.get $det))) (then
-        (call $emitClo (local.get $scr) (local.get $inp) (local.get $nR) (local.get $stride) (local.get $L))
+        (call $emit (local.get $scr) (local.get $inp) (local.get $nR) (local.get $stride) (local.get $L) (i32.const 1))
         (br $jn)))
       ;; closeness, and the crowd rays' inputs
-      (local.set $i (i32.const 0))
       (local.set $i (call $closePairs (local.get $scr) (local.get $L) (local.get $nR)))
       (block $rd2 (loop $rl2
         (br_if $rd2 (i32.ge_s (local.get $i) (local.get $nR)))
@@ -583,7 +552,7 @@
       (local.set $base (local.get $inp))
       ;; no creature seen and no detail record: every ray's features are closeness, the one-hot and zeros
       (if (i32.eqz (local.get $det)) (then (if (call $unseen (local.get $scr) (local.get $nR))
-        (then (call $emit (local.get $scr) (local.get $base) (local.get $nR) (local.get $stride)) (local.set $i (local.get $nR))))))
+        (then (call $emit (local.get $scr) (local.get $base) (local.get $nR) (local.get $stride) (local.get $L) (i32.const 0)) (local.set $i (local.get $nR))))))
       (local.set $kinds (v128.const i32x4 -1 1 2 3))
       (local.set $ones (v128.const f32x4 1 1 1 1))
       (block $wd (loop $wl

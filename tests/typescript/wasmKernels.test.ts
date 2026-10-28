@@ -4,7 +4,7 @@ import { Crowd } from "../../src/typescript/src/sim/crowd.ts";
 import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { createRng } from "../../src/typescript/src/sim/rng.ts";
 import { terrainOf } from "../../src/typescript/src/sim/terrain.ts";
-import { EXTRA_INPUTS, EXTRA_TERRAIN, inputLayout, planOf } from "../../src/typescript/src/sim/sensors.ts";
+import { EXTRA_INPUTS, EXTRA_TERRAIN, INPUT_EXTRA_LABELS, inputLayout, planOf } from "../../src/typescript/src/sim/sensors.ts";
 import { HIT_CREATURE, HIT_FOOD, HIT_NONE, HIT_POISON, HIT_WALL } from "../../src/typescript/src/sim/types.ts";
 import { LAYOUT as L } from "../../src/typescript/src/sim/wasm/layout.ts";
 import { WasmBrainBank } from "../../src/typescript/src/sim/wasm/brainKernel.ts";
@@ -37,6 +37,8 @@ describe("wasm toolchain", () => {
     expect(L.REC_DETAIL + 4).toBeLessThanOrEqual(L.REC_BYTES);
     expect(L.EXTRAS).toBe(EXTRA_INPUTS);
     expect(L.UNITS_AT).toBe(4 * EXTRA_INPUTS); // the memory units follow the f32 extras
+    expect([L.R_EXTRA_SPEED, L.R_EXTRA_SIDE, L.R_EXTRA_TURN, L.R_EXTRA_GROUND]).toEqual([1, 2, 3, 4].map((i) => L.R_EXTRAS + 8 * i));
+    expect(INPUT_EXTRA_LABELS.slice(1)).toEqual(["speed", "lateral", "turn", "terrain"]);
     expect(L.R_OUT).toBe(L.R_EXTRAS + 8 * EXTRA_INPUTS); // the f64 extras end where the i32 fields begin
     expect(EXTRA_TERRAIN).toBe(EXTRA_INPUTS - 1);
     const sense = Object.entries(L).filter(([k]) => k.startsWith("S_") && k !== "S_BYTES").map(([k, v]) => [k, v] as const);
@@ -429,6 +431,32 @@ describe("sense.wat (SenseKernels)", () => {
     const grounds = new Set(spots.map(([x, y]) => t.valueAt(x, y)));
     expect(grounds.size).toBeGreaterThan(1);
     check({ width: 3000, height: 2000, rays: 6, spread: 2 * Math.PI, length: 250, creatures: spots, map }, true);
+  });
+
+  it("matches the JS rays for rock discs whose tangent lies on the edge ray of the fan, a hair inside and outside the widened wedge", () => {
+    const map = { stoneDensity: 0.06, ridgeDensity: 0.05, slowDensity: 0.1, fastDensity: 0.1 };
+    const t = terrainOf({ seed: DEFAULT_ECO_CONFIG.seed, world: { width: 3000, height: 2000, ...map } });
+    for (const [rays, spread] of [[8, 1], [7, 2.5], [5, 0.4]] as const) {
+      const rng = createRng(33);
+      const spots: Spot[] = [];
+      for (let tries = 0; spots.length < 30 && tries < 40000; tries++) {
+        const d = rng.int(t.rockCount);
+        const r = t.rockR[d]!;
+        const dist = r + rng.range(5, 140);
+        const a = rng.range(0, 2 * Math.PI);
+        const x = t.rockX[d]! + dist * Math.cos(a);
+        const y = t.rockY[d]! + dist * Math.sin(a);
+        const eps = [0, 1e-9, -1e-9, 1e-6, -1e-6, 0.03, -0.03][tries % 7]!;
+        const side = tries % 2 ? 1 : -1;
+        const edge = (tries >> 1) % 2 ? 1 : -1;
+        const heading = Math.atan2(t.rockY[d]! - y, t.rockX[d]! - x) + side * Math.asin(r / dist) + eps - (edge * spread) / 2; // the tangent ray of the disc along one edge ray
+        const apart = spots.every(([sx, sy]) => Math.hypot(sx - x, sy - y) > 300);
+        if (apart && x > 12 && y > 12 && x < 2988 && y < 1988 && !t.touchesRock(x, y, 12)) spots.push([x, y, heading]);
+      }
+      expect(spots.length).toBeGreaterThan(15);
+      const { seen } = check({ width: 3000, height: 2000, rays, spread, length: 150, creatures: spots, map }, true);
+      expect(seen).toContain(HIT_WALL);
+    }
   });
 
   it("breaks exact ties between items in different cells and in one cell by grid order, as World.castRays does", () => {

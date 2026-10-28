@@ -207,6 +207,22 @@ describe("periodic save retry", () => {
     expect(files()).toBe(1);
   });
 
+  it("a save queued behind the one in flight when the stop is asked rejects at its turn, so the stop save is not held behind it", async () => {
+    mocks.delay = 1000;
+    const first = saves.save();
+    await vi.advanceTimersByTimeAsync(0); // the first pack is waiting on its timer now
+    const queued = saves.save().catch((e: unknown) => e);
+    saves.stopRetries();
+    const stop = saves.save(true);
+    await vi.advanceTimersByTimeAsync(1000);
+    await first;
+    mocks.delay = 0;
+    expect(String(await queued)).toMatch(/the server is stopping/);
+    await expect(stop).resolves.toMatch(/already saved/);
+    expect(mocks.calls).toBe(1);
+    expect(files()).toBe(1);
+  });
+
   it("a stop asked while another save is in flight that then fails still saves, with the normal pack budget, when budget remains", async () => {
     mocks.outcomes = [timeout(), "real"];
     mocks.delay = 1000;

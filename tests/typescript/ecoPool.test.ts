@@ -9,6 +9,7 @@ import { ThinkPool, defaultHelpers, serveHelper, tickTimeoutMs } from "../../src
 import type { HelperIn, HelperOut, HelperPort } from "../../src/typescript/src/worker/ecoPool.ts";
 import { EcoRunner } from "../../src/typescript/src/worker/ecoRunner.ts";
 import { createNodeThinkPool, nodeHelperPorts } from "../../src/typescript/src/worker/nodePool.ts";
+import { WASM_RUN_FINGERPRINT } from "./helpers.ts";
 
 // A small crowded world with varied plans and structural mutations, so creatures are born and die within a few hundred ticks.
 function cfg(seed = 5): EcoConfig {
@@ -255,7 +256,7 @@ describe("WebAssembly kernels", () => {
     expect(a.births).toBeGreaterThan(0);
     expect(a.deaths).toBeGreaterThan(0);
     expect(serial(wasmCfg(), 300).fingerprint()).toBe(a.fingerprint());
-    expect(a.fingerprint()).toBe(81047108); // pinned; re-pinned for the terrain input (#34), was 116543125; change it only on purpose
+    expect(a.fingerprint()).toBe(WASM_RUN_FINGERPRINT);
     const js = serial(wasmCfg(5, false), 300);
     expect(js.wasm).toBe(false);
     expect(serial(cfg(), 300).fingerprint()).toBe(a.fingerprint()); // WASM is the default

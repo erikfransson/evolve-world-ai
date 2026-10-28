@@ -3,7 +3,7 @@
 // Offsets are in bytes from the start of the row or block.
 
 import { GROUND_HALF, GROUND_PAD } from "../groundField.ts";
-import { EXTRA_INPUTS, EXTRA_TERRAIN } from "../sensors.ts";
+import { EXTRA_INPUTS, EXTRA_SIDE, EXTRA_SPEED, EXTRA_TERRAIN, EXTRA_TURN } from "../sensors.ts";
 
 export const LAYOUT = {
   ROW_BYTES: 192,
@@ -23,9 +23,9 @@ export const LAYOUT = {
   R_RAY_LENGTH: 96,
   // the brain input extras the fill kernel copies (as f32) after the ray features: energy signal, forward and sideways speed, turn rate, ground value
   R_EXTRAS: 104, // EXTRAS f64, to R_OUT
-  R_EXTRA_SPEED: 112,
-  R_EXTRA_SIDE: 120,
-  R_EXTRA_TURN: 128,
+  R_EXTRA_SPEED: 104 + 8 * EXTRA_SPEED,
+  R_EXTRA_SIDE: 104 + 8 * EXTRA_SIDE,
+  R_EXTRA_TURN: 104 + 8 * EXTRA_TURN,
   R_EXTRA_GROUND: 104 + 8 * EXTRA_TERRAIN,
   // i32 fields of a row
   R_OUT: 144, // byte address of the brain outputs: turn, thrust, then one target per memory unit
@@ -191,10 +191,12 @@ export const LAYOUT = {
   M_OUT: 8, // the list of member indices found
   M_OUT_COUNT: 12,
   M_THRESHOLDS: 16, // f64 per member
-  M_FIRST: 20,
+  M_FIRST: 20, // birthCandidates: the member to look at next (the kernel advances it)
   M_SEED: 24, // mutateScan: the generator state in, and out after the last draw
   M_LIMIT: 28, // mutateScan: a gene mutates when its draw is below this (unsigned)
-  M_BYTES: 32,
+  M_MAX: 32, // birthCandidates: stop after this many found
+  M_STEPS: 36, // birthCandidates: members looked at so far
+  M_BYTES: 40,
   // species block of step (f64 unless noted), one per species: the config values the step reads and the decay factors
   Q_DT: 0,
   Q_MAX_THRUST: 8,
