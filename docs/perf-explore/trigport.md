@@ -19,4 +19,4 @@ Step phase medians: mixed 1.300 to 1.109 (-0.19 ms, -15%), cap 1.629 to 1.317 (-
 `wasmStep` 21 pass (new: headings 823549 to 1e300, negative, NaN, infinities through `step` with the port on and off; port equals Math on 20000 random, large and k*pi/2 angles; probe returns false for a sin or cos that differs in the last bit). `vitest run wasm step crowd resident`: 6 files, 102 tests, exit 0. `tsc --noEmit` exit 0.
 
 ## Verdict
-Exact on V8 (fingerprint equal on both cases), step phase -15 to -19%, whole tick gain inside the noise on the mixed case and about 2% on the cap case. Cost: +167 lines wat, +40 TS, +35 test, 2 KB more kernel bytes. Mergeable if every 1% counts.
+Exact on V8 (fingerprint equal on both cases), step phase -15 to -19%, whole tick gain inside the noise on the mixed case and about 2% on the cap case. Cost: +167 lines wat, +40 TS, +35 test, 1.4 KB more step kernel bytes (1702 to 3062). Mergeable if every 1% counts.
