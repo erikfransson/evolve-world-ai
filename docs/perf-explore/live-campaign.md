@@ -8,6 +8,7 @@ Number to compare: `cpuMsPerTick` (user CPU per steady tick, after the first qua
 Fingerprint equal means bit-identical results.
 
 ## Decisions for Erik
+- bf16 genomes (`pl-bf16genome`, two switches): 1.03-1.04x only, but 12.5 MB less bank memory, 27% smaller saves and engine-exact genomes; a rule change with new pins and a fresh world. Not recommended for speed alone.
 - Huge pages: measured on the brain kernel with MADV_COLLAPSE, 1.7-3.7% of the kernel (about 1% of the tick), via THP `always` system-wide (root) or a native madvise in the server; collapse fails on fragmented memory, so not guaranteed (`pagepack.md`).
 - Helper threads on the server host: the engine's ThinkPool (`liveBench --threads`) was rejected in idea 6 only because this laptop runs the campaign at SCHED_IDLE under load; on a host with spare cores it is the largest untested lever (sense and brain are 70% of the tick and split across threads). Needs one measurement on the host.
 
@@ -218,6 +219,8 @@ Head phases 2026-10-28 14:50 (253f894, load 6-7, `scout-head.md`; ms per tick, 3
 
 | 109 | Two-lane fdlibm exp in crowd.wat pack, probe-guarded like the trig port | yes (on V8) | Parked on `pl-exp2` (`exp2.md`): bit-equal on 20M arguments, pack -25% (0.02-0.055 ms per tick, 0.3%), +207 lines; too much code for the gain, kept for a small-wins bundle |
 
+| 111 | Moonshot for Erik: bf16-valued genomes (rounded at birth) with a 16-bit brain bank, exact f32 math on the rounded values | no against today's worlds (exact given the rule) | Parked on `pl-bf16genome` behind two switches (`bf16genome.md`): only 1.03x mixed / 1.04x cap (the L3 sweep is flat past the knee and the rest is multiply-add throughput); ecology inside the seed spread over 3 seeds; side gains: bank -12.5 MB, saves -27%, genomes exact across engines. Not recommended for speed |
+
 ## Log
 - 2026-10-27 09:00 Campaign start. Prior campaigns (B1, B2, `docs/perf-explore/`) already moved sense, brains, physics, crowd grid, collisions and scans into WASM; their rejected ideas are not retried unless the live setting changes the picture.
 - 2026-10-27 09:19 `server/src/liveBench.ts` written; two runs at 400 seeded give the same fingerprint (260290661), so the bench is deterministic.
@@ -386,3 +389,4 @@ Head phases 2026-10-28 14:50 (253f894, load 6-7, `scout-head.md`; ms per tick, 3
 - 2026-10-28 14:55 idea 109 parked (0.3% for 207 lines).
 - 2026-10-28 14:40 review round 4 (Opus, independent) of ideas 96, 97, 106: nothing to fix (demote lanes, the shift square's edges and non-finite positions, pmin/pmax against the JS clamps, the overshooting gap stores fit the +12 bytes on every grid size, refresh unchanged). Closed.
 - 2026-10-28 14:50 scout-head (`scout-head.md`): the pool of single exact ideas at 1.5% or more is dry; left: a small-wins bundle (parked 100 and 109 plus forwardRun's stamp-and-walk moved into the forward export, about 1.5-1.7%), quad lanes (95, running), and the decisions. Rock walk is 14% of the sense kernel for the 10.6% of creatures near rock (a grid-order disc layout gained nothing). Spawned idea 112 (the bundle).
+- 2026-10-28 15:05 idea 111 parked: bf16 genomes buy 3-4%, not worth a rule change; the brain kernel is multiply-add bound once past the L3 knee.
