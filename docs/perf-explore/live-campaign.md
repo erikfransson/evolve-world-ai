@@ -273,3 +273,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-28 04:44 Idea 78 started: the last memory lever the studies point at. Running: 77, 78.
 - 2026-10-28 04:50 Idea 77 merged: review round 2 fully closed. Running: 78.
 - 2026-10-28 05:00 Idea 78 parked. The memory thread is closed: the process peak with saves is about 545 MB at 3300 creatures (verify worker on top of the main process), bounded by the worker caps, with the pool leak fixed; no setting or further trim moves it. No agents running.
+- 2026-10-28 05:07 Full suite on the final perf-live (after ideas 75, 76, 77): green. Campaign converged; no agents running; wakeups continue and act on Erik's decisions.
