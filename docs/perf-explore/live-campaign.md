@@ -175,6 +175,10 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 
 | 98 | Touch kernel as one call per tick | - | Closed (`touchbatch.md`): already so; the 2500 calls counted in touchbit.md are in-kernel `firstItem` calls, not boundary crossings |
 
+| 90 | fdlibm sin/cos port inside step.wat, enabled by a start-up probe that keeps the host imports on any bit difference | yes | Merged (`trigport.md`): step -15% mixed / -19% cap (-0.19 / -0.31 ms), +240 lines with tests |
+| 92 | brain.wat: the tanh and compact loops' v128 constants in locals (V8 rebuilt each `v128.const` per use, 27 of 52 instructions per tanh vector) | yes | Merged (`scout-brain.md`): brain forward 1.08-1.09x, tick 1.057x mixed / 1.024x cap, +22/-12 |
+| 88 | sense.wat: exact test two rays per candidate in f64x2, inline zero fills, closeness fused into the no-crowd emit | yes | Merged (`raytests.md`): senser -4.8% mixed / -6.3% cap, tick 0.981 / 0.975, +75/-46 |
+
 ## Log
 - 2026-10-27 09:00 Campaign start. Prior campaigns (B1, B2, `docs/perf-explore/`) already moved sense, brains, physics, crowd grid, collisions and scans into WASM; their rejected ideas are not retried unless the live setting changes the picture.
 - 2026-10-27 09:19 `server/src/liveBench.ts` written; two runs at 400 seeded give the same fingerprint (260290661), so the bench is deterministic.
@@ -318,3 +322,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-28 10:03 factor batch12: 1.31x mixed / 1.34x cap at idea 85. Merged 92 (brain constants in locals), 90 (trig port) and 88 (ray tests in f64x2): kernels regenerated with no drift, 30 s fingerprints equal to perf-base on both cases (654925885 mixed, 906134928 cap at 30 s), full suite running on the merged head 2a55d98; next factor run after it.
 - 2026-10-28 10:06 wakeup: 6 agents running (91, 93, 94, 95, 96, soak), suite on the merged head running; pool refilled with ideas 97-100.
 - 2026-10-28 10:20 idea 98 closed (already one call per tick).
+- 2026-10-28 13:05 full suite on the merged head 2a55d98: 1242 passed, 8 timed out in cli.test.ts (subprocess tests at load 37); that file alone passed 16 of 16 with a long timeout, so the merges of 88, 90 and 92 stand. The weekly limit cut all nine agents 10:15-13:00; resumed. Factor batch13 started.
