@@ -6,7 +6,7 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
-- RL Arena: Fading patch (Time pressure), Patch war (Compete) and Live now (Bigger, the Live World's sting 50 and kill bonus 5) are new envs; existing envs are unchanged (`docs/rl-envs.md`)
+- RL Arena: Patch war (Compete) and Live now (Bigger, Live's rules as of 2026-10 without seasons) are new envs; existing envs are unchanged (`docs/rl-envs.md`)
 - RL Arena: Fight group grows from 3 to 6 envs with Ambush, Turf war and Cull (all pass the E1 to E8 checks, `docs/rl-envs.md`). The `early` reward now also pays a ram by the share of the episode left; the existing early envs have no collision damage, so they are unchanged.
 
 ## 0.2.7 (2026-10-26)
