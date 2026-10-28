@@ -483,7 +483,7 @@ describe("sense.wat (SenseKernels)", () => {
       for (let k = 0; k < n; k++) {
         const i = Math.floor(rng.range(0, 400));
         if (k % 3 === 0) world.removeItem(i);
-        else world.setItem(i, rng.range(4, 1196), round % 2 ? 230 + rng.range(0, 40) : rng.range(4, 796), 1 + (k % 2));
+        else world.setItem(i, rng.range(4, 1196), round % 2 ? 230 + rng.range(0, 40) : rng.range(4, 796), (1 + (k % 2)) as 1 | 2);
       }
       packed();
     }
