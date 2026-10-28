@@ -48,7 +48,7 @@ function wrapExports(owner: any, label: string): void {
   const ex = owner.exports;
   owner.exports = Object.fromEntries(Object.keys(ex).map((k) => [k, (...a: unknown[]) => { const t = now(); const r = ex[k](...a); add(`wasm ${label}.${k}`, now() - t); return r; }]));
 }
-for (const [cls, names] of [[WasmSenser, ["run", "syncItems", "patchCell"]], [WasmCrowd, ["rebuild", "refresh", "pack", "touch", "bind"]], [WasmFiller, ["fill", "prepare"]], [WasmStepper, ["step"]], [WasmMembers, ["settle", "birthCandidates"]], [WasmBrainBank, ["forwardRun", "runRegion"]], [ItemEconomy, ["regrow"]], [World, ["addRandomly", "removeItem"]], [Ecosystem, ["gridCrowd", "giveBirth", "eat", "prepareTick"]]] as [{ name: string; prototype: object }, string[]][])
+for (const [cls, names] of [[WasmSenser, ["run", "syncItems", "patchCells"]], [WasmCrowd, ["rebuild", "refresh", "pack", "touch", "bind"]], [WasmFiller, ["fill", "prepare"]], [WasmStepper, ["step"]], [WasmMembers, ["settle", "birthCandidates"]], [WasmBrainBank, ["forwardRun", "runRegion"]], [ItemEconomy, ["regrow"]], [World, ["addRandomly", "removeItem"]], [Ecosystem, ["gridCrowd", "giveBirth", "eat", "prepareTick"]]] as [{ name: string; prototype: object }, string[]][])
   for (const n of names) wrap(cls.prototype, n, `${cls.name}.${n}`);
 
 const config = structuredClone(liveConfig);

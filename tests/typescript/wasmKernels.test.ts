@@ -454,6 +454,41 @@ describe("sense.wat (SenseKernels)", () => {
     }
   });
 
+  it("keeps the packed item rows equal to the cell lists, item for item, over many changes in one row, repeated cells and rebuilds", () => {
+    const o: Setup = { rays: 3, spread: 1, creatures: [[300, 250, 0.4]], items };
+    const { world, crowd, kernels, batch } = check(o, true);
+    const rng = createRng(9);
+    const packed = () => {
+      run(kernels, world, crowd, batch);
+      const t = kernels.itemTables(world)!;
+      const buf = kernels.f32.buffer;
+      const start = new Int32Array(buf, t.start, world.rows * (t.cols + 1));
+      const ids = new Int32Array(buf, t.ids);
+      const xy = new Float32Array(buf, t.xy);
+      for (let row = 0; row < world.rows; row++) {
+        for (let cx = 0; cx < t.cols; cx++) {
+          let p = start[row * (t.cols + 1) + cx]!;
+          for (let i = world.cellHead[row * t.cols + cx]!; i >= 0; i = world.nextItem[i]!, p++) {
+            expect(ids[p]).toBe(i);
+            expect(xy[2 * p]).toBe(world.xs[i]);
+            expect(xy[2 * p + 1]).toBe(world.ys[i]);
+          }
+          expect(start[row * (t.cols + 1) + cx + 1]).toBe(p);
+        }
+      }
+    };
+    packed();
+    for (let round = 0; round < 40; round++) {
+      const n = round % 10 === 9 ? 400 : 1 + (round % 7) * 5; // every tenth round changes so many cells that the list is dropped and all is packed again
+      for (let k = 0; k < n; k++) {
+        const i = Math.floor(rng.range(0, 400));
+        if (k % 3 === 0) world.removeItem(i);
+        else world.setItem(i, rng.range(4, 1196), round % 2 ? 230 + rng.range(0, 40) : rng.range(4, 796), 1 + (k % 2));
+      }
+      packed();
+    }
+  });
+
   it("sees other creatures with their energy, within f32 rounding of the JS crowd rays", () => {
     const rng = createRng(7);
     const spots: Spot[] = Array.from({ length: 120 }, () => [rng.range(0, 600), rng.range(0, 400), rng.range(0, 7)]);
