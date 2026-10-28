@@ -182,6 +182,38 @@ describe("WasmBrainBank", () => {
     expect(Array.from(bank.f32.subarray(bank.outputAt(5), bank.outputAt(5) + 2)).every(Number.isFinite)).toBe(true);
   });
 
+  it("compact() closes the holes of released blocks, keeps every output, and reports the moved slots", async () => {
+    const bank = WasmBrainBank.createSync()!;
+    const rng = testRng(12);
+    const n = 600;
+    const run = (slots: number[]): Map<number, number[]> => {
+      for (const s of slots) {
+        const a = new Float32Array(SIZE_SETS[s % SIZE_SETS.length]![0]!);
+        fillInput(a, testRng(s));
+        bank.f32.set(a, bank.inputAt(s));
+      }
+      bank.forwardSlots(Int32Array.from(slots), slots.length);
+      return new Map(slots.map((s) => [s, Array.from(bank.f32.subarray(bank.outputAt(s), bank.outputAt(s) + SIZE_SETS[s % SIZE_SETS.length]!.at(-1)!))]));
+    };
+    for (let slot = 0; slot < n; slot++) bank.set(slot, SIZE_SETS[slot % SIZE_SETS.length]!, randomGenome(SIZE_SETS[slot % SIZE_SETS.length]!, rng));
+    const kept: number[] = [];
+    for (let slot = 0; slot < n; slot++) if (slot % 3 === 0 || slot % 7 === 0) bank.release(slot); else kept.push(slot);
+    const before = run(kept);
+    const moved = new Set<number>();
+    bank.onMove = (slot) => moved.add(slot);
+    const span = (): number => Math.max(...kept.map((s) => bank.inputAt(s))) - Math.min(...kept.map((s) => bank.inputAt(s)));
+    const spanBefore = span();
+    for (let i = 0; i < 20; i++) bank.compact();
+    expect(moved.size).toBeGreaterThan(0);
+    expect(span()).toBeLessThan(spanBefore);
+    expect(run(kept)).toEqual(before);
+    const settled = moved.size;
+    bank.compact();
+    expect(moved.size).toBe(settled); // nothing left to move
+    for (let slot = 0; slot < n; slot += 3) if (!kept.includes(slot)) bank.set(slot, SIZE_SETS[2]!, randomGenome(SIZE_SETS[2]!, rng)); // refills the holes at the end
+    expect(run(kept)).toEqual(before);
+  });
+
   it("rejects bad shapes", async () => {
     const bank = WasmBrainBank.createSync()!;
     expect(() => bank.set(0, [3], new Float32Array(0))).toThrow(/layer sizes/);
