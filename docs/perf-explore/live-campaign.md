@@ -9,7 +9,6 @@ Fingerprint equal means bit-identical results.
 
 ## Decisions for Erik
 
-- **Review note:** ideas 59 (births) and 83 (sense subtractions) merged after review round 2; a correctness pass over those two is due before the merge into development.
 - **Exact wins are merged** (1.17x at 60 s, 1.18x over 1800 s, bit-identical; peak memory over 7200 s with saves 533 MB against 751 MB on development); the branch is ready to merge into `development` (73 commits, 53 files, +2175/-149; one correctness review and the three Live push-gate reviews passed; `development` has not moved since the branch point). The exact pool is dry after 26 ideas: nothing runs outside the profiled phases (0.01 ms), and every phase has been cut or shown flat.
 - **`dt` 1/20 (1.5x more, `dt20.md`; ready on `pl-dtswitch`, `dtswitch.md`: merge it and the first start begins a fresh world, old saves refused and kept): the same 1.5x as `thinkEvery` 2 with a much smaller ecology shift (turn rate +11%, food eaten identical, births within the seed spread); one line in `liveConfig`, memory rates kept, fresh world on the switch (old saves carry ticks of the old dt). 1/25 gives 1.17x for half the shift. Say which, or neither.
 - **`eco.thinkEvery` 2 (1.5x more) is in the code but off in `liveConfig`.** It changes the ecology (births and deaths 1.5-1.9x, creatures turn more and eat less, from the brain's delayed self-feedback), see `think2.md`, `think3.md`, `sense2.md`. Say yes to turn it on, or no to leave it as a page option.
@@ -290,3 +289,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-28 06:05 Idea 82 closed: the bench's two cases are the two ceilings (weights, population). Running: 81 (6 h soak), the subtractive scout.
 - 2026-10-28 06:08 The subtractive scout returned three removals (op-count estimates 130, 45-60 and 31 per creature); idea 83 builds them as a bundle with ablation. Running: 81, 83.
 - 2026-10-28 06:29 Idea 83 merged (A and C). The sense kernel is closed for subtractions too. Running: 81 (6 h soak).
+- 2026-10-28 06:35 Correctness review of ideas 59 and 83: no bugs; two low notes (the brainLayout test does not pin the multi-species `layerSizes` case though it is correct by inspection; `takeSpare` matches on genome length rather than layer sizes, a lost saving only). The mutate scan's rng stream, the spare reuse independence, the offset-table chain with release, the skip path's scratch and the kind-at-hit paths were each checked. Branch merge-ready again. Running: 81 (6 h soak).
