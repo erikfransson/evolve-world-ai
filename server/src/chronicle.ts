@@ -67,10 +67,12 @@ export class Chronicle {
   }
 
   // Adds what is due to the stats message: a sample when one was taken, and the lineages, best living and (with records) the records.
-  observe(eco: Ecosystem, stats: Stats, records: boolean): void {
+  // viewed false (no viewer connected): only the history and lineage samples run. The lineage rows, best, depth and the living
+  // records wait for the next viewed call (values only grow, and deaths offer themselves through onDeath).
+  observe(eco: Ecosystem, stats: Stats, records: boolean, viewed = true): void {
     if (this.watched !== eco) this.reset(eco);
     const t = eco.tick * eco.config.dt;
-    const top = namedTop(eco, LINEAGE_TOP);
+    const top = viewed || t >= this.nextLineage ? namedTop(eco, LINEAGE_TOP) : []; // the family table is the dearest part of an idle pass
     // An extinct world's clock stops (no ticks), so its 0 is sampled at once, or the graph would end on the last living count.
     const diedOut = eco.extinct && this.samples.length > 0 && this.samples[this.samples.length - 2] !== 0;
     if (t >= this.nextSample || diedOut) {
@@ -94,6 +96,7 @@ export class Chronicle {
       if (this.lineage.length > MAX_LINEAGE_HISTORY * LINEAGE_FIELDS) this.lineage.splice(0, LINEAGE_FIELDS);
       this.historyJson = null;
     }
+    if (!viewed) return;
     stats.lineages = top.map((l): WireLineage => ({ founder: l.founder, hue: Math.round(l.hue), pool: l.pool, count: l.count, ...(l.name ? { name: l.name, ...(l.starter ? { starter: true } : {}) } : {}), ...(l.others.length ? { founders: l.others.sort((a, b) => a - b).slice(0, MAX_GROUP_FOUNDERS) } : {}) }));
     let oldest: EcoCreature | null = null;
     let parent: EcoCreature | null = null;
