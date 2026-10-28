@@ -41,6 +41,7 @@ Fingerprint equal means bit-identical results.
 | 2026-10-28 00:37 | after batch 9 (idea 54 merged; two pinned cores shared with 4 agents) | 17.84 / 21.59 (cap) | 13.82 / 16.79 (cap) | 1.29x mixed, 1.29x cap (exact) | 218 / 217 MB mixed, 258 / 257 cap |
 | 2026-10-28 01:53 | after ideas 75 and 76 (load lighter, 2 agents) | 15.16 / 18.56 (cap) | 12.23 / 14.40 (cap) | 1.24x mixed, 1.29x cap (exact) | 251 / 218 MB mixed, 256 / 257 cap |
 | 2026-10-28 05:15 | after idea 59 (quiet machine, load 3: the cleanest run of the campaign) | 10.99 / 13.52 (cap) | 8.58 / 10.45 (cap) | 1.28x mixed, 1.29x cap (exact) | 252 / 219 MB mixed, 257 / 256 cap |
+| 2026-10-28 10:05 | after idea 85 (batch12; loaded machine, load 11-25, 5 agents; ideas 92, 90, 88 merged after this run and not in it) | 16.81 / 20.48 (cap) | 12.81 / 15.32 (cap) | 1.31x mixed, 1.34x cap (exact) | 219 / 220 MB mixed, 258 / 255 cap |
 
 Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54, brain forward 5.23 / 5.17, slots (prepareRows) 1.04 / 1.52, memory and steer 1.26 / 1.59, eat 1.05 / 1.35, crowd grid 0.51 / 0.67, collisions 0.18 / 0.27, rest under 0.2. Server frame encoding adds 0.57 ms per tick at 5 Hz. Speed achieved unpaced on this loaded machine: 2.0x and 1.7x real time (the set speed is 3x).
 
@@ -312,3 +313,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-28 10:05 idea 90 reported (`trigport.md`): fdlibm sin/cos port in step.wat with a start-up probe (imports kept on any bit difference), step phase -15% mixed / -19% cap (-0.19 / -0.31 ms), tick 1.004 / 0.976, exact, +240 lines with tests; merge queued after idea 92, one full suite on the merged head.
 - 2026-10-28 10:15 idea 88 reported (`raytests.md`): exact test two rays at a time in f64x2, inline zero fills, closeness fused into the no-crowd emit; senser -4.8% mixed / -6.3% cap, tick 0.981 / 0.975, exact, +75/-46 wat; merge queued with 90 and 92 (one full suite on the merged head).
 - 2026-10-28 10:25 idea 89 rejected (`cell16.md`), branch kept as record.
+- 2026-10-28 10:50 factor batch12: 1.31x mixed / 1.34x cap at idea 85. Merged 92 (brain constants in locals), 90 (trig port) and 88 (ray tests in f64x2): kernels regenerated with no drift, 30 s fingerprints equal to perf-base on both cases (654925885 mixed, 906134928 cap at 30 s), full suite running on the merged head 2a55d98; next factor run after it.
