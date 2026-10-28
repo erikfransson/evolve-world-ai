@@ -6,6 +6,23 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+Live World speed campaign (branch `perf-live`): on the live bench the tick is 1.48x faster in the mixed world and 1.46x at the 5000 cap, with bit-identical results. The simulation and the saves are unchanged.
+
+- Live server: a save no longer freezes the tick loop. The main thread takes a snapshot and a worker packs, stringifies and gzips it (stall per save from 3 to 6 s down to under 0.2 s, peak memory during a save about 200 MB lower, same bytes).
+- Live server: a periodic save that fails for a transient reason (worker timeout, out of memory, exit) is retried after 15, 30, then 60 minutes.
+- Live server: the stop save has its own time budget (packs up to 25 s when alone) and is skipped when a save that finished after the stop was asked already covers it.
+- Live server: save workers keep fewer transient copies (30 MB less at the peak, packing about 3x faster).
+- Live server: the pool of dead creatures is capped at 256 per species, in the main thread and in the helper threads. A dropped creature gives back its brain block, units, slot and row, and they are reused, so memory follows the peak population instead of keeping every corpse (peak memory over 1800 s about 44 MB lower).
+- Live and Ecosystem: a lone creature gets its crowd grid before sensing (a fill step placed members through a grid it did not have).
+- Engine, sense: rays are tested two at a time, creatures with nothing in reach skip the ray passes, rock discs outside the ray wedge are dropped, and records are read in grid order.
+- Engine, brain: brains run in memory order and prefetch the next weight block, wider column blocks, cheaper tanh and zero-input skipping.
+- Engine, step: sin and cos run inside the kernel (a start-up check keeps the host functions if any bit differs), and the rock check is skipped away from rock.
+- Engine, crowd grid: the grid is reused at the start of the next tick, and its rebuild is about 13% faster.
+- Engine, fill: cheaper energy and ground preparation and two-at-a-time narrowing of the values handed to the kernels.
+- Engine, births: the candidate scan runs only when the caps leave room, and a newborn reuses a dead creature of its brain size (a birth costs 0.43x).
+- Engine, item grid: dirty cells are patched in one kernel call per tick, and the touch step is skipped for creatures with nothing in reach.
+- Bench tooling: `liveBench` gets `--save`, `--profileEvery`, `--threads`, `--load`, `--keep`, `--scatter`, `--reach`, `--fixed`, `--food`, `--dt` and `--memcomp`, and `kernelTimers` times each kernel call.
+
 ## 0.2.7 (2026-10-26)
 
 - Live: room for 5000 creatures (was 3000, #63), births still stop 100 below it. The brain-weight budget stays at 7 million, so a world of big brains still waits for deaths before that. A full world fits fewer viewers (about 16 to 23).
