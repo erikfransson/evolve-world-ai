@@ -20,7 +20,7 @@ Live World speed campaign (branch `perf-live`): on the live bench the tick is 1.
 - Engine, crowd grid: the grid is reused at the start of the next tick, and its rebuild is about 13% faster.
 - Engine, fill: cheaper energy and ground preparation and two-at-a-time narrowing of the values handed to the kernels.
 - Engine, births: the candidate scan runs only when the caps leave room, and a newborn reuses a dead creature of its brain size (a birth costs 0.43x).
-- Engine, item grid: dirty cells are patched in one kernel call per tick, and the touch step is skipped for creatures with nothing in reach.
+- Engine, item grid: dirty cells are patched in one kernel call per tick.
 - Bench tooling: `liveBench` gets `--save`, `--profileEvery`, `--threads`, `--load`, `--keep`, `--scatter`, `--reach`, `--fixed`, `--food`, `--dt` and `--memcomp`, and `kernelTimers` times each kernel call.
 
 ## 0.2.7 (2026-10-26)
