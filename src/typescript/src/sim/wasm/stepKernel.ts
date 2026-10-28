@@ -2,7 +2,7 @@ import type { EngineConfig } from "../config.ts";
 import type { Aging } from "../physics.ts";
 import { decaysFor } from "../physics.ts";
 import { OUTPUT_SIZE } from "../sensors.ts";
-import { CLEAR_CELL, ROCK_CELL } from "../terrain.ts";
+import { CLEAR_SHIFT, ROCK_CELL } from "../terrain.ts";
 import type { Terrain } from "../terrain.ts";
 import { STEP_BYTES, compiled } from "./loader.ts";
 import { LAYOUT as L, f64At } from "./layout.ts";
@@ -174,7 +174,7 @@ export class WasmStepper {
     i32[(P + L.P_NEAR_ROWS) >> 2] = terrain.nearRows;
     f64[(P + L.P_MAX_ROCK_R) >> 3] = terrain.maxRockR;
     f64[(P + L.P_INV_ROCK_CELL) >> 3] = 1 / ROCK_CELL;
-    f64[(P + L.P_CLEAR_CELL) >> 3] = CLEAR_CELL;
+    i32[(P + L.P_CLEAR_SHIFT) >> 2] = CLEAR_SHIFT;
     f64[(P + L.P_AGING_START) >> 3] = aging?.startTicks ?? 0;
     f64[(P + L.P_AGING_PER_TICK) >> 3] = aging?.perTick ?? 0;
     this.exports.step(P);
