@@ -196,7 +196,7 @@ Head phases 2026-10-28 14:50 (253f894, load 6-7, `scout-head.md`; ms per tick, 3
 | 93 | v128 constants in locals in sense.wat (`$emit`, `$emitClo`, the hit path, the ray-pair loop) and members.wat | yes | Merged as hygiene (`constsense.md`): senser faster in 12 of 12 pairs by 0.01-0.26 ms, tick flat within noise; crowd, fill and step had no rebuilt constants |
 | 102 | Sense walks: load `own`/`kind` only after the distance reject | - | Rejected (`rowstride.md`): the item walk already reads only x/y before the reject; 81-84% of crowd entries pass the distance test, so the `own` load moves for 16-19% of entries at the cost of a branch |
 
-| 100 | Item grid patches in one kernel call per tick (`patchItems`: the three shifts and a v128 add over the later starts per dirty cell) | yes | Parked on `pl-itemsync` (`itemsync.md`): syncItems 0.18 to 0.10 ms per tick (0.7%), exact with a test, +150/-28; below the bar on its own, take it if a bundle of small wins is wanted |
+| 100 | Item grid patches in one kernel call per tick (`patchItems`: the three shifts and a v128 add over the later starts per dirty cell) | yes | Merged via idea 112 (`itemsync.md`, `bundle.md`): syncItems 0.24 to 0.08 ms per tick (1.5%), exact with a test, +150/-28 |
 
 | 104 | Newer Node A/B (measurement) | - | Closed: only Node 24.18 is installed (plus a system Node 12); installing one is Erik's call (decision list) |
 
@@ -221,6 +221,8 @@ Head phases 2026-10-28 14:50 (253f894, load 6-7, `scout-head.md`; ms per tick, 3
 | 109 | Two-lane fdlibm exp in crowd.wat pack, probe-guarded like the trig port | yes (on V8) | Parked on `pl-exp2` (`exp2.md`): bit-equal on 20M arguments, pack -25% (0.02-0.055 ms per tick, 0.3%), +207 lines; too much code for the gain, kept for a small-wins bundle |
 
 | 111 | Moonshot for Erik: bf16-valued genomes (rounded at birth) with a 16-bit brain bank, exact f32 math on the rounded values | no against today's worlds (exact given the rule) | Parked on `pl-bf16genome` behind two switches (`bf16genome.md`): only 1.03x mixed / 1.04x cap (the L3 sweep is flat past the knee and the rest is multiply-add throughput); ecology inside the seed spread over 3 seeds; side gains: bank -12.5 MB, saves -27%, genomes exact across engines. Not recommended for speed |
+
+| 112 | Bundle of the parked small wins (100 itemsync, 109 exp2) plus forwardRun's stamp-and-walk in the kernel | yes | Split (`bundle.md`): 100 merged on its own (syncItems 0.24 to 0.08 ms, exact, +150 lines with a test); 109 stays parked (0.01-0.03 ms); the kernel-side run order gains nothing (JIT loops at 3.3 ns per slot) and is dropped |
 
 ## Log
 - 2026-10-27 09:00 Campaign start. Prior campaigns (B1, B2, `docs/perf-explore/`) already moved sense, brains, physics, crowd grid, collisions and scans into WASM; their rejected ideas are not retried unless the live setting changes the picture.
@@ -393,3 +395,4 @@ Head phases 2026-10-28 14:50 (253f894, load 6-7, `scout-head.md`; ms per tick, 3
 - 2026-10-28 14:54 idea 111 parked: bf16 genomes buy 3-4%, not worth a rule change; the brain kernel is multiply-add bound once past the L3 knee.
 - 2026-10-28 15:01 factor batch15 on 3d6c0ec: 1.47x mixed / 1.62x cap, fingerprints equal; the mixed number matches the prediction from batch13 plus the small merges, the cap number is above it and still noisy.
 - 2026-10-28 15:08 wakeup: 2 agents running (95, 112); spawned 113 (per-eat JS cost, 4 us per eat), 114 (per-birth cost and the candidate scan), 115 (rock-adjacent sensing, 14% of the sense kernel for 10.6% of creatures). The exact pool at the 1.5% bar is dry, so the refill stays at five grounded agents rather than ten.
+- 2026-10-28 15:25 idea 112 split: 100 merged (kernels regenerated, tsc clean after typing the test's item kind), 109 parked, run-order export dropped. Review round 5 due for 100.
