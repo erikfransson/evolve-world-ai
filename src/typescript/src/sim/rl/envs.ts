@@ -18,7 +18,7 @@ const small = (o: Pick<EnvSpec, "id" | "name" | "description" | "size" | "food" 
 });
 
 // Live-like envs: 90 s, bumps hurt, a visitor's 300 start energy, and a seed pool crowd of `rivals` (at `rivalEnergy` when given).
-const bigger = ({ rivals, rivalEnergy, ...o }: Pick<EnvSpec, "id" | "name" | "description" | "size" | "food" | "poison" | "foodRegrow" | "reward"> & { rivals: number; rivalEnergy?: number }): EnvSpec => ({
+const bigger = ({ rivals, rivalEnergy, ...o }: Pick<EnvSpec, "id" | "name" | "description" | "size" | "food" | "poison" | "foodRegrow" | "reward"> & Partial<Omit<EnvSpec, "rivals">> & { rivals: number; rivalEnergy?: number }): EnvSpec => ({
   ...o,
   world: "ecosystem",
   role: PREY,
@@ -39,6 +39,7 @@ export const ENVS: readonly EnvSpec[] = [
   small({ id: "fading", name: "Fading food", description: "Each bite is worth less as the clock runs down: two points at the start, nothing at the end. Eat early.", size: [400, 400], food: 8, poison: 0, seconds: 20, reward: { early: 2 }, tags: ["speed"] }),
   small({ id: "stings", name: "Stings", description: "Fading food among stinging poison. Hurry, but a careless bite costs energy.", size: [400, 400], food: 8, poison: 4, seconds: 20, poisonDamage: 20, reward: { early: 2 }, tags: ["speed"] }),
   small({ id: "race", name: "Race", description: "A trained rival eats from the same small box, and each bite is worth more the sooner you take it.", size: [300, 300], food: 8, poison: 0, seconds: 15, rivals: [{ species: PREY, count: 1, source: "pool" }], reward: { early: 2 }, tags: ["speed"] }),
+  small({ id: "fading-patch", name: "Fading patch", description: "All the food lies in one patch across the room and fades with the clock. Pick a direction and commit.", size: [450, 450], food: 10, poison: 4, seconds: 25, layout: { kind: "patch", radius: 70 }, reward: { early: 2 }, tags: ["speed", "search"] }),
   // Avoiding poison and finding a way round
   small({ id: "minefield", name: "Minefield", description: "Four food hidden among twelve poison. One wrong bite ends it.", size: [300, 300], food: 4, poison: 12, seconds: 25, tags: ["caution"] }),
   small({ id: "fence", name: "Fence", description: "A wall of stinging poison with one gap. The food is on the other side.", size: [400, 400], food: 6, poison: 0, seconds: 30, layout: { kind: "fence", gap: 110, near: 2 }, poisonDamage: 25, reward: { food: 1, fast: 0.1, cross: 1 }, tags: ["navigate"] }),
@@ -188,6 +189,7 @@ export const ENVS: readonly EnvSpec[] = [
   }),
   // Competing (self-play: rivals are the learner's own current brain and its recent best candidates)
   small({ id: "duel", name: "Duel", description: "Six food and one trained rival from the seed pool who wants them too.", size: [300, 300], food: 6, poison: 0, seconds: 25, rivals: [{ species: PREY, count: 1, source: "pool" }], tags: ["compete"] }),
+  small({ id: "patch-war", name: "Patch war", description: "One regrowing patch and five trained rivals, and every bump costs energy. Eat in the crowd without being shoved out.", size: [450, 450], food: 12, poison: 0, foodRegrow: 1, seconds: 40, layout: { kind: "patch", radius: 60 }, collisionDamage: true, learnerEnergy: 150, rivals: [{ species: PREY, count: 5, source: "pool" }], reward: { food: 1, survive: 0.02 }, tags: ["compete", "search"] }),
   small({
     id: "crowd",
     name: "Crowd",
@@ -356,6 +358,7 @@ export const ENVS: readonly EnvSpec[] = [
   bigger({ id: "live-patch", name: "Live patch", description: "A slice of the Live World: regrowing food, lethal poison and a crowd of trained foragers. Bumps hurt.", size: [1200, 1200], food: 60, poison: 20, foodRegrow: 2, rivals: 20, reward: { food: 1, survive: 0.03 } }),
   bigger({ id: "live-famine", name: "Feast and famine", description: "A wide, thinly fed land with a few rivals. Range far to find the food before it runs out.", size: [2200, 2200], food: 35, poison: 15, foodRegrow: 0.3, rivals: 8, reward: { food: 1, survive: 0.03 } }),
   bigger({ id: "live-poison", name: "Poison country", description: "More poison than food over a big land, with rivals. Tell the two apart or die.", size: [1500, 1500], food: 40, poison: 90, foodRegrow: 1, rivals: 12, reward: { food: 1, survive: 0.05 } }),
+  bigger({ id: "live-now", name: "Live now", description: "The Live World's current rules in a small patch: stings cost 50, a kill adds 5 energy, food regrows slowly, and the crowd is trained foragers.", size: [1200, 1200], food: 60, poison: 20, foodRegrow: 0.6, poisonDamage: 50, killEnergy: 5, rivals: 20, reward: { food: 1, survive: 0.03 } }),
   bigger({ id: "live-commons", name: "Crowded commons", description: "Little food and many weak foragers. Ramming them pays.", size: [1000, 1000], food: 20, poison: 10, foodRegrow: 0.5, rivals: 25, rivalEnergy: 25, reward: { food: 0.5, ram: 2, survive: 0.02 } }),
 ];
 
