@@ -55,7 +55,7 @@
           (block $id (loop $il
             (br_if $id (i32.ge_u (local.get $lp) (local.get $le)))
             (local.set $i (i32.load (local.get $lp)))
-            (local.set $vs (f32x4.splat (f32.load (i32.add (local.get $src) (i32.shl (local.get $i) (i32.const 2))))))
+            (local.set $vs (v128.load32_splat (i32.add (local.get $src) (i32.shl (local.get $i) (i32.const 2)))))
             (local.set $p (i32.add (local.get $wj) (i32.mul (local.get $i) (local.get $stride))))
             (local.set $a0 (f32x4.add (local.get $a0) (f32x4.mul (v128.load offset=0 (local.get $p)) (local.get $vs))))
             (local.set $a1 (f32x4.add (local.get $a1) (f32x4.mul (v128.load offset=16 (local.get $p)) (local.get $vs))))
@@ -83,7 +83,7 @@
           (block $id (loop $il
             (br_if $id (i32.ge_u (local.get $lp) (local.get $le)))
             (local.set $i (i32.load (local.get $lp)))
-            (local.set $vs (f32x4.splat (f32.load (i32.add (local.get $src) (i32.shl (local.get $i) (i32.const 2))))))
+            (local.set $vs (v128.load32_splat (i32.add (local.get $src) (i32.shl (local.get $i) (i32.const 2)))))
             (local.set $p (i32.add (local.get $wj) (i32.mul (local.get $i) (local.get $stride))))
             (local.set $a0 (f32x4.add (local.get $a0) (f32x4.mul (v128.load offset=0 (local.get $p)) (local.get $vs))))
             (local.set $a1 (f32x4.add (local.get $a1) (f32x4.mul (v128.load offset=16 (local.get $p)) (local.get $vs))))
@@ -108,7 +108,7 @@
           (block $id (loop $il
             (br_if $id (i32.ge_u (local.get $lp) (local.get $le)))
             (local.set $i (i32.load (local.get $lp)))
-            (local.set $vs (f32x4.splat (f32.load (i32.add (local.get $src) (i32.shl (local.get $i) (i32.const 2))))))
+            (local.set $vs (v128.load32_splat (i32.add (local.get $src) (i32.shl (local.get $i) (i32.const 2)))))
             (local.set $p (i32.add (local.get $wj) (i32.mul (local.get $i) (local.get $stride))))
             (local.set $a0 (f32x4.add (local.get $a0) (f32x4.mul (v128.load offset=0 (local.get $p)) (local.get $vs))))
             (local.set $a1 (f32x4.add (local.get $a1) (f32x4.mul (v128.load offset=16 (local.get $p)) (local.get $vs))))
@@ -133,7 +133,7 @@
           (block $id (loop $il
             (br_if $id (i32.ge_u (local.get $lp) (local.get $le)))
             (local.set $i (i32.load (local.get $lp)))
-            (local.set $vs (f32x4.splat (f32.load (i32.add (local.get $src) (i32.shl (local.get $i) (i32.const 2))))))
+            (local.set $vs (v128.load32_splat (i32.add (local.get $src) (i32.shl (local.get $i) (i32.const 2)))))
             (local.set $p (i32.add (local.get $wj) (i32.mul (local.get $i) (local.get $stride))))
             (local.set $a0 (f32x4.add (local.get $a0) (f32x4.mul (v128.load offset=0 (local.get $p)) (local.get $vs))))
             (local.set $a1 (f32x4.add (local.get $a1) (f32x4.mul (v128.load offset=16 (local.get $p)) (local.get $vs))))
@@ -155,7 +155,7 @@
           (block $id (loop $il
             (br_if $id (i32.ge_u (local.get $lp) (local.get $le)))
             (local.set $i (i32.load (local.get $lp)))
-            (local.set $vs (f32x4.splat (f32.load (i32.add (local.get $src) (i32.shl (local.get $i) (i32.const 2))))))
+            (local.set $vs (v128.load32_splat (i32.add (local.get $src) (i32.shl (local.get $i) (i32.const 2)))))
             (local.set $p (i32.add (local.get $wj) (i32.mul (local.get $i) (local.get $stride))))
             (local.set $a0 (f32x4.add (local.get $a0) (f32x4.mul (v128.load offset=0 (local.get $p)) (local.get $vs))))
             (local.set $a1 (f32x4.add (local.get $a1) (f32x4.mul (v128.load offset=16 (local.get $p)) (local.get $vs))))
@@ -174,7 +174,7 @@
           (block $id (loop $il
             (br_if $id (i32.ge_u (local.get $lp) (local.get $le)))
             (local.set $i (i32.load (local.get $lp)))
-            (local.set $vs (f32x4.splat (f32.load (i32.add (local.get $src) (i32.shl (local.get $i) (i32.const 2))))))
+            (local.set $vs (v128.load32_splat (i32.add (local.get $src) (i32.shl (local.get $i) (i32.const 2)))))
             (local.set $p (i32.add (local.get $wj) (i32.mul (local.get $i) (local.get $stride))))
             (local.set $a0 (f32x4.add (local.get $a0) (f32x4.mul (v128.load offset=0 (local.get $p)) (local.get $vs))))
             (local.set $lp (i32.add (local.get $lp) (i32.const 4)))

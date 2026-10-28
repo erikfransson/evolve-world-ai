@@ -11,7 +11,8 @@
     (local $n i32) (local $i i32) (local $k i32) (local $g i32) (local $rowAt i32) (local $row i32) (local $cellOf i32) (local $from i32) (local $to i32) (local $swap i32)
     (local $cols i32) (local $cell f64) (local $maxX f64) (local $maxY f64) (local $cx f64) (local $cy f64)
     (local $bits i32) (local $mask i32) (local $passes i32) (local $pass i32) (local $shift i32) (local $count i32) (local $b i32) (local $sum i32) (local $c i32) (local $j i32) (local $slot i32)
-    (local $prev i32) (local $m i32) (local $start i32) (local $occupied i32) (local $species i32) (local $sp i32) (local $fill v128)
+    (local $prev i32) (local $m i32) (local $start i32) (local $occupied i32) (local $species i32) (local $sp i32) (local $fill v128) (local $colsF f64)
+    (local $xs i32) (local $ys i32) (local $es i32) (local $ss i32) (local $os i32)
     (local.set $n (i32.load offset={{C_N}} (local.get $C)))
     (local.set $rowAt (i32.load offset={{C_ROW_AT}} (local.get $C)))
     (local.set $cellOf (i32.load offset={{C_CELL_OF}} (local.get $C)))
@@ -19,6 +20,7 @@
     (local.set $cell (f64.load offset={{C_CELL}} (local.get $C)))
     (local.set $maxX (f64.convert_i32_s (i32.sub (local.get $cols) (i32.const 1))))
     (local.set $maxY (f64.convert_i32_s (i32.sub (i32.load offset={{C_ROWS}} (local.get $C)) (i32.const 1))))
+    (local.set $colsF (f64.convert_i32_s (local.get $cols)))
     ;; cell key of each creature: clamped column and row; a NaN stays NaN and becomes 0 in the key, like the Int32Array store in JS
     (block $keysDone (loop $keyLoop
       (br_if $keysDone (i32.ge_s (local.get $i) (local.get $n)))
@@ -28,7 +30,7 @@
       (local.set $cx (select (f64.const 0) (select (local.get $maxX) (local.get $cx) (f64.gt (local.get $cx) (local.get $maxX))) (f64.lt (local.get $cx) (f64.const 0))))
       (local.set $cy (select (f64.const 0) (select (local.get $maxY) (local.get $cy) (f64.gt (local.get $cy) (local.get $maxY))) (f64.lt (local.get $cy) (f64.const 0))))
       (i32.store (i32.add (local.get $cellOf) (i32.shl (local.get $i) (i32.const 2)))
-        (i32.trunc_sat_f64_s (f64.add (f64.mul (local.get $cy) (f64.convert_i32_s (local.get $cols))) (local.get $cx))))
+        (i32.trunc_sat_f64_s (f64.add (f64.mul (local.get $cy) (local.get $colsF)) (local.get $cx))))
       (local.set $i (i32.add (local.get $i) (i32.const 1)))
       (br $keyLoop)))
     ;; stable LSD radix sort of the creature indices by key: to starts as the identity, each pass reads from and writes to the other buffer
@@ -87,18 +89,23 @@
     (local.set $start (i32.load offset={{C_CELL_START}} (local.get $C)))
     (local.set $occupied (i32.load offset={{C_OCCUPIED}} (local.get $C)))
     (local.set $species (i32.load offset={{C_SPECIES_IN}} (local.get $C)))
+    (local.set $xs (i32.load offset={{C_XS}} (local.get $C)))
+    (local.set $ys (i32.load offset={{C_YS}} (local.get $C)))
+    (local.set $es (i32.load offset={{C_ENERGIES}} (local.get $C)))
+    (local.set $ss (i32.load offset={{C_SPECIES}} (local.get $C)))
+    (local.set $os (i32.load offset={{C_OWNERS}} (local.get $C)))
     (local.set $prev (i32.const -1))
     (local.set $k (i32.const 0))
     (block $sortedDone (loop $sortedLoop
       (br_if $sortedDone (i32.ge_s (local.get $k) (local.get $n)))
       (local.set $i (i32.load (i32.add (local.get $to) (i32.shl (local.get $k) (i32.const 2)))))
       (local.set $row (i32.shl (i32.load (i32.add (local.get $rowAt) (i32.shl (local.get $i) (i32.const 2)))) (i32.const 3)))
-      (f64.store (i32.add (i32.load offset={{C_XS}} (local.get $C)) (i32.shl (local.get $k) (i32.const 3))) (f64.load offset={{R_X}} (local.get $row)))
-      (f64.store (i32.add (i32.load offset={{C_YS}} (local.get $C)) (i32.shl (local.get $k) (i32.const 3))) (f64.load offset={{R_Y}} (local.get $row)))
-      (f64.store (i32.add (i32.load offset={{C_ENERGIES}} (local.get $C)) (i32.shl (local.get $k) (i32.const 3))) (f64.load offset={{R_ENERGY}} (local.get $row)))
-      (i32.store (i32.add (i32.load offset={{C_SPECIES}} (local.get $C)) (i32.shl (local.get $k) (i32.const 2)))
+      (f64.store (i32.add (local.get $xs) (i32.shl (local.get $k) (i32.const 3))) (f64.load offset={{R_X}} (local.get $row)))
+      (f64.store (i32.add (local.get $ys) (i32.shl (local.get $k) (i32.const 3))) (f64.load offset={{R_Y}} (local.get $row)))
+      (f64.store (i32.add (local.get $es) (i32.shl (local.get $k) (i32.const 3))) (f64.load offset={{R_ENERGY}} (local.get $row)))
+      (i32.store (i32.add (local.get $ss) (i32.shl (local.get $k) (i32.const 2)))
         (select (i32.load (i32.add (local.get $species) (i32.shl (local.get $i) (i32.const 2)))) (i32.const 0) (local.get $species)))
-      (i32.store (i32.add (i32.load offset={{C_OWNERS}} (local.get $C)) (i32.shl (local.get $k) (i32.const 2))) (local.get $i))
+      (i32.store (i32.add (local.get $os) (i32.shl (local.get $k) (i32.const 2))) (local.get $i))
       (local.set $c (i32.load (i32.add (local.get $cellOf) (i32.shl (local.get $i) (i32.const 2)))))
       (if (i32.ne (local.get $c) (local.get $prev))
         (then
@@ -139,7 +146,7 @@
   ;; Returns 0 as soon as a creature's cell key (computed as in rebuild) is not the one it was sorted by, and the grid must be rebuilt.
   (func (export "refresh") (param $C i32) (result i32)
     (local $n i32) (local $k i32) (local $i i32) (local $row i32) (local $rowAt i32) (local $cellOf i32) (local $owners i32) (local $species i32)
-    (local $cols i32) (local $cell f64) (local $maxX f64) (local $maxY f64) (local $x f64) (local $y f64) (local $cx f64) (local $cy f64)
+    (local $cols i32) (local $cell f64) (local $maxX f64) (local $maxY f64) (local $x f64) (local $y f64) (local $cx f64) (local $cy f64) (local $colsF f64)
     (local.set $n (i32.load offset={{C_N}} (local.get $C)))
     (local.set $rowAt (i32.load offset={{C_ROW_AT}} (local.get $C)))
     (local.set $cellOf (i32.load offset={{C_CELL_OF}} (local.get $C)))
@@ -149,6 +156,7 @@
     (local.set $cell (f64.load offset={{C_CELL}} (local.get $C)))
     (local.set $maxX (f64.convert_i32_s (i32.sub (local.get $cols) (i32.const 1))))
     (local.set $maxY (f64.convert_i32_s (i32.sub (i32.load offset={{C_ROWS}} (local.get $C)) (i32.const 1))))
+    (local.set $colsF (f64.convert_i32_s (local.get $cols)))
     (block $done (loop $each
       (br_if $done (i32.ge_s (local.get $k) (local.get $n)))
       (local.set $i (i32.load (i32.add (local.get $owners) (i32.shl (local.get $k) (i32.const 2)))))
@@ -160,7 +168,7 @@
       (local.set $cx (select (f64.const 0) (select (local.get $maxX) (local.get $cx) (f64.gt (local.get $cx) (local.get $maxX))) (f64.lt (local.get $cx) (f64.const 0))))
       (local.set $cy (select (f64.const 0) (select (local.get $maxY) (local.get $cy) (f64.gt (local.get $cy) (local.get $maxY))) (f64.lt (local.get $cy) (f64.const 0))))
       (if (i32.ne (i32.load (i32.add (local.get $cellOf) (i32.shl (local.get $i) (i32.const 2))))
-            (i32.trunc_sat_f64_s (f64.add (f64.mul (local.get $cy) (f64.convert_i32_s (local.get $cols))) (local.get $cx))))
+            (i32.trunc_sat_f64_s (f64.add (f64.mul (local.get $cy) (local.get $colsF)) (local.get $cx))))
         (then (return (i32.const 0))))
       (f64.store (i32.add (i32.load offset={{C_XS}} (local.get $C)) (i32.shl (local.get $k) (i32.const 3))) (local.get $x))
       (f64.store (i32.add (i32.load offset={{C_YS}} (local.get $C)) (i32.shl (local.get $k) (i32.const 3))) (local.get $y))
@@ -202,7 +210,7 @@
   ;; packed rows of the sense kernel, in that same walk order, with f32 positions. A NaN position has an empty cell range and finds nothing, like in JS.
   (func $firstItem (param $C i32) (param $x f64) (param $y f64) (result i32)
     (local $reach f64) (local $reach2 f64) (local $inv f64) (local $cx0 f64) (local $cx1 f64) (local $cy0 f64) (local $cy1 f64)
-    (local $cols i32) (local $cy i32) (local $cyLast i32) (local $cxFirst i32) (local $cxLast i32) (local $rowAt i32) (local $p i32) (local $end i32) (local $fx f64) (local $fy f64) (local $at i32)
+    (local $cols i32) (local $cy i32) (local $cyLast i32) (local $cxFirst i32) (local $cxLast i32) (local $rowAt i32) (local $p i32) (local $end i32) (local $fx f64) (local $fy f64) (local $at i32) (local $xy i32)
     (local.set $reach (f64.load offset={{C_ITEM_REACH}} (local.get $C)))
     (local.set $reach2 (f64.mul (local.get $reach) (local.get $reach)))
     (local.set $inv (f64.load offset={{C_INV_ITEM_CELL}} (local.get $C)))
@@ -217,6 +225,7 @@
     (local.set $cxLast (i32.trunc_sat_f64_s (local.get $cx1)))
     (local.set $cy (i32.trunc_sat_f64_s (local.get $cy0)))
     (local.set $cyLast (i32.trunc_sat_f64_s (local.get $cy1)))
+    (local.set $xy (i32.load offset={{C_ITEM_XY}} (local.get $C)))
     (block $rowsDone (loop $rowLoop
       (br_if $rowsDone (i32.gt_s (local.get $cy) (local.get $cyLast)))
       ;; the items of the cells cxFirst .. cxLast of this grid row are one run of the packed row
@@ -225,7 +234,7 @@
       (local.set $end (i32.load (i32.add (local.get $rowAt) (i32.shl (i32.add (local.get $cxLast) (i32.const 1)) (i32.const 2)))))
       (block $itemsDone (loop $itemLoop
         (br_if $itemsDone (i32.ge_s (local.get $p) (local.get $end)))
-        (local.set $at (i32.add (i32.load offset={{C_ITEM_XY}} (local.get $C)) (i32.shl (local.get $p) (i32.const 3))))
+        (local.set $at (i32.add (local.get $xy) (i32.shl (local.get $p) (i32.const 3))))
         (local.set $fx (f64.sub (f64.promote_f32 (f32.load (local.get $at))) (local.get $x)))
         (local.set $fy (f64.sub (f64.promote_f32 (f32.load offset=4 (local.get $at))) (local.get $y)))
         (if (f64.lt (f64.add (f64.mul (local.get $fx) (local.get $fx)) (f64.mul (local.get $fy) (local.get $fy))) (local.get $reach2))
