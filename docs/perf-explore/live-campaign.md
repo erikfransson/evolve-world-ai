@@ -195,6 +195,8 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 
 | 103 | Compact eat hit list from the touch kernel | - | Closed (`eatlist.md`): the JS already scans `touched[]` once (26 us) and calls eat only for the 33-58 hits; the eat cost is misses in eatAt, removeItem and the log |
 
+| 101 | brain.wat touch stream: distance (i+2, split), spread (per iteration, bursts, 4 lines every 2nd), targets (inputs, biases, own rows ahead) | yes | Rejected (`touchdist.md`): no variant beats the stream (best +1.2% mixed / -0.4% cap with a branch per iteration; bursts of missing loads stall retirement 2-9%); the touch-stream line is closed with pfrows and touch6, only a native prefetch is left |
+
 ## Log
 - 2026-10-27 09:00 Campaign start. Prior campaigns (B1, B2, `docs/perf-explore/`) already moved sense, brains, physics, crowd grid, collisions and scans into WASM; their rejected ideas are not retried unless the live setting changes the picture.
 - 2026-10-27 09:19 `server/src/liveBench.ts` written; two runs at 400 seeded give the same fingerprint (260290661), so the bench is deterministic.
@@ -350,3 +352,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-28 13:32 ideas 103 and 104 closed (already so / nothing installed). Note to self: two closes in a row from my own misread of the eat path; read the code before briefing the next eat idea.
 - 2026-10-28 13:45 focused suites on the lone-creature fix: 182 of 184 passed, the two ThinkPool parity cases hit the 300 s timeout at load 20 and pass alone (2 of 2); no regression.
 - 2026-10-28 13:50 follow-up review (same Opus reviewer) through 75cfb06: the idea 85 fix correct on the JS crowd path, helper threads and restored saves; ideas 93, 94 and 99 nothing to fix (compact lane order and hand-off proven for every nIn). Review round 3 closed.
+- 2026-10-28 14:00 idea 101 rejected (`touchdist.md`); the brain scout's 28-35% second-pass gain stays unexplained without counters (L1 fill bandwidth or page translation over about 6000 pages are the candidates; huge pages would test the second, Erik's root toggle).
