@@ -342,9 +342,9 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-28 13:10 idea 91 rejected (`alloc.md`): the GC premise from the scouts was wrong (their 3-4 scavenges per second came from --cpu-prof and the first seconds).
 - 2026-10-28 13:12 idea 81 done (`soak6.md`): 6 h soak passes, peak 554 MB at save time, plateau about 430 MB.
 - 2026-10-28 13:25 factor batch13 on 2a55d98: 1.39x mixed / 1.42x cap, fingerprints equal, RSS equal.
-- 2026-10-28 13:40 idea 99 merged (kernels regenerated, no drift); added to the running review's range.
-- 2026-10-28 13:50 idea 94 merged (kernels regenerated, no drift).
-- 2026-10-28 14:05 review of ideas 85, 88, 90, 92 (Opus, independent): 88, 90, 92 nothing to fix (odd ray lane, tie rule, bounds, the probe's branches and the browser fallback checked); 85 had a HIGH bug: a creature inserted into an empty world (one founder, a visitor's insert into an extinct world) was never gridded because prepareTick skipped lone creatures, and the fill kernel's new trap fired every tick. Fixed: prepareTick returns early only for an empty table; regression test added (red without the fix). 99 and 94 added to the review's range.
-- 2026-10-28 14:15 idea 93 merged (kernels regenerated from the merged sources), idea 102 rejected (study only).
-- 2026-10-28 14:20 idea 100 parked (0.7%).
-- 2026-10-28 14:35 ideas 103 and 104 closed (already so / nothing installed). Note to self: two closes in a row from my own misread of the eat path; read the code before briefing the next eat idea.
+- 2026-10-28 13:08 idea 99 merged (kernels regenerated, no drift); added to the running review's range.
+- 2026-10-28 13:12 idea 94 merged (kernels regenerated, no drift).
+- 2026-10-28 13:15 review of ideas 85, 88, 90, 92 (Opus, independent): 88, 90, 92 nothing to fix (odd ray lane, tie rule, bounds, the probe's branches and the browser fallback checked); 85 had a HIGH bug: a creature inserted into an empty world (one founder, a visitor's insert into an extinct world) was never gridded because prepareTick skipped lone creatures, and the fill kernel's new trap fired every tick. Fixed: prepareTick returns early only for an empty table; regression test added (red without the fix). 99 and 94 added to the review's range.
+- 2026-10-28 13:22 idea 93 merged (kernels regenerated from the merged sources), idea 102 rejected (study only).
+- 2026-10-28 13:26 idea 100 parked (0.7%).
+- 2026-10-28 13:32 ideas 103 and 104 closed (already so / nothing installed). Note to self: two closes in a row from my own misread of the eat path; read the code before briefing the next eat idea.
