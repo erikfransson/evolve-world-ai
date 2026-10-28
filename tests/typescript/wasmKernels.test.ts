@@ -579,6 +579,31 @@ describe("sense.wat (SenseKernels)", () => {
     }
   });
 
+  it("writes the same brain input for creatures that see items but no creature as the full path of the detail creature, over ray counts, species counts and walls", () => {
+    for (const [rays, species] of [[7, 0], [8, 1], [9, 3], [1, 2]] as const) {
+      const rng = createRng(60 + rays);
+      const spots: Spot[] = Array.from({ length: 50 }, () => [rng.range(-20, 1220), rng.range(-20, 820), rng.range(0, 7)]);
+      for (let i = 0; i < 4; i++) spots.push([6 + 3 * i, 400 + 9 * i, i], [1194 - 3 * i, 5 + 9 * i, 2 + i]); // against the left and right walls, a few in sight of each other
+      const { kernel, world, crowd, kernels, batch } = check({ rays, spread: 1.5, length: 100, creatures: spots, items, species }, false);
+      const bank = (kernels as unknown as { brains: WasmBrainBank }).brains;
+      const inputOf = (c: Creature): number[] => Array.from(bank.f32.subarray(bank.inputAt(c.kernelSlot), bank.inputAt(c.kernelSlot) + c.brain.layerActivations()[0]!.length));
+      const blank = (): void => kernel.forEach((c) => bank.f32.subarray(bank.inputAt(c.kernelSlot), bank.inputAt(c.kernelSlot) + c.brain.layerActivations()[0]!.length).fill(NaN));
+      let itemsOnly = 0;
+      kernel.forEach((c) => {
+        blank();
+        kernels.detail = c;
+        run(kernels, world, crowd, batch);
+        const full = inputOf(c);
+        blank();
+        kernels.detail = null;
+        run(kernels, world, crowd, batch);
+        expect(inputOf(c)).toEqual(full);
+        if (c.rays.every((r) => r.kind !== HIT_CREATURE) && c.rays.some((r) => r.kind === HIT_FOOD || r.kind === HIT_POISON || r.kind === HIT_WALL)) itemsOnly++;
+      });
+      expect(itemsOnly).toBeGreaterThan(10);
+    }
+  });
+
   it("keeps the rays of non-detail creatures untouched and needs no detail", () => {
     const { kernel, world, crowd, kernels, batch } = check({ rays: 4, spread: 1, creatures: [[300, 300, 0], [320, 300, 3]], items }, false);
     kernel[1]!.rays[0]!.closeness = 0.123;
