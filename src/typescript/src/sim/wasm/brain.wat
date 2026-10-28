@@ -2,14 +2,46 @@
 (module
   (memory (export "mem") 1)
 
-  ;; Appends the indices of the non-zero inputs to list, in order, without branching; returns how many.
-  ;; Four inputs at a time: the lane mask picks a byte shuffle from tab (16 shuffles of 16 bytes, then 16 counts) that packs their indices.
+  ;; Appends the indices of the non-zero inputs to list, in order; returns how many. Branch-free except for skipping all-zero groups of sixteen.
+  ;; Sixteen inputs at a time are tested first (an all-zero group only advances idx), then four at a time: the lane mask picks a byte shuffle from tab (16 shuffles of 16 bytes, then 16 counts) that packs their indices.
   (func $compact (param $src i32) (param $n i32) (param $list i32) (param $tab i32) (result i32)
-    (local $p i32) (local $end i32) (local $cnt i32) (local $m i32) (local $idx v128) (local $four v128)
+    (local $p i32) (local $end i32) (local $cnt i32) (local $m i32) (local $m16 i32) (local $e16 i32) (local $idx v128) (local $four v128) (local $zero v128) (local $sixteen v128)
     (local.set $idx (v128.const i32x4 0 1 2 3))
     (local.set $four (v128.const i32x4 4 4 4 4))
+    (local.set $zero (v128.const i32x4 0 0 0 0))
+    (local.set $sixteen (v128.const i32x4 16 16 16 16))
     (local.set $p (local.get $src))
     (local.set $end (i32.add (local.get $src) (i32.shl (i32.and (local.get $n) (i32.const -4)) (i32.const 2))))
+    (local.set $e16 (i32.add (local.get $src) (i32.shl (i32.and (local.get $n) (i32.const -16)) (i32.const 2))))
+    (block $d16 (loop $l16
+      (br_if $d16 (i32.ge_u (local.get $p) (local.get $e16)))
+      (local.set $m16 (i8x16.bitmask (i8x16.narrow_i16x8_s
+        (i16x8.narrow_i32x4_s (f32x4.ne (v128.load (local.get $p)) (local.get $zero)) (f32x4.ne (v128.load offset=16 (local.get $p)) (local.get $zero)))
+        (i16x8.narrow_i32x4_s (f32x4.ne (v128.load offset=32 (local.get $p)) (local.get $zero)) (f32x4.ne (v128.load offset=48 (local.get $p)) (local.get $zero))))))
+      (if (local.get $m16) (then
+      (local.set $m (i32.and (i32.shr_u (local.get $m16) (i32.const 0)) (i32.const 15)))
+      (v128.store (i32.add (local.get $list) (i32.shl (local.get $cnt) (i32.const 2)))
+        (i8x16.swizzle (local.get $idx) (v128.load (i32.add (local.get $tab) (i32.shl (local.get $m) (i32.const 4))))))
+      (local.set $cnt (i32.add (local.get $cnt) (i32.load8_u offset=256 (i32.add (local.get $tab) (local.get $m)))))
+      (local.set $idx (i32x4.add (local.get $idx) (local.get $four)))
+      (local.set $m (i32.and (i32.shr_u (local.get $m16) (i32.const 4)) (i32.const 15)))
+      (v128.store (i32.add (local.get $list) (i32.shl (local.get $cnt) (i32.const 2)))
+        (i8x16.swizzle (local.get $idx) (v128.load (i32.add (local.get $tab) (i32.shl (local.get $m) (i32.const 4))))))
+      (local.set $cnt (i32.add (local.get $cnt) (i32.load8_u offset=256 (i32.add (local.get $tab) (local.get $m)))))
+      (local.set $idx (i32x4.add (local.get $idx) (local.get $four)))
+      (local.set $m (i32.and (i32.shr_u (local.get $m16) (i32.const 8)) (i32.const 15)))
+      (v128.store (i32.add (local.get $list) (i32.shl (local.get $cnt) (i32.const 2)))
+        (i8x16.swizzle (local.get $idx) (v128.load (i32.add (local.get $tab) (i32.shl (local.get $m) (i32.const 4))))))
+      (local.set $cnt (i32.add (local.get $cnt) (i32.load8_u offset=256 (i32.add (local.get $tab) (local.get $m)))))
+      (local.set $idx (i32x4.add (local.get $idx) (local.get $four)))
+      (local.set $m (i32.and (i32.shr_u (local.get $m16) (i32.const 12)) (i32.const 15)))
+      (v128.store (i32.add (local.get $list) (i32.shl (local.get $cnt) (i32.const 2)))
+        (i8x16.swizzle (local.get $idx) (v128.load (i32.add (local.get $tab) (i32.shl (local.get $m) (i32.const 4))))))
+      (local.set $cnt (i32.add (local.get $cnt) (i32.load8_u offset=256 (i32.add (local.get $tab) (local.get $m)))))
+      (local.set $idx (i32x4.add (local.get $idx) (local.get $four)))
+      ) (else (local.set $idx (i32x4.add (local.get $idx) (local.get $sixteen)))))
+      (local.set $p (i32.add (local.get $p) (i32.const 64)))
+      (br $l16)))
     (block $d (loop $l
       (br_if $d (i32.ge_u (local.get $p) (local.get $end)))
       (local.set $m (i32x4.bitmask (f32x4.ne (v128.load (local.get $p)) (v128.const f32x4 0 0 0 0))))
