@@ -405,3 +405,4 @@ Head phases 2026-10-28 14:50 (253f894, load 6-7, `scout-head.md`; ms per tick, 3
 - 2026-10-28 15:20 review round 5 (Opus, independent) of idea 100: nothing to fix in the engine (an own probe over 3 grids x 300 rounds, 0 mismatches, same-row and repeated cells and both fallbacks); the repo test did not reach the two fallbacks, the reviewer adds those cases now.
 - 2026-10-28 15:30 patchItems fallback tests added (bb8d595), red on both mutants; review round 5 closed.
 - 2026-10-28 15:45 idea 95 parked (quad lanes); its residentBodies test fix taken into perf-live (the test read a typed-array view that the step's memory growth detaches, a pre-existing fragility).
+- 2026-10-28 15:40 full suite on eae5208 (ideas 100, the patchItems fallback tests, the residentBodies fix): 122 files, 1254 tests, exit 0. 6-hour report sent (1.47x / 1.62x noisy, 1.45-1.5x safe reading).
