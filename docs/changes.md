@@ -6,6 +6,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+## 0.2.8 (2026-10-28)
+
 - Live, Ecosystem and Trials: the abyssal floor is a little lighter (floor colour and a softer dark mottle).
 - RL Arena: Memory group grows from 3 to 4 envs with Two stops (two food clusters shown once, new `stops` layout); it beats the same body without memory on 6 of 6 seeds but misses the E1 check, kept like Glimpse (`docs/rl-envs.md`). Existing envs are unchanged
 - RL Arena: Patch war (Compete) and Live now (Bigger, Live's rules as of 2026-10 without seasons) are new envs; existing envs are unchanged (`docs/rl-envs.md`)
