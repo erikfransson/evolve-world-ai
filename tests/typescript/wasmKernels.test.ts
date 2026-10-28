@@ -399,6 +399,32 @@ describe("sense.wat (SenseKernels)", () => {
     check({ width: 3000, height: 2000, rays: 6, spread: 2 * Math.PI, length: 250, creatures: spots, map }, true);
   });
 
+  it("matches the JS rays for rock discs whose tangent lies on the edge ray of the fan, a hair inside and outside the widened wedge", () => {
+    const map = { stoneDensity: 0.06, ridgeDensity: 0.05 };
+    const t = terrainOf({ seed: DEFAULT_ECO_CONFIG.seed, world: { width: 3000, height: 2000, ...map } });
+    for (const [rays, spread] of [[8, 1], [7, 2.5], [5, 0.4]] as const) {
+      const rng = createRng(33);
+      const spots: Spot[] = [];
+      for (let tries = 0; spots.length < 30 && tries < 40000; tries++) {
+        const d = rng.int(t.rockCount);
+        const r = t.rockR[d]!;
+        const dist = r + rng.range(5, 140);
+        const a = rng.range(0, 2 * Math.PI);
+        const x = t.rockX[d]! + dist * Math.cos(a);
+        const y = t.rockY[d]! + dist * Math.sin(a);
+        const eps = [0, 1e-9, -1e-9, 1e-6, -1e-6, 0.03, -0.03][tries % 7]!;
+        const side = tries % 2 ? 1 : -1;
+        const edge = (tries >> 1) % 2 ? 1 : -1;
+        const heading = Math.atan2(t.rockY[d]! - y, t.rockX[d]! - x) + side * Math.asin(r / dist) + eps - (edge * spread) / 2; // the tangent ray of the disc along one edge ray
+        const apart = spots.every(([sx, sy]) => Math.hypot(sx - x, sy - y) > 300);
+        if (apart && x > 12 && y > 12 && x < 2988 && y < 1988 && !t.touchesRock(x, y, 12)) spots.push([x, y, heading]);
+      }
+      expect(spots.length).toBeGreaterThan(15);
+      const { seen } = check({ width: 3000, height: 2000, rays, spread, length: 150, creatures: spots, map }, true);
+      expect(seen).toContain(HIT_WALL);
+    }
+  });
+
   it("breaks exact ties between items in different cells and in one cell by grid order, as World.castRays does", () => {
     const r = DEFAULT_ECO_CONFIG.world.itemRadius;
     expect(r).toBe(4);

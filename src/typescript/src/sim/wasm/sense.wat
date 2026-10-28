@@ -172,7 +172,7 @@
     (local $ps i32) (local $base i32) (local $sigp i32) (local $cStart i32) (local $ccols i32) (local $crows i32)
     ;; rock
     (local $rcols i32) (local $rrows i32) (local $rstart i32) (local $rorder i32) (local $rxyr i32) (local $rmax f64) (local $rinv f64)
-    (local $rext f64) (local $rr f64) (local $rfar f64) (local $di i32) (local $rlb i32) (local $skip i32)
+    (local $rext f64) (local $rr f64) (local $rfar f64) (local $rm f64) (local $di i32) (local $rlb i32) (local $skip i32)
     (local $cc32 f32) (local $ks i32) (local $sb i32)
     (local.set $n (i32.load offset={{S_N}} (local.get $P)))
     (local.set $stride (i32.load offset={{S_STRIDE}} (local.get $P)))
@@ -318,11 +318,16 @@
             (local.set $rr (f64.load offset=16 (local.get $di)))
             (local.set $d2 (f64.add (f64.mul (local.get $fx) (local.get $fx)) (f64.mul (local.get $fy) (local.get $fy))))
             (local.set $rfar (f64.add (f64.add (local.get $L) (local.get $rr)) (f64.mul (f64.const 1e-9) (local.get $L))))
+            ;; kept only inside the distance and the ray wedge widened by the disc radius, as the items are; a disc outside it cannot be hit and must not force the busy path
             (if (f64.le (local.get $d2) (f64.mul (local.get $rfar) (local.get $rfar))) (then
-              (f64.store (local.get $cp) (local.get $fx))
-              (f64.store offset=8 (local.get $cp) (local.get $fy))
-              (f64.store offset=16 (local.get $cp) (f64.sub (local.get $d2) (f64.mul (local.get $rr) (local.get $rr))))
-              (local.set $cp (i32.add (local.get $cp) (i32.const 32)))))
+              (local.set $rm (f64.add (local.get $rr) (f64.mul (f64.const 1e-9) (local.get $L))))
+              (if (i32.or (local.get $open) (i32.and
+                  (f64.ge (f64.sub (f64.mul (local.get $d0x) (local.get $fy)) (f64.mul (local.get $d0y) (local.get $fx))) (f64.neg (local.get $rm)))
+                  (f64.le (f64.sub (f64.mul (local.get $d1x) (local.get $fy)) (f64.mul (local.get $d1y) (local.get $fx))) (local.get $rm)))) (then
+                (f64.store (local.get $cp) (local.get $fx))
+                (f64.store offset=8 (local.get $cp) (local.get $fy))
+                (f64.store offset=16 (local.get $cp) (f64.sub (local.get $d2) (f64.mul (local.get $rr) (local.get $rr))))
+                (local.set $cp (i32.add (local.get $cp) (i32.const 32)))))))
             (local.set $it (i32.add (local.get $it) (i32.const 1)))
             (br $ritl)))
           (local.set $cy (i32.add (local.get $cy) (i32.const 1)))
