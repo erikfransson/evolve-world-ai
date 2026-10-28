@@ -707,6 +707,7 @@ export class Ecosystem {
     this.lineages.died(m.founderId);
     this.journal?.died.push(m.id);
     if (this.spare[m.species]!.length < MAX_SPARE) this.spare[m.species]!.push(m);
+    else this.kernels?.release(m.creature);
     this.deaths++;
     const count = this.counts[m.species]!;
     count.population--;

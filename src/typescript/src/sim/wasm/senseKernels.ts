@@ -14,8 +14,8 @@ import { WasmStepper } from "./stepKernel.ts";
 
 // The WASM kernels of one owner of creatures (an Ecosystem or a helper thread): sense.wat does rays and brain inputs for the whole batch in one call, then the
 // brains run in WebAssembly too, and the creatures' bodies are rows of the same memory (ResidentStore), filled, stepped and scanned by kernels of their own.
-// Each creature keeps a brain slot here for as long as this owner holds it (creatures are recycled, not dropped), and the slot is set again by attach whenever reset gave
-// the creature a new genome or plan. Results are f32 in the crowd rays and the brain, so they differ from the JS path, but each creature's result depends only on its
+// Each creature keeps a brain slot here for as long as this owner holds it, and the slot is set again by attach whenever reset gave the creature a new genome or plan;
+// a creature dropped for good gives its slot and row back (release) for the next one made. Results are f32 in the crowd rays and the brain, so they differ from the JS path, but each creature's result depends only on its
 // own inputs and the item and crowd snapshots, so any split into batches agrees. Without WebAssembly SIMD, or with a kernel missing, there are no kernels and the JS path runs.
 export class SenseKernels {
   // The creature whose rays (creature.rays) and brain input must be current after the batch, such as the selected one.
@@ -30,6 +30,7 @@ export class SenseKernels {
   private sameStart!: boolean; // every species starts with the energyScale, so a creature's own energy signal is the one the crowd kernel packs for others
   private energyScale!: number; // seen energies are squashed against this, the largest species start energy (speciesEngine's seenEnergyScale)
   private nextSlot = 0;
+  private readonly freeSlots: number[] = []; // released slots, taken by attach before new ones
 
   private constructor(brains: WasmBrainBank, senser: WasmSenser, store: ResidentStore, filler: WasmFiller, stepper: WasmStepper, config: EcoConfig) {
     this.brains = brains;
@@ -71,6 +72,7 @@ export class SenseKernels {
     this.filler.reset();
     this.stepper.reset();
     this.nextSlot = 0;
+    this.freeSlots.length = 0;
     this.detail = null;
     this.stride = inputLayout(config).rayFeatures;
     this.setScale(config);
@@ -102,7 +104,7 @@ export class SenseKernels {
   attach(c: Creature): void {
     if (c.kernelOwner !== this) {
       c.kernelOwner = this;
-      c.kernelSlot = this.nextSlot++;
+      c.kernelSlot = this.freeSlots.pop() ?? this.nextSlot++;
     }
     const slot = c.kernelSlot;
     this.brains.set(slot, c.brain.sizes, c.brain.genome);
@@ -111,6 +113,18 @@ export class SenseKernels {
     const r = c.resident!;
     r.setBrain(slot, c.plan.rayCount, this.senser.offsetsAt(slot), this.brains.inputAt(slot) * 4);
     r.rayLength = c.plan.rayLength;
+  }
+
+  // Frees what a creature that is dropped (not kept for reuse) holds here, its brain block, offset table and row, and keeps its slot and row for the next creature.
+  release(c: Creature): void {
+    if (c.kernelOwner !== this) return;
+    const slot = c.kernelSlot;
+    this.brains.release(slot);
+    this.senser.release(slot);
+    this.freeSlots.push(slot);
+    c.kernelOwner = null;
+    c.kernelSlot = -1;
+    if (c.resident) this.store.release(c.resident);
   }
 
   // run for resident creatures given as their row addresses and crowd indices, in brain run order: the fill kernel builds the records

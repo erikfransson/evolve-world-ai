@@ -41,3 +41,22 @@ Population samples ring 1080 (258 at 1800 s, grows 129 per 900 s until full), li
 
 - `ShareHelper` in `ecoShare.ts` (browser page and tests, 0 helpers on the server) now bounds its dead-creature pool by the same `MAX_SPARE` per species; test "helper spare creature pool" in `ecoPool.test.ts` fails without it.
 - Bit-identical: only the number of kept spares changes, never which one a birth pops while the pool is non-empty beyond the cap; thinkEvery pin and helper-vs-serial cases unchanged.
+
+## Kernel resources on drop
+
+Push-gate review: with kernels on, a creature dropped past `MAX_SPARE` kept its brain slot and weight block (about 8 KB), its 192-byte resident row, its units block and a ref on its ray offset table, so each crash and regrow with more than 256 net deaths per species leaked them, and the orphaned rows were still rebound on every memory growth.
+Fix: `SenseKernels.release` (called by `Ecosystem.remove` and `ShareHelper.apply` when the pool is full) frees the brain block (`WasmBrainBank.release`, out of the run order), unrefs the offset table and frees the units block, and puts the slot and the `ResidentState` on free lists that `attach` and `ResidentStore.add` take from before growing.
+No result depends on slot numbers or block addresses (brains run by address, each from its own block, reused rows are zeroed as new ones), so results are exact.
+Also `Creature.reset` now zeroes the JS outputs, which a reused spare carried over from its previous owner until its first think (JS path, visible in saves at thinkEvery above 1).
+Tests: "kernel resources of dropped creatures" (`ecosystem.test.ts`, 4 crash-and-regrow cycles) and "frees the kernel resources of dropped creatures for reuse" (`ecoPool.test.ts`, helper) assert that bank memory, `nextSlot`, resident rows and arena top stay flat after the first cycle; both fail on perf-live (836 to 1116 slots, 456 to 656). "gives a reused spare zero outputs" fails without the reset line.
+
+Exact: fingerprints 708687555 (mixed, 4 runs), 10334191 (juggernaut cap), 847136415 (1800 s, both builds), thinkEvery pin 81047108; full suite 1231 tests pass.
+
+Memory, `--seconds 1800 --copies 800`, one run each, MEM line as above:
+
+| Build     | peak RSS | heapUsed | arrayBuffers | external | RSS at end |
+|-----------|----------|----------|--------------|----------|------------|
+| perf-live | 284 MB   | 25 MB    | 36 MB        | 105 MB   | 284 MB     |
+| sparefix  | 259 MB   | 30 MB    | 39 MB        | 101 MB   | 260 MB     |
+
+Speed, two alternating 60 s pairs (mixed): base 13.40, 13.02 against 12.67, 13.44 ms per tick, within the spread.

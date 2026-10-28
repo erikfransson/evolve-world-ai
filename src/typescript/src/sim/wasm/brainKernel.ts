@@ -25,7 +25,7 @@ const pad4 = (n: number): number => (n + 3) & ~3;
 export class WasmBrainBank {
   private readonly kernel: Kernel<BrainExports>;
   private arena: Arena;
-  private blockPtr: number[] = [];
+  private blockPtr: (number | undefined)[] = [];
   private blockBytes: number[] = [];
   private inFloat: number[] = [];
   private outFloat: number[] = [];
@@ -169,6 +169,16 @@ export class WasmBrainBank {
     d[at + 2] = (w + pad4(nIn)) * 4;
     d[at + 3] = sizes.length;
     for (let i = 0; i < sizes.length; i++) d[at + 4 + i] = sizes[i]!;
+  }
+
+  // Frees the slot's brain block (a creature that left for good), so the slot holds no brain until set again.
+  release(slot: number): void {
+    const ptr = this.blockPtr[slot];
+    if (ptr === undefined) return;
+    this.arena.release(ptr, this.blockBytes[slot]!);
+    this.unorder(ptr);
+    this.blockPtr[slot] = undefined;
+    this.blockBytes[slot] = 0;
   }
 
   // Runs the slots slots[0 .. count-1] in that order, each of which must hold a brain; e.g. one thread's share of the creatures.
