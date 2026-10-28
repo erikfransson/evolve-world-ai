@@ -2,7 +2,7 @@ import { BIRTH_WEIGHT_CAP, LIMITS, SEED_COPIES, mostCopies, seedRoom } from "./c
 import { IGNORED_OVERRIDES, OVERRIDES, PREVIOUS_OVERRIDES, loadOverrides, retireOverrides } from "./admin.ts";
 import type { SeedFounder } from "./founders.ts";
 import type { Value } from "./tunables.ts";
-import { TooBig, packSave, parseSave } from "./saveParse.ts";
+import { PACK_TIMEOUT_MS, TooBig, VERIFY_TIMEOUT_MS, WorkerFailed, packSave, parseSave } from "./saveParse.ts";
 import { OtherWorld } from "./saveParse.ts";
 import type { LiveWorld } from "./liveWorld.ts";
 import { seedWeights } from "./liveWorld.ts";
@@ -13,6 +13,17 @@ import type { StateStore } from "./state.ts";
 
 const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 const RESTORE_TRIES = 3; // saves of this world tried at startup before giving up, so a failing start exits in minutes and systemd stops retrying
+// The stop path (SIGTERM, TimeoutStopSec=60 in the unit): its save may pack for up to STOP_PACK_MS when none was in flight at the stop, and
+// its verify gets what is left of STOP_BUDGET_MS since the stop was asked, at least STOP_VERIFY_MIN_MS and at most VERIFY_TIMEOUT_MS.
+// Worst case pack + verify + write stays near STOP_BUDGET_MS, leaving the rest of the 60 s for the exit.
+export const STOP_PACK_MS = 25_000;
+export const STOP_BUDGET_MS = 50_000;
+const STOP_VERIFY_MIN_MS = 5_000;
+export const stopVerifyMs = (sinceStopMs: number): number => Math.max(STOP_VERIFY_MIN_MS, Math.min(VERIFY_TIMEOUT_MS, STOP_BUDGET_MS - sinceStopMs));
+interface Stop {
+  at: number; // performance.now() when the stop was asked
+  alone: boolean; // no other save was in flight then, so the pack may take STOP_PACK_MS
+}
 const UNREADABLE = "SAVE REFUSED: it would not restore, the last good save is kept";
 export const MAX_KEPT_RESETS = 3; // reset folders kept before a reset is refused: each holds the saves of the last 4 days (about 1 GB at 40 MB a save), outside the disk cap
 
@@ -42,6 +53,10 @@ export class Saves {
   private readonly live: LiveWorld;
   readonly store: StateStore;
   private resetting = false; // set once a reset moved the saves aside: nothing more is saved next to the kept world, the server exits
+  private busy = 0; // jobs queued or running in exclusive
+  private retryTimer: NodeJS.Timeout | null = null; // at most one: the retry of a periodic save that failed for a transient reason
+  private retries = 0; // failed periodic tries in a row, picks the wait from LIMITS.saveRetryMs
+  private retriesOff = false; // set when the server stops: no retry is scheduled or run next to the stop's own save
 
   constructor(live: LiveWorld, store: StateStore) {
     this.live = live;
@@ -49,19 +64,65 @@ export class Saves {
   }
 
   private exclusive<T>(job: () => Promise<T>): Promise<T> {
+    this.busy++;
     const run = this.queue.then(job, job);
-    this.queue = run.catch(() => undefined);
+    this.queue = run.catch(() => undefined).finally(() => void this.busy--);
     return run;
   }
 
   // A short line saying what was saved; rejects with the reason when nothing was.
-  save(): Promise<string> {
-    return this.exclusive(() => this.saveNow()).catch((e: unknown) => {
-      throw new Error(`not saved: ${errText(e)}`);
-    });
+  // stop: the save of the stop path, with its larger pack and verify budgets (see STOP_PACK_MS).
+  save(stop = false): Promise<string> {
+    const st: Stop | undefined = stop ? { at: performance.now(), alone: this.busy === 0 } : undefined;
+    return this.exclusive(() => this.saveNow(st)).then(
+      (line) => {
+        this.clearRetry(); // a save went through: the world is safe again, whoever asked for it
+        return line;
+      },
+      (e: unknown) => {
+        throw new Error(`not saved: ${errText(e)}`, { cause: e });
+      },
+    );
   }
 
-  private async saveNow(): Promise<string> {
+  // The periodic save. A worker timeout, out-of-memory or exit (WorkerFailed) schedules one retry after the next wait of
+  // LIMITS.saveRetryMs, instead of leaving the world unsaved until the next periodic save; a too big world, a full state directory, a save
+  // that would not restore and the like are permanent until the world changes and are not retried. Retries go through save(), so
+  // they share its queue: at most one save in flight, and one retry timer.
+  async periodic(log: (line: string) => void = console.log, logError: (line: string) => void = console.error): Promise<void> {
+    if (this.retriesOff) return;
+    this.clearTimer();
+    try {
+      log(await this.save());
+    } catch (e) {
+      logError(errText(e));
+      if (this.retriesOff || !(e instanceof Error && e.cause instanceof WorkerFailed)) return this.clearRetry();
+      const waits = LIMITS.saveRetryMs;
+      const wait = waits[Math.min(this.retries, waits.length - 1)]!;
+      this.retries++;
+      logError(`save retry ${this.retries} in ${Math.round(wait / 60_000)} min`);
+      this.retryTimer = setTimeout(() => void this.periodic(log, logError), wait);
+      this.retryTimer.unref();
+    }
+  }
+
+  // No more retries, for the stop path: its own save is the last one.
+  stopRetries(): void {
+    this.retriesOff = true;
+    this.clearTimer();
+  }
+
+  private clearTimer(): void {
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    this.retryTimer = null;
+  }
+
+  private clearRetry(): void {
+    this.clearTimer();
+    this.retries = 0;
+  }
+
+  private async saveNow(stop?: Stop): Promise<string> {
       if (this.resetting) throw new Error("the world is being reset");
       if (this.live.failedTicks > 0) throw new Error(`its ticks are failing (${this.live.failedTicks} in a row), the last good save is kept`);
       let stallMs = 0;
@@ -69,7 +130,7 @@ export class Saves {
       let tick = 0;
       const packed = this.live.whenIdle(() => {
         const t0 = performance.now();
-        const run = packSave(this.live.saveSnapshot(), LIMITS.maxSaveJsonBytes);
+        const run = packSave(this.live.saveSnapshot(), LIMITS.maxSaveJsonBytes, stop?.alone ? STOP_PACK_MS : PACK_TIMEOUT_MS);
         ({ population, tick } = this.live.eco); // as of the snapshot, not of the world a few seconds on
         stallMs = Math.round(performance.now() - t0);
         return run;
@@ -82,9 +143,10 @@ export class Saves {
       });
       // The same parse and checks as a restore, on the worker with its heap cap; a save that fails them is never written.
       const verify = (gz: Uint8Array): Promise<unknown> =>
-        parseSave(gz, LIMITS.maxSaveJsonBytes, true).catch((e: unknown) => {
+        parseSave(gz, LIMITS.maxSaveJsonBytes, true, undefined, stop ? stopVerifyMs(performance.now() - stop.at) : VERIFY_TIMEOUT_MS).catch((e: unknown) => {
           console.error(UNREADABLE);
-          throw new Error(`it would not restore: ${errText(e)}`);
+          const why = `it would not restore: ${errText(e)}`;
+          throw e instanceof WorkerFailed ? new WorkerFailed(why) : new Error(why); // a verify worker that timed out or died is transient, a save it judged bad is not
         });
       const h = this.live.homeWorld();
       const world = `${h.map || "random"} ${h.width}x${h.height}${h.mapVersion ? ` ${h.mapVersion}` : ""}`; // so the listing tells this world's saves from another's
