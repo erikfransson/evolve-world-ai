@@ -170,6 +170,8 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 
 | 85 | Sense records in crowd cell order, read off the grid's sorted owners instead of a counting sort by item row | yes | Merged (`cellorder.md`): senser 1.045x both cases (faster in 6 of 6 pairs), tick 1.018x mixed / 1.022x cap, net -9 lines, full suite green |
 
+| 89 | Crowd `cellStart` as u16 (u32 above 65535 creatures), 8 cells per v128 fill | yes | Rejected (`cell16.md`): crowd grid unchanged, senser 3-5% slower (u16 loads in the walk), tick 1.016 / 1.014 slower; the fill is not cold-table bound at this size |
+
 ## Log
 - 2026-10-27 09:00 Campaign start. Prior campaigns (B1, B2, `docs/perf-explore/`) already moved sense, brains, physics, crowd grid, collisions and scans into WASM; their rejected ideas are not retried unless the live setting changes the picture.
 - 2026-10-27 09:19 `server/src/liveBench.ts` written; two runs at 400 seeded give the same fingerprint (260290661), so the bench is deterministic.
@@ -309,3 +311,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-28 09:55 scout-brain report (`scout-brain.md`): the brain kernel is bound by bringing each brain's lines into L1 once per tick plus instructions, not by DRAM (trace replay 1.9 ms, rerun of each brain -28-35%); layer-major order, hit-sorted rows and copy-on-write rows rejected with numbers (the bench's near-clone seeding would flatter any sharing idea: 95.6% duplicate rows there, 36.6% in an aged save). Built: v128 constants hoisted into locals in brain.wat's tanh and compact loops (V8 rebuilds a v128.const at every use, 27 of 52 instructions per tanh vector), brain forward 1.08-1.09x, tick 1.057x mixed / 1.024x cap, exact: idea 92, full suite running; the same pattern in sense.wat spawned as idea 93. Quad-lane brains (four same-shape brains per v128) noted as the one large rewrite with 0.5-1.0 ms upside, uncertain. Factor run batch12 started 09:45 (loaded machine, 5 agents).
 - 2026-10-28 10:05 idea 90 reported (`trigport.md`): fdlibm sin/cos port in step.wat with a start-up probe (imports kept on any bit difference), step phase -15% mixed / -19% cap (-0.19 / -0.31 ms), tick 1.004 / 0.976, exact, +240 lines with tests; merge queued after idea 92, one full suite on the merged head.
 - 2026-10-28 10:15 idea 88 reported (`raytests.md`): exact test two rays at a time in f64x2, inline zero fills, closeness fused into the no-crowd emit; senser -4.8% mixed / -6.3% cap, tick 0.981 / 0.975, exact, +75/-46 wat; merge queued with 90 and 92 (one full suite on the merged head).
+- 2026-10-28 10:25 idea 89 rejected (`cell16.md`), branch kept as record.
