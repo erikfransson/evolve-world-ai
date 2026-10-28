@@ -40,20 +40,13 @@ export const LAYOUT = {
   // brain input extras: how many, and the byte offset of the first memory unit from the first extra
   EXTRAS: EXTRA_INPUTS,
   UNITS_AT: 4 * EXTRA_INPUTS,
-  // sense record, 64 bytes (fill.wat writes it, sense.wat reads it; senser.ts reads the same offsets): f64 x y cos sin ray length, i32 crowd index of the creature, rays,
-  // byte address of its ray offset tables, byte address of its brain input, and where to write its rays for the UI (0 for none)
-  REC_BYTES: 64,
-  REC_SHIFT: 6, // log2 of REC_BYTES
-  REC_X: 0,
-  REC_Y: 8,
-  REC_COS: 16,
-  REC_SIN: 24,
-  REC_RAY_LENGTH: 32,
-  REC_SELF: 40,
-  REC_RAYS: 44,
-  REC_OFFSETS: 48,
-  REC_INPUT: 52,
-  REC_DETAIL: 56,
+  // sense record, 16 bytes (fill.wat writes it, sense.wat reads it; senser.ts reads the same offsets): the creature's row address, the crowd index of the creature, and where to write its rays for the UI (0 for none);
+  // the rest sense.wat reads from the row in place
+  REC_BYTES: 16,
+  REC_SHIFT: 4, // log2 of REC_BYTES
+  REC_ROW: 0,
+  REC_SELF: 4,
+  REC_DETAIL: 8,
   // call block of sense (sense.wat; the tick's item grid, crowd columns, rock tables and batch). f64 and f32 where marked, else i32 (addresses in bytes)
   S_WORLD_W: 0, // f64
   S_WORLD_H: 8, // f64
