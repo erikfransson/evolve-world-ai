@@ -182,6 +182,8 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 
 | 91 | Per-tick allocation audit (heap profiler on the bench with frames) | yes | Rejected, parked on `pl-alloc` (`alloc.md`): 52 KB per tick with frames (chronicle and leaderboard 18.6 KB, lineage for-of 6.9 KB) halved by 12 lines, but GC is 0.04-0.2% of the tick (one 16 MB scavenge per 10 s), tick ratio 0.998-1.006; the chronicle and protocol changes would need the push gate for no speed |
 
+| 99 | brain.wat `$compact` tests sixteen inputs at a time and skips all-zero groups (same list, same predicate) | yes | Merged as a small exact extra (`compact16.md`): brain forward -3.2% mixed / -1% cap, tick 0.989 / 1.006, +36 lines and a wider test |
+
 ## Log
 - 2026-10-27 09:00 Campaign start. Prior campaigns (B1, B2, `docs/perf-explore/`) already moved sense, brains, physics, crowd grid, collisions and scans into WASM; their rejected ideas are not retried unless the live setting changes the picture.
 - 2026-10-27 09:19 `server/src/liveBench.ts` written; two runs at 400 seeded give the same fingerprint (260290661), so the bench is deterministic.
@@ -329,3 +331,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-28 13:10 idea 91 rejected (`alloc.md`): the GC premise from the scouts was wrong (their 3-4 scavenges per second came from --cpu-prof and the first seconds).
 - 2026-10-28 13:12 idea 81 done (`soak6.md`): 6 h soak passes, peak 554 MB at save time, plateau about 430 MB.
 - 2026-10-28 13:25 factor batch13 on 2a55d98: 1.39x mixed / 1.42x cap, fingerprints equal, RSS equal.
+- 2026-10-28 13:40 idea 99 merged (kernels regenerated, no drift); added to the running review's range.
