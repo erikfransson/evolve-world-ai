@@ -200,6 +200,8 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 
 | 97 | Step kernel parts breakdown (trig 27%, keepOut 17%, first touch 14%, units 8%); built: the clear-of-rock early-out inlined in the step loop, keepOut only near rock, raster square by shift | yes | Merged as a small exact extra (`stepparts.md`): step -3% mixed / -5% cap, tick inside noise, +24/-20; the kernel is flat otherwise (six exact rewrites of trig and keepOut gained nothing) |
 
+| 105 | V8 JIT audit of the tick JS (`--trace-deopt`, `--log-ic`, map checks, tier forcing) | - | Rejected (`deopt.md`): one map per object kind, 15 deopts in 12000 steady ticks, no megamorphic site in the tick, forcing TurboFan or earlier tier-up changes nothing; JS is 4.6% of samples, bounded at 0.5 ms |
+
 ## Log
 - 2026-10-27 09:00 Campaign start. Prior campaigns (B1, B2, `docs/perf-explore/`) already moved sense, brains, physics, crowd grid, collisions and scans into WASM; their rejected ideas are not retried unless the live setting changes the picture.
 - 2026-10-27 09:19 `server/src/liveBench.ts` written; two runs at 400 seeded give the same fingerprint (260290661), so the bench is deterministic.
@@ -357,3 +359,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-28 13:50 follow-up review (same Opus reviewer) through 75cfb06: the idea 85 fix correct on the JS crowd path, helper threads and restored saves; ideas 93, 94 and 99 nothing to fix (compact lane order and hand-off proven for every nIn). Review round 3 closed.
 - 2026-10-28 13:39 idea 101 rejected (`touchdist.md`); the brain scout's 28-35% second-pass gain stays unexplained without counters (L1 fill bandwidth or page translation over about 6000 pages are the candidates; huge pages would test the second, Erik's root toggle).
 - 2026-10-28 13:48 idea 97 merged (no drift); ideas 106 (crowd rebuild parts) and 107 (sense emit bytes) spawned. Decision added for Erik: helper threads on the server host (`--threads`, the ThinkPool) if that host has spare cores; idea 6 rejected them only for this loaded laptop under SCHED_IDLE.
+- 2026-10-28 13:55 idea 105 rejected (`deopt.md`): the JS side is clean.

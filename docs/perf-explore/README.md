@@ -48,4 +48,5 @@ One write-up per exploration, with the tables of tried ideas and their verdicts.
 - `brainblock.md`: brain.wat runs 24-wide layers in one pass and tanh in its own inline loop; kernel 1.10x on the live mix, bit-identical, tick about 1.03x (within noise).
 - `wasmphys.md`: the per-creature step, the crowd grid, the item lookup, the collision pair search and the settle and birth scans in WASM over the resident rows, engine Math imported, bit-identical; Inland 10k 1.13x serial (47 to 41 ms), 1.11x total CPU with 3 helpers. The step and the crowd grid are the main gains, the other three are about 1% each.
 - `fma.md`: relaxed-SIMD fused multiply-add in brain and sense kernels, about 1.025x per tick but not bit-exact and machine-dependent; parked on branch `pl-fma`.
+- `deopt.md`: V8 JIT audit of the tick JS (deopts, ICs, shapes, tiers) on the live bench and the cap case; JIT-clean, forcing TurboFan changes nothing, rejected.
 - `aot.md`: brain.wasm and sense.wasm through wasm2c as a Node addon on the WASM memory, bit-identical but 0.66-0.86x of V8 with bounds checks (0.92-1.01x unchecked); dead, prototype in `server/aot/`.
