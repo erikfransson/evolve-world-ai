@@ -109,11 +109,14 @@
 
   ;; $emit: the features of nR rays that saw no creature: closeness and the one-hot of food, poison and wall, then zeros (species flags and seen energy).
   (func $emit (param $scr i32) (param $base i32) (param $nR i32) (param $stride i32)
-    (local $i i32) (local $z i32)
+    (local $i i32) (local $z i32) (local $kinds v128) (local $ones v128)
+    ;; constants in locals: V8 rebuilds a v128 constant at each use inside a loop
+    (local.set $kinds (v128.const i32x4 -1 1 2 3))
+    (local.set $ones (v128.const f32x4 1 1 1 1))
     (block $d (loop $l
       (br_if $d (i32.ge_s (local.get $i) (local.get $nR)))
       (v128.store (local.get $base) (f32x4.replace_lane 0
-        (v128.and (i32x4.eq (i32x4.splat (i32.load offset=1536 (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 2))))) (v128.const i32x4 -1 1 2 3)) (f32x4.splat (f32.const 1)))
+        (v128.and (i32x4.eq (i32x4.splat (i32.load offset=1536 (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 2))))) (local.get $kinds)) (local.get $ones))
         (f32.demote_f64 (f64.load offset=1024 (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 3)))))))
       (if (i32.eq (local.get $stride) (i32.const 6)) (then (i64.store offset=16 (local.get $base) (i64.const 0)))
         (else (local.set $z (i32.const 16)) (block $zd (loop $zl
@@ -127,14 +130,17 @@
 
   ;; $emitClo: $emit with the closeness (0 for kind 0, else 1 - best / L) computed per ray from best and kind.
   (func $emitClo (param $scr i32) (param $base i32) (param $nR i32) (param $stride i32) (param $L f64)
-    (local $i i32) (local $kind i32) (local $clo f64) (local $z i32)
+    (local $i i32) (local $kind i32) (local $clo f64) (local $z i32) (local $kinds v128) (local $ones v128)
+    ;; constants in locals: V8 rebuilds a v128 constant at each use inside a loop
+    (local.set $kinds (v128.const i32x4 -1 1 2 3))
+    (local.set $ones (v128.const f32x4 1 1 1 1))
     (block $d (loop $l
       (br_if $d (i32.ge_s (local.get $i) (local.get $nR)))
       (local.set $kind (i32.load offset=1536 (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 2)))))
       (if (i32.eqz (local.get $kind)) (then (local.set $clo (f64.const 0)))
         (else (local.set $clo (f64.sub (f64.const 1) (f64.div (f64.load offset=1024 (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 3)))) (local.get $L))))))
       (v128.store (local.get $base) (f32x4.replace_lane 0
-        (v128.and (i32x4.eq (i32x4.splat (local.get $kind)) (v128.const i32x4 -1 1 2 3)) (f32x4.splat (f32.const 1)))
+        (v128.and (i32x4.eq (i32x4.splat (local.get $kind)) (local.get $kinds)) (local.get $ones))
         (f32.demote_f64 (local.get $clo))))
       (if (i32.eq (local.get $stride) (i32.const 6)) (then (i64.store offset=16 (local.get $base) (i64.const 0)))
         (else (local.set $z (i32.const 16)) (block $zd (loop $zl
@@ -147,7 +153,7 @@
       (br $l))))
 
   (func (export "sense") (param $P i32)
-    (local $j i32) (local $n i32) (local $q i32) (local $nR i32) (local $i i32) (local $stride i32)
+    (local $kinds v128) (local $ones v128) (local $lane0 v128) (local $three v128) (local $j i32) (local $n i32) (local $q i32) (local $nR i32) (local $i i32) (local $stride i32)
     (local $x f64) (local $y f64) (local $hc f64) (local $hs f64) (local $L f64) (local $self i32) (local $off i32) (local $inp i32)
     (local $scr i32) (local $cand i32) (local $W f64) (local $H f64) (local $r f64) (local $r2 f64)
     (local $far f64) (local $far2 f64) (local $margin f64) (local $nmargin f64) (local $open i32) (local $last i32)
@@ -425,6 +431,8 @@
       (local.set $infv (f64x2.splat (f64.const inf)))
       (local.set $ng (i32.shr_u (i32.add (local.get $nR) (i32.const 1)) (i32.const 1)))
       ;; two passes in candidate order: the items with the cheap check, then the rock discs (each with its own radius, not the item's), straight to the exact test
+      (local.set $lane0 (v128.const i64x2 -1 0))
+      (local.set $three (v128.const i64x2 3 3))
       (local.set $pass (i32.const 0))
       (block $pdone (loop $ploop
       (br_if $pdone (i32.gt_u (local.get $pass) (i32.const 1)))
@@ -444,7 +452,7 @@
           (local.set $dyv (v128.load offset=512 (local.get $ro)))
           (local.set $sv (f64x2.sub (f64x2.mul (local.get $fxv) (local.get $dyv)) (f64x2.mul (local.get $fyv) (local.get $dxv))))
           (local.set $m (f64x2.le (f64x2.mul (local.get $sv) (local.get $sv)) (local.get $rtk)))
-          (if (i32.eq (i32.add (i32.shl (local.get $g) (i32.const 1)) (i32.const 1)) (local.get $nR)) (then (local.set $m (v128.and (local.get $m) (v128.const i64x2 -1 0)))))
+          (if (i32.eq (i32.add (i32.shl (local.get $g) (i32.const 1)) (i32.const 1)) (local.get $nR)) (then (local.set $m (v128.and (local.get $m) (local.get $lane0)))))
           (if (v128.any_true (local.get $m)) (then
             (local.set $bv (f64x2.add (f64x2.mul (local.get $fxv) (local.get $dxv)) (f64x2.mul (local.get $fyv) (local.get $dyv))))
             (local.set $cv (v128.load64_splat offset=16 (local.get $cp)))
@@ -456,7 +464,7 @@
             (local.set $m (v128.and (v128.and (local.get $m)
               (v128.or (local.get $inside) (v128.and (f64x2.gt (local.get $bv) (v128.const f64x2 0 0)) (f64x2.ge (local.get $discv) (v128.const f64x2 0 0)))))
               (v128.or (f64x2.lt (local.get $tv) (local.get $bs))
-                (v128.and (f64x2.eq (local.get $tv) (local.get $bs)) (i64x2.eq (local.get $ix) (v128.const i64x2 3 3))))))
+                (v128.and (f64x2.eq (local.get $tv) (local.get $bs)) (i64x2.eq (local.get $ix) (local.get $three))))))
             (if (v128.any_true (local.get $m)) (then
               (local.set $ks (if (result i32) (local.get $pass) (then (i32.const 3))
                 (else (select (i32.const 1) (i32.const 2) (i32.eq (i32.load8_u (i32.add (local.get $ikd) (i32.load offset=24 (local.get $cp)))) (i32.const 1))))))
@@ -576,6 +584,8 @@
       ;; no creature seen and no detail record: every ray's features are closeness, the one-hot and zeros
       (if (i32.eqz (local.get $det)) (then (if (call $unseen (local.get $scr) (local.get $nR))
         (then (call $emit (local.get $scr) (local.get $base) (local.get $nR) (local.get $stride)) (local.set $i (local.get $nR))))))
+      (local.set $kinds (v128.const i32x4 -1 1 2 3))
+      (local.set $ones (v128.const f32x4 1 1 1 1))
       (block $wd (loop $wl
         (br_if $wd (i32.ge_s (local.get $i) (local.get $nR)))
         (local.set $ps (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 2))))
@@ -593,7 +603,7 @@
         ;; closeness, then the one-hot of food, poison and wall (kind 1 to 3) in one store
         (v128.store (local.get $base)
           (f32x4.replace_lane 0
-            (v128.and (i32x4.eq (i32x4.splat (local.get $kind)) (v128.const i32x4 -1 1 2 3)) (f32x4.splat (f32.const 1)))
+            (v128.and (i32x4.eq (i32x4.splat (local.get $kind)) (local.get $kinds)) (local.get $ones))
             (f32.demote_f64 (local.get $clo))))
         ;; creature features: one flag per species at offset 16 (S = stride - 5), then the squashed seen energy; no branch on the seen creature, slot 0 stands in for none
         (local.set $ks (select (local.get $k) (i32.const 0) (i32.ge_s (local.get $k) (i32.const 0))))
@@ -608,7 +618,7 @@
           (block $sd (loop $sl
             (br_if $sd (i32.ge_s (local.get $g) (i32.sub (local.get $stride) (i32.const 5))))
             (f32.store offset=16 (i32.add (local.get $base) (i32.shl (local.get $g) (i32.const 2)))
-              (select (f32.const 1) (f32.const 0) (i32.eq (local.get $sp) (local.get $g))))
+              (select (f32x4.extract_lane 0 (local.get $ones)) (f32.const 0) (i32.eq (local.get $sp) (local.get $g))))
             (local.set $g (i32.add (local.get $g) (i32.const 1)))
             (br $sl)))
           (f32.store offset=16 (i32.add (local.get $base) (i32.shl (i32.sub (local.get $stride) (i32.const 5)) (i32.const 2))) (local.get $cc32))))))
