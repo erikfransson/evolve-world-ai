@@ -6,8 +6,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
-- Live: brains cost no energy and eyes half as much (`creature.neuronCost` 0, was 0.005; `creature.rayCost` 0.01, was 0.02), so the Oracle survives beside the Grazer. The Ecosystem and Arena keep their costs.
-- Live: three starter founders, Juggernaut, Oracle and Grazer. The Explorer is no longer seeded or offered in "Add your creature" and the RL Arena's Founders choice (one shared file).
+- Live: brains cost no energy and eyes half as much (`creature.neuronCost` 0, was 0.005; `creature.rayCost` 0.01, was 0.02), so the Oracle survives beside the Grazer. The Ecosystem and Arena keep their costs. A save keeps its own costs, so this takes a `./live reset` after the deploy, and an admin load of an older save brings the old costs back.
+- Live: three starter founders, Juggernaut, Oracle and Grazer. The Explorer is no longer seeded or offered in "Add your creature" and the RL Arena's Founders choice (one shared file). A running world keeps its Explorer family; the next reset seeds three.
 
 ## 0.2.7 (2026-10-26)
 
