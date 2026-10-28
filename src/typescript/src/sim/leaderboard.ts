@@ -54,6 +54,16 @@ export class Leaderboard {
     if (list.length > this.top) list.length = this.top;
   }
 
+  // The value a living creature must reach before offering it can change anything: offer ignores values at or below 0, and (the list full) values
+  // at or below its last entry that are not already listed. Offer a creature when value > 0 && value >= floor, skip it otherwise. Exact because
+  // an alive creature's values never fall (age, children, eaten and kills only count up, ids are never reused, and a new world gets a new
+  // Leaderboard): a listed creature's value is at least the value it was listed with, which is at least the last entry's, so it is never
+  // below the floor; the lists stay sorted, so the last entry is the smallest. Read the floor again after every offer, it can rise.
+  floor(board: Board, species: number): number {
+    const list = this.lists.get(`${species}:${board}`);
+    return list && list.length >= this.top ? list[list.length - 1]!.value : 0;
+  }
+
   // Copies of the non-empty lists, for a message.
   snapshot(): Leaders[] {
     const out: Leaders[] = [];

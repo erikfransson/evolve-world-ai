@@ -1,10 +1,9 @@
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
 import { wrapAngle } from "../../src/typescript/src/sim/angle.ts";
 import { VERSION } from "../../src/typescript/src/version.ts";
-import type { CreatureFrame as EngineFrame } from "../../src/typescript/src/sim/ecosystem.ts";
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { PoolEntry } from "../../src/typescript/src/sim/seedPool.ts";
-import { MAX_DELTA_EVENTS, MAX_DELTA_OPS, MAX_ITEM_SLOTS, PROTOCOL_VERSION, encodeCreatures, encodeDeltaChunk, encodeItems, itemsBytes } from "../../src/typescript/src/live/protocol.ts";
+import { MAX_DELTA_EVENTS, MAX_DELTA_OPS, MAX_ITEM_SLOTS, PROTOCOL_VERSION, encodeDeltaChunk, encodeItems, itemsBytes } from "../../src/typescript/src/live/protocol.ts";
 import type { Hello, ItemOp, Stats, WireEvent, WireMap } from "../../src/typescript/src/live/protocol.ts";
 import { encodeDetail, encodeGenome } from "../../src/typescript/src/live/detail.ts";
 import { ITEM_REMOVE, ITEM_SET } from "../../src/typescript/src/sim/world.ts";
@@ -13,6 +12,7 @@ import { EVENT_STRIDE } from "../../src/typescript/src/sim/ecosystem.ts";
 import { TokenBucket } from "./budget.ts";
 import { addingOn } from "./adds.ts";
 import { Chronicle } from "./chronicle.ts";
+import { encodeMembers } from "./memberFrame.ts";
 import { restoreState, saveState, snapshotState } from "../../src/typescript/src/sim/ecoState.ts";
 import { boardValue } from "../../src/typescript/src/sim/leaderboard.ts";
 import type { EcoSnapshot, EcoState } from "../../src/typescript/src/sim/ecoState.ts";
@@ -44,8 +44,6 @@ export class LiveWorld {
   eco: Ecosystem;
   private owed = 0; // ticks due but not yet run
   private lastAt = performance.now();
-  private frame: EngineFrame | undefined;
-  private ages = new Float32Array(0);
   private speedTicks = 0;
   private speedSince = performance.now();
   paused = false; // admin pause: no ticks run and no time is owed afterwards
@@ -214,10 +212,12 @@ export class LiveWorld {
     const e = this.eco;
     const due = [...this.watched.keys()].filter((id) => (this.captures.get(id)?.tick ?? -1) < e.tick && e.get(id));
     due.sort((a, b) => (this.captures.get(a)?.tick ?? -1) - (this.captures.get(b)?.tick ?? -1));
+    let grid = false; // the crowd grid is rebuilt for the first creature only: nothing moves between these senses
     for (const id of due) {
       if (!this.refreshes.take(1)) break;
       e.detail = id;
-      e.refreshDetail();
+      e.refreshDetail(!grid);
+      grid = true;
       this.capture(id);
     }
     e.detail = null;
@@ -456,10 +456,7 @@ export class LiveWorld {
 
   creatureFrame(): Uint8Array {
     const e = this.eco;
-    const f = (this.frame = e.readCreatures(this.frame));
-    if (this.ages.length < f.count) this.ages = new Float32Array(Math.max(f.count, 2 * this.ages.length));
-    for (let i = 0; i < f.count; i++) this.ages[i] = e.get(f.ids[i]!)!.ageTicks * this.config.dt;
-    return encodeCreatures(e.tick, { ...f, age: this.ages, radius: this.config.creature.radius }, this.config.world, fullEnergy(this.config.eco));
+    return encodeMembers(e.tick, e.members, this.config.dt, this.config.creature.radius, this.config.world, fullEnergy(this.config.eco));
   }
 
   // Bytes of itemsFrame() now, without encoding it.

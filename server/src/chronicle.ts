@@ -17,13 +17,27 @@ interface Group {
   others: number[]; // the group's other founders
 }
 
+// wireName by raw engine name: a pure function of the string, and the family rows ask for it every second. Bounded by clearing when full.
+const parsedNames = new Map<string, { name: string; starter: boolean; key: string }>();
+const MAX_PARSED_NAMES = 2048;
+function parsedName(raw: string): { name: string; starter: boolean; key: string } {
+  let p = parsedNames.get(raw);
+  if (!p) {
+    if (parsedNames.size >= MAX_PARSED_NAMES) parsedNames.clear();
+    const { name, starter } = wireName(raw);
+    p = { name, starter, key: name ? `${starter ? "*" : ""}${name.toLowerCase()}` : "" }; // the add rule's case: one name, one family on the list
+    parsedNames.set(raw, p);
+  }
+  return p;
+}
+
 // The k largest families, with every family of the same visible name (the 10 seeded copies of a starter, a visitor's 1 to 10 copies)
 // counted as one; unnamed families stand alone. From the lineage table's kept counts, O(living families) per call.
 export function namedTop(eco: Ecosystem, k: number): Group[] {
   const groups = new Map<string, Group>();
   eco.lineages.forEachLiving((founder, count, hue, pool) => {
-    const { name, starter } = wireName(eco.lineageName(founder));
-    const key = name ? `${starter ? "*" : ""}${name.toLowerCase()}` : `#${founder}`; // the add rule's case: one name, one family on the list
+    const { name, starter, key: nameKey } = parsedName(eco.lineageName(founder));
+    const key = name ? nameKey : `#${founder}`;
     const g = groups.get(key);
     if (!g) groups.set(key, { founder, hue, pool, count, name, starter, others: [] });
     else {
@@ -103,8 +117,20 @@ export class Chronicle {
     let killer: EcoCreature | null = null;
     let kills = 0;
     let depth = 0;
-    for (const m of eco.members) {
-      this.offer(eco, m, true);
+    // One pass: a creature is offered only when it could enter or update a list (Leaderboard.floor), the rest only count for best and depth.
+    const members = eco.members;
+    const dt = eco.config.dt;
+    const floors = RECORD_BOARDS.map((b) => this.board.floor(b, 0));
+    for (let i = 0; i < members.length; i++) {
+      const m = members[i]!;
+      for (let b = 0; b < RECORD_BOARDS.length; b++) {
+        const v = boardValue(m, RECORD_BOARDS[b]!, dt);
+        if (v > 0 && v >= floors[b]!) {
+          this.offer(eco, m, true);
+          for (let c = 0; c < floors.length; c++) floors[c] = this.board.floor(RECORD_BOARDS[c]!, 0);
+          break;
+        }
+      }
       if (!oldest || m.ageTicks > oldest.ageTicks || (m.ageTicks === oldest.ageTicks && m.id < oldest.id)) oldest = m;
       if (!parent || m.children > parent.children || (m.children === parent.children && m.id < parent.id)) parent = m;
       const k = boardValue(m, "kills");
