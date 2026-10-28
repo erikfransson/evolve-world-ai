@@ -8,6 +8,7 @@ Number to compare: `cpuMsPerTick` (user CPU per steady tick, after the first qua
 Fingerprint equal means bit-identical results.
 
 ## Decisions for Erik
+- End condition (Erik, 2026-10-28 22:00): the campaign runs until idea 200, then stops. After that: an independent code-quality review (thermo-nuclear style, Opus or better) of the whole campaign diff, fixes applied, the factor re-measured to show the boost survived the clean-up, then the merge into development (push-gate re-check for any server change).
 - Merge perf-live into development: ready (1.48x mixed / 1.46x cap bit-identical, six engine review rounds and the three push-gate reviews closed, full suite green, 6 h soak passed, Unreleased notes in docs/changes.md). One deferred pre-existing note: no fsync before a save's rename (a crash can leave a zero-length newest save; recovery falls back to older saves; an fsync would stall the tick thread). Nothing is pushed.
 - Quad-lane brains (`pl-quad`, exact, 760 lines): brain phase 1.06x mixed / 1.20x cap, about 2-5% of the tick; worth it only if the cap case matters and the native kernel stays parked.
 - bf16 genomes (`pl-bf16genome`, two switches): 1.03-1.04x only, but 12.5 MB less bank memory, 27% smaller saves and engine-exact genomes; a rule change with new pins and a fresh world. Not recommended for speed alone.
@@ -445,3 +446,4 @@ Head phases 2026-10-28 14:50 (253f894, load 6-7, `scout-head.md`; ms per tick, 3
 - 2026-10-28 21:24 idea 124 rejected: the V8 defaults are right for today's kernels.
 - 2026-10-28 21:27 6 h report: factor unchanged at about 1.46x mixed / 1.50x cap (head db6ddf3 engine); since 15:23 kept 114, 115, 118, 119 and the stop-queue fix, parked 116, rejected 120, 123 (dry), 124, studies 121, 122 done; running 125 (split blocks on the packed arena), 126 (senser tidy bundle, measured 2-3%), 127 and 128 (brain and step kernel micro-budgets).
 - 2026-10-28 21:43 idea 126 built (senser 0.924 mixed / 0.961 cap in 3 pairs, 600 s senser 0.945, fingerprints equal, +53/-47 in sense.wat, suite 1256/1257 with one cli timeout green alone): review round 8 (Opus) running before the merge.
+- 2026-10-28 21:49 Erik: keep going until idea 200, then the goal is over; then independent code-quality review, keep the boost through the clean-up, merge into development. Recorded in the decisions block.
