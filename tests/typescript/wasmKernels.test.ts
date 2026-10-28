@@ -400,7 +400,7 @@ describe("sense.wat (SenseKernels)", () => {
   });
 
   it("matches the JS rays for rock discs whose tangent lies on the edge ray of the fan, a hair inside and outside the widened wedge", () => {
-    const map = { stoneDensity: 0.06, ridgeDensity: 0.05 };
+    const map = { stoneDensity: 0.06, ridgeDensity: 0.05, slowDensity: 0.1, fastDensity: 0.1 };
     const t = terrainOf({ seed: DEFAULT_ECO_CONFIG.seed, world: { width: 3000, height: 2000, ...map } });
     for (const [rays, spread] of [[8, 1], [7, 2.5], [5, 0.4]] as const) {
       const rng = createRng(33);
