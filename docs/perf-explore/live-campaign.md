@@ -51,6 +51,7 @@ Fingerprint equal means bit-identical results.
 | 2026-10-28 14:20 | after ideas 93, 94, 96, 97, 99 (batch14; load falling 19 to 8 during the run, spread 15%: treat as an upper bound, rerun on a quieter machine) | 15.05 / 17.85 (cap) | 9.59 / 11.73 (cap) | 1.57x mixed, 1.52x cap (exact) | 247 / 218 MB mixed, 259 / 257 cap |
 | 2026-10-28 15:01 | after idea 106 (batch15; load 8-10, 2 agents; base spread 13-15 ms, so still about 10% noise) | 13.06 / 16.86 (cap) | 8.90 / 10.38 (cap) | 1.47x mixed, 1.62x cap (exact) | 220 / 218 MB mixed, 258 / 257 cap |
 | 2026-10-28 15:58 | after ideas 100, 114, 115 (batch16; load 7-9, 1 agent; the cleanest run since batch13) | 13.07 / 16.18 (cap) | 8.82 / 11.05 (cap) | 1.48x mixed, 1.46x cap (exact) | 249 / 216 MB mixed, 258 / 258 cap |
+| 2026-10-28 18:15 | after ideas 118 and 119, the tidied head db6ddf3 (batch17; load 7-9, soak running) | 13.44 / 16.41 (cap) | 9.36 / 10.71 (cap) | 1.44x mixed, 1.53x cap (exact) | 220 / 222 MB mixed, 257 / 258 cap |
 
 Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54, brain forward 5.23 / 5.17, slots (prepareRows) 1.04 / 1.52, memory and steer 1.26 / 1.59, eat 1.05 / 1.35, crowd grid 0.51 / 0.67, collisions 0.18 / 0.27, rest under 0.2. Server frame encoding adds 0.57 ms per tick at 5 Hz. Speed achieved unpaced on this loaded machine: 2.0x and 1.7x real time (the set speed is 3x).
 
@@ -427,3 +428,4 @@ Head phases 2026-10-28 14:50 (253f894, load 6-7, `scout-head.md`; ms per tick, 3
 - 2026-10-28 17:20 idea 119 merged (tick modulus general for any thinkEvery with a test that goes red at 9; the fingerprint pin named once; extras offsets by index; comments and docs refreshed).
 - 2026-10-28 17:35 idea 118 merged (kernels tidied, exact, net -39 wat lines, pairs 0.98 / 0.975). Full suite and a final factor run next; then review round 7 of 118 and 119.
 - 2026-10-28 17:50 review round 7 (Opus, independent) of ideas 118 and 119: nothing to fix (the hoisted f32 window reads only locals written before the walks, the folded emit is byte-identical for every stride and parity, the header tick is read only modulo thinkEvery, offsets equal the old literals). Closed.
+- 2026-10-28 18:15 full suite on db6ddf3: 1257 tests, exit 0; factor batch17 1.44x / 1.53x (batch16 was 1.48x / 1.46x: the two runs bracket about 1.46x / 1.50x, noise 5%). The branch is merge-ready at this head; only the 12 h soak is running.
