@@ -58,16 +58,19 @@ export class Saves {
   private retryTimer: NodeJS.Timeout | null = null; // at most one: the retry of a periodic save that failed for a transient reason
   private retries = 0; // failed periodic tries in a row, picks the wait from LIMITS.saveRetryMs
   private lastSavedAt = -Infinity; // performance.now() when a save last went through
-  private retriesOff = false; // set when the server stops: no retry is scheduled or run next to the stop's own save
+  private retriesOff = false; // set when the server stops: no retry is scheduled, and queued jobs other than the stop's own save reject
 
   constructor(live: LiveWorld, store: StateStore) {
     this.live = live;
     this.store = store;
   }
 
-  private exclusive<T>(job: () => Promise<T>): Promise<T> {
+  // stop: the stop path's own save; once a stop was asked every other job still queued rejects when its turn comes, so the stop save
+  // is not held behind them past the stop budget.
+  private exclusive<T>(job: () => Promise<T>, stop = false): Promise<T> {
     this.busy++;
-    const run = this.queue.then(job, job);
+    const start = (): Promise<T> => (this.retriesOff && !stop ? Promise.reject(new Error("the server is stopping")) : job());
+    const run = this.queue.then(start, start);
     this.queue = run.catch(() => undefined).finally(() => void this.busy--);
     return run;
   }
@@ -76,7 +79,7 @@ export class Saves {
   // stop: the save of the stop path, with its larger pack and verify budgets (see STOP_PACK_MS).
   save(stop = false): Promise<string> {
     const st: Stop | undefined = stop ? { at: performance.now(), alone: this.busy === 0 } : undefined;
-    return this.exclusive(() => this.saveNow(st)).then(
+    return this.exclusive(() => this.saveNow(st), stop).then(
       (line) => {
         this.clearRetry(); // a save went through: the world is safe again, whoever asked for it
         return line;
