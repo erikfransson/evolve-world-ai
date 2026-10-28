@@ -138,7 +138,7 @@ export const LAYOUT = {
   P_NEAR_ROWS: 52,
   P_MAX_ROCK_R: 56, // f64
   P_INV_ROCK_CELL: 64, // f64
-  P_CLEAR_CELL: 72, // f64
+  P_CLEAR_SHIFT: 72,
   P_AGING_START: 80, // f64
   P_AGING_PER_TICK: 88, // f64
   P_BYTES: 96,
