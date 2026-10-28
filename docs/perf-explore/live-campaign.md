@@ -214,6 +214,8 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 
 | 106 | Crowd rebuild by parts (cell keys 19%, gather 16%, cellStart gap fill 47%; 1.2 rebuilds per tick: 19% of tick starts have a birth or death); built: f64x2 cell keys, the gap fill as its own four-cell pass | yes | Merged (`rebuildparts.md`): rebuild -12 to -14% per call, refresh -14%, the two grid phases -0.14 ms mixed / -0.21 ms cap (1.3-1.5% of the tick), tick 0.992 / 0.988, +42/-44 |
 
+| 109 | Two-lane fdlibm exp in crowd.wat pack, probe-guarded like the trig port | yes (on V8) | Parked on `pl-exp2` (`exp2.md`): bit-equal on 20M arguments, pack -25% (0.02-0.055 ms per tick, 0.3%), +207 lines; too much code for the gain, kept for a small-wins bundle |
+
 ## Log
 - 2026-10-27 09:00 Campaign start. Prior campaigns (B1, B2, `docs/perf-explore/`) already moved sense, brains, physics, crowd grid, collisions and scans into WASM; their rejected ideas are not retried unless the live setting changes the picture.
 - 2026-10-27 09:19 `server/src/liveBench.ts` written; two runs at 400 seeded give the same fingerprint (260290661), so the bench is deterministic.
@@ -379,3 +381,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-28 14:10 full suite on 6858a11 (ideas 93, 94, 96, 97, 99 and the lone-creature fix): 122 files, 1251 tests, exit 0. Factor batch14 started. Idea 111 (bf16-valued genomes, a game-rule moonshot for Erik) spawned on the pagepack finding.
 - 2026-10-28 14:20 factor batch14 on 6858a11: 1.57x / 1.52x but noisy (live runs 9.0-10.7 ms); batch13's clean 1.39x / 1.42x plus the five small merges (about 3-4%) predicts about 1.45x; rerun queued for the 15:23 report.
 - 2026-10-28 14:40 idea 106 merged (no drift, tsc clean). Review round 4 due for 96, 97, 106.
+- 2026-10-28 14:55 idea 109 parked (0.3% for 207 lines).
