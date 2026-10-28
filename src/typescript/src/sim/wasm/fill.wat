@@ -32,7 +32,7 @@
           (local.get $ty)))
       (f64.const {{G_HALF}})))
 
-  ;; Math.min(hi, Math.max(0, v)) for hi > 0, with compares and selects (f64.min and f64.max are slow); a NaN stays NaN
+  ;; Math.min(hi, Math.max(0, v)) with compares and selects (f64.min and f64.max are slow); a NaN stays NaN
   (func $clamp (param $v f64) (param $hi f64) (result f64)
     (local.set $v (select (f64.const 0) (local.get $v) (f64.lt (local.get $v) (f64.const 0))))
     (select (local.get $hi) (local.get $v) (f64.gt (local.get $v) (local.get $hi)))
@@ -144,9 +144,16 @@
       (local.set $q (i32.load (i32.add (local.get $place) (i32.shl (local.get $k) (i32.const 2)))))
       (local.set $rec (i32.add (i32.load offset={{F_REC}} (local.get $F)) (i32.shl (local.get $q) (i32.const {{REC_SHIFT}}))))
       (local.set $nR (i32.load offset={{R_RAYS}} (local.get $row)))
-      (i32.store offset={{REC_ROW}} (local.get $rec) (local.get $row))
+      (f64.store offset={{REC_X}} (local.get $rec) (f64.load offset={{R_X}} (local.get $row)))
+      (f64.store offset={{REC_Y}} (local.get $rec) (f64.load offset={{R_Y}} (local.get $row)))
+      (f64.store offset={{REC_COS}} (local.get $rec) (f64.load offset={{R_COS}} (local.get $row)))
+      (f64.store offset={{REC_SIN}} (local.get $rec) (f64.load offset={{R_SIN}} (local.get $row)))
+      (f64.store offset={{REC_RAY_LENGTH}} (local.get $rec) (f64.load offset={{R_RAY_LENGTH}} (local.get $row)))
       (i32.store offset={{REC_SELF}} (local.get $rec) (i32.load (i32.add (i32.load offset={{F_SELVES}} (local.get $F)) (i32.shl (local.get $k) (i32.const 2)))))
+      (i32.store offset={{REC_RAYS}} (local.get $rec) (local.get $nR))
+      (i32.store offset={{REC_OFFSETS}} (local.get $rec) (i32.load offset={{R_OFFSETS}} (local.get $row)))
       (local.set $in (i32.load offset={{R_INPUT}} (local.get $row)))
+      (i32.store offset={{REC_INPUT}} (local.get $rec) (local.get $in))
       (i32.store offset={{REC_DETAIL}} (local.get $rec) (select (i32.load offset={{F_DETAIL_PTR}} (local.get $F)) (i32.const 0) (i32.eq (local.get $row) (local.get $detailRow))))
       (i32.store (i32.add (i32.load offset={{F_SLOTS}} (local.get $F)) (i32.shl (local.get $k) (i32.const 2))) (i32.load offset={{R_SLOT}} (local.get $row)))
       ;; brain input extras at input + 4 * rays * stride, then the memory units
