@@ -206,6 +206,8 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 
 | 107 | Sense emit: skip zero-over-zero ray blocks (86% of emitted rays), three v128 stores per ray pair | yes | Rejected (`emitbytes.md`): both exact and flat; the emit's cost is the first touch of 3-4 input lines per creature evicted by the brain's weight stream, not store count. Gotcha logged: a wasm validation error in sense.wat silently falls back to the JS path (check the senser phase in --profile) |
 
+| 110 | Moonshot study: per-cell (or per 3x3 block) candidate gather in the senser | - | Rejected (`cellgather.md`): 93-97% of creatures are alone in their cell, 70-83% alone in their 3x3 block, so a cell gather saves 1.4-3.3% of row visits (0.01 ms) and a block gather 7-13% (0.06-0.15 ms) before the copy cost; only pays at about 50x the cap density |
+
 ## Log
 - 2026-10-27 09:00 Campaign start. Prior campaigns (B1, B2, `docs/perf-explore/`) already moved sense, brains, physics, crowd grid, collisions and scans into WASM; their rejected ideas are not retried unless the live setting changes the picture.
 - 2026-10-27 09:19 `server/src/liveBench.ts` written; two runs at 400 seeded give the same fingerprint (260290661), so the bench is deterministic.
@@ -366,3 +368,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-28 13:55 idea 105 rejected (`deopt.md`): the JS side is clean.
 - 2026-10-28 14:05 idea 96 merged (the narrowing only).
 - 2026-10-28 14:15 idea 107 rejected.
+- 2026-10-28 14:30 idea 110 rejected (study).
