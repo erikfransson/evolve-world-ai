@@ -8,6 +8,7 @@ Number to compare: `cpuMsPerTick` (user CPU per steady tick, after the first qua
 Fingerprint equal means bit-identical results.
 
 ## Decisions for Erik
+- Quad-lane brains (`pl-quad`, exact, 760 lines): brain phase 1.06x mixed / 1.20x cap, about 2-5% of the tick; worth it only if the cap case matters and the native kernel stays parked.
 - bf16 genomes (`pl-bf16genome`, two switches): 1.03-1.04x only, but 12.5 MB less bank memory, 27% smaller saves and engine-exact genomes; a rule change with new pins and a fresh world. Not recommended for speed alone.
 - Huge pages: measured on the brain kernel with MADV_COLLAPSE, 1.7-3.7% of the kernel (about 1% of the tick), via THP `always` system-wide (root) or a native madvise in the server; collapse fails on fragmented memory, so not guaranteed (`pagepack.md`).
 - Helper threads on the server host: the engine's ThinkPool (`liveBench --threads`) was rejected in idea 6 only because this laptop runs the campaign at SCHED_IDLE under load; on a host with spare cores it is the largest untested lever (sense and brain are 70% of the tick and split across threads). Needs one measurement on the host.
@@ -226,6 +227,8 @@ Head phases 2026-10-28 14:50 (253f894, load 6-7, `scout-head.md`; ms per tick, 3
 
 | 113 | Per-eat JS cost | - | Rejected (`eatcost.md`): 2.2 us per eat, 0.09 ms per tick (the scouts' 0.24 was timer overhead); first-touch misses on ten cold lines, no splice, no allocation; a strided item record would cap at 0.03 ms |
 
+| 95 | Moonshot: four same-shape brains per f32x4 lane set (`quadForward`, weights [in][out][4], layer 0 on the union nz list with -0 lanes, a quad bank with lane repacking) | yes | Parked on `pl-quad` (`quad.md`): brain forward 1.06x mixed / 1.20x cap (1.27x at thinkEvery 2, 1.23x on an aged save), tick inside noise mixed and about 1.05x cap, +760 lines mostly generated with lane-management state; the native kernel (1.55x on the kernel) beats it, so it goes with that decision |
+
 ## Log
 - 2026-10-27 09:00 Campaign start. Prior campaigns (B1, B2, `docs/perf-explore/`) already moved sense, brains, physics, crowd grid, collisions and scans into WASM; their rejected ideas are not retried unless the live setting changes the picture.
 - 2026-10-27 09:19 `server/src/liveBench.ts` written; two runs at 400 seeded give the same fingerprint (260290661), so the bench is deterministic.
@@ -401,3 +404,4 @@ Head phases 2026-10-28 14:50 (253f894, load 6-7, `scout-head.md`; ms per tick, 3
 - 2026-10-28 15:40 idea 113 rejected (the eat loop is 0.09 ms, not 0.24: timers).
 - 2026-10-28 15:20 review round 5 (Opus, independent) of idea 100: nothing to fix in the engine (an own probe over 3 grids x 300 rounds, 0 mismatches, same-row and repeated cells and both fallbacks); the repo test did not reach the two fallbacks, the reviewer adds those cases now.
 - 2026-10-28 15:30 patchItems fallback tests added (bb8d595), red on both mutants; review round 5 closed.
+- 2026-10-28 15:45 idea 95 parked (quad lanes); its residentBodies test fix taken into perf-live (the test read a typed-array view that the step's memory growth detaches, a pre-existing fragility).

@@ -42,6 +42,7 @@ function checkedTick(eco: Ecosystem): number {
   }
   const before = creatures.map(grab);
   kernels.stepper.step(e.table.slotRows, creatures.length, e.aging, e.items.terrain);
+  const outF32 = kernels.f32; // the step's first rock tables may grow the memory, which replaces f32
   const got = creatures.map(grab);
   creatures.forEach((c: Any, k: number) => {
     const s = c.state;
@@ -51,7 +52,7 @@ function checkedTick(eco: Ecosystem): number {
     c.heading.sin = a[9];
     const u = c.memory as Float64Array;
     for (let i = 0; i < u.length; i++) u[i] = a[10 + i]!;
-    const out = c.outputArray(f32);
+    const out = c.outputArray(outF32);
     c.remember(out);
     c.steer(out);
     const want = grab(c);
