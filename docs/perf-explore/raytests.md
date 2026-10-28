@@ -60,30 +60,26 @@ Ms figures assume a 3.1 ms kernel (79% of the 4.0 ms senser phase of a quiet run
 
 Rejected here: the exact test on both lanes for every group without the prefilter gate (branch-free, exact by the prefilter margin): 1.07-1.12x slower, the sqrt and stores on the 74% of groups no ray passes cost more than the branch saves.
 
-## Whole tick (liveBench `--profile`, mixed, 3 alternating pairs, base = `perf-live` worktree)
+## Whole tick (liveBench `--profile`, 60 s, taskset 2,3,6,7 nice 19, 3 alternating pairs, base = `perf-live` 8443cb6, branch merged with it)
 
-Load 24-27, so absolute ms are inflated.
+Load 21-24, so absolute ms are inflated.
 
-| Build | cpuMsPerTick (med)               | senser ms (med)            | peak RSS MB   | fingerprint |
-|-------|----------------------------------|----------------------------|---------------|-------------|
-| base  | 13.030, 13.029, 13.091 (13.030)  | 4.883, 4.895, 4.946 (4.895) | 215, 218, 217 | 708687555   |
-| all   | 13.017, 13.043, 12.602 (13.017)  | 4.729, 4.777, 4.620 (4.729) | 221, 220, 218 | 708687555   |
+| Case  | Build | cpuMsPerTick (med)               | senser ms (med)             | peak RSS MB   | fingerprint |
+|-------|-------|----------------------------------|-----------------------------|---------------|-------------|
+| mixed | base  | 12.841, 12.858, 13.003 (12.858)  | 4.671, 4.649, 4.726 (4.671) | 221, 219, 215 | 708687555   |
+| mixed | 88    | 12.881, 12.611, 12.314 (12.611)  | 4.551, 4.447, 4.350 (4.447) | 219, 216, 219 | 708687555   |
+| cap   | base  | 14.922, 15.393, 15.722 (15.393)  | 5.717, 5.863, 5.993 (5.863) | 253, 253, 252 | 10334191    |
+| cap   | 88    | 14.612, 15.631, 15.001 (15.001)  | 5.387, 5.745, 5.493 (5.493) | 251, 251, 251 | 10334191    |
 
-Senser phase -0.17 ms (-3.4%) in every pair, as the kernel ratio predicts; the tick ratio of medians is 0.999, inside the pair spread (+-0.4 ms) at this load. Final build (with the stride loop in `$emit`), one mixed run: 12.982 ms, senser 4.733, fingerprint 708687555, 220 MB.
+Ratio of medians: mixed 0.981 (senser -0.22 ms, -4.8%), cap 0.975 (senser -0.37 ms, -6.3%). The senser is lower in every pair in both cases, and the tick in 5 of 6 pairs. Peak RSS unchanged.
+An earlier mixed series against 531a215 (before the merge) gave senser 4.895 to 4.729 (-0.17 ms) and tick 0.999. An earlier cap series is void: `perf-live` took idea 85 (cell order, senser -4.5%) during it, so its base ran newer code.
 
-Cap (`--only juggernaut --copies 4900 --profile`, 3 alternating pairs, load falling 21 to 17 during the series):
-
-| Build | cpuMsPerTick (med)               | senser ms (med)             | peak RSS MB   | fingerprint |
-|-------|----------------------------------|-----------------------------|---------------|-------------|
-| base  | 15.772, 15.297, 15.212 (15.297)  | 6.225, 5.896, 5.797 (5.896) | 256, 253, 257 | 10334191    |
-| all   | 15.340, 15.592, 15.642 (15.592)  | 5.871, 5.940, 5.954 (5.940) | 257, 254, 251 | 10334191    |
-
-Cap ratio of medians 1.019 (tick), 1.007 (senser): no gain at the cap. Only the first pair is better, while the load was highest. Not explained; a cap-snapshot kernel run would tell whether the juggernaut mix (fewer candidates, more alone) gains nothing or the pairs are noise.
+Diff against the branch point 531a215: `sense.wat` +88 -40, `kernels.generated.ts` 1 line.
 
 ## Tests
 
-`npm run wasm`; `npx vitest run wasmKernels thinkEvery residentBodies wasmStep --testTimeout=180000 --maxWorkers=1`: 4 files, 66 tests, exit 0 (JS against kernel bit for bit for 0-12 rays, odd and even, and several strides). Final build: `npx vitest run wasm sense resident thinkEvery ecoPool --maxWorkers=2` exit 1, 133 of 134 passed: `wasmStep` "Inland Sea" timed out at 20 s (load 25); `npx vitest run wasmStep --maxWorkers=1 --testTimeout=180000` 19 of 19, exit 0.
+`npm run wasm`; `npx vitest run wasmKernels thinkEvery residentBodies wasmStep --testTimeout=180000 --maxWorkers=1`: 4 files, 66 tests, exit 0 (JS against kernel bit for bit for 0-12 rays, odd and even, and several strides). Merged build: `npx vitest run wasm sense resident thinkEvery ecoPool --maxWorkers=2` exit 1, 132 of 134: `residentBodies` and `wasmStep` "Inland Sea" timed out at 20 s (load 31); `npx vitest run residentBodies wasmStep --maxWorkers=1 --testTimeout=180000` 28 of 28, exit 0.
 
 ## Verdict suggestion
 
-The sense kernel has no dominant per-ray cost left: the per-ray passes are about 15% of it, ray-candidate tests 17-19%, the rest walks, rock and the early-out, all instruction and branch bound with misses under 10% that probes can remove. The three cuts above are exact and general (any ray count, odd and even, any stride) and add up to -5.5% of the kernel, about 1.5% of the tick at 3300; but the cap pairs show no gain (senser +0.7%), so the tick gain is unproven: below the bar unless a cap-snapshot kernel run shows the cap pairs were noise. Park on the branch, or merge only as a free extra with idea 83. Not worth more scouting of this kernel for exact gains.
+Merge. Exact (fingerprints equal in both cases), general over ray count and stride, senser -4.8% mixed and -6.3% at the cap, tick 1.9% and 2.5% in the pairs, for about 90 lines of WAT. The kernel has no dominant per-ray cost left: per-ray passes are about 15% of it, ray-candidate tests 17-19%, the rest walks, rock and the early-out, instruction and branch bound with under 10% removable misses. Further exact scouting of this kernel is not worth it.
