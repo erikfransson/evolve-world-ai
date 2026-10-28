@@ -399,3 +399,4 @@ Head phases 2026-10-28 14:50 (253f894, load 6-7, `scout-head.md`; ms per tick, 3
 - 2026-10-28 15:08 wakeup: 2 agents running (95, 112); spawned 113 (per-eat JS cost, 4 us per eat), 114 (per-birth cost and the candidate scan), 115 (rock-adjacent sensing, 14% of the sense kernel for 10.6% of creatures). The exact pool at the 1.5% bar is dry, so the refill stays at five grounded agents rather than ten.
 - 2026-10-28 15:25 idea 112 split: 100 merged (kernels regenerated, tsc clean after typing the test's item kind), 109 parked, run-order export dropped. Review round 5 due for 100.
 - 2026-10-28 15:40 idea 113 rejected (the eat loop is 0.09 ms, not 0.24: timers).
+- 2026-10-28 15:20 review round 5 (Opus, independent) of idea 100: nothing to fix in the engine (an own probe over 3 grids x 300 rounds, 0 mismatches, same-row and repeated cells and both fallbacks); the repo test did not reach the two fallbacks, the reviewer adds those cases now.
