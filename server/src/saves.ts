@@ -101,6 +101,7 @@ export class Saves {
       const wait = waits[Math.min(this.retries, waits.length - 1)]!;
       this.retries++;
       logError(`save retry ${this.retries} in ${Math.round(wait / 60_000)} min`);
+      this.clearTimer(); // a periodic tick that ran during a retry's save may have left a timer behind
       this.retryTimer = setTimeout(() => void this.periodic(log, logError), wait);
       this.retryTimer.unref();
     }
