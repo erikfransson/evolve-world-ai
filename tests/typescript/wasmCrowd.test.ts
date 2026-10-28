@@ -9,6 +9,7 @@ import { ECO_PRESETS, withEcoPreset } from "../../src/typescript/src/sim/presets
 import { createRng } from "../../src/typescript/src/sim/rng.ts";
 import { energySignal } from "../../src/typescript/src/sim/sensors.ts";
 import { wasmAvailable } from "../../src/typescript/src/sim/wasm/loader.ts";
+import { LAYOUT } from "../../src/typescript/src/sim/wasm/layout.ts";
 import { F, Region } from "../../src/typescript/src/sim/wasm/resident.ts";
 import { prepareRows } from "../../src/typescript/src/sim/wasm/residentStep.ts";
 import { useKernels } from "./helpers.ts";
@@ -357,6 +358,10 @@ describe.skipIf(!wasmAvailable())("the WebAssembly collision sweep finds the pai
 });
 
 describe.skipIf(!wasmAvailable())("the WebAssembly kernels at their edges", () => {
+  it("crowd.wat reads x and y of a row as one f64x2, so y must follow x", () => {
+    expect(LAYOUT.R_Y).toBe(LAYOUT.R_X + 8);
+  });
+
   it("switching between the WebAssembly and the JS crowd while the memory grows", () => {
     const eco = make(inland, 300);
     const e = eco as Any;
