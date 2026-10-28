@@ -47,6 +47,7 @@ Fingerprint equal means bit-identical results.
 | 2026-10-28 10:00 | after idea 85 (batch12; loaded machine, load 11-25, 5 agents; ideas 92, 90, 88 merged after this run and not in it) | 16.81 / 20.48 (cap) | 12.81 / 15.32 (cap) | 1.31x mixed, 1.34x cap (exact) | 219 / 220 MB mixed, 258 / 255 cap |
 | 2026-10-28 13:25 | after ideas 85, 92, 90, 88 (batch13; load 7-10, 7 agents) | 16.59 / 20.18 (cap) | 11.94 / 14.24 (cap) | 1.39x mixed, 1.42x cap (exact) | 218 / 218 MB mixed, 256 / 256 cap |
 | 2026-10-28 14:20 | after ideas 93, 94, 96, 97, 99 (batch14; load falling 19 to 8 during the run, spread 15%: treat as an upper bound, rerun on a quieter machine) | 15.05 / 17.85 (cap) | 9.59 / 11.73 (cap) | 1.57x mixed, 1.52x cap (exact) | 247 / 218 MB mixed, 259 / 257 cap |
+| 2026-10-28 15:10 | after idea 106 (batch15; load 8-10, 2 agents; base spread 13-15 ms, so still about 10% noise) | 13.06 / 16.86 (cap) | 8.90 / 10.38 (cap) | 1.47x mixed, 1.62x cap (exact) | 220 / 218 MB mixed, 258 / 257 cap |
 
 Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54, brain forward 5.23 / 5.17, slots (prepareRows) 1.04 / 1.52, memory and steer 1.26 / 1.59, eat 1.05 / 1.35, crowd grid 0.51 / 0.67, collisions 0.18 / 0.27, rest under 0.2. Server frame encoding adds 0.57 ms per tick at 5 Hz. Speed achieved unpaced on this loaded machine: 2.0x and 1.7x real time (the set speed is 3x).
 
@@ -390,3 +391,4 @@ Head phases 2026-10-28 14:50 (253f894, load 6-7, `scout-head.md`; ms per tick, 3
 - 2026-10-28 14:40 review round 4 (Opus, independent) of ideas 96, 97, 106: nothing to fix (demote lanes, the shift square's edges and non-finite positions, pmin/pmax against the JS clamps, the overshooting gap stores fit the +12 bytes on every grid size, refresh unchanged). Closed.
 - 2026-10-28 14:50 scout-head (`scout-head.md`): the pool of single exact ideas at 1.5% or more is dry; left: a small-wins bundle (parked 100 and 109 plus forwardRun's stamp-and-walk moved into the forward export, about 1.5-1.7%), quad lanes (95, running), and the decisions. Rock walk is 14% of the sense kernel for the 10.6% of creatures near rock (a grid-order disc layout gained nothing). Spawned idea 112 (the bundle).
 - 2026-10-28 14:54 idea 111 parked: bf16 genomes buy 3-4%, not worth a rule change; the brain kernel is multiply-add bound once past the L3 knee.
+- 2026-10-28 15:10 factor batch15 on 3d6c0ec: 1.47x mixed / 1.62x cap, fingerprints equal; the mixed number matches the prediction from batch13 plus the small merges, the cap number is above it and still noisy.
