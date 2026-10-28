@@ -7,7 +7,7 @@ Branch `pl-itempairs` from `perf-live` 4e9f308 (idea 126 merged). Exact, fingerp
 - The open-fan case is an `or` with a per-creature lane mask. The kept bits come out by `i64x2.bitmask`.
 - Candidate order is unchanged: lane 0 is written at `cp` and `cp` advances by its bit, then lane 1 is written at the new `cp` and advances by its bit. Each lane writes fx, fy (one `v128.store` of the shuffled pair) and the item index, as before. The exact pass and the tie rules see the same candidates in the same order.
 - An odd last item of a run reads one item past the run (8 bytes) and masks its lane with `it + 1 < ie`. `senser.ts` allocates the item xy region with 8 spare bytes so that read is always inside the block. The extra candidate write stays inside the candidate buffer (its 64 byte slack).
-- Diff: `sense.wat` +29 -15, `senser.ts` +1 -1 (generated file 1 line).
+- Diff: `sense.wat` +28 -14, `senser.ts` +1 -1 (generated file 1 line).
 
 ## Kernel harness (p25 ms, same state, hash equal at calls 300, 1000, 1800)
 | Case  | Call | base  | pairs | delta  |
