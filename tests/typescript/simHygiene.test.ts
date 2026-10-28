@@ -8,7 +8,7 @@ import { SenseKernels } from "../../src/typescript/src/sim/wasm/senseKernels.ts"
 import { startItems } from "../../src/typescript/src/ui/ecoIdle.ts";
 import { ThinkPool, serveHelper } from "../../src/typescript/src/worker/ecoPool.ts";
 import type { HelperIn, HelperOut, HelperPort } from "../../src/typescript/src/worker/ecoPool.ts";
-import { testRng } from "./helpers.ts";
+import { WASM_RUN_FINGERPRINT, testRng } from "./helpers.ts";
 
 // The crowded small world of the ecoPool tests, so creatures are born and die within a few hundred ticks.
 function cfg(wasm: boolean): EcoConfig {
@@ -43,7 +43,7 @@ describe("watched creature with helpers", () => {
   // The watched id changes every tick and refreshDetail runs on some, as the page does while a creature is selected.
   it.each([
     [false, 866550263], // re-pinned for the terrain input (#34), were 84105801 and 116543125
-    [true, 81047108],
+    [true, WASM_RUN_FINGERPRINT],
   ])("keeps the run equal to the serial one (wasm %s)", async (wasm, fingerprint) => {
     const serial = new Ecosystem(cfg(wasm));
     for (let t = 0; t < 300; t++) serial.step();

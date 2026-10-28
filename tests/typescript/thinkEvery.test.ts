@@ -4,6 +4,8 @@ import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
 import { restoreState, saveState } from "../../src/typescript/src/sim/ecoState.ts";
 import { ThinkPool, serveHelper } from "../../src/typescript/src/worker/ecoPool.ts";
 import type { HelperIn, HelperOut, HelperPort } from "../../src/typescript/src/worker/ecoPool.ts";
+import { MAX_THINK_EVERY } from "../../src/typescript/src/sim/ecoConfig.ts";
+import { WASM_RUN_FINGERPRINT } from "./helpers.ts";
 
 // eco.thinkEvery: a creature senses and thinks every k-th tick, staggered by id, and keeps its outputs in between.
 
@@ -98,7 +100,7 @@ describe("thinkEvery", () => {
     bank.stamp = 0x7fffffff - 2; // two ticks from the i32 limit of the per-slot marks
     for (let t = 0; t < 300; t++) eco.step();
     expect(bank.stamp).toBeLessThan(300);
-    expect(eco.fingerprint()).toBe(81047108);
+    expect(eco.fingerprint()).toBe(WASM_RUN_FINGERPRINT);
   });
 
   it("1 thinks for everyone every tick and gives the pinned WebAssembly run of ecoPool.test.ts", () => {
@@ -116,7 +118,7 @@ describe("thinkEvery", () => {
       }
     }
     expect(same / all).toBeLessThan(0.05);
-    expect(eco.fingerprint()).toBe(81047108);
+    expect(eco.fingerprint()).toBe(WASM_RUN_FINGERPRINT);
   });
 
   it("2 changes the run", () => {
@@ -161,6 +163,21 @@ describe("thinkEvery", () => {
       expect(d.fingerprint()).toBe(ref.fingerprint());
     });
   }
+
+  it("every allowed thinkEvery gives the serial run with helpers across a tick of 840 (the old header modulus)", async () => {
+    for (let k = 1; k <= MAX_THINK_EVERY; k++) {
+      const ref = new Ecosystem(cfg(k), null, { journal: true });
+      ref.tick = 835;
+      for (let t = 0; t < 12; t++) ref.step();
+      const eco = new Ecosystem(cfg(k), null, { journal: true });
+      eco.tick = 835;
+      const pool = new ThinkPool(ports(2));
+      await pool.start(eco);
+      await steps(eco, pool, 12);
+      pool.close();
+      expect(eco.fingerprint(), `thinkEvery ${k}`).toBe(ref.fingerprint());
+    }
+  });
 
   it("1 saves no outputs, and a restore rejects outputs out of range", () => {
     expect(saveState(serial(cfg(1), 20)).creatures.outputs).toBeUndefined();

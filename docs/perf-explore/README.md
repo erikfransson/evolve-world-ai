@@ -9,7 +9,7 @@ One write-up per exploration, with the tables of tried ideas and their verdicts.
 - `gpu.md`: WebGPU compute not worth it, at most about 1.2x and not bit-exact.
 - `render.md`: pixel-layer items about 14x faster to draw but change pixels; prototype only.
 - `offscreen.md`: render worker with OffscreenCanvas, page busy 111% to about 10% of wall time, pixel-identical; merged, on by default with a page fallback.
-- `trig.md`: WASM sin and cos gain nothing; not worth porting.
+- `trig.md`: WASM sin and cos on their own gain nothing; the later fdlibm port inside step.wat (idea 90, `trigport.md`) cut the step 15-19% and is merged.
 - `profile2.md`: per-phase profile at 12k to 30k; PhaseTimer kept. Helper gains measured under load, so pessimistic.
 - Shared-memory helper mode was removed on 2026-10-11 (see `docs/perf-notes.md`), so notes here that mention shared helpers or `--shared` describe a retired mode.
 - `crowd.md`: crowd rebuild by radix sort over occupied cells plus dirty-list item sync, bit-identical, 1.7x at 50k and 1.3x at 30k with low population; merged.
@@ -20,7 +20,7 @@ One write-up per exploration, with the tables of tried ideas and their verdicts.
 - `brain.md`: sparse input packing and in-place outputs in the brain kernel, 1.33x kernel and 8-13% per tick, bit-identical; merged.  Round 3: tanh without min/max clamps, kernel 1.2x and tick 1.07x at 50k, bit-identical.
 - `helpers2.md`: resident rows with helper threads (coordinator and helpers), memory units kept on the owner, bulk packet copies; Inland 10k with 3 helpers 97.7 to 75.7 CPU ms per tick, coordinator thread 24 ms against 45.6 serial, bit-identical.
 - `helpers.md`: genomes sent only to the owning helper (start-up RSS 1.37 to 1.0 GB at 50k with 4 helpers) and the start timeout for the first tick; merged. Messaging is near its floor, spatial split and overlap rejected.
-- `sense.md`: item trace with an f64x2 prefilter (kernel 1.24x) and the batch in item-grid row order (1.09x), whole tick 1.05x at 38000 and 1.15x at 50000, bit-identical; verdict merge.
+- `sense.md`: item trace with an f64x2 prefilter (kernel 1.24x) and the batch in item-grid row order (1.09x), whole tick 1.05x at 38000 and 1.15x at 50000, bit-identical; verdict merge. The later records in crowd cell order (idea 85, `cellorder.md`) took another 1.02x.
 - `soa.md`: typed-array store for hot creature state, bit-identical but 1.00x; rejected. Idea 32 at the live setting: resident rows are already flat, columns measured 5% slower in `prepareRows`, under 0.07 ms removable; rejected after the study.
 - `sensecopy.md`: the per-batch copy of the item grid into WASM is under 1% of a tick even at 50k; rejected.
 - `hunt.md`: the hunt search of the two-species world (The Great Hunt, page since removed) is about 1.5% of a tick; nothing to gain.
@@ -44,9 +44,10 @@ One write-up per exploration, with the tables of tried ideas and their verdicts.
 - B2 rounds 3-4 (no merge, all exact): `crowdsparse.md` (cellStart writes under 1% of a tick), `fusedio.md` (moving memory, ground and y writes out of the senser fill gives noise), `eatwasm.md` (touched items from the packed rows in WASM, 1.009x for 117 lines), `kernelprof.md` (sense kernel cost is flat across its parts; best cut 1.04x kernel, 1.00x tick).
 - B2 round 3-5 merges: memory grown in eighths (`a561bed`, 1.14x), resident creature rows (`resident.md`, lite variant, 1.15x), eating over the touched list (`eatrows.md`, 1.04x). The Inland Sea at 10k creatures went from 70 to about 48 ms CPU per tick under load (about 35 ms on a quiet machine). `gridslots.md`: reusing the crowd grid or fusing the input fill with the step is not worth it or not exact.
 - `helpers2.md`: helpers now use the resident rows; 3 helpers cost 1.29x less CPU and the coordinator thread is about 1.5x shorter (merged).
-- B2 round 7 (no merge): `helpers3.md` (coordinator weight not measurable at load 10-14; balance would save under 3%), `onecall.md` (body inputs computed in fill.wat: 1.016x for +66 lines and a second copy of the ground lookup; rejected).
+- B2 round 7 (no merge): `helpers3.md` (coordinator weight not measurable at load 10-14; balance would save under 3%), `onecall.md` (body inputs computed in fill.wat: 1.016x for +66 lines and a second copy of the ground lookup; rejected then, but idea 44, `prepfill.md`, later merged prepareRows' arithmetic and the ground lookup into the fill kernel with a JS fallback, slots phase 0.87 to 0.36 ms).
 - `brainblock.md`: brain.wat runs 24-wide layers in one pass and tanh in its own inline loop; kernel 1.10x on the live mix, bit-identical, tick about 1.03x (within noise).
 - `wasmphys.md`: the per-creature step, the crowd grid, the item lookup, the collision pair search and the settle and birth scans in WASM over the resident rows, engine Math imported, bit-identical; Inland 10k 1.13x serial (47 to 41 ms), 1.11x total CPU with 3 helpers. The step and the crowd grid are the main gains, the other three are about 1% each.
 - `fma.md`: relaxed-SIMD fused multiply-add in brain and sense kernels, about 1.025x per tick but not bit-exact and machine-dependent; parked on branch `pl-fma`.
 - `deopt.md`: V8 JIT audit of the tick JS (deopts, ICs, shapes, tiers) on the live bench and the cap case; JIT-clean, forcing TurboFan changes nothing, rejected.
 - `aot.md`: brain.wasm and sense.wasm through wasm2c as a Node addon on the WASM memory, bit-identical but 0.66-0.86x of V8 with bounds checks (0.92-1.01x unchecked); dead, prototype in `server/aot/`.
+- `live-campaign.md`: the 2026-10-27 Live World tick campaign on branch `perf-live` (`liveBench`, ideas numbered with verdicts, 1.48x mixed / 1.46x cap bit-identical); the single-idea files above feed it.

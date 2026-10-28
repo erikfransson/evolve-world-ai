@@ -3,7 +3,7 @@
 // Offsets are in bytes from the start of the row or block.
 
 import { GROUND_HALF, GROUND_PAD } from "../groundField.ts";
-import { EXTRA_INPUTS, EXTRA_TERRAIN } from "../sensors.ts";
+import { EXTRA_INPUTS, EXTRA_SIDE, EXTRA_SPEED, EXTRA_TERRAIN, EXTRA_TURN } from "../sensors.ts";
 
 export const LAYOUT = {
   ROW_BYTES: 192,
@@ -23,9 +23,9 @@ export const LAYOUT = {
   R_RAY_LENGTH: 96,
   // the brain input extras the fill kernel copies (as f32) after the ray features: energy signal, forward and sideways speed, turn rate, ground value
   R_EXTRAS: 104, // EXTRAS f64, to R_OUT
-  R_EXTRA_SPEED: 112,
-  R_EXTRA_SIDE: 120,
-  R_EXTRA_TURN: 128,
+  R_EXTRA_SPEED: 104 + 8 * EXTRA_SPEED,
+  R_EXTRA_SIDE: 104 + 8 * EXTRA_SIDE,
+  R_EXTRA_TURN: 104 + 8 * EXTRA_TURN,
   R_EXTRA_GROUND: 104 + 8 * EXTRA_TERRAIN,
   // i32 fields of a row
   R_OUT: 144, // byte address of the brain outputs: turn, thrust, then one target per memory unit

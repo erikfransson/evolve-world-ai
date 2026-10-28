@@ -2,7 +2,7 @@ import { Arena, BRAIN_BYTES, Kernel } from "./loader.ts";
 import type { Genome } from "../types.ts";
 
 // Batched Brain.forward on f32x4 SIMD, for creatures with brains of any layer sizes (up to 11 layers).
-// Each slot holds one creature's weights in linear memory, so set() once when a brain is born or changes and forwardSlots() every tick.
+// Each slot holds one creature's weights in linear memory, so set() once when a brain is born or changes and runRegion() with forwardRun() every tick.
 // The creature's input vector is written into f32 at inputAt(slot), the output is read from f32 at outputAt(slot).
 // Results differ from the JS Brain only by f32 rounding of the sums (see docs/perf-notes.md).
 
@@ -31,7 +31,7 @@ export class WasmBrainBank {
   private outFloat: number[] = [];
   private descPtr = NO_SLOT;
   private descCap = 0;
-  private runPtr = NO_SLOT; // slot numbers of one forwardSlots call
+  private runPtr = NO_SLOT; // slot numbers of one forwardRun
   private runCap = 0;
   private order = new Int32Array(64); // the slots holding a brain, by block address, so forwardRun streams the weights in memory order
   private held = 0;

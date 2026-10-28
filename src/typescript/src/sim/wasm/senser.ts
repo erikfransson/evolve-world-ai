@@ -12,9 +12,8 @@ import { LAYOUT as L } from "./layout.ts";
 import { Region, growRegion } from "./resident.ts";
 
 // The whole Ecosystem sense in one WebAssembly call per batch (sense.wat): ray directions, item and wall rays in f64 with the
-// JS candidate order, crowd rays in f32 as rays.wat, and the ray features written into the brain's input vector in place.
-// Rock (the world's Terrain, static) is copied once per world into three tables the kernel walks like the item grid. Shares the brain bank's linear memory. Per tick the item grid and the crowd are copied in whole, which costs far less
-// than the per-creature object traffic it replaces. The creature's RayHit objects are not updated, except for the one
+// JS candidate order, crowd rays in f32, and the ray features written into the brain's input vector in place.
+// Rock (the world's Terrain, static) is copied once per world into three tables the kernel walks like the item grid. Shares the brain bank's linear memory. The item grid is patched per tick (patchItems) and the crowd is read in place. The creature's RayHit objects are not updated, except for the one
 // creature given as detail (the selected one), whose rays are read back for the UI.
 
 export const MAX_RAYS = 64;
