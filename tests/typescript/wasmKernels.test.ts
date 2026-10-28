@@ -35,6 +35,10 @@ describe("wasm toolchain", () => {
     expect(i32[0]).toBeGreaterThanOrEqual(8 * f64.length);
     expect(i32.map((o, i) => o - 4 * i - i32[0]!)).toEqual([0, 0, 0, 0, 0]);
     expect(L.REC_DETAIL + 4).toBeLessThanOrEqual(L.REC_BYTES);
+    // fill.wat copies a row's x, y and cos, sin as f64x2 and its rays, offsets, input and slot as one v128
+    expect([L.R_Y - L.R_X, L.R_SIN - L.R_COS]).toEqual([8, 8]);
+    expect([L.R_OFFSETS, L.R_INPUT, L.R_SLOT].map((o) => o - L.R_RAYS)).toEqual([4, 8, 12]);
+    expect(L.R_RAYS + 16).toBeLessThanOrEqual(L.ROW_BYTES);
     expect(L.EXTRAS).toBe(EXTRA_INPUTS);
     expect(L.UNITS_AT).toBe(4 * EXTRA_INPUTS); // the memory units follow the f32 extras
     expect([L.R_EXTRA_SPEED, L.R_EXTRA_SIDE, L.R_EXTRA_TURN, L.R_EXTRA_GROUND]).toEqual([1, 2, 3, 4].map((i) => L.R_EXTRAS + 8 * i));
