@@ -6,8 +6,8 @@ import { LAYOUT as L, f64At, i32At } from "./layout.ts";
 
 // Creature bodies that live in the WebAssembly memory, one row each (offsets in layout.ts), so the fill kernel builds the sense batch from
 // them without touching a JS object, and JS reads them through ResidentState, an object with the same fields as a plain CreatureState.
-// Rows are carved from chunks of the brain bank's arena and never move. A row belongs to its Creature for life (creatures are recycled,
-// not dropped). The memory's views go stale when it grows, so the store keeps every state pointed at the current ones (Kernel.onGrow).
+// Rows are carved from chunks of the brain bank's arena and never move. A row belongs to its Creature until the creature is dropped
+// (release), then to the next one made. The memory's views go stale when it grows, so the store keeps every state pointed at the current ones (Kernel.onGrow).
 
 const CHUNK_ROWS = 256;
 const ROW_F = f64At(L.ROW_BYTES);
@@ -81,6 +81,12 @@ export class ResidentState implements CreatureState, Heading {
     this.f.fill(0, at, at + count);
   }
 
+  // Frees the units block, as a new row has none.
+  dropUnits(): void {
+    if (this.unitBytes > 0) this.store.bank.free(this.i[this.o * 2 + I.units]!, this.unitBytes);
+    this.unitBytes = 0;
+  }
+
   // A view of the units, valid until the memory grows; made on each call, so keep it out of hot loops.
   get units(): Float64Array {
     const b = this.o * 2;
@@ -125,6 +131,7 @@ export class ResidentStore {
   i32 = new Int32Array(0);
   readonly bank: WasmBrainBank;
   private readonly states: ResidentState[] = [];
+  private readonly free: ResidentState[] = []; // released rows, handed out again by add before new ones are carved
   private chunk = 0;
   private left = 0;
   readonly species: EngineConfig[] = []; // the configs the rows' species indices stand for, set by the Ecosystem
@@ -146,8 +153,14 @@ export class ResidentStore {
     for (const rebind of this.rebinders) rebind();
   }
 
-  // A new row.
+  // A new row (all zero), a released one when there is one.
   add(): ResidentState {
+    const old = this.free.pop();
+    if (old) {
+      this.f64.fill(0, old.o, old.o + ROW_F);
+      old.alive = true;
+      return old;
+    }
     if (this.left === 0) {
       this.chunk = Math.ceil(this.bank.alloc(CHUNK_ROWS * L.ROW_BYTES + 64) / 64) * 64; // rows start on a cache line
       this.left = CHUNK_ROWS;
@@ -157,6 +170,12 @@ export class ResidentStore {
     const s = new ResidentState(this, ptr);
     this.states.push(s);
     return s;
+  }
+
+  // Takes back the row of a creature that is dropped; its state must not be used after this.
+  release(s: ResidentState): void {
+    s.dropUnits();
+    this.free.push(s);
   }
 
   // The address of region r with room for bytes, moved to a larger block when needed.
@@ -170,6 +189,7 @@ export class ResidentStore {
   // Forgets every row, after the bank was reset; creatures of the previous owner must be gone.
   reset(): void {
     this.states.length = 0;
+    this.free.length = 0;
     this.species.length = 0;
     this.rebinders.clear();
     this.chunk = 0;

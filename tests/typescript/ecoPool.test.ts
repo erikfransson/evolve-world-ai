@@ -1,6 +1,8 @@
 import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
+import { Creature } from "../../src/typescript/src/sim/creature.ts";
 import { Ecosystem, MAX_SPARE } from "../../src/typescript/src/sim/ecosystem.ts";
+import { wasmAvailable } from "../../src/typescript/src/sim/wasm/loader.ts";
 import { restoreState, saveState } from "../../src/typescript/src/sim/ecoState.ts";
 import { ShareCoordinator, ShareHelper, fittedCaps, packetBytes, packetViews, publishedBytes } from "../../src/typescript/src/sim/ecoShare.ts";
 import { ThinkPool, defaultHelpers, serveHelper, tickTimeoutMs } from "../../src/typescript/src/worker/ecoPool.ts";
@@ -505,5 +507,33 @@ describe("helper spare creature pool", () => {
     internal.apply(deaths, new Float64Array(0), deaths.length);
     expect(internal.mine.size).toBe(0);
     expect(internal.spare[0]!.length).toBe(MAX_SPARE);
+  });
+
+  it.skipIf(!wasmAvailable())("frees the kernel resources of dropped creatures for reuse", () => {
+    const config = cfg();
+    const eco = new Ecosystem(config, null);
+    const helper = new ShareHelper(config, 10, 0, true);
+    type Kernels = { nextSlot: number; brains: { memory: WebAssembly.Memory; arena: { top: number } }; store: { states: unknown[] } };
+    const internal = helper as unknown as { mine: Map<number, Creature>; speciesOf: Map<number, number>; engines: Creature["config"][]; spare: Creature[][]; kernels: Kernels; apply(d: Float64Array, g: Float64Array, n: number): void };
+    const k = internal.kernels;
+    const c0 = eco.members[0]!.creature;
+    const n = MAX_SPARE + 200;
+    const sizes: number[][] = [];
+    let id = 0;
+    for (let cycle = 0; cycle < 4; cycle++) {
+      const deaths = new Float64Array(2 * n);
+      for (let i = 0; i < n; i++, id++) {
+        let c = internal.spare[0]!.pop(); // as born() does
+        if (c) c.reset(c0.brain.genome, 0, 0, 0, 0, c0.plan);
+        else c = new Creature(internal.engines[0]!, c0.brain.genome, 0, 0, 0, c0.plan, k as never, 0);
+        internal.mine.set(id, c);
+        internal.speciesOf.set(id, 0);
+        deaths[2 * i] = 3; // DIED
+        deaths[2 * i + 1] = id;
+      }
+      internal.apply(deaths, new Float64Array(0), deaths.length);
+      sizes.push([k.brains.memory.buffer.byteLength, k.nextSlot, k.store.states.length, k.brains.arena.top]);
+    }
+    for (const s of sizes.slice(1)) expect(s).toEqual(sizes[0]);
   });
 });

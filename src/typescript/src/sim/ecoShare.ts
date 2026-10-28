@@ -616,6 +616,7 @@ export class ShareHelper {
           this.mine.delete(id);
           const pool = this.spare[this.speciesOf.get(id)!]!;
           if (pool.length < MAX_SPARE) pool.push(c);
+          else this.kernels?.release(c);
           this.speciesOf.delete(id);
         }
       } else if (code === BORN) {

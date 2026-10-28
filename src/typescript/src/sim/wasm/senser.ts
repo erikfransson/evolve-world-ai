@@ -58,7 +58,7 @@ export class WasmSenser {
   private readonly exports: SenseExports;
   // Ray offset tables are shared by content: a slot holds one table, a table is freed when its last slot lets go. So the tables in memory never outnumber the slots.
   private readonly tables = new Map<string, OffsetTable>();
-  private readonly slotTable: OffsetTable[] = [];
+  private readonly slotTable: (OffsetTable | undefined)[] = [];
   // Named regions of the shared memory, grown on demand (see grow); held in fields so a tick does no lookups.
   private rItems = new Region();
   private rItemXY = new Region();
@@ -162,10 +162,20 @@ export class WasmSenser {
     }
     table.refs++;
     this.slotTable[slot] = table;
-    if (held && --held.refs === 0) {
-      this.tables.delete(held.key);
-      this.bank.free(held.ptr, held.bytes);
-    }
+    if (held) this.unref(held);
+  }
+
+  // Lets go of the slot's table (a creature that left for good).
+  release(slot: number): void {
+    const held = this.slotTable[slot];
+    this.slotTable[slot] = undefined;
+    if (held) this.unref(held);
+  }
+
+  private unref(table: OffsetTable): void {
+    if (--table.refs > 0) return;
+    this.tables.delete(table.key);
+    this.bank.free(table.ptr, table.bytes);
   }
 
   // The address of the ray offset tables stored for the slot.

@@ -187,6 +187,7 @@ export class Creature {
     const sizes = layerSizes(this.config, this.ownPlan);
     this.brain.load(sizes, genome);
     this.fitPlan(sizes);
+    this.output.fill(0); // as a new creature's, not the previous owner's
     const s = this.state;
     s.x = x;
     s.y = y;

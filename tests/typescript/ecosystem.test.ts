@@ -11,6 +11,7 @@ import type { PoolEntry } from "../../src/typescript/src/sim/seedPool.ts";
 import { FEAT_CREATURE, FEAT_SEEN_ENERGY, energySignal, inputLayout } from "../../src/typescript/src/sim/sensors.ts";
 import { HIT_CREATURE, HIT_FOOD, HIT_NONE, HIT_POISON } from "../../src/typescript/src/sim/types.ts";
 import { World } from "../../src/typescript/src/sim/world.ts";
+import { wasmAvailable } from "../../src/typescript/src/sim/wasm/loader.ts";
 
 type Over = { [K in keyof EcoConfig]?: Partial<EcoConfig[K]> };
 
@@ -690,5 +691,48 @@ describe("spare creature pool", () => {
     while (eco.members.length > 0) internal.remove(0);
     expect(internal.spare.every((p) => p.length <= MAX_SPARE)).toBe(true);
     expect(internal.spare[0]!.length).toBe(MAX_SPARE);
+  });
+
+  it("gives a reused spare zero outputs, as a new creature has", () => {
+    const eco = new Ecosystem(ecoCfg({ seed: 5, eco: { wasm: false } }));
+    const internal = eco as unknown as { remove(i: number): void; spawn(...args: unknown[]): { creature: Creature; founderId: number }; lineages: { born(f: number): void } };
+    for (let t = 0; t < 3; t++) eco.step();
+    const dead = eco.members[0]!;
+    const c = dead.creature;
+    expect(c.outputs.some((v) => v !== 0)).toBe(true);
+    internal.remove(0);
+    const m = internal.spawn(c.brain.genome.slice(), c.plan, 500, 500, 0, 50, 0, { ...dead.birth });
+    m.founderId = 0;
+    internal.lineages.born(0);
+    expect(m.creature).toBe(c);
+    expect(Array.from(m.creature.outputs).every((v) => v === 0)).toBe(true);
+  });
+});
+
+// Kernel memory a crash and regrow leaves behind: bank size, brain slots, resident rows and the arena top.
+type KernelInternals = { nextSlot: number; brains: { memory: WebAssembly.Memory; arena: { top: number } }; store: { states: unknown[] } };
+const kernelSizes = (k: KernelInternals): number[] => [k.brains.memory.buffer.byteLength, k.nextSlot, k.store.states.length, k.brains.arena.top];
+
+describe("kernel resources of dropped creatures", () => {
+  it.skipIf(!wasmAvailable())("stay flat over crash-and-regrow cycles", () => {
+    const n = MAX_SPARE + 300;
+    const eco = new Ecosystem(ecoCfg({ seed: 4, world: { width: 3000, height: 3000 }, eco: { initialPopulation: n } }));
+    expect(eco.wasm).toBe(true);
+    const internal = eco as unknown as { remove(i: number): void; spawn(...args: unknown[]): { founderId: number }; lineages: { born(f: number): void }; kernels: KernelInternals };
+    const kids = eco.members.map((m) => ({ genome: m.creature.brain.genome.slice(), plan: { ...m.creature.plan, hiddenLayers: m.creature.plan.hiddenLayers.slice() }, birth: { ...m.birth } }));
+    const sizes: number[][] = [];
+    for (let cycle = 0; cycle < 4; cycle++) {
+      while (eco.members.length > 20) internal.remove(eco.members.length - 1);
+      for (let i = eco.members.length; i < n; i++) {
+        const k = kids[i]!;
+        const m = internal.spawn(k.genome, k.plan, 100 + (i % 50) * 55, 100 + Math.floor(i / 50) * 55, 0, 50, 0, k.birth);
+        m.founderId = 0; // a child of founder 0, as a birth makes it
+        internal.lineages.born(0);
+      }
+      eco.step();
+      eco.step();
+      sizes.push(kernelSizes(internal.kernels));
+    }
+    for (const s of sizes.slice(1)) expect(s).toEqual(sizes[0]);
   });
 });
