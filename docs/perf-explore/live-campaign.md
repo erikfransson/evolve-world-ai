@@ -52,6 +52,7 @@ Fingerprint equal means bit-identical results.
 | 2026-10-28 15:01 | after idea 106 (batch15; load 8-10, 2 agents; base spread 13-15 ms, so still about 10% noise) | 13.06 / 16.86 (cap) | 8.90 / 10.38 (cap) | 1.47x mixed, 1.62x cap (exact) | 220 / 218 MB mixed, 258 / 257 cap |
 | 2026-10-28 15:58 | after ideas 100, 114, 115 (batch16; load 7-9, 1 agent; the cleanest run since batch13) | 13.07 / 16.18 (cap) | 8.82 / 11.05 (cap) | 1.48x mixed, 1.46x cap (exact) | 249 / 216 MB mixed, 258 / 258 cap |
 | 2026-10-28 17:20 | after ideas 118 and 119, the tidied head db6ddf3 (batch17; load 7-9, soak running) | 13.44 / 16.41 (cap) | 9.36 / 10.71 (cap) | 1.44x mixed, 1.53x cap (exact) | 220 / 222 MB mixed, 257 / 258 cap |
+| 2026-10-28 21:27 | report: no engine change since batch17 (docs only) | - | - | 1.46x mixed / 1.50x cap (batches 16-17 bracket) | unchanged |
 
 Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54, brain forward 5.23 / 5.17, slots (prepareRows) 1.04 / 1.52, memory and steer 1.26 / 1.59, eat 1.05 / 1.35, crowd grid 0.51 / 0.67, collisions 0.18 / 0.27, rest under 0.2. Server frame encoding adds 0.57 ms per tick at 5 Hz. Speed achieved unpaced on this loaded machine: 2.0x and 1.7x real time (the set speed is 3x).
 
@@ -442,3 +443,4 @@ Head phases 2026-10-28 14:50 (253f894, load 6-7, `scout-head.md`; ms per tick, 3
 - 2026-10-28 21:05 idea 121 reported: an exact senser tidy bundle worth 2-3% of the tick (the kernel-harness resolves 0.05-0.1 ms effects the whole-tick pairs missed); the scout builds it as idea 126 on its branch.
 - 2026-10-28 21:05 spawned 127 (brain.wat micro-budget and tidy bundle) and 128 (step, crowd, fill, members and touch micro-budget and tidy bundle) on the kernel-harness method from idea 121. Running: 124, 125, 126, 127, 128.
 - 2026-10-28 21:24 idea 124 rejected: the V8 defaults are right for today's kernels.
+- 2026-10-28 21:27 6 h report: factor unchanged at about 1.46x mixed / 1.50x cap (head db6ddf3 engine); since 15:23 kept 114, 115, 118, 119 and the stop-queue fix, parked 116, rejected 120, 123 (dry), 124, studies 121, 122 done; running 125 (split blocks on the packed arena), 126 (senser tidy bundle, measured 2-3%), 127 and 128 (brain and step kernel micro-budgets).
