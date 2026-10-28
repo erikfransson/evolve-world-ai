@@ -122,13 +122,13 @@ describe("WasmBrainBank", () => {
     const rng = testRng(21);
     let slot = 0;
     let maxAbs = 0;
-    for (let nIn = 1; nIn <= 19; nIn++) {
+    for (let nIn = 1; nIn <= 70; nIn++) {
       for (const nOut of [1, 4, 5, 8, 13]) {
         const sizes = [nIn, 6, nOut];
         const g = randomGenome(sizes, rng);
         bank.set(slot, sizes, g);
         const input = new Float32Array(nIn);
-        if (slot % 3 !== 0) for (let i = 0; i < nIn; i++) input[i] = rng.next() < 0.3 ? rng.next() * 2 - 1 : 0; // slot % 3 === 0: all zero
+        if (slot % 3 !== 0) for (let i = 0; i < nIn; i++) input[i] = rng.next() < (slot % 3 === 1 ? 0.3 : 0.04) ? rng.next() * 2 - 1 : rng.next() < 0.1 ? -0 : 0; // slot % 3 === 0: all zero, 2: sparse so whole groups of 16 are zero
         bank.f32.set(input, bank.inputAt(slot));
         const want = new Float32Array(nOut);
         new Brain(sizes, g).forward(input, want);
