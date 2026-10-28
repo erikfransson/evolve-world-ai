@@ -184,6 +184,8 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 
 | 99 | brain.wat `$compact` tests sixteen inputs at a time and skips all-zero groups (same list, same predicate) | yes | Merged as a small exact extra (`compact16.md`): brain forward -3.2% mixed / -1% cap, tick 0.989 / 1.006, +36 lines and a wider test |
 
+| 94 | V8 codegen audit of all kernels (`--print-wasm-code` with `--prof` ticks mapped onto the dump): `v128.load32_splat` in the brain column loops, walk invariants in locals in sense.wat, hoisted invariants in crowd.wat | yes | Merged as a small exact cleanup (`codegen.md`): each phase 0.5-1% faster in 4-5 of 6 pairs, tick 1.008 / 1.010 inside noise, +43/-31; finding: no bounds checks, spills or conversions left, the hot spots outside the brain stall on the first load of a creature's data |
+
 ## Log
 - 2026-10-27 09:00 Campaign start. Prior campaigns (B1, B2, `docs/perf-explore/`) already moved sense, brains, physics, crowd grid, collisions and scans into WASM; their rejected ideas are not retried unless the live setting changes the picture.
 - 2026-10-27 09:19 `server/src/liveBench.ts` written; two runs at 400 seeded give the same fingerprint (260290661), so the bench is deterministic.
@@ -332,3 +334,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-28 13:12 idea 81 done (`soak6.md`): 6 h soak passes, peak 554 MB at save time, plateau about 430 MB.
 - 2026-10-28 13:25 factor batch13 on 2a55d98: 1.39x mixed / 1.42x cap, fingerprints equal, RSS equal.
 - 2026-10-28 13:40 idea 99 merged (kernels regenerated, no drift); added to the running review's range.
+- 2026-10-28 13:50 idea 94 merged (kernels regenerated, no drift).
