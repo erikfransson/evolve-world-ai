@@ -150,7 +150,7 @@ export class WasmCrowd {
     const perm = store.grow(r.perm, bytes);
     const permB = store.grow(r.permB, bytes);
     const count = store.grow(r.count, 4 << crowd.radixBits);
-    const start = store.grow(r.start, (crowd.cols * crowd.rows + 1) * 4);
+    const start = store.grow(r.start, (crowd.cols * crowd.rows + 1) * 4 + 12); // the fill stores four cells at a time, up to three past the end
     const occupied = store.grow(r.occupied, bytes);
     const speciesIn = store.grow(r.speciesIn, bytes);
     const xs = store.grow(r.xs, n * 8);
