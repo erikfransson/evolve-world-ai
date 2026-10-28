@@ -173,6 +173,8 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 
 | 89 | Crowd `cellStart` as u16 (u32 above 65535 creatures), 8 cells per v128 fill | yes | Rejected (`cell16.md`): crowd grid unchanged, senser 3-5% slower (u16 loads in the walk), tick 1.016 / 1.014 slower; the fill is not cold-table bound at this size |
 
+| 98 | Touch kernel as one call per tick | - | Closed (`touchbatch.md`): already so; the 2500 calls counted in touchbit.md are in-kernel `firstItem` calls, not boundary crossings |
+
 ## Log
 - 2026-10-27 09:00 Campaign start. Prior campaigns (B1, B2, `docs/perf-explore/`) already moved sense, brains, physics, crowd grid, collisions and scans into WASM; their rejected ideas are not retried unless the live setting changes the picture.
 - 2026-10-27 09:19 `server/src/liveBench.ts` written; two runs at 400 seeded give the same fingerprint (260290661), so the bench is deterministic.
@@ -315,3 +317,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-28 09:56 idea 89 rejected (`cell16.md`), branch kept as record.
 - 2026-10-28 10:03 factor batch12: 1.31x mixed / 1.34x cap at idea 85. Merged 92 (brain constants in locals), 90 (trig port) and 88 (ray tests in f64x2): kernels regenerated with no drift, 30 s fingerprints equal to perf-base on both cases (654925885 mixed, 906134928 cap at 30 s), full suite running on the merged head 2a55d98; next factor run after it.
 - 2026-10-28 10:06 wakeup: 6 agents running (91, 93, 94, 95, 96, soak), suite on the merged head running; pool refilled with ideas 97-100.
+- 2026-10-28 10:20 idea 98 closed (already one call per tick).
