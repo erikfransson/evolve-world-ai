@@ -54,6 +54,8 @@ Fingerprint equal means bit-identical results.
 | 2026-10-28 15:58 | after ideas 100, 114, 115 (batch16; load 7-9, 1 agent; the cleanest run since batch13) | 13.07 / 16.18 (cap) | 8.82 / 11.05 (cap) | 1.48x mixed, 1.46x cap (exact) | 249 / 216 MB mixed, 258 / 258 cap |
 | 2026-10-28 17:20 | after ideas 118 and 119, the tidied head db6ddf3 (batch17; load 7-9, soak running) | 13.44 / 16.41 (cap) | 9.36 / 10.71 (cap) | 1.44x mixed, 1.53x cap (exact) | 220 / 222 MB mixed, 257 / 258 cap |
 | 2026-10-28 21:27 | report: no engine change since batch17 (docs only) | - | - | 1.46x mixed / 1.50x cap (batches 16-17 bracket) | unchanged |
+| 2026-10-28 22:38 | 4 founders x 800 (3 pairs, medians, batch18, head b52af95: 126 + 116 + 125) | 17.06 | 11.29 | 1.51x (exact) | 214 / 220 MB |
+| 2026-10-28 22:38 | Juggernaut x 4900 (3 pairs, medians, batch18) | 21.18 | 13.30 | 1.59x (exact) | 256 / 255 MB |
 
 Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54, brain forward 5.23 / 5.17, slots (prepareRows) 1.04 / 1.52, memory and steer 1.26 / 1.59, eat 1.05 / 1.35, crowd grid 0.51 / 0.67, collisions 0.18 / 0.27, rest under 0.2. Server frame encoding adds 0.57 ms per tick at 5 Hz. Speed achieved unpaced on this loaded machine: 2.0x and 1.7x real time (the set speed is 3x).
 
@@ -466,3 +468,4 @@ Head phases 2026-10-28 14:50 (253f894, load 6-7, `scout-head.md`; ms per tick, 3
 - 2026-10-28 22:26 idea 134 (inspector) reported: the engine JS outside the kernels is dry at 1%; its three server items match idea 131 and go to bundle 138 (ages from table.states in readCreatures, direct byte writes in the encoder, leaderboard lists by index with the minimum test first).
 - 2026-10-28 22:33 review round 10 (Opus, independent) of idea 128: nothing to fix. Merged into perf-live (4806d4c, kernels regenerated, no drift). Batch18 measures the head before 128; batch19 follows.
 - 2026-10-28 22:35 idea 135 (moonshot 3) reported: record-ordered item candidate lists are the one big exact lever left (6-7% of the tick in the harness); the same agent builds it as idea 139.
+- 2026-10-28 22:38 factor batch18 on b52af95 (126, 116, 125 in; 128 not yet): 1.51x mixed / 1.59x cap, fingerprints equal, RSS equal. Batch19 launched on 4806d4c (128 in).
