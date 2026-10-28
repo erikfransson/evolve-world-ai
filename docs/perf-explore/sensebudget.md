@@ -1,7 +1,7 @@
 # Sense kernel budget at the perf-live head (idea 121, "sensebudget")
 
 Branch `pl-sensebudget` from `perf-live` 6f81ad5 (ideas 85, 88, 93, 94, 97, 115, 118 merged). Study plus probes, no engine change committed.
-One probe bundle (idea 1 below) is exact, passes the kernel tests and gives senser -5.4% mixed / -6.6% cap in `liveBench`. Its patch is kept outside the repo (`sensebudget-bundle.patch`, +25 -16 in `sense.wat`).
+One probe bundle (idea 1 below) is exact, passes the kernel tests and gives senser -5.4% mixed / -6.6% cap in `liveBench`. Its patch is kept outside the repo (`sensebudget-bundle.patch`, +25 -16 in `sense.wat`), built as idea 126 in `sensetidy.md`.
 
 ## How measured
 
@@ -50,12 +50,11 @@ The zero fill of the early-out costs nothing measurable (the variant that skips 
 
 ### 1. Address and branch tidy bundle in `sense.wat` (exact, measured)
 
-Five small edits, none worth 1.5% alone, together 5% of the kernel. V8 does no induction-variable reduction and this function is spill-bound, so recomputed indices cost real instructions.
+Four small edits, none worth 1.5% alone, together 5% of the kernel. (A stride-6 emit loop was also planned but never got into the probe, so it is not measured and not part of the bundle.) V8 does no induction-variable reduction and this function is spill-bound, so recomputed indices cost real instructions.
 
 - Odd last ray lane padded with NaN in the direction scratch (dx and dy at index nR when nR is odd). The prefilter then needs no `g*2+1 == nR` test, and the group loop steps two pointers against an end pointer instead of rebuilding them from `g`. The NaN lane never passes either prefilter (`NaN <= x` is false, also against the rock pass infinity).
 - The item row loop steps two row pointers (`itemStart` at the first column and past the last) by the row stride instead of `imul` and shifts per row.
 - `$dirsPairs` also stores best = L and kind = 0 when no wall is in range, so the separate `$initPairs` pass is gone from that path.
-- `$emit` has a stride-6 loop without the per-ray stride test (the generic loop stays for other strides).
 - Item candidates store fx, fy and the index. The exact path computes d2 - r2 itself (same operations, so the same bits). Rock discs keep their stored value.
 
 Kernel p25 in ms, mixed / cap, stacked on the first row (call 300, same state):
@@ -65,7 +64,7 @@ Kernel p25 in ms, mixed / cap, stacked on the first row (call 300, same state):
 | base                                 | 3.632        | 4.682        |
 | group loop (NaN lane, pointers)      | -0.071       | -0.083       |
 | + item row pointers                  | -0.143       | -0.167       |
-| + fused directions and init, stride-6 emit | -0.168 | -0.193       |
+| + fused directions and init         | -0.168       | -0.193       |
 | + lazy d2 - r2                       | -0.205       | -0.244       |
 
 Hash equal at calls 300, 1000 and 1800, both cases. Gains at the other calls were -0.06 to -0.11 mixed and -0.11 cap (load spikes at call 1000).
@@ -81,7 +80,7 @@ Hash equal at calls 300, 1000 and 1800, both cases. Gains at the other calls wer
 
 Ratio of medians (new / base): senser 0.946 mixed and 0.934 cap, faster in 6 of 6 pairs. Tick 0.971 and 0.958, but the brain forward phase also moves by 1-3% between sides, so the safe claim is the senser delta, 0.22 ms mixed and 0.33 ms cap, which is 2.1% and 2.7% of the quiet-machine tick (10.4 and 12.0 ms).
 Tests with the patch applied: `npx vitest run wasm sense resident thinkEvery --maxWorkers=2 --testTimeout=180000`, 6 files, 113 tests, exit 0 (the kernel against the JS rays bit for bit, odd and even ray counts, several strides).
-General: the NaN lane exists only for odd nR (at most index 63 of the 64-ray scratch), pointers cover any row and group count, the stride-6 loop is a branch in front of the old one.
+General: the NaN lane exists only for odd nR (at most index 63 of the 64-ray scratch), pointers cover any row and group count.
 
 ### 2. Vector window set-up (exact, small)
 
