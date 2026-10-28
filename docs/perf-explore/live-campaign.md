@@ -349,3 +349,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-28 13:26 idea 100 parked (0.7%).
 - 2026-10-28 13:32 ideas 103 and 104 closed (already so / nothing installed). Note to self: two closes in a row from my own misread of the eat path; read the code before briefing the next eat idea.
 - 2026-10-28 13:45 focused suites on the lone-creature fix: 182 of 184 passed, the two ThinkPool parity cases hit the 300 s timeout at load 20 and pass alone (2 of 2); no regression.
+- 2026-10-28 13:50 follow-up review (same Opus reviewer) through 75cfb06: the idea 85 fix correct on the JS crowd path, helper threads and restored saves; ideas 93, 94 and 99 nothing to fix (compact lane order and hand-off proven for every nIn). Review round 3 closed.
