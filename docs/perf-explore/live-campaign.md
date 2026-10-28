@@ -49,6 +49,7 @@ Fingerprint equal means bit-identical results.
 | 2026-10-28 13:25 | after ideas 85, 92, 90, 88 (batch13; load 7-10, 7 agents) | 16.59 / 20.18 (cap) | 11.94 / 14.24 (cap) | 1.39x mixed, 1.42x cap (exact) | 218 / 218 MB mixed, 256 / 256 cap |
 | 2026-10-28 14:20 | after ideas 93, 94, 96, 97, 99 (batch14; load falling 19 to 8 during the run, spread 15%: treat as an upper bound, rerun on a quieter machine) | 15.05 / 17.85 (cap) | 9.59 / 11.73 (cap) | 1.57x mixed, 1.52x cap (exact) | 247 / 218 MB mixed, 259 / 257 cap |
 | 2026-10-28 15:01 | after idea 106 (batch15; load 8-10, 2 agents; base spread 13-15 ms, so still about 10% noise) | 13.06 / 16.86 (cap) | 8.90 / 10.38 (cap) | 1.47x mixed, 1.62x cap (exact) | 220 / 218 MB mixed, 258 / 257 cap |
+| 2026-10-28 16:30 | after ideas 100, 114, 115 (batch16; load 7-9, 1 agent; the cleanest run since batch13) | 13.07 / 16.18 (cap) | 8.82 / 11.05 (cap) | 1.48x mixed, 1.46x cap (exact) | 249 / 216 MB mixed, 258 / 258 cap |
 
 Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54, brain forward 5.23 / 5.17, slots (prepareRows) 1.04 / 1.52, memory and steer 1.26 / 1.59, eat 1.05 / 1.35, crowd grid 0.51 / 0.67, collisions 0.18 / 0.27, rest under 0.2. Server frame encoding adds 0.57 ms per tick at 5 Hz. Speed achieved unpaced on this loaded machine: 2.0x and 1.7x real time (the set speed is 3x).
 
@@ -413,3 +414,4 @@ Head phases 2026-10-28 14:50 (253f894, load 6-7, `scout-head.md`; ms per tick, 3
 - 2026-10-28 15:55 idea 115 merged (no drift); review round 6 due for 115 (and 116 when it lands).
 - 2026-10-28 16:10 idea 114 merged (no drift; tsc needed the ground densities in idea 115's test). Review round 6 due for 114 and 115 (116 pending).
 - 2026-10-28 16:20 review round 6 (Opus, independent) of ideas 114 and 115: nothing to fix (the wedge filter is a closed half-plane argument bit-equal to the edge rays; the skipped scan has no side effects and the caps only tighten inside the loop; the chunked walk's order equals the full list); one note corrected in rockcost.md. Closed.
+- 2026-10-28 16:30 factor batch16 on 5e1c62e: 1.48x mixed / 1.46x cap, fingerprints equal, RSS equal; consistent with batch13 plus the merges since (about 6%).
