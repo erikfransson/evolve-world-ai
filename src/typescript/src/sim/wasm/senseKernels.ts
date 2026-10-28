@@ -31,6 +31,7 @@ export class SenseKernels {
   private energyScale!: number; // seen energies are squashed against this, the largest species start energy (speciesEngine's seenEnergyScale)
   private nextSlot = 0;
   private readonly freeSlots: number[] = []; // released slots, taken by attach before new ones
+  private readonly owners: (Creature | undefined)[] = []; // the creature holding each slot, whose brain addresses a block move (compact() or a slide inside set()) changes
 
   private constructor(brains: WasmBrainBank, senser: WasmSenser, store: ResidentStore, filler: WasmFiller, stepper: WasmStepper, config: EcoConfig) {
     this.brains = brains;
@@ -40,6 +41,7 @@ export class SenseKernels {
     this.stepper = stepper;
     this.stride = inputLayout(config).rayFeatures;
     this.setScale(config);
+    brains.onMove = (slot) => this.bindBrain(this.owners[slot]!, slot);
   }
 
   private setScale(config: EcoConfig): void {
@@ -73,6 +75,7 @@ export class SenseKernels {
     this.stepper.reset();
     this.nextSlot = 0;
     this.freeSlots.length = 0;
+    this.owners.length = 0;
     this.detail = null;
     this.stride = inputLayout(config).rayFeatures;
     this.setScale(config);
@@ -107,12 +110,17 @@ export class SenseKernels {
       c.kernelSlot = this.freeSlots.pop() ?? this.nextSlot++;
     }
     const slot = c.kernelSlot;
-    this.brains.set(slot, c.brain.sizes, c.brain.genome);
+    this.brains.set(slot, c.brain.sizes, c.brain.genome, Math.min(c.plan.rayCount * this.stride, c.brain.sizes[0]!));
     this.senser.setOffsets(slot, c);
+    this.owners[slot] = c;
+    this.bindBrain(c, slot);
+    c.resident!.rayLength = c.plan.rayLength;
+  }
+
+  // Points the creature and its row at the slot's brain input and output.
+  private bindBrain(c: Creature, slot: number): void {
     c.adoptOutput(this.brains, this.brains.outputAt(slot));
-    const r = c.resident!;
-    r.setBrain(slot, c.plan.rayCount, this.senser.offsetsAt(slot), this.brains.inputAt(slot) * 4);
-    r.rayLength = c.plan.rayLength;
+    c.resident!.setBrain(slot, c.plan.rayCount, this.senser.offsetsAt(slot), this.brains.inputAt(slot) * 4);
   }
 
   // Frees what a creature that is dropped (not kept for reuse) holds here, its brain block, offset table and row, and keeps its slot and row for the next creature.
@@ -120,6 +128,7 @@ export class SenseKernels {
     if (c.kernelOwner !== this) return;
     const slot = c.kernelSlot;
     this.brains.release(slot);
+    this.owners[slot] = undefined;
     this.senser.release(slot);
     this.freeSlots.push(slot);
     c.kernelOwner = null;
@@ -131,6 +140,7 @@ export class SenseKernels {
   // and brain inputs from the rows, and the slot list of the brain run. detail, when in the batch, gets its rays and input read back.
   runRows(world: World, crowd: Crowd, rows: Int32Array, selves: Int32Array, n: number, detail: Creature | null, prof: PhaseTimer | null = null): void {
     if (n === 0) return;
+    this.brains.compact();
     const slotsAt = this.brains.runRegion(n);
     prof?.lap("slots");
     this.senser.run(world, crowd, n, selves, this.stride, this.energyScale, detail, this.filler, rows, slotsAt, this.packsOwnSignal(crowd));

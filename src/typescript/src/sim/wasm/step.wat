@@ -267,13 +267,17 @@
 
   ;; Steps each of the n rows listed at P_ROWS, in that order.
   (func (export "step") (param $P i32)
-    (local $near i32) (local $cx i32) (local $cy i32) (local $fx f64) (local $fy f64)
+    (local $near i32) (local $cx i32) (local $cy i32)
     (local $k i32) (local $n i32) (local $row i32) (local $sp i32) (local $out i32) (local $units i32) (local $count i32) (local $short i32) (local $u i32) (local $at i32)
     (local $dt f64) (local $thrust f64) (local $targetTurn f64) (local $turn f64) (local $heading f64) (local $cos f64) (local $sin f64)
     (local $vx0 f64) (local $vy0 f64) (local $vx f64) (local $vy f64) (local $v f64) (local $fwd f64) (local $side f64) (local $terminal f64) (local $slowed f64)
     (local $speciesAt i32) (local $rowsAt i32) (local $outputSize i32) (local $empty i32) (local $aging i32) (local $agingStart f64) (local $agingPerTick f64)
-    (local $ground f64) (local $upkeep f64) (local $ticks f64) (local $radius f64) (local $bounce f64)
+    (local $ground f64) (local $rocks i32) (local $nearCols i32) (local $nearRows i32) (local $clearShift i32) (local $xyv v128) (local $ij v128) (local $upkeep f64) (local $ticks f64) (local $radius f64) (local $bounce f64)
     (local.set $n (i32.load offset={{P_N}} (local.get $P)))
+    (local.set $rocks (i32.load offset={{P_ROCKS}} (local.get $P)))
+    (local.set $nearCols (i32.load offset={{P_NEAR_COLS}} (local.get $P)))
+    (local.set $nearRows (i32.load offset={{P_NEAR_ROWS}} (local.get $P)))
+    (local.set $clearShift (i32.load offset={{P_CLEAR_SHIFT}} (local.get $P)))
     (local.set $rowsAt (i32.load offset={{P_ROWS}} (local.get $P)))
     (local.set $speciesAt (i32.load offset={{P_SPECIES}} (local.get $P)))
     (local.set $outputSize (i32.load offset={{P_OUTPUT_SIZE}} (local.get $P)))
@@ -352,19 +356,19 @@
       (call $wall (i32.add (local.get $row) (i32.const {{R_X}})) (i32.add (local.get $row) (i32.const {{R_VX}})) (local.get $radius) (f64.load offset={{Q_WIDTH}} (local.get $sp)) (local.get $bounce))
       (call $wall (i32.add (local.get $row) (i32.const {{R_Y}})) (i32.add (local.get $row) (i32.const {{R_VY}})) (local.get $radius) (f64.load offset={{Q_HEIGHT}} (local.get $sp)) (local.get $bounce))
       ;; rock, unless the clear-of-rock raster square of the disc has no rock within reach (negative, NaN and out-of-raster positions take the full path)
-      (if (i32.load offset={{P_ROCKS}} (local.get $P))
+      (if (local.get $rocks)
         (then
           (local.set $near (i32.const 1))
-          (local.set $fx (f64.load offset={{R_X}} (local.get $row)))
-          (local.set $fy (f64.load offset={{R_Y}} (local.get $row)))
-          (if (i32.and (f64.ge (local.get $fx) (f64.const 0)) (f64.ge (local.get $fy) (f64.const 0)))
+          (local.set $xyv (f64x2.replace_lane 1 (f64x2.splat (f64.load offset={{R_X}} (local.get $row))) (f64.load offset={{R_Y}} (local.get $row))))
+          (if (i64x2.all_true (f64x2.ge (local.get $xyv) (v128.const f64x2 0 0)))
             (then
-              (local.set $cx (i32.shr_u (i32.trunc_sat_f64_s (local.get $fx)) (i32.load offset={{P_CLEAR_SHIFT}} (local.get $P))))
-              (local.set $cy (i32.shr_u (i32.trunc_sat_f64_s (local.get $fy)) (i32.load offset={{P_CLEAR_SHIFT}} (local.get $P))))
-              (if (i32.and (i32.lt_u (local.get $cx) (i32.load offset={{P_NEAR_COLS}} (local.get $P))) (i32.lt_u (local.get $cy) (i32.load offset={{P_NEAR_ROWS}} (local.get $P))))
+              (local.set $ij (i32x4.shr_u (i32x4.trunc_sat_f64x2_s_zero (local.get $xyv)) (local.get $clearShift)))
+              (local.set $cx (i32x4.extract_lane 0 (local.get $ij)))
+              (local.set $cy (i32x4.extract_lane 1 (local.get $ij)))
+              (if (i32.and (i32.lt_u (local.get $cx) (local.get $nearCols)) (i32.lt_u (local.get $cy) (local.get $nearRows)))
                 (then
                   ;; the raster is a bit per square
-                  (local.set $at (i32.add (i32.mul (local.get $cy) (i32.load offset={{P_NEAR_COLS}} (local.get $P))) (local.get $cx)))
+                  (local.set $at (i32.add (i32.mul (local.get $cy) (local.get $nearCols)) (local.get $cx)))
                   (local.set $near (i32.and (i32.const 1) (i32.shr_u (i32.load8_u (i32.add (i32.load offset={{Q_NEAR}} (local.get $sp)) (i32.shr_u (local.get $at) (i32.const 3)))) (i32.and (local.get $at) (i32.const 7)))))))))
           (if (local.get $near) (then (call $keepOut (local.get $P) (local.get $row) (local.get $sp))))))
       ;; energy: the upkeep (grown with age), thrust and turning

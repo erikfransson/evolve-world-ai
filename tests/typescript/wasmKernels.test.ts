@@ -35,6 +35,10 @@ describe("wasm toolchain", () => {
     expect(i32[0]).toBeGreaterThanOrEqual(8 * f64.length);
     expect(i32.map((o, i) => o - 4 * i - i32[0]!)).toEqual([0, 0, 0, 0, 0]);
     expect(L.REC_DETAIL + 4).toBeLessThanOrEqual(L.REC_BYTES);
+    // fill.wat copies a row's x, y and cos, sin as f64x2 and its rays, offsets, input and slot as one v128
+    expect([L.R_Y - L.R_X, L.R_SIN - L.R_COS]).toEqual([8, 8]);
+    expect([L.R_OFFSETS, L.R_INPUT, L.R_SLOT].map((o) => o - L.R_RAYS)).toEqual([4, 8, 12]);
+    expect(L.R_RAYS + 16).toBeLessThanOrEqual(L.ROW_BYTES);
     expect(L.EXTRAS).toBe(EXTRA_INPUTS);
     expect(L.UNITS_AT).toBe(4 * EXTRA_INPUTS); // the memory units follow the f32 extras
     expect([L.R_EXTRA_SPEED, L.R_EXTRA_SIDE, L.R_EXTRA_TURN, L.R_EXTRA_GROUND]).toEqual([1, 2, 3, 4].map((i) => L.R_EXTRAS + 8 * i));
@@ -143,6 +147,38 @@ describe("WasmBrainBank", () => {
     expect(maxAbs).toBeLessThan(2e-6);
   });
 
+  it("holds a brain with the eight hidden layers a save may carry, and no more (the descriptor's layer cap)", () => {
+    const bank = WasmBrainBank.createSync()!;
+    const rng = testRng(34);
+    const eight = [8, 5, 5, 5, 5, 5, 5, 5, 5, 3]; // 6 + 8 plan entries in ecoState's restore check
+    bank.set(0, eight, randomGenome(eight, rng), 0);
+    const nine = [...eight.slice(0, 9), 5, 3];
+    expect(() => bank.set(1, nine, randomGenome(nine, rng), 0)).toThrow(/layer sizes/);
+  });
+
+  it("gives the same output bits wherever the first layer is split between the ray rows and the rest", async () => {
+    const bank = WasmBrainBank.createSync()!;
+    const rng = testRng(33);
+    const run = (slot: number, sizes: number[], g: Float32Array, rays: number, input: Float32Array): number[] => {
+      bank.set(slot, sizes, g, rays);
+      bank.f32.set(input, bank.inputAt(slot));
+      bank.forwardSlots(Int32Array.of(slot), 1);
+      return Array.from(bank.f32.subarray(bank.outputAt(slot), bank.outputAt(slot) + sizes[sizes.length - 1]!));
+    };
+    for (const sizes of SIZE_SETS) {
+      const g = randomGenome(sizes, rng);
+      const nIn = sizes[0]!;
+      for (let round = 0; round < 4; round++) {
+        const input = new Float32Array(nIn);
+        fillInput(input, rng);
+        if (round === 3) input.fill(0);
+        const want = run(0, sizes, g, 0, input);
+        for (const rays of new Set([1, nIn >> 1, nIn - 1, nIn])) if (rays >= 1 && rays <= nIn) expect(run(1, sizes, g, rays, input)).toEqual(want);
+        for (const rays of [nIn, 0, 1]) expect(run(1, sizes, g, rays, input)).toEqual(want); // the same slot set again with a bigger, smaller and no ray region
+      }
+    }
+  });
+
   it("saturates large sums to exactly +-1 like the JS tanh", async () => {
     const bank = WasmBrainBank.createSync()!;
     const sizes = [2, 2];
@@ -182,6 +218,38 @@ describe("WasmBrainBank", () => {
     bank.f32.set(new Float32Array(SIZE_SETS[3]![0]!), bank.inputAt(5));
     runFirst(bank, 6);
     expect(Array.from(bank.f32.subarray(bank.outputAt(5), bank.outputAt(5) + 2)).every(Number.isFinite)).toBe(true);
+  });
+
+  it("compact() closes the holes of released blocks, keeps every output, and reports the moved slots", async () => {
+    const bank = WasmBrainBank.createSync()!;
+    const rng = testRng(12);
+    const n = 600;
+    const run = (slots: number[]): Map<number, number[]> => {
+      for (const s of slots) {
+        const a = new Float32Array(SIZE_SETS[s % SIZE_SETS.length]![0]!);
+        fillInput(a, testRng(s));
+        bank.f32.set(a, bank.inputAt(s));
+      }
+      bank.forwardSlots(Int32Array.from(slots), slots.length);
+      return new Map(slots.map((s) => [s, Array.from(bank.f32.subarray(bank.outputAt(s), bank.outputAt(s) + SIZE_SETS[s % SIZE_SETS.length]!.at(-1)!))]));
+    };
+    for (let slot = 0; slot < n; slot++) bank.set(slot, SIZE_SETS[slot % SIZE_SETS.length]!, randomGenome(SIZE_SETS[slot % SIZE_SETS.length]!, rng));
+    const kept: number[] = [];
+    for (let slot = 0; slot < n; slot++) if (slot % 3 === 0 || slot % 7 === 0) bank.release(slot); else kept.push(slot);
+    const before = run(kept);
+    const moved = new Set<number>();
+    bank.onMove = (slot) => moved.add(slot);
+    const span = (): number => Math.max(...kept.map((s) => bank.inputAt(s))) - Math.min(...kept.map((s) => bank.inputAt(s)));
+    const spanBefore = span();
+    for (let i = 0; i < 20; i++) bank.compact();
+    expect(moved.size).toBeGreaterThan(0);
+    expect(span()).toBeLessThan(spanBefore);
+    expect(run(kept)).toEqual(before);
+    const settled = moved.size;
+    bank.compact();
+    expect(moved.size).toBe(settled); // nothing left to move
+    for (let slot = 0; slot < n; slot += 3) if (!kept.includes(slot)) bank.set(slot, SIZE_SETS[2]!, randomGenome(SIZE_SETS[2]!, rng)); // refills the holes at the end
+    expect(run(kept)).toEqual(before);
   });
 
   it("rejects bad shapes", async () => {
