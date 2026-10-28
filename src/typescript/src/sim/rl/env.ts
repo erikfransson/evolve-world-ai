@@ -70,7 +70,7 @@ export interface EnvSpec {
   // starting food itself (without regrowth the episode then ends early, the learner counting as alive to the end).
   // ram: per rival that dies touching the learner while collision damage is on.
   // cross: per poison wall of the layout the learner got past (at any moment), a first reward on the way to food beyond it.
-  // early: per item, times the share of the episode still left at the bite (1 at the start, 0 at the end).
+  // early: per item or ram, times the share of the episode still left at the bite (1 at the start, 0 at the end).
   reward: { food?: number; kill?: number; survive?: number; energy?: number; fast?: number; ram?: number; cross?: number; early?: number };
   tags: string[];
 }
@@ -354,7 +354,10 @@ export function runEpisode(
         touchesOtherRival: eco.members.some((o) => o.id !== 0 && o.id !== m.id && o.creature.state.alive && near(o.creature.state)),
         poisonEatenThisTick: eco.poisonEaten > poisonBefore,
       });
-      if (ram) out.rams++;
+      if (ram) {
+        out.rams++;
+        early += earlyWeight(tick, ticks); // a ram counts for the early reward like a bite
+      }
       return;
     }
     early += (m.eaten - out.food) * earlyWeight(tick, ticks); // bites on the dying tick
