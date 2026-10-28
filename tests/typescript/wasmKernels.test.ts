@@ -143,6 +143,29 @@ describe("WasmBrainBank", () => {
     expect(maxAbs).toBeLessThan(2e-6);
   });
 
+  it("gives the same output bits wherever the first layer is split between the ray rows and the rest", async () => {
+    const bank = WasmBrainBank.createSync()!;
+    const rng = testRng(33);
+    const run = (slot: number, sizes: number[], g: Float32Array, rays: number, input: Float32Array): number[] => {
+      bank.set(slot, sizes, g, rays);
+      bank.f32.set(input, bank.inputAt(slot));
+      bank.forwardSlots(Int32Array.of(slot), 1);
+      return Array.from(bank.f32.subarray(bank.outputAt(slot), bank.outputAt(slot) + sizes[sizes.length - 1]!));
+    };
+    for (const sizes of SIZE_SETS) {
+      const g = randomGenome(sizes, rng);
+      const nIn = sizes[0]!;
+      for (let round = 0; round < 4; round++) {
+        const input = new Float32Array(nIn);
+        fillInput(input, rng);
+        if (round === 3) input.fill(0);
+        const want = run(0, sizes, g, 0, input);
+        for (const rays of new Set([1, nIn >> 1, nIn - 1, nIn])) if (rays >= 1 && rays <= nIn) expect(run(1, sizes, g, rays, input)).toEqual(want);
+        for (const rays of [nIn, 0, 1]) expect(run(1, sizes, g, rays, input)).toEqual(want); // the same slot set again with a bigger, smaller and no ray region
+      }
+    }
+  });
+
   it("saturates large sums to exactly +-1 like the JS tanh", async () => {
     const bank = WasmBrainBank.createSync()!;
     const sizes = [2, 2];

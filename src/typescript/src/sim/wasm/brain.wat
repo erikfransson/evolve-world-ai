@@ -60,15 +60,16 @@
       (local.set $cnt (i32.add (local.get $cnt) (i32.load8_u offset=256 (i32.add (local.get $tab) (local.get $m)))))))
     (local.get $cnt))
 
-  ;; One layer: dst[0..nPad) = tanh(bias + sum over list of src[i] * W[i][..]), the list holding cnt input indices, added in order.
+  ;; One layer: dst[0..nPad) = tanh(init + sum over list of src[i] * W[i][..]), the list holding cnt input indices, added in order; init is the bias row, or the partial sum of an earlier pass.
+  ;; Without th the sums are stored as they are (the first of two passes over the first layer, see forward).
   ;; Columns go in groups of up to six vectors (24 outputs, so a 24-wide layer is one pass over the inputs) that stay in registers across the input loop.
   ;; The groups of up to four vectors also touch two lines at pf per input (pf moves 128 bytes while below pe) and return pf; see forward.
-  (func $layer (param $src i32) (param $list i32) (param $cnt i32) (param $w i32) (param $nIn i32) (param $nPad i32) (param $dst i32) (param $pf i32) (param $pe i32) (result i32)
+  (func $layer (param $src i32) (param $list i32) (param $cnt i32) (param $w i32) (param $init i32) (param $nPad i32) (param $dst i32) (param $pf i32) (param $pe i32) (param $th i32) (result i32)
     (local $jb i32) (local $stride i32) (local $bias i32) (local $left i32) (local $le i32) (local $lp i32) (local $i i32) (local $p i32) (local $b i32) (local $wj i32)
     (local $vs v128) (local $a0 v128) (local $a1 v128) (local $a2 v128) (local $a3 v128) (local $a4 v128) (local $a5 v128)
     (local $x v128) (local $x2 v128) (local $n v128) (local $d v128) (local $k0 v128) (local $k1 v128) (local $k2 v128) (local $k3 v128) (local $k4 v128) (local $k5 v128) (local $k6 v128) (local $k7 v128) (local $k8 v128)
     (local.set $stride (i32.shl (local.get $nPad) (i32.const 2)))
-    (local.set $bias (i32.add (local.get $w) (i32.mul (local.get $nIn) (local.get $stride))))
+    (local.set $bias (local.get $init))
     (local.set $le (i32.add (local.get $list) (i32.shl (local.get $cnt) (i32.const 2))))
     (block $jd (loop $jl
       (local.set $left (i32.sub (local.get $stride) (local.get $jb)))
@@ -217,6 +218,7 @@
           (v128.store offset=0 (local.get $b) (local.get $a0))))))))))))
       (local.set $jb (select (i32.add (local.get $jb) (i32.const 96)) (local.get $stride) (i32.ge_u (local.get $left) (i32.const 96))))
       (br $jl)))
+    (if (local.get $th) (then
     ;; tanh in place over the layer, in a loop of its own (V8 does not inline a call to a $tanh function).
     ;; The constants sit in locals: V8 rebuilds a v128.const at each use inside a loop (three instructions).
     (local.set $k0 (v128.const f32x4 135135 135135 135135 135135))
@@ -247,15 +249,17 @@
         (f32x4.div (local.get $n) (local.get $d))
         (f32x4.ge (f32x4.abs (local.get $x)) (local.get $k8))))
       (local.set $p (i32.add (local.get $p) (i32.const 16)))
-      (br_if $tl (i32.lt_u (local.get $p) (local.get $b))))
+      (br_if $tl (i32.lt_u (local.get $p) (local.get $b))))))
     (local.get $pf))
 
   ;; forward(desc, slots, n, scratchA, scratchB, nzList, iota, tab): creatures slots[0..n-1], each scratch buffer holds the widest padded layer.
   ;; The first layer adds only the non-zero inputs; the others use the identity index list iota. The last layer stores straight to the output.
+  ;; A block is split: the first-layer rows of the first desc[4] inputs (the rays) sit at desc[5], the rest of the block (the other rows, biases, later layers) at desc[0].
+  ;; The first layer then runs as two passes over the same column groups, the ray entries of the list first (partial sum stored to dst), the rest on top; the adds keep their order.
   ;; While a brain runs, its layers touch the next brain's weights in order, so the hardware prefetcher streams them in early (WASM has no prefetch).
   (func (export "forward") (param $desc i32) (param $slots i32) (param $n i32) (param $sa i32) (param $sb i32) (param $nz i32) (param $iota i32) (param $tab i32)
     (local $c i32) (local $d i32) (local $l i32) (local $layers i32) (local $nIn i32) (local $nOut i32) (local $nPad i32)
-    (local $w i32) (local $src i32) (local $dst i32) (local $list i32) (local $cnt i32) (local $pf i32) (local $pe i32)
+    (local $w i32) (local $src i32) (local $dst i32) (local $list i32) (local $cnt i32) (local $pf i32) (local $pe i32) (local $rf i32) (local $init i32) (local $k i32)
     (block $cd (loop $cl
       (br_if $cd (i32.ge_u (local.get $c) (local.get $n)))
       (local.set $d (i32.add (local.get $desc) (i32.shl (i32.load (i32.add (local.get $slots) (i32.shl (local.get $c) (i32.const 2)))) (i32.const 6))))
@@ -273,16 +277,29 @@
       (local.set $l (i32.const 0))
       (block $ld (loop $ll
         (br_if $ld (i32.ge_u (local.get $l) (local.get $layers)))
-        (local.set $nIn (i32.load offset=16 (i32.add (local.get $d) (i32.shl (local.get $l) (i32.const 2)))))
-        (local.set $nOut (i32.load offset=20 (i32.add (local.get $d) (i32.shl (local.get $l) (i32.const 2)))))
+        (local.set $nIn (i32.load offset=24 (i32.add (local.get $d) (i32.shl (local.get $l) (i32.const 2)))))
+        (local.set $nOut (i32.load offset=28 (i32.add (local.get $d) (i32.shl (local.get $l) (i32.const 2)))))
         (local.set $nPad (i32.and (i32.add (local.get $nOut) (i32.const 3)) (i32.const -4)))
         (local.set $dst (select (local.get $sb) (local.get $sa) (i32.and (local.get $l) (i32.const 1))))
         (if (i32.eq (i32.add (local.get $l) (i32.const 1)) (local.get $layers)) (then (local.set $dst (i32.load offset=8 (local.get $d)))))
+        (local.set $rf (select (i32.const 0) (i32.load offset=16 (local.get $d)) (local.get $l)))
+        (local.set $init (i32.add (local.get $w) (i32.mul (i32.sub (local.get $nIn) (local.get $rf)) (i32.shl (local.get $nPad) (i32.const 2)))))
         (if (local.get $l)
-          (then (local.set $list (local.get $iota)) (local.set $cnt (local.get $nIn)))
-          (else (local.set $list (local.get $nz)) (local.set $cnt (call $compact (local.get $src) (local.get $nIn) (local.get $nz) (local.get $tab)))))
-        (local.set $pf (call $layer (local.get $src) (local.get $list) (local.get $cnt) (local.get $w) (local.get $nIn) (local.get $nPad) (local.get $dst) (local.get $pf) (local.get $pe)))
-        (local.set $w (i32.add (local.get $w) (i32.shl (i32.mul (i32.add (local.get $nIn) (i32.const 1)) (local.get $nPad)) (i32.const 2))))
+          (then (local.set $pf (call $layer (local.get $src) (local.get $iota) (local.get $nIn) (local.get $w) (local.get $init) (local.get $nPad) (local.get $dst) (local.get $pf) (local.get $pe) (i32.const 1))))
+          (else
+            (local.set $k (i32.const 0))
+            (local.set $cnt (call $compact (local.get $src) (local.get $nIn) (local.get $nz) (local.get $tab)))
+            (block $kd (loop $kl
+              (br_if $kd (i32.ge_u (local.get $k) (local.get $cnt)))
+              (br_if $kd (i32.ge_u (i32.load (i32.add (local.get $nz) (i32.shl (local.get $k) (i32.const 2)))) (local.get $rf)))
+              (local.set $k (i32.add (local.get $k) (i32.const 1)))
+              (br $kl)))
+            (if (local.get $k) (then
+              (local.set $pf (call $layer (local.get $src) (local.get $nz) (local.get $k) (i32.load offset=20 (local.get $d)) (local.get $init) (local.get $nPad) (local.get $dst) (local.get $pf) (local.get $pe) (i32.const 0)))
+              (local.set $init (local.get $dst))))
+            (local.set $pf (call $layer (local.get $src) (i32.add (local.get $nz) (i32.shl (local.get $k) (i32.const 2))) (i32.sub (local.get $cnt) (local.get $k))
+              (i32.sub (local.get $w) (i32.mul (local.get $rf) (i32.shl (local.get $nPad) (i32.const 2)))) (local.get $init) (local.get $nPad) (local.get $dst) (local.get $pf) (local.get $pe) (i32.const 1)))))
+        (local.set $w (i32.add (local.get $w) (i32.shl (i32.mul (i32.add (i32.sub (local.get $nIn) (local.get $rf)) (i32.const 1)) (local.get $nPad)) (i32.const 2))))
         (local.set $src (local.get $dst))
         (local.set $l (i32.add (local.get $l) (i32.const 1)))
         (br $ll)))

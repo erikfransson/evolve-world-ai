@@ -110,7 +110,7 @@ export class SenseKernels {
       c.kernelSlot = this.freeSlots.pop() ?? this.nextSlot++;
     }
     const slot = c.kernelSlot;
-    this.brains.set(slot, c.brain.sizes, c.brain.genome);
+    this.brains.set(slot, c.brain.sizes, c.brain.genome, Math.min(c.plan.rayCount * this.stride, c.brain.sizes[0]!));
     this.senser.setOffsets(slot, c);
     this.owners[slot] = c;
     this.bindBrain(c, slot);
