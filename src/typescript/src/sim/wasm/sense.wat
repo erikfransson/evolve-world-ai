@@ -628,4 +628,41 @@
       )
       (local.set $j (i32.add (local.get $j) (i32.const 1)))
       (br $jl))))
+
+  ;; $patchItems: resizes the packed item cells of n records (i32 x4: byte address of the cell's itemStart entry, byte address of its row's last entry, the cell's new item count, the row run's end slot),
+  ;; in order, the way a JS patch does: the rest of the row moves by the change in length in the xy (f32 pairs), kind (u8) and id (i32) arrays and the later start entries shift.
+  ;; Returns the number of records done; fewer than n means the row outgrew its run (the caller rebuilds everything). The new cells' items are written by the caller.
+  (func (export "patchItems") (param $rec i32) (param $n i32) (param $xy i32) (param $kd i32) (param $ids i32) (result i32)
+    (local $i i32) (local $sA i32) (local $lastA i32) (local $at i32) (local $nx i32) (local $end i32) (local $delta i32) (local $mv i32) (local $dst i32) (local $p i32) (local $dv v128)
+    (block $done (loop $next
+      (br_if $done (i32.ge_u (local.get $i) (local.get $n)))
+      (local.set $sA (i32.load (local.get $rec)))
+      (local.set $lastA (i32.load offset=4 (local.get $rec)))
+      (local.set $at (i32.load (local.get $sA)))
+      (local.set $nx (i32.load offset=4 (local.get $sA)))
+      (local.set $delta (i32.sub (i32.add (local.get $at) (i32.load offset=8 (local.get $rec))) (local.get $nx)))
+      (if (i32.ne (local.get $delta) (i32.const 0)) (then
+        (local.set $end (i32.load (local.get $lastA)))
+        (br_if $done (i32.gt_s (i32.add (local.get $end) (local.get $delta)) (i32.load offset=12 (local.get $rec))))
+        (local.set $mv (i32.sub (local.get $end) (local.get $nx)))
+        (local.set $dst (i32.add (local.get $nx) (local.get $delta)))
+        (memory.copy (i32.add (local.get $xy) (i32.shl (local.get $dst) (i32.const 3))) (i32.add (local.get $xy) (i32.shl (local.get $nx) (i32.const 3))) (i32.shl (local.get $mv) (i32.const 3)))
+        (memory.copy (i32.add (local.get $kd) (local.get $dst)) (i32.add (local.get $kd) (local.get $nx)) (local.get $mv))
+        (memory.copy (i32.add (local.get $ids) (i32.shl (local.get $dst) (i32.const 2))) (i32.add (local.get $ids) (i32.shl (local.get $nx) (i32.const 2))) (i32.shl (local.get $mv) (i32.const 2)))
+        (local.set $dv (i32x4.splat (local.get $delta)))
+        (local.set $p (i32.add (local.get $sA) (i32.const 4)))
+        (block $vd (loop $vl
+          (br_if $vd (i32.gt_u (i32.add (local.get $p) (i32.const 16)) (i32.add (local.get $lastA) (i32.const 4))))
+          (v128.store (local.get $p) (i32x4.add (v128.load (local.get $p)) (local.get $dv)))
+          (local.set $p (i32.add (local.get $p) (i32.const 16)))
+          (br $vl)))
+        (block $sd (loop $sl
+          (br_if $sd (i32.gt_u (local.get $p) (local.get $lastA)))
+          (i32.store (local.get $p) (i32.add (i32.load (local.get $p)) (local.get $delta)))
+          (local.set $p (i32.add (local.get $p) (i32.const 4)))
+          (br $sl)))))
+      (local.set $rec (i32.add (local.get $rec) (i32.const 16)))
+      (local.set $i (i32.add (local.get $i) (i32.const 1)))
+      (br $next)))
+    (local.get $i))
 )

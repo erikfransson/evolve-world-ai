@@ -20,9 +20,11 @@ import { Region, growRegion } from "./resident.ts";
 export const MAX_RAYS = 64;
 const ROCK_BOUND_CAP = 2048; // distances past this are not told apart; a ray longer than this walks the rock anyway
 const SCRATCH_BYTES = 2816;
+const PATCH_MAX = 1024; // dirty cells patched in place per tick; more are cheaper to pack again whole
 
 interface SenseExports extends WebAssembly.Exports {
   sense(p: number): void;
+  patchItems(rec: number, n: number, xy: number, kinds: number, ids: number): number;
 }
 
 // Per cell of the rock grid, a lower bound of the distance from any point of the cell to the nearest disc edge (ROCK_BOUND_CAP when none is nearer),
@@ -78,6 +80,7 @@ export class WasmSenser {
   private rItemXY = new Region();
   private rItemKinds = new Region();
   private rItemIds = new Region();
+  private rPatch = new Region();
   private rCStart = new Region();
   private rSx = new Region();
   private rSy = new Region();
@@ -130,6 +133,7 @@ export class WasmSenser {
     this.rItemXY = new Region();
     this.rItemKinds = new Region();
     this.rItemIds = new Region();
+    this.rPatch = new Region();
     this.rCStart = new Region();
     this.rSx = new Region();
     this.rSy = new Region();
@@ -238,11 +242,8 @@ export class WasmSenser {
   private syncItems(world: World): void {
     const { cols, rows, cellHead, nextItem } = world;
     const dirty = world.dirtyCells;
-    let full = this.synced !== world || !dirty;
-    if (!full && dirty!.length > 0) {
-      this.views();
-      for (const c of dirty!) full = !this.patchCell(world, c) || full;
-    }
+    let full = this.synced !== world || !dirty || dirty.length > PATCH_MAX;
+    if (!full && dirty!.length > 0) full = !this.patchCells(world, dirty!);
     if (full) {
       let widest = 0;
       for (let row = 0; row < rows; row++) {
@@ -273,29 +274,29 @@ export class WasmSenser {
     else world.dirtyCells = [];
   }
 
-  // Makes cell c's packed run match its list: the rest of the row shifts by the change in length. False when the row outgrows its run.
-  private patchCell(world: World, c: number): boolean {
+  // Makes the packed runs of the dirty cells match their lists: the kernel resizes them in order (the rest of each row shifts by the change in length), then the lists are written.
+  // False when a row outgrows its run.
+  private patchCells(world: World, dirty: number[]): boolean {
     const { cols, cellHead, nextItem } = world;
-    const start = this.i32;
-    const xy = this.f32;
-    const kd = this.u8;
-    const xB = this.pXY >> 2; // element offsets of the packed arrays in the whole-memory views
-    const row = Math.floor(c / cols);
-    const s = (this.pStart >> 2) + row * (cols + 1) + (c - row * cols);
-    const last = (this.pStart >> 2) + row * (cols + 1) + cols;
-    let n = 0;
-    for (let i = cellHead[c]!; i >= 0; i = nextItem[i]!) n++;
-    const at = start[s]!;
-    const delta = n - (start[s + 1]! - at);
-    if (delta !== 0) {
-      const end = start[last]!;
-      if (end + delta > (row + 1) * this.rowCap) return false;
-      xy.copyWithin(xB + 2 * (at + n), xB + 2 * start[s + 1]!, xB + 2 * end);
-      kd.copyWithin(this.pKinds + at + n, this.pKinds + start[s + 1]!, this.pKinds + end);
-      start.copyWithin((this.pIds >> 2) + at + n, (this.pIds >> 2) + start[s + 1]!, (this.pIds >> 2) + end);
-      for (let j = s + 1; j <= last; j++) start[j] += delta;
+    const n = dirty.length;
+    const pRec = this.grow(this.rPatch, PATCH_MAX * 16);
+    this.views();
+    const i32 = this.i32;
+    const r = pRec >> 2;
+    const sBase = this.pStart; // byte address of itemStart
+    for (let k = 0; k < n; k++) {
+      const c = dirty[k]!;
+      const row = Math.floor(c / cols);
+      let m = 0;
+      for (let i = cellHead[c]!; i >= 0; i = nextItem[i]!) m++;
+      const rowA = sBase + row * (cols + 1) * 4;
+      i32[r + 4 * k] = rowA + (c - row * cols) * 4;
+      i32[r + 4 * k + 1] = rowA + cols * 4;
+      i32[r + 4 * k + 2] = m;
+      i32[r + 4 * k + 3] = (row + 1) * this.rowCap;
     }
-    this.writeCell(world, c, at);
+    if (this.exports.patchItems(pRec, n, this.pXY, this.pKinds, this.pIds) !== n) return false;
+    for (let k = 0; k < n; k++) this.writeCell(world, dirty[k]!, i32[i32[r + 4 * k]! >> 2]!);
     return true;
   }
 
