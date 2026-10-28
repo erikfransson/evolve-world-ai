@@ -8,6 +8,7 @@ Number to compare: `cpuMsPerTick` (user CPU per steady tick, after the first qua
 Fingerprint equal means bit-identical results.
 
 ## Decisions for Erik
+- Huge pages: measured on the brain kernel with MADV_COLLAPSE, 1.7-3.7% of the kernel (about 1% of the tick), via THP `always` system-wide (root) or a native madvise in the server; collapse fails on fragmented memory, so not guaranteed (`pagepack.md`).
 - Helper threads on the server host: the engine's ThinkPool (`liveBench --threads`) was rejected in idea 6 only because this laptop runs the campaign at SCHED_IDLE under load; on a host with spare cores it is the largest untested lever (sense and brain are 70% of the tick and split across threads). Needs one measurement on the host.
 
 - **Exact wins are merged** (1.17x at 60 s, 1.18x over 1800 s, bit-identical; peak memory over 7200 s with saves 533 MB against 751 MB on development); the branch is ready to merge into `development` (73 commits, 53 files, +2175/-149; one correctness review and the three Live push-gate reviews passed; `development` has not moved since the branch point). The exact pool is dry after 26 ideas: nothing runs outside the profiled phases (0.01 ms), and every phase has been cut or shown flat.
@@ -208,6 +209,8 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 
 | 110 | Moonshot study: per-cell (or per 3x3 block) candidate gather in the senser | - | Rejected (`cellgather.md`): 93-97% of creatures are alone in their cell, 70-83% alone in their 3x3 block, so a cell gather saves 1.4-3.3% of row visits (0.01 ms) and a block gather 7-13% (0.06-0.15 ms) before the copy cost; only pays at about 50x the cap density |
 
+| 108 | Study: why the brain kernel's second pass is 28-35% faster (page translation, L1, L2 or L3) | - | Done (`pagepack.md`): not L1, not the TLB; the 24 MB weight footprint spills past this process's share of the 12 MB L3 (knee at 4-8 MB, +40-45% at 24 MB); a page-aware packer loses to plain packing (padding breaks the stream); 2 MB pages measured 1.7-3.7% on the brain kernel (about 1% of the tick), root or native; only fewer weight bytes per brain move the knee |
+
 ## Log
 - 2026-10-27 09:00 Campaign start. Prior campaigns (B1, B2, `docs/perf-explore/`) already moved sense, brains, physics, crowd grid, collisions and scans into WASM; their rejected ideas are not retried unless the live setting changes the picture.
 - 2026-10-27 09:19 `server/src/liveBench.ts` written; two runs at 400 seeded give the same fingerprint (260290661), so the bench is deterministic.
@@ -369,3 +372,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-28 14:05 idea 96 merged (the narrowing only).
 - 2026-10-28 14:15 idea 107 rejected.
 - 2026-10-28 14:30 idea 110 rejected (study).
+- 2026-10-28 14:40 idea 108 done: the brain kernel is L3-footprint bound; a brain-only arena (plain packing) is worth 0.1-0.2 ms, below the bar; huge pages about 1% (decision note updated).
