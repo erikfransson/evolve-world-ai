@@ -389,4 +389,4 @@ Head phases 2026-10-28 14:50 (253f894, load 6-7, `scout-head.md`; ms per tick, 3
 - 2026-10-28 14:55 idea 109 parked (0.3% for 207 lines).
 - 2026-10-28 14:40 review round 4 (Opus, independent) of ideas 96, 97, 106: nothing to fix (demote lanes, the shift square's edges and non-finite positions, pmin/pmax against the JS clamps, the overshooting gap stores fit the +12 bytes on every grid size, refresh unchanged). Closed.
 - 2026-10-28 14:50 scout-head (`scout-head.md`): the pool of single exact ideas at 1.5% or more is dry; left: a small-wins bundle (parked 100 and 109 plus forwardRun's stamp-and-walk moved into the forward export, about 1.5-1.7%), quad lanes (95, running), and the decisions. Rock walk is 14% of the sense kernel for the 10.6% of creatures near rock (a grid-order disc layout gained nothing). Spawned idea 112 (the bundle).
-- 2026-10-28 15:05 idea 111 parked: bf16 genomes buy 3-4%, not worth a rule change; the brain kernel is multiply-add bound once past the L3 knee.
+- 2026-10-28 14:54 idea 111 parked: bf16 genomes buy 3-4%, not worth a rule change; the brain kernel is multiply-add bound once past the L3 knee.
