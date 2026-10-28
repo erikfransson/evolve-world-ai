@@ -68,7 +68,7 @@ No aged save exists in the scratchpad; not run.
 
 ## Tests
 
-`npx vitest run wasm sense resident --maxWorkers=2 --testTimeout=180000`: 5 files, 102 tests, exit 0. New `wasmKernels` test: rock discs whose tangent lies on an edge ray (a hair either side, 3 fans), bit-equal to the JS rays. With the margin set to 0 it goes red (closeness differs); with the fix it passes. (It also passes on the old kernel: the cut is exact.)
+`npx vitest run wasm sense resident --maxWorkers=2 --testTimeout=180000`: 5 files, 102 tests, exit 0. New `wasmKernels` test: rock discs whose tangent lies on an edge ray (a hair either side, 3 fans), bit-equal to the JS rays. With the radius term dropped from the margin it goes red (closeness differs); the 1e-9 L rounding term alone is defensive and not pinned by the test (review round 6). (It also passes on the old kernel: the cut is exact.)
 
 ## Verdict suggestion
 

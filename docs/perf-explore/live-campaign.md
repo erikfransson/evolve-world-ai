@@ -412,3 +412,4 @@ Head phases 2026-10-28 14:50 (253f894, load 6-7, `scout-head.md`; ms per tick, 3
 - 2026-10-28 15:40 full suite on eae5208 (ideas 100, the patchItems fallback tests, the residentBodies fix): 122 files, 1254 tests, exit 0. 6-hour report sent (1.47x / 1.62x noisy, 1.45-1.5x safe reading).
 - 2026-10-28 15:55 idea 115 merged (no drift); review round 6 due for 115 (and 116 when it lands).
 - 2026-10-28 16:10 idea 114 merged (no drift; tsc needed the ground densities in idea 115's test). Review round 6 due for 114 and 115 (116 pending).
+- 2026-10-28 16:20 review round 6 (Opus, independent) of ideas 114 and 115: nothing to fix (the wedge filter is a closed half-plane argument bit-equal to the edge rays; the skipped scan has no side effects and the caps only tighten inside the loop; the chunked walk's order equals the full list); one note corrected in rockcost.md. Closed.
