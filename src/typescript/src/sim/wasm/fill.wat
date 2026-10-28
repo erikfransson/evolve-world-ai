@@ -32,12 +32,6 @@
           (local.get $ty)))
       (f64.const {{G_HALF}})))
 
-  ;; Math.min(hi, Math.max(0, v)) with compares and selects (f64.min and f64.max are slow); a NaN stays NaN
-  (func $clamp (param $v f64) (param $hi f64) (result f64)
-    (local.set $v (select (f64.const 0) (local.get $v) (f64.lt (local.get $v) (f64.const 0))))
-    (select (local.get $hi) (local.get $v) (f64.gt (local.get $v) (local.get $hi)))
-  )
-
   ;; Twin of prepareRows in residentStep.ts with the energy signal left out (the crowd kernel's pack stores it): forward and sideways speed, turn rate and the
   ;; ground value under the creature into the row's brain input extras, and the ground factor the step moves by; GroundField.valueAt for the value.
   (func (export "prepare") (param $G i32)
@@ -67,29 +61,26 @@
       (local.set $factor (f64.const 1))
       (if (i32.and (i32.eqz (local.get $empty)) (i32.ne (local.get $raster) (i32.const 0))) (then
         ;; the node (i, j) at or below the point, and the fractions tx, ty past it
-        (local.set $fx (call $clamp (f64.add (f64.mul (f64.load offset={{R_X}} (local.get $row)) (f64.load offset={{G_INV}} (local.get $G))) (f64.const {{G_PAD}})) (f64.load offset={{G_COL_MAX}} (local.get $G))))
-        (local.set $fy (call $clamp (f64.add (f64.mul (f64.load offset={{R_Y}} (local.get $row)) (f64.load offset={{G_INV}} (local.get $G))) (f64.const {{G_PAD}})) (f64.load offset={{G_ROW_MAX}} (local.get $G))))
+        (local.set $fx (f64.min (f64.load offset={{G_COL_MAX}} (local.get $G))
+          (f64.max (f64.const 0) (f64.add (f64.mul (f64.load offset={{R_X}} (local.get $row)) (f64.load offset={{G_INV}} (local.get $G))) (f64.const {{G_PAD}})))))
+        (local.set $fy (f64.min (f64.load offset={{G_ROW_MAX}} (local.get $G))
+          (f64.max (f64.const 0) (f64.add (f64.mul (f64.load offset={{R_Y}} (local.get $row)) (f64.load offset={{G_INV}} (local.get $G))) (f64.const {{G_PAD}})))))
         (local.set $i (i32.trunc_sat_f64_s (local.get $fx)))
         (local.set $j (i32.trunc_sat_f64_s (local.get $fy)))
+        (local.set $tx (f64.sub (local.get $fx) (f64.convert_i32_s (local.get $i))))
+        (local.set $ty (f64.sub (local.get $fy) (f64.convert_i32_s (local.get $j))))
         (local.set $p (i32.add (local.get $raster) (i32.add (i32.mul (local.get $j) (local.get $stride)) (i32.shl (local.get $i) (i32.const 1)))))
-        ;; both layers are below one half unless some corner byte (layer 0 low, layer 1 high) has bit 7 set: most creatures stand on neither
-        (if (i32.and (i32.const 0x8080)
-              (i32.or (i32.or (i32.load16_u (local.get $p)) (i32.load16_u offset=2 (local.get $p)))
-                      (i32.or (i32.load16_u (i32.add (local.get $p) (local.get $stride))) (i32.load16_u offset=2 (i32.add (local.get $p) (local.get $stride))))))
-          (then
-            (local.set $tx (f64.sub (local.get $fx) (f64.convert_i32_s (local.get $i))))
-            (local.set $ty (f64.sub (local.get $fy) (f64.convert_i32_s (local.get $j))))
-            (if (call $hit (local.get $p) (local.get $stride) (local.get $tx) (local.get $ty))
-              (then (local.set $value (f64.const -1)) (local.set $factor (f64.load offset={{G_SLOW}} (local.get $G))))
-              (else (if (call $hit (i32.add (local.get $p) (i32.const 1)) (local.get $stride) (local.get $tx) (local.get $ty))
-                (then (local.set $value (f64.const 1)) (local.set $factor (f64.load offset={{G_FAST}} (local.get $G)))))))))))
+        (if (call $hit (local.get $p) (local.get $stride) (local.get $tx) (local.get $ty))
+          (then (local.set $value (f64.const -1)) (local.set $factor (f64.load offset={{G_SLOW}} (local.get $G))))
+          (else (if (call $hit (i32.add (local.get $p) (i32.const 1)) (local.get $stride) (local.get $tx) (local.get $ty))
+            (then (local.set $value (f64.const 1)) (local.set $factor (f64.load offset={{G_FAST}} (local.get $G)))))))))
       (f64.store offset={{R_EXTRA_GROUND}} (local.get $row) (local.get $value))
       (f64.store offset={{R_GROUND_FACTOR}} (local.get $row) (local.get $factor))
       (local.set $k (i32.add (local.get $k) (i32.const 1)))
       (br $l)))
   )
 
-  ;; n f64 at src as f32 at dst, two at a time (f32x4.demote_f64x2_zero rounds each lane as f32.demote_f64)
+  ;; n f64 at src stored as f32 at dst, two at a time (f32x4.demote_f64x2_zero rounds each lane as f32.demote_f64)
   (func $narrow (param $dst i32) (param $src i32) (param $n i32)
     (local $i i32)
     (block $d (loop $l
