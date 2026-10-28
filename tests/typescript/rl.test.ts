@@ -267,7 +267,7 @@ describe("hidden food in envs", () => {
 describe("memory envs", () => {
   it("has at least four, and each runs and passes the custom env checks", () => {
     const memory = ENVS.filter((e) => groupOf(e) === "Memory");
-    expect(memory.length).toBeGreaterThanOrEqual(5);
+    expect(memory.length).toBeGreaterThanOrEqual(4);
     for (const e of memory) {
       expect(typeof checkEnv(JSON.parse(JSON.stringify(e)), "ecosystem", 0)).not.toBe("string");
       expect(runEpisode(e, randomLearner(e, 2), 3).seconds).toBeGreaterThan(0);
@@ -282,25 +282,11 @@ describe("memory envs", () => {
     expect(side.filter(Boolean).length).toBe(4);
   });
 
-  it("checks a food cycle: it needs a visible time and must be at least as long", () => {
-    const base = { ...JSON.parse(JSON.stringify(envById("lighthouse")!)) };
-    expect(typeof checkEnv(base, "ecosystem", 0)).not.toBe("string");
-    expect(checkEnv({ ...base, foodCycle: 0.5 }, "ecosystem", 0)).toMatch(/cycle/);
-    expect(checkEnv({ ...base, foodVisibleFor: undefined }, "ecosystem", 0)).toMatch(/cycle/);
-  });
-
-  it("hides and shows the food on the cycle: 20 s at 4 s a cycle toggles every 0.7 s then 3.3 s", () => {
-    const calls: boolean[] = [];
-    const orig = Ecosystem.prototype.setFoodHidden;
-    Ecosystem.prototype.setFoodHidden = function (h: boolean) { calls.push(h); return orig.call(this, h); };
-    try {
-      const env = envById("lighthouse")!;
-      runEpisode(env, randomLearner(env, 4), 1);
-    } finally {
-      Ecosystem.prototype.setFoodHidden = orig;
-    }
-    expect(calls.slice(0, 4)).toEqual([true, false, true, false]);
-    expect(calls.length).toBeGreaterThanOrEqual(8);
+  it("keeps the stops count through checkEnv and rejects a bad one", () => {
+    const spec = JSON.parse(JSON.stringify(envById("two-stops")!));
+    const checked = checkEnv(spec, "ecosystem", 0) as EnvSpec;
+    expect(checked.layout).toEqual({ kind: "stops", count: 2 });
+    for (const count of [0, 1.5, 7, -1]) expect(checkEnv({ ...spec, layout: { kind: "stops", count } }, "ecosystem", 0)).toMatch(/stops count/);
   });
 });
 

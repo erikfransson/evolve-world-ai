@@ -26,8 +26,7 @@ Self-play envs (Melee, Brawl) score against the learner's own league, so their h
 | Flash (flash)       | Memory               | 5 food all round in a 600 x 600 room, visible 2 s of 15 | memory 3.19 vs none 2.17 (600 it, pop 100, 6 seeds) | |
 | Glimpse (glimpse)   | Memory               | a patch of 12 food in 500 x 500, visible 1.5 s of 25 | memory 3.17 vs none 2.10 (6 seeds) | |
 | Truffles (truffles) | Memory               | the same patch, never visible, 30 s                 | memory 2.22 vs none 1.64 (6 seeds) | |
-| Lighthouse (lighthouse) | Memory            | 5 food all round in 600 x 600, shown 0.7 s of every 4 s, 20 s | memory 2.99 vs none 2.44 (6 seeds, 6 of 6) | |
-| Two stops (two-stops) | Memory              | 2 clusters of 4 food on opposite sides, shown 2 s of 18 | memory 3.76 vs none 2.92 (6 seeds, 6 of 6) | |
+| Two stops (two-stops) | Memory              | 2 clusters of 4 food on opposite sides, shown 2 s of 18 (kept anyway, see notes) | memory 3.76 vs none 2.92 (6 seeds, 6 of 6) | |
 | Sprint (sprint)     | Energy               | 600 x 120 strip, food at the far end, 100 energy    | 0.00 -> 4.08   | PPO 0        |
 | Toll road           | Energy               | a closed belt of mild poison, most food behind it   | not measured   |              |
 | Lean times          | Energy               | low energy, slow regrowth, stinging poison          | 0.91 -> 0.92 (200 it) | 0.94 -> 2.05 (200 it); PPO 60 s: 0.94 -> 5.99 |
@@ -121,13 +120,12 @@ E1-E8 from `docs/rl-notes/probes/t3-snr.ts` (64 held-out seeds); E6 and E7 do no
 | Env (id)  | Memory | None | Gap  | Seeds won | E1 SNR | E2 scripted / best | E3 best alive | E4 seeds for 25% | E5 random scores | E8 ms/ep |
 | --------- | ------ | ---- | ---- | --------- | ------ | ------------------ | ------------- | ---------------- | ---------------- | -------- |
 | Flash (reference) | 3.19 | 2.17 | 1.02 | 5 of 6 | 2.44 | 0.18 | 0.83 | 67  | 5% | 2.2 |
-| Lighthouse | 2.99 | 2.44 | 0.55 | 6 of 6 | 2.22 | 0.16 | 0.65 | 111 | 7% | 2.3 |
 | Two stops  | 3.76 | 2.92 | 0.84 | 6 of 6 | 1.30 | 0.18 | 0.70 | 195 | 2% | 2.5 |
 
-- Lighthouse: Flash's layout, but the food shows again for 0.7 s at the start of every 4 s (`foodCycle`), so a creature must hold the places between flashes. Small gap but memory wins on every seed; the cost is a lower score and 111 seeds to resolve a quarter of the gap.
-- Two stops: two clusters (`stops` layout, 150 to 190 from the start) shown for 2 s. Eating one then needs the other's place, beyond sight. Passes E2, E3, E8 but misses E1 (1.30 against 1.5) and needs many seeds (E4 195), like Glimpse; kept for the clean memory gap. At 30 s the best creature lived only 46% of the time (E3 fail, SNR 1.29, gap 0.73 over 6 seeds, 5 of 6), so it was cut to 18 s.
+- Two stops (kept anyway, like Glimpse): two clusters (`stops` layout, 150 to 190 from the start) shown for 2 s. Eating one then needs the other's place, beyond sight. Passes E2, E3, E8 but misses E1 (1.30 against 1.5) and needs 195 seeds for a quarter of the gap (E4); kept for its clean gap (6 of 6 seeds), which Erik asked memory envs for. At 30 s the best creature lived only 46% of the time (E3 fail, SNR 1.29, gap 0.73 over 6 seeds, 5 of 6), so it was cut to 18 s.
+- Lighthouse (Flash's layout, food shown 0.7 s of every 4 s, 20 s, an engine option `foodCycle`, since removed): memory 2.99 vs 2.44 (0.55, 6 of 6), E1 2.22, E3 0.65, E4 111, but dropped on the transfer check. Same body (memory 4+4), 6 seeds, 400 iterations: Flash training scores 2.71 on Lighthouse, Lighthouse training 2.99, from a start of 0.04, so Flash training reaches 90% of Lighthouse's gain (limit 85%). The same skill as Flash.
 - Failed (3 seeds unless noted): Three stops (3 clusters of 3, 30 s) 3.22 vs 3.24, both eat one cluster and neither learns to leave for the next. Blink with 2 clusters shown 1 s of 6 (6 seeds) 2.99 vs 2.83, 3 of 6 seeds, the blink lets a memoryless creature track the clusters. Blink 8 (8 food all round, 0.7 s of 5 s, 25 s, 6 seeds) 5.58 vs 5.05, 4 of 6 seeds with a swing from -1.75 to +2.91.
-- Group Memory is now 5 envs. Not done: transfer check against Flash and Glimpse (Lighthouse is Flash's layout, so expect overlap), and PPO.
+- Group Memory is now 4 envs. Not done: transfer check of Two stops against Flash and Glimpse, and PPO.
 
 ## Notes
 
