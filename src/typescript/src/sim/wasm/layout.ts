@@ -99,8 +99,8 @@ export const LAYOUT = {
   F_DETAIL_PTR: 28,
   F_DETAIL_ROW: 32,
   F_STRIDE: 36,
-  F_ITEM_ROWS: 40,
-  F_INV_CELL: 48, // f64
+  F_OWNERS: 40,
+  F_CROWD_N: 44,
   F_BYTES: 64,
   // call block of prepare (fill.wat; i32 unless noted) and its species block (f64): the speeds, turn rate and ground under each creature as brain input extras, and the ground factor
   G_N: 0,
