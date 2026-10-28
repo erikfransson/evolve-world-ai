@@ -189,6 +189,8 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 | 93 | v128 constants in locals in sense.wat (`$emit`, `$emitClo`, the hit path, the ray-pair loop) and members.wat | yes | Merged as hygiene (`constsense.md`): senser faster in 12 of 12 pairs by 0.01-0.26 ms, tick flat within noise; crowd, fill and step had no rebuilt constants |
 | 102 | Sense walks: load `own`/`kind` only after the distance reject | - | Rejected (`rowstride.md`): the item walk already reads only x/y before the reject; 81-84% of crowd entries pass the distance test, so the `own` load moves for 16-19% of entries at the cost of a branch |
 
+| 100 | Item grid patches in one kernel call per tick (`patchItems`: the three shifts and a v128 add over the later starts per dirty cell) | yes | Parked on `pl-itemsync` (`itemsync.md`): syncItems 0.18 to 0.10 ms per tick (0.7%), exact with a test, +150/-28; below the bar on its own, take it if a bundle of small wins is wanted |
+
 ## Log
 - 2026-10-27 09:00 Campaign start. Prior campaigns (B1, B2, `docs/perf-explore/`) already moved sense, brains, physics, crowd grid, collisions and scans into WASM; their rejected ideas are not retried unless the live setting changes the picture.
 - 2026-10-27 09:19 `server/src/liveBench.ts` written; two runs at 400 seeded give the same fingerprint (260290661), so the bench is deterministic.
@@ -340,3 +342,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-28 13:50 idea 94 merged (kernels regenerated, no drift).
 - 2026-10-28 14:05 review of ideas 85, 88, 90, 92 (Opus, independent): 88, 90, 92 nothing to fix (odd ray lane, tie rule, bounds, the probe's branches and the browser fallback checked); 85 had a HIGH bug: a creature inserted into an empty world (one founder, a visitor's insert into an extinct world) was never gridded because prepareTick skipped lone creatures, and the fill kernel's new trap fired every tick. Fixed: prepareTick returns early only for an empty table; regression test added (red without the fix). 99 and 94 added to the review's range.
 - 2026-10-28 14:15 idea 93 merged (kernels regenerated from the merged sources), idea 102 rejected (study only).
+- 2026-10-28 14:20 idea 100 parked (0.7%).
