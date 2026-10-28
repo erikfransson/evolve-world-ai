@@ -1,6 +1,6 @@
-# Scout: where the sense kernel's per-creature cost goes (scout-ray)
+# Sense kernel: cost per stage and three exact cuts in the ray tests and emit (idea 88, "raytests")
 
-Branch `pl-scout-ray` from `perf-live` 531a215. Study plus a prototype of three exact cuts in `sense.wat` (committed on the branch, tests green, fingerprint equal).
+Branch `pl-scout-ray` from `perf-live` 531a215. Study (scout) plus three exact cuts in `sense.wat`, fingerprints equal. `$emit` and `$emitClo` also zero the species flags and energy of strides other than 6 with an `i32` store loop instead of a per-ray `memory.fill` (not hit live, where the stride is 6).
 
 ## Call structure
 
@@ -52,9 +52,9 @@ Kernel ratio = variant p25 / base p25 in the same run, 3 runs per tick.
 | # | Idea | Lines | t400 | t1500 | Expected at 3300 |
 |---|------|------:|-----:|------:|------------------|
 | 1 | Exact test two rays at a time: keep the f64x2 prefilter, and when a lane passes run the same quadratic and the tie rule in f64x2 on both lanes, masked by the prefilter (and by the last ray for odd nR), with one `bitselect` store of best and kind. Replaces the `ctz` lane loop and the scalar test. Item kind read only when a lane hits. | +25 -25 | 0.975, 0.976, 0.975 | 0.968, 0.977, 0.971 | -2.5% kernel, about -0.08 ms |
-| 2 | Early-out zero fill as an inline `v128.store` loop with an `i32` tail instead of `memory.fill` (V8 calls out for it; cold lines make it worse). Equal in a hot microbench (192 B: 20 vs 23 ns), but faster in the kernel in all 16 runs. `$emit` uses `memory.fill` per ray for strides other than 6 (other species counts), the same loop applies there. | +9 -1 | 0.967-0.983 | 0.970-0.989 | -2% kernel, about -0.06 ms, more in sparse worlds |
+| 2 | Early-out zero fill as an inline `v128.store` loop with an `i32` tail instead of `memory.fill` (V8 calls out for it; cold lines make it worse). Equal in a hot microbench (192 B: 20 vs 23 ns), but faster in the kernel in all 16 runs. The per-ray `memory.fill` of `$emit` for strides other than 6 is an `i32` store loop too. | +9 -1, +10 -4 | 0.967-0.983 | 0.970-0.989 | -2% kernel, about -0.06 ms, more in sparse worlds |
 | 3 | Closeness fused into the emit of the no-crowd path (`$emitClo` computes `1 - best / L` per ray); the closeness pass moves after the crowd gather and runs only on the full path. | +20 -2 | 0.989, 0.989, 0.989 | 0.996, 0.982, 0.989 | -1.1% kernel, about -0.035 ms |
-| all | 1 + 2 + 3 | +67 -44 | 0.949, 0.950, 0.946 | 0.946, 0.937, 0.941 | -5.5% kernel, about -0.17 ms (1.5% of a 10.6 ms tick) |
+| all | 1 + 2 + 3 (diff: sense.wat +73 -47) | +73 -47 | 0.949, 0.950, 0.946 | 0.946, 0.937, 0.941 | -5.5% kernel, about -0.17 ms (1.5% of a 10.6 ms tick) |
 
 Ms figures assume a 3.1 ms kernel (79% of the 4.0 ms senser phase of a quiet run).
 
@@ -69,12 +69,21 @@ Load 24-27, so absolute ms are inflated.
 | base  | 13.030, 13.029, 13.091 (13.030)  | 4.883, 4.895, 4.946 (4.895) | 215, 218, 217 | 708687555   |
 | all   | 13.017, 13.043, 12.602 (13.017)  | 4.729, 4.777, 4.620 (4.729) | 221, 220, 218 | 708687555   |
 
-Senser phase -0.17 ms (-3.4%) in every pair, as the kernel ratio predicts; the tick ratio of medians is 0.999, inside the pair spread (+-0.4 ms) at this load. The cap case was not run.
+Senser phase -0.17 ms (-3.4%) in every pair, as the kernel ratio predicts; the tick ratio of medians is 0.999, inside the pair spread (+-0.4 ms) at this load. Final build (with the stride loop in `$emit`), one mixed run: 12.982 ms, senser 4.733, fingerprint 708687555, 220 MB.
+
+Cap (`--only juggernaut --copies 4900 --profile`, 3 alternating pairs, load falling 21 to 17 during the series):
+
+| Build | cpuMsPerTick (med)               | senser ms (med)             | peak RSS MB   | fingerprint |
+|-------|----------------------------------|-----------------------------|---------------|-------------|
+| base  | 15.772, 15.297, 15.212 (15.297)  | 6.225, 5.896, 5.797 (5.896) | 256, 253, 257 | 10334191    |
+| all   | 15.340, 15.592, 15.642 (15.592)  | 5.871, 5.940, 5.954 (5.940) | 257, 254, 251 | 10334191    |
+
+Cap ratio of medians 1.019 (tick), 1.007 (senser): no gain at the cap. Only the first pair is better, while the load was highest. Not explained; a cap-snapshot kernel run would tell whether the juggernaut mix (fewer candidates, more alone) gains nothing or the pairs are noise.
 
 ## Tests
 
-`npm run wasm`; `npx vitest run wasmKernels thinkEvery residentBodies wasmStep --testTimeout=180000 --maxWorkers=1`: 4 files, 66 tests, exit 0 (JS against kernel bit for bit for 0-12 rays, odd and even, and several strides).
+`npm run wasm`; `npx vitest run wasmKernels thinkEvery residentBodies wasmStep --testTimeout=180000 --maxWorkers=1`: 4 files, 66 tests, exit 0 (JS against kernel bit for bit for 0-12 rays, odd and even, and several strides). Final build: `npx vitest run wasm sense resident thinkEvery ecoPool --maxWorkers=2` exit 1, 133 of 134 passed: `wasmStep` "Inland Sea" timed out at 20 s (load 25); `npx vitest run wasmStep --maxWorkers=1 --testTimeout=180000` 19 of 19, exit 0.
 
 ## Verdict suggestion
 
-The sense kernel has no dominant per-ray cost left: the per-ray passes are about 15% of it, ray-candidate tests 17-19%, the rest walks, rock and the early-out, all instruction and branch bound with misses under 10% that probes can remove. The three cuts above are exact and general (any ray count, odd and even, any stride) and add up to -5.5% of the kernel, about 1.5% of the tick at 3300; worth one implementing branch (this one, after cap-case pairs and a review), not three. Not worth more scouting of this kernel for exact gains.
+The sense kernel has no dominant per-ray cost left: the per-ray passes are about 15% of it, ray-candidate tests 17-19%, the rest walks, rock and the early-out, all instruction and branch bound with misses under 10% that probes can remove. The three cuts above are exact and general (any ray count, odd and even, any stride) and add up to -5.5% of the kernel, about 1.5% of the tick at 3300; but the cap pairs show no gain (senser +0.7%), so the tick gain is unproven: below the bar unless a cap-snapshot kernel run shows the cap pairs were noise. Park on the branch, or merge only as a free extra with idea 83. Not worth more scouting of this kernel for exact gains.
