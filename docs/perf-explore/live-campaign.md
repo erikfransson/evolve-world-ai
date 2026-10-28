@@ -42,6 +42,7 @@ Fingerprint equal means bit-identical results.
 | 2026-10-28 01:53 | after ideas 75 and 76 (load lighter, 2 agents) | 15.16 / 18.56 (cap) | 12.23 / 14.40 (cap) | 1.24x mixed, 1.29x cap (exact) | 251 / 218 MB mixed, 256 / 257 cap |
 | 2026-10-28 05:15 | after idea 59 (quiet machine, load 3: the cleanest run of the campaign) | 10.99 / 13.52 (cap) | 8.58 / 10.45 (cap) | 1.28x mixed, 1.29x cap (exact) | 252 / 219 MB mixed, 257 / 256 cap |
 | 2026-10-28 10:00 | after idea 85 (batch12; loaded machine, load 11-25, 5 agents; ideas 92, 90, 88 merged after this run and not in it) | 16.81 / 20.48 (cap) | 12.81 / 15.32 (cap) | 1.31x mixed, 1.34x cap (exact) | 219 / 220 MB mixed, 258 / 255 cap |
+| 2026-10-28 13:25 | after ideas 85, 92, 90, 88 (batch13; load 7-10, 7 agents) | 16.59 / 20.18 (cap) | 11.94 / 14.24 (cap) | 1.39x mixed, 1.42x cap (exact) | 218 / 218 MB mixed, 256 / 256 cap |
 
 Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54, brain forward 5.23 / 5.17, slots (prepareRows) 1.04 / 1.52, memory and steer 1.26 / 1.59, eat 1.05 / 1.35, crowd grid 0.51 / 0.67, collisions 0.18 / 0.27, rest under 0.2. Server frame encoding adds 0.57 ms per tick at 5 Hz. Speed achieved unpaced on this loaded machine: 2.0x and 1.7x real time (the set speed is 3x).
 
@@ -327,3 +328,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-28 13:05 full suite on the merged head 2a55d98: 1242 passed, 8 timed out in cli.test.ts (subprocess tests at load 37); that file alone passed 16 of 16 with a long timeout, so the merges of 88, 90 and 92 stand. The weekly limit cut all nine agents 10:15-13:00; resumed. Factor batch13 started.
 - 2026-10-28 13:10 idea 91 rejected (`alloc.md`): the GC premise from the scouts was wrong (their 3-4 scavenges per second came from --cpu-prof and the first seconds).
 - 2026-10-28 13:12 idea 81 done (`soak6.md`): 6 h soak passes, peak 554 MB at save time, plateau about 430 MB.
+- 2026-10-28 13:25 factor batch13 on 2a55d98: 1.39x mixed / 1.42x cap, fingerprints equal, RSS equal.
