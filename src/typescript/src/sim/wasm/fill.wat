@@ -1,6 +1,6 @@
 ;; The sense batch from resident creature rows (see resident.ts and layout.ts, whose offsets replace the double-brace tokens): per creature the 64-byte
 ;; sense record that sense.wat reads and the brain input extras (energy signal, speeds, turn, ground, then the memory units, as f32), and the
-;; brain slot list of the batch. Creatures are counting-sorted by item grid row (stable), which is the order sense.wat walks. Only moves data:
+;; brain slot list of the batch. Creatures are placed in crowd grid (cell) order, read off the grid's owners, so neighbours share the cells sense.wat walks. Only moves data:
 ;; the extras are stored in the row as f64, by prepare (below) or, when the energy signal is not packed by the crowd kernel, by JS (residentStep.ts).
 ;; Memory is the brain bank's (imported).
 ;; The record is layout.ts's REC_* (sense.wat reads it).
@@ -81,52 +81,44 @@
   )
 
   (func (export "fill") (param $F i32)
-    (local $n i32) (local $k i32) (local $rows i32) (local $place i32) (local $count i32) (local $nrows i32) (local $r i32) (local $row i32) (local $q i32) (local $rec i32)
-    (local $v f64) (local $at i32) (local $nR i32) (local $in i32) (local $units i32) (local $u i32) (local $up i32) (local $detailRow i32) (local $inv f64) (local $x i32)
+    (local $n i32) (local $k i32) (local $rows i32) (local $place i32) (local $inv i32) (local $ncrowd i32) (local $owners i32) (local $r i32) (local $row i32) (local $q i32) (local $rec i32)
+    (local $v i32) (local $at i32) (local $nR i32) (local $in i32) (local $units i32) (local $u i32) (local $up i32) (local $detailRow i32) (local $x i32)
     (local.set $n (i32.load offset={{F_N}} (local.get $F)))
     (local.set $rows (i32.load offset={{F_ROWS}} (local.get $F)))
     (local.set $place (i32.load offset={{F_PLACE}} (local.get $F)))
-    (local.set $count (i32.load offset={{F_COUNT}} (local.get $F)))
-    (local.set $nrows (i32.load offset={{F_ITEM_ROWS}} (local.get $F)))
-    (local.set $inv (f64.load offset={{F_INV_CELL}} (local.get $F)))
+    (local.set $inv (i32.load offset={{F_COUNT}} (local.get $F)))
+    (local.set $ncrowd (i32.load offset={{F_CROWD_N}} (local.get $F)))
+    (local.set $owners (i32.load offset={{F_OWNERS}} (local.get $F)))
     (local.set $detailRow (i32.load offset={{F_DETAIL_ROW}} (local.get $F)))
-    ;; counts per item grid row: count[row + 1]++
+    ;; place[k] = the record position of batch member k: the members in crowd (cell) order, read off the grid's owners; inv[self] = k + 1 for the members, 0 for the rest
     (local.set $r (i32.const 0))
     (block $zd (loop $zl
-      (br_if $zd (i32.gt_s (local.get $r) (local.get $nrows)))
-      (i32.store (i32.add (local.get $count) (i32.shl (local.get $r) (i32.const 2))) (i32.const 0))
+      (br_if $zd (i32.ge_s (local.get $r) (local.get $ncrowd)))
+      (i32.store (i32.add (local.get $inv) (i32.shl (local.get $r) (i32.const 2))) (i32.const 0))
       (local.set $r (i32.add (local.get $r) (i32.const 1)))
       (br $zl)))
     (block $cd (loop $cl
       (br_if $cd (i32.ge_s (local.get $k) (local.get $n)))
-      (local.set $row (i32.load (i32.add (local.get $rows) (i32.shl (local.get $k) (i32.const 2)))))
-      (local.set $v (f64.floor (f64.mul (f64.load offset={{R_Y}} (local.get $row)) (local.get $inv))))
-      ;; NaN and negative go to row 0
-      (local.set $r (select
-        (select (i32.sub (local.get $nrows) (i32.const 1)) (i32.trunc_sat_f64_s (local.get $v)) (f64.ge (local.get $v) (f64.convert_i32_s (local.get $nrows))))
-        (i32.const 0)
-        (f64.ge (local.get $v) (f64.const 0))))
-      (i32.store (i32.add (local.get $place) (i32.shl (local.get $k) (i32.const 2))) (local.get $r))
-      (local.set $r (i32.add (i32.shl (i32.add (local.get $r) (i32.const 1)) (i32.const 2)) (local.get $count)))
-      (i32.store (local.get $r) (i32.add (i32.load (local.get $r)) (i32.const 1)))
+      (local.set $r (i32.load (i32.add (i32.load offset={{F_SELVES}} (local.get $F)) (i32.shl (local.get $k) (i32.const 2)))))
+      (if (i32.ge_u (local.get $r) (local.get $ncrowd)) (then unreachable))
+      (i32.store (i32.add (local.get $inv) (i32.shl (local.get $r) (i32.const 2))) (i32.add (local.get $k) (i32.const 1)))
       (local.set $k (i32.add (local.get $k) (i32.const 1)))
       (br $cl)))
+    (local.set $q (i32.const 0))
     (local.set $r (i32.const 0))
     (block $pd (loop $pl
-      (br_if $pd (i32.ge_s (local.get $r) (local.get $nrows)))
-      (i32.store offset=4 (i32.add (local.get $count) (i32.shl (local.get $r) (i32.const 2)))
-        (i32.add (i32.load offset=4 (i32.add (local.get $count) (i32.shl (local.get $r) (i32.const 2))))
-                 (i32.load (i32.add (local.get $count) (i32.shl (local.get $r) (i32.const 2))))))
+      (br_if $pd (i32.ge_s (local.get $r) (local.get $ncrowd)))
+      (local.set $v (i32.load (i32.add (local.get $inv) (i32.shl (i32.load (i32.add (local.get $owners) (i32.shl (local.get $r) (i32.const 2)))) (i32.const 2)))))
+      (if (local.get $v) (then
+        (i32.store (i32.add (local.get $place) (i32.shl (i32.sub (local.get $v) (i32.const 1)) (i32.const 2))) (local.get $q))
+        (local.set $q (i32.add (local.get $q) (i32.const 1)))))
       (local.set $r (i32.add (local.get $r) (i32.const 1)))
       (br $pl)))
     (local.set $k (i32.const 0))
     (block $fd (loop $fl
       (br_if $fd (i32.ge_s (local.get $k) (local.get $n)))
       (local.set $row (i32.load (i32.add (local.get $rows) (i32.shl (local.get $k) (i32.const 2)))))
-      ;; q = count[grid row]++, the record position
-      (local.set $at (i32.add (local.get $count) (i32.shl (i32.load (i32.add (local.get $place) (i32.shl (local.get $k) (i32.const 2)))) (i32.const 2))))
-      (local.set $q (i32.load (local.get $at)))
-      (i32.store (local.get $at) (i32.add (local.get $q) (i32.const 1)))
+      (local.set $q (i32.load (i32.add (local.get $place) (i32.shl (local.get $k) (i32.const 2)))))
       (local.set $rec (i32.add (i32.load offset={{F_REC}} (local.get $F)) (i32.shl (local.get $q) (i32.const {{REC_SHIFT}}))))
       (local.set $nR (i32.load offset={{R_RAYS}} (local.get $row)))
       (f64.store offset={{REC_X}} (local.get $rec) (f64.load offset={{R_X}} (local.get $row)))

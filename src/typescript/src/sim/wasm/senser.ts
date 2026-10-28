@@ -371,7 +371,7 @@ export class WasmSenser {
       i32[species + k] = crowdSpecies[k]!;
       f32[sig + k] = energySignal(energies[k]!, startEnergy);
     }
-    filler.fill(rows, selves, n, world, pRec, slotsAt, pDetail, detail, stride);
+    filler.fill(rows, selves, n, pOwn, count, pRec, slotsAt, pDetail, detail, stride);
     this.views(); // fill may have grown the memory
     ({ f32, i32, f64 } = this);
     f64[(pP + L.S_WORLD_W) >> 3] = world.width;
