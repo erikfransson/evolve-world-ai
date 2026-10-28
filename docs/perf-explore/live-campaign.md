@@ -10,7 +10,7 @@ Fingerprint equal means bit-identical results.
 ## Decisions for Erik
 - Malloc environment in the unit (`memscout.md`, idea 137): `MALLOC_ARENA_MAX=2`, `MALLOC_MMAP_THRESHOLD_=131072`, `MALLOC_TRIM_THRESHOLD_=131072` cut the steady RSS after saves from 400 to 316 MB (3 cap pairs, 150 s); the save peak is unchanged. Three unit-file lines, no code; idea 68 saw no gain from the arena cap alone, so a soak with the env set should confirm before the unit changes. Say yes to run that soak.
 - End condition (Erik, 2026-10-28 22:00): the campaign runs until idea 200, then stops. After that: an independent code-quality review (thermo-nuclear style, Opus or better) of the whole campaign diff, fixes applied, the factor re-measured to show the boost survived the clean-up, then the merge into development (push-gate re-check for any server change).
-- Merge perf-live into development: ready (1.48x mixed / 1.46x cap bit-identical, six engine review rounds and the three push-gate reviews closed, full suite green, 6 h soak passed, Unreleased notes in docs/changes.md). One deferred pre-existing note: no fsync before a save's rename (a crash can leave a zero-length newest save; recovery falls back to older saves; an fsync would stall the tick thread). Nothing is pushed.
+- Merge perf-live into development: ready (1.53x mixed / 1.59x cap bit-identical at batch19, six engine review rounds and the three push-gate reviews closed, full suite green, 6 h soak passed, Unreleased notes in docs/changes.md). One deferred pre-existing note: no fsync before a save's rename (a crash can leave a zero-length newest save; recovery falls back to older saves; an fsync would stall the tick thread). Nothing is pushed.
 - Quad-lane brains (`pl-quad`, exact, 760 lines): brain phase 1.06x mixed / 1.20x cap, about 2-5% of the tick; worth it only if the cap case matters and the native kernel stays parked.
 - bf16 genomes (`pl-bf16genome`, two switches): 1.03-1.04x only, but 12.5 MB less bank memory, 27% smaller saves and engine-exact genomes; a rule change with new pins and a fresh world. Not recommended for speed alone.
 - Huge pages: measured on the brain kernel with MADV_COLLAPSE, 1.7-3.7% of the kernel (about 1% of the tick), via THP `always` system-wide (root) or a native madvise in the server; collapse fails on fragmented memory, so not guaranteed (`pagepack.md`).
@@ -57,6 +57,8 @@ Fingerprint equal means bit-identical results.
 | 2026-10-28 21:27 | report: no engine change since batch17 (docs only) | - | - | 1.46x mixed / 1.50x cap (batches 16-17 bracket) | unchanged |
 | 2026-10-28 22:38 | 4 founders x 800 (3 pairs, medians, batch18, head b52af95: 126 + 116 + 125) | 17.06 | 11.29 | 1.51x (exact) | 214 / 220 MB |
 | 2026-10-28 22:38 | Juggernaut x 4900 (3 pairs, medians, batch18) | 21.18 | 13.30 | 1.59x (exact) | 256 / 255 MB |
+| 2026-10-28 22:54 | 4 founders x 800 (3 pairs, medians, batch19, head 4806d4c: 128 in) | 16.91 | 11.08 | 1.53x (exact) | 251 / 219 MB |
+| 2026-10-28 22:54 | Juggernaut x 4900 (3 pairs, medians, batch19) | 20.54 | 12.95 | 1.59x (exact) | 258 / 256 MB |
 
 Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54, brain forward 5.23 / 5.17, slots (prepareRows) 1.04 / 1.52, memory and steer 1.26 / 1.59, eat 1.05 / 1.35, crowd grid 0.51 / 0.67, collisions 0.18 / 0.27, rest under 0.2. Server frame encoding adds 0.57 ms per tick at 5 Hz. Speed achieved unpaced on this loaded machine: 2.0x and 1.7x real time (the set speed is 3x).
 
@@ -472,3 +474,4 @@ Head phases 2026-10-28 14:50 (253f894, load 6-7, `scout-head.md`; ms per tick, 3
 - 2026-10-28 22:35 idea 135 (moonshot 3) reported: record-ordered item candidate lists are the one big exact lever left (6-7% of the tick in the harness); the same agent builds it as idea 139.
 - 2026-10-28 22:38 factor batch18 on b52af95 (126, 116, 125 in; 128 not yet): 1.51x mixed / 1.59x cap, fingerprints equal, RSS equal. Batch19 launched on 4806d4c (128 in).
 - 2026-10-28 22:45 idea 137 (memory scout) reported: no leak; the genome copy (23-27 MB) is built away as idea 140; the malloc env is a decision for Erik.
+- 2026-10-28 22:54 factor batch19 on 4806d4c (126, 116, 125, 128 in): 1.53x mixed / 1.59x cap, fingerprints equal, RSS equal (the base's 251 MB mixed peak is a one-off outlier of the base runs).
