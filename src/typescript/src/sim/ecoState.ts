@@ -68,14 +68,15 @@ export function saveState(eco: Ecosystem): EcoState {
 }
 
 // The keys keep their order, so JSON.stringify(packState(snapshotState(eco))) is the same text as JSON.stringify(saveState(eco)).
-export function packState(s: EcoSnapshot): EcoState {
+// col: how a column becomes its string (the packing worker puts a marker there and writes the base64 itself, a piece at a time).
+export function packState(s: EcoSnapshot, col: (a: Typed) => string = pack): EcoState {
   const it = s.items;
   const cr = s.creatures;
   return {
     ...s,
-    items: { xs: pack(it.xs), ys: pack(it.ys), kinds: pack(it.kinds), nextItem: pack(it.nextItem), cellHead: pack(it.cellHead), freeSlots: pack(it.freeSlots), freeCount: it.freeCount },
+    items: { xs: col(it.xs), ys: col(it.ys), kinds: col(it.kinds), nextItem: col(it.nextItem), cellHead: col(it.cellHead), freeSlots: col(it.freeSlots), freeCount: it.freeCount },
     creatures: {
-      count: cr.count, scalars: pack(cr.scalars), plans: cr.plans, genomes: pack(cr.genomes), memory: pack(cr.memory), ...(cr.outputs ? { outputs: pack(cr.outputs) } : {}),
+      count: cr.count, scalars: col(cr.scalars), plans: cr.plans, genomes: col(cr.genomes), memory: col(cr.memory), ...(cr.outputs ? { outputs: col(cr.outputs) } : {}),
       ...(cr.mutationScales ? { mutationScales: cr.mutationScales } : {}), ...(cr.bumpKills ? { bumpKills: cr.bumpKills } : {}),
     },
   };

@@ -3,11 +3,12 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, symlinkSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createHash } from "node:crypto";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { LIMITS, LIVE } from "../../server/src/config.ts";
 import { LiveWorld } from "../../server/src/liveWorld.ts";
 import { Saves, openWorld } from "../../server/src/saves.ts";
-import { packSave } from "../../server/src/saveParse.ts";
+import { TooBig, packSave } from "../../server/src/saveParse.ts";
 import { loadFounders } from "../../server/src/founders.ts";
 import { loadOverrides } from "../../server/src/admin.ts";
 import { StateStore, readRegularFile, saveName } from "../../server/src/state.ts";
@@ -159,6 +160,28 @@ describe("saves", () => {
     }
     expect(columns).toBe(10);
   });
+
+  it("the streamed gzip of a cap-size world is the byte-for-byte gzip of the one-shot JSON, and the size check is exact", async () => {
+    const c = smallConfig();
+    c.eco.thinkEvery = 2; // the outputs column too
+    c.eco.initialPopulation = 0; // empty, so the founders can be seeded
+    c.world.width = 12000;
+    c.world.height = 7800;
+    c.eco.maxPopulation = 5000;
+    const w = new LiveWorld(c, null);
+    let seed = 7;
+    w.seedFounders(loadFounders(FOUNDERS.pathname).filter((f) => f.id === "juggernaut"), () => ((seed = (seed * 16807) % 2147483647) / 2147483647), 4900);
+    for (let i = 0; i < 3; i++) w.eco.step();
+    expect(w.eco.population).toBeGreaterThan(4000);
+    const oneShot = gzipSync(Buffer.from(JSON.stringify(packState(w.saveSnapshot()))));
+    const sha = (b: Uint8Array): string => createHash("sha256").update(b).digest("hex");
+    const { gz, bytes } = await packSave(w.saveSnapshot(), LIMITS.maxSaveJsonBytes);
+    expect(sha(gz)).toBe(sha(oneShot));
+    expect(bytes).toBe(gunzipSync(oneShot).length);
+    await expect(packSave(w.saveSnapshot(), bytes - 1)).rejects.toMatchObject({ bytes });
+    await expect(packSave(w.saveSnapshot(), bytes - 1)).rejects.toBeInstanceOf(TooBig);
+    expect((await packSave(w.saveSnapshot(), bytes)).bytes).toBe(bytes);
+  }, 180_000);
 
   it("a save packer that takes too long is refused, its worker gone, and the next save goes through", async () => {
     const w = new LiveWorld(smallConfig(), null);
