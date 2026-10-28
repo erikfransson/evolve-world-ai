@@ -231,6 +231,8 @@ Head phases 2026-10-28 14:50 (253f894, load 6-7, `scout-head.md`; ms per tick, 3
 
 | 115 | Rock-adjacent sensing by parts (rock stage 12.5% of the sense kernel: lookup 0.08, walk 0.21, disc ray stage 0.16 ms; 40-65% of kept discs lie outside the ray wedge); built: a disc is kept only inside the wedge widened by its radius, as items are | yes | Merged as a free extra (`rockcost.md`): sense kernel -2% mixed / -2.4% cap, +10/-5 wat and a tangent-edge test; the walk is not miss bound (lists -0.05, prefetch +0.08) |
 
+| 114 | Births by parts: the candidate scan is 58-75% of the births phase and runs for nothing in 59-80% of ticks (a cap ends it at entry); births are 0.24-0.51 per tick, 195 us each; built: the scan only when the caps leave room, candidates in chunks of 8 | yes | Merged as a small exact extra (`birthcost.md`): births phase -50 to -60% (0.04-0.095 ms per tick), +45/-12 with a chunk-walk test |
+
 ## Log
 - 2026-10-27 09:00 Campaign start. Prior campaigns (B1, B2, `docs/perf-explore/`) already moved sense, brains, physics, crowd grid, collisions and scans into WASM; their rejected ideas are not retried unless the live setting changes the picture.
 - 2026-10-27 09:19 `server/src/liveBench.ts` written; two runs at 400 seeded give the same fingerprint (260290661), so the bench is deterministic.
@@ -409,3 +411,4 @@ Head phases 2026-10-28 14:50 (253f894, load 6-7, `scout-head.md`; ms per tick, 3
 - 2026-10-28 15:45 idea 95 parked (quad lanes); its residentBodies test fix taken into perf-live (the test read a typed-array view that the step's memory growth detaches, a pre-existing fragility).
 - 2026-10-28 15:40 full suite on eae5208 (ideas 100, the patchItems fallback tests, the residentBodies fix): 122 files, 1254 tests, exit 0. 6-hour report sent (1.47x / 1.62x noisy, 1.45-1.5x safe reading).
 - 2026-10-28 15:55 idea 115 merged (no drift); review round 6 due for 115 (and 116 when it lands).
+- 2026-10-28 16:10 idea 114 merged (no drift; tsc needed the ground densities in idea 115's test). Review round 6 due for 114 and 115 (116 pending).
