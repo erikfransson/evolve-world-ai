@@ -454,28 +454,34 @@ describe("sense.wat (SenseKernels)", () => {
     }
   });
 
+  // Checks the packed item rows against the cell lists, item for item; returns the slots of a row's run (where row 1 starts).
+  function expectPacked(kernels: SenseKernels, world: World): number {
+    const t = kernels.itemTables(world)!;
+    const buf = kernels.f32.buffer;
+    const start = new Int32Array(buf, t.start, world.rows * (t.cols + 1));
+    const ids = new Int32Array(buf, t.ids);
+    const xy = new Float32Array(buf, t.xy);
+    for (let row = 0; row < world.rows; row++) {
+      for (let cx = 0; cx < t.cols; cx++) {
+        let p = start[row * (t.cols + 1) + cx]!;
+        for (let i = world.cellHead[row * t.cols + cx]!; i >= 0; i = world.nextItem[i]!, p++) {
+          expect(ids[p]).toBe(i);
+          expect(xy[2 * p]).toBe(world.xs[i]);
+          expect(xy[2 * p + 1]).toBe(world.ys[i]);
+        }
+        expect(start[row * (t.cols + 1) + cx + 1]).toBe(p);
+      }
+    }
+    return start[t.cols + 1]!;
+  }
+
   it("keeps the packed item rows equal to the cell lists, item for item, over many changes in one row, repeated cells and rebuilds", () => {
     const o: Setup = { rays: 3, spread: 1, creatures: [[300, 250, 0.4]], items };
     const { world, crowd, kernels, batch } = check(o, true);
     const rng = createRng(9);
     const packed = () => {
       run(kernels, world, crowd, batch);
-      const t = kernels.itemTables(world)!;
-      const buf = kernels.f32.buffer;
-      const start = new Int32Array(buf, t.start, world.rows * (t.cols + 1));
-      const ids = new Int32Array(buf, t.ids);
-      const xy = new Float32Array(buf, t.xy);
-      for (let row = 0; row < world.rows; row++) {
-        for (let cx = 0; cx < t.cols; cx++) {
-          let p = start[row * (t.cols + 1) + cx]!;
-          for (let i = world.cellHead[row * t.cols + cx]!; i >= 0; i = world.nextItem[i]!, p++) {
-            expect(ids[p]).toBe(i);
-            expect(xy[2 * p]).toBe(world.xs[i]);
-            expect(xy[2 * p + 1]).toBe(world.ys[i]);
-          }
-          expect(start[row * (t.cols + 1) + cx + 1]).toBe(p);
-        }
-      }
+      expectPacked(kernels, world);
     };
     packed();
     for (let round = 0; round < 40; round++) {
@@ -487,6 +493,51 @@ describe("sense.wat (SenseKernels)", () => {
       }
       packed();
     }
+  });
+
+  it("packs the item rows again when more than 1024 cells changed or a row outgrew its run, and only then", () => {
+    const rng = createRng(13);
+    const spot = (y0: number): [number, number] => [rng.range(4, 3996), y0 < 0 ? rng.range(4, 3996) : y0 + rng.range(10, 90)];
+    const own = Array.from({ length: 300 }, (_, i): [number, number, number] => [...spot(i < 60 ? 1200 : -1), 1 + (i % 2)]); // row 12 the widest
+    const { world, crowd, kernels, batch } = check({ rays: 3, spread: 1, creatures: [[300, 250, 0.4]], items: own, width: 4000, height: 4000 }, true);
+    expect(world.cols * world.rows).toBeGreaterThan(1024); // the dirty list can pass 1024 cells before it is dropped
+    const sync = () => {
+      run(kernels, world, crowd, batch);
+      return expectPacked(kernels, world);
+    };
+    const place = (i: number, y0: number) => world.setItem(i, ...spot(y0), (1 + (i % 2)) as 1 | 2);
+    let cap = sync();
+    // A few changes a tick, the widest row growing within its run: patched in place, so the run keeps its length.
+    for (let tick = 0; tick < 5; tick++) {
+      place(60 + 2 * tick, 1200);
+      place(61 + 2 * tick, 1200);
+      for (let k = 0; k < 6; k++) place(100 + Math.floor(rng.range(0, 200)), -1);
+      expect(sync()).toBe(cap);
+    }
+    // Every item moved twice: more than 1024 dirty cells, packed again whole with the run fitted to the new widest row.
+    for (let i = 0; i < 300; i++) {
+      place(i, -1);
+      place(i, -1);
+    }
+    expect(world.dirtyCells!.length).toBeGreaterThan(1024);
+    const whole = sync();
+    expect(whole).not.toBe(cap);
+    cap = whole;
+    // Eight items a tick poured into row 20: patched until the row outgrows its run, then packed again with a longer one.
+    let grew = 0;
+    for (let tick = 0, next = 300; tick < 14; tick++) {
+      for (let k = 0; k < 8; k++) place(next++ % 400, 2000);
+      let n = 0;
+      for (let c = 20 * world.cols; c < 21 * world.cols; c++) for (let i = world.cellHead[c]!; i >= 0; i = world.nextItem[i]!) n++;
+      const now = sync();
+      if (n <= cap) expect(now).toBe(cap);
+      else {
+        expect(now).toBeGreaterThan(n);
+        grew++;
+      }
+      cap = now;
+    }
+    expect(grew).toBeGreaterThan(0);
   });
 
   it("sees other creatures with their energy, within f32 rounding of the JS crowd rays", () => {
