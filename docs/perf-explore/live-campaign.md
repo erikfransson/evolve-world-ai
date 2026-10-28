@@ -45,6 +45,7 @@ Fingerprint equal means bit-identical results.
 | 2026-10-28 05:15 | after idea 59 (quiet machine, load 3: the cleanest run of the campaign) | 10.99 / 13.52 (cap) | 8.58 / 10.45 (cap) | 1.28x mixed, 1.29x cap (exact) | 252 / 219 MB mixed, 257 / 256 cap |
 | 2026-10-28 10:00 | after idea 85 (batch12; loaded machine, load 11-25, 5 agents; ideas 92, 90, 88 merged after this run and not in it) | 16.81 / 20.48 (cap) | 12.81 / 15.32 (cap) | 1.31x mixed, 1.34x cap (exact) | 219 / 220 MB mixed, 258 / 255 cap |
 | 2026-10-28 13:25 | after ideas 85, 92, 90, 88 (batch13; load 7-10, 7 agents) | 16.59 / 20.18 (cap) | 11.94 / 14.24 (cap) | 1.39x mixed, 1.42x cap (exact) | 218 / 218 MB mixed, 256 / 256 cap |
+| 2026-10-28 15:00 | after ideas 93, 94, 96, 97, 99 (batch14; load falling 19 to 8 during the run, spread 15%: treat as an upper bound, rerun on a quieter machine) | 15.05 / 17.85 (cap) | 9.59 / 11.73 (cap) | 1.57x mixed, 1.52x cap (exact) | 247 / 218 MB mixed, 259 / 257 cap |
 
 Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54, brain forward 5.23 / 5.17, slots (prepareRows) 1.04 / 1.52, memory and steer 1.26 / 1.59, eat 1.05 / 1.35, crowd grid 0.51 / 0.67, collisions 0.18 / 0.27, rest under 0.2. Server frame encoding adds 0.57 ms per tick at 5 Hz. Speed achieved unpaced on this loaded machine: 2.0x and 1.7x real time (the set speed is 3x).
 
@@ -374,3 +375,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-28 14:30 idea 110 rejected (study).
 - 2026-10-28 14:40 idea 108 done: the brain kernel is L3-footprint bound; a brain-only arena (plain packing) is worth 0.1-0.2 ms, below the bar; huge pages about 1% (decision note updated).
 - 2026-10-28 14:45 full suite on 6858a11 (ideas 93, 94, 96, 97, 99 and the lone-creature fix): 122 files, 1251 tests, exit 0. Factor batch14 started. Idea 111 (bf16-valued genomes, a game-rule moonshot for Erik) spawned on the pagepack finding.
+- 2026-10-28 15:00 factor batch14 on 6858a11: 1.57x / 1.52x but noisy (live runs 9.0-10.7 ms); batch13's clean 1.39x / 1.42x plus the five small merges (about 3-4%) predicts about 1.45x; rerun queued for the 15:23 report.
