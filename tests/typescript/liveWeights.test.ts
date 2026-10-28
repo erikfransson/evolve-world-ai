@@ -70,7 +70,7 @@ describe("brain weights of the live world", () => {
     expect(new StateStore(dir).list().length).toBeGreaterThan(0); // nothing moved
   });
 
-  // The budget binds before the population for big brains: the four founders fill it near 3300 creatures (a reset past it is refused,
+  // The budget binds before the population for big brains: the three founders fill it near 2800 creatures (a reset past it is refused,
   // above), while a world of the Juggernaut alone, Live's usual lineage, fits the whole room below the birth reserve.
   it("leave the founders room at the start count, a Juggernaut world the whole room, and the live world its cap", () => {
     expect(seedWeights(FOUNDERS, SEED_COPIES)).toBeLessThanOrEqual(BIRTH_WEIGHT_CAP);

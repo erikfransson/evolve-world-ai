@@ -6,6 +6,9 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- Live: brains cost no energy and eyes half as much (`creature.neuronCost` 0, was 0.005; `creature.rayCost` 0.01, was 0.02), so the Oracle survives beside the Grazer. The Ecosystem and Arena keep their costs.
+- Live: three starter founders, Juggernaut, Oracle and Grazer. The Explorer is no longer seeded or offered in "Add your creature" and the RL Arena's Founders choice (one shared file).
+
 ## 0.2.7 (2026-10-26)
 
 - Live: room for 5000 creatures (was 3000, #63), births still stop 100 below it. The brain-weight budget stays at 7 million, so a world of big brains still waits for deaths before that. A full world fits fewer viewers (about 16 to 23).
