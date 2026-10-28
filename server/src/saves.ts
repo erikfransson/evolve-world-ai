@@ -15,7 +15,8 @@ const errText = (e: unknown): string => (e instanceof Error ? e.message : String
 const RESTORE_TRIES = 3; // saves of this world tried at startup before giving up, so a failing start exits in minutes and systemd stops retrying
 // The stop path (SIGTERM, TimeoutStopSec=60 in the unit): its save may pack for up to STOP_PACK_MS when none was in flight at the stop, and
 // its verify gets what is left of STOP_BUDGET_MS since the stop was asked, at least STOP_VERIFY_MIN_MS and at most VERIFY_TIMEOUT_MS.
-// Worst case pack + verify + write stays near STOP_BUDGET_MS, leaving the rest of the 60 s for the exit.
+// Worst case pack + verify + write stays near STOP_BUDGET_MS, leaving the rest of the 60 s for the exit. A stop queued behind another
+// save is skipped when that save went through after the stop, and does not start when less than a pack and the verify floor are left.
 export const STOP_PACK_MS = 25_000;
 export const STOP_BUDGET_MS = 50_000;
 const STOP_VERIFY_MIN_MS = 5_000;
@@ -56,6 +57,7 @@ export class Saves {
   private busy = 0; // jobs queued or running in exclusive
   private retryTimer: NodeJS.Timeout | null = null; // at most one: the retry of a periodic save that failed for a transient reason
   private retries = 0; // failed periodic tries in a row, picks the wait from LIMITS.saveRetryMs
+  private lastSavedAt = -Infinity; // performance.now() when a save last went through
   private retriesOff = false; // set when the server stops: no retry is scheduled or run next to the stop's own save
 
   constructor(live: LiveWorld, store: StateStore) {
@@ -125,6 +127,11 @@ export class Saves {
 
   private async saveNow(stop?: Stop): Promise<string> {
       if (this.resetting) throw new Error("the world is being reset");
+      if (stop && !stop.alone) {
+        // Queued behind another save: that one kept its normal budget, so the stop save only runs if a pack and the verify floor still fit.
+        if (this.lastSavedAt > stop.at) return "already saved by the save that was in flight when the stop was asked";
+        if (STOP_BUDGET_MS - (performance.now() - stop.at) < PACK_TIMEOUT_MS + STOP_VERIFY_MIN_MS) throw new Error("the stop budget is spent, the last good save is kept");
+      }
       if (this.live.failedTicks > 0) throw new Error(`its ticks are failing (${this.live.failedTicks} in a row), the last good save is kept`);
       let stallMs = 0;
       let population = 0;
@@ -152,6 +159,7 @@ export class Saves {
       const h = this.live.homeWorld();
       const world = `${h.map || "random"} ${h.width}x${h.height}${h.mapVersion ? ` ${h.mapVersion}` : ""}`; // so the listing tells this world's saves from another's
       const name = await this.store.writeGzipped(gz, { population, tick, world }, new Date(), verify);
+      this.lastSavedAt = performance.now();
       return `saved ${name} (${Math.round(bytes / 1e6)} MB json, ${stallMs} ms tick stall)`;
   }
 

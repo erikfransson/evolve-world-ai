@@ -194,16 +194,50 @@ describe("periodic save retry", () => {
     expect(mocks.verifyMs[1]).toBeLessThanOrEqual(VERIFY_TIMEOUT_MS);
   });
 
-  it("a stop asked while another save is in flight packs with the normal budget and waits for it", async () => {
+  it("a stop asked while another save is in flight: that save went through after the stop, so the stop save is skipped", async () => {
     mocks.delay = 1000;
     const other = saves.save();
     const stop = saves.save(true);
     await vi.advanceTimersByTimeAsync(1000);
     await other;
     mocks.delay = 0;
-    await stop;
+    await expect(stop).resolves.toMatch(/already saved/);
+    expect(mocks.calls).toBe(1);
+    expect(mocks.packMs).toEqual([PACK_TIMEOUT_MS]);
+    expect(files()).toBe(1);
+  });
+
+  it("a stop asked while another save is in flight that then fails still saves, with the normal pack budget, when budget remains", async () => {
+    mocks.outcomes = [timeout(), "real"];
+    mocks.delay = 1000;
+    const other = saves.save().catch((e: unknown) => e);
+    const stop = saves.save(true);
+    await vi.advanceTimersByTimeAsync(0); // the other pack is waiting on its timer now
+    mocks.delay = 0; // the stop save must not wait on the fake clock
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(await other).toBeInstanceOf(Error);
+    await expect(stop).resolves.toMatch(/^saved /);
     expect(mocks.maxInFlight).toBe(1);
     expect(mocks.packMs).toEqual([PACK_TIMEOUT_MS, PACK_TIMEOUT_MS]);
+    expect(files()).toBe(1);
+  });
+
+  it("a stop behind a failed save with the stop budget spent throws without starting a worker", async () => {
+    mocks.outcomes = [timeout()];
+    mocks.delay = 1000;
+    const other = saves.save().catch((e: unknown) => e);
+    const stop = saves.save(true);
+    const stopFailed = stop.catch((e: unknown) => e);
+    const now = performance.now.bind(performance);
+    const spy = vi.spyOn(performance, "now").mockImplementation(() => now() + STOP_BUDGET_MS - PACK_TIMEOUT_MS); // less than pack + verify floor left
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(await other).toBeInstanceOf(Error);
+    const e = await stopFailed;
+    spy.mockRestore();
+    expect(String(e)).toMatch(/not saved.*stop budget is spent, the last good save is kept/);
+    expect(mocks.calls).toBe(1);
+    expect(mocks.packMs).toEqual([PACK_TIMEOUT_MS]);
+    expect(files()).toBe(0);
   });
 
   it("a stop whose pack takes the whole STOP_PACK_MS still verifies and finishes inside the unit's 60 s", () => {
