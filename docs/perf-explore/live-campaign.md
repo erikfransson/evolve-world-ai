@@ -191,6 +191,8 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 
 | 100 | Item grid patches in one kernel call per tick (`patchItems`: the three shifts and a v128 add over the later starts per dirty cell) | yes | Parked on `pl-itemsync` (`itemsync.md`): syncItems 0.18 to 0.10 ms per tick (0.7%), exact with a test, +150/-28; below the bar on its own, take it if a bundle of small wins is wanted |
 
+| 104 | Newer Node A/B (measurement) | - | Closed: only Node 24.18 is installed (plus a system Node 12); installing one is Erik's call (decision list) |
+
 ## Log
 - 2026-10-27 09:00 Campaign start. Prior campaigns (B1, B2, `docs/perf-explore/`) already moved sense, brains, physics, crowd grid, collisions and scans into WASM; their rejected ideas are not retried unless the live setting changes the picture.
 - 2026-10-27 09:19 `server/src/liveBench.ts` written; two runs at 400 seeded give the same fingerprint (260290661), so the bench is deterministic.
