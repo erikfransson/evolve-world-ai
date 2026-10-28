@@ -2,7 +2,6 @@ import type { Creature } from "../creature.ts";
 import type { GroundField } from "../groundField.ts";
 import { FAST_FACTOR, SLOW_FACTOR } from "../terrain.ts";
 import type { Terrain } from "../terrain.ts";
-import type { World } from "../world.ts";
 import { FILL_BYTES, compiled } from "./loader.ts";
 import { LAYOUT as L, f64At } from "./layout.ts";
 import { Region } from "./resident.ts";
@@ -21,7 +20,7 @@ export class WasmFiller {
   private readonly rRows = new Region(); // the row addresses of the batch, in batch order
   private readonly rSelves = new Region();
   private readonly rPlace = new Region();
-  private readonly rCount = new Region();
+  private readonly rCount = new Region(); // per crowd member, its batch position + 1
   private readonly rPrepRows = new Region(); // prepare's batch
   private readonly rSpecies = new Region(); // prepare's species blocks
   private readonly rGround = new Region(); // the ground field's nodes
@@ -90,14 +89,14 @@ export class WasmFiller {
     this.exports.prepare(G);
   }
 
-  // The sense records (into pRec, sorted by item grid row) and brain input extras of the batch of row addresses rows[0 .. n-1], and the brain slot
-  // list at slotsAt. selves[k] is the crowd index of batch member k; detail, when in the batch, gets its rays written at pDetail.
-  fill(rows: Int32Array, selves: Int32Array, n: number, world: World, pRec: number, slotsAt: number, pDetail: number, detail: Creature | null, stride: number): void {
+  // The sense records (into pRec, in crowd cell order) and brain input extras of the batch of row addresses rows[0 .. n-1], and the brain slot
+  // list at slotsAt. selves[k] is the crowd member index of batch member k, pOwners the grid's owners (crowdCount of them); detail, when in the batch, gets its rays written at pDetail.
+  fill(rows: Int32Array, selves: Int32Array, n: number, pOwners: number, crowdCount: number, pRec: number, slotsAt: number, pDetail: number, detail: Creature | null, stride: number): void {
     const store = this.store;
     const rowsAt = store.grow(this.rRows, n * 4);
     const selvesAt = store.grow(this.rSelves, n * 4);
     const placeAt = store.grow(this.rPlace, n * 4);
-    const countAt = store.grow(this.rCount, (world.rows + 1) * 4);
+    const countAt = store.grow(this.rCount, crowdCount * 4);
     const { f64, i32 } = store; // after the last allocation
     i32.set(rows.subarray(0, n), rowsAt >> 2);
     i32.set(selves.subarray(0, n), selvesAt >> 2);
@@ -112,8 +111,8 @@ export class WasmFiller {
     i32[(F + L.F_DETAIL_PTR) >> 2] = pDetail;
     i32[(F + L.F_DETAIL_ROW) >> 2] = detail ? detail.resident!.ptr : 0;
     i32[(F + L.F_STRIDE) >> 2] = stride;
-    i32[(F + L.F_ITEM_ROWS) >> 2] = world.rows;
-    f64[(F + L.F_INV_CELL) >> 3] = 1 / world.cell;
+    i32[(F + L.F_OWNERS) >> 2] = pOwners;
+    i32[(F + L.F_CROWD_N) >> 2] = crowdCount;
     this.exports.fill(F);
   }
 }
