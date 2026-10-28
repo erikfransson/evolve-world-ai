@@ -159,6 +159,7 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 | 80 | dt 1/20 as a ready branch: `LIVE_DT` in config.ts, a guard that refuses a save written at another dt (startup falls back or starts fresh, admin load keeps the world), tests; pins at 1/20: 606739999 mixed, 453750406 cap; the old pins hold at the exact 1/30 | lever (Erik's), prepared | cpuMsPerTick unchanged, 1.5x fewer ticks per simulated second, memory equal | no by nature | Ready on `pl-dtswitch` (`dtswitch.md`), not merged: Erik's decision; the first start after the switch begins a fresh world |
 | 81 | Validation: 6 h soak of the current perf-live server (memory over hours with the 4 h save, admin saves at 1, 3, 5 h) | validation | running | - | Batch 10 (`soak6.md`) |
 | 82 | Factor at the 5000 cap with mixed founders | measurement | not reachable: the 7 M brain-weight budget (births stop at 6.24 M) caps the mixed seed at about 830 copies, so the 800-copy mixed case already sits at the weight ceiling and the 4900-Juggernaut case at the population ceiling; the two bench cases bracket both | - | Closed |
+| 83 | Subtractive sense-kernel bundle: skip the crowd-ray leftovers (f32 closeness half, group loop, `$unseen`) for creatures with no crowd candidate and no detail record; fold `$initPairs` into `$dirsPairs`; defer the item-kind lookup to hit time | small, exact | running; 2-4% on paper, ablation decides each part | yes | Batch 10 (`subtract.md`) |
 | 7 | prepareRows (slots phase, 7%) into the fill kernel | small | no exact variant over 1%: ground lookup is at most 0.6 ms, exp 0.33, rest 0.45 | yes | Rejected (`prep.md`) |
 
 ## Log
@@ -286,3 +287,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-28 06:03 Idea 80 ready: the dt switch is one merge away. No agents running. Campaign state: 1.28x mixed / 1.29x cap exact; dt 1/20 on top would make it about 1.9x per simulated second.
 - 2026-10-28 06:04 Batch 10 continues: the 6 h soak (81), the mixed-cap factor (82), and a scout framed on subtractive sense-kernel changes only (every added path lost; what won was removing work).
 - 2026-10-28 06:05 Idea 82 closed: the bench's two cases are the two ceilings (weights, population). Running: 81 (6 h soak), the subtractive scout.
+- 2026-10-28 06:08 The subtractive scout returned three removals (op-count estimates 130, 45-60 and 31 per creature); idea 83 builds them as a bundle with ablation. Running: 81, 83.
