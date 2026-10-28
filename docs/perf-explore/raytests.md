@@ -74,7 +74,7 @@ Load 21-24, so absolute ms are inflated.
 Ratio of medians: mixed 0.981 (senser -0.22 ms, -4.8%), cap 0.975 (senser -0.37 ms, -6.3%). The senser is lower in every pair in both cases, and the tick in 5 of 6 pairs. Peak RSS unchanged.
 An earlier mixed series against 531a215 (before the merge) gave senser 4.895 to 4.729 (-0.17 ms) and tick 0.999. An earlier cap series is void: `perf-live` took idea 85 (cell order, senser -4.5%) during it, so its base ran newer code.
 
-Diff against the branch point 531a215: `sense.wat` +88 -40, `kernels.generated.ts` 1 line.
+Diff against `perf-live` 8443cb6: `sense.wat` +75 -46, `kernels.generated.ts` 1 line.
 
 ## Tests
 
