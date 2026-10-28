@@ -171,7 +171,7 @@ Details and rejected f64x2 variant in `docs/perf-explore/wasm.md`.
 
 ## RL episodes (single thread)
 
-`nice -n 17 node src/rlBench.ts [--reps 3] [--env id]` in `src/typescript`: ms of CPU time per episode for pool:39 and a random learner over 6 seeds; the fingerprint (799232213 since 0.2.4: time-pressure envs and fixed held-out seeds) hashes every result, so it must not change.
+`nice -n 17 node src/rlBench.ts [--reps 3] [--env id]` in `src/typescript`: ms of CPU time per episode for pool:39 and a random learner over 6 seeds; the fingerprint hashes every result of every env in `ENVS`, so it must not change when an optimisation lands. It was 799232213 since 0.2.4 (time-pressure envs and fixed held-out seeds); with the Ambush, Turf war and Cull envs added it prints 1819613860, and the value without those three is still 799232213 (checked 2026-10-28), so the existing envs are unchanged; with Patch war and Live now added it prints 976191245 (2026-10-28); with Two stops (Memory) added it prints 238187872 (2026-10-28, `--reps 1`), and the value without it is still 976191245.
 Profile: brain forward/first layer about 30%, sensing and input encoding 15-20%; episode setup 5-10% (random rival genomes dominate in hunt envs); crowd grid, collisions and prepare about 20% for single-creature envs.
 Kept (bit-identical): no collision pass and no grid rebuild for a lone creature, one cached layout config for random learners. Single-creature envs 1.3-2.5x faster (forage-sparse pool 9.7 to 3.8 ms, endurance random 8.7 to 3.3), multi-creature envs unchanged within noise.
 Not done: wasm kernels (f32, changes results, brain-bound at 1-9 creatures anyway).

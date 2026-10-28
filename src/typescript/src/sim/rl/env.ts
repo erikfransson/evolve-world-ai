@@ -70,7 +70,7 @@ export interface EnvSpec {
   // starting food itself (without regrowth the episode then ends early, the learner counting as alive to the end).
   // ram: per rival that dies touching the learner while collision damage is on.
   // cross: per poison wall of the layout the learner got past (at any moment), a first reward on the way to food beyond it.
-  // early: per item, times the share of the episode still left at the bite (1 at the start, 0 at the end).
+  // early: per item or ram, times the share of the episode still left at the bite (1 at the start, 0 at the end).
   reward: { food?: number; kill?: number; survive?: number; energy?: number; fast?: number; ram?: number; cross?: number; early?: number };
   tags: string[];
 }
@@ -354,7 +354,10 @@ export function runEpisode(
         touchesOtherRival: eco.members.some((o) => o.id !== 0 && o.id !== m.id && o.creature.state.alive && near(o.creature.state)),
         poisonEatenThisTick: eco.poisonEaten > poisonBefore,
       });
-      if (ram) out.rams++;
+      if (ram) {
+        out.rams++;
+        early += earlyWeight(tick, ticks); // a ram counts for the early reward like a bite
+      }
       return;
     }
     early += (m.eaten - out.food) * earlyWeight(tick, ticks); // bites on the dying tick
@@ -484,7 +487,7 @@ export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | s
     const l = v.layout as Record<string, unknown> | null;
     if (!l || !(LAYOUT_KINDS as readonly unknown[]).includes(l.kind)) return `layout must be one of ${LAYOUT_KINDS.join(", ")}`;
     const [sw, sh] = size as number[];
-    const fixed = l.kind === "sprint" || l.kind === "cuedoor" || l.kind === "flash"; // no size parameter
+    const fixed = l.kind === "sprint" || l.kind === "cuedoor" || l.kind === "flash" || l.kind === "stops"; // no size parameter
     const round = l.kind === "patch" || l.kind === "islands"; // sized by a radius; ring by its lane; the walled ones by a gap
     const param = round ? l.radius : l.kind === "ring" ? l.lane : l.gap;
     // A patch must fit and three islands must fit apart; wall gaps leave wall on both sides of a door.
@@ -492,9 +495,11 @@ export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | s
     if (!fixed && !n(param, [L.layoutSize[0], Math.min(L.layoutSize[1], most)])) return `layout ${round ? "radius" : l.kind === "ring" ? "lane" : "gap"} must be ${L.layoutSize[0]} to ${Math.floor(Math.min(L.layoutSize[1], most))} for this world size`;
     if (l.kind !== "patch" && l.kind !== "islands" && l.kind !== "sprint" && rivals.some((r) => r.count > 0)) return "this layout does not take rivals yet";
     if (l.near !== undefined && !(Number.isInteger(l.near) && (l.near as number) >= 0 && (l.near as number) <= (v.food as number))) return "near food must be a whole number up to the food count";
+    if (l.kind === "stops" && l.count !== undefined && !(Number.isInteger(l.count) && (l.count as number) >= 1 && (l.count as number) <= 6)) return "stops count must be a whole number from 1 to 6";
     const nearOf = l.near === undefined ? {} : { near: l.near as number };
     layout =
       l.kind === "sprint" ? { kind: "sprint", ...nearOf }
+      : l.kind === "stops" ? { kind: "stops", ...(l.count === undefined ? {} : { count: l.count as number }) }
       : l.kind === "cuedoor" || l.kind === "flash" ? { kind: l.kind }
       : l.kind === "patch" || l.kind === "islands" ? { kind: l.kind, radius: param as number }
       : l.kind === "rooms" ? { kind: "rooms", gap: param as number, ...nearOf }
