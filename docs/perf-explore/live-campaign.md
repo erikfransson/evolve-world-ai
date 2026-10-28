@@ -179,6 +179,8 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 | 92 | brain.wat: the tanh and compact loops' v128 constants in locals (V8 rebuilt each `v128.const` per use, 27 of 52 instructions per tanh vector) | yes | Merged (`scout-brain.md`): brain forward 1.08-1.09x, tick 1.057x mixed / 1.024x cap, +22/-12 |
 | 88 | sense.wat: exact test two rays per candidate in f64x2, inline zero fills, closeness fused into the no-crowd emit | yes | Merged (`raytests.md`): senser -4.8% mixed / -6.3% cap, tick 0.981 / 0.975, +75/-46 |
 
+| 91 | Per-tick allocation audit (heap profiler on the bench with frames) | yes | Rejected, parked on `pl-alloc` (`alloc.md`): 52 KB per tick with frames (chronicle and leaderboard 18.6 KB, lineage for-of 6.9 KB) halved by 12 lines, but GC is 0.04-0.2% of the tick (one 16 MB scavenge per 10 s), tick ratio 0.998-1.006; the chronicle and protocol changes would need the push gate for no speed |
+
 ## Log
 - 2026-10-27 09:00 Campaign start. Prior campaigns (B1, B2, `docs/perf-explore/`) already moved sense, brains, physics, crowd grid, collisions and scans into WASM; their rejected ideas are not retried unless the live setting changes the picture.
 - 2026-10-27 09:19 `server/src/liveBench.ts` written; two runs at 400 seeded give the same fingerprint (260290661), so the bench is deterministic.
@@ -323,3 +325,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-28 10:06 wakeup: 6 agents running (91, 93, 94, 95, 96, soak), suite on the merged head running; pool refilled with ideas 97-100.
 - 2026-10-28 10:20 idea 98 closed (already one call per tick).
 - 2026-10-28 13:05 full suite on the merged head 2a55d98: 1242 passed, 8 timed out in cli.test.ts (subprocess tests at load 37); that file alone passed 16 of 16 with a long timeout, so the merges of 88, 90 and 92 stand. The weekly limit cut all nine agents 10:15-13:00; resumed. Factor batch13 started.
+- 2026-10-28 13:10 idea 91 rejected (`alloc.md`): the GC premise from the scouts was wrong (their 3-4 scavenges per second came from --cpu-prof and the first seconds).
