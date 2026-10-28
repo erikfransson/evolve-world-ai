@@ -19,7 +19,7 @@
         (i16x8.narrow_i32x4_s (f32x4.ne (v128.load (local.get $p)) (local.get $zero)) (f32x4.ne (v128.load offset=16 (local.get $p)) (local.get $zero)))
         (i16x8.narrow_i32x4_s (f32x4.ne (v128.load offset=32 (local.get $p)) (local.get $zero)) (f32x4.ne (v128.load offset=48 (local.get $p)) (local.get $zero))))))
       (if (local.get $m16) (then
-      (local.set $m (i32.and (i32.shr_u (local.get $m16) (i32.const 0)) (i32.const 15)))
+      (local.set $m (i32.and (local.get $m16) (i32.const 15)))
       (v128.store (i32.add (local.get $list) (i32.shl (local.get $cnt) (i32.const 2)))
         (i8x16.swizzle (local.get $idx) (v128.load (i32.add (local.get $tab) (i32.shl (local.get $m) (i32.const 4))))))
       (local.set $cnt (i32.add (local.get $cnt) (i32.load8_u offset=256 (i32.add (local.get $tab) (local.get $m)))))
@@ -199,8 +199,7 @@
           (local.set $b (i32.add (local.get $dst) (local.get $jb)))
           (v128.store offset=0 (local.get $b) (local.get $a0))
           (v128.store offset=16 (local.get $b) (local.get $a1)))
-        (else (if (i32.const 1)
-        (then
+        (else
           (local.set $a0 (v128.load offset=0 (local.get $b)))
           (local.set $lp (local.get $list))
           (block $id (loop $il
@@ -215,7 +214,7 @@
             (local.set $pf (select (i32.add (local.get $pf) (i32.const 128)) (local.get $pf) (i32.lt_u (local.get $pf) (local.get $pe))))
             (br $il)))
           (local.set $b (i32.add (local.get $dst) (local.get $jb)))
-          (v128.store offset=0 (local.get $b) (local.get $a0))))))))))))))
+          (v128.store offset=0 (local.get $b) (local.get $a0))))))))))))
       (local.set $jb (select (i32.add (local.get $jb) (i32.const 96)) (local.get $stride) (i32.ge_u (local.get $left) (i32.const 96))))
       (br $jl)))
     ;; tanh in place over the layer, in a loop of its own (V8 does not inline a call to a $tanh function).
