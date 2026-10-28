@@ -224,6 +224,8 @@ Head phases 2026-10-28 14:50 (253f894, load 6-7, `scout-head.md`; ms per tick, 3
 
 | 112 | Bundle of the parked small wins (100 itemsync, 109 exp2) plus forwardRun's stamp-and-walk in the kernel | yes | Split (`bundle.md`): 100 merged on its own (syncItems 0.24 to 0.08 ms, exact, +150 lines with a test); 109 stays parked (0.01-0.03 ms); the kernel-side run order gains nothing (JIT loops at 3.3 ns per slot) and is dropped |
 
+| 113 | Per-eat JS cost | - | Rejected (`eatcost.md`): 2.2 us per eat, 0.09 ms per tick (the scouts' 0.24 was timer overhead); first-touch misses on ten cold lines, no splice, no allocation; a strided item record would cap at 0.03 ms |
+
 ## Log
 - 2026-10-27 09:00 Campaign start. Prior campaigns (B1, B2, `docs/perf-explore/`) already moved sense, brains, physics, crowd grid, collisions and scans into WASM; their rejected ideas are not retried unless the live setting changes the picture.
 - 2026-10-27 09:19 `server/src/liveBench.ts` written; two runs at 400 seeded give the same fingerprint (260290661), so the bench is deterministic.
@@ -396,3 +398,4 @@ Head phases 2026-10-28 14:50 (253f894, load 6-7, `scout-head.md`; ms per tick, 3
 - 2026-10-28 15:01 factor batch15 on 3d6c0ec: 1.47x mixed / 1.62x cap, fingerprints equal; the mixed number matches the prediction from batch13 plus the small merges, the cap number is above it and still noisy.
 - 2026-10-28 15:08 wakeup: 2 agents running (95, 112); spawned 113 (per-eat JS cost, 4 us per eat), 114 (per-birth cost and the candidate scan), 115 (rock-adjacent sensing, 14% of the sense kernel for 10.6% of creatures). The exact pool at the 1.5% bar is dry, so the refill stays at five grounded agents rather than ten.
 - 2026-10-28 15:25 idea 112 split: 100 merged (kernels regenerated, tsc clean after typing the test's item kind), 109 parked, run-order export dropped. Review round 5 due for 100.
+- 2026-10-28 15:40 idea 113 rejected (the eat loop is 0.09 ms, not 0.24: timers).
