@@ -417,7 +417,7 @@ export class Ecosystem {
 
   // Grids the creatures as they stand at the tick start, for sensePhase.
   prepareTick(): void {
-    if (this.table.length < 2 && this.crowd.count < 2) return; // a lone creature, or none, only sees itself in a grid of at most itself
+    if (this.table.length === 0) return; // a lone creature still gets its grid: the fill kernel places every member through the grid's owners
     const n = this.table.length;
     const species = this.multi ? this.table.kinds : undefined;
     // No one came or went since the last WebAssembly grid (sharedPhase's): its order still holds unless someone changed cell, and the rest is re-read.
