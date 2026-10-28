@@ -212,6 +212,8 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 
 | 108 | Study: why the brain kernel's second pass is 28-35% faster (page translation, L1, L2 or L3) | - | Done (`pagepack.md`): not L1, not the TLB; the 24 MB weight footprint spills past this process's share of the 12 MB L3 (knee at 4-8 MB, +40-45% at 24 MB); a page-aware packer loses to plain packing (padding breaks the stream); 2 MB pages measured 1.7-3.7% on the brain kernel (about 1% of the tick), root or native; only fewer weight bytes per brain move the knee |
 
+| 106 | Crowd rebuild by parts (cell keys 19%, gather 16%, cellStart gap fill 47%; 1.2 rebuilds per tick: 19% of tick starts have a birth or death); built: f64x2 cell keys, the gap fill as its own four-cell pass | yes | Merged (`rebuildparts.md`): rebuild -12 to -14% per call, refresh -14%, the two grid phases -0.14 ms mixed / -0.21 ms cap (1.3-1.5% of the tick), tick 0.992 / 0.988, +42/-44 |
+
 ## Log
 - 2026-10-27 09:00 Campaign start. Prior campaigns (B1, B2, `docs/perf-explore/`) already moved sense, brains, physics, crowd grid, collisions and scans into WASM; their rejected ideas are not retried unless the live setting changes the picture.
 - 2026-10-27 09:19 `server/src/liveBench.ts` written; two runs at 400 seeded give the same fingerprint (260290661), so the bench is deterministic.
@@ -376,3 +378,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-28 14:08 idea 108 done: the brain kernel is L3-footprint bound; a brain-only arena (plain packing) is worth 0.1-0.2 ms, below the bar; huge pages about 1% (decision note updated).
 - 2026-10-28 14:10 full suite on 6858a11 (ideas 93, 94, 96, 97, 99 and the lone-creature fix): 122 files, 1251 tests, exit 0. Factor batch14 started. Idea 111 (bf16-valued genomes, a game-rule moonshot for Erik) spawned on the pagepack finding.
 - 2026-10-28 14:20 factor batch14 on 6858a11: 1.57x / 1.52x but noisy (live runs 9.0-10.7 ms); batch13's clean 1.39x / 1.42x plus the five small merges (about 3-4%) predicts about 1.45x; rerun queued for the 15:23 report.
+- 2026-10-28 14:40 idea 106 merged (no drift, tsc clean). Review round 4 due for 96, 97, 106.
