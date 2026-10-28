@@ -186,6 +186,9 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 
 | 94 | V8 codegen audit of all kernels (`--print-wasm-code` with `--prof` ticks mapped onto the dump): `v128.load32_splat` in the brain column loops, walk invariants in locals in sense.wat, hoisted invariants in crowd.wat | yes | Merged as a small exact cleanup (`codegen.md`): each phase 0.5-1% faster in 4-5 of 6 pairs, tick 1.008 / 1.010 inside noise, +43/-31; finding: no bounds checks, spills or conversions left, the hot spots outside the brain stall on the first load of a creature's data |
 
+| 93 | v128 constants in locals in sense.wat (`$emit`, `$emitClo`, the hit path, the ray-pair loop) and members.wat | yes | Merged as hygiene (`constsense.md`): senser faster in 12 of 12 pairs by 0.01-0.26 ms, tick flat within noise; crowd, fill and step had no rebuilt constants |
+| 102 | Sense walks: load `own`/`kind` only after the distance reject | - | Rejected (`rowstride.md`): the item walk already reads only x/y before the reject; 81-84% of crowd entries pass the distance test, so the `own` load moves for 16-19% of entries at the cost of a branch |
+
 ## Log
 - 2026-10-27 09:00 Campaign start. Prior campaigns (B1, B2, `docs/perf-explore/`) already moved sense, brains, physics, crowd grid, collisions and scans into WASM; their rejected ideas are not retried unless the live setting changes the picture.
 - 2026-10-27 09:19 `server/src/liveBench.ts` written; two runs at 400 seeded give the same fingerprint (260290661), so the bench is deterministic.
@@ -336,3 +339,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-28 13:40 idea 99 merged (kernels regenerated, no drift); added to the running review's range.
 - 2026-10-28 13:50 idea 94 merged (kernels regenerated, no drift).
 - 2026-10-28 14:05 review of ideas 85, 88, 90, 92 (Opus, independent): 88, 90, 92 nothing to fix (odd ray lane, tie rule, bounds, the probe's branches and the browser fallback checked); 85 had a HIGH bug: a creature inserted into an empty world (one founder, a visitor's insert into an extinct world) was never gridded because prepareTick skipped lone creatures, and the fill kernel's new trap fired every tick. Fixed: prepareTick returns early only for an empty table; regression test added (red without the fix). 99 and 94 added to the review's range.
+- 2026-10-28 14:15 idea 93 merged (kernels regenerated from the merged sources), idea 102 rejected (study only).
