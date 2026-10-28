@@ -59,7 +59,7 @@ Bigger (Live-like, 90 s, start energy 300, lethal poison, bumps hurt, seed pool 
 
 Every bite pays 2 x the share of the episode still left (reward `early`), so speed is paid per bite and the gradient is there from the first lucky bite.
 A clear-all bonus (Nibble's `fast`) only pays a perfect run, and tripled the seeds needed in the C1 probe.
-Checked against the C1b env criteria E1-E8 with `docs/rl-notes/probes/t3-snr.ts` (rl-notes 17f9b8d, 64 held-out seeds): all three pass.
+Checked against the C1b env criteria E1-E8 with `docs/rl-notes/probes/t3-snr.ts` (rl-notes 17f9b8d, 64 held-out seeds): Fading food, Stings and Race pass; Lap (below) misses E5 and is kept anyway.
 E6 (energy reward) does not apply; E7 holds by design.
 
 | Env (id)             | Idea                                          | E1 SNR | E2 scripted / best | E3 best alive | E4 seeds for 25% | E5 random scores | E8 ms/ep |
@@ -69,7 +69,7 @@ E6 (energy reward) does not apply; E7 holds by design.
 | Race (race)          | 300 x 300, 15 s, one pool rival eats too       | 3.59   | 0.15               | 1.00          | 13               | 29%              | 6.0      |
 | Lap (lap)            | Ring lane of 8 food between stinging poison rings, 25 s | 4.99   | 0.05               | 0.86          | 9                | 0% (miss)        | 2.8      |
 
-Training from fresh designs (ES pop 100, 150 iterations, 1 episode, `randomLearner` bodies 1 to 3, final genome on 64 held-out seeds): Fading food 0.13 -> 4.76 (sd over runs 2.00), Stings 0.14 -> 4.76 (1.90), Race 0.32 -> 4.53 (1.05); curves rise steadily, though body 1 stops near 2.6 in both fading envs.
+Training from fresh designs (ES pop 100, 150 iterations, 1 episode, `randomLearner` bodies 1 to 3, final genome on 64 held-out seeds): Fading food 0.13 -> 4.76 (sd over runs 2.00), Stings 0.14 -> 4.76 (1.90), Race 0.32 -> 4.53 (1.05) (the three originals; Lap is trained in the Round 2 note); curves rise steadily, though body 1 stops near 2.6 in both fading envs.
 Speed check (C1 review): mean learner speed (world units per second while alive) on 32 held-out seeds, mean of the same 3 bodies, each trained 150 iterations at pop 100; reward in brackets.
 Untrained bodies move at 0 to 7.
 
@@ -137,7 +137,7 @@ Distinctness: a creature trained on another env, scored on the new env, as a sha
 **Corral** (Fight, the hunting env): 16 weak pool foragers (40 energy) in a 300 x 300 pen with 3 food, 12 s, learner 300 energy, kill energy 20, reward is one point per ram and nothing else.
 Prey starve within about 6 s and a death with another rival touching is not credited, so rams come from hitting early in a crowded pen; the older pure-ram attempts had fewer prey and a learner with 80 to 120 energy.
 Training (reward = rams per episode, food eaten about 0.3 and unpaid): random:1 0.50 -> 2.23, random:2 0.48 -> 2.63, pool:0 2.03 -> 2.63. Cull, Ambush and Turf war creatures ram 0.3 to 0.9 per episode in their own envs.
-E1 2.29, E2 0.28 (best scripted: straight 0.83 against Juggernaut 2.95), E3 1.00, E4 66 seeds for a quarter of the gap (limit 64, a small miss), E5 random designs score on 40% of seeds, E8 17.3 ms (pool:39) and 11.6 (random) in `rlBench --reps 9` at load average about 32, where Cull reads 10.9 and 9.4 against 5.6 and 5.2 on a quiet machine; so about 8 and 6 ms when quiet (not measured quiet).
+E1 2.29, E2 0.28 (best scripted: straight 0.83 against Juggernaut 2.95), E3 1.00, E4 66 seeds for a quarter of the gap (limit 64, a small miss), E5 random designs score on 40% of seeds, E8 17.3 ms (pool:39) and 11.6 (random) in `rlBench --reps 9` at load average about 32, where Cull reads 10.9 and 9.4 against 5.6 and 5.2 on a quiet machine; so about 8.9 and 6.4 ms when quiet (scaled from Cull's ratio, unmeasured; re-measure on a quiet machine).
 Distinctness (share of Corral's own gain, random:1 / random:2): Ambush 84% / 79%, Cull 72% / 56%, Turf war 59% / 65%, Aggressor 2% / 54%, Brawl 40% / 24%. Ambush is close to the limit.
 Failed variants: 10 prey in a 360 x 360 pen (E4 needs 108 to 119 seeds, ES reaches only 1.5 rams); the same pen without food (Ambush training reaches 229% of its gain, own gain 0.58 on random:1); `early` instead of a flat ram reward (food bites then dominate); g09, the 15 s version (Ambush training reaches 104% on random:1).
 
@@ -146,6 +146,8 @@ Training: random:1 0 -> 4.51, random:2 0 -> 10.57, pool:0 0.27 -> 2.62.
 E1 4.99, E2 0.05, E3 0.86, E4 9 seeds, E8 2.8 ms (loaded).
 E5 misses: random designs score exactly 0 on every seed, and the env is body-dependent like Ring road (founders: only Oracle scores, 5.59; Explorer 1.23). Adding `survive: 0.02` removed the learning (0.40 -> 0.44 and 0.29 -> 0.42), so it was left out.
 Distinctness (share of Lap's own gain on random:1 / random:2): Fading 9% / 3%, Race 8%, Stings 7%, Corridor 10%, Sprint 38% / 4%, Rooms 42%, Minefield 13%, Islands 9%, Fence 5%, Ring road 0% / 0% (it does not learn from either body in 60 iterations).
+Lap is kept anyway despite the E5 miss: it learns from both bodies and no time pressure relative or Ring road trains it.
+Reverse transfer: Lap-trained creatures score on Ring road (64 seeds) 0.40 -> 4.33 (random:1) and 0.29 -> 11.05 (random:2), so Lap training solves Ring road, which does not learn on its own in 60 iterations; Lap may make Ring road redundant as a training env.
 Failed time pressure candidates, all with `early: 2`, each scored by a Fading-trained creature: a 600 x 150 corridor (Fading reaches 92% of its gain), 300 x 300 with 12 lethal poison (Fading 171%), two library aggressors (Fading 117%), 25 starting energy (duplicate of Fading), four rooms (E3 fails, alive 0.48), islands (gain 0.38), ten slow grazers (15.6 ms per episode), a Sprint strip (Sprint training reaches 84% to 94% of its gain). `early` pays a fast reckless creature, so any env where heading for the nearest food works duplicates Fading.
 
 ## Notes
