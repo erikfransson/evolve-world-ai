@@ -31,7 +31,7 @@ export class SenseKernels {
   private energyScale!: number; // seen energies are squashed against this, the largest species start energy (speciesEngine's seenEnergyScale)
   private nextSlot = 0;
   private readonly freeSlots: number[] = []; // released slots, taken by attach before new ones
-  private readonly owners: (Creature | undefined)[] = []; // the creature holding each slot, whose brain addresses compact() moves
+  private readonly owners: (Creature | undefined)[] = []; // the creature holding each slot, whose brain addresses a block move (compact() or a slide inside set()) changes
 
   private constructor(brains: WasmBrainBank, senser: WasmSenser, store: ResidentStore, filler: WasmFiller, stepper: WasmStepper, config: EcoConfig) {
     this.brains = brains;

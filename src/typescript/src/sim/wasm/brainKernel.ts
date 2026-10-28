@@ -39,7 +39,7 @@ export class WasmBrainBank {
   private rayPtr: (number | undefined)[] = []; // per slot, the first-layer rows of the ray inputs, outside the block (they are mostly dead, so the block stays small and dense)
   private rayBytes: number[] = [];
   private chunks: Chunk[] = [];
-  onMove: ((slot: number) => void) | null = null; // called for each slot whose block compact() moved, after its input and output addresses changed
+  onMove: ((slot: number) => void) | null = null; // called for each slot whose block moved (compact(), or a chunk slid by place() inside another slot's set()), after its input and output addresses changed
   private inFloat: number[] = [];
   private outFloat: number[] = [];
   private descPtr = NO_SLOT;

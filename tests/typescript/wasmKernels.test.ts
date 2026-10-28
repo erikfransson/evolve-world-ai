@@ -143,6 +143,15 @@ describe("WasmBrainBank", () => {
     expect(maxAbs).toBeLessThan(2e-6);
   });
 
+  it("holds a brain with the eight hidden layers a save may carry, and no more (the descriptor's layer cap)", () => {
+    const bank = WasmBrainBank.createSync()!;
+    const rng = testRng(34);
+    const eight = [8, 5, 5, 5, 5, 5, 5, 5, 5, 3]; // 6 + 8 plan entries in ecoState's restore check
+    bank.set(0, eight, randomGenome(eight, rng), 0);
+    const nine = [...eight.slice(0, 9), 5, 3];
+    expect(() => bank.set(1, nine, randomGenome(nine, rng), 0)).toThrow(/layer sizes/);
+  });
+
   it("gives the same output bits wherever the first layer is split between the ray rows and the rest", async () => {
     const bank = WasmBrainBank.createSync()!;
     const rng = testRng(33);
