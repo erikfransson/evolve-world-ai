@@ -6,6 +6,7 @@ import { wasmAvailable } from "../../src/typescript/src/sim/wasm/loader.ts";
 import { creatureFile, parseCreatureFile } from "../../src/typescript/src/sim/rl/creatureFile.ts";
 import type { EnvSpec } from "../../src/typescript/src/sim/rl/env.ts";
 import { ENVS, ENV_GROUPS, envById, groupOf } from "../../src/typescript/src/sim/rl/envs.ts";
+import { placeLayout } from "../../src/typescript/src/sim/rl/layouts.ts";
 import { Es, centredRanks, standardise } from "../../src/typescript/src/sim/rl/es.ts";
 import { parseLibrary, serialiseLearner } from "../../src/typescript/src/sim/rl/library.ts";
 import { testRng } from "./helpers.ts";
@@ -260,6 +261,46 @@ describe("hidden food in envs", () => {
     if (eco.wasm) expect(() => eco.setFoodHidden(true)).toThrow(/JS sense path/);
     const r = runEpisode(env, randomLearner(env, 2), 3);
     expect(r.seconds).toBeGreaterThan(0);
+  });
+});
+
+describe("memory envs", () => {
+  it("has at least four, and each runs and passes the custom env checks", () => {
+    const memory = ENVS.filter((e) => groupOf(e) === "Memory");
+    expect(memory.length).toBeGreaterThanOrEqual(5);
+    for (const e of memory) {
+      expect(typeof checkEnv(JSON.parse(JSON.stringify(e)), "ecosystem", 0)).not.toBe("string");
+      expect(runEpisode(e, randomLearner(e, 2), 3).seconds).toBeGreaterThan(0);
+    }
+  });
+
+  it("deals the stops layout into evenly sized clusters, away from the start", () => {
+    const placed = placeLayout({ kind: "stops", count: 2 }, [600, 600], 8, 0, 5);
+    expect(placed.items.length).toBe(8);
+    for (const it of placed.items) expect(Math.hypot(it.x - 300, it.y - 300)).toBeGreaterThan(100);
+    const side = placed.items.map((it) => (it.x - 300) * (placed.items[0]!.x - 300) + (it.y - 300) * (placed.items[0]!.y - 300) > 0);
+    expect(side.filter(Boolean).length).toBe(4);
+  });
+
+  it("checks a food cycle: it needs a visible time and must be at least as long", () => {
+    const base = { ...JSON.parse(JSON.stringify(envById("lighthouse")!)) };
+    expect(typeof checkEnv(base, "ecosystem", 0)).not.toBe("string");
+    expect(checkEnv({ ...base, foodCycle: 0.5 }, "ecosystem", 0)).toMatch(/cycle/);
+    expect(checkEnv({ ...base, foodVisibleFor: undefined }, "ecosystem", 0)).toMatch(/cycle/);
+  });
+
+  it("hides and shows the food on the cycle: 20 s at 4 s a cycle toggles every 0.7 s then 3.3 s", () => {
+    const calls: boolean[] = [];
+    const orig = Ecosystem.prototype.setFoodHidden;
+    Ecosystem.prototype.setFoodHidden = function (h: boolean) { calls.push(h); return orig.call(this, h); };
+    try {
+      const env = envById("lighthouse")!;
+      runEpisode(env, randomLearner(env, 4), 1);
+    } finally {
+      Ecosystem.prototype.setFoodHidden = orig;
+    }
+    expect(calls.slice(0, 4)).toEqual([true, false, true, false]);
+    expect(calls.length).toBeGreaterThanOrEqual(8);
   });
 });
 

@@ -64,6 +64,8 @@ export const ENVS: readonly EnvSpec[] = [
   small({ id: "flash", name: "Flash", description: "Five bites all around show for two seconds, then go dark but stay there. A creature can head for one; finding the others means remembering where they were.", size: [600, 600], food: 5, poison: 0, seconds: 15, foodVisibleFor: 2, layout: { kind: "flash" }, reward: { food: 1 }, tags: ["memory"] }),
   small({ id: "glimpse", name: "Glimpse", description: "A patch of food shows for a moment, then goes dark. Remember where it was and go there.", size: [500, 500], food: 12, poison: 0, seconds: 25, foodVisibleFor: 1.5, layout: { kind: "patch", radius: 60 }, reward: { food: 1 }, tags: ["memory"] }),
   small({ id: "truffles", name: "Truffles", description: "Food you can never see, packed in one patch. A bite is felt, not seen: stay and search close by.", size: [500, 500], food: 12, poison: 0, seconds: 30, foodVisibleFor: 0, layout: { kind: "patch", radius: 60 }, reward: { food: 1 }, tags: ["memory"] }),
+  small({ id: "lighthouse", name: "Lighthouse", description: "Five bites all around show only for a blink every four seconds, and are dark in between. Keep the places in mind between flashes.", size: [600, 600], food: 5, poison: 0, seconds: 20, foodVisibleFor: 0.7, foodCycle: 4, layout: { kind: "flash" }, reward: { food: 1 }, tags: ["memory"] }),
+  small({ id: "two-stops", name: "Two stops", description: "Two clusters of food on opposite sides show for two seconds, then go dark. Eat one, then remember where the other was.", size: [600, 600], food: 8, poison: 0, seconds: 18, foodVisibleFor: 2, layout: { kind: "stops", count: 2 }, reward: { food: 1 }, tags: ["memory"] }),
   // Energy
   small({
     id: "lean-times",

@@ -66,6 +66,7 @@ export interface EnvSpec {
   augment?: { energy?: number; count?: number; items?: number; size?: number };
   killEnergy?: number; // with collision damage: extra energy for the survivor of a lethal bump (eco.killEnergy)
   foodVisibleFor?: number; // seconds: after this, rays pass through food (it stays edible), so finding it takes memory
+  foodCycle?: number; // seconds: with foodVisibleFor, the food shows again for foodVisibleFor at the start of every cycle (a blink), instead of once
   // Per item, per kill, per second alive, x energy signal at the end, and per second left when the learner has eaten all the
   // starting food itself (without regrowth the episode then ends early, the learner counting as alive to the end).
   // ram: per rival that dies touching the learner while collision damage is on.
@@ -370,8 +371,12 @@ export function runEpisode(
   // Only speed-scored envs without regrowth end early, and only when the learner itself ate every item (not a rival).
   const clearable = env.reward.fast !== undefined && env.food > 0 && env.foodRegrow === 0;
   const hideAt = env.foodVisibleFor === undefined ? Infinity : Math.round(env.foodVisibleFor / config.dt);
+  const cycleTicks = env.foodCycle === undefined ? 0 : Math.max(1, Math.round(env.foodCycle / config.dt));
+  let dark = false; // the food is hidden now (blinking envs)
   for (let t = 0; t < ticks; t++) {
-    if (t === hideAt) eco.setFoodHidden(true);
+    if (cycleTicks > 0) {
+      if (t % cycleTicks >= hideAt !== dark) eco.setFoodHidden((dark = !dark));
+    } else if (t === hideAt) eco.setFoodHidden(true);
     poisonBefore = eco.poisonEaten;
     tick = t + 1;
     if (act) {
@@ -482,12 +487,13 @@ export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | s
   }
   if (v.killEnergy !== undefined && !n(v.killEnergy, L.killEnergy)) return `kill energy must be ${L.killEnergy[0]} to ${L.killEnergy[1]}`;
   if (v.foodVisibleFor !== undefined && !n(v.foodVisibleFor, [0, 60])) return "food may stay visible 0 to 60 s";
+  if (v.foodCycle !== undefined && (v.foodVisibleFor === undefined || !n(v.foodCycle, [Math.max(0.5, v.foodVisibleFor as number), 60]))) return "a food cycle needs a visible time and must be at least as long, up to 60 s";
   let layout: Layout | undefined;
   if (v.layout !== undefined) {
     const l = v.layout as Record<string, unknown> | null;
     if (!l || !(LAYOUT_KINDS as readonly unknown[]).includes(l.kind)) return `layout must be one of ${LAYOUT_KINDS.join(", ")}`;
     const [sw, sh] = size as number[];
-    const fixed = l.kind === "sprint" || l.kind === "cuedoor" || l.kind === "flash"; // no size parameter
+    const fixed = l.kind === "sprint" || l.kind === "cuedoor" || l.kind === "flash" || l.kind === "stops"; // no size parameter
     const round = l.kind === "patch" || l.kind === "islands"; // sized by a radius; ring by its lane; the walled ones by a gap
     const param = round ? l.radius : l.kind === "ring" ? l.lane : l.gap;
     // A patch must fit and three islands must fit apart; wall gaps leave wall on both sides of a door.
@@ -498,7 +504,7 @@ export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | s
     const nearOf = l.near === undefined ? {} : { near: l.near as number };
     layout =
       l.kind === "sprint" ? { kind: "sprint", ...nearOf }
-      : l.kind === "cuedoor" || l.kind === "flash" ? { kind: l.kind }
+      : l.kind === "cuedoor" || l.kind === "flash" || l.kind === "stops" ? { kind: l.kind }
       : l.kind === "patch" || l.kind === "islands" ? { kind: l.kind, radius: param as number }
       : l.kind === "rooms" ? { kind: "rooms", gap: param as number, ...nearOf }
       : l.kind === "ring" ? { kind: "ring", lane: param as number }
@@ -525,6 +531,7 @@ export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | s
     ...(duel ? { duel } : {}),
     ...(augment ? { augment } : {}),
     ...(v.foodVisibleFor === undefined ? {} : { foodVisibleFor: v.foodVisibleFor as number }),
+    ...(v.foodCycle === undefined ? {} : { foodCycle: v.foodCycle as number }),
     reward,
     tags: ["custom"],
   };
