@@ -186,6 +186,15 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 
 | 94 | V8 codegen audit of all kernels (`--print-wasm-code` with `--prof` ticks mapped onto the dump): `v128.load32_splat` in the brain column loops, walk invariants in locals in sense.wat, hoisted invariants in crowd.wat | yes | Merged as a small exact cleanup (`codegen.md`): each phase 0.5-1% faster in 4-5 of 6 pairs, tick 1.008 / 1.010 inside noise, +43/-31; finding: no bounds checks, spills or conversions left, the hot spots outside the brain stall on the first load of a creature's data |
 
+| 93 | v128 constants in locals in sense.wat (`$emit`, `$emitClo`, the hit path, the ray-pair loop) and members.wat | yes | Merged as hygiene (`constsense.md`): senser faster in 12 of 12 pairs by 0.01-0.26 ms, tick flat within noise; crowd, fill and step had no rebuilt constants |
+| 102 | Sense walks: load `own`/`kind` only after the distance reject | - | Rejected (`rowstride.md`): the item walk already reads only x/y before the reject; 81-84% of crowd entries pass the distance test, so the `own` load moves for 16-19% of entries at the cost of a branch |
+
+| 100 | Item grid patches in one kernel call per tick (`patchItems`: the three shifts and a v128 add over the later starts per dirty cell) | yes | Parked on `pl-itemsync` (`itemsync.md`): syncItems 0.18 to 0.10 ms per tick (0.7%), exact with a test, +150/-28; below the bar on its own, take it if a bundle of small wins is wanted |
+
+| 104 | Newer Node A/B (measurement) | - | Closed: only Node 24.18 is installed (plus a system Node 12); installing one is Erik's call (decision list) |
+
+| 103 | Compact eat hit list from the touch kernel | - | Closed (`eatlist.md`): the JS already scans `touched[]` once (26 us) and calls eat only for the 33-58 hits; the eat cost is misses in eatAt, removeItem and the log |
+
 ## Log
 - 2026-10-27 09:00 Campaign start. Prior campaigns (B1, B2, `docs/perf-explore/`) already moved sense, brains, physics, crowd grid, collisions and scans into WASM; their rejected ideas are not retried unless the live setting changes the picture.
 - 2026-10-27 09:19 `server/src/liveBench.ts` written; two runs at 400 seeded give the same fingerprint (260290661), so the bench is deterministic.
@@ -333,5 +342,11 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-28 13:10 idea 91 rejected (`alloc.md`): the GC premise from the scouts was wrong (their 3-4 scavenges per second came from --cpu-prof and the first seconds).
 - 2026-10-28 13:12 idea 81 done (`soak6.md`): 6 h soak passes, peak 554 MB at save time, plateau about 430 MB.
 - 2026-10-28 13:25 factor batch13 on 2a55d98: 1.39x mixed / 1.42x cap, fingerprints equal, RSS equal.
-- 2026-10-28 13:40 idea 99 merged (kernels regenerated, no drift); added to the running review's range.
-- 2026-10-28 13:50 idea 94 merged (kernels regenerated, no drift).
+- 2026-10-28 13:08 idea 99 merged (kernels regenerated, no drift); added to the running review's range.
+- 2026-10-28 13:12 idea 94 merged (kernels regenerated, no drift).
+- 2026-10-28 13:15 review of ideas 85, 88, 90, 92 (Opus, independent): 88, 90, 92 nothing to fix (odd ray lane, tie rule, bounds, the probe's branches and the browser fallback checked); 85 had a HIGH bug: a creature inserted into an empty world (one founder, a visitor's insert into an extinct world) was never gridded because prepareTick skipped lone creatures, and the fill kernel's new trap fired every tick. Fixed: prepareTick returns early only for an empty table; regression test added (red without the fix). 99 and 94 added to the review's range.
+- 2026-10-28 13:22 idea 93 merged (kernels regenerated from the merged sources), idea 102 rejected (study only).
+- 2026-10-28 13:26 idea 100 parked (0.7%).
+- 2026-10-28 13:32 ideas 103 and 104 closed (already so / nothing installed). Note to self: two closes in a row from my own misread of the eat path; read the code before briefing the next eat idea.
+- 2026-10-28 13:45 focused suites on the lone-creature fix: 182 of 184 passed, the two ThinkPool parity cases hit the 300 s timeout at load 20 and pass alone (2 of 2); no regression.
+- 2026-10-28 13:50 follow-up review (same Opus reviewer) through 75cfb06: the idea 85 fix correct on the JS crowd path, helper threads and restored saves; ideas 93, 94 and 99 nothing to fix (compact lane order and hand-off proven for every nIn). Review round 3 closed.

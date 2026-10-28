@@ -389,6 +389,21 @@ describe("Ecosystem collision damage", () => {
     expect(gaps).toEqual({ right: 0, below: 0, "below-right": 0, "below-left": 0 });
   });
 
+  it("a creature inserted into an empty world steps on the kernel path (its grid is built before sensing)", () => {
+    const donor = structuredClone(DEFAULT_ECO_CONFIG);
+    donor.seed = 1;
+    donor.eco.initialPopulation = 1;
+    const { creature } = new Ecosystem(donor).members[0]!;
+    const c = structuredClone(DEFAULT_ECO_CONFIG);
+    c.seed = 1;
+    c.eco.initialPopulation = 0;
+    const e = new Ecosystem(c);
+    expect(e.wasm).toBe(true);
+    expect(e.insertCreature({ genome: creature.brain.genome, plan: creature.plan, x: 500, y: 500, hue: 10, name: "t" }).ok).toBe(true);
+    for (let t = 0; t < 20; t++) e.step();
+    expect(e.population).toBe(1);
+  });
+
   it("a lone survivor does not see a creature that has just died", () => {
     const c = still({ initialPopulation: 2, collisions: false, wasm: false, birthEnergyRange: [1e9, 1e9] }, 100);
     const e = new Ecosystem(c);
