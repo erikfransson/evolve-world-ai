@@ -40,6 +40,7 @@ Fingerprint equal means bit-identical results.
 | 2026-10-27 23:40 | after batch 8 so far (idea 36 merged; two pinned cores shared with 7 agents) | 17.99 / 22.06 (cap) | 13.99 / 17.16 (cap) | 1.286x mixed, 1.286x cap (exact) | 219 / 221 MB mixed, 255 / 255 cap |
 | 2026-10-28 00:37 | after batch 9 (idea 54 merged; two pinned cores shared with 4 agents) | 17.84 / 21.59 (cap) | 13.82 / 16.79 (cap) | 1.29x mixed, 1.29x cap (exact) | 218 / 217 MB mixed, 258 / 257 cap |
 | 2026-10-28 01:53 | after ideas 75 and 76 (load lighter, 2 agents) | 15.16 / 18.56 (cap) | 12.23 / 14.40 (cap) | 1.24x mixed, 1.29x cap (exact) | 251 / 218 MB mixed, 256 / 257 cap |
+| 2026-10-28 05:15 | after idea 59 (quiet machine, load 3: the cleanest run of the campaign) | 10.99 / 13.52 (cap) | 8.58 / 10.45 (cap) | 1.28x mixed, 1.29x cap (exact) | 252 / 219 MB mixed, 257 / 256 cap |
 
 Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54, brain forward 5.23 / 5.17, slots (prepareRows) 1.04 / 1.52, memory and steer 1.26 / 1.59, eat 1.05 / 1.35, crowd grid 0.51 / 0.67, collisions 0.18 / 0.27, rest under 0.2. Server frame encoding adds 0.57 ms per tick at 5 Hz. Speed achieved unpaced on this loaded machine: 2.0x and 1.7x real time (the set speed is 3x).
 
@@ -275,3 +276,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-28 05:00 Idea 78 parked. The memory thread is closed: the process peak with saves is about 545 MB at 3300 creatures (verify worker on top of the main process), bounded by the worker caps, with the pool leak fixed; no setting or further trim moves it. No agents running.
 - 2026-10-28 05:07 Full suite on the final perf-live (after ideas 75, 76, 77): green. Campaign converged; no agents running; wakeups continue and act on Erik's decisions.
 - 2026-10-28 05:10 Idea 59 merged (the bar of 1.5% was mine, not Erik's; a built, exact, tested gain that grows with churn belongs in). Resolved its conflicts with idea 75's offset-table release (hash map plus release kept), kernels regenerated, 176 focused tests green, both fingerprints equal. Factor run on a quiet machine started. Idea 79 started: productionize the native AVX2 brain kernel on a branch so Erik's decision is a merge, not a project.
+- 2026-10-28 05:16 Factor on a quiet machine: 1.28x mixed (10.99 vs 8.58 ms, spread 0.2), 1.29x cap (13.52 vs 10.45), fingerprints equal; this is the number to quote. Running: 79 (native brain kernel package).
