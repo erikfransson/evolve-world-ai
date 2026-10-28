@@ -2,7 +2,7 @@
 
 Branch `pl-cellorder`. Question: does running the sense kernel over creatures in crowd-grid cell order (neighbours consecutive) cut the senser phase?
 
-## What changed (+28 -36, net -8 lines)
+## What changed (+29 -38 outside the generated kernels and this note, net -9 lines)
 - `fill.wat` placed the sense records by a stable counting sort on the item grid row (creatures inside a row in slot order, so random in x). It now places them in crowd cell order, read off the grid that is already sorted: `inv[self] = k + 1` for the batch members, then one walk over the crowd's `owners` in sorted order gives each member its record position. n scatter writes plus `count` gathers over about 3300 ints (13 KB, L1), no per-creature float math and no row counts, so it replaces the old two passes and costs less than they did.
 - `senser.run` passes `pOwn` (the owners in the kernel memory) and the crowd count; `F_ITEM_ROWS`/`F_INV_CELL` in the fill block became `F_OWNERS`/`F_CROWD_N`. A member index outside the crowd traps (`unreachable`) instead of writing out of bounds.
 - Order independence: `sense.wat` has no global and writes nothing into its parameter block, only each record's own input vector and ray detail; scratch is rewritten per record. Equal fingerprints confirm it. The brain slot list stays in batch order, so the brain run is untouched.
