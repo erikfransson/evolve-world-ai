@@ -9,6 +9,7 @@ Fingerprint equal means bit-identical results.
 
 ## Decisions for Erik
 
+- **Open until fixed:** the spare-pool cap (idea 54) orphans kernel rows, slots and weight blocks of dropped creatures, so wasm memory grows per crash-and-regrow cycle (push-gate review 1, 2026-10-28 01:05); a fix that releases and reuses them is being built (idea 75). Do not merge perf-live before it lands.
 - **Exact wins are merged** (1.17x at 60 s, 1.18x over 1800 s, bit-identical; peak memory over 7200 s with saves 533 MB against 751 MB on development); the branch is ready to merge into `development` (73 commits, 53 files, +2175/-149; one correctness review and the three Live push-gate reviews passed; `development` has not moved since the branch point). The exact pool is dry after 26 ideas: nothing runs outside the profiled phases (0.01 ms), and every phase has been cut or shown flat.
 - **`dt` 1/20 (1.5x more, `dt20.md`): the same 1.5x as `thinkEvery` 2 with a much smaller ecology shift (turn rate +11%, food eaten identical, births within the seed spread); one line in `liveConfig`, memory rates kept, fresh world on the switch (old saves carry ticks of the old dt). 1/25 gives 1.17x for half the shift. Say which, or neither.
 - **`eco.thinkEvery` 2 (1.5x more) is in the code but off in `liveConfig`.** It changes the ecology (births and deaths 1.5-1.9x, creatures turn more and eat less, from the brain's delayed self-feedback), see `think2.md`, `think3.md`, `sense2.md`. Say yes to turn it on, or no to leave it as a page option.
@@ -149,6 +150,7 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 | 72 | Array-of-structs gather records for the item rows | small | exact, but unique lines touched per call rise 7723 to 9383 (the shared 1-byte kind array was nearly free, the records double the xy footprint): senser 1.6-4.6% slower, tick 1.3% worse mixed, flat at the cap | yes | Rejected (`aos.md`) |
 | 73 | Validation: a 60 min soak of the perf-live server on loopback ports with a scripted viewer (speed, population, RSS, saves, log) | validation | running | - | Batch 9 (`soak.md`) |
 | 74 | The same spare-pool cap on the helper-thread side (ecoShare.ts) | memory hygiene | exact (fingerprint 708687555 with 2 helpers), 106 tests | yes | Merged (`heap.md` Helper pools) |
+| 75 | Fix for 54: release a dropped creature's kernel resources (brain block, slot, row, offset-table ref) and reuse them through free lists; abuse test over crash-and-regrow cycles | memory, correctness | running | yes | Review finding (`heap.md`) |
 | 7 | prepareRows (slots phase, 7%) into the fill kernel | small | no exact variant over 1%: ground lookup is at most 0.6 ms, exp 0.33, rest 0.45 | yes | Rejected (`prep.md`) |
 
 ## Log
@@ -254,3 +256,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-28 00:55 Full suite on perf-live after ideas 54 and 69: 121 files, 1227 tests, exit 0.
 - 2026-10-28 00:58 Idea 59 parked: a real per-birth gain that the tick does not feel. Running: 68, 73.
 - 2026-10-28 00:59 Review round 2 started (read-only, Opus): an engine correctness review of everything merged since the 12:22 review, and the three Live push-gate reviews for the server changes since the 15:03 round (save workers, pack base64, bench tooling). Findings get fixed before Erik decides on the merge. Still running: 68 (memory settings), 73 (server soak).
+- 2026-10-28 01:03 Push-gate review 1 (public surface): one medium-high finding, the spare-pool cap orphans kernel memory (a regression against development: bounded by peak population before, growing per population cycle now); everything else clean (bench files unreachable from the service, saves byte-identical and rollback-readable, worker lifecycle settled once). Idea 75 started to fix it.
