@@ -348,3 +348,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-28 13:22 idea 93 merged (kernels regenerated from the merged sources), idea 102 rejected (study only).
 - 2026-10-28 13:26 idea 100 parked (0.7%).
 - 2026-10-28 13:32 ideas 103 and 104 closed (already so / nothing installed). Note to self: two closes in a row from my own misread of the eat path; read the code before briefing the next eat idea.
+- 2026-10-28 13:45 focused suites on the lone-creature fix: 182 of 184 passed, the two ThinkPool parity cases hit the 300 s timeout at load 20 and pass alone (2 of 2); no regression.
