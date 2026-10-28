@@ -373,3 +373,4 @@ Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54,
 - 2026-10-28 14:15 idea 107 rejected.
 - 2026-10-28 14:30 idea 110 rejected (study).
 - 2026-10-28 14:40 idea 108 done: the brain kernel is L3-footprint bound; a brain-only arena (plain packing) is worth 0.1-0.2 ms, below the bar; huge pages about 1% (decision note updated).
+- 2026-10-28 14:45 full suite on 6858a11 (ideas 93, 94, 96, 97, 99 and the lone-creature fix): 122 files, 1251 tests, exit 0. Factor batch14 started. Idea 111 (bf16-valued genomes, a game-rule moonshot for Erik) spawned on the pagepack finding.
