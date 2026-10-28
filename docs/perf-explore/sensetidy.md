@@ -8,7 +8,7 @@ Branch `pl-sensebudget` from `perf-live` 6f81ad5 (engine unchanged up to af8f48b
 - `$dirsPairs` also stores best = L and kind 0 when no wall is in range. `$initPairs` is gone.
 - Item candidates store fx, fy and the index. The exact path computes d2 - r2 from them (same operations, same bits). Rock discs keep their stored value.
 - Item and crowd cell windows are one vector chain each (`f64x2` and `f32x4` floor, `i32x4.trunc_sat_*`, per-call clamp vectors, `extract_lane`). The lower clamp (>= 0) and upper clamp (<= last cell) stay separate, so a negative last column still gives an empty window.
-- Header notes the NaN lane; the unused `$lane0` is dropped. Diff `sense.wat` +31 -32 with comments (generated file 1 line).
+- Header notes the NaN lane; the unused `$lane0` is dropped. Diff `sense.wat` +53 -47 with comments (generated file 1 line).
 
 ## Window set-up check (kernel harness, same state, p25 ms, 3 runs, call 300)
 Variants alternate inside each run, hash equal throughout (mixed 10b91cba, cap 4cc9bd68).
