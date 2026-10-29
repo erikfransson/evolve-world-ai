@@ -108,31 +108,36 @@
   ;; $emit: the features of nR rays that saw no creature: closeness and the one-hot of food, poison and wall, then zeros (species flags and seen energy).
   ;; Closeness is read from scratch when calc is 0, else computed per ray from best and kind (0 for kind 0, else 1 - best / L).
   (func $emit (param $scr i32) (param $base i32) (param $nR i32) (param $stride i32) (param $L f64) (param $calc i32)
-    (local $i i32) (local $kind i32) (local $clo f64) (local $z i32) (local $kinds v128) (local $ones v128) (local $Lv v128) (local $one v128) (local $kk v128) (local $cv v128) (local $oa v128) (local $ob v128)
+    (local $i i32) (local $kind i32) (local $clo f64) (local $z i32) (local $kinds v128) (local $ones v128) (local $Lv v128) (local $one v128) (local $kk v128) (local $cv v128) (local $oa v128) (local $ob v128) (local $sb i32)
     ;; constants in locals: V8 rebuilds a v128 constant at each use inside a loop
     (local.set $kinds (v128.const i32x4 -1 1 2 3))
     (local.set $ones (v128.const f32x4 1 1 1 1))
-    ;; stride 6 (one species flag): two rays per step, 48 bytes as three v128 stores (the odd last ray and other strides take the loop below)
-    (if (i32.eq (local.get $stride) (i32.const 6)) (then
-      (local.set $Lv (f64x2.splat (local.get $L)))
-      (local.set $one (f64x2.splat (f64.const 1)))
-      (block $pd (loop $pl
-        (br_if $pd (i32.gt_s (i32.add (local.get $i) (i32.const 2)) (local.get $nR)))
-        (local.set $kk (v128.load64_zero offset=1536 (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 2)))))
-        (local.set $cv (v128.load offset=1024 (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 3)))))
-        (if (local.get $calc) (then
-          (local.set $cv (v128.andnot (f64x2.sub (local.get $one) (f64x2.div (local.get $cv) (local.get $Lv)))
-            (i64x2.eq (i64x2.extend_low_i32x4_s (local.get $kk)) (v128.const i64x2 0 0))))))
-        (local.set $cv (f32x4.demote_f64x2_zero (local.get $cv)))
-        (local.set $oa (v128.and (i32x4.eq (i8x16.shuffle 0 1 2 3 0 1 2 3 0 1 2 3 0 1 2 3 (local.get $kk) (local.get $kk)) (local.get $kinds)) (local.get $ones)))
-        (local.set $ob (v128.and (i32x4.eq (i8x16.shuffle 4 5 6 7 4 5 6 7 4 5 6 7 4 5 6 7 (local.get $kk) (local.get $kk)) (local.get $kinds)) (local.get $ones)))
-        (local.set $ob (i8x16.shuffle 20 21 22 23 4 5 6 7 8 9 10 11 12 13 14 15 (local.get $ob) (local.get $cv)))
-        (v128.store (local.get $base) (i8x16.shuffle 16 17 18 19 4 5 6 7 8 9 10 11 12 13 14 15 (local.get $oa) (local.get $cv)))
-        (v128.store offset=16 (local.get $base) (i8x16.shuffle 0 1 2 3 4 5 6 7 16 17 18 19 20 21 22 23 (v128.const i64x2 0 0) (local.get $ob)))
-        (v128.store offset=32 (local.get $base) (i8x16.shuffle 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 (local.get $ob) (v128.const i64x2 0 0)))
-        (local.set $base (i32.add (local.get $base) (i32.const 48)))
-        (local.set $i (i32.add (local.get $i) (i32.const 2)))
-        (br $pl)))))
+    ;; two rays per step, any stride: the zero tails (4 * (stride - 4) bytes each) as right-aligned v128 stores, which only overshoot into the ray's own head, then the two heads (the odd last ray takes the loop below)
+    (local.set $sb (i32.shl (local.get $stride) (i32.const 2)))
+    (local.set $Lv (f64x2.splat (local.get $L)))
+    (local.set $one (f64x2.splat (f64.const 1)))
+    (block $pd (loop $pl
+      (br_if $pd (i32.gt_s (i32.add (local.get $i) (i32.const 2)) (local.get $nR)))
+      (local.set $kk (v128.load64_zero offset=1536 (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 2)))))
+      (local.set $cv (v128.load offset=1024 (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 3)))))
+      (if (local.get $calc) (then
+        (local.set $cv (v128.andnot (f64x2.sub (local.get $one) (f64x2.div (local.get $cv) (local.get $Lv)))
+          (i64x2.eq (i64x2.extend_low_i32x4_s (local.get $kk)) (v128.const i64x2 0 0))))))
+      (local.set $cv (f32x4.demote_f64x2_zero (local.get $cv)))
+      (local.set $oa (v128.and (i32x4.eq (i8x16.shuffle 0 1 2 3 0 1 2 3 0 1 2 3 0 1 2 3 (local.get $kk) (local.get $kk)) (local.get $kinds)) (local.get $ones)))
+      (local.set $ob (v128.and (i32x4.eq (i8x16.shuffle 4 5 6 7 4 5 6 7 4 5 6 7 4 5 6 7 (local.get $kk) (local.get $kk)) (local.get $kinds)) (local.get $ones)))
+      (local.set $z (i32.add (local.get $base) (i32.sub (local.get $sb) (i32.const 16))))
+      (block $zd (loop $zl
+        (br_if $zd (i32.le_s (local.get $z) (local.get $base)))
+        (v128.store (local.get $z) (v128.const i64x2 0 0))
+        (v128.store (i32.add (local.get $z) (local.get $sb)) (v128.const i64x2 0 0))
+        (local.set $z (i32.sub (local.get $z) (i32.const 16)))
+        (br $zl)))
+      (v128.store (local.get $base) (i8x16.shuffle 16 17 18 19 4 5 6 7 8 9 10 11 12 13 14 15 (local.get $oa) (local.get $cv)))
+      (v128.store (i32.add (local.get $base) (local.get $sb)) (i8x16.shuffle 20 21 22 23 4 5 6 7 8 9 10 11 12 13 14 15 (local.get $ob) (local.get $cv)))
+      (local.set $base (i32.add (local.get $base) (i32.shl (local.get $sb) (i32.const 1))))
+      (local.set $i (i32.add (local.get $i) (i32.const 2)))
+      (br $pl)))
     (block $d (loop $l
       (br_if $d (i32.ge_s (local.get $i) (local.get $nR)))
       (local.set $kind (i32.load offset=1536 (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 2)))))
@@ -143,18 +148,17 @@
       (v128.store (local.get $base) (f32x4.replace_lane 0
         (v128.and (i32x4.eq (i32x4.splat (local.get $kind)) (local.get $kinds)) (local.get $ones))
         (f32.demote_f64 (local.get $clo))))
-      (if (i32.eq (local.get $stride) (i32.const 6)) (then (i64.store offset=16 (local.get $base) (i64.const 0)))
-        (else (local.set $z (i32.const 16)) (block $zd (loop $zl
-          (br_if $zd (i32.gt_s (i32.add (local.get $z) (i32.const 16)) (i32.shl (local.get $stride) (i32.const 2))))
-          (v128.store (i32.add (local.get $base) (local.get $z)) (v128.const i64x2 0 0))
-          (local.set $z (i32.add (local.get $z) (i32.const 16)))
-          (br $zl)))
-          (block $zd1 (loop $zl1
-          (br_if $zd1 (i32.ge_s (local.get $z) (i32.shl (local.get $stride) (i32.const 2))))
-          (i32.store (i32.add (local.get $base) (local.get $z)) (i32.const 0))
-          (local.set $z (i32.add (local.get $z) (i32.const 4)))
-          (br $zl1)))))
-      (local.set $base (i32.add (local.get $base) (i32.shl (local.get $stride) (i32.const 2))))
+      (local.set $z (i32.const 16)) (block $zd (loop $zl
+        (br_if $zd (i32.gt_s (i32.add (local.get $z) (i32.const 16)) (local.get $sb)))
+        (v128.store (i32.add (local.get $base) (local.get $z)) (v128.const i64x2 0 0))
+        (local.set $z (i32.add (local.get $z) (i32.const 16)))
+        (br $zl)))
+      (block $zd1 (loop $zl1
+        (br_if $zd1 (i32.ge_s (local.get $z) (local.get $sb)))
+        (i32.store (i32.add (local.get $base) (local.get $z)) (i32.const 0))
+        (local.set $z (i32.add (local.get $z) (i32.const 4)))
+        (br $zl1)))
+      (local.set $base (i32.add (local.get $base) (local.get $sb)))
       (local.set $i (i32.add (local.get $i) (i32.const 1)))
       (br $l))))
 
@@ -601,23 +605,31 @@
         (then (call $emit (local.get $scr) (local.get $base) (local.get $nR) (local.get $stride) (local.get $L) (i32.const 0)) (local.set $i (local.get $nR))))))
       (local.set $kinds (v128.const i32x4 -1 1 2 3))
       (local.set $ones (v128.const f32x4 1 1 1 1))
-      ;; no detail record and stride 6: the same features as the loop below, with the seen-creature branch instead of selects
-      (if (i32.and (i32.eqz (local.get $det)) (i32.eq (local.get $stride) (i32.const 6))) (then
+      ;; no detail record: the same features as the loop below, with the seen-creature branch instead of selects; the zero tail is right-aligned v128 stores (overshoot only into the head, stored after)
+      (if (i32.eqz (local.get $det)) (then
         (block $ld (loop $ll
           (br_if $ld (i32.ge_s (local.get $i) (local.get $nR)))
           (local.set $ps (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 2))))
           (local.set $k (i32.load offset=2560 (local.get $ps)))
+          (local.set $g (i32.add (local.get $base) (i32.sub (local.get $sb) (i32.const 16))))
+          (block $zd (loop $zl
+            (br_if $zd (i32.le_s (local.get $g) (local.get $base)))
+            (v128.store (local.get $g) (v128.const i64x2 0 0))
+            (local.set $g (i32.sub (local.get $g) (i32.const 16)))
+            (br $zl)))
           (if (i32.ge_s (local.get $k) (i32.const 0)) (then
             (v128.store (local.get $base) (f32x4.replace_lane 0 (v128.const i64x2 0 0)
               (f32.demote_f64 (f64.sub (f64.const 1) (f64.div (f64.promote_f32 (f32.load offset=2304 (local.get $ps))) (f64.promote_f32 (local.get $L32)))))))
-            (f32.store offset=16 (local.get $base) (f32.convert_i32_u (i32.eqz (i32.load (i32.add (local.get $spp) (i32.shl (local.get $k) (i32.const 2)))))))
-            (f32.store offset=20 (local.get $base) (f32.load (i32.add (local.get $sigp) (i32.shl (local.get $k) (i32.const 2))))))
+            (if (i32.gt_s (local.get $stride) (i32.const 4)) (then
+              (local.set $sp (i32.load (i32.add (local.get $spp) (i32.shl (local.get $k) (i32.const 2)))))
+              (if (i32.lt_u (local.get $sp) (i32.sub (local.get $stride) (i32.const 5))) (then
+                (f32.store offset=16 (i32.add (local.get $base) (i32.shl (local.get $sp) (i32.const 2))) (f32.const 1))))
+              (f32.store (i32.add (local.get $base) (i32.sub (local.get $sb) (i32.const 4))) (f32.load (i32.add (local.get $sigp) (i32.shl (local.get $k) (i32.const 2))))))))
           (else
             (v128.store (local.get $base) (f32x4.replace_lane 0
               (v128.and (i32x4.eq (i32x4.splat (i32.load offset=1536 (local.get $ps))) (local.get $kinds)) (local.get $ones))
-              (f32.demote_f64 (f64.load offset=1024 (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 3)))))))
-            (i64.store offset=16 (local.get $base) (i64.const 0))))
-          (local.set $base (i32.add (local.get $base) (i32.const 24)))
+              (f32.demote_f64 (f64.load offset=1024 (i32.add (local.get $scr) (i32.shl (local.get $i) (i32.const 3)))))))))
+          (local.set $base (i32.add (local.get $base) (local.get $sb)))
           (local.set $i (i32.add (local.get $i) (i32.const 1)))
           (br $ll)))))
       (block $wd (loop $wl
@@ -642,11 +654,7 @@
         ;; creature features: one flag per species at offset 16 (S = stride - 5), then the squashed seen energy; no branch on the seen creature, slot 0 stands in for none
         (local.set $ks (select (local.get $k) (i32.const 0) (i32.ge_s (local.get $k) (i32.const 0))))
         (local.set $cc32 (select (f32.load (i32.add (local.get $sigp) (i32.shl (local.get $ks) (i32.const 2)))) (f32.const 0) (i32.ge_s (local.get $k) (i32.const 0))))
-        (if (i32.eq (local.get $stride) (i32.const 6)) (then
-          (f32.store offset=16 (local.get $base)
-            (f32.convert_i32_u (i32.and (i32.ge_s (local.get $k) (i32.const 0)) (i32.eqz (i32.load (i32.add (local.get $spp) (i32.shl (local.get $ks) (i32.const 2))))))))
-          (f32.store offset=20 (local.get $base) (local.get $cc32)))
-        (else (if (i32.gt_s (local.get $stride) (i32.const 4)) (then
+        (if (i32.gt_s (local.get $stride) (i32.const 4)) (then
           (local.set $sp (select (i32.load (i32.add (local.get $spp) (i32.shl (local.get $ks) (i32.const 2)))) (i32.const -1) (i32.ge_s (local.get $k) (i32.const 0))))
           (local.set $g (i32.const 0))
           (block $sd (loop $sl
@@ -655,7 +663,7 @@
               (select (f32x4.extract_lane 0 (local.get $ones)) (f32.const 0) (i32.eq (local.get $sp) (local.get $g))))
             (local.set $g (i32.add (local.get $g) (i32.const 1)))
             (br $sl)))
-          (f32.store offset=16 (i32.add (local.get $base) (i32.shl (i32.sub (local.get $stride) (i32.const 5)) (i32.const 2))) (local.get $cc32))))))
+          (f32.store offset=16 (i32.add (local.get $base) (i32.shl (i32.sub (local.get $stride) (i32.const 5)) (i32.const 2))) (local.get $cc32))))
         (local.set $base (i32.add (local.get $base) (local.get $sb)))
         (local.set $i (i32.add (local.get $i) (i32.const 1)))
         (br $wl)))

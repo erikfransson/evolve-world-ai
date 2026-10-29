@@ -413,6 +413,7 @@ describe("sense.wat (SenseKernels)", () => {
     items?: [number, number, number][]; // x, y, kind
     map?: Partial<SimConfig["world"]>; // stones, ridges and ground (terrain.ts) on top of the size
     species?: number; // species count; creature k is of species k % species, and rays carry one flag per species
+    blind?: boolean; // creatures do not see creatures: four features per ray
   }
 
   function build(o: Setup) {
@@ -422,7 +423,7 @@ describe("sense.wat (SenseKernels)", () => {
       ...base,
       species: names.map((name) => ({ name, hue: -1, hueSpread: 360, plants: true, prey: [], eatEfficiency: 0, eatBaseline: 0 })),
       world: { ...base.world, width: o.width ?? 1200, height: o.height ?? 800, ...(o.itemRadius === undefined ? {} : { itemRadius: o.itemRadius }), ...o.map },
-     creature: { ...base.creature, rayCount: o.rays, raySpread: o.spread, rayLength: o.length ?? 100 },
+     creature: { ...base.creature, rayCount: o.rays, raySpread: o.spread, rayLength: o.length ?? 100, ...(o.blind ? { seesCreatures: false } : {}) },
     };
     const eng = o.species ? speciesEngine(cfg, speciesList(cfg)[0]!) : cfg; // what a creature of the ecosystem runs on
     const world = new World(cfg, 400);
@@ -891,6 +892,38 @@ describe("sense.wat (SenseKernels)", () => {
         if (c.rays.every((r) => r.kind !== HIT_CREATURE) && c.rays.some((r) => r.kind === HIT_FOOD || r.kind === HIT_POISON || r.kind === HIT_WALL)) itemsOnly++;
       });
       expect(itemsOnly).toBeGreaterThan(10);
+    }
+  });
+
+  it("writes the JS encoding, and the same input with and without a detail record, at every ray stride and ray count", () => {
+    for (const [species, blind, stride] of [[0, true, 4], [0, false, 6], [2, false, 7], [3, false, 8], [4, false, 9], [7, false, 12]] as const) {
+      for (const rays of [1, 2, 3, 8, 9, 16, 33, 64]) {
+        const rng = createRng(90 + rays + stride);
+        const spots: Spot[] = Array.from({ length: 40 }, () => [rng.range(-20, 1220), rng.range(-20, 820), rng.range(0, 7)]);
+        for (let i = 0; i < 5; i++) spots.push([300 + 25 * i, 300, i], [6 + 3 * i, 400 + 9 * i, i]); // a clump, some against the left wall
+        const { kernel, reference, world, crowd, kernels, batch, bad } = check({ rays, spread: 1.5, length: 100, creatures: spots, items, species, blind }, false);
+        expect(bad).toBeLessThanOrEqual(2);
+        const bank = (kernels as unknown as { brains: WasmBrainBank }).brains;
+        const len = kernel[0]!.brain.layerActivations()[0]!.length;
+        const inputOf = (c: Creature): number[] => Array.from(bank.f32.subarray(bank.inputAt(c.kernelSlot), bank.inputAt(c.kernelSlot) + len));
+        expect(len).toBe(rays * stride + 5 + 4);
+        const blank = (): void => kernel.forEach((c) => bank.f32.subarray(bank.inputAt(c.kernelSlot), bank.inputAt(c.kernelSlot) + len).fill(NaN));
+        let seen = 0;
+        kernel.forEach((c, k) => {
+          blank();
+          kernels.detail = c;
+          run(kernels, world, crowd, batch);
+          const full = inputOf(c);
+          blank();
+          kernels.detail = null;
+          run(kernels, world, crowd, batch);
+          expect(inputOf(c)).toEqual(full);
+          const want = reference[k]!.encode();
+          for (let i = 0; i < rays * stride; i++) expect(Math.abs(full[i]! - want[i]!)).toBeLessThanOrEqual(1e-4); // ray part; the body inputs after it follow the pre-step state
+          if (c.rays.some((r) => r.kind === HIT_CREATURE)) seen++;
+        });
+        if (!blind && rays >= 8) expect(seen).toBeGreaterThan(0);
+      }
     }
   });
 
