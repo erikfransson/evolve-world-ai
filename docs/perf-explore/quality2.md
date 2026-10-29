@@ -7,6 +7,7 @@ No source file crosses 1000 lines (ecosystem.ts 883). Most growth: wasmKernels.t
 ## Findings, ranked
 
 1. Lend/own genome lifecycle spread over five sites (creature.ts reset, senseKernels attach and release, brain.ts ensure and load's lent branch). Judo: one `Brain.lendTo(lender, slot, sizes)`; reshape, the lent getter and load's lent branch go. Safe without pairs.
+   Fix (idea 156, `pl-lendto`): `Brain.lendTo(lender, slot, sizes, genome)` called by `attach` after `bank.set`; `Creature.reset` loads only when no kernel owner holds it; `reshape` and load's lent branch gone, the state model is one comment above `Brain`. The `lent` getter stays as a state query for the ecoPool tests. Fingerprints 708687555 and 10334191 unchanged.
 2. Brain descriptor and tanh table offsets kept by hand in brainKernel.ts and as literals in brain.wat instead of layout.ts. Move them into LAYOUT; bytes identical, drift test proves it. Safe.
    Fix (idea 157): B_DESC_* and B_TANH_AT in LAYOUT, used by brainKernel.ts and brain.wat; `kernels.generated.ts` byte-identical.
 3. WasmBrainBank holds four jobs (genome layout, chunk allocator with compaction, address-ordered index, run list). Extract the chunk allocator and index (about 150 lines); pure cleanups: forwardSlots repeats runRegion's grow, freeBlock and unorder each call find, reset() repeats the initialisers (also senser.ts). Cleanups safe; the extraction needs one pair.
