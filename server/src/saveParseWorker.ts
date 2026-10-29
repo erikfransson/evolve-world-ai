@@ -15,6 +15,8 @@ const MAX_JSON_TOKENS = 1_000_000;
 const { gz, maxJsonBytes, verifyOnly, home, carryFrom } = workerData as { gz: Uint8Array; maxJsonBytes: number; verifyOnly: boolean; home: Home | null; carryFrom: string | null };
 // Its own function, so the gunzipped bytes and their text are garbage before restoreState builds the world.
 // A collection once restoreState has decoded the base64 columns, so the 40 MB of column text and of parse input is gone before the world is built.
+// The flag is process-wide (V8 flags are shared): every later vm context and worker gets a callable gc. Harmless while no visitor
+// bytes ever run as code (no eval, Function or vm anywhere in server/ or the engine); keep it that way.
 // If a Node ever refuses the flag, the worker still parses and verifies, only without the early collection.
 let collect: (() => void) | undefined;
 try {
