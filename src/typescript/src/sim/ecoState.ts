@@ -68,14 +68,15 @@ export function saveState(eco: Ecosystem): EcoState {
 }
 
 // The keys keep their order, so JSON.stringify(packState(snapshotState(eco))) is the same text as JSON.stringify(saveState(eco)).
-export function packState(s: EcoSnapshot): EcoState {
+// col: how a column becomes its string (the packing worker puts a marker there and writes the base64 itself, a piece at a time).
+export function packState(s: EcoSnapshot, col: (a: Typed) => string = pack): EcoState {
   const it = s.items;
   const cr = s.creatures;
   return {
     ...s,
-    items: { xs: pack(it.xs), ys: pack(it.ys), kinds: pack(it.kinds), nextItem: pack(it.nextItem), cellHead: pack(it.cellHead), freeSlots: pack(it.freeSlots), freeCount: it.freeCount },
+    items: { xs: col(it.xs), ys: col(it.ys), kinds: col(it.kinds), nextItem: col(it.nextItem), cellHead: col(it.cellHead), freeSlots: col(it.freeSlots), freeCount: it.freeCount },
     creatures: {
-      count: cr.count, scalars: pack(cr.scalars), plans: cr.plans, genomes: pack(cr.genomes), memory: pack(cr.memory), ...(cr.outputs ? { outputs: pack(cr.outputs) } : {}),
+      count: cr.count, scalars: col(cr.scalars), plans: cr.plans, genomes: col(cr.genomes), memory: col(cr.memory), ...(cr.outputs ? { outputs: col(cr.outputs) } : {}),
       ...(cr.mutationScales ? { mutationScales: cr.mutationScales } : {}), ...(cr.bumpKills ? { bumpKills: cr.bumpKills } : {}),
     },
   };
@@ -310,8 +311,9 @@ function unpack<T extends Typed>(make: { new (buffer: ArrayBuffer): T; BYTES_PER
 
 // A new Ecosystem continuing the saved run. pool is only needed for the same reason as in the constructor (ray limit of the WebAssembly kernels).
 // journal: build it for helper threads, which then receive every creature and item in their first packet.
+// decoded: the caller does not use `state` again. Its base64 columns are dropped as soon as they are decoded and this is called, so the caller can collect the text before the world is built.
 // The state is checked first (config, limits, ranges, links of the items, ids, lineages) and any violation throws an Error saying which.
-export function restoreState(state: EcoState, pool: readonly PoolEntry[] | null = null, options: { journal?: boolean } = {}): Ecosystem {
+export function restoreState(state: EcoState, pool: readonly PoolEntry[] | null = null, options: { journal?: boolean; decoded?: () => void } = {}): Ecosystem {
   if (!isObject(state) || (state.version !== STATE_VERSION && state.version !== OLDEST_VERSION)) throw new Error(`saved state has version ${isObject(state) ? String(state.version) : "none"}, this build reads versions ${OLDEST_VERSION} and ${STATE_VERSION}`);
   const { core, creatures: cr } = state;
   if (!isObject(core) || !isObject(cr) || !isObject(state.items)) return invalid("core, items or creatures are missing");
@@ -342,6 +344,7 @@ export function restoreState(state: EcoState, pool: readonly PoolEntry[] | null 
     freeSlots: unpack(Int32Array, it.freeSlots, capacity, "items.freeSlots"),
     freeCount: it.freeCount,
   };
+  if (options.decoded) for (const k of ["xs", "ys", "kinds", "nextItem", "cellHead", "freeSlots"] as const) delete (it as Partial<typeof it>)[k];
   checkItems(snapshot, core.food, core.poison);
 
   const K = SCALARS.length;
@@ -368,6 +371,10 @@ export function restoreState(state: EcoState, pool: readonly PoolEntry[] | null 
   if (!memory.every(Number.isFinite)) invalid("a genome or memory holds a number that is not finite");
   const outputs = config.eco.thinkEvery > 1 && cr.outputs !== undefined ? unpack(Float32Array, cr.outputs, n * OUTPUT_SIZE + memoryTotal, "creatures.outputs") : null;
   if (outputs && !outputs.every((x) => Math.abs(x) <= 1)) invalid("a brain output is not a number from -1 to 1");
+  if (options.decoded) {
+    for (const k of ["scalars", "genomes", "memory", "outputs"] as const) delete (cr as Partial<typeof cr>)[k];
+    options.decoded();
+  }
   const scales = checkMutationScales(cr.mutationScales, n);
   const bumpKills = checkBumpKills(cr.bumpKills, n);
   const at = (name: (typeof SCALARS)[number]): number => SCALARS.indexOf(name);
