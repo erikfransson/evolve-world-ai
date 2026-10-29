@@ -64,6 +64,7 @@ Fingerprint equal means bit-identical results.
 | 2026-10-29 02:07 | Juggernaut x 4900 (3 pairs, medians, batch20) | 20.41 | 12.69 | 1.61x (exact) | 258 / 238 MB |
 | 2026-10-29 02:21 | 4 founders x 800 (3 pairs, medians, batch21, head f73f57d: 127 in) | 16.49 | 10.39 | 1.59x (exact) | 249 / 204 MB |
 | 2026-10-29 02:21 | Juggernaut x 4900 (3 pairs, medians, batch21) | 20.35 | 12.03 | 1.69x (exact) | 257 / 240 MB |
+| 2026-10-29 03:27 | report: head 377fddf (batch21 engine plus server ideas 138, 48, 144) | - | - | 1.59x mixed / 1.69x cap (batch21) | 204 / 240 MB (below development) |
 
 Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54, brain forward 5.23 / 5.17, slots (prepareRows) 1.04 / 1.52, memory and steer 1.26 / 1.59, eat 1.05 / 1.35, crowd grid 0.51 / 0.67, collisions 0.18 / 0.27, rest under 0.2. Server frame encoding adds 0.57 ms per tick at 5 Hz. Speed achieved unpaced on this loaded machine: 2.0x and 1.7x real time (the set speed is 3x).
 
@@ -516,3 +517,4 @@ Head phases 2026-10-28 14:50 (253f894, load 6-7, `scout-head.md`; ms per tick, 3
 - 2026-10-29 02:53 full suite on 377fddf (116, 125, 126, 127, 128, 140, 143, 138 with 48, 144): 124 files, 1280 tests, exit 0.
 - 2026-10-29 03:08 idea 147 parked: the trig pairing loses in the step loop; the u16 table wins its phases but the tick shows a brain-forward shift of the same size (unexplained). Step and crowd rebuild are closed.
 - 2026-10-29 03:08 spawned 148 (bundle of the parked smalls 141, 142 ported onto the new brain.wat, 147 B; 10 interleaved pairs per case to settle the brain-forward shift). Running: 146, 148.
+- 2026-10-29 03:27 6 h report: factor 1.59x mixed / 1.69x cap (batch21), peak RSS below development; since 21:23 merged 116+125, 126, 128, 140, 143, 127, 138+48, 144; parked 129, 141, 142, 147; rejected 120, 124, 130, 132, 139; studies 121, 122, 123, 131, 133, 134, 135, 137. Running 146 (save peak), 148 (smalls bundle); the 12 h soak ends 04:57.
