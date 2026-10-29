@@ -326,7 +326,7 @@ export class WasmSenser {
     const rock = world.terrain;
     const kernel = crowd.kernel; // the grid is already in this memory: the kernel packs the f32 columns and the rest is read in place
     const grid = kernel?.at;
-    const pCStart = grid ? grid.start : this.grow(this.rCStart, (ccells + 1) * 4);
+    const pCStart = grid ? grid.start : this.grow(this.rCStart, (ccells + 1) * 2);
     const pSx = this.grow(this.rSx, count * 4 + 16);
     const pSy = this.grow(this.rSy, count * 4 + 16);
     const pOwn = grid ? grid.owners : this.grow(this.rOwn, count * 4 + 16);
@@ -343,7 +343,7 @@ export class WasmSenser {
     const pP = this.grow(this.rP, L.S_BYTES);
     this.views(); // after the last allocation
     let { f32, i32, f64 } = this;
-    if (!kernel) i32.set(crowd.cellStart, pCStart >> 2);
+    if (!kernel) new Uint16Array(i32.buffer, pCStart, ccells + 1).set(crowd.cellStart);
     if (this.rockSynced !== rock) {
       i32.set(rock.rockStart, pRockStart >> 2);
       i32.set(rock.rockOrder, pRockOrder >> 2);
