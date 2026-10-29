@@ -34,7 +34,7 @@ Live World speed campaign (branch `perf-live`): on the live bench the tick is 1.
 - Settings: pasted settings are validated to the engine's limits (at most 8 hidden layers; population settings capped at 20000) instead of failing later.
 - Structure: `Brain.lendTo` is the one lend/own transition, the creature frame record has one writer in `protocol.ts`, a `SparePool` owns the dead-creature pool, and the save columns are listed once.
 - Bench tooling: `liveBench` gets `--save`, `--profileEvery`, `--threads`, `--load`, `--keep`, `--scatter`, `--reach`, `--fixed`, `--food`, `--dt` and `--memcomp`, and `kernelTimers` times each kernel call.
-- Live: brains cost no energy and eyes half as much (`creature.neuronCost` 0, was 0.005; `creature.rayCost` 0.01, was 0.02), so the Oracle survives beside the Grazer. The Ecosystem and Arena keep their costs. A save keeps its own costs, so this takes a `./live reset` after the deploy, and an admin load of an older save brings the old costs back.
+- Live: brains and eyes cost half as much (`creature.neuronCost` 0.0025, was 0.005; `creature.rayCost` 0.01, was 0.02), so the Oracle can last beside the Grazer and the Juggernaut. The Ecosystem and Arena keep their costs. A save keeps its own costs, so this takes a `./live reset` after the deploy, and an admin load of an older save brings the old costs back.
 - Live: three starter founders, Juggernaut, Oracle and Grazer. The Explorer is no longer seeded or offered in "Add your creature" and the RL Arena's Founders choice (one shared file). A running world keeps its Explorer family; the next reset seeds three.
 
 ## 0.2.8 (2026-10-28)

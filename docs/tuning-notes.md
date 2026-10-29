@@ -163,6 +163,7 @@ About 8% fewer creatures on average. Both sit near 2900-3200 for the first 20 mi
 ## Live brain and eye costs, three founders (2026-10-27)
 
 Erik chose free neurons and cheaper rays for Live only (option 2): `creature.neuronCost` 0 (was 0.005) and `creature.rayCost` 0.01 (was 0.02). The Ecosystem and Arena keep their costs. The Explorer leaves the founders, so a fresh world seeds Juggernaut, Oracle and Grazer.
+Erik changed this on 2026-10-29 to `creature.neuronCost` 0.0025 with rayCost 0.01 (founder-archetypes runs: all three founders alive at the end in 3 of 4 runs, while free neurons lost the Juggernaut in both runs).
 Lab screens before this (cap 3000, 4 seeds, 180 min, bonus 5): at the old costs the shipped Oracle died (43 and 0 at +60), neuronCost 0 alone left it at 14, 187, 0 and 231 at +180, and neuronCost 0 with rayCost 0.01 gave J/O/G 322/0/1024, 0/398/979, 0/452/899, 0/343/1023. Juggernaut and Oracle tend to exclude each other; Erik accepts that the Juggernaut may fade, as visitors can add it again.
 Re-screen on the branch's liveConfig (cap 5000, foodRegrow 0.00285), 10 copies of each shipped founder, bonus 5, no brain-weight budget (founderEval), J/O/G:
 
