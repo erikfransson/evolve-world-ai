@@ -20,15 +20,16 @@ export class WasmMembers {
   private readonly rOut = new Region();
   private readonly rThresholds = new Region();
   private readonly rHits = new Region();
-  private walkN = 0; // the member count of the last run
   endState = 0; // the generator state after the last mutateHits scan
-  private readonly pM: number;
+  private readonly pM: number; // call block of settle and the birth walk
+  private readonly pScan: number; // call block of mutateScan, so mutateHits calls leave the walk's fields alone
   private list = new Int32Array(64); // the last result, in JS memory: acting on it may grow the kernel memory
 
   private constructor(store: ResidentStore, exports: MembersExports) {
     this.store = store;
     this.exports = exports;
     this.pM = store.bank.alloc(L.M_BYTES);
+    this.pScan = store.bank.alloc(L.M_BYTES);
   }
 
   static create(store: ResidentStore): WasmMembers | null {
@@ -49,7 +50,6 @@ export class WasmMembers {
     i32.set(rowAt.subarray(0, n), rowAtAt >> 2);
     if (thresholds) f64.set(thresholds.subarray(0, n), thresholdsAt >> 3);
     const M = this.pM;
-    this.walkN = n;
     i32[(M + L.M_N) >> 2] = n;
     i32[(M + L.M_ROW_AT) >> 2] = rowAtAt;
     i32[(M + L.M_OUT) >> 2] = outAt;
@@ -83,14 +83,10 @@ export class WasmMembers {
     return this.run("birthCandidates", rowAt, n, thresholds, first, max);
   }
 
-  // The next max of the walk of the last birthCandidates call, from its copies of rowAt and thresholds (energies are read as they are now). Valid until the next call.
+  // The next max of the walk of the last birthCandidates call (no settle in between), from its copies of rowAt and thresholds (energies are read as they are now). Valid until the next call.
   nextBirthCandidates(max: number): Int32Array {
     const { i32 } = this.store;
-    const M = this.pM; // mutateHits calls in between have used the block's other fields
-    i32[(M + L.M_N) >> 2] = this.walkN;
-    i32[(M + L.M_ROW_AT) >> 2] = this.rRowAt.ptr;
-    i32[(M + L.M_OUT) >> 2] = this.rOut.ptr;
-    i32[(M + L.M_THRESHOLDS) >> 2] = this.rThresholds.ptr;
+    const M = this.pM;
     i32[(M + L.M_MAX) >> 2] = max;
     this.exports.birthCandidates(M);
     return this.result();
@@ -102,7 +98,7 @@ export class WasmMembers {
     const { store } = this;
     const outAt = store.grow(this.rHits, n * 12);
     const { i32 } = store; // after the allocation
-    const M = this.pM;
+    const M = this.pScan;
     i32[(M + L.M_N) >> 2] = n;
     i32[(M + L.M_OUT) >> 2] = outAt;
     i32[(M + L.M_SEED) >> 2] = state;
