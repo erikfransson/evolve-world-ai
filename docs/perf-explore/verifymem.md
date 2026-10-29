@@ -27,13 +27,13 @@ Whole process, `liveBench --seconds 50 --save 15` (2 saves, ticks running, pinne
 |------|------|---|-----------|-----------------|
 | mixed 3300 | 466, 439, 413 (median 439) | 414, 393, 363 (393) | 391, 378, 405 (391) | 303028926 |
 | cap 4900   | 481, 488, 467 (481) | 474, 461, 468 (468) | 427, 428, 428 (428) | 10949528 |
-Save peak over the steady footprint (RSS 195-200 mixed, 217 cap): about +240 base, +190 final at 3300; +265 base, +210 final at the cap. Median HWM -48 MB (3300) and -53 MB (cap), a spread of 36 and 21 MB at the final arm against 53 and 21 at base. cpuMsPerTick equal within load noise (24.4-27.4 all arms). All 18 final-arm saves in the 18 runs went through at the real 10 s pack and 40 s verify timeouts (two earlier B runs failed saves, see below).
+Save peak over the steady footprint (RSS 195-200 mixed, 217 cap): about +240 base, +190 final at 3300; +265 base, +210 final at the cap. Median HWM -48 MB (3300) and -53 MB (cap), run spread at the final arm 27 (mixed) and 1 (cap), at base 53 and 21. cpuMsPerTick equal within load noise (24.4-28.2, all arms). All 12 saves of the final arm and all 12 of base went through at the real 10 s pack and 40 s verify timeouts; B lost 1 of 12 (mixed run 3). With idea 78's async stream instead of the sync pack, 7 of 13 saves in the first mixed campaign timed out (pack or verify) against 0 of 6 at base, which is why the pack is sync here.
 
 Stage isolation (`stages.ts`: a process holding a restored world, snapshot then pack then verify, second round, `VmHWM` of the whole process per stage, 3 runs): pack 517-537 to 432-443, verify 555-575 to 480-491 (-75 to -90), idle after the saves 414-447 to 380-390. Same on the mixed world (pack 521-529 to 430-436, verify 559-567 to 481-491).
 Verify worker alone (`meas.ts`, MB added over a start that holds the first worker's leftovers): cap 124, 128, 123 to 100, 99, 85 (young 32) and 85, 85, 99 (young 8); mixed 126, 128, 125 to 100, 102, 101.
 
 ## Tests
-- `npx vitest run live ecoLive ecosystem ecoState --maxWorkers=1 --testTimeout=180000` in `src/typescript`: 362 passed in 20 files, exit 0 (before and after the young-generation commit). `npx tsc --noEmit` in `server/` and `src/typescript/`: exit 0.
+- `npx vitest run live ecoLive ecosystem ecoState --maxWorkers=1 --testTimeout=180000` in `src/typescript`: 362 passed in 20 files, exit 0 (run on the verify commit and again on the final head). `npx tsc --noEmit` in `server/` and `src/typescript/`: exit 0.
 - New test in `liveSaves.test.ts` ("verify-only refuses a truncated, not-gzip, not-JSON or out-of-range save ..."): truncated gzip, not gzip, half a JSON text, NaN position, position outside the walls, huge velocity, huge item capacity, truncated column, null lineage table are each rejected by the verify worker; a good save verifies, and the non-verify parse returns state whose JSON equals the saved text (the dropped columns change nothing). It is a guard: it passes on perf-live as well, because the checks did not change.
 
 ## Verdict suggestion
