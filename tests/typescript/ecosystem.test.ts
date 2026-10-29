@@ -5,7 +5,8 @@ import { Crowd } from "../../src/typescript/src/sim/crowd.ts";
 import { createRng } from "../../src/typescript/src/sim/rng.ts";
 import { DEFAULT_ECO_CONFIG, MAX_HIDDEN_LAYERS, seasonFactor, seasonName } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
-import { EVENT_CAP, EVENT_DEATH, EVENT_IMPACT, EVENT_STRIDE, Ecosystem, MAX_SPARE } from "../../src/typescript/src/sim/ecosystem.ts";
+import { EVENT_CAP, EVENT_DEATH, EVENT_IMPACT, EVENT_STRIDE, Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
+import { MAX_SPARE, type SparePool } from "../../src/typescript/src/sim/sparePool.ts";
 import { trialsSizes } from "../../src/typescript/src/sim/seedPool.ts";
 import type { PoolEntry } from "../../src/typescript/src/sim/seedPool.ts";
 import { FEAT_CREATURE, FEAT_SEEN_ENERGY, energySignal, inputLayout } from "../../src/typescript/src/sim/sensors.ts";
@@ -704,10 +705,9 @@ describe("spare creature pool", () => {
   it("stays within MAX_SPARE per species after a crash", () => {
     const d = structuredClone(DEFAULT_ECO_CONFIG);
     const eco = new Ecosystem({ ...d, seed: 3, eco: { ...d.eco, wasm: false, initialPopulation: MAX_SPARE + 40 } });
-    const internal = eco as unknown as { remove(i: number): void; spare: unknown[][] };
+    const internal = eco as unknown as { remove(i: number): void; spare: SparePool<unknown> };
     while (eco.members.length > 0) internal.remove(0);
-    expect(internal.spare.every((p) => p.length <= MAX_SPARE)).toBe(true);
-    expect(internal.spare[0]!.length).toBe(MAX_SPARE);
+    expect(internal.spare.count(0)).toBe(MAX_SPARE);
   });
 
   it("gives a reused spare zero outputs, as a new creature has", () => {
@@ -757,7 +757,7 @@ describe("kernel resources of dropped creatures", () => {
 describe("reusing dead creatures", () => {
   it("hands a newborn a dead creature with a brain of its size when one is among the latest, else the latest", () => {
     const eco = new Ecosystem(ecoCfg({ eco: { foundersVary: true, initialPopulation: 80 } }), null);
-    const e = eco as unknown as { remove(i: number): void; takeSpare(species: number, genes: number): { creature: { brain: { genome: Float32Array } } } | undefined };
+    const e = eco as unknown as { remove(i: number): void; spare: SparePool<{ creature: { brain: { genome: Float32Array } } }> };
     const lengths = eco.members.map((m) => m.creature.brain.genome.length);
     const [a, b] = [...new Set(lengths)];
     expect(b).toBeDefined(); // the founders differ in size
@@ -767,9 +767,9 @@ describe("reusing dead creatures", () => {
     e.remove(ia);
     const ib = eco.members.findIndex((m) => m.creature.brain.genome.length === b);
     e.remove(ib);
-    expect(e.takeSpare(0, a!)!.creature.brain.genome.length).toBe(a);
-    expect(e.takeSpare(0, a!)!.creature.brain.genome.length).toBe(b); // none of size a left: the latest
-    expect(e.takeSpare(0, a!)).toBeUndefined();
+    expect(e.spare.take(0, a!)!.creature.brain.genome.length).toBe(a);
+    expect(e.spare.take(0, a!)!.creature.brain.genome.length).toBe(b); // none of size a left: the latest
+    expect(e.spare.take(0, a!)).toBeUndefined();
   });
 });
 

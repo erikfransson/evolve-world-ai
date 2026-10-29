@@ -35,13 +35,13 @@ import type { Species } from "./species.ts";
 import { HIT_FOOD, HIT_NONE, HIT_POISON } from "./types.ts";
 import type { CreatureState, Genome, HitKind, WorldView } from "./types.ts";
 import { World } from "./world.ts";
+import { SparePool } from "./sparePool.ts";
 import { SenseKernels } from "./wasm/senseKernels.ts";
 import { MAX_RAYS } from "./wasm/senser.ts";
 import type { PhaseTimer } from "./profile.ts";
 
 const SMALL_SCAN = 32; // up to this many members the settle and birth scans run in JS: RL episodes have 1-31 creatures, so the kernel pays only for crowds
 const BIRTH_CHUNK = 8; // birth candidates fetched per kernel call: a tick has about one birth, so the walk ends within the first few
-const SPARE_LOOK = 16; // dead creatures looked at for one whose brain has the newborn's size
 
 export { BIG_IMPACT, EVENT_CAP, EVENT_DEATH, EVENT_IMPACT, EVENT_STRIDE } from "./contacts.ts";
 export { MAX_INSERT_ENERGY, MAX_INSERT_LAYERS, MAX_INSERT_MEMORY, MAX_INSERT_NEURONS, MAX_INSERT_RAYS, MAX_INSERT_RAY_LENGTH, MAX_NAME_LENGTH, MUTATION_SCALE_RANGE } from "./ecoInsert.ts";
@@ -150,7 +150,6 @@ export interface EcoJournal {
 //    walk the creatures from a random start each tick, so no creature wins contested food, prey or the last free place by its list position.
 // With a species list every creature belongs to one species, with that species' body, costs, births and
 // diet; a hunter eats a touching creature of a species it preys on. Without one there is a single species with the shared settings.
-export const MAX_SPARE = 256; // dead creatures' storage kept per species for reuse by births; a crash would otherwise keep the old peak's brains for good
 const MAX_ROCK_TRIES = 200; // random founder spots tried before taking the nearest free one
 
 export class Ecosystem {
@@ -189,7 +188,7 @@ export class Ecosystem {
   private readonly table: MemberTable; // members and the columns kept with them
   private readonly economy: ItemEconomy; // food and poison: counts, caps, regrowth
   private readonly contacts: Contacts; // eating, hunting and collisions
-  private readonly spare: EcoCreature[][]; // per species, since a creature keeps its species' engine config
+  private readonly spare: SparePool<EcoCreature>; // per species, since a creature keeps its species' engine config
   private readonly engines: EngineConfig[]; // per species
   private readonly ranges: EcoConfig["eco"][]; // per species, for plan variation
   private readonly counts: SpeciesCount[];
@@ -243,7 +242,7 @@ export class Ecosystem {
     this.engines = this.species.map((sp) => speciesEngine(config, sp, scale));
     this.ranges = this.species.map((sp) => speciesRanges(config, sp));
     this.counts = this.species.map(() => ({ population: 0, births: 0, deaths: 0, eaten: 0 }));
-    this.spare = this.species.map(() => []);
+    this.spare = new SparePool(this.species.length, (m) => m.creature.brain.genomeLength);
     this.rng = startRng(config);
     this.aging = agingOf(eco, dt);
     this.items = new World(config, restore?.itemCapacity ?? Math.max(start.food, caps.food) + Math.max(start.poison, caps.poison));
@@ -546,16 +545,16 @@ export class Ecosystem {
     // The energy test reads no creature object: table.states[i] is members[i].creature.state and table.birthEnergies[i] its birth energy. Births replace the table's arrays when they fill up.
     if (scan) {
       // only the members with energy for a child, in the order of the walk from first, a few at a time as the walk ends at the caps; births change no one else's energy
-      if (members.length < birthCap && this.weights <= this.birthWeightCap) {
+      if (this.birthRoom(birthCap)) {
         for (let ready = scan.birthCandidates(this.table.rowAt, n, this.table.birthEnergies, first, BIRTH_CHUNK); ; ready = scan.nextBirthCandidates(BIRTH_CHUNK)) {
-          for (let k = 0; k < ready.length && members.length < birthCap && this.weights <= this.birthWeightCap; k++) {
+          for (let k = 0; k < ready.length && this.birthRoom(birthCap); k++) {
             const parent = members[ready[k]!]!;
             if (this.tick - parent.lastBirthTick >= parent.cooldownTicks) this.giveBirth(parent);
           }
-          if (ready.length < BIRTH_CHUNK || members.length >= birthCap || this.weights > this.birthWeightCap) break;
+          if (ready.length < BIRTH_CHUNK || !this.birthRoom(birthCap)) break;
         }
       }
-    } else for (let k = 0; k < n && members.length < birthCap && this.weights <= this.birthWeightCap; k++) {
+    } else for (let k = 0; k < n && this.birthRoom(birthCap); k++) {
       const at = (first + k) % n;
       if (this.table.states[at]!.energy < this.table.birthEnergies[at]!) continue;
       const parent = members[at]!;
@@ -666,6 +665,11 @@ export class Ecosystem {
     this.counts[parent.species]!.births++;
   }
 
+  // True while another birth fits under the population cap and the weights cap; both only grow inside the birth loop.
+  private birthRoom(birthCap: number): boolean {
+    return this.members.length < birthCap && this.weights <= this.birthWeightCap;
+  }
+
   // Places founder i with the birth traits in this.traits; the one path for drawn and cast founders.
   private found(i: number, c: CastMember, fromPool: boolean): void {
     const m = this.spawn(c.genome, c.plan, c.x, c.y, c.heading, c.energy ?? this.species[c.species]!.startEnergy, c.species, this.traits);
@@ -673,23 +677,9 @@ export class Ecosystem {
     this.lineages.describe(i, c.hue, c.species, fromPool);
   }
 
-  // The most recent dead creature of this species among the last SPARE_LOOK whose brain has genomeLength genes (so its bank block and buffers fit as they are), else the latest one.
-  private takeSpare(species: number, genomeLength: number): EcoCreature | undefined {
-    const list = this.spare[species]!;
-    const top = list.length - 1;
-    for (let i = top; i >= 0 && i > top - SPARE_LOOK; i--) {
-      if (list[i]!.creature.brain.genomeLength !== genomeLength) continue;
-      const m = list[i]!;
-      list[i] = list[top]!;
-      list.pop();
-      return m;
-    }
-    return list.pop();
-  }
-
   // Adds a creature with these birth traits, reusing a dead one's storage when there is one; genome and plan are copied.
   private spawn(genome: Genome, plan: PlanView, x: number, y: number, heading: number, energy: number, species: number, birth: BirthTraits, mutationScale = 1): EcoCreature {
-    let m = this.takeSpare(species, genome.length);
+    let m = this.spare.take(species, genome.length);
     if (m) m.creature.reset(genome, x, y, heading, energy, plan);
     else {
       m = new EcoCreature(new Creature(this.engines[species]!, genome, x, y, heading, plan, this.kernels, species));
@@ -727,8 +717,7 @@ export class Ecosystem {
     this.onDeath?.(m);
     this.lineages.died(m.founderId);
     this.journal?.died.push(m.id);
-    if (this.spare[m.species]!.length < MAX_SPARE) this.spare[m.species]!.push(m);
-    else this.kernels?.release(m.creature);
+    if (!this.spare.keep(m.species, m)) this.kernels?.release(m.creature);
     this.deaths++;
     const count = this.counts[m.species]!;
     count.population--;
