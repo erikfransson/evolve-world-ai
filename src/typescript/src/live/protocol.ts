@@ -188,20 +188,6 @@ export function parseClientMessage(data: string): ClientMessage | null {
   return { t: "select", id };
 }
 
-// Per-creature arrays as the server has them (engine units).
-export interface CreatureSource {
-  count: number;
-  ids: ArrayLike<number>;
-  x: ArrayLike<number>;
-  y: ArrayLike<number>;
-  heading: ArrayLike<number>;
-  energy: ArrayLike<number>; // absolute
-  hue: ArrayLike<number>; // degrees
-  founder: ArrayLike<number>;
-  age: ArrayLike<number>; // seconds
-  radius: number;
-}
-
 export interface CreatureFrame {
   tick: number; // u32: wraps after 2^32 ticks (LiveScene orders by the nearest)
   count: number;
@@ -226,25 +212,26 @@ export function creatureFrameBytes(count: number): number {
   return CREATURE_HEADER + count * CREATURE_RECORD;
 }
 
-export function encodeCreatures(tick: number, src: CreatureSource, world: WorldSize, fullEnergy: number): Uint8Array {
-  const out = new Uint8Array(creatureFrameBytes(src.count));
-  const dv = new DataView(out.buffer);
-  dv.setUint8(0, MSG_CREATURES);
-  dv.setUint32(1, tick, true);
-  dv.setUint32(5, src.count, true);
-  const radius = clamp(Math.round(src.radius * 4), 255);
-  for (let i = 0, o = CREATURE_HEADER; i < src.count; i++, o += CREATURE_RECORD) {
-    dv.setUint32(o, src.ids[i]!, true);
-    dv.setUint16(o + 4, q16(src.x[i]!, world.width), true);
-    dv.setUint16(o + 6, q16(src.y[i]!, world.height), true);
-    dv.setUint16(o + 8, q16((((src.heading[i]! % TAU) + TAU) % TAU), TAU), true);
-    dv.setUint8(o + 10, radius);
-    dv.setUint8(o + 11, clamp(Math.round((src.energy[i]! / fullEnergy) * 255), 255));
-    dv.setUint8(o + 12, clamp(Math.floor(src.age[i]!), MAX_AGE_S));
-    dv.setUint16(o + 13, q16(src.hue[i]! % 360, 360), true);
-    dv.setUint32(o + 15, clamp(src.founder[i]!, MAX_ID), true);
-  }
+// The one writer of the creature frame layout (the server's encodeMembers calls these; decodeCreatures reads them back).
+export function newCreatureFrame(tick: number, count: number): Uint8Array {
+  const out = new Uint8Array(creatureFrameBytes(count));
+  out[0] = MSG_CREATURES;
+  out[1] = tick & 255; out[2] = (tick >>> 8) & 255; out[3] = (tick >>> 16) & 255; out[4] = (tick >>> 24) & 255;
+  out[5] = count & 255; out[6] = (count >>> 8) & 255; out[7] = (count >>> 16) & 255; out[8] = (count >>> 24) & 255;
   return out;
+}
+
+// One record at byte offset `o`, from the quantized fields: ids as an int32 bit pattern, positions and heading and hue as u16, the rest as u8 (founder u32).
+export function putCreature(out: Uint8Array, o: number, id: number, x: number, y: number, heading: number, radius: number, energy: number, age: number, hue: number, founder: number): void {
+  out[o] = id & 255; out[o + 1] = (id >>> 8) & 255; out[o + 2] = (id >>> 16) & 255; out[o + 3] = (id >>> 24) & 255;
+  out[o + 4] = x & 255; out[o + 5] = x >>> 8;
+  out[o + 6] = y & 255; out[o + 7] = y >>> 8;
+  out[o + 8] = heading & 255; out[o + 9] = heading >>> 8;
+  out[o + 10] = radius;
+  out[o + 11] = energy;
+  out[o + 12] = age;
+  out[o + 13] = hue & 255; out[o + 14] = hue >>> 8;
+  out[o + 15] = founder & 255; out[o + 16] = (founder >>> 8) & 255; out[o + 17] = (founder >>> 16) & 255; out[o + 18] = (founder >>> 24) & 255;
 }
 
 const view = (buf: ArrayBuffer | Uint8Array): DataView => {

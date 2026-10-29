@@ -1,12 +1,175 @@
 ;; The per-creature step of resident rows: memory units, turn, thrust, drag, ground, walls, rock and energy. Twin of Creature.remember and steer (physics.stepBody, the
 ;; reference): the same arithmetic in the same order, one f64 operation per JS operation and none fused, so the rows come out bit for bit alike. Math.sin and
-;; Math.cos are the engine's own, imported, so the results equal the JS path on every engine. Offsets are layout.ts's, substituted for the double-brace tokens.
+;; Math.cos are the engine's own, imported, and replaced by a port of V8's fdlibm only when the loader's start-up probe (stepKernel.ts) finds the port equal to them. Offsets are layout.ts's, substituted for the double-brace tokens.
 ;; Keep this and stepBody in step: tests/typescript/wasmStep.test.ts compares them.
 ;; Memory is the brain bank's (imported); a row's brain outputs are f32 in the same memory.
 (module
   (import "brain" "mem" (memory 1))
   (import "math" "sin" (func $sin (param f64) (result f64)))
   (import "math" "cos" (func $cos (param f64) (result f64)))
+
+  (global $port (export "port") (mut i32) (i32.const 0)) ;; 1 once the probe found $sincos equal to the host's Math.sin and Math.cos
+
+  (func $hi (param $x f64) (result i32)
+    (i32.wrap_i64 (i64.shr_u (i64.reinterpret_f64 (local.get $x)) (i64.const 32))))
+
+  (func $kcos (param $x f64) (param $y f64) (result f64)
+    (local $ix i32) (local $z f64) (local $r f64) (local $qx f64)
+    (local.set $ix (i32.and (call $hi (local.get $x)) (i32.const 0x7fffffff)))
+    (if (i32.lt_s (local.get $ix) (i32.const 0x3E400000))
+      (then (if (i32.eqz (i32.trunc_f64_s (local.get $x))) (then (return (f64.const 1))))))
+    (local.set $z (f64.mul (local.get $x) (local.get $x)))
+    (local.set $r
+      (f64.mul (local.get $z)
+        (f64.add (f64.const 4.16666666666666019037e-02)
+          (f64.mul (local.get $z)
+            (f64.add (f64.const -1.38888888888741095749e-03)
+              (f64.mul (local.get $z)
+                (f64.add (f64.const 2.48015872894767294178e-05)
+                  (f64.mul (local.get $z)
+                    (f64.add (f64.const -2.75573143513906633035e-07)
+                      (f64.mul (local.get $z)
+                        (f64.add (f64.const 2.08757232129817482790e-09)
+                          (f64.mul (local.get $z) (f64.const -1.13596475577881948265e-11)))))))))))))
+    (if (i32.lt_s (local.get $ix) (i32.const 0x3FD33333))
+      (then
+        ;; 1 - (0.5 z - (z r - x y))
+        (return (f64.sub (f64.const 1)
+          (f64.sub (f64.mul (f64.const 0.5) (local.get $z))
+            (f64.sub (f64.mul (local.get $z) (local.get $r)) (f64.mul (local.get $x) (local.get $y))))))))
+    (if (i32.gt_s (local.get $ix) (i32.const 0x3FE90000))
+      (then (local.set $qx (f64.const 0.28125)))
+      (else (local.set $qx (f64.reinterpret_i64 (i64.shl (i64.extend_i32_u (i32.sub (local.get $ix) (i32.const 0x00200000))) (i64.const 32))))))
+    ;; (1 - qx) - ((0.5 z - qx) - (z r - x y))
+    (f64.sub (f64.sub (f64.const 1) (local.get $qx))
+      (f64.sub (f64.sub (f64.mul (f64.const 0.5) (local.get $z)) (local.get $qx))
+        (f64.sub (f64.mul (local.get $z) (local.get $r)) (f64.mul (local.get $x) (local.get $y))))))
+
+  (func $ksin (param $x f64) (param $y f64) (param $iy i32) (result f64)
+    (local $ix i32) (local $z f64) (local $v f64) (local $r f64)
+    (local.set $ix (i32.and (call $hi (local.get $x)) (i32.const 0x7fffffff)))
+    (if (i32.lt_s (local.get $ix) (i32.const 0x3E400000))
+      (then (if (i32.eqz (i32.trunc_f64_s (local.get $x))) (then (return (local.get $x))))))
+    (local.set $z (f64.mul (local.get $x) (local.get $x)))
+    (local.set $v (f64.mul (local.get $z) (local.get $x)))
+    (local.set $r
+      (f64.add (f64.const 8.33333333332248946124e-03)
+        (f64.mul (local.get $z)
+          (f64.add (f64.const -1.98412698298579493134e-04)
+            (f64.mul (local.get $z)
+              (f64.add (f64.const 2.75573137070700676789e-06)
+                (f64.mul (local.get $z)
+                  (f64.add (f64.const -2.50507602534068634195e-08)
+                    (f64.mul (local.get $z) (f64.const 1.58969099521155010221e-10))))))))))
+    (if (i32.eqz (local.get $iy))
+      (then
+        ;; x + v (S1 + z r)
+        (return (f64.add (local.get $x)
+          (f64.mul (local.get $v) (f64.add (f64.const -1.66666666666666324348e-01) (f64.mul (local.get $z) (local.get $r))))))))
+    ;; x - ((z (0.5 y - v r) - y) - v S1)
+    (f64.sub (local.get $x)
+      (f64.sub
+        (f64.sub (f64.mul (local.get $z) (f64.sub (f64.mul (f64.const 0.5) (local.get $y)) (f64.mul (local.get $v) (local.get $r)))) (local.get $y))
+        (f64.mul (local.get $v) (f64.const -1.66666666666666324348e-01)))))
+
+  ;; fdlibm __ieee754_rem_pio2 for pi/4 < |x| <= 2^19 pi/2: returns n, y0, y1. n = 0x80000000 marks a larger finite |x|.
+  (func $rem (param $x f64) (result i32 f64 f64)
+    (local $hx i32) (local $ix i32) (local $z f64) (local $t f64) (local $n i32) (local $fn f64)
+    (local $r f64) (local $w f64) (local $y0 f64) (local $y1 f64) (local $j i32) (local $i i32) (local $big i32)
+    (local.set $hx (call $hi (local.get $x)))
+    (local.set $ix (i32.and (local.get $hx) (i32.const 0x7fffffff)))
+    (if (i32.lt_s (local.get $ix) (i32.const 0x4002D97C))
+      (then
+        (if (i32.gt_s (local.get $hx) (i32.const 0))
+          (then
+            (local.set $z (f64.sub (local.get $x) (f64.const 1.57079632673412561417e+00)))
+            (if (i32.ne (local.get $ix) (i32.const 0x3FF921FB))
+              (then
+                (local.set $y0 (f64.sub (local.get $z) (f64.const 6.07710050650619224932e-11)))
+                (local.set $y1 (f64.sub (f64.sub (local.get $z) (local.get $y0)) (f64.const 6.07710050650619224932e-11))))
+              (else
+                (local.set $z (f64.sub (local.get $z) (f64.const 6.07710050630396597660e-11)))
+                (local.set $y0 (f64.sub (local.get $z) (f64.const 2.02226624879595063154e-21)))
+                (local.set $y1 (f64.sub (f64.sub (local.get $z) (local.get $y0)) (f64.const 2.02226624879595063154e-21)))))
+            (return (i32.const 1) (local.get $y0) (local.get $y1)))
+          (else
+            (local.set $z (f64.add (local.get $x) (f64.const 1.57079632673412561417e+00)))
+            (if (i32.ne (local.get $ix) (i32.const 0x3FF921FB))
+              (then
+                (local.set $y0 (f64.add (local.get $z) (f64.const 6.07710050650619224932e-11)))
+                (local.set $y1 (f64.add (f64.sub (local.get $z) (local.get $y0)) (f64.const 6.07710050650619224932e-11))))
+              (else
+                (local.set $z (f64.add (local.get $z) (f64.const 6.07710050630396597660e-11)))
+                (local.set $y0 (f64.add (local.get $z) (f64.const 2.02226624879595063154e-21)))
+                (local.set $y1 (f64.add (f64.sub (local.get $z) (local.get $y0)) (f64.const 2.02226624879595063154e-21)))))
+            (return (i32.const -1) (local.get $y0) (local.get $y1))))))
+    (if (i32.gt_s (local.get $ix) (i32.const 0x413921FB))
+      (then (return (i32.const 0x80000000) (f64.const 0) (f64.const 0))))
+    ;; medium size
+    (local.set $t (f64.abs (local.get $x)))
+    (local.set $n (i32.trunc_f64_s (f64.add (f64.mul (local.get $t) (f64.const 6.36619772367581382433e-01)) (f64.const 0.5))))
+    (local.set $fn (f64.convert_i32_s (local.get $n)))
+    (local.set $r (f64.sub (local.get $t) (f64.mul (local.get $fn) (f64.const 1.57079632673412561417e+00))))
+    (local.set $w (f64.mul (local.get $fn) (f64.const 6.07710050650619224932e-11)))
+    ;; quick check: n < 32 and ix differs from the high word of n pi/2
+    (local.set $big
+      (if (result i32) (i32.lt_s (local.get $n) (i32.const 32))
+        (then (i32.ne (local.get $ix) (call $hi (f64.mul (f64.convert_i32_s (local.get $n)) (f64.const 1.5707963267948966)))))
+        (else (i32.const 0))))
+    (if (local.get $big)
+      (then (local.set $y0 (f64.sub (local.get $r) (local.get $w))))
+      (else
+        (local.set $j (i32.shr_s (local.get $ix) (i32.const 20)))
+        (local.set $y0 (f64.sub (local.get $r) (local.get $w)))
+        (local.set $i (i32.sub (local.get $j) (i32.and (i32.shr_u (call $hi (local.get $y0)) (i32.const 20)) (i32.const 0x7ff))))
+        (if (i32.gt_s (local.get $i) (i32.const 16))
+          (then
+            (local.set $t (local.get $r))
+            (local.set $w (f64.mul (local.get $fn) (f64.const 6.07710050630396597660e-11)))
+            (local.set $r (f64.sub (local.get $t) (local.get $w)))
+            (local.set $w (f64.sub (f64.mul (local.get $fn) (f64.const 2.02226624879595063154e-21))
+                                   (f64.sub (f64.sub (local.get $t) (local.get $r)) (local.get $w))))
+            (local.set $y0 (f64.sub (local.get $r) (local.get $w)))
+            (local.set $i (i32.sub (local.get $j) (i32.and (i32.shr_u (call $hi (local.get $y0)) (i32.const 20)) (i32.const 0x7ff))))
+            (if (i32.gt_s (local.get $i) (i32.const 49))
+              (then
+                (local.set $t (local.get $r))
+                (local.set $w (f64.mul (local.get $fn) (f64.const 2.02226624871116645580e-21)))
+                (local.set $r (f64.sub (local.get $t) (local.get $w)))
+                (local.set $w (f64.sub (f64.mul (local.get $fn) (f64.const 8.47842766036889956997e-32))
+                                       (f64.sub (f64.sub (local.get $t) (local.get $r)) (local.get $w))))
+                (local.set $y0 (f64.sub (local.get $r) (local.get $w)))))))))
+    (local.set $y1 (f64.sub (f64.sub (local.get $r) (local.get $y0)) (local.get $w)))
+    (if (i32.lt_s (local.get $hx) (i32.const 0))
+      (then (return (i32.sub (i32.const 0) (local.get $n)) (f64.neg (local.get $y0)) (f64.neg (local.get $y1)))))
+    (local.get $n) (local.get $y0) (local.get $y1))
+
+  ;; sin and cos of x as the engine's Math.sin and Math.cos compute them (fdlibm), or the imports where this port does not reach (|x| past 823549)
+  (func $sincos (param $x f64) (result f64 f64)
+    (local $ix i32) (local $n i32) (local $y0 f64) (local $y1 f64) (local $s f64) (local $c f64) (local $nan f64)
+    (local.set $ix (i32.and (call $hi (local.get $x)) (i32.const 0x7fffffff)))
+    (if (i32.le_s (local.get $ix) (i32.const 0x3FE921FB))
+      (then (return (call $ksin (local.get $x) (f64.const 0) (i32.const 0)) (call $kcos (local.get $x) (f64.const 0)))))
+    (if (i32.ge_s (local.get $ix) (i32.const 0x7FF00000))
+      (then (return (call $sin (local.get $x)) (call $cos (local.get $x)))))
+    (call $rem (local.get $x))
+    (local.set $y1) (local.set $y0) (local.set $n)
+    (if (i32.eq (local.get $n) (i32.const 0x80000000)) (then (return (call $sin (local.get $x)) (call $cos (local.get $x)))))
+    (local.set $s (call $ksin (local.get $y0) (local.get $y1) (i32.const 1)))
+    (local.set $c (call $kcos (local.get $y0) (local.get $y1)))
+    (block $done
+      (block $three (block $two (block $one
+        (br_table $done $one $two $three (i32.and (local.get $n) (i32.const 3))))
+        (return (local.get $c) (f64.neg (local.get $s))))
+        (return (f64.neg (local.get $s)) (f64.neg (local.get $c))))
+        (return (f64.neg (local.get $c)) (local.get $s)))
+    (local.get $s) (local.get $c))
+  (func (export "portSincos") (param $x f64) (result f64 f64) (call $sincos (local.get $x)))
+
+  (func $trig (param $x f64) (result f64 f64)
+    (if (result f64 f64) (global.get $port)
+      (then (call $sincos (local.get $x)))
+      (else (call $sin (local.get $x)) (call $cos (local.get $x)))))
 
   ;; Clamps one axis of a disc into [radius, size - radius] and reflects the velocity pointing into the wall, scaled by the restitution (physics.ts keepInside).
   (func $wall (param $pos i32) (param $vel i32) (param $radius f64) (param $size f64) (param $bounce f64)
@@ -24,30 +187,18 @@
             (if (f64.gt (local.get $v) (f64.const 0)) (then (f64.store (local.get $vel) (f64.mul (f64.neg (local.get $bounce)) (local.get $v)))))))))
   )
 
-  ;; Pushes the disc out of the rock along the contact normal and reflects the velocity pointing into it, up to 4 passes (terrain.ts keepOut).
+  ;; Pushes the disc out of the rock along the contact normal and reflects the velocity pointing into it, up to 4 passes (terrain.ts keepOut). The caller has run the clear-of-rock early-out.
   (func $keepOut (param $P i32) (param $row i32) (param $sp i32)
     (local $radius f64) (local $bounce f64) (local $x f64) (local $y f64) (local $vx f64) (local $vy f64)
     (local $reach f64) (local $nx f64) (local $ny f64) (local $d2 f64) (local $d f64) (local $into f64) (local $e f64) (local $inv f64)
-    (local $squareX f64) (local $squareY f64)
     (local $rockStart i32) (local $rockOrder i32) (local $rockXyr i32) (local $maxR f64)
     (local $pass i32) (local $moved i32) (local $cols i32) (local $cx0 i32) (local $cx1 i32) (local $cy1 i32) (local $cy i32) (local $k i32) (local $end i32) (local $disc i32)
-    (if (i32.eqz (i32.load offset={{P_ROCKS}} (local.get $P))) (then (return)))
     (local.set $radius (f64.load offset={{Q_RADIUS}} (local.get $sp)))
     (local.set $bounce (f64.load offset={{Q_WALL_BOUNCE}} (local.get $sp)))
     (local.set $x (f64.load offset={{R_X}} (local.get $row)))
     (local.set $y (f64.load offset={{R_Y}} (local.get $row)))
     (local.set $vx (f64.load offset={{R_VX}} (local.get $row)))
     (local.set $vy (f64.load offset={{R_VY}} (local.get $row)))
-    ;; early-out: the clear-of-rock raster square of the disc has no rock within reach (NaN fails the tests and takes the full path)
-    (local.set $squareX (f64.floor (f64.div (local.get $x) (f64.load offset={{P_CLEAR_CELL}} (local.get $P)))))
-    (local.set $squareY (f64.floor (f64.div (local.get $y) (f64.load offset={{P_CLEAR_CELL}} (local.get $P)))))
-    (if (i32.and
-          (i32.and (f64.ge (local.get $squareX) (f64.const 0)) (f64.lt (local.get $squareX) (f64.convert_i32_s (i32.load offset={{P_NEAR_COLS}} (local.get $P)))))
-          (i32.and (f64.ge (local.get $squareY) (f64.const 0)) (f64.lt (local.get $squareY) (f64.convert_i32_s (i32.load offset={{P_NEAR_ROWS}} (local.get $P))))))
-      (then
-        (if (i32.eqz (i32.load8_u (i32.add (i32.load offset={{Q_NEAR}} (local.get $sp))
-              (i32.add (i32.mul (i32.trunc_sat_f64_s (local.get $squareY)) (i32.load offset={{P_NEAR_COLS}} (local.get $P))) (i32.trunc_sat_f64_s (local.get $squareX))))))
-          (then (return)))))
     (local.set $cols (i32.load offset={{P_ROCK_COLS}} (local.get $P)))
     (local.set $rockStart (i32.load offset={{P_ROCK_START}} (local.get $P)))
     (local.set $rockOrder (i32.load offset={{P_ROCK_ORDER}} (local.get $P)))
@@ -116,12 +267,17 @@
 
   ;; Steps each of the n rows listed at P_ROWS, in that order.
   (func (export "step") (param $P i32)
+    (local $near i32) (local $cx i32) (local $cy i32)
     (local $k i32) (local $n i32) (local $row i32) (local $sp i32) (local $out i32) (local $units i32) (local $count i32) (local $short i32) (local $u i32) (local $at i32)
     (local $dt f64) (local $thrust f64) (local $targetTurn f64) (local $turn f64) (local $heading f64) (local $cos f64) (local $sin f64)
     (local $vx0 f64) (local $vy0 f64) (local $vx f64) (local $vy f64) (local $v f64) (local $fwd f64) (local $side f64) (local $terminal f64) (local $slowed f64)
     (local $speciesAt i32) (local $rowsAt i32) (local $outputSize i32) (local $empty i32) (local $aging i32) (local $agingStart f64) (local $agingPerTick f64)
-    (local $ground f64) (local $upkeep f64) (local $ticks f64) (local $radius f64) (local $bounce f64)
+    (local $ground f64) (local $rocks i32) (local $nearCols i32) (local $nearRows i32) (local $clearShift i32) (local $xyv v128) (local $ij v128) (local $upkeep f64) (local $ticks f64) (local $radius f64) (local $bounce f64)
     (local.set $n (i32.load offset={{P_N}} (local.get $P)))
+    (local.set $rocks (i32.load offset={{P_ROCKS}} (local.get $P)))
+    (local.set $nearCols (i32.load offset={{P_NEAR_COLS}} (local.get $P)))
+    (local.set $nearRows (i32.load offset={{P_NEAR_ROWS}} (local.get $P)))
+    (local.set $clearShift (i32.load offset={{P_CLEAR_SHIFT}} (local.get $P)))
     (local.set $rowsAt (i32.load offset={{P_ROWS}} (local.get $P)))
     (local.set $speciesAt (i32.load offset={{P_SPECIES}} (local.get $P)))
     (local.set $outputSize (i32.load offset={{P_OUTPUT_SIZE}} (local.get $P)))
@@ -162,8 +318,9 @@
       (f64.store offset={{R_TURN}} (local.get $row) (local.get $turn))
       (local.set $heading (f64.add (f64.load offset={{R_HEADING}} (local.get $row)) (f64.mul (local.get $turn) (local.get $dt))))
       (f64.store offset={{R_HEADING}} (local.get $row) (local.get $heading))
-      (local.set $cos (call $cos (local.get $heading)))
-      (local.set $sin (call $sin (local.get $heading)))
+      (call $trig (local.get $heading))
+      (local.set $cos)
+      (local.set $sin)
       (f64.store offset={{R_COS}} (local.get $row) (local.get $cos))
       (f64.store offset={{R_SIN}} (local.get $row) (local.get $sin))
       ;; velocity: forward speed toward the thrust's terminal speed (or braking), sideways speed decaying
@@ -198,7 +355,22 @@
       (local.set $bounce (f64.load offset={{Q_WALL_BOUNCE}} (local.get $sp)))
       (call $wall (i32.add (local.get $row) (i32.const {{R_X}})) (i32.add (local.get $row) (i32.const {{R_VX}})) (local.get $radius) (f64.load offset={{Q_WIDTH}} (local.get $sp)) (local.get $bounce))
       (call $wall (i32.add (local.get $row) (i32.const {{R_Y}})) (i32.add (local.get $row) (i32.const {{R_VY}})) (local.get $radius) (f64.load offset={{Q_HEIGHT}} (local.get $sp)) (local.get $bounce))
-      (call $keepOut (local.get $P) (local.get $row) (local.get $sp))
+      ;; rock, unless the clear-of-rock raster square of the disc has no rock within reach (negative, NaN and out-of-raster positions take the full path)
+      (if (local.get $rocks)
+        (then
+          (local.set $near (i32.const 1))
+          (local.set $xyv (f64x2.replace_lane 1 (f64x2.splat (f64.load offset={{R_X}} (local.get $row))) (f64.load offset={{R_Y}} (local.get $row))))
+          (if (i64x2.all_true (f64x2.ge (local.get $xyv) (v128.const f64x2 0 0)))
+            (then
+              (local.set $ij (i32x4.shr_u (i32x4.trunc_sat_f64x2_s_zero (local.get $xyv)) (local.get $clearShift)))
+              (local.set $cx (i32x4.extract_lane 0 (local.get $ij)))
+              (local.set $cy (i32x4.extract_lane 1 (local.get $ij)))
+              (if (i32.and (i32.lt_u (local.get $cx) (local.get $nearCols)) (i32.lt_u (local.get $cy) (local.get $nearRows)))
+                (then
+                  ;; the raster is a bit per square
+                  (local.set $at (i32.add (i32.mul (local.get $cy) (local.get $nearCols)) (local.get $cx)))
+                  (local.set $near (i32.and (i32.const 1) (i32.shr_u (i32.load8_u (i32.add (i32.load offset={{Q_NEAR}} (local.get $sp)) (i32.shr_u (local.get $at) (i32.const 3)))) (i32.and (local.get $at) (i32.const 7)))))))))
+          (if (local.get $near) (then (call $keepOut (local.get $P) (local.get $row) (local.get $sp))))))
       ;; energy: the upkeep (grown with age), thrust and turning
       (local.set $upkeep (f64.load offset={{R_UPKEEP}} (local.get $row)))
       (local.set $ticks (f64.load offset={{R_TICKS}} (local.get $row)))

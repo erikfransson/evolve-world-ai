@@ -1,12 +1,16 @@
 import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
+import { Creature } from "../../src/typescript/src/sim/creature.ts";
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
+import { MAX_SPARE, SparePool } from "../../src/typescript/src/sim/sparePool.ts";
+import { wasmAvailable } from "../../src/typescript/src/sim/wasm/loader.ts";
 import { restoreState, saveState } from "../../src/typescript/src/sim/ecoState.ts";
-import { ShareCoordinator, fittedCaps, packetBytes, packetViews, publishedBytes } from "../../src/typescript/src/sim/ecoShare.ts";
+import { ShareCoordinator, ShareHelper, fittedCaps, packetBytes, packetViews, publishedBytes } from "../../src/typescript/src/sim/ecoShare.ts";
 import { ThinkPool, defaultHelpers, serveHelper, tickTimeoutMs } from "../../src/typescript/src/worker/ecoPool.ts";
 import type { HelperIn, HelperOut, HelperPort } from "../../src/typescript/src/worker/ecoPool.ts";
 import { EcoRunner } from "../../src/typescript/src/worker/ecoRunner.ts";
 import { createNodeThinkPool, nodeHelperPorts } from "../../src/typescript/src/worker/nodePool.ts";
+import { WASM_RUN_FINGERPRINT } from "./helpers.ts";
 
 // A small crowded world with varied plans and structural mutations, so creatures are born and die within a few hundred ticks.
 function cfg(seed = 5): EcoConfig {
@@ -253,7 +257,7 @@ describe("WebAssembly kernels", () => {
     expect(a.births).toBeGreaterThan(0);
     expect(a.deaths).toBeGreaterThan(0);
     expect(serial(wasmCfg(), 300).fingerprint()).toBe(a.fingerprint());
-    expect(a.fingerprint()).toBe(81047108); // pinned; re-pinned for the terrain input (#34), was 116543125; change it only on purpose
+    expect(a.fingerprint()).toBe(WASM_RUN_FINGERPRINT);
     const js = serial(wasmCfg(5, false), 300);
     expect(js.wasm).toBe(false);
     expect(serial(cfg(), 300).fingerprint()).toBe(a.fingerprint()); // WASM is the default
@@ -444,7 +448,7 @@ describe("ThinkPool message handling", () => {
 
 describe("helper packets", () => {
   it("fittedCaps grows for a bigger genome area, and the delta cap counts every word publish writes", () => {
-    const caps = { creatures: 10, memory: 10, delta: 100, genome: 100 };
+    const caps = { creatures: 10, memory: 10, delta: 100, genome: 100, outputs: 0 };
     expect(fittedCaps(caps, { ...caps, genome: 101 })).not.toBeNull();
     expect(fittedCaps(caps, caps)).toBeNull();
 
@@ -487,5 +491,79 @@ describe("helper packets", () => {
     } finally {
       pool.close();
     }
+  });
+});
+
+describe("helper spare creature pool", () => {
+  it("stays within MAX_SPARE per species after a crash", () => {
+    const helper = new ShareHelper(cfg(), 10, 0);
+    const internal = helper as unknown as { mine: Map<number, unknown>; speciesOf: Map<number, number>; spare: SparePool<unknown>; apply(d: Float64Array, g: Float64Array, n: number): void };
+    const n = MAX_SPARE + 40;
+    const deaths = new Float64Array(2 * n);
+    for (let i = 0; i < n; i++) {
+      internal.mine.set(i, {});
+      internal.speciesOf.set(i, 0);
+      deaths[2 * i] = 3; // DIED
+      deaths[2 * i + 1] = i;
+    }
+    internal.apply(deaths, new Float64Array(0), deaths.length);
+    expect(internal.mine.size).toBe(0);
+    expect(internal.spare.count(0)).toBe(MAX_SPARE);
+  });
+
+  it.skipIf(!wasmAvailable())("kernel creatures lend their genome to the bank and every read of it is bit-identical to an own copy", () => {
+    const eco = new Ecosystem(cfg(), null);
+    for (let t = 0; t < 400; t++) eco.step(); // births, deaths, spare reuse and structural changes
+    const lent = eco.members.filter((m) => m.creature.brain.lent);
+    expect(lent.length).toBeGreaterThan(eco.members.length - 2); // all but the creature shown in detail
+    const before = JSON.stringify(saveState(eco));
+    for (const m of eco.members) {
+      const g = m.creature.brain.genome;
+      expect(g.length).toBe(m.creature.brain.genomeLength);
+    }
+    for (const m of eco.members) m.creature.brain.own(); // every brain back to its own copy, read from the bank
+    expect(eco.members.every((m) => !m.creature.brain.lent)).toBe(true);
+    expect(JSON.stringify(saveState(eco))).toBe(before);
+  });
+
+  it.skipIf(!wasmAvailable())("reset with a genome of the wrong length throws and leaves a lent brain as it was", () => {
+    const eco = new Ecosystem(cfg(), null);
+    for (let t = 0; t < 50; t++) eco.step();
+    const c = eco.members.find((m) => m.creature.brain.lent)!.creature;
+    const before = Float32Array.from(c.brain.genome);
+    const sizes = c.brain.sizes.slice();
+    expect(() => c.reset(new Float32Array(before.length + 3), 0, 0, 0, 1, c.plan)).toThrow(/genome length/);
+    expect(c.brain.lent).toBe(true);
+    expect(c.brain.genomeLength).toBe(before.length);
+    expect(c.brain.sizes).toEqual(sizes);
+    expect(Buffer.from(c.brain.genome.buffer).equals(Buffer.from(before.buffer))).toBe(true);
+  });
+
+  it.skipIf(!wasmAvailable())("frees the kernel resources of dropped creatures for reuse", () => {
+    const config = cfg();
+    const eco = new Ecosystem(config, null);
+    const helper = new ShareHelper(config, 10, 0, true);
+    type Kernels = { nextSlot: number; brains: { memory: WebAssembly.Memory; arena: { top: number } }; store: { states: unknown[] } };
+    const internal = helper as unknown as { mine: Map<number, Creature>; speciesOf: Map<number, number>; engines: Creature["config"][]; spare: SparePool<Creature>; kernels: Kernels; apply(d: Float64Array, g: Float64Array, n: number): void };
+    const k = internal.kernels;
+    const c0 = eco.members[0]!.creature;
+    const n = MAX_SPARE + 200;
+    const sizes: number[][] = [];
+    let id = 0;
+    for (let cycle = 0; cycle < 4; cycle++) {
+      const deaths = new Float64Array(2 * n);
+      for (let i = 0; i < n; i++, id++) {
+        let c = internal.spare.take(0, c0.brain.genomeLength); // as born() does
+        if (c) c.reset(c0.brain.genome, 0, 0, 0, 0, c0.plan);
+        else c = new Creature(internal.engines[0]!, c0.brain.genome, 0, 0, 0, c0.plan, k as never, 0);
+        internal.mine.set(id, c);
+        internal.speciesOf.set(id, 0);
+        deaths[2 * i] = 3; // DIED
+        deaths[2 * i + 1] = id;
+      }
+      internal.apply(deaths, new Float64Array(0), deaths.length);
+      sizes.push([k.brains.memory.buffer.byteLength, k.nextSlot, k.store.states.length, k.brains.arena.top]);
+    }
+    for (const s of sizes.slice(1)) expect(s).toEqual(sizes[0]);
   });
 });

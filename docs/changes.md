@@ -6,6 +6,39 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+## 0.2.9 (2026-10-29)
+
+- RL Arena: Corral (Fight, 16 weak foragers in a pen, only rams pay) and Lap (Time pressure, Ring road's lane with an early reward) are new envs; Lap misses the E5 check (random designs always score 0) and Corral needs 66 seeds for E4 (`docs/rl-envs.md`). Existing envs are unchanged
+
+Live World speed campaign (branch `perf-live`): on the live bench the tick is 1.65x faster in the mixed world and 1.72x at the 5000 cap, with bit-identical results and a lower peak memory than before (about 50 MB less at the bench, about 100 MB less around a save). The simulation is unchanged, and saves only gain fields for the new `eco.thinkEvery` option below. The campaign log with every idea and verdict is `docs/perf-explore/live-campaign.md`.
+
+- Live server: the viewer frame path costs less CPU with identical bytes. The creature frame is written in one pass straight into the wire buffer, the stats pass offers a creature to the record lists only when it could enter or update one, family names are parsed once, and followed creatures share one crowd grid per refresh instead of one each (a watched server with five followers spent 10 ms of CPU per second on those grids). With nobody connected no creature frame and no per-creature stats pass run at all.
+- Live server: a save no longer freezes the tick loop. The main thread takes a snapshot and a worker packs, stringifies and gzips it (stall per save from 3 to 6 s down to under 0.2 s, peak memory during a save about 200 MB lower, same bytes).
+- Live server: a periodic save that fails for a transient reason (worker timeout, out of memory, exit) is retried after 15, 30, then 60 minutes.
+- Live server: the stop save has its own time budget (packs up to 25 s when alone) and is skipped when a save that finished after the stop was asked already covers it.
+- Live server: save workers keep fewer transient copies (30 MB less at the peak, packing about 3x faster).
+- Live server: the pool of dead creatures is capped at 256 per species, in the main thread and in the helper threads. A dropped creature gives back its brain block, units, slot and row, and they are reused, so memory follows the peak population instead of keeping every corpse (peak memory over 1800 s about 44 MB lower).
+- Live and Ecosystem: a lone creature gets its crowd grid before sensing (a fill step placed members through a grid it did not have).
+- Engine, sense: rays are tested two at a time, creatures with nothing in reach skip the ray passes, rock discs outside the ray wedge are dropped, and records are read in grid order.
+- Engine, brain: brains run in memory order and prefetch the next weight block, wider column blocks, cheaper tanh and zero-input skipping.
+- Engine, step: sin and cos run inside the kernel (a start-up check keeps the host functions if any bit differs), and the rock check is skipped away from rock.
+- Engine, crowd grid: the grid is reused at the start of the next tick, and its rebuild is about 13% faster.
+- Engine, fill: cheaper energy and ground preparation and two-at-a-time narrowing of the values handed to the kernels.
+- Engine, births: the candidate scan runs only when the caps leave room, and a newborn reuses a dead creature of its brain size (a birth costs 0.43x).
+- Engine, item grid: dirty cells are patched in one kernel call per tick.
+- Engine, brain: each brain's first-layer ray rows live in their own region and the dense part is packed in 1 MiB chunks with a sliding compaction, so the kernel streams fewer dead bytes; the forward pass is one function (compaction, layers, tanh) generated from templates at assembly time (`scripts/watTemplate.ts`), and the chunk allocator is its own module.
+- Engine, sense: vector cell windows, two packed items per step in the cell walk, a NaN-padded odd ray lane, directions fused with the no-wall init, and the emit written two rays per step for every ray stride; the in-sight predicate and the cell-row walk are template macros.
+- Engine, step, crowd and fill: the touch kernel's window and pointers vectorised, the sense record copied with v128 stores, the clear-of-rock test on one vector, a 16-bit crowd cell table, and a quiet-block mask for the ground lookup.
+- Engine, memory: a kernel-backed brain no longer keeps a JavaScript copy of its weights (read back from the kernel block when a save, birth or viewer needs them).
+- Live server: the save workers free the gunzipped text and the base64 columns as soon as they are decoded and pack in one buffer, so a save's memory peak is about 50 MB lower; `restoreState` is split into `decodeState` and the world build.
+- Live server: the tick loop continues through `setImmediate` while it is behind instead of a 1 ms timer sleep, and the unit sets `--max-semi-space-size=4` (peak memory 24 to 64 MB lower at no tick cost).
+- Ecosystem settings: a new experimental `eco.thinkEvery` (1 to 8, default 1, off on Live) lets creatures sense and think every Nth tick, about 1.5x cheaper at 2; a save of a world using it carries `thinkEvery` and the creatures' last outputs.
+- Settings: pasted settings are validated to the engine's limits (at most 8 hidden layers; population settings capped at 20000) instead of failing later.
+- Structure: `Brain.lendTo` is the one lend/own transition, the creature frame record has one writer in `protocol.ts`, a `SparePool` owns the dead-creature pool, and the save columns are listed once.
+- Bench tooling: `liveBench` gets `--save`, `--profileEvery`, `--threads`, `--load`, `--keep`, `--scatter`, `--reach`, `--fixed`, `--food`, `--dt` and `--memcomp`, and `kernelTimers` times each kernel call.
+- Live: brains and eyes cost half as much (`creature.neuronCost` 0.0025, was 0.005; `creature.rayCost` 0.01, was 0.02), so the Oracle can last beside the Grazer and the Juggernaut. The Ecosystem and Arena keep their costs. A save keeps its own costs, so this takes a `./live reset` after the deploy, and an admin load of an older save brings the old costs back.
+- Live: three starter founders, Juggernaut, Oracle and Grazer. The Explorer is no longer seeded or offered in "Add your creature" and the RL Arena's Founders choice (one shared file). A running world keeps its Explorer family; the next reset seeds three.
+
 ## 0.2.8 (2026-10-28)
 
 - Live, Ecosystem and Trials: the abyssal floor is a little lighter (floor colour and a softer dark mottle).

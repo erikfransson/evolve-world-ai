@@ -245,6 +245,12 @@ describe("env groups", () => {
     for (const g of ENV_GROUPS) if (g !== "Advanced" && g !== "Custom") expect(count.get(g) ?? 0).toBeGreaterThanOrEqual(3);
   });
 
+  it("holds four Time pressure envs, Lap among them, filed with navigation tags but under Time pressure", () => {
+    expect(ENVS.filter((e) => groupOf(e) === "Time pressure").length).toBeGreaterThanOrEqual(4);
+    expect(groupOf(envById("lap")!)).toBe("Time pressure");
+    expect(typeof checkEnv(JSON.parse(JSON.stringify(envById("lap")!)), "ecosystem", 0)).not.toBe("string");
+  });
+
   it("keeps every Bigger env within the custom env limits", () => {
     const bigger = ENVS.filter((e) => groupOf(e) === "Bigger");
     expect(bigger.length).toBeGreaterThanOrEqual(4);

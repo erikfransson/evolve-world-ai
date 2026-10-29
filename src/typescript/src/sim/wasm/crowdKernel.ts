@@ -1,3 +1,4 @@
+import { MAX_GRID_CREATURES } from "../crowd.ts";
 import type { Crowd } from "../crowd.ts";
 import { CROWD_BYTES, compiled } from "./loader.ts";
 import { LAYOUT as L } from "./layout.ts";
@@ -12,6 +13,7 @@ interface CrowdExports extends WebAssembly.Exports {
   pack(c: number): void;
   touch(c: number): void;
   sweep(c: number): number;
+  refresh(c: number): number;
 }
 
 const REGIONS = ["touched", "rowAt", "cellOf", "perm", "permB", "count", "start", "occupied", "speciesIn", "xs", "ys", "energies", "species", "owners"] as const;
@@ -54,7 +56,7 @@ export class WasmCrowd {
       this.views = {
         xs: new Float64Array(buffer, r.xs.ptr, r.xs.cap >> 3), ys: new Float64Array(buffer, r.ys.ptr, r.ys.cap >> 3), energies: new Float64Array(buffer, r.energies.ptr, r.energies.cap >> 3),
         species: new Int32Array(buffer, r.species.ptr, r.species.cap >> 2), owners: new Int32Array(buffer, r.owners.ptr, r.owners.cap >> 2),
-        cellStart: new Int32Array(buffer, r.start.ptr, cells), occupied: new Int32Array(buffer, r.occupied.ptr, r.occupied.cap >> 2),
+        cellStart: new Uint16Array(buffer, r.start.ptr, cells), occupied: new Int32Array(buffer, r.occupied.ptr, r.occupied.cap >> 2),
       };
       this.viewsMoved = store.moved;
     }
@@ -67,13 +69,14 @@ export class WasmCrowd {
     return { start: r.start.ptr, owners: r.owners.ptr, species: r.species.ptr };
   }
 
-  // For the sense kernel: the sorted positions as f32 at sx and sy and each creature's energy signal as f32 at sig (twin of the loop in WasmSenser.run).
-  pack(startEnergy: number, sx: number, sy: number, sig: number): void {
+  // For the sense kernel: the sorted positions as f32 at sx and sy and each creature's energy signal as f32 at sig (twin of the loop in WasmSenser.run), and into the rows when toRows.
+  pack(startEnergy: number, sx: number, sy: number, sig: number, toRows = false): void {
     const C = this.pC;
     const i32 = this.store.i32;
     i32[(C + L.C_SX) >> 2] = sx;
     i32[(C + L.C_SY) >> 2] = sy;
     i32[(C + L.C_SIG) >> 2] = sig;
+    i32[(C + L.C_SIG_ROWS) >> 2] = toRows ? 1 : 0;
     this.store.f64[(C + L.C_START_ENERGY) >> 3] = startEnergy;
     this.exports.pack(C);
   }
@@ -125,9 +128,23 @@ export class WasmCrowd {
     this.n = 0;
   }
 
+  // The last rebuild's grid for the same n creatures at the same rows (no one came or went since): re-reads positions, energies and species in grid order,
+  // equal to a rebuild bit for bit. False, with the grid to be rebuilt, when there is no grid of n or a creature changed cell.
+  refresh(rowAt: Int32Array, n: number, species?: Int32Array): boolean {
+    if (this.n !== n || this.crowd.kernel !== this) return false;
+    const { store, region: r } = this;
+    const { i32 } = store;
+    i32.set(rowAt.subarray(0, n), r.rowAt.ptr >> 2);
+    if (species) i32.set(species.subarray(0, n), r.speciesIn.ptr >> 2);
+    const C = this.pC;
+    i32[(C + L.C_SPECIES_IN) >> 2] = species ? r.speciesIn.ptr : 0;
+    return this.exports.refresh(C) !== 0;
+  }
+
   // Grids the n creatures whose rows are at f64 indices rowAt[0 .. n-1], with species[i] for creature i (all 0 without).
   rebuild(rowAt: Int32Array, n: number, species?: Int32Array): void {
     const { store, crowd, region: r } = this;
+    if (n > MAX_GRID_CREATURES) throw new RangeError(`a crowd grid holds at most ${MAX_GRID_CREATURES} creatures, got ${n}`);
     const bytes = n * 4;
     store.grow(r.touched, bytes); // where touch writes
     const rowAtAt = store.grow(r.rowAt, bytes);
@@ -135,7 +152,7 @@ export class WasmCrowd {
     const perm = store.grow(r.perm, bytes);
     const permB = store.grow(r.permB, bytes);
     const count = store.grow(r.count, 4 << crowd.radixBits);
-    const start = store.grow(r.start, (crowd.cols * crowd.rows + 1) * 4);
+    const start = store.grow(r.start, (crowd.cols * crowd.rows + 1) * 2 + 14); // u16 slots; the fill stores eight cells at a time, up to seven past the end
     const occupied = store.grow(r.occupied, bytes);
     const speciesIn = store.grow(r.speciesIn, bytes);
     const xs = store.grow(r.xs, n * 8);

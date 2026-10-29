@@ -4,7 +4,7 @@ import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { decaysFor, stepBody } from "../../src/typescript/src/sim/physics.ts";
 import { createRng } from "../../src/typescript/src/sim/rng.ts";
 import { EXTRA_TERRAIN, inputLayout } from "../../src/typescript/src/sim/sensors.ts";
-import { buildGroundField, GROUND_HALF } from "../../src/typescript/src/sim/groundField.ts";
+import { buildGroundField, GROUND_BLOCK_SHIFT, GROUND_HALF, GroundField } from "../../src/typescript/src/sim/groundField.ts";
 import { FAST_FACTOR, SLOW_FACTOR, TERRAIN_FAST, TERRAIN_SLOW, Terrain, terrainOf } from "../../src/typescript/src/sim/terrain.ts";
 import { FEATHER_BANDS, FEATHER_UNITS } from "../../src/typescript/src/ui/groundScene.ts";
 import { fineOf, groundBodies, traceSmooth } from "../../src/typescript/src/ui/groundOutline.ts";
@@ -207,5 +207,22 @@ describe("drawn ground and sensed ground", () => {
       tested++;
     }
     expect(tested).toBe(60);
+  });
+
+  it("flags a block of cells exactly when a corner of one of its cells reaches 128 in either layer", () => {
+    const rng = createRng(5);
+    for (const [w, h, p] of [[1000, 1000, 0.02], [2600, 700, 0.003], [60_000, 40_000, 0.0003], [500, 500, 0]] as const) {
+      const f = new GroundField(w, h);
+      for (let k = 0; k < f.data.length; k++) f.data[k] = rng.range(0, 1) < p ? 128 + Math.floor(rng.range(0, 128)) : Math.floor(rng.range(0, 128));
+      const { flags, cols } = f.blockFlags();
+      const want = new Uint8Array(flags.length);
+      for (let cj = 0; cj < f.rows - 1; cj++) for (let ci = 0; ci < f.cols - 1; ci++) {
+        let high = false;
+        for (const [i, j] of [[ci, cj], [ci + 1, cj], [ci, cj + 1], [ci + 1, cj + 1]]) high ||= (f.data[2 * (j! * f.cols + i!)]! | f.data[2 * (j! * f.cols + i!) + 1]!) >= 128;
+        if (high) want[(cj >> GROUND_BLOCK_SHIFT) * cols + (ci >> GROUND_BLOCK_SHIFT)] = 1;
+      }
+      expect(flags).toEqual(want);
+      if (p > 0) expect(want.some((v) => v === 1) && want.some((v) => v === 0)).toBe(true);
+    }
   });
 });

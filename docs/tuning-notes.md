@@ -160,6 +160,34 @@ Paired settle runs, the Live config seeded with 10 of each founder, seed 1, 60 s
 
 About 8% fewer creatures on average. Both sit near 2900-3200 for the first 20 minutes, where the four founders fill the brain-weight budget.
 
+## Live brain and eye costs, three founders (2026-10-27)
+
+Erik chose free neurons and cheaper rays for Live only (option 2): `creature.neuronCost` 0 (was 0.005) and `creature.rayCost` 0.01 (was 0.02). The Ecosystem and Arena keep their costs. The Explorer leaves the founders, so a fresh world seeds Juggernaut, Oracle and Grazer.
+Erik changed this on 2026-10-29 to `creature.neuronCost` 0.0025 with rayCost 0.01 (founder-archetypes runs: all three founders alive at the end in 3 of 4 runs, while free neurons lost the Juggernaut in both runs).
+Lab screens before this (cap 3000, 4 seeds, 180 min, bonus 5): at the old costs the shipped Oracle died (43 and 0 at +60), neuronCost 0 alone left it at 14, 187, 0 and 231 at +180, and neuronCost 0 with rayCost 0.01 gave J/O/G 322/0/1024, 0/398/979, 0/452/899, 0/343/1023. Juggernaut and Oracle tend to exclude each other; Erik accepts that the Juggernaut may fade, as visitors can add it again.
+Re-screen on the branch's liveConfig (cap 5000, foodRegrow 0.00285), 10 copies of each shipped founder, bonus 5, no brain-weight budget (founderEval), J/O/G:
+
+| costs (neuron, ray) | seed | +60           | +120          | +180          |
+| ------------------- | ---- | ------------- | ------------- | ------------- |
+| 0.005, 0.02         | 1    | 1612/253/1424 | 1683/70/1488  | 1278/39/1992  |
+| 0.005, 0.02         | 2    | 1039/144/2190 | 1229/146/1922 | 1258/150/1931 |
+| 0, 0.01             | 1    | 184/1032/2447 | 0/1095/2447   | 0/1043/2529   |
+| 0, 0.01             | 2    | 345/759/2459  | 8/749/2949    | 0/620/3020    |
+
+At the new costs the Oracle holds 600-1100 and the Juggernaut dies by +90 to +180; at the old costs the Oracle dwindles to 39-150.
+Brain drift, LiveWorld with its weight budget, seed 1, 300 min, both costs run side by side on a loaded laptop (ms per tick are relative). Units are hidden neurons plus memory per creature:
+
+| costs       | min | creatures | units | rays  | weights | ms/tick | J/O/G          |
+| ----------- | --- | --------- | ----- | ----- | ------- | ------- | -------------- |
+| 0.005, 0.02 | 30  | 2342      | 63.4  | 9.67  | 2463    | 9.6     | 479/974/889    |
+| 0.005, 0.02 | 180 | 3275      | 29.8  | 8.05  | 1042    | 9.8     | 1348/1/1926    |
+| 0.005, 0.02 | 300 | 3260      | 30.0  | 8.07  | 1049    | 9.9     | 1336/0/1924    |
+| 0, 0.01     | 30  | 2293      | 69.6  | 9.96  | 2721    | 9.2     | 454/1119/720   |
+| 0, 0.01     | 180 | 2141      | 74.2  | 10.22 | 2914    | 9.1     | 217/1179/745   |
+| 0, 0.01     | 300 | 2017      | 78.4  | 10.42 | 3094    | 8.4     | 189/1212/616   |
+
+At the new costs the brain-weight budget binds from about 30 min (2017 x 3094 is 6.24 M, the birth cap), so the seasons barely move the population. Brains grow about 13% from 30 to 300 min (part of it is the Oracle's growing share), and the budget turns that into fewer creatures, not slower ticks. At the old costs the population swings 1330-3440 with the seasons and the Oracle is gone by 210 min. The weight budget, not the population cap, bounds the tick cost under free neurons.
+
 ## Ideas not yet tried
 - Evaluate each creature on two layouts to reduce layout luck.
 - Tournament with a larger size (5 to 7).

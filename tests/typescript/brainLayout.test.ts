@@ -14,6 +14,16 @@ afterEach(() => vi.unstubAllGlobals());
 const GRID_X = 38; // first feature column
 const FEAT_DX = 12;
 
+describe("layerSizes", () => {
+  it("agrees with inputLayout for any ray, memory and species count", () => {
+    const plan = { rayCount: 7, raySpread: 2, rayLength: 100, hiddenLayers: [9, 5], memoryShort: 2, memoryLong: 3 };
+    for (const config of [DEFAULT_CONFIG, DEFAULT_ECO_CONFIG, { ...DEFAULT_ECO_CONFIG, creature: { ...DEFAULT_ECO_CONFIG.creature, seesCreatures: false } }]) {
+      const layout = inputLayout(config, plan);
+      expect(layerSizes(config, plan)).toEqual([layout.size, 9, 5, layout.outputs]);
+    }
+  });
+});
+
 describe("BrainView layout", () => {
   it("keeps the four feature columns and the extras under them for Trials", () => {
     const sizes = layerSizes(DEFAULT_CONFIG);

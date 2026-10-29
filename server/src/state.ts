@@ -101,9 +101,13 @@ export class StateStore {
   // asyncGzip: compress off the main thread, so only the caller's own JSON work blocks.
   // verify: rejects, so nothing is written, when the gzipped save would not be read back.
   async write(json: string, meta: { population: number; tick: number; world?: string }, at = new Date(), asyncGzip = true, verify?: (gz: Uint8Array) => Promise<unknown>): Promise<string> {
+    return this.writeGzipped(asyncGzip ? await gzipAsync(json) : gzipSync(json), meta, at, verify);
+  }
+
+  // write for a save gzipped elsewhere (saves.ts packs it on a worker).
+  async writeGzipped(data: Uint8Array, meta: { population: number; tick: number; world?: string }, at = new Date(), verify?: (gz: Uint8Array) => Promise<unknown>): Promise<string> {
     const used = this.dirBytes();
     if (used > LIMITS.maxStateDirBytes) throw new Error(`state directory holds ${Math.round(used / 1e6)} MB, over the ${LIMITS.maxStateDirBytes / 1e6} MB cap: not saving`);
-    const data = asyncGzip ? await gzipAsync(json) : gzipSync(json);
     if (verify) await verify(data);
     const name = saveName(at);
     this.put(name, data);

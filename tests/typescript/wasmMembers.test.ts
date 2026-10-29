@@ -5,6 +5,7 @@ import { restoreState, saveState } from "../../src/typescript/src/sim/ecoState.t
 import type { EcoState } from "../../src/typescript/src/sim/ecoState.ts";
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
 import { ECO_PRESETS, withEcoPreset } from "../../src/typescript/src/sim/presets.ts";
+import { mutate } from "../../src/typescript/src/sim/ga.ts";
 import { createRng } from "../../src/typescript/src/sim/rng.ts";
 import { wasmAvailable } from "../../src/typescript/src/sim/wasm/loader.ts";
 import { F } from "../../src/typescript/src/sim/wasm/resident.ts";
@@ -67,6 +68,39 @@ describe.skipIf(!wasmAvailable())("the WebAssembly scans equal the loops", () =>
         if (!(f[e.table.rowAt[at] + F.energy] < thresholds[at]!)) want.push(at);
       }
       expect(Array.from(e.wasmMembers.birthCandidates(e.table.rowAt, n, thresholds, first))).toEqual(want);
+      for (const chunk of [1, 3, 8]) {
+        // the walk in chunks, with a mutateHits call (which uses the same call block) between them
+        const got: number[] = [];
+        let part = e.wasmMembers.birthCandidates(e.table.rowAt, n, thresholds, first, chunk);
+        for (;;) {
+          got.push(...part);
+          if (part.length < chunk) break;
+          e.wasmMembers.mutateHits(200, 12345, 1 << 30);
+          part = e.wasmMembers.nextBirthCandidates(chunk);
+        }
+        expect(got).toEqual(want);
+      }
+    }
+  });
+
+  it("mutate: the same genome and generator state with the kernel scan as without, for every length, rate and start state", () => {
+    const e = make((c) => c, 1) as Any;
+    const rng = createRng(3);
+    for (const rate of [1e-9, 0.01, 0.05, 0.3, 0.999, 4294967295 / 4294967296, 1, 2, 0, NaN]) {
+      for (const n of [0, 1, 15, 16, 17, 19, 64, 1237, 4506]) {
+        const parent = Float32Array.from({ length: n }, (_, g) => Math.sin(g));
+        const state = rng.int(2 ** 31) * 2 - rng.int(2 ** 31);
+        const want = parent.slice();
+        const ref = createRng(0);
+        ref.state = state;
+        mutate(want, rate, 0.3, ref);
+        const got = parent.slice();
+        const real = createRng(0);
+        real.state = state;
+        mutate(got, rate, 0.3, real, e.wasmMembers);
+        expect(Array.from(got)).toEqual(Array.from(want));
+        expect(real.state).toBe(ref.state);
+      }
     }
   });
 

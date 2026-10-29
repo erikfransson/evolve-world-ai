@@ -17,6 +17,7 @@ export class MemberTable {
   readonly bySlot: EcoCreature[] = []; // the members in creature construction order, kept up to date as they come and go
   slotRows = new Int32Array(START_CAPACITY); // resident bodies: the row addresses and member indices of bySlot, in that order
   slotSelves = new Int32Array(START_CAPACITY);
+  version = 0; // counts admit and swapRemove calls, so a grid of the members can tell it is still theirs
   private readonly resident: boolean;
 
   constructor(resident: boolean) {
@@ -30,6 +31,7 @@ export class MemberTable {
   // Adds m at the end of the member list, and to bySlot. Its species, birth energy and (resident) row are read from m now.
   admit(m: EcoCreature): void {
     const i = this.members.length;
+    this.version++;
     if (i === this.kinds.length) this.growColumns();
     m.index = i;
     this.members.push(m);
@@ -54,6 +56,7 @@ export class MemberTable {
   // Removes members[i] by moving the last member into its place; returns the removed one.
   swapRemove(i: number): EcoCreature {
     const m = this.members[i]!;
+    this.version++;
     const last = this.members.length - 1;
     const moved = this.members[last]!;
     this.members[i] = moved;

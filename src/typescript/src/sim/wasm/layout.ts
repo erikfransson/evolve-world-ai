@@ -2,7 +2,8 @@
 // The TypeScript side reads the offsets from here, and scripts/wasmAssemble.ts substitutes them for the {{NAME}} tokens of the .wat files, so the two sides cannot drift apart.
 // Offsets are in bytes from the start of the row or block.
 
-import { EXTRA_INPUTS } from "../sensors.ts";
+import { GROUND_BLOCK_SHIFT, GROUND_HALF, GROUND_PAD } from "../groundField.ts";
+import { EXTRA_INPUTS, EXTRA_SIDE, EXTRA_SPEED, EXTRA_TERRAIN, EXTRA_TURN } from "../sensors.ts";
 
 export const LAYOUT = {
   ROW_BYTES: 192,
@@ -22,6 +23,10 @@ export const LAYOUT = {
   R_RAY_LENGTH: 96,
   // the brain input extras the fill kernel copies (as f32) after the ray features: energy signal, forward and sideways speed, turn rate, ground value
   R_EXTRAS: 104, // EXTRAS f64, to R_OUT
+  R_EXTRA_SPEED: 104 + 8 * EXTRA_SPEED,
+  R_EXTRA_SIDE: 104 + 8 * EXTRA_SIDE,
+  R_EXTRA_TURN: 104 + 8 * EXTRA_TURN,
+  R_EXTRA_GROUND: 104 + 8 * EXTRA_TERRAIN,
   // i32 fields of a row
   R_OUT: 144, // byte address of the brain outputs: turn, thrust, then one target per memory unit
   R_SPECIES: 148,
@@ -35,6 +40,19 @@ export const LAYOUT = {
   // brain input extras: how many, and the byte offset of the first memory unit from the first extra
   EXTRAS: EXTRA_INPUTS,
   UNITS_AT: 4 * EXTRA_INPUTS,
+  // brain descriptor, one per slot (brainKernel.ts writes it, brain.wat reads it): i32 words, then the layer sizes
+  B_DESC_BYTES: 64,
+  B_DESC_SHIFT: 6, // log2 of B_DESC_BYTES
+  B_BLOCK: 0, // address of the brain block
+  B_INPUT: 4, // address of the input vector
+  B_OUTPUT: 8, // address of the output vector
+  B_COUNT: 12, // number of layer sizes
+  B_RAY_INPUTS: 16, // inputs whose first-layer rows sit in the ray region
+  B_RAY_ROWS: 20, // address of the ray region
+  B_SIZES: 24, // the layer sizes, up to B_DESC_BYTES
+  B_SIZES_NEXT: 28, // the second layer size
+  // the tanh constants (nine splat vectors) in the brain tab, after the 272 bytes of shuffle and count tables of the index packing
+  B_TANH_AT: 272,
   // sense record, 64 bytes (fill.wat writes it, sense.wat reads it; senser.ts reads the same offsets): f64 x y cos sin ray length, i32 crowd index of the creature, rays,
   // byte address of its ray offset tables, byte address of its brain input, and where to write its rays for the UI (0 for none)
   REC_BYTES: 64,
@@ -81,6 +99,7 @@ export const LAYOUT = {
   S_ROCK_START: 152,
   S_ROCK_ORDER: 156,
   S_ROCK_XYR: 160,
+  S_ROCK_LB: 168, // f32 per rock cell, a lower bound of the distance to the nearest disc edge (rockLowerBound)
   S_BYTES: 192,
   // call block of fill (i32 unless noted)
   F_N: 0,
@@ -93,9 +112,31 @@ export const LAYOUT = {
   F_DETAIL_PTR: 28,
   F_DETAIL_ROW: 32,
   F_STRIDE: 36,
-  F_ITEM_ROWS: 40,
-  F_INV_CELL: 48, // f64
+  F_OWNERS: 40,
+  F_CROWD_N: 44,
   F_BYTES: 64,
+  // call block of prepare (fill.wat; i32 unless noted) and its species block (f64): the speeds, turn rate and ground under each creature as brain input extras, and the ground factor
+  G_N: 0,
+  G_ROWS: 4,
+  G_SPECIES: 8, // address of the species blocks
+  G_RASTER: 12, // address of the ground field's nodes (2 bytes each), 0 for none
+  G_STRIDE: 16, // bytes per raster row
+  G_EMPTY: 20, // 1 when the map has no rock and no patches
+  G_INV: 24, // f64: the field's 1 / cell
+  G_COL_MAX: 32, // f64: cols - 1.0001
+  G_ROW_MAX: 40, // f64: rows - 1.0001
+  G_SLOW: 48, // f64: speed factor on mud and on firm ground
+  G_FAST: 56, // f64
+  G_MASK: 64, // address of the ground field's block flags (GroundField.blockFlags)
+  G_MASK_COLS: 68, // blocks per row of them
+  G_BYTES: 80,
+  G_BLOCK_SHIFT: GROUND_BLOCK_SHIFT,
+  G_PAD: GROUND_PAD, // the field's constants, as values for the wat
+  G_HALF: GROUND_HALF,
+  H_DRAG: 0,
+  H_MAX_THRUST: 8,
+  H_MAX_TURN: 16,
+  H_BYTES: 24,
   // call block of step (i32 unless noted)
   P_N: 0,
   P_ROWS: 4,
@@ -113,7 +154,7 @@ export const LAYOUT = {
   P_NEAR_ROWS: 52,
   P_MAX_ROCK_R: 56, // f64
   P_INV_ROCK_CELL: 64, // f64
-  P_CLEAR_CELL: 72, // f64
+  P_CLEAR_SHIFT: 72,
   P_AGING_START: 80, // f64
   P_AGING_PER_TICK: 88, // f64
   P_BYTES: 96,
@@ -158,6 +199,7 @@ export const LAYOUT = {
   C_SW_RESUME: 168,
   C_HIT_S: 172, // out: the pair found, as sorted slots
   C_HIT_T: 176,
+  C_SIG_ROWS: 180, // pack's input: nonzero also stores each energy signal into its row's first extra (as f64)
   C_BYTES: 184,
   // call block of members (i32)
   M_N: 0,
@@ -165,8 +207,12 @@ export const LAYOUT = {
   M_OUT: 8, // the list of member indices found
   M_OUT_COUNT: 12,
   M_THRESHOLDS: 16, // f64 per member
-  M_FIRST: 20,
-  M_BYTES: 24,
+  M_FIRST: 20, // birthCandidates: the member to look at next (the kernel advances it)
+  M_SEED: 24, // mutateScan: the generator state in, and out after the last draw
+  M_LIMIT: 28, // mutateScan: a gene mutates when its draw is below this (unsigned)
+  M_MAX: 32, // birthCandidates: stop after this many found
+  M_STEPS: 36, // birthCandidates: members looked at so far
+  M_BYTES: 40,
   // species block of step (f64 unless noted), one per species: the config values the step reads and the decay factors
   Q_DT: 0,
   Q_MAX_THRUST: 8,
@@ -185,7 +231,7 @@ export const LAYOUT = {
   Q_DECAY_TURN: 112,
   Q_DECAY_DRAG: 120,
   Q_DECAY_SIDE: 128,
-  Q_NEAR: 136, // i32: address of the clear-of-rock raster for this species' radius
+  Q_NEAR: 136, // i32: address of the clear-of-rock raster, a bit per square, for this species' radius
   Q_BYTES: 144,
 } as const;
 

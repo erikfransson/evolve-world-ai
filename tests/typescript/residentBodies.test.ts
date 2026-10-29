@@ -2,8 +2,12 @@ import "../../src/typescript/src/sim/maps/index.ts"; // the Inland Sea cases bui
 import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
+import { GROUND_BLOCK_SHIFT, GROUND_PAD, GroundField } from "../../src/typescript/src/sim/groundField.ts";
 import { ECO_PRESETS, withEcoPreset } from "../../src/typescript/src/sim/presets.ts";
 import { wasmAvailable } from "../../src/typescript/src/sim/wasm/loader.ts";
+import { F } from "../../src/typescript/src/sim/wasm/resident.ts";
+import { prepareRows } from "../../src/typescript/src/sim/wasm/residentStep.ts";
+import { Terrain } from "../../src/typescript/src/sim/terrain.ts";
 
 // Creature bodies resident in the WebAssembly memory (wasm/resident.ts): the row code (fill kernel, residentStep.ts) must equal the
 // Creature code it replaces, bit for bit, on every tick.
@@ -40,6 +44,7 @@ function checkedTick(eco: Ecosystem): number {
   }
   const before = creatures.map(grab);
   kernels.stepper.step(e.table.slotRows, creatures.length, e.aging, e.items.terrain);
+  const outF32 = kernels.f32; // the step's first rock tables may grow the memory, which replaces f32
   const got = creatures.map(grab);
   creatures.forEach((c: Any, k: number) => {
     const s = c.state;
@@ -49,7 +54,7 @@ function checkedTick(eco: Ecosystem): number {
     c.heading.sin = a[9];
     const u = c.memory as Float64Array;
     for (let i = 0; i < u.length; i++) u[i] = a[10 + i]!;
-    const out = c.outputArray(f32);
+    const out = c.outputArray(outF32);
     c.remember(out);
     c.steer(out);
     const want = grab(c);
@@ -75,6 +80,94 @@ describe.skipIf(!wasmAvailable())("resident bodies", () => {
       expect(bad).toBe(0);
     });
   }
+
+  it("the fill kernel's prepare equals prepareRows bit for bit, on ground, edges and outside the world", () => {
+    const eco = world((c) => withEcoPreset(c, "inland-sea", ECO_PRESETS), 600);
+    const e = eco as Any;
+    const kernels = e.kernels;
+    const store = kernels.store;
+    const terrain = e.items.terrain;
+    const n = eco.members.length;
+    const rows = Int32Array.from({ length: n }, (_, k) => eco.members[k]!.creature.resident!.ptr);
+    const w = e.world.width as number;
+    const h = e.world.height as number;
+    let seed = 12345;
+    const rnd = (): number => ((seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) / 4294967296);
+    let slow = 0;
+    let fast = 0;
+    for (let round = 0; round < 6; round++) {
+      eco.members.forEach((m, k) => {
+        const s = m.creature.state;
+        s.x = k % 9 === 0 ? (rnd() - 0.5) * 2 * w : rnd() * w;
+        s.y = k % 9 === 1 ? (rnd() - 0.5) * 2 * h : rnd() * h;
+        s.vx = (rnd() - 0.5) * 20;
+        s.vy = (rnd() - 0.5) * 20;
+        s.turnRate = (rnd() - 0.5) * 0.3;
+        s.energy = 1 + rnd() * 100;
+      });
+      const ex = (o: number): number[] => [1, 2, 3, 4].map((i) => store.f64[o + F.extras + i]!).concat(store.f64[o + F.groundFactor]!);
+      prepareRows(store, rows, n, terrain);
+      const want = Array.from(rows, (r) => ex(r >> 3));
+      const wanted = Array.from(rows, (r) => store.f64[(r >> 3) + F.groundFactor]!);
+      for (const r of rows) {
+        store.f64[(r >> 3) + F.groundFactor] = NaN;
+        for (let i = 1; i <= 4; i++) store.f64[(r >> 3) + F.extras + i] = NaN;
+      }
+      kernels.prepareRows(rows, n, terrain);
+      const got = Array.from(rows, (r) => ex(r >> 3));
+      for (let k = 0; k < n; k++) for (let i = 0; i < 5; i++) expect(Object.is(got[k]![i], want[k]![i])).toBe(true);
+      for (const v of wanted) if (v < 1) slow++; else if (v > 1) fast++;
+    }
+    expect(slow).toBeGreaterThan(0);
+    expect(fast).toBeGreaterThan(0);
+  });
+
+  it("the fill kernel's prepare equals prepareRows on hand-made fields: sizes off the block grid, sparse and weak corners, block edges, the map edge", () => {
+    const eco = world((c) => c, 500);
+    const e = eco as Any;
+    const kernels = e.kernels;
+    const store = kernels.store;
+    const n = eco.members.length;
+    const rows = Int32Array.from({ length: n }, (_, k) => eco.members[k]!.creature.resident!.ptr);
+    let seed = 777;
+    const rnd = (): number => ((seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) / 4294967296);
+    const sizes: [number, number][] = [[1000, 1000], [2600, 700], [450, 3100], [8 * 50 * 3, 8 * 50 * 2], [60_000, 40_000]];
+    let seen = 0;
+    for (const [w, h] of sizes) for (const density of [0.003, 0.05]) {
+      const field = new GroundField(w, h);
+      const d = field.data;
+      for (let k = 0; k < d.length; k++) {
+        const r = rnd();
+        d[k] = r < density ? 255 : r < density * 2 ? 128 : r < 0.3 ? 127 : Math.floor(rnd() * 100); // 127 on all four corners must stay below one half
+      }
+      const terrain = new Terrain([], field, w, h);
+      const block = field.cell << GROUND_BLOCK_SHIFT;
+      eco.members.forEach((m, k) => {
+        const s = m.creature.state;
+        const edge = (v: number, extent: number): number => { // on, just before and just after a block edge or a node, or anywhere including outside
+          const b = (Math.floor(rnd() * (extent / block + 2)) * block) - GROUND_PAD * field.cell;
+          return k % 4 === 0 ? b + (rnd() - 0.5) * 1e-6 : k % 4 === 1 ? b + (rnd() - 0.5) * field.cell : v;
+        };
+        s.x = edge((rnd() * 1.4 - 0.2) * w, w);
+        s.y = edge((rnd() * 1.4 - 0.2) * h, h);
+        s.vx = (rnd() - 0.5) * 20;
+        s.vy = (rnd() - 0.5) * 20;
+        s.turnRate = (rnd() - 0.5) * 0.3;
+      });
+      const at = (r: number): number[] => [1, 2, 3, 4].map((i) => store.f64[(r >> 3) + F.extras + i]!).concat(store.f64[(r >> 3) + F.groundFactor]!);
+      prepareRows(store, rows, n, terrain);
+      const want = Array.from(rows, at);
+      for (const r of rows) {
+        store.f64[(r >> 3) + F.groundFactor] = NaN;
+        for (let i = 1; i <= 4; i++) store.f64[(r >> 3) + F.extras + i] = NaN;
+      }
+      kernels.prepareRows(rows, n, terrain);
+      const got = Array.from(rows, at);
+      for (let k = 0; k < n; k++) for (let i = 0; i < 5; i++) expect(Object.is(got[k]![i], want[k]![i])).toBe(true);
+      for (const v of want) if (v[3] !== 0) seen++;
+    }
+    expect(seen).toBeGreaterThan(100);
+  });
 
   it("bodies survive the memory growing, and a long run stays equal to the JS", () => {
     const eco = world((c) => c, 200);

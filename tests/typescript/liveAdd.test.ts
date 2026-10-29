@@ -171,7 +171,7 @@ describe("add message: encode and parse", () => {
     if (!("ids" in r)) throw new Error(r.reason);
     const t = w.eco.lineageTable.toState();
     w.eco.lineageTable.load({ ...t, late: t.late.map((row) => [...row.slice(0, 5), "bad name"] as (typeof t.late)[0]) }); // from an older or hand-edited save
-    const named = w.stats(0).lineages!.find((l) => l.founder === r.ids[0]);
+    const named = w.stats(1).lineages!.find((l) => l.founder === r.ids[0]);
     expect(named).toBeDefined();
     expect(named!.name).toBeUndefined();
   });
@@ -411,7 +411,7 @@ describe("adding to the world (LiveWorld)", () => {
       expect(m.birth).toEqual({ energy: 150, cost: 70, cooldown: 10 });
     }
     expect(a.aliveAdded()).toBe(3);
-    const kiwi = a.stats(0).lineages!.filter((l) => l.name === "Kiwi"); // the three copies' families as one row
+    const kiwi = a.stats(1).lineages!.filter((l) => l.name === "Kiwi"); // the three copies' families as one row
     expect(kiwi).toHaveLength(1);
     expect([kiwi[0]!.count, kiwi[0]!.founders]).toEqual([3, r.ids.slice(1)]);
     const b = new LiveWorld(config, null);

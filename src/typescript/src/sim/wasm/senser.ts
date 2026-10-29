@@ -12,79 +12,116 @@ import { LAYOUT as L } from "./layout.ts";
 import { Region, growRegion } from "./resident.ts";
 
 // The whole Ecosystem sense in one WebAssembly call per batch (sense.wat): ray directions, item and wall rays in f64 with the
-// JS candidate order, crowd rays in f32 as rays.wat, and the ray features written into the brain's input vector in place.
-// Rock (the world's Terrain, static) is copied once per world into three tables the kernel walks like the item grid. Shares the brain bank's linear memory. Per tick the item grid and the crowd are copied in whole, which costs far less
-// than the per-creature object traffic it replaces. The creature's RayHit objects are not updated, except for the one
+// JS candidate order, crowd rays in f32, and the ray features written into the brain's input vector in place.
+// Rock (the world's Terrain, static) is copied once per world into three tables the kernel walks like the item grid. Shares the brain bank's linear memory. The item grid is patched per tick (patchItems) and the crowd is read in place. The creature's RayHit objects are not updated, except for the one
 // creature given as detail (the selected one), whose rays are read back for the UI.
 
 export const MAX_RAYS = 64;
+const ROCK_BOUND_CAP = 2048; // distances past this are not told apart; a ray longer than this walks the rock anyway
 const SCRATCH_BYTES = 2816;
+const PATCH_MAX = 1024; // dirty cells patched in place per tick; more are cheaper to pack again whole
 
 interface SenseExports extends WebAssembly.Exports {
   sense(p: number): void;
+  patchItems(rec: number, n: number, xy: number, kinds: number, ids: number): number;
 }
+
+// Per cell of the rock grid, a lower bound of the distance from any point of the cell to the nearest disc edge (ROCK_BOUND_CAP when none is nearer),
+// shrunk by 1e-6 relative so f32 rounding cannot raise it. A ray of that length or less from a point in the cell cannot reach a disc.
+export function rockLowerBound(cols: number, rows: number, cell: number, x: ArrayLike<number>, y: ArrayLike<number>, r: ArrayLike<number>, count: number): Float32Array {
+  const out = new Float32Array(cols * rows).fill(ROCK_BOUND_CAP);
+  for (let d = 0; d < count; d++) {
+    const reach = ROCK_BOUND_CAP + r[d]!;
+    const cx1 = Math.min(cols - 1, Math.floor((x[d]! + reach) / cell));
+    const cy1 = Math.min(rows - 1, Math.floor((y[d]! + reach) / cell));
+    for (let cy = Math.max(0, Math.floor((y[d]! - reach) / cell)); cy <= cy1; cy++) {
+      const dy = Math.max(cy * cell - y[d]!, 0, y[d]! - (cy + 1) * cell);
+      for (let cx = Math.max(0, Math.floor((x[d]! - reach) / cell)); cx <= cx1; cx++) {
+        const dx = Math.max(cx * cell - x[d]!, 0, x[d]! - (cx + 1) * cell);
+        const edge = Math.max(0, Math.hypot(dx, dy) - r[d]!);
+        if (edge < out[cy * cols + cx]!) out[cy * cols + cx] = edge;
+      }
+    }
+  }
+  for (let i = 0; i < out.length; i++) out[i] *= 1 - 1e-6;
+  return out;
+}
+
+interface OffsetTable {
+  bits: Uint32Array; // the offsets (f32 bits) the cos and sin at ptr were made from
+  hash: number; // of bits; tables with one hash form a chain
+  next: OffsetTable | undefined;
+  ptr: number;
+  bytes: number;
+  refs: number;
+}
+
+const hashBits = (bits: Uint32Array): number => {
+  let h = bits.length;
+  for (let i = 0; i < bits.length; i++) h = Math.imul(h ^ bits[i]!, 0x9e3779b1) ^ (h >>> 15);
+  return h;
+};
+
+const sameBits = (a: Uint32Array, b: Uint32Array): boolean => {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+};
 
 export class WasmSenser {
   private readonly bank: WasmBrainBank;
   private readonly exports: SenseExports;
-  private readonly offPtr: number[] = [];
-  private readonly offBytes: number[] = [];
+  // Ray offset tables are shared by content: a slot holds one table, a table is freed when its last slot lets go. So the tables in memory never outnumber the slots.
+  private readonly tables = new Map<number, OffsetTable>(); // by hash of the offsets, chained
+  private readonly slotTable: (OffsetTable | undefined)[] = [];
   // Named regions of the shared memory, grown on demand (see grow); held in fields so a tick does no lookups.
-  private rItems = new Region();
-  private rItemXY = new Region();
-  private rItemKinds = new Region();
-  private rItemIds = new Region();
-  private rCStart = new Region();
-  private rSx = new Region();
-  private rSy = new Region();
-  private rOwn = new Region();
-  private rSig = new Region();
-  private rSpecies = new Region();
-  private rRec = new Region();
-  private rCand = new Region();
-  private rScratch = new Region();
-  private rDetail = new Region();
-  private rP = new Region();
-  private rRockStart = new Region();
-  private rRockOrder = new Region();
-  private rRockXYR = new Region();
+  private rItems!: Region;
+  private rItemXY!: Region;
+  private rItemKinds!: Region;
+  private rItemIds!: Region;
+  private rPatch!: Region;
+  private rCStart!: Region;
+  private rSx!: Region;
+  private rSy!: Region;
+  private rOwn!: Region;
+  private rSig!: Region;
+  private rSpecies!: Region;
+  private rRec!: Region;
+  private rCand!: Region;
+  private rScratch!: Region;
+  private rDetail!: Region;
+  private rP!: Region;
+  private rRockStart!: Region;
+  private rRockOrder!: Region;
+  private rRockXYR!: Region;
+  private rRockLB!: Region;
   // Views of the whole linear memory, valid while buffer is the memory's current buffer (growth replaces it).
-  private buffer: ArrayBuffer | null = null;
-  private f32 = new Float32Array(0);
-  private i32 = new Int32Array(0);
-  private f64 = new Float64Array(0);
-  private u8 = new Uint8Array(0);
-  private synced: World | null = null; // the world whose items the packed rows in wasm memory match
-  private rockSynced: Terrain | null = null; // the map whose rock tables are in wasm memory
-  private rowCap = 0; // item slots per row run
-  private pStart = 0;
-  private pXY = 0;
-  private pKinds = 0;
-  private pIds = 0;
+  private buffer!: ArrayBuffer | null;
+  private f32!: Float32Array;
+  private i32!: Int32Array;
+  private f64!: Float64Array;
+  private u8!: Uint8Array;
+  private synced!: World | null; // the world whose items the packed rows in wasm memory match
+  private rockSynced!: Terrain | null; // the map whose rock tables are in wasm memory
+  private rowCap!: number; // item slots per row run
+  private pStart!: number;
+  private pXY!: number;
+  private pKinds!: number;
+  private pIds!: number;
 
   private constructor(bank: WasmBrainBank, exports: SenseExports) {
     this.bank = bank;
     this.exports = exports;
+    this.init();
   }
 
-  static create(bank: WasmBrainBank): WasmSenser | null {
-    try {
-      const imports = { brain: { mem: bank.memory } };
-      const instance = new WebAssembly.Instance(compiled(SENSE_BYTES), imports);
-      return new WasmSenser(bank, instance.exports as SenseExports);
-    } catch {
-      return null;
-    }
-  }
-
-  // Back to the state of a new senser (the bank must be reset too, its regions are gone).
-  reset(): void {
-    this.offPtr.length = 0;
-    this.offBytes.length = 0;
+  // The state of a new senser, for the constructor and reset(); every field that reset() must clear is set here.
+  private init(): void {
     this.rItems = new Region();
     this.rItemXY = new Region();
     this.rItemKinds = new Region();
     this.rItemIds = new Region();
+    this.rPatch = new Region();
     this.rCStart = new Region();
     this.rSx = new Region();
     this.rSy = new Region();
@@ -99,9 +136,14 @@ export class WasmSenser {
     this.rRockStart = new Region();
     this.rRockOrder = new Region();
     this.rRockXYR = new Region();
-    this.rockSynced = null;
+    this.rRockLB = new Region();
     this.buffer = null;
+    this.f32 = new Float32Array(0);
+    this.i32 = new Int32Array(0);
+    this.f64 = new Float64Array(0);
+    this.u8 = new Uint8Array(0);
     this.synced = null;
+    this.rockSynced = null;
     this.rowCap = 0;
     this.pStart = 0;
     this.pXY = 0;
@@ -109,29 +151,77 @@ export class WasmSenser {
     this.pIds = 0;
   }
 
-  // Stores the creature's ray offset cos and sin tables for its slot; call when the slot's brain is set.
+  static create(bank: WasmBrainBank): WasmSenser | null {
+    try {
+      const imports = { brain: { mem: bank.memory } };
+      const instance = new WebAssembly.Instance(compiled(SENSE_BYTES), imports);
+      return new WasmSenser(bank, instance.exports as SenseExports);
+    } catch {
+      return null;
+    }
+  }
+
+  // Back to the state of a new senser (the bank must be reset too, its regions are gone).
+  reset(): void {
+    this.tables.clear();
+    this.slotTable.length = 0;
+    this.init();
+  }
+
+  // Points the slot at the creature's ray offset cos and sin tables, made once per distinct set of offsets (compared by bits); call when the slot's brain is set.
   setOffsets(slot: number, c: Creature): void {
     const n = c.plan.rayCount;
     if (n > MAX_RAYS) throw new Error(`${n} rays exceed ${MAX_RAYS}`);
-    const bytes = 16 * n;
-    let ptr = this.offPtr[slot];
-    if (ptr === undefined || this.offBytes[slot] !== bytes) {
-      if (ptr !== undefined) this.bank.free(ptr, this.offBytes[slot]!);
-      ptr = this.bank.alloc(bytes);
-      this.offPtr[slot] = ptr;
-      this.offBytes[slot] = bytes;
-    }
-    const f64 = new Float64Array(this.bank.memory.buffer, ptr, 2 * n);
     const offsets = c.rayOffsets;
-    for (let i = 0; i < n; i++) {
-      f64[i] = Math.cos(offsets[i]!);
-      f64[n + i] = Math.sin(offsets[i]!);
+    const bits = new Uint32Array(offsets.buffer, offsets.byteOffset, n);
+    const held = this.slotTable[slot];
+    if (held && sameBits(held.bits, bits)) return;
+    const hash = hashBits(bits);
+    let table = this.tables.get(hash);
+    while (table && !sameBits(table.bits, bits)) table = table.next;
+    if (!table) {
+      const bytes = 16 * n;
+      table = { bits: bits.slice(), hash, next: this.tables.get(hash), ptr: this.bank.alloc(bytes), bytes, refs: 0 };
+      this.tables.set(hash, table);
+      const f64 = new Float64Array(this.bank.memory.buffer, table.ptr, 2 * n);
+      for (let i = 0; i < n; i++) {
+        f64[i] = Math.cos(offsets[i]!);
+        f64[n + i] = Math.sin(offsets[i]!);
+      }
     }
+    table.refs++;
+    this.slotTable[slot] = table;
+    if (held) this.unref(held);
+  }
+
+  // Lets go of the slot's table (a creature that left for good).
+  release(slot: number): void {
+    const held = this.slotTable[slot];
+    this.slotTable[slot] = undefined;
+    if (held) this.unref(held);
+  }
+
+  private unref(table: OffsetTable): void {
+    if (--table.refs > 0) return;
+    this.unlink(table);
+    this.bank.free(table.ptr, table.bytes);
+  }
+
+  private unlink(t: OffsetTable): void {
+    const head = this.tables.get(t.hash);
+    if (head === t) {
+      if (t.next) this.tables.set(t.hash, t.next);
+      else this.tables.delete(t.hash);
+      return;
+    }
+    let prev = head!;
+    while (prev.next !== t) prev = prev.next!;
+    prev.next = t.next;
   }
 
   // The address of the ray offset tables stored for the slot.
   offsetsAt(slot: number): number {
-    return this.offPtr[slot]!;
+    return this.slotTable[slot]!.ptr;
   }
 
   // The pointer of region r holding at least bytes, allocated or moved to a larger block when needed (contents are not kept).
@@ -161,11 +251,8 @@ export class WasmSenser {
   private syncItems(world: World): void {
     const { cols, rows, cellHead, nextItem } = world;
     const dirty = world.dirtyCells;
-    let full = this.synced !== world || !dirty;
-    if (!full && dirty!.length > 0) {
-      this.views();
-      for (const c of dirty!) full = !this.patchCell(world, c) || full;
-    }
+    let full = this.synced !== world || !dirty || dirty.length > PATCH_MAX;
+    if (!full && dirty!.length > 0) full = !this.patchCells(world, dirty!);
     if (full) {
       let widest = 0;
       for (let row = 0; row < rows; row++) {
@@ -175,7 +262,7 @@ export class WasmSenser {
       }
       this.rowCap = Math.max(64, Math.ceil(widest * 1.5) + 16);
       this.pStart = this.grow(this.rItems, rows * (cols + 1) * 4);
-      this.pXY = this.grow(this.rItemXY, rows * this.rowCap * 8);
+      this.pXY = this.grow(this.rItemXY, rows * this.rowCap * 8 + 8); // + 8: the sense kernel reads item pairs
       this.pKinds = this.grow(this.rItemKinds, rows * this.rowCap);
       this.pIds = this.grow(this.rItemIds, rows * this.rowCap * 4);
       this.views();
@@ -196,29 +283,29 @@ export class WasmSenser {
     else world.dirtyCells = [];
   }
 
-  // Makes cell c's packed run match its list: the rest of the row shifts by the change in length. False when the row outgrows its run.
-  private patchCell(world: World, c: number): boolean {
+  // Makes the packed runs of the dirty cells match their lists: the kernel resizes them in order (the rest of each row shifts by the change in length), then the lists are written.
+  // False when a row outgrows its run.
+  private patchCells(world: World, dirty: number[]): boolean {
     const { cols, cellHead, nextItem } = world;
-    const start = this.i32;
-    const xy = this.f32;
-    const kd = this.u8;
-    const xB = this.pXY >> 2; // element offsets of the packed arrays in the whole-memory views
-    const row = Math.floor(c / cols);
-    const s = (this.pStart >> 2) + row * (cols + 1) + (c - row * cols);
-    const last = (this.pStart >> 2) + row * (cols + 1) + cols;
-    let n = 0;
-    for (let i = cellHead[c]!; i >= 0; i = nextItem[i]!) n++;
-    const at = start[s]!;
-    const delta = n - (start[s + 1]! - at);
-    if (delta !== 0) {
-      const end = start[last]!;
-      if (end + delta > (row + 1) * this.rowCap) return false;
-      xy.copyWithin(xB + 2 * (at + n), xB + 2 * start[s + 1]!, xB + 2 * end);
-      kd.copyWithin(this.pKinds + at + n, this.pKinds + start[s + 1]!, this.pKinds + end);
-      start.copyWithin((this.pIds >> 2) + at + n, (this.pIds >> 2) + start[s + 1]!, (this.pIds >> 2) + end);
-      for (let j = s + 1; j <= last; j++) start[j] += delta;
+    const n = dirty.length;
+    const pRec = this.grow(this.rPatch, PATCH_MAX * 16);
+    this.views();
+    const i32 = this.i32;
+    const r = pRec >> 2;
+    const sBase = this.pStart; // byte address of itemStart
+    for (let k = 0; k < n; k++) {
+      const c = dirty[k]!;
+      const row = Math.floor(c / cols);
+      let m = 0;
+      for (let i = cellHead[c]!; i >= 0; i = nextItem[i]!) m++;
+      const rowA = sBase + row * (cols + 1) * 4;
+      i32[r + 4 * k] = rowA + (c - row * cols) * 4;
+      i32[r + 4 * k + 1] = rowA + cols * 4;
+      i32[r + 4 * k + 2] = m;
+      i32[r + 4 * k + 3] = (row + 1) * this.rowCap;
     }
-    this.writeCell(world, c, at);
+    if (this.exports.patchItems(pRec, n, this.pXY, this.pKinds, this.pIds) !== n) return false;
+    for (let k = 0; k < n; k++) this.writeCell(world, dirty[k]!, i32[i32[r + 4 * k]! >> 2]!);
     return true;
   }
 
@@ -242,14 +329,14 @@ export class WasmSenser {
 
   // Senses the batch of resident rows and writes each creature's complete brain input at its slot: the fill kernel builds the records and the body inputs
   // from the rows, and writes the brain slot list at slotsAt. selves[k] is the crowd index of batch member k.
-  run(world: World, crowd: Crowd, n: number, selves: Int32Array, stride: number, startEnergy: number, detail: Creature | null, filler: WasmFiller, rows: Int32Array, slotsAt: number): void {
+  run(world: World, crowd: Crowd, n: number, selves: Int32Array, stride: number, startEnergy: number, detail: Creature | null, filler: WasmFiller, rows: Int32Array, slotsAt: number, signalToRows = false): void {
     this.syncItems(world);
     const count = crowd.count;
     const ccells = crowd.cols * crowd.rows;
     const rock = world.terrain;
     const kernel = crowd.kernel; // the grid is already in this memory: the kernel packs the f32 columns and the rest is read in place
     const grid = kernel?.at;
-    const pCStart = grid ? grid.start : this.grow(this.rCStart, (ccells + 1) * 4);
+    const pCStart = grid ? grid.start : this.grow(this.rCStart, (ccells + 1) * 2);
     const pSx = this.grow(this.rSx, count * 4 + 16);
     const pSy = this.grow(this.rSy, count * 4 + 16);
     const pOwn = grid ? grid.owners : this.grow(this.rOwn, count * 4 + 16);
@@ -260,12 +347,13 @@ export class WasmSenser {
     const pRockStart = this.grow(this.rRockStart, rock.rockStart.length * 4);
     const pRockOrder = this.grow(this.rRockOrder, rock.rockCount * 4 + 4);
     const pRockXYR = this.grow(this.rRockXYR, rock.rockCount * 24 + 8);
+    const pRockLB = this.grow(this.rRockLB, rock.cols * rock.rows * 4 + 4);
     const pScr = this.grow(this.rScratch, SCRATCH_BYTES);
     const pDetail = this.grow(this.rDetail, 16 * MAX_RAYS);
     const pP = this.grow(this.rP, L.S_BYTES);
     this.views(); // after the last allocation
     let { f32, i32, f64 } = this;
-    if (!kernel) i32.set(crowd.cellStart, pCStart >> 2);
+    if (!kernel) new Uint16Array(i32.buffer, pCStart, ccells + 1).set(crowd.cellStart);
     if (this.rockSynced !== rock) {
       i32.set(rock.rockStart, pRockStart >> 2);
       i32.set(rock.rockOrder, pRockOrder >> 2);
@@ -275,6 +363,7 @@ export class WasmSenser {
         f64[xyr + 3 * d + 1] = rock.rockY[d]!;
         f64[xyr + 3 * d + 2] = rock.rockR[d]!;
       }
+      f32.set(rockLowerBound(rock.cols, rock.rows, ROCK_CELL, rock.rockX, rock.rockY, rock.rockR, rock.rockCount), pRockLB >> 2);
       this.rockSynced = rock;
     }
     const sx = pSx >> 2;
@@ -284,7 +373,7 @@ export class WasmSenser {
     const species = pSpecies >> 2;
     const { xs, ys, owners, energies } = crowd;
     const crowdSpecies = crowd.species;
-    if (kernel) kernel.pack(startEnergy, pSx, pSy, pSig);
+    if (kernel) kernel.pack(startEnergy, pSx, pSy, pSig, signalToRows);
     else for (let k = 0; k < count; k++) {
       f32[sx + k] = xs[k]!;
       f32[sy + k] = ys[k]!;
@@ -292,7 +381,7 @@ export class WasmSenser {
       i32[species + k] = crowdSpecies[k]!;
       f32[sig + k] = energySignal(energies[k]!, startEnergy);
     }
-    filler.fill(rows, selves, n, world, pRec, slotsAt, pDetail, detail, stride);
+    filler.fill(rows, selves, n, pOwn, count, pRec, slotsAt, pDetail, detail, stride);
     this.views(); // fill may have grown the memory
     ({ f32, i32, f64 } = this);
     f64[(pP + L.S_WORLD_W) >> 3] = world.width;
@@ -326,6 +415,7 @@ export class WasmSenser {
     i32[(pP + L.S_ROCK_START) >> 2] = pRockStart;
     i32[(pP + L.S_ROCK_ORDER) >> 2] = pRockOrder;
     i32[(pP + L.S_ROCK_XYR) >> 2] = pRockXYR;
+    i32[(pP + L.S_ROCK_LB) >> 2] = pRockLB;
     this.exports.sense(pP);
   }
 

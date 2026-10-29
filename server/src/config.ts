@@ -13,7 +13,7 @@ export const MAX_POPULATION = 5000;
 // MemoryMax=1G and --max-old-space-size=768 like the unit, 50000 x 31250 world, items at the admin's largest caps, 7.02 M weights:
 // 2900 creatures save 45 MB, peak 605 MB writing, 556 MB at a start and 607 MB at an admin load over a full world; 5000 creatures
 // 45 MB, 623, 539 and 631 MB. Earlier (2026-10-22, 2 GB cap) 13 M weights were 77 MB of JSON and 1234 MB to read back.
-// The budget binds before the population for big brains: the four founders (1876 weights each on average) fill it near 3300 creatures,
+// The budget binds before the population for big brains: the three founders (2207 weights each on average) fill it near 2800 creatures,
 // the Juggernaut alone (1236) fits 5000. Measured without helper threads (HELPER_THREADS 0, the unit's default): helpers keep their
 // own copies of the brains, so measure again under MemoryMax before setting LIVE_THREADS.
 // Births stop WEIGHT_RESERVE short of it, as at the birth reserve, so visitors' adds still fit; adds past it are refused.
@@ -39,6 +39,8 @@ liveConfig.eco.poisonRegrow = 0.0003;
 liveConfig.eco.poisonMaxDensity = 0.01;
 liveConfig.eco.collisionDamage = true;
 liveConfig.eco.killEnergy = 5; // a kill also gives this much energy, on top of the loser's (Erik, 2026-10-17: at 25 the Juggernaut took over, tuning-notes)
+liveConfig.creature.neuronCost = 0.0025; // half-price brains and eyes (Ecosystem 0.005 and 0.02) so all three founders can last (Erik, 2026-10-29, docs/tuning-notes.md)
+liveConfig.creature.rayCost = 0.01;
 liveConfig.eco.maxPopulation = MAX_POPULATION; // bounds the frame size, so the viewer budget holds
 liveConfig.eco.birthReserve = 100; // births stop 100 below the cap, so visitors can still add (insertCreature fills to maxPopulation)
 liveConfig.eco.seasons = true;
@@ -47,6 +49,7 @@ liveConfig.eco.winterFood = 0.4;
 liveConfig.eco.birthEnergyRange = [...LIVE_BIRTH.energy]; // wider than the Ecosystem's, for visitors' adds and their descendants' drift
 liveConfig.eco.birthCostRange = [...LIVE_BIRTH.cost];
 liveConfig.eco.birthCooldownRange = [...LIVE_BIRTH.cooldown];
+liveConfig.eco.thinkEvery = 1; // 2 makes a tick about 1.5x cheaper (each creature senses and thinks every other tick) but raises churn 1.5-1.9x in 600 s runs (docs/perf-explore/think2.md); Erik decides
 liveConfig.eco.hueDrift = 3; // degrees (Ecosystem 8): families keep their colour longer, so the view reads as lineages
 
 // A fresh world gets this many copies of each founder in the founders file, at random open spots; an admin reset may ask for more,
@@ -60,7 +63,7 @@ export const MAX_SEED_FOUNDERS = MAX_FOUNDERS; // the same bound as the pages (l
 export const MAX_POOL = 30; // variants per founder
 export const MAX_POOL_WEIGHTS = 400_000; // in the whole pools file: 30 variants of the 4506-weight Oracle are 135 000
 export const MAX_POOLS_FILE_BYTES = 4 * 1024 * 1024; // 400 000 weights at 3 decimals are about 3 MB
-export const MAX_FOUNDERS_FILE_BYTES = 512 * 1024; // 4 trained founders are 57 kB; 8 of the largest genomes an add allows (7538 weights, about 60 kB each) fit
+export const MAX_FOUNDERS_FILE_BYTES = 512 * 1024; // 3 trained founders are 51 kB; 8 of the largest genomes an add allows (7538 weights, about 60 kB each) fit
 
 // Item slots are fixed when a world is built, so it is built with room for admin to raise the food and poison caps (densities).
 // Up to ITEM_HEADROOM where that fits (small worlds); else the slots are held to ITEM_SLOT_SHARE of the wire's MAX_ITEM_SLOTS:
@@ -138,6 +141,7 @@ export const LIMITS = {
   statsGetBurst: 20,
   statsEveryMs: 1000,
   stateEveryMs: 4 * 60 * 60 * 1000,
+  saveRetryMs: [15, 30, 60].map((m) => m * 60 * 1000), // waits before the retries of a periodic save that failed for a transient reason; the last repeats until one succeeds
   keepStateMs: 4 * 24 * 60 * 60 * 1000, // saves older than this are deleted, except the newest six (state.ts)
   maxStateDirBytes: 2e9, // no save is written while the state directory holds more than this
   maxSaveJsonBytes: 50e6, // a save may be at most this much JSON (Inland Sea at 30000 x 18750: 24 MB at 2500 creatures, 42 MB at 5000; the brain-weight budget keeps a full world near 45 MB); parsing runs in a worker with its own heap cap (saveParse.ts)

@@ -1,4 +1,4 @@
-import { Brain, layerSizes, refit } from "./brain.ts";
+import { Brain, genomeLength, layerSizes, refit } from "./brain.ts";
 import type { EngineConfig } from "./config.ts";
 import { agingFactor, consume, decaysFor, settle, stepBody } from "./physics.ts";
 import type { Aging, Decays, Heading } from "./physics.ts";
@@ -183,10 +183,12 @@ export class Creature {
   // Reuses this creature for a newcomer: copies the genome into its brain and resets body, senses and memory.
   // With a plan, the creature takes it over; either way genome must be sized for the plan.
   reset(genome: Genome, x: number, y: number, heading: number, energy: number, plan: PlanView = this.ownPlan): void {
+    const sizes = layerSizes(this.config, plan);
+    if (genome.length !== genomeLength(sizes)) throw new Error(`genome length ${genome.length} does not match expected ${genomeLength(sizes)}`); // before anything changes
     copyPlan(plan, this.ownPlan);
-    const sizes = layerSizes(this.config, this.ownPlan);
-    this.brain.load(sizes, genome);
+    if (!this.kernelOwner) this.brain.load(sizes, genome); // else attach below sets the kernels' block and the brain's layout from genome
     this.fitPlan(sizes);
+    this.output.fill(0); // as a new creature's, not the previous owner's
     const s = this.state;
     s.x = x;
     s.y = y;
@@ -206,7 +208,7 @@ export class Creature {
       ray.energy = 0;
       ray.species = 0;
     }
-    this.kernelOwner?.attach(this);
+    this.kernelOwner?.attach(this, genome, sizes);
   }
 
   // Casts the rays from the current pose into this.rays without advancing the simulation.
@@ -417,6 +419,21 @@ export class SenseBatch {
     this.creatures[k] = creature;
     this.selves[k] = self;
   }
+}
+
+// eco.thinkEvery: whether a creature senses and thinks this tick. Every every-th tick, staggered by id, and on its first tick, when its outputs are not yet its own.
+export function thinksNow(tick: number, every: number, id: number, ticksAlive: number): boolean {
+  return ticksAlive === 0 || (tick + id) % every === 0;
+}
+
+// The members of batch that think this tick (thinksNow), in into; batch itself when every creature thinks every tick. idOf gives the id of crowd index self.
+export function thinkersOf(batch: SenseBatch, into: SenseBatch, tick: number, every: number, idOf: (self: number) => number): SenseBatch {
+  if (every <= 1) return batch;
+  into.clear();
+  const { creatures, selves } = batch;
+  for (let k = 0; k < batch.count; k++) if (thinksNow(tick, every, idOf(selves[k]!), creatures[k]!.state.ticksAlive)) into.add(creatures[k]!, selves[k]!);
+  into.sorted = batch.sorted;
+  return into;
 }
 
 // Sense and think for a whole batch on the JS path; writes only each creature's rays and outputs. The one boundary for the per-tick
