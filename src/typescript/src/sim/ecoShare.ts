@@ -5,7 +5,7 @@ import type { EngineConfig } from "./config.ts";
 import type { EcoConfig } from "./ecoConfig.ts";
 import { agingOf } from "./physics.ts";
 import type { Aging } from "./physics.ts";
-import { MAX_SPARE } from "./ecosystem.ts";
+import { SparePool } from "./sparePool.ts";
 import type { Ecosystem } from "./ecosystem.ts";
 import { OUTPUT_SIZE } from "./sensors.ts";
 import type { BodyPlan } from "./sensors.ts";
@@ -489,7 +489,7 @@ export class ShareHelper {
   private readonly batch = new SenseBatch();
   private readonly thinkBatch = new SenseBatch();
   private readonly every: number; // eco.thinkEvery
-  private readonly spare: Creature[][]; // per species, at most MAX_SPARE each
+  private readonly spare: SparePool<Creature>;
   private genome = new Float32Array(0);
   private genomeAt = 0; // words of the packet's genomes read so far
   private readonly plan: BodyPlan = { rayCount: 0, raySpread: 0, rayLength: 0, hiddenLayers: [], memoryShort: 0, memoryLong: 0 };
@@ -507,7 +507,7 @@ export class ShareHelper {
     const species = speciesList(config);
     const scale = seenEnergyScale(species);
     this.engines = species.map((sp) => speciesEngine(config, sp, scale));
-    this.spare = this.engines.map(() => []);
+    this.spare = new SparePool(this.engines.length, (c) => c.brain.genomeLength);
     this.index = index;
     this.every = config.eco.thinkEvery;
     this.aging = agingOf(config.eco, config.dt);
@@ -617,9 +617,7 @@ export class ShareHelper {
         const c = this.mine.get(id);
         if (c) {
           this.mine.delete(id);
-          const pool = this.spare[this.speciesOf.get(id)!]!;
-          if (pool.length < MAX_SPARE) pool.push(c);
-          else this.kernels?.release(c);
+          if (!this.spare.keep(this.speciesOf.get(id)!, c)) this.kernels?.release(c);
           this.speciesOf.delete(id);
         }
       } else if (code === BORN) {
@@ -647,7 +645,7 @@ export class ShareHelper {
     const genome = this.genome;
     for (let g = 0; g < length; g++) genome[g] = genomes[this.genomeAt++]!;
     const units = plan.memoryShort + plan.memoryLong;
-    let c = this.spare[species]!.pop();
+    let c = this.spare.take(species, length);
     if (c) c.reset(genome, 0, 0, 0, 0, plan);
     else c = new Creature(this.engines[species]!, genome, 0, 0, 0, plan, this.kernels, species);
     c.setMemory(genomes, this.genomeAt);

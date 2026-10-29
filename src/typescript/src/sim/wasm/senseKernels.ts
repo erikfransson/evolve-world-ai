@@ -103,16 +103,22 @@ export class SenseKernels {
     return this.brains.f32;
   }
 
+  // The creature's brain input vector in kernel memory (a view; read it fresh, growth replaces the memory).
+  inputOf(c: Creature): Float32Array {
+    const at = this.brains.inputAt(c.kernelSlot);
+    return this.brains.f32.subarray(at, at + c.brain.sizes[0]!);
+  }
+
   // Gives a resident creature (see ResidentStore) its brain slot and tells its row where the kernels find it. The Creature calls it when made and on each
   // reset; the creature's brain then stays in its slot and a tick needs no per-creature slot work.
-  attach(c: Creature, genome: Genome = c.brain.genome): void {
+  attach(c: Creature, genome: Genome = c.brain.genome, sizes: readonly number[] = c.brain.sizes): void {
     if (c.kernelOwner !== this) {
       c.kernelOwner = this;
       c.kernelSlot = this.freeSlots.pop() ?? this.nextSlot++;
     }
     const slot = c.kernelSlot;
-    this.brains.set(slot, c.brain.sizes, genome, Math.min(c.plan.rayCount * this.stride, c.brain.sizes[0]!));
-    c.brain.lend(this.brains, slot); // the block now holds the weights
+    this.brains.set(slot, sizes, genome, Math.min(c.plan.rayCount * this.stride, sizes[0]!));
+    c.brain.lendTo(this.brains, slot, sizes, genome); // the block now holds the weights
     this.senser.setOffsets(slot, c);
     this.owners[slot] = c;
     this.bindBrain(c, slot);

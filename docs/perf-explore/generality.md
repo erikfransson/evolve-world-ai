@@ -45,7 +45,7 @@ Two D items, both reachable only through unchecked pasted settings JSON, and one
 | Clear-of-rock raster at 128 units, one bit per square | `terrain.ts:36`, `step.wat` | conservative raster, any radius per species, out-of-raster squares take the full path |
 | Rock lower bound table | `senser.ts` `rockLowerBound` | one table per terrain, cost about 225 cells per disc, 70 KB at the largest map |
 | Offset tables shared by content | `senser.ts` | by bits, hash chains, freed at zero refs, never more tables than slots |
-| Birth chunks (`BIRTH_CHUNK 8` loops to the end), `takeSpare` (`SPARE_LOOK 16`, falls back to the newest), `MAX_SPARE 256` | `ecosystem.ts` | heuristics with a total fallback. `MAX_SPARE` only releases storage |
+| Birth chunks (`BIRTH_CHUNK 8` loops to the end), `SparePool.take` (`SPARE_LOOK 16`, falls back to the newest), `MAX_SPARE 256` | `ecosystem.ts`, `sparePool.ts` | heuristics with a total fallback. `MAX_SPARE` only releases storage |
 | `mutateScan`, `settle`, `birthCandidates` | `members.wat` | exact twins, n bytes of output buffer sized by n |
 | Lent genomes, `genomeInto`, row and slot reuse | `brain.ts`, `resident.ts`, `senseKernels.ts` | storage only |
 | Leaderboard `floor` skip | `leaderboard.ts:67`, `chronicle.ts` | exact because the four boards only grow while alive. Species fixed at 0 as the existing `offer` already did |

@@ -75,59 +75,48 @@ export class WasmSenser {
   private readonly tables = new Map<number, OffsetTable>(); // by hash of the offsets, chained
   private readonly slotTable: (OffsetTable | undefined)[] = [];
   // Named regions of the shared memory, grown on demand (see grow); held in fields so a tick does no lookups.
-  private rItems = new Region();
-  private rItemXY = new Region();
-  private rItemKinds = new Region();
-  private rItemIds = new Region();
-  private rPatch = new Region();
-  private rCStart = new Region();
-  private rSx = new Region();
-  private rSy = new Region();
-  private rOwn = new Region();
-  private rSig = new Region();
-  private rSpecies = new Region();
-  private rRec = new Region();
-  private rCand = new Region();
-  private rScratch = new Region();
-  private rDetail = new Region();
-  private rP = new Region();
-  private rRockStart = new Region();
-  private rRockOrder = new Region();
-  private rRockXYR = new Region();
-  private rRockLB = new Region();
+  private rItems!: Region;
+  private rItemXY!: Region;
+  private rItemKinds!: Region;
+  private rItemIds!: Region;
+  private rPatch!: Region;
+  private rCStart!: Region;
+  private rSx!: Region;
+  private rSy!: Region;
+  private rOwn!: Region;
+  private rSig!: Region;
+  private rSpecies!: Region;
+  private rRec!: Region;
+  private rCand!: Region;
+  private rScratch!: Region;
+  private rDetail!: Region;
+  private rP!: Region;
+  private rRockStart!: Region;
+  private rRockOrder!: Region;
+  private rRockXYR!: Region;
+  private rRockLB!: Region;
   // Views of the whole linear memory, valid while buffer is the memory's current buffer (growth replaces it).
-  private buffer: ArrayBuffer | null = null;
-  private f32 = new Float32Array(0);
-  private i32 = new Int32Array(0);
-  private f64 = new Float64Array(0);
-  private u8 = new Uint8Array(0);
-  private synced: World | null = null; // the world whose items the packed rows in wasm memory match
-  private rockSynced: Terrain | null = null; // the map whose rock tables are in wasm memory
-  private rowCap = 0; // item slots per row run
-  private pStart = 0;
-  private pXY = 0;
-  private pKinds = 0;
-  private pIds = 0;
+  private buffer!: ArrayBuffer | null;
+  private f32!: Float32Array;
+  private i32!: Int32Array;
+  private f64!: Float64Array;
+  private u8!: Uint8Array;
+  private synced!: World | null; // the world whose items the packed rows in wasm memory match
+  private rockSynced!: Terrain | null; // the map whose rock tables are in wasm memory
+  private rowCap!: number; // item slots per row run
+  private pStart!: number;
+  private pXY!: number;
+  private pKinds!: number;
+  private pIds!: number;
 
   private constructor(bank: WasmBrainBank, exports: SenseExports) {
     this.bank = bank;
     this.exports = exports;
+    this.init();
   }
 
-  static create(bank: WasmBrainBank): WasmSenser | null {
-    try {
-      const imports = { brain: { mem: bank.memory } };
-      const instance = new WebAssembly.Instance(compiled(SENSE_BYTES), imports);
-      return new WasmSenser(bank, instance.exports as SenseExports);
-    } catch {
-      return null;
-    }
-  }
-
-  // Back to the state of a new senser (the bank must be reset too, its regions are gone).
-  reset(): void {
-    this.tables.clear();
-    this.slotTable.length = 0;
+  // The state of a new senser, for the constructor and reset(); every field that reset() must clear is set here.
+  private init(): void {
     this.rItems = new Region();
     this.rItemXY = new Region();
     this.rItemKinds = new Region();
@@ -148,14 +137,35 @@ export class WasmSenser {
     this.rRockOrder = new Region();
     this.rRockXYR = new Region();
     this.rRockLB = new Region();
-    this.rockSynced = null;
     this.buffer = null;
+    this.f32 = new Float32Array(0);
+    this.i32 = new Int32Array(0);
+    this.f64 = new Float64Array(0);
+    this.u8 = new Uint8Array(0);
     this.synced = null;
+    this.rockSynced = null;
     this.rowCap = 0;
     this.pStart = 0;
     this.pXY = 0;
     this.pKinds = 0;
     this.pIds = 0;
+  }
+
+  static create(bank: WasmBrainBank): WasmSenser | null {
+    try {
+      const imports = { brain: { mem: bank.memory } };
+      const instance = new WebAssembly.Instance(compiled(SENSE_BYTES), imports);
+      return new WasmSenser(bank, instance.exports as SenseExports);
+    } catch {
+      return null;
+    }
+  }
+
+  // Back to the state of a new senser (the bank must be reset too, its regions are gone).
+  reset(): void {
+    this.tables.clear();
+    this.slotTable.length = 0;
+    this.init();
   }
 
   // Points the slot at the creature's ray offset cos and sin tables, made once per distinct set of offsets (compared by bits); call when the slot's brain is set.

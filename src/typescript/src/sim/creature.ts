@@ -186,8 +186,7 @@ export class Creature {
     const sizes = layerSizes(this.config, plan);
     if (genome.length !== genomeLength(sizes)) throw new Error(`genome length ${genome.length} does not match expected ${genomeLength(sizes)}`); // before anything changes
     copyPlan(plan, this.ownPlan);
-    if (this.brain.lent) this.brain.reshape(sizes); // the weights are in the kernels' block, attach below sets it from genome
-    else this.brain.load(sizes, genome);
+    if (!this.kernelOwner) this.brain.load(sizes, genome); // else attach below sets the kernels' block and the brain's layout from genome
     this.fitPlan(sizes);
     this.output.fill(0); // as a new creature's, not the previous owner's
     const s = this.state;
@@ -209,7 +208,7 @@ export class Creature {
       ray.energy = 0;
       ray.species = 0;
     }
-    this.kernelOwner?.attach(this, genome);
+    this.kernelOwner?.attach(this, genome, sizes);
   }
 
   // Casts the rays from the current pose into this.rays without advancing the simulation.

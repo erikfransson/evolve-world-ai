@@ -558,11 +558,13 @@ describe.skipIf(!wasmAvailable())("the own energy signal in the rows", () => {
         for (let t = 0; t < 50; t++) eco.step();
         eco.prepareTick();
         expect(e.crowd.kernel).not.toBeNull();
-        expect(e.kernels.packsOwnSignal(e.crowd)).toBe(packs);
         const { rows, selves, n } = eco.senseBatchRows();
         expect(n).toBeGreaterThan(30);
-        eco.senseRows(rows, selves, n);
         const f: Float64Array = e.resident.f64;
+        for (let k = 0; k < n; k++) f[(rows[k]! >> 3) + F.extras] = NaN;
+        e.kernels.prepareRows(rows, n, e.items.terrain, e.crowd); // the crowd kernel's pack stores the signal when it can, so prepare leaves it, else prepare writes it
+        expect(Number.isNaN(f[(rows[0]! >> 3) + F.extras])).toBe(packs);
+        eco.senseRows(rows, selves, n);
         const fields = [F.extras, F.extras + 1, F.extras + 2, F.extras + 3, F.extras + EXTRA_TERRAIN, F.groundFactor];
         const read = (): number[] => Array.from({ length: n }, (_, k) => fields.map((x) => f[(rows[k]! >> 3) + x]!)).flat();
         const got = read();
@@ -577,6 +579,30 @@ describe.skipIf(!wasmAvailable())("the own energy signal in the rows", () => {
         expect(got.every(Number.isFinite)).toBe(true);
       }
       expect(grounded).toBeGreaterThan(0);
+    });
+
+    it(`with start energies ${a} and ${b}, edge energies and a start energy of 0 give the oracle's signal`, () => {
+      const eco = world(a, b);
+      const e = eco as Any;
+      for (let t = 0; t < 20; t++) eco.step();
+      eco.prepareTick();
+      const { rows, n } = eco.senseBatchRows();
+      const store = e.resident;
+      const edges = [0, -0, -5, NaN, 1e308, -1e308, Infinity, -Infinity, 1e-320];
+      const signals = (): number[] => Array.from({ length: n }, (_, k) => store.f64[(rows[k]! >> 3) + F.extras] as number);
+      for (const zero of [-1, 0, 1]) {
+        const start = store.species[zero < 0 ? 0 : zero]!.creature;
+        const kept = start.startEnergy;
+        if (zero >= 0) start.startEnergy = 0;
+        for (let k = 0; k < n; k++) store.f64[(rows[k]! >> 3) + F.energy] = edges[k % edges.length]!;
+        e.kernels.filler.prepare(rows, n, e.items.terrain, true);
+        const got = signals();
+        prepareRows(store, rows, n, e.items.terrain);
+        const want = signals();
+        start.startEnergy = kept;
+        expect(got.some((v) => Number.isNaN(v))).toBe(true);
+        for (let k = 0; k < n; k++) expect(Object.is(got[k], want[k])).toBe(true);
+      }
     });
   }
 });
