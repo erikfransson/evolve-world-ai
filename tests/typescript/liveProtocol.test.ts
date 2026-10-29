@@ -1,4 +1,5 @@
-import { CREATURE_RECORD, ITEMS_HEADER, MAX_FRAME_CREATURES, PROTOCOL_VERSION, creatureFrameBytes, decodeCreatures, decodeItems, encodeCreatures, encodeItems } from "../../src/typescript/src/live/protocol.ts";
+import { CREATURE_RECORD, ITEMS_HEADER, MAX_FRAME_CREATURES, PROTOCOL_VERSION, creatureFrameBytes, decodeCreatures, decodeItems, encodeItems } from "../../src/typescript/src/live/protocol.ts";
+import { encodeCreatures } from "./frameOracle.ts";
 import { LiveScene } from "../../src/typescript/src/live/scene.ts";
 import { retryDelayS, serverUrl, DEV_SERVER, PUBLIC_SERVER } from "../../src/typescript/src/live/serverUrl.ts";
 import { LiveLink, cleanStats } from "../../src/typescript/src/live/connection.ts";

@@ -92,8 +92,8 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
   let lastFrameNo = -1;
   const feed = new ItemFeed();
   let deltaBytes = 0; // smoothed bytes of item changes per frame
-  let skippedBytes = 0; // size the creature frame would have, while the frame loop skips encoding it for want of viewers
-  const strided = (): number => (lastCreatures?.length ?? skippedBytes) * FRAME_HZ;
+  let frameBytes = 0; // size of the creature frame of the last frame tick, also while it is not encoded for want of viewers
+  const strided = (): number => frameBytes * FRAME_HZ;
   const unstrided = (): number => deltaBytes * FRAME_HZ;
   // Room for one more viewer: under the cap, and all of them at the slowest frame rate stay inside the budget.
   const room = (): boolean => viewers.size < limits.maxViewers && fits(viewers.size + 1, strided(), unstrided(), budget, MAX_STRIDE);
@@ -362,7 +362,7 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
     // New world: ids and items start over, so every viewer needs a fresh hello, the full item set and its history again.
     feed.clear();
     lastCreatures = null;
-    skippedBytes = 0;
+    frameBytes = 0;
     for (const v of viewers.values()) {
       select(v, null);
       v.want = undefined;
@@ -383,7 +383,7 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
         // path), the item changes are still drained and logged so the feed stays whole.
         const watched = viewers.size > 0;
         lastCreatures = watched ? live.creatureFrame() : null;
-        skippedBytes = watched ? 0 : creatureFrameBytes(live.eco.population);
+        frameBytes = creatureFrameBytes(live.eco.population);
         const delta = live.takeDelta();
         feed.push(frames, delta);
         deltaBytes = 0.8 * deltaBytes + 0.2 * (delta?.length ?? 0);
@@ -427,7 +427,7 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
     viewers: () => viewers.size,
     forgetFrames: () => {
       lastCreatures = null;
-      skippedBytes = 0;
+      frameBytes = 0;
       feed.clear();
       for (const v of viewers.values()) v.lastFrame = -1;
     },
