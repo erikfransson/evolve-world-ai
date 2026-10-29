@@ -10,7 +10,9 @@ const SCRATCH_FLOATS = 1024; // per ping-pong buffer, so every layer has at most
 const SCRATCH_B = SCRATCH_FLOATS * 4;
 const IOTA_AT = 2 * SCRATCH_B; // 0, 1, 2, ... for the dense layers
 const NZ_AT = IOTA_AT + SCRATCH_B; // index list of the non-zero inputs of the first layer, room for a 4-wide store past the end
-const TAB_AT = NZ_AT + SCRATCH_B + 64; // shuffle and count tables of the index packing
+const TAB_AT = NZ_AT + SCRATCH_B + 64; // shuffle and count tables of the index packing, then the tanh constants
+const TANH_AT = TAB_AT + 272; // brain.wat reads the constants at tab + 272
+const TANH_CONSTS = [135135, 17325, 378, 62370, 3150, 28, -0, 1, 4.97]; // -0 is the sign mask; 9 splat vectors
 const ARENA_START = TAB_AT + 512;
 const DESC_WORDS = 16;
 const DESC_SIZES = 6; // descriptor words before the layer sizes: block, input, output, size count, ray inputs, ray rows
@@ -68,6 +70,8 @@ export class WasmBrainBank {
       }
       bytes[256 + m] = k;
     }
+    const tanh = new Float32Array(kernel.memory.buffer, TANH_AT, 4 * TANH_CONSTS.length);
+    TANH_CONSTS.forEach((v, i) => tanh.fill(v, 4 * i, 4 * i + 4));
   }
 
   // Null when WebAssembly SIMD is unavailable (or disabled); keep using the JS Brain then.
