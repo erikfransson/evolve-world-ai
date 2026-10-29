@@ -38,7 +38,7 @@ export class WasmFiller {
 
   static create(store: ResidentStore): WasmFiller | null {
     try {
-      const instance = new WebAssembly.Instance(compiled(FILL_BYTES), { brain: { mem: store.bank.memory }, math: { exp: Math.exp } });
+      const instance = new WebAssembly.Instance(compiled(FILL_BYTES), { brain: { mem: store.bank.memory } });
       return new WasmFiller(store, instance.exports as FillExports);
     } catch {
       return null;
@@ -53,9 +53,8 @@ export class WasmFiller {
     this.pG = this.store.bank.alloc(L.G_BYTES);
   }
 
-  // The body inputs (Creature.writeBodyInputs) of the rows at rows[0 .. n-1] (byte addresses): the brain input extras and the ground factor. The energy signal only with signal
-  // (stored f32 rounded, as the crowd kernel's pack does), else that kernel has stored it.
-  prepare(rows: Int32Array, n: number, terrain: Terrain, signal: boolean): void {
+  // Twin of prepareRows (residentStep.ts) without the energy signal, for the rows at rows[0 .. n-1] (byte addresses): the brain input extras after the signal and the ground factor.
+  prepare(rows: Int32Array, n: number, terrain: Terrain): void {
     const store = this.store;
     const species = store.species;
     const rowsAt = store.grow(this.rPrepRows, n * 4);
@@ -78,7 +77,6 @@ export class WasmFiller {
       f64[h + f64At(L.H_DRAG)] = c.drag;
       f64[h + f64At(L.H_MAX_THRUST)] = c.maxThrust;
       f64[h + f64At(L.H_MAX_TURN)] = c.maxTurnRate;
-      f64[h + f64At(L.H_START)] = c.startEnergy;
     }
     const G = this.pG;
     i32[(G + L.G_N) >> 2] = n;
@@ -86,7 +84,6 @@ export class WasmFiller {
     i32[(G + L.G_SPECIES) >> 2] = speciesAt;
     i32[(G + L.G_RASTER) >> 2] = field ? this.rGround.ptr : 0;
     i32[(G + L.G_EMPTY) >> 2] = terrain.empty ? 1 : 0;
-    i32[(G + L.G_SIGNAL) >> 2] = signal ? 1 : 0;
     if (field) {
       i32[(G + L.G_STRIDE) >> 2] = 2 * field.cols;
       f64[(G + L.G_INV) >> 3] = field.inv;

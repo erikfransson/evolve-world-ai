@@ -1,37 +1,20 @@
 ;; The sense batch from resident creature rows (see resident.ts and layout.ts, whose offsets replace the double-brace tokens): per creature the 64-byte
 ;; sense record that sense.wat reads and the brain input extras (energy signal, speeds, turn, ground, then the memory units, as f32), and the
 ;; brain slot list of the batch. Creatures are placed in crowd grid (cell) order, read off the grid's owners, so neighbours share the cells sense.wat walks. Only moves data:
-;; the extras are stored in the row as f64, by prepare (below), whose energy signal is left to the crowd kernel's pack when that stores it.
+;; the extras are stored in the row as f64, by prepare (below) or, when the energy signal is not packed by the crowd kernel, by JS (residentStep.ts).
 ;; Memory is the brain bank's (imported).
 ;; The record is layout.ts's REC_* (sense.wat reads it).
 (module
   (import "brain" "mem" (memory 1))
-  (import "math" "exp" (func $exp (param f64) (result f64)))
 
-  ;; The energy signal of Creature.writeBodyInputs (1 - exp(-energy / startEnergy)) into the first extra of the rows, f32 rounded as the crowd kernel's pack stores it.
-  (func $signal (param $G i32)
-    (local $k i32) (local $n i32) (local $row i32)
-    (local.set $n (i32.load offset={{G_N}} (local.get $G)))
-    (block $d (loop $l
-      (br_if $d (i32.ge_s (local.get $k) (local.get $n)))
-      (local.set $row (i32.load (i32.add (i32.load offset={{G_ROWS}} (local.get $G)) (i32.shl (local.get $k) (i32.const 2)))))
-      (f64.store offset={{R_EXTRAS}} (local.get $row)
-        (f64.promote_f32 (f32.demote_f64 (f64.sub (f64.const 1)
-          (call $exp (f64.div (f64.neg (f64.load offset={{R_ENERGY}} (local.get $row)))
-            (f64.load offset={{H_START}} (i32.add (i32.load offset={{G_SPECIES}} (local.get $G)) (i32.mul (i32.load offset={{R_SPECIES}} (local.get $row)) (i32.const {{H_BYTES}}))))))))))
-      (local.set $k (i32.add (local.get $k) (i32.const 1)))
-      (br $l)))
-  )
-
-  ;; The body inputs of Creature.writeBodyInputs into the row's brain input extras: energy signal (only with G_SIGNAL, else the crowd kernel's pack stores it),
-  ;; forward and sideways speed, turn rate and the ground value under the creature (GroundField.valueAt), and the ground factor the step moves by.
+  ;; Twin of prepareRows in residentStep.ts with the energy signal left out (the crowd kernel's pack stores it): forward and sideways speed, turn rate and the
+  ;; ground value under the creature into the row's brain input extras, and the ground factor the step moves by; GroundField.valueAt for the value.
   (func (export "prepare") (param $G i32)
     (local $n i32) (local $k i32) (local $row i32) (local $sp i32) (local $raster i32) (local $stride i32) (local $empty i32)
     (local $cos f64) (local $sin f64) (local $vx f64) (local $vy f64) (local $drag f64) (local $thrust f64)
     (local $i i32) (local $j i32) (local $p i32) (local $value f64) (local $factor f64) (local $hit i32) (local $lookup i32) (local $slow f64) (local $fast f64) (local $mask i32) (local $maskCols i32)
     (local $invV v128) (local $padV v128) (local $maxV v128) (local $f v128) (local $t v128) (local $w v128) (local $a v128) (local $b v128) (local $c v128) (local $d v128) (local $tx v128) (local $ty v128)
     (local.set $n (i32.load offset={{G_N}} (local.get $G)))
-    (if (i32.load offset={{G_SIGNAL}} (local.get $G)) (then (call $signal (local.get $G))))
     (local.set $raster (i32.load offset={{G_RASTER}} (local.get $G)))
     (local.set $stride (i32.load offset={{G_STRIDE}} (local.get $G)))
     (local.set $empty (i32.load offset={{G_EMPTY}} (local.get $G)))

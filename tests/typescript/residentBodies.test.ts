@@ -6,8 +6,8 @@ import { GROUND_BLOCK_SHIFT, GROUND_PAD, GroundField } from "../../src/typescrip
 import { ECO_PRESETS, withEcoPreset } from "../../src/typescript/src/sim/presets.ts";
 import { wasmAvailable } from "../../src/typescript/src/sim/wasm/loader.ts";
 import { F } from "../../src/typescript/src/sim/wasm/resident.ts";
+import { prepareRows } from "../../src/typescript/src/sim/wasm/residentStep.ts";
 import { Terrain } from "../../src/typescript/src/sim/terrain.ts";
-import { prepareRows } from "./helpers.ts";
 
 // Creature bodies resident in the WebAssembly memory (wasm/resident.ts): the row code (fill kernel, residentStep.ts) must equal the
 // Creature code it replaces, bit for bit, on every tick.
@@ -81,7 +81,7 @@ describe.skipIf(!wasmAvailable())("resident bodies", () => {
     });
   }
 
-  it("the fill kernel's prepare equals the oracle bit for bit, on ground, edges and outside the world", () => {
+  it("the fill kernel's prepare equals prepareRows bit for bit, on ground, edges and outside the world", () => {
     const eco = world((c) => withEcoPreset(c, "inland-sea", ECO_PRESETS), 600);
     const e = eco as Any;
     const kernels = e.kernels;
@@ -105,24 +105,24 @@ describe.skipIf(!wasmAvailable())("resident bodies", () => {
         s.turnRate = (rnd() - 0.5) * 0.3;
         s.energy = 1 + rnd() * 100;
       });
-      const ex = (o: number): number[] => [0, 1, 2, 3, 4].map((i) => store.f64[o + F.extras + i]!).concat(store.f64[o + F.groundFactor]!);
+      const ex = (o: number): number[] => [1, 2, 3, 4].map((i) => store.f64[o + F.extras + i]!).concat(store.f64[o + F.groundFactor]!);
       prepareRows(store, rows, n, terrain);
       const want = Array.from(rows, (r) => ex(r >> 3));
       const wanted = Array.from(rows, (r) => store.f64[(r >> 3) + F.groundFactor]!);
       for (const r of rows) {
         store.f64[(r >> 3) + F.groundFactor] = NaN;
-        for (let i = 0; i <= 4; i++) store.f64[(r >> 3) + F.extras + i] = NaN;
+        for (let i = 1; i <= 4; i++) store.f64[(r >> 3) + F.extras + i] = NaN;
       }
-      kernels.filler.prepare(rows, n, terrain, true);
+      kernels.prepareRows(rows, n, terrain);
       const got = Array.from(rows, (r) => ex(r >> 3));
-      for (let k = 0; k < n; k++) for (let i = 0; i < 6; i++) expect(Object.is(got[k]![i], want[k]![i])).toBe(true);
+      for (let k = 0; k < n; k++) for (let i = 0; i < 5; i++) expect(Object.is(got[k]![i], want[k]![i])).toBe(true);
       for (const v of wanted) if (v < 1) slow++; else if (v > 1) fast++;
     }
     expect(slow).toBeGreaterThan(0);
     expect(fast).toBeGreaterThan(0);
   });
 
-  it("the fill kernel's prepare equals the oracle on hand-made fields: sizes off the block grid, sparse and weak corners, block edges, the map edge", () => {
+  it("the fill kernel's prepare equals prepareRows on hand-made fields: sizes off the block grid, sparse and weak corners, block edges, the map edge", () => {
     const eco = world((c) => c, 500);
     const e = eco as Any;
     const kernels = e.kernels;
@@ -154,17 +154,17 @@ describe.skipIf(!wasmAvailable())("resident bodies", () => {
         s.vy = (rnd() - 0.5) * 20;
         s.turnRate = (rnd() - 0.5) * 0.3;
       });
-      const at = (r: number): number[] => [0, 1, 2, 3, 4].map((i) => store.f64[(r >> 3) + F.extras + i]!).concat(store.f64[(r >> 3) + F.groundFactor]!);
+      const at = (r: number): number[] => [1, 2, 3, 4].map((i) => store.f64[(r >> 3) + F.extras + i]!).concat(store.f64[(r >> 3) + F.groundFactor]!);
       prepareRows(store, rows, n, terrain);
       const want = Array.from(rows, at);
       for (const r of rows) {
         store.f64[(r >> 3) + F.groundFactor] = NaN;
-        for (let i = 0; i <= 4; i++) store.f64[(r >> 3) + F.extras + i] = NaN;
+        for (let i = 1; i <= 4; i++) store.f64[(r >> 3) + F.extras + i] = NaN;
       }
-      kernels.filler.prepare(rows, n, terrain, true);
+      kernels.prepareRows(rows, n, terrain);
       const got = Array.from(rows, at);
-      for (let k = 0; k < n; k++) for (let i = 0; i < 6; i++) expect(Object.is(got[k]![i], want[k]![i])).toBe(true);
-      for (const v of want) if (v[4] !== 0) seen++;
+      for (let k = 0; k < n; k++) for (let i = 0; i < 5; i++) expect(Object.is(got[k]![i], want[k]![i])).toBe(true);
+      for (const v of want) if (v[3] !== 0) seen++;
     }
     expect(seen).toBeGreaterThan(100);
   });

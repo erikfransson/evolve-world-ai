@@ -83,14 +83,14 @@ export class SenseKernels {
     return this;
   }
 
-  // Whether the crowd kernel's pack stores each creature's own energy signal into its row (run's last argument), else the fill kernel's prepare does.
-  private packsOwnSignal(crowd: Crowd): boolean {
+  // Whether the crowd kernel's pack stores each creature's own energy signal into its row (run's last argument), so prepareRows can skip it.
+  packsOwnSignal(crowd: Crowd): boolean {
     return this.sameStart && crowd.kernel !== null;
   }
 
-  // The body inputs of the rows (see WasmFiller.prepare), with the energy signal unless the crowd kernel packs it.
-  prepareRows(rows: Int32Array, n: number, terrain: Terrain, crowd: Crowd): void {
-    this.filler.prepare(rows, n, terrain, !this.packsOwnSignal(crowd));
+  // prepareRows without the energy signal, in the fill kernel (used when packsOwnSignal).
+  prepareRows(rows: Int32Array, n: number, terrain: Terrain): void {
+    this.filler.prepare(rows, n, terrain);
   }
 
   // The item tables the step kernel looks items up in, or null when stale (see WasmSenser.itemTables).

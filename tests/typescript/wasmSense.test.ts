@@ -8,13 +8,13 @@ import { HIT_CREATURE, HIT_FOOD, HIT_NONE, HIT_POISON, HIT_WALL } from "../../sr
 import { LAYOUT as L } from "../../src/typescript/src/sim/wasm/layout.ts";
 import type { WasmBrainBank } from "../../src/typescript/src/sim/wasm/brainKernel.ts";
 import { F } from "../../src/typescript/src/sim/wasm/resident.ts";
+import { prepareRows } from "../../src/typescript/src/sim/wasm/residentStep.ts";
 import { rockLowerBound } from "../../src/typescript/src/sim/wasm/senser.ts";
 import { SenseKernels } from "../../src/typescript/src/sim/wasm/senseKernels.ts";
 import { speciesEngine, speciesList } from "../../src/typescript/src/sim/species.ts";
 import type { SimConfig } from "../../src/typescript/src/sim/config.ts";
 import { Creature, SenseBatch } from "../../src/typescript/src/sim/creature.ts";
 import { World } from "../../src/typescript/src/sim/world.ts";
-import { prepareRows } from "./helpers.ts";
 
 // sense.wat through SenseKernels against the JS rays (World.castRays, Creature.sense and encode), and the brain input the paths of the kernel write.
 
@@ -62,18 +62,18 @@ describe("sense.wat (SenseKernels)", () => {
   }
 
   // The sense kernels on the batch of resident creatures, as Ecosystem.sensePhase runs them on its members.
-  // The rows are prepared by the oracle prepareRows, or with kernel set by the fill kernel's prepare as senseThinkRows runs it:
-  // then everything the oracle wrote is poisoned first, so only the kernel's values can reach the brain input.
+  // The rows are prepared by the JS twin prepareRows, or with kernel set by the fill kernel's prepare (senseThinkRows does that when the crowd kernel packs the energy signal):
+  // then everything the twin wrote but the energy signal is poisoned first, so only the kernel's values can reach the brain input.
   function run(kernels: SenseKernels, world: World, crowd: Crowd, batch: SenseBatch, kernel = false): void {
     const rows = Int32Array.from({ length: batch.count }, (_, k) => batch.creatures[k]!.resident!.ptr);
     prepareRows(kernels.store, rows, batch.count, world.terrain);
     if (kernel) {
       const f = kernels.store.f64;
       for (const r of rows) {
-        for (let i = 0; i <= EXTRA_TERRAIN; i++) f[(r >> 3) + F.extras + i] = NaN;
+        for (let i = 1; i <= EXTRA_TERRAIN; i++) f[(r >> 3) + F.extras + i] = NaN;
         f[(r >> 3) + F.groundFactor] = NaN;
       }
-      kernels.prepareRows(rows, batch.count, world.terrain, crowd);
+      kernels.prepareRows(rows, batch.count, world.terrain);
     }
     kernels.runRows(world, crowd, rows, batch.selves, batch.count, kernels.detail);
   }
