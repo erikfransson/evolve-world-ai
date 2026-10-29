@@ -339,6 +339,10 @@ export class WasmBrainBank {
 
   // Writes order into kernel memory.
   private copyOrder(): void {
+    if (this.held === 0) { // nothing to mirror: the kernel then places no slot and forwardRun throws its usual error
+      this.orderDirty = false;
+      return;
+    }
     if (this.held > this.orderCap) {
       if (this.orderPtr !== NO_SLOT) this.arena.release(this.orderPtr, this.orderCap * 4);
       this.orderCap = this.order.length;
