@@ -7,7 +7,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 ## Unreleased
 
 - RL Arena: Corral (Fight, 16 weak foragers in a pen, only rams pay) and Lap (Time pressure, Ring road's lane with an early reward) are new envs; Lap misses the E5 check (random designs always score 0) and Corral needs 66 seeds for E4 (`docs/rl-envs.md`). Existing envs are unchanged
-Live World speed campaign (branch `perf-live`): on the live bench the tick is about 1.6x faster in the mixed world and 1.75x at the 5000 cap, with bit-identical results and a lower peak memory than before (about 50 MB less at the bench, about 100 MB less around a save). The simulation and the saves are unchanged. The campaign log with every idea and verdict is `docs/perf-explore/live-campaign.md`.
+
+Live World speed campaign (branch `perf-live`): on the live bench the tick is 1.65x faster in the mixed world and 1.72x at the 5000 cap, with bit-identical results and a lower peak memory than before (about 50 MB less at the bench, about 100 MB less around a save). The simulation and the saves are unchanged. The campaign log with every idea and verdict is `docs/perf-explore/live-campaign.md`.
 
 - Live server: the viewer frame path costs less CPU with identical bytes. The creature frame is written in one pass straight into the wire buffer, the stats pass offers a creature to the record lists only when it could enter or update one, family names are parsed once, and followed creatures share one crowd grid per refresh instead of one each (a watched server with five followers spent 10 ms of CPU per second on those grids). With nobody connected no creature frame and no per-creature stats pass run at all.
 - Live server: a save no longer freezes the tick loop. The main thread takes a snapshot and a worker packs, stringifies and gzips it (stall per save from 3 to 6 s down to under 0.2 s, peak memory during a save about 200 MB lower, same bytes).
