@@ -40,6 +40,19 @@ export const LAYOUT = {
   // brain input extras: how many, and the byte offset of the first memory unit from the first extra
   EXTRAS: EXTRA_INPUTS,
   UNITS_AT: 4 * EXTRA_INPUTS,
+  // brain descriptor, one per slot (brainKernel.ts writes it, brain.wat reads it): i32 words, then the layer sizes
+  B_DESC_BYTES: 64,
+  B_DESC_SHIFT: 6, // log2 of B_DESC_BYTES
+  B_BLOCK: 0, // address of the brain block
+  B_INPUT: 4, // address of the input vector
+  B_OUTPUT: 8, // address of the output vector
+  B_COUNT: 12, // number of layer sizes
+  B_RAY_INPUTS: 16, // inputs whose first-layer rows sit in the ray region
+  B_RAY_ROWS: 20, // address of the ray region
+  B_SIZES: 24, // the layer sizes, up to B_DESC_BYTES
+  B_SIZES_NEXT: 28, // the second layer size
+  // the tanh constants (nine splat vectors) in the brain tab, after the 272 bytes of shuffle and count tables of the index packing
+  B_TANH_AT: 272,
   // sense record, 64 bytes (fill.wat writes it, sense.wat reads it; senser.ts reads the same offsets): f64 x y cos sin ray length, i32 crowd index of the creature, rays,
   // byte address of its ray offset tables, byte address of its brain input, and where to write its rays for the UI (0 for none)
   REC_BYTES: 64,

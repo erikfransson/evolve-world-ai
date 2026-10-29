@@ -37,7 +37,7 @@
               (local.set $d (f32x4.add (local.get $k0) (f32x4.mul (local.get $x2) (f32x4.add (local.get $k3) (f32x4.mul (local.get $x2) (f32x4.add (local.get $k4) (f32x4.mul (local.get $x2) (local.get $k5))))))))
               (v128.store offset=@o (local.get $b) (v128.bitselect (v128.or (v128.and (local.get $x) (local.get $k6)) (local.get $k7)) (f32x4.div (local.get $n) (local.get $d)) (f32x4.ge (v128.andnot (local.get $x) (local.get $k6)) (local.get $k8))))
   {{end}}
-  ;; The nine tanh constants, splat vectors at tab + 272.
+  ;; The nine tanh constants, splat vectors at tab + B_TANH_AT.
   {{def consts}}
               (local.set $k0 (v128.load offset=0 (local.get $kt)))
               (local.set $k1 (v128.load offset=16 (local.get $kt)))
@@ -74,9 +74,9 @@
   {{end}}
 
   ;; forward(desc, slots, n, scratchA, scratchB, nzList, iota, tab): creatures slots[0..n-1], each scratch buffer holds the widest padded layer.
-  ;; tab holds the shuffle and count tables of the index packing (272 bytes), then the nine tanh constants as splat vectors.
+  ;; tab holds the shuffle and count tables of the index packing (B_TANH_AT bytes), then the nine tanh constants as splat vectors.
   ;; The first layer adds only the non-zero inputs; the others use the identity index list iota. The last layer stores straight to the output.
-  ;; A block is split: the first-layer rows of the first desc[4] inputs (the rays) sit at desc[5], the rest of the block (the other rows, biases, later layers) at desc[0].
+  ;; A block is split: the first-layer rows of the first B_RAY_INPUTS inputs (the rays) sit at B_RAY_ROWS, the rest of the block (the other rows, biases, later layers) at B_BLOCK.
   ;; The first layer then runs as two passes over the same column groups, the ray entries of the list first (partial sum stored to dst), the rest on top; the adds keep their order.
   ;; Columns go in groups of up to six vectors (24 outputs, so a 24-wide layer is one pass over the inputs) that stay in registers across the input loop; tanh runs on them before they are stored.
   ;; The groups of up to four vectors also touch two lines at pf per input (pf moves 128 bytes while below pe, the next brain's weights), so the hardware prefetcher streams them in early (WASM has no prefetch).
@@ -89,22 +89,22 @@
     (local $jb i32) (local $stride i32) (local $bias i32) (local $left i32) (local $le i32) (local $lp i32) (local $i i32) (local $p i32) (local $b i32) (local $wj i32)
     (local $vs v128) (local $a0 v128) (local $a1 v128) (local $a2 v128) (local $a3 v128) (local $a4 v128) (local $a5 v128)
     (local $x v128) (local $x2 v128) (local $n v128) (local $d v128) (local $k0 v128) (local $k1 v128) (local $k2 v128) (local $k3 v128) (local $k4 v128) (local $k5 v128) (local $k6 v128) (local $k7 v128) (local $k8 v128)
-    (local.set $kt (i32.add (local.get $tab) (i32.const 272)))
+    (local.set $kt (i32.add (local.get $tab) (i32.const {{B_TANH_AT}})))
     (block $cd (loop $cl
       (br_if $cd (i32.ge_u (local.get $c) (local.get $nb)))
-      (local.set $bd (i32.add (local.get $desc) (i32.shl (i32.load (i32.add (local.get $slots) (i32.shl (local.get $c) (i32.const 2)))) (i32.const 6))))
+      (local.set $bd (i32.add (local.get $desc) (i32.shl (i32.load (i32.add (local.get $slots) (i32.shl (local.get $c) (i32.const 2)))) (i32.const {{B_DESC_SHIFT}}))))
       (local.set $pf (i32.const 0))
       (local.set $pe (i32.const 0))
       (if (i32.lt_u (i32.add (local.get $c) (i32.const 1)) (local.get $nb)) (then
-        (local.set $pe (i32.add (local.get $desc) (i32.shl (i32.load offset=4 (i32.add (local.get $slots) (i32.shl (local.get $c) (i32.const 2)))) (i32.const 6))))
+        (local.set $pe (i32.add (local.get $desc) (i32.shl (i32.load offset=4 (i32.add (local.get $slots) (i32.shl (local.get $c) (i32.const 2)))) (i32.const {{B_DESC_SHIFT}}))))
         (local.set $pf (i32.load (local.get $pe)))
-        (local.set $pe (i32.sub (i32.load offset=4 (local.get $pe)) (i32.const 256)))
+        (local.set $pe (i32.sub (i32.load offset={{B_INPUT}} (local.get $pe)) (i32.const 256)))
         (if (i32.lt_s (local.get $pe) (local.get $pf)) (then (local.set $pf (i32.const 0)) (local.set $pe (i32.const 0))))))
       ;; Pack the indices of the non-zero inputs into nz, in order, and count them in cn. Branch-free except for skipping all-zero groups of sixteen.
       ;; Sixteen inputs at a time are tested first (an all-zero group only advances idx), then four at a time: the lane mask picks a byte shuffle from tab (16 shuffles of 16 bytes, then 16 counts) that packs their indices.
       (local.set $cn (i32.const 0))
-      (local.set $cin (i32.load offset=4 (local.get $bd)))
-      (local.set $cnin (i32.load offset=24 (local.get $bd)))
+      (local.set $cin (i32.load offset={{B_INPUT}} (local.get $bd)))
+      (local.set $cnin (i32.load offset={{B_SIZES}} (local.get $bd)))
       (local.set $idx (v128.const i32x4 0 1 2 3))
       (local.set $four (v128.const i32x4 4 4 4 4))
       (local.set $zero (v128.const i32x4 0 0 0 0))
@@ -158,10 +158,10 @@
           (i8x16.swizzle (local.get $idx) (v128.load (i32.add (local.get $tab) (i32.shl (local.get $cm) (i32.const 4))))))
         (local.set $cn (i32.add (local.get $cn) (i32.load8_u offset=256 (i32.add (local.get $tab) (local.get $cm)))))))
 
-      (local.set $w (i32.load (local.get $bd)))
-      (local.set $src (i32.load offset=4 (local.get $bd)))
-      (local.set $layers (i32.sub (i32.load offset=12 (local.get $bd)) (i32.const 1)))
-      (local.set $rf (i32.load offset=16 (local.get $bd)))
+      (local.set $w (i32.load offset={{B_BLOCK}} (local.get $bd)))
+      (local.set $src (i32.load offset={{B_INPUT}} (local.get $bd)))
+      (local.set $layers (i32.sub (i32.load offset={{B_COUNT}} (local.get $bd)) (i32.const 1)))
+      (local.set $rf (i32.load offset={{B_RAY_INPUTS}} (local.get $bd)))
       ;; k: how many of the listed inputs are rays (index below rf), whose rows are in the ray region.
       (local.set $k (i32.const 0))
       (block $kd (loop $kl
@@ -173,19 +173,19 @@
       ;; One layer per turn. Pass 0 is the ray entries of the first layer (sums stored as they are), the last pass adds the rest on top, applies tanh and stores.
       (block $ld (loop $ll
         (br_if $ld (i32.ge_u (local.get $l) (local.get $layers)))
-        (local.set $nIn (i32.load offset=24 (i32.add (local.get $bd) (i32.shl (local.get $l) (i32.const 2)))))
-        (local.set $nOut (i32.load offset=28 (i32.add (local.get $bd) (i32.shl (local.get $l) (i32.const 2)))))
+        (local.set $nIn (i32.load offset={{B_SIZES}} (i32.add (local.get $bd) (i32.shl (local.get $l) (i32.const 2)))))
+        (local.set $nOut (i32.load offset={{B_SIZES_NEXT}} (i32.add (local.get $bd) (i32.shl (local.get $l) (i32.const 2)))))
         (local.set $nPad (i32.and (i32.add (local.get $nOut) (i32.const 3)) (i32.const -4)))
         (local.set $dst (select (local.get $sb) (local.get $sa) (i32.and (local.get $l) (i32.const 1))))
-        (if (i32.eq (i32.add (local.get $l) (i32.const 1)) (local.get $layers)) (then (local.set $dst (i32.load offset=8 (local.get $bd)))))
+        (if (i32.eq (i32.add (local.get $l) (i32.const 1)) (local.get $layers)) (then (local.set $dst (i32.load offset={{B_OUTPUT}} (local.get $bd)))))
         (local.set $stride (i32.shl (local.get $nPad) (i32.const 2)))
-        (local.set $rf (select (i32.const 0) (i32.load offset=16 (local.get $bd)) (local.get $l)))
+        (local.set $rf (select (i32.const 0) (i32.load offset={{B_RAY_INPUTS}} (local.get $bd)) (local.get $l)))
         (local.set $init (i32.add (local.get $w) (i32.mul (i32.sub (local.get $nIn) (local.get $rf)) (local.get $stride))))
         (local.set $ps (select (i32.const 0) (i32.const 1) (i32.and (i32.eqz (local.get $l)) (i32.ne (local.get $k) (i32.const 0)))))
         (block $pd (loop $pl
           (if (i32.eqz (local.get $ps))
             (then
-              (local.set $list (local.get $nz)) (local.set $cnt (local.get $k)) (local.set $wp (i32.load offset=20 (local.get $bd))) (local.set $bias (local.get $init)) (local.set $th (i32.const 0)) (local.set $ps (i32.const 1)))
+              (local.set $list (local.get $nz)) (local.set $cnt (local.get $k)) (local.set $wp (i32.load offset={{B_RAY_ROWS}} (local.get $bd))) (local.set $bias (local.get $init)) (local.set $th (i32.const 0)) (local.set $ps (i32.const 1)))
             (else
               (local.set $th (i32.const 1)) (local.set $ps (i32.const 2))
               (if (local.get $l)
@@ -201,7 +201,7 @@
             (br_if $jd (i32.eqz (local.get $left)))
             (local.set $b (i32.add (local.get $bias) (local.get $jb)))
             (local.set $wj (i32.add (local.get $wp) (local.get $jb)))
-            ;; Column groups of 6, 5, 4, 3, 2 or 1 vectors: bias or partial sum, input loop, then tanh on the accumulators (constants k0 to k8 from tab + 272) and store.
+            ;; Column groups of 6, 5, 4, 3, 2 or 1 vectors: bias or partial sum, input loop, then tanh on the accumulators (constants k0 to k8 from tab + B_TANH_AT) and store.
             ;; |x| >= 4.97 gives exactly +-1, as the JS version does. No clamps: wild quotients outside that range are replaced.
             (if (i32.ge_u (local.get $left) (i32.const 96)) (then
               {{group 6 0}}

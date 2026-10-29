@@ -1,5 +1,6 @@
 import { Arena, BRAIN_BYTES, Kernel } from "./loader.ts";
 import type { Genome } from "../types.ts";
+import { LAYOUT as L, i32At } from "./layout.ts";
 
 // Batched Brain.forward on f32x4 SIMD, for creatures with brains of any layer sizes (up to 9 layers).
 // Each slot holds one creature's weights in linear memory, so set() once when a brain is born or changes and runRegion() with forwardRun() every tick.
@@ -11,12 +12,19 @@ const SCRATCH_B = SCRATCH_FLOATS * 4;
 const IOTA_AT = 2 * SCRATCH_B; // 0, 1, 2, ... for the dense layers
 const NZ_AT = IOTA_AT + SCRATCH_B; // index list of the non-zero inputs of the first layer, room for a 4-wide store past the end
 const TAB_AT = NZ_AT + SCRATCH_B + 64; // shuffle and count tables of the index packing, then the tanh constants
-const TANH_AT = TAB_AT + 272; // brain.wat reads the constants at tab + 272
+const TANH_AT = TAB_AT + L.B_TANH_AT;
 const TANH_CONSTS = [135135, 17325, 378, 62370, 3150, 28, -0, 1, 4.97]; // -0 is the sign mask; 9 splat vectors
 const ARENA_START = TAB_AT + 512;
 if (TANH_AT + 16 * TANH_CONSTS.length > ARENA_START) throw new Error("the tanh constants overlap the arena");
-const DESC_WORDS = 16;
-const DESC_SIZES = 6; // descriptor words before the layer sizes: block, input, output, size count, ray inputs, ray rows
+// Descriptor word indices (layout.ts has the byte offsets brain.wat reads).
+const DESC_WORDS = i32At(L.B_DESC_BYTES);
+const D_BLOCK = i32At(L.B_BLOCK);
+const D_INPUT = i32At(L.B_INPUT);
+const D_OUTPUT = i32At(L.B_OUTPUT);
+const D_COUNT = i32At(L.B_COUNT);
+const D_RAY_INPUTS = i32At(L.B_RAY_INPUTS);
+const D_RAY_ROWS = i32At(L.B_RAY_ROWS);
+const DESC_SIZES = i32At(L.B_SIZES); // descriptor words before the layer sizes
 const MAX_SIZES = DESC_WORDS - DESC_SIZES;
 const NO_SLOT = -1;
 const BLOCK_ALIGN = 64; // brain blocks are laid back to back in chunks, each starting on a cache line
@@ -36,36 +44,36 @@ interface Chunk { ptr: number; cap: number; top: number; live: number }
 
 export class WasmBrainBank {
   private readonly kernel: Kernel<BrainExports>;
-  private arena: Arena;
-  private blockPtr: (number | undefined)[] = [];
-  private blockBytes: number[] = [];
-  private blockChunk: number[] = [];
-  private rayPtr: (number | undefined)[] = []; // per slot, the first-layer rows of the ray inputs, outside the block (they are mostly dead, so the block stays small and dense)
-  private rayBytes: number[] = [];
-  private chunks: Chunk[] = [];
+  private arena!: Arena;
+  private blockPtr!: (number | undefined)[];
+  private blockBytes!: number[];
+  private blockChunk!: number[];
+  private rayPtr!: (number | undefined)[]; // per slot, the first-layer rows of the ray inputs, outside the block (they are mostly dead, so the block stays small and dense)
+  private rayBytes!: number[];
+  private chunks!: Chunk[];
   onMove: ((slot: number) => void) | null = null; // called for each slot whose block moved (compact(), or a chunk slid by place() inside another slot's set()), after its input and output addresses changed
-  private inFloat: number[] = [];
-  private outFloat: number[] = [];
-  private descPtr = NO_SLOT;
-  private descCap = 0;
-  private runPtr = NO_SLOT; // slot numbers of one forwardRun
-  private runCap = 0;
-  private order = new Int32Array(64); // the slots holding a brain, by block address, so forwardRun streams the weights in memory order
-  private held = 0;
-  private orderPtr = NO_SLOT; // a copy of order in kernel memory for runOrder, rewritten by forwardRun after order changed
-  private orderCap = 0;
-  private orderDirty = true;
-  private markPtr = NO_SLOT; // per slot (descCap bytes), the stamp (1 to 255) of the forwardRun it is in
-  private stamp = 0;
+  private inFloat!: number[];
+  private outFloat!: number[];
+  private descPtr!: number;
+  private descCap!: number;
+  private runPtr!: number; // slot numbers of one forwardRun
+  private runCap!: number;
+  private order!: Int32Array; // the slots holding a brain, by block address, so forwardRun streams the weights in memory order
+  private held!: number;
+  private orderPtr!: number; // a copy of order in kernel memory for runOrder, rewritten by forwardRun after order changed
+  private orderCap!: number;
+  private orderDirty!: boolean;
+  private markPtr!: number; // per slot (descCap bytes), the stamp (1 to 255) of the forwardRun it is in
+  private stamp!: number;
 
   private constructor(kernel: Kernel<BrainExports>) {
     this.kernel = kernel;
-    this.arena = new Arena(kernel, ARENA_START);
+    this.init();
     kernel.ensure(ARENA_START);
     const i32 = kernel.i32;
     for (let i = 0; i < SCRATCH_FLOATS; i++) i32[IOTA_AT / 4 + i] = i;
     // For each lane mask m, the byte shuffle that moves the index of its k-th set lane to lane k, and the number of set lanes.
-    const bytes = new Uint8Array(kernel.memory.buffer, TAB_AT, 272);
+    const bytes = new Uint8Array(kernel.memory.buffer, TAB_AT, L.B_TANH_AT);
     for (let m = 0; m < 16; m++) {
       let k = 0;
       for (let lane = 0; lane < 4; lane++) {
@@ -79,14 +87,8 @@ export class WasmBrainBank {
     TANH_CONSTS.forEach((v, i) => tanh.fill(v, 4 * i, 4 * i + 4));
   }
 
-  // Null when WebAssembly SIMD is unavailable (or disabled); keep using the JS Brain then.
-  static createSync(): WasmBrainBank | null {
-    const kernel = Kernel.createSync<BrainExports>(BRAIN_BYTES);
-    return kernel ? new WasmBrainBank(kernel) : null;
-  }
-
-  // Back to the state of a new bank, so a successive owner can reuse the instance: no slots, a fresh arena, zeroed scratch and arena memory.
-  reset(): void {
+  // The state of a new bank, for the constructor and reset(); every field that reset() must clear is set here.
+  private init(): void {
     this.blockPtr = [];
     this.blockBytes = [];
     this.blockChunk = [];
@@ -99,6 +101,7 @@ export class WasmBrainBank {
     this.descCap = 0;
     this.runPtr = NO_SLOT;
     this.runCap = 0;
+    this.order = new Int32Array(64);
     this.held = 0;
     this.orderPtr = NO_SLOT;
     this.orderCap = 0;
@@ -106,6 +109,17 @@ export class WasmBrainBank {
     this.markPtr = NO_SLOT;
     this.stamp = 0;
     this.arena = new Arena(this.kernel, ARENA_START);
+  }
+
+  // Null when WebAssembly SIMD is unavailable (or disabled); keep using the JS Brain then.
+  static createSync(): WasmBrainBank | null {
+    const kernel = Kernel.createSync<BrainExports>(BRAIN_BYTES);
+    return kernel ? new WasmBrainBank(kernel) : null;
+  }
+
+  // Back to the state of a new bank, so a successive owner can reuse the instance: no slots, a fresh arena, zeroed scratch and arena memory.
+  reset(): void {
+    this.init();
     const f32 = this.kernel.f32;
     f32.fill(0, 0, IOTA_AT / 4);
     f32.fill(0, NZ_AT / 4, TAB_AT / 4);
@@ -212,12 +226,12 @@ export class WasmBrainBank {
     this.outFloat[slot] = w + pad4(nIn);
     const d = this.kernel.i32;
     const at = (this.descPtr >> 2) + slot * DESC_WORDS;
-    d[at] = ptr;
-    d[at + 1] = w * 4;
-    d[at + 2] = (w + pad4(nIn)) * 4;
-    d[at + 3] = sizes.length;
-    d[at + 4] = rayInputs;
-    d[at + 5] = rayAt ?? 0;
+    d[at + D_BLOCK] = ptr;
+    d[at + D_INPUT] = w * 4;
+    d[at + D_OUTPUT] = (w + pad4(nIn)) * 4;
+    d[at + D_COUNT] = sizes.length;
+    d[at + D_RAY_INPUTS] = rayInputs;
+    d[at + D_RAY_ROWS] = rayAt ?? 0;
     for (let i = 0; i < sizes.length; i++) d[at + DESC_SIZES + i] = sizes[i]!;
   }
 
@@ -226,10 +240,10 @@ export class WasmBrainBank {
     const f32 = this.kernel.f32;
     const d = this.kernel.i32;
     const at = (this.descPtr >> 2) + slot * DESC_WORDS;
-    const count = d[at + 3]!;
-    const rayInputs = d[at + 4]!;
-    const rb = d[at + 5]! >> 2;
-    let w = d[at]! >> 2;
+    const count = d[at + D_COUNT]!;
+    const rayInputs = d[at + D_RAY_INPUTS]!;
+    const rb = d[at + D_RAY_ROWS]! >> 2;
+    let w = d[at + D_BLOCK]! >> 2;
     let g = 0;
     for (let l = 0; l + 1 < count; l++) {
       const inN = d[at + DESC_SIZES + l]!;
@@ -286,9 +300,9 @@ export class WasmBrainBank {
         f32.copyWithin(at >> 2, ptr >> 2, (ptr + bytes) >> 2);
         const shift = at - ptr;
         const w = (this.descPtr >> 2) + slot * DESC_WORDS;
-        d[w] = at;
-        d[w + 1] += shift;
-        d[w + 2] += shift;
+        d[w + D_BLOCK] = at;
+        d[w + D_INPUT] += shift;
+        d[w + D_OUTPUT] += shift;
         this.blockPtr[slot] = at;
         this.inFloat[slot] += shift >> 2;
         this.outFloat[slot] += shift >> 2;
@@ -303,14 +317,10 @@ export class WasmBrainBank {
   // Runs the slots slots[0 .. count-1] in that order, each of which must hold a brain; e.g. one thread's share of the creatures.
   forwardSlots(slots: Int32Array, count: number): void {
     if (count <= 0) return;
-    if (count > this.runCap) {
-      if (this.runPtr !== NO_SLOT) this.arena.release(this.runPtr, this.runCap * 4);
-      this.runCap = Math.max(64, 2 * this.runCap, count);
-      this.runPtr = this.arena.alloc(this.runCap * 4);
-    }
+    const run = this.runRegion(count);
     for (let k = 0; k < count; k++) if (this.blockPtr[slots[k]!] === undefined) throw new Error(`slot ${slots[k]} holds no brain`);
-    this.kernel.i32.set(slots.subarray(0, count), this.runPtr >> 2);
-    this.kernel.exports.forward(this.descPtr, this.runPtr, count, 0, SCRATCH_B, NZ_AT, IOTA_AT, TAB_AT);
+    this.kernel.i32.set(slots.subarray(0, count), run >> 2);
+    this.kernel.exports.forward(this.descPtr, run, count, 0, SCRATCH_B, NZ_AT, IOTA_AT, TAB_AT);
   }
 
   // The address of the slot list of the next forwardRun (room for count slots), for a kernel to fill in place.
@@ -384,11 +394,10 @@ export class WasmBrainBank {
       const prev = k > 0 ? this.order[k - 1]! : -1;
       ch.top = prev >= 0 && this.blockChunk[prev] === this.blockChunk[slot] ? this.blockPtr[prev]! + alignUp(this.blockBytes[prev]!) - ch.ptr : 0;
     }
-    this.unorder(ptr);
+    this.unorder(k);
   }
 
-  private unorder(ptr: number): void {
-    const k = this.find(ptr);
+  private unorder(k: number): void {
     this.order.copyWithin(k, k + 1, this.held--);
     this.orderDirty = true;
   }
