@@ -12,6 +12,7 @@ import { ResidentStore } from "./resident.ts";
 import { MAX_RAYS, WasmSenser } from "./senser.ts";
 import { WasmFiller } from "./fillKernel.ts";
 import { WasmStepper } from "./stepKernel.ts";
+import { prepareRows } from "./residentStep.ts";
 
 // The WASM kernels of one owner of creatures (an Ecosystem or a helper thread): sense.wat does rays and brain inputs for the whole batch in one call, then the
 // brains run in WebAssembly too, and the creatures' bodies are rows of the same memory (ResidentStore), filled, stepped and scanned by kernels of their own.
@@ -84,11 +85,17 @@ export class SenseKernels {
   }
 
   // Whether the crowd kernel's pack stores each creature's own energy signal into its row (run's last argument), so prepareRows can skip it.
-  packsOwnSignal(crowd: Crowd): boolean {
+  private packsOwnSignal(crowd: Crowd): boolean {
     return this.sameStart && crowd.kernel !== null;
   }
 
-  // prepareRows without the energy signal, in the fill kernel (used when packsOwnSignal).
+  // prepareRows (residentStep.ts) for the batch: the JS twin, or the fill kernel's prepare without the energy signal when the crowd kernel's pack stores it.
+  prepare(rows: Int32Array, n: number, world: World, crowd: Crowd): void {
+    if (this.packsOwnSignal(crowd)) this.filler.prepare(rows, n, world.terrain);
+    else prepareRows(this.store, rows, n, world.terrain);
+  }
+
+  // The fill kernel's prepare alone, without the energy signal.
   prepareRows(rows: Int32Array, n: number, terrain: Terrain): void {
     this.filler.prepare(rows, n, terrain);
   }

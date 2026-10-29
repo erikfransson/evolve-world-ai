@@ -90,10 +90,7 @@ export class WasmBrainBank {
     this.markPtr = NO_SLOT;
     this.stamp = 0;
     this.arena = new Arena(this.kernel, ARENA_START);
-    this.blocks = new BlockChunks(this.arena, {
-      relocate: (slot, from, to, bytes) => this.relocate(slot, from, to, bytes),
-      moved: (slots) => { if (this.onMove) for (const slot of slots) this.onMove(slot); },
-    });
+    this.blocks = new BlockChunks(this.arena, { relocate: (slot, from, to, bytes) => this.relocate(slot, from, to, bytes) });
   }
 
   // Null when WebAssembly SIMD is unavailable (or disabled); keep using the JS Brain then.
@@ -254,7 +251,7 @@ export class WasmBrainBank {
     this.blocks.compact();
   }
 
-  // A block slid from `from` to `to`: copies it whole and moves the slot's descriptor and input and output addresses along.
+  // A block slid from `from` to `to`: copies it whole, moves the slot's descriptor and input and output addresses along and tells onMove.
   private relocate(slot: number, from: number, to: number, bytes: number): void {
     this.kernel.f32.copyWithin(to >> 2, from >> 2, (from + bytes) >> 2);
     const shift = to - from;
@@ -265,6 +262,7 @@ export class WasmBrainBank {
     d[w + D_OUTPUT] += shift;
     this.inFloat[slot] += shift >> 2;
     this.outFloat[slot] += shift >> 2;
+    this.onMove?.(slot);
   }
 
   // Runs the slots slots[0 .. count-1] in that order, each of which must hold a brain; e.g. one thread's share of the creatures.
@@ -290,7 +288,7 @@ export class WasmBrainBank {
   // The slots are run by block address instead of in the written order; each brain depends only on its own block, so the results are the same.
   forwardRun(count: number): void {
     if (count <= 0) return;
-    if (this.blocks.orderDirty) this.copyOrder();
+    this.copyOrder();
     if (this.stamp >= 255) { // the marks are bytes: clear them and start the stamps over
       new Uint8Array(this.kernel.memory.buffer, this.markPtr, this.descCap).fill(0);
       this.stamp = 0;
@@ -300,9 +298,11 @@ export class WasmBrainBank {
     this.kernel.exports.forward(this.descPtr, this.runPtr, count, 0, SCRATCH_B, NZ_AT, IOTA_AT, TAB_AT);
   }
 
-  // Writes the order of the blocks into kernel memory.
+  // Writes the order of the blocks into kernel memory when it changed.
   private copyOrder(): void {
-    const { order, held } = this.blocks;
+    const order = this.blocks.takeOrder();
+    if (!order) return;
+    const held = this.blocks.held;
     if (held > 0) { // with nothing to mirror the kernel places no slot, and forwardRun throws its usual error
       if (held > this.orderCap) {
         if (this.orderPtr !== NO_SLOT) this.arena.release(this.orderPtr, this.orderCap * 4);
@@ -311,7 +311,6 @@ export class WasmBrainBank {
       }
       this.kernel.i32.set(order.subarray(0, held), this.orderPtr >> 2);
     }
-    this.blocks.orderDirty = false;
   }
 
   private ensureSlots(n: number): void {

@@ -143,7 +143,7 @@ describe.skipIf(!wasmAvailable())("the WebAssembly crowd grid equals Crowd.rebui
     expect(bad).toBe(0);
   });
 
-  it("with toRows, in each creature's row as its first brain input extra, which prepareRows then leaves", () => {
+  it("with toRows, in each creature's row as its first brain input extra, which the fill kernel's prepare then leaves", () => {
     const eco = make(inland, 400);
     const e = eco as Any;
     for (let t = 0; t < 5; t++) eco.step();
@@ -160,7 +160,7 @@ describe.skipIf(!wasmAvailable())("the WebAssembly crowd grid equals Crowd.rebui
       if (!Object.is(store.f64[row + F.extras], Math.fround(energySignal(crowd.energies[k]!, 300)))) bad++;
     }
     const kept = Array.from({ length: n }, (_, k) => first(k));
-    prepareRows(store, rows, n, e.items.terrain, true);
+    e.kernels.prepareRows(rows, n, e.items.terrain);
     for (let k = 0; k < n; k++) if (!Object.is(first(k), kept[k])) bad++;
     expect(bad).toBe(0);
   });
@@ -575,7 +575,9 @@ describe.skipIf(!wasmAvailable())("the own energy signal in the rows (packsOwnSi
         if (f[o + F.extras + EXTRA_TERRAIN] !== 0) grounded++;
       }
       expect(grounded).toBeGreaterThan(0);
-      prepareRows(e.resident, rows, n, e.items.terrain, packs);
+      const signals = Array.from({ length: n }, (_, k) => f[(rows[k]! >> 3) + F.extras]!);
+      prepareRows(e.resident, rows, n, e.items.terrain);
+      if (packs) signals.forEach((v, k) => (f[(rows[k]! >> 3) + F.extras] = v)); // the twin writes the unrounded signal the pack already stored
       expect(read()).toEqual(got);
       expect(got.every(Number.isFinite)).toBe(true);
     });
