@@ -2,7 +2,7 @@
 // The TypeScript side reads the offsets from here, and scripts/wasmAssemble.ts substitutes them for the {{NAME}} tokens of the .wat files, so the two sides cannot drift apart.
 // Offsets are in bytes from the start of the row or block.
 
-import { GROUND_HALF, GROUND_PAD } from "../groundField.ts";
+import { GROUND_BLOCK_SHIFT, GROUND_HALF, GROUND_PAD } from "../groundField.ts";
 import { EXTRA_INPUTS, EXTRA_SIDE, EXTRA_SPEED, EXTRA_TERRAIN, EXTRA_TURN } from "../sensors.ts";
 
 export const LAYOUT = {
@@ -114,7 +114,10 @@ export const LAYOUT = {
   G_ROW_MAX: 40, // f64: rows - 1.0001
   G_SLOW: 48, // f64: speed factor on mud and on firm ground
   G_FAST: 56, // f64
-  G_BYTES: 64,
+  G_MASK: 64, // address of the ground field's block flags (GroundField.blockFlags)
+  G_MASK_COLS: 68, // blocks per row of them
+  G_BYTES: 80,
+  G_BLOCK_SHIFT: GROUND_BLOCK_SHIFT,
   G_PAD: GROUND_PAD, // the field's constants, as values for the wat
   G_HALF: GROUND_HALF,
   H_DRAG: 0,
