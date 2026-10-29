@@ -71,3 +71,10 @@ Two D items, both reachable only through unchecked pasted settings JSON, and one
 1. D1: let `SenseKernels.create` or the Ecosystem constructor fall back to JS for more than 8 hidden layers, as it does for rays, or validate `brain.hiddenLayers` to the form's 1-4 in `settingsIO`. A test for the fallback.
 2. D2: validate pasted `eco.maxPopulation` and `initialPopulation` to the save maximum of 20000.
 3. Pin 63 and 64 rays on the sense kernel with one cheap test (species 0 and 3), and a species set with unequal start energies for B2.
+
+## Fixes (idea 153)
+
+- D1: `checkHiddenLayers` (`ecoConfig.ts`, `MAX_HIDDEN_LAYERS = 8`) runs in `parseWithPreset` (`settingsIO.ts`) and `checkedConfig` (`ecoState.ts`). A pasted or saved brain with 9 or more hidden layers now fails with `config "brain.hiddenLayers" must have at most 8 layers, got N.` at validation, not at the first attach. Test: `ecosystem.test.ts` "brain depth limit" (8 layers run on the kernels, 9 refused on restore), `settingsIO.test.ts`.
+- D2: `parseWithPreset` clamps `eco.maxPopulation`, `initialPopulation` and `birthReserve` to `MAX_CREATURES = 20000` (moved from `ecoState.ts` to `ecoConfig.ts`, same value), so the 65535 grid guard is out of reach of settings. The forms' 10000 and `retune`'s cap are unchanged. Saves already refused above 20000. Pasted species are rejected, so no species `founders` to clamp. Test: `settingsIO.test.ts`.
+- Gaps: `wasmKernels.test.ts` runs 62, 63 and 64 rays (species 0 and 3, spreads 1.5 and 2 pi) and ray lengths 2048, 2049 and 5000 around rock against the JS senser, bit for bit. `wasmCrowd.test.ts` pins `packsOwnSignal` (start energies 50/120 and 90/50 take the `prepareRows` twin, 50/50 and 120/120 the crowd kernel's pack) and that the rows equal the twin bit for bit.
+- Engine code is unchanged for every valid world (constants and validation only); fingerprints checked below.
