@@ -6,6 +6,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- RL Arena: Corral (Fight, 16 weak foragers in a pen, only rams pay) and Lap (Time pressure, Ring road's lane with an early reward) are new envs; Lap misses the E5 check (random designs always score 0) and Corral needs 66 seeds for E4 (`docs/rl-envs.md`). Existing envs are unchanged
+
 ## 0.2.8 (2026-10-28)
 
 - Live, Ecosystem and Trials: the abyssal floor is a little lighter (floor colour and a softer dark mottle).

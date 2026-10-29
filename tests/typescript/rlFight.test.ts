@@ -3,7 +3,7 @@ import type { EnvSpec } from "../../src/typescript/src/sim/rl/env.ts";
 import type { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
 import { ENVS, envById, groupOf } from "../../src/typescript/src/sim/rl/envs.ts";
 
-const NEW_FIGHT = ["ambush", "turf-war", "cull"];
+const NEW_FIGHT = ["ambush", "turf-war", "cull", "corral"];
 
 describe("fight envs", () => {
   it("are filed under Fight, keep within the custom env limits and play an episode", () => {
@@ -13,6 +13,11 @@ describe("fight envs", () => {
       expect(typeof checkEnv(JSON.parse(JSON.stringify(env)), "ecosystem", 0)).not.toBe("string");
       expect(Number.isFinite(runEpisode({ ...env, seconds: 3 }, randomLearner(env, 1), 7).reward)).toBe(true);
     }
+  });
+
+  it("Corral pays rams only", () => {
+    const env = envById("corral")!;
+    expect(env.reward).toEqual({ ram: 1 });
   });
 
   it("Fight holds at least four envs", () => {
