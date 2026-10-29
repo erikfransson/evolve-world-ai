@@ -156,6 +156,12 @@ describe("WasmBrainBank", () => {
     expect(() => bank.set(1, nine, randomGenome(nine, rng), 0)).toThrow(/layer sizes/);
   });
 
+  it("rejects a run list on an empty bank with the usual error", () => {
+    const bank = WasmBrainBank.createSync()!;
+    new Int32Array(bank.memory.buffer).set([0], bank.runRegion(1) >> 2);
+    expect(() => bank.forwardRun(1)).toThrow(/without a brain/);
+  });
+
   it("gives the same output bits wherever the first layer is split between the ray rows and the rest", async () => {
     const bank = WasmBrainBank.createSync()!;
     const rng = testRng(33);
