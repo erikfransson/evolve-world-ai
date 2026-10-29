@@ -1,4 +1,5 @@
 import { generatedSource } from "../../src/typescript/scripts/wasmAssemble.ts";
+import { expandTemplates } from "../../src/typescript/scripts/watTemplate.ts";
 import { Brain, genomeLength, layerSizes, randomGenome } from "../../src/typescript/src/sim/brain.ts";
 import { Crowd } from "../../src/typescript/src/sim/crowd.ts";
 import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
@@ -25,6 +26,14 @@ describe("wasm toolchain", () => {
   it("kernels.generated.ts matches the .wat sources (run `npm run wasm` after editing them)", async () => {
     const committed = readFileSync(new URL("../../src/typescript/src/sim/wasm/kernels.generated.ts", import.meta.url), "utf8");
     expect(await generatedSource()).toBe(committed);
+  });
+
+  it("expands def, for and if templates and leaves layout names alone", () => {
+    const text = "{{def reg i o}}(a@i @o){{end}}{{def grp n pf}}{{for i @n}}{{reg @i @o}}{{end}}{{if @pf}}P{{end}}{{end}}{{grp 3 1}}|{{grp 2 0}}|{{OFF}}";
+    expect(expandTemplates(text, "t.wat", (n) => n === "OFF")).toBe("(a0 0)(a1 16)(a2 32)P|(a0 0)(a1 16)|{{OFF}}");
+    expect(() => expandTemplates("{{nope}}", "t.wat", () => false)).toThrow(/unknown template/);
+    expect(() => expandTemplates("{{for i 2}}x", "t.wat", () => false)).toThrow(/unclosed/);
+    expect(() => expandTemplates("{{def m a}}{{end}}{{m}}", "t.wat", () => false)).toThrow(/takes 1/);
   });
 
   it("the layout fits the sense record, the brain input extras and the row", () => {
