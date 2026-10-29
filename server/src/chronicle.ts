@@ -20,7 +20,8 @@ interface Group {
 // wireName by raw engine name: a pure function of the string, and the family rows ask for it every second. Bounded by clearing when full.
 const parsedNames = new Map<string, { name: string; starter: boolean; key: string }>();
 const MAX_PARSED_NAMES = 2048;
-function parsedName(raw: string): { name: string; starter: boolean; key: string } {
+export function parsedNameCacheSize(): number { return parsedNames.size; } // for the bound test
+export function parsedName(raw: string): { name: string; starter: boolean; key: string } {
   let p = parsedNames.get(raw);
   if (!p) {
     if (parsedNames.size >= MAX_PARSED_NAMES) parsedNames.clear();

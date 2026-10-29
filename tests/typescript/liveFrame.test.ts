@@ -1,5 +1,6 @@
 // @vitest-environment node
 // Idea 138: the viewer frame path rewritten for speed must give the same bytes, records, family list and detail rows as before.
+import { parsedName, parsedNameCacheSize } from "../../server/src/chronicle.ts";
 import { LiveWorld } from "../../server/src/liveWorld.ts";
 import { namedTop } from "../../server/src/chronicle.ts";
 import { encodeMembers } from "../../server/src/memberFrame.ts";
@@ -217,5 +218,14 @@ describe("followed creatures", () => {
     expect(b.rows).toEqual(a.rows);
     expect(b.fingerprint).toBe(a.fingerprint);
     expect(a.rows.some((r) => r.length > 0)).toBe(true);
+  });
+});
+
+describe("the parsed-name cache", () => {
+  it("stays under its bound through more distinct names than it holds, and still parses after the clear", () => {
+    for (let i = 0; i < 2100; i++) parsedName(`Name${i}`);
+    expect(parsedNameCacheSize()).toBeLessThanOrEqual(2048); // red without the clear: 2100
+    expect(parsedName("Name5").name).toBe(parsedName("Name5").name);
+    expect(parsedName("Zed").name).toBe("Zed");
   });
 });
