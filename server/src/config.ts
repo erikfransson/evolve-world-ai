@@ -13,7 +13,7 @@ export const MAX_POPULATION = 5000;
 // MemoryMax=1G and --max-old-space-size=768 like the unit, 50000 x 31250 world, items at the admin's largest caps, 7.02 M weights:
 // 2900 creatures save 45 MB, peak 605 MB writing, 556 MB at a start and 607 MB at an admin load over a full world; 5000 creatures
 // 45 MB, 623, 539 and 631 MB. Earlier (2026-10-22, 2 GB cap) 13 M weights were 77 MB of JSON and 1234 MB to read back.
-// The budget binds before the population for big brains: the four founders (1876 weights each on average) fill it near 3300 creatures,
+// The budget binds before the population for big brains: the three founders (2207 weights each on average) fill it near 2800 creatures,
 // the Juggernaut alone (1236) fits 5000. Measured without helper threads (HELPER_THREADS 0, the unit's default): helpers keep their
 // own copies of the brains, so measure again under MemoryMax before setting LIVE_THREADS.
 // Births stop WEIGHT_RESERVE short of it, as at the birth reserve, so visitors' adds still fit; adds past it are refused.
@@ -39,6 +39,8 @@ liveConfig.eco.poisonRegrow = 0.0003;
 liveConfig.eco.poisonMaxDensity = 0.01;
 liveConfig.eco.collisionDamage = true;
 liveConfig.eco.killEnergy = 5; // a kill also gives this much energy, on top of the loser's (Erik, 2026-10-17: at 25 the Juggernaut took over, tuning-notes)
+liveConfig.creature.neuronCost = 0; // free brains and cheaper eyes (Ecosystem 0.005 and 0.02) so the Oracle survives beside the Grazer (Erik, 2026-10-27, docs/tuning-notes.md)
+liveConfig.creature.rayCost = 0.01;
 liveConfig.eco.maxPopulation = MAX_POPULATION; // bounds the frame size, so the viewer budget holds
 liveConfig.eco.birthReserve = 100; // births stop 100 below the cap, so visitors can still add (insertCreature fills to maxPopulation)
 liveConfig.eco.seasons = true;
@@ -61,7 +63,7 @@ export const MAX_SEED_FOUNDERS = MAX_FOUNDERS; // the same bound as the pages (l
 export const MAX_POOL = 30; // variants per founder
 export const MAX_POOL_WEIGHTS = 400_000; // in the whole pools file: 30 variants of the 4506-weight Oracle are 135 000
 export const MAX_POOLS_FILE_BYTES = 4 * 1024 * 1024; // 400 000 weights at 3 decimals are about 3 MB
-export const MAX_FOUNDERS_FILE_BYTES = 512 * 1024; // 4 trained founders are 57 kB; 8 of the largest genomes an add allows (7538 weights, about 60 kB each) fit
+export const MAX_FOUNDERS_FILE_BYTES = 512 * 1024; // 3 trained founders are 51 kB; 8 of the largest genomes an add allows (7538 weights, about 60 kB each) fit
 
 // Item slots are fixed when a world is built, so it is built with room for admin to raise the food and poison caps (densities).
 // Up to ITEM_HEADROOM where that fits (small worlds); else the slots are held to ITEM_SLOT_SHARE of the wire's MAX_ITEM_SLOTS:
