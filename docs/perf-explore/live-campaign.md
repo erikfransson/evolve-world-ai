@@ -73,6 +73,8 @@ Fingerprint equal means bit-identical results.
 | 2026-10-29 07:02 | Juggernaut x 4900 (3 pairs, medians, batch23, noisy) | 16.11 | 10.69 | 1.51x (exact, noisy; batch22 gave 1.74x on the same engine bytes but for 154) | 258 / 237 MB |
 | 2026-10-29 07:14 | 4 founders x 800 (3 pairs, medians, batch24, quiet machine, head with 152-154) | 12.75 | 7.84 | 1.63x (exact) | 253 / 203 MB |
 | 2026-10-29 07:14 | Juggernaut x 4900 (3 pairs, medians, batch24) | 15.70 | 8.94 | 1.76x (exact) | 256 / 237 MB |
+| 2026-10-29 07:59 | 4 founders x 800 (3 pairs, medians, batch25, head 0cb0787 after the quality fixes 156-163) | 13.04 | 8.26 | 1.58x (exact) | 219 / 200 MB |
+| 2026-10-29 07:59 | Juggernaut x 4900 (3 pairs, medians, batch25) | 15.92 | 9.20 | 1.73x (exact) | 257 / 236 MB |
 
 Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54, brain forward 5.23 / 5.17, slots (prepareRows) 1.04 / 1.52, memory and steer 1.26 / 1.59, eat 1.05 / 1.35, crowd grid 0.51 / 0.67, collisions 0.18 / 0.27, rest under 0.2. Server frame encoding adds 0.57 ms per tick at 5 Hz. Speed achieved unpaced on this loaded machine: 2.0x and 1.7x real time (the set speed is 3x).
 
@@ -577,3 +579,4 @@ Head phases 2026-10-28 14:50 (253f894, load 6-7, `scout-head.md`; ms per tick, 3
 - 2026-10-29 07:46 idea 162 built; review round 18 (Opus) running since it changes the species block layout and a kernel path for other worlds.
 - 2026-10-29 07:52 idea 162 merged after rebasing onto 161 (no drift). Remaining: 158 and the soak.
 - 2026-10-29 07:53 idea 158 merged. All quality-review fixes (156-163) are in; brainKernel.ts 333 lines plus blockChunks.ts 157, sense.wat with macros, wasmKernels.test.ts 391. Factor batch25 and the full suite next, then the soak collection at 11:09.
+- 2026-10-29 07:59 factor batch25 after the quality fixes: 1.58x mixed / 1.73x cap (batch24 before them: 1.63x / 1.76x). The mixed drop is inside the day's spread but Erik's rule is that the boost must survive the clean-up, so a direct A/B of the pre-fix head d3ade3a against the current head runs next (5 pairs).
