@@ -502,3 +502,4 @@ Head phases 2026-10-28 14:50 (253f894, load 6-7, `scout-head.md`; ms per tick, 3
 - 2026-10-29 02:07 factor batch20 on f647f58 (116, 125, 126, 128, 140, 143): 1.57x mixed / 1.61x cap, fingerprints equal, perf-live peak RSS now below the base (204 vs 253 mixed, 238 vs 258 cap) from idea 140.
 - 2026-10-29 02:08 idea 142 parked (0.3-0.4%): the engine JS between the kernels is miss bound, nothing left at the bar.
 - 2026-10-29 02:09 idea 141 parked (0.9%, exact): cell order is dead for prepare; the mask-plus-blend is a bundle candidate with 142 (0.3-0.4%).
+- 2026-10-29 02:10 spawned 146 (save peak: the verify worker holds 120-135 MB for 20 s; cut 60 MB or more without weakening the restore guarantee) and 147 (bundle: two-lane fdlibm trig in step plus a u16 crowd cellStart table). Running: review 13 of 127, 138, 144, 146, 147. The exact single-idea pool is dry at 1.5%; what remains are bundles of sub-1% exact tidies (141, 142 parked), memory work and the server path.
