@@ -9,6 +9,7 @@
   ;; The first layer then runs as two passes over the same column groups, the ray entries of the list first (partial sum stored to dst), the rest on top; the adds keep their order.
   ;; Columns go in groups of up to six vectors (24 outputs, so a 24-wide layer is one pass over the inputs) that stay in registers across the input loop; tanh runs on them before they are stored.
   ;; The groups of up to four vectors also touch two lines at pf per input (pf moves 128 bytes while below pe, the next brain's weights), so the hardware prefetcher streams them in early (WASM has no prefetch).
+  ;; Every touch stays in bounds: pe is the next block's inputs minus 256 (or 0 for the last brain), so pf never reaches past them.
   ;; Compaction, layers and tanh are all in this one function: V8 does not inline a call, and the calls per layer cost stack arguments and spills (idea 127).
   (func (export "forward") (param $desc i32) (param $slots i32) (param $nb i32) (param $sa i32) (param $sb i32) (param $nz i32) (param $iota i32) (param $tab i32)
     (local $bd i32) (local $c i32) (local $pf i32) (local $pe i32) (local $kt i32)

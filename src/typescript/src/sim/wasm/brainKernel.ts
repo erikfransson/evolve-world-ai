@@ -14,6 +14,7 @@ const TAB_AT = NZ_AT + SCRATCH_B + 64; // shuffle and count tables of the index 
 const TANH_AT = TAB_AT + 272; // brain.wat reads the constants at tab + 272
 const TANH_CONSTS = [135135, 17325, 378, 62370, 3150, 28, -0, 1, 4.97]; // -0 is the sign mask; 9 splat vectors
 const ARENA_START = TAB_AT + 512;
+if (TANH_AT + 16 * TANH_CONSTS.length > ARENA_START) throw new Error("the tanh constants overlap the arena");
 const DESC_WORDS = 16;
 const DESC_SIZES = 6; // descriptor words before the layer sizes: block, input, output, size count, ray inputs, ray rows
 const MAX_SIZES = DESC_WORDS - DESC_SIZES;
