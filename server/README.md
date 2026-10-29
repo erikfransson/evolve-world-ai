@@ -20,6 +20,7 @@ The wire format is in `src/typescript/src/live/protocol.ts`.
 - Admin listens on loopback only, needs a token kept on the host, and accepts browsers only from its own page.
 - Saves are gzipped JSON, read only as regular files, parsed and validated on a worker before a restore; a bad save falls back to an older one.
 - `evolve-live.service.template` runs it as a sandboxed systemd user service: lowest CPU and IO priority, memory cap, home hidden except the checkout and the state dir.
+  When the template changes (as `--max-semi-space-size=4` did in 0.2.9), copy the change into the installed unit, run `systemctl --user daemon-reload`, then restart.
 
 ## Development
 `npm ci`, then `npm start` (ports and paths via `LIVE_PORT`, `LIVE_ADMIN_PORT`, `LIVE_STATE_DIR`, `LIVE_WEB_ROOT`).

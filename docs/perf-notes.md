@@ -171,7 +171,7 @@ Details and rejected f64x2 variant in `docs/perf-explore/wasm.md`.
 
 ## Live World speed campaign (2026-10-27)
 
-The server tick of the Inland Sea (one thread, cap 5000) went about 1.48x faster on the mixed case and 1.46x at the cap, bit-identical, with `server/src/liveBench.ts` as the benchmark. Ideas, numbers and verdicts are in `docs/perf-explore/live-campaign.md`; the older sections here predate it.
+The server tick of the Inland Sea (one thread, cap 5000) went about 1.65x faster on the mixed case and 1.72x at the cap, bit-identical, with `server/src/liveBench.ts` as the benchmark. Ideas, numbers and verdicts are in `docs/perf-explore/live-campaign.md`; the older sections here predate it.
 
 ## RL episodes (single thread)
 

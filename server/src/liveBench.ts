@@ -2,7 +2,7 @@
 // Prints CPU ms per steady tick, the phase profile, peak RSS and a fingerprint (equal runs give equal fingerprints).
 // Usage (in server/): node src/liveBench.ts [--seconds 60] [--copies 800] [--seed 1] [--founders ../src/typescript/public/live-founders.json]
 //   [--dt 0.0333] [--memcomp] [--only juggernaut,grazer] [--frames [--idle]] [--profile] [--profileEvery 300] [--every 10] [--threads 0] [--think 1] [--save 15]
-// --copies: copies of each founder seeded (4 founders x 800 = 3200 creatures, 6 M brain weights, under the birth weight cap).
+// --copies: copies of each founder seeded (3 founders x 800 = 2400 creatures, about 5.3 M brain weights; the campaign numbers were measured with 4 founders, 3200 creatures).
 // --only: seed these founder ids only (so --only juggernaut --copies 4900 fills the 5000 cap with small brains).
 // --frames: also encode the creature frame and item delta at the server's 5 Hz (FRAME_MS), as the public loop does for viewers.
 // --dt: seconds per tick instead of liveConfig's (1/30); --memcomp: with it, scale the memory rates so their time constants in seconds stay as at 1/30.
