@@ -1,6 +1,7 @@
 import { Arena, BRAIN_BYTES, Kernel } from "./loader.ts";
 import type { Genome } from "../types.ts";
 import { LAYOUT as L, i32At } from "./layout.ts";
+import { BlockChunks } from "./blockChunks.ts";
 
 // Batched Brain.forward on f32x4 SIMD, for creatures with brains of any layer sizes (up to 9 layers).
 // Each slot holds one creature's weights in linear memory, so set() once when a brain is born or changes and runRegion() with forwardRun() every tick.
@@ -27,9 +28,6 @@ const D_RAY_ROWS = i32At(L.B_RAY_ROWS);
 const DESC_SIZES = i32At(L.B_SIZES); // descriptor words before the layer sizes
 const MAX_SIZES = DESC_WORDS - DESC_SIZES;
 const NO_SLOT = -1;
-const BLOCK_ALIGN = 64; // brain blocks are laid back to back in chunks, each starting on a cache line
-const CHUNK_BYTES = 1 << 20;
-const HOLE_SHARE = 16; // a chunk is compacted when 1/HOLE_SHARE of its used bytes is hole
 
 interface BrainExports extends WebAssembly.Exports {
   forward(desc: number, slots: number, n: number, scratchA: number, scratchB: number, nz: number, iota: number, tab: number): void;
@@ -37,20 +35,13 @@ interface BrainExports extends WebAssembly.Exports {
 }
 
 const pad4 = (n: number): number => (n + 3) & ~3;
-const alignUp = (n: number): number => (n + BLOCK_ALIGN - 1) & ~(BLOCK_ALIGN - 1);
-
-// A run of arena memory the brain blocks are bump-allocated in: top bytes used, live of them held by blocks, the rest holes.
-interface Chunk { ptr: number; cap: number; top: number; live: number }
 
 export class WasmBrainBank {
   private readonly kernel: Kernel<BrainExports>;
   private arena!: Arena;
-  private blockPtr!: (number | undefined)[];
-  private blockBytes!: number[];
-  private blockChunk!: number[];
+  private blocks!: BlockChunks; // where each slot's block sits, and the slots by block address
   private rayPtr!: (number | undefined)[]; // per slot, the first-layer rows of the ray inputs, outside the block (they are mostly dead, so the block stays small and dense)
   private rayBytes!: number[];
-  private chunks!: Chunk[];
   onMove: ((slot: number) => void) | null = null; // called for each slot whose block moved (compact(), or a chunk slid by place() inside another slot's set()), after its input and output addresses changed
   private inFloat!: number[];
   private outFloat!: number[];
@@ -58,11 +49,8 @@ export class WasmBrainBank {
   private descCap!: number;
   private runPtr!: number; // slot numbers of one forwardRun
   private runCap!: number;
-  private order!: Int32Array; // the slots holding a brain, by block address, so forwardRun streams the weights in memory order
-  private held!: number;
-  private orderPtr!: number; // a copy of order in kernel memory for runOrder, rewritten by forwardRun after order changed
+  private orderPtr!: number; // a copy of blocks.order in kernel memory for runOrder, rewritten by forwardRun after the order changed
   private orderCap!: number;
-  private orderDirty!: boolean;
   private markPtr!: number; // per slot (descCap bytes), the stamp (1 to 255) of the forwardRun it is in
   private stamp!: number;
 
@@ -89,26 +77,23 @@ export class WasmBrainBank {
 
   // The state of a new bank, for the constructor and reset(); every field that reset() must clear is set here.
   private init(): void {
-    this.blockPtr = [];
-    this.blockBytes = [];
-    this.blockChunk = [];
     this.rayPtr = [];
     this.rayBytes = [];
-    this.chunks = [];
     this.inFloat = [];
     this.outFloat = [];
     this.descPtr = NO_SLOT;
     this.descCap = 0;
     this.runPtr = NO_SLOT;
     this.runCap = 0;
-    this.order = new Int32Array(64);
-    this.held = 0;
     this.orderPtr = NO_SLOT;
     this.orderCap = 0;
-    this.orderDirty = true;
     this.markPtr = NO_SLOT;
     this.stamp = 0;
     this.arena = new Arena(this.kernel, ARENA_START);
+    this.blocks = new BlockChunks(this.arena, {
+      relocate: (slot, from, to, bytes) => this.relocate(slot, from, to, bytes),
+      moved: (slots) => { if (this.onMove) for (const slot of slots) this.onMove(slot); },
+    });
   }
 
   // Null when WebAssembly SIMD is unavailable (or disabled); keep using the JS Brain then.
@@ -178,14 +163,7 @@ export class WasmBrainBank {
     const rayBytes = rayInputs * nPad0 * 4;
     const bytes = (weightFloats - rayInputs * nPad0 + pad4(nIn) + pad4(nOut)) * 4;
     this.ensureSlots(slot + 1);
-    let ptr = this.blockPtr[slot]!;
-    if (ptr === undefined || alignUp(this.blockBytes[slot]!) !== alignUp(bytes)) {
-      if (ptr !== undefined) this.freeBlock(slot);
-      ptr = this.place(slot, alignUp(bytes));
-      this.blockPtr[slot] = ptr;
-      this.reorder(slot, ptr);
-    }
-    this.blockBytes[slot] = bytes;
+    const ptr = this.blocks.set(slot, bytes);
     let rayAt = this.rayPtr[slot];
     if (rayAt !== undefined && Arena.round(this.rayBytes[slot]!) !== Arena.round(rayBytes)) {
       this.arena.release(rayAt, this.rayBytes[slot]!);
@@ -265,60 +243,35 @@ export class WasmBrainBank {
 
   // Frees the slot's brain block (a creature that left for good), so the slot holds no brain until set again.
   release(slot: number): void {
-    const ptr = this.blockPtr[slot];
-    if (ptr === undefined) return;
-    this.freeBlock(slot);
-    this.blockPtr[slot] = undefined;
-    this.blockBytes[slot] = 0;
+    if (this.blocks.ptr(slot) === undefined) return;
+    this.blocks.release(slot);
     if (this.rayPtr[slot] !== undefined) this.arena.release(this.rayPtr[slot]!, this.rayBytes[slot]!);
     this.rayPtr[slot] = undefined;
   }
 
-  // Slides the live blocks of the chunk with the most hole down over its holes (when the hole is over 1/HOLE_SHARE of its used bytes), so the
-  // run-order stream of weights has no gaps. Block contents are copied whole, so results are unchanged; onMove tells the owner of each moved slot.
+  // Slides the live blocks of the chunk with the most hole down over its holes, so the run-order stream of weights has no gaps; onMove tells the owner of each moved slot.
   compact(): void {
-    let worst = -1;
-    let most = 0;
-    for (let c = 0; c < this.chunks.length; c++) {
-      const hole = this.chunks[c]!.top - this.chunks[c]!.live;
-      if (hole > most && hole * HOLE_SHARE > this.chunks[c]!.top) { most = hole; worst = c; }
-    }
-    if (worst >= 0) this.slideChunk(worst);
+    this.blocks.compact();
   }
 
-  private slideChunk(c: number): void {
-    const ch = this.chunks[c]!;
-    const f32 = this.kernel.f32;
+  // A block slid from `from` to `to`: copies it whole and moves the slot's descriptor and input and output addresses along.
+  private relocate(slot: number, from: number, to: number, bytes: number): void {
+    this.kernel.f32.copyWithin(to >> 2, from >> 2, (from + bytes) >> 2);
+    const shift = to - from;
     const d = this.kernel.i32;
-    const moved: number[] = [];
-    let at = ch.ptr;
-    for (let k = this.find(ch.ptr); k < this.held && this.blockChunk[this.order[k]!] === c; k++) {
-      const slot = this.order[k]!;
-      const ptr = this.blockPtr[slot]!;
-      const bytes = this.blockBytes[slot]!;
-      if (ptr !== at) {
-        f32.copyWithin(at >> 2, ptr >> 2, (ptr + bytes) >> 2);
-        const shift = at - ptr;
-        const w = (this.descPtr >> 2) + slot * DESC_WORDS;
-        d[w + D_BLOCK] = at;
-        d[w + D_INPUT] += shift;
-        d[w + D_OUTPUT] += shift;
-        this.blockPtr[slot] = at;
-        this.inFloat[slot] += shift >> 2;
-        this.outFloat[slot] += shift >> 2;
-        moved.push(slot);
-      }
-      at += alignUp(bytes);
-    }
-    ch.top = at - ch.ptr;
-    if (this.onMove) for (const slot of moved) this.onMove(slot);
+    const w = (this.descPtr >> 2) + slot * DESC_WORDS;
+    d[w + D_BLOCK] = to;
+    d[w + D_INPUT] += shift;
+    d[w + D_OUTPUT] += shift;
+    this.inFloat[slot] += shift >> 2;
+    this.outFloat[slot] += shift >> 2;
   }
 
   // Runs the slots slots[0 .. count-1] in that order, each of which must hold a brain; e.g. one thread's share of the creatures.
   forwardSlots(slots: Int32Array, count: number): void {
     if (count <= 0) return;
     const run = this.runRegion(count);
-    for (let k = 0; k < count; k++) if (this.blockPtr[slots[k]!] === undefined) throw new Error(`slot ${slots[k]} holds no brain`);
+    for (let k = 0; k < count; k++) if (this.blocks.ptr(slots[k]!) === undefined) throw new Error(`slot ${slots[k]} holds no brain`);
     this.kernel.i32.set(slots.subarray(0, count), run >> 2);
     this.kernel.exports.forward(this.descPtr, run, count, 0, SCRATCH_B, NZ_AT, IOTA_AT, TAB_AT);
   }
@@ -337,93 +290,28 @@ export class WasmBrainBank {
   // The slots are run by block address instead of in the written order; each brain depends only on its own block, so the results are the same.
   forwardRun(count: number): void {
     if (count <= 0) return;
-    if (this.orderDirty) this.copyOrder();
+    if (this.blocks.orderDirty) this.copyOrder();
     if (this.stamp >= 255) { // the marks are bytes: clear them and start the stamps over
       new Uint8Array(this.kernel.memory.buffer, this.markPtr, this.descCap).fill(0);
       this.stamp = 0;
     }
-    const placed = this.kernel.exports.runOrder(this.runPtr, count, this.orderPtr, this.held, this.markPtr, this.descCap, ++this.stamp);
+    const placed = this.kernel.exports.runOrder(this.runPtr, count, this.orderPtr, this.blocks.held, this.markPtr, this.descCap, ++this.stamp);
     if (placed !== count) throw new Error("brain run list holds a slot without a brain, or one twice");
     this.kernel.exports.forward(this.descPtr, this.runPtr, count, 0, SCRATCH_B, NZ_AT, IOTA_AT, TAB_AT);
   }
 
-  // Writes order into kernel memory.
+  // Writes the order of the blocks into kernel memory.
   private copyOrder(): void {
-    if (this.held === 0) { // nothing to mirror: the kernel then places no slot and forwardRun throws its usual error
-      this.orderDirty = false;
-      return;
+    const { order, held } = this.blocks;
+    if (held > 0) { // with nothing to mirror the kernel places no slot, and forwardRun throws its usual error
+      if (held > this.orderCap) {
+        if (this.orderPtr !== NO_SLOT) this.arena.release(this.orderPtr, this.orderCap * 4);
+        this.orderCap = order.length;
+        this.orderPtr = this.arena.alloc(this.orderCap * 4);
+      }
+      this.kernel.i32.set(order.subarray(0, held), this.orderPtr >> 2);
     }
-    if (this.held > this.orderCap) {
-      if (this.orderPtr !== NO_SLOT) this.arena.release(this.orderPtr, this.orderCap * 4);
-      this.orderCap = this.order.length;
-      this.orderPtr = this.arena.alloc(this.orderCap * 4);
-    }
-    this.kernel.i32.set(this.order.subarray(0, this.held), this.orderPtr >> 2);
-    this.orderDirty = false;
-  }
-
-  // A block of size bytes (a multiple of BLOCK_ALIGN) at the end of the first chunk with room, else of a new chunk.
-  private place(slot: number, size: number): number {
-    let c = 0;
-    while (c < this.chunks.length && this.chunks[c]!.top + size > this.chunks[c]!.cap) c++;
-    if (c === this.chunks.length) { // no room at any end: slide the chunk with the most hole if that makes room, else a new chunk
-      let roomy = -1;
-      for (let i = 0; i < c; i++) if (this.chunks[i]!.cap - this.chunks[i]!.live >= size && (roomy < 0 || this.chunks[i]!.live < this.chunks[roomy]!.live)) roomy = i;
-      if (roomy >= 0) { this.slideChunk(roomy); c = roomy; }
-    }
-    if (c === this.chunks.length) {
-      const cap = Math.max(CHUNK_BYTES, size);
-      this.chunks.push({ ptr: this.arena.alloc(cap), cap, top: 0, live: 0 });
-    }
-    const ch = this.chunks[c]!;
-    const ptr = ch.ptr + ch.top;
-    ch.top += size;
-    ch.live += size;
-    this.blockChunk[slot] = c;
-    return ptr;
-  }
-
-  // Gives the slot's block back to its chunk: the hole stays until compact() unless the block is the last one, then the chunk's end moves back.
-  private freeBlock(slot: number): void {
-    const ptr = this.blockPtr[slot]!;
-    const size = alignUp(this.blockBytes[slot]!);
-    const ch = this.chunks[this.blockChunk[slot]!]!;
-    ch.live -= size;
-    const k = this.find(ptr);
-    if (ptr + size === ch.ptr + ch.top) {
-      const prev = k > 0 ? this.order[k - 1]! : -1;
-      ch.top = prev >= 0 && this.blockChunk[prev] === this.blockChunk[slot] ? this.blockPtr[prev]! + alignUp(this.blockBytes[prev]!) - ch.ptr : 0;
-    }
-    this.unorder(k);
-  }
-
-  private unorder(k: number): void {
-    this.order.copyWithin(k, k + 1, this.held--);
-    this.orderDirty = true;
-  }
-
-  private reorder(slot: number, ptr: number): void {
-    if (this.held === this.order.length) {
-      const grown = new Int32Array(2 * this.held);
-      grown.set(this.order);
-      this.order = grown;
-    }
-    const k = this.find(ptr);
-    this.order.copyWithin(k + 1, k, this.held++);
-    this.order[k] = slot;
-    this.orderDirty = true;
-  }
-
-  // The first place in order whose block is at ptr or above.
-  private find(ptr: number): number {
-    let lo = 0;
-    let hi = this.held;
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1;
-      if (this.blockPtr[this.order[mid]!]! < ptr) lo = mid + 1;
-      else hi = mid;
-    }
-    return lo;
+    this.blocks.orderDirty = false;
   }
 
   private ensureSlots(n: number): void {
