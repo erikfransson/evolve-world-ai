@@ -525,6 +525,19 @@ describe("helper spare creature pool", () => {
     expect(JSON.stringify(saveState(eco))).toBe(before);
   });
 
+  it.skipIf(!wasmAvailable())("reset with a genome of the wrong length throws and leaves a lent brain as it was", () => {
+    const eco = new Ecosystem(cfg(), null);
+    for (let t = 0; t < 50; t++) eco.step();
+    const c = eco.members.find((m) => m.creature.brain.lent)!.creature;
+    const before = Float32Array.from(c.brain.genome);
+    const sizes = c.brain.sizes.slice();
+    expect(() => c.reset(new Float32Array(before.length + 3), 0, 0, 0, 1, c.plan)).toThrow(/genome length/);
+    expect(c.brain.lent).toBe(true);
+    expect(c.brain.genomeLength).toBe(before.length);
+    expect(c.brain.sizes).toEqual(sizes);
+    expect(Buffer.from(c.brain.genome.buffer).equals(Buffer.from(before.buffer))).toBe(true);
+  });
+
   it.skipIf(!wasmAvailable())("frees the kernel resources of dropped creatures for reuse", () => {
     const config = cfg();
     const eco = new Ecosystem(config, null);

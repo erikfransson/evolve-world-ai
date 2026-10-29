@@ -619,18 +619,19 @@ export class Ecosystem {
     const pc = parent.creature;
     const plan = this.childPlan;
     copyPlan(pc.plan, plan);
-    let source = pc.brain.genome;
+    let source: Float32Array | null = null; // null: the parent's own weights, copied once below
     if (eco.planDrift > 0) driftPlan(plan, eco.planDrift, ranges, this.rng);
     if (eco.structuralRate > 0 && this.rng.next() < eco.structuralRate) {
       const maps = mutateStructure(plan, inputLayout(this.config, pc.plan), pc.brain.sizes, ranges, this.rng);
       if (maps) {
         this.remapped = refit(this.remapped, genomeLength(maps.map((m) => m.length)));
-        remapWeights(pc.brain.sizes, source, maps, this.remapped, this.rng);
+        remapWeights(pc.brain.sizes, pc.brain.genome as Float32Array, maps, this.remapped, this.rng);
         source = this.remapped;
       }
     }
-    const genome = (this.childGenome = refit(this.childGenome, source.length));
-    genome.set(source);
+    const genome = (this.childGenome = refit(this.childGenome, source ? source.length : pc.brain.genomeLength));
+    if (source) genome.set(source);
+    else pc.brain.genomeInto(genome);
     mutate(genome, this.config.mutation.rate, this.config.mutation.std * parent.mutationScale, this.rng, this.wasmMembers);
     const traits = this.traits;
     traits.energy = parent.birth.energy;

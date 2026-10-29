@@ -225,6 +225,7 @@ export class ShareCoordinator {
   private readonly ownerOf = new Map<number, number>();
   private readonly costOf = new Map<number, number>();
   private readonly load: Float64Array;
+  private bornGenome = new Float32Array(0); // scratch: one born creature's weights on their way into a packet
   private readonly genomeAt: Float64Array; // words of genomes written into each helper's packet this tick
   private readonly batch = new SenseBatch();
   private stride = 0; // most memory units of any creature so far
@@ -281,11 +282,11 @@ export class ShareCoordinator {
       const m = eco.get(id);
       if (!m) continue; // born and died since the last packet
       const c = m.creature;
-      const genome = c.brain.genome;
+      const genomeLen = c.brain.genomeLength;
       const plan = c.plan;
       let owner = 0;
       for (let h = 1; h <= this.helpers; h++) if (this.load[h]! < this.load[owner]!) owner = h;
-      const cost = genome.length + 30 * plan.rayCount; // rough relative work of one creature
+      const cost = genomeLen + 30 * plan.rayCount; // rough relative work of one creature
       this.load[owner] += cost;
       this.ownerOf.set(id, owner);
       m.owner = owner;
@@ -301,11 +302,13 @@ export class ShareCoordinator {
       d[k++] = plan.memoryLong;
       d[k++] = plan.hiddenLayers.length;
       for (const n of plan.hiddenLayers) d[k++] = n;
-      d[k++] = genome.length;
+      d[k++] = genomeLen;
       if (owner < this.helpers) {
         const to = packets[owner]!.genomes;
         let at = genomeAt[owner]!;
-        for (let g = 0; g < genome.length; g++) to[at++] = genome[g]!;
+        const genome = (this.bornGenome = refit(this.bornGenome, genomeLen));
+        c.brain.genomeInto(genome);
+        for (let g = 0; g < genomeLen; g++) to[at++] = genome[g]!;
         const memory = c.memory; // a restored creature has memory already; the helper keeps it from here on
         for (let u = 0; u < memory.length; u++) to[at++] = memory[u]!;
         if (eco.config.eco.thinkEvery > 1) {

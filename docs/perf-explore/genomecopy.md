@@ -8,6 +8,11 @@ Branch `pl-memscout` (on perf-live 5767e22 plus the merge). Candidate 1 of `mems
 - `senseKernels.ts`: `attach(c, genome)` lends after `set`; `release` owns before the block is freed (a dropped creature keeps a readable genome). `creature.ts`: `reset` passes the genome to `attach` for a lent brain.
 - Length-only reads (`.genome.length` in `ecosystem.ts`, `ecoState.ts`, `ecoShare.ts`, `liveBench.ts`) use `genomeLength`; the save snapshot reads each genome straight into its column with `genomeInto`. Births, the helper-thread share (born packets), the viewer's genome request and carry read the `genome` getter. No-kernel creatures (RL, tests, JS path) keep the copy and are unchanged. No save-format change.
 
+## Contract notes
+- RL creatures that run through `SenseKernels` (`rl/env.ts` `kernels.reset`) are lent too. As before, a previous episode's creatures must not be read after `bank.reset()`: their blocks are gone, and a read would return whatever the next episode wrote there.
+- `Creature.reset` checks the genome length against the plan's layer sizes first, so a mismatched genome throws with the brain, plan and bank descriptor untouched (test in `ecoPool.test.ts`).
+- A birth copies the parent's weights once (`genomeInto` into the child scratch) unless a structural mutation remaps them; the helper packet reads through a scratch array, not a fresh copy.
+
 ## Exactness
 - `wasmKernels.test.ts` "readGenome rebuilds the stored genome bit for bit": 400 slots over every `SIZE_SETS` entry, ray inputs 0, 1, all and half, after releases, 20 `compact()` calls and refills with other layouts.
 - `ecoPool.test.ts` "kernel creatures lend their genome...": after 400 ticks all members but the detail one are lent, lengths agree, and the saved state is identical after `own()` on all.
