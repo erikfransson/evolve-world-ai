@@ -35,3 +35,25 @@ Why no flag can help much: GC is about 2% of CPU, and the WASM kernels tier up t
 No flag makes the tick cheaper: every ratio is within the 1-2% pair noise, the only real differences are losses (`--no-wasm-loop-unrolling` +5%, `--no-wasm-inlining` +3%, `--no-wasm-dynamic-tiering` +2%), which confirms the defaults.
 Add nothing to `server/evolve-live.service.template` for speed; keep `--max-old-space-size=768`.
 Optional memory flag: `--minor-ms` gives about -30 MB peak RSS at the 5000 cap with equal speed, but it is experimental in this V8 and only a 60 s run was checked, so it would need a long soak before use (suggest not).
+
+# Idea 124: the flag sweep again on today's kernels (flags2, second round)
+Branch `pl-flags2` from perf-live 6f81ad5, no code change. `node --max-old-space-size=768 <flag> src/liveBench.ts --seconds 30`, mixed `--copies 800` and cap `--only juggernaut --copies 4900`, pinned 2,3,6,7 nice 19 idle, load 8-20.
+Per flag: base, flag, base, flag, base, flag, base (3 pairs); ratio = flag run / mean of its two adjacent bases. 40 base runs per case. Fingerprints: 654925885 (mixed) and 906134928 (cap) in all 140 runs, so no flag changes the result.
+Base spread is large (mixed 9.4-13.1 ms/tick, cap 12.9-14.5), so pair ratios swing by up to 10-20% (a first all-base run of 30 mixed runs, same script, spanned 9.4-12.6).
+
+| flag                                  | mixed ratios per pair | med   | cap ratios per pair   | med   | peakRSS mixed / cap | verdict |
+|---------------------------------------|-----------------------|-------|-----------------------|-------|---------------------|---------|
+| --no-wasm-loop-unrolling              | 0.919 1.192 1.020     | 1.020 | 1.020 1.054 1.054     | 1.054 | 210-213 / 234-249   | no, cap +5% (default right) |
+| --no-wasm-loop-peeling                | 0.951 1.045 1.047     | 1.045 | 0.997 0.899 0.982     | 0.982 | 212-215 / 235-239   | no (mixed worse, cap noise) |
+| --no-wasm-inlining                    | 1.062 1.144 1.012     | 1.062 | 1.142 1.099 1.033     | 1.099 | 211-214 / 234-241   | worse, +6 to +10% |
+| --no-turboshaft-wasm-load-elimination | 0.990 0.988 0.983     | 0.988 | 1.008 0.998 1.034     | 1.008 | 210-213 / 233-238   | no (-1.2% mixed only, cap flat) |
+| --wasm-tiering-budget=1000            | 1.031 1.018 0.995     | 1.018 | 1.012 1.064 0.988     | 1.012 | 211-216 / 236-241   | no |
+| --no-wasm-lazy-compilation            | 0.986 1.039 1.011     | 1.011 | 1.001 1.026 1.016     | 1.016 | 220-223 / 245-252   | no, +10 MB |
+| --no-liftoff                          | 0.968 0.992 0.827     | 0.968 | 0.999 1.001 0.981     | 0.999 | 211-214 / 234-240   | no (0.827 is a load dip, cap flat) |
+| --max-semi-space-size=32              | 1.015 1.014 1.004     | 1.014 | 0.998 0.989 1.019     | 0.998 | 208-213 / 238-240   | no |
+| --max-semi-space-size=64              | 1.002 0.992 0.975     | 0.992 | 0.997 0.983 0.978     | 0.983 | 209-214 / 234-239   | no (-1% to -2%, under the bar, within noise) |
+| --single-threaded-gc                  | 0.914 1.011 0.980     | 0.980 | 0.981 1.010 1.011     | 1.010 | 217-220 / 240-246   | no, +5 MB, signs disagree |
+
+Verdict: no flag reaches the 1.5% bar on both cases with consistent sign, so nothing goes into server/evolve-live.service.template.
+Only weak leads: `--max-semi-space-size=64` (5 of 6 pairs below 1.0, medians 0.992 and 0.983, no RSS cost) and `--no-turboshaft-wasm-load-elimination` (mixed 3 of 3 below 1.0, cap flat); both are inside the base noise and the first round (above) had them at 1.012 and 1.001.
+Raw: /tmp/claude-1000/-home-erik-progs-evolve-world-ai/955cd588-515f-4098-9019-fd8b6ae2ff1c/scratchpad/f2/results.txt (also results_bad_allbase.txt, 30 all-base runs from a script bug).
