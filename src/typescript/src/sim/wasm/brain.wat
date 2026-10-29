@@ -2,6 +2,32 @@
 (module
   (memory (export "mem") 1)
 
+  ;; runOrder(run, n, order, held, mark, cap, stamp): rewrites the n slots at run as those of them in the order list (held slots by block address), by stamping
+  ;; mark[slot] for each and walking the list. Returns how many it wrote, fewer than n when a slot is not below cap, holds no brain or is listed twice.
+  (func (export "runOrder") (param $run i32) (param $n i32) (param $order i32) (param $held i32) (param $mark i32) (param $cap i32) (param $stamp i32) (result i32)
+    (local $p i32) (local $e i32) (local $j i32) (local $s i32) (local $m i32)
+    (local.set $e (i32.add (local.get $run) (i32.shl (local.get $n) (i32.const 2))))
+    (local.set $p (local.get $run))
+    (block $d1 (loop $l1
+      (br_if $d1 (i32.ge_u (local.get $p) (local.get $e)))
+      (local.set $s (i32.load (local.get $p)))
+      (if (i32.lt_u (local.get $s) (local.get $cap)) (then (i32.store8 (i32.add (local.get $mark) (local.get $s)) (local.get $stamp))))
+      (local.set $p (i32.add (local.get $p) (i32.const 4)))
+      (br $l1)))
+    (local.set $j (local.get $run))
+    (local.set $p (local.get $order))
+    (local.set $m (i32.add (local.get $order) (i32.shl (local.get $held) (i32.const 2))))
+    (block $d2 (loop $l2
+      (br_if $d2 (i32.ge_u (local.get $p) (local.get $m)))
+      (br_if $d2 (i32.ge_u (local.get $j) (local.get $e)))
+      (local.set $s (i32.load (local.get $p)))
+      (if (i32.eq (i32.load8_u (i32.add (local.get $mark) (local.get $s))) (local.get $stamp)) (then
+        (i32.store (local.get $j) (local.get $s))
+        (local.set $j (i32.add (local.get $j) (i32.const 4)))))
+      (local.set $p (i32.add (local.get $p) (i32.const 4)))
+      (br $l2)))
+    (i32.shr_u (i32.sub (local.get $j) (local.get $run)) (i32.const 2)))
+
   ;; forward(desc, slots, n, scratchA, scratchB, nzList, iota, tab): creatures slots[0..n-1], each scratch buffer holds the widest padded layer.
   ;; tab holds the shuffle and count tables of the index packing (272 bytes), then the nine tanh constants as splat vectors.
   ;; The first layer adds only the non-zero inputs; the others use the identity index list iota. The last layer stores straight to the output.
