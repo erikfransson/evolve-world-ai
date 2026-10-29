@@ -38,3 +38,5 @@ Verify worker alone (`meas.ts`, MB added over a start that holds the first worke
 
 ## Verdict suggestion
 Merge (push gate: 3 reviews). The cap peak falls 53 MB and the 3300 peak 48 MB at the bench level (80 MB in the stage-isolated harness), bytes identical, restore path and checks unchanged, about 45 code lines. This is short of 60 MB in the bench; the rest of the +190 to +210 is the main process (running footprint, glibc leftovers of the workers) and the in-memory parse floor (+80). Next levers, not exact-code: unit environment `MALLOC_ARENA_MAX=2` and fixed mmap/trim thresholds (idea 137 candidate 2, -84 MB steady), and a lower main-thread semi-space size.
+
+Update (ideas 158 and 164): the `decoded` callback and the expose-gc collection described above are gone; the verify worker now decodes the JSON in its own function (`decodeState`) so the text and columns drop by scope, measured at the same worker peak (quality3.md).
