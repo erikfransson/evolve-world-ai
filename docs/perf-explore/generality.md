@@ -78,3 +78,7 @@ Two D items, both reachable only through unchecked pasted settings JSON, and one
 - D2: `parseWithPreset` clamps `eco.maxPopulation`, `initialPopulation` and `birthReserve` to `MAX_CREATURES = 20000` (moved from `ecoState.ts` to `ecoConfig.ts`, same value), so the 65535 grid guard is out of reach of settings. The forms' 10000 and `retune`'s cap are unchanged. Saves already refused above 20000. Pasted species are rejected, so no species `founders` to clamp. Test: `settingsIO.test.ts`.
 - Gaps: `wasmKernels.test.ts` runs 62, 63 and 64 rays (species 0 and 3, spreads 1.5 and 2 pi) and ray lengths 2048, 2049 and 5000 around rock against the JS senser, bit for bit. `wasmCrowd.test.ts` pins `packsOwnSignal` (start energies 50/120 and 90/50 take the `prepareRows` twin, 50/50 and 120/120 the crowd kernel's pack) and that the rows equal the twin bit for bit.
 - Engine code is unchanged for every valid world (constants and validation only); fingerprints checked below.
+
+## Follow-up (idea 154)
+
+B1 is closed: the pair emit, the lean merge loop and the detail loop take every stride (byte-identical over strides 4-16 in review round 17's differential), so no stride-keyed branch remains in sense.wat.

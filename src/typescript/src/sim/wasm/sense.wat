@@ -128,7 +128,7 @@
       (local.set $ob (v128.and (i32x4.eq (i8x16.shuffle 4 5 6 7 4 5 6 7 4 5 6 7 4 5 6 7 (local.get $kk) (local.get $kk)) (local.get $kinds)) (local.get $ones)))
       (local.set $z (i32.add (local.get $base) (i32.sub (local.get $sb) (i32.const 16))))
       (block $zd (loop $zl
-        (br_if $zd (i32.le_s (local.get $z) (local.get $base)))
+        (br_if $zd (i32.le_u (local.get $z) (local.get $base)))
         (v128.store (local.get $z) (v128.const i64x2 0 0))
         (v128.store (i32.add (local.get $z) (local.get $sb)) (v128.const i64x2 0 0))
         (local.set $z (i32.sub (local.get $z) (i32.const 16)))
@@ -613,7 +613,7 @@
           (local.set $k (i32.load offset=2560 (local.get $ps)))
           (local.set $g (i32.add (local.get $base) (i32.sub (local.get $sb) (i32.const 16))))
           (block $zd (loop $zl
-            (br_if $zd (i32.le_s (local.get $g) (local.get $base)))
+            (br_if $zd (i32.le_u (local.get $g) (local.get $base)))
             (v128.store (local.get $g) (v128.const i64x2 0 0))
             (local.set $g (i32.sub (local.get $g) (i32.const 16)))
             (br $zl)))
