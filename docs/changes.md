@@ -6,7 +6,7 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
-Live World speed campaign (branch `perf-live`): on the live bench the tick is 1.48x faster in the mixed world and 1.46x at the 5000 cap, with bit-identical results. The simulation and the saves are unchanged.
+Live World speed campaign (branch `perf-live`): on the live bench the tick is about 1.6x faster in the mixed world and 1.75x at the 5000 cap, with bit-identical results and a lower peak memory than before (about 50 MB less at the bench, about 100 MB less around a save). The simulation and the saves are unchanged. The campaign log with every idea and verdict is `docs/perf-explore/live-campaign.md`.
 
 - Live server: the viewer frame path costs less CPU with identical bytes. The creature frame is written in one pass straight into the wire buffer, the stats pass offers a creature to the record lists only when it could enter or update one, family names are parsed once, and followed creatures share one crowd grid per refresh instead of one each (a watched server with five followers spent 10 ms of CPU per second on those grids). With nobody connected no creature frame and no per-creature stats pass run at all.
 - Live server: a save no longer freezes the tick loop. The main thread takes a snapshot and a worker packs, stringifies and gzips it (stall per save from 3 to 6 s down to under 0.2 s, peak memory during a save about 200 MB lower, same bytes).
@@ -22,6 +22,14 @@ Live World speed campaign (branch `perf-live`): on the live bench the tick is 1.
 - Engine, fill: cheaper energy and ground preparation and two-at-a-time narrowing of the values handed to the kernels.
 - Engine, births: the candidate scan runs only when the caps leave room, and a newborn reuses a dead creature of its brain size (a birth costs 0.43x).
 - Engine, item grid: dirty cells are patched in one kernel call per tick.
+- Engine, brain: each brain's first-layer ray rows live in their own region and the dense part is packed in 1 MiB chunks with a sliding compaction, so the kernel streams fewer dead bytes; the forward pass is one function (compaction, layers, tanh) generated from templates at assembly time (`scripts/watTemplate.ts`), and the chunk allocator is its own module.
+- Engine, sense: vector cell windows, two packed items per step in the cell walk, a NaN-padded odd ray lane, directions fused with the no-wall init, and the emit written two rays per step for every ray stride; the in-sight predicate and the cell-row walk are template macros.
+- Engine, step, crowd and fill: the touch kernel's window and pointers vectorised, the sense record copied with v128 stores, the clear-of-rock test on one vector, a 16-bit crowd cell table, and a quiet-block mask for the ground lookup.
+- Engine, memory: a kernel-backed brain no longer keeps a JavaScript copy of its weights (read back from the kernel block when a save, birth or viewer needs them).
+- Live server: the save workers free the gunzipped text and the base64 columns as soon as they are decoded and pack in one buffer, so a save's memory peak is about 50 MB lower; `restoreState` is split into `decodeState` and the world build.
+- Live server: the tick loop continues through `setImmediate` while it is behind instead of a 1 ms timer sleep, and the unit sets `--max-semi-space-size=4` (peak memory 24 to 64 MB lower at no tick cost).
+- Settings: pasted settings are validated to the engine's limits (at most 8 hidden layers; population settings capped at 20000) instead of failing later.
+- Structure: `Brain.lendTo` is the one lend/own transition, the creature frame record has one writer in `protocol.ts`, a `SparePool` owns the dead-creature pool, and the save columns are listed once.
 - Bench tooling: `liveBench` gets `--save`, `--profileEvery`, `--threads`, `--load`, `--keep`, `--scatter`, `--reach`, `--fixed`, `--food`, `--dt` and `--memcomp`, and `kernelTimers` times each kernel call.
 
 ## 0.2.7 (2026-10-26)
