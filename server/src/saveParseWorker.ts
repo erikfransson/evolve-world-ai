@@ -1,7 +1,5 @@
 import { parentPort, workerData } from "node:worker_threads";
 import { gunzipSync } from "node:zlib";
-import { setFlagsFromString } from "node:v8";
-import { runInNewContext } from "node:vm";
 import { decodeState, restoreDecoded, saveState } from "../../src/typescript/src/sim/ecoState.ts";
 import type { DecodedState, EcoState } from "../../src/typescript/src/sim/ecoState.ts";
 import { otherWorldReason } from "./saveParse.ts";
@@ -14,18 +12,6 @@ import type { Home } from "./saveParse.ts";
 const MAX_JSON_TOKENS = 1_000_000;
 const { gz, maxJsonBytes, verifyOnly, home, carryFrom } = workerData as { gz: Uint8Array; maxJsonBytes: number; verifyOnly: boolean; home: Home | null; carryFrom: string | null };
 // Its own function, so the gunzipped bytes and their text are garbage before the world is built.
-// A collection once the state is decoded, so the 40 MB of column text and of parse input is gone before the world is built.
-// The flag is process-wide (V8 flags are shared): every later vm context and worker gets a callable gc. Harmless while no visitor
-// bytes ever run as code (no eval, Function or vm anywhere in server/ or the engine); keep it that way.
-// If a Node ever refuses the flag, the worker still parses and verifies, only without the early collection.
-let collect: (() => void) | undefined;
-try {
-  setFlagsFromString("--expose-gc");
-  const gc = runInNewContext("gc") as unknown;
-  if (typeof gc === "function") collect = gc as () => void;
-} catch {
-  collect = undefined;
-}
 function parseJson(): EcoState {
   const json = gunzipSync(gz, { maxOutputLength: maxJsonBytes, chunkSize: maxJsonBytes + 1 }); // one chunk, so no second copy is made to join them
   let tokens = 0;
@@ -51,7 +37,6 @@ function decode(): DecodedState | null {
 try {
   const decoded = decode();
   if (decoded) {
-    collect?.();
     // Post the state rebuilt from the checked world, so unknown keys and junk in the file never reach the main heap.
     const world = restoreDecoded(decoded);
     parentPort!.postMessage({ ok: true, state: verifyOnly ? null : saveState(world) });

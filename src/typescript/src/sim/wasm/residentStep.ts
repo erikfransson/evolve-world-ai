@@ -15,8 +15,8 @@ import type { SenseKernels } from "./senseKernels.ts";
 // The step itself is WebAssembly (WasmStepper), whose reference is Creature.remember and steer.
 
 // Twin of Creature.writeBodyInputs, the same arithmetic in the same order (parity test: tests/typescript/residentBodies.test.ts). Writes each row's brain input extras
-// (energy signal unless signalDone, as the crowd kernel's pack stores it in the sense run; forward and sideways speed, turn rate, ground value; the fill kernel copies them as f32) and the ground factor the step moves by.
-export function prepareRows(store: ResidentStore, rows: Int32Array, n: number, terrain: Terrain, signalDone = false): void {
+// (energy signal; forward and sideways speed, turn rate, ground value; the fill kernel copies them as f32) and the ground factor the step moves by.
+export function prepareRows(store: ResidentStore, rows: Int32Array, n: number, terrain: Terrain): void {
   const f = store.f64;
   const i32 = store.i32;
   const configs = store.species;
@@ -29,7 +29,7 @@ export function prepareRows(store: ResidentStore, rows: Int32Array, n: number, t
     const vx = f[o + F.vx]!;
     const vy = f[o + F.vy]!;
     const e = o + F.extras;
-    if (!signalDone) f[e] = energySignal(f[o + F.energy]!, c.startEnergy);
+    f[e] = energySignal(f[o + F.energy]!, c.startEnergy);
     f[e + 1] = ((vx * cos + vy * sin) * c.drag) / c.maxThrust;
     f[e + 2] = ((vy * cos - vx * sin) * c.drag) / c.maxThrust;
     f[e + 3] = f[o + F.turn]! / c.maxTurnRate;
@@ -43,13 +43,12 @@ export function prepareRows(store: ResidentStore, rows: Int32Array, n: number, t
 let thinkRows = new Int32Array(0);
 let thinkSelves = new Int32Array(0);
 
-// prepareRows for the batch (the step needs every ground factor; the fill kernel's prepare does it when the crowd kernel packs the energy signal), then sense and think for those of it that think this tick (thinksNow); idOf gives the id
+// SenseKernels.prepare for the batch (the step needs every ground factor), then sense and think for those of it that think this tick (thinksNow); idOf gives the id
 // of crowd index self. detail gets its rays and input read back only when it thought, else they stay as of its last think.
 export function senseThinkRows(kernels: SenseKernels, world: World, crowd: Crowd, rows: Int32Array, selves: Int32Array, n: number, tick: number, every: number,
   idOf: (self: number) => number, detail: Creature | null, prof: PhaseTimer | null = null): void {
   const store = kernels.store;
-  if (kernels.packsOwnSignal(crowd)) kernels.prepareRows(rows, n, world.terrain);
-  else prepareRows(store, rows, n, world.terrain);
+  kernels.prepare(rows, n, world, crowd);
   if (every <= 1) return kernels.runRows(world, crowd, rows, selves, n, detail, prof);
   if (thinkRows.length < n) {
     thinkRows = new Int32Array(2 * n);

@@ -12,10 +12,9 @@ const alignUp = (n: number): number => (n + BLOCK_ALIGN - 1) & ~(BLOCK_ALIGN - 1
 // A run of arena memory the brain blocks are bump-allocated in: top bytes used, live of them held by blocks, the rest holes.
 interface Chunk { ptr: number; cap: number; top: number; live: number }
 
-// What the owner does when a block slides: relocate copies the bytes at from..from+bytes to `to` and fixes its own addresses for the slot, moved reports the slots once the chunk is done.
+// What the owner does when a block slides: copies the bytes at from..from+bytes to `to`, fixes its own addresses for the slot and tells whoever holds them.
 export interface BlockHost {
   relocate(slot: number, from: number, to: number, bytes: number): void;
-  moved(slots: number[]): void;
 }
 
 export class BlockChunks {
@@ -27,11 +26,18 @@ export class BlockChunks {
   private readonly chunks: Chunk[] = [];
   order = new Int32Array(64); // the slots holding a block, by block address
   held = 0; // how many of order are in use
-  orderDirty = true; // set when order changed; whoever mirrors it clears it
+  private orderDirty = true;
 
   constructor(arena: Arena, host: BlockHost) {
     this.arena = arena;
     this.host = host;
+  }
+
+  // The order (use its first `held` entries) when it changed since the last call, else null.
+  takeOrder(): Int32Array | null {
+    if (!this.orderDirty) return null;
+    this.orderDirty = false;
+    return this.order;
   }
 
   // The block's address, undefined when the slot holds none.
@@ -62,7 +68,7 @@ export class BlockChunks {
   }
 
   // Slides the live blocks of the chunk with the most hole down over its holes (when the hole is over 1/HOLE_SHARE of its used bytes), so the
-  // run-order stream of weights has no gaps. Block contents are copied whole, so results are unchanged; the host is told of each moved slot.
+  // run-order stream of weights has no gaps. Block contents are copied whole, so results are unchanged; the host relocates each moved slot.
   compact(): void {
     let worst = -1;
     let most = 0;
@@ -75,7 +81,6 @@ export class BlockChunks {
 
   private slideChunk(c: number): void {
     const ch = this.chunks[c]!;
-    const moved: number[] = [];
     let at = ch.ptr;
     for (let k = this.find(ch.ptr); k < this.held && this.blockChunk[this.order[k]!] === c; k++) {
       const slot = this.order[k]!;
@@ -84,12 +89,10 @@ export class BlockChunks {
       if (ptr !== at) {
         this.host.relocate(slot, ptr, at, bytes);
         this.blockPtr[slot] = at;
-        moved.push(slot);
       }
       at += alignUp(bytes);
     }
     ch.top = at - ch.ptr;
-    this.host.moved(moved);
   }
 
   // A block of size bytes (a multiple of BLOCK_ALIGN) at the end of the first chunk with room, else of a new chunk.
