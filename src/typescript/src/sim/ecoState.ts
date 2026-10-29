@@ -1,7 +1,7 @@
 import { genomeLength, layerSizes, upgradeGenome } from "./brain.ts";
 import { ITEM_RADIUS_RANGE, overrideConfig } from "./config.ts";
 import type { DeepPartial } from "./config.ts";
-import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG, MAX_KILL_ENERGY } from "./ecoConfig.ts";
+import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG, MAX_CREATURES, MAX_KILL_ENERGY, MAX_THINK_EVERY, checkHiddenLayers } from "./ecoConfig.ts";
 import type { EcoConfig } from "./ecoConfig.ts";
 import { MUTATION_SCALE_RANGE } from "./ecoInsert.ts";
 import { Ecosystem } from "./ecosystem.ts";
@@ -9,6 +9,7 @@ import type { EcoCore, MemberRecord } from "./ecosystem.ts";
 import { mapSpec, mapVersion } from "./maps/index.ts";
 import type { LineageState } from "./lineages.ts";
 import type { PoolEntry } from "./seedPool.ts";
+import { OUTPUT_SIZE } from "./sensors.ts";
 import { checkRanges, mergeSpeciesList } from "./species.ts";
 import type { World, WorldSnapshot } from "./world.ts";
 
@@ -36,6 +37,7 @@ export interface EcoState {
     plans: number[][]; // per creature: rayCount, raySpread, rayLength, memoryShort, memoryLong, genome length, ...hidden layers
     genomes: string; // float32, all creatures one after the other
     memory: string; // float64, the same
+    outputs?: string; // float32, the brain outputs (OUTPUT_SIZE plus memory units each) in list order; only with eco.thinkEvery above 1, which keeps them between thinks
     mutationScales?: [number, number][]; // [position in the list, mutationScale] of the creatures whose scale is not 1; absent when all are 1
     bumpKills?: [number, number][]; // [position in the list, bump kills] of the creatures with any; absent when none has
   };
@@ -50,15 +52,38 @@ export const SCALARS = [
 type Typed = Float32Array | Float64Array | Int32Array | Uint8Array;
 
 function pack(a: Typed): string {
+  if (typeof Buffer === "function") return Buffer.from(a.buffer, a.byteOffset, a.byteLength).toString("base64"); // no rope of chunks, same text
   const bytes = new Uint8Array(a.buffer, a.byteOffset, a.byteLength);
   let text = "";
   for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return btoa(text);
 }
 
+// An EcoState whose binary columns are still typed arrays (fresh copies, never the world's own), so it can go to a worker that packs them.
+type Unpacked<T> = { [K in keyof T]: Exclude<T[K], undefined> extends string ? Typed : T[K] };
+export type EcoSnapshot = Omit<EcoState, "items" | "creatures"> & { items: Unpacked<EcoState["items"]>; creatures: Unpacked<EcoState["creatures"]> };
+
 export function saveState(eco: Ecosystem): EcoState {
+  return packState(snapshotState(eco));
+}
+
+// The columns of a snapshot are its typed arrays, in key order: the items', then the creatures'.
+const isColumn = (v: unknown): v is Typed => ArrayBuffer.isView(v);
+export function snapshotColumns(s: EcoSnapshot): Typed[] {
+  return [...Object.values(s.items), ...Object.values(s.creatures)].filter(isColumn);
+}
+
+// The keys keep their order, so JSON.stringify(packState(snapshotState(eco))) is the same text as JSON.stringify(saveState(eco)).
+// col: how a column becomes its string (the packing worker puts a marker there and writes the base64 itself, a piece at a time).
+export function packState(s: EcoSnapshot, col: (a: Typed) => string = pack): EcoState {
+  const packed = <T extends object>(o: T): T => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, isColumn(v) ? col(v) : v])) as T;
+  return { ...s, items: packed(s.items), creatures: packed(s.creatures) } as unknown as EcoState;
+}
+
+export function snapshotState(eco: Ecosystem): EcoSnapshot {
   const config = structuredClone(eco.config);
   config.eco.wasm = eco.wasm;
+  if (config.eco.thinkEvery === 1) delete (config.eco as Partial<typeof config.eco>).thinkEvery; // the default: left out, so saves read on servers from before the setting (restore fills it in)
   const members = eco.members;
   const n = members.length;
   const K = SCALARS.length;
@@ -67,11 +92,12 @@ export function saveState(eco: Ecosystem): EcoState {
   let genomeTotal = 0;
   let memoryTotal = 0;
   for (const m of members) {
-    genomeTotal += m.creature.brain.genome.length;
+    genomeTotal += m.creature.brain.genomeLength;
     memoryTotal += m.creature.memory.length;
   }
   const genomes = new Float32Array(genomeTotal);
   const memory = new Float64Array(memoryTotal);
+  const outputs = config.eco.thinkEvery > 1 ? new Float32Array(n * OUTPUT_SIZE + memoryTotal) : null;
   let g = 0;
   let u = 0;
   members.forEach((m, i) => {
@@ -83,10 +109,11 @@ export function saveState(eco: Ecosystem): EcoState {
     ];
     scalars.set(row, i * K);
     const p = c.plan;
-    const genome = c.brain.genome;
-    plans.push([p.rayCount, p.raySpread, p.rayLength, p.memoryShort, p.memoryLong, genome.length, ...p.hiddenLayers]);
-    genomes.set(genome, g);
-    g += genome.length;
+    const len = c.brain.genomeLength;
+    plans.push([p.rayCount, p.raySpread, p.rayLength, p.memoryShort, p.memoryLong, len, ...p.hiddenLayers]);
+    c.brain.genomeInto(genomes.subarray(g, g + len));
+    g += len;
+    outputs?.set(c.outputs, i * OUTPUT_SIZE + u);
     memory.set(c.memory, u);
     u += c.memory.length;
   });
@@ -104,16 +131,15 @@ export function saveState(eco: Ecosystem): EcoState {
     ...(config.world.map ? { mapVersion: mapVersion(config.world.map) } : {}),
     config,
     core: eco.exportCore(),
-    items: { xs: pack(w.xs), ys: pack(w.ys), kinds: pack(w.kinds), nextItem: pack(w.nextItem), cellHead: pack(w.cellHead), freeSlots: pack(w.freeSlots), freeCount: w.freeCount },
+    items: { xs: w.xs, ys: w.ys, kinds: w.kinds, nextItem: w.nextItem, cellHead: w.cellHead, freeSlots: w.freeSlots, freeCount: w.freeCount },
     lineages: eco.lineageTable.toState(),
-    creatures: { count: n, scalars: pack(scalars), plans, genomes: pack(genomes), memory: pack(memory), ...(mutationScales.length ? { mutationScales } : {}), ...(bumpKills.length ? { bumpKills } : {}) },
+    creatures: { count: n, scalars, plans, genomes, memory, ...(outputs ? { outputs } : {}), ...(mutationScales.length ? { mutationScales } : {}), ...(bumpKills.length ? { bumpKills } : {}) },
   };
 }
 
 // Limits a state is held to on restore; far above any real world, they only stop a corrupt or hostile state from exhausting memory or time.
 const MAX_RAYS = 64; // the WebAssembly kernels' limit
 const MAX_ITEM_SLOTS = 2_000_000;
-const MAX_CREATURES = 20_000;
 const MAX_GENOME_FLOATS = 30_000_000; // all creatures together, 120 MB
 const MIN_WORLD_SIZE = 500; // the settings forms' smallest world
 const MAX_WORLD_SIZE = 50_000;
@@ -236,6 +262,8 @@ function checkedConfig(raw: unknown): EcoConfig {
   whole(eco.maxPopulation, 0, MAX_CREATURES, "eco.maxPopulation");
   whole(eco.birthReserve, 0, MAX_CREATURES, "eco.birthReserve");
   whole(eco.initialPopulation, 0, MAX_CREATURES, "eco.initialPopulation");
+  whole(eco.thinkEvery, 1, MAX_THINK_EVERY, "eco.thinkEvery");
+  checkHiddenLayers(config.brain.hiddenLayers);
   return config;
 }
 
@@ -279,10 +307,27 @@ function unpack<T extends Typed>(make: { new (buffer: ArrayBuffer): T; BYTES_PER
   return new make(out.buffer);
 }
 
-// A new Ecosystem continuing the saved run. pool is only needed for the same reason as in the constructor (ray limit of the WebAssembly kernels).
-// journal: build it for helper threads, which then receive every creature and item in their first packet.
-// The state is checked first (config, limits, ranges, links of the items, ids, lineages) and any violation throws an Error saying which.
-export function restoreState(state: EcoState, pool: readonly PoolEntry[] | null = null, options: { journal?: boolean } = {}): Ecosystem {
+// A state decoded and checked: the typed columns and the validated scalar fields. It keeps the small core, lineage and plan
+// objects of the parsed state but none of the base64 column strings, so a caller that lets the state go out of scope can collect
+// the JSON text and columns before restoreDecoded builds the world.
+export interface DecodedState {
+  config: EcoConfig;
+  core: EcoCore;
+  lineages: LineageState;
+  items: WorldSnapshot;
+  founders: number;
+  plans: number[][]; // in the current genome layout
+  scalars: Float64Array;
+  genomes: Float32Array;
+  memory: Float64Array;
+  outputs: Float32Array | null;
+  scales: Map<number, number>;
+  bumpKills: Map<number, number>;
+  perFounder: Map<number, number>; // living creatures per founder id
+}
+
+// Decodes and checks a saved state (config, limits, ranges, links of the items, ids, lineages); any violation throws an Error saying which.
+export function decodeState(state: EcoState): DecodedState {
   if (!isObject(state) || (state.version !== STATE_VERSION && state.version !== OLDEST_VERSION)) throw new Error(`saved state has version ${isObject(state) ? String(state.version) : "none"}, this build reads versions ${OLDEST_VERSION} and ${STATE_VERSION}`);
   const { core, creatures: cr } = state;
   if (!isObject(core) || !isObject(cr) || !isObject(state.items)) return invalid("core, items or creatures are missing");
@@ -337,6 +382,8 @@ export function restoreState(state: EcoState, pool: readonly PoolEntry[] | null 
   const { plans, genomes } = currentGenomes(state.version, config, cr.plans as number[][], saved);
   const memory = unpack(Float64Array, cr.memory, memoryTotal, "creatures.memory");
   if (!memory.every(Number.isFinite)) invalid("a genome or memory holds a number that is not finite");
+  const outputs = config.eco.thinkEvery > 1 && cr.outputs !== undefined ? unpack(Float32Array, cr.outputs, n * OUTPUT_SIZE + memoryTotal, "creatures.outputs") : null;
+  if (outputs && !outputs.every((x) => Math.abs(x) <= 1)) invalid("a brain output is not a number from -1 to 1");
   const scales = checkMutationScales(cr.mutationScales, n);
   const bumpKills = checkBumpKills(cr.bumpKills, n);
   const at = (name: (typeof SCALARS)[number]): number => SCALARS.indexOf(name);
@@ -367,15 +414,29 @@ export function restoreState(state: EcoState, pool: readonly PoolEntry[] | null 
   for (let s = 0; s < species; s++) if (core.counts[s]!.population !== perSpecies[s]) invalid("species populations do not match the creatures");
 
   checkLineages(state.lineages, species, nextId);
+  return { config, core, lineages: state.lineages, items: snapshot, founders, plans, scalars, genomes, memory, outputs, scales, bumpKills, perFounder };
+}
 
-  const eco = new Ecosystem(config, pool, { journal: options.journal, restore: { founders, poolFounders: core.poolFounders, itemCapacity: capacity } });
+// A new Ecosystem continuing the saved run. pool is only needed for the same reason as in the constructor (ray limit of the WebAssembly kernels).
+// journal: build it for helper threads, which then receive every creature and item in their first packet.
+export function restoreState(state: EcoState, pool: readonly PoolEntry[] | null = null, options: { journal?: boolean } = {}): Ecosystem {
+  return restoreDecoded(decodeState(state), pool, options);
+}
+
+// The world of a decoded state. The wasm check and the lineage table's cross-checks can still refuse it.
+export function restoreDecoded(d: DecodedState, pool: readonly PoolEntry[] | null = null, options: { journal?: boolean } = {}): Ecosystem {
+  const { config, core, plans, scalars, genomes, memory, outputs, scales, bumpKills, perFounder } = d;
+  const n = plans.length;
+  const K = SCALARS.length;
+  const at = (name: (typeof SCALARS)[number]): number => SCALARS.indexOf(name);
+  const eco = new Ecosystem(config, pool, { journal: options.journal, restore: { founders: d.founders, poolFounders: core.poolFounders, itemCapacity: d.items.xs.length } });
   if (config.eco.wasm !== eco.wasm) throw new Error("saved state ran with WebAssembly kernels that are not available here, or the reverse; results would differ");
   eco.importCore(core);
-  eco.lineageTable.load(state.lineages);
+  eco.lineageTable.load(d.lineages);
   for (const f of perFounder.keys()) if (!eco.lineageTable.has(f)) invalid(`a creature descends from founder ${f}, which has no lineage row`);
   const off = eco.lineageTable.firstMismatch(perFounder);
   if (off >= 0) invalid(`lineage ${off} counts ${eco.lineageTable.size(off)} living, the creatures say ${perFounder.get(off) ?? 0}`);
-  (eco.world as World).load(snapshot);
+  (eco.world as World).load(d.items);
   let g = 0;
   let u = 0;
   for (let i = 0; i < n; i++) {
@@ -391,7 +452,8 @@ export function restoreState(state: EcoState, pool: readonly PoolEntry[] | null 
       genome: genomes.subarray(g, g + p[5]!),
       memory: memory.subarray(u, u + units),
     };
-    eco.restoreMember(record);
+    const out = eco.restoreMember(record).creature.outputs;
+    if (outputs) out.set(outputs.subarray(i * OUTPUT_SIZE + u, i * OUTPUT_SIZE + u + out.length));
     g += p[5]!;
     u += units;
   }

@@ -2,7 +2,7 @@ import { wrapAngle } from "./angle.ts";
 import { genomeLength, layerSizes, randomGenome, refit } from "./brain.ts";
 import { itemCounts } from "./config.ts";
 import type { EngineConfig } from "./config.ts";
-import { Creature, SenseBatch, senseThinkBatch } from "./creature.ts";
+import { Creature, SenseBatch, senseThinkBatch, thinkersOf } from "./creature.ts";
 import { Crowd } from "./crowd.ts";
 import { startRng } from "./ecoConfig.ts";
 import type { EcoConfig } from "./ecoConfig.ts";
@@ -15,7 +15,7 @@ import { SMALL_SORT } from "./crowd.ts";
 import { WasmCrowd } from "./wasm/crowdKernel.ts";
 import { WasmMembers } from "./wasm/membersKernel.ts";
 import type { ResidentStore } from "./wasm/resident.ts";
-import { advanceBodies, prepareRows } from "./wasm/residentStep.ts";
+import { advanceBodies, senseThinkRows } from "./wasm/residentStep.ts";
 import type { Aging } from "./physics.ts";
 import type { StatefulRng } from "./rng.ts";
 import { copyPlan, inputLayout, planOf } from "./sensors.ts";
@@ -35,11 +35,13 @@ import type { Species } from "./species.ts";
 import { HIT_FOOD, HIT_NONE, HIT_POISON } from "./types.ts";
 import type { CreatureState, Genome, HitKind, WorldView } from "./types.ts";
 import { World } from "./world.ts";
+import { SparePool } from "./sparePool.ts";
 import { SenseKernels } from "./wasm/senseKernels.ts";
 import { MAX_RAYS } from "./wasm/senser.ts";
 import type { PhaseTimer } from "./profile.ts";
 
 const SMALL_SCAN = 32; // up to this many members the settle and birth scans run in JS: RL episodes have 1-31 creatures, so the kernel pays only for crowds
+const BIRTH_CHUNK = 8; // birth candidates fetched per kernel call: a tick has about one birth, so the walk ends within the first few
 
 export { BIG_IMPACT, EVENT_CAP, EVENT_DEATH, EVENT_IMPACT, EVENT_STRIDE } from "./contacts.ts";
 export { MAX_INSERT_ENERGY, MAX_INSERT_LAYERS, MAX_INSERT_MEMORY, MAX_INSERT_NEURONS, MAX_INSERT_RAYS, MAX_INSERT_RAY_LENGTH, MAX_NAME_LENGTH, MUTATION_SCALE_RANGE } from "./ecoInsert.ts";
@@ -176,14 +178,17 @@ export class Ecosystem {
   private readonly crowd: Crowd;
   private hits = new Int32Array(0); // members touching an item this tick, ascending
   private readonly batch = new SenseBatch();
+  private readonly thinkBatch = new SenseBatch(); // the part of a JS batch that thinks this tick (eco.thinkEvery)
+  private readonly idOf = (self: number): number => this.members[self]!.id;
   private readonly kernels: SenseKernels | null; // with eco.wasm when WebAssembly SIMD is available
   private readonly wasmCrowd: WasmCrowd | null; // the crowd grid built in WebAssembly from the rows (crowdKernel.ts), when the rows are resident
+  private gridVersion = -1; // table.version when wasmCrowd last built the grid
   private readonly wasmMembers: WasmMembers | null; // the settle and birth scans over the rows in WebAssembly (membersKernel.ts)
   private readonly resident: ResidentStore | null; // creature bodies as rows of the kernel memory, which the fill kernel reads
   private readonly table: MemberTable; // members and the columns kept with them
   private readonly economy: ItemEconomy; // food and poison: counts, caps, regrowth
   private readonly contacts: Contacts; // eating, hunting and collisions
-  private readonly spare: EcoCreature[][]; // per species, since a creature keeps its species' engine config
+  private readonly spare: SparePool<EcoCreature>; // per species, since a creature keeps its species' engine config
   private readonly engines: EngineConfig[]; // per species
   private readonly ranges: EcoConfig["eco"][]; // per species, for plan variation
   private readonly counts: SpeciesCount[];
@@ -237,7 +242,7 @@ export class Ecosystem {
     this.engines = this.species.map((sp) => speciesEngine(config, sp, scale));
     this.ranges = this.species.map((sp) => speciesRanges(config, sp));
     this.counts = this.species.map(() => ({ population: 0, births: 0, deaths: 0, eaten: 0 }));
-    this.spare = this.species.map(() => []);
+    this.spare = new SparePool(this.species.length, (m) => m.creature.brain.genomeLength);
     this.rng = startRng(config);
     this.aging = agingOf(eco, dt);
     this.items = new World(config, restore?.itemCapacity ?? Math.max(start.food, caps.food) + Math.max(start.poison, caps.poison));
@@ -378,12 +383,11 @@ export class Ecosystem {
     return { rows: this.table.slotRows, selves: this.table.slotSelves, n: this.table.bySlot.length };
   }
 
-  // Phase 1a for the resident bodies at selves, after prepareTick.
+  // Phase 1a for the resident bodies at selves, after prepareTick: those of them that think this tick (eco.thinkEvery) sense and think.
   senseRows(rows: Int32Array, selves: Int32Array, n: number): void {
     const kernels = this.kernels!;
     kernels.detail = this.detail === null ? null : (this.table.byId.get(this.detail)?.creature ?? null);
-    prepareRows(this.resident!, rows, n, this.items.terrain);
-    kernels.runRows(this.items, this.crowd, rows, selves, n, kernels.detail, this.profile);
+    senseThinkRows(kernels, this.items, this.crowd, rows, selves, n, this.tick, this.config.eco.thinkEvery, this.idOf, kernels.detail, this.profile);
   }
 
   // Phase 1b for the resident bodies at selves: memory and motion, and the item each touches into touched[self].
@@ -405,14 +409,20 @@ export class Ecosystem {
 
   private gridCrowd(n: number, species?: Int32Array): void {
     const wasm = this.wasmCrowd;
-    if (wasm && n > SMALL_SORT) wasm.rebuild(this.table.rowAt, n, species);
-    else this.crowd.rebuild(this.table.states, n, species);
+    if (wasm && n > SMALL_SORT) {
+      wasm.rebuild(this.table.rowAt, n, species);
+      this.gridVersion = this.table.version;
+    } else this.crowd.rebuild(this.table.states, n, species);
   }
 
   // Grids the creatures as they stand at the tick start, for sensePhase.
   prepareTick(): void {
-    if (this.table.length < 2 && this.crowd.count < 2) return; // a lone creature, or none, only sees itself in a grid of at most itself
-    this.gridCrowd(this.table.length, this.multi ? this.table.kinds : undefined);
+    if (this.table.length === 0) return; // a lone creature still gets its grid: the fill kernel places every member through the grid's owners
+    const n = this.table.length;
+    const species = this.multi ? this.table.kinds : undefined;
+    // No one came or went since the last WebAssembly grid (sharedPhase's): its order still holds unless someone changed cell, and the rest is re-read.
+    if (this.table.version === this.gridVersion && n > SMALL_SORT && this.wasmCrowd?.refresh(this.table.rowAt, n, species)) return;
+    this.gridCrowd(n, species);
   }
 
   // Phase 1a for every member, after prepareTick: sense and think into each creature's outputs.
@@ -420,11 +430,7 @@ export class Ecosystem {
     if (this.kernels) {
       // Resident bodies: the batch is the maintained row list, nothing to gather per creature.
       this.profile?.lap("batch build");
-      const kernels = this.kernels;
-      const n = this.members.length;
-      kernels.detail = this.detail === null ? null : (this.table.byId.get(this.detail)?.creature ?? null);
-      prepareRows(this.resident!, this.table.slotRows, n, this.items.terrain);
-      kernels.runRows(this.items, this.crowd, this.table.slotRows, this.table.slotSelves, n, kernels.detail, this.profile);
+      this.senseRows(this.table.slotRows, this.table.slotSelves, this.members.length);
       return;
     }
     const batch = this.batch;
@@ -437,18 +443,18 @@ export class Ecosystem {
 
   // Brings the detail creature's rays and brain input up to date outside a tick (display only, on the JS path): on selecting it,
   // or while paused. Rebuilds the crowd grid, which every tick does first anyway, and leaves the simulation state alone.
-  refreshDetail(): void {
-    const i = this.detail === null ? -1 : this.members.findIndex((m) => m.id === this.detail);
-    if (i < 0) return;
-    this.gridCrowd(this.table.length, this.multi ? this.table.kinds : undefined);
-    const c = this.members[i]!.creature;
-    c.sense(this.items, this.crowd, i);
-    c.encode();
+  // rebuild false: the grid was just rebuilt for another detail creature and nothing has moved since (several refreshed in a row).
+  refreshDetail(rebuild = true): void {
+    const m = this.detail === null ? undefined : this.table.byId.get(this.detail);
+    if (!m) return;
+    if (rebuild) this.gridCrowd(this.table.length, this.multi ? this.table.kinds : undefined);
+    m.creature.sense(this.items, this.crowd, m.index);
+    m.creature.encode();
   }
 
-  // Phase 1a for a batch of members on the JS path, each at its list index, after prepareTick.
+  // Phase 1a for a batch of members on the JS path, each at its list index, after prepareTick: those that think this tick (eco.thinkEvery).
   senseBatch(batch: SenseBatch): void {
-    senseThinkBatch(this.items, this.crowd, batch, this.profile);
+    senseThinkBatch(this.items, this.crowd, thinkersOf(batch, this.thinkBatch, this.tick, this.config.eco.thinkEvery, this.idOf), this.profile);
   }
 
   // Phase 1b for one creature: memory and motion. Returns the item it touches there (Creature.touched), for finishTick.
@@ -538,13 +544,17 @@ export class Ecosystem {
     const birthCap = eco.maxPopulation - eco.birthReserve;
     // The energy test reads no creature object: table.states[i] is members[i].creature.state and table.birthEnergies[i] its birth energy. Births replace the table's arrays when they fill up.
     if (scan) {
-      // only the members with energy for a child, in the order of the walk from first; births change no one else's energy
-      const ready = scan.birthCandidates(this.table.rowAt, n, this.table.birthEnergies, first);
-      for (let k = 0; k < ready.length && members.length < birthCap && this.weights <= this.birthWeightCap; k++) {
-        const parent = members[ready[k]!]!;
-        if (this.tick - parent.lastBirthTick >= parent.cooldownTicks) this.giveBirth(parent);
+      // only the members with energy for a child, in the order of the walk from first, a few at a time as the walk ends at the caps; births change no one else's energy
+      if (this.birthRoom(birthCap)) {
+        for (let ready = scan.birthCandidates(this.table.rowAt, n, this.table.birthEnergies, first, BIRTH_CHUNK); ; ready = scan.nextBirthCandidates(BIRTH_CHUNK)) {
+          for (let k = 0; k < ready.length && this.birthRoom(birthCap); k++) {
+            const parent = members[ready[k]!]!;
+            if (this.tick - parent.lastBirthTick >= parent.cooldownTicks) this.giveBirth(parent);
+          }
+          if (ready.length < BIRTH_CHUNK || !this.birthRoom(birthCap)) break;
+        }
       }
-    } else for (let k = 0; k < n && members.length < birthCap && this.weights <= this.birthWeightCap; k++) {
+    } else for (let k = 0; k < n && this.birthRoom(birthCap); k++) {
       const at = (first + k) % n;
       if (this.table.states[at]!.energy < this.table.birthEnergies[at]!) continue;
       const parent = members[at]!;
@@ -608,19 +618,20 @@ export class Ecosystem {
     const pc = parent.creature;
     const plan = this.childPlan;
     copyPlan(pc.plan, plan);
-    let source = pc.brain.genome;
+    let source: Float32Array | null = null; // null: the parent's own weights, copied once below
     if (eco.planDrift > 0) driftPlan(plan, eco.planDrift, ranges, this.rng);
     if (eco.structuralRate > 0 && this.rng.next() < eco.structuralRate) {
       const maps = mutateStructure(plan, inputLayout(this.config, pc.plan), pc.brain.sizes, ranges, this.rng);
       if (maps) {
         this.remapped = refit(this.remapped, genomeLength(maps.map((m) => m.length)));
-        remapWeights(pc.brain.sizes, source, maps, this.remapped, this.rng);
+        remapWeights(pc.brain.sizes, pc.brain.genome as Float32Array, maps, this.remapped, this.rng);
         source = this.remapped;
       }
     }
-    const genome = (this.childGenome = refit(this.childGenome, source.length));
-    genome.set(source);
-    mutate(genome, this.config.mutation.rate, this.config.mutation.std * parent.mutationScale, this.rng);
+    const genome = (this.childGenome = refit(this.childGenome, source ? source.length : pc.brain.genomeLength));
+    if (source) genome.set(source);
+    else pc.brain.genomeInto(genome);
+    mutate(genome, this.config.mutation.rate, this.config.mutation.std * parent.mutationScale, this.rng, this.wasmMembers);
     const traits = this.traits;
     traits.energy = parent.birth.energy;
     traits.cost = parent.birth.cost;
@@ -654,6 +665,11 @@ export class Ecosystem {
     this.counts[parent.species]!.births++;
   }
 
+  // True while another birth fits under the population cap and the weights cap; both only grow inside the birth loop.
+  private birthRoom(birthCap: number): boolean {
+    return this.members.length < birthCap && this.weights <= this.birthWeightCap;
+  }
+
   // Places founder i with the birth traits in this.traits; the one path for drawn and cast founders.
   private found(i: number, c: CastMember, fromPool: boolean): void {
     const m = this.spawn(c.genome, c.plan, c.x, c.y, c.heading, c.energy ?? this.species[c.species]!.startEnergy, c.species, this.traits);
@@ -663,7 +679,7 @@ export class Ecosystem {
 
   // Adds a creature with these birth traits, reusing a dead one's storage when there is one; genome and plan are copied.
   private spawn(genome: Genome, plan: PlanView, x: number, y: number, heading: number, energy: number, species: number, birth: BirthTraits, mutationScale = 1): EcoCreature {
-    let m = this.spare[species]!.pop();
+    let m = this.spare.take(species, genome.length);
     if (m) m.creature.reset(genome, x, y, heading, energy, plan);
     else {
       m = new EcoCreature(new Creature(this.engines[species]!, genome, x, y, heading, plan, this.kernels, species));
@@ -688,7 +704,7 @@ export class Ecosystem {
     m.birth.cooldown = birth.cooldown;
     m.cooldownTicks = Math.round(birth.cooldown / this.config.dt);
     m.mutationScale = mutationScale;
-    this.weights += m.creature.brain.genome.length;
+    this.weights += m.creature.brain.genomeLength;
     this.journal?.born.push(m.id);
     this.table.admit(m);
     return m;
@@ -697,11 +713,11 @@ export class Ecosystem {
   // Swap-removes members[i].
   private remove(i: number): void {
     const m = this.table.swapRemove(i);
-    this.weights -= m.creature.brain.genome.length;
+    this.weights -= m.creature.brain.genomeLength;
     this.onDeath?.(m);
     this.lineages.died(m.founderId);
     this.journal?.died.push(m.id);
-    this.spare[m.species]!.push(m);
+    if (!this.spare.keep(m.species, m)) this.kernels?.release(m.creature);
     this.deaths++;
     const count = this.counts[m.species]!;
     count.population--;
@@ -806,7 +822,7 @@ export class Ecosystem {
     m.id = r.id; m.parentId = r.parentId; m.depth = r.depth; m.birthTick = r.birthTick; m.children = r.children; m.eaten = r.eaten; m.kills = r.kills; m.bumpKills = r.bumpKills ?? 0;
     m.species = r.species; m.hue = r.hue; m.founderId = r.founderId; m.lastBirthTick = r.lastBirthTick;
     m.birth.energy = r.birthEnergy; m.birth.cost = r.birthCost; m.birth.cooldown = r.birthCooldown; m.cooldownTicks = r.cooldownTicks; m.mutationScale = r.mutationScale ?? 1;
-    this.weights += c.brain.genome.length;
+    this.weights += c.brain.genomeLength;
     this.journal?.born.push(m.id);
     this.table.admit(m);
     return m;

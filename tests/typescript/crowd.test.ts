@@ -1,5 +1,5 @@
 import { DEFAULT_CONFIG } from "../../src/typescript/src/sim/config.ts";
-import { Crowd } from "../../src/typescript/src/sim/crowd.ts";
+import { Crowd, MAX_GRID_CREATURES } from "../../src/typescript/src/sim/crowd.ts";
 import { HIT_CREATURE, HIT_NONE } from "../../src/typescript/src/sim/types.ts";
 import type { CreatureState, RayHit } from "../../src/typescript/src/sim/types.ts";
 
@@ -25,5 +25,17 @@ describe("Crowd", () => {
     expect(ray.kind).toBe(HIT_CREATURE);
     expect(ray.energy).toBe(64);
     expect(ray.closeness).toBeCloseTo(1 - (L - 10 - 50 - c.creature.radius) / L, 6);
+  });
+
+  it("cellStart holds slots as u16: the largest grid keeps its counts and one more creature is refused", () => {
+    const crowd = new Crowd(c);
+    const n = MAX_GRID_CREATURES;
+    const x = new Float64Array(n + 1).fill(10);
+    const e = new Float64Array(n + 1).fill(1);
+    crowd.rebuildFrom(x, x, e, n);
+    expect(crowd.cellStart[crowd.cols * crowd.rows]).toBe(n);
+    expect(crowd.cellStart[0]).toBe(0);
+    expect(crowd.cellStart[1]).toBe(n);
+    expect(() => crowd.rebuildFrom(x, x, e, n + 1)).toThrow(RangeError);
   });
 });

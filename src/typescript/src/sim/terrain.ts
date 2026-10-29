@@ -33,7 +33,8 @@ const GAP = 80; // free passage kept between rock and the walls and between piec
 const TRIES = 40; // placements tried per piece before giving up on the rest of its kind
 const MAX_ROCK_SHARE = 0.4; // rock never covers more of the world than this, however high the setting
 export const ROCK_CELL = 300; // world units per cell of the rock grid
-export const CLEAR_CELL = 100; // world units per square of keepOut's clear-of-rock raster
+export const CLEAR_SHIFT = 7;
+export const CLEAR_CELL = 1 << CLEAR_SHIFT; // world units per square of keepOut's clear-of-rock raster, a power of two so the kernel finds the square by a shift
 
 export const PATCH_SIZE_RANGE = [0.4, 2.5] as const; // the form's range for the size of a slow or fast patch, a multiple of the standard one
 export const MAX_PIECES = 300; // pieces of one kind, however high the setting, so a map stays cheap to build and to look up

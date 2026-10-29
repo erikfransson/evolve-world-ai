@@ -50,7 +50,10 @@ export const FEAT_SEEN_ENERGY = 5; // with one species; in general the last ray 
 export const INPUT_EXTRA_LABELS = ["energy", "speed", "lateral", "turn", "terrain"] as const;
 export const INPUT_EXTRA_SHORT = ["E", "S", "L", "T", "G"] as const; // one letter each for the brain view, G for ground
 export const EXTRA_INPUTS = INPUT_EXTRA_LABELS.length;
-export const EXTRA_TERRAIN = 4; // index of the terrain input among the extras
+export const EXTRA_SPEED = 1; // indices of the inputs among the extras, as in INPUT_EXTRA_LABELS
+export const EXTRA_SIDE = 2;
+export const EXTRA_TURN = 3;
+export const EXTRA_TERRAIN = 4;
 
 // Brain outputs: turn and thrust (thrust below brakeThreshold brakes), then one target per memory unit.
 export const OUTPUT_LABELS = ["turn", "thrust"] as const;

@@ -14,6 +14,7 @@ import type { StatefulRng } from "./rng.ts";
 export const GROUND_MIN_CELL = 50; // world units per raster cell, smallest
 export const GROUND_MAX_CELLS = 250_000; // cells (about nodes) of any map, which raises the cell size of worlds above 50000 x 50000
 export const GROUND_HALF = 127.5; // a layer value at or above this is of the layer's kind
+export const GROUND_BLOCK_SHIFT = 3; // log2 of the cells per side of a block of blockFlags
 export const GROUND_PAD = 1; // nodes beyond the world on each side, held at 0 so every outline closes inside the raster
 
 // Keeps mud + firm <= 255 at every node of interleaved ground data by capping the other layer at what the winner (0 mud, 1 firm) leaves. Both builders use it.
@@ -34,7 +35,7 @@ export class GroundField {
   readonly cols: number; // nodes per row; node (i, j) sits at world ((i - GROUND_PAD) * cell, (j - GROUND_PAD) * cell)
   readonly rows: number;
   readonly data: Uint8Array; // two bytes per node, mud then firm, so one cache line serves both kinds
-  private readonly inv: number;
+  readonly inv: number; // 1 / cell
 
   constructor(width: number, height: number) {
     this.width = width;
@@ -68,6 +69,24 @@ export class GroundField {
     const b = g[k + 2]!;
     const c = g[k + row]!;
     return a + (b - a) * (fx - i) + (c - a) * (fy - j) + (a - b - c + g[k + row + 2]!) * (fx - i) * (fy - j);
+  }
+
+  // One byte per block of 2^GROUND_BLOCK_SHIFT squared cells (row-major, `cols` per row): 1 when a corner node of one of its cells reaches 128 in either layer, so valueAt can be nonzero there.
+  blockFlags(): { flags: Uint8Array; cols: number } {
+    const s = GROUND_BLOCK_SHIFT;
+    const cols = ((this.cols - 2) >> s) + 1;
+    const flags = new Uint8Array(cols * (((this.rows - 2) >> s) + 1));
+    const g = this.data;
+    for (let j = 0; j < this.rows; j++) {
+      const b0 = Math.max(0, j - 1) >> s; // the cells at or left of the node, rows j - 1 and j, as far as they exist
+      const b1 = Math.min(this.rows - 2, j) >> s;
+      for (let i = 0; i < this.cols; i++) {
+        if (((g[2 * (j * this.cols + i)]! | g[2 * (j * this.cols + i) + 1]!) & 128) === 0) continue;
+        const a1 = Math.min(this.cols - 2, i) >> s;
+        for (let b = b0; b <= b1; b++) for (let a = Math.max(0, i - 1) >> s; a <= a1; a++) flags[b * cols + a] = 1;
+      }
+    }
+    return { flags, cols };
   }
 
   // -1 on mud, 1 on firm ground, 0 elsewhere. The hot path of every creature every tick: two cache lines, and the blend only where a corner is high enough.

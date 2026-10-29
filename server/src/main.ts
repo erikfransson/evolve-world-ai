@@ -58,7 +58,7 @@ try {
 const pub = startPublic(HOST, publicPort, live);
 
 const saveNow = (): Promise<string> => saves.save();
-setInterval(() => void saveNow().then(console.log, (e: unknown) => console.error(errText(e))), LIMITS.stateEveryMs);
+setInterval(() => void saves.periodic(), LIMITS.stateEveryMs);
 
 async function loadSave(name: string): Promise<string> {
   const line = await saves.load(name);
@@ -79,8 +79,9 @@ async function stop(): Promise<void> {
   }
   if (exit.way === "stop") return;
   exit.way = "stop";
+  saves.stopRetries();
   try {
-    console.log(await saveNow());
+    console.log(await saves.save(true));
   } catch (e) {
     console.error(errText(e));
   }

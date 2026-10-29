@@ -1,15 +1,23 @@
 import { Worker } from "node:worker_threads";
-import type { EcoState } from "../../src/typescript/src/sim/ecoState.ts";
+import { snapshotColumns } from "../../src/typescript/src/sim/ecoState.ts";
+import type { EcoSnapshot, EcoState } from "../../src/typescript/src/sim/ecoState.ts";
 import type { Carried } from "./carry.ts";
 
 // Unzips, parses and checks a save on a worker thread with its own small heap, so a crafted save (deep or many tiny JSON values)
 // can at worst kill that worker, never the server. Resolves with a state restoreState accepted there, rejects with the reason otherwise.
 // verifyOnly: only check, and resolve with nothing, so the rebuilt state (100 to 200 MB at 2500 creatures, more at the 5000 cap) never crosses to the main heap.
 export const PARSE_HEAP_MB = 384;
+const YOUNG_MB = 8; // young generation of every save worker: at 32 its scavenge space added 25 to 40 MB to the save peak (docs/perf-explore/verifymem.md)
 const PARSE_TIMEOUT_MS = 120_000;
 // A save's own check must finish well inside the unit's TimeoutStopSec=60, so a slow one cannot cost the shutdown save; a real one takes 3 to 6 s.
 export const VERIFY_TIMEOUT_MS = 40_000;
 const WORKER = new URL("./saveParseWorker.ts", import.meta.url);
+const PACK_WORKER = new URL("./saveWriteWorker.ts", import.meta.url);
+// With the verify after it, a save still finishes inside TimeoutStopSec=60; a real pack takes 1 to 3 s.
+export const PACK_TIMEOUT_MS = 10_000; // with VERIFY_TIMEOUT_MS inside the unit's TimeoutStopSec of 60 s, room left for the stop's own save
+
+// A save worker that timed out, ran out of memory or exited: transient, a later try may go through (saves.ts retries a periodic save). A save the worker judged bad is a plain Error.
+export class WorkerFailed extends Error {}
 
 // A save of another world: another size, map or map data. Startup starts a fresh world past it instead of retrying.
 export class OtherWorld extends Error {}
@@ -36,11 +44,12 @@ export function otherWorldReason(state: unknown, home: Home): string | null {
 }
 
 // home: when given, a save of another world rejects with OtherWorld before the engine's checks run.
+// verifyMs: the timeout of a verify-only check (the stop path shortens it to what is left of its budget).
 export function parseSave(gz: Uint8Array, maxJsonBytes: number, verifyOnly?: false, home?: Home): Promise<EcoState>;
-export function parseSave(gz: Uint8Array, maxJsonBytes: number, verifyOnly: true, home?: Home): Promise<undefined>;
-export function parseSave(gz: Uint8Array, maxJsonBytes: number, verifyOnly = false, home?: Home): Promise<EcoState | undefined> {
+export function parseSave(gz: Uint8Array, maxJsonBytes: number, verifyOnly: true, home?: Home, verifyMs?: number): Promise<undefined>;
+export function parseSave(gz: Uint8Array, maxJsonBytes: number, verifyOnly = false, home?: Home, verifyMs = VERIFY_TIMEOUT_MS): Promise<EcoState | undefined> {
   return new Promise((resolve, reject) => {
-    const worker = new Worker(WORKER, { workerData: { gz, maxJsonBytes, verifyOnly, home: home ?? null, carryFrom: null }, resourceLimits: { maxOldGenerationSizeMb: PARSE_HEAP_MB, maxYoungGenerationSizeMb: 32 }, stdout: false, stderr: false });
+    const worker = new Worker(WORKER, { workerData: { gz, maxJsonBytes, verifyOnly, home: home ?? null, carryFrom: null }, resourceLimits: { maxOldGenerationSizeMb: PARSE_HEAP_MB, maxYoungGenerationSizeMb: YOUNG_MB }, stdout: false, stderr: false });
     let settled = false;
     const finish = (err: Error | null, state?: EcoState | null): void => {
       if (settled) return;
@@ -50,10 +59,10 @@ export function parseSave(gz: Uint8Array, maxJsonBytes: number, verifyOnly = fal
       if (err) reject(err);
       else resolve(verifyOnly ? undefined : state!);
     };
-    const timer = setTimeout(() => finish(new Error("parsing the save took too long")), verifyOnly ? VERIFY_TIMEOUT_MS : PARSE_TIMEOUT_MS);
+    const timer = setTimeout(() => finish(new WorkerFailed("parsing the save took too long")), verifyOnly ? verifyMs : PARSE_TIMEOUT_MS);
     worker.on("message", (m: { ok: true; state: EcoState | null } | { ok: false; reason: string; other?: boolean }) => finish(m.ok ? null : m.other ? new OtherWorld(m.reason) : new Error(m.reason), m.ok ? m.state : undefined));
-    worker.on("error", (e: Error) => finish(new Error(`save parser failed: ${e.message}`)));
-    worker.on("exit", (code) => finish(new Error(`save parser stopped (exit ${code})`)));
+    worker.on("error", (e: Error) => finish(new WorkerFailed(`save parser failed: ${e.message}`)));
+    worker.on("exit", (code) => finish(new WorkerFailed(`save parser stopped (exit ${code})`)));
   });
 }
 
@@ -61,7 +70,7 @@ export function parseSave(gz: Uint8Array, maxJsonBytes: number, verifyOnly = fal
 // or map version. Null when the save holds none; rejects with the reason when the save is broken. The caller checks the creature as an upload.
 export function parseCarry(gz: Uint8Array, maxJsonBytes: number, from: string): Promise<Carried | null> {
   return new Promise((resolve, reject) => {
-    const worker = new Worker(WORKER, { workerData: { gz, maxJsonBytes, verifyOnly: false, home: null, carryFrom: from }, resourceLimits: { maxOldGenerationSizeMb: PARSE_HEAP_MB, maxYoungGenerationSizeMb: 32 }, stdout: false, stderr: false });
+    const worker = new Worker(WORKER, { workerData: { gz, maxJsonBytes, verifyOnly: false, home: null, carryFrom: from }, resourceLimits: { maxOldGenerationSizeMb: PARSE_HEAP_MB, maxYoungGenerationSizeMb: YOUNG_MB }, stdout: false, stderr: false });
     let settled = false;
     const finish = (err: Error | null, carried?: Carried | null): void => {
       if (settled) return;
@@ -71,9 +80,41 @@ export function parseCarry(gz: Uint8Array, maxJsonBytes: number, from: string): 
       if (err) reject(err);
       else resolve(carried ?? null);
     };
-    const timer = setTimeout(() => finish(new Error("parsing the save took too long")), PARSE_TIMEOUT_MS);
+    const timer = setTimeout(() => finish(new WorkerFailed("parsing the save took too long")), PARSE_TIMEOUT_MS);
     worker.on("message", (m: { ok: true; carried: Carried | null } | { ok: false; reason: string }) => finish(m.ok ? null : new Error(m.reason), m.ok ? m.carried : undefined));
-    worker.on("error", (e: Error) => finish(new Error(`save parser failed: ${e.message}`)));
-    worker.on("exit", (code) => finish(new Error(`save parser stopped (exit ${code})`)));
+    worker.on("error", (e: Error) => finish(new WorkerFailed(`save parser failed: ${e.message}`)));
+    worker.on("exit", (code) => finish(new WorkerFailed(`save parser stopped (exit ${code})`)));
+  });
+}
+
+// The JSON of a save is over maxJsonBytes.
+export class TooBig extends Error {
+  readonly bytes: number;
+  constructor(bytes: number) {
+    super(`${bytes} bytes of JSON`);
+    this.bytes = bytes;
+  }
+}
+// A save of a snapshot (snapshotState) packed, stringified and gzipped on a worker with the parser's heap cap, so the tick loop only
+// pays for the snapshot. The worker takes the snapshot's typed arrays (transferred, they are copies). Resolves with the gzip and the
+// JSON's byte length; rejects with TooBig when the JSON is over maxJsonBytes, with the reason otherwise.
+export function packSave(snap: EcoSnapshot, maxJsonBytes: number, timeoutMs = PACK_TIMEOUT_MS): Promise<{ gz: Uint8Array; bytes: number }> {
+  const columns = snapshotColumns(snap);
+  return new Promise((resolve, reject) => {
+    // The snapshot is cloned (its columns moved) here, before any later tick can change the world it came from.
+    const worker = new Worker(PACK_WORKER, { workerData: { snap, maxJsonBytes }, transferList: columns.map((a) => a.buffer as ArrayBuffer), resourceLimits: { maxOldGenerationSizeMb: PARSE_HEAP_MB, maxYoungGenerationSizeMb: YOUNG_MB }, stdout: false, stderr: false });
+    let settled = false;
+    const finish = (err: Error | null, out?: { gz: Uint8Array; bytes: number }): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      const done = (): void => (err ? reject(err) : resolve(out!));
+      worker.terminate().then(done, done); // settled only once the packer is gone, so the verify worker never runs beside it
+    };
+    const timer = setTimeout(() => finish(new WorkerFailed("packing the save took too long")), timeoutMs);
+    worker.on("message", (m: { ok: true; gz: Uint8Array; bytes: number } | { ok: false; tooBig?: number; reason?: string }) =>
+      m.ok ? finish(null, { gz: m.gz, bytes: m.bytes }) : finish(m.tooBig !== undefined ? new TooBig(m.tooBig) : new Error(m.reason)));
+    worker.on("error", (e: Error) => finish(new WorkerFailed(`save packer failed: ${e.message}`)));
+    worker.on("exit", (code) => finish(new WorkerFailed(`save packer stopped (exit ${code})`)));
   });
 }

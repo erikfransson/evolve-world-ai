@@ -96,9 +96,7 @@ export function nextGeneration(
       let s = rng.state; // rng's mulberry32 stream, run inline for speed
       for (let g = 0; g < length; g++) {
         s = (s + 0x6d2b79f5) | 0;
-        let t = Math.imul(s ^ (s >>> 15), 1 | s);
-        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-        if (((t ^ (t >>> 14)) >>> 0) < 0x80000000) child[g] = b[g];
+        if (draw(s) < 0x80000000) child[g] = b[g];
       }
       rng.state = s;
     }
@@ -118,19 +116,53 @@ export function bigMutate(child: Genome, rng: StatefulRng): void {
   }
 }
 
+// The unsigned 32-bit draw of rng's mulberry32 stream at state s, which is already stepped by 0x6d2b79f5.
+function draw(s: number): number {
+  let t = Math.imul(s ^ (s >>> 15), 1 | s);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return (t ^ (t >>> 14)) >>> 0;
+}
+
+// rng.normal() from its two draws a and b (Box-Muller; u1 = 1 - a / 2^32, u2 = b / 2^32).
+function normalFrom(a: number, b: number): number {
+  const u1 = 1 - (a >>> 0) / 4294967296;
+  const u2 = (b >>> 0) / 4294967296;
+  return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+}
+
+// WasmMembers.mutateHits: the scan of mutate in WebAssembly.
+export interface MutateScan {
+  mutateHits(n: number, state: number, limit: number): Int32Array;
+  readonly endState: number;
+}
+const SCAN_MIN = 16; // genes; below this the loop is cheaper than the kernel call
+
 // Adds mutationStd normal noise to each gene with probability mutationRate, drawing from rng exactly as rng.next() calls would.
-export function mutate(child: Genome, rate: number, std: number, rng: StatefulRng): void {
+// The scan between hits is its own tight loop (or scan's kernel), and the hit's two draws (rng.normal) run inline, so no call splits the loop.
+export function mutate(child: Genome, rate: number, std: number, rng: StatefulRng, scan: MutateScan | null = null): void {
   const mutateBelow = rate * 4294967296; // next() < rate is next32 < rate * 2^32, exactly
-  let s = rng.state; // rng's mulberry32 stream, run inline for speed; synced around normal()
-  for (let g = 0; g < child.length; g++) {
-    s = (s + 0x6d2b79f5) | 0;
-    let t = Math.imul(s ^ (s >>> 15), 1 | s);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    if (((t ^ (t >>> 14)) >>> 0) < mutateBelow) {
-      rng.state = s;
-      child[g] += rng.normal() * std;
-      s = rng.state;
+  const n = child.length;
+  if (scan && n >= SCAN_MIN && mutateBelow > 0 && mutateBelow <= 4294967295) {
+    const hits = scan.mutateHits(n, rng.state, Math.ceil(mutateBelow)); // next32 < mutateBelow is next32 < ceil(mutateBelow) for an integer
+    for (let k = 0; k < hits.length; k += 3) {
+      child[hits[k]!] += normalFrom(hits[k + 1]!, hits[k + 2]!) * std;
     }
+    rng.state = scan.endState;
+    return;
+  }
+  let s = rng.state; // rng's mulberry32 stream, run inline for speed
+  let g = 0;
+  while (g < n) {
+    for (; g < n; g++) {
+      s = (s + 0x6d2b79f5) | 0;
+      if (draw(s) < mutateBelow) break;
+    }
+    if (g === n) break;
+    // normal(): u1 = 1 - next(), u2 = next()
+    s = (s + 0x6d2b79f5) | 0;
+    const a = draw(s);
+    s = (s + 0x6d2b79f5) | 0;
+    child[g++] += normalFrom(a, draw(s)) * std;
   }
   rng.state = s;
 }

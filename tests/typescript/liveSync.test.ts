@@ -13,7 +13,8 @@ import type { PublicServer } from "../../server/src/public.ts";
 import { Saves } from "../../server/src/saves.ts";
 import { StateStore } from "../../server/src/state.ts";
 import { ItemMirror } from "../../src/typescript/src/live/items.ts";
-import { MSG_DELTA, MSG_DETAIL, MSG_ITEMS, decodeCreatures, decodeDelta, decodeItems, deltaMessage, encodeCreatures, encodeDeltaChunk } from "../../src/typescript/src/live/protocol.ts";
+import { MSG_DELTA, MSG_DETAIL, MSG_ITEMS, decodeCreatures, decodeDelta, decodeItems, deltaMessage, encodeDeltaChunk } from "../../src/typescript/src/live/protocol.ts";
+import { encodeCreatures } from "./frameOracle.ts";
 import type { Stats } from "../../src/typescript/src/live/protocol.ts";
 import { decodeDetail, encodeDetail } from "../../src/typescript/src/live/detail.ts";
 import { HIDDEN_CLOSE_MS, LiveLink, cleanStats, historyAxis } from "../../src/typescript/src/live/connection.ts";
@@ -264,6 +265,86 @@ describe("failing ticks", () => {
       expect(fake.failedTicks).toBe(50);
     } finally {
       vi.useRealTimers();
+    }
+  });
+
+  // A loop driver for runTicks that stops it through its failure path (maxFailures 1) once stop() was called.
+  function driver(advance: () => Promise<number>): { live: Pick<LiveWorld, "advance" | "failedTicks">; stop: () => void; stopped: Promise<void> } {
+    let stopping = false;
+    let done!: () => void;
+    const stopped = new Promise<void>((r) => (done = r));
+    const live = {
+      failedTicks: 0,
+      advance: async (): Promise<number> => {
+        if (!stopping) return advance();
+        live.failedTicks = 1;
+        throw new Error("test stop");
+      },
+    };
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    runTicks(live, 1, () => done());
+    return { live, stop: () => void (stopping = true), stopped };
+  }
+  const spin = (ms: number): void => {
+    const t = performance.now();
+    while (performance.now() - t < ms);
+  };
+
+  // Red with setTimeout(loop, 0) on the behind path: each slice then waited for a 1 ms timer (at most about 300 slices in 300 ms).
+  it("runs the next slice at once while behind, without a timer sleep", async () => {
+    let slices = 0;
+    const d = driver(async () => (slices++, 0));
+    await wait(300);
+    d.stop();
+    await d.stopped;
+    expect(slices).toBeGreaterThan(1000);
+  });
+
+  // Red with a microtask or synchronous loop on the behind path: sockets and timers were never served while the world was behind.
+  it("serves sockets and timers between slices while behind", async () => {
+    const port = 62470;
+    await serve(port);
+    let slices = 0;
+    const d = driver(async () => (slices++, spin(10), 0)); // every slice ends behind, as at 3300 creatures on a busy host
+    try {
+      const c = client(port, grown());
+      await vi.waitFor(() => expect(c.log).toContain("hello"), { timeout: 5000 });
+      c.ws.send("ping");
+      await vi.waitFor(() => expect(c.log).toContain("pong"), { timeout: 5000 });
+      let fired = false;
+      setTimeout(() => (fired = true), 30);
+      await vi.waitFor(() => expect(fired).toBe(true), { timeout: 5000 });
+      expect(slices).toBeGreaterThan(3);
+    } finally {
+      d.stop();
+      await d.stopped;
+    }
+  });
+
+  // Red without the cap in advance: a 10 s stall owed 900 ticks, all run back to back on the behind path.
+  it("holds the catch-up cap after a stall, over several behind slices", async () => {
+    const world = grown();
+    let clock = performance.now();
+    const realNow = performance.now.bind(performance);
+    vi.spyOn(performance, "now").mockImplementation(() => (clock += 1)); // every read moves 1 ms, so a slice ends after about 15 ticks
+    const waits: number[] = [];
+    try {
+      await world.advance();
+      const before = world.eco.tick;
+      clock += 10_000;
+      const d = driver(async () => {
+        const w = await world.advance();
+        waits.push(w);
+        if (w > 0) d.stop(); // caught up
+        return w;
+      });
+      await d.stopped;
+      const cap = LIMITS.maxCatchUpS / world.config.dt;
+      expect(waits.filter((w) => w === 0).length).toBeGreaterThan(1); // the catch-up took several slices on the behind path
+      expect(world.eco.tick - before).toBeGreaterThanOrEqual(cap - 1);
+      expect(world.eco.tick - before).toBeLessThan(cap + 15); // the cap plus the ticks the mocked clock owed during the slices
+    } finally {
+      vi.mocked(performance.now).mockImplementation(realNow);
     }
   });
 

@@ -165,9 +165,13 @@ Default set to WASM (`eco.wasm` true, "Use WebAssembly" under Life cycle); runti
 
 ## One-call WebAssembly sense (E5d)
 
-`sense.wat` does ray directions, item and wall rays (f64, same candidate order as `World.castRays`), crowd rays (f32) and the ray features written into the brain input, for a whole batch in one call. The item grid and crowd are copied into WASM memory each tick. The old `rays.wat` is gone. Only `Ecosystem.detail` (the selected creature) gets its `creature.rays` and brain input read back.
+`sense.wat` does ray directions, item and wall rays (f64, same candidate order as `World.castRays`), crowd rays (f32) and the ray features written into the brain input, for a whole batch in one call. The item grid is patched in WASM memory per tick (`patchItems`) and the crowd is read in place. The old `rays.wat` is gone. Only `Ecosystem.detail` (the selected creature) gets its `creature.rays` and brain input read back.
 Width 20000 (about 2700 creatures), user CPU ms per steady tick, main e17cba7 vs branch in alternating pairs: serial 28.4, 29.3, 28.2 vs 20.5, 20.7, 21.8 (1.37x); 3 shared helpers, total CPU 40.4, 40.0 vs 32.2, 32.8 (1.24x). Fingerprints equal to main for serial, 3 shared, 3 message and 1 shared helpers.
 Details and rejected f64x2 variant in `docs/perf-explore/wasm.md`.
+
+## Live World speed campaign (2026-10-27)
+
+The server tick of the Inland Sea (one thread, cap 5000) went about 1.48x faster on the mixed case and 1.46x at the cap, bit-identical, with `server/src/liveBench.ts` as the benchmark. Ideas, numbers and verdicts are in `docs/perf-explore/live-campaign.md`; the older sections here predate it.
 
 ## RL episodes (single thread)
 
@@ -200,7 +204,7 @@ Launch food values (A5): From a quarter-area run scaled x4: population about 800
 
 Server and page (A7), nice 19, host load about 17 on 8 cores, so slower than an idle core:
 - Startup: founders check 7 ms, world and map build 3.0-3.5 s, seeding 20 ms; with a 2500-creature save 14 s to listening (parse 7 s, restore 0.8 s), peak RSS 414 MB. Each helper thread builds its own map (3.4 s, about 40 MB).
-- 2500 creatures, 150k food: tick 36 ms here (1.4x achieved), save 24 MB JSON (14.5 MB gz) whatever the food, saveState stalls ticks 2.8 s (2.4 s on the old world), save path 10 s, verify 4.7 s (passes with a 192 MB heap too). An admin load (save, parse, restore) peaks at 944 MB RSS uncapped (old world 824 MB) and at 829 MB inside a MemoryMax=1G, swap 0 scope, where it completes.
+- 2500 creatures, 150k food: tick 36 ms here (1.4x achieved), save 24 MB JSON (14.5 MB gz) whatever the food, saveState stalled ticks 2.8 s (2.4 s on the old world; since the worker save the stall is 0.04-0.19 s, `docs/perf-explore/savestall.md`), save path 10 s, verify 4.7 s (passes with a 192 MB heap too). An admin load (save, parse, restore) peaks at 944 MB RSS uncapped (old world 824 MB) and at 829 MB inside a MemoryMax=1G, swap 0 scope, where it completes.
 - Full item set at 150k food: 663 kB (59 kB of slot kinds), over the 300 kB connect allowance, so it comes from the resync share: a lone viewer has it after 2.1 s, ten joining together after 0.8-7.8 s. At 10-12k food it is about 107 kB and goes out at once. Creature frame at 2500: 47.5 kB.
 - Page (headless Chrome, software raster): at 2500 creatures and 50-90k items a frame's JS is 30-40 ms, with 450-550 ms long tasks for raster; at 140k items 54 ms and 700 ms; at 12 creatures and 45k items 4.5 ms and 90 ms. The map worker also traces the rock outlines (`rockGeometry`, checked on the page and handed over with `useRockGeometry`), so the longest main-thread task while the map arrives and is first drawn fell from 17-19 s to 1.1 s on desktop and 1.6 s on phone (the rest is software raster).
 - Population: from 40 seeds and 50k start food it reaches the 2500 cap in about 90 simulated seconds and stays there while food lasts, so visitor adds are refused as "world full".

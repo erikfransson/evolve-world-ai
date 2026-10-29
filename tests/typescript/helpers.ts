@@ -88,3 +88,6 @@ export function useKernels(eco: Ecosystem, use: { crowd?: boolean; members?: boo
   if (use.crowd !== undefined) e.wasmCrowd = use.crowd ? own.crowd : null;
   if (use.members !== undefined) e.wasmMembers = use.members ? own.members : null;
 }
+
+// Fingerprint of the pinned 300-tick WebAssembly run of ecoPool.test.ts; re-pinned for the terrain input (#34), was 116543125. Change it only on purpose.
+export const WASM_RUN_FINGERPRINT = 81047108;

@@ -1,20 +1,12 @@
 import { generatedSource } from "../../src/typescript/scripts/wasmAssemble.ts";
+import { expandTemplates } from "../../src/typescript/scripts/watTemplate.ts";
 import { Brain, genomeLength, layerSizes, randomGenome } from "../../src/typescript/src/sim/brain.ts";
-import { Crowd } from "../../src/typescript/src/sim/crowd.ts";
 import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
-import { createRng } from "../../src/typescript/src/sim/rng.ts";
-import { terrainOf } from "../../src/typescript/src/sim/terrain.ts";
-import { EXTRA_INPUTS, EXTRA_TERRAIN, inputLayout, planOf } from "../../src/typescript/src/sim/sensors.ts";
-import { HIT_CREATURE, HIT_FOOD, HIT_NONE, HIT_POISON, HIT_WALL } from "../../src/typescript/src/sim/types.ts";
+import { EXTRA_INPUTS, EXTRA_TERRAIN, INPUT_EXTRA_LABELS, inputLayout, planOf } from "../../src/typescript/src/sim/sensors.ts";
 import { LAYOUT as L } from "../../src/typescript/src/sim/wasm/layout.ts";
 import { WasmBrainBank } from "../../src/typescript/src/sim/wasm/brainKernel.ts";
 import { setWasmDisabled, wasmAvailable } from "../../src/typescript/src/sim/wasm/loader.ts";
-import { speciesEngine, speciesList } from "../../src/typescript/src/sim/species.ts";
-import { prepareRows } from "../../src/typescript/src/sim/wasm/residentStep.ts";
 import { SenseKernels } from "../../src/typescript/src/sim/wasm/senseKernels.ts";
-import type { SimConfig } from "../../src/typescript/src/sim/config.ts";
-import { Creature, SenseBatch } from "../../src/typescript/src/sim/creature.ts";
-import { World } from "../../src/typescript/src/sim/world.ts";
 import { readFileSync } from "node:fs";
 import { testRng } from "./helpers.ts";
 
@@ -26,6 +18,14 @@ describe("wasm toolchain", () => {
     expect(await generatedSource()).toBe(committed);
   });
 
+  it("expands def, for and if templates and leaves layout names alone", () => {
+    const text = "{{def reg i o}}(a@i @o){{end}}{{def grp n pf}}{{for i @n}}{{reg @i @o}}{{end}}{{if @pf}}P{{end}}{{end}}{{grp 3 1}}|{{grp 2 0}}|{{OFF}}";
+    expect(expandTemplates(text, "t.wat", (n) => n === "OFF")).toBe("(a0 0)(a1 16)(a2 32)P|(a0 0)(a1 16)|{{OFF}}");
+    expect(() => expandTemplates("{{nope}}", "t.wat", () => false)).toThrow(/unknown template/);
+    expect(() => expandTemplates("{{for i 2}}x", "t.wat", () => false)).toThrow(/unclosed/);
+    expect(() => expandTemplates("{{def m a}}{{end}}{{m}}", "t.wat", () => false)).toThrow(/takes 1/);
+  });
+
   it("the layout fits the sense record, the brain input extras and the row", () => {
     const f64 = [L.REC_X, L.REC_Y, L.REC_COS, L.REC_SIN, L.REC_RAY_LENGTH];
     const i32 = [L.REC_SELF, L.REC_RAYS, L.REC_OFFSETS, L.REC_INPUT, L.REC_DETAIL];
@@ -34,8 +34,14 @@ describe("wasm toolchain", () => {
     expect(i32[0]).toBeGreaterThanOrEqual(8 * f64.length);
     expect(i32.map((o, i) => o - 4 * i - i32[0]!)).toEqual([0, 0, 0, 0, 0]);
     expect(L.REC_DETAIL + 4).toBeLessThanOrEqual(L.REC_BYTES);
+    // fill.wat copies a row's x, y and cos, sin as f64x2 and its rays, offsets, input and slot as one v128
+    expect([L.R_Y - L.R_X, L.R_SIN - L.R_COS]).toEqual([8, 8]);
+    expect([L.R_OFFSETS, L.R_INPUT, L.R_SLOT].map((o) => o - L.R_RAYS)).toEqual([4, 8, 12]);
+    expect(L.R_RAYS + 16).toBeLessThanOrEqual(L.ROW_BYTES);
     expect(L.EXTRAS).toBe(EXTRA_INPUTS);
     expect(L.UNITS_AT).toBe(4 * EXTRA_INPUTS); // the memory units follow the f32 extras
+    expect([L.R_EXTRA_SPEED, L.R_EXTRA_SIDE, L.R_EXTRA_TURN, L.R_EXTRA_GROUND]).toEqual([1, 2, 3, 4].map((i) => L.R_EXTRAS + 8 * i));
+    expect(INPUT_EXTRA_LABELS.slice(1)).toEqual(["speed", "lateral", "turn", "terrain"]);
     expect(L.R_OUT).toBe(L.R_EXTRAS + 8 * EXTRA_INPUTS); // the f64 extras end where the i32 fields begin
     expect(EXTRA_TERRAIN).toBe(EXTRA_INPUTS - 1);
     const sense = Object.entries(L).filter(([k]) => k.startsWith("S_") && k !== "S_BYTES").map(([k, v]) => [k, v] as const);
@@ -121,13 +127,13 @@ describe("WasmBrainBank", () => {
     const rng = testRng(21);
     let slot = 0;
     let maxAbs = 0;
-    for (let nIn = 1; nIn <= 19; nIn++) {
+    for (let nIn = 1; nIn <= 70; nIn++) {
       for (const nOut of [1, 4, 5, 8, 13]) {
         const sizes = [nIn, 6, nOut];
         const g = randomGenome(sizes, rng);
         bank.set(slot, sizes, g);
         const input = new Float32Array(nIn);
-        if (slot % 3 !== 0) for (let i = 0; i < nIn; i++) input[i] = rng.next() < 0.3 ? rng.next() * 2 - 1 : 0; // slot % 3 === 0: all zero
+        if (slot % 3 !== 0) for (let i = 0; i < nIn; i++) input[i] = rng.next() < (slot % 3 === 1 ? 0.3 : 0.04) ? rng.next() * 2 - 1 : rng.next() < 0.1 ? -0 : 0; // slot % 3 === 0: all zero, 2: sparse so whole groups of 16 are zero
         bank.f32.set(input, bank.inputAt(slot));
         const want = new Float32Array(nOut);
         new Brain(sizes, g).forward(input, want);
@@ -138,6 +144,44 @@ describe("WasmBrainBank", () => {
       }
     }
     expect(maxAbs).toBeLessThan(2e-6);
+  });
+
+  it("holds a brain with the eight hidden layers a save may carry, and no more (the descriptor's layer cap)", () => {
+    const bank = WasmBrainBank.createSync()!;
+    const rng = testRng(34);
+    const eight = [8, 5, 5, 5, 5, 5, 5, 5, 5, 3]; // 6 + 8 plan entries in ecoState's restore check
+    bank.set(0, eight, randomGenome(eight, rng), 0);
+    const nine = [...eight.slice(0, 9), 5, 3];
+    expect(() => bank.set(1, nine, randomGenome(nine, rng), 0)).toThrow(/layer sizes/);
+  });
+
+  it("rejects a run list on an empty bank with the usual error", () => {
+    const bank = WasmBrainBank.createSync()!;
+    new Int32Array(bank.memory.buffer).set([0], bank.runRegion(1) >> 2);
+    expect(() => bank.forwardRun(1)).toThrow(/without a brain/);
+  });
+
+  it("gives the same output bits wherever the first layer is split between the ray rows and the rest", async () => {
+    const bank = WasmBrainBank.createSync()!;
+    const rng = testRng(33);
+    const run = (slot: number, sizes: number[], g: Float32Array, rays: number, input: Float32Array): number[] => {
+      bank.set(slot, sizes, g, rays);
+      bank.f32.set(input, bank.inputAt(slot));
+      bank.forwardSlots(Int32Array.of(slot), 1);
+      return Array.from(bank.f32.subarray(bank.outputAt(slot), bank.outputAt(slot) + sizes[sizes.length - 1]!));
+    };
+    for (const sizes of SIZE_SETS) {
+      const g = randomGenome(sizes, rng);
+      const nIn = sizes[0]!;
+      for (let round = 0; round < 4; round++) {
+        const input = new Float32Array(nIn);
+        fillInput(input, rng);
+        if (round === 3) input.fill(0);
+        const want = run(0, sizes, g, 0, input);
+        for (const rays of new Set([1, nIn >> 1, nIn - 1, nIn])) if (rays >= 1 && rays <= nIn) expect(run(1, sizes, g, rays, input)).toEqual(want);
+        for (const rays of [nIn, 0, 1]) expect(run(1, sizes, g, rays, input)).toEqual(want); // the same slot set again with a bigger, smaller and no ray region
+      }
+    }
   });
 
   it("saturates large sums to exactly +-1 like the JS tanh", async () => {
@@ -181,6 +225,73 @@ describe("WasmBrainBank", () => {
     expect(Array.from(bank.f32.subarray(bank.outputAt(5), bank.outputAt(5) + 2)).every(Number.isFinite)).toBe(true);
   });
 
+  it("compact() closes the holes of released blocks, keeps every output, and reports the moved slots", async () => {
+    const bank = WasmBrainBank.createSync()!;
+    const rng = testRng(12);
+    const n = 600;
+    const run = (slots: number[]): Map<number, number[]> => {
+      for (const s of slots) {
+        const a = new Float32Array(SIZE_SETS[s % SIZE_SETS.length]![0]!);
+        fillInput(a, testRng(s));
+        bank.f32.set(a, bank.inputAt(s));
+      }
+      bank.forwardSlots(Int32Array.from(slots), slots.length);
+      return new Map(slots.map((s) => [s, Array.from(bank.f32.subarray(bank.outputAt(s), bank.outputAt(s) + SIZE_SETS[s % SIZE_SETS.length]!.at(-1)!))]));
+    };
+    for (let slot = 0; slot < n; slot++) bank.set(slot, SIZE_SETS[slot % SIZE_SETS.length]!, randomGenome(SIZE_SETS[slot % SIZE_SETS.length]!, rng));
+    const kept: number[] = [];
+    for (let slot = 0; slot < n; slot++) if (slot % 3 === 0 || slot % 7 === 0) bank.release(slot); else kept.push(slot);
+    const before = run(kept);
+    const moved = new Set<number>();
+    bank.onMove = (slot) => moved.add(slot);
+    const span = (): number => Math.max(...kept.map((s) => bank.inputAt(s))) - Math.min(...kept.map((s) => bank.inputAt(s)));
+    const spanBefore = span();
+    for (let i = 0; i < 20; i++) bank.compact();
+    expect(moved.size).toBeGreaterThan(0);
+    expect(span()).toBeLessThan(spanBefore);
+    expect(run(kept)).toEqual(before);
+    const settled = moved.size;
+    bank.compact();
+    expect(moved.size).toBe(settled); // nothing left to move
+    for (let slot = 0; slot < n; slot += 3) if (!kept.includes(slot)) bank.set(slot, SIZE_SETS[2]!, randomGenome(SIZE_SETS[2]!, rng)); // refills the holes at the end
+    expect(run(kept)).toEqual(before);
+  });
+
+  it("readGenome rebuilds the stored genome bit for bit, for every size set, with and without a ray region, and after blocks moved", async () => {
+    const bank = WasmBrainBank.createSync()!;
+    const rng = testRng(31);
+    const genomes = new Map<number, Float32Array>();
+    const rays = (sizes: readonly number[], k: number): number => [0, 1, sizes[0]!, Math.floor(sizes[0]! / 2)][k % 4]!;
+    const n = 400;
+    for (let slot = 0; slot < n; slot++) {
+      const sizes = SIZE_SETS[slot % SIZE_SETS.length]!;
+      const g = randomGenome(sizes, rng);
+      genomes.set(slot, g);
+      bank.set(slot, sizes, g, rays(sizes, slot));
+    }
+    const same = (slot: number): void => {
+      const sizes = SIZE_SETS[slot % SIZE_SETS.length]!;
+      const out = new Float32Array(genomeLength(sizes));
+      bank.readGenome(slot, out);
+      expect(Buffer.from(out.buffer).equals(Buffer.from(genomes.get(slot)!.buffer))).toBe(true);
+    };
+    for (let slot = 0; slot < n; slot++) same(slot);
+    const kept: number[] = [];
+    for (let slot = 0; slot < n; slot++) if (slot % 3 === 0 || slot % 7 === 0) bank.release(slot); else kept.push(slot);
+    for (let i = 0; i < 20; i++) bank.compact();
+    for (const slot of kept) same(slot);
+    for (let slot = 0; slot < n; slot += 3) { // refilled holes and a changed layout in a used slot
+      const sizes = SIZE_SETS[(slot + 1) % SIZE_SETS.length]!;
+      const g = randomGenome(sizes, rng);
+      bank.set(slot, sizes, g, rays(sizes, slot + 1));
+      genomes.set(slot, g);
+      const out = new Float32Array(g.length);
+      bank.readGenome(slot, out);
+      expect(Buffer.from(out.buffer).equals(Buffer.from(g.buffer))).toBe(true);
+    }
+    for (const slot of kept) same(slot);
+  });
+
   it("rejects bad shapes", async () => {
     const bank = WasmBrainBank.createSync()!;
     expect(() => bank.set(0, [3], new Float32Array(0))).toThrow(/layer sizes/);
@@ -221,294 +332,60 @@ describe("WasmBrainBank", () => {
   });
 });
 
-describe("sense.wat (SenseKernels)", () => {
-  type Spot = [number, number, number]; // x, y, heading
-  interface Setup {
-    width?: number;
-    height?: number;
-    rays: number;
-    spread: number;
-    length?: number;
-    itemRadius?: number;
-    creatures: Spot[];
-    items?: [number, number, number][]; // x, y, kind
-    map?: Partial<SimConfig["world"]>; // stones, ridges and ground (terrain.ts) on top of the size
-    species?: number; // species count; creature k is of species k % species, and rays carry one flag per species
-  }
-
-  function build(o: Setup) {
-    const base = DEFAULT_ECO_CONFIG;
-    const names = Array.from({ length: o.species ?? 0 }, (_, i) => `s${i}`);
-    const cfg = {
-      ...base,
-      species: names.map((name) => ({ name, hue: -1, hueSpread: 360, plants: true, prey: [], eatEfficiency: 0, eatBaseline: 0 })),
-      world: { ...base.world, width: o.width ?? 1200, height: o.height ?? 800, ...(o.itemRadius === undefined ? {} : { itemRadius: o.itemRadius }), ...o.map },
-     creature: { ...base.creature, rayCount: o.rays, raySpread: o.spread, rayLength: o.length ?? 100 },
+describe("WasmBrainBank forwardRun", () => {
+  it("runs a scrambled slot list by block address as forwardSlots does, across growth, reshapes, releases and stamp wraps", async () => {
+    const bank = WasmBrainBank.createSync()!;
+    const rng = testRng(21);
+    const sizes = (s: number) => SIZE_SETS[s % 4]!;
+    const outs = (list: number[]): number[][] => list.map((s) => Array.from(bank.f32.slice(bank.outputAt(s), bank.outputAt(s) + 2)));
+    const inputs = new Map<number, Float32Array>();
+    const feed = (list: number[]): void => {
+      for (const s of list) {
+        const a = new Float32Array(sizes(s)[0]!);
+        fillInput(a, rng);
+        inputs.set(s, a);
+        bank.f32.set(a, bank.inputAt(s));
+      }
     };
-    const eng = o.species ? speciesEngine(cfg, speciesList(cfg)[0]!) : cfg; // what a creature of the ecosystem runs on
-    const world = new World(cfg, 400);
-    (o.items ?? []).forEach(([x, y, kind], i) => world.setItem(i, x, y, kind as 1 | 2));
-    const rng = createRng(3);
-    const kernels = SenseKernels.create(cfg)!;
-    kernels.store.species.push(eng); // the config the rows' species index 0 stands for
-    const kernel = o.creatures.map(([x, y, h]) => {
-      const g = randomGenome(layerSizes(cfg, planOf(cfg)), rng);
-      const c = new Creature(eng, g, x, y, h, undefined, kernels); // resident, as in an Ecosystem
-      return c;
-    });
-    const reference = o.creatures.map(([x, y, h], k) => new Creature(eng, kernel[k]!.brain.genome.slice(), x, y, h));
-    const states = kernel.map((c) => c.state);
-    states.forEach((s, k) => (s.energy = 10 + 37 * k));
-    reference.forEach((c, k) => (c.state.energy = states[k]!.energy));
-    return { cfg, world, kernels, kernel, reference, speciesOf: Int32Array.from(kernel, (_, k) => (o.species ? k % o.species : 0)) };
-  }
-
-  // The sense kernels on the batch of resident creatures, as Ecosystem.sensePhase runs them on its members.
-  function run(kernels: SenseKernels, world: World, crowd: Crowd, batch: SenseBatch): void {
-    const rows = Int32Array.from({ length: batch.count }, (_, k) => batch.creatures[k]!.resident!.ptr);
-    prepareRows(kernels.store, rows, batch.count, world.terrain);
-    kernels.runRows(world, crowd, rows, batch.selves, batch.count, kernels.detail);
-  }
-
-  // Runs the kernel with each creature in turn as the detail one and compares rays and brain input with the JS sense.
-  // exact: no creature is in sight of another, so the f32 crowd path does not enter and every bit must agree.
-  function check(o: Setup, exact: boolean) {
-    const { cfg, world, kernels, kernel, reference, speciesOf } = build(o);
-    const crowd = new Crowd(cfg);
-    crowd.rebuild(kernel.map((c) => c.state), kernel.length, speciesOf);
-    const batch = new SenseBatch();
-    kernel.forEach((c, k) => batch.add(c, k));
-    reference.forEach((c, k) => {
-      c.sense(world, crowd, k);
-      c.encode();
-    });
-    let bad = 0;
-    const seen = new Set<number>();
-    const species = new Set<number>();
-    kernel.forEach((c, k) => {
-      kernels.detail = c;
-      run(kernels, world, crowd, batch);
-      const ref = reference[k]!;
-      c.rays.forEach((ray, i) => {
-        seen.add(ray.kind);
-        if (ray.kind === HIT_CREATURE) species.add(ray.species);
-        const want = ref.rays[i]!;
-        if (exact) {
-          expect(ray.kind).toBe(want.kind);
-          expect(ray.closeness).toBe(want.closeness);
-        } else if (ray.kind !== want.kind || Math.abs(ray.closeness - want.closeness) > 1e-4 || (ray.kind === HIT_CREATURE && (ray.energy !== want.energy || ray.species !== want.species))) bad++;
-      });
-      const got = c.brain.layerActivations()[0]!;
-      const want = ref.encode();
-      expect(got.length).toBe(want.length);
-      if (exact) expect(Array.from(got)).toEqual(Array.from(want));
-      else for (let i = 0; i < got.length; i++) if (Math.abs(got[i]! - want[i]!) > 1e-4) bad++;
-      expect(Array.from(c.outputs).every(Number.isFinite)).toBe(true);
-    });
-    return { bad, seen, species, world, crowd, kernels, batch, kernel, reference, rays: kernel.length * o.rays };
-  }
-
-  const items: [number, number, number][] = [];
-  const itemRng = createRng(11);
-  for (let i = 0; i < 300; i++) items.push([itemRng.range(4, 1196), itemRng.range(4, 796), 1 + (i % 3 === 0 ? 1 : 0)]);
-
-  it("matches the JS rays bit for bit next to walls and in corners", () => {
-    const r = 12;
-    const spots: Spot[] = [[r, r, 5.5], [1200 - r, 800 - r, 2.4], [r, 800 - r, -1], [1200 - r, r, 3.5], [600, r, 1.6], [-300, 400, 0.7], [1300, 900, 4]];
-    const { seen } = check({ rays: 9, spread: 1.5, creatures: spots, items }, true);
-    expect(seen).toContain(HIT_WALL);
-    expect(seen).toContain(HIT_FOOD);
-    expect(seen).toContain(HIT_NONE);
-  });
-
-  it("matches with a full 360 degree fan, and with one ray", () => {
-    check({ rays: 12, spread: 2 * Math.PI, creatures: [[300, 300, 0.3], [20, 400, 3], [1190, 790, 5]], items }, true);
-    check({ rays: 1, spread: 0, creatures: [[300, 300, 0.3], [20, 400, 3]], items }, true);
-  });
-
-  it("matches the JS rays for items grazing the rays, where the cheap ray prefilter and the exact test meet", () => {
-    const r = DEFAULT_ECO_CONFIG.world.itemRadius;
-    const rng = createRng(21);
-    const spots: Spot[] = [[600, 400, 0.9], [333.3, 222.2, 4.1], [900.7, 600.1, 2.2]];
-    const graze: [number, number, number][] = [];
-    spots.forEach(([x, y, h]) => {
-      for (let i = 0; i < 90; i++) {
-        const a = h + (i % 9 - 4) * 0.35; // near the direction of a 9 ray fan of spread 1.4
-        const d = rng.range(5, 95);
-        const side = (i % 2 ? 1 : -1) * r * (1 + (rng.range(0, 1) - 0.5) * 4e-3); // perpendicular offset within 0.2% of the radius
-        graze.push([x + d * Math.cos(a) - side * Math.sin(a), y + d * Math.sin(a) + side * Math.cos(a), 1 + (i % 3 === 0 ? 1 : 0)]);
+    const alive = new Set<number>();
+    const idle = 999; // run in the first call only, so a stamp reused after the wrap would list it wrongly if the marks were not cleared
+    for (let round = 0; round < 600; round++) {
+      // births in new slots (growing the slot tables), reshapes of old ones and releases
+      if (round === 0) { bank.set(idle, sizes(idle), randomGenome(sizes(idle), rng)); alive.add(idle); }
+      const born = round < 5 ? 40 : 1 + (round % 3);
+      for (let k = 0; k < born; k++) {
+        const s = round < 5 ? alive.size - 1 : (round * 7 + k) % 300;
+        bank.set(s, sizes(s + round), randomGenome(sizes(s + round), rng));
+        alive.add(s);
       }
-    });
-    const { seen } = check({ rays: 9, spread: 1.4, creatures: spots, items: graze }, true);
-    expect(seen).toContain(HIT_FOOD);
-  });
-
-  it("matches the JS rays for items a few float steps either side of the exact-test boundary, for any item radius", () => {
-    const ulp = 2 ** -15; // spacing of f32 values in [256, 512)
-    check({ rays: 1, spread: 0, width: 6000, length: 5000, itemRadius: 0, creatures: [[500, 100, 0]], items: [[4500, 100 + 2.29e-5, 1]] }, true); // far item, rounding makes the discriminant 0
-    for (const itemRadius of [4, 1e-4, 0]) {
-      const items: [number, number, number][] = [];
-      for (let i = 0; i < 10; i++) {
-        for (let j = -3; j <= 3; j++) {
-          if (j === 0 && itemRadius === 0) continue; // an item on the ray would hide the grazing ones behind it
-          items.push([3000 + 200 * i, 400 + itemRadius + j * ulp, 1], [3100 + 200 * i, 400 - itemRadius + j * ulp, 2]);
-        }
-      }
-      const rng = createRng(9);
-      for (let i = 0; i < 40; i++) items.push([rng.range(3000, 5000), 400 + rng.range(-1, 1) * itemRadius, 1]);
-      check({ rays: 1, spread: 0, width: 6000, length: 5000, itemRadius, creatures: [[600, 400, 0]], items }, true);
-      check({ rays: 3, spread: 1e-3, width: 6000, length: 5000, itemRadius, creatures: [[600, 400, 0]], items }, true);
+      if (round % 5 === 4) { const s = [...alive].filter((x) => x !== idle)[round % (alive.size - 1)]!; bank.release(s); alive.delete(s); }
+      const list = [...alive].filter((s) => (s + round) % 4 !== 0 && (s !== idle || round === 0)).sort((a, b) => ((a * 7919 + round) % 101) - ((b * 7919 + round) % 101));
+      feed(list);
+      const slots = Int32Array.from(list);
+      new Int32Array(bank.memory.buffer).set(slots, bank.runRegion(list.length) >> 2);
+      bank.forwardRun(list.length);
+      const viaRun = outs(list);
+      list.forEach((s) => bank.f32.set(inputs.get(s)!, bank.inputAt(s)));
+      bank.forwardSlots(slots, list.length);
+      expect(outs(list)).toEqual(viaRun);
     }
   });
 
-  it("handles a plan with zero rays", () => {
-    const { kernel } = check({ rays: 0, spread: 0, creatures: [[300, 300, 0.3], [400, 300, 1]], items }, true);
-    expect(kernel[0]!.rays.length).toBe(0);
-  });
-
-  it("agrees with JS on an item exactly at the ray length, and a hair either side", () => {
-    const r = DEFAULT_ECO_CONFIG.world.itemRadius;
-    for (const d of [0, -1e-3, 1e-3, -0.5, 0.5]) {
-      const { rays } = check({ rays: 1, spread: 0, length: 100, creatures: [[200, 300, 0]], items: [[200 + 100 + r + d, 300, 1]] }, true);
-      expect(rays).toBe(1);
-    }
-    check({ rays: 3, spread: 0.2, length: 100, creatures: [[200, 300, 0]], items: [[200 + 100 + r, 300, 2], [200 + 100, 300 + r, 1], [250, 300, 2]] }, true);
-  });
-
-  it("matches the JS rays bit for bit around rock, and sees the ground under each creature", () => {
-    const map = { stoneDensity: 0.06, ridgeDensity: 0.05, slowDensity: 0.1, fastDensity: 0.1 };
-    const t = terrainOf({ seed: DEFAULT_ECO_CONFIG.seed, world: { width: 3000, height: 2000, ...map } });
-    const rng = createRng(21);
-    const spots: Spot[] = [];
-    for (let tries = 0; spots.length < 24 && tries < 20000; tries++) {
-      const d = rng.int(t.rockCount);
-      const near = t.rockR[d]! + rng.range(5, 220);
-      const a = rng.range(0, 2 * Math.PI);
-      const hug = tries % 2 === 0; // half the spots hug rock, half lie anywhere, so mud and firm ground are both under some
-      const x = hug ? t.rockX[d]! + near * Math.cos(a) : rng.range(20, 2980);
-      const y = hug ? t.rockY[d]! + near * Math.sin(a) : rng.range(20, 1980);
-      const apart = spots.every(([sx, sy]) => Math.hypot(sx - x, sy - y) > 300); // out of each other's sight, so the f32 crowd path stays out of it
-      if (apart && x > 12 && y > 12 && x < 2988 && y < 1988 && !t.touchesRock(x, y, 12)) spots.push([x, y, rng.range(0, 2 * Math.PI)]);
-    }
-    const some = items.map(([x, y, k]) => [x * 2.5, y * 2.5, k] as [number, number, number]);
-    const { seen } = check({ width: 3000, height: 2000, rays: 10, spread: 3, length: 150, creatures: spots, items: some, map }, true);
-    expect(seen).toContain(HIT_WALL);
-    const grounds = new Set(spots.map(([x, y]) => t.valueAt(x, y)));
-    expect(grounds.size).toBeGreaterThan(1);
-    check({ width: 3000, height: 2000, rays: 6, spread: 2 * Math.PI, length: 250, creatures: spots, map }, true);
-  });
-
-  it("breaks exact ties between items in different cells and in one cell by grid order, as World.castRays does", () => {
-    const r = DEFAULT_ECO_CONFIG.world.itemRadius;
-    expect(r).toBe(4);
-    // One ray along +x (dy is exactly 0), so items mirrored about its line have identical hit distances.
-    // Ray length 100 makes the grid cell 100, so y = 300 is a row boundary: y 298 is the row before y 302.
-    const across = (foodY: number, poisonY: number) =>
-      check({ rays: 1, spread: 0, length: 100, creatures: [[200, 300, 0]], items: [[250, foodY, 1], [250, poisonY, 2]] }, true).kernel[0]!.rays[0]!.kind;
-    expect(across(298, 302)).toBe(HIT_FOOD); // the earlier row's item wins
-    expect(across(302, 298)).toBe(HIT_POISON);
-    // Same cell (y 250 in row 2, rows are 100 tall): the last placed item heads the cell's list.
-    const within = (items: [number, number, number][]) => check({ rays: 1, spread: 0, length: 100, creatures: [[200, 250, 0]], items }, true).kernel[0]!.rays[0]!.kind;
-    expect(within([[250, 248, 1], [250, 252, 2]])).toBe(HIT_POISON);
-    expect(within([[250, 248, 2], [250, 252, 1]])).toBe(HIT_FOOD);
-  });
-
-  it("sees item changes between runs, such as an item eaten or placed mid-tick", () => {
-    const o: Setup = { rays: 5, spread: 1, creatures: [[300, 300, 0]], items: [[360, 300, 1], [380, 305, 2]] };
-    const { world, crowd, kernels, batch, kernel, reference } = check(o, true);
-    for (const step of [() => world.removeItem(0), () => world.setItem(0, 340, 295, 2), () => world.removeItem(1)]) {
-      step();
-      reference[0]!.sense(world, crowd, 0);
-      kernels.detail = kernel[0]!;
-      run(kernels, world, crowd, batch);
-      kernel[0]!.rays.forEach((ray, i) => {
-        expect(ray.kind).toBe(reference[0]!.rays[i]!.kind);
-        expect(ray.closeness).toBe(reference[0]!.rays[i]!.closeness);
-      });
-    }
-  });
-
-  it("keeps matching while items move in and out of crowded cells, and when a row outgrows its packed run", () => {
-    const o: Setup = { rays: 7, spread: 2, creatures: [[300, 250, 0.4], [700, 250, 3]], items };
-    const { world, crowd, kernels, batch, kernel, reference } = check(o, true);
-    const rng = createRng(5);
-    const agree = () => {
-      kernel.forEach((c, k) => {
-        reference[k]!.sense(world, crowd, k);
-        kernels.detail = c;
-        run(kernels, world, crowd, batch);
-        c.rays.forEach((ray, i) => {
-          expect(ray.kind).toBe(reference[k]!.rays[i]!.kind);
-          expect(ray.closeness).toBe(reference[k]!.rays[i]!.closeness);
-        });
-      });
+  it("rejects a run list with a slot that holds no brain or one that is listed twice", async () => {
+    const bank = WasmBrainBank.createSync()!;
+    const sizes = SIZE_SETS[4]!;
+    const rng = testRng(22);
+    for (const s of [0, 1, 3]) bank.set(s, sizes, randomGenome(sizes, rng));
+    const run = (list: number[]): void => {
+      new Int32Array(bank.memory.buffer).set(list, bank.runRegion(list.length) >> 2);
+      bank.forwardRun(list.length);
     };
-    for (let round = 0; round < 30; round++) {
-      for (let k = 0; k < 20; k++) {
-        const i = Math.floor(rng.range(0, 400));
-        if (round < 20 && k % 3 === 0) world.removeItem(i);
-        else world.setItem(i, rng.range(4, 1196), 230 + rng.range(0, 40), (1 + (k % 2)) as 1 | 2); // crowd the row of the creatures
-      }
-      agree();
-    }
-  });
-
-  it("sees other creatures with their energy, within f32 rounding of the JS crowd rays", () => {
-    const rng = createRng(7);
-    const spots: Spot[] = Array.from({ length: 120 }, () => [rng.range(0, 600), rng.range(0, 400), rng.range(0, 7)]);
-    const { bad, rays } = check({ width: 600, height: 400, rays: 8, spread: 2, length: 120, creatures: spots, items: items.filter(([x, y]) => x < 600 && y < 400) }, false);
-    expect(rays).toBe(960);
-    expect(bad).toBeLessThanOrEqual(2);
-  });
-
-  it("writes one flag per species and the energy after them, as the JS encoding does", () => {
-    const rng = createRng(21);
-    const spots: Spot[] = Array.from({ length: 120 }, () => [rng.range(0, 600), rng.range(0, 400), rng.range(0, 7)]);
-    const { bad, species, kernel } = check({ width: 600, height: 400, rays: 8, spread: 2, length: 120, creatures: spots, items: items.filter(([x, y]) => x < 600 && y < 400), species: 3 }, false);
-    expect([...species].sort()).toEqual([0, 1, 2]);
-    expect(kernel[0]!.brain.layerActivations()[0]!.length).toBe(8 * (5 + 3) + 5 + 4);
-    expect(bad).toBeLessThanOrEqual(2);
-    check({ rays: 6, spread: 2, creatures: [[300, 300, 0], [900, 600, 2]], items, species: 2 }, true); // no creature in sight: flags all zero, exact
-  });
-
-  it("reads the outputs in place across a kernel memory growth", () => {
-    const { kernel, kernels } = check({ rays: 4, spread: 1, creatures: [[300, 300, 0], [320, 300, 3], [700, 500, 1]], items }, false);
-    const before = kernel.map((c) => Array.from(c.outputs));
-    const bank = (kernels as unknown as { brains: WasmBrainBank }).brains;
-    const old = bank.memory.buffer;
-    bank.alloc(20_000_000); // grows the memory, detaching the old buffer
-    expect(old.byteLength).toBe(0);
-    kernel.forEach((c, k) => {
-      expect(Array.from(c.outputs)).toEqual(before[k]);
-      expect(Number.isFinite(c.drain)).toBe(true);
-    });
-  });
-
-  it("runs a creature reset with a new genome and plan as that one, without the caller attaching it again", () => {
-    const { cfg, world, kernels, kernel } = build({ rays: 6, spread: 1.5, creatures: [[300, 300, 0.3]], items });
-    const c = kernel[0]!;
-    const plan = { ...c.plan, rayCount: 4, raySpread: 1, hiddenLayers: [5, 3] };
-    const genome = randomGenome(layerSizes(cfg, plan), createRng(8));
-    c.reset(genome, 320, 310, 1.1, 50, plan);
-    const reference = new Creature(cfg, genome.slice(), 320, 310, 1.1, plan);
-    reference.state.energy = 50;
-    const crowd = new Crowd(cfg);
-    crowd.rebuild([c.state], 1);
-    const batch = new SenseBatch();
-    batch.add(c, 0);
-    run(kernels, world, crowd, batch);
-    reference.senseThink(world, crowd, 0);
-    expect(c.outputs.length).toBe(reference.outputs.length);
-    c.outputs.forEach((v, i) => expect(Math.abs(v - reference.outputs[i]!)).toBeLessThan(1e-4));
-  });
-
-  it("keeps the rays of non-detail creatures untouched and needs no detail", () => {
-    const { kernel, world, crowd, kernels, batch } = check({ rays: 4, spread: 1, creatures: [[300, 300, 0], [320, 300, 3]], items }, false);
-    kernel[1]!.rays[0]!.closeness = 0.123;
-    kernels.detail = kernel[0]!;
-    run(kernels, world, crowd, batch);
-    expect(kernel[1]!.rays[0]!.closeness).toBe(0.123);
-    kernels.detail = null;
-    run(kernels, world, crowd, batch);
+    run([3, 0, 1]);
+    expect(() => run([3, 2, 1])).toThrow(/without a brain/); // slot 2 was never set
+    expect(() => run([3, 3, 1])).toThrow(/or one twice/);
+    expect(() => run([3, 900, 1])).toThrow(/without a brain/); // beyond the slot table
+    bank.release(1);
+    expect(() => run([3, 0, 1])).toThrow(/without a brain/);
+    run([3, 0]);
   });
 });

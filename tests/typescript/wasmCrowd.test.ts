@@ -1,15 +1,17 @@
 import "../../src/typescript/src/sim/maps/index.ts"; // the Inland Sea cases build the map
 import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
-import { Crowd } from "../../src/typescript/src/sim/crowd.ts";
+import { Crowd, SMALL_SORT as SMALL } from "../../src/typescript/src/sim/crowd.ts";
 import { restoreState, saveState } from "../../src/typescript/src/sim/ecoState.ts";
 import type { EcoState } from "../../src/typescript/src/sim/ecoState.ts";
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
 import { ECO_PRESETS, withEcoPreset } from "../../src/typescript/src/sim/presets.ts";
 import { createRng } from "../../src/typescript/src/sim/rng.ts";
-import { energySignal } from "../../src/typescript/src/sim/sensors.ts";
+import { EXTRA_TERRAIN, energySignal } from "../../src/typescript/src/sim/sensors.ts";
 import { wasmAvailable } from "../../src/typescript/src/sim/wasm/loader.ts";
-import { Region } from "../../src/typescript/src/sim/wasm/resident.ts";
+import { LAYOUT } from "../../src/typescript/src/sim/wasm/layout.ts";
+import { F, Region } from "../../src/typescript/src/sim/wasm/resident.ts";
+import { prepareRows } from "../../src/typescript/src/sim/wasm/residentStep.ts";
 import { useKernels } from "./helpers.ts";
 
 // The WebAssembly crowd grid (crowd.wat, crowdKernel.ts) against its JS twin Crowd.rebuild (crowd.ts): every array must be the same bit for bit,
@@ -141,6 +143,28 @@ describe.skipIf(!wasmAvailable())("the WebAssembly crowd grid equals Crowd.rebui
     expect(bad).toBe(0);
   });
 
+  it("with toRows, in each creature's row as its first brain input extra, which the fill kernel's prepare then leaves", () => {
+    const eco = make(inland, 400);
+    const e = eco as Any;
+    for (let t = 0; t < 5; t++) eco.step();
+    eco.prepareTick();
+    const crowd: Crowd = e.crowd;
+    const store = e.resident;
+    const [sx, sy, sig] = [new Region(), new Region(), new Region()].map((r) => store.grow(r, crowd.count * 4 + 16));
+    crowd.kernel!.pack(300, sx!, sy!, sig!, true);
+    const { rows, n } = eco.senseBatchRows();
+    const first = (k: number) => store.f64[(rows[k]! >> 3) + F.extras] as number;
+    let bad = 0;
+    for (let k = 0; k < crowd.count; k++) {
+      const row = e.table.rowAt[crowd.owners[k]!]!;
+      if (!Object.is(store.f64[row + F.extras], Math.fround(energySignal(crowd.energies[k]!, 300)))) bad++;
+    }
+    const kept = Array.from({ length: n }, (_, k) => first(k));
+    e.kernels.prepareRows(rows, n, e.items.terrain);
+    for (let k = 0; k < n; k++) if (!Object.is(first(k), kept[k])) bad++;
+    expect(bad).toBe(0);
+  });
+
   it("after the memory grows, which replaces every view of it", () => {
     const eco = make(inland, 300);
     const e = eco as Any;
@@ -154,6 +178,44 @@ describe.skipIf(!wasmAvailable())("the WebAssembly crowd grid equals Crowd.rebui
       eco.step();
       e.kernels.brains.alloc(16 * 1024 * 1024);
       expect(crowdDifferences(eco)).toBe(0);
+    }
+  });
+
+  it("when the tick start reuses the grid of the shared phase, through births, deaths, eating, hunting and bumps", () => {
+    const worlds: [string, () => Ecosystem][] = [
+      ["bumps with damage", () => make((c) => damage({ ...c, world: { ...c.world, width: 1500, height: 1000 }, eco: { ...c.eco, birthEnergyRange: [60, 80], birthCostRange: [20, 30], birthCooldownRange: [1, 2] } }), 300)],
+      ["hunting", () => new Ecosystem(structuredClone(DEFAULT_PREDATOR_CONFIG), null)],
+    ];
+    for (const [name, build] of worlds) {
+      const eco = build();
+      const e = eco as Any;
+      let reused = 0;
+      let rebuilt = 0;
+      let bad = 0;
+      const refresh = e.wasmCrowd.refresh.bind(e.wasmCrowd);
+      e.wasmCrowd.refresh = (...a: unknown[]): boolean => {
+        const ok = refresh(...a);
+        if (ok) reused++;
+        return ok;
+      };
+      const rebuild = e.wasmCrowd.rebuild.bind(e.wasmCrowd);
+      e.wasmCrowd.rebuild = (...a: unknown[]): void => {
+        rebuilt++;
+        rebuild(...a);
+      };
+      const births = eco.births;
+      for (let t = 0; t < 300 && eco.members.length > SMALL; t++) {
+        eco.step();
+        // what the next tick start sees, after edits between ticks: energies only, or a move into another cell
+        if (t % 7 === 3) eco.members[t % eco.members.length]!.creature.state.energy *= 0.5;
+        if (t % 11 === 5) eco.members[t % eco.members.length]!.creature.state.x += 2 * e.crowd.cell;
+        eco.prepareTick();
+        bad += crowdDifferences(eco);
+      }
+      expect(bad, name).toBe(0);
+      expect(reused, name).toBeGreaterThan(20);
+      expect(rebuilt - 300, name).toBeGreaterThan(20); // the shared phase rebuilds every tick, the tick start after births, deaths and cell changes
+      expect(eco.births - births, name).toBeGreaterThan(0);
     }
   });
 
@@ -296,6 +358,10 @@ describe.skipIf(!wasmAvailable())("the WebAssembly collision sweep finds the pai
 });
 
 describe.skipIf(!wasmAvailable())("the WebAssembly kernels at their edges", () => {
+  it("crowd.wat reads x and y of a row as one f64x2, so y must follow x", () => {
+    expect(LAYOUT.R_Y).toBe(LAYOUT.R_X + 8);
+  });
+
   it("switching between the WebAssembly and the JS crowd while the memory grows", () => {
     const eco = make(inland, 300);
     const e = eco as Any;
@@ -469,4 +535,51 @@ describe.skipIf(!wasmAvailable())("whole runs with the WebAssembly crowd grid an
       expect([b.fingerprint(), b.population, b.deaths]).toEqual([a.fingerprint(), a.population, a.deaths]);
     }
   });
+});
+
+describe.skipIf(!wasmAvailable())("the own energy signal in the rows (packsOwnSignal)", () => {
+  // Species start energies [a, b]: equal ones let the crowd kernel pack the signal, unequal ones take the JS prepareRows twin.
+  const world = (a: number, b: number): Ecosystem => {
+    const c = structuredClone(DEFAULT_PREDATOR_CONFIG);
+    c.world = { ...c.world, width: 3000, height: 2000, stoneDensity: 0.06, slowDensity: 0.1, fastDensity: 0.1 };
+    c.species![0]!.startEnergy = a;
+    c.species![0]!.founders = 60;
+    c.species![1]!.startEnergy = b;
+    c.species![1]!.founders = 20;
+    c.eco.maxPopulation = 200;
+    return new Ecosystem(c, null);
+  };
+
+  for (const [a, b, packs] of [[50, 120, false], [90, 50, false], [50, 50, true], [120, 120, true]] as const) {
+    it(`with start energies ${a} and ${b}, ${packs ? "the crowd kernel packs" : "prepareRows writes"} the signal and the rows equal the JS twin bit for bit`, () => {
+      const eco = world(a, b);
+      const e = eco as Any;
+      for (let t = 0; t < 6; t++) eco.step();
+      eco.prepareTick();
+      expect(e.crowd.kernel).not.toBeNull();
+      expect(e.kernels.packsOwnSignal(e.crowd)).toBe(packs);
+      const { rows, selves, n } = eco.senseBatchRows();
+      expect(n).toBeGreaterThan(30);
+      eco.senseRows(rows, selves, n);
+      const f: Float64Array = e.resident.f64;
+      const fields = [F.extras, F.extras + 1, F.extras + 2, F.extras + 3, F.extras + EXTRA_TERRAIN, F.groundFactor];
+      const read = (): number[] => Array.from({ length: n }, (_, k) => fields.map((x) => f[(rows[k]! >> 3) + x]!)).flat();
+      const got = read();
+      let grounded = 0;
+      for (let k = 0; k < n; k++) {
+        const o = rows[k]! >> 3;
+        const m = eco.members[selves[k]!]!;
+        const start = m.species === 0 ? a : b;
+        const signal = energySignal(f[o + F.energy]!, start);
+        expect(Object.is(f[o + F.extras], packs ? Math.fround(signal) : signal)).toBe(true); // the packed one is f32 rounded, the twin's is not
+        if (f[o + F.extras + EXTRA_TERRAIN] !== 0) grounded++;
+      }
+      expect(grounded).toBeGreaterThan(0);
+      const signals = Array.from({ length: n }, (_, k) => f[(rows[k]! >> 3) + F.extras]!);
+      prepareRows(e.resident, rows, n, e.items.terrain);
+      if (packs) signals.forEach((v, k) => (f[(rows[k]! >> 3) + F.extras] = v)); // the twin writes the unrounded signal the pack already stored
+      expect(read()).toEqual(got);
+      expect(got.every(Number.isFinite)).toBe(true);
+    });
+  }
 });

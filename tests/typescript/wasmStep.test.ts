@@ -8,6 +8,7 @@ import { ECO_PRESETS, withEcoPreset } from "../../src/typescript/src/sim/presets
 import { createRng } from "../../src/typescript/src/sim/rng.ts";
 import { LAYOUT as L } from "../../src/typescript/src/sim/wasm/layout.ts";
 import { wasmAvailable } from "../../src/typescript/src/sim/wasm/loader.ts";
+import { trigPortMatches } from "../../src/typescript/src/sim/wasm/stepKernel.ts";
 
 // The WebAssembly step (step.wat, stepKernel.ts) against the Creature code it replaces (remember and steer, which run on resident rows like on any state) on the same rows:
 // every f64 of every row and every memory unit must be the same bit for bit (Object.is), tick after tick, in worlds of every kind, and whole runs and saves must not tell the two apart.
@@ -177,6 +178,40 @@ describe.skipIf(!wasmAvailable())("the WebAssembly step equals the Creature code
     eco.sensePhase();
     expect(stepBoth(eco)).toBe(0);
     expect(e.kernels).not.toBeNull();
+  });
+
+  const headings = [823549, -823549, 823549.6, 823550, -823550, 1e6, -1e6, 1e9, -1e9, 1e300, -1e300, Infinity, -Infinity, NaN, -0, 1e-300, -3, 100, -1000.5, 4.71238898038469];
+
+  it("on large, negative and special headings, with the fdlibm port and with the host's functions", () => {
+    for (const port of [1, 0]) {
+      const eco = make(inland, 120);
+      const e = eco as Any;
+      const exports = e.kernels.stepper.exports;
+      expect(exports.port.value).toBe(1); // the probe accepts the port on this engine
+      exports.port.value = port;
+      eco.prepareTick();
+      eco.sensePhase();
+      eco.members.forEach((m, i) => {
+        m.creature.state.heading = headings[i % headings.length]!;
+        m.creature.state.turnRate = i % 3 === 0 ? 0 : 20 * (i % 2 ? 1 : -1);
+      });
+      expect(stepBoth(eco)).toBe(0);
+    }
+  });
+
+  it("the port equals Math.sin and Math.cos on random, large and edge angles, and the probe notices a differing host function", () => {
+    const eco = make((c) => c, 1);
+    const exports = (eco as Any).kernels.stepper.exports;
+    const rng = createRng(5);
+    const xs = [...headings, ...Array.from({ length: 20000 }, () => (rng.next() - 0.5) * 10 ** rng.int(8))];
+    for (let k = -300; k <= 300; k++) xs.push(k * (Math.PI / 2), k * (Math.PI / 2) * (1 + Number.EPSILON));
+    for (const x of xs) {
+      const [s, c] = exports.portSincos(x);
+      expect(Object.is(s, Math.sin(x)) && Object.is(c, Math.cos(x))).toBe(true);
+    }
+    expect(trigPortMatches(exports, Math.sin, Math.cos)).toBe(true);
+    expect(trigPortMatches(exports, (x) => Math.sin(x) * (1 + 2 ** -52), Math.cos)).toBe(false); // a libm that differs in the last bit
+    expect(trigPortMatches(exports, Math.sin, (x) => (Math.abs(x) < 3 ? Math.cos(x) : Math.cos(x) + 2 ** -53))).toBe(false);
   });
 
   // The f32 brain outputs of the row at batch position k, as an index into the f32 view.

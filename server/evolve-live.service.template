@@ -11,7 +11,7 @@ StartLimitBurst=5
 [Service]
 WorkingDirectory=@REPO@/server
 Environment=LIVE_STATE_DIR=@STATE@
-ExecStart=@NODE@/bin/node --max-old-space-size=768 src/main.ts
+ExecStart=@NODE@/bin/node --max-old-space-size=768 --max-semi-space-size=4 src/main.ts
 Nice=19
 CPUSchedulingPolicy=idle
 IOSchedulingClass=idle

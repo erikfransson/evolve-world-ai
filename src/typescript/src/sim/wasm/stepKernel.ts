@@ -2,7 +2,7 @@ import type { EngineConfig } from "../config.ts";
 import type { Aging } from "../physics.ts";
 import { decaysFor } from "../physics.ts";
 import { OUTPUT_SIZE } from "../sensors.ts";
-import { CLEAR_CELL, ROCK_CELL } from "../terrain.ts";
+import { CLEAR_SHIFT, ROCK_CELL } from "../terrain.ts";
 import type { Terrain } from "../terrain.ts";
 import { STEP_BYTES, compiled } from "./loader.ts";
 import { LAYOUT as L, f64At } from "./layout.ts";
@@ -10,11 +10,47 @@ import { Region } from "./resident.ts";
 import type { ResidentStore } from "./resident.ts";
 
 // The per-creature step of resident rows in WebAssembly (step.wat), a twin of Creature.remember and steer (physics.stepBody) that tests/typescript/wasmStep.test.ts
-// compares bit for bit. Math.sin and Math.cos are the engine's own, imported, and the decay factors (Math.exp) are computed here per call, so the results equal the JS path on every engine.
+// compares bit for bit. Math.sin and Math.cos are the engine's own, imported, and the decay factors (Math.exp) are computed here per call. The kernel also holds a port of
+// V8's fdlibm sin and cos, used only where trigPortMatches finds it equal to the host's functions on the probe angles, so the results equal the JS path on every engine.
 
 interface StepExports extends WebAssembly.Exports {
   step(p: number): void;
+  port: WebAssembly.Global;
+  portSincos(x: number): [number, number];
 }
+
+// Angles that exercise every branch of the port: uniform headings, wide ranges up to its limit, multiples of pi/2 within a few ulps, and the edge cases.
+function probeAngles(): Float64Array {
+  const xs: number[] = [0, -0, 5e-324, 1e-10, 2 ** -28, Math.PI / 4, -Math.PI / 4, 3 * Math.PI / 4, 823549.6, 1e9, NaN, Infinity, -Infinity];
+  let state = 0x9e3779b9; // xorshift32, the same angles on every engine
+  const next = (): number => {
+    state ^= state << 13;
+    state ^= state >>> 17;
+    state ^= state << 5;
+    return (state >>> 0) / 4294967296 - 0.5;
+  };
+  for (let i = 0; i < 1500; i++) xs.push(100 * next());
+  for (let i = 0; i < 512; i++) xs.push(2e4 * next(), 1.6e6 * next());
+  const bits = new Float64Array(1);
+  const ints = new BigInt64Array(bits.buffer);
+  for (let i = 0; i < 512; i++) {
+    bits[0] = Math.round(2000 * next()) * (Math.PI / 2);
+    ints[0]! += BigInt(Math.round(8 * next()));
+    xs.push(bits[0]);
+  }
+  return Float64Array.from(xs);
+}
+
+// True when the kernel's fdlibm port gives the same bits as the given sin and cos on the probe angles (a few percent of angles differ on engines with another libm, so thousands catch it).
+export function trigPortMatches(exports: Pick<StepExports, "portSincos">, sin: (x: number) => number, cos: (x: number) => number): boolean {
+  for (const x of probeAngles()) {
+    const [s, c] = exports.portSincos(x);
+    if (!Object.is(s, sin(x)) || !Object.is(c, cos(x))) return false;
+  }
+  return true;
+}
+
+let portOk: boolean | undefined; // the host's Math does not change, so one probe serves every stepper
 
 export class WasmStepper {
   private readonly store: ResidentStore;
@@ -22,7 +58,7 @@ export class WasmStepper {
   private readonly rRows = new Region(); // the row addresses of the batch
   private readonly rSpecies = new Region(); // one species block each
   private readonly rRock = [new Region(), new Region(), new Region()]; // rockStart, rockOrder, the discs as x, y, r
-  private nearRegions: Region[] = []; // per species, the clear-of-rock raster
+  private nearRegions: Region[] = []; // per species, the clear-of-rock raster, a bit per square
   private nearRadius: number[] = []; // the radius each raster was made for
   private terrain: Terrain | null = null; // the map whose rock is in wasm memory
   private pP = 0;
@@ -36,7 +72,9 @@ export class WasmStepper {
   static create(store: ResidentStore): WasmStepper | null {
     try {
       const imports = { brain: { mem: store.bank.memory }, math: { sin: Math.sin, cos: Math.cos } };
-      return new WasmStepper(store, new WebAssembly.Instance(compiled(STEP_BYTES), imports).exports as StepExports);
+      const exports = new WebAssembly.Instance(compiled(STEP_BYTES), imports).exports as StepExports;
+      exports.port.value = (portOk ??= trigPortMatches(exports, Math.sin, Math.cos)) ? 1 : 0;
+      return new WasmStepper(store, exports);
     } catch {
       return null;
     }
@@ -75,8 +113,10 @@ export class WasmStepper {
       if (this.nearRadius[s] === radius) continue;
       const raster = terrain.nearFor(radius);
       const region = (this.nearRegions[s] ??= new Region());
-      const at = store.grow(region, raster.length);
-      new Uint8Array(store.i32.buffer, at, raster.length).set(raster);
+      const at = store.grow(region, (raster.length + 7) >> 3);
+      const bits = new Uint8Array(store.i32.buffer, at, (raster.length + 7) >> 3);
+      bits.fill(0);
+      for (let i = 0; i < raster.length; i++) if (raster[i]) bits[i >> 3]! |= 1 << (i & 7);
       this.nearRadius[s] = radius;
     }
   }
@@ -134,7 +174,7 @@ export class WasmStepper {
     i32[(P + L.P_NEAR_ROWS) >> 2] = terrain.nearRows;
     f64[(P + L.P_MAX_ROCK_R) >> 3] = terrain.maxRockR;
     f64[(P + L.P_INV_ROCK_CELL) >> 3] = 1 / ROCK_CELL;
-    f64[(P + L.P_CLEAR_CELL) >> 3] = CLEAR_CELL;
+    i32[(P + L.P_CLEAR_SHIFT) >> 2] = CLEAR_SHIFT;
     f64[(P + L.P_AGING_START) >> 3] = aging?.startTicks ?? 0;
     f64[(P + L.P_AGING_PER_TICK) >> 3] = aging?.perTick ?? 0;
     this.exports.step(P);

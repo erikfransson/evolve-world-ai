@@ -2,7 +2,7 @@
 import { pageBody } from "./pageLoader.ts";
 import { DEFAULT_CONFIG } from "../../src/typescript/src/sim/config.ts";
 import type { SimConfig } from "../../src/typescript/src/sim/config.ts";
-import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
+import { DEFAULT_ECO_CONFIG, MAX_CREATURES } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { buildForm } from "../../src/typescript/src/ui/settingsForm.ts";
 import type { FormHandle } from "../../src/typescript/src/ui/settingsForm.ts";
@@ -45,6 +45,17 @@ describe("settings JSON", () => {
 
   it("says that The Great Hunt was removed for an old pasted file", () => {
     expect(() => parseSettings(JSON.stringify({ mode: "predators", version: 1 }), "ecosystem")).toThrow(/The Great Hunt, which has been removed/);
+  });
+
+  it("refuses more hidden layers than the brain kernels hold when pasted, and holds the population to what a save may carry", () => {
+    const paste = (config: object) => parseSettings(JSON.stringify({ mode: "ecosystem", version: 1, config }), "ecosystem");
+    expect(paste({ brain: { hiddenLayers: [4, 4, 4, 4, 4, 4, 4, 4] } }).brain.hiddenLayers).toHaveLength(8);
+    expect(() => paste({ brain: { hiddenLayers: [4, 4, 4, 4, 4, 4, 4, 4, 4] } })).toThrow(/brain.hiddenLayers" must have at most 8 layers, got 9/);
+    expect(() => paste({ brain: { hiddenLayers: new Array(10).fill(4) } })).toThrow(/at most 8 layers/);
+    const big = paste({ eco: { maxPopulation: 70_000, initialPopulation: 1e9, birthReserve: 65_536 } }).eco;
+    expect([big.maxPopulation, big.initialPopulation, big.birthReserve]).toEqual([MAX_CREATURES, MAX_CREATURES, MAX_CREATURES]);
+    const kept = paste({ eco: { maxPopulation: 4000, initialPopulation: 300 } }).eco;
+    expect([kept.maxPopulation, kept.initialPopulation]).toEqual([4000, 300]);
   });
 
   it("rejects pasted species, which only the RL Arena uses", () => {

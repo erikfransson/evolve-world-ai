@@ -3,14 +3,18 @@ import { Creature } from "../../src/typescript/src/sim/creature.ts";
 import type { CreatureState } from "../../src/typescript/src/sim/types.ts";
 import { Crowd } from "../../src/typescript/src/sim/crowd.ts";
 import { createRng } from "../../src/typescript/src/sim/rng.ts";
-import { DEFAULT_ECO_CONFIG, seasonFactor, seasonName } from "../../src/typescript/src/sim/ecoConfig.ts";
+import { DEFAULT_ECO_CONFIG, MAX_HIDDEN_LAYERS, seasonFactor, seasonName } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { EVENT_CAP, EVENT_DEATH, EVENT_IMPACT, EVENT_STRIDE, Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
+import { MAX_SPARE, type SparePool } from "../../src/typescript/src/sim/sparePool.ts";
 import { trialsSizes } from "../../src/typescript/src/sim/seedPool.ts";
 import type { PoolEntry } from "../../src/typescript/src/sim/seedPool.ts";
 import { FEAT_CREATURE, FEAT_SEEN_ENERGY, energySignal, inputLayout } from "../../src/typescript/src/sim/sensors.ts";
 import { HIT_CREATURE, HIT_FOOD, HIT_NONE, HIT_POISON } from "../../src/typescript/src/sim/types.ts";
 import { World } from "../../src/typescript/src/sim/world.ts";
+import { restoreState, saveState } from "../../src/typescript/src/sim/ecoState.ts";
+import type { EcoState } from "../../src/typescript/src/sim/ecoState.ts";
+import { wasmAvailable } from "../../src/typescript/src/sim/wasm/loader.ts";
 
 type Over = { [K in keyof EcoConfig]?: Partial<EcoConfig[K]> };
 
@@ -388,6 +392,21 @@ describe("Ecosystem collision damage", () => {
     expect(gaps).toEqual({ right: 0, below: 0, "below-right": 0, "below-left": 0 });
   });
 
+  it("a creature inserted into an empty world steps on the kernel path (its grid is built before sensing)", () => {
+    const donor = structuredClone(DEFAULT_ECO_CONFIG);
+    donor.seed = 1;
+    donor.eco.initialPopulation = 1;
+    const { creature } = new Ecosystem(donor).members[0]!;
+    const c = structuredClone(DEFAULT_ECO_CONFIG);
+    c.seed = 1;
+    c.eco.initialPopulation = 0;
+    const e = new Ecosystem(c);
+    expect(e.wasm).toBe(true);
+    expect(e.insertCreature({ genome: creature.brain.genome, plan: creature.plan, x: 500, y: 500, hue: 10, name: "t" }).ok).toBe(true);
+    for (let t = 0; t < 20; t++) e.step();
+    expect(e.population).toBe(1);
+  });
+
   it("a lone survivor does not see a creature that has just died", () => {
     const c = still({ initialPopulation: 2, collisions: false, wasm: false, birthEnergyRange: [1e9, 1e9] }, 100);
     const e = new Ecosystem(c);
@@ -679,5 +698,94 @@ describe("Ecosystem lineages and aging", () => {
       expect(losses[at]! / (2 * dt)).toBeCloseTo(1.06, 2);
       expect(losses.at(-1)!).toBeGreaterThan(losses[0]! + 1e-4);
     });
+  });
+});
+
+describe("spare creature pool", () => {
+  it("stays within MAX_SPARE per species after a crash", () => {
+    const d = structuredClone(DEFAULT_ECO_CONFIG);
+    const eco = new Ecosystem({ ...d, seed: 3, eco: { ...d.eco, wasm: false, initialPopulation: MAX_SPARE + 40 } });
+    const internal = eco as unknown as { remove(i: number): void; spare: SparePool<unknown> };
+    while (eco.members.length > 0) internal.remove(0);
+    expect(internal.spare.count(0)).toBe(MAX_SPARE);
+  });
+
+  it("gives a reused spare zero outputs, as a new creature has", () => {
+    const eco = new Ecosystem(ecoCfg({ seed: 5, eco: { wasm: false } }));
+    const internal = eco as unknown as { remove(i: number): void; spawn(...args: unknown[]): { creature: Creature; founderId: number }; lineages: { born(f: number): void } };
+    for (let t = 0; t < 3; t++) eco.step();
+    const dead = eco.members[0]!;
+    const c = dead.creature;
+    expect(c.outputs.some((v) => v !== 0)).toBe(true);
+    internal.remove(0);
+    const m = internal.spawn(c.brain.genome.slice(), c.plan, 500, 500, 0, 50, 0, { ...dead.birth });
+    m.founderId = 0;
+    internal.lineages.born(0);
+    expect(m.creature).toBe(c);
+    expect(Array.from(m.creature.outputs).every((v) => v === 0)).toBe(true);
+  });
+});
+
+// Kernel memory a crash and regrow leaves behind: bank size, brain slots, resident rows and the arena top.
+type KernelInternals = { nextSlot: number; brains: { memory: WebAssembly.Memory; arena: { top: number } }; store: { states: unknown[] } };
+const kernelSizes = (k: KernelInternals): number[] => [k.brains.memory.buffer.byteLength, k.nextSlot, k.store.states.length, k.brains.arena.top];
+
+describe("kernel resources of dropped creatures", () => {
+  it.skipIf(!wasmAvailable())("stay flat over crash-and-regrow cycles", () => {
+    const n = MAX_SPARE + 300;
+    const eco = new Ecosystem(ecoCfg({ seed: 4, world: { width: 3000, height: 3000 }, eco: { initialPopulation: n } }));
+    expect(eco.wasm).toBe(true);
+    const internal = eco as unknown as { remove(i: number): void; spawn(...args: unknown[]): { founderId: number }; lineages: { born(f: number): void }; kernels: KernelInternals };
+    const kids = eco.members.map((m) => ({ genome: m.creature.brain.genome.slice(), plan: { ...m.creature.plan, hiddenLayers: m.creature.plan.hiddenLayers.slice() }, birth: { ...m.birth } }));
+    const sizes: number[][] = [];
+    for (let cycle = 0; cycle < 4; cycle++) {
+      while (eco.members.length > 20) internal.remove(eco.members.length - 1);
+      for (let i = eco.members.length; i < n; i++) {
+        const k = kids[i]!;
+        const m = internal.spawn(k.genome, k.plan, 100 + (i % 50) * 55, 100 + Math.floor(i / 50) * 55, 0, 50, 0, k.birth);
+        m.founderId = 0; // a child of founder 0, as a birth makes it
+        internal.lineages.born(0);
+      }
+      eco.step();
+      eco.step();
+      sizes.push(kernelSizes(internal.kernels));
+    }
+    for (const s of sizes.slice(1)) expect(s).toEqual(sizes[0]);
+  });
+});
+
+describe("reusing dead creatures", () => {
+  it("hands a newborn a dead creature with a brain of its size when one is among the latest, else the latest", () => {
+    const eco = new Ecosystem(ecoCfg({ eco: { foundersVary: true, initialPopulation: 80 } }), null);
+    const e = eco as unknown as { remove(i: number): void; spare: SparePool<{ creature: { brain: { genome: Float32Array } } }> };
+    const lengths = eco.members.map((m) => m.creature.brain.genome.length);
+    const [a, b] = [...new Set(lengths)];
+    expect(b).toBeDefined(); // the founders differ in size
+    const lastOf = (len: number) => lengths.lastIndexOf(len);
+    // kill the last member of size a, then of size b: b is the latest dead, a one below
+    const ia = lastOf(a!);
+    e.remove(ia);
+    const ib = eco.members.findIndex((m) => m.creature.brain.genome.length === b);
+    e.remove(ib);
+    expect(e.spare.take(0, a!)!.creature.brain.genome.length).toBe(a);
+    expect(e.spare.take(0, a!)!.creature.brain.genome.length).toBe(b); // none of size a left: the latest
+    expect(e.spare.take(0, a!)).toBeUndefined();
+  });
+});
+
+describe("brain depth limit", () => {
+  it("runs a world of eight hidden layers on the kernels, and refuses nine when a save is checked, not at the first attach", () => {
+    expect(MAX_HIDDEN_LAYERS).toBe(8);
+    const layers = (n: number) => ecoCfg({ brain: { hiddenLayers: new Array(n).fill(5) } });
+    const eco = new Ecosystem(layers(8), null);
+    const kernels = (eco as unknown as { kernels: unknown }).kernels;
+    if (wasmAvailable()) expect(kernels).not.toBeNull();
+    for (let t = 0; t < 20; t++) eco.step();
+    expect(eco.population).toBeGreaterThan(0);
+    expect(eco.members.every((m) => m.creature.plan.hiddenLayers.length === 8)).toBe(true);
+    const state = JSON.parse(JSON.stringify(saveState(eco))) as EcoState;
+    expect(restoreState(state).members.length).toBe(eco.members.length);
+    (state.config as EcoConfig).brain.hiddenLayers = new Array(9).fill(5);
+    expect(() => restoreState(state)).toThrow(/hiddenLayers" must have at most 8 layers, got 9/);
   });
 });

@@ -3,14 +3,17 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, symlinkSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { gzipSync } from "node:zlib";
+import { createHash } from "node:crypto";
+import { gunzipSync, gzipSync } from "node:zlib";
 import { LIMITS, LIVE } from "../../server/src/config.ts";
 import { LiveWorld } from "../../server/src/liveWorld.ts";
 import { Saves, openWorld } from "../../server/src/saves.ts";
+import { TooBig, packSave } from "../../server/src/saveParse.ts";
 import { loadFounders } from "../../server/src/founders.ts";
 import { loadOverrides } from "../../server/src/admin.ts";
 import { StateStore, readRegularFile, saveName } from "../../server/src/state.ts";
 import { smallConfig } from "./liveHelpers.ts";
+import { packState, snapshotColumns, snapshotState } from "../../src/typescript/src/sim/ecoState.ts";
 
 const FOUNDERS = new URL("../../src/typescript/public/live-founders.json", import.meta.url);
 
@@ -111,6 +114,82 @@ describe("saves", () => {
     await expect(store.read(saveName(at(2)))).rejects.toThrow(/no such save/);
     expect(() => readRegularFile(join(dir, saveName(at(1))), 1e6)).toThrow(/regular file/);
     expect(() => readRegularFile(join(dir, saveName(at(2))), 1e6)).toThrow(/regular file/); // returns at once, no blocking open
+  });
+
+  it("packs a save on the worker into the same JSON as JSON.stringify(saveState()), byte for byte, and the world runs on", async () => {
+    for (const thinkEvery of [1, 2]) {
+      const c = smallConfig();
+      c.eco.thinkEvery = thinkEvery; // 2 adds the outputs column
+      const w = new LiveWorld(c, null);
+      for (let i = 0; i < 20; i++) w.eco.step();
+      w.eco.members[0]!.mutationScale = 0.5;
+      w.eco.members[1]!.bumpKills = 3;
+      const dir = tmp();
+      const line = await new Saves(w, new StateStore(dir)).save();
+      const name = readdirSync(dir).find((n) => n.endsWith(".json.gz"))!;
+      expect(line).toContain(name);
+      expect(gunzipSync(readFileSync(join(dir, name))).toString("utf8")).toBe(json(w));
+      expect(json(w).includes('"thinkEvery"')).toBe(thinkEvery !== 1); // at 1 the key stays out, so the save reads on a server from before the setting
+      const b = new LiveWorld(c, null);
+      b.restoreState(await new StateStore(dir).read(name));
+      for (let i = 0; i < 10; i++) {
+        w.eco.step();
+        b.eco.step();
+      }
+      expect(b.eco.fingerprint()).toBe(w.eco.fingerprint()); // the snapshot's columns were copies: the world's own were not moved away
+    }
+  });
+
+  it("packs every column to the same base64 as btoa over its bytes", () => {
+    const c = smallConfig();
+    c.eco.thinkEvery = 2;
+    const w = new LiveWorld(c, null);
+    for (let i = 0; i < 20; i++) w.eco.step();
+    const snap = snapshotState(w.eco);
+    const packed = packState(snap);
+    let columns = 0;
+    for (const [part, text] of [[snap.items, packed.items], [snap.creatures, packed.creatures]] as const) {
+      for (const [k, v] of Object.entries(part)) {
+        if (!ArrayBuffer.isView(v)) continue;
+        const bytes = new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
+        let raw = "";
+        for (let i = 0; i < bytes.length; i++) raw += String.fromCharCode(bytes[i]!);
+        expect((text as Record<string, unknown>)[k]).toBe(btoa(raw));
+        columns++;
+      }
+    }
+    expect(columns).toBe(10);
+    expect(snapshotColumns(snap)).toHaveLength(columns); // the transfer list of packSave
+  });
+
+  it("the streamed gzip of a cap-size world is the byte-for-byte gzip of the one-shot JSON, and the size check is exact", async () => {
+    const c = smallConfig();
+    c.eco.thinkEvery = 2; // the outputs column too
+    c.eco.initialPopulation = 0; // empty, so the founders can be seeded
+    c.world.width = 12000;
+    c.world.height = 7800;
+    c.eco.maxPopulation = 5000;
+    const w = new LiveWorld(c, null);
+    let seed = 7;
+    w.seedFounders(loadFounders(FOUNDERS.pathname).filter((f) => f.id === "juggernaut"), () => ((seed = (seed * 16807) % 2147483647) / 2147483647), 4900);
+    for (let i = 0; i < 3; i++) w.eco.step();
+    expect(w.eco.population).toBeGreaterThan(4000);
+    const oneShot = gzipSync(Buffer.from(JSON.stringify(packState(w.saveSnapshot()))));
+    const sha = (b: Uint8Array): string => createHash("sha256").update(b).digest("hex");
+    const { gz, bytes } = await packSave(w.saveSnapshot(), LIMITS.maxSaveJsonBytes);
+    expect(sha(gz)).toBe(sha(oneShot));
+    expect(bytes).toBe(gunzipSync(oneShot).length);
+    await expect(packSave(w.saveSnapshot(), bytes - 1)).rejects.toMatchObject({ bytes });
+    await expect(packSave(w.saveSnapshot(), bytes - 1)).rejects.toBeInstanceOf(TooBig);
+    expect((await packSave(w.saveSnapshot(), bytes)).bytes).toBe(bytes);
+  }, 180_000);
+
+  it("a save packer that takes too long is refused, its worker gone, and the next save goes through", async () => {
+    const w = new LiveWorld(smallConfig(), null);
+    for (let i = 0; i < 5; i++) w.eco.step();
+    await expect(packSave(w.saveSnapshot(), LIMITS.maxSaveJsonBytes, 0)).rejects.toThrow("took too long");
+    const { gz } = await packSave(w.saveSnapshot(), LIMITS.maxSaveJsonBytes);
+    expect(gunzipSync(gz).toString("utf8")).toBe(json(w));
   });
 
   it("refuses to write a save larger than it may read back, and says so loudly", async () => {
@@ -393,5 +472,35 @@ describe("save parsing", () => {
     await expect(parseSave(gzipSync(good), LIMITS.maxSaveJsonBytes, true)).resolves.toBeUndefined();
     const bad = { ...JSON.parse(good), lineages: null };
     await expect(parseSave(gzipSync(JSON.stringify(bad)), LIMITS.maxSaveJsonBytes, true)).rejects.toThrow();
+  });
+
+  it("verify-only refuses a truncated, not-gzip, not-JSON or out-of-range save, and the restored state equals the saved one", async () => {
+    const { parseSave } = await import("../../server/src/saveParse.ts");
+    const good = json(world(8));
+    const gz = gzipSync(good);
+    const edit = (change: (s: Record<string, any>) => void): Buffer => { // eslint-disable-line @typescript-eslint/no-explicit-any
+      const s = JSON.parse(good) as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+      change(s);
+      return gzipSync(JSON.stringify(s));
+    };
+    const scalar = (s: Record<string, any>, at: number, v: number): void => { // eslint-disable-line @typescript-eslint/no-explicit-any
+      const raw = Buffer.from(s.creatures.scalars, "base64");
+      raw.writeDoubleLE(v, at * 8);
+      s.creatures.scalars = raw.toString("base64");
+    };
+    const bad: [string, Uint8Array][] = [
+      ["truncated gzip", gz.subarray(0, gz.length >> 1)],
+      ["not gzip", Buffer.from("not gzip at all")],
+      ["not JSON", gzipSync(good.slice(0, good.length >> 1))],
+      ["a NaN position", edit((s) => scalar(s, 15, NaN))],
+      ["a position outside the walls", edit((s) => scalar(s, 15, 1e12))],
+      ["a huge velocity", edit((s) => scalar(s, 18, 1e308))],
+      ["a huge item capacity", edit((s) => { s.core.itemCapacity = 1e12; })],
+      ["a truncated column", edit((s) => { s.creatures.genomes = s.creatures.genomes.slice(0, -8); })],
+      ["a missing lineage table", edit((s) => { s.lineages = null; })],
+    ];
+    for (const [what, file] of bad) await expect(parseSave(file, LIMITS.maxSaveJsonBytes, true), what).rejects.toThrow();
+    await expect(parseSave(gz, LIMITS.maxSaveJsonBytes, true)).resolves.toBeUndefined();
+    expect(JSON.stringify(await parseSave(gz, LIMITS.maxSaveJsonBytes))).toBe(good); // the columns dropped after decoding change nothing in the world
   });
 });

@@ -47,6 +47,7 @@ liveConfig.eco.winterFood = 0.4;
 liveConfig.eco.birthEnergyRange = [...LIVE_BIRTH.energy]; // wider than the Ecosystem's, for visitors' adds and their descendants' drift
 liveConfig.eco.birthCostRange = [...LIVE_BIRTH.cost];
 liveConfig.eco.birthCooldownRange = [...LIVE_BIRTH.cooldown];
+liveConfig.eco.thinkEvery = 1; // 2 makes a tick about 1.5x cheaper (each creature senses and thinks every other tick) but raises churn 1.5-1.9x in 600 s runs (docs/perf-explore/think2.md); Erik decides
 liveConfig.eco.hueDrift = 3; // degrees (Ecosystem 8): families keep their colour longer, so the view reads as lineages
 
 // A fresh world gets this many copies of each founder in the founders file, at random open spots; an admin reset may ask for more,
@@ -138,6 +139,7 @@ export const LIMITS = {
   statsGetBurst: 20,
   statsEveryMs: 1000,
   stateEveryMs: 4 * 60 * 60 * 1000,
+  saveRetryMs: [15, 30, 60].map((m) => m * 60 * 1000), // waits before the retries of a periodic save that failed for a transient reason; the last repeats until one succeeds
   keepStateMs: 4 * 24 * 60 * 60 * 1000, // saves older than this are deleted, except the newest six (state.ts)
   maxStateDirBytes: 2e9, // no save is written while the state directory holds more than this
   maxSaveJsonBytes: 50e6, // a save may be at most this much JSON (Inland Sea at 30000 x 18750: 24 MB at 2500 creatures, 42 MB at 5000; the brain-weight budget keeps a full world near 45 MB); parsing runs in a worker with its own heap cap (saveParse.ts)
