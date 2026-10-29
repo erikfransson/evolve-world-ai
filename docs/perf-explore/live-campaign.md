@@ -296,6 +296,7 @@ Head phases 2026-10-28 14:50 (253f894, load 6-7, `scout-head.md`; ms per tick, 3
 | 157 | Quality: brain descriptor words and the tanh table offset as LAYOUT constants used by brain.wat and the bank; forwardSlots through runRegion, one find per free, one init() for constructor and reset in the bank and the senser | yes | Merged: kernels byte-identical, tests 178 green, fingerprints equal; +156/-122 | - | Merged (bytes identical) |
 | 159 | Quality: one creature record writer (`newCreatureFrame`, `putCreature`) in protocol.ts used by encodeMembers; encodeCreatures moved to the tests as the independent oracle; public.ts keeps one `frameBytes` instead of skippedBytes beside lastCreatures | yes | Merged: wire bytes identical (the liveFrame probes against the oracle), frameMsPerTick 0.368 vs 0.381 within noise, fingerprints equal; +81/-61 | - | Merged (server: push gate re-check before the push) |
 | 156 | Quality: `Brain.lendTo` as the one lend/own transition (attach calls it after bank.set; reset loads only when not kernel-owned; reshape and load's lent branch deleted; the three states documented above Brain; the `lent` getter kept for the tests) | yes | Merged: 273 tests green, fingerprints equal; +20/-21 | - | Merged |
+| 161 | Quality: sense.wat's in-sight predicate and cell-row walk as template macros (expanded text identical in the hot paths, bytes identical) with a path map above `sense`; the sense tests moved to wasmSense.test.ts with a detailParity helper, a SenseKernels.inputOf accessor, and a test of the production prepareRows path | yes | Merged: bytes identical, 121 tests green, fingerprints equal; wasmKernels.test.ts 976 to 391 lines | - | Merged (bytes identical) |
 
 ## Log
 - 2026-10-27 09:00 Campaign start. Prior campaigns (B1, B2, `docs/perf-explore/`) already moved sense, brains, physics, crowd grid, collisions and scans into WASM; their rejected ideas are not retried unless the live setting changes the picture.
@@ -566,3 +567,4 @@ Head phases 2026-10-28 14:50 (253f894, load 6-7, `scout-head.md`; ms per tick, 3
 - 2026-10-29 07:26 idea 157 merged (bytes identical). 163 (chunk allocator extraction) spawned on top.
 - 2026-10-29 07:29 idea 159 merged (frame layout written once; server tsc and the frame tests green on the merged head).
 - 2026-10-29 07:32 idea 156 merged. The one failure after 159's merge was a load timeout (72 of 72 on the rerun). Running: 158, 160, 161, 162, 163, the soak.
+- 2026-10-29 07:36 idea 161 merged (bytes identical, no drift).
