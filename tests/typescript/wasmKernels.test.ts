@@ -903,4 +903,41 @@ describe("sense.wat (SenseKernels)", () => {
     kernels.detail = null;
     run(kernels, world, crowd, batch);
   });
+
+  it("matches the JS rays bit for bit at the plan limit of 63 and 64 rays, over species counts and fans", () => {
+    const r = 12;
+    const spots: Spot[] = [[r, r, 5.5], [1200 - r, 800 - r, 2.4], [r, 800 - r, -1], [1200 - r, r, 3.5], [600, r, 1.6], [600, 400, 0.7], [-300, 400, 0.7]];
+    for (const rays of [62, 63, 64]) {
+      for (const species of [0, 3]) {
+        for (const spread of [1.5, 2 * Math.PI]) {
+          const { seen } = check({ rays, spread, creatures: spots, items, species }, true);
+          expect(seen).toContain(HIT_FOOD);
+          expect(seen).toContain(HIT_WALL);
+        }
+      }
+    }
+  });
+
+  it("matches the JS rays around rock for rays longer than ROCK_BOUND_CAP, where the rock skip is off", () => {
+    const map = { stoneDensity: 0.06, ridgeDensity: 0.05, slowDensity: 0.1, fastDensity: 0.1 };
+    const t = terrainOf({ seed: DEFAULT_ECO_CONFIG.seed, world: { width: 3000, height: 2000, ...map } });
+    const rng = createRng(77);
+    const spots: Spot[] = [];
+    for (let tries = 0; spots.length < 6 && tries < 20000; tries++) {
+      const d = rng.int(t.rockCount);
+      const near = t.rockR[d]! + rng.range(5, 220);
+      const a = rng.range(0, 2 * Math.PI);
+      const x = t.rockX[d]! + near * Math.cos(a);
+      const y = t.rockY[d]! + near * Math.sin(a);
+      if (x > 12 && y > 12 && x < 2988 && y < 1988 && !t.touchesRock(x, y, 12)) spots.push([x, y, rng.range(0, 2 * Math.PI)]);
+    }
+    expect(spots.length).toBe(6);
+    const some = items.map(([x, y, k]) => [x * 2.5, y * 2.5, k] as [number, number, number]);
+    for (const length of [2048, 2049, 5000]) {
+      for (const spot of spots) { // one creature per run, so none is in sight of another and every bit must agree
+        const { seen } = check({ width: 3000, height: 2000, rays: 8, spread: 2 * Math.PI, length, creatures: [spot], items: some, map }, true);
+        expect(seen.size).toBeGreaterThan(0);
+      }
+    }
+  });
 });
