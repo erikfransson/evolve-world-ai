@@ -6,6 +6,7 @@ import { wasmAvailable } from "../../src/typescript/src/sim/wasm/loader.ts";
 import { creatureFile, parseCreatureFile } from "../../src/typescript/src/sim/rl/creatureFile.ts";
 import type { EnvSpec } from "../../src/typescript/src/sim/rl/env.ts";
 import { ENVS, ENV_GROUPS, envById, groupOf } from "../../src/typescript/src/sim/rl/envs.ts";
+import { placeLayout } from "../../src/typescript/src/sim/rl/layouts.ts";
 import { Es, centredRanks, standardise } from "../../src/typescript/src/sim/rl/es.ts";
 import { parseLibrary, serialiseLearner } from "../../src/typescript/src/sim/rl/library.ts";
 import { testRng } from "./helpers.ts";
@@ -244,6 +245,12 @@ describe("env groups", () => {
     for (const g of ENV_GROUPS) if (g !== "Advanced" && g !== "Custom") expect(count.get(g) ?? 0).toBeGreaterThanOrEqual(3);
   });
 
+  it("holds four Time pressure envs, Lap among them, filed with navigation tags but under Time pressure", () => {
+    expect(ENVS.filter((e) => groupOf(e) === "Time pressure").length).toBeGreaterThanOrEqual(4);
+    expect(groupOf(envById("lap")!)).toBe("Time pressure");
+    expect(typeof checkEnv(JSON.parse(JSON.stringify(envById("lap")!)), "ecosystem", 0)).not.toBe("string");
+  });
+
   it("keeps every Bigger env within the custom env limits", () => {
     const bigger = ENVS.filter((e) => groupOf(e) === "Bigger");
     expect(bigger.length).toBeGreaterThanOrEqual(4);
@@ -260,6 +267,32 @@ describe("hidden food in envs", () => {
     if (eco.wasm) expect(() => eco.setFoodHidden(true)).toThrow(/JS sense path/);
     const r = runEpisode(env, randomLearner(env, 2), 3);
     expect(r.seconds).toBeGreaterThan(0);
+  });
+});
+
+describe("memory envs", () => {
+  it("has at least four, and each runs and passes the custom env checks", () => {
+    const memory = ENVS.filter((e) => groupOf(e) === "Memory");
+    expect(memory.length).toBeGreaterThanOrEqual(4);
+    for (const e of memory) {
+      expect(typeof checkEnv(JSON.parse(JSON.stringify(e)), "ecosystem", 0)).not.toBe("string");
+      expect(runEpisode(e, randomLearner(e, 2), 3).seconds).toBeGreaterThan(0);
+    }
+  });
+
+  it("deals the stops layout into evenly sized clusters, away from the start", () => {
+    const placed = placeLayout({ kind: "stops", count: 2 }, [600, 600], 8, 0, 5);
+    expect(placed.items.length).toBe(8);
+    for (const it of placed.items) expect(Math.hypot(it.x - 300, it.y - 300)).toBeGreaterThan(100);
+    const side = placed.items.map((it) => (it.x - 300) * (placed.items[0]!.x - 300) + (it.y - 300) * (placed.items[0]!.y - 300) > 0);
+    expect(side.filter(Boolean).length).toBe(4);
+  });
+
+  it("keeps the stops count through checkEnv and rejects a bad one", () => {
+    const spec = JSON.parse(JSON.stringify(envById("two-stops")!));
+    const checked = checkEnv(spec, "ecosystem", 0) as EnvSpec;
+    expect(checked.layout).toEqual({ kind: "stops", count: 2 });
+    for (const count of [0, 1.5, 7, -1]) expect(checkEnv({ ...spec, layout: { kind: "stops", count } }, "ecosystem", 0)).toMatch(/stops count/);
   });
 });
 

@@ -6,6 +6,7 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- RL Arena: Corral (Fight, 16 weak foragers in a pen, only rams pay) and Lap (Time pressure, Ring road's lane with an early reward) are new envs; Lap misses the E5 check (random designs always score 0) and Corral needs 66 seeds for E4 (`docs/rl-envs.md`). Existing envs are unchanged
 Live World speed campaign (branch `perf-live`): on the live bench the tick is about 1.6x faster in the mixed world and 1.75x at the 5000 cap, with bit-identical results and a lower peak memory than before (about 50 MB less at the bench, about 100 MB less around a save). The simulation and the saves are unchanged. The campaign log with every idea and verdict is `docs/perf-explore/live-campaign.md`.
 
 - Live server: the viewer frame path costs less CPU with identical bytes. The creature frame is written in one pass straight into the wire buffer, the stats pass offers a creature to the record lists only when it could enter or update one, family names are parsed once, and followed creatures share one crowd grid per refresh instead of one each (a watched server with five followers spent 10 ms of CPU per second on those grids). With nobody connected no creature frame and no per-creature stats pass run at all.
@@ -31,6 +32,12 @@ Live World speed campaign (branch `perf-live`): on the live bench the tick is ab
 - Settings: pasted settings are validated to the engine's limits (at most 8 hidden layers; population settings capped at 20000) instead of failing later.
 - Structure: `Brain.lendTo` is the one lend/own transition, the creature frame record has one writer in `protocol.ts`, a `SparePool` owns the dead-creature pool, and the save columns are listed once.
 - Bench tooling: `liveBench` gets `--save`, `--profileEvery`, `--threads`, `--load`, `--keep`, `--scatter`, `--reach`, `--fixed`, `--food`, `--dt` and `--memcomp`, and `kernelTimers` times each kernel call.
+## 0.2.8 (2026-10-28)
+
+- Live, Ecosystem and Trials: the abyssal floor is a little lighter (floor colour and a softer dark mottle).
+- RL Arena: Memory group grows from 3 to 4 envs with Two stops (two food clusters shown once, new `stops` layout); it beats the same body without memory on 6 of 6 seeds but misses the E1 check, kept like Glimpse (`docs/rl-envs.md`). Existing envs are unchanged
+- RL Arena: Patch war (Compete) and Live now (Bigger, Live's rules as of 2026-10 without seasons) are new envs; existing envs are unchanged (`docs/rl-envs.md`)
+- RL Arena: Fight group grows from 3 to 6 envs with Ambush, Turf war and Cull (all pass the E1 to E8 checks, `docs/rl-envs.md`). The `early` reward now also pays a ram by the share of the episode left; the existing early envs have no collision damage, so they are unchanged.
 
 ## 0.2.7 (2026-10-26)
 

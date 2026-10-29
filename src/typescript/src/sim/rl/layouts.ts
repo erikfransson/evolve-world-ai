@@ -14,10 +14,11 @@ export type Layout =
   | { kind: "islands"; radius: number } // the food split over three islands, the poison scattered in the water between them
   | { kind: "ring"; lane: number } // a circular lane of this width between two poison rings, the food spaced along it, the first just ahead of the start
   | { kind: "cuedoor" } // a T-maze: a cue bite beside the start (left or right), a walled corridor up, then two doors to separate rooms, the food in the cued one
+  | { kind: "stops"; count?: number } // food in count (3) small clusters round a central start, dealt evenly (pair with foodVisibleFor): visit one, then recall where the others were
   | { kind: "flash" } // food at a middle distance around a central start, in all directions (pair with foodVisibleFor)
   | { kind: "sprint"; near?: number }; // a strip with the learner at one end and the food at the other (near of it halfway, as a first step)
 
-export const LAYOUT_KINDS = ["fence", "maze", "patch", "rooms", "islands", "sprint", "ring", "cuedoor", "flash"] as const;
+export const LAYOUT_KINDS = ["fence", "maze", "patch", "rooms", "islands", "sprint", "ring", "cuedoor", "flash", "stops"] as const;
 
 export interface Placed {
   items: ItemSpot[];
@@ -131,6 +132,23 @@ export function placeLayout(layout: Layout, size: readonly [number, number], foo
       const a = a0 + (k * 2 * Math.PI) / food + rng.range(-0.3, 0.3);
       const d = rng.range(110, 150);
       items.push({ x: w / 2 + d * Math.cos(a), y: h / 2 + d * Math.sin(a), kind: HIT_FOOD });
+    }
+    return { items, start, walls };
+  } else if (layout.kind === "stops") {
+    // Clusters of food 150 to 190 from a central start, evenly spaced in angle: the nearest is a short walk, the others lie beyond sight.
+    start = { x: w / 2, y: h / 2 };
+    const n = layout.count ?? 3;
+    const a0 = rng.next() * 2 * Math.PI;
+    const centres = Array.from({ length: n }, (_, k) => {
+      const a = a0 + (k * 2 * Math.PI) / n + rng.range(-0.2, 0.2);
+      const d = rng.range(150, 190);
+      return { x: w / 2 + d * Math.cos(a), y: h / 2 + d * Math.sin(a) };
+    });
+    for (let k = 0; k < food; k++) {
+      const c = centres[k % n]!;
+      const a = rng.next() * 2 * Math.PI;
+      const d = 30 * Math.sqrt(rng.next());
+      items.push({ x: c.x + d * Math.cos(a), y: c.y + d * Math.sin(a), kind: HIT_FOOD });
     }
     return { items, start, walls };
   } else if (layout.kind === "ring") {

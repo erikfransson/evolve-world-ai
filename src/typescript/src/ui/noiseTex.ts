@@ -120,7 +120,7 @@ export function floorImage(width: number, height: number): { image: Canvas | nul
           px[k] = 0;
           px[k + 1] = 4;
           px[k + 2] = 8;
-          px[k + 3] = Math.round(255 * 0.18 * Math.min(1, -n * 1.6));
+          px[k + 3] = Math.round(255 * 0.12 * Math.min(1, -n * 1.6));
         }
       }
     }
