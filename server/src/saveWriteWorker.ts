@@ -14,17 +14,17 @@ try {
   const mark = randomUUID(); // a visitor's text cannot contain it
   const parts = JSON.stringify(packState(snap, (a) => mark + (columns.push(new Uint8Array(a.buffer, a.byteOffset, a.byteLength)) - 1))).split(new RegExp(`${mark}(\\d+)`));
   if (parts.length !== 2 * columns.length + 1) throw new Error("save columns not found in the JSON");
-  const bytes = parts.reduce((n, p, i) => n + (i % 2 ? 4 * Math.ceil(columns[i >> 1]!.length / 3) : Buffer.byteLength(p)), 0); // exact, known before any gzip work
+  const bytes = parts.reduce((n, p, i) => n + (i % 2 ? 4 * Math.ceil(columns[Number(p)]!.length / 3) : Buffer.byteLength(p)), 0); // exact, known before any gzip work
   if (bytes > maxJsonBytes) parentPort!.postMessage({ ok: false, tooBig: bytes });
   else {
     const json = Buffer.allocUnsafe(bytes);
     let at = 0;
     for (let i = 0; i < parts.length; i += 2) {
       at += json.write(parts[i]!, at);
-      const col = columns[i >> 1];
+      const col = columns[Number(parts[i + 1])]; // by the marker's own index, whatever order the columns appear in the text
       if (!col) continue;
       for (let from = 0; from < col.length; from += PIECE) at += json.write(Buffer.from(col.buffer, col.byteOffset + from, Math.min(PIECE, col.length - from)).toString("base64"), at, "latin1");
-      columns[i >> 1] = new Uint8Array(0); // written
+      columns[Number(parts[i + 1])] = new Uint8Array(0); // written
     }
     if (at !== bytes) throw new Error("save JSON size mismatch");
     const gz = new Uint8Array(gzipSync(json)); // its own buffer, so the transfer moves nothing else

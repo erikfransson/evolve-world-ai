@@ -15,8 +15,15 @@ const MAX_JSON_TOKENS = 1_000_000;
 const { gz, maxJsonBytes, verifyOnly, home, carryFrom } = workerData as { gz: Uint8Array; maxJsonBytes: number; verifyOnly: boolean; home: Home | null; carryFrom: string | null };
 // Its own function, so the gunzipped bytes and their text are garbage before restoreState builds the world.
 // A collection once restoreState has decoded the base64 columns, so the 40 MB of column text and of parse input is gone before the world is built.
-setFlagsFromString("--expose-gc");
-const collect = runInNewContext("gc") as () => void;
+// If a Node ever refuses the flag, the worker still parses and verifies, only without the early collection.
+let collect: (() => void) | undefined;
+try {
+  setFlagsFromString("--expose-gc");
+  const gc = runInNewContext("gc") as unknown;
+  if (typeof gc === "function") collect = gc as () => void;
+} catch {
+  collect = undefined;
+}
 function parseJson(): EcoState {
   const json = gunzipSync(gz, { maxOutputLength: maxJsonBytes, chunkSize: maxJsonBytes + 1 }); // one chunk, so no second copy is made to join them
   let tokens = 0;
