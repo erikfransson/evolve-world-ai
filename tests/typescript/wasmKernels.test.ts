@@ -11,7 +11,6 @@ import { LAYOUT as L } from "../../src/typescript/src/sim/wasm/layout.ts";
 import { WasmBrainBank } from "../../src/typescript/src/sim/wasm/brainKernel.ts";
 import { setWasmDisabled, wasmAvailable } from "../../src/typescript/src/sim/wasm/loader.ts";
 import { speciesEngine, speciesList } from "../../src/typescript/src/sim/species.ts";
-import { prepareRows } from "../../src/typescript/src/sim/wasm/residentStep.ts";
 import { rockLowerBound } from "../../src/typescript/src/sim/wasm/senser.ts";
 import { SenseKernels } from "../../src/typescript/src/sim/wasm/senseKernels.ts";
 import type { SimConfig } from "../../src/typescript/src/sim/config.ts";
@@ -446,7 +445,7 @@ describe("sense.wat (SenseKernels)", () => {
   // The sense kernels on the batch of resident creatures, as Ecosystem.sensePhase runs them on its members.
   function run(kernels: SenseKernels, world: World, crowd: Crowd, batch: SenseBatch): void {
     const rows = Int32Array.from({ length: batch.count }, (_, k) => batch.creatures[k]!.resident!.ptr);
-    prepareRows(kernels.store, rows, batch.count, world.terrain);
+    kernels.prepareRows(rows, batch.count, world.terrain, crowd);
     kernels.runRows(world, crowd, rows, batch.selves, batch.count, kernels.detail);
   }
 

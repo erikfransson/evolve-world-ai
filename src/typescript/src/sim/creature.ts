@@ -121,7 +121,7 @@ export class Creature {
     return this.groundValue;
   }
 
-  // (Resident creatures get the same values from prepareRows in wasm/residentStep.ts, which must stay in step with this.)
+  // (Resident creatures get the same values from the fill kernel's prepare, wasm/fill.wat, which must stay in step with this.)
   // Writes the brain input that does not come from rays (extras, then memory units) at f32[at], where at is the first extra's index.
   writeBodyInputs(f32: Float32Array, at: number): void {
     const c = this.config.creature;

@@ -116,6 +116,7 @@ export const LAYOUT = {
   G_FAST: 56, // f64
   G_MASK: 64, // address of the ground field's block flags (GroundField.blockFlags)
   G_MASK_COLS: 68, // blocks per row of them
+  G_SIGNAL: 72, // 1 when prepare also writes the energy signal (the crowd kernel's pack does not)
   G_BYTES: 80,
   G_BLOCK_SHIFT: GROUND_BLOCK_SHIFT,
   G_PAD: GROUND_PAD, // the field's constants, as values for the wat
@@ -123,7 +124,8 @@ export const LAYOUT = {
   H_DRAG: 0,
   H_MAX_THRUST: 8,
   H_MAX_TURN: 16,
-  H_BYTES: 24,
+  H_START: 24, // f64: the species' start energy
+  H_BYTES: 32,
   // call block of step (i32 unless noted)
   P_N: 0,
   P_ROWS: 4,

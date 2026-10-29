@@ -1,5 +1,9 @@
 import type { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
 import type { Rng } from "../../src/typescript/src/sim/types.ts";
+import { EXTRA_TERRAIN, energySignal } from "../../src/typescript/src/sim/sensors.ts";
+import { Terrain } from "../../src/typescript/src/sim/terrain.ts";
+import { F, I } from "../../src/typescript/src/sim/wasm/resident.ts";
+import type { ResidentStore } from "../../src/typescript/src/sim/wasm/resident.ts";
 
 // Small deterministic Rng for tests, independent of src/sim/rng.ts.
 export function testRng(seed = 1): Rng {
@@ -91,3 +95,27 @@ export function useKernels(eco: Ecosystem, use: { crowd?: boolean; members?: boo
 
 // Fingerprint of the pinned 300-tick WebAssembly run of ecoPool.test.ts; re-pinned for the terrain input (#34), was 116543125. Change it only on purpose.
 export const WASM_RUN_FINGERPRINT = 81047108;
+
+// The oracle of the fill kernel's prepare: Creature.writeBodyInputs for resident rows, the same arithmetic in the same order, into the rows' brain input extras
+// (the energy signal f32 rounded, as the kernel stores it) and the ground factor the step moves by. Without signal the first extra is left as it is.
+export function prepareRows(store: ResidentStore, rows: Int32Array, n: number, terrain: Terrain, signal = true): void {
+  const f = store.f64;
+  const i32 = store.i32;
+  const empty = terrain.empty;
+  for (let k = 0; k < n; k++) {
+    const o = rows[k]! >> 3;
+    const c = store.species[i32[(o << 1) + I.species]!]!.creature;
+    const cos = f[o + F.cos]!;
+    const sin = f[o + F.sin]!;
+    const vx = f[o + F.vx]!;
+    const vy = f[o + F.vy]!;
+    const e = o + F.extras;
+    if (signal) f[e] = Math.fround(energySignal(f[o + F.energy]!, c.startEnergy));
+    f[e + 1] = ((vx * cos + vy * sin) * c.drag) / c.maxThrust;
+    f[e + 2] = ((vy * cos - vx * sin) * c.drag) / c.maxThrust;
+    f[e + 3] = f[o + F.turn]! / c.maxTurnRate;
+    const ground = empty ? 0 : terrain.valueAt(f[o + F.x]!, f[o + F.y]!);
+    f[e + EXTRA_TERRAIN] = ground;
+    f[o + F.groundFactor] = empty ? 1 : Terrain.factor(ground);
+  }
+}

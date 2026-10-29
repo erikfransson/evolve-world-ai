@@ -1,55 +1,26 @@
 import type { Aging } from "../physics.ts";
-import { EXTRA_TERRAIN, energySignal } from "../sensors.ts";
-import { Terrain } from "../terrain.ts";
 import type { World } from "../world.ts";
 import { refit } from "../brain.ts";
 import { thinksNow } from "../creature.ts";
 import type { Creature } from "../creature.ts";
 import type { Crowd } from "../crowd.ts";
 import type { PhaseTimer } from "../profile.ts";
-import { F, I } from "./resident.ts";
-import type { ResidentStore } from "./resident.ts";
+import { F } from "./resident.ts";
 import type { SenseKernels } from "./senseKernels.ts";
 
-// Resident bodies in JS on the rows' arrays. The batch is a list of row byte addresses; row r is the f64 element r / 8 and its i32 fields start at r / 4.
+// Resident bodies on the rows' arrays. The batch is a list of row byte addresses; row r is the f64 element r / 8 and its i32 fields start at r / 4.
 // The step itself is WebAssembly (WasmStepper), whose reference is Creature.remember and steer.
-
-// Twin of Creature.writeBodyInputs, the same arithmetic in the same order (parity test: tests/typescript/residentBodies.test.ts). Writes each row's brain input extras
-// (energy signal unless signalDone, as the crowd kernel's pack stores it in the sense run; forward and sideways speed, turn rate, ground value; the fill kernel copies them as f32) and the ground factor the step moves by.
-export function prepareRows(store: ResidentStore, rows: Int32Array, n: number, terrain: Terrain, signalDone = false): void {
-  const f = store.f64;
-  const i32 = store.i32;
-  const configs = store.species;
-  const empty = terrain.empty;
-  for (let k = 0; k < n; k++) {
-    const o = rows[k]! >> 3;
-    const c = configs[i32[(o << 1) + I.species]!]!.creature;
-    const cos = f[o + F.cos]!;
-    const sin = f[o + F.sin]!;
-    const vx = f[o + F.vx]!;
-    const vy = f[o + F.vy]!;
-    const e = o + F.extras;
-    if (!signalDone) f[e] = energySignal(f[o + F.energy]!, c.startEnergy);
-    f[e + 1] = ((vx * cos + vy * sin) * c.drag) / c.maxThrust;
-    f[e + 2] = ((vy * cos - vx * sin) * c.drag) / c.maxThrust;
-    f[e + 3] = f[o + F.turn]! / c.maxTurnRate;
-    const ground = empty ? 0 : terrain.valueAt(f[o + F.x]!, f[o + F.y]!);
-    f[e + EXTRA_TERRAIN] = ground;
-    f[o + F.groundFactor] = empty ? 1 : Terrain.factor(ground);
-  }
-}
 
 // Scratch for senseThinkRows: the thinking part of its batch.
 let thinkRows = new Int32Array(0);
 let thinkSelves = new Int32Array(0);
 
-// prepareRows for the batch (the step needs every ground factor; the fill kernel's prepare does it when the crowd kernel packs the energy signal), then sense and think for those of it that think this tick (thinksNow); idOf gives the id
+// The body inputs of the batch (the step needs every ground factor; the fill kernel's prepare writes them, Creature.writeBodyInputs is its reference), then sense and think for those of it that think this tick (thinksNow); idOf gives the id
 // of crowd index self. detail gets its rays and input read back only when it thought, else they stay as of its last think.
 export function senseThinkRows(kernels: SenseKernels, world: World, crowd: Crowd, rows: Int32Array, selves: Int32Array, n: number, tick: number, every: number,
   idOf: (self: number) => number, detail: Creature | null, prof: PhaseTimer | null = null): void {
   const store = kernels.store;
-  if (kernels.packsOwnSignal(crowd)) kernels.prepareRows(rows, n, world.terrain);
-  else prepareRows(store, rows, n, world.terrain);
+  kernels.prepareRows(rows, n, world.terrain, crowd);
   if (every <= 1) return kernels.runRows(world, crowd, rows, selves, n, detail, prof);
   if (thinkRows.length < n) {
     thinkRows = new Int32Array(2 * n);
