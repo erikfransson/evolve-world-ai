@@ -515,3 +515,4 @@ Head phases 2026-10-28 14:50 (253f894, load 6-7, `scout-head.md`; ms per tick, 3
 - 2026-10-29 02:42 idea 144 merged (setImmediate on the behind path; the orchestrator read the 4-line diff: timers and the poll phase still run between slices, the slice budget and catch-up cap are untouched).
 - 2026-10-29 02:53 full suite on 377fddf (116, 125, 126, 127, 128, 140, 143, 138 with 48, 144): 124 files, 1280 tests, exit 0.
 - 2026-10-29 03:08 idea 147 parked: the trig pairing loses in the step loop; the u16 table wins its phases but the tick shows a brain-forward shift of the same size (unexplained). Step and crowd rebuild are closed.
+- 2026-10-29 03:08 spawned 148 (bundle of the parked smalls 141, 142 ported onto the new brain.wat, 147 B; 10 interleaved pairs per case to settle the brain-forward shift). Running: 146, 148.
