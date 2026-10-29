@@ -7,7 +7,7 @@ import type { EcoState } from "../../src/typescript/src/sim/ecoState.ts";
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
 import { ECO_PRESETS, withEcoPreset } from "../../src/typescript/src/sim/presets.ts";
 import { createRng } from "../../src/typescript/src/sim/rng.ts";
-import { energySignal } from "../../src/typescript/src/sim/sensors.ts";
+import { EXTRA_TERRAIN, energySignal } from "../../src/typescript/src/sim/sensors.ts";
 import { wasmAvailable } from "../../src/typescript/src/sim/wasm/loader.ts";
 import { LAYOUT } from "../../src/typescript/src/sim/wasm/layout.ts";
 import { F, Region } from "../../src/typescript/src/sim/wasm/resident.ts";
@@ -535,4 +535,49 @@ describe.skipIf(!wasmAvailable())("whole runs with the WebAssembly crowd grid an
       expect([b.fingerprint(), b.population, b.deaths]).toEqual([a.fingerprint(), a.population, a.deaths]);
     }
   });
+});
+
+describe.skipIf(!wasmAvailable())("the own energy signal in the rows (packsOwnSignal)", () => {
+  // Species start energies [a, b]: equal ones let the crowd kernel pack the signal, unequal ones take the JS prepareRows twin.
+  const world = (a: number, b: number): Ecosystem => {
+    const c = structuredClone(DEFAULT_PREDATOR_CONFIG);
+    c.world = { ...c.world, width: 3000, height: 2000, stoneDensity: 0.06, slowDensity: 0.1, fastDensity: 0.1 };
+    c.species![0]!.startEnergy = a;
+    c.species![0]!.founders = 60;
+    c.species![1]!.startEnergy = b;
+    c.species![1]!.founders = 20;
+    c.eco.maxPopulation = 200;
+    return new Ecosystem(c, null);
+  };
+
+  for (const [a, b, packs] of [[50, 120, false], [90, 50, false], [50, 50, true], [120, 120, true]] as const) {
+    it(`with start energies ${a} and ${b}, ${packs ? "the crowd kernel packs" : "prepareRows writes"} the signal and the rows equal the JS twin bit for bit`, () => {
+      const eco = world(a, b);
+      const e = eco as Any;
+      for (let t = 0; t < 6; t++) eco.step();
+      eco.prepareTick();
+      expect(e.crowd.kernel).not.toBeNull();
+      expect(e.kernels.packsOwnSignal(e.crowd)).toBe(packs);
+      const { rows, selves, n } = eco.senseBatchRows();
+      expect(n).toBeGreaterThan(30);
+      eco.senseRows(rows, selves, n);
+      const f: Float64Array = e.resident.f64;
+      const fields = [F.extras, F.extras + 1, F.extras + 2, F.extras + 3, F.extras + EXTRA_TERRAIN, F.groundFactor];
+      const read = (): number[] => Array.from({ length: n }, (_, k) => fields.map((x) => f[(rows[k]! >> 3) + x]!)).flat();
+      const got = read();
+      let grounded = 0;
+      for (let k = 0; k < n; k++) {
+        const o = rows[k]! >> 3;
+        const m = eco.members[selves[k]!]!;
+        const start = m.species === 0 ? a : b;
+        const signal = energySignal(f[o + F.energy]!, start);
+        expect(Object.is(f[o + F.extras], packs ? Math.fround(signal) : signal)).toBe(true); // the packed one is f32 rounded, the twin's is not
+        if (f[o + F.extras + EXTRA_TERRAIN] !== 0) grounded++;
+      }
+      expect(grounded).toBeGreaterThan(0);
+      prepareRows(e.resident, rows, n, e.items.terrain, packs);
+      expect(read()).toEqual(got);
+      expect(got.every(Number.isFinite)).toBe(true);
+    });
+  }
 });

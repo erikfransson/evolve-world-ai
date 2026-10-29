@@ -3,7 +3,7 @@ import { Creature } from "../../src/typescript/src/sim/creature.ts";
 import type { CreatureState } from "../../src/typescript/src/sim/types.ts";
 import { Crowd } from "../../src/typescript/src/sim/crowd.ts";
 import { createRng } from "../../src/typescript/src/sim/rng.ts";
-import { DEFAULT_ECO_CONFIG, seasonFactor, seasonName } from "../../src/typescript/src/sim/ecoConfig.ts";
+import { DEFAULT_ECO_CONFIG, MAX_HIDDEN_LAYERS, seasonFactor, seasonName } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { EVENT_CAP, EVENT_DEATH, EVENT_IMPACT, EVENT_STRIDE, Ecosystem, MAX_SPARE } from "../../src/typescript/src/sim/ecosystem.ts";
 import { trialsSizes } from "../../src/typescript/src/sim/seedPool.ts";
@@ -11,6 +11,8 @@ import type { PoolEntry } from "../../src/typescript/src/sim/seedPool.ts";
 import { FEAT_CREATURE, FEAT_SEEN_ENERGY, energySignal, inputLayout } from "../../src/typescript/src/sim/sensors.ts";
 import { HIT_CREATURE, HIT_FOOD, HIT_NONE, HIT_POISON } from "../../src/typescript/src/sim/types.ts";
 import { World } from "../../src/typescript/src/sim/world.ts";
+import { restoreState, saveState } from "../../src/typescript/src/sim/ecoState.ts";
+import type { EcoState } from "../../src/typescript/src/sim/ecoState.ts";
 import { wasmAvailable } from "../../src/typescript/src/sim/wasm/loader.ts";
 
 type Over = { [K in keyof EcoConfig]?: Partial<EcoConfig[K]> };
@@ -768,5 +770,22 @@ describe("reusing dead creatures", () => {
     expect(e.takeSpare(0, a!)!.creature.brain.genome.length).toBe(a);
     expect(e.takeSpare(0, a!)!.creature.brain.genome.length).toBe(b); // none of size a left: the latest
     expect(e.takeSpare(0, a!)).toBeUndefined();
+  });
+});
+
+describe("brain depth limit", () => {
+  it("runs a world of eight hidden layers on the kernels, and refuses nine when a save is checked, not at the first attach", () => {
+    expect(MAX_HIDDEN_LAYERS).toBe(8);
+    const layers = (n: number) => ecoCfg({ brain: { hiddenLayers: new Array(n).fill(5) } });
+    const eco = new Ecosystem(layers(8), null);
+    const kernels = (eco as unknown as { kernels: unknown }).kernels;
+    if (wasmAvailable()) expect(kernels).not.toBeNull();
+    for (let t = 0; t < 20; t++) eco.step();
+    expect(eco.population).toBeGreaterThan(0);
+    expect(eco.members.every((m) => m.creature.plan.hiddenLayers.length === 8)).toBe(true);
+    const state = JSON.parse(JSON.stringify(saveState(eco))) as EcoState;
+    expect(restoreState(state).members.length).toBe(eco.members.length);
+    (state.config as EcoConfig).brain.hiddenLayers = new Array(9).fill(5);
+    expect(() => restoreState(state)).toThrow(/hiddenLayers" must have at most 8 layers, got 9/);
   });
 });

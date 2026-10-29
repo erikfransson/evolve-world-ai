@@ -54,6 +54,13 @@ export interface EcoConfig extends EngineConfig {
 // world.foodDensity and world.poisonDensity are the starting densities.
 export const MAX_KILL_ENERGY = 300; // eco.killEnergy at most, for saves and RL envs
 export const MAX_THINK_EVERY = 8; // eco.thinkEvery at most, for saves
+export const MAX_HIDDEN_LAYERS = 8; // brain.hiddenLayers at most: the brain kernels hold 10 layer sizes (wasmKernels.test.ts pins it)
+export const MAX_CREATURES = 20_000; // eco.maxPopulation at most, the crowd grid's 65535 guard stays out of reach
+
+// Throws when a pasted or saved brain has more hidden layers than the kernels hold, so a world fails at validation and not at its first attach.
+export function checkHiddenLayers(layers: readonly unknown[]): void {
+  if (layers.length > MAX_HIDDEN_LAYERS) throw new Error(`config "brain.hiddenLayers" must have at most ${MAX_HIDDEN_LAYERS} layers, got ${layers.length}.`);
+}
 
 export const DEFAULT_ECO_CONFIG: EcoConfig = {
   seed: 1,

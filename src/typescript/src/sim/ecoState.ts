@@ -1,7 +1,7 @@
 import { genomeLength, layerSizes, upgradeGenome } from "./brain.ts";
 import { ITEM_RADIUS_RANGE, overrideConfig } from "./config.ts";
 import type { DeepPartial } from "./config.ts";
-import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG, MAX_KILL_ENERGY, MAX_THINK_EVERY } from "./ecoConfig.ts";
+import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG, MAX_CREATURES, MAX_KILL_ENERGY, MAX_THINK_EVERY, checkHiddenLayers } from "./ecoConfig.ts";
 import type { EcoConfig } from "./ecoConfig.ts";
 import { MUTATION_SCALE_RANGE } from "./ecoInsert.ts";
 import { Ecosystem } from "./ecosystem.ts";
@@ -142,7 +142,6 @@ export function snapshotState(eco: Ecosystem): EcoSnapshot {
 // Limits a state is held to on restore; far above any real world, they only stop a corrupt or hostile state from exhausting memory or time.
 const MAX_RAYS = 64; // the WebAssembly kernels' limit
 const MAX_ITEM_SLOTS = 2_000_000;
-const MAX_CREATURES = 20_000;
 const MAX_GENOME_FLOATS = 30_000_000; // all creatures together, 120 MB
 const MIN_WORLD_SIZE = 500; // the settings forms' smallest world
 const MAX_WORLD_SIZE = 50_000;
@@ -266,6 +265,7 @@ function checkedConfig(raw: unknown): EcoConfig {
   whole(eco.birthReserve, 0, MAX_CREATURES, "eco.birthReserve");
   whole(eco.initialPopulation, 0, MAX_CREATURES, "eco.initialPopulation");
   whole(eco.thinkEvery, 1, MAX_THINK_EVERY, "eco.thinkEvery");
+  checkHiddenLayers(config.brain.hiddenLayers);
   return config;
 }
 
