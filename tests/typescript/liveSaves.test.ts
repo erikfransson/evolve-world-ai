@@ -472,4 +472,34 @@ describe("save parsing", () => {
     const bad = { ...JSON.parse(good), lineages: null };
     await expect(parseSave(gzipSync(JSON.stringify(bad)), LIMITS.maxSaveJsonBytes, true)).rejects.toThrow();
   });
+
+  it("verify-only refuses a truncated, not-gzip, not-JSON or out-of-range save, and the restored state equals the saved one", async () => {
+    const { parseSave } = await import("../../server/src/saveParse.ts");
+    const good = json(world(8));
+    const gz = gzipSync(good);
+    const edit = (change: (s: Record<string, any>) => void): Buffer => { // eslint-disable-line @typescript-eslint/no-explicit-any
+      const s = JSON.parse(good) as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+      change(s);
+      return gzipSync(JSON.stringify(s));
+    };
+    const scalar = (s: Record<string, any>, at: number, v: number): void => { // eslint-disable-line @typescript-eslint/no-explicit-any
+      const raw = Buffer.from(s.creatures.scalars, "base64");
+      raw.writeDoubleLE(v, at * 8);
+      s.creatures.scalars = raw.toString("base64");
+    };
+    const bad: [string, Uint8Array][] = [
+      ["truncated gzip", gz.subarray(0, gz.length >> 1)],
+      ["not gzip", Buffer.from("not gzip at all")],
+      ["not JSON", gzipSync(good.slice(0, good.length >> 1))],
+      ["a NaN position", edit((s) => scalar(s, 15, NaN))],
+      ["a position outside the walls", edit((s) => scalar(s, 15, 1e12))],
+      ["a huge velocity", edit((s) => scalar(s, 18, 1e308))],
+      ["a huge item capacity", edit((s) => { s.core.itemCapacity = 1e12; })],
+      ["a truncated column", edit((s) => { s.creatures.genomes = s.creatures.genomes.slice(0, -8); })],
+      ["a missing lineage table", edit((s) => { s.lineages = null; })],
+    ];
+    for (const [what, file] of bad) await expect(parseSave(file, LIMITS.maxSaveJsonBytes, true), what).rejects.toThrow();
+    await expect(parseSave(gz, LIMITS.maxSaveJsonBytes, true)).resolves.toBeUndefined();
+    expect(JSON.stringify(await parseSave(gz, LIMITS.maxSaveJsonBytes))).toBe(good); // the columns dropped after decoding change nothing in the world
+  });
 });
