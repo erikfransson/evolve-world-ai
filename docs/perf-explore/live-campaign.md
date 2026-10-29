@@ -68,6 +68,8 @@ Fingerprint equal means bit-identical results.
 | 2026-10-29 03:27 | report: head 377fddf (batch21 engine plus server ideas 138, 48, 144) | - | - | 1.59x mixed / 1.69x cap (batch21) | 204 / 240 MB (below development) |
 | 2026-10-29 03:51 | 4 founders x 800 (3 pairs, medians, batch22, head eae6fa2: 146, 148 in) | 14.64 | 9.02 | 1.62x (exact) | 248 / 202 MB |
 | 2026-10-29 03:51 | Juggernaut x 4900 (3 pairs, medians, batch22) | 17.78 | 10.20 | 1.74x (exact) | 257 / 237 MB |
+| 2026-10-29 07:02 | 4 founders x 800 (3 pairs, medians, batch23, head 9b6d1c4-era: 152, 153, 154 in; noisy: three reviews' test runs started mid-batch) | 14.08 | 8.40 | 1.68x (exact, noisy) | 251 / 202 MB |
+| 2026-10-29 07:02 | Juggernaut x 4900 (3 pairs, medians, batch23, noisy) | 16.11 | 10.69 | 1.51x (exact, noisy; batch22 gave 1.74x on the same engine bytes but for 154) | 258 / 237 MB |
 
 Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54, brain forward 5.23 / 5.17, slots (prepareRows) 1.04 / 1.52, memory and steer 1.26 / 1.59, eat 1.05 / 1.35, crowd grid 0.51 / 0.67, collisions 0.18 / 0.27, rest under 0.2. Server frame encoding adds 0.57 ms per tick at 5 Hz. Speed achieved unpaced on this loaded machine: 2.0x and 1.7x real time (the set speed is 3x).
 
@@ -545,3 +547,4 @@ Head phases 2026-10-28 14:50 (253f894, load 6-7, `scout-head.md`; ms per tick, 3
 - 2026-10-29 06:32 soak 149: the copied monitor still pointed at soak12's samples file (hard-coded path); its 93 rows were moved to soak6b/samples.csv, soak12's file restored to its 720 rows, the monitor restarted with the elapsed offset at 95 min (its frame and save counters restart there). Server untouched. Lesson: check a copied script's constants, not only its arguments.
 - 2026-10-29 06:56 review round 17 (Opus, independent) of idea 154: nothing to fix; merged, with the two tail-loop address compares switched to unsigned like the rest of the file (sense tests green). Audit item B1 closed. Factor batch23 launched.
 - 2026-10-29 06:57 push-gate round 2 (three independent Opus reviews of the server diff c384eb5..HEAD: public attack surface, host isolation and admin, page and protocol) launched now so findings land before the merge; factor batch23 and the 6 h soak run.
+- 2026-10-29 07:02 factor batch23 (152-154 in): 1.68x mixed / 1.51x cap with run spreads of 20-25% (the gate reviews' suites ran alongside); fingerprints equal; batch22's 1.62x / 1.74x stays the reference until a quiet rerun (batch24 after the reviews).
