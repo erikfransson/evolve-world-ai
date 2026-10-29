@@ -252,7 +252,7 @@ export class WasmSenser {
       }
       this.rowCap = Math.max(64, Math.ceil(widest * 1.5) + 16);
       this.pStart = this.grow(this.rItems, rows * (cols + 1) * 4);
-      this.pXY = this.grow(this.rItemXY, rows * this.rowCap * 8);
+      this.pXY = this.grow(this.rItemXY, rows * this.rowCap * 8 + 8); // + 8: the sense kernel reads item pairs
       this.pKinds = this.grow(this.rItemKinds, rows * this.rowCap);
       this.pIds = this.grow(this.rItemIds, rows * this.rowCap * 4);
       this.views();

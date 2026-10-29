@@ -32,6 +32,9 @@ So the plain emit is 0.42 ms (12% of the kernel), the stores into the input line
 - `$emit` at stride 6 does two rays per step: closeness for the pair as one `f64x2` division (`andnot` of the kind-0 mask, same bits as the scalar branch), `demote_f64x2_zero`, one-hot for both rays, and the 48 bytes as three `v128` stores through `i8x16.shuffle`. The odd last ray and every other stride take the old loop, whose zero tail is now `v128` stores plus `i32` remainder (any feature count).
 - The merge loop (crowd path, seen creature or unseen with detail) has a copy for no detail record and stride 6: a branch on the seen creature instead of the selects and loads of slot 0, no detail branch, a fixed 24-byte step. The old loop stays for detail records and other strides.
 
+## Strides
+`rayFeatureCount(config)` (sensors.ts) is 4 without creature sight, otherwise 5 + S for S species (at least 6: closeness, food, poison, wall, S species flags, seen energy). The pair emit and the lean merge copy run at stride 6 only (one species, the live world). Every other stride (4, and 7 and up for several species) takes the old per-ray loops, which are the same code as before apart from the zero tail now written as `v128` stores plus `i32` remainder; the kernel tests check one species (stride 6) and three (stride 8) against the JS encoding; stride 4 (no creature sight) is not used by the ecosystem kernel and has no test. Extending the pair path to other strides would need a different shuffle per stride (the pair is 48 bytes only at 6), so it was not done.
+
 ## Kernel harness, 3 alternating runs (p25 ms, hash equal: mixed 10b91cba, cap 4cc9bd68)
 
 | Case  | Run | base  | new   | delta  |
