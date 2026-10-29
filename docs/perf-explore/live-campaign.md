@@ -7,6 +7,13 @@ Benchmark: `node src/liveBench.ts` in `server/` (new, this campaign): the server
 Number to compare: `cpuMsPerTick` (user CPU per steady tick, after the first quarter), run as `nice -n 19 ionice -c3 chrt --idle 0`, several alternating pairs because the laptop is loaded (load 10-12).
 Fingerprint equal means bit-identical results.
 
+## Final state (2026-10-29 09:10, campaign stopped by Erik at idea 164)
+
+- Head b6d5e86 (plus docs): development vs perf-live 1.65x mixed / 1.72x cap on the live bench (batch26), bit-identical fingerprints in every pair, peak RSS 201 vs 220 MB mixed and 239 vs 258 MB cap (development's), save peak about 100 MB lower (ideas 140, 146, 150). Full suite 125 files, 1300 tests, exit 0.
+- 164 ideas logged: 37 merged, 14 parked on their pl- branches, the rest rejected or studies (table below). 18 independent engine review rounds, two push-gate rounds (round 2 closed on ec09c4a) and two thermo-nuclear quality reviews (quality2.md, quality3.md: approved). The quality fixes measured neutral in a quiet 5-pair A/B (1.000x / 1.020x); idea 162 was reverted for a measured cost.
+- Before a push: the server diff of ideas 158, 159 and 164 (save workers, protocol.ts record writer, the verify worker's gc hack removed) came after the gate's round 2 and needs its re-check; nothing is pushed. Erik's decision levers stay in the decisions block (dt 1/20, helper threads, quad lanes on the new kernel, malloc env, loop wake spacing, huge pages, the unit refill for the semi-space flag).
+- Soak of the final engine (idea 149, 6 h) is collected at 11:09; the 12 h soak of the mid-campaign head passed (soak12.md).
+
 ## Decisions for Erik
 - Deploy notes from push gate round 2: the installed unit still lacks `--max-semi-space-size=4` until the unit is refilled from the template and daemon-reloaded; the user manager delegates only `memory pids`, so the unit's `CPUQuota=50%` has no effect (pre-existing); the sum of the heap caps (main 768 plus one save worker 384 plus off-heap) can pass MemoryMax 1G in principle, as before the branch, and the diff lowers both young generations.
 - `--max-semi-space-size=4` is now in the unit template's ExecStart (idea 150, `semispace.md`): peak RSS -24 MB mixed / -64 MB cap, no tick cost, fingerprints equal; bench numbers from 3 runs each, so watch the first soak after the change. Say no to drop it.
@@ -75,6 +82,8 @@ Fingerprint equal means bit-identical results.
 | 2026-10-29 07:14 | Juggernaut x 4900 (3 pairs, medians, batch24) | 15.70 | 8.94 | 1.76x (exact) | 256 / 237 MB |
 | 2026-10-29 07:59 | 4 founders x 800 (3 pairs, medians, batch25, head 0cb0787 after the quality fixes 156-163) | 13.04 | 8.26 | 1.58x (exact) | 219 / 200 MB |
 | 2026-10-29 07:59 | Juggernaut x 4900 (3 pairs, medians, batch25) | 15.92 | 9.20 | 1.73x (exact) | 257 / 236 MB |
+| 2026-10-29 09:10 | 4 founders x 800 (3 pairs, medians, batch26, final head b6d5e86) | 13.37 | 8.12 | 1.65x (exact) | 220 / 201 MB |
+| 2026-10-29 09:10 | Juggernaut x 4900 (3 pairs, medians, batch26, final) | 16.23 | 9.43 | 1.72x (exact) | 258 / 239 MB |
 
 Baseline phases (ms per tick, 3300 mixed / 4900 Juggernaut): senser 5.74 / 7.54, brain forward 5.23 / 5.17, slots (prepareRows) 1.04 / 1.52, memory and steer 1.26 / 1.59, eat 1.05 / 1.35, crowd grid 0.51 / 0.67, collisions 0.18 / 0.27, rest under 0.2. Server frame encoding adds 0.57 ms per tick at 5 Hz. Speed achieved unpaced on this loaded machine: 2.0x and 1.7x real time (the set speed is 3x).
 
@@ -589,3 +598,4 @@ Head phases 2026-10-28 14:50 (253f894, load 6-7, `scout-head.md`; ms per tick, 3
 - 2026-10-29 08:42 final A/B (d3ade3a vs 129df55, 5 pairs) ran under the review's test load: 0.979 mixed / 0.875 cap with spreads of 25% (cap live 9.25 to 11.4), not conclusive; rerun on a quiet machine after idea 164 lands, as the last word on the quality fixes' cost.
 - 2026-10-29 08:50 idea 164 merged. Final checks next: the quiet A/B (d3ade3a vs head), the full suite, factor batch26, then the merge summary for Erik.
 - 2026-10-29 08:58 final quiet A/B (d3ade3a before the quality fixes vs b6d5e86 after 156-161, 163, 164; 5 pairs): 1.000x mixed / 1.020x cap, fingerprints equal. The boost survived the clean-up. Factor batch26 and the full suite follow in the same chain.
+- 2026-10-29 09:10 final chain: factor batch26 1.65x mixed / 1.72x cap on b6d5e86, full suite 1300 green. Final state written at the top of this log. Campaign closed.
