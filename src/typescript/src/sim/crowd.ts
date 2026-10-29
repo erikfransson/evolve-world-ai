@@ -5,6 +5,7 @@ import type { WasmCrowd } from "./wasm/crowdKernel.ts";
 
 type GridArrays = Pick<Crowd, "xs" | "ys" | "energies" | "species" | "owners" | "cellStart" | "occupied">;
 
+export const MAX_GRID_CREATURES = 0xffff; // cellStart holds slots as u16, and the engine allows 20000 creatures (ecoState MAX_CREATURES)
 export const SMALL_SORT = 12; // up to this many creatures rebuildFrom sorts by insertion: RL episodes have 1-11 creatures, the radix sort pays off for crowds
 
 // Creatures in a uniform grid of cell size config.creature.rayLength, rebuilt each tick by a stable radix sort of the cell keys,
@@ -14,7 +15,7 @@ export class Crowd {
   count = 0;
   readonly cols: number;
   readonly rows: number;
-  cellStart: Int32Array;
+  cellStart: Uint16Array; // slots, so a grid holds at most MAX_GRID_CREATURES creatures (half the bytes of an Int32Array for the 600 KB table)
   // Sorted by cell; owner is the index into the states array the grid was built from.
   xs: Float64Array;
   ys: Float64Array;
@@ -51,7 +52,7 @@ export class Crowd {
     this.cell = Math.max(config.creature.rayLength, 2 * this.radius, 1);
     this.cols = Math.max(1, Math.ceil(config.world.width / this.cell));
     this.rows = Math.max(1, Math.ceil(config.world.height / this.cell));
-    this.cellStart = new Int32Array(this.cols * this.rows + 1);
+    this.cellStart = new Uint16Array(this.cols * this.rows + 1);
     const keyBits = Math.max(1, Math.ceil(Math.log2(this.cols * this.rows)));
     this.radixPasses = Math.ceil(keyBits / 11);
     this.radixBits = Math.ceil(keyBits / this.radixPasses);
@@ -140,6 +141,7 @@ export class Crowd {
 
   // The same from arrays: creature i at (x[i], y[i]) with energy e[i] and species sp[i] (all 0 without).
   rebuildFrom(x: Float64Array, y: Float64Array, e: Float64Array, n: number, sp?: ArrayLike<number>): void {
+    if (n > MAX_GRID_CREATURES) throw new RangeError(`a crowd grid holds at most ${MAX_GRID_CREATURES} creatures, got ${n}`);
     if (this.kernel) this.own(n);
     if (n > this.xs.length) this.grow(n);
     const cellOf = this.cellOf;

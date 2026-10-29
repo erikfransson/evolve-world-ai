@@ -2,7 +2,7 @@
 ;; the crowd rays (f32), and the ray features written straight into the brain input vector.
 ;; Memory is the brain bank's (imported), so inputs need no copy. Everything is scratch per tick except the per-slot offset tables.
 ;; Param block P (layout.ts S_*, double-brace tokens below): the world's item grid (itemStart is cols+1 per row, absolute; itemXY f32 pairs; itemKind u8; items packed per row in cell order),
-;;   the crowd grid (cStart, sx, sy, own, sig, species: i32 per crowd slot), the creature records (rec, n), the brain input stride (ray features are 4 + S + 1 per ray: S species flags, then the energy),
+;;   the crowd grid (cStart: u16 per cell, sx, sy, own, sig, species: i32 per crowd slot), the creature records (rec, n), the brain input stride (ray features are 4 + S + 1 per ray: S species flags, then the energy),
 ;;   the candidate and ray scratch (cand, scr).
 ;; Rock (Terrain, as World.gatherRock): rockMaxR, invRockCell, rockCols (0 for no rock), rockRows, rockStart (cols*rows+1), rockOrder, rockXYR (f64 x y r per disc).
 ;;   Rock discs join the item candidates as kind 3 (wall), after the items, so a ray reports the nearest of wall, rock, item and creature.
@@ -395,8 +395,8 @@
         (block $ecyd (loop $ecyl
           (br_if $ecyd (i32.gt_s (local.get $cy) (local.get $cy1)))
           (local.set $row (i32.mul (local.get $cy) (local.get $ccols)))
-          (local.set $k (i32.load (i32.add (local.get $cStart) (i32.shl (i32.add (local.get $row) (local.get $cx0)) (i32.const 2)))))
-          (local.set $e (i32.load (i32.add (local.get $cStart) (i32.shl (i32.add (i32.add (local.get $row) (local.get $cx1)) (i32.const 1)) (i32.const 2)))))
+          (local.set $k (i32.load16_u (i32.add (local.get $cStart) (i32.shl (i32.add (local.get $row) (local.get $cx0)) (i32.const 1)))))
+          (local.set $e (i32.load16_u (i32.add (local.get $cStart) (i32.shl (i32.add (i32.add (local.get $row) (local.get $cx1)) (i32.const 1)) (i32.const 1)))))
           (block $ekd (loop $ekl
             (br_if $ekd (i32.ge_s (local.get $k) (local.get $e)))
             (local.set $fxf (f32.sub (f32.load (i32.add (local.get $sx) (i32.shl (local.get $k) (i32.const 2)))) (local.get $x32)))
@@ -523,8 +523,8 @@
       (block $cyd2 (loop $cyl2
         (br_if $cyd2 (i32.gt_s (local.get $cy) (local.get $cy1)))
         (local.set $row (i32.mul (local.get $cy) (local.get $ccols)))
-        (local.set $k (i32.load (i32.add (local.get $cStart) (i32.shl (i32.add (local.get $row) (local.get $cx0)) (i32.const 2)))))
-        (local.set $e (i32.load (i32.add (local.get $cStart) (i32.shl (i32.add (i32.add (local.get $row) (local.get $cx1)) (i32.const 1)) (i32.const 2)))))
+        (local.set $k (i32.load16_u (i32.add (local.get $cStart) (i32.shl (i32.add (local.get $row) (local.get $cx0)) (i32.const 1)))))
+        (local.set $e (i32.load16_u (i32.add (local.get $cStart) (i32.shl (i32.add (i32.add (local.get $row) (local.get $cx1)) (i32.const 1)) (i32.const 1)))))
         (block $kd (loop $kl
           (br_if $kd (i32.ge_s (local.get $k) (local.get $e)))
           (local.set $fxf (f32.sub (f32.load (i32.add (local.get $sx) (i32.shl (local.get $k) (i32.const 2)))) (local.get $x32)))
