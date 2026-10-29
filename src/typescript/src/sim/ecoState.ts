@@ -307,8 +307,9 @@ function unpack<T extends Typed>(make: { new (buffer: ArrayBuffer): T; BYTES_PER
   return new make(out.buffer);
 }
 
-// A state decoded and checked: the typed columns and the validated scalar fields, none of them pointing into the state's text,
-// so a caller that lets the state go out of scope can collect the JSON before restoreDecoded builds the world.
+// A state decoded and checked: the typed columns and the validated scalar fields. It keeps the small core, lineage and plan
+// objects of the parsed state but none of the base64 column strings, so a caller that lets the state go out of scope can collect
+// the JSON text and columns before restoreDecoded builds the world.
 export interface DecodedState {
   config: EcoConfig;
   core: EcoCore;
