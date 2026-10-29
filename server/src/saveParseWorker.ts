@@ -2,8 +2,8 @@ import { parentPort, workerData } from "node:worker_threads";
 import { gunzipSync } from "node:zlib";
 import { setFlagsFromString } from "node:v8";
 import { runInNewContext } from "node:vm";
-import { restoreState, saveState } from "../../src/typescript/src/sim/ecoState.ts";
-import type { EcoState } from "../../src/typescript/src/sim/ecoState.ts";
+import { decodeState, restoreDecoded, saveState } from "../../src/typescript/src/sim/ecoState.ts";
+import type { DecodedState, EcoState } from "../../src/typescript/src/sim/ecoState.ts";
 import { otherWorldReason } from "./saveParse.ts";
 import { oldestInState } from "./carry.ts";
 import type { Home } from "./saveParse.ts";
@@ -13,8 +13,8 @@ import type { Home } from "./saveParse.ts";
 // of millions of tiny values ("[{},{},...]") makes JSON.parse allocate far more than its size and grind near the heap cap; it is refused unparsed.
 const MAX_JSON_TOKENS = 1_000_000;
 const { gz, maxJsonBytes, verifyOnly, home, carryFrom } = workerData as { gz: Uint8Array; maxJsonBytes: number; verifyOnly: boolean; home: Home | null; carryFrom: string | null };
-// Its own function, so the gunzipped bytes and their text are garbage before restoreState builds the world.
-// A collection once restoreState has decoded the base64 columns, so the 40 MB of column text and of parse input is gone before the world is built.
+// Its own function, so the gunzipped bytes and their text are garbage before the world is built.
+// A collection once the state is decoded, so the 40 MB of column text and of parse input is gone before the world is built.
 // The flag is process-wide (V8 flags are shared): every later vm context and worker gets a callable gc. Harmless while no visitor
 // bytes ever run as code (no eval, Function or vm anywhere in server/ or the engine); keep it that way.
 // If a Node ever refuses the flag, the worker still parses and verifies, only without the early collection.
@@ -38,15 +38,22 @@ function parseJson(): EcoState {
   if (json.byteOffset === 0 && json.buffer.byteLength >= 1 << 20) (json.buffer as ArrayBuffer & { transfer(length: number): ArrayBuffer }).transfer(0);
   return JSON.parse(text) as EcoState;
 }
-try {
+// Parses and decodes; the parsed state goes out of scope on return. Null when the answer was already posted (a carry, or a save of another world).
+function decode(): DecodedState | null {
   const state = parseJson();
   const other = home ? otherWorldReason(state, home) : null;
   // A reset's carry: only the oldest creature, read from the columns without building the world, so a save of an older map version works too.
   if (carryFrom !== null) parentPort!.postMessage({ ok: true, carried: oldestInState(state, carryFrom) });
   else if (other) parentPort!.postMessage({ ok: false, other: true, reason: other });
-  else {
+  else return decodeState(state);
+  return null;
+}
+try {
+  const decoded = decode();
+  if (decoded) {
+    collect?.();
     // Post the state rebuilt from the checked world, so unknown keys and junk in the file never reach the main heap.
-    const world = restoreState(state, null, { decoded: collect });
+    const world = restoreDecoded(decoded);
     parentPort!.postMessage({ ok: true, state: verifyOnly ? null : saveState(world) });
   }
 } catch (e) {
