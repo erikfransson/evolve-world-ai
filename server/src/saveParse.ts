@@ -6,6 +6,7 @@ import type { Carried } from "./carry.ts";
 // can at worst kill that worker, never the server. Resolves with a state restoreState accepted there, rejects with the reason otherwise.
 // verifyOnly: only check, and resolve with nothing, so the rebuilt state (100 to 200 MB at 2500 creatures, more at the 5000 cap) never crosses to the main heap.
 export const PARSE_HEAP_MB = 384;
+const YOUNG_MB = 8; // young generation of every save worker: at 32 its scavenge space added 25 to 40 MB to the save peak (docs/perf-explore/verifymem.md)
 const PARSE_TIMEOUT_MS = 120_000;
 // A save's own check must finish well inside the unit's TimeoutStopSec=60, so a slow one cannot cost the shutdown save; a real one takes 3 to 6 s.
 export const VERIFY_TIMEOUT_MS = 40_000;
@@ -47,7 +48,7 @@ export function parseSave(gz: Uint8Array, maxJsonBytes: number, verifyOnly?: fal
 export function parseSave(gz: Uint8Array, maxJsonBytes: number, verifyOnly: true, home?: Home, verifyMs?: number): Promise<undefined>;
 export function parseSave(gz: Uint8Array, maxJsonBytes: number, verifyOnly = false, home?: Home, verifyMs = VERIFY_TIMEOUT_MS): Promise<EcoState | undefined> {
   return new Promise((resolve, reject) => {
-    const worker = new Worker(WORKER, { workerData: { gz, maxJsonBytes, verifyOnly, home: home ?? null, carryFrom: null }, resourceLimits: { maxOldGenerationSizeMb: PARSE_HEAP_MB, maxYoungGenerationSizeMb: 32 }, stdout: false, stderr: false });
+    const worker = new Worker(WORKER, { workerData: { gz, maxJsonBytes, verifyOnly, home: home ?? null, carryFrom: null }, resourceLimits: { maxOldGenerationSizeMb: PARSE_HEAP_MB, maxYoungGenerationSizeMb: YOUNG_MB }, stdout: false, stderr: false });
     let settled = false;
     const finish = (err: Error | null, state?: EcoState | null): void => {
       if (settled) return;
@@ -68,7 +69,7 @@ export function parseSave(gz: Uint8Array, maxJsonBytes: number, verifyOnly = fal
 // or map version. Null when the save holds none; rejects with the reason when the save is broken. The caller checks the creature as an upload.
 export function parseCarry(gz: Uint8Array, maxJsonBytes: number, from: string): Promise<Carried | null> {
   return new Promise((resolve, reject) => {
-    const worker = new Worker(WORKER, { workerData: { gz, maxJsonBytes, verifyOnly: false, home: null, carryFrom: from }, resourceLimits: { maxOldGenerationSizeMb: PARSE_HEAP_MB, maxYoungGenerationSizeMb: 32 }, stdout: false, stderr: false });
+    const worker = new Worker(WORKER, { workerData: { gz, maxJsonBytes, verifyOnly: false, home: null, carryFrom: from }, resourceLimits: { maxOldGenerationSizeMb: PARSE_HEAP_MB, maxYoungGenerationSizeMb: YOUNG_MB }, stdout: false, stderr: false });
     let settled = false;
     const finish = (err: Error | null, carried?: Carried | null): void => {
       if (settled) return;
@@ -101,7 +102,7 @@ export function packSave(snap: EcoSnapshot, maxJsonBytes: number, timeoutMs = PA
   const columns = [it.xs, it.ys, it.kinds, it.nextItem, it.cellHead, it.freeSlots, cr.scalars, cr.genomes, cr.memory, ...(cr.outputs ? [cr.outputs] : [])];
   return new Promise((resolve, reject) => {
     // The snapshot is cloned (its columns moved) here, before any later tick can change the world it came from.
-    const worker = new Worker(PACK_WORKER, { workerData: { snap, maxJsonBytes }, transferList: columns.map((a) => a.buffer as ArrayBuffer), resourceLimits: { maxOldGenerationSizeMb: PARSE_HEAP_MB, maxYoungGenerationSizeMb: 32 }, stdout: false, stderr: false });
+    const worker = new Worker(PACK_WORKER, { workerData: { snap, maxJsonBytes }, transferList: columns.map((a) => a.buffer as ArrayBuffer), resourceLimits: { maxOldGenerationSizeMb: PARSE_HEAP_MB, maxYoungGenerationSizeMb: YOUNG_MB }, stdout: false, stderr: false });
     let settled = false;
     const finish = (err: Error | null, out?: { gz: Uint8Array; bytes: number }): void => {
       if (settled) return;
