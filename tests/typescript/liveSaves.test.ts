@@ -13,7 +13,7 @@ import { loadFounders } from "../../server/src/founders.ts";
 import { loadOverrides } from "../../server/src/admin.ts";
 import { StateStore, readRegularFile, saveName } from "../../server/src/state.ts";
 import { smallConfig } from "./liveHelpers.ts";
-import { packState, snapshotState } from "../../src/typescript/src/sim/ecoState.ts";
+import { packState, snapshotColumns, snapshotState } from "../../src/typescript/src/sim/ecoState.ts";
 
 const FOUNDERS = new URL("../../src/typescript/public/live-founders.json", import.meta.url);
 
@@ -159,6 +159,7 @@ describe("saves", () => {
       }
     }
     expect(columns).toBe(10);
+    expect(snapshotColumns(snap)).toHaveLength(columns); // the transfer list of packSave
   });
 
   it("the streamed gzip of a cap-size world is the byte-for-byte gzip of the one-shot JSON, and the size check is exact", async () => {

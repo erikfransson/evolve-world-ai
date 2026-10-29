@@ -1,4 +1,5 @@
 import { Worker } from "node:worker_threads";
+import { snapshotColumns } from "../../src/typescript/src/sim/ecoState.ts";
 import type { EcoSnapshot, EcoState } from "../../src/typescript/src/sim/ecoState.ts";
 import type { Carried } from "./carry.ts";
 
@@ -86,9 +87,7 @@ export function parseCarry(gz: Uint8Array, maxJsonBytes: number, from: string): 
   });
 }
 
-// A save of a snapshot (snapshotState) packed, stringified and gzipped on a worker with the parser's heap cap, so the tick loop only
-// pays for the snapshot. The worker takes the snapshot's typed arrays (transferred, they are copies). Resolves with the gzip and the
-// JSON's byte length; rejects with TooBig when the JSON is over maxJsonBytes, with the reason otherwise.
+// The JSON of a save is over maxJsonBytes.
 export class TooBig extends Error {
   readonly bytes: number;
   constructor(bytes: number) {
@@ -96,10 +95,11 @@ export class TooBig extends Error {
     this.bytes = bytes;
   }
 }
+// A save of a snapshot (snapshotState) packed, stringified and gzipped on a worker with the parser's heap cap, so the tick loop only
+// pays for the snapshot. The worker takes the snapshot's typed arrays (transferred, they are copies). Resolves with the gzip and the
+// JSON's byte length; rejects with TooBig when the JSON is over maxJsonBytes, with the reason otherwise.
 export function packSave(snap: EcoSnapshot, maxJsonBytes: number, timeoutMs = PACK_TIMEOUT_MS): Promise<{ gz: Uint8Array; bytes: number }> {
-  const it = snap.items;
-  const cr = snap.creatures;
-  const columns = [it.xs, it.ys, it.kinds, it.nextItem, it.cellHead, it.freeSlots, cr.scalars, cr.genomes, cr.memory, ...(cr.outputs ? [cr.outputs] : [])];
+  const columns = snapshotColumns(snap);
   return new Promise((resolve, reject) => {
     // The snapshot is cloned (its columns moved) here, before any later tick can change the world it came from.
     const worker = new Worker(PACK_WORKER, { workerData: { snap, maxJsonBytes }, transferList: columns.map((a) => a.buffer as ArrayBuffer), resourceLimits: { maxOldGenerationSizeMb: PARSE_HEAP_MB, maxYoungGenerationSizeMb: YOUNG_MB }, stdout: false, stderr: false });
