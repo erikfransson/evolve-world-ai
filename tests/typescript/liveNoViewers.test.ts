@@ -7,6 +7,7 @@ import { LIMITS } from "../../server/src/config.ts";
 import { LiveWorld } from "../../server/src/liveWorld.ts";
 import { startPublic } from "../../server/src/public.ts";
 import type { PublicServer } from "../../server/src/public.ts";
+import type { AddressInfo } from "node:net";
 import { MSG_CREATURES, MSG_ITEMS } from "../../src/typescript/src/live/protocol.ts";
 import { smallConfig } from "./liveHelpers.ts";
 
@@ -17,11 +18,15 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-async function serve(port: number, world: LiveWorld): Promise<PublicServer> {
-  const pub = startPublic("127.0.0.1", port, world, { ...LIMITS, acceptBurst: 100 });
+// Port 0: the OS picks a free port, so parallel test files cannot collide (CI saw EADDRINUSE on a fixed port).
+async function listen(pub: PublicServer): Promise<number> {
   servers.push(pub);
   await new Promise<void>((r) => (pub.http.listening ? r() : pub.http.once("listening", () => r())));
-  return pub;
+  return (pub.http.address() as AddressInfo).port;
+}
+async function serve(world: LiveWorld, limits = { ...LIMITS, acceptBurst: 100 }): Promise<{ pub: PublicServer; port: number }> {
+  const pub = startPublic("127.0.0.1", 0, world, limits);
+  return { pub, port: await listen(pub) };
 }
 
 // A viewer that records the first byte of each binary frame and the text types.
@@ -39,10 +44,10 @@ describe("no viewers: the frame loop", () => {
     const world = new LiveWorld(smallConfig(), null);
     for (let i = 0; i < 20; i++) world.eco.step();
     const frames = vi.spyOn(world, "creatureFrame");
-    const pub = await serve(62431, world);
+    const { pub, port } = await serve(world);
     await wait(700); // 3 frame ticks with nobody there
     expect(frames).not.toHaveBeenCalled();
-    const w = watcher(62431);
+    const w = watcher(port);
     await vi.waitFor(() => expect(gotFullSet(w)).toBe(true), { timeout: 1500 });
     expect(w.texts).toContain("hello");
     expect(w.texts).toContain("history");
@@ -54,12 +59,12 @@ describe("no viewers: the frame loop", () => {
     const world = new LiveWorld(smallConfig(), null);
     for (let i = 0; i < 20; i++) world.eco.step();
     const frames = vi.spyOn(world, "creatureFrame");
-    const pub = await serve(62432, world);
+    const { pub, port } = await serve(world);
     await wait(300);
-    const a = watcher(62432);
+    const a = watcher(port);
     await vi.waitFor(() => expect(a.texts).toContain("hello"));
     a.ws.terminate();
-    const b = watcher(62432); // within the same 200 ms interval
+    const b = watcher(port); // within the same 200 ms interval
     await vi.waitFor(() => expect(gotFullSet(b)).toBe(true), { timeout: 1500 });
     b.ws.terminate();
     await vi.waitFor(() => expect(pub.viewers()).toBe(0));
@@ -67,7 +72,7 @@ describe("no viewers: the frame loop", () => {
     const calls = frames.mock.calls.length;
     await wait(700);
     expect(frames.mock.calls.length).toBe(calls);
-    const c = watcher(62432);
+    const c = watcher(port);
     await vi.waitFor(() => expect(gotFullSet(c)).toBe(true), { timeout: 1500 });
   });
 
@@ -80,11 +85,9 @@ describe("no viewers: the frame loop", () => {
     const maxViewers = 100;
     const budget = Math.floor(3.5 * frame); // room for 3 viewers at the slowest rate (every 5th frame)
     const limits = { ...LIMITS, acceptBurst: 100, maxViewers, maxSendBytesPerSecond: budget + connect + maxViewers * text, connectBurstBytes: 0, connectBytesPerSecond: connect, textBytesPerViewer: text, detailBytesPerViewer: 0 };
-    const pub = startPublic("127.0.0.1", 62433, world, limits);
-    servers.push(pub);
-    await new Promise<void>((r) => (pub.http.listening ? r() : pub.http.once("listening", () => r())));
+    const { pub, port } = await serve(world, limits);
     await wait(500); // empty period: the frame loop has skipped encoding
-    const ws = Array.from({ length: 40 }, () => watcher(62433)); // all within about one frame interval
+    const ws = Array.from({ length: 40 }, () => watcher(port)); // all within about one frame interval
     await wait(800);
     const hellos = ws.filter((w) => w.texts.includes("hello")).length;
     expect(hellos).toBeGreaterThan(0);
