@@ -85,6 +85,13 @@ export interface GenomeLender {
   readGenome(slot: number, out: Genome): void;
 }
 
+// A brain is in one of three states, which `lender` and `ready` tell apart (lent weights are NO_F32):
+//   own, lazy:  weightsGenome is the genome, no JS views yet (constructor, load).
+//   own, ready: the same, plus views and scratch built over weightsGenome (ensure, first use of the JS path).
+//   lent:       the bank holds the weights, weightsGenome is empty and genome reads the bank; never ready.
+// Transitions: lendTo (own lazy to lent, own ready stays own with its copy reloaded) is called by SenseKernels.attach right after it set the bank slot,
+// and is the only way the shape of a lent brain changes. own() (lent to own lazy, before the slot is freed) and ensure() (lazy or lent to ready) take the weights back.
+// load only runs on an own brain: Creature.reset skips it while a kernel owner holds the creature, because attach sets the bank and lends again.
 export class Brain {
   private shape: readonly number[];
   private weightsGenome: Genome; // the brain's own copy; weights and biases view it. Empty while lent
@@ -121,15 +128,17 @@ export class Brain {
     return this.genes;
   }
 
-  // True while the weights live only in the bank: the genome getter then rebuilds a copy, and reset must go through reshape.
+  // True in the lent state (tests and diagnostics; production code does not branch on it).
   get lent(): boolean {
     return this.lender !== null;
   }
 
-  // Hands the weights over to the bank's slot, which now holds them (set from this genome), and drops the own copy.
-  // A brain that built its JS views (ensure) keeps its copy, since the views are over it.
-  lend(lender: GenomeLender, slot: number): void {
-    if (this.ready) return;
+  // The bank holds the weights for this layout and slot (set from genome just before): the brain takes the layout and the lender and drops its own copy.
+  // A brain with JS views (ready) keeps its copy, since the views are over it, and loads genome into it instead.
+  lendTo(lender: GenomeLender, slot: number, sizes: readonly number[], genome: Genome): void {
+    if (this.ready) return this.load(sizes, genome);
+    this.shape = sizes.slice();
+    this.genes = genomeLength(sizes);
     this.lender = lender;
     this.lenderSlot = slot;
     this.weightsGenome = NO_F32;
@@ -142,12 +151,6 @@ export class Brain {
     this.lender.readGenome(this.lenderSlot, g);
     this.weightsGenome = g;
     this.lender = null;
-  }
-
-  // A lent brain taking another layout; the caller sets the bank slot from the new genome and lends again.
-  reshape(sizes: readonly number[]): void {
-    this.shape = sizes.slice();
-    this.genes = genomeLength(sizes);
   }
 
   get weights(): readonly Float32Array[] {
@@ -217,10 +220,6 @@ export class Brain {
   load(sizes: readonly number[], genome: Genome): void {
     const length = genomeLength(sizes);
     if (genome.length !== length) throw new Error(`genome length ${genome.length} does not match expected ${length}`);
-    if (this.lender) {
-      this.lender = null;
-      this.weightsGenome = new Float32Array(length);
-    }
     this.genes = length;
     if (sameSizes(sizes, this.shape)) {
       this.weightsGenome.set(genome);
