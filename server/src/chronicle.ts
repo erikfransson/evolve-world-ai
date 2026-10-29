@@ -120,14 +120,13 @@ export class Chronicle {
     // One pass: a creature is offered only when it could enter or update a list (Leaderboard.floor), the rest only count for best and depth.
     const members = eco.members;
     const dt = eco.config.dt;
-    const floors = RECORD_BOARDS.map((b) => this.board.floor(b, 0));
+    const lists = RECORD_BOARDS.map((b) => this.board.entries(b, 0)); // read live: an offer reorders them
     for (let i = 0; i < members.length; i++) {
       const m = members[i]!;
       for (let b = 0; b < RECORD_BOARDS.length; b++) {
         const v = boardValue(m, RECORD_BOARDS[b]!, dt);
-        if (v > 0 && v >= floors[b]!) {
+        if (v > 0 && v >= this.board.floor((lists[b] ??= this.board.entries(RECORD_BOARDS[b]!, 0)))) {
           this.offer(eco, m, true);
-          for (let c = 0; c < floors.length; c++) floors[c] = this.board.floor(RECORD_BOARDS[c]!, 0);
           break;
         }
       }

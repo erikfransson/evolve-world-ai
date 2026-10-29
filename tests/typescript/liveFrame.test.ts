@@ -106,7 +106,7 @@ describe("Leaderboard.floor", () => {
         const v = values[id]!;
         all.offer("age", 0, id, v, round, true, build(id));
         offersAll++;
-        if (v > 0 && v >= skipped.floor("age", 0)) {
+        if (v > 0 && v >= skipped.floor(skipped.entries("age", 0))) {
           skipped.offer("age", 0, id, v, round, true, build(id));
           offersSkipped++;
         }
@@ -114,7 +114,7 @@ describe("Leaderboard.floor", () => {
       expect(JSON.stringify(skipped.snapshot())).toBe(JSON.stringify(all.snapshot()));
     }
     expect(offersSkipped).toBeLessThan(offersAll / 2);
-    expect(new Leaderboard(3).floor("age", 0)).toBe(0);
+    expect(new Leaderboard(3).floor(undefined)).toBe(0);
   });
 });
 
