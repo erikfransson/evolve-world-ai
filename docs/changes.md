@@ -6,6 +6,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+## 0.2.9 (2026-10-29)
+
 - RL Arena: Corral (Fight, 16 weak foragers in a pen, only rams pay) and Lap (Time pressure, Ring road's lane with an early reward) are new envs; Lap misses the E5 check (random designs always score 0) and Corral needs 66 seeds for E4 (`docs/rl-envs.md`). Existing envs are unchanged
 
 Live World speed campaign (branch `perf-live`): on the live bench the tick is 1.65x faster in the mixed world and 1.72x at the 5000 cap, with bit-identical results and a lower peak memory than before (about 50 MB less at the bench, about 100 MB less around a save). The simulation is unchanged, and saves only gain fields for the new `eco.thinkEvery` option below. The campaign log with every idea and verdict is `docs/perf-explore/live-campaign.md`.
