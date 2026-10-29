@@ -93,7 +93,7 @@ export function snapshotState(eco: Ecosystem): EcoSnapshot {
   let genomeTotal = 0;
   let memoryTotal = 0;
   for (const m of members) {
-    genomeTotal += m.creature.brain.genome.length;
+    genomeTotal += m.creature.brain.genomeLength;
     memoryTotal += m.creature.memory.length;
   }
   const genomes = new Float32Array(genomeTotal);
@@ -110,10 +110,10 @@ export function snapshotState(eco: Ecosystem): EcoSnapshot {
     ];
     scalars.set(row, i * K);
     const p = c.plan;
-    const genome = c.brain.genome;
-    plans.push([p.rayCount, p.raySpread, p.rayLength, p.memoryShort, p.memoryLong, genome.length, ...p.hiddenLayers]);
-    genomes.set(genome, g);
-    g += genome.length;
+    const len = c.brain.genomeLength;
+    plans.push([p.rayCount, p.raySpread, p.rayLength, p.memoryShort, p.memoryLong, len, ...p.hiddenLayers]);
+    c.brain.genomeInto(genomes.subarray(g, g + len));
+    g += len;
     outputs?.set(c.outputs, i * OUTPUT_SIZE + u);
     memory.set(c.memory, u);
     u += c.memory.length;

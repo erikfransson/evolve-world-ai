@@ -510,6 +510,21 @@ describe("helper spare creature pool", () => {
     expect(internal.spare[0]!.length).toBe(MAX_SPARE);
   });
 
+  it.skipIf(!wasmAvailable())("kernel creatures lend their genome to the bank and every read of it is bit-identical to an own copy", () => {
+    const eco = new Ecosystem(cfg(), null);
+    for (let t = 0; t < 400; t++) eco.step(); // births, deaths, spare reuse and structural changes
+    const lent = eco.members.filter((m) => m.creature.brain.lent);
+    expect(lent.length).toBeGreaterThan(eco.members.length - 2); // all but the creature shown in detail
+    const before = JSON.stringify(saveState(eco));
+    for (const m of eco.members) {
+      const g = m.creature.brain.genome;
+      expect(g.length).toBe(m.creature.brain.genomeLength);
+    }
+    for (const m of eco.members) m.creature.brain.own(); // every brain back to its own copy, read from the bank
+    expect(eco.members.every((m) => !m.creature.brain.lent)).toBe(true);
+    expect(JSON.stringify(saveState(eco))).toBe(before);
+  });
+
   it.skipIf(!wasmAvailable())("frees the kernel resources of dropped creatures for reuse", () => {
     const config = cfg();
     const eco = new Ecosystem(config, null);

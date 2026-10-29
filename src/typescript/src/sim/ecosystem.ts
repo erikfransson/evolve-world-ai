@@ -677,7 +677,7 @@ export class Ecosystem {
     const list = this.spare[species]!;
     const top = list.length - 1;
     for (let i = top; i >= 0 && i > top - SPARE_LOOK; i--) {
-      if (list[i]!.creature.brain.genome.length !== genomeLength) continue;
+      if (list[i]!.creature.brain.genomeLength !== genomeLength) continue;
       const m = list[i]!;
       list[i] = list[top]!;
       list.pop();
@@ -713,7 +713,7 @@ export class Ecosystem {
     m.birth.cooldown = birth.cooldown;
     m.cooldownTicks = Math.round(birth.cooldown / this.config.dt);
     m.mutationScale = mutationScale;
-    this.weights += m.creature.brain.genome.length;
+    this.weights += m.creature.brain.genomeLength;
     this.journal?.born.push(m.id);
     this.table.admit(m);
     return m;
@@ -722,7 +722,7 @@ export class Ecosystem {
   // Swap-removes members[i].
   private remove(i: number): void {
     const m = this.table.swapRemove(i);
-    this.weights -= m.creature.brain.genome.length;
+    this.weights -= m.creature.brain.genomeLength;
     this.onDeath?.(m);
     this.lineages.died(m.founderId);
     this.journal?.died.push(m.id);
@@ -832,7 +832,7 @@ export class Ecosystem {
     m.id = r.id; m.parentId = r.parentId; m.depth = r.depth; m.birthTick = r.birthTick; m.children = r.children; m.eaten = r.eaten; m.kills = r.kills; m.bumpKills = r.bumpKills ?? 0;
     m.species = r.species; m.hue = r.hue; m.founderId = r.founderId; m.lastBirthTick = r.lastBirthTick;
     m.birth.energy = r.birthEnergy; m.birth.cost = r.birthCost; m.birth.cooldown = r.birthCooldown; m.cooldownTicks = r.cooldownTicks; m.mutationScale = r.mutationScale ?? 1;
-    this.weights += c.brain.genome.length;
+    this.weights += c.brain.genomeLength;
     this.journal?.born.push(m.id);
     this.table.admit(m);
     return m;

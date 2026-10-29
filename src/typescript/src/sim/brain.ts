@@ -80,9 +80,17 @@ const NO_F32 = new Float32Array(0); // shared, never written: refit makes a new 
 const NO_F64 = new Float64Array(0);
 const NO_I32 = new Int32Array(0);
 
+// Where a brain's weights live when the brain lends its genome out (the WASM bank): readGenome writes the genome of the slot into out.
+export interface GenomeLender {
+  readGenome(slot: number, out: Genome): void;
+}
+
 export class Brain {
   private shape: readonly number[];
-  private weightsGenome: Genome; // the brain's own copy; weights and biases view it
+  private weightsGenome: Genome; // the brain's own copy; weights and biases view it. Empty while lent
+  private genes: number; // genome length
+  private lender: GenomeLender | null = null; // the bank that holds the weights instead of weightsGenome, with the slot
+  private lenderSlot = -1;
   // Everything below is built on first use (ensure), so a brain only run on the WebAssembly kernels is just its genome.
   private ready = false;
   // Per layer views into the genome: weights row-major [out][in], biases [out].
@@ -106,6 +114,40 @@ export class Brain {
     }
     this.shape = sizes.slice();
     this.weightsGenome = genome.slice();
+    this.genes = genome.length;
+  }
+
+  get genomeLength(): number {
+    return this.genes;
+  }
+
+  // True while the weights live only in the bank: the genome getter then rebuilds a copy, and reset must go through reshape.
+  get lent(): boolean {
+    return this.lender !== null;
+  }
+
+  // Hands the weights over to the bank's slot, which now holds them (set from this genome), and drops the own copy.
+  // A brain that built its JS views (ensure) keeps its copy, since the views are over it.
+  lend(lender: GenomeLender, slot: number): void {
+    if (this.ready) return;
+    this.lender = lender;
+    this.lenderSlot = slot;
+    this.weightsGenome = NO_F32;
+  }
+
+  // Takes the weights back from the bank into an own copy (the bank slot is about to be freed, or the JS path needs them).
+  own(): void {
+    if (!this.lender) return;
+    const g = new Float32Array(this.genes);
+    this.lender.readGenome(this.lenderSlot, g);
+    this.weightsGenome = g;
+    this.lender = null;
+  }
+
+  // A lent brain taking another layout; the caller sets the bank slot from the new genome and lends again.
+  reshape(sizes: readonly number[]): void {
+    this.shape = sizes.slice();
+    this.genes = genomeLength(sizes);
   }
 
   get weights(): readonly Float32Array[] {
@@ -120,6 +162,7 @@ export class Brain {
 
   private ensure(): void {
     if (this.ready) return;
+    this.own();
     this.ready = true;
     this.build();
   }
@@ -128,8 +171,18 @@ export class Brain {
     return this.shape;
   }
 
+  // Writes the weights in layer order into out (genomeLength long), without the copy the genome getter makes for a lent brain.
+  genomeInto(out: Genome): void {
+    if (this.lender) this.lender.readGenome(this.lenderSlot, out);
+    else out.set(this.weightsGenome);
+  }
+
+  // The weights in layer order. A lent brain returns a new copy each time; read genomeLength for the length alone.
   get genome(): Readonly<Genome> {
-    return this.weightsGenome;
+    if (!this.lender) return this.weightsGenome;
+    const g = new Float32Array(this.genes);
+    this.lender.readGenome(this.lenderSlot, g);
+    return g;
   }
 
   // Lays out views and scratch for this.sizes over this.genome.
@@ -164,6 +217,11 @@ export class Brain {
   load(sizes: readonly number[], genome: Genome): void {
     const length = genomeLength(sizes);
     if (genome.length !== length) throw new Error(`genome length ${genome.length} does not match expected ${length}`);
+    if (this.lender) {
+      this.lender = null;
+      this.weightsGenome = new Float32Array(length);
+    }
+    this.genes = length;
     if (sameSizes(sizes, this.shape)) {
       this.weightsGenome.set(genome);
       if (this.ready) this.transposeFirstLayer();

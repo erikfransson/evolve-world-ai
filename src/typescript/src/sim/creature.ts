@@ -185,7 +185,8 @@ export class Creature {
   reset(genome: Genome, x: number, y: number, heading: number, energy: number, plan: PlanView = this.ownPlan): void {
     copyPlan(plan, this.ownPlan);
     const sizes = layerSizes(this.config, this.ownPlan);
-    this.brain.load(sizes, genome);
+    if (this.brain.lent) this.brain.reshape(sizes); // the weights are in the kernels' block, attach below sets it from genome
+    else this.brain.load(sizes, genome);
     this.fitPlan(sizes);
     this.output.fill(0); // as a new creature's, not the previous owner's
     const s = this.state;
@@ -207,7 +208,7 @@ export class Creature {
       ray.energy = 0;
       ray.species = 0;
     }
-    this.kernelOwner?.attach(this);
+    this.kernelOwner?.attach(this, genome);
   }
 
   // Casts the rays from the current pose into this.rays without advancing the simulation.

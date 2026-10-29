@@ -138,7 +138,7 @@ function reach(label: string): void {
     const r = m.creature.plan.rayLength;
     const a = near(cg, cx, cy, cx[i]!, cy[i]!, r, i), b = near(ig, items.xs, items.ys, cx[i]!, cy[i]!, r);
     c += a; it += b; if (a + b === 0) empty++;
-    rays += m.creature.plan.rayCount; mem += m.creature.memory.length; len += r; w += m.creature.brain.genome.length;
+    rays += m.creature.plan.rayCount; mem += m.creature.memory.length; len += r; w += m.creature.brain.genomeLength;
   });
   const n = Math.max(1, ms.length);
   console.error(JSON.stringify({ reach: label, n: ms.length, tick: eco.tick, food: eco.food, poison: eco.poison, crowdPerCreature: +(c / n).toFixed(3), itemsPerCreature: +(it / n).toFixed(2), emptyShare: +(empty / n).toFixed(3), rays: +(rays / n).toFixed(2), memory: +(mem / n).toFixed(2), rayLength: +(len / n).toFixed(1), weights: Math.round(w / n), meanAgeTicks: +(ms.reduce((s, m) => s + m.creature.state.ticksAlive, 0) / n).toFixed(0), species: ms.reduce((o, m) => { o[m.species] = (o[m.species] ?? 0) + 1; return o; }, {} as Record<number, number>) }));

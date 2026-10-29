@@ -252,7 +252,7 @@ export class ShareCoordinator {
       const plan = c.plan;
       const units = plan.memoryShort + plan.memoryLong;
       delta += 11 + plan.hiddenLayers.length;
-      genome += c.brain.genome.length + units + (carry ? OUTPUT_SIZE + units : 0);
+      genome += c.brain.genomeLength + units + (carry ? OUTPUT_SIZE + units : 0);
       this.stride = Math.max(this.stride, units);
     }
     return { creatures: eco.population, memory: eco.population * this.stride, delta, genome, outputs: carry ? eco.population * (OUTPUT_SIZE + this.stride) : 0 };
