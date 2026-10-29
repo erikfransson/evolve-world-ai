@@ -1,12 +1,13 @@
 // Live World benchmark: the server's LiveWorld (liveConfig, The Inland Sea) seeded with the live founders, stepped headless on this thread.
 // Prints CPU ms per steady tick, the phase profile, peak RSS and a fingerprint (equal runs give equal fingerprints).
 // Usage (in server/): node src/liveBench.ts [--seconds 60] [--copies 800] [--seed 1] [--founders ../src/typescript/public/live-founders.json]
-//   [--dt 0.0333] [--memcomp] [--only juggernaut,grazer] [--frames] [--profile] [--profileEvery 300] [--every 10] [--threads 0] [--think 1] [--save 15]
+//   [--dt 0.0333] [--memcomp] [--only juggernaut,grazer] [--frames [--idle]] [--profile] [--profileEvery 300] [--every 10] [--threads 0] [--think 1] [--save 15]
 // --copies: copies of each founder seeded (4 founders x 800 = 3200 creatures, 6 M brain weights, under the birth weight cap).
 // --only: seed these founder ids only (so --only juggernaut --copies 4900 fills the 5000 cap with small brains).
 // --frames: also encode the creature frame and item delta at the server's 5 Hz (FRAME_MS), as the public loop does for viewers.
 // --dt: seconds per tick instead of liveConfig's (1/30); --memcomp: with it, scale the memory rates so their time constants in seconds stay as at 1/30.
 // Per simulated minute the output also lists births, deaths, food and poison eaten, mean speed, mean absolute turn rate, mean energy and mean lifespan of the deaths (ecoWindows).
+// --idle: with --frames, the loop as it runs with no viewer connected (item changes drained, no creature frame, stats without the per-creature pass).
 // --think: eco.thinkEvery instead of liveConfig's (1 is every tick).
 // --threads: helper threads that sense and think (createNodeThinkPool), as LIVE_THREADS on the server; speedAchieved then shows the wall gain.
 // --save: save every this many simulated seconds through the server's Saves into a temporary state directory, and report per save the
@@ -41,6 +42,7 @@ const { values } = parseArgs({
     founders: { type: "string", default: fileURLToPath(new URL("../../src/typescript/public/live-founders.json", import.meta.url)) },
     only: { type: "string" },
     frames: { type: "boolean" },
+    idle: { type: "boolean" },
     profile: { type: "boolean" },
     fixed: { type: "boolean" },
     food: { type: "string" },
@@ -238,13 +240,13 @@ while (eco.tick < ticks && !eco.extinct) {
   else live.step();
   if (values.frames && eco.tick % frameEvery === 0) {
     const f0 = performance.now();
-    frameBytes += live.creatureFrame().length;
+    if (!values.idle) frameBytes += live.creatureFrame().length;
     frameBytes += live.takeDelta()?.length ?? 0;
     frameMs += performance.now() - f0;
   }
   if (values.frames && eco.tick % statsEvery === 0) {
     const f0 = performance.now();
-    live.stats(1);
+    live.stats(values.idle ? 0 : 1);
     frameMs += performance.now() - f0;
   }
   winPop += eco.population;

@@ -34,18 +34,21 @@ const feed = new ItemFeed();
 let frameNo = 0, steadyTicks = 0, cpuStart = 0;
 let bytes = 0;
 for (let k = 0; k < ticks && !eco.extinct; k++) {
+  if (k === warm && process.env.INJECT) { const bd = (live as any).chronicle.board; for (const b of ["age", "children", "eaten"]) for (let j = 0; j < 3; j++) bd.offer(b, 0, -1 - j, 1e6 + j, 0, false, () => ({ id: -1 - j, species: 0, hue: 1, from: 0, plan: { rayCount: 1, raySpread: 1, rayLength: 1, hiddenLayers: [], memoryShort: 0, memoryLong: 0 } })); }
   if (k === warm) { cpuStart = cpu(); steadyTicks = 0; for (const key in acc) { acc[key] = []; wall[key] = []; } }
   const c0 = cpu();
   live.step();
   if (k >= warm) { steadyTicks++; (acc.step ??= []).push(cpu() - c0); }
   if (k % frameEvery === 0 && k >= warm) {
     // creatureFrame in pieces (same code as LiveWorld.creatureFrame)
-    const f = t("1 readCreatures", () => (lw.frame = eco.readCreatures(lw.frame as never)));
-    const ff = f as ReturnType<typeof eco.readCreatures>;
-    t("2 ages (eco.get per creature)", () => { if (lw.ages.length < ff.count) lw.ages = new Float32Array(Math.max(ff.count, 2 * lw.ages.length)); for (let i = 0; i < ff.count; i++) lw.ages[i] = eco.get(ff.ids[i]!)!.ageTicks * config.dt; });
-    const bytesOut = t("3 encodeCreatures", () => encodeCreatures(eco.tick, { ...ff, age: lw.ages, radius: config.creature.radius }, config.world, fullEnergy(config.eco)));
-    bytes += bytesOut.length;
     t("3b whole creatureFrame()", () => live.creatureFrame());
+    if ((lw as unknown as { ages?: unknown }).ages) {
+      const f = t("1 readCreatures", () => (lw.frame = eco.readCreatures(lw.frame as never)));
+      const ff = f as ReturnType<typeof eco.readCreatures>;
+      t("2 ages (eco.get per creature)", () => { if (lw.ages.length < ff.count) lw.ages = new Float32Array(Math.max(ff.count, 2 * lw.ages.length)); for (let i = 0; i < ff.count; i++) lw.ages[i] = eco.get(ff.ids[i]!)!.ageTicks * config.dt; });
+      const bytesOut = t("3 encodeCreatures", () => encodeCreatures(eco.tick, { ...ff, age: lw.ages, radius: config.creature.radius }, config.world, fullEnergy(config.eco)));
+      bytes += bytesOut.length;
+    }
     const d = t("4 takeDelta", () => live.takeDelta());
     t("5 feed.push + delta()", () => { feed.push(frameNo, d); feed.delta(frameNo - 1, frameNo, () => 1e9); });
     frameNo++;

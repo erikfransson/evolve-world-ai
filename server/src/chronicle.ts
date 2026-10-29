@@ -17,13 +17,27 @@ interface Group {
   others: number[]; // the group's other founders
 }
 
+// wireName by raw engine name: a pure function of the string, and the family rows ask for it every second. Bounded by clearing when full.
+const parsedNames = new Map<string, { name: string; starter: boolean; key: string }>();
+const MAX_PARSED_NAMES = 2048;
+function parsedName(raw: string): { name: string; starter: boolean; key: string } {
+  let p = parsedNames.get(raw);
+  if (!p) {
+    if (parsedNames.size >= MAX_PARSED_NAMES) parsedNames.clear();
+    const { name, starter } = wireName(raw);
+    p = { name, starter, key: name ? `${starter ? "*" : ""}${name.toLowerCase()}` : "" }; // the add rule's case: one name, one family on the list
+    parsedNames.set(raw, p);
+  }
+  return p;
+}
+
 // The k largest families, with every family of the same visible name (the 10 seeded copies of a starter, a visitor's 1 to 10 copies)
 // counted as one; unnamed families stand alone. From the lineage table's kept counts, O(living families) per call.
 export function namedTop(eco: Ecosystem, k: number): Group[] {
   const groups = new Map<string, Group>();
   eco.lineages.forEachLiving((founder, count, hue, pool) => {
-    const { name, starter } = wireName(eco.lineageName(founder));
-    const key = name ? `${starter ? "*" : ""}${name.toLowerCase()}` : `#${founder}`; // the add rule's case: one name, one family on the list
+    const { name, starter, key: nameKey } = parsedName(eco.lineageName(founder));
+    const key = name ? nameKey : `#${founder}`;
     const g = groups.get(key);
     if (!g) groups.set(key, { founder, hue, pool, count, name, starter, others: [] });
     else {
@@ -67,10 +81,12 @@ export class Chronicle {
   }
 
   // Adds what is due to the stats message: a sample when one was taken, and the lineages, best living and (with records) the records.
-  observe(eco: Ecosystem, stats: Stats, records: boolean): void {
+  // viewed false (no viewer connected): only the history and lineage samples run. The lineage rows, best, depth and the living
+  // records wait for the next viewed call (values only grow, and deaths offer themselves through onDeath).
+  observe(eco: Ecosystem, stats: Stats, records: boolean, viewed = true): void {
     if (this.watched !== eco) this.reset(eco);
     const t = eco.tick * eco.config.dt;
-    const top = namedTop(eco, LINEAGE_TOP);
+    const top = viewed || t >= this.nextLineage ? namedTop(eco, LINEAGE_TOP) : []; // the family table is the dearest part of an idle pass
     // An extinct world's clock stops (no ticks), so its 0 is sampled at once, or the graph would end on the last living count.
     const diedOut = eco.extinct && this.samples.length > 0 && this.samples[this.samples.length - 2] !== 0;
     if (t >= this.nextSample || diedOut) {
@@ -94,14 +110,26 @@ export class Chronicle {
       if (this.lineage.length > MAX_LINEAGE_HISTORY * LINEAGE_FIELDS) this.lineage.splice(0, LINEAGE_FIELDS);
       this.historyJson = null;
     }
+    if (!viewed) return;
     stats.lineages = top.map((l): WireLineage => ({ founder: l.founder, hue: Math.round(l.hue), pool: l.pool, count: l.count, ...(l.name ? { name: l.name, ...(l.starter ? { starter: true } : {}) } : {}), ...(l.others.length ? { founders: l.others.sort((a, b) => a - b).slice(0, MAX_GROUP_FOUNDERS) } : {}) }));
     let oldest: EcoCreature | null = null;
     let parent: EcoCreature | null = null;
     let killer: EcoCreature | null = null;
     let kills = 0;
     let depth = 0;
-    for (const m of eco.members) {
-      this.offer(eco, m, true);
+    // One pass: a creature is offered only when it could enter or update a list (Leaderboard.floor), the rest only count for best and depth.
+    const members = eco.members;
+    const dt = eco.config.dt;
+    const lists = RECORD_BOARDS.map((b) => this.board.entries(b, 0)); // read live: an offer reorders them
+    for (let i = 0; i < members.length; i++) {
+      const m = members[i]!;
+      for (let b = 0; b < RECORD_BOARDS.length; b++) {
+        const v = boardValue(m, RECORD_BOARDS[b]!, dt);
+        if (v > 0 && v >= this.board.floor((lists[b] ??= this.board.entries(RECORD_BOARDS[b]!, 0)))) {
+          this.offer(eco, m, true);
+          break;
+        }
+      }
       if (!oldest || m.ageTicks > oldest.ageTicks || (m.ageTicks === oldest.ageTicks && m.id < oldest.id)) oldest = m;
       if (!parent || m.children > parent.children || (m.children === parent.children && m.id < parent.id)) parent = m;
       const k = boardValue(m, "kills");

@@ -51,3 +51,4 @@ Idle against base: A -1.3%, B -0.6% on cpuMsPerTick (-0.19 and -0.09 ms); frame 
 ## Verdict
 
 Exact for the simulation (fingerprint equal), bounded and small, wire difference limited to the first frame of a viewer joining an idle server (at most 200 ms). Worth about 0.1-0.2 ms per tick (0.6-1.3%) only while nobody watches, which on the production server (0 viewers at the last check) is most of the time. Keep if the push gate passes; it does nothing for the bench numbers of a watched server.
+- A tie at the edge of a record list reached while nobody watched is settled by member order when offers resume, as the always-offered path already did at exact ties (review round 14).

@@ -8,6 +8,7 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 Live World speed campaign (branch `perf-live`): on the live bench the tick is 1.48x faster in the mixed world and 1.46x at the 5000 cap, with bit-identical results. The simulation and the saves are unchanged.
 
+- Live server: the viewer frame path costs less CPU with identical bytes. The creature frame is written in one pass straight into the wire buffer, the stats pass offers a creature to the record lists only when it could enter or update one, family names are parsed once, and followed creatures share one crowd grid per refresh instead of one each (a watched server with five followers spent 10 ms of CPU per second on those grids). With nobody connected no creature frame and no per-creature stats pass run at all.
 - Live server: a save no longer freezes the tick loop. The main thread takes a snapshot and a worker packs, stringifies and gzips it (stall per save from 3 to 6 s down to under 0.2 s, peak memory during a save about 200 MB lower, same bytes).
 - Live server: a periodic save that fails for a transient reason (worker timeout, out of memory, exit) is retried after 15, 30, then 60 minutes.
 - Live server: the stop save has its own time budget (packs up to 25 s when alone) and is skipped when a save that finished after the stop was asked already covers it.

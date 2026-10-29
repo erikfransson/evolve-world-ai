@@ -444,13 +444,13 @@ export class Ecosystem {
 
   // Brings the detail creature's rays and brain input up to date outside a tick (display only, on the JS path): on selecting it,
   // or while paused. Rebuilds the crowd grid, which every tick does first anyway, and leaves the simulation state alone.
-  refreshDetail(): void {
-    const i = this.detail === null ? -1 : this.members.findIndex((m) => m.id === this.detail);
-    if (i < 0) return;
-    this.gridCrowd(this.table.length, this.multi ? this.table.kinds : undefined);
-    const c = this.members[i]!.creature;
-    c.sense(this.items, this.crowd, i);
-    c.encode();
+  // rebuild false: the grid was just rebuilt for another detail creature and nothing has moved since (several refreshed in a row).
+  refreshDetail(rebuild = true): void {
+    const m = this.detail === null ? undefined : this.table.byId.get(this.detail);
+    if (!m) return;
+    if (rebuild) this.gridCrowd(this.table.length, this.multi ? this.table.kinds : undefined);
+    m.creature.sense(this.items, this.crowd, m.index);
+    m.creature.encode();
   }
 
   // Phase 1a for a batch of members on the JS path, each at its list index, after prepareTick: those that think this tick (eco.thinkEvery).
