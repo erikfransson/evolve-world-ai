@@ -162,6 +162,52 @@
       (local.set $i (i32.add (local.get $i) (i32.const 1)))
       (br $l))))
 
+  ;; The crowd walk, written once (a template expanded at assembly time, see scripts/watTemplate.ts): the cells cy0..cy1 of the f32 crowd grid, each row one run of crowd slots k..e.
+  ;; early 1: only accumulate in $mk whether any slot is in sight (the early-out). full 1: write every slot as a candidate (fx, fy, d2 - r^2, slot) and advance $cp only for the ones in sight. s makes the labels unique.
+  ;; inSight: another creature inside the distance and the wedge, in f32; the early walk recomputes d2 from fxf and fyf, the full walk reads $d2f (same value).
+  {{def inSight early full}}
+  (i32.and (i32.and
+    (i32.ne (i32.load (i32.add (local.get $own) (i32.shl (local.get $k) (i32.const 2)))) (local.get $self))
+    (f32.le {{if @early}}(f32.add (f32.mul (local.get $fxf) (local.get $fxf)) (f32.mul (local.get $fyf) (local.get $fyf))){{end}}{{if @full}}(local.get $d2f){{end}} (local.get $far2c)))
+    (i32.or (local.get $openc)
+      (i32.and
+        (f32.ge (f32.sub (f32.mul (local.get $d0xf) (local.get $fyf)) (f32.mul (local.get $d0yf) (local.get $fxf))) (local.get $nmarginc))
+        (f32.le (f32.sub (f32.mul (local.get $d1xf) (local.get $fyf)) (f32.mul (local.get $d1yf) (local.get $fxf))) (local.get $marginc)))))
+  {{end}}
+  {{def crowdWalk early full s}}
+  (block $wcyd@s (loop $wcyl@s
+    (br_if $wcyd@s (i32.gt_s (local.get $cy) (local.get $cy1)))
+    (local.set $row (i32.mul (local.get $cy) (local.get $ccols)))
+    (local.set $k (i32.load16_u (i32.add (local.get $cStart) (i32.shl (i32.add (local.get $row) (local.get $cx0)) (i32.const 1)))))
+    (local.set $e (i32.load16_u (i32.add (local.get $cStart) (i32.shl (i32.add (i32.add (local.get $row) (local.get $cx1)) (i32.const 1)) (i32.const 1)))))
+    (block $wkd@s (loop $wkl@s
+      (br_if $wkd@s (i32.ge_s (local.get $k) (local.get $e)))
+      (local.set $fxf (f32.sub (f32.load (i32.add (local.get $sx) (i32.shl (local.get $k) (i32.const 2)))) (local.get $x32)))
+      (local.set $fyf (f32.sub (f32.load (i32.add (local.get $sy) (i32.shl (local.get $k) (i32.const 2)))) (local.get $y32)))
+      {{if @early}}
+      (local.set $mk (i32.or (local.get $mk) {{inSight @early @full}}))
+      {{end}}
+      {{if @full}}
+      (local.set $d2f (f32.add (f32.mul (local.get $fxf) (local.get $fxf)) (f32.mul (local.get $fyf) (local.get $fyf))))
+      ;; branch-free as the item walk: write the candidate, advance only when it is another creature inside the distance and wedge
+      (f32.store (local.get $cp) (local.get $fxf))
+      (f32.store offset=4 (local.get $cp) (local.get $fyf))
+      (f32.store offset=8 (local.get $cp) (f32.sub (local.get $d2f) (local.get $r2c)))
+      (i32.store offset=12 (local.get $cp) (local.get $k))
+      (local.set $cp (i32.add (local.get $cp) (i32.shl {{inSight @early @full}} (i32.const 4))))
+      {{end}}
+      (local.set $k (i32.add (local.get $k) (i32.const 1)))
+      (br $wkl@s)))
+    (local.set $cy (i32.add (local.get $cy) (i32.const 1)))
+    (br $wcyl@s)))
+  {{end}}
+
+  ;; Per creature, five ways to write its features (a creature takes exactly one):
+  ;;  1. early-out ($busy block): nothing in sight, so the all-zero features, no ray passes.
+  ;;  2. no creature candidate and no detail record: $emit with closeness computed from best and kind (calc 1).
+  ;;  3. crowd rays run but none hit a creature and no detail record ($unseen): $emit with closeness from scratch (calc 0).
+  ;;  4. no detail record, some creature hit ($ll): one pass, the seen-creature branch instead of selects.
+  ;;  5. detail record ($wl): the general pass over every ray, also writing the UI detail (closeness, kind, slot).
   (func (export "sense") (param $P i32)
     (local $kinds v128) (local $ones v128) (local $three v128) (local $j i32) (local $n i32) (local $q i32) (local $nR i32) (local $i i32) (local $stride i32)
     (local $x f64) (local $y f64) (local $hc f64) (local $hs f64) (local $L f64) (local $self i32) (local $off i32) (local $inp i32)
@@ -396,26 +442,7 @@
         ;; the crowd walk of the creature phase below without its writes: any other creature inside the distance and wedge
         (local.set $mk (i32.const 0))
         (local.set $cy (local.get $cy0))
-        (block $ecyd (loop $ecyl
-          (br_if $ecyd (i32.gt_s (local.get $cy) (local.get $cy1)))
-          (local.set $row (i32.mul (local.get $cy) (local.get $ccols)))
-          (local.set $k (i32.load16_u (i32.add (local.get $cStart) (i32.shl (i32.add (local.get $row) (local.get $cx0)) (i32.const 1)))))
-          (local.set $e (i32.load16_u (i32.add (local.get $cStart) (i32.shl (i32.add (i32.add (local.get $row) (local.get $cx1)) (i32.const 1)) (i32.const 1)))))
-          (block $ekd (loop $ekl
-            (br_if $ekd (i32.ge_s (local.get $k) (local.get $e)))
-            (local.set $fxf (f32.sub (f32.load (i32.add (local.get $sx) (i32.shl (local.get $k) (i32.const 2)))) (local.get $x32)))
-            (local.set $fyf (f32.sub (f32.load (i32.add (local.get $sy) (i32.shl (local.get $k) (i32.const 2)))) (local.get $y32)))
-            (local.set $mk (i32.or (local.get $mk) (i32.and (i32.and
-              (i32.ne (i32.load (i32.add (local.get $own) (i32.shl (local.get $k) (i32.const 2)))) (local.get $self))
-              (f32.le (f32.add (f32.mul (local.get $fxf) (local.get $fxf)) (f32.mul (local.get $fyf) (local.get $fyf))) (local.get $far2c)))
-              (i32.or (local.get $openc)
-                (i32.and
-                  (f32.ge (f32.sub (f32.mul (local.get $d0xf) (local.get $fyf)) (f32.mul (local.get $d0yf) (local.get $fxf))) (local.get $nmarginc))
-                  (f32.le (f32.sub (f32.mul (local.get $d1xf) (local.get $fyf)) (f32.mul (local.get $d1yf) (local.get $fxf))) (local.get $marginc)))))))
-            (local.set $k (i32.add (local.get $k) (i32.const 1)))
-            (br $ekl)))
-          (local.set $cy (i32.add (local.get $cy) (i32.const 1)))
-          (br $ecyl)))
+        {{crowdWalk 1 0 e}}
         (br_if $busy (local.get $mk))
         (local.set $e (i32.mul (local.get $nR) (i32.shl (local.get $stride) (i32.const 2))))
         (local.set $i (i32.const 16))
@@ -524,33 +551,7 @@
       ;; crowd rays (f32), over the window computed above
       (local.set $cp (local.get $cand))
       (local.set $cy (local.get $cy0))
-      (block $cyd2 (loop $cyl2
-        (br_if $cyd2 (i32.gt_s (local.get $cy) (local.get $cy1)))
-        (local.set $row (i32.mul (local.get $cy) (local.get $ccols)))
-        (local.set $k (i32.load16_u (i32.add (local.get $cStart) (i32.shl (i32.add (local.get $row) (local.get $cx0)) (i32.const 1)))))
-        (local.set $e (i32.load16_u (i32.add (local.get $cStart) (i32.shl (i32.add (i32.add (local.get $row) (local.get $cx1)) (i32.const 1)) (i32.const 1)))))
-        (block $kd (loop $kl
-          (br_if $kd (i32.ge_s (local.get $k) (local.get $e)))
-          (local.set $fxf (f32.sub (f32.load (i32.add (local.get $sx) (i32.shl (local.get $k) (i32.const 2)))) (local.get $x32)))
-          (local.set $fyf (f32.sub (f32.load (i32.add (local.get $sy) (i32.shl (local.get $k) (i32.const 2)))) (local.get $y32)))
-          (local.set $d2f (f32.add (f32.mul (local.get $fxf) (local.get $fxf)) (f32.mul (local.get $fyf) (local.get $fyf))))
-          ;; branch-free as the item walk: write the candidate, advance only when it is another creature inside the distance and wedge
-          (f32.store (local.get $cp) (local.get $fxf))
-          (f32.store offset=4 (local.get $cp) (local.get $fyf))
-          (f32.store offset=8 (local.get $cp) (f32.sub (local.get $d2f) (local.get $r2c)))
-          (i32.store offset=12 (local.get $cp) (local.get $k))
-          (local.set $cp (i32.add (local.get $cp)
-            (i32.shl (i32.and (i32.and
-              (i32.ne (i32.load (i32.add (local.get $own) (i32.shl (local.get $k) (i32.const 2)))) (local.get $self))
-              (f32.le (local.get $d2f) (local.get $far2c)))
-              (i32.or (local.get $openc)
-                (i32.and
-                  (f32.ge (f32.sub (f32.mul (local.get $d0xf) (local.get $fyf)) (f32.mul (local.get $d0yf) (local.get $fxf))) (local.get $nmarginc))
-                  (f32.le (f32.sub (f32.mul (local.get $d1xf) (local.get $fyf)) (f32.mul (local.get $d1yf) (local.get $fxf))) (local.get $marginc))))) (i32.const 4))))
-          (local.set $k (i32.add (local.get $k) (i32.const 1)))
-          (br $kl)))
-        (local.set $cy (i32.add (local.get $cy) (i32.const 1)))
-        (br $cyl2)))
+      {{crowdWalk 0 1 f}}
       (local.set $ce (local.get $cp))
       ;; no creature candidate and no detail record: no ray can see a creature, so the features are closeness, the one-hot and zeros
       (if (i32.and (i32.eq (local.get $ce) (local.get $cand)) (i32.eqz (local.get $det))) (then
