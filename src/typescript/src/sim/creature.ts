@@ -1,4 +1,4 @@
-import { Brain, layerSizes, refit } from "./brain.ts";
+import { Brain, genomeLength, layerSizes, refit } from "./brain.ts";
 import type { EngineConfig } from "./config.ts";
 import { agingFactor, consume, decaysFor, settle, stepBody } from "./physics.ts";
 import type { Aging, Decays, Heading } from "./physics.ts";
@@ -183,9 +183,11 @@ export class Creature {
   // Reuses this creature for a newcomer: copies the genome into its brain and resets body, senses and memory.
   // With a plan, the creature takes it over; either way genome must be sized for the plan.
   reset(genome: Genome, x: number, y: number, heading: number, energy: number, plan: PlanView = this.ownPlan): void {
+    const sizes = layerSizes(this.config, plan);
+    if (genome.length !== genomeLength(sizes)) throw new Error(`genome length ${genome.length} does not match expected ${genomeLength(sizes)}`); // before anything changes
     copyPlan(plan, this.ownPlan);
-    const sizes = layerSizes(this.config, this.ownPlan);
-    this.brain.load(sizes, genome);
+    if (this.brain.lent) this.brain.reshape(sizes); // the weights are in the kernels' block, attach below sets it from genome
+    else this.brain.load(sizes, genome);
     this.fitPlan(sizes);
     this.output.fill(0); // as a new creature's, not the previous owner's
     const s = this.state;
@@ -207,7 +209,7 @@ export class Creature {
       ray.energy = 0;
       ray.species = 0;
     }
-    this.kernelOwner?.attach(this);
+    this.kernelOwner?.attach(this, genome);
   }
 
   // Casts the rays from the current pose into this.rays without advancing the simulation.

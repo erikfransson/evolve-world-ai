@@ -619,18 +619,19 @@ export class Ecosystem {
     const pc = parent.creature;
     const plan = this.childPlan;
     copyPlan(pc.plan, plan);
-    let source = pc.brain.genome;
+    let source: Float32Array | null = null; // null: the parent's own weights, copied once below
     if (eco.planDrift > 0) driftPlan(plan, eco.planDrift, ranges, this.rng);
     if (eco.structuralRate > 0 && this.rng.next() < eco.structuralRate) {
       const maps = mutateStructure(plan, inputLayout(this.config, pc.plan), pc.brain.sizes, ranges, this.rng);
       if (maps) {
         this.remapped = refit(this.remapped, genomeLength(maps.map((m) => m.length)));
-        remapWeights(pc.brain.sizes, source, maps, this.remapped, this.rng);
+        remapWeights(pc.brain.sizes, pc.brain.genome as Float32Array, maps, this.remapped, this.rng);
         source = this.remapped;
       }
     }
-    const genome = (this.childGenome = refit(this.childGenome, source.length));
-    genome.set(source);
+    const genome = (this.childGenome = refit(this.childGenome, source ? source.length : pc.brain.genomeLength));
+    if (source) genome.set(source);
+    else pc.brain.genomeInto(genome);
     mutate(genome, this.config.mutation.rate, this.config.mutation.std * parent.mutationScale, this.rng, this.wasmMembers);
     const traits = this.traits;
     traits.energy = parent.birth.energy;
@@ -677,7 +678,7 @@ export class Ecosystem {
     const list = this.spare[species]!;
     const top = list.length - 1;
     for (let i = top; i >= 0 && i > top - SPARE_LOOK; i--) {
-      if (list[i]!.creature.brain.genome.length !== genomeLength) continue;
+      if (list[i]!.creature.brain.genomeLength !== genomeLength) continue;
       const m = list[i]!;
       list[i] = list[top]!;
       list.pop();
@@ -713,7 +714,7 @@ export class Ecosystem {
     m.birth.cooldown = birth.cooldown;
     m.cooldownTicks = Math.round(birth.cooldown / this.config.dt);
     m.mutationScale = mutationScale;
-    this.weights += m.creature.brain.genome.length;
+    this.weights += m.creature.brain.genomeLength;
     this.journal?.born.push(m.id);
     this.table.admit(m);
     return m;
@@ -722,7 +723,7 @@ export class Ecosystem {
   // Swap-removes members[i].
   private remove(i: number): void {
     const m = this.table.swapRemove(i);
-    this.weights -= m.creature.brain.genome.length;
+    this.weights -= m.creature.brain.genomeLength;
     this.onDeath?.(m);
     this.lineages.died(m.founderId);
     this.journal?.died.push(m.id);
@@ -832,7 +833,7 @@ export class Ecosystem {
     m.id = r.id; m.parentId = r.parentId; m.depth = r.depth; m.birthTick = r.birthTick; m.children = r.children; m.eaten = r.eaten; m.kills = r.kills; m.bumpKills = r.bumpKills ?? 0;
     m.species = r.species; m.hue = r.hue; m.founderId = r.founderId; m.lastBirthTick = r.lastBirthTick;
     m.birth.energy = r.birthEnergy; m.birth.cost = r.birthCost; m.birth.cooldown = r.birthCooldown; m.cooldownTicks = r.cooldownTicks; m.mutationScale = r.mutationScale ?? 1;
-    this.weights += c.brain.genome.length;
+    this.weights += c.brain.genomeLength;
     this.journal?.born.push(m.id);
     this.table.admit(m);
     return m;
