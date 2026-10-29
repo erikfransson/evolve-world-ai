@@ -680,7 +680,9 @@ export function runTicks(live: Pick<LiveWorld, "advance" | "failedTicks">, maxFa
       console.error(`tick failed: ${e instanceof Error ? e.message : e}`);
       if (live.failedTicks >= maxFailures) return fatal(`${live.failedTicks} ticks in a row failed`);
     }
-    setTimeout(() => void loop(), wait);
+    // Behind (0): the next slice right after this turn's timers and sockets, without a 1 ms timer sleep (docs/perf-explore/behindpath.md).
+    if (wait === 0) setImmediate(() => void loop());
+    else setTimeout(() => void loop(), wait);
   };
   void loop();
 }
