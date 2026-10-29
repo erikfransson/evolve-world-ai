@@ -213,6 +213,34 @@ export class WasmBrainBank {
     for (let i = 0; i < sizes.length; i++) d[at + DESC_SIZES + i] = sizes[i]!;
   }
 
+  // Writes the slot's genome (the Brain layout) into out, undoing set(): bit-exact, as the block holds the same f32 values transposed and padded.
+  readGenome(slot: number, out: Genome): void {
+    const f32 = this.kernel.f32;
+    const d = this.kernel.i32;
+    const at = (this.descPtr >> 2) + slot * DESC_WORDS;
+    const count = d[at + 3]!;
+    const rayInputs = d[at + 4]!;
+    const rb = d[at + 5]! >> 2;
+    let w = d[at]! >> 2;
+    let g = 0;
+    for (let l = 0; l + 1 < count; l++) {
+      const inN = d[at + DESC_SIZES + l]!;
+      const outN = d[at + DESC_SIZES + l + 1]!;
+      const nPad = pad4(outN);
+      const split = l === 0 ? rayInputs : 0;
+      for (let j = 0; j < outN; j++) {
+        const from = g + j * inN;
+        for (let i = 0, p = rb + j; i < split; i++, p += nPad) out[from + i] = f32[p]!;
+        for (let i = split, p = w + j; i < inN; i++, p += nPad) out[from + i] = f32[p]!;
+      }
+      g += inN * outN;
+      w += (inN - split) * nPad;
+      for (let j = 0; j < outN; j++) out[g + j] = f32[w + j]!;
+      g += outN;
+      w += nPad;
+    }
+  }
+
   // Frees the slot's brain block (a creature that left for good), so the slot holds no brain until set again.
   release(slot: number): void {
     const ptr = this.blockPtr[slot];

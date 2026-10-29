@@ -252,6 +252,41 @@ describe("WasmBrainBank", () => {
     expect(run(kept)).toEqual(before);
   });
 
+  it("readGenome rebuilds the stored genome bit for bit, for every size set, with and without a ray region, and after blocks moved", async () => {
+    const bank = WasmBrainBank.createSync()!;
+    const rng = testRng(31);
+    const genomes = new Map<number, Float32Array>();
+    const rays = (sizes: readonly number[], k: number): number => [0, 1, sizes[0]!, Math.floor(sizes[0]! / 2)][k % 4]!;
+    const n = 400;
+    for (let slot = 0; slot < n; slot++) {
+      const sizes = SIZE_SETS[slot % SIZE_SETS.length]!;
+      const g = randomGenome(sizes, rng);
+      genomes.set(slot, g);
+      bank.set(slot, sizes, g, rays(sizes, slot));
+    }
+    const same = (slot: number): void => {
+      const sizes = SIZE_SETS[slot % SIZE_SETS.length]!;
+      const out = new Float32Array(genomeLength(sizes));
+      bank.readGenome(slot, out);
+      expect(Buffer.from(out.buffer).equals(Buffer.from(genomes.get(slot)!.buffer))).toBe(true);
+    };
+    for (let slot = 0; slot < n; slot++) same(slot);
+    const kept: number[] = [];
+    for (let slot = 0; slot < n; slot++) if (slot % 3 === 0 || slot % 7 === 0) bank.release(slot); else kept.push(slot);
+    for (let i = 0; i < 20; i++) bank.compact();
+    for (const slot of kept) same(slot);
+    for (let slot = 0; slot < n; slot += 3) { // refilled holes and a changed layout in a used slot
+      const sizes = SIZE_SETS[(slot + 1) % SIZE_SETS.length]!;
+      const g = randomGenome(sizes, rng);
+      bank.set(slot, sizes, g, rays(sizes, slot + 1));
+      genomes.set(slot, g);
+      const out = new Float32Array(g.length);
+      bank.readGenome(slot, out);
+      expect(Buffer.from(out.buffer).equals(Buffer.from(g.buffer))).toBe(true);
+    }
+    for (const slot of kept) same(slot);
+  });
+
   it("rejects bad shapes", async () => {
     const bank = WasmBrainBank.createSync()!;
     expect(() => bank.set(0, [3], new Float32Array(0))).toThrow(/layer sizes/);
