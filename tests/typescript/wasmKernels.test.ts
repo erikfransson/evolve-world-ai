@@ -327,6 +327,64 @@ describe("WasmBrainBank", () => {
   });
 });
 
+describe("WasmBrainBank forwardRun", () => {
+  it("runs a scrambled slot list by block address as forwardSlots does, across growth, reshapes, releases and stamp wraps", async () => {
+    const bank = WasmBrainBank.createSync()!;
+    const rng = testRng(21);
+    const sizes = (s: number) => SIZE_SETS[s % 4]!;
+    const outs = (list: number[]): number[][] => list.map((s) => Array.from(bank.f32.slice(bank.outputAt(s), bank.outputAt(s) + 2)));
+    const inputs = new Map<number, Float32Array>();
+    const feed = (list: number[]): void => {
+      for (const s of list) {
+        const a = new Float32Array(sizes(s)[0]!);
+        fillInput(a, rng);
+        inputs.set(s, a);
+        bank.f32.set(a, bank.inputAt(s));
+      }
+    };
+    const alive = new Set<number>();
+    const idle = 999; // run in the first call only, so a stamp reused after the wrap would list it wrongly if the marks were not cleared
+    for (let round = 0; round < 600; round++) {
+      // births in new slots (growing the slot tables), reshapes of old ones and releases
+      if (round === 0) { bank.set(idle, sizes(idle), randomGenome(sizes(idle), rng)); alive.add(idle); }
+      const born = round < 5 ? 40 : 1 + (round % 3);
+      for (let k = 0; k < born; k++) {
+        const s = round < 5 ? alive.size - 1 : (round * 7 + k) % 300;
+        bank.set(s, sizes(s + round), randomGenome(sizes(s + round), rng));
+        alive.add(s);
+      }
+      if (round % 5 === 4) { const s = [...alive].filter((x) => x !== idle)[round % (alive.size - 1)]!; bank.release(s); alive.delete(s); }
+      const list = [...alive].filter((s) => (s + round) % 4 !== 0 && (s !== idle || round === 0)).sort((a, b) => ((a * 7919 + round) % 101) - ((b * 7919 + round) % 101));
+      feed(list);
+      const slots = Int32Array.from(list);
+      new Int32Array(bank.memory.buffer).set(slots, bank.runRegion(list.length) >> 2);
+      bank.forwardRun(list.length);
+      const viaRun = outs(list);
+      list.forEach((s) => bank.f32.set(inputs.get(s)!, bank.inputAt(s)));
+      bank.forwardSlots(slots, list.length);
+      expect(outs(list)).toEqual(viaRun);
+    }
+  });
+
+  it("rejects a run list with a slot that holds no brain or one that is listed twice", async () => {
+    const bank = WasmBrainBank.createSync()!;
+    const sizes = SIZE_SETS[4]!;
+    const rng = testRng(22);
+    for (const s of [0, 1, 3]) bank.set(s, sizes, randomGenome(sizes, rng));
+    const run = (list: number[]): void => {
+      new Int32Array(bank.memory.buffer).set(list, bank.runRegion(list.length) >> 2);
+      bank.forwardRun(list.length);
+    };
+    run([3, 0, 1]);
+    expect(() => run([3, 2, 1])).toThrow(/without a brain/); // slot 2 was never set
+    expect(() => run([3, 3, 1])).toThrow(/or one twice/);
+    expect(() => run([3, 900, 1])).toThrow(/without a brain/); // beyond the slot table
+    bank.release(1);
+    expect(() => run([3, 0, 1])).toThrow(/without a brain/);
+    run([3, 0]);
+  });
+});
+
 describe("sense.wat (SenseKernels)", () => {
   type Spot = [number, number, number]; // x, y, heading
   interface Setup {

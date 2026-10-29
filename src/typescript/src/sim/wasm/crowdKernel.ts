@@ -1,3 +1,4 @@
+import { MAX_GRID_CREATURES } from "../crowd.ts";
 import type { Crowd } from "../crowd.ts";
 import { CROWD_BYTES, compiled } from "./loader.ts";
 import { LAYOUT as L } from "./layout.ts";
@@ -55,7 +56,7 @@ export class WasmCrowd {
       this.views = {
         xs: new Float64Array(buffer, r.xs.ptr, r.xs.cap >> 3), ys: new Float64Array(buffer, r.ys.ptr, r.ys.cap >> 3), energies: new Float64Array(buffer, r.energies.ptr, r.energies.cap >> 3),
         species: new Int32Array(buffer, r.species.ptr, r.species.cap >> 2), owners: new Int32Array(buffer, r.owners.ptr, r.owners.cap >> 2),
-        cellStart: new Int32Array(buffer, r.start.ptr, cells), occupied: new Int32Array(buffer, r.occupied.ptr, r.occupied.cap >> 2),
+        cellStart: new Uint16Array(buffer, r.start.ptr, cells), occupied: new Int32Array(buffer, r.occupied.ptr, r.occupied.cap >> 2),
       };
       this.viewsMoved = store.moved;
     }
@@ -143,6 +144,7 @@ export class WasmCrowd {
   // Grids the n creatures whose rows are at f64 indices rowAt[0 .. n-1], with species[i] for creature i (all 0 without).
   rebuild(rowAt: Int32Array, n: number, species?: Int32Array): void {
     const { store, crowd, region: r } = this;
+    if (n > MAX_GRID_CREATURES) throw new RangeError(`a crowd grid holds at most ${MAX_GRID_CREATURES} creatures, got ${n}`);
     const bytes = n * 4;
     store.grow(r.touched, bytes); // where touch writes
     const rowAtAt = store.grow(r.rowAt, bytes);
@@ -150,7 +152,7 @@ export class WasmCrowd {
     const perm = store.grow(r.perm, bytes);
     const permB = store.grow(r.permB, bytes);
     const count = store.grow(r.count, 4 << crowd.radixBits);
-    const start = store.grow(r.start, (crowd.cols * crowd.rows + 1) * 4 + 12); // the fill stores four cells at a time, up to three past the end
+    const start = store.grow(r.start, (crowd.cols * crowd.rows + 1) * 2 + 14); // u16 slots; the fill stores eight cells at a time, up to seven past the end
     const occupied = store.grow(r.occupied, bytes);
     const speciesIn = store.grow(r.speciesIn, bytes);
     const xs = store.grow(r.xs, n * 8);

@@ -24,7 +24,9 @@ export class WasmFiller {
   private readonly rPrepRows = new Region(); // prepare's batch
   private readonly rSpecies = new Region(); // prepare's species blocks
   private readonly rGround = new Region(); // the ground field's nodes
+  private readonly rMask = new Region(); // and its block flags
   private ground: GroundField | null = null; // the field in rGround
+  private blockCols = 0;
   private pF = 0;
   private pG = 0;
 
@@ -45,7 +47,7 @@ export class WasmFiller {
 
   // Back to a new filler's state, after the brain bank was reset (its arena, and with it every address held here, is gone).
   reset(): void {
-    for (const r of [this.rRows, this.rSelves, this.rPlace, this.rCount, this.rPrepRows, this.rSpecies, this.rGround]) r.cap = 0;
+    for (const r of [this.rRows, this.rSelves, this.rPlace, this.rCount, this.rPrepRows, this.rSpecies, this.rGround, this.rMask]) r.cap = 0;
     this.ground = null;
     this.pF = this.store.bank.alloc(L.F_BYTES);
     this.pG = this.store.bank.alloc(L.G_BYTES);
@@ -61,6 +63,10 @@ export class WasmFiller {
     if (field !== null && field !== this.ground) {
       const at = store.grow(this.rGround, field.data.length);
       new Uint8Array(store.i32.buffer, at, field.data.length).set(field.data);
+      const blocks = field.blockFlags();
+      const maskAt = store.grow(this.rMask, blocks.flags.length);
+      new Uint8Array(store.i32.buffer, maskAt, blocks.flags.length).set(blocks.flags);
+      this.blockCols = blocks.cols;
       this.ground = field;
     }
     const { f64, i32 } = store; // after the last allocation
@@ -83,6 +89,8 @@ export class WasmFiller {
       f64[(G + L.G_INV) >> 3] = field.inv;
       f64[(G + L.G_COL_MAX) >> 3] = field.cols - 1.0001;
       f64[(G + L.G_ROW_MAX) >> 3] = field.rows - 1.0001;
+      i32[(G + L.G_MASK) >> 2] = this.rMask.ptr;
+      i32[(G + L.G_MASK_COLS) >> 2] = this.blockCols;
     }
     f64[(G + L.G_SLOW) >> 3] = SLOW_FACTOR;
     f64[(G + L.G_FAST) >> 3] = FAST_FACTOR;

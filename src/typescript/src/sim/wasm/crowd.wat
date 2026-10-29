@@ -114,25 +114,25 @@
           (local.set $prev (local.get $c))))
       (local.set $k (i32.add (local.get $k) (i32.const 1)))
       (br $sortedLoop)))
-    ;; cellStart[c] = creatures in cells below c, written by the gaps between occupied cells, four cells a store. A store may run up to three cells past
+    ;; cellStart[c] = creatures in cells below c (u16: a grid holds under 65536 creatures), written by the gaps between occupied cells, eight cells a store. A store may run up to seven cells past
     ;; the gap (the table has room for them); the next gap, or the tail, writes those again. The cells after the last occupied one start at n.
     (local.set $cells (i32.mul (local.get $cols) (i32.load offset={{C_ROWS}} (local.get $C))))
     (local.set $o (i32.const 0))
     (block $gapsDone (loop $gapLoop
       (br_if $gapsDone (i32.ge_s (local.get $o) (local.get $m)))
       (local.set $c (i32.load (i32.add (local.get $occupied) (i32.shl (local.get $o) (i32.const 2)))))
-      (local.set $fill (i32x4.splat (i32.load (i32.add (local.get $from) (i32.shl (local.get $o) (i32.const 2))))))
+      (local.set $fill (i16x8.splat (i32.load (i32.add (local.get $from) (i32.shl (local.get $o) (i32.const 2))))))
       (loop $gapVec
-        (v128.store (i32.add (local.get $start) (i32.shl (local.get $g) (i32.const 2))) (local.get $fill))
-        (local.set $g (i32.add (local.get $g) (i32.const 4)))
+        (v128.store (i32.add (local.get $start) (i32.shl (local.get $g) (i32.const 1))) (local.get $fill))
+        (local.set $g (i32.add (local.get $g) (i32.const 8)))
         (br_if $gapVec (i32.le_s (local.get $g) (local.get $c))))
       (local.set $g (i32.add (local.get $c) (i32.const 1)))
       (local.set $o (i32.add (local.get $o) (i32.const 1)))
       (br $gapLoop)))
-    (local.set $fill (i32x4.splat (local.get $n)))
+    (local.set $fill (i16x8.splat (local.get $n)))
     (loop $tailVec
-      (v128.store (i32.add (local.get $start) (i32.shl (local.get $g) (i32.const 2))) (local.get $fill))
-      (local.set $g (i32.add (local.get $g) (i32.const 4)))
+      (v128.store (i32.add (local.get $start) (i32.shl (local.get $g) (i32.const 1))) (local.get $fill))
+      (local.set $g (i32.add (local.get $g) (i32.const 8)))
       (br_if $tailVec (i32.le_s (local.get $g) (local.get $cells))))
     (i32.store offset={{C_OCCUPIED_COUNT}} (local.get $C) (local.get $m))
   )
@@ -297,18 +297,18 @@
       (local.set $c (i32.load (i32.add (i32.load offset={{C_OCCUPIED}} (local.get $C)) (i32.shl (local.get $o) (i32.const 2)))))
       (local.set $cy (i32.div_u (local.get $c) (local.get $cols)))
       (local.set $cx (i32.sub (local.get $c) (i32.mul (local.get $cy) (local.get $cols))))
-      (local.set $end (i32.load (i32.add (local.get $start) (i32.shl (i32.add (local.get $c) (i32.const 1)) (i32.const 2)))))
+      (local.set $end (i32.load16_u (i32.add (local.get $start) (i32.shl (i32.add (local.get $c) (i32.const 1)) (i32.const 1)))))
       (local.set $hasRight (i32.lt_s (i32.add (local.get $cx) (i32.const 1)) (local.get $cols)))
       ;; the run of the later creatures of this cell and the cell to the right, and the run of the cells below-left, below and below-right
-      (local.set $run1 (select (i32.load (i32.add (local.get $start) (i32.shl (i32.add (local.get $c) (i32.const 2)) (i32.const 2)))) (local.get $end) (local.get $hasRight)))
+      (local.set $run1 (select (i32.load16_u (i32.add (local.get $start) (i32.shl (i32.add (local.get $c) (i32.const 2)) (i32.const 1)))) (local.get $end) (local.get $hasRight)))
       (local.set $run2a (i32.const 0))
       (local.set $run2b (i32.const 0))
       (if (i32.lt_s (i32.add (local.get $cy) (i32.const 1)) (local.get $rows))
         (then
           (local.set $below (i32.add (local.get $c) (local.get $cols)))
-          (local.set $run2a (i32.load (i32.add (local.get $start) (i32.shl (select (i32.sub (local.get $below) (i32.const 1)) (local.get $below) (i32.gt_s (local.get $cx) (i32.const 0))) (i32.const 2)))))
-          (local.set $run2b (i32.load (i32.add (local.get $start) (i32.shl (select (i32.add (local.get $below) (i32.const 2)) (i32.add (local.get $below) (i32.const 1)) (local.get $hasRight)) (i32.const 2)))))))
-      (if (i32.eqz (local.get $resume)) (then (local.set $s (i32.load (i32.add (local.get $start) (i32.shl (local.get $c) (i32.const 2)))))))
+          (local.set $run2a (i32.load16_u (i32.add (local.get $start) (i32.shl (select (i32.sub (local.get $below) (i32.const 1)) (local.get $below) (i32.gt_s (local.get $cx) (i32.const 0))) (i32.const 1)))))
+          (local.set $run2b (i32.load16_u (i32.add (local.get $start) (i32.shl (select (i32.add (local.get $below) (i32.const 2)) (i32.add (local.get $below) (i32.const 1)) (local.get $hasRight)) (i32.const 1)))))))
+      (if (i32.eqz (local.get $resume)) (then (local.set $s (i32.load16_u (i32.add (local.get $start) (i32.shl (local.get $c) (i32.const 1)))))))
       (block $creaturesDone (loop $creatureLoop
         (br_if $creaturesDone (i32.ge_s (local.get $s) (local.get $end)))
         (if (i32.eqz (local.get $resume)) (then (local.set $phase (i32.const 0)) (local.set $t (i32.add (local.get $s) (i32.const 1)))))

@@ -25,6 +25,7 @@ const HOLE_SHARE = 16; // a chunk is compacted when 1/HOLE_SHARE of its used byt
 
 interface BrainExports extends WebAssembly.Exports {
   forward(desc: number, slots: number, n: number, scratchA: number, scratchB: number, nz: number, iota: number, tab: number): void;
+  runOrder(run: number, n: number, order: number, held: number, mark: number, cap: number, stamp: number): number;
 }
 
 const pad4 = (n: number): number => (n + 3) & ~3;
@@ -51,7 +52,10 @@ export class WasmBrainBank {
   private runCap = 0;
   private order = new Int32Array(64); // the slots holding a brain, by block address, so forwardRun streams the weights in memory order
   private held = 0;
-  private mark = new Int32Array(64); // per slot, the stamp of the forwardRun it is in
+  private orderPtr = NO_SLOT; // a copy of order in kernel memory for runOrder, rewritten by forwardRun after order changed
+  private orderCap = 0;
+  private orderDirty = true;
+  private markPtr = NO_SLOT; // per slot (descCap bytes), the stamp (1 to 255) of the forwardRun it is in
   private stamp = 0;
 
   private constructor(kernel: Kernel<BrainExports>) {
@@ -96,7 +100,10 @@ export class WasmBrainBank {
     this.runPtr = NO_SLOT;
     this.runCap = 0;
     this.held = 0;
-    this.mark.fill(0);
+    this.orderPtr = NO_SLOT;
+    this.orderCap = 0;
+    this.orderDirty = true;
+    this.markPtr = NO_SLOT;
     this.stamp = 0;
     this.arena = new Arena(this.kernel, ARENA_START);
     const f32 = this.kernel.f32;
@@ -320,23 +327,29 @@ export class WasmBrainBank {
   // The slots are run by block address instead of in the written order; each brain depends only on its own block, so the results are the same.
   forwardRun(count: number): void {
     if (count <= 0) return;
-    const i32 = this.kernel.i32;
-    const at = this.runPtr >> 2;
-    const mark = this.mark;
-    if (this.stamp === 0x7fffffff) { // mark is i32: start the stamps over before they wrap
-      mark.fill(0);
+    if (this.orderDirty) this.copyOrder();
+    if (this.stamp >= 255) { // the marks are bytes: clear them and start the stamps over
+      new Uint8Array(this.kernel.memory.buffer, this.markPtr, this.descCap).fill(0);
       this.stamp = 0;
     }
-    const stamp = ++this.stamp;
-    for (let k = 0; k < count; k++) mark[i32[at + k]!] = stamp;
-    const end = at + count;
-    let j = at;
-    for (let k = 0, held = this.held; k < held && j < end; k++) {
-      const s = this.order[k]!;
-      if (mark[s] === stamp) i32[j++] = s;
-    }
-    if (j !== end) throw new Error("brain run list holds a slot without a brain, or one twice");
+    const placed = this.kernel.exports.runOrder(this.runPtr, count, this.orderPtr, this.held, this.markPtr, this.descCap, ++this.stamp);
+    if (placed !== count) throw new Error("brain run list holds a slot without a brain, or one twice");
     this.kernel.exports.forward(this.descPtr, this.runPtr, count, 0, SCRATCH_B, NZ_AT, IOTA_AT, TAB_AT);
+  }
+
+  // Writes order into kernel memory.
+  private copyOrder(): void {
+    if (this.held === 0) { // nothing to mirror: the kernel then places no slot and forwardRun throws its usual error
+      this.orderDirty = false;
+      return;
+    }
+    if (this.held > this.orderCap) {
+      if (this.orderPtr !== NO_SLOT) this.arena.release(this.orderPtr, this.orderCap * 4);
+      this.orderCap = this.order.length;
+      this.orderPtr = this.arena.alloc(this.orderCap * 4);
+    }
+    this.kernel.i32.set(this.order.subarray(0, this.held), this.orderPtr >> 2);
+    this.orderDirty = false;
   }
 
   // A block of size bytes (a multiple of BLOCK_ALIGN) at the end of the first chunk with room, else of a new chunk.
@@ -377,6 +390,7 @@ export class WasmBrainBank {
   private unorder(ptr: number): void {
     const k = this.find(ptr);
     this.order.copyWithin(k, k + 1, this.held--);
+    this.orderDirty = true;
   }
 
   private reorder(slot: number, ptr: number): void {
@@ -388,6 +402,7 @@ export class WasmBrainBank {
     const k = this.find(ptr);
     this.order.copyWithin(k + 1, k, this.held++);
     this.order[k] = slot;
+    this.orderDirty = true;
   }
 
   // The first place in order whose block is at ptr or above.
@@ -413,12 +428,10 @@ export class WasmBrainBank {
       i32.copyWithin(ptr >> 2, from, from + this.descCap * DESC_WORDS);
       this.arena.release(this.descPtr, this.descCap * DESC_WORDS * 4);
     }
+    if (this.markPtr !== NO_SLOT) this.arena.release(this.markPtr, this.descCap);
     this.descPtr = ptr;
     this.descCap = cap;
-    if (cap > this.mark.length) {
-      const grown = new Int32Array(cap);
-      grown.set(this.mark);
-      this.mark = grown;
-    }
+    this.markPtr = this.arena.alloc(cap);
+    new Uint8Array(this.kernel.memory.buffer, this.markPtr, cap).fill(0);
   }
 }
