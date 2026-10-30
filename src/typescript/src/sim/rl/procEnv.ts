@@ -205,7 +205,7 @@ export function runCrowdStats(spec: ProcSpec, learner: Learner, seed: number, li
 
 export function runCrowdEpisode(spec: ProcSpec, learner: Learner, seed: number, library: Library = {}): EpisodeResult {
   const s = runCrowdStats(spec, learner, seed, library);
-  return { reward: s.reward, food: s.bites, kills: 0, rams: 0, seconds: s.life, energy: 0 };
+  return { reward: s.reward, food: s.bites, kills: 0, rams: 0, seconds: s.life, energy: 0, poison: 0, poisonEnergy: 0, firstFood: -1, died: 0 };
 }
 
 // The training env for rlTrain --selfplay: runEpisode plays it by runCrowdEpisode.
