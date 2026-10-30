@@ -1,6 +1,10 @@
 // Fine-tunes one creature in an RL environment (#27) with evolution strategies, on worker threads.
 // Usage: node src/rlTrain.ts --env nibble [--from pool:39 | random:1 | file:creature.json] [--iters 60] [--pairs 16] [--sigma 0.08]
 //        [--lr 0.02] [--episodes 2] [--eval 16] [--every 10] [--vary 0] [--threads N] [--seed 1] [--out learner.json] [--library public/rl/library.json] [--save]
+//        [--mix nibble,far-food,...] [--selfplay [--crowd 5,50] [--lineage 0]] [--budget SECONDS]
+// --mix rotates through the envs, one per iteration (all candidates on it). --selfplay (S1) trains on a new procedurally drawn crowded world every
+// episode, the learner's genome playing half the bodies and the league (current weights, recent bests) the rest; the env is then ignored.
+// --from founder:ID starts from a Live founder of public/live-founders.json, design:ID from a fixed design of sim/rl/designPanel.ts. --budget stops after that many wall seconds (after iters at the latest).
 // Each iteration scores 2 x pairs perturbed genomes on `episodes` fresh seeds; every `every` iterations the current genome is scored
 // on `eval` held-out seeds no iteration trains on. --vary F plays every episode, held-out ones too, on a varied env (varied in env.ts). --save appends the result to the library under the env id, as a rival for later envs.
 
@@ -10,10 +14,13 @@ import { parseArgs } from "node:util";
 import { parsePool } from "./sim/seedPool.ts";
 import type { PoolEntry } from "./sim/seedPool.ts";
 import { poolLearner, randomLearner, varied } from "./sim/rl/env.ts";
-import type { Learner, Library } from "./sim/rl/env.ts";
+import type { EnvSpec, Learner, Library } from "./sim/rl/env.ts";
 import { envById } from "./sim/rl/envs.ts";
 import { KINDS, fileLearner, parseCreatureFile } from "./sim/rl/creatureFile.ts";
 import { Trainer, heldSeeds } from "./sim/rl/trainer.ts";
+import { PROC_DEFAULTS, procEnv } from "./sim/rl/procEnv.ts";
+import { parseFounders } from "./live/founders.ts";
+import { DESIGN_PANEL, designLearner } from "./sim/rl/designPanel.ts";
 import { parseLibrary, serialiseLearner } from "./sim/rl/library.ts";
 import { createNodeRlPool, parseThreads } from "./worker/nodePool.ts";
 
@@ -36,6 +43,11 @@ const { values } = parseArgs({
     library: { type: "string", default: "public/rl/library.json" },
     out: { type: "string" },
     save: { type: "boolean", default: false },
+    mix: { type: "string" },
+    selfplay: { type: "boolean", default: false },
+    crowd: { type: "string", default: PROC_DEFAULTS.crowd.join(",") },
+    lineage: { type: "string", default: "0" },
+    budget: { type: "string", default: "0" },
   },
 });
 
@@ -44,9 +56,17 @@ const load = (pool: string, library: string): { pool: PoolEntry[] | null; librar
   library: parseLibrary(existsSync(library) ? JSON.parse(readFileSync(library, "utf8")) : null),
 });
 
-const env = envById(values.env!);
-if (!env) {
-  console.error(`error: unknown env "${values.env}"`);
+const mixIds = values.mix ? values.mix.split(",") : [values.env!];
+const crowd = values.crowd!.split(",").map(Number);
+if (crowd.length !== 2 || !(crowd[0]! >= 1 && crowd[0]! <= crowd[1]!)) {
+  console.error("error: --crowd must be LO,HI");
+  process.exit(1);
+}
+const procSpec = { ...PROC_DEFAULTS, crowd: [crowd[0]!, crowd[1]!] as const, lineageWeight: Number(values.lineage) };
+const mix = values.selfplay ? [procEnv(procSpec)] : mixIds.map((id) => envById(id));
+const env = mix[0] ?? envById("nibble")!;
+if (mix.some((e) => !e)) {
+  console.error(`error: unknown env in "${values.mix ?? values.env}"`);
   process.exit(1);
 }
 const num = (k: keyof typeof values): number => Number(values[k]);
@@ -77,6 +97,15 @@ const { pool, library } = load(resolve(values.pool!), resolve(values.library!));
 const [kind, arg] = values.from!.split(/:(.*)/);
 let learner: Learner;
 if (kind === "pool" && pool) learner = poolLearner(env, pool[Number(arg)]!);
+else if (kind === "design" && DESIGN_PANEL.some((x) => x.id === arg)) learner = designLearner(DESIGN_PANEL.find((x) => x.id === arg)!);
+else if (kind === "founder") {
+  const f = parseFounders(JSON.parse(readFileSync(resolve("public/live-founders.json"), "utf8"))).find((x) => x.id === arg);
+  if (!f) {
+    console.error(`error: no founder "${arg}"`);
+    process.exit(1);
+  }
+  learner = { plan: f.plan, genome: f.genome };
+}
 else if (kind === "random") learner = randomLearner(env, Number(arg ?? 1));
 else if (kind === "file") {
   // A creature file (Arena "Save"), checked like any outside data.
@@ -92,17 +121,33 @@ else {
   process.exit(1);
 }
 
-const helpers = createNodeRlPool({ envs: [varied(env, vary)], plan: learner.plan, pool, library }, threads);
+const envs = (mix as EnvSpec[]).map((e) => varied(e, vary));
+const helpers = createNodeRlPool({ envs: [envs[0]!], plan: learner.plan, pool, library }, threads);
 const trainer = new Trainer(Float32Array.from(learner.genome), { pairs, sigma: num("sigma"), lr: num("lr") }, helpers, 1, episodes, seed);
 const evalSeeds = heldSeeds(evalCount);
 const t0 = performance.now();
+const rotate = (k: number): void => { // the next iteration plays env k of the mix; held-out checks play them all (k < 0)
+  const these = k < 0 ? envs : [envs[k % envs.length]!];
+  helpers.setEnvs(these);
+  trainer.setEnvs(helpers, these);
+};
+if (envs.length > 1) rotate(-1);
 const start = (await trainer.held(evalSeeds)).mean;
 const curve: { iter: number; train: number; held?: number }[] = [{ iter: 0, train: NaN, held: start }];
 console.log(`env ${env.id}, from ${values.from}, ${learner.genome.length} weights; held-out ${start.toFixed(3)} on ${evalCount} seeds`);
-while (trainer.iter < iters) {
+const budget = num("budget"); // wall seconds of training steps, held-out checks not counted
+let trained = 0;
+while (trainer.iter < iters && !(budget > 0 && trained >= budget)) {
+  const t1 = performance.now();
+  if (envs.length > 1) rotate(trainer.iter);
   const step = await trainer.step();
+  trained += (performance.now() - t1) / 1000;
   const point: (typeof curve)[number] = { iter: step.iter, train: step.train };
-  if (step.iter % every === 0 || step.iter === iters) point.held = (await trainer.held(evalSeeds)).mean;
+  const last = step.iter === iters || (budget > 0 && trained >= budget);
+  if (step.iter % every === 0 || last) {
+    if (envs.length > 1) rotate(-1);
+    point.held = (await trainer.held(evalSeeds)).mean;
+  }
   curve.push(point);
   if (point.held !== undefined) console.log(`iter ${step.iter}: train mean ${step.train.toFixed(3)}, held-out ${point.held.toFixed(3)} (${((performance.now() - t0) / 1000).toFixed(0)} s)`);
 }
