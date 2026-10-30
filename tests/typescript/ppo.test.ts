@@ -134,4 +134,21 @@ describe("Ppo", () => {
     });
     expect(samples).toBeGreaterThan(env.seconds * 10); // more than repeat 3 could give
   });
+
+  it("records diagnostics only when asked, and trains the same either way", () => {
+    const off = new Ppo([env], learner, sizes, { episodes: 2 }, 7);
+    const on = new Ppo([env], learner, sizes, { episodes: 2, diag: true }, 7);
+    off.step();
+    on.step();
+    expect(off.lastDiag).toBeNull();
+    expect(Array.from(on.theta)).toEqual(Array.from(off.theta));
+    const d = on.lastDiag!;
+    expect(d.layerNorm).toHaveLength(sizes.length - 1);
+    expect(d.gradNorm).toBeGreaterThan(0);
+    expect(d.clipActive).toBeGreaterThanOrEqual(0);
+    expect(d.clipActive).toBeLessThanOrEqual(1);
+    for (const f of d.saturated) expect(f).toBeGreaterThanOrEqual(0);
+    expect(d.logStd).toHaveLength(2);
+    expect(d.advStd).toBeGreaterThan(0);
+  });
 });
