@@ -28,14 +28,17 @@ import { addFavourite, loadFavourites, loadSpeed, removeFavourite, saveSpeed } f
 import { drawCreaturePreview } from "./ui/creaturePreview.ts";
 import { PreviewScene } from "./ui/previewScene.ts";
 import { fitCanvas } from "./ui/canvas.ts";
-import { DEFAULT_TILES, TILE_COUNTS, TileGrid } from "./ui/arenaTiles.ts";
+import { TileGrid } from "./ui/arenaTiles.ts";
+import type { Badge, Show } from "./ui/arenaTiles.ts";
+import { PHASE_TEXT, displayOrder, gridColumns, layoutsPerEnv, pageOf, phaseOf, unshownEnvs } from "./ui/arenaLayout.ts";
+import type { Recording } from "./sim/rl/recording.ts";
 import { Zoom } from "./ui/arenaZoom.ts";
 import { EnvGallery } from "./ui/envGallery.ts";
 import { setEnvs, summaryLine, toggleEnv } from "./ui/envSelect.ts";
 import type { PreviewIn, PreviewOut } from "./worker/envPreviewWorker.ts";
 import { $, durationText } from "./ui/page.ts";
 import { buildForm } from "./ui/settingsForm.ts";
-import { RewardGraph, latestValues } from "./ui/rewardGraph.ts";
+import { RewardGraph } from "./ui/rewardGraph.ts";
 import { downloadJson } from "./ui/download.ts";
 import { bindGentle } from "./ui/gentle.ts";
 import { siteUpdated } from "./ui/staleSite.ts";
@@ -78,7 +81,8 @@ interface Run {
 }
 let run: Run | null = null;
 
-const grid = new TileGrid($("tiles"));
+const tilesBox = $("tileGrid"); // not "tiles": that is the run form's replays field
+const grid = new TileGrid(tilesBox);
 const zoom = new Zoom(grid, $("zoom"), { canvas: $<HTMLCanvasElement>("zoomCanvas"), title: $("zoomTitle"), stats: $("zoomStats") }, $("zoomClose"));
 const brainReplay = new BrainReplay($<HTMLCanvasElement>("brainView"));
 const graph = new RewardGraph($<HTMLCanvasElement>("rewardView"));
@@ -211,7 +215,6 @@ reducedMotion?.addEventListener?.("change", () => drawPreview());
 function drawPreview(): void {
   const card = $("previewCard");
   card.hidden = run !== null || preview === null;
-  document.querySelector<HTMLElement>(".stats")!.hidden = !card.hidden; // empty until a run, so the preview takes their place
   if (card.hidden || !preview) return;
   const { plan, genome } = preview;
   renderEnergy($("energyCard"), energyBudget(plan, worldConfig(kind())));
@@ -287,9 +290,11 @@ async function importFile(): Promise<void> {
 const allEnvs = (): EnvSpec[] => envsForKind([...ENVS, ...customs], kind());
 
 function pick(next: Set<string>): void {
+  if (state === "running") return; // the gallery is locked while training; pause to change
   picked = next;
   gallery.sync(picked);
   showStart();
+  showTiles();
 }
 
 const gallery = new EnvGallery($("gallery"), {
@@ -306,8 +311,13 @@ const gallery = new EnvGallery($("gallery"), {
 // Clips are recorded by a worker, once per env id, as soon as the page loads and whenever a custom env is added.
 const previewWorker = new Worker(new URL("./worker/envPreviewWorker.ts", import.meta.url), { type: "module" });
 const requested = new Set<string>();
+const clips = new Map<string, Recording>(); // the gallery's sample clip per env id
 previewWorker.onmessage = (ev: MessageEvent<PreviewOut>) => {
-  if (ev.data.type === "clip") gallery.setClip(ev.data.id, ev.data.rec);
+  if (ev.data.type === "clip") {
+    clips.set(ev.data.id, ev.data.rec);
+    gallery.setClip(ev.data.id, ev.data.rec);
+    if (!run) showTiles();
+  }
   else console.warn("env preview failed", ev.data.id, ev.data.message);
 };
 function requestClips(envs: readonly EnvSpec[]): void {
@@ -327,13 +337,60 @@ function showEnvs(): void {
   updateStartButton();
 }
 
-// The gallery shows unless a run is going; while paused or finished it folds, so the tiles stay in view.
+// The gallery sits in the sidebar and stays in view; it is locked while training (pause to change) and its clips rest then.
 function showGallery(): void {
-  $("gallery").hidden = state === "running";
-  gallery.setCompact(run !== null);
+  $("gallery").classList.toggle("locked", state === "running");
   gallery.play(state !== "running");
-  $("viewrow").hidden = run === null && state === "idle";
 }
+
+// ---- tiles: one per env in use (the chosen ones before a run, the running ones during it), paged when there are many
+
+const IDLE_NOTE = "Design or pick a creature, choose environments, then press Start.";
+let page = 0;
+const tilesWrap = document.querySelector<HTMLElement>(".tiles-wrap")!;
+
+// Before a run the tiles play the gallery's clips of the chosen envs, so the grid always shows what will train.
+function previewShow(): Show {
+  const envs = selectedEnvs().filter((e) => clips.has(e.id));
+  return { iter: 0, genome: new Float32Array(0), recordings: envs.map((e) => clips.get(e.id)!), names: envs.map((e) => e.name), envCount: Math.max(1, envs.length), preview: true };
+}
+
+function showTiles(): void {
+  if (!run) grid.replace(previewShow(), performance.now());
+  layoutTiles();
+}
+
+function layoutTiles(): void {
+  const s = grid.current;
+  const total = s?.recordings.length ?? 0;
+  const order = s ? displayOrder(total, s.envCount) : [];
+  const pg = pageOf(order.length, page);
+  page = pg.page;
+  grid.setSlots(order.slice(pg.from, pg.to));
+  tilesBox.style.setProperty("--cols", String(gridColumns(pg.to - pg.from, tilesWrap.clientWidth)));
+  $("pager").hidden = pg.pages <= 1;
+  $("pageInfo").textContent = `${pg.from + 1}–${pg.to} of ${total}`;
+  $<HTMLButtonElement>("pagePrev").disabled = pg.page === 0;
+  $<HTMLButtonElement>("pageNext").disabled = pg.page >= pg.pages - 1;
+  const chosen = selectedEnvs().length;
+  const envs = run ? (run.nextEnvs ?? run.envs) : selectedEnvs();
+  const parts: string[] = [];
+  if (!run) {
+    $("replaysTitle").textContent = "Chosen environments";
+    parts.push(chosen === 0 ? "none chosen yet" : `${chosen} chosen${total < chosen ? `, ${chosen - total} clip${chosen - total === 1 ? "" : "s"} loading` : ""}`);
+  } else {
+    $("replaysTitle").textContent = run.method === "backprop" ? "Current policy" : "Best candidate";
+    parts.push(`${run.envs.length} environment${run.envs.length === 1 ? "" : "s"}${total > run.envs.length ? `, ${Math.round(total / run.envs.length)} layouts each` : ""}`);
+    const hidden = unshownEnvs(run.envs.length);
+    if (hidden > 0) parts.push(`${hidden} more train without a replay`);
+    if (state === "paused" && envs.map((e) => e.id).join() !== selectedEnvs().map((e) => e.id).join()) parts.push(`${chosen} chosen, applies on Resume`);
+  }
+  $("tilesInfo").textContent = parts.join(" · ");
+  const note = $("note");
+  if (!run && note.textContent === IDLE_NOTE) note.hidden = total > 0;
+}
+
+new ResizeObserver(() => layoutTiles()).observe(tilesWrap);
 
 const selectedEnvs = (): EnvSpec[] => allEnvs().filter((e) => picked.has(e.id));
 
@@ -419,6 +476,7 @@ function updateStartButton(): void {
   const n = selectedEnvs().length;
   $("envSummary").textContent = summaryLine(n);
   $("envSummary").classList.toggle("warn", n === 0);
+  $("tabEnvCount").textContent = String(n);
   const blocked = typeof resolveStart() === "string" || selectedEnvs().length === 0;
   startBtn.disabled = state !== "idle" || blocked;
   if (state === "paused") pauseBtn.disabled = selectedEnvs().length === 0; // Resume needs an env
@@ -433,9 +491,14 @@ function setState(s: RunState): void {
   settings.disabled = runSettings.disabled = s !== "idle";
   envSettings.disabled = s === "running"; // envs can change while paused, and apply on Resume
   grid.paused = s === "paused";
+  const phase = phaseOf(s, run !== null);
+  $("phase").textContent = PHASE_TEXT[phase];
+  $("phase").className = `phase ${phase}`;
+  tilesBox.dataset.phase = phase;
   syncMaxNote();
   showGallery();
   updateStartButton();
+  layoutTiles();
 }
 
 function send(msg: RlInMessage): void {
@@ -447,7 +510,7 @@ function begin(): void {
   const envs = selectedEnvs();
   if (typeof start === "string" || envs.length === 0) return;
   const cfg = runForm.read();
-  const tiles = Number(cfg.tiles);
+  const layouts = layoutsPerEnv(cfg.tiles, envs.length);
   const options = { pairs: Math.round(cfg.population / 2), sigma: cfg.sigma, lr: cfg.lr, decay: DECAY, episodes: cfg.episodes, iterations: cfg.iterations, backprop: { lr: cfg.bpLr, episodes: cfg.bpEpisodes } };
   const seed = Math.floor(Math.random() * 0x7fffffff);
   run = { kind: kind(), method: cfg.method, envs, plan: { ...start.learner.plan, hiddenLayers: start.learner.plan.hiddenLayers.slice() }, from: start.from, iterations: options.iterations, its: [], startHeld: null, startPerEnv: null, latest: null, nextEnvs: null };
@@ -462,11 +525,11 @@ function begin(): void {
       if (worker === failed) fail(updated ? "the site was updated while this page was open. Reload the page to train again." : "the training worker crashed (details in the browser console)"); // not a run started meanwhile
     });
   };
-  grid.setCount(TILE_COUNTS.includes(tiles as 1) ? tiles : DEFAULT_TILES);
   zoom.close();
   grid.clear();
+  page = 0;
   brainReplay.reset();
-  send({ type: "start", envs, learner: serialiseLearner(start.learner), method: cfg.method, options, tiles: grid.size, held: ARENA_HELD_SEEDS, seed, poolUrl: POOL_URL, libraryUrl: LIBRARY_URL, gentle: $<HTMLInputElement>("gentle").checked, playback: grid.speed > 0 });
+  send({ type: "start", envs, learner: serialiseLearner(start.learner), method: cfg.method, options, tiles: layouts, tilesPerEnv: true, held: ARENA_HELD_SEEDS, seed, poolUrl: POOL_URL, libraryUrl: LIBRARY_URL, gentle: $<HTMLInputElement>("gentle").checked, playback: grid.speed > 0 });
   $("note").textContent = "Starting…";
   $("note").hidden = false;
   setState("running");
@@ -504,6 +567,7 @@ function onMessage(m: RlOutMessage): void {
   else if (m.type === "show") {
     grid.show({ iter: m.iter, genome: m.genome, recordings: m.recordings, names: m.recordings.map((_, k) => run!.envs[k % run!.envs.length]!.name), envCount: run.envs.length, policy: run.method === "backprop" }, performance.now());
     $("note").hidden = true;
+    layoutTiles();
   } else if (m.type === "done") setState("idle");
   else if (m.type === "error") return fail(m.message);
   render();
@@ -516,10 +580,12 @@ function reset(): void {
   zoom.close();
   grid.clear();
   brainReplay.reset();
-  $("note").textContent = "Design or pick a creature, choose environments, then press Start.";
+  $("note").textContent = IDLE_NOTE;
   $("note").hidden = false;
+  page = 0;
   setState("idle");
   drawPreview();
+  showTiles();
   render();
 }
 
@@ -546,34 +612,41 @@ function render(): void {
     held.append(Object.assign(document.createElement("span"), { className: `delta ${c.dir}`, textContent: c.text }));
   }
   $("statStart").textContent = fixed(r?.startHeld);
+  $("statGain").textContent = r && heldIt ? ` · ${iterText(heldIt.iter, r.method)}` : "";
   $("statBest").textContent = fixed(last?.best);
   const backprop = (r?.method ?? runForm.read().method) === "backprop";
   $("statBestLabel").textContent = backprop ? "Luckiest episode" : "Luckiest candidate";
-  const now = latestValues(r?.its ?? [], r?.startHeld ?? null);
-  const keyText = (name: string, v: number | null): string => (v === null ? name : `${name} ${v.toFixed(1)}`);
   $("graphCard").hidden = !r;
-  $("keyTrain").textContent = keyText("train mean", now.train);
-  $("keyBest").textContent = keyText(backprop ? "luckiest episode" : "luckiest candidate", now.best);
-  $("keyHeld").textContent = keyText("held-out", now.held);
+  $("keyBest").textContent = backprop ? "luckiest episode, own scale" : "luckiest candidate, own scale"; // the values stand in the KPIs above
   const tip = (backprop ? "Reward of the best training episode in the latest update." : "Reward of the best candidate on its training episodes in the latest iteration.") + " Mostly luck: on held-out worlds it scores about like the current brain.";
   $("statBestTip").dataset.tip = tip;
   $("statBestTip").ariaLabel = tip;
   $("statTrain").textContent = fixed(last?.train);
   $("statTime").textContent = last ? durationText(last.seconds) : EMPTY;
-  for (const dd of document.querySelectorAll<HTMLElement>(".stats dd")) dd.classList.toggle("empty", dd.textContent === EMPTY);
+  for (const dd of document.querySelectorAll<HTMLElement>(".kpis dd, #statHeld")) dd.classList.toggle("empty", dd.textContent === EMPTY);
   graph.setData(r?.its ?? [], r?.startHeld ?? null);
   renderTable(r, heldIt);
+  grid.setBadges(badges(r, heldIt));
   const canSave = !!r?.latest;
   $<HTMLButtonElement>("saveFile").disabled = !canSave;
   $<HTMLButtonElement>("saveBrowser").disabled = !canSave;
 }
 
+// "at iteration 40" for the latest held-out check.
+const iterText = (iter: number, method: TrainMethod): string => `checked at ${method === "backprop" ? "update" : "iteration"} ${iter}`;
+
+// The held-out change since the start per env, for the tile badges; none before the first check after a start or rebase.
+function badges(r: Run | null, heldIt: RlIteration | undefined): (Badge | null)[] {
+  if (!r?.startPerEnv || !heldIt?.perEnv || heldIt.perEnv.length !== r.envs.length) return [];
+  return r.envs.map((_, k) => change(heldIt.perEnv![k]!, r.startPerEnv![k]!));
+}
+
 function renderTable(r: Run | null, heldIt: RlIteration | undefined): void {
-  const table = $("envTable");
-  const body = table.querySelector("tbody")!;
-  table.hidden = !r?.startPerEnv || r.envs.length < 2;
+  const box = $<HTMLDetailsElement>("perEnv");
+  const body = $("envTable").querySelector("tbody")!;
+  box.hidden = !r?.startPerEnv || r.envs.length < 2;
   body.replaceChildren();
-  if (table.hidden || !r) return;
+  if (box.hidden || !r) return;
   r.envs.forEach((e, k) => {
     const row = body.insertRow();
     const start = r.startPerEnv![k]!;
@@ -624,7 +697,7 @@ function saveBrowser(): void {
 function draw(now: number): void {
   const shown = grid.draw(now);
   const on = input("brainOn").checked;
-  if (on && shown && run && grid.current) {
+  if (on && shown && run && grid.current && !grid.current.preview) {
     brainReplay.setGenome(run.envs[0]!, run.plan, grid.current.genome);
     brainReplay.draw(shown.rec, shown.frame);
   }
@@ -679,7 +752,6 @@ const speedRadios = document.querySelectorAll<HTMLInputElement>("input[name=spee
 function syncMaxNote(): void {
   $("maxNote").hidden = grid.speed !== 0 || !$("note").hidden;
 }
-const tilesBox = $("tiles");
 function applySpeed(v: number, wasMax: boolean): void {
   grid.speed = v;
   const max = v === 0;
@@ -697,20 +769,38 @@ speedRadios.forEach((el) => {
   });
 });
 grid.onOpen = (k) => zoom.open(k);
+const turnPage = (d: number): void => {
+  page += d;
+  layoutTiles();
+};
+$("pagePrev").addEventListener("click", () => turnPage(-1));
+$("pageNext").addEventListener("click", () => turnPage(1));
 grid.onFinished = () => {
   if (state !== "idle" && grid.speed > 0) send({ type: "show" }); // the tiles played to the end: ask for the next best candidate
 };
+
+// Sidebar tabs: one settings group at a time, so the laptop height holds it without a long scroll.
+const tabs = document.querySelectorAll<HTMLButtonElement>(".side-tabs [data-tab]");
+function showTab(id: string): void {
+  for (const t of tabs) {
+    const on = t.dataset.tab === id;
+    t.setAttribute("aria-selected", String(on));
+    $(t.dataset.tab!).classList.toggle("tab-off", !on);
+  }
+}
+tabs.forEach((t) => t.addEventListener("click", () => showTab(t.dataset.tab!)));
+showTab("settings");
 
 initTooltips($("tooltip"));
 bindGentle($<HTMLInputElement>("gentle"), (on) => send({ type: "gentle", on }));
 designForm.fill(DEFAULT_DESIGN);
 runForm.fill(DEFAULT_RUN);
-grid.setCount(DEFAULT_TILES);
 fillSaved();
 showEnvs();
 showCustom();
 render();
 setState("idle");
+showTiles();
 requestAnimationFrame(draw);
 void fetch(FOUNDERS_URL)
   .then((r) => (r.ok ? r.json() : null))

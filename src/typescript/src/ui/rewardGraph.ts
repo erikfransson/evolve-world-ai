@@ -8,7 +8,7 @@ export const HELD_COLOR = "#3ddc97";
 const GRID_COLOR = "rgba(143, 174, 159, 0.15)";
 const PAD = { left: 52, right: 12, top: 12, bottom: 36 }; // CSS px
 
-const nice = (v: number): string => (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(1));
+const nice = (v: number): string => (Math.abs(v) >= 100 ? v.toFixed(0) : Math.abs(v) < 0.05 ? "0.0" : v.toFixed(1)); // never "-0.0"
 
 interface Point {
   iter: number;
@@ -44,7 +44,10 @@ export function latestValues(its: readonly RlIteration[], start: number | null):
 
 const DOT_LIMIT = 150; // more held-out checks than this and the dots would blur into a band, so only the line is drawn
 const GAP = 18; // CSS px between the two panels, enough to keep their facing y labels apart
-const LUCK_SHARE = 0.3; // the luckiest panel's share of the plot height
+const LUCK_SHARE = 0.26; // the luckiest panel's share of the plot height
+const UP_FILL = "61, 220, 151"; // rgb of HELD_COLOR, for the area above the start
+const DOWN_FILL = "248, 113, 113"; // rgb of the area below the start
+const PANEL_BG = "rgba(3, 12, 9, 0.35)";
 
 // The y range of a panel: its finite values plus a margin, so each panel fills its height however far apart the panels' curves are.
 export function fitRange(vals: Iterable<number>): { lo: number; hi: number } {
@@ -60,15 +63,30 @@ export function fitRange(vals: Iterable<number>): { lo: number; hi: number } {
   return { lo: lo - pad, hi: hi + pad };
 }
 
+// The trend of a noisy curve: a centred moving average over about a twentieth of the points (at least 2 each side), narrower at the ends.
+export function smooth(pts: readonly Point[]): Point[] {
+  const n = pts.length;
+  const h = Math.max(2, Math.round(n / 40));
+  const sum = new Float64Array(n + 1);
+  for (let i = 0; i < n; i++) sum[i + 1] = sum[i]! + pts[i]!.v;
+  return pts.map((p, i) => {
+    const lo = Math.max(0, i - h);
+    const hi = Math.min(n, i + h + 1);
+    return { iter: p.iter, v: (sum[hi]! - sum[lo]!) / (hi - lo) };
+  });
+}
+
 interface Curve {
   pts: readonly Point[];
   color: string;
   width: number;
-  dots: boolean;
+  dots?: boolean;
+  glow?: boolean;
 }
 
-// Draws the reward curves into a cssW x cssH area as two panels on one iteration axis: train mean (thin) and held-out checks (bold, with dots) on top,
-// and below, on its own scale, the luckiest candidate, which runs several times higher and would flatten the others on a shared axis.
+// Draws the reward curves into a cssW x cssH area as two panels on one iteration axis. On top: held-out checks (bold and glowing, with the area
+// against the start value filled green above and red below, the latest value marked), and the train mean as faint noise with its trend.
+// Below, on its own scale, the luckiest candidate, which runs several times higher and would flatten the others on a shared axis.
 export function drawRewardGraph(ctx: CanvasRenderingContext2D, its: readonly RlIteration[], start: number | null, cssW: number, cssH: number): void {
   ctx.clearRect(0, 0, cssW, cssH);
   const x0 = PAD.left;
@@ -81,13 +99,24 @@ export function drawRewardGraph(ctx: CanvasRenderingContext2D, its: readonly RlI
   for (const it of its) if (it.held !== null) held.push({ iter: it.iter, v: it.held });
   const last = Math.max(1, its.length ? its[its.length - 1]!.iter : 1);
   const px = (i: number): number => x0 + (i / last) * w;
-  ctx.font = graphFont();
+  const font = graphFont();
+  ctx.font = font;
   ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  const maxPts = Math.max(2, Math.floor(w));
 
-  // One panel: grid, left axis and y labels, then its curves on a y scale fitted to them alone.
-  const panel = (top: number, h: number, curves: readonly Curve[], labels: number): void => {
+  const line = (pts: readonly Point[], py: (v: number) => number): void => {
+    ctx.beginPath();
+    pts.forEach((p, k) => (k === 0 ? ctx.moveTo(px(p.iter), py(p.v)) : ctx.lineTo(px(p.iter), py(p.v))));
+    if (pts.length === 1) ctx.lineTo(px(pts[0]!.iter) + 1, py(pts[0]!.v));
+  };
+
+  // One panel: backdrop, grid and y labels, whatever `under` draws, then its curves on a y scale fitted to them alone; returns the scale.
+  const panel = (top: number, h: number, curves: readonly Curve[], labels: number, under: (py: (v: number) => number) => void = () => {}): ((v: number) => number) => {
     const { lo, hi } = fitRange(curves.flatMap((c) => c.pts.map((p) => p.v)));
     const py = (v: number): number => top + h - ((v - lo) / (hi - lo)) * h;
+    ctx.fillStyle = PANEL_BG;
+    ctx.fillRect(x0, top, w, h);
     const marks = labels === 3 ? [lo, (lo + hi) / 2, hi] : [lo, hi];
     ctx.lineWidth = 1;
     ctx.strokeStyle = GRID_COLOR;
@@ -97,53 +126,133 @@ export function drawRewardGraph(ctx: CanvasRenderingContext2D, its: readonly RlI
       ctx.lineTo(x0 + w, py(v));
     }
     ctx.stroke();
-    ctx.strokeStyle = AXIS;
-    ctx.beginPath();
-    ctx.moveTo(x0, top);
-    ctx.lineTo(x0, top + h);
-    ctx.lineTo(x0 + w, top + h);
-    ctx.stroke();
     ctx.fillStyle = LABEL;
     ctx.textAlign = "right";
     ctx.textBaseline = "middle";
-    for (const v of marks) ctx.fillText(nice(v), x0 - 5, py(v));
+    for (const v of marks) ctx.fillText(nice(v), x0 - 6, py(v));
+    under(py);
     for (const c of curves) {
       if (c.pts.length === 0) continue;
-      const pts = thin(c.pts, Math.max(2, Math.floor(w)));
+      const pts = thin(c.pts, maxPts);
       ctx.strokeStyle = c.color;
       ctx.fillStyle = c.color;
       ctx.lineWidth = c.width;
-      ctx.beginPath();
-      pts.forEach((p, k) => (k === 0 ? ctx.moveTo(px(p.iter), py(p.v)) : ctx.lineTo(px(p.iter), py(p.v))));
-      if (pts.length === 1) ctx.lineTo(px(pts[0]!.iter) + 1, py(pts[0]!.v));
+      if (c.glow) {
+        ctx.shadowColor = c.color;
+        ctx.shadowBlur = 12;
+      }
+      line(pts, py);
       ctx.stroke();
+      ctx.shadowBlur = 0;
       if (c.dots && pts.length <= DOT_LIMIT) {
         ctx.beginPath();
         for (const p of pts) {
-          ctx.moveTo(px(p.iter) + 3, py(p.v));
-          ctx.arc(px(p.iter), py(p.v), 3, 0, 2 * Math.PI);
+          ctx.moveTo(px(p.iter) + 2.5, py(p.v));
+          ctx.arc(px(p.iter), py(p.v), 2.5, 0, 2 * Math.PI);
         }
         ctx.fill();
       }
     }
+    return py;
   };
+
   const train = its.map((it) => ({ iter: it.iter, v: it.train }));
   const best = its.map((it) => ({ iter: it.iter, v: it.best }));
-  panel(PAD.top, mainH, [{ pts: train, color: TRAIN_COLOR, width: 1, dots: false }, { pts: held, color: HELD_COLOR, width: 2.5, dots: true }], 3);
-  const luckTop = PAD.top + mainH + GAP;
-  panel(luckTop, luckH, [{ pts: best, color: BEST_COLOR, width: 1, dots: false }], 2);
+  const faint = (hex: string): string => `${hex}55`; // the raw, noisy values behind their trend
+  const top = PAD.top;
+  // Under the curves: the held-out area against the start, green above and red below, and the start as a dashed line.
+  const under = (py: (v: number) => number): void => {
+    if (start === null) return;
+    const base = py(start);
+    if (held.length > 1) {
+      const pts = thin(held, maxPts);
+      for (const [above, rgb] of [[true, UP_FILL], [false, DOWN_FILL]] as const) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x0, above ? top : base, w, above ? base - top : top + mainH - base);
+        ctx.clip();
+        const g = ctx.createLinearGradient(0, above ? top : top + mainH, 0, base);
+        g.addColorStop(0, `rgba(${rgb}, 0.38)`);
+        g.addColorStop(1, `rgba(${rgb}, 0.02)`);
+        ctx.fillStyle = g;
+        line(pts, py);
+        ctx.lineTo(px(pts[pts.length - 1]!.iter), base);
+        ctx.lineTo(px(pts[0]!.iter), base);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+    ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = "rgba(230, 244, 234, 0.35)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x0, base);
+    ctx.lineTo(x0 + w, base);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  };
+  const py = panel(
+    top,
+    mainH,
+    [
+      { pts: train, color: faint(TRAIN_COLOR), width: 1 },
+      { pts: smooth(train), color: TRAIN_COLOR, width: 1.75 },
+      { pts: held, color: HELD_COLOR, width: 3, dots: true, glow: true },
+    ],
+    3,
+    under,
+  );
+  // The latest held-out value: a haloed marker, a bracket down to the start and the change next to it.
+  const now = held[held.length - 1];
+  if (now) {
+    const x = px(now.iter);
+    const y = py(now.v);
+    if (start !== null && held.length > 1 && Math.abs(now.v - start) > 1e-9) {
+      const up = now.v > start;
+      ctx.strokeStyle = up ? HELD_COLOR : `rgb(${DOWN_FILL})`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(x, py(start));
+      ctx.lineTo(x, y);
+      ctx.stroke();
+      const d = now.v - start;
+      const text = `${d > 0 ? "+" : "−"}${nice(Math.abs(d))}`;
+      ctx.font = `600 ${font}`;
+      ctx.textAlign = "right";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = up ? HELD_COLOR : `rgb(${DOWN_FILL})`;
+      ctx.fillText(text, x - 8, (py(start) + y) / 2);
+      ctx.font = font;
+    }
+    ctx.fillStyle = `rgba(${UP_FILL}, 0.22)`;
+    ctx.beginPath();
+    ctx.moveTo(x + 9, y);
+    ctx.arc(x, y, 9, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.fillStyle = "#e6f4ea";
+    ctx.strokeStyle = HELD_COLOR;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(x + 4.5, y);
+    ctx.arc(x, y, 4.5, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.stroke();
+  }
+  const luckTop = top + mainH + GAP;
+  panel(luckTop, luckH, [{ pts: best, color: faint(BEST_COLOR), width: 1 }, { pts: smooth(best), color: BEST_COLOR, width: 1.5 }], 2);
 
   ctx.fillStyle = LABEL;
   ctx.textBaseline = "top";
   const ticks = w >= 240 ? 4 : 2;
   for (let k = 0; k <= ticks; k++) {
     ctx.textAlign = k === 0 ? "left" : k === ticks ? "right" : "center";
-    ctx.fillText(`${Math.round((last * k) / ticks)}`, x0 + (w * k) / ticks, luckTop + luckH + 4);
+    ctx.fillText(`${Math.round((last * k) / ticks)}`, x0 + (w * k) / ticks, luckTop + luckH + 5);
   }
   ctx.textAlign = "center";
   ctx.fillText("iteration", x0 + w / 2, cssH - 14);
   ctx.save();
-  ctx.translate(11, PAD.top + mainH / 2);
+  ctx.translate(11, top + mainH / 2);
   ctx.rotate(-Math.PI / 2);
   ctx.textBaseline = "middle";
   ctx.fillText("reward", 0, 0);
