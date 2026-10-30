@@ -31,6 +31,7 @@ export interface PpoOptions {
   repeat: number; // ticks one sampled action is held
   everyTick: boolean; // the brain acts every tick and only the sampled noise is held `repeat` ticks, as an offset (founders steer every tick)
   targetKl: number; // stop the update's epochs when a minibatch's approx KL passes 1.5 x this; 0 never stops
+  logStdMin?: number; // floor of the learned log-std, default LOG_STD_RANGE[0]
   diag?: boolean; // fill Ppo.lastDiag after every update (no effect on the training)
 }
 
@@ -762,7 +763,7 @@ export class Ppo {
         this.policyAdam.step(this.theta, gPol);
         this.stdAdam.step(this.logStd, gStd);
         this.criticAdam.step(this.critic, gCrit);
-        for (let a = 0; a < ACTIONS; a++) this.logStd[a] = Math.min(LOG_STD_RANGE[1], Math.max(LOG_STD_RANGE[0], this.logStd[a]!));
+        for (let a = 0; a < ACTIONS; a++) this.logStd[a] = Math.min(LOG_STD_RANGE[1], Math.max(o.logStdMin ?? LOG_STD_RANGE[0], this.logStd[a]!));
       }
     }
     if (before) this.lastDiag = this.diagFinish(before);

@@ -9,6 +9,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { layerSizes } from "./sim/brain.ts";
+import { DESIGN_PANEL, designLearner } from "./sim/rl/designPanel.ts";
 import { layoutConfig, poolLearner, randomLearner, scoreLearner } from "./sim/rl/env.ts";
 import type { EnvSpec, Learner } from "./sim/rl/env.ts";
 import { ENVS, envById } from "./sim/rl/envs.ts";
@@ -32,6 +33,7 @@ const { values } = parseArgs({
     lr: { type: "string", default: "0.003" },
     logstd: { type: "string", default: "-0.5" },
     entropy: { type: "string", default: "0" },
+    "logstd-min": { type: "string", default: "-3" },
     repeat: { type: "string", default: "3" },
     "every-tick": { type: "boolean", default: false },
     "repeat-then": { type: "string" },
@@ -55,14 +57,15 @@ const num = (k: keyof typeof values): number => Number(values[k]);
 const pool = existsSync(values.pool!) ? parsePool(JSON.parse(readFileSync(values.pool!, "utf8"))).entries : null;
 const [kind, arg] = values.from!.split(/:(.*)/);
 const founder = kind === "founder" ? (JSON.parse(readFileSync(values.founders!, "utf8")).founders as { id: string; plan: Learner["plan"]; genome: number[] }[]).find((f) => f.id === arg) : undefined;
-const learner = founder ? { plan: founder.plan, genome: Float32Array.from(founder.genome) } : kind === "pool" && pool ? poolLearner(env, pool[Number(arg)]!) : kind === "random" ? randomLearner(env, Number(arg ?? 1)) : null;
+const design = kind === "design" ? DESIGN_PANEL.find((d) => d.id.startsWith(arg!)) : undefined;
+const learner = design ? designLearner(design) : founder ? { plan: founder.plan, genome: Float32Array.from(founder.genome) } : kind === "pool" && pool ? poolLearner(env, pool[Number(arg)]!) : kind === "random" ? randomLearner(env, Number(arg ?? 1)) : null;
 if (!learner) {
-  console.error("error: --from must be pool:N, random:SEED or founder:ID");
+  console.error("error: --from must be pool:N, random:SEED, founder:ID or design:pN (src/sim/rl/designPanel.ts)");
   process.exit(1);
 }
 const sizes = layerSizes(layoutConfig(env.world), learner.plan);
 const ppo = new Ppo(envList, learner, sizes, {
-  episodes: num("episodes"), epochs: num("epochs"), minibatch: num("minibatch"), lr: num("lr"), logStd: num("logstd"), entropy: num("entropy"), repeat: num("repeat"), gamma: num("gamma"), everyTick: values["every-tick"], targetKl: num("target-kl"), diag: values.diag !== undefined,
+  episodes: num("episodes"), epochs: num("epochs"), minibatch: num("minibatch"), lr: num("lr"), logStd: num("logstd"), entropy: num("entropy"), repeat: num("repeat"), gamma: num("gamma"), everyTick: values["every-tick"], targetKl: num("target-kl"), logStdMin: num("logstd-min"), diag: values.diag !== undefined,
 }, num("seed"), pool);
 const seeds = heldSeeds(num("eval"));
 // The mean over the envs of each env's mean on the held-out seeds, as the Arena's held-out score.
