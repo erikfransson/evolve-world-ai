@@ -5,7 +5,7 @@ import { collide, hurt, keepInside } from "./physics.ts";
 import type { Body, Contact } from "./physics.ts";
 import type { StatefulRng } from "./rng.ts";
 import type { Species } from "./species.ts";
-import { HIT_FOOD, HIT_NONE } from "./types.ts";
+import { HIT_FOOD, HIT_NONE, HIT_POISON } from "./types.ts";
 import type { CreatureState, HitKind } from "./types.ts";
 import type { Crowd } from "./crowd.ts";
 import type { World } from "./world.ts";
@@ -57,6 +57,7 @@ export class Contacts {
     if (eaten < 0) return HIT_NONE;
     const kind = this.items.kinds[eaten] as HitKind;
     if (kind === HIT_FOOD) m.eaten++;
+    else if (kind === HIT_POISON) m.poisonBites++;
     this.items.removeItem(eaten); // so no one else eats it this tick
     return kind;
   }
