@@ -31,6 +31,7 @@ export interface PpoOptions {
   repeat: number; // ticks one sampled action is held
   everyTick: boolean; // the brain acts every tick and only the sampled noise is held `repeat` ticks, as an offset (founders steer every tick)
   targetKl: number; // stop the update's epochs when a minibatch's approx KL passes 1.5 x this; 0 never stops
+  poisonPenalty?: number; // reward taken per poison item the learner eats (0: poison costs only the energy and the future food)
   logStdMin?: number; // floor of the learned log-std, default LOG_STD_RANGE[0]
   diag?: boolean; // fill Ppo.lastDiag after every update (no effect on the training)
 }
@@ -435,6 +436,7 @@ export interface RolloutTask {
   logStd: Float64Array;
   repeat: number;
   everyTick?: boolean; // as PpoOptions.everyTick
+  poisonPenalty?: number; // as PpoOptions.poisonPenalty
   gamma: number;
   lambda: number;
   criticHidden: number;
@@ -471,6 +473,8 @@ export function playRollout(env: EnvSpec, plan: Learner["plan"], task: RolloutTa
   let t = 0;
   let eaten = 0;
   let kills = 0;
+  let bites = 0; // poison bites already charged
+  const penalty = task.poisonPenalty ?? 0;
   // Stores the sample for this tick's input and means, and leaves each action's noise (std * eps) in held.
   const sampleAt = (input: Float32Array, u: Float64Array): void => {
     const at = n * stride;
@@ -510,13 +514,18 @@ export function playRollout(env: EnvSpec, plan: Learner["plan"], task: RolloutTa
     const me = eco.get(0);
     if (!me) return;
     rewards[n - 1]! += ((w.food ?? 0) + (w.early ?? 0) * earlyWeight(t, ticks)) * (me.eaten - eaten) + (w.kill ?? 0) * (me.kills - kills) + (w.survive ?? 0) * DT;
+    if (penalty > 0 && me.poisonBites > bites) {
+      rewards[n - 1]! -= penalty * (me.poisonBites - bites);
+      bites = me.poisonBites;
+    }
     eaten = me.eaten;
     kills = me.kills;
   }, act);
   // The rest of the reward (food on the dying tick, end energy, time left, rams) comes at the end, so the steps sum to the episode's.
   let sum = 0;
   for (let k = 0; k < n; k++) sum += rewards[k]!;
-  rewards[n - 1]! += result.reward - sum;
+  // The steps already hold the penalty of the bites the hook saw; the rest (a lethal bite, after which the learner is gone) is charged here.
+  rewards[n - 1]! += result.reward - penalty * result.poison - sum;
   // GAE, the episode ending at its last sample (time is in the critic's input, so the horizon is part of the state).
   const values = new Float64Array(n);
   for (let k = 0; k < n; k++) values[k] = criticNet.forward(critic, obs, k * stride)[0]!;
@@ -626,6 +635,7 @@ export class Ppo {
       logStd: this.logStd,
       repeat: o.repeat,
       everyTick: o.everyTick,
+      poisonPenalty: o.poisonPenalty,
       gamma: o.gamma,
       lambda: o.lambda,
       criticHidden: o.criticHidden,

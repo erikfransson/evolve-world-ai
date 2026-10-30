@@ -33,6 +33,7 @@ const { values } = parseArgs({
     lr: { type: "string", default: "0.003" },
     logstd: { type: "string", default: "-0.5" },
     entropy: { type: "string", default: "0" },
+    "poison-penalty": { type: "string", default: "0" },
     "logstd-min": { type: "string", default: "-3" },
     repeat: { type: "string", default: "3" },
     "every-tick": { type: "boolean", default: false },
@@ -65,7 +66,7 @@ if (!learner) {
 }
 const sizes = layerSizes(layoutConfig(env.world), learner.plan);
 const ppo = new Ppo(envList, learner, sizes, {
-  episodes: num("episodes"), epochs: num("epochs"), minibatch: num("minibatch"), lr: num("lr"), logStd: num("logstd"), entropy: num("entropy"), repeat: num("repeat"), gamma: num("gamma"), everyTick: values["every-tick"], targetKl: num("target-kl"), logStdMin: num("logstd-min"), diag: values.diag !== undefined,
+  episodes: num("episodes"), epochs: num("epochs"), minibatch: num("minibatch"), lr: num("lr"), logStd: num("logstd"), entropy: num("entropy"), repeat: num("repeat"), gamma: num("gamma"), everyTick: values["every-tick"], targetKl: num("target-kl"), poisonPenalty: num("poison-penalty"), logStdMin: num("logstd-min"), diag: values.diag !== undefined,
 }, num("seed"), pool);
 const seeds = heldSeeds(num("eval"));
 // The mean over the envs of each env's mean on the held-out seeds, as the Arena's held-out score.

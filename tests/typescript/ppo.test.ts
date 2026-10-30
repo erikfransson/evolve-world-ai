@@ -152,3 +152,19 @@ describe("Ppo", () => {
     expect(d.advStd).toBeGreaterThan(0);
   });
 });
+
+describe("poison penalty", () => {
+  it("lowers the return of an episode that eats poison, and nothing else", () => {
+    const env = envById("minefield")!;
+    const learner = randomLearner(env, 1);
+    const sizes = layerSizes(layoutConfig(env.world), learner.plan);
+    const ppo = new Ppo([env], learner, sizes, {}, 3);
+    let task: Parameters<typeof playRollout>[2] | undefined;
+    ppo.setEnvs([env]);
+    task = (ppo as unknown as { tasks(): Parameters<typeof playRollout>[2][] }).tasks()[0]!;
+    const plain = playRollout(env, learner.plan, { ...task, poisonPenalty: 0 }, null, {});
+    const pen = playRollout(env, learner.plan, { ...task, poisonPenalty: 2 }, null, {});
+    expect(pen.reward).toBe(plain.reward);
+    expect(pen.ret[0]!).toBeLessThan(plain.ret[0]! + 1e-9);
+  });
+});
