@@ -7,6 +7,7 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 ## Unreleased
 
 - Trials: a hall of fame keeps the 5 all-time best brains of the run and puts them back into every generation until 5 better ones replace them, so one generation on a layout without food in sight no longer loses the best brains (`ga.hallOfFame`, 0 turns it off). Trials runs evolve differently from before (fingerprint 727564408 -> 459613821) and learn faster on 3 of 3 test seeds. Founder-pool rebuilds (`buildPool`) use the same GA, so they change too.
+- Trials: the creature's brain runs on the WebAssembly kernel the other modes use, so evaluation is about 1.3x faster at the default brain and 2.8x with two hidden layers of 32. Fitness values change slightly (f32 sums), so a saved run replays a little differently; the world, the rendering and how well creatures learn stay the same. Without WebAssembly SIMD the JS brain runs as before.
 
 ## 0.3.0 (2026-10-31)
 

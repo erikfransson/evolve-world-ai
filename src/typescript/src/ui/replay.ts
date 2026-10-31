@@ -2,6 +2,7 @@ import type { SimConfig } from "../sim/config.ts";
 import { Episode } from "../sim/episode.ts";
 import { Population } from "../sim/population.ts";
 import { FRAME_FLOATS } from "../sim/trajectory.ts";
+import { WasmBrainBank } from "../sim/wasm/brainKernel.ts";
 import type { Trajectories } from "../sim/trajectory.ts";
 import type { Genome, PlaybackState } from "../sim/types.ts";
 import type { GenerationMessage, PastMessage } from "../worker/protocol.ts";
@@ -33,10 +34,12 @@ export class Replay {
   generation = -1; // generation being replayed
   private trajectories: Trajectories | null = null;
   private clock = 0; // ticks the best has run
+  private bank: WasmBrainBank | null = null; // the brain kernel of every replayed best in turn, so each load does not make a new one
 
   // The others always play, so switching the view never restarts the replay.
   load(source: ReplaySource, config: SimConfig): void {
-    this.best = new Episode(config, source.genome, source.layoutSeed, source.creatureIndex);
+    this.bank ??= WasmBrainBank.createSync();
+    this.best = new Episode(config, source.genome, source.layoutSeed, source.creatureIndex, true, this.bank);
     this.trajectories = source.trajectories;
     this.others = Array.from({ length: source.trajectories.offsets.length - 1 }, () => ({ x: 0, y: 0, heading: 0, energy: 0, alive: true }));
     this.generation = source.generation;
