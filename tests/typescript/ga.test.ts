@@ -1,6 +1,7 @@
 import { DEFAULT_CONFIG } from "../../src/typescript/src/sim/config.ts";
 import type { SelectionMethod } from "../../src/typescript/src/sim/config.ts";
-import { BIG_MUTATION, SELECTION_PICKERS, STAGNATION_BOOST, bigMutate, isStagnant, mutate, nextGeneration } from "../../src/typescript/src/sim/ga.ts";
+import { BIG_MUTATION, SELECTION_PICKERS, STAGNATION_BOOST, bigMutate, isStagnant, mutate, nextGeneration, updateHall } from "../../src/typescript/src/sim/ga.ts";
+import type { HallEntry } from "../../src/typescript/src/sim/ga.ts";
 import { Population } from "../../src/typescript/src/sim/population.ts";
 import { createRng } from "../../src/typescript/src/sim/rng.ts";
 import { testRng } from "./helpers.ts";
@@ -91,6 +92,42 @@ describe("nextGeneration", () => {
     }
     const out = nextGeneration(pop, fitness, ga, createRng(5), fresh);
     expect(same(out.data, expected.data)).toBe(true);
+  });
+});
+
+describe("hall of fame", () => {
+  it("keeps the fittest distinct genomes of all generations, fittest first, each at its best score", () => {
+    const { pop, fitness } = makePop(); // fitness 0..19, creature 3 scores 1
+    const hall: HallEntry[] = [];
+    updateHall(hall, 3, pop, fitness, 0);
+    expect(hall.map((e) => e.fitness)).toEqual([19, 18, 17]);
+    const low = new Float64Array(N).fill(0.5);
+    low[3] = 18.5; // a later generation with one strong creature
+    updateHall(hall, 3, pop, low, 1);
+    expect(hall.map((e) => [e.fitness, e.generation])).toEqual([[19, 0], [18.5, 1], [18, 0]]);
+    expect(same(hall[1]!.genome, pop.genome(3))).toBe(true);
+    expect(hall[1]!.genome.buffer).not.toBe(pop.data.buffer);
+    const twice = new Population(N, L); // every creature is the same genome as the hall's best
+    for (let i = 0; i < N; i++) twice.genome(i).set(hall[0]!.genome);
+    updateHall(hall, 3, twice, new Float64Array(N).fill(25), 2);
+    expect(hall.map((e) => [e.fitness, e.generation])).toEqual([[25, 2], [18.5, 1], [18, 0]]);
+    updateHall(hall, 2.5, pop, new Float64Array(N).fill(NaN), 3); // a fractional size rounds down, NaN never enters
+    expect(hall.map((e) => e.fitness)).toEqual([25, 18.5]);
+    updateHall(hall, 0, pop, fitness, 4);
+    expect(hall).toEqual([]);
+  });
+
+  it("puts the kept genomes first, skips elites among them and keeps the size", () => {
+    const { pop, fitness } = makePop();
+    const order = [...fitness.keys()].sort((a, b) => fitness[b] - fitness[a]);
+    const outside = Float32Array.from({ length: L }, () => -7);
+    const keep = [outside, pop.genome(order[0]).slice()];
+    const out = nextGeneration(pop, fitness, base, createRng(1), fresh, keep); // 2 elites, the first already kept
+    expect(out.size).toBe(N);
+    expect(same(out.genome(0), outside)).toBe(true);
+    expect(same(out.genome(1), pop.genome(order[0]))).toBe(true);
+    expect(same(out.genome(2), pop.genome(order[1]))).toBe(true);
+    expect(out.data.filter((v) => v === -7).length).toBe(L);
   });
 });
 

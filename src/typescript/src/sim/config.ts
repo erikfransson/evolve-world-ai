@@ -68,6 +68,7 @@ export interface SimConfig {
   ga: {
     selection: SelectionMethod;
     eliteFraction: number; // copied unchanged
+    hallOfFame: number; // the all-time fittest genomes of the run, put back into every generation; 0 = off
     parentFraction: number; // truncation: top fraction allowed to breed
     crossover: boolean; // uniform crossover between two parents
     mutationRate: number; // probability per gene
@@ -130,6 +131,7 @@ export const DEFAULT_CONFIG: SimConfig = {
   ga: {
     selection: "truncation",
     eliteFraction: 0.02,
+    hallOfFame: 5,
     parentFraction: 0.1,
     crossover: true,
     mutationRate: 0.05,

@@ -188,6 +188,15 @@ Brain drift, LiveWorld with its weight budget, seed 1, 300 min, both costs run s
 
 At the new costs the brain-weight budget binds from about 30 min (2017 x 3094 is 6.24 M, the birth cap), so the seasons barely move the population. Brains grow about 13% from 30 to 300 min (part of it is the Oracle's growing share), and the budget turns that into fewer creatures, not slower ticks. At the old costs the population swings 1330-3440 with the seasons and the Oracle is gone by 210 min. The weight budget, not the population cap, bounds the tick cost under free neurons.
 
+## Trials hall of fame (2026-10-31)
+
+Every creature of a generation shares one layout, so a layout with no food in sight scores everyone near zero and the elites (picked on that generation only) were random, losing the best genomes.
+New `ga.hallOfFame` (default 5, 0 = off): the 5 fittest distinct genomes of the whole run, each at its best score, go into the first slots of every next generation; this generation's elites that are not among them follow, then the children.
+A genome enters only by beating the 5th entry.
+Pop 150, defaults, 50 generations, hall 0 -> 5 (best ever, mean of the best over the last 10 generations, mean of the mean over the last 10):
+seed 1 415 -> 469, 346 -> 403, 89 -> 103; seed 2 462 -> 470, 385 -> 403, 104 -> 119; seed 3 409 -> 449, 319 -> 367, 91 -> 95.
+Better on all three seeds, kept. Trials fingerprint (`bench.ts --pop 300 --gens 12 --seed 2`) 727564408 -> 459613821.
+
 ## Ideas not yet tried
 - Evaluate each creature on two layouts to reduce layout luck.
 - Tournament with a larger size (5 to 7).
