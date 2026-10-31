@@ -3,6 +3,7 @@ import { layoutConfig, randomLearner, runEpisode } from "../../src/typescript/sr
 import { envById } from "../../src/typescript/src/sim/rl/envs.ts";
 import { createNodeRlPool } from "../../src/typescript/src/worker/nodePool.ts";
 import { Mlp, Ppo, playRollout } from "../../src/typescript/src/sim/rl/ppo.ts";
+import type { RolloutTask } from "../../src/typescript/src/sim/rl/ppo.ts";
 import { testRng } from "./helpers.ts";
 
 describe("Mlp", () => {
@@ -74,6 +75,15 @@ describe("Ppo", () => {
       expect(Array.from(ppo.theta)).toEqual(Array.from(serial.theta));
     }
   });
+  it("trains every env when there are more envs than episodes per update", async () => {
+    const envs = Array.from({ length: 7 }, () => env);
+    const ppo = new Ppo(envs, learner, sizes, { episodes: 3, epochs: 1 }, 7);
+    const played: number[] = [];
+    const player = { rollouts: async (tasks: readonly RolloutTask[]) => tasks.map((t) => (played.push(t.env), playRollout(envs[t.env]!, learner.plan, t, null, {}))) };
+    for (let k = 0; k < 3; k++) await ppo.stepWith(player);
+    expect(played).toEqual([0, 1, 2, 3, 4, 5, 6, 0, 1]);
+  });
+
   it("plays every tick with the held noise the same as a plain policy at repeat 1", () => {
     const a = new Ppo([env], learner, sizes, { episodes: 2, epochs: 1, repeat: 1 }, 7);
     const b = new Ppo([env], learner, sizes, { episodes: 2, epochs: 1, repeat: 1, everyTick: true }, 7);

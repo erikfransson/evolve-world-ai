@@ -75,6 +75,7 @@ export class EcoCreature {
   birthTick = 0;
   children = 0;
   eaten = 0; // food items eaten, poison not counted
+  poisonBites = 0; // poison items eaten (for the RL transfer battery)
   kills = 0; // prey eaten (hunts only, so an RL kill reward never pays a bump)
   bumpKills = 0; // creatures that died in a bump it survived (collision damage)
   species = 0; // index into the config's species; children keep their parent's
@@ -696,6 +697,7 @@ export class Ecosystem {
     m.birthTick = this.tick;
     m.children = 0;
     m.eaten = 0;
+    m.poisonBites = 0;
     m.kills = 0;
     m.bumpKills = 0;
     m.lastBirthTick = -Infinity;

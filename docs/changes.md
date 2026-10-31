@@ -7,6 +7,7 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 ## Unreleased
 
 - RL Arena redesign (dashboard): settings in sidebar tabs (Creature, Environments with a compact picker grouped by tag, Training); a sticky run bar with a Ready/Training/Paused/Finished pill and Save; the reward graph leads with the held-out value and its gain, glowing held-out line with the area against the start filled, train mean as raw plus trend, luckiest on its own scale. The tiles follow the environments in use: one per chosen env before a run (sample clips) and per running env during it (with its held-out change), Auto layouts for 1 to 3 envs, paged past 12. Replaces the fixed Tiles shown count, which hid envs
+- RL Arena backprop: every env now trains. With more envs than episodes per update (for example all 42 envs at 16 episodes), episode k always played env k, so envs 17 and up never trained; the start env now moves on by the update's episodes. Runs whose env count divides the episodes per update are unchanged.
 
 ## 0.2.9 (2026-10-29)
 
