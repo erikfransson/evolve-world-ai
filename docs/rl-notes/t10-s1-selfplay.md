@@ -73,6 +73,57 @@ Per design, long survival / food per min (sp3p1 minus livefixed): p1-tiny -0.09 
 Verdict S2: after the control, S1 with P = 1 is a modest gain, not a clear win. Median over 8 designs: long survival +0.11, long food +2.6 per min, bigger food +1.1 per min, bigger survival level, stings level to slightly up on bigger (+0.2 per min, 3 designs better, 2 worse). It helps most for designs with enough rays and memory (p3, p5, p6, p7) and hurts p2 and p8. About half of the designs win by CI on each measure, two lose, so it is not reliably better than training on Live-like envs. The fixed recipe on Live-like envs is the strong baseline to use (it beats the small-env recipe by a wide margin), and procedural worlds plus self-play add something on top for some bodies. Limits: 300 s runs, 2 training seeds for 5 of 8 designs, the control sees the battery's env ids, no repeat of the whole 8-design set.
 - Raw numbers per run in `runs/s2/*.log` (training held-out is on each arm's own scale).
 
+## S3: leave-env-out (2026-10-31)
+
+Raw outputs in `runs/s2/` (git-ignored), tables `runs/s2/s3_*.txt` from `probes/t10-s1-agg.py` (scopes added there: held2 = live-poison and live-commons, seen3 = live-now, live-patch, live-famine).
+The lock queue allowed 4 designs (p1-tiny, p3-mid, p6-big-brain, p8-few-wide-mem), 2 training seeds, 300 s each, M1 battery with 64 seeds, paired CIs. Delta cells are min / median / max over the 4 designs, then designs with CI above / below 0.
+Arms: lo3 = fixed recipe on live-now, live-patch, live-famine; small = nibble, far-food, corridor, patch, minefield; mix = nibble, live-now, far-food, live-patch, minefield, live-famine, stings, live-now rotated (half small, half live; live-now twice so each half has four slots); sp3p1 = S1 with food 3 and poison 1 (never trains on battery envs). Overlap: the long scope is live-now stretched to 240 s, so lo3 and mix have seen its base env; held2 envs were never trained on by any arm; the small scope contains minefield and stings (in mix) and patch, far-food, minefield (in small).
+
+Per-design absolute values are in the txt files.
+
+| comparison (A minus B)  | scope    | measure        | min    | median | max    | up | down |
+|-------------------------|----------|----------------|--------|--------|--------|----|------|
+| small minus lo3         | held2    | survival       | +0.02  | +0.15  | +0.24  | 2  | 0    |
+| small minus lo3         | held2    | food per min   | -3.70  | -0.85  | -0.58  | 0  | 3    |
+| small minus lo3         | held2    | poison per min | -2.39  | -1.09  | -0.63  | 0  | 3    |
+| small minus lo3         | long     | survival       | -0.18  | -0.17  | -0.02  | 0  | 3    |
+| small minus lo3         | long     | food per min   | -5.23  | -1.71  | -0.97  | 0  | 4    |
+| small minus lo3         | small    | food per min   | +2.39  | +6.27  | +6.48  | 4  | 0    |
+| sp3p1 minus lo3         | held2    | survival       | +0.06  | +0.15  | +0.23  | 4  | 0    |
+| sp3p1 minus lo3         | held2    | food per min   | -0.62  | +0.30  | +1.35  | 1  | 0    |
+| sp3p1 minus lo3         | held2    | poison per min | -2.17  | -0.69  | -0.66  | 0  | 4    |
+| sp3p1 minus lo3         | long     | survival       | -0.06  | +0.05  | +0.23  | 2  | 1    |
+| sp3p1 minus lo3         | long     | food per min   | -2.77  | +0.33  | +1.91  | 1  | 2    |
+| sp3p1 minus lo3         | small    | survival       | -0.02  | +0.24  | +0.28  | 3  | 0    |
+| sp3p1 minus lo3         | small    | food per min   | +0.35  | +1.85  | +2.99  | 2  | 0    |
+| mix minus lo3           | held2    | survival       | -0.05  | +0.03  | +0.03  | 0  | 1    |
+| mix minus lo3           | held2    | food per min   | +0.26  | +1.27  | +1.81  | 3  | 0    |
+| mix minus lo3           | held2    | poison per min | -0.58  | -0.13  | +0.90  | 1  | 1    |
+| mix minus lo3           | long     | survival       | -0.05  | +0.09  | +0.19  | 2  | 1    |
+| mix minus lo3           | long     | food per min   | +0.94  | +2.49  | +2.81  | 4  | 0    |
+| mix minus lo3           | small    | survival       | -0.07  | +0.06  | +0.08  | 3  | 1    |
+| mix minus lo3           | small    | food per min   | +1.28  | +2.87  | +3.85  | 4  | 0    |
+| mix minus small         | held2    | survival       | -0.22  | -0.07  | -0.00  | 0  | 3    |
+| mix minus small         | held2    | food per min   | +1.12  | +3.23  | +4.50  | 4  | 0    |
+| mix minus small         | long     | survival       | +0.12  | +0.21  | +0.27  | 4  | 0    |
+| mix minus small         | long     | food per min   | +2.74  | +5.44  | +7.72  | 4  | 0    |
+| mix minus small         | small    | food per min   | -4.29  | -2.42  | -1.11  | 0  | 4    |
+| mix minus sp3p1         | held2    | survival       | -0.20  | -0.11  | -0.06  | 0  | 4    |
+| mix minus sp3p1         | held2    | food per min   | -0.56  | +1.89  | +2.13  | 2  | 0    |
+| mix minus sp3p1         | held2    | poison per min | +0.17  | +1.59  | +1.59  | 3  | 0    |
+| mix minus sp3p1         | long     | survival       | -0.14  | +0.04  | +0.14  | 1  | 1    |
+| mix minus sp3p1         | long     | food per min   | +0.57  | +3.70  | +4.24  | 3  | 0    |
+
+Poison rows: "up" means more stings (worse).
+
+Reading:
+- Does Live-like training transfer to Live-like worlds it has not seen? For food, yes: lo3 reaches 3.0 to 8.2 food per min on live-poison and live-commons, and the small-env recipe 2.2 to 6.2, so lo3 is better by 0.6 to 3.7 per min (3 of 4 designs). For survival on the held-out envs, no: the small-env recipe survives longer there (+0.15 median), because it forages less and stings less. Training on Live-like envs buys food and costs stings, not survival.
+- sp3p1 never saw a battery env and has the best held-out survival (+0.15 median over lo3, 4 of 4 up) and fewer stings (0.7 to 2.2 per min fewer, 4 of 4), with food level to slightly higher. Its long-scope gain over lo3 is small and mixed (survival +0.05, food +0.3).
+- The mixed arm is the best food forager on every scope: +1.3 per min over lo3 on the held-out envs (3 of 4 up), +2.5 on long (4 of 4), and +2.9 on the small scope (4 of 4), with survival level to slightly up on long and small. It is better than the small-env recipe on long by +0.21 survival and +5.4 food per min (4 of 4), but loses small-scope food (-2.4 per min, 4 of 4 down) and held-out survival (-0.07, 3 down). It stings more than sp3p1 (+0.5 to +1.6 per min) and survives less on held-out envs than sp3p1 (-0.11, 4 of 4 down).
+- Competence is not lost by live-only training: lo3 on the small scope is within the small recipe's range except food (-6.3 per min vs small, 4 of 4), so the small envs do teach basics faster than lo3 does. The mix recovers most of it (mix minus lo3 +2.9 on the small scope).
+- Candidate for the Arena default env mix: the half small, half Live-like rotation (mix) for food and general competence. For survival and stings alone, S1 with the poison term is the safer trainer. The two could be combined (mix plus S1 episodes); not tested.
+- Limits: 4 designs, 2 seeds, 300 s; long overlaps the training env for lo3 and mix; one run per cell.
+
 ## Generator and reward (procEnv.ts, PROC_DEFAULTS)
 
 Every value is drawn from the episode seed, so a seed is one world and training seeds never repeat.
