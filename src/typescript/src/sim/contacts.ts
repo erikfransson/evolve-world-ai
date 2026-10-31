@@ -23,6 +23,7 @@ export const BIG_IMPACT = 15;
 export class Contacts {
   private readonly slain = new Set<CreatureState>(); // killed by a bump or a hunt this tick
   onBumpKill: ((survivor: CreatureState, victim: CreatureState) => void) | null = null; // each lethal bump with one survivor (analysis tools)
+  bumpKills = 0; // lethal bumps with one survivor in this world, the world total of the members' bumpKills (saved in the core)
   private readonly config: EcoConfig;
   private readonly items: World;
   private readonly crowd: Crowd;
@@ -204,6 +205,7 @@ export class Contacts {
     if (b.energy <= 0) this.slain.add(b);
     if (a.energy <= 0 === b.energy <= 0) return;
     this.table.members[a.energy > 0 ? i : j]!.bumpKills++;
+    this.bumpKills++;
     this.onBumpKill?.(a.energy > 0 ? a : b, a.energy > 0 ? b : a);
   }
 

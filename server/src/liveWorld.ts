@@ -442,6 +442,8 @@ export class LiveWorld {
       population: e.population,
       births: e.births,
       deaths: e.deaths,
+      lived: e.everLived,
+      kills: e.kills,
       food: e.food,
       poison: e.poison,
       viewers,

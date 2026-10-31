@@ -180,8 +180,8 @@ function renderStats(): void {
   if (s) {
     setTile("statPop", nf.format(s.population));
     setTile("statViewers", nf.format(s.viewers));
-    setTile("statBirths", nf.format(s.births));
-    setTile("statDeaths", nf.format(s.deaths));
+    setTile("statLived", s.lived === undefined ? null : nf.format(s.lived));
+    setTile("statKills", s.kills === undefined ? null : nf.format(s.kills));
     setTile("statFood", nf.format(s.food));
     setTile("statTime", durationText(s.simSeconds));
     setTile("statDepth", nf.format(s.depth));

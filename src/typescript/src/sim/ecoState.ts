@@ -342,10 +342,15 @@ export function decodeState(state: EcoState): DecodedState {
   const n = whole(cr.count, 0, MAX_CREATURES, "creature count");
   whole(core.tick, 0, Number.MAX_SAFE_INTEGER, "tick");
   for (const k of ["births", "deaths", "foodEaten", "poisonEaten", "food", "poison"] as const) whole(core[k], 0, Number.MAX_SAFE_INTEGER, k);
+  if (core.bumpKills !== undefined) whole(core.bumpKills, 0, Number.MAX_SAFE_INTEGER, "bumpKills");
   const nextId = whole(core.nextId, 0, Number.MAX_SAFE_INTEGER, "nextId");
   whole(core.rngState, -(2 ** 31), 2 ** 32, "rngState");
   for (const k of ["foodDue", "poisonDue"] as const) if (!(typeof core[k] === "number" && core[k] >= 0 && core[k] <= MAX_DUE)) invalid(`${k} is out of bounds`);
   if (!Array.isArray(core.counts) || core.counts.length !== species) invalid("species counts do not match the config");
+  for (const c of core.counts) {
+    if (!isObject(c)) invalid("a species count is malformed");
+    for (const k of ["births", "deaths", "eaten"] as const) whole(c[k], 0, Number.MAX_SAFE_INTEGER, `species ${k}`); // eaten feeds the Live kills total
+  }
   if (!Array.isArray(cr.plans) || cr.plans.length !== n) invalid("plan count does not match creature count");
   const it = state.items;
   const cells = Math.max(1, Math.ceil(config.world.width / Math.max(config.creature.rayLength, 4 * config.world.itemRadius, 1))) * Math.max(1, Math.ceil(config.world.height / Math.max(config.creature.rayLength, 4 * config.world.itemRadius, 1)));
@@ -457,5 +462,6 @@ export function restoreDecoded(d: DecodedState, pool: readonly PoolEntry[] | nul
     g += p[5]!;
     u += units;
   }
+  if (core.bumpKills === undefined) eco.bumpKills = eco.members.reduce((k, m) => k + m.bumpKills, 0); // an older save: the dead's bump kills are lost
   return eco;
 }
