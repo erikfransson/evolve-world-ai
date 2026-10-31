@@ -8,6 +8,7 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 - Trials: a hall of fame keeps the 5 all-time best brains of the run and puts them back into every generation until 5 better ones replace them, so one generation on a layout without food in sight no longer loses the best brains (`ga.hallOfFame`, 0 turns it off). Trials runs evolve differently from before (fingerprint 727564408 -> 459613821) and learn faster on 3 of 3 test seeds. Founder-pool rebuilds (`buildPool`) use the same GA, so they change too.
 - Trials: the creature's brain runs on the WebAssembly kernel the other modes use, so evaluation is about 1.3x faster at the default brain and 2.8x with two hidden layers of 32. Fitness values change slightly (f32 sums), so a saved run replays a little differently; the world, the rendering and how well creatures learn stay the same. Without WebAssembly SIMD the JS brain runs as before.
+- RL Arena memory envs (Flash, Glimpse, Truffles, Two stops) now run on the WebAssembly kernels like every other env: the senser packs its item rows without food while food is hidden. Food is hidden from rays on the same ticks as before and eating is unchanged; rewards differ slightly (f32), as for the other envs. Episodes with mid and big brains run 1.3 to 2x faster, the tiniest brains (one layer of 8) about 0.6 to 0.85x. Other envs, Ecosystem and Live are bit-identical
 
 ## 0.3.0 (2026-10-31)
 

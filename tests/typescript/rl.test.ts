@@ -10,6 +10,7 @@ import { placeLayout } from "../../src/typescript/src/sim/rl/layouts.ts";
 import { Es, centredRanks, standardise } from "../../src/typescript/src/sim/rl/es.ts";
 import { parseLibrary, serialiseLearner } from "../../src/typescript/src/sim/rl/library.ts";
 import { testRng } from "./helpers.ts";
+import { HIT_FOOD, HIT_POISON } from "../../src/typescript/src/sim/types.ts";
 
 describe("centredRanks", () => {
   it("maps ranks to [-0.5, 0.5] and shares ties", () => {
@@ -259,14 +260,47 @@ describe("env groups", () => {
 });
 
 describe("hidden food in envs", () => {
-  it("hides food only on the JS sense path, which RL envs use", () => {
+  // Per tick, whether any learner ray sees food and any sees the poison behind it, with food hidden for ticks 4 to 9.
+  const timeline = (wasm: boolean): string[] => {
     const env = envById("flash")!;
-    const config = envConfig(env, 1);
-    expect(config.eco.wasm).toBe(false);
-    const eco = new Ecosystem({ ...config, eco: { ...config.eco, wasm: true } }, null, { cast: castFor(env, config, randomLearner(env, 1), 1, null, {}) });
-    if (eco.wasm) expect(() => eco.setFoodHidden(true)).toThrow(/JS sense path/);
-    const r = runEpisode(env, randomLearner(env, 2), 3);
-    expect(r.seconds).toBeGreaterThan(0);
+    const base = envConfig(env, 1);
+    const config = { ...base, eco: { ...base.eco, wasm } };
+    const learner = randomLearner(env, 1);
+    const [cx, cy] = [300, 300];
+    const offsets = new Ecosystem(config, null, { cast: castFor(env, config, learner, 1, null, {}) }).get(0)!.creature.rayOffsets;
+    const cast = castFor(env, config, learner, 1, null, {}, { x: cx, y: cy, heading: -offsets[0]! }); // the first ray points along +x
+    const L = learner.plan.rayLength;
+    const items = [{ x: cx + 0.5 * L, y: cy, kind: HIT_FOOD }, { x: cx + 0.8 * L, y: cy, kind: HIT_POISON }] as const;
+    const eco = new Ecosystem(config, null, { cast, items });
+    expect(eco.wasm).toBe(wasm);
+    eco.detail = 0;
+    const out: string[] = [];
+    for (let t = 0; t < 14; t++) {
+      if (t === 4) eco.setFoodHidden(true);
+      if (t === 10) eco.setFoodHidden(false);
+      eco.prepareTick();
+      eco.sensePhase();
+      const c = eco.get(0)!.creature;
+      out.push(`${c.rays.some((r) => r.kind === HIT_FOOD) ? "F" : "-"}${c.rays.some((r) => r.kind === HIT_POISON) ? "P" : "-"}`);
+      c.outputs.fill(0);
+      eco.finishTick();
+    }
+    expect(eco.get(0)!.eaten).toBe(0); // the food stays put, so every tick tests the same geometry
+    return out;
+  };
+
+  it("hides food from the rays on the WASM path exactly when the JS path does", () => {
+    const js = timeline(false);
+    expect(js.slice(0, 4).every((s) => s[0] === "F")).toBe(true);
+    expect(js.slice(4, 10).every((s) => s === "-P")).toBe(true);
+    expect(js.slice(10).every((s) => s[0] === "F")).toBe(true);
+    if (wasmAvailable()) expect(timeline(true)).toEqual(js);
+  });
+
+  it("runs memory envs on the WASM kernels", () => {
+    const env = envById("flash")!;
+    expect(envConfig(env, 1).eco.wasm).toBe(wasmAvailable());
+    expect(runEpisode(env, randomLearner(env, 2), 3).seconds).toBeGreaterThan(0);
   });
 });
 
