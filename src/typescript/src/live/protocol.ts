@@ -132,6 +132,8 @@ export interface Stats {
   population: number;
   births: number;
   deaths: number;
+  lived?: number; // creatures ever in this world since its reset (founders, births, adds); absent from servers before it
+  kills?: number; // creatures killed by another since the reset (hunts and lethal bumps with one survivor); absent likewise
   food: number;
   poison: number;
   viewers: number;

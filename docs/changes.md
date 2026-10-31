@@ -7,6 +7,7 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 ## Unreleased
 
 - RL Arena backprop: every env now trains. With more envs than episodes per update (for example all 42 envs at 16 episodes), episode k always played env k, so envs 17 and up never trained; the start env now moves on by the update's episodes. Runs whose env count divides the episodes per update are unchanged.
+- Live page: the Births and Deaths tiles, nearly equal while the world sits at its cap, become two world totals since the last reset. "Ever lived" counts every creature that was ever in the world (founders, births, visitor adds, the living included). "Kills" counts creatures killed by another, by a hunt or by a lethal bump the other survived (a bump that kills both counts for no one). Population is now "Alive now". Saves keep the world total of bump kills (`core.bumpKills`); an older save starts it from the living creatures' bump kills, as hunts and the creature count were saved already. The simulation is unchanged.
 
 ## 0.2.9 (2026-10-29)
 

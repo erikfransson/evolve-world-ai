@@ -342,6 +342,7 @@ export function decodeState(state: EcoState): DecodedState {
   const n = whole(cr.count, 0, MAX_CREATURES, "creature count");
   whole(core.tick, 0, Number.MAX_SAFE_INTEGER, "tick");
   for (const k of ["births", "deaths", "foodEaten", "poisonEaten", "food", "poison"] as const) whole(core[k], 0, Number.MAX_SAFE_INTEGER, k);
+  if (core.bumpKills !== undefined) whole(core.bumpKills, 0, Number.MAX_SAFE_INTEGER, "bumpKills");
   const nextId = whole(core.nextId, 0, Number.MAX_SAFE_INTEGER, "nextId");
   whole(core.rngState, -(2 ** 31), 2 ** 32, "rngState");
   for (const k of ["foodDue", "poisonDue"] as const) if (!(typeof core[k] === "number" && core[k] >= 0 && core[k] <= MAX_DUE)) invalid(`${k} is out of bounds`);
@@ -457,5 +458,6 @@ export function restoreDecoded(d: DecodedState, pool: readonly PoolEntry[] | nul
     g += p[5]!;
     u += units;
   }
+  if (core.bumpKills === undefined) eco.bumpKills = eco.members.reduce((k, m) => k + m.bumpKills, 0); // an older save: the dead's bump kills are lost
   return eco;
 }
