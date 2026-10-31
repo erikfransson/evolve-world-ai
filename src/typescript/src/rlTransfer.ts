@@ -7,6 +7,7 @@
 // mean over envs, per design, then min, median and max over designs.
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
 import { parseArgs } from "node:util";
@@ -29,6 +30,7 @@ interface Job {
 }
 type Row = Record<Metric, number>;
 
+const fileHash = (path: string): string | null => (existsSync(path) ? createHash("sha1").update(readFileSync(path)).digest("hex").slice(0, 12) : null);
 const loadPool = (path: string): PoolEntry[] | null => (existsSync(path) ? parsePool(JSON.parse(readFileSync(path, "utf8"))).entries : null);
 const loadLibrary = (path: string): Library => parseLibrary(existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : null);
 
@@ -141,7 +143,7 @@ async function main(): Promise<void> {
   const sum = results.map((r) => ({ name: r.name, ...summarise(r, groups) }));
   console.log(`transfer battery${values.label ? ` [${values.label}]` : ""}: ${named.length} genomes x ${envs.length} envs x ${count} seeds (base ${TRANSFER_BASE}), ${threads} threads, ${f(wall, 1)} s wall`);
   console.log("scope small = competence (food, poison, time to first food); bigger and long = Live-like survival. Means over envs and seeds.");
-  const cols: [string, Metric, number][] = [["survival", "survival", 2], ["died", "died", 2], ["food/min", "foodPerMin", 2], ["poison/min", "poisonPerMin", 2], ["first s", "firstFood", 1], ["poisonE", "poisonEnergy", 1], ["endE", "energy", 1]];
+  const cols: [string, Metric, number][] = [["survival", "survival", 2], ["died", "died", 2], ["food/min", "foodPerMin", 2], ["poison/min", "poisonPerMin", 2], ["first s", "firstFood", 1], ["clear s", "clearTime", 1], ["poisonE", "poisonEnergy", 1], ["endE", "energy", 1]];
   const line = (a: string[]): string => a.map((x, i) => (i < 2 ? x.padEnd(i ? 8 : 16) : x.padStart(10))).join(" ");
   console.log(line(["genome", "scope", ...cols.map((c) => c[0])]));
   const scopes = (s: (typeof sum)[number]): [string, Row][] => [["all", s.all], ...Object.entries(s.byGroup)] as [string, Row][];
@@ -168,7 +170,7 @@ async function main(): Promise<void> {
     });
     const ci = (c: Ci, d: number): string => `${c.mean >= 0 ? "+" : ""}${f(c.mean, d)} [${f(c.lo, d)}, ${f(c.hi, d)}]`;
     console.log(`\npaired difference to baseline ${values.baseline} (paired over ${Math.min(count, base.seedCount)} seeds, mean over envs, 95% CI)`);
-    const pcols = cols.slice(0, 5).filter((c) => c[1] !== "died");
+    const pcols = cols.slice(0, 6).filter((c) => c[1] !== "died");
     for (const scope of ["all", "small", "bigger", "long"]) {
       console.log(`scope ${scope}: ${pcols.map((c) => c[0]).join(" | ")}`);
       for (const p of paired) {
@@ -186,7 +188,7 @@ async function main(): Promise<void> {
     }
   }
   if (values.out) {
-    const out = { format: "evolve-transfer-battery", version: 1, label: values.label, seedBase: TRANSFER_BASE, seedCount: count, wallSeconds: wall, threads, envs: envs.map((e) => ({ id: e.env.id, group: e.group })), metrics: METRICS, genomes: results, summary: sum, paired };
+    const out = { format: "evolve-transfer-battery", version: 1, label: values.label, assets: { pool: fileHash(values.pool!), library: fileHash(values.library!) }, seedBase: TRANSFER_BASE, seedCount: count, wallSeconds: wall, threads, envs: envs.map((e) => ({ id: e.env.id, group: e.group })), metrics: METRICS, genomes: results, summary: sum, paired };
     writeFileSync(resolve(values.out), JSON.stringify(out, (_, v) => (typeof v === "number" ? Math.round(v * 1e4) / 1e4 : v)) + "\n"); // 4 decimals keep the file small
   }
 }
