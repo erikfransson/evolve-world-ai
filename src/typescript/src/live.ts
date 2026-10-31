@@ -36,9 +36,15 @@ import { AddPanel } from "./live/addPanel.ts";
 import { parseFounders } from "./live/founders.ts";
 import { renderMapInfo } from "./live/mapInfo.ts";
 import { MapCache } from "./live/mapTerrain.ts";
+import { mapLoader } from "./live/mapAsset.ts";
+import { GROUND_FILES, LIVE_MAP, MAP_FILES } from "./live/mapFiles.ts";
+import { GroundBackdrop } from "./ui/groundBackdrop.ts";
+import { fitWorld } from "./ui/camera.ts";
+import { useRockFarm, warmRock } from "./ui/abyssRock.ts";
+import { rockFarm } from "./ui/rockFarm.ts";
 import { recastRays } from "./live/rayRecast.ts";
-import { paintMapLegend } from "./live/mapLegend.ts";
-import { mapVersion } from "./sim/maps/index.ts";
+import { paintMapLegendWhenSeen } from "./live/mapLegend.ts";
+import { mapSpec, mapVersion } from "./sim/maps/index.ts";
 
 // TODO(L6): admin panel. `?admin` opens a second socket to the owner's loopback admin port (ws://127.0.0.1:8788), sends {t:"auth", token}
 // with a token the owner pastes in, then {t:"get-config"} and {t:"set-config", changes}. See server/src/admin.ts.
@@ -239,8 +245,18 @@ function onHello(h: Hello): void {
   renderMapInfo($("info"), h);
 }
 
-// The ground and rock of a hand-designed map, built from its name on a worker (once per map and size); plain ground meanwhile.
-const maps = new MapCache();
+// The ground and rock of a hand-designed map, from the file the build ships, else built from its name on a worker (once per map and size); plain ground meanwhile.
+const maps = new MapCache(mapLoader(MAP_FILES));
+useRockFarm(rockFarm()); // rock images are built on workers, so the first view of the map does not stall the page
+const WARM_SCALE = 0.03; // a whole-map view: its rock images are the ones a first view of the map needs (abyssRock's cellFor is the same below about 0.08)
+// The Live map's ground as a picture, drawn from the first frame (before the hello) until the map is built and drawn sharp.
+const liveSpec = mapSpec(LIVE_MAP)!;
+const backdrop = new GroundBackdrop(liveSpec.width, liveSpec.height, GROUND_FILES[LIVE_MAP]!);
+backdrop.load(fitWorld(liveSpec.width, liveSpec.height, Math.max(1, canvas.clientWidth) * devicePixelRatio, Math.max(1, canvas.clientHeight) * devicePixelRatio));
+for (const name of Object.keys(MAP_FILES)) {
+  const s = mapSpec(name);
+  if (s) void maps.get(name, s.width, s.height).then((t) => t && warmRock(t, WARM_SCALE)); // fetched while the server's hello is on its way
+}
 let mapStale = false;
 function showMap(h: Hello): void {
   const name = h.map.name;
@@ -248,12 +264,13 @@ function showMap(h: Hello): void {
   const d = draw;
   // The server runs another design of this map than this page has: plain ground, and the pill says so, until the page is updated.
   mapStale = h.map.version !== undefined && h.map.version !== mapVersion(name);
+  if (d) d.backdrop = !mapStale && name === LIVE_MAP && h.world.width === liveSpec.width && h.world.height === liveSpec.height ? backdrop : null;
   renderStats();
   if (mapStale) return;
   void maps.get(name, h.world.width, h.world.height).then((t) => {
     if (t && draw === d) {
       d!.map = t; // a newer hello has its own
-      paintMapLegend($("info"), t);
+      paintMapLegendWhenSeen($("info"), t);
     }
   });
 }
@@ -575,8 +592,10 @@ function frame(now: number): void {
   camera.update(now);
   if (!draw) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
+    if (!backdrop.ready) return ctx.clearRect(0, 0, canvas.width, canvas.height); // clear: the page's CSS shows the ground pictures under the canvas meanwhile
     ctx.fillStyle = "#0b1d16";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+    backdrop.drawFitted(ctx, canvas.width, canvas.height, dpr);
     return;
   }
   // An empty world is still drawn: its ground and food stay in view until creatures are added again.

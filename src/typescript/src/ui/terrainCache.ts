@@ -49,6 +49,11 @@ export class TerrainCache {
   private h = 0;
   private readonly memo: CacheMemo = { ready: false, zoom: 0, area: { x0: 0, x1: 0, y0: 0, y1: 0 }, builtAt: -Infinity, lastZoom: 0, lastX: NaN, lastY: NaN, lastCovered: false };
 
+  // Whether the cached map was drawn with all its own images (no stand-ins), so what the last draw copied is the map as it looks.
+  get finished(): boolean {
+    return this.memo.ready && !this.unfinished;
+  }
+
   // Draws t into ctx (in world units) for the view, from the cache, rebuilding it after a zoom or when the view leaves the cached area;
   // false when it would be too large or the view moves too fast, and then the caller draws the map directly.
   draw(ctx: CanvasRenderingContext2D, t: Terrain, zoom: number, view: View, animating: boolean, now = performance.now()): boolean {
