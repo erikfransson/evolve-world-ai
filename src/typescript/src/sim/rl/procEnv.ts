@@ -47,7 +47,7 @@ export const PROC_DEFAULTS: ProcSpec = {
   energy: [100, 300],
   layouts: ["patch", "islands", "rooms", "fence"],
   openShare: 0.5,
-  foodWeight: 0.25,
+  foodWeight: 3, // 0.25 learned nothing in 300 s (standing still lives long); 3 beat the fixed recipe on Live-like survival, see t10-s1-selfplay.md
   lineageWeight: 0,
 };
 
