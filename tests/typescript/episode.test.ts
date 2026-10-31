@@ -5,6 +5,8 @@ import { Episode, poisonClearRadius, runEpisode } from "../../src/typescript/src
 import { HIT_POISON } from "../../src/typescript/src/sim/types.ts";
 import { createRng } from "../../src/typescript/src/sim/rng.ts";
 import { planOf, planUpkeep } from "../../src/typescript/src/sim/sensors.ts";
+import { setWasmDisabled } from "../../src/typescript/src/sim/wasm/loader.ts";
+import { WasmBrainBank } from "../../src/typescript/src/sim/wasm/brainKernel.ts";
 
 const cfg: SimConfig = {
   ...DEFAULT_CONFIG,
@@ -162,5 +164,21 @@ describe("brain kernel", () => {
     const wide: SimConfig = { ...cfg, creature: { ...cfg.creature, maxLifeSeconds: 2 }, brain: { ...cfg.brain, hiddenLayers: [1030] } };
     const g = randomGenome(layerSizes(wide), createRng(4));
     expect(runEpisode(wide, g, 2, 0)).toBe(jsFitness(wide, g, 2));
+  });
+
+  it("runs the JS brain when WebAssembly is disabled, also on a bank made before", () => {
+    const bank = WasmBrainBank.createSync();
+    runEpisode(cfg, rand(1), 9, 0); // the shared bank exists now
+    setWasmDisabled(true);
+    try {
+      for (let s = 1; s <= 3; s++) {
+        expect(runEpisode(cfg, rand(s), 9, 0)).toBe(jsFitness(cfg, rand(s), 9));
+        const e = new Episode(cfg, rand(s), 9, 0, false, bank);
+        while (!e.done) e.step();
+        expect(e.fitness()).toBe(jsFitness(cfg, rand(s), 9));
+      }
+    } finally {
+      setWasmDisabled(false);
+    }
   });
 });

@@ -8,6 +8,7 @@ import type { FrameRecorder } from "./trajectory.ts";
 import type { CreatureState, EpisodeView, Genome, HitKind, RayHit, Rng } from "./types.ts";
 import { World } from "./world.ts";
 import { MAX_BRAIN_SIZES, MAX_LAYER_NEURONS, WasmBrainBank } from "./wasm/brainKernel.ts";
+import { wasmAvailable } from "./wasm/loader.ts";
 
 const CLEAR_MARGIN = 10; // world units kept free of items around the start point
 const CLEAR_MAX_SHARE = 0.35; // of the shorter world side, so small worlds keep room for poison
@@ -72,7 +73,7 @@ export class Episode implements EpisodeView {
     this.rayOffsets = this.creature.rayOffsets;
     this.brain = this.creature.brain;
     this.view = view;
-    const given = !TRIALS_WASM ? null : bank === undefined ? WasmBrainBank.createSync() : bank;
+    const given = !TRIALS_WASM || !wasmAvailable() ? null : bank === undefined ? WasmBrainBank.createSync() : bank; // a given bank too, so setWasmDisabled holds
     this.bank = given && fitsKernel(this.brain.sizes) ? given : null;
     if (this.bank) {
       this.bank.set(0, this.brain.sizes, genome); // replaces the previous episode's brain, inputs and outputs zeroed

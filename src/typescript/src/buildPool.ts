@@ -104,7 +104,7 @@ function validate(config: SimConfig, genome: Float32Array, seed: number): { fitn
   let speed = 0;
   let turn = 0;
   for (let k = 0; k < VALIDATION_LAYOUTS; k++) {
-    const e = new Episode(config, genome, deriveSeed(seed, 0x7a11d, k), 0);
+    const e = new Episode(config, genome, deriveSeed(seed, 0x7a11d, k), 0, false); // no brain panel, so the kernel alone
     while (!e.done) {
       e.step();
       speed += Math.hypot(e.state.vx, e.state.vy);
