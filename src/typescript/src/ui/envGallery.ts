@@ -49,9 +49,6 @@ export class EnvGallery {
   private readonly total = el("span", "gallery-total");
   private picked: ReadonlySet<string> = new Set();
   private envs: readonly EnvSpec[] = [];
-  private readonly toggle = el("button", "mini gallery-toggle");
-  private compact = false;
-  private expanded = false;
 
   private readonly root: HTMLElement;
   private readonly on: GalleryHandlers;
@@ -71,35 +68,18 @@ export class EnvGallery {
     const head = el("div", "gallery-head");
     const title = el("h2", "", "Environments");
     const actions = el("div", "gallery-actions");
-    const all = el("button", "mini", "Select all");
-    const none = el("button", "mini", "Clear all");
+    const all = el("button", "mini", "All");
+    const none = el("button", "mini", "None");
+    all.title = "Choose every environment";
+    none.title = "Clear the choice";
     for (const b of [all, none]) b.type = "button";
     all.addEventListener("click", () => this.on.setMany(this.envs.map((e) => e.id), true));
     none.addEventListener("click", () => this.on.setMany(this.envs.map((e) => e.id), false));
-    this.toggle.type = "button";
-    this.toggle.addEventListener("click", () => {
-      this.expanded = !this.expanded;
-      this.layout();
-    });
-    actions.append(all, none, this.toggle);
+    actions.append(all, none);
     head.append(title, this.total, actions);
-    const hint = el("p", "hint gallery-hint", "Click cards to choose. Each iteration the creature trains in all chosen environments. Small worlds learn within a few dozen iterations, bigger ones take longer.");
-    this.root.append(head, hint, this.body);
-  }
-
-  // Compact while a run is on screen (paused or finished): the cards fold away behind a toggle, so the tiles stay in view.
-  setCompact(on: boolean): void {
-    if (on === this.compact) return;
-    this.compact = on;
-    this.expanded = false;
-    this.layout();
-  }
-
-  private layout(): void {
-    const folded = this.compact && !this.expanded;
-    this.root.classList.toggle("folded", folded);
-    this.toggle.hidden = !this.compact;
-    this.toggle.textContent = folded ? "Change environments" : "Hide cards";
+    const hint = el("p", "hint gallery-hint", "The creature trains in every chosen one. Small worlds learn within a few dozen iterations, bigger ones take longer.");
+    const lock = el("p", "hint gallery-lock", "Pause to change them; the change applies on Resume.");
+    this.root.append(head, hint, lock, this.body);
   }
 
   // Rebuilds the cards for a new env list; clips already recorded are reused.
@@ -119,8 +99,8 @@ export class EnvGallery {
         const name = el("span", "group-name", group);
         const count = el("span", "group-count");
         const ids = list.map((e) => e.id);
-        const all = el("button", "mini", "Select all");
-        const none = el("button", "mini", "Clear");
+        const all = el("button", "mini", "All");
+        const none = el("button", "mini", "None");
         for (const b of [all, none]) b.type = "button";
         // Buttons sit inside <summary>: stop the click from folding the group.
         all.addEventListener("click", (ev) => {
@@ -142,12 +122,12 @@ export class EnvGallery {
       }),
     );
     this.sync(picked);
-    this.layout();
   }
 
   private card(env: EnvSpec): HTMLElement {
     const card = el("div", "env-card");
     card.tabIndex = 0;
+    card.title = env.description;
     card.setAttribute("role", "button");
     const canvas = el("canvas");
     canvas.setAttribute("aria-hidden", "true");
@@ -213,23 +193,22 @@ export class EnvGallery {
     this.paint(c, 0);
   }
 
-  // Animates visible cards while playing; a run starting stops all drawing.
+  // Animates visible cards while playing; while a run trains they hold a still frame (painted once each, when first on screen) to save CPU.
   play(on: boolean): void {
     this.playing = on;
-    if (on && !this.raf) this.raf = requestAnimationFrame(this.tick);
+    if (!this.raf) this.raf = requestAnimationFrame(this.tick);
   }
 
   private tick = (now: number): void => {
     this.raf = 0;
-    if (!this.playing) return;
-    for (const c of this.cards.values()) if (c.rec && this.visible.has(c.el)) this.paint(c, now);
+    for (const c of this.cards.values()) if (c.rec && this.visible.has(c.el)) this.paint(c, now, !this.playing);
     this.raf = requestAnimationFrame(this.tick);
   };
 
-  private paint(c: Card, now: number): void {
+  private paint(c: Card, now: number, still = false): void {
     const rec = c.rec;
     if (!rec || c.canvas.clientWidth <= 0) return;
-    const seconds = this.reduced ? rec.frames * rec.dt * 0.4 : ((now - c.t0) / 1000) * CLIP_SPEED;
+    const seconds = this.reduced || still ? rec.frames * rec.dt * 0.4 : ((now - c.t0) / 1000) * CLIP_SPEED;
     const f = frameAt(rec, seconds);
     const key = `${f}|${c.canvas.clientWidth}|${c.canvas.clientHeight}`;
     if (key === c.drawn) return;

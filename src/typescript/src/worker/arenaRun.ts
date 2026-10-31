@@ -9,6 +9,7 @@ import type { RlTrainer } from "../sim/rl/trainer.ts";
 import type { RlPool, RlSetup } from "./rlPool.ts";
 import { Pacer, gentleController } from "./pacer.ts";
 import type { DutyController } from "./pacer.ts";
+import { MAX_SHOW_TILES } from "./rlProtocol.ts";
 import type { RlInMessage, RlOutMessage } from "./rlProtocol.ts";
 
 // One Arena training run: ES or backprop steps over the chosen envs, a held-out check every few steps, and a show of the latest best
@@ -139,7 +140,8 @@ export class ArenaRun {
   }
 
   private async show(tiles: number, iter: number, genome: Float32Array): Promise<void> {
-    const tasks = Array.from({ length: tiles }, (_, k) => ({ env: k % this.envs.length, genome, seed: deriveSeed(iter, k, 0x5404) }));
+    const count = this.start.tilesPerEnv ? Math.min(MAX_SHOW_TILES, tiles * this.envs.length) : tiles;
+    const tasks = Array.from({ length: count }, (_, k) => ({ env: k % this.envs.length, genome, seed: deriveSeed(iter, k, 0x5404) }));
     const recordings = await this.pool.recordings(tasks, 2, (k) => k === 0);
     if (this.stopped) return;
     this.post({ type: "show", iter, genome, recordings }, recordings.flatMap(recordingBuffers));
