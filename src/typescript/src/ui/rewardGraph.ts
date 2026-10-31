@@ -208,7 +208,7 @@ export function drawRewardGraph(ctx: CanvasRenderingContext2D, its: readonly RlI
   if (now) {
     const x = px(now.iter);
     const y = py(now.v);
-    if (start !== null && held.length > 1 && Math.abs(now.v - start) > 1e-9) {
+    if (start !== null && held.length > 1 && nice(Math.abs(now.v - start)) !== nice(0)) { // no "−0.0" for a change that rounds away
       const up = now.v > start;
       ctx.strokeStyle = up ? HELD_COLOR : `rgb(${DOWN_FILL})`;
       ctx.lineWidth = 1.5;

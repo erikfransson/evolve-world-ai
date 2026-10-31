@@ -130,6 +130,7 @@ export class TileGrid {
       t.box.classList.remove("empty");
       for (const e of [t.title, t.sub, t.stats, t.badge]) e.textContent = "";
       t.badge.hidden = true;
+      t.canvas.getContext("2d")?.clearRect(0, 0, t.canvas.width, t.canvas.height); // setSlots keeps same-count canvases, so drop the old frame
     }
   }
 
