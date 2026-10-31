@@ -1,3 +1,7 @@
+import { readFileSync } from "node:fs";
+import { envById } from "../../src/typescript/src/sim/rl/envs.ts";
+import { checkLearner } from "../../src/typescript/src/sim/rl/library.ts";
+import type { Learner } from "../../src/typescript/src/sim/rl/env.ts";
 import { BLANK_ENV, randomLearner, runEpisode } from "../../src/typescript/src/sim/rl/env.ts";
 import { HELD_BASE } from "../../src/typescript/src/sim/rl/trainer.ts";
 import { GROUPS, METRICS, TRANSFER_BASE, batteryEnvs, pairedDifference, t975, tInterval, transferEpisode, transferSeeds } from "../../src/typescript/src/sim/rl/transfer.ts";
@@ -55,5 +59,23 @@ describe("design panel", () => {
       expect(a.genome.length).toBe(genomeLengthIn("ecosystem", p.plan));
       expect(Array.from(a.genome)).toEqual(Array.from(b.genome));
     }
+  });
+});
+
+describe("cleared episodes", () => {
+  it("keep the real elapsed time and the clear time, and count as survived", () => {
+    const env = envById("nibble")!; // 3 food, speed-scored, no regrowth
+    const trained = checkLearner(JSON.parse(readFileSync(new URL("../../docs/rl-notes/t10-m1-panel/es/p2-narrow-long.json", import.meta.url), "utf8")), "ecosystem") as Learner;
+    let cleared = 0;
+    for (let s = 1; s <= 20; s++) {
+      const r = runEpisode(env, trained, s);
+      if (r.clearTime >= 0) {
+        cleared++;
+        expect(r.seconds).toBe(env.seconds);
+        expect(r.elapsed).toBe(r.clearTime);
+        expect(r.elapsed).toBeLessThan(env.seconds);
+      }
+    }
+    expect(cleared).toBeGreaterThan(0);
   });
 });

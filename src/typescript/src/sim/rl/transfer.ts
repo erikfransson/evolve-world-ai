@@ -31,16 +31,16 @@ export function batteryEnvs(): BatteryEnv[] {
   ];
 }
 
-export const METRICS = ["survival", "died", "foodPerMin", "firstFood", "poisonPerMin", "poisonEnergy", "energy"] as const;
+export const METRICS = ["survival", "died", "foodPerMin", "firstFood", "clearTime", "poisonPerMin", "poisonEnergy", "energy"] as const;
 export type Metric = (typeof METRICS)[number];
 export const MIN_ALIVE_SECONDS = 5; // floor under the per-minute rates, so a creature dead at once does not divide by ~0
 
-// One episode as the metrics: survival is the share of the episode lived, rates are per minute alive, firstFood is seconds to the first bite (the episode length when none).
+// One episode as the metrics: survival is the share of the episode lived, rates are per minute alive, firstFood is seconds to the first bite and clearTime seconds to eating every item (the episode length when none; survival counts a cleared episode as lived).
 export function transferEpisode(env: EnvSpec, learner: Learner, seed: number, pool: readonly PoolEntry[] | null, library: Library): Record<Metric, number> {
   const r = runEpisode(env, learner, seed, pool, library);
   const total = variantFor(env, seed).seconds;
-  const minutes = Math.max(r.seconds, MIN_ALIVE_SECONDS) / 60;
-  return { survival: r.seconds / total, died: r.died, foodPerMin: r.food / minutes, poisonPerMin: r.poison / minutes, poisonEnergy: r.poisonEnergy, firstFood: r.firstFood < 0 ? total : r.firstFood, energy: r.energy };
+  const minutes = Math.max(r.elapsed, MIN_ALIVE_SECONDS) / 60; // really played, not the cleared episode's full length
+  return { survival: r.seconds / total, died: r.died, foodPerMin: r.food / minutes, poisonPerMin: r.poison / minutes, poisonEnergy: r.poisonEnergy, firstFood: r.firstFood < 0 ? total : r.firstFood, clearTime: r.clearTime < 0 ? total : r.clearTime, energy: r.energy };
 }
 
 export type PerSeed = Record<Metric, number[]>; // one env, seeds in order
