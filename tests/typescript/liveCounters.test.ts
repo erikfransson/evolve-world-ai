@@ -77,6 +77,21 @@ describe("world totals: ever lived and kills", () => {
     }
   });
 
+  it("refuses species counts that are not whole counts, so a corrupt save cannot blow up the kills total", () => {
+    const { eco } = killingWorld();
+    for (let t = 0; t < 100; t++) eco.step();
+    const bads: [string, unknown][] = [["eaten", "x".repeat(1000)], ["eaten", -5], ["eaten", 1.5], ["eaten", { n: 1 }], ["eaten", 1e308], ["births", -1], ["deaths", "7"]];
+    for (const [k, bad] of bads) {
+      const s = copy(saveState(eco));
+      (s.core.counts[1] as unknown as Record<string, unknown>)[k] = bad;
+      expect(() => restoreState(s), `${k} = ${String(bad).slice(0, 20)}`).toThrow(new RegExp(`species ${k}`));
+    }
+    const s = copy(saveState(eco));
+    (s.core.counts as unknown[])[0] = null;
+    expect(() => restoreState(s)).toThrow(/species count/);
+    expect(restoreState(copy(saveState(eco))).kills).toBe(eco.kills); // a good save still restores
+  });
+
   it("sends them in the stats, and the page bounds them and keeps them absent from an older server", () => {
     const live = new LiveWorld(smallConfig(), null);
     for (let t = 0; t < 200; t++) live.eco.step();
