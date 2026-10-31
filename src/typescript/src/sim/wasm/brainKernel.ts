@@ -9,6 +9,7 @@ import { BlockChunks } from "./blockChunks.ts";
 // Results differ from the JS Brain only by f32 rounding of the sums (see docs/perf-notes.md).
 
 const SCRATCH_FLOATS = 1024; // per ping-pong buffer, so every layer has at most 1024 neurons
+export const MAX_LAYER_NEURONS = SCRATCH_FLOATS; // the largest layer set() takes, inputs included
 const SCRATCH_B = SCRATCH_FLOATS * 4;
 const IOTA_AT = 2 * SCRATCH_B; // 0, 1, 2, ... for the dense layers
 const NZ_AT = IOTA_AT + SCRATCH_B; // index list of the non-zero inputs of the first layer, room for a 4-wide store past the end
@@ -27,6 +28,7 @@ const D_RAY_INPUTS = i32At(L.B_RAY_INPUTS);
 const D_RAY_ROWS = i32At(L.B_RAY_ROWS);
 const DESC_SIZES = i32At(L.B_SIZES); // descriptor words before the layer sizes
 const MAX_SIZES = DESC_WORDS - DESC_SIZES;
+export const MAX_BRAIN_SIZES = MAX_SIZES; // layer sizes set() takes, input and output included
 const NO_SLOT = -1;
 
 interface BrainExports extends WebAssembly.Exports {
@@ -53,6 +55,7 @@ export class WasmBrainBank {
   private orderCap!: number;
   private markPtr!: number; // per slot (descCap bytes), the stamp (1 to 255) of the forwardRun it is in
   private stamp!: number;
+  private fixedCount = 0; // slots in the run list fixRun wrote
 
   private constructor(kernel: Kernel<BrainExports>) {
     this.kernel = kernel;
@@ -268,10 +271,21 @@ export class WasmBrainBank {
   // Runs the slots slots[0 .. count-1] in that order, each of which must hold a brain; e.g. one thread's share of the creatures.
   forwardSlots(slots: Int32Array, count: number): void {
     if (count <= 0) return;
+    this.fixRun(slots, count);
+    this.forwardFixed();
+  }
+
+  // The two halves of forwardSlots, for a caller that runs the same slots tick after tick (a Trials episode): fixRun writes the run list,
+  // forwardFixed runs it. The list stays valid until the next set, release, alloc or forwardRun of this bank.
+  fixRun(slots: Int32Array, count: number): void {
     const run = this.runRegion(count);
     for (let k = 0; k < count; k++) if (this.blocks.ptr(slots[k]!) === undefined) throw new Error(`slot ${slots[k]} holds no brain`);
     this.kernel.i32.set(slots.subarray(0, count), run >> 2);
-    this.kernel.exports.forward(this.descPtr, run, count, 0, SCRATCH_B, NZ_AT, IOTA_AT, TAB_AT);
+    this.fixedCount = count;
+  }
+
+  forwardFixed(): void {
+    this.kernel.exports.forward(this.descPtr, this.runPtr, this.fixedCount, 0, SCRATCH_B, NZ_AT, IOTA_AT, TAB_AT);
   }
 
   // The address of the slot list of the next forwardRun (room for count slots), for a kernel to fill in place.
