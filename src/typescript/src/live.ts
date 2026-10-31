@@ -35,10 +35,11 @@ import type { Hello, Season, Stats } from "./live/protocol.ts";
 import { AddPanel } from "./live/addPanel.ts";
 import { parseFounders } from "./live/founders.ts";
 import { renderMapInfo } from "./live/mapInfo.ts";
-import { MapCache } from "./live/mapTerrain.ts";
+import { LIVE_MAP, MapCache } from "./live/mapTerrain.ts";
 import { recastRays } from "./live/rayRecast.ts";
 import { paintMapLegend } from "./live/mapLegend.ts";
-import { mapVersion } from "./sim/maps/index.ts";
+import { mapSpec, mapVersion } from "./sim/maps/index.ts";
+import { BACKGROUND } from "./ui/palette.ts";
 
 // TODO(L6): admin panel. `?admin` opens a second socket to the owner's loopback admin port (ws://127.0.0.1:8788), sends {t:"auth", token}
 // with a token the owner pastes in, then {t:"get-config"} and {t:"set-config", changes}. See server/src/admin.ts.
@@ -52,7 +53,15 @@ const UI_INTERVAL_MS = 100;
 const BRAIN_INTERVAL_MS = 25;
 const STORE = "evolve.live.card";
 const ENTRY_KEY = "evolve.live.entry"; // sessionStorage: the entry card was answered this visit
+const REVEAL_FADE_MS = 450; // the world fades in over this once its ground, food and creatures are all ready
+const REVEAL_CAP_MS = 2000; // after the hello, shown as it is if the ground is still not ready, rather than hold the world back
 const SEASON_COLORS: Record<string, string> = { Summer: "#fbbf24", Autumn: "#fb923c", Winter: "#93c5fd", Spring: "#4ade80" };
+
+// The ground and rock of a hand-designed map, built from its name on a worker (once per map and size). The live world's map starts
+// building at once, in parallel with loading the page and connecting; a hello naming another map builds that one instead.
+const maps = new MapCache();
+const liveSpec = mapSpec(LIVE_MAP);
+if (liveSpec) void maps.get(LIVE_MAP, liveSpec.width, liveSpec.height);
 
 const canvas = $<HTMLCanvasElement>("view");
 const chip = $("chip");
@@ -148,6 +157,7 @@ function fmtUptime(s: number): string {
 function onState(state: LinkState, retryInS: number): void {
   clearInterval(retryTimer);
   $("offline").hidden = state !== "offline";
+  $("worldLoading").hidden = revealAt >= 0 || state === "offline";
   if (state !== "live") {
     addPanel.disconnected();
     $("emptyNote").hidden = true;
@@ -191,7 +201,8 @@ function renderStats(): void {
     if (s.season) showSeason(seasonName(seasonEco(s.season), s.simSeconds), `food\u00a0${seasonFactor(seasonEco(s.season), s.simSeconds).toFixed(2)}×`);
   }
   if (chip.dataset.state === "live") setChip("live", mapStale ? "Map updating" : "Live", s ? ` · ${nf.format(s.viewers)} watching` : "");
-  if (s && chip.dataset.state === "live") $("entryLive").textContent = s.population > 0 ? `${nf.format(s.population)} creatures alive · ${nf.format(s.viewers)} watching` : `No creatures right now, add one to start the world again · ${nf.format(s.viewers)} watching`;
+  if (chip.dataset.state === "live" && revealAt < 0) $("entryLive").textContent = "Loading the world";
+  else if (s && chip.dataset.state === "live") $("entryLive").textContent = s.population > 0 ? `${nf.format(s.population)} creatures alive · ${nf.format(s.viewers)} watching` : `No creatures right now, add one to start the world again · ${nf.format(s.viewers)} watching`;
   $("emptyNote").hidden = !(s && chip.dataset.state === "live" && s.population === 0);
 }
 
@@ -213,6 +224,7 @@ function showSeason(name: string, food: string): void {
 
 function onHello(h: Hello): void {
   hello = h;
+  helloAt = performance.now();
   mapStale = false;
   versionEl.textContent = versionLabel(h.serverVersion);
   scene.reset();
@@ -239,20 +251,22 @@ function onHello(h: Hello): void {
   renderMapInfo($("info"), h);
 }
 
-// The ground and rock of a hand-designed map, built from its name on a worker (once per map and size); plain ground meanwhile.
-const maps = new MapCache();
 let mapStale = false;
+let mapFailed = false; // the map of the latest hello could not be built: plain ground
 function showMap(h: Hello): void {
   const name = h.map.name;
   if (!name) return;
   const d = draw;
   // The server runs another design of this map than this page has: plain ground, and the pill says so, until the page is updated.
   mapStale = h.map.version !== undefined && h.map.version !== mapVersion(name);
+  mapFailed = false;
   renderStats();
   if (mapStale) return;
   void maps.get(name, h.world.width, h.world.height).then((t) => {
-    if (t && draw === d) {
-      d!.map = t; // a newer hello has its own
+    if (draw !== d) return; // a newer hello has its own
+    if (!t) mapFailed = true;
+    else {
+      d!.map = t;
       paintMapLegend($("info"), t);
     }
   });
@@ -565,17 +579,53 @@ function drawBrain(now: number): void {
   brainView.draw(s.brain.brain, !s.died, s.brain.layout);
 }
 
-const IDLE_FRAME_MS = 1000 / 30 - 2; // with nothing followed or animating, draw at most 30 times a second
+// The world shows at once as a whole: the item set and a creature frame are in and the ground can be drawn, then it fades in.
+// Until then the plain background shows. Without a map, a stale or failed one, or past REVEAL_CAP_MS, it shows with what it has.
+let helloAt = 0;
+let revealAt = -1; // performance.now() of the reveal, -1 before
+let gotCreatures = false;
+function worldReady(now: number): boolean {
+  if (!hello || !draw) return false;
+  if (now - helloAt > REVEAL_CAP_MS) return true;
+  return gotCreatures && scene.hasItems && groundReady();
+}
+// Whether the ground can be drawn: the map's Terrain is built (or there is no map to wait for).
+function groundReady(): boolean {
+  return !hello!.map.name || mapStale || mapFailed || draw!.map !== undefined;
+}
+function reveal(now: number): void {
+  revealAt = now;
+  $("worldLoading").hidden = true;
+  renderStats();
+  setTimeout(runDeferred); // after the first frame of the world
+  loadFounders();
+}
+// Stats and history (tiles, graphs, lineages, records) wait until the world shows, so the first messages go to the world; then they run in order.
+let deferred: (() => void)[] | null = [];
+function afterReveal(fn: () => void): void {
+  if (deferred) deferred.push(fn);
+  else fn();
+}
+function runDeferred(): void {
+  while (deferred?.length) deferred.shift()!();
+  deferred = null;
+}
+
+const IDLE_FRAME_MS = 1000 / 30 - 2; // with nothing followed or animating, draw at most 30 times a second (every frame while the world fades in)
 function frame(now: number): void {
   requestAnimationFrame(frame);
-  if (!selection && !camera.animating && now - lastDrawAt < IDLE_FRAME_MS) return;
+  if (!selection && !camera.animating && now - revealAt > REVEAL_FADE_MS && now - lastDrawAt < IDLE_FRAME_MS) return;
   lastDrawAt = now;
   const dpr = syncCanvas();
   const ctx = canvas.getContext("2d")!;
   camera.update(now);
-  if (!draw) {
+  if (draw && revealAt < 0) {
+    scene.sample(now); // applies the item set when it is due
+    if (worldReady(now)) reveal(now);
+  }
+  if (!draw || revealAt < 0) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = "#0b1d16";
+    ctx.fillStyle = BACKGROUND;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     return;
   }
@@ -601,6 +651,14 @@ function frame(now: number): void {
     selected.rayHeading = undefined;
   }
   renderer.draw(ctx, camera, drawConfig(), litViews(views), selected, true, dpr, highlight, births, now, impacts);
+  const fade = 1 - (now - revealAt) / REVEAL_FADE_MS;
+  if (fade > 0) {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = fade * fade;
+    ctx.fillStyle = BACKGROUND;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.globalAlpha = 1;
+  }
   if (now - lastUiAt >= UI_INTERVAL_MS) {
     lastUiAt = now;
     updateSelectedCard();
@@ -617,7 +675,10 @@ scene.handlers = {
 const link = new LiveLink(url, {
   onState,
   onHello,
-  onCreatures: (f) => scene.push(f, performance.now()),
+  onCreatures(f) {
+    gotCreatures = true;
+    scene.push(f, performance.now());
+  },
   onItems: (f) => scene.setItems(f),
   onDelta: (d) => scene.addDeltas(d),
   onDetail: (d) => scene.addDetail(d),
@@ -626,14 +687,14 @@ const link = new LiveLink(url, {
     selection.genome = genome;
     buildBrain();
   },
-  onStats,
+  onStats: (s) => afterReveal(() => onStats(s)),
   onAdd: (r) => addPanel.reply(r),
   onRules: (r) => addPanel.setRules(r),
-  onHistory(h) {
+  onHistory: (h) => afterReveal(() => {
     samples = h.samples.slice();
     lineageHistory = h.lineage.slice();
     showHistory();
-  },
+  }),
 });
 
 function zoomBy(factor: number): void {
@@ -701,6 +762,16 @@ const addPanel = new AddPanel($("addPanel"), {
   },
   minimised: (on) => ($("addPeek").hidden = !on),
 });
+// The starter creatures for the add panel, fetched once the world shows or the panel opens, so they never hold up the world.
+let foundersAsked = false;
+function loadFounders(): void {
+  if (foundersAsked) return;
+  foundersAsked = true;
+  void fetch(new URL("../live-founders.json", document.baseURI).href)
+    .then((r) => (r.ok ? r.json() : null))
+    .then((data) => addPanel.setFounders(parseFounders(data)))
+    .catch(() => addPanel.setFounders([]));
+}
 function remember(): void {
   try {
     sessionStorage.setItem(ENTRY_KEY, "1");
@@ -709,6 +780,7 @@ function remember(): void {
   }
 }
 function openAdd(): void {
+  loadFounders();
   $("entry").hidden = true;
   remember();
   addPanel.open();
@@ -733,10 +805,6 @@ else if (!answered) {
   $("entry").hidden = false;
   $("entryAdd").focus({ preventScroll: true });
 }
-void fetch(new URL("../live-founders.json", document.baseURI).href)
-  .then((r) => (r.ok ? r.json() : null))
-  .then((data) => addPanel.setFounders(parseFounders(data)))
-  .catch(() => addPanel.setFounders([]));
 
 // The world view fills the window below the banner; the page scrolls on to the info section.
 const banner = document.querySelector<HTMLElement>(".banner")!;

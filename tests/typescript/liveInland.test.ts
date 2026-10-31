@@ -24,10 +24,10 @@ import { decodeDetail } from "../../src/typescript/src/live/detail.ts";
 import { cleanStats } from "../../src/typescript/src/live/connection.ts";
 import { lineageRows } from "../../src/typescript/src/ui/lineagePanel.ts";
 import { genomeLengthFor } from "../../src/typescript/src/sim/rl/creatureFile.ts";
-import { MAP_TIMEOUT_MS, MAX_OUTLINE_LOOPS, MAX_OUTLINE_POINTS, MapCache, checkOutlines, loadMapTerrain, terrainFromParts } from "../../src/typescript/src/live/mapTerrain.ts";
+import { LIVE_MAP, MAP_TIMEOUT_MS, MAX_OUTLINE_LOOPS, MAX_OUTLINE_POINTS, MapCache, checkOutlines, loadMapTerrain, terrainFromParts } from "../../src/typescript/src/live/mapTerrain.ts";
 import { rockBodies, rockGeometry } from "../../src/typescript/src/ui/rockOutline.ts";
 import type { RockGeometry } from "../../src/typescript/src/ui/rockOutline.ts";
-import { builtMap, mapVersion } from "../../src/typescript/src/sim/maps/index.ts";
+import { builtMap, mapSpec, mapVersion } from "../../src/typescript/src/sim/maps/index.ts";
 import { terrainOf } from "../../src/typescript/src/sim/terrain.ts";
 import type { Terrain } from "../../src/typescript/src/sim/terrain.ts";
 import { smallConfig } from "./liveHelpers.ts";
@@ -555,6 +555,11 @@ describe("the page's map worker", () => {
     const w = { terminated: 0, postMessage() {}, terminate() { w.terminated++; }, onmessage: null, onerror: null };
     return w;
   };
+
+  it("starts on the map and size the server runs, before the hello names them", () => {
+    expect(LIVE_MAP).toBe(liveConfig.world.map);
+    expect(mapSpec(LIVE_MAP)).toMatchObject({ width: liveConfig.world.width, height: liveConfig.world.height });
+  });
 
   it("is given up after the timeout: terminated, and null", async () => {
     expect(MAP_TIMEOUT_MS).toBe(60_000);

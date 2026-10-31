@@ -6,6 +6,7 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- Live page load: the map starts building on its worker as the page starts, in parallel with connecting, instead of after the server's hello. The world view stays on the plain background with a "Loading the world" note until the ground, food and creatures can all be drawn, then fades in whole (at most 2 s after the hello, then with what it has). Tiles, graphs and lineages fill in just after the world shows, the founders file loads after it, and the page preconnects to the world server.
 - Trials: a hall of fame keeps the 5 all-time best brains of the run and puts them back into every generation until 5 better ones replace them, so one generation on a layout without food in sight no longer loses the best brains (`ga.hallOfFame`, 0 turns it off). Trials runs evolve differently from before (fingerprint 727564408 -> 459613821) and learn faster on 3 of 3 test seeds. Founder-pool rebuilds (`buildPool`) use the same GA, so they change too.
 
 ## 0.3.0 (2026-10-31)
