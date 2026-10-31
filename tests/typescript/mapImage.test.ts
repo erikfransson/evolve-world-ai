@@ -1,7 +1,8 @@
 // @vitest-environment node
 import { readFileSync, statSync } from "node:fs";
 import { groundImageHashes } from "../../src/typescript/scripts/mapImageHash.ts";
-import { GROUND_FILES, LIVE_MAP, MAP_FILES } from "../../src/typescript/src/live/mapFiles.ts";
+import { GROUND_FILES, MAP_FILES } from "../../src/typescript/src/live/mapFiles.ts";
+import { LIVE_MAP } from "../../src/typescript/src/live/mapTerrain.ts";
 import { BACKDROP_SCALES } from "../../src/typescript/src/ui/groundBackdrop.ts";
 
 const dir = new URL("../../src/typescript/src/live/maps/", import.meta.url);

@@ -12,6 +12,3 @@ export const MAP_FILES: Readonly<Record<string, string>> = { "inland-sea": inlan
 export const GROUND_FILES: Readonly<Record<string, BackdropFiles>> = {
   "inland-sea": { preview: inlandPreview, images: { "0.025": inlandLow, "0.05": inlandHigh }, winter: inlandWinter },
 };
-
-// The map the Live server runs, until its hello says otherwise: its pictures are drawn before the hello arrives.
-export const LIVE_MAP = "inland-sea";

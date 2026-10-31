@@ -459,8 +459,8 @@ export function prepareGround(t: Terrain, scale: number, view: View): boolean {
     for (const patch of patchesIn(t, tier, scale, view)) shelfOf(patch, budget); // close up only the shelves are made ahead
     return !budget.refused;
   }
-  const store = baked.get(t);
-  if (!store) return true;
+  let store = baked.get(t);
+  if (!store) baked.set(t, (store = { tiers: new Map(), pixels: 0 })); // ahead of the first draw too, so a page can make the bitmaps a few at a time before it draws the map
   const ts = touch(store, tier);
   const left = { n: PREPARE_BAKES };
   for (const patch of patchesIn(t, tier, scale, view)) if (left.n > 0) tilesIn(store, ts, patch, view, left, budget);
