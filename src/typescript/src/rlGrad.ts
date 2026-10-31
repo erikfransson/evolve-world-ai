@@ -34,6 +34,7 @@ const { values } = parseArgs({
     logstd: { type: "string", default: "-0.5" },
     entropy: { type: "string", default: "0" },
     "poison-penalty": { type: "string", default: "0" },
+    poison: { type: "string", default: "0" }, // reward.poison for every env (cost per poison bite, in the env reward)
     "logstd-min": { type: "string", default: "-3" },
     repeat: { type: "string", default: "3" },
     "every-tick": { type: "boolean", default: false },
@@ -48,11 +49,12 @@ const { values } = parseArgs({
   },
 });
 
-const envList: EnvSpec[] = values.envs === "all" ? ENVS.filter((e) => e.world === "ecosystem") : (values.envs ?? values.env!).split(",").map((id) => envById(id)!);
-if (envList.some((e) => !e)) {
+const envList0: EnvSpec[] = values.envs === "all" ? ENVS.filter((e) => e.world === "ecosystem") : (values.envs ?? values.env!).split(",").map((id) => envById(id)!);
+if (envList0.some((e) => !e)) {
   console.error(`error: unknown env in "${values.envs ?? values.env}"`);
   process.exit(1);
 }
+const envList = Number(values.poison) === 0 ? envList0 : envList0.map((e) => ({ ...e, reward: { ...e.reward, poison: Number(values.poison) } }));
 const env = envList[0]!;
 const num = (k: keyof typeof values): number => Number(values[k]);
 const pool = existsSync(values.pool!) ? parsePool(JSON.parse(readFileSync(values.pool!, "utf8"))).entries : null;

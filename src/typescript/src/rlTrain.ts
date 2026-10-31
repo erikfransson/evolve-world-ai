@@ -50,6 +50,7 @@ const { values } = parseArgs({
     poisonw: { type: "string", default: "0" },
     foodw: { type: "string", default: String(PROC_DEFAULTS.foodWeight) },
     budget: { type: "string", default: "0" },
+    poison: { type: "string", default: "0" }, // reward.poison for every env of the mix (cost per poison bite)
   },
 });
 
@@ -123,7 +124,8 @@ else {
   process.exit(1);
 }
 
-const envs = (mix as EnvSpec[]).map((e) => varied(e, vary));
+const poisonCost = Number(values.poison);
+const envs = (mix as EnvSpec[]).map((e) => varied(poisonCost === 0 ? e : { ...e, reward: { ...e.reward, poison: poisonCost } }, vary));
 const helpers = createNodeRlPool({ envs: [envs[0]!], plan: learner.plan, pool, library }, threads);
 const trainer = new Trainer(Float32Array.from(learner.genome), { pairs, sigma: num("sigma"), lr: num("lr") }, helpers, 1, episodes, seed);
 const evalSeeds = heldSeeds(evalCount);

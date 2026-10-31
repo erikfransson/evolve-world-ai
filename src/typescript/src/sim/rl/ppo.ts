@@ -475,6 +475,7 @@ export function playRollout(env: EnvSpec, plan: Learner["plan"], task: RolloutTa
   let kills = 0;
   let bites = 0; // poison bites already charged
   const penalty = task.poisonPenalty ?? 0;
+  const cost = penalty + (env.reward.poison ?? 0); // the env's own poison cost is in the episode reward, so each bite carries it on its step too
   // Stores the sample for this tick's input and means, and leaves each action's noise (std * eps) in held.
   const sampleAt = (input: Float32Array, u: Float64Array): void => {
     const at = n * stride;
@@ -514,8 +515,8 @@ export function playRollout(env: EnvSpec, plan: Learner["plan"], task: RolloutTa
     const me = eco.get(0);
     if (!me) return;
     rewards[n - 1]! += ((w.food ?? 0) + (w.early ?? 0) * earlyWeight(t, ticks)) * (me.eaten - eaten) + (w.kill ?? 0) * (me.kills - kills) + (w.survive ?? 0) * DT;
-    if (penalty > 0 && me.poisonBites > bites) {
-      rewards[n - 1]! -= penalty * (me.poisonBites - bites);
+    if (cost !== 0 && me.poisonBites > bites) {
+      rewards[n - 1]! -= cost * (me.poisonBites - bites);
       bites = me.poisonBites;
     }
     eaten = me.eaten;

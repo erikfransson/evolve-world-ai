@@ -1,5 +1,5 @@
 import { Brain, layerSizes, randomGenome } from "../../src/typescript/src/sim/brain.ts";
-import { layoutConfig, randomLearner, runEpisode } from "../../src/typescript/src/sim/rl/env.ts";
+import { BLANK_ENV, layoutConfig, randomLearner, runEpisode } from "../../src/typescript/src/sim/rl/env.ts";
 import { envById } from "../../src/typescript/src/sim/rl/envs.ts";
 import { createNodeRlPool } from "../../src/typescript/src/worker/nodePool.ts";
 import { Mlp, Ppo, playRollout } from "../../src/typescript/src/sim/rl/ppo.ts";
@@ -176,5 +176,22 @@ describe("poison penalty", () => {
     const pen = playRollout(env, learner.plan, { ...task, poisonPenalty: 2 }, null, {});
     expect(pen.reward).toBe(plain.reward);
     expect(pen.ret[0]!).toBeLessThan(plain.ret[0]! + 1e-9);
+  });
+});
+
+describe("env reward.poison in PPO", () => {
+  it("charges each bite on its step and keeps the steps summing to the episode reward", () => {
+    const base = { ...BLANK_ENV, id: "t-poison", size: [200, 200] as [number, number], food: 0, poison: 40, seconds: 10, poisonDamage: 10 };
+    const env = { ...base, reward: { poison: 2 } };
+    const learner = randomLearner(env, 1);
+    const sizes = layerSizes(layoutConfig(env.world), learner.plan);
+    const ppo = new Ppo([env], learner, sizes, {}, 3);
+    ppo.setEnvs([env]);
+    const task = (ppo as unknown as { tasks(): Parameters<typeof playRollout>[2][] }).tasks()[0]!;
+    const plainEnv = playRollout(base, learner.plan, task, null, {});
+    const costly = playRollout(env, learner.plan, task, null, {});
+    expect(plainEnv.reward).toBe(0);
+    expect(costly.reward).toBeLessThan(0);
+    expect(costly.ret[0]!).toBeLessThan(plainEnv.ret[0]!);
   });
 });

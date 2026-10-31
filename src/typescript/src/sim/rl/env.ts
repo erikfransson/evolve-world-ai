@@ -73,7 +73,8 @@ export interface EnvSpec {
   // ram: per rival that dies touching the learner while collision damage is on.
   // cross: per poison wall of the layout the learner got past (at any moment), a first reward on the way to food beyond it.
   // early: per item or ram, times the share of the episode still left at the bite (1 at the start, 0 at the end).
-  reward: { food?: number; kill?: number; survive?: number; energy?: number; fast?: number; ram?: number; cross?: number; early?: number };
+  // poison: a cost per poison item the learner eats, a lethal bite included (positive values subtract; off when left out).
+  reward: { food?: number; kill?: number; survive?: number; energy?: number; fast?: number; ram?: number; cross?: number; early?: number; poison?: number };
   proc?: ProcSpec; // self-play (S1): a new crowded world every episode, played by runCrowdEpisode; every other field is then unused
   tags: string[];
 }
@@ -425,7 +426,7 @@ export function runEpisode(
   }
   const w = env.reward;
   const startEnergy = eco.species[env.role]!.startEnergy;
-  out.reward = (w.food ?? 0) * out.food + (w.kill ?? 0) * out.kills + (w.survive ?? 0) * out.seconds + (w.energy ?? 0) * energySignal(out.energy, startEnergy) + (w.fast ?? 0) * cleared + (w.ram ?? 0) * out.rams + (w.cross ?? 0) * crossed(placed?.walls ?? [], minY, config.creature.radius) + (w.early ?? 0) * early;
+  out.reward = (w.food ?? 0) * out.food + (w.kill ?? 0) * out.kills + (w.survive ?? 0) * out.seconds + (w.energy ?? 0) * energySignal(out.energy, startEnergy) + (w.fast ?? 0) * cleared + (w.ram ?? 0) * out.rams + (w.cross ?? 0) * crossed(placed?.walls ?? [], minY, config.creature.radius) + (w.early ?? 0) * early - (w.poison ?? 0) * out.poison;
   if (kernels) spareKernels = kernels; // an episode that throws just drops them
   return out;
 }
@@ -472,7 +473,7 @@ export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | s
   if (rivals.reduce((a, r) => a + r.count, 0) > L.rivals[1]) return `at most ${L.rivals[1]} rivals`;
   const w = (v.reward ?? {}) as Record<string, unknown>;
   const reward: EnvSpec["reward"] = {};
-  for (const k of ["food", "kill", "survive", "energy", "fast", "ram", "cross", "early"] as const) {
+  for (const k of ["food", "kill", "survive", "energy", "fast", "ram", "cross", "early", "poison"] as const) {
     if (w[k] === undefined) continue;
     if (!n(w[k], L.weight)) return `reward ${k} must be ${L.weight[0]} to ${L.weight[1]}`;
     reward[k] = w[k] as number;
