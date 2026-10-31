@@ -91,6 +91,12 @@ export interface EpisodeResult {
   rams: number; // rivals killed by bumping into the learner
   seconds: number; // alive
   energy: number; // at the end, or when it died
+  poison: number; // poison items the learner ate
+  poisonEnergy: number; // energy those bites took (a lethal bite takes what was left)
+  firstFood: number; // seconds until the first bite, -1 when none
+  elapsed: number; // seconds really played (seconds counts a cleared episode as lived to the end)
+  clearTime: number; // seconds until the learner ate every starting item (speed-scored envs without regrowth), -1 when not
+  died: number; // 1 when the learner died before the episode ended, else 0
 }
 
 const BIRTHLESS = 1e9; // birth energy no creature reaches
@@ -334,10 +340,16 @@ export function runEpisode(
   if (onTick || act) eco.detail = 0;
   const reach = 2 * config.creature.radius + 2; // bumping distance, for crediting a ram
   const ticks = Math.round(env.seconds / config.dt);
-  const out: EpisodeResult = { reward: 0, food: 0, kills: 0, rams: 0, seconds: 0, energy: 0 };
+  const out: EpisodeResult = { reward: 0, food: 0, kills: 0, rams: 0, seconds: 0, energy: 0, poison: 0, poisonEnergy: 0, firstFood: -1, elapsed: 0, clearTime: -1, died: 0 };
   const rivalEnergy = new Map<number, number>(); // each rival's energy after the previous tick, for crediting rams
   if (env.collisionDamage) for (const m of eco.members) if (m.id !== 0) rivalEnergy.set(m.id, m.creature.state.energy); // so a death on the first tick is judged too
   let poisonBefore = eco.poisonEaten; // the world's poison count before the tick, to skip poison deaths
+  const dmg = config.world.poisonDamage;
+  let prevEnergy = eco.get(0)?.creature.state.energy ?? 0; // the learner's energy before the tick, to price its poison bites
+  const addPoison = (total: number): void => {
+    out.poisonEnergy += Math.min((total - out.poison) * dmg, prevEnergy); // a lethal bite takes what was left
+    out.poison = total;
+  };
   let early = 0; // bites weighted by the share of the episode left at each
   let tick = 0; // ticks done when the current one ends
   // The learner's last tick counts too: what it ate before it died; a dead learner ends with no energy.
@@ -362,6 +374,9 @@ export function runEpisode(
     }
     early += (m.eaten - out.food) * earlyWeight(tick, ticks); // bites on the dying tick
     out.food = m.eaten;
+    if (m.poisonBites > out.poison) addPoison(m.poisonBites);
+    if (out.firstFood < 0 && m.eaten > 0) out.firstFood = tick * config.dt;
+    out.died = 1;
     out.kills = m.kills;
     out.energy = 0;
   };
@@ -386,12 +401,17 @@ export function runEpisode(
     if (!me) break;
     early += (me.eaten - out.food) * earlyWeight(tick, ticks);
     out.food = me.eaten;
+    if (me.poisonBites > out.poison) addPoison(me.poisonBites);
+    if (out.firstFood < 0 && me.eaten > 0) out.firstFood = tick * config.dt;
+    prevEnergy = me.creature.state.energy;
     out.kills = me.kills;
     out.energy = me.creature.state.energy;
     minY = Math.min(minY, me.creature.state.y);
     out.seconds = (t + 1) * config.dt;
+    out.elapsed = out.seconds;
     if (clearable && me.eaten === env.food) {
       cleared = env.seconds - out.seconds;
+      out.clearTime = out.seconds;
       out.seconds = env.seconds;
       break;
     }
@@ -405,7 +425,7 @@ export function runEpisode(
 
 // Mean result over several seeds (layouts, positions and rivals all change with the seed).
 export function scoreLearner(env: EnvSpec, learner: Learner, seeds: readonly number[], pool: readonly PoolEntry[] | null = null, library: Library = {}): EpisodeResult {
-  const sum: EpisodeResult = { reward: 0, food: 0, kills: 0, rams: 0, seconds: 0, energy: 0 };
+  const sum: EpisodeResult = { reward: 0, food: 0, kills: 0, rams: 0, seconds: 0, energy: 0, poison: 0, poisonEnergy: 0, firstFood: 0, elapsed: 0, clearTime: 0, died: 0 };
   for (const s of seeds) {
     const r = runEpisode(env, learner, s, pool, library);
     for (const k of Object.keys(sum) as (keyof EpisodeResult)[]) sum[k] += r[k] / seeds.length;
