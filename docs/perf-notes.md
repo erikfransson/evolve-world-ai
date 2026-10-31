@@ -4,7 +4,7 @@ Running log of optimisation experiments for large populations (500 to 2000).
 Benchmark: `node src/bench.ts --pop 1000 --gens 2` in `src/typescript` on an 8-core machine, quiet unless noted.
 The fingerprint hashes all fitness values, so an unchanged fingerprint means unchanged results.
 Current fingerprints (since obstacles and terrain, #34, 2026-10-12, which add a brain input, so a genome has more genes and every mutation draws more numbers; the map-off values changed on purpose):
-`--pop 300 --gens 12 --seed 2` 459613821 (727564408 before the Trials hall of fame, 2026-10-31); `ecoBench --seconds 30 --pop 600` 739359978 (also with 3 helpers), `--set eco.wasm=false` 877945501, `--predators --seconds 40` 410981010 (before: 847633506, 204227508, 303607739). `--pop 1000 --gens 2` not re-measured. Rollback is one-way: a version 2 save (written after this change) cannot be read by an older build.
+`--pop 300 --gens 12 --seed 2` 393406425 with the Trials hall of fame and the brain on WebAssembly (459613821 with the hall of fame alone, 553379790 with the WebAssembly brain alone, 727564408 before both, 2026-10-31; serial and 7 threads agree); `ecoBench --seconds 30 --pop 600` 739359978 (also with 3 helpers), `--set eco.wasm=false` 877945501, `--predators --seconds 40` 410981010 (before: 847633506, 204227508, 303607739). `--pop 1000 --gens 2` not re-measured. Rollback is one-way: a version 2 save (written after this change) cannot be read by an older build.
 
 | Date       | Idea                                                    | Seconds (pop 1000, 2 gens) | Speedup | Results          | Verdict  |
 |------------|---------------------------------------------------------|----------------------------|---------|------------------|----------|
