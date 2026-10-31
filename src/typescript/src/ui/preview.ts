@@ -7,7 +7,7 @@ import { founderRng, layoutSeedFor } from "../sim/evolution.ts";
 export function buildPreview(config: SimConfig): Episode | null {
   try {
     const genome = randomGenome(layerSizes(config), founderRng(config.seed));
-    const episode = new Episode(config, genome, layoutSeedFor(config.seed, 0), 0);
+    const episode = new Episode(config, genome, layoutSeedFor(config.seed, 0), 0, true, null); // never stepped, so no brain kernel
     episode.sense();
     return episode;
   } catch (error) {

@@ -4,7 +4,7 @@ Running log of optimisation experiments for large populations (500 to 2000).
 Benchmark: `node src/bench.ts --pop 1000 --gens 2` in `src/typescript` on an 8-core machine, quiet unless noted.
 The fingerprint hashes all fitness values, so an unchanged fingerprint means unchanged results.
 Current fingerprints (since obstacles and terrain, #34, 2026-10-12, which add a brain input, so a genome has more genes and every mutation draws more numbers; the map-off values changed on purpose):
-`--pop 300 --gens 12 --seed 2` 727564408; `ecoBench --seconds 30 --pop 600` 739359978 (also with 3 helpers), `--set eco.wasm=false` 877945501, `--predators --seconds 40` 410981010 (before: 847633506, 204227508, 303607739). `--pop 1000 --gens 2` not re-measured. Rollback is one-way: a version 2 save (written after this change) cannot be read by an older build.
+`--pop 300 --gens 12 --seed 2` 393406425 with the Trials hall of fame and the brain on WebAssembly (459613821 with the hall of fame alone, 553379790 with the WebAssembly brain alone, 727564408 before both, 2026-10-31; serial and 7 threads agree); `ecoBench --seconds 30 --pop 600` 739359978 (also with 3 helpers), `--set eco.wasm=false` 877945501, `--predators --seconds 40` 410981010 (before: 847633506, 204227508, 303607739). `--pop 1000 --gens 2` not re-measured. Rollback is one-way: a version 2 save (written after this change) cannot be read by an older build.
 
 | Date       | Idea                                                    | Seconds (pop 1000, 2 gens) | Speedup | Results          | Verdict  |
 |------------|---------------------------------------------------------|----------------------------|---------|------------------|----------|
@@ -113,7 +113,22 @@ The rays rows are historical: they measure the deleted `rays.wat`, and `wasmBenc
 
 (a) Closeness difference plus 1 per ray whose kind differs. A rare grazing ray hits in f64 and misses in f32 (or the reverse), so a few rays out of 10^5 differ in kind. Otherwise closeness agrees to about 1e-4.
 Ray time includes queueing the rays and applying results into `RayHit` objects, which is about 40% of the WASM time (10000 large: queue 10.4, run 18.8, apply 1.2 ms), so the speedup grows once callers write straight into the batch buffers.
-Trials stays on the JS path. Ecosystem uses them with `eco.wasm` (default true since E5c, below).
+Ecosystem uses them with `eco.wasm` (default true since E5c, below), and Trials runs its brain on `brain.wat` (next section).
+
+## Trials brain on WebAssembly (2026-10-31)
+
+`Episode` runs the brain of its one creature on `WasmBrainBank` (slot 0, one bank per thread reused by `runEpisode`), with rays, encoding and motion still in JS (`TRIALS_WASM` in `sim/episode.ts`). Without WebAssembly SIMD, or for a layer over 1024 neurons, the JS brain runs.
+The whole Ecosystem kernel set (sense, fill, step, brain) was tried first and was slower (7.2 against 5.5 us per tick at the defaults): its per-call setup is made for thousands of creatures, and Trials calls it for one.
+Results change slightly (f32 sums): `bench --pop 300 --gens 12 --seed 2` 727564408 before (836727452 in older notes, before the terrain input), 553379790 after. The JS path is unchanged (same fingerprint as before with WebAssembly disabled).
+Evaluation per creature-tick, median of the 3 seeds, 150 creatures, 50 generations (20 for the big brain), serial, load about 13:
+
+| Brain          | JS ns/tick (3 seeds) | WASM ns/tick (3 seeds) | Speedup |
+|----------------|----------------------|------------------------|---------|
+| default [6]    | 4723 (4599-4730)     | 3630 (3628-3995)       | 1.30x   |
+| hidden [32,32] | 13672 (13611-14289)  | 4883 (4834-5289)       | 2.8x    |
+
+On 300 random genomes (`trialsTickBench`, 3 runs) the default gains 1.05x (6066 to 5755 ns, spread 5217-5771) and [32,32] 1.9x (15015 to 7952 ns, spread 6797-9390): random creatures see little, so the JS sparse first layer has little to do.
+Fitness over 50 generations (seeds 1-3, mean of the last 10): best 346/385/319 JS against 395/412/340 WASM, population mean 89/104/91 against 107/128/84, so learning is not worse.
 
 ## Ecosystem helper threads (E5a)
 

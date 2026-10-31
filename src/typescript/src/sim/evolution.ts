@@ -2,7 +2,8 @@ import { genomeLength, layerSizes, randomGenome } from "./brain.ts";
 import type { SimConfig } from "./config.ts";
 import { SerialEvaluator } from "./evaluator.ts";
 import type { Evaluator } from "./evaluator.ts";
-import { nextGeneration } from "./ga.ts";
+import { nextGeneration, updateHall } from "./ga.ts";
+import type { HallEntry } from "./ga.ts";
 import { Population } from "./population.ts";
 import { createRng, deriveSeed } from "./rng.ts";
 import type { StatefulRng } from "./rng.ts";
@@ -17,6 +18,7 @@ export class Evolution {
   generation = 0;
   population: Population;
   bestEver = 0;
+  readonly hall: HallEntry[] = []; // the all-time fittest genomes (ga.hallOfFame of them), put back into every generation
 
   private readonly config: SimConfig;
   private readonly serial: Evaluator;
@@ -65,7 +67,9 @@ export class Evolution {
       meanFitness: n ? sum / n : 0,
     };
     if (bestFitness > this.bestEver) this.bestEver = bestFitness;
-    this.population = nextGeneration(population, fitness, this.config.ga, createRng(deriveSeed(this.config.seed, generation, 7)), (rng) => randomGenome(this.sizes, rng));
+    updateHall(this.hall, this.config.ga.hallOfFame, population, fitness, generation);
+    const keep = this.hall.map((e) => e.genome);
+    this.population = nextGeneration(population, fitness, this.config.ga, createRng(deriveSeed(this.config.seed, generation, 7)), (rng) => randomGenome(this.sizes, rng), keep);
     this.generation = generation + 1;
     return { result, population };
   }
