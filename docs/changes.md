@@ -6,6 +6,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- RL Arena backprop: every env now trains. With more envs than episodes per update (for example all 42 envs at 16 episodes), episode k always played env k, so envs 17 and up never trained; the start env now moves on by the update's episodes. Runs whose env count divides the episodes per update are unchanged.
+
 ## 0.2.9 (2026-10-29)
 
 - RL Arena: Corral (Fight, 16 weak foragers in a pen, only rams pay) and Lap (Time pressure, Ring road's lane with an early reward) are new envs; Lap misses the E5 check (random designs always score 0) and Corral needs 66 seeds for E4 (`docs/rl-envs.md`). Existing envs are unchanged
