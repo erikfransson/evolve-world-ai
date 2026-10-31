@@ -1,6 +1,6 @@
 import { runEpisode, variantFor } from "./env.ts";
 import type { EnvSpec, Learner, Library } from "./env.ts";
-import { ENVS, envById } from "./envs.ts";
+import { envById } from "./envs.ts";
 import { HELD_BASE } from "./trainer.ts";
 import type { PoolEntry } from "../seedPool.ts";
 
@@ -22,7 +22,11 @@ const BIGGER = ["live-patch", "live-famine", "live-poison", "live-now", "live-co
 export const LONG_SECONDS = 240; // Live survival is long-horizon: four minutes of Live's current rules
 
 export function batteryEnvs(): BatteryEnv[] {
-  const get = (id: string): EnvSpec => envById(id) ?? ENVS[0]!;
+  const get = (id: string): EnvSpec => {
+    const env = envById(id);
+    if (!env) throw new Error(`battery env ${id} not found`); // a renamed env must not be scored as another
+    return env;
+  };
   const longEnv: EnvSpec = { ...get("live-now"), id: "live-long", name: "Live long", seconds: LONG_SECONDS };
   return [
     ...BIGGER.map((id) => ({ env: get(id), group: "bigger" as const })),
