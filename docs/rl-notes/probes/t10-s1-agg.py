@@ -23,11 +23,11 @@ designs = sorted({k[0] for k in arms[names[0]]})
 for sc in ("long", "bigger", "small"):
     for m in M:
         print(f"\n{sc} {m}: " + ", ".join(names) + (f"; delta {names[1]} minus {names[0]} (95% CI)" if len(names) > 1 else ""))
-        ds = []
+        ds = []; up = down = 0
         for d in designs:
             row = f"{d:16}" + "".join(f"{mean(arms[n][(d, sc, m)]):9.2f}" for n in names if (d, sc, m) in arms[n])
             if len(names) > 1 and all((d, sc, m) in arms[n] for n in names[:2]):
                 a, b = arms[names[0]][(d, sc, m)], arms[names[1]][(d, sc, m)]
-                mu, h = ci([y - x for x, y in zip(a, b)]); ds.append(mu); row += f"   {mu:+.2f} +-{h:.2f}"
+                mu, h = ci([y - x for x, y in zip(a, b)]); ds.append(mu); up += mu - h > 0; down += mu + h < 0; row += f"   {mu:+.2f} +-{h:.2f}"
             print(row)
-        if ds: s = sorted(ds); print(f"  delta over designs: min {s[0]:+.2f}, median {s[len(s)//2]:+.2f}, max {s[-1]:+.2f}")
+        if ds: s = sorted(ds); print(f"  delta over {len(ds)} designs: min {s[0]:+.2f}, median {s[len(s)//2]:+.2f}, max {s[-1]:+.2f}; CI above 0 in {up}, below 0 in {down}")

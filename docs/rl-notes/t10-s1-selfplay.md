@@ -38,6 +38,41 @@ Verdict:
 - With food weight 3 (reward below) S1 beats the fixed recipe on the 240 s Live-like scope for all three designs, with 5 to 12 times fewer steps: it forages as fast or faster and survives longer (p5 0.82 against 0.36). On the 90 s scope it matches fixed survival and forages more. It stings itself more than the fixed recipe (poison per min up 0.1 to 1.3). It is one training run per cell of 300 s and three designs, so call it a promising result, not a proven recipe. Not tested: longer budgets, the other five panel designs, a mix of S1 with the small envs, lineage weight above 0, PPO.
 - Caveat: S1 is trained on the Live-like regime (regrowing food, collision damage, crowds) that the long scope measures, while the fixed mix has no regrowth and no crowd. Part of the gap is that match, not self-play itself. A fixed-env arm on Live-like envs (live-now, live-patch) at equal CPU was not run.
 
+## S2: control, poison term, all 8 designs (2026-10-31)
+
+Raw outputs: `runs/s1/`, `runs/s2/` in the worktree (git-ignored); comparisons in `runs/s2/cmp_*.txt`, made by `probes/t10-s1-agg.py`.
+Same setup as above (300 s, 2 threads, ES 10 pairs, sigma 0.08, lr 0.02, M1 battery with 64 seeds, paired over eval seeds, CIs 95%).
+Arms: livefixed = fixed recipe on Live-like envs (live-now, live-patch, live-poison, live-famine, live-commons rotated, 5 episodes per candidate, 160 to 195 steps); sp3p0 = S1 with food weight 3; sp3p1 = S1 with food weight 3 and poison weight 1 (reward minus P x poison bites / supply, the same supply as the food share). Caveat: livefixed trains on the same env ids the battery scores (different seeds), which favours it.
+
+Step 1, Live-like control (3 designs, 3 seeds), sp3p0 minus livefixed. The control is much stronger than the small-env fixed recipe (long survival 0.45 / 0.72 / 0.56 against 0.23 / 0.36 / 0.37 for p1 / p5 / p7).
+- long survival -0.11 / +0.10 / +0.11, food per min +1.0 / +2.0 / +0.8, poison per min +0.4 / +0.5 / -0.2.
+- bigger survival -0.15 / -0.14 / +0.01, food per min +1.1 / +0.9 / -0.2, poison per min +1.0 / +1.4 / +0.2.
+So most of the first S1 gain was the Live-like regime, not self-play. What remains is a small edge in food and in long survival for two designs, and a loss in bigger survival and in stings.
+
+Step 2, poison term, sp3p1 minus sp3p0 (same 3 designs and seeds), P = 1 against P = 0:
+- long survival +0.01 / +0.07 / +0.16, food per min -0.7 / +2.2 / +3.7, poison per min -0.30 / -0.24 / +0.11.
+- bigger survival +0.09 / +0.07 / +0.02, food per min -0.5 / +1.1 / +1.8, poison per min -0.85 / -0.71 / -0.03.
+P = 1 helps in nearly every cell (CI above 0 or level), so P = 1 is the S1 setting.
+Against livefixed (3 designs): long survival -0.10 / +0.17 / +0.28, food per min +0.3 / +4.2 / +4.5; bigger survival -0.06 / -0.08 / +0.03, food per min +0.6 / +2.0 / +1.6. S1 still beat the control on long for 2 of 3 designs, so step 3 ran.
+
+Step 3, all 8 panel designs, 2 training seeds, sp3p1 minus livefixed (paired over the 64 eval seeds, mean of both seeds; up / down = designs whose CI lies above / below 0):
+
+| scope  | measure           | min    | median | max    | up | down |
+|--------|-------------------|--------|--------|--------|----|------|
+| long   | survival (share)  | -0.13  | +0.11  | +0.29  | 4  | 2    |
+| long   | food per min      | -2.94  | +2.60  | +3.77  | 5  | 2    |
+| long   | poison per min    | -0.51  | -0.01  | +0.35  | 2  | 2    |
+| long   | s to first food   | -9.0   | +0.4   | +7.7   | 0  | 2    |
+| bigger | survival (share)  | -0.09  | +0.01  | +0.13  | 2  | 2    |
+| bigger | food per min      | -1.74  | +1.12  | +2.42  | 6  | 2    |
+| bigger | poison per min    | -0.67  | +0.20  | +0.67  | 2  | 3    |
+| bigger | s to first food   | -7.6   | -0.3   | +6.3   | 2  | 2    |
+
+Per design, long survival / food per min (sp3p1 minus livefixed): p1-tiny -0.09 / +0.1, p2-narrow-long +0.03 / -2.9, p3-mid +0.17 / +3.2, p4-wide-short -0.01 / +2.9, p5-many-rays +0.11 / +2.6, p6-big-brain +0.14 / +1.1, p7-big-memory +0.29 / +3.8, p8-few-wide-mem -0.13 / -2.7. Both losses on long food are the two designs with few or very wide rays (p2, p8); p1 (3 short rays) has no gain either.
+
+Verdict S2: after the control, S1 with P = 1 is a modest gain, not a clear win. Median over 8 designs: long survival +0.11, long food +2.6 per min, bigger food +1.1 per min, bigger survival level, stings level to slightly up on bigger (+0.2 per min, 3 designs better, 2 worse). It helps most for designs with enough rays and memory (p3, p5, p6, p7) and hurts p2 and p8. About half of the designs win by CI on each measure, two lose, so it is not reliably better than training on Live-like envs. The fixed recipe on Live-like envs is the strong baseline to use (it beats the small-env recipe by a wide margin), and procedural worlds plus self-play add something on top for some bodies. Limits: 300 s runs, 2 training seeds for 5 of 8 designs, the control sees the battery's env ids, no repeat of the whole 8-design set.
+- Raw numbers per run in `runs/s2/*.log` (training held-out is on each arm's own scale).
+
 ## Generator and reward (procEnv.ts, PROC_DEFAULTS)
 
 Every value is drawn from the episode seed, so a seed is one world and training seeds never repeat.
