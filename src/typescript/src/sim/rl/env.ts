@@ -117,7 +117,6 @@ export function isRam(c: { learnerAlive: boolean; touchesLearner: boolean; energ
 // faster for every brain size. Their f32 arithmetic differs slightly from the JS path, but each creature's result depends only
 // on its own inputs, so rewards stay deterministic per seed whatever the thread count or episode order.
 export const RL_WASM = true;
-const useWasm = (env: EnvSpec): boolean => RL_WASM && env.foodVisibleFor === undefined; // hidden food needs the JS sense path
 
 // The engine config of an env: its world on the base of the Ecosystem or the hunt world, no births, no structural change.
 export function envConfig(env: EnvSpec, seed: number): EcoConfig {
@@ -131,7 +130,7 @@ export function envConfig(env: EnvSpec, seed: number): EcoConfig {
   const total = env.rivals.reduce((a, r) => a + r.count, 1);
   base.eco = {
     ...base.eco,
-    wasm: useWasm(env), // f32 kernels give the same numbers in Node and every browser
+    wasm: RL_WASM, // f32 kernels give the same numbers in Node and every browser
     maxPopulation: total,
     foodRegrow: env.foodRegrow / per,
     foodMaxDensity: env.food / per,
