@@ -62,7 +62,45 @@ export function isStagnant(fitness: ArrayLike<number>): boolean {
   return max - min <= STAGNATION_SPREAD * (sum / n);
 }
 
-// Breeds the next generation: elites first, then children, then fresh random immigrants (made by randomGenome) at the end.
+export interface HallEntry {
+  genome: Genome;
+  fitness: number; // the best score this genome reached
+  generation: number; // the generation of that score
+}
+
+const sameGenome = (a: Genome, b: Genome): boolean => {
+  for (let g = 0; g < a.length; g++) if (a[g] !== b[g]) return false;
+  return true;
+};
+
+// Keeps hall as the `size` fittest distinct genomes seen so far, fittest first. A genome enters only by beating the last entry
+// of a full hall, and a genome already in it keeps its best score. Ties keep the older entry.
+export function updateHall(hall: HallEntry[], size: number, population: Population, fitness: ArrayLike<number>, generation: number): void {
+  const cap = Math.floor(size);
+  if (!(cap >= 1)) {
+    hall.length = 0;
+    return;
+  }
+  if (hall.length > cap) hall.length = cap;
+  for (let i = 0; i < population.size; i++) {
+    const f = fitness[i];
+    if (Number.isNaN(f) || (hall.length >= cap && f <= hall[hall.length - 1]!.fitness)) continue;
+    const genome = population.genome(i);
+    const known = hall.find((e) => sameGenome(e.genome, genome));
+    if (known) {
+      if (f <= known.fitness) continue;
+      known.fitness = f;
+      known.generation = generation;
+    } else {
+      hall.push({ genome: genome.slice(), fitness: f, generation });
+    }
+    hall.sort((a, b) => b.fitness - a.fitness);
+    if (hall.length > cap) hall.length = cap;
+  }
+}
+
+// Breeds the next generation: the kept genomes (the hall of fame) first, then this generation's elites that are not among them,
+// then children, then fresh random immigrants (made by randomGenome) at the end.
 // A stagnant generation (see isStagnant) breeds its children with STAGNATION_BOOST times the mutation std.
 export function nextGeneration(
   population: Population,
@@ -70,16 +108,23 @@ export function nextGeneration(
   ga: GaConfig,
   rng: StatefulRng,
   randomGenome: (rng: StatefulRng) => Genome,
+  keep: readonly Genome[] = [],
 ): Population {
   const n = population.size;
   const next = new Population(n, population.genomeLength);
   if (n === 0) return next;
   const order = Array.from({ length: n }, (_, i) => i).sort((a, b) => fitness[b] - fitness[a]);
 
-  let eliteCount = Math.min(n, Math.round(ga.eliteFraction * n));
-  if (ga.eliteFraction > 0) eliteCount = Math.max(1, eliteCount);
+  let elites = Math.min(n, Math.round(ga.eliteFraction * n));
+  if (ga.eliteFraction > 0) elites = Math.max(1, elites);
 
-  for (let i = 0; i < eliteCount; i++) next.genome(i).set(population.genome(order[i]));
+  let eliteCount = Math.min(n, keep.length);
+  for (let i = 0; i < eliteCount; i++) next.genome(i).set(keep[i]!);
+  for (let k = 0; k < elites && eliteCount < n; k++) {
+    const genome = population.genome(order[k]);
+    if (keep.some((g) => sameGenome(g, genome))) continue;
+    next.genome(eliteCount++).set(genome);
+  }
 
   const immigrants = Math.min(n - eliteCount, Math.round(ga.immigrantFraction * n));
   const childEnd = n - immigrants;
