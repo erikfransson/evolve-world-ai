@@ -1,7 +1,7 @@
 // Fine-tunes one creature in an RL environment (#27) with evolution strategies, on worker threads.
 // Usage: node src/rlTrain.ts --env nibble [--from pool:39 | random:1 | file:creature.json] [--iters 60] [--pairs 16] [--sigma 0.08]
 //        [--lr 0.02] [--episodes 2] [--eval 16] [--every 10] [--vary 0] [--threads N] [--seed 1] [--out learner.json] [--library public/rl/library.json] [--save]
-//        [--mix nibble,far-food,...] [--selfplay [--crowd 5,50] [--lineage 0] [--foodw 3]] [--budget SECONDS]
+//        [--mix nibble,far-food,...] [--selfplay [--crowd 5,50] [--lineage 0] [--foodw 3] [--poisonw 0]] [--budget SECONDS]
 // --mix rotates through the envs, one per iteration (all candidates on it). --selfplay (S1) trains on a new procedurally drawn crowded world every
 // episode, the learner's genome playing half the bodies and the league (current weights, recent bests) the rest; the env is then ignored.
 // --from founder:ID starts from a Live founder of public/live-founders.json, design:ID from a fixed design of sim/rl/designPanel.ts. --budget stops after that many wall seconds (after iters at the latest).
@@ -47,6 +47,7 @@ const { values } = parseArgs({
     selfplay: { type: "boolean", default: false },
     crowd: { type: "string", default: PROC_DEFAULTS.crowd.join(",") },
     lineage: { type: "string", default: "0" },
+    poisonw: { type: "string", default: "0" },
     foodw: { type: "string", default: String(PROC_DEFAULTS.foodWeight) },
     budget: { type: "string", default: "0" },
   },
@@ -63,7 +64,7 @@ if (crowd.length !== 2 || !(crowd[0]! >= 1 && crowd[0]! <= crowd[1]!)) {
   console.error("error: --crowd must be LO,HI");
   process.exit(1);
 }
-const procSpec = { ...PROC_DEFAULTS, crowd: [crowd[0]!, crowd[1]!] as const, lineageWeight: Number(values.lineage), foodWeight: Number(values.foodw) };
+const procSpec = { ...PROC_DEFAULTS, crowd: [crowd[0]!, crowd[1]!] as const, lineageWeight: Number(values.lineage), foodWeight: Number(values.foodw), poisonWeight: Number(values.poisonw) };
 const mix = values.selfplay ? [procEnv(procSpec)] : mixIds.map((id) => envById(id));
 const env = mix[0] ?? envById("nibble")!;
 if (mix.some((e) => !e)) {

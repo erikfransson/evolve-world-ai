@@ -30,6 +30,7 @@ export interface ProcSpec {
   layouts: readonly (Layout["kind"] | "open")[]; // one drawn per world, open scatter with weight `openShare`
   openShare: number;
   foodWeight: number; // reward weight of the food share (see crowdReward)
+  poisonWeight: number; // reward weight of the poison bites, taken off like the food share (0 leaves it out)
   lineageWeight: number; // reward weight of the learner's share of the end population (0 leaves it out)
 }
 
@@ -48,6 +49,7 @@ export const PROC_DEFAULTS: ProcSpec = {
   layouts: ["patch", "islands", "rooms", "fence"],
   openShare: 0.5,
   foodWeight: 3, // 0.25 learned nothing in 300 s (standing still lives long); 3 beat the fixed recipe on Live-like survival, see t10-s1-selfplay.md
+  poisonWeight: 0,
   lineageWeight: 0,
 };
 
@@ -122,9 +124,9 @@ function specOf(w: ProcWorld): EnvSpec {
 }
 
 // The reward of one learner body: the share of the episode it lived (1 if it was alive at the end) plus foodWeight times the bites
-// it ate over the food its share of the world offered (supply). A world's score is the mean over the learner's bodies, plus
+// it ate over the food its share of the world offered (supply), minus poisonWeight times its poison bites over the same supply. A world's score is the mean over the learner's bodies, plus
 // lineageWeight times the learner's share of the creatures alive at the end.
-export const crowdReward = (life: number, bites: number, supply: number, foodWeight: number): number => life + (foodWeight * bites) / supply;
+export const crowdReward = (life: number, bites: number, supply: number, foodWeight: number, poison = 0, poisonWeight = 0): number => life + (foodWeight * bites - poisonWeight * poison) / supply;
 
 export interface CrowdStats {
   reward: number;
@@ -132,6 +134,7 @@ export interface CrowdStats {
   crowd: number;
   life: number; // mean lived share of the learner's bodies
   bites: number; // mean food bites per learner body
+  poison: number; // mean poison bites per learner body
   aliveShare: number; // learner bodies alive at the end
   leagueAliveShare: number; // league bodies alive at the end (NaN without any)
   ticks: number; // ticks played
@@ -169,12 +172,14 @@ export function runCrowdStats(spec: ProcSpec, learner: Learner, seed: number, li
   const ticks = Math.round(w.seconds / config.dt);
   const diedAt = new Float64Array(w.learners).fill(ticks);
   const bites = new Float64Array(w.learners);
+  const stings = new Float64Array(w.learners);
   let tick = 0;
   let learnersDead = 0;
   eco.onDeath = (m) => {
     if (m.id >= w.learners) return;
     diedAt[m.id] = tick;
     bites[m.id] = m.eaten;
+    stings[m.id] = m.poisonBites;
     learnersDead++;
   };
   let played = 0;
@@ -188,19 +193,22 @@ export function runCrowdStats(spec: ProcSpec, learner: Learner, seed: number, li
   for (const m of eco.members) {
     if (m.id < w.learners) {
       bites[m.id] = m.eaten;
+      stings[m.id] = m.poisonBites;
       aliveL++;
     } else aliveO++;
   }
   let sum = 0;
   let life = 0;
   let eaten = 0;
+  let stung = 0;
   for (let k = 0; k < w.learners; k++) {
     life += diedAt[k]! / ticks / w.learners;
     eaten += bites[k]! / w.learners;
-    sum += crowdReward(diedAt[k]! / ticks, bites[k]!, w.supply, spec.foodWeight) / w.learners;
+    stung += stings[k]! / w.learners;
+    sum += crowdReward(diedAt[k]! / ticks, bites[k]!, w.supply, spec.foodWeight, stings[k]!, spec.poisonWeight) / w.learners;
   }
   if (spec.lineageWeight) sum += (spec.lineageWeight * aliveL) / Math.max(1, aliveL + aliveO);
-  return { reward: sum, learners: w.learners, crowd: w.crowd, life, bites: eaten, aliveShare: aliveL / w.learners, leagueAliveShare: w.crowd > w.learners ? aliveO / (w.crowd - w.learners) : NaN, ticks: played };
+  return { reward: sum, learners: w.learners, crowd: w.crowd, life, bites: eaten, poison: stung, aliveShare: aliveL / w.learners, leagueAliveShare: w.crowd > w.learners ? aliveO / (w.crowd - w.learners) : NaN, ticks: played };
 }
 
 export function runCrowdEpisode(spec: ProcSpec, learner: Learner, seed: number, library: Library = {}): EpisodeResult {

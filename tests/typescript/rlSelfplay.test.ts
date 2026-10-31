@@ -43,6 +43,7 @@ describe("procedural self-play world (S1)", () => {
 
   it("rewards life plus the food share, and leaves the built-in envs alone", () => {
     expect(crowdReward(0.5, 4, 2, 0.25)).toBeCloseTo(1);
+    expect(crowdReward(0.5, 4, 2, 0.25, 2, 1)).toBeCloseTo(0); // 0.5 + (0.25 x 4 - 1 x 2) / 2
     expect(ENVS.some((e) => e.proc)).toBe(false);
     const lineage = runCrowdStats({ ...spec, lineageWeight: 1 }, learner, 11);
     expect(lineage.reward).toBeGreaterThanOrEqual(runCrowdStats(spec, learner, 11).reward);
