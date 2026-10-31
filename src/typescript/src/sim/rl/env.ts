@@ -18,6 +18,8 @@ import { plainText } from "./validate.ts";
 import { envById } from "./envs.ts";
 import { LAYOUT_KINDS, placeLayout } from "./layouts.ts";
 import type { Layout } from "./layouts.ts";
+import { runCrowdEpisode } from "./procEnv.ts";
+import type { ProcSpec } from "./procEnv.ts";
 
 // RL environments (#27): short episodes on the Ecosystem engine, so a creature trained here acts exactly as it would in the
 // Ecosystem or the two-species hunt world. An environment is plain data: a small world, the learner's species, rivals, and reward weights.
@@ -72,6 +74,7 @@ export interface EnvSpec {
   // cross: per poison wall of the layout the learner got past (at any moment), a first reward on the way to food beyond it.
   // early: per item or ram, times the share of the episode still left at the bite (1 at the start, 0 at the end).
   reward: { food?: number; kill?: number; survive?: number; energy?: number; fast?: number; ram?: number; cross?: number; early?: number };
+  proc?: ProcSpec; // self-play (S1): a new crowded world every episode, played by runCrowdEpisode; every other field is then unused
   tags: string[];
 }
 
@@ -329,6 +332,10 @@ export function runEpisode(
   onTick?: (eco: Ecosystem) => void,
   act?: (learner: Creature) => void,
 ): EpisodeResult {
+  if (env.proc) {
+    if (onTick || act) throw new Error("self-play episodes cannot be drawn or played stochastically");
+    return runCrowdEpisode(env.proc, learner, seed, library);
+  }
   env = variantFor(env, seed);
   const config = episodeConfig(env, seed);
   const placed = env.layout ? placeLayout(env.layout, env.size, env.food, env.poison, seed) : null;
