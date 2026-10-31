@@ -76,7 +76,7 @@ const sameGenome = (a: Genome, b: Genome): boolean => {
 // Keeps hall as the `size` fittest distinct genomes seen so far, fittest first. A genome enters only by beating the last entry
 // of a full hall, and a genome already in it keeps its best score. Ties keep the older entry.
 export function updateHall(hall: HallEntry[], size: number, population: Population, fitness: ArrayLike<number>, generation: number): void {
-  const cap = Math.floor(size);
+  const cap = Math.min(Math.floor(size), population.size); // a hall bigger than the population would only cost memory and sorting
   if (!(cap >= 1)) {
     hall.length = 0;
     return;
