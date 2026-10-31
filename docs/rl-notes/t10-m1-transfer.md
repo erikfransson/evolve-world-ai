@@ -44,7 +44,7 @@ Engine change: runEpisode returns poison, poisonEnergy, firstFood and died (a pe
 
 ## Commands (src/typescript)
 
-Prefix long ones with `flock /home/erik/progs/evolve-world-ai/.claude/heavy.lock nice -n 19 ionice -c3 chrt --idle 0`.
+Prefix long ones with `flock <repo>/.claude/heavy.lock nice -n 19 ionice -c3 chrt --idle 0`.
 - Untrained panel, founders, a random design: `node src/rlTransfer.ts --from panel --from founders --from random:1 --seeds 64 --threads 2 --label untrained --out ../../docs/rl-notes/t10-m1-untrained.json` (111 s wall for 12 genomes, about 9 s per genome; 8 designs 60 s).
 - Train the panel: `node src/rlPanelTrain.ts --method es --iters 200 --out ../../docs/rl-notes/t10-m1-panel/es` (21.6 min wall for 8 designs on 2 threads), `--method backprop --iters 500` (9 min).
 - Score a trained panel against the reference: `node src/rlTransfer.ts --from panel:../../docs/rl-notes/t10-m1-panel/es --label mine --out mine.json --baseline ../../docs/rl-notes/t10-m1-untrained.json`.

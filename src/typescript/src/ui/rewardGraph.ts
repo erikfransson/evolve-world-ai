@@ -244,7 +244,7 @@ export function drawRewardGraph(ctx: CanvasRenderingContext2D, its: readonly RlI
 
   ctx.fillStyle = LABEL;
   ctx.textBaseline = "top";
-  const ticks = w >= 240 ? 4 : 2;
+  const ticks = Math.min(w >= 240 ? 4 : 2, last); // no repeated labels early in a run
   for (let k = 0; k <= ticks; k++) {
     ctx.textAlign = k === 0 ? "left" : k === ticks ? "right" : "center";
     ctx.fillText(`${Math.round((last * k) / ticks)}`, x0 + (w * k) / ticks, luckTop + luckH + 5);

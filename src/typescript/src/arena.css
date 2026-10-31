@@ -218,7 +218,7 @@ fieldset.tab-off { display: none; }
 .energy-full { font-size: 0.8rem; color: var(--muted); margin-top: -0.35rem; }
 .energy-full .nb { color: var(--text); white-space: nowrap; margin-right: 0.25em; }
 .energy-rows { display: grid; gap: 0.3rem; }
-.energy-row { display: grid; grid-template-columns: 9.5rem minmax(0, 1fr) 2.6rem; align-items: center; gap: 0.5rem; font-size: 0.78rem; color: var(--muted); }
+.energy-row { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr) 2.6rem; align-items: center; gap: 0.5rem; font-size: 0.78rem; color: var(--muted); }
 .energy-val { text-align: right; color: var(--text); }
 .energy-bar { height: 0.45rem; border-radius: 999px; background: color-mix(in srgb, var(--border) 70%, transparent); overflow: hidden; }
 .energy-fill { display: block; height: 100%; border-radius: 999px; }
