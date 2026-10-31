@@ -2,6 +2,7 @@ import { MEMORY_UNITS, memoryUnits } from "../sim/config.ts";
 import { PLAN_LIMITS } from "../sim/rl/creatureFile.ts";
 import type { BodyPlan } from "../sim/sensors.ts";
 import type { TrainMethod } from "../worker/rlProtocol.ts";
+import { LAYOUT_CHOICES } from "./arenaLayout.ts";
 import { planFields, range } from "./settingsForm.ts";
 import type { FormSpec, Section } from "./settingsForm.ts";
 
@@ -45,7 +46,6 @@ const DESIGN_SECTIONS: readonly Section<DesignConfig>[] = [
 ];
 export const DESIGN_FORM: FormSpec<DesignConfig> = { sections: DESIGN_SECTIONS, defaults: DEFAULT_DESIGN };
 
-export const TILE_CHOICES = ["1", "4", "6", "12"] as const;
 
 export interface RunConfig {
   method: TrainMethod;
@@ -54,12 +54,12 @@ export interface RunConfig {
   episodes: number;
   sigma: number;
   lr: number;
-  tiles: string; // one of TILE_CHOICES
+  tiles: string; // replays per env, one of LAYOUT_CHOICES
   bpLr: number; // backprop learning rate
   bpEpisodes: number; // backprop episodes per update
 }
 
-export const DEFAULT_RUN: RunConfig = { method: "es", population: 100, iterations: 5000, episodes: 1, sigma: 0.08, lr: 0.02, tiles: "12", bpLr: 0.003, bpEpisodes: 16 };
+export const DEFAULT_RUN: RunConfig = { method: "es", population: 100, iterations: 5000, episodes: 1, sigma: 0.08, lr: 0.02, tiles: "auto", bpLr: 0.003, bpEpisodes: 16 };
 
 const rr = range<RunConfig>;
 const es = (c: RunConfig): boolean => c.method === "es";
@@ -81,7 +81,7 @@ const RUN_SECTIONS: readonly Section<RunConfig>[] = [
       rr({ id: "population", label: "Population", tip: "Candidate brains tried per iteration. More is steadier and slower.", min: 10, max: 5000, step: 10, log: true, enabledWhen: es, get: (c) => c.population, set: (c, v) => { c.population = v; } }),
       rr({ id: "iterations", label: "Iterations", tip: "The run stops after this many iterations (updates for Backprop RL).", min: 100, max: 200000, step: 100, log: true, get: (c) => c.iterations, set: (c, v) => { c.iterations = v; } }),
       rr({ id: "episodes", label: "Episodes per candidate", tip: "Worlds each candidate plays per environment and iteration. More is less noisy and slower.", min: 1, max: 40, step: 1, enabledWhen: es, get: (c) => c.episodes, set: (c, v) => { c.episodes = v; } }),
-      { kind: "choice", id: "tiles", label: "Tiles shown", tip: "How many replays of the trained creature to watch (Evolutionary RL: the iteration's best candidate; Backprop RL: the current policy). Tile k plays environment k, repeating if there are fewer environments, each time on a different layout.", options: TILE_CHOICES.map((n) => [n, n] as const), get: (c) => c.tiles, set: (c, v) => { c.tiles = v; } },
+      { kind: "choice", id: "tiles", label: "Replays per environment", tip: "Every chosen environment gets its own tiles replaying the trained creature (Evolutionary RL: the iteration's best candidate; Backprop RL: the current policy), each on a different layout. Auto shows 4 layouts of a single environment, 2 each of two or three, and one each of more.", options: LAYOUT_CHOICES.map((n) => [n, n === "auto" ? "Auto" : n] as const), get: (c) => c.tiles, set: (c, v) => { c.tiles = v; } },
       rr({ id: "sigma", label: "Mutation size", tip: "How far each candidate is nudged from the current brain (sigma).", min: 0.01, max: 0.3, step: 0.01, fmt: "dens", advanced: true, enabledWhen: es, get: (c) => c.sigma, set: (c, v) => { c.sigma = v; } }),
       rr({ id: "lr", label: "Learning rate", tip: "How far the brain moves toward the better-scoring direction each iteration.", min: 0.002, max: 0.1, step: 0.002, fmt: "dens3", advanced: true, enabledWhen: es, get: (c) => c.lr, set: (c, v) => { c.lr = v; } }),
       rr({ id: "bpLr", label: "Backprop learning rate", tip: "How far each gradient step moves the brain (Backprop RL).", min: 0.0005, max: 0.01, step: 0.0005, fmt: "dens4", advanced: true, enabledWhen: backprop, get: (c) => c.bpLr, set: (c, v) => { c.bpLr = v; } }),

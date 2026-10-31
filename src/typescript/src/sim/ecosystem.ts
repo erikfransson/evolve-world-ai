@@ -75,6 +75,7 @@ export class EcoCreature {
   birthTick = 0;
   children = 0;
   eaten = 0; // food items eaten, poison not counted
+  poisonBites = 0; // poison items eaten (for the RL transfer battery)
   kills = 0; // prey eaten (hunts only, so an RL kill reward never pays a bump)
   bumpKills = 0; // creatures that died in a bump it survived (collision damage)
   species = 0; // index into the config's species; children keep their parent's
@@ -124,6 +125,7 @@ export interface EcoCore {
   tick: number; births: number; deaths: number; foodEaten: number; poisonEaten: number; food: number; poison: number;
   rngState: number; foodDue: number; poisonDue: number; nextId: number; founders: number; poolFounders: number; itemCapacity: number;
   counts: SpeciesCount[];
+  bumpKills?: number; // lethal bumps with one survivor; saves before it lack it, and restoreDecoded takes the living creatures' sum
 }
 
 // Everything restoreMember needs of one creature.
@@ -696,6 +698,7 @@ export class Ecosystem {
     m.birthTick = this.tick;
     m.children = 0;
     m.eaten = 0;
+    m.poisonBites = 0;
     m.kills = 0;
     m.bumpKills = 0;
     m.lastBirthTick = -Infinity;
@@ -790,12 +793,32 @@ export class Ecosystem {
     return this.lineages;
   }
 
+  // Creatures that have ever been in this world: founders, births and inserts (every one takes the next id, from 0).
+  get everLived(): number {
+    return this.nextId;
+  }
+
+  // Creatures killed by another in this world: eaten by a hunter, or dead in a bump the other survived (a bump that kills both counts for no one).
+  get kills(): number {
+    let k = this.contacts.bumpKills;
+    for (const c of this.counts) k += c.eaten;
+    return k;
+  }
+
+  // The world total of lethal bumps with one survivor; restoreDecoded sets it for a save without it.
+  get bumpKills(): number {
+    return this.contacts.bumpKills;
+  }
+  set bumpKills(v: number) {
+    this.contacts.bumpKills = v;
+  }
+
   // The scalars of the run, for saveState.
   exportCore(): EcoCore {
     return {
       tick: this.tick, births: this.births, deaths: this.deaths, foodEaten: this.foodEaten, poisonEaten: this.poisonEaten,
       food: this.food, poison: this.poison, rngState: this.rng.state, foodDue: this.economy.foodDue, poisonDue: this.economy.poisonDue, nextId: this.nextId,
-      founders: this.founders, poolFounders: this.poolFounders, itemCapacity: this.items.count, counts: this.counts.map((c) => ({ ...c })),
+      founders: this.founders, poolFounders: this.poolFounders, itemCapacity: this.items.count, counts: this.counts.map((c) => ({ ...c })), bumpKills: this.contacts.bumpKills,
     };
   }
 
@@ -803,6 +826,7 @@ export class Ecosystem {
   importCore(c: EcoCore): void {
     this.tick = c.tick; this.births = c.births; this.deaths = c.deaths; this.foodEaten = c.foodEaten; this.poisonEaten = c.poisonEaten;
     this.food = c.food; this.poison = c.poison; this.rng.state = c.rngState; this.economy.foodDue = c.foodDue; this.economy.poisonDue = c.poisonDue; this.nextId = c.nextId;
+    this.contacts.bumpKills = c.bumpKills ?? 0;
     if (c.counts.length !== this.counts.length) throw new Error("saved species counts do not fit this world");
     c.counts.forEach((x, i) => {
       const to = this.counts[i]!;

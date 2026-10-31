@@ -540,8 +540,9 @@ export class Ppo {
   private readonly learner: Learner;
   private readonly pool: readonly PoolEntry[] | null;
   private readonly library: Library;
+  private envOffset = 0;
 
-  // Episode k of an update plays envs[k % envs.length].
+  // Episode k of an update plays envs[(envOffset + k) % envs.length]; the offset moves on by the update's episodes, so every env trains even when there are more envs than episodes.
   constructor(envs: readonly EnvSpec[], learner: Learner, sizes: readonly number[], options: Partial<PpoOptions>, seed: number, pool: readonly PoolEntry[] | null = null, library: Library = {}) {
     this.envs = envs;
     this.learner = learner;
@@ -591,8 +592,10 @@ export class Ppo {
 
   private tasks(): RolloutTask[] {
     const o = this.options;
+    const offset = this.envOffset % this.envs.length;
+    this.envOffset = (offset + o.episodes) % this.envs.length;
     return Array.from({ length: o.episodes }, (_, e) => ({
-      env: e % this.envs.length,
+      env: (offset + e) % this.envs.length,
       seed: this.rng.int(HELD_BASE),
       noiseSeed: this.rng.int(HELD_BASE),
       theta: this.theta,

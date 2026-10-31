@@ -10,12 +10,21 @@ export interface Show {
   names: string[]; // env name per recording
   envCount: number; // recordings[k] plays env k % envCount
   policy?: boolean; // the current policy of a backprop run, not an iteration's best candidate
+  preview?: boolean; // the gallery's sample clips of the chosen envs, before a run
 }
 
-// Tile grid shapes: the desktop column count per tile count (phones use 2 columns in CSS).
-export const TILE_COUNTS = [1, 4, 6, 12] as const;
-export const DEFAULT_TILES = 12;
-export const tileColumns = (n: number): number => (n <= 1 ? 1 : n === 4 ? 2 : n === 6 ? 3 : 4);
+// A per-env change of held-out reward for the tile badges.
+export interface Badge {
+  text: string;
+  dir: "up" | "down" | "flat";
+}
+
+// The small line under a tile's env name: which learner, and the layout when an env has more than one tile.
+export function tileSub(s: Pick<Show, "iter" | "policy" | "preview" | "envCount">, k: number, total: number): string {
+  if (s.preview) return "sample clip";
+  const learner = s.iter === 0 ? "starting creature" : s.policy ? `policy, update ${s.iter}` : `best of iteration ${s.iter}`;
+  return total > s.envCount ? `${learner} · layout ${Math.floor(k / Math.max(1, s.envCount)) + 1}` : learner;
+}
 
 // "Forage box · best of iteration 42 · layout 3": the scenario, which learner, and which of that scenario's layouts (tile index within its env + 1).
 export function tileTitle(name: string, iter: number, k: number, envCount: number, policy = false): string {
@@ -34,13 +43,17 @@ export interface ZoomTarget {
 }
 
 interface Tile {
+  k: number; // the recording this tile plays
   box: HTMLElement;
   canvas: HTMLCanvasElement;
   title: HTMLElement;
+  sub: HTMLElement;
   stats: HTMLElement;
+  badge: HTMLElement;
 }
 
-// A grid of small canvases that replay the latest show. Each tile loops its own episode; a newer show waits until the longest one has played.
+// A grid of small canvases that replay the latest show, one per slot (a recording index). Each tile loops its own episode; a newer show waits
+// until the longest one has played.
 export class TileGrid {
   private tiles: Tile[] = [];
   private playing: Show | null = null;
@@ -56,44 +69,57 @@ export class TileGrid {
   onOpen: (k: number) => void = () => {};
   onFinished: () => void = () => {}; // once per show, when every tile has played to the end and no newer show waits
   private asked = false;
+  private badges: readonly (Badge | null)[] = []; // per env index
 
   constructor(root: HTMLElement) {
     this.root = root;
-  }
-
-  get size(): number {
-    return this.tiles.length;
   }
 
   get current(): Show | null {
     return this.playing;
   }
 
-  // Rebuilds the grid for n tiles (one of TILE_COUNTS).
-  setCount(n: number): void {
-    this.root.style.setProperty("--cols", String(tileColumns(n)));
-    this.root.replaceChildren();
-    this.tiles = Array.from({ length: n }, (_, k) => {
-      const box = document.createElement("figure");
-      box.className = "tile-box";
-      box.tabIndex = 0;
-      box.setAttribute("role", "button");
-      box.title = "Open large";
-      box.addEventListener("click", () => this.onOpen(k));
-      box.addEventListener("keydown", (ev) => {
-        if (ev.key !== "Enter" && ev.key !== " ") return;
-        ev.preventDefault();
-        this.onOpen(k);
-      });
-      const canvas = document.createElement("canvas");
-      const cap = document.createElement("figcaption");
-      const title = document.createElement("b");
-      const stats = document.createElement("span");
-      cap.append(title, stats);
-      box.append(canvas, cap);
-      this.root.append(box);
-      return { box, canvas, title, stats };
+  // The recordings shown, in order; the boxes are rebuilt only when their number changes.
+  setSlots(slots: readonly number[]): void {
+    if (slots.length !== this.tiles.length) {
+      this.root.replaceChildren();
+      this.tiles = slots.map(() => this.box());
+    }
+    this.tiles.forEach((t, i) => (t.k = slots[i]!));
+    if (this.playing) this.label();
+  }
+
+  private box(): Tile {
+    const box = document.createElement("figure");
+    box.className = "tile-box";
+    box.tabIndex = 0;
+    box.setAttribute("role", "button");
+    box.title = "Open large";
+    const tile: Tile = { k: 0, box, canvas: document.createElement("canvas"), title: document.createElement("b"), sub: document.createElement("small"), stats: document.createElement("span"), badge: document.createElement("i") };
+    box.addEventListener("click", () => this.onOpen(tile.k));
+    box.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Enter" && ev.key !== " ") return;
+      ev.preventDefault();
+      this.onOpen(tile.k);
     });
+    const frame = document.createElement("div");
+    frame.className = "tile-frame";
+    tile.badge.className = "tile-badge";
+    frame.append(tile.canvas, tile.badge);
+    const cap = document.createElement("figcaption");
+    const head = document.createElement("div");
+    head.className = "tile-head";
+    tile.stats.className = "tile-result";
+    head.append(tile.title, tile.stats);
+    cap.append(head, tile.sub);
+    box.append(frame, cap);
+    this.root.append(box);
+    return tile;
+  }
+
+  // Held-out change per env index, shown on the tiles of that env.
+  setBadges(badges: readonly (Badge | null)[]): void {
+    this.badges = badges;
     if (this.playing) this.label();
   }
 
@@ -101,8 +127,10 @@ export class TileGrid {
     this.playing = this.queued = null;
     for (const t of this.tiles) {
       t.box.hidden = false;
-      t.title.textContent = "";
-      t.stats.textContent = "";
+      t.box.classList.remove("empty");
+      for (const e of [t.title, t.sub, t.stats, t.badge]) e.textContent = "";
+      t.badge.hidden = true;
+      t.canvas.getContext("2d")?.clearRect(0, 0, t.canvas.width, t.canvas.height); // setSlots keeps same-count canvases, so drop the old frame
     }
   }
 
@@ -112,8 +140,14 @@ export class TileGrid {
     if (this.playing) this.label();
   }
 
+  // Plays s at once, dropping a queued show (the gallery's clips, which no training show follows).
+  replace(s: Show, now: number): void {
+    this.queued = null;
+    this.start(s, now);
+  }
+
   show(s: Show, now: number): void {
-    if (this.playing && this.speed > 0) this.queued = s;
+    if (this.playing && this.speed > 0 && !this.playing.preview) this.queued = s;
     else {
       this.queued = null; // a show queued before Max would otherwise replay after this newer one
       this.start(s, now);
@@ -131,16 +165,23 @@ export class TileGrid {
 
   private label(): void {
     const s = this.playing!;
-    const put = (k: number, title: HTMLElement, stats: HTMLElement): void => {
-      const rec = s.recordings[k]!;
-      title.textContent = tileTitle(s.names[k] ?? "", s.iter, k, s.envCount, s.policy);
-      stats.textContent = resultLine(rec.result);
-    };
-    this.tiles.forEach((t, k) => {
-      t.box.hidden = !s.recordings[k];
-      if (s.recordings[k]) put(k, t.title, t.stats);
-    });
-    if (this.zoom && s.recordings[this.zoom.k]) put(this.zoom.k, this.zoom.target.title, this.zoom.target.stats);
+    const total = s.recordings.length;
+    for (const t of this.tiles) {
+      const rec = s.recordings[t.k];
+      t.box.classList.toggle("empty", !rec);
+      t.title.textContent = s.names[t.k] ?? "";
+      t.sub.textContent = rec ? tileSub(s, t.k, total) : "replay at the next show";
+      t.stats.textContent = rec && !s.preview ? resultLine(rec.result) : ""; // a sample clip plays some other creature
+      const badge = s.preview ? null : this.badges[t.k % Math.max(1, s.envCount)];
+      t.badge.hidden = !badge;
+      t.badge.textContent = badge?.text ?? "";
+      t.badge.className = `tile-badge ${badge?.dir ?? ""}`;
+    }
+    const z = this.zoom && s.recordings[this.zoom.k];
+    if (this.zoom && z) {
+      this.zoom.target.title.textContent = s.preview ? `${s.names[this.zoom.k] ?? ""} · sample clip` : tileTitle(s.names[this.zoom.k] ?? "", s.iter, this.zoom.k, s.envCount, s.policy);
+      this.zoom.target.stats.textContent = s.preview ? "A sample of this environment. Press Start to train your creature in it." : resultLine(z.result);
+    }
   }
 
   // Draws every tile and the opened one; returns tile 0's recording and frame for the brain view.
@@ -165,12 +206,14 @@ export class TileGrid {
       drawArena(ctx, rec, f, canvas.clientWidth, canvas.clientHeight);
       return f;
     };
-    this.tiles.forEach((tile, k) => {
-      const rec = s?.recordings[k];
-      if (!rec) return;
+    for (const tile of this.tiles) {
+      const rec = s?.recordings[tile.k];
+      if (!rec || tile.canvas.clientWidth <= 0) continue;
       const f = paint(rec, tile.canvas);
-      if (k === 0) first = { rec, frame: f };
-    });
+      if (tile.k === 0) first = { rec, frame: f };
+    }
+    const r0 = s && !s.preview ? s.recordings[0] : undefined;
+    if (!first && r0) first = { rec: r0, frame: frameAt(r0, this.clock) }; // tile 0 on another page still drives the brain view
     const zoomRec = this.zoom && s?.recordings[this.zoom.k];
     if (this.zoom && zoomRec) paint(zoomRec, this.zoom.target.canvas);
     return first;

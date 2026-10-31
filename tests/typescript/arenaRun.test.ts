@@ -57,6 +57,20 @@ describe.each(["es", "backprop"] as const)("ArenaRun with %s", (method) => {
     expect(types(again).filter((t) => t === "show").length).toBeGreaterThan(1); // one at the next step end, one final
   });
 
+  it("with tiles per env, shows that many of every env, also after the envs change", async () => {
+    const out: RlOutMessage[] = [];
+    const run = new ArenaRun({ ...start(3, [short("nibble"), short("minefield")]), tiles: 2, tilesPerEnv: true }, assets, inline, (m) => out.push(m));
+    run.pause();
+    const done = run.run();
+    for (let k = 0; k < 20; k++) await tick();
+    run.setEnvs([short("nibble"), short("minefield"), short("corridor")]);
+    run.resume();
+    await done;
+    const counts = out.flatMap((m) => (m.type === "show" ? [m.recordings.length] : []));
+    expect(counts[0]).toBe(4);
+    expect(counts.at(-1)).toBe(6);
+  });
+
   it("holds between steps while paused and goes on after resume", async () => {
     const out: RlOutMessage[] = [];
     const run = new ArenaRun(start(3), assets, inline, (m) => out.push(m));

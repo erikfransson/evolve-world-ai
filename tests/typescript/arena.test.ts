@@ -1,11 +1,12 @@
 // @vitest-environment happy-dom
 import { drawArena, frameAt, learnerAlive, loopSeconds } from "../../src/typescript/src/ui/arenaScene.ts";
-import { drawRewardGraph, fitRange, latestValues, thin } from "../../src/typescript/src/ui/rewardGraph.ts";
+import { drawRewardGraph, fitRange, latestValues, smooth, thin } from "../../src/typescript/src/ui/rewardGraph.ts";
 import { ARENA_KIND, bestFounder, change, customEnv, envsForKind, kindRejection, planSummary } from "../../src/typescript/src/ui/arenaPick.ts";
 import type { CustomEnvForm } from "../../src/typescript/src/ui/arenaPick.ts";
 import { DEFAULT_SPEED, FAVOURITES_KEY, MAX_FAVOURITES, SPEED_KEY, addFavourite, loadFavourites, loadSpeed, removeFavourite, saveSpeed } from "../../src/typescript/src/ui/arenaStore.ts";
 import { DEFAULT_DESIGN, designPlan, planDesign } from "../../src/typescript/src/ui/arenaForm.ts";
-import { TILE_COUNTS, resultLine, tileColumns, tileTitle } from "../../src/typescript/src/ui/arenaTiles.ts";
+import { resultLine, tileSub, tileTitle } from "../../src/typescript/src/ui/arenaTiles.ts";
+import { displayOrder, gridColumns, layoutsPerEnv, pageOf, phaseOf, unshownEnvs } from "../../src/typescript/src/ui/arenaLayout.ts";
 import { BLANK_ENV, envConfig } from "../../src/typescript/src/sim/rl/env.ts";
 import { ENVS } from "../../src/typescript/src/sim/rl/envs.ts";
 import { creatureFile, genomeLengthFor } from "../../src/typescript/src/sim/rl/creatureFile.ts";
@@ -32,7 +33,7 @@ function recording(): Recording {
     rays: Float32Array.from([0.5, 1, 0, 0, 0, 0, 1, 3]),
     inputSize: 0,
     inputs: new Float32Array(0),
-    result: { reward: 1, food: 1, kills: 0, rams: 0, seconds: 5, energy: 10 },
+    result: { reward: 1, food: 1, kills: 0, rams: 0, seconds: 5, energy: 10, poison: 0, poisonEnergy: 0, firstFood: -1, elapsed: 5, clearTime: -1, died: 0 },
   };
 }
 
@@ -88,10 +89,21 @@ describe("drawRewardGraph", () => {
     }
   });
 
-  it("draws a held-out dot per check including the start", () => {
+  it("draws a held-out dot per check including the start, and marks the latest with a halo and a ring", () => {
     const { ctx, calls } = fakeCtx(400, 170);
     drawRewardGraph(ctx, [step(1, 2, null), step(5, 3, 4)], 1, 400, 170);
-    expect(named(calls, "arc")).toBe(2);
+    expect(named(calls, "arc")).toBe(2 + 2);
+    const text = calls.filter((c) => c.name === "fillText").map((c) => c.args[0]);
+    expect(text).toContain("+3.0"); // the gain since the start beside the latest check
+  });
+
+  it("smooths a noisy curve into its trend without shifting it", () => {
+    const pts = Array.from({ length: 200 }, (_, i) => ({ iter: i, v: i / 10 + (i % 2 ? 1 : -1) }));
+    const t = smooth(pts);
+    expect(t).toHaveLength(200);
+    expect(Math.abs(t[100]!.v - 10)).toBeLessThan(0.25);
+    expect(t.map((p) => p.iter)).toEqual(pts.map((p) => p.iter));
+    expect(smooth([])).toEqual([]);
   });
 
   it("reports the latest value of each curve for the legend", () => {
@@ -117,7 +129,7 @@ describe("drawRewardGraph", () => {
     const its = [10, 20, 30].map((i, k) => ({ iter: i, train: 9 + k, best: 100 + k, held: 9 + k, perEnv: null, seconds: i }));
     drawRewardGraph(ctx, its, 9, 400, 290);
     const ys = calls.filter((c) => c.name === "arc").map((c) => c.args[1] as number);
-    const mainH = 290 - 12 - 36 - 18 - Math.round((290 - 12 - 36 - 18) * 0.3);
+    const mainH = 290 - 12 - 36 - 18 - Math.round((290 - 12 - 36 - 18) * 0.26);
     expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(0.7 * mainH);
   });
 
@@ -221,9 +233,49 @@ describe("tile captions and layout", () => {
     expect(resultLine({ food: 4, kills: 0, seconds: 44.6 })).toBe("food 4, alive 45 s");
     expect(resultLine({ food: 4, kills: 2, seconds: 10 })).toBe("food 4, kills 2, alive 10 s");
   });
-  it("lays 12 tiles out 4 x 3", () => {
-    expect(TILE_COUNTS).toEqual([1, 4, 6, 12]);
-    expect(TILE_COUNTS.map(tileColumns)).toEqual([1, 2, 3, 4]);
+  it("says which learner a tile plays, and its layout only when an env has several", () => {
+    expect(tileSub({ iter: 42, envCount: 4 }, 2, 4)).toBe("best of iteration 42");
+    expect(tileSub({ iter: 42, envCount: 1 }, 2, 4)).toBe("best of iteration 42 · layout 3");
+    expect(tileSub({ iter: 0, envCount: 2 }, 1, 2)).toBe("starting creature");
+    expect(tileSub({ iter: 0, envCount: 2, preview: true }, 1, 2)).toBe("sample clip");
+  });
+});
+
+describe("tiles follow the environments in use", () => {
+  it("gives a few envs extra layouts and many envs one tile each", () => {
+    expect([1, 2, 3, 4, 12, 40].map((n) => layoutsPerEnv("auto", n))).toEqual([4, 2, 2, 1, 1, 1]);
+    expect(layoutsPerEnv("2", 12)).toBe(2);
+    expect(layoutsPerEnv("12", 1)).toBe(4); // an old saved count is capped
+    expect(layoutsPerEnv("junk", 5)).toBe(1);
+  });
+  it("puts each env's layouts side by side", () => {
+    expect(displayOrder(6, 3)).toEqual([0, 3, 1, 4, 2, 5]); // recording k plays env k % 3
+    expect(displayOrder(4, 4)).toEqual([0, 1, 2, 3]);
+    expect(displayOrder(0, 0)).toEqual([]);
+  });
+  it("shows every env up to the show cap, and counts the rest", () => {
+    expect(unshownEnvs(46)).toBe(0);
+    expect(unshownEnvs(50)).toBe(2);
+  });
+  it("balances the columns over the rows the width needs", () => {
+    expect(gridColumns(1, 1000)).toBe(1);
+    expect(gridColumns(4, 1000)).toBe(4);
+    expect(gridColumns(12, 1000)).toBe(4); // 5 fit, 3 rows of 4
+    expect(gridColumns(5, 1000)).toBe(5);
+    expect(gridColumns(6, 600)).toBe(3);
+    expect(gridColumns(12, 350)).toBe(1);
+  });
+  it("pages many tiles and clamps the page", () => {
+    expect(pageOf(4, 0)).toEqual({ from: 0, to: 4, page: 0, pages: 1 });
+    expect(pageOf(30, 2)).toEqual({ from: 24, to: 30, page: 2, pages: 3 });
+    expect(pageOf(30, 9).page).toBe(2);
+    expect(pageOf(0, 1)).toEqual({ from: 0, to: 0, page: 0, pages: 1 });
+  });
+  it("names the phase for the status pill", () => {
+    expect(phaseOf("idle", false)).toBe("ready");
+    expect(phaseOf("running", true)).toBe("training");
+    expect(phaseOf("paused", true)).toBe("paused");
+    expect(phaseOf("idle", true)).toBe("done");
   });
 });
 
@@ -276,7 +328,7 @@ describe("reward graph at 5000 iterations", () => {
     const { ctx, calls } = fakeCtx(800, 300);
     drawRewardGraph(ctx, its, 0, 800, 300);
     expect(badCoordinateCalls(calls)).toEqual([]);
-    expect(named(calls, "lineTo")).toBeLessThan(3 * 800 + 20);
+    expect(named(calls, "lineTo")).toBeLessThan(7 * 800 + 40); // raw and trend train and luckiest, held-out and its two fills
   });
 });
 

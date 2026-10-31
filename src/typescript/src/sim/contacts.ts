@@ -5,7 +5,7 @@ import { collide, hurt, keepInside } from "./physics.ts";
 import type { Body, Contact } from "./physics.ts";
 import type { StatefulRng } from "./rng.ts";
 import type { Species } from "./species.ts";
-import { HIT_FOOD, HIT_NONE } from "./types.ts";
+import { HIT_FOOD, HIT_NONE, HIT_POISON } from "./types.ts";
 import type { CreatureState, HitKind } from "./types.ts";
 import type { Crowd } from "./crowd.ts";
 import type { World } from "./world.ts";
@@ -23,6 +23,7 @@ export const BIG_IMPACT = 15;
 export class Contacts {
   private readonly slain = new Set<CreatureState>(); // killed by a bump or a hunt this tick
   onBumpKill: ((survivor: CreatureState, victim: CreatureState) => void) | null = null; // each lethal bump with one survivor (analysis tools)
+  bumpKills = 0; // lethal bumps with one survivor in this world, the world total of the members' bumpKills (saved in the core)
   private readonly config: EcoConfig;
   private readonly items: World;
   private readonly crowd: Crowd;
@@ -57,6 +58,7 @@ export class Contacts {
     if (eaten < 0) return HIT_NONE;
     const kind = this.items.kinds[eaten] as HitKind;
     if (kind === HIT_FOOD) m.eaten++;
+    else if (kind === HIT_POISON) m.poisonBites++;
     this.items.removeItem(eaten); // so no one else eats it this tick
     return kind;
   }
@@ -203,6 +205,7 @@ export class Contacts {
     if (b.energy <= 0) this.slain.add(b);
     if (a.energy <= 0 === b.energy <= 0) return;
     this.table.members[a.energy > 0 ? i : j]!.bumpKills++;
+    this.bumpKills++;
     this.onBumpKill?.(a.energy > 0 ? a : b, a.energy > 0 ? b : a);
   }
 

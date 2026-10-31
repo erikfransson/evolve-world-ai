@@ -62,6 +62,8 @@ export function cleanStats(s: Stats): Stats {
     season: isObj(s.season) && n(s.season.yearMinutes) > 0 ? { yearMinutes: within(s.season.yearMinutes, 1, 1e6), winterFood: within(s.season.winterFood, 0, 1) } : null,
     best: isObj(s.best) ? { age: id(s.best.age), children: id(s.best.children), kills: id(s.best.kills) } : null,
   };
+  if (s.lived !== undefined) out.lived = count(s.lived); // an older server sends neither, and the tiles show "-"
+  if (s.kills !== undefined) out.kills = count(s.kills);
   const sample = numbers(s.sample, HISTORY_FIELDS, 1);
   if (sample.length) out.sample = sample;
   const lineageSample = numbers(s.lineageSample, LINEAGE_FIELDS, 1);

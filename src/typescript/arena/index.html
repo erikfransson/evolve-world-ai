@@ -21,6 +21,11 @@
     </header>
     <main class="layout">
       <aside class="panel">
+        <div class="side-tabs" role="tablist" aria-label="Settings">
+          <button type="button" role="tab" data-tab="settings" aria-selected="true">Creature</button>
+          <button type="button" role="tab" data-tab="envSettings" aria-selected="false">Environments <span id="tabEnvCount" class="tab-count"></span></button>
+          <button type="button" role="tab" data-tab="runSettings" aria-selected="false">Training</button>
+        </div>
         <form id="setup" autocomplete="off" onsubmit="return false">
           <fieldset id="settings">
             <section class="card">
@@ -49,10 +54,8 @@
           </fieldset>
 
           <fieldset id="envSettings">
-            <section class="card">
-              <h2>Environments</h2>
-              <p id="envSummary" class="env-summary" role="status"></p>
-              <p class="hint">Choose them in the gallery on the right. Pause to change them during a run.</p>
+            <section id="gallery" class="card gallery"></section>
+            <section class="card custom-card">
               <details class="more" id="customBox">
                 <summary>Custom environment</summary>
                 <div class="more-body">
@@ -73,7 +76,6 @@
                 </div>
               </details>
             </section>
-
           </fieldset>
 
           <fieldset id="runSettings">
@@ -83,12 +85,24 @@
       </aside>
 
       <section class="arena-stage">
-        <div class="stage-head">
+        <div class="runbar">
+          <span id="phase" class="phase ready" role="status">Ready</span>
           <div class="iter">
-            <span class="iter-label">Iteration</span>
-            <span class="iter-num"><span id="iterNow">0</span><span class="iter-of"> / <span id="iterTotal">-</span></span></span>
+            <div class="iter-row"><span class="iter-label">Iteration</span><span class="iter-num"><span id="iterNow">0</span><span class="iter-of"> / <span id="iterTotal">-</span></span></span><span id="envSummary" class="env-summary" role="status"></span></div>
             <div class="meter" aria-hidden="true"><span id="iterFill"></span></div>
           </div>
+          <details class="save-pop" id="savePop">
+            <summary class="secondary">Save</summary>
+            <div class="save-box">
+              <label class="name" for="saveName">Name</label>
+              <input id="saveName" type="text" maxlength="60" value="My creature" />
+              <div class="save-buttons">
+                <button id="saveFile" class="secondary" type="button" disabled>Save creature</button>
+                <button id="saveBrowser" class="secondary" type="button" disabled>Save to browser</button>
+              </div>
+              <p id="saveMsg" class="preset-desc">Saved after the first held-out check, every 5 iterations. Files can be imported again here.</p>
+            </div>
+          </details>
           <div class="buttons">
             <button id="start" class="primary" type="button">Start</button>
             <button id="pause" class="secondary" type="button" disabled>Pause</button>
@@ -97,38 +111,24 @@
         </div>
         <section id="graphCard" class="card graph-card" hidden>
           <header class="graph-head">
-            <h2>Reward per iteration</h2>
-            <span class="fit-foot"><span class="key train" id="keyTrain">train mean</span><span class="key best" id="keyBest">best candidate</span><span class="key held" id="keyHeld">held-out</span></span>
-          </header>
-          <canvas id="rewardView" aria-label="Train mean, best and held-out reward against iteration"></canvas>
-          <table id="envTable" class="env-table" hidden><thead><tr><th>Environment</th><th>Start</th><th>Now</th><th>Change</th></tr></thead><tbody></tbody></table>
-        </section>
-        <dl class="stats">
-          <div class="tile accent"><dt>Held-out reward<span class="tip" tabindex="0" role="img" aria-label="Mean reward of the current brain over the chosen environments on worlds it never trains on, checked every 5 iterations. The change is against the starting brain." data-tip="Mean reward of the current brain over the chosen environments on worlds it never trains on, checked every 5 iterations. The change is against the starting brain.">ⓘ</span></dt><dd id="statHeld" class="empty">—</dd></div>
-          <div class="tile "><dt>Start reward<span class="tip" tabindex="0" role="img" aria-label="Held-out reward of the brain before any training." data-tip="Held-out reward of the brain before any training.">ⓘ</span></dt><dd id="statStart" class="empty">—</dd></div>
-          <div class="tile "><dt><span id="statBestLabel">Best candidate</span><span class="tip" id="statBestTip" tabindex="0" role="img" aria-label="Reward of the best candidate in the latest iteration." data-tip="Reward of the best candidate in the latest iteration.">ⓘ</span></dt><dd id="statBest" class="empty">—</dd></div>
-          <div class="tile "><dt>Train mean<span class="tip" tabindex="0" role="img" aria-label="Mean reward of the candidates in the latest iteration." data-tip="Mean reward of the candidates in the latest iteration.">ⓘ</span></dt><dd id="statTrain" class="empty">—</dd></div>
-          <div class="tile "><dt>Elapsed<span class="tip" tabindex="0" role="img" aria-label="Real time since training started." data-tip="Real time since training started.">ⓘ</span></dt><dd id="statTime" class="empty">—</dd></div>
-        </dl>
-        <div class="viewbar">
-          <div class="toggle"><span class="lbl"><label class="name" for="brainOn">Brain</label><span class="tip" tabindex="0" role="img" aria-label="Show the brain of the creature in the tiles, replayed on what tile 1 sees. Its connections change as training goes on." data-tip="Show the brain of the creature in the tiles, replayed on what tile 1 sees. Its connections change as training goes on.">ⓘ</span></span><input id="brainOn" type="checkbox" role="switch" /></div>
-          <div class="toggle"><span class="lbl"><label class="name" for="gentle">Gentle on CPU</label><span class="tip" tabindex="0" role="img" aria-label="Leaves room for your other programs: one core stays free and the simulation backs off when your computer is busy. Turn off for maximum speed." data-tip="Leaves room for your other programs: one core stays free and the simulation backs off when your computer is busy. Turn off for maximum speed.">ⓘ</span></span><input id="gentle" type="checkbox" role="switch" checked /></div>
-          <div class="speed"><span class="lbl"><span class="name">Speed</span><span class="tip" tabindex="0" role="img" aria-label="Replay speed of the tiles. Max skips the replays and trains as fast as possible; pick a speed to watch the latest best. Gentle on CPU also slows training." data-tip="Replay speed of the tiles. Max skips the replays and trains as fast as possible; pick a speed to watch the latest best. Gentle on CPU also slows training.">ⓘ</span></span>
-            <div class="seg" role="radiogroup" aria-label="Playback speed">
-              <label><input type="radio" name="speed" value="1" /><span>1×</span></label>
-              <label><input type="radio" name="speed" value="2" /><span>2×</span></label>
-              <label><input type="radio" name="speed" value="4" checked /><span>4×</span></label>
-              <label><input type="radio" name="speed" value="8" /><span>8×</span></label>
-              <label><input type="radio" name="speed" value="0" /><span>Max</span></label>
+            <div class="headline">
+              <span class="headline-label">Held-out reward<span class="tip" tabindex="0" role="img" aria-label="Mean reward of the current brain over the chosen environments on worlds it never trains on, checked every 5 iterations. The change is against the starting brain." data-tip="Mean reward of the current brain over the chosen environments on worlds it never trains on, checked every 5 iterations. The change is against the starting brain.">ⓘ</span></span>
+              <span id="statHeld" class="headline-value empty">—</span>
+              <span class="headline-sub">started at <b id="statStart">—</b><span id="statGain"></span></span>
             </div>
-          </div>
-          <ul class="legend arena-legend">
-            <li><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7" fill="#fbbf24" /></svg>Learner</li>
-            <li id="legendRival" hidden><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7" class="rival-dot" /></svg>Rival</li>
-            <li><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="5" fill="#4ade80" /></svg>Food</li>
-            <li><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="5" fill="#e040fb" /></svg>Poison</li>
-          </ul>
-        </div>
+            <dl class="kpis">
+              <div class="kpi train"><dt>Train mean<span class="tip" tabindex="0" role="img" aria-label="Mean reward of the candidates in the latest iteration. The thin line is the raw value, the brighter one its trend." data-tip="Mean reward of the candidates in the latest iteration. The thin line is the raw value, the brighter one its trend.">ⓘ</span></dt><dd id="statTrain" class="empty">—</dd></div>
+              <div class="kpi best"><dt><span id="statBestLabel">Luckiest candidate</span><span class="tip" id="statBestTip" tabindex="0" role="img" aria-label="Reward of the best candidate in the latest iteration." data-tip="Reward of the best candidate in the latest iteration.">ⓘ</span></dt><dd id="statBest" class="empty">—</dd></div>
+              <div class="kpi"><dt>Elapsed<span class="tip" tabindex="0" role="img" aria-label="Real time since training started." data-tip="Real time since training started.">ⓘ</span></dt><dd id="statTime" class="empty">—</dd></div>
+            </dl>
+          </header>
+          <span class="fit-foot graph-keys"><span class="key held" id="keyHeld">held-out, with the gain since the start</span><span class="key train" id="keyTrain">train mean: raw and trend</span><span class="key best" id="keyBest">luckiest candidate, own scale</span></span>
+          <canvas id="rewardView" aria-label="Held-out, train mean and luckiest reward against iteration"></canvas>
+          <details class="more per-env" id="perEnv" hidden>
+            <summary>Per environment</summary>
+            <table id="envTable" class="env-table"><thead><tr><th>Environment</th><th>Start</th><th>Now</th><th>Change</th></tr></thead><tbody></tbody></table>
+          </details>
+        </section>
         <section id="previewCard" class="card preview-card">
           <h2>Creature preview</h2>
           <div class="preview-body">
@@ -143,26 +143,46 @@
             <div id="energyCard" class="energy" aria-label="Energy budget of this design"></div>
           </div>
         </section>
-        <section id="gallery" class="card gallery"></section>
-        <div id="viewrow" class="viewrow">
-          <div class="tiles-wrap">
-            <div id="tiles" class="tiles"></div>
-            <p id="note" class="empty-note">Design or pick a creature, choose environments, then press Start.</p>
-            <p id="maxNote" class="empty-note" hidden>Max speed: training without replays. Pick a speed to watch the latest best.</p>
+        <section class="card replays">
+          <header class="replays-head">
+            <h2 id="replaysTitle">Chosen environments</h2>
+            <span id="tilesInfo" class="tiles-info"></span>
+            <div id="pager" class="pager" hidden>
+              <button id="pagePrev" class="mini" type="button" aria-label="Previous page">‹</button>
+              <span id="pageInfo"></span>
+              <button id="pageNext" class="mini" type="button" aria-label="Next page">›</button>
+            </div>
+          </header>
+          <div class="viewbar">
+            <div class="speed"><span class="lbl"><span class="name">Speed</span><span class="tip" tabindex="0" role="img" aria-label="Replay speed of the tiles. Max skips the replays and trains as fast as possible; pick a speed to watch the latest best. Gentle on CPU also slows training." data-tip="Replay speed of the tiles. Max skips the replays and trains as fast as possible; pick a speed to watch the latest best. Gentle on CPU also slows training.">ⓘ</span></span>
+              <div class="seg" role="radiogroup" aria-label="Playback speed">
+                <label><input type="radio" name="speed" value="1" /><span>1×</span></label>
+                <label><input type="radio" name="speed" value="2" /><span>2×</span></label>
+                <label><input type="radio" name="speed" value="4" checked /><span>4×</span></label>
+                <label><input type="radio" name="speed" value="8" /><span>8×</span></label>
+                <label><input type="radio" name="speed" value="0" /><span>Max</span></label>
+              </div>
+            </div>
+            <div class="toggle"><span class="lbl"><label class="name" for="brainOn">Brain</label><span class="tip" tabindex="0" role="img" aria-label="Show the brain of the creature in the tiles, replayed on what the first tile sees. Its connections change as training goes on." data-tip="Show the brain of the creature in the tiles, replayed on what the first tile sees. Its connections change as training goes on.">ⓘ</span></span><input id="brainOn" type="checkbox" role="switch" /></div>
+            <div class="toggle"><span class="lbl"><label class="name" for="gentle">Gentle on CPU</label><span class="tip" tabindex="0" role="img" aria-label="Leaves room for your other programs: one core stays free and the simulation backs off when your computer is busy. Turn off for maximum speed." data-tip="Leaves room for your other programs: one core stays free and the simulation backs off when your computer is busy. Turn off for maximum speed.">ⓘ</span></span><input id="gentle" type="checkbox" role="switch" checked /></div>
+            <ul class="legend arena-legend">
+              <li><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7" fill="#fbbf24" /></svg>Learner</li>
+              <li id="legendRival" hidden><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7" class="rival-dot" /></svg>Rival</li>
+              <li><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="5" fill="#4ade80" /></svg>Food</li>
+              <li><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="5" fill="#e040fb" /></svg>Poison</li>
+            </ul>
           </div>
-          <section id="brainCard" class="card brain-card" hidden>
-            <h2>Brain of the creature shown</h2>
-            <canvas id="brainView" aria-label="The shown candidate's brain, live"></canvas>
-          </section>
-        </div>
-        <section class="card save-card">
-          <h2>Save</h2>
-          <div class="field"><div class="row"><span class="lbl"><label class="name" for="saveName">Name</label></span></div><input id="saveName" type="text" maxlength="60" value="My creature" /></div>
-          <div class="buttons">
-            <button id="saveFile" class="secondary" type="button" disabled>Save creature</button>
-            <button id="saveBrowser" class="secondary" type="button" disabled>Save to browser</button>
+          <div id="viewrow" class="viewrow">
+            <div class="tiles-wrap">
+              <div id="tileGrid" class="tiles"></div>
+              <p id="note" class="empty-note">Design or pick a creature, choose environments, then press Start.</p>
+              <p id="maxNote" class="empty-note" hidden>Max speed: training without replays. Pick a speed to watch the latest best.</p>
+            </div>
+            <section id="brainCard" class="card brain-card" hidden>
+              <h2>Brain of the creature shown</h2>
+              <canvas id="brainView" aria-label="The shown candidate's brain, live"></canvas>
+            </section>
           </div>
-          <p id="saveMsg" class="preset-desc">Saved after the first held-out check, every 5 iterations. Files can be imported again here.</p>
         </section>
       </section>
     </main>
