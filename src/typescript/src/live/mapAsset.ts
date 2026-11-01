@@ -10,7 +10,7 @@ import { loadMapTerrain, terrainFromParts } from "./mapTerrain.ts";
 
 // A hand-designed map prebuilt for the Live page: the arrays the map worker would make (rock, ground, weights, rock outlines) plus the
 // floor and wash pixels, made by the same code ahead of time (scripts/buildMapAsset.ts) and shipped gzipped as a static file, so a first
-// visit draws the map at once instead of building it for seconds. maps.test.ts checks the shipped file still equals a fresh build.
+// visit draws the map at once instead of building it for seconds. mapAsset.test.ts checks the shipped file still equals a fresh build.
 // The page checks everything in it as it checks the worker's arrays, and builds the map on the worker when the file is missing or does not fit.
 
 const MAGIC = "EWMAP1";

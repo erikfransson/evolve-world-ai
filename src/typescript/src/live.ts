@@ -36,10 +36,10 @@ import { AddPanel } from "./live/addPanel.ts";
 import { parseFounders } from "./live/founders.ts";
 import { renderMapInfo } from "./live/mapInfo.ts";
 import { LIVE_MAP, MapCache } from "./live/mapTerrain.ts";
+import { RevealGate } from "./live/revealGate.ts";
 import { mapLoader } from "./live/mapAsset.ts";
 import { GROUND_FILES, MAP_FILES } from "./live/mapFiles.ts";
-import { GroundBackdrop } from "./ui/groundBackdrop.ts";
-import { fitWorld } from "./ui/camera.ts";
+import { GroundBackdrop, WINTER_TINT } from "./ui/groundBackdrop.ts";
 import { useRockFarm, warmRock } from "./ui/abyssRock.ts";
 import { rockFarm } from "./ui/rockFarm.ts";
 import { recastRays } from "./live/rayRecast.ts";
@@ -87,7 +87,7 @@ if (fontLink) {
 const canvas = $<HTMLCanvasElement>("view");
 // The live map's ground as a picture (ui/groundBackdrop.ts): under the canvas by CSS from the first paint, then on it until the map is drawn sharp.
 const backdrop = new GroundBackdrop(liveSpec.width, liveSpec.height, GROUND_FILES[LIVE_MAP]!);
-backdrop.load(fitWorld(liveSpec.width, liveSpec.height, Math.max(1, canvas.clientWidth) * devicePixelRatio, Math.max(1, canvas.clientHeight) * devicePixelRatio));
+backdrop.load(devicePixelRatio);
 const chip = $("chip");
 const versionEl = $("version");
 versionEl.textContent = versionLabel(null); // the page's own version until the server says hello
@@ -181,7 +181,7 @@ function fmtUptime(s: number): string {
 function onState(state: LinkState, retryInS: number): void {
   clearInterval(retryTimer);
   $("offline").hidden = state !== "offline";
-  $("worldLoading").hidden = revealAt >= 0 || state === "offline";
+  $("worldLoading").hidden = revealAt >= 0 || (state !== "connecting" && state !== "live");
   if (state !== "live") {
     addPanel.disconnected();
     $("emptyNote").hidden = true;
@@ -297,7 +297,7 @@ function showMap(h: Hello): void {
         d!.map = t;
         paintMapLegendWhenSeen($("info"), t);
       };
-      if (d!.backdrop?.ready) afterReveal(() => warmMap(t, use));
+      if (d!.backdrop?.ready) gate.later("map", () => warmMap(t, use));
       else use();
     }
   });
@@ -546,8 +546,8 @@ leaderCard.addEventListener("keydown", (e) => {
   }
 });
 
-function onStats(s: Stats): void {
-  lastStats = s;
+// The season and the history samples a stats message carries; true when the season changed.
+function noteSamples(s: Stats): boolean {
   const seasonChanged = JSON.stringify(s.season) !== JSON.stringify(season);
   season = s.season;
   if (s.sample) {
@@ -558,7 +558,13 @@ function onStats(s: Stats): void {
     lineageHistory.push(...s.lineageSample);
     if (lineageHistory.length > MAX_LINEAGE_HISTORY * LINEAGE_FIELDS) lineageHistory.splice(0, LINEAGE_FIELDS);
   }
-  if (s.sample || s.lineageSample || seasonChanged) showHistory();
+  return seasonChanged;
+}
+
+// noted: its samples are in already (noteSamples, before the reveal).
+function onStats(s: Stats, noted = false): void {
+  lastStats = s;
+  if (!noted && (noteSamples(s) || s.sample || s.lineageSample)) showHistory();
   if (s.lineages) {
     // A named group's row is its lowest living founder; when that line dies out the row moves to the next one. A lit group follows it.
     const litName = highlight >= 0 ? (lastLineages.find((l) => l.founder === highlight)?.name ?? "") : "";
@@ -598,6 +604,11 @@ function onStats(s: Stats): void {
   $<HTMLButtonElement>("pickChildren").disabled = !s.best;
   $<HTMLButtonElement>("pickKills").disabled = !s.best;
   renderStats();
+}
+
+// The winter tint's opacity on the ground picture before the world's frames run, from the latest stats.
+function earlyWinter(): number {
+  return season && lastStats ? WINTER_TINT * winterness(seasonEco(season), lastStats.simSeconds) : 0;
 }
 
 function drawConfig(): EcoDrawConfig {
@@ -640,23 +651,18 @@ function worldReady(now: number): boolean {
 function groundReady(): boolean {
   return !hello!.map.name || mapStale || mapFailed || draw!.map !== undefined || draw!.backdrop?.ready === true;
 }
+let fadeOverPicture = false; // the world fades in over the ground picture, not the plain background
 function reveal(now: number): void {
   revealAt = now;
+  fadeOverPicture = draw?.backdrop?.ready === true;
   $("worldLoading").hidden = true;
   renderStats();
-  setTimeout(runDeferred); // after the first frame of the world
+  setTimeout(() => gate.reveal()); // after the first frame of the world
   loadFounders();
 }
-// Stats and history (tiles, graphs, lineages, records) wait until the world shows, so the first messages go to the world; then they run in order.
-let deferred: (() => void)[] | null = [];
-function afterReveal(fn: () => void): void {
-  if (deferred) deferred.push(fn);
-  else fn();
-}
-function runDeferred(): void {
-  while (deferred?.length) deferred.shift()!();
-  deferred = null;
-}
+// The redraws of stats and history (tiles, graphs, lineages, records) and the sharp map's warm-up wait until the world shows, so the first
+// messages go to the world; their bookkeeping (samples, season) is done as they arrive, and only the latest redraw of each kind waits.
+const gate = new RevealGate();
 
 const IDLE_FRAME_MS = 1000 / 30 - 2; // with nothing followed or animating, draw at most 30 times a second (every frame while the world fades in)
 function frame(now: number): void {
@@ -676,7 +682,7 @@ function frame(now: number): void {
     if (bd && !bd.ready) return ctx.clearRect(0, 0, canvas.width, canvas.height); // clear: the page's CSS shows the ground pictures under the canvas meanwhile
     ctx.fillStyle = BACKGROUND;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    bd?.drawFitted(ctx, canvas.width, canvas.height, dpr);
+    bd?.drawFitted(ctx, canvas.width, canvas.height, dpr, earlyWinter());
     return;
   }
   // An empty world is still drawn: its ground and food stay in view until creatures are added again.
@@ -701,12 +707,13 @@ function frame(now: number): void {
     selected.rayHeading = undefined;
   }
   renderer.draw(ctx, camera, drawConfig(), litViews(views), selected, true, dpr, highlight, births, now, impacts);
+  if (!draw.backdrop && canvas.style.backgroundImage !== "none") canvas.style.backgroundImage = "none"; // the map is drawn sharp (or is another map): the CSS pictures go
   const fade = 1 - (now - revealAt) / REVEAL_FADE_MS;
   if (fade > 0) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = fade * fade;
-    if (draw.backdrop?.ready) {
-      backdrop.drawFitted(ctx, canvas.width, canvas.height, dpr); // the ground stays: only the creatures and food fade in over it
+    if (fadeOverPicture) {
+      backdrop.drawFitted(ctx, canvas.width, canvas.height, dpr, earlyWinter()); // the ground stays: only the creatures and food fade in over it
     } else {
       ctx.fillStyle = BACKGROUND;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -741,14 +748,22 @@ const link = new LiveLink(url, {
     selection.genome = genome;
     buildBrain();
   },
-  onStats: (s) => afterReveal(() => onStats(s)),
+  onStats(s) {
+    if (gate.open) return onStats(s);
+    lastStats = s;
+    noteSamples(s);
+    gate.later("stats", () => {
+      onStats(lastStats!, true);
+      showHistory();
+    });
+  },
   onAdd: (r) => addPanel.reply(r),
   onRules: (r) => addPanel.setRules(r),
-  onHistory: (h) => afterReveal(() => {
+  onHistory(h) {
     samples = h.samples.slice();
     lineageHistory = h.lineage.slice();
-    showHistory();
-  }),
+    gate.later("history", showHistory);
+  },
 });
 
 function zoomBy(factor: number): void {

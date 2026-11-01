@@ -1,4 +1,4 @@
-// Writes the prebuilt Live map files (src/live/maps/<name>.bin, gzipped) from the map builder and the drawing code; maps.test.ts fails while one is stale.
+// Writes the prebuilt Live map files (src/live/maps/<name>.bin, gzipped) from the map builder and the drawing code; mapAsset.test.ts fails while one is stale.
 // Run from src/typescript: node scripts/buildMapAsset.ts
 import { writeFileSync } from "node:fs";
 import { gzipSync } from "node:zlib";
