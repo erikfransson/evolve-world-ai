@@ -11,6 +11,8 @@ import { BACKGROUND, FLOOR, FOOD, POISON, RAY_COLORS, WALL } from "./scene.ts";
 import { DotAtlas } from "./dotAtlas.ts";
 import { TerrainCache } from "./terrainCache.ts";
 import { drawTerrain } from "./terrainScene.ts";
+import { WINTER_RGB, WINTER_TINT } from "./groundBackdrop.ts";
+import type { GroundBackdrop } from "./groundBackdrop.ts";
 
 export interface EcoDrawConfig {
   worldW: number;
@@ -21,6 +23,7 @@ export interface EcoDrawConfig {
   winter?: number; // 0 (summer) to 1 (mid-winter): how far the floor is tinted cold
   terrain?: TerrainSettings; // the map to draw (rock and slow and fast ground); none without
   map?: Terrain; // or the map already built (the Live page builds it on a worker), used instead of terrain
+  backdrop?: GroundBackdrop | null; // a picture of the map's ground, drawn in its place until the map is built and drawn with all its images; draw sets it to null then
 }
 
 // Adds a creature's outline to the current path: a circle, or a hunter's teardrop.
@@ -30,7 +33,6 @@ function bodyPath(ctx: CanvasRenderingContext2D, x: number, y: number, r: number
   ctx.arc(x, y, r, 0, Math.PI * 2);
 }
 
-const WINTER_TINT = 0.16; // floor overlay opacity at mid-winter
 const HUE_BUCKETS = 72;
 const AGE_LEVELS = 8;
 const AGE_SATURATE_S = 180; // age at which a creature has reached its most muted look
@@ -101,12 +103,15 @@ export class EcoRenderer {
     ctx.fillStyle = FLOOR;
     ctx.fillRect(0, 0, cfg.worldW, cfg.worldH);
     if (cfg.winter) {
-      ctx.fillStyle = `rgba(150, 190, 235, ${WINTER_TINT * cfg.winter})`;
+      ctx.fillStyle = `rgba(${WINTER_RGB.join(", ")}, ${WINTER_TINT * cfg.winter})`;
       ctx.fillRect(0, 0, cfg.worldW, cfg.worldH);
     }
     const terrain = cfg.map ?? (cfg.terrain ? readyTerrainOf(cfg.terrain) : null); // none while a named map is on its way
     const view = { x0: tl.x, x1: br.x, y0: tl.y, y1: br.y };
-    if (terrain && !this.terrainCache.draw(ctx, terrain, z, view, cam.animating)) drawTerrain(ctx, terrain, z, view);
+    let sharp = false; // the map drawn as it looks, every image in place
+    if (terrain) sharp = this.terrainCache.draw(ctx, terrain, z, view, cam.animating) ? this.terrainCache.finished : drawTerrain(ctx, terrain, z, view);
+    if (sharp) cfg.backdrop = null; // retired for good at the first sharp frame: later stand-ins (a deep zoom, tiles on their way) are the map's own
+    else cfg.backdrop?.draw(ctx, WINTER_TINT * (cfg.winter ?? 0));
     ctx.strokeStyle = WALL;
     ctx.lineWidth = Math.max(2, 1.5 * dpr) * dev;
     ctx.strokeRect(0, 0, cfg.worldW, cfg.worldH);

@@ -5,6 +5,8 @@ import { Episode, poisonClearRadius, runEpisode } from "../../src/typescript/src
 import { HIT_POISON } from "../../src/typescript/src/sim/types.ts";
 import { createRng } from "../../src/typescript/src/sim/rng.ts";
 import { planOf, planUpkeep } from "../../src/typescript/src/sim/sensors.ts";
+import { setWasmDisabled } from "../../src/typescript/src/sim/wasm/loader.ts";
+import { WasmBrainBank } from "../../src/typescript/src/sim/wasm/brainKernel.ts";
 
 const cfg: SimConfig = {
   ...DEFAULT_CONFIG,
@@ -127,5 +129,56 @@ describe("poison-free start", () => {
     const config = withOverrides(DEFAULT_CONFIG, { world: { width: 200, height: 200, poisonDensity: 1 } });
     expect(poisonClearRadius(config)).toBeCloseTo(70);
     expect(() => new Episode(config, new Float32Array(genomeLength(layerSizes(config))), 1, 0)).not.toThrow();
+  });
+});
+
+describe("brain kernel", () => {
+  const jsFitness = (c: SimConfig, genome: Float32Array, seed: number): number => {
+    const e = new Episode(c, genome, seed, 0, false, null);
+    while (!e.done) e.step();
+    return e.fitness();
+  };
+
+  it("runs the brain on the kernel when available, close to the JS path but not bit-equal", () => {
+    let differs = 0;
+    for (let s = 1; s <= 6; s++) {
+      const wasm = runEpisode(cfg, rand(s), 9, 0);
+      const js = jsFitness(cfg, rand(s), 9);
+      if (wasm !== js) differs++;
+      expect(Math.abs(wasm - js)).toBeLessThan(0.5 * Math.max(1, js)); // f32 sums can tip a choice, so lifetimes may drift
+    }
+    expect(differs).toBeGreaterThan(0); // the kernel really ran
+  });
+
+  it("gives a viewing Episode (own bank, JS brain shown) the fitness runEpisode gave on the shared bank", () => {
+    for (let s = 1; s <= 4; s++) {
+      runEpisode(cfg, rand(s + 10), 3, s); // leaves the shared bank holding another brain
+      const e = new Episode(cfg, rand(s), 3, 0);
+      while (!e.done) e.step();
+      expect(runEpisode(cfg, rand(s), 3, 0)).toBe(e.fitness());
+      expect(e.brain.layerActivations()[1]!.some((v) => v !== 0)).toBe(true); // hidden layer kept current for the brain panel
+    }
+  });
+
+  it("falls back to the JS brain for a layer the kernel does not take", () => {
+    const wide: SimConfig = { ...cfg, creature: { ...cfg.creature, maxLifeSeconds: 2 }, brain: { ...cfg.brain, hiddenLayers: [1030] } };
+    const g = randomGenome(layerSizes(wide), createRng(4));
+    expect(runEpisode(wide, g, 2, 0)).toBe(jsFitness(wide, g, 2));
+  });
+
+  it("runs the JS brain when WebAssembly is disabled, also on a bank made before", () => {
+    const bank = WasmBrainBank.createSync();
+    runEpisode(cfg, rand(1), 9, 0); // the shared bank exists now
+    setWasmDisabled(true);
+    try {
+      for (let s = 1; s <= 3; s++) {
+        expect(runEpisode(cfg, rand(s), 9, 0)).toBe(jsFitness(cfg, rand(s), 9));
+        const e = new Episode(cfg, rand(s), 9, 0, false, bank);
+        while (!e.done) e.step();
+        expect(e.fitness()).toBe(jsFitness(cfg, rand(s), 9));
+      }
+    } finally {
+      setWasmDisabled(false);
+    }
   });
 });
