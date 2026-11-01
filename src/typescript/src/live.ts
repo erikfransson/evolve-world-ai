@@ -750,7 +750,7 @@ const link = new LiveLink(url, {
   },
   onStats(s) {
     if (gate.open) return onStats(s);
-    lastStats = s;
+    lastStats = s.records || !lastStats?.records ? s : { ...s, records: lastStats.records }; // records come only every few seconds; keep them for the reveal
     noteSamples(s);
     gate.later("stats", () => {
       onStats(lastStats!, true);
