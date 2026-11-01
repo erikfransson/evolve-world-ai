@@ -1,5 +1,5 @@
 import { Brain, layerSizes, randomGenome } from "../../src/typescript/src/sim/brain.ts";
-import { layoutConfig, randomLearner, runEpisode } from "../../src/typescript/src/sim/rl/env.ts";
+import { BLANK_ENV, layoutConfig, randomLearner, runEpisode } from "../../src/typescript/src/sim/rl/env.ts";
 import { envById } from "../../src/typescript/src/sim/rl/envs.ts";
 import { createNodeRlPool } from "../../src/typescript/src/worker/nodePool.ts";
 import { Mlp, Ppo, playRollout } from "../../src/typescript/src/sim/rl/ppo.ts";
@@ -143,5 +143,55 @@ describe("Ppo", () => {
       }),
     });
     expect(samples).toBeGreaterThan(env.seconds * 10); // more than repeat 3 could give
+  });
+
+  it("records diagnostics only when asked, and trains the same either way", () => {
+    const off = new Ppo([env], learner, sizes, { episodes: 2 }, 7);
+    const on = new Ppo([env], learner, sizes, { episodes: 2, diag: true }, 7);
+    off.step();
+    on.step();
+    expect(off.lastDiag).toBeNull();
+    expect(Array.from(on.theta)).toEqual(Array.from(off.theta));
+    const d = on.lastDiag!;
+    expect(d.layerNorm).toHaveLength(sizes.length - 1);
+    expect(d.gradNorm).toBeGreaterThan(0);
+    expect(d.clipActive).toBeGreaterThanOrEqual(0);
+    expect(d.clipActive).toBeLessThanOrEqual(1);
+    for (const f of d.saturated) expect(f).toBeGreaterThanOrEqual(0);
+    expect(d.logStd).toHaveLength(2);
+    expect(d.advStd).toBeGreaterThan(0);
+  });
+});
+
+describe("poison penalty", () => {
+  it("lowers the return of an episode that eats poison, and nothing else", () => {
+    const env = envById("minefield")!;
+    const learner = randomLearner(env, 1);
+    const sizes = layerSizes(layoutConfig(env.world), learner.plan);
+    const ppo = new Ppo([env], learner, sizes, {}, 3);
+    let task: Parameters<typeof playRollout>[2] | undefined;
+    ppo.setEnvs([env]);
+    task = (ppo as unknown as { tasks(): Parameters<typeof playRollout>[2][] }).tasks()[0]!;
+    const plain = playRollout(env, learner.plan, { ...task, poisonPenalty: 0 }, null, {});
+    const pen = playRollout(env, learner.plan, { ...task, poisonPenalty: 2 }, null, {});
+    expect(pen.reward).toBe(plain.reward);
+    expect(pen.ret[0]!).toBeLessThan(plain.ret[0]! + 1e-9);
+  });
+});
+
+describe("env reward.poison in PPO", () => {
+  it("charges each bite on its step and keeps the steps summing to the episode reward", () => {
+    const base = { ...BLANK_ENV, id: "t-poison", size: [200, 200] as [number, number], food: 0, poison: 40, seconds: 10, poisonDamage: 10 };
+    const env = { ...base, reward: { poison: 2 } };
+    const learner = randomLearner(env, 1);
+    const sizes = layerSizes(layoutConfig(env.world), learner.plan);
+    const ppo = new Ppo([env], learner, sizes, {}, 3);
+    ppo.setEnvs([env]);
+    const task = (ppo as unknown as { tasks(): Parameters<typeof playRollout>[2][] }).tasks()[0]!;
+    const plainEnv = playRollout(base, learner.plan, task, null, {});
+    const costly = playRollout(env, learner.plan, task, null, {});
+    expect(plainEnv.reward).toBe(0);
+    expect(costly.reward).toBeLessThan(0);
+    expect(costly.ret[0]!).toBeLessThan(plainEnv.ret[0]!);
   });
 });

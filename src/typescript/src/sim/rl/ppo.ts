@@ -31,6 +31,29 @@ export interface PpoOptions {
   repeat: number; // ticks one sampled action is held
   everyTick: boolean; // the brain acts every tick and only the sampled noise is held `repeat` ticks, as an offset (founders steer every tick)
   targetKl: number; // stop the update's epochs when a minibatch's approx KL passes 1.5 x this; 0 never stops
+  poisonPenalty?: number; // reward taken per poison item the learner eats (0: poison costs only the energy and the future food)
+  logStdMin?: number; // floor of the learned log-std, default LOG_STD_RANGE[0]
+  diag?: boolean; // fill Ppo.lastDiag after every update (no effect on the training)
+}
+
+// What one update looked like, for finding out why learning stalls (PpoOptions.diag).
+export interface PpoDiag {
+  layerNorm: number[]; // L2 norm of each policy layer's weights and biases
+  layerMax: number[]; // max |w| of each layer
+  saturated: number[]; // per hidden layer, share of units with |pre-activation| > 2.5 on the batch (sampled)
+  gradNorm: number; // mean pre-clip policy gradient norm over the update's minibatches (per-sample mean)
+  criticGradNorm: number;
+  clipActive: number; // share of minibatches whose policy gradient was cut to MAX_GRAD_NORM
+  logStd: number[];
+  kl: number; // mean approx KL over the minibatches
+  klMax: number;
+  clipFrac: number; // share of samples outside the PPO clip range
+  explainedVar: number; // critic against the returns, before the update
+  advMean: number; // raw GAE advantage before normalisation
+  advStd: number;
+  reward: number; // mean episode reward of the update
+  samples: number;
+  epochs: number;
 }
 
 export const PPO_DEFAULTS: PpoOptions = { episodes: 16, epochs: 2, minibatch: 256, lr: 3e-3, criticLr: 3e-3, clip: 0.2, gamma: 0.995, lambda: 0.95, logStd: -0.5, entropy: 0, criticHidden: 32, repeat: 3, everyTick: false, targetKl: 0 };
@@ -39,6 +62,8 @@ const ACTIONS = OUTPUT_SIZE; // turn, thrust
 const LOG_2PI = Math.log(2 * Math.PI);
 const LOG_STD_RANGE = [-3, 1] as const;
 const MAX_GRAD_NORM = 0.5;
+const SAT_ACT = Math.tanh(2.5); // a tanh unit with |pre-activation| above 2.5 outputs more than this
+const DIAG_SAMPLES = 1024; // samples the batch statistics look at
 const DT = DEFAULT_CONFIG.dt; // the env worlds keep the default tick
 
 // An MLP in the brain's genome layout (per layer weights [out][in], then biases), tanh on hidden layers, linear outputs.
@@ -411,6 +436,7 @@ export interface RolloutTask {
   logStd: Float64Array;
   repeat: number;
   everyTick?: boolean; // as PpoOptions.everyTick
+  poisonPenalty?: number; // as PpoOptions.poisonPenalty
   gamma: number;
   lambda: number;
   criticHidden: number;
@@ -447,6 +473,9 @@ export function playRollout(env: EnvSpec, plan: Learner["plan"], task: RolloutTa
   let t = 0;
   let eaten = 0;
   let kills = 0;
+  let bites = 0; // poison bites already charged
+  const penalty = task.poisonPenalty ?? 0;
+  const cost = penalty + (env.reward.poison ?? 0); // the env's own poison cost is in the episode reward, so each bite carries it on its step too
   // Stores the sample for this tick's input and means, and leaves each action's noise (std * eps) in held.
   const sampleAt = (input: Float32Array, u: Float64Array): void => {
     const at = n * stride;
@@ -486,13 +515,18 @@ export function playRollout(env: EnvSpec, plan: Learner["plan"], task: RolloutTa
     const me = eco.get(0);
     if (!me) return;
     rewards[n - 1]! += ((w.food ?? 0) + (w.early ?? 0) * earlyWeight(t, ticks)) * (me.eaten - eaten) + (w.kill ?? 0) * (me.kills - kills) + (w.survive ?? 0) * DT;
+    if (cost !== 0 && me.poisonBites > bites) {
+      rewards[n - 1]! -= cost * (me.poisonBites - bites);
+      bites = me.poisonBites;
+    }
     eaten = me.eaten;
     kills = me.kills;
   }, act);
   // The rest of the reward (food on the dying tick, end energy, time left, rams) comes at the end, so the steps sum to the episode's.
   let sum = 0;
   for (let k = 0; k < n; k++) sum += rewards[k]!;
-  rewards[n - 1]! += result.reward - sum;
+  // The steps already hold the penalty of the bites the hook saw; the rest (a lethal bite, after which the learner is gone) is charged here.
+  rewards[n - 1]! += result.reward - penalty * result.poison - sum;
   // GAE, the episode ending at its last sample (time is in the critic's input, so the horizon is part of the state).
   const values = new Float64Array(n);
   for (let k = 0; k < n; k++) values[k] = criticNet.forward(critic, obs, k * stride)[0]!;
@@ -523,6 +557,8 @@ export class Ppo {
   readonly logStd: Float64Array;
   readonly options: PpoOptions; // repeat changes with setRepeat
   lastKl = 0; // mean approx KL of the last minibatch the last update looked at
+  lastDiag: PpoDiag | null = null; // set after every update when options.diag
+  private dgrad = { n: 0, pol: 0, crit: 0, clipped: 0, kl: 0, klMax: 0, clipSamples: 0, samples: 0, advMean: 0, advStd: 0, reward: 0 };
   lastEpochs = 0; // epochs the last update ran, fewer than options.epochs when targetKl stopped it
   private klSum = 0;
   iter = 0;
@@ -603,6 +639,7 @@ export class Ppo {
       logStd: this.logStd,
       repeat: o.repeat,
       everyTick: o.everyTick,
+      poisonPenalty: o.poisonPenalty,
       gamma: o.gamma,
       lambda: o.lambda,
       criticHidden: o.criticHidden,
@@ -637,6 +674,7 @@ export class Ppo {
     let sq = 0;
     for (let i = 0; i < n; i++) sq += (batch.adv[i]! - mean) ** 2;
     const sd = Math.sqrt(sq / n) || 1;
+    if (this.options.diag) Object.assign(this.dgrad, { n: 0, pol: 0, crit: 0, clipped: 0, kl: 0, klMax: 0, clipSamples: 0, samples: 0, advMean: mean, advStd: sd, reward: train });
     for (let i = 0; i < n; i++) batch.adv[i] = (batch.adv[i]! - mean) / sd;
     this.update(batch);
     this.iter++;
@@ -656,6 +694,10 @@ export class Ppo {
     this.klSum += ratio - 1 - (lp - b.logp[i]!); // k3 estimator of KL(old, new)
     const A = b.adv[i]!;
     const clipped = (A > 0 && ratio > 1 + o.clip) || (A < 0 && ratio < 1 - o.clip);
+    if (o.diag) {
+      this.dgrad.samples++;
+      if (clipped) this.dgrad.clipSamples++;
+    }
     const dLp = clipped ? 0 : -ratio * A; // d(loss)/d(log prob), loss = -min(r A, clip(r) A)
     dOut.fill(0);
     for (let a = 0; a < ACTIONS; a++) {
@@ -679,6 +721,7 @@ export class Ppo {
     const order = Array.from({ length: b.n }, (_, i) => i);
     let stop = false;
     this.lastEpochs = 0;
+    const before = o.diag ? this.diagBatch(b) : null;
     for (let epoch = 0; epoch < o.epochs && !stop; epoch++) {
       shuffle(order, this.rng);
       this.lastEpochs++;
@@ -712,19 +755,86 @@ export class Ppo {
         }
         const m = end - start;
         this.lastKl = this.klSum / m;
+        if (o.diag) {
+          this.dgrad.kl += this.lastKl;
+          this.dgrad.klMax = Math.max(this.dgrad.klMax, this.lastKl);
+        }
         // The policy moved too far from the one that played: no step from this minibatch and no more epochs.
         if (o.targetKl > 0 && this.lastKl > 1.5 * o.targetKl) {
           stop = true;
           break;
         }
         // A non-finite gradient (a numeric blow-up) would poison the weights for good through Adam, so that minibatch is skipped.
-        if (!clipNorm(gPol, m) || !clipNorm(gStd, m) || !clipNorm(gCrit, m)) continue;
+        const rec = o.diag ? { norm: 0 } : null;
+        const okPol = clipNorm(gPol, m, rec);
+        if (rec) {
+          this.dgrad.n++;
+          this.dgrad.pol += rec.norm;
+          if (rec.norm > MAX_GRAD_NORM) this.dgrad.clipped++;
+        }
+        if (!okPol || !clipNorm(gStd, m) || !clipNorm(gCrit, m, rec)) continue;
+        if (rec) this.dgrad.crit += rec.norm;
         this.policyAdam.step(this.theta, gPol);
         this.stdAdam.step(this.logStd, gStd);
         this.criticAdam.step(this.critic, gCrit);
-        for (let a = 0; a < ACTIONS; a++) this.logStd[a] = Math.min(LOG_STD_RANGE[1], Math.max(LOG_STD_RANGE[0], this.logStd[a]!));
+        for (let a = 0; a < ACTIONS; a++) this.logStd[a] = Math.min(LOG_STD_RANGE[1], Math.max(o.logStdMin ?? LOG_STD_RANGE[0], this.logStd[a]!));
       }
     }
+    if (before) this.lastDiag = this.diagFinish(before);
+  }
+
+  // Batch statistics at the start of an update: hidden-unit saturation and the critic's explained variance, on an evenly spaced subsample.
+  private diagBatch(b: Batch): { saturated: number[]; explainedVar: number } {
+    const sizes = this.policyNet.sizes;
+    const hidden = sizes.length - 2;
+    const sat = new Array<number>(hidden).fill(0);
+    const k = Math.min(b.n, DIAG_SAMPLES);
+    let sy = 0;
+    let syy = 0;
+    let sr = 0;
+    for (let j = 0; j < k; j++) {
+      const i = Math.floor((j * b.n) / k);
+      this.policyNet.forward(this.theta, b.obs, i * b.stride);
+      for (let l = 0; l < hidden; l++) {
+        const a = this.policyNet.acts[l + 1]!;
+        let c = 0;
+        for (let u = 0; u < a.length; u++) if (Math.abs(a[u]!) > SAT_ACT) c++;
+        sat[l]! += c / a.length / k;
+      }
+      const v = this.criticNet.forward(this.critic, b.obs, i * b.stride)[0]!;
+      const e = b.ret[i]! - v;
+      sy += b.ret[i]!;
+      syy += b.ret[i]! ** 2;
+      sr += e * e;
+    }
+    const varY = syy / k - (sy / k) ** 2;
+    return { saturated: sat, explainedVar: varY > 1e-12 ? 1 - sr / k / varY : 0 };
+  }
+
+  private diagFinish(before: { saturated: number[]; explainedVar: number }): PpoDiag {
+    const sizes = this.policyNet.sizes;
+    const layerNorm: number[] = [];
+    const layerMax: number[] = [];
+    let at = 0;
+    for (let l = 0; l + 1 < sizes.length; l++) {
+      const len = (sizes[l]! + 1) * sizes[l + 1]!;
+      let sq = 0;
+      let mx = 0;
+      for (let i = at; i < at + len; i++) {
+        const w = this.theta[i]!;
+        sq += w * w;
+        mx = Math.max(mx, Math.abs(w));
+      }
+      layerNorm.push(Math.sqrt(sq));
+      layerMax.push(mx);
+      at += len;
+    }
+    const d = this.dgrad;
+    const mb = Math.max(1, d.n);
+    return {
+      layerNorm, layerMax, saturated: before.saturated, gradNorm: d.pol / mb, criticGradNorm: d.crit / mb, clipActive: d.clipped / mb, logStd: Array.from(this.logStd),
+      kl: d.kl / mb, klMax: d.klMax, clipFrac: d.clipSamples / Math.max(1, d.samples), explainedVar: before.explainedVar, advMean: d.advMean, advStd: d.advStd, reward: d.reward, samples: d.samples / Math.max(1, this.lastEpochs), epochs: this.lastEpochs,
+    };
   }
 }
 
@@ -768,10 +878,11 @@ export class BackpropTrainer implements RlTrainer {
 }
 
 // Averages the summed gradient over m samples and caps its norm; false when it is not finite.
-function clipNorm(g: Float64Array, m: number): boolean {
+function clipNorm(g: Float64Array, m: number, rec: { norm: number } | null = null): boolean {
   let sq = 0;
   for (let i = 0; i < g.length; i++) sq += (g[i]! / m) ** 2;
   if (!Number.isFinite(sq)) return false;
+  if (rec) rec.norm = Math.sqrt(sq);
   const scale = Math.min(1, MAX_GRAD_NORM / (Math.sqrt(sq) + 1e-12)) / m;
   for (let i = 0; i < g.length; i++) g[i] *= scale;
   return true;

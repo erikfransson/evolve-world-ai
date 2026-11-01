@@ -1,6 +1,6 @@
 import { genomeLength, layerSizes } from "../../src/typescript/src/sim/brain.ts";
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
-import { castFor, checkEnv, envConfig, isRam, RAM_MIN_ENERGY, randomLearner, runEpisode } from "../../src/typescript/src/sim/rl/env.ts";
+import { BLANK_ENV, castFor, checkEnv, envConfig, isRam, RAM_MIN_ENERGY, randomLearner, runEpisode } from "../../src/typescript/src/sim/rl/env.ts";
 import { recordEpisode } from "../../src/typescript/src/sim/rl/recording.ts";
 import { wasmAvailable } from "../../src/typescript/src/sim/wasm/loader.ts";
 import { creatureFile, parseCreatureFile } from "../../src/typescript/src/sim/rl/creatureFile.ts";
@@ -375,5 +375,29 @@ describe("rams", () => {
   it("does not credit a death away from the learner or after it died", () => {
     expect(isRam({ ...ram, touchesLearner: false })).toBe(false);
     expect(isRam({ ...ram, learnerAlive: false })).toBe(false);
+  });
+});
+
+describe("reward.poison", () => {
+  // Random brains in a field of poison eat some: the cost is poison bites times the weight, and only when set.
+  const env: EnvSpec = { ...BLANK_ENV, id: "t-poison", size: [200, 200], food: 0, poison: 40, seconds: 10, poisonDamage: 10 };
+  const bites = (e: EnvSpec): ReturnType<typeof runEpisode>[] => {
+    const learner = randomLearner(e, 1);
+    return [1, 2, 3, 4, 5, 6].map((seed) => runEpisode(e, learner, seed, null, {}));
+  };
+  it("subtracts the weight per poison bite, and leaves envs without it unchanged", () => {
+    const plain = bites(env);
+    const cost = bites({ ...env, reward: { ...env.reward, poison: 2 } });
+    expect(plain.some((r) => r.poison > 0)).toBe(true); // the scripted case does bite poison
+    plain.forEach((r, i) => {
+      expect(cost[i]!.poison).toBe(r.poison);
+      expect(cost[i]!.reward).toBeCloseTo(r.reward - 2 * r.poison, 9);
+    });
+    expect(bites({ ...env, reward: { ...env.reward, poison: 0 } }).map((r) => r.reward)).toEqual(plain.map((r) => r.reward));
+  });
+  it("is accepted by checkEnv", () => {
+    const e = { ...env, reward: { food: 1, poison: 1 } };
+    expect((checkEnv(e, "ecosystem", 0) as EnvSpec).reward.poison).toBe(1);
+    expect(typeof checkEnv({ ...e, reward: { food: 1, poison: 99 } }, "ecosystem", 0)).toBe("string");
   });
 });
