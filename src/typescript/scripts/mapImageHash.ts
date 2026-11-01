@@ -15,7 +15,8 @@ export function lookFiles(): string[] {
     if (seen.has(file)) return;
     seen.add(file);
     const text = readFileSync(file, "utf8");
-    for (const m of text.matchAll(/(?:from|import)\s+"(\.{1,2}\/[^"]+\.ts)"/g)) visit(join(dirname(file), m[1]!));
+    // Statement by statement, skipping `import type` and `export type`: erased at build time, they cannot change a picture.
+    for (const m of text.matchAll(/^(import|export)\b([^;"]*?)(?:from\s+)?"(\.{1,2}\/[^"]+\.ts)"/gm)) if (!/^\s+type\b/.test(m[2]!)) visit(join(dirname(file), m[3]!));
   };
   visit(join(root, "scripts/mapImage.ts"));
   return [...seen].map((f) => relative(root, f)).sort();
