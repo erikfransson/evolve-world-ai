@@ -11,7 +11,8 @@ import { BrainView } from "./ui/brainView.ts";
 import { fitCanvas } from "./ui/canvas.ts";
 import { FitnessGraph } from "./ui/fitnessGraph.ts";
 import { initCard } from "./ui/overlays.ts";
-import { buildPreview } from "./ui/preview.ts";
+import { Camera } from "./ui/camera.ts";
+import { buildPreview, turnPreview } from "./ui/preview.ts";
 import { Replay, sourceOfLive, sourceOfPast } from "./ui/replay.ts";
 import type { ReplaySource } from "./ui/replay.ts";
 import { drawScene } from "./ui/scene.ts";
@@ -51,6 +52,10 @@ initCard(legendCard, "evolve.card.legend", false);
 const brainPanel = initCard(brainCard, "evolve.card.brain", window.matchMedia("(max-width: 700px)").matches);
 const brainView = new BrainView($<HTMLCanvasElement>("brainView"));
 const replay = new Replay();
+const camera = new Camera(DEFAULT_CONFIG.world.width, DEFAULT_CONFIG.world.height, 1, 1);
+camera.maxZoom = 8; // canvas pixels per world unit
+let cameraWorld = "";
+let lastFrameAt = 0;
 let preview: Episode | null = null; // idle-phase world built from the form, rebuilt on change only
 const fitnessCard = $("fitnessCard");
 const fitnessNote = $("fitnessNote");
@@ -264,8 +269,26 @@ function replayLabel(ticksAlive: number): string {
   return `Generation ${replay.generation} · ${elapsed}${bestEver}`;
 }
 
+// The camera follows the canvas size and the world of the config on screen; a different world starts fitted.
+function syncCamera(): void {
+  const { width, height } = run.config.world;
+  const key = `${width}x${height}`;
+  if (key !== cameraWorld) {
+    cameraWorld = key;
+    camera.setWorld(width, height);
+  }
+  if (camera.width !== canvas.width || camera.height !== canvas.height) camera.resize(canvas.width, canvas.height);
+  camera.update(performance.now());
+  // Fitted, a vertical swipe on a phone scrolls the page; zoomed in, a drag pans the world.
+  canvas.style.touchAction = camera.zoom > camera.minZoom * 1.0001 ? "none" : "pan-y";
+}
+
 function frame(now: number): void {
   const dpr = fitCanvas(canvas);
+  syncCamera();
+  const dt = (now - lastFrameAt) / 1000;
+  lastFrameAt = now;
+  if (preview && !replay.best) turnPreview(preview, dt);
   // Wall time drives the replay so speed is the same at any refresh rate.
   if (replay.best && run.phase !== "paused") {
     replay.advance(clock.advance(now, replaySpeed / run.config.dt), performance.now() + STEP_BUDGET_MS);
@@ -274,9 +297,9 @@ function frame(now: number): void {
     clock.reset(now);
   }
   const best = replay.best;
-  if (best) drawScene(ctx, run.config, best, replay.others, view, replayLabel(best.state.ticksAlive), dpr);
-  else if (preview) drawScene(ctx, run.config, preview, [], { showAll: false, showRays: true, pov: false }, "Preview", dpr);
-  else drawScene(ctx, run.config, null, [], view, null, dpr);
+  if (best) drawScene(ctx, run.config, best, replay.others, view, replayLabel(best.state.ticksAlive), dpr, camera);
+  else if (preview) drawScene(ctx, run.config, preview, [], { showAll: false, showRays: true, pov: false }, "Preview", dpr, camera);
+  else drawScene(ctx, run.config, null, [], view, null, dpr, camera);
   if (best && brainPanel.isExpanded() && now - lastBrainAt >= BRAIN_INTERVAL_MS) {
     brainView.draw(best.brain, best.state.alive);
     lastBrainAt = now;
@@ -284,6 +307,8 @@ function frame(now: number): void {
   requestAnimationFrame(frame);
 }
 
+camera.attach(canvas);
+$("zoomFit").onclick = () => camera.animateToFit();
 startBtn.onclick = start;
 resetBtn.onclick = reset;
 skipBtn.onclick = watchLatest;
