@@ -5,7 +5,7 @@ import { recordEpisode } from "../../src/typescript/src/sim/rl/recording.ts";
 import { wasmAvailable } from "../../src/typescript/src/sim/wasm/loader.ts";
 import { creatureFile, parseCreatureFile } from "../../src/typescript/src/sim/rl/creatureFile.ts";
 import type { EnvSpec } from "../../src/typescript/src/sim/rl/env.ts";
-import { ENVS, ENV_GROUPS, envById, groupOf } from "../../src/typescript/src/sim/rl/envs.ts";
+import { ENVS, ENV_GROUPS, RECOMMENDED_MIX, envById, groupOf } from "../../src/typescript/src/sim/rl/envs.ts";
 import { placeLayout } from "../../src/typescript/src/sim/rl/layouts.ts";
 import { Es, centredRanks, standardise } from "../../src/typescript/src/sim/rl/es.ts";
 import { parseLibrary, serialiseLearner } from "../../src/typescript/src/sim/rl/library.ts";
@@ -399,5 +399,12 @@ describe("reward.poison", () => {
     const e = { ...env, reward: { food: 1, poison: 1 } };
     expect((checkEnv(e, "ecosystem", 0) as EnvSpec).reward.poison).toBe(1);
     expect(typeof checkEnv({ ...e, reward: { food: 1, poison: 99 } }, "ecosystem", 0)).toBe("string");
+  });
+});
+
+describe("recommended mix", () => {
+  it("names real envs", () => {
+    expect(RECOMMENDED_MIX.length).toBeGreaterThan(1);
+    for (const id of RECOMMENDED_MIX) expect(envById(id)).toBeDefined();
   });
 });

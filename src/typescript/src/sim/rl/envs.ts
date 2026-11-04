@@ -379,6 +379,9 @@ export const ENVS: readonly EnvSpec[] = [
   bigger({ id: "live-commons", name: "Crowded commons", description: "Little food and many weak foragers. Ramming them pays.", size: [1000, 1000], food: 20, poison: 10, foodRegrow: 0.5, rivals: 25, rivalEnergy: 25, reward: { food: 0.5, ram: 2, survive: 0.02 } }),
 ];
 
+// A mix of envs that trained well in the D3 runs (poison down, survival up): offered as a preset by the Arena.
+export const RECOMMENDED_MIX: readonly string[] = ["nibble", "live-now", "far-food", "live-patch", "minefield", "live-famine", "stings", "live-now"];
+
 export const envById = (id: string): EnvSpec | undefined => ENVS.find((e) => e.id === id);
 
 // Categories for choosing envs, in display order; groupOf files an env under one by its tags.

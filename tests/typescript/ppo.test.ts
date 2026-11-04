@@ -2,7 +2,7 @@ import { Brain, layerSizes, randomGenome } from "../../src/typescript/src/sim/br
 import { BLANK_ENV, layoutConfig, randomLearner, runEpisode } from "../../src/typescript/src/sim/rl/env.ts";
 import { envById } from "../../src/typescript/src/sim/rl/envs.ts";
 import { createNodeRlPool } from "../../src/typescript/src/worker/nodePool.ts";
-import { Mlp, Ppo, playRollout } from "../../src/typescript/src/sim/rl/ppo.ts";
+import { Mlp, PPO_DEFAULTS, Ppo, playRollout } from "../../src/typescript/src/sim/rl/ppo.ts";
 import type { RolloutTask } from "../../src/typescript/src/sim/rl/ppo.ts";
 import { testRng } from "./helpers.ts";
 
@@ -218,5 +218,13 @@ describe("env reward.poison in PPO", () => {
     const early = Array.from(steps.slice(0, -1)).filter((v) => v < 0);
     expect(early.length).toBeGreaterThan(0);
     for (const v of early) expect(Math.abs(v / 2 - Math.round(v / 2))).toBeLessThan(1e-9);
+  });
+});
+
+describe("PPO defaults", () => {
+  it("keep exploring and charge poison in training only", () => {
+    expect(PPO_DEFAULTS.logStdMin).toBe(-1);
+    expect(PPO_DEFAULTS.poisonPenalty).toBe(1);
+    expect(PPO_DEFAULTS.logStd).toBe(-0.5);
   });
 });

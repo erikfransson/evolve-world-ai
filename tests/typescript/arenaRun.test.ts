@@ -125,3 +125,25 @@ describe.each(["es", "backprop"] as const)("ArenaRun with %s", (method) => {
     expect(show.iter).toBe(3);
   });
 });
+
+describe("ArenaRun poison cost", () => {
+  const bite = { ...envById("nibble")!, id: "bite", food: 0, poison: 40, poisonDamage: 10, seconds: 10 }; // the random learner bites poison here
+  const ready = async (method: TrainMethod, poisonCost?: number): Promise<number> => {
+    const out: RlOutMessage[] = [];
+    const start = startOf(1, [bite], method);
+    const run = new ArenaRun({ ...start, options: { ...start.options, poisonCost } }, assets, inline, (m) => out.push(m));
+    await run.run();
+    return (out.find((m) => m.type === "ready") as Extract<RlOutMessage, { type: "ready" }>).held;
+  };
+
+  it("charges poison bites in the env reward on ES runs, 1 each by default and 0 for none", async () => {
+    const none = await ready("es", 0);
+    const dflt = await ready("es");
+    expect(dflt).toBeLessThan(none - 0.5);
+    expect(await ready("es", 1)).toBe(dflt);
+  });
+
+  it("leaves backprop envs alone, which have their own poison penalty", async () => {
+    expect(await ready("backprop")).toBe(await ready("backprop", 0));
+  });
+});

@@ -31,8 +31,8 @@ export interface PpoOptions {
   repeat: number; // ticks one sampled action is held
   everyTick: boolean; // the brain acts every tick and only the sampled noise is held `repeat` ticks, as an offset (founders steer every tick)
   targetKl: number; // stop the update's epochs when a minibatch's approx KL passes 1.5 x this; 0 never stops
-  poisonPenalty?: number; // reward taken per poison item the learner eats (0: poison costs only the energy and the future food)
-  logStdMin?: number; // floor of the learned log-std, default LOG_STD_RANGE[0]
+  poisonPenalty?: number; // training-only reward taken per poison item the learner eats, not in reported scores (1 by default; 0: poison costs only the energy and the future food)
+  logStdMin?: number; // floor of the learned log-std (-1 by default: the policy keeps exploring); never below LOG_STD_RANGE[0]
   diag?: boolean; // fill Ppo.lastDiag after every update (no effect on the training)
 }
 
@@ -56,7 +56,7 @@ export interface PpoDiag {
   epochs: number;
 }
 
-export const PPO_DEFAULTS: PpoOptions = { episodes: 16, epochs: 2, minibatch: 256, lr: 3e-3, criticLr: 3e-3, clip: 0.2, gamma: 0.995, lambda: 0.95, logStd: -0.5, entropy: 0, criticHidden: 32, repeat: 3, everyTick: false, targetKl: 0 };
+export const PPO_DEFAULTS: PpoOptions = { episodes: 16, epochs: 2, minibatch: 256, lr: 3e-3, criticLr: 3e-3, clip: 0.2, gamma: 0.995, lambda: 0.95, logStd: -0.5, entropy: 0, criticHidden: 32, repeat: 3, everyTick: false, targetKl: 0, logStdMin: -1, poisonPenalty: 1 };
 
 const ACTIONS = OUTPUT_SIZE; // turn, thrust
 const LOG_2PI = Math.log(2 * Math.PI);

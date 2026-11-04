@@ -9,6 +9,7 @@ import type { Recording } from "../sim/rl/recording.ts";
 export interface RlRunOptions extends Omit<EsOptions, "shaping">, Partial<Pick<EsOptions, "shaping">> {
   episodes: number; // seeds per candidate and env each iteration
   iterations: number; // the run stops after this many
+  poisonCost?: number; // ES only: reward.poison put on every env that has none, 0 to 10, default 1 (backprop has its own poisonPenalty)
   backprop?: Partial<Pick<PpoOptions, "lr" | "episodes">>; // with method "backprop"; the ES fields above then do not apply
 }
 

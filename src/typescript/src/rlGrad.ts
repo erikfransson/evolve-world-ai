@@ -14,7 +14,7 @@ import { layoutConfig, poolLearner, randomLearner, scoreLearner } from "./sim/rl
 import type { EnvSpec, Learner } from "./sim/rl/env.ts";
 import { ENVS, envById } from "./sim/rl/envs.ts";
 import { serialiseLearner } from "./sim/rl/library.ts";
-import { LOG_STD_RANGE, Ppo } from "./sim/rl/ppo.ts";
+import { LOG_STD_RANGE, PPO_DEFAULTS, Ppo } from "./sim/rl/ppo.ts";
 import { heldSeeds } from "./sim/rl/trainer.ts";
 import { parsePool } from "./sim/seedPool.ts";
 
@@ -33,9 +33,9 @@ const { values } = parseArgs({
     lr: { type: "string", default: "0.003" },
     logstd: { type: "string", default: "-0.5" },
     entropy: { type: "string", default: "0" },
-    "poison-penalty": { type: "string", default: "0" },
+    "poison-penalty": { type: "string", default: String(PPO_DEFAULTS.poisonPenalty) },
     poison: { type: "string", default: "0" }, // reward.poison for every env (cost per poison bite, in the env reward)
-    "logstd-min": { type: "string", default: "-3" },
+    "logstd-min": { type: "string", default: String(PPO_DEFAULTS.logStdMin) },
     repeat: { type: "string", default: "3" },
     "every-tick": { type: "boolean", default: false },
     "repeat-then": { type: "string" },
