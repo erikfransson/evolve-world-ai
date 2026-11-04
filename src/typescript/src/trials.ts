@@ -279,6 +279,8 @@ function syncCamera(): void {
   }
   if (camera.width !== canvas.width || camera.height !== canvas.height) camera.resize(canvas.width, canvas.height);
   camera.update(performance.now());
+  // Fitted, a vertical swipe on a phone scrolls the page; zoomed in, a drag pans the world.
+  canvas.style.touchAction = camera.zoom > camera.minZoom * 1.0001 ? "none" : "pan-y";
 }
 
 function frame(now: number): void {

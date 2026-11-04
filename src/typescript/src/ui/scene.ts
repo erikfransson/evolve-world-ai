@@ -240,7 +240,13 @@ export function beginFrame(ctx: CanvasRenderingContext2D, config: SimConfig, ful
   ctx.setTransform(f.scale, 0, 0, f.scale, f.offsetX, f.offsetY);
   ctx.fillStyle = FLOOR;
   ctx.fillRect(0, 0, ww, wh);
-  drawTerrain(ctx, terrainOf(config), f.scale);
+  let seen;
+  if (cam) {
+    const a = cam.screenToWorld(0, 0);
+    const b = cam.screenToWorld(cw, ch);
+    seen = { x0: a.x, x1: b.x, y0: a.y, y1: b.y }; // only what is on screen is painted
+  }
+  drawTerrain(ctx, terrainOf(config), f.scale, seen);
   ctx.strokeStyle = WALL;
   ctx.lineWidth = Math.max(2, 3 / f.scale);
   ctx.strokeRect(0, 0, ww, wh);
