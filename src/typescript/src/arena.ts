@@ -10,7 +10,7 @@ import type { Founder } from "./live/founders.ts";
 import type { PoolEntry } from "./sim/seedPool.ts";
 import { layoutConfig, libraryFits, poolLearner } from "./sim/rl/env.ts";
 import type { EnvSpec, Learner, Rivals } from "./sim/rl/env.ts";
-import { ENVS } from "./sim/rl/envs.ts";
+import { ENVS, RECOMMENDED_MIX } from "./sim/rl/envs.ts";
 import { KINDS, MAX_FILE_BYTES, creatureFile, fileLearner, parseCreatureFile } from "./sim/rl/creatureFile.ts";
 import type { CreatureFile, CreatureKind } from "./sim/rl/creatureFile.ts";
 import { serialiseLearner } from "./sim/rl/library.ts";
@@ -22,7 +22,7 @@ import { energyBudget, f1, renderEnergy } from "./ui/energyCard.ts";
 import type { RlInMessage, RlIteration, RlOutMessage, TrainMethod } from "./worker/rlProtocol.ts";
 import { ARENA_HELD_SEEDS } from "./worker/rlProtocol.ts";
 import { BrainReplay } from "./ui/arenaBrain.ts";
-import { DEFAULT_DESIGN, DEFAULT_RUN, DESIGN_FORM, RUN_FORM, designPlan, planDesign } from "./ui/arenaForm.ts";
+import { DEFAULT_DESIGN, DEFAULT_RUN, DESIGN_FORM, RUN_FORM, designPlan, planDesign, startOptions, trainingRecord } from "./ui/arenaForm.ts";
 import { ARENA_KIND, bestFounder, change, customEnv, envsForKind, kindRejection, planSummary } from "./ui/arenaPick.ts";
 import { addFavourite, loadFavourites, loadSpeed, removeFavourite, saveSpeed } from "./ui/arenaStore.ts";
 import { drawCreaturePreview } from "./ui/creaturePreview.ts";
@@ -34,7 +34,7 @@ import { PHASE_TEXT, displayOrder, gridColumns, layoutsPerEnv, pageOf, phaseOf, 
 import type { Recording } from "./sim/rl/recording.ts";
 import { Zoom } from "./ui/arenaZoom.ts";
 import { EnvGallery } from "./ui/envGallery.ts";
-import { setEnvs, summaryLine, toggleEnv } from "./ui/envSelect.ts";
+import { mixPick, setEnvs, summaryLine, toggleEnv } from "./ui/envSelect.ts";
 import type { PreviewIn, PreviewOut } from "./worker/envPreviewWorker.ts";
 import { $, durationText } from "./ui/page.ts";
 import { buildForm } from "./ui/settingsForm.ts";
@@ -74,6 +74,7 @@ interface Run {
   from: string;
   iterations: number;
   its: RlIteration[];
+  poisonCost: number | null; // ES only, put in the saved file
   startHeld: number | null;
   startPerEnv: number[] | null;
   latest: { iter: number; learner: StoredLearner } | null;
@@ -300,6 +301,7 @@ function pick(next: Set<string>): void {
 const gallery = new EnvGallery($("gallery"), {
   toggle: (id) => pick(toggleEnv(picked, id)),
   setMany: (ids, on) => pick(setEnvs(picked, ids, on)),
+  mix: () => pick(mixPick(RECOMMENDED_MIX, allEnvs())),
   remove: (id) => {
     customs.splice(customs.findIndex((e) => e.id === id), 1);
     picked.delete(id);
@@ -511,9 +513,9 @@ function begin(): void {
   if (typeof start === "string" || envs.length === 0) return;
   const cfg = runForm.read();
   const layouts = layoutsPerEnv(cfg.tiles, envs.length);
-  const options = { pairs: Math.round(cfg.population / 2), sigma: cfg.sigma, lr: cfg.lr, decay: DECAY, episodes: cfg.episodes, iterations: cfg.iterations, backprop: { lr: cfg.bpLr, episodes: cfg.bpEpisodes } };
+  const options = startOptions(cfg, DECAY);
   const seed = Math.floor(Math.random() * 0x7fffffff);
-  run = { kind: kind(), method: cfg.method, envs, plan: { ...start.learner.plan, hiddenLayers: start.learner.plan.hiddenLayers.slice() }, from: start.from, iterations: options.iterations, its: [], startHeld: null, startPerEnv: null, latest: null, nextEnvs: null };
+  run = { kind: kind(), method: cfg.method, envs, plan: { ...start.learner.plan, hiddenLayers: start.learner.plan.hiddenLayers.slice() }, from: start.from, iterations: options.iterations, its: [], poisonCost: options.poisonCost ?? null, startHeld: null, startPerEnv: null, latest: null, nextEnvs: null };
   worker?.terminate();
   worker = new Worker(new URL("./worker/rlWorker.ts", import.meta.url), { type: "module" });
   worker.onmessage = (ev: MessageEvent<RlOutMessage>) => onMessage(ev.data);
@@ -667,14 +669,8 @@ function currentFile(): CreatureFile | null {
   if (!run?.latest) return null;
   const heldIt = lastHeld(run);
   const learner: Learner = { plan: run.latest.learner.plan, genome: Float32Array.from(run.latest.learner.genome) };
-  return creatureFile(run.kind, input("saveName").value, learner, {
-    envs: run.envs.map((e) => e.id),
-    iterations: run.latest.iter,
-    from: run.from,
-    heldStart: run.startHeld,
-    heldEnd: heldIt?.held ?? null,
-    date: new Date().toISOString().slice(0, 10),
-  });
+  const training = trainingRecord({ envs: run.envs.map((e) => e.id), iterations: run.latest.iter, from: run.from, heldStart: run.startHeld, heldEnd: heldIt?.held ?? null, poisonCost: run.poisonCost }, new Date().toISOString().slice(0, 10));
+  return creatureFile(run.kind, input("saveName").value, learner, training);
 }
 
 function saveFile(): void {

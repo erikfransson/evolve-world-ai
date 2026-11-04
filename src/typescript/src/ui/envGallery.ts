@@ -10,6 +10,7 @@ const CLIP_SPEED = 3; // clip seconds per real second
 export interface GalleryHandlers {
   toggle: (id: string) => void;
   setMany: (ids: string[], on: boolean) => void;
+  mix: () => void; // the Mix button: choose exactly the recommended mix
   remove: (id: string) => void; // a custom env's delete button
 }
 
@@ -75,7 +76,11 @@ export class EnvGallery {
     for (const b of [all, none]) b.type = "button";
     all.addEventListener("click", () => this.on.setMany(this.envs.map((e) => e.id), true));
     none.addEventListener("click", () => this.on.setMany(this.envs.map((e) => e.id), false));
-    actions.append(all, none);
+    const mix = el("button", "mini", "Mix");
+    mix.title = "Choose the recommended mix of environments (replaces the choice)";
+    mix.type = "button";
+    mix.addEventListener("click", () => this.on.mix());
+    actions.append(all, none, mix);
     head.append(title, this.total, actions);
     const hint = el("p", "hint gallery-hint", "The creature trains in every chosen one. Small worlds learn within a few dozen iterations, bigger ones take longer.");
     const lock = el("p", "hint gallery-lock", "Pause to change them; the change applies on Resume.");
