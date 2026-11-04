@@ -125,6 +125,10 @@ else {
 }
 
 const poisonCost = Number(values.poison);
+if (values.selfplay && poisonCost !== 0) {
+  console.error("error: --poison does not apply to --selfplay (the crowd world scores poison with --poisonw, a different unit)");
+  process.exit(1);
+}
 const envs = (mix as EnvSpec[]).map((e) => varied(poisonCost === 0 ? e : { ...e, reward: { ...e.reward, poison: poisonCost } }, vary));
 const helpers = createNodeRlPool({ envs: [envs[0]!], plan: learner.plan, pool, library }, threads);
 const trainer = new Trainer(Float32Array.from(learner.genome), { pairs, sigma: num("sigma"), lr: num("lr") }, helpers, 1, episodes, seed);

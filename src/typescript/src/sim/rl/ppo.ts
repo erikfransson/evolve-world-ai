@@ -60,7 +60,7 @@ export const PPO_DEFAULTS: PpoOptions = { episodes: 16, epochs: 2, minibatch: 25
 
 const ACTIONS = OUTPUT_SIZE; // turn, thrust
 const LOG_2PI = Math.log(2 * Math.PI);
-const LOG_STD_RANGE = [-3, 1] as const;
+export const LOG_STD_RANGE = [-3, 1] as const;
 const MAX_GRAD_NORM = 0.5;
 const SAT_ACT = Math.tanh(2.5); // a tanh unit with |pre-activation| above 2.5 outputs more than this
 const DIAG_SAMPLES = 1024; // samples the batch statistics look at
@@ -558,7 +558,7 @@ export class Ppo {
   readonly options: PpoOptions; // repeat changes with setRepeat
   lastKl = 0; // mean approx KL of the last minibatch the last update looked at
   lastDiag: PpoDiag | null = null; // set after every update when options.diag
-  private dgrad = { n: 0, pol: 0, crit: 0, clipped: 0, kl: 0, klMax: 0, clipSamples: 0, samples: 0, advMean: 0, advStd: 0, reward: 0 };
+  private dgrad = { n: 0, critN: 0, klN: 0, pol: 0, crit: 0, clipped: 0, kl: 0, klMax: 0, clipSamples: 0, samples: 0, advMean: 0, advStd: 0, reward: 0 };
   lastEpochs = 0; // epochs the last update ran, fewer than options.epochs when targetKl stopped it
   private klSum = 0;
   iter = 0;
@@ -587,7 +587,7 @@ export class Ppo {
     this.options = { ...PPO_DEFAULTS, ...options };
     this.theta = Float32Array.from(learner.genome);
     if (this.theta.length !== genomeLength(sizes)) throw new Error("genome does not fit the brain sizes");
-    this.logStd = new Float64Array(ACTIONS).fill(this.options.logStd);
+    this.logStd = new Float64Array(ACTIONS).fill(Math.max(this.options.logStdMin ?? LOG_STD_RANGE[0], this.options.logStd)); // a floor above the start raises it before the first update
     this.rng = createRng(deriveSeed(seed, 0x9905));
     const criticSizes = [sizes[0]! + 1, this.options.criticHidden, 1];
     this.critic = randomGenome(criticSizes, this.rng);
@@ -674,7 +674,7 @@ export class Ppo {
     let sq = 0;
     for (let i = 0; i < n; i++) sq += (batch.adv[i]! - mean) ** 2;
     const sd = Math.sqrt(sq / n) || 1;
-    if (this.options.diag) Object.assign(this.dgrad, { n: 0, pol: 0, crit: 0, clipped: 0, kl: 0, klMax: 0, clipSamples: 0, samples: 0, advMean: mean, advStd: sd, reward: train });
+    if (this.options.diag) Object.assign(this.dgrad, { n: 0, critN: 0, klN: 0, pol: 0, crit: 0, clipped: 0, kl: 0, klMax: 0, clipSamples: 0, samples: 0, advMean: mean, advStd: sd, reward: train });
     for (let i = 0; i < n; i++) batch.adv[i] = (batch.adv[i]! - mean) / sd;
     this.update(batch);
     this.iter++;
@@ -757,6 +757,7 @@ export class Ppo {
         this.lastKl = this.klSum / m;
         if (o.diag) {
           this.dgrad.kl += this.lastKl;
+          this.dgrad.klN++;
           this.dgrad.klMax = Math.max(this.dgrad.klMax, this.lastKl);
         }
         // The policy moved too far from the one that played: no step from this minibatch and no more epochs.
@@ -767,13 +768,16 @@ export class Ppo {
         // A non-finite gradient (a numeric blow-up) would poison the weights for good through Adam, so that minibatch is skipped.
         const rec = o.diag ? { norm: 0 } : null;
         const okPol = clipNorm(gPol, m, rec);
-        if (rec) {
+        if (rec && okPol) {
           this.dgrad.n++;
           this.dgrad.pol += rec.norm;
           if (rec.norm > MAX_GRAD_NORM) this.dgrad.clipped++;
         }
         if (!okPol || !clipNorm(gStd, m) || !clipNorm(gCrit, m, rec)) continue;
-        if (rec) this.dgrad.crit += rec.norm;
+        if (rec) {
+          this.dgrad.critN++;
+          this.dgrad.crit += rec.norm;
+        }
         this.policyAdam.step(this.theta, gPol);
         this.stdAdam.step(this.logStd, gStd);
         this.criticAdam.step(this.critic, gCrit);
@@ -832,8 +836,8 @@ export class Ppo {
     const d = this.dgrad;
     const mb = Math.max(1, d.n);
     return {
-      layerNorm, layerMax, saturated: before.saturated, gradNorm: d.pol / mb, criticGradNorm: d.crit / mb, clipActive: d.clipped / mb, logStd: Array.from(this.logStd),
-      kl: d.kl / mb, klMax: d.klMax, clipFrac: d.clipSamples / Math.max(1, d.samples), explainedVar: before.explainedVar, advMean: d.advMean, advStd: d.advStd, reward: d.reward, samples: d.samples / Math.max(1, this.lastEpochs), epochs: this.lastEpochs,
+      layerNorm, layerMax, saturated: before.saturated, gradNorm: d.pol / mb, criticGradNorm: d.crit / Math.max(1, d.critN), clipActive: d.clipped / mb, logStd: Array.from(this.logStd),
+      kl: d.kl / Math.max(1, d.klN), klMax: d.klMax, clipFrac: d.clipSamples / Math.max(1, d.samples), explainedVar: before.explainedVar, advMean: d.advMean, advStd: d.advStd, reward: d.reward, samples: d.samples / Math.max(1, this.lastEpochs), epochs: this.lastEpochs,
     };
   }
 }

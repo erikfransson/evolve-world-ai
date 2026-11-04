@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { randomLearner, runEpisode, SELF } from "../../src/typescript/src/sim/rl/env.ts";
 import { PROC_DEFAULTS, crowdReward, drawWorld, procEnv, runCrowdStats } from "../../src/typescript/src/sim/rl/procEnv.ts";
 import { ENVS } from "../../src/typescript/src/sim/rl/envs.ts";
@@ -47,5 +48,12 @@ describe("procedural self-play world (S1)", () => {
     expect(ENVS.some((e) => e.proc)).toBe(false);
     const lineage = runCrowdStats({ ...spec, lineageWeight: 1 }, learner, 11);
     expect(lineage.reward).toBeGreaterThanOrEqual(runCrowdStats(spec, learner, 11).reward);
+  });
+});
+
+describe("self-play wiring", () => {
+  it("keeps procEnv out of env.ts, which the web bundle imports", () => {
+    const src = readFileSync(new URL("../../src/typescript/src/sim/rl/env.ts", import.meta.url), "utf8");
+    expect(src).not.toMatch(/import\s+\{[^}]*\}\s+from\s+"\.\/procEnv\.ts"/);
   });
 });

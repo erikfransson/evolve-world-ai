@@ -137,3 +137,16 @@ describe.concurrent("buildPool.ts and ecoBench.ts", () => {
     expect(b.err).toContain("must be a number");
   });
 });
+
+describe("RL CLI option checks", () => {
+  it("rejects --poison with --selfplay and points to --poisonw", async () => {
+    const r = await run("rlTrain", "--selfplay", "--poison", "1");
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("--poisonw");
+  });
+  it.each(["abc", "5", "-9"])("rejects --logstd-min %s", async (v) => {
+    const r = await run("rlGrad", "--from", "random:1", "--logstd-min", v);
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("--logstd-min");
+  });
+});

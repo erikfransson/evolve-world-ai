@@ -18,8 +18,7 @@ import { plainText } from "./validate.ts";
 import { envById } from "./envs.ts";
 import { LAYOUT_KINDS, placeLayout } from "./layouts.ts";
 import type { Layout } from "./layouts.ts";
-import { runCrowdEpisode } from "./procEnv.ts";
-import type { ProcSpec } from "./procEnv.ts";
+import type { ProcSpec } from "./procEnv.ts"; // type only, so the web bundle does not pull procEnv in
 
 // RL environments (#27): short episodes on the Ecosystem engine, so a creature trained here acts exactly as it would in the
 // Ecosystem or the two-species hunt world. An environment is plain data: a small world, the learner's species, rivals, and reward weights.
@@ -322,6 +321,12 @@ const crossed = (walls: readonly number[], minY: number, radius: number): number
 let spareKernels: SenseKernels | null = null;
 export const dropSpareKernels = (): void => { spareKernels = null; }; // the next episode builds fresh ones (tests)
 
+// procEnv.ts registers how self-play episodes are played when a Node tool imports it; env.ts cannot import it (cycle, and the web bundle stays free of it).
+let crowdRunner: ((spec: ProcSpec, learner: Learner, seed: number, library: Library) => EpisodeResult) | null = null;
+export function registerCrowdRunner(run: NonNullable<typeof crowdRunner>): void {
+  crowdRunner = run;
+}
+
 // Plays one episode and scores the learner. onTick, when given, sees the world after every tick (the Arena draws it).
 // act, when given, may overwrite the learner's outputs after its brain ran and before it moves (a stochastic policy, rlGrad).
 export function runEpisode(
@@ -335,7 +340,8 @@ export function runEpisode(
 ): EpisodeResult {
   if (env.proc) {
     if (onTick || act) throw new Error("self-play episodes cannot be drawn or played stochastically");
-    return runCrowdEpisode(env.proc, learner, seed, library);
+    if (!crowdRunner) throw new Error("self-play episodes need procEnv.ts to be imported (Node tools only)");
+    return crowdRunner(env.proc, learner, seed, library);
   }
   env = variantFor(env, seed);
   const config = episodeConfig(env, seed);

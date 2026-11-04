@@ -1,4 +1,4 @@
-import { SELF, BLANK_ENV, envConfig } from "./env.ts";
+import { SELF, BLANK_ENV, envConfig, registerCrowdRunner } from "./env.ts";
 import type { EnvSpec, EpisodeResult, Learner, Library } from "./env.ts";
 import { Ecosystem } from "../ecosystem.ts";
 import type { CastMember } from "../ecosystem.ts";
@@ -218,3 +218,5 @@ export function runCrowdEpisode(spec: ProcSpec, learner: Learner, seed: number, 
 
 // The training env for rlTrain --selfplay: runEpisode plays it by runCrowdEpisode.
 export const procEnv = (spec: ProcSpec): EnvSpec => ({ ...BLANK_ENV, id: "selfplay", name: "Self-play", description: "A new crowded world every episode.", proc: spec, tags: ["selfplay"] });
+
+registerCrowdRunner(runCrowdEpisode);
