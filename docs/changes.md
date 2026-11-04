@@ -6,6 +6,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- Trials: the world canvas zooms (wheel, pinch, drag to pan, double-click zooms in, Fit button resets) with the shared Live camera, never past the whole world (#70).
+- Trials: the preview before Start puts the creature in open space, clear of rock, and turns it slowly so its rays sweep; the run itself is unchanged (#73).
 - RL Arena: new Time pressure env Hand to mouth (`hand-to-mouth`): ten bites in a winding chain, start energy 20 and a living cost of 5, so only a creature that runs straight from bite to bite survives. New `chain` layout and an optional `EnvSpec.livingCost` (energy per second just for being alive; off unless set, so existing envs are bit-identical). Poison-skill and clean-sweep candidates were screened and dropped as duplicates (`docs/rl-envs.md`).
 - Arena: a Poison cost setting (0 to 10, default 1, Evolutionary RL only) sets the ES poison cost, a Mix button in the Environments header picks the recommended mix (live-now once, as the picker holds each env once), and saved creature files from ES runs name the `poisonCost` their held-out scores include.
 - Poison follow-up: backprop's poison penalty is skipped on envs that set their own `reward.poison` (no double charge), and `rlTrain --poison` now defaults to the Arena ES cost 1 on envs without their own (`--poison 0` turns it off). `rlGrad --poison` stays 0.

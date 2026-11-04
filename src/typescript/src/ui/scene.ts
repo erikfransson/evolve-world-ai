@@ -3,6 +3,7 @@ import { HIT_FOOD, HIT_NONE, HIT_POISON } from "../sim/types.ts";
 import type { SimConfig } from "../sim/config.ts";
 import { terrainOf } from "../sim/terrain.ts";
 import { BACKGROUND, FLOOR, FOOD, OTHER, POISON, RAY_NONE, RAY_WALL, WALL } from "./palette.ts";
+import type { Camera } from "./camera.ts";
 import { drawTerrain } from "./terrainScene.ts";
 
 export interface ViewOptions {
@@ -213,12 +214,18 @@ export function drawLabel(ctx: CanvasRenderingContext2D, text: string, dpr: numb
 }
 
 // Clears the canvas and draws floor and walls; leaves the context in world coordinates and returns the frame values.
-export function beginFrame(ctx: CanvasRenderingContext2D, config: SimConfig, fullAt = TRIALS_FULL_AT): Frame {
+// cam: a zoomed and panned view of the world instead of the whole of it.
+export function beginFrame(ctx: CanvasRenderingContext2D, config: SimConfig, fullAt = TRIALS_FULL_AT, cam?: Camera): Frame {
   const cw = ctx.canvas.width;
   const ch = ctx.canvas.height;
   const { width: ww, height: wh } = config.world;
   worldToCanvas(ww, wh, cw, ch, frame);
   const f = frame;
+  if (cam) {
+    f.scale = cam.zoom;
+    f.offsetX = cw / 2 + cam.focusX - cam.cx * cam.zoom;
+    f.offsetY = ch / 2 + cam.focusY - cam.cy * cam.zoom;
+  }
   f.px = 1 / f.scale;
   f.creatureR = config.creature.radius;
   f.itemR = Math.max(config.world.itemRadius, 1.5 * f.px);
@@ -248,8 +255,9 @@ export function drawScene(
   view: ViewOptions,
   label: string | null = null,
   dpr = 1,
+  cam?: Camera,
 ): void {
-  const f = beginFrame(ctx, config);
+  const f = beginFrame(ctx, config, TRIALS_FULL_AT, cam);
 
   if (best) {
     drawItems(ctx, f, best.world);
