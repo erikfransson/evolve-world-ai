@@ -84,7 +84,7 @@ export class World implements WorldView {
   readonly width: number;
   readonly height: number;
   private readonly spacing: number; // see tooClose
-  foodHidden = false; // rays pass through food (it stays edible); RL memory envs set it. The WASM sense path does not read it.
+  foodHidden = false; // rays pass through food (it stays edible); RL memory envs set it. The WASM senser packs its item rows without food then.
   readonly itemRadius: number;
   readonly terrain: Terrain; // static rock and ground; rays see rock as wall
   // Uniform grid as per-cell linked lists: cellHead[c] -> item -> nextItem[item] -> -1.

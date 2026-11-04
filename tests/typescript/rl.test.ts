@@ -5,11 +5,12 @@ import { recordEpisode } from "../../src/typescript/src/sim/rl/recording.ts";
 import { wasmAvailable } from "../../src/typescript/src/sim/wasm/loader.ts";
 import { creatureFile, parseCreatureFile } from "../../src/typescript/src/sim/rl/creatureFile.ts";
 import type { EnvSpec } from "../../src/typescript/src/sim/rl/env.ts";
-import { ENVS, ENV_GROUPS, envById, groupOf } from "../../src/typescript/src/sim/rl/envs.ts";
+import { ENVS, ENV_GROUPS, RECOMMENDED_MIX, envById, groupOf } from "../../src/typescript/src/sim/rl/envs.ts";
 import { placeLayout } from "../../src/typescript/src/sim/rl/layouts.ts";
 import { Es, centredRanks, standardise } from "../../src/typescript/src/sim/rl/es.ts";
 import { parseLibrary, serialiseLearner } from "../../src/typescript/src/sim/rl/library.ts";
 import { testRng } from "./helpers.ts";
+import { HIT_FOOD, HIT_POISON } from "../../src/typescript/src/sim/types.ts";
 
 describe("centredRanks", () => {
   it("maps ranks to [-0.5, 0.5] and shares ties", () => {
@@ -259,14 +260,47 @@ describe("env groups", () => {
 });
 
 describe("hidden food in envs", () => {
-  it("hides food only on the JS sense path, which RL envs use", () => {
+  // Per tick, whether any learner ray sees food and any sees the poison behind it, with food hidden for ticks 4 to 9.
+  const timeline = (wasm: boolean): string[] => {
     const env = envById("flash")!;
-    const config = envConfig(env, 1);
-    expect(config.eco.wasm).toBe(false);
-    const eco = new Ecosystem({ ...config, eco: { ...config.eco, wasm: true } }, null, { cast: castFor(env, config, randomLearner(env, 1), 1, null, {}) });
-    if (eco.wasm) expect(() => eco.setFoodHidden(true)).toThrow(/JS sense path/);
-    const r = runEpisode(env, randomLearner(env, 2), 3);
-    expect(r.seconds).toBeGreaterThan(0);
+    const base = envConfig(env, 1);
+    const config = { ...base, eco: { ...base.eco, wasm } };
+    const learner = randomLearner(env, 1);
+    const [cx, cy] = [300, 300];
+    const offsets = new Ecosystem(config, null, { cast: castFor(env, config, learner, 1, null, {}) }).get(0)!.creature.rayOffsets;
+    const cast = castFor(env, config, learner, 1, null, {}, { x: cx, y: cy, heading: -offsets[0]! }); // the first ray points along +x
+    const L = learner.plan.rayLength;
+    const items = [{ x: cx + 0.5 * L, y: cy, kind: HIT_FOOD }, { x: cx + 0.8 * L, y: cy, kind: HIT_POISON }] as const;
+    const eco = new Ecosystem(config, null, { cast, items });
+    expect(eco.wasm).toBe(wasm);
+    eco.detail = 0;
+    const out: string[] = [];
+    for (let t = 0; t < 14; t++) {
+      if (t === 4) eco.setFoodHidden(true);
+      if (t === 10) eco.setFoodHidden(false);
+      eco.prepareTick();
+      eco.sensePhase();
+      const c = eco.get(0)!.creature;
+      out.push(`${c.rays.some((r) => r.kind === HIT_FOOD) ? "F" : "-"}${c.rays.some((r) => r.kind === HIT_POISON) ? "P" : "-"}`);
+      c.outputs.fill(0);
+      eco.finishTick();
+    }
+    expect(eco.get(0)!.eaten).toBe(0); // the food stays put, so every tick tests the same geometry
+    return out;
+  };
+
+  it("hides food from the rays on the WASM path exactly when the JS path does", () => {
+    const js = timeline(false);
+    expect(js.slice(0, 4).every((s) => s[0] === "F")).toBe(true);
+    expect(js.slice(4, 10).every((s) => s === "-P")).toBe(true);
+    expect(js.slice(10).every((s) => s[0] === "F")).toBe(true);
+    if (wasmAvailable()) expect(timeline(true)).toEqual(js);
+  });
+
+  it("runs memory envs on the WASM kernels", () => {
+    const env = envById("flash")!;
+    expect(envConfig(env, 1).eco.wasm).toBe(wasmAvailable());
+    expect(runEpisode(env, randomLearner(env, 2), 3).seconds).toBeGreaterThan(0);
   });
 });
 
@@ -293,6 +327,33 @@ describe("memory envs", () => {
     const checked = checkEnv(spec, "ecosystem", 0) as EnvSpec;
     expect(checked.layout).toEqual({ kind: "stops", count: 2 });
     for (const count of [0, 1.5, 7, -1]) expect(checkEnv({ ...spec, layout: { kind: "stops", count } }, "ecosystem", 0)).toMatch(/stops count/);
+  });
+});
+
+describe("chain layout and energy-pressure env", () => {
+  const inside = (it: { x: number; y: number }, w: number, h: number): boolean => it.x >= 0 && it.x <= w && it.y >= 0 && it.y <= h;
+
+  it("chain winds food 85 apart inside the room, the first 60 from a start that faces it, the same for the same seed", () => {
+    for (let seed = 1; seed <= 20; seed++) {
+      const placed = placeLayout({ kind: "chain" }, [500, 500], 10, 0, seed);
+      expect(placed.items).toHaveLength(10);
+      expect(Math.hypot(placed.items[0]!.x - placed.start.x, placed.items[0]!.y - placed.start.y)).toBeCloseTo(60, 5);
+      expect(Math.atan2(placed.items[0]!.y - placed.start.y, placed.items[0]!.x - placed.start.x)).toBeCloseTo(placed.start.heading!, 5);
+      for (let k = 1; k < 10; k++) expect(Math.hypot(placed.items[k]!.x - placed.items[k - 1]!.x, placed.items[k]!.y - placed.items[k - 1]!.y)).toBeCloseTo(85, 5);
+      for (const it of placed.items) expect(inside(it, 500, 500)).toBe(true);
+      expect(placeLayout({ kind: "chain" }, [500, 500], 10, 0, seed)).toEqual(placed);
+    }
+  });
+
+  it("hand to mouth runs, keeps its layout through checkEnv and sits in Time pressure", () => {
+    {
+      const e = envById("hand-to-mouth")!;
+      const checked = checkEnv(JSON.parse(JSON.stringify(e)), "ecosystem", 0) as EnvSpec;
+      expect(typeof checked).not.toBe("string");
+      expect(checked.layout).toEqual(e.layout);
+      expect(runEpisode(e, randomLearner(e, 2), 3).seconds).toBeGreaterThan(0);
+    }
+    expect(groupOf(envById("hand-to-mouth")!)).toBe("Time pressure");
   });
 });
 
@@ -365,5 +426,12 @@ describe("reward.poison", () => {
     const e = { ...env, reward: { food: 1, poison: 1 } };
     expect((checkEnv(e, "ecosystem", 0) as EnvSpec).reward.poison).toBe(1);
     expect(typeof checkEnv({ ...e, reward: { food: 1, poison: 99 } }, "ecosystem", 0)).toBe("string");
+  });
+});
+
+describe("recommended mix", () => {
+  it("names real envs", () => {
+    expect(RECOMMENDED_MIX.length).toBeGreaterThan(1);
+    for (const id of RECOMMENDED_MIX) expect(envById(id)).toBeDefined();
   });
 });

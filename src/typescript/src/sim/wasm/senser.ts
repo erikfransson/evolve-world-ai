@@ -4,7 +4,7 @@ import { energySignal } from "../sensors.ts";
 import type { Terrain } from "../terrain.ts";
 import type { World } from "../world.ts";
 import type { WasmBrainBank } from "./brainKernel.ts";
-import { HIT_CREATURE } from "../types.ts";
+import { HIT_CREATURE, HIT_FOOD } from "../types.ts";
 import { SENSE_BYTES, compiled } from "./loader.ts";
 import { ROCK_CELL } from "../terrain.ts";
 import type { WasmFiller } from "./fillKernel.ts";
@@ -15,6 +15,7 @@ import { Region, growRegion } from "./resident.ts";
 // JS candidate order, crowd rays in f32, and the ray features written into the brain's input vector in place.
 // Rock (the world's Terrain, static) is copied once per world into three tables the kernel walks like the item grid. Shares the brain bank's linear memory. The item grid is patched per tick (patchItems) and the crowd is read in place. The creature's RayHit objects are not updated, except for the one
 // creature given as detail (the selected one), whose rays are read back for the UI.
+// While the world's food is hidden (World.foodHidden, RL memory envs) the rows leave food out, so rays pass through it as on the JS path.
 
 export const MAX_RAYS = 64;
 const ROCK_BOUND_CAP = 2048; // distances past this are not told apart; a ray longer than this walks the rock anyway
@@ -102,6 +103,7 @@ export class WasmSenser {
   private f64!: Float64Array;
   private u8!: Uint8Array;
   private synced!: World | null; // the world whose items the packed rows in wasm memory match
+  private syncedHidden!: boolean; // whether the packed rows leave food out (the world's foodHidden when they were packed)
   private rockSynced!: Terrain | null; // the map whose rock tables are in wasm memory
   private rowCap!: number; // item slots per row run
   private pStart!: number;
@@ -143,6 +145,7 @@ export class WasmSenser {
     this.f64 = new Float64Array(0);
     this.u8 = new Uint8Array(0);
     this.synced = null;
+    this.syncedHidden = false;
     this.rockSynced = null;
     this.rowCap = 0;
     this.pStart = 0;
@@ -240,9 +243,9 @@ export class WasmSenser {
     this.u8 = new Uint8Array(buffer);
   }
 
-  // The packed item rows for kernels that look items up (step.wat), or null when they do not match the world's items right now (changed since the last sync).
+  // The packed item rows for kernels that look items up (step.wat), or null when they do not match the world's items right now (changed since the last sync, or food left out).
   itemTables(world: World): { start: number; xy: number; ids: number; cols: number } | null {
-    if (this.synced !== world || world.dirtyCells === null || world.dirtyCells.length > 0) return null;
+    if (this.synced !== world || this.syncedHidden || world.dirtyCells === null || world.dirtyCells.length > 0) return null;
     return { start: this.pStart, xy: this.pXY, ids: this.pIds, cols: world.cols };
   }
 
@@ -251,13 +254,15 @@ export class WasmSenser {
   private syncItems(world: World): void {
     const { cols, rows, cellHead, nextItem } = world;
     const dirty = world.dirtyCells;
-    let full = this.synced !== world || !dirty || dirty.length > PATCH_MAX;
+    const hide = world.foodHidden;
+    let full = this.synced !== world || hide !== this.syncedHidden || !dirty || dirty.length > PATCH_MAX;
     if (!full && dirty!.length > 0) full = !this.patchCells(world, dirty!);
     if (full) {
+      this.syncedHidden = hide; // before the cells are counted and written
       let widest = 0;
       for (let row = 0; row < rows; row++) {
         let n = 0;
-        for (let c = row * cols; c < (row + 1) * cols; c++) for (let i = cellHead[c]!; i >= 0; i = nextItem[i]!) n++;
+        for (let c = row * cols; c < (row + 1) * cols; c++) n += this.cellSize(world, c, hide);
         widest = Math.max(widest, n);
       }
       this.rowCap = Math.max(64, Math.ceil(widest * 1.5) + 16);
@@ -286,7 +291,7 @@ export class WasmSenser {
   // Makes the packed runs of the dirty cells match their lists: the kernel resizes them in order (the rest of each row shifts by the change in length), then the lists are written.
   // False when a row outgrows its run.
   private patchCells(world: World, dirty: number[]): boolean {
-    const { cols, cellHead, nextItem } = world;
+    const cols = world.cols;
     const n = dirty.length;
     const pRec = this.grow(this.rPatch, PATCH_MAX * 16);
     this.views();
@@ -296,8 +301,7 @@ export class WasmSenser {
     for (let k = 0; k < n; k++) {
       const c = dirty[k]!;
       const row = Math.floor(c / cols);
-      let m = 0;
-      for (let i = cellHead[c]!; i >= 0; i = nextItem[i]!) m++;
+      const m = this.cellSize(world, c, this.syncedHidden);
       const rowA = sBase + row * (cols + 1) * 4;
       i32[r + 4 * k] = rowA + (c - row * cols) * 4;
       i32[r + 4 * k + 1] = rowA + cols * 4;
@@ -309,7 +313,15 @@ export class WasmSenser {
     return true;
   }
 
-  // Writes cell c's items in list order from packed slot p; returns the slot after them.
+  // The items of cell c the packed rows hold: all, or all but food when hide.
+  private cellSize(world: World, c: number, hide: boolean): number {
+    const { cellHead, nextItem, kinds } = world;
+    let m = 0;
+    for (let i = cellHead[c]!; i >= 0; i = nextItem[i]!) if (!hide || kinds[i] !== HIT_FOOD) m++;
+    return m;
+  }
+
+  // Writes cell c's items in list order from packed slot p (food left out when the rows hide it); returns the slot after them.
   private writeCell(world: World, c: number, p: number): number {
     const { cellHead, nextItem, xs, ys, kinds } = world;
     const xy = this.f32;
@@ -318,7 +330,9 @@ export class WasmSenser {
     const kB = this.pKinds;
     const ids = this.i32;
     const idB = this.pIds >> 2;
+    const hide = this.syncedHidden;
     for (let i = cellHead[c]!; i >= 0; i = nextItem[i]!) {
+      if (hide && kinds[i] === HIT_FOOD) continue;
       ids[idB + p] = i;
       xy[xB + 2 * p] = xs[i]!;
       xy[xB + 2 * p + 1] = ys[i]!;

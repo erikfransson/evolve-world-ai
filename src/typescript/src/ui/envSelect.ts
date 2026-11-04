@@ -30,6 +30,12 @@ export function setEnvs(picked: ReadonlySet<string>, ids: readonly string[], on:
   return next;
 }
 
+// The recommended mix as a pick: the set holds each env once, so the doubled live-now (a weighting in rlTrain --mix) counts once. Ids missing from `envs` are skipped.
+export function mixPick(mix: readonly string[], envs: readonly EnvSpec[]): Set<string> {
+  const have = new Set(envs.map((e) => e.id));
+  return new Set(mix.filter((id) => have.has(id)));
+}
+
 export const pickedIn = (picked: ReadonlySet<string>, envs: readonly EnvSpec[]): number => envs.filter((e) => picked.has(e.id)).length;
 
 export const summaryLine = (n: number): string => (n === 0 ? "No environment chosen" : `${n} environment${n === 1 ? "" : "s"} chosen`);

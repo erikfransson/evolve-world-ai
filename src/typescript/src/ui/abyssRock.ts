@@ -89,7 +89,26 @@ const hash2 = (x: number, y: number, seed: number): number => {
 
 // ---- The shaded image of one body ----
 
-function buildRaster(item: Item, cell: number): Raster | null {
+// What the image builders read of a body: plain data, so a worker can build them too (rockFarm.ts).
+export interface RockJob {
+  id: number;
+  size: number;
+  body: { x0: number; y0: number; x1: number; y1: number; loops: number[][] };
+}
+export interface RockPixels {
+  px: Uint8ClampedArray<ArrayBuffer>;
+  ox: number;
+  oy: number;
+  w: number;
+  h: number;
+  cell: number;
+}
+const toRaster = (p: RockPixels): Raster | null => {
+  const image = canvasOfPixels(p.w, p.h, p.px);
+  return image ? { image, ox: p.ox, oy: p.oy, w: p.w, h: p.h, cell: p.cell } : null;
+};
+
+export function rasterPixels(item: RockJob, cell: number): RockPixels {
   const b = item.body;
   const ox = Math.floor(b.x0 / cell) * cell - 2 * cell;
   const oy = Math.floor(b.y0 / cell) * cell - 2 * cell;
@@ -178,13 +197,12 @@ function buildRaster(item: Item, cell: number): Raster | null {
       px[4 * k + 3] = 255;
     }
   }
-  const image = canvasOfPixels(w, h, px);
-  return image ? { image, ox, oy, w, h, cell } : null;
+  return { px, ox, oy, w, h, cell };
 }
 
 // The silt shadow around a body as an alpha-only image (a pixel per cell, margin around the box), from the distance outside the edge: a tight dark falloff and a wide faint one,
 // lying a little lower than the body.
-function buildHalo(item: Item, cell: number): Raster | null {
+export function haloPixels(item: RockJob, cell: number): RockPixels {
   const b = item.body;
   const reach = HALO_REACH * item.size;
   const m = haloMargin(item, cell);
@@ -211,12 +229,11 @@ function buildHalo(item: Item, cell: number): Raster | null {
       px[k + 3] = 255 * a;
     }
   }
-  const image = canvasOfPixels(w, h, px);
-  return image ? { image, ox, oy, w, h, cell } : null;
+  return { px, ox, oy, w, h, cell };
 }
 
-const haloMargin = (item: Item, cell: number): number => Math.ceil((HALO_REACH * item.size) / cell) + 2;
-const keyOf = (item: Item, cell: number, halo: boolean): string => `${item.id}:${cell}${halo ? "h" : ""}`;
+const haloMargin = (item: RockJob, cell: number): number => Math.ceil((HALO_REACH * item.size) / cell) + 2;
+const keyOf = (item: { id: number }, cell: number, halo: boolean): string => `${item.id}:${cell}${halo ? "h" : ""}`;
 
 // Module-wide, not per map: the images of a map left behind stay until newer ones push them out of BUDGET_CELLS.
 const rasters = new Map<string, Raster | null>(); // least recently used first
@@ -231,10 +248,35 @@ function rasterOf(item: Item, cell: number, halo: boolean, budget: BuildBudget):
     rasters.set(key, r);
     return r;
   }
+  if (farm) {
+    // Built on a worker: asked for once, a stand-in meanwhile (the draw is unfinished until it is here).
+    if (!waiting.has(key)) {
+      waiting.add(key);
+      const f = farm;
+      const job: RockJob = { id: item.id, size: item.size, body: { x0: item.body.x0, y0: item.body.y0, x1: item.body.x1, y1: item.body.y1, loops: item.body.loops } };
+      f.build(job, cell, halo).then(
+        (p) => {
+          waiting.delete(key);
+          if (!rasters.has(key)) keep(key, p ? toRaster(p) : null);
+        },
+        () => {
+          waiting.delete(key);
+          if (farm === f) farm = null; // a broken worker: build on this thread from now on
+        },
+      );
+    }
+    budget.refused = true;
+    return undefined;
+  }
   const b = item.body;
   const m = halo ? 2 * haloMargin(item, cell) + 2 : 6; // px past the box, as the build makes them
   if (!spend(budget, ((b.x1 - b.x0) / cell + m) * ((b.y1 - b.y0) / cell + m))) return undefined;
-  r = halo ? buildHalo(item, cell) : buildRaster(item, cell);
+  r = halo ? toRaster(haloPixels(item, cell)) : toRaster(rasterPixels(item, cell));
+  keep(key, r);
+  return r;
+}
+
+function keep(key: string, r: Raster | null): void {
   rasters.set(key, r);
   if (r) {
     rasterCells += r.w * r.h;
@@ -244,7 +286,34 @@ function rasterOf(item: Item, cell: number, halo: boolean, budget: BuildBudget):
       if (old) rasterCells -= old.w * old.h;
     }
   }
-  return r;
+}
+
+// Builds body images elsewhere (rockFarm.ts): resolves to the pixels rasterPixels or haloPixels would make here.
+export interface RockFarm {
+  build(job: RockJob, cell: number, halo: boolean): Promise<RockPixels | null>;
+}
+let farm: RockFarm | null = null;
+const waiting = new Set<string>(); // keys asked of the farm and not back yet
+
+// Makes this thread hand its rock images to a farm of workers (null: build them here, the default), so a first view or a zoom does not stall the page.
+export function useRockFarm(f: RockFarm | null): void {
+  farm = f;
+}
+
+// With a farm, asks it now for the images of every body at a scale (a view of the whole map), so they are on their way before the first draw needs them.
+export function warmRock(t: Terrain, scale: number): void {
+  if (farm) prepareRock(t, scale, { x0: 0, x1: t.width, y0: 0, y1: t.height });
+}
+
+// Runs draw with rock images built on this thread, for pictures drawn once that cannot wait for a worker (the legend swatches).
+export function withRockHere<T>(draw: () => T): T {
+  const f = farm;
+  farm = null;
+  try {
+    return draw();
+  } finally {
+    if (farm === null) farm = f;
+  }
 }
 
 // While its own is put off: the body's image at the nearest other resolution that is built, else null.

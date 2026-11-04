@@ -21,12 +21,10 @@ const images = new WeakMap<Terrain, OffscreenCanvas | HTMLCanvasElement | null>(
 const BLUR_UNITS = 140; // world units the wash is softened over: a haze, not a stamp
 const WISP_UNITS = 700; // size of the soft plumes that thin and thicken the haze
 
-function build(t: Terrain): OffscreenCanvas | HTMLCanvasElement | null {
+// The wash's RGBA pixels, a pixel per raster node, which need no canvas (the build ships the Live map's, see live/mapAsset.ts).
+export function tintPixels(t: Terrain): Uint8ClampedArray<ArrayBuffer> {
   const w = t.weights!;
-  const canvas = makeCanvas(w.cols, w.rows);
-  const g = context2d(canvas);
-  if (!canvas || !g) return null;
-  const image = g.createImageData(w.cols, w.rows);
+  const image = { data: new Uint8ClampedArray(4 * w.cols * w.rows) };
   const clamp01 = (v: number): number => Math.min(1, Math.max(0, v));
   const n = w.cols * w.rows;
   const tints = [POISON_TINT, DRY_TINT, RICH_TINT];
@@ -59,8 +57,24 @@ function build(t: Terrain): OffscreenCanvas | HTMLCanvasElement | null {
     image.data[4 * k + 2] = rgb[2]! / sum;
     image.data[4 * k + 3] = Math.round(255 * Math.min(1, top * wisp));
   }
-  g.putImageData(image, 0, 0);
+  return image.data;
+}
+
+function build(t: Terrain, px: Uint8ClampedArray<ArrayBuffer>): OffscreenCanvas | HTMLCanvasElement | null {
+  const w = t.weights!;
+  const canvas = makeCanvas(w.cols, w.rows);
+  const g = context2d(canvas);
+  if (!canvas || !g || typeof ImageData === "undefined") return null;
+  g.putImageData(new ImageData(px, w.cols, w.rows), 0, 0);
   return canvas;
+}
+
+// Makes drawTint use these pixels (tintPixels made elsewhere) for t instead of computing them. False when they do not fit its raster.
+export function seedTint(t: Terrain, px: Uint8ClampedArray<ArrayBuffer>): boolean {
+  const w = t.weights;
+  if (!w || px.length !== 4 * w.cols * w.rows) return false;
+  if (!images.get(t)) images.set(t, build(t, px));
+  return true;
 }
 
 // Draws the wash over the whole world, in world coordinates; nothing for a map without weights.
@@ -68,7 +82,7 @@ export function drawTint(ctx: CanvasRenderingContext2D, t: Terrain): void {
   const w = t.weights;
   if (!w) return;
   let image = images.get(t);
-  if (image === undefined) images.set(t, (image = build(t)));
+  if (image === undefined) images.set(t, (image = build(t, tintPixels(t))));
   if (!image) return;
   const origin = -(GROUND_PAD + 0.5) * w.cell; // pixel i is centred on node i, which sits at (i - GROUND_PAD) cells
   ctx.imageSmoothingEnabled = true;

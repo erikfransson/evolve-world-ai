@@ -48,4 +48,70 @@ describe("rock images", () => {
     expect(drawRock(ctx, t, scale, view, false)).toBe(true);
     expect(images.length - made).toBe(0);
   });
+
+  it("on a farm of workers are asked for once, drawn as stand-ins meanwhile, from the same body data as here", async () => {
+    vi.resetModules();
+    const { ECO_PRESETS } = await import("../../src/typescript/src/sim/presets.ts");
+    await import("../../src/typescript/src/sim/maps/index.ts");
+    const { terrainOf } = await import("../../src/typescript/src/sim/terrain.ts");
+    const { drawRock, prepareRock, useRockFarm, rasterPixels, haloPixels } = await import("../../src/typescript/src/ui/abyssRock.ts");
+    const { rockFarm } = await import("../../src/typescript/src/ui/rockFarm.ts");
+    type Job = Parameters<typeof rasterPixels>[0];
+    const t = terrainOf({ seed: 1, world: ECO_PRESETS.find((p) => p.id === "inland-sea")!.world });
+    const view = { x0: 0, x1: t.width, y0: 0, y1: t.height };
+    const scale = 0.032;
+    const asked: { job: Job; cell: number; halo: boolean }[] = [];
+    const fake = () => {
+      const w = {
+        onmessage: null as ((e: MessageEvent) => void) | null,
+        onerror: null as (() => void) | null,
+        postMessage(m: { n: number; job: Job; cell: number; halo: boolean }) {
+          asked.push(m);
+          queueMicrotask(() => w.onmessage?.({ data: { n: m.n, pixels: m.halo ? haloPixels(m.job, m.cell) : rasterPixels(m.job, m.cell) } } as MessageEvent));
+        },
+        terminate() {},
+      };
+      return w as unknown as Worker;
+    };
+    useRockFarm(rockFarm(2, fake));
+    const start = images.length;
+    expect(drawRock(ctx, t, scale, view, false)).toBe(false);
+    expect(built(start)).toHaveLength(0); // nothing built on this thread
+    const n = asked.length;
+    expect(n).toBeGreaterThan(2);
+    expect(prepareRock(t, scale, view)).toBe(false);
+    expect(asked.length).toBe(n); // asked once
+    await new Promise((r) => setTimeout(r, 0));
+    expect(built(start)).toHaveLength(n);
+    expect(prepareRock(t, scale, view)).toBe(true);
+    expect(drawRock(ctx, t, scale, view, false)).toBe(true);
+    const { rockBodies } = await import("../../src/typescript/src/ui/rockOutline.ts");
+    const a = asked.find((m) => !m.halo)!;
+    expect(a.job.body.loops).toEqual(rockBodies(t).find((b) => b.x0 === a.job.body.x0 && b.y0 === a.job.body.y0)!.loops); // the worker gets the body as it is here
+    useRockFarm(null);
+  }, 60_000);
+  it("on a farm whose worker fails are built on this thread instead", async () => {
+    vi.resetModules();
+    const { ECO_PRESETS } = await import("../../src/typescript/src/sim/presets.ts");
+    await import("../../src/typescript/src/sim/maps/index.ts");
+    const { terrainOf } = await import("../../src/typescript/src/sim/terrain.ts");
+    const { drawRock, prepareRock, useRockFarm } = await import("../../src/typescript/src/ui/abyssRock.ts");
+    const { rockFarm } = await import("../../src/typescript/src/ui/rockFarm.ts");
+    const t = terrainOf({ seed: 1, world: ECO_PRESETS.find((p) => p.id === "inland-sea")!.world });
+    const broken = () => {
+      const w = { onmessage: null, onerror: null as (() => void) | null, postMessage() { queueMicrotask(() => w.onerror?.()); }, terminate() {} };
+      return w as unknown as Worker;
+    };
+    useRockFarm(rockFarm(1, broken));
+    const view = { x0: 0, x1: t.width, y0: 0, y1: t.height };
+    const start = images.length;
+    expect(drawRock(ctx, t, 0.032, view, false)).toBe(false);
+    expect(built(start)).toHaveLength(0);
+    await new Promise((r) => setTimeout(r, 0));
+    let calls = 0;
+    while (!prepareRock(t, 0.032, view) && calls < 2000) calls++;
+    expect(built(start).length).toBeGreaterThan(0);
+    expect(drawRock(ctx, t, 0.032, view, false)).toBe(true);
+    useRockFarm(null);
+  }, 60_000);
 });

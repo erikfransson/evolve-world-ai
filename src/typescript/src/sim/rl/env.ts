@@ -18,8 +18,7 @@ import { plainText } from "./validate.ts";
 import { envById } from "./envs.ts";
 import { LAYOUT_KINDS, placeLayout } from "./layouts.ts";
 import type { Layout } from "./layouts.ts";
-import { runCrowdEpisode } from "./procEnv.ts";
-import type { ProcSpec } from "./procEnv.ts";
+import type { ProcSpec } from "./procEnv.ts"; // type only, so the web bundle does not pull procEnv in
 
 // RL environments (#27): short episodes on the Ecosystem engine, so a creature trained here acts exactly as it would in the
 // Ecosystem or the two-species hunt world. An environment is plain data: a small world, the learner's species, rivals, and reward weights.
@@ -58,6 +57,7 @@ export interface EnvSpec {
   collisionDamage?: boolean; // bumps cost energy and a creature killed by one gives its energy to the other
   learnerEnergy?: number; // the learner's start energy, the species' when left out
   poisonDamage?: number; // energy one poison item drains; lethal when left out (POISON_LETHAL)
+  livingCost?: number; // energy per second just for being alive (the engine's 2 when left out), to make time itself costly
   fast?: number; // share of the world under fast patches (terrain: 175% speed, so harder bumps)
   // Duel (#44): instead of the rivals, one scripted charger that moves straight at a fixed speed, starting `distance` away at
   // `bearing` radians off the learner's facing and heading at the learner plus `offset` (0 charges, pi/2 crosses, pi moves away).
@@ -121,7 +121,6 @@ export function isRam(c: { learnerAlive: boolean; touchesLearner: boolean; energ
 // faster for every brain size. Their f32 arithmetic differs slightly from the JS path, but each creature's result depends only
 // on its own inputs, so rewards stay deterministic per seed whatever the thread count or episode order.
 export const RL_WASM = true;
-const useWasm = (env: EnvSpec): boolean => RL_WASM && env.foodVisibleFor === undefined; // hidden food needs the JS sense path
 
 // The engine config of an env: its world on the base of the Ecosystem or the hunt world, no births, no structural change.
 export function envConfig(env: EnvSpec, seed: number): EcoConfig {
@@ -132,10 +131,14 @@ export function envConfig(env: EnvSpec, seed: number): EcoConfig {
   const per = itemsPerDensity(base);
   base.world.foodDensity = env.food / per;
   base.world.poisonDensity = env.poison / per;
+  if (env.livingCost !== undefined) {
+    base.creature.livingCost = env.livingCost;
+    if (base.species) base.species[env.role]!.livingCost = env.livingCost;
+  }
   const total = env.rivals.reduce((a, r) => a + r.count, 1);
   base.eco = {
     ...base.eco,
-    wasm: useWasm(env), // f32 kernels give the same numbers in Node and every browser
+    wasm: RL_WASM, // f32 kernels give the same numbers in Node and every browser
     maxPopulation: total,
     foodRegrow: env.foodRegrow / per,
     foodMaxDensity: env.food / per,
@@ -322,6 +325,12 @@ const crossed = (walls: readonly number[], minY: number, radius: number): number
 let spareKernels: SenseKernels | null = null;
 export const dropSpareKernels = (): void => { spareKernels = null; }; // the next episode builds fresh ones (tests)
 
+// procEnv.ts registers how self-play episodes are played when a Node tool imports it; env.ts cannot import it (cycle, and the web bundle stays free of it).
+let crowdRunner: ((spec: ProcSpec, learner: Learner, seed: number, library: Library) => EpisodeResult) | null = null;
+export function registerCrowdRunner(run: NonNullable<typeof crowdRunner>): void {
+  crowdRunner = run;
+}
+
 // Plays one episode and scores the learner. onTick, when given, sees the world after every tick (the Arena draws it).
 // act, when given, may overwrite the learner's outputs after its brain ran and before it moves (a stochastic policy, rlGrad).
 export function runEpisode(
@@ -335,7 +344,8 @@ export function runEpisode(
 ): EpisodeResult {
   if (env.proc) {
     if (onTick || act) throw new Error("self-play episodes cannot be drawn or played stochastically");
-    return runCrowdEpisode(env.proc, learner, seed, library);
+    if (!crowdRunner) throw new Error("self-play episodes need procEnv.ts to be imported (Node tools only)");
+    return crowdRunner(env.proc, learner, seed, library);
   }
   env = variantFor(env, seed);
   const config = episodeConfig(env, seed);
@@ -515,7 +525,7 @@ export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | s
     const l = v.layout as Record<string, unknown> | null;
     if (!l || !(LAYOUT_KINDS as readonly unknown[]).includes(l.kind)) return `layout must be one of ${LAYOUT_KINDS.join(", ")}`;
     const [sw, sh] = size as number[];
-    const fixed = l.kind === "sprint" || l.kind === "cuedoor" || l.kind === "flash" || l.kind === "stops"; // no size parameter
+    const fixed = l.kind === "sprint" || l.kind === "cuedoor" || l.kind === "flash" || l.kind === "stops" || l.kind === "chain"; // no size parameter
     const round = l.kind === "patch" || l.kind === "islands"; // sized by a radius; ring by its lane; the walled ones by a gap
     const param = round ? l.radius : l.kind === "ring" ? l.lane : l.gap;
     // A patch must fit and three islands must fit apart; wall gaps leave wall on both sides of a door.
@@ -528,7 +538,7 @@ export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | s
     layout =
       l.kind === "sprint" ? { kind: "sprint", ...nearOf }
       : l.kind === "stops" ? { kind: "stops", ...(l.count === undefined ? {} : { count: l.count as number }) }
-      : l.kind === "cuedoor" || l.kind === "flash" ? { kind: l.kind }
+      : l.kind === "cuedoor" || l.kind === "flash" || l.kind === "chain" ? { kind: l.kind }
       : l.kind === "patch" || l.kind === "islands" ? { kind: l.kind, radius: param as number }
       : l.kind === "rooms" ? { kind: "rooms", gap: param as number, ...nearOf }
       : l.kind === "ring" ? { kind: "ring", lane: param as number }

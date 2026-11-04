@@ -23,3 +23,27 @@ export function paintMapLegend(root: HTMLElement, t: Terrain): void {
     head.hidden = !any;
   }
 }
+
+let watching: IntersectionObserver | null = null;
+let pending = 0; // bumped by every new map, so a paint still waiting for idle time drops out
+
+// paintMapLegend once the legend (below the world view) comes into view and the page has idle time: its swatches cost a second or more of
+// drawing (rock and ground images at a close zoom), which would otherwise hold up the first full view of the map. A newer map replaces a wait still pending.
+export function paintMapLegendWhenSeen(root: HTMLElement, t: Terrain): void {
+  watching?.disconnect();
+  watching = null;
+  const ticket = ++pending;
+  const paint = (): void => {
+    if (ticket === pending) paintMapLegend(root, t);
+  };
+  if (typeof IntersectionObserver === "undefined") return paint();
+  const o = new IntersectionObserver((entries) => {
+    if (!entries.some((e) => e.isIntersecting) || watching !== o) return;
+    o.disconnect();
+    watching = null;
+    if (typeof requestIdleCallback === "function") requestIdleCallback(paint, { timeout: 1500 });
+    else setTimeout(paint, 200);
+  });
+  watching = o;
+  o.observe(root.querySelector("#infoLegend") ?? root);
+}
