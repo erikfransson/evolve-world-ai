@@ -1,5 +1,7 @@
+import { runsOf } from "./config.ts";
 import type { SimConfig } from "./config.ts";
 import { runEpisode } from "./episode.ts";
+import { deriveSeed } from "./rng.ts";
 import type { Population } from "./population.ts";
 import { FrameRecorder, TopFrames } from "./trajectory.ts";
 import type { RecordOptions, Trajectories } from "./trajectory.ts";
@@ -15,8 +17,11 @@ export interface Evaluator {
   close(): void;
 }
 
+// Layout seed of run r of a generation. Run 0 is the generation's own layout, which replays and past-generation views show.
+export const runSeed = (layoutSeed: number, run: number): number => (run === 0 ? layoutSeed : deriveSeed(layoutSeed, 0x7a11, run));
+
 // Fitness of creatures [start, end) into out[0..end-start). The genomes buffer holds creatures from index genomeOffset on.
-// With record, also returns the frames of each of these creatures.
+// With record, also returns the frames of each of these creatures (from run 0). With several runs the fitness is the mean over the runs.
 export function evaluateRange(
   config: SimConfig,
   genomes: Float32Array,
@@ -29,9 +34,12 @@ export function evaluateRange(
   record?: RecordOptions,
 ): Trajectories | undefined {
   const recorder = record ? new FrameRecorder(end - start, record.maxFrames) : undefined;
+  const runs = runsOf(config);
   for (let i = start; i < end; i++) {
-    const at = (i - genomeOffset) * genomeLength;
-    out[i - start] = runEpisode(config, genomes.subarray(at, at + genomeLength), layoutSeed, i, recorder);
+    const genome = genomes.subarray((i - genomeOffset) * genomeLength, (i - genomeOffset + 1) * genomeLength);
+    let sum = runEpisode(config, genome, layoutSeed, i, recorder); // only run 0 is recorded
+    for (let r = 1; r < runs; r++) sum += runEpisode(config, genome, runSeed(layoutSeed, r), i);
+    out[i - start] = runs === 1 ? sum : sum / runs;
   }
   return recorder?.result();
 }

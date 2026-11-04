@@ -1,4 +1,4 @@
-import { DEFAULT_CONFIG, ITEM_RADIUS_RANGE, POISON_LETHAL } from "../sim/config.ts";
+import { DEFAULT_CONFIG, ITEM_RADIUS_RANGE, MAX_RUNS, POISON_LETHAL } from "../sim/config.ts";
 import { planOf, planUpkeep } from "../sim/sensors.ts";
 import type { SelectionMethod, SimConfig } from "../sim/config.ts";
 import { configPlanFields, items, mapFields, range } from "./settingsForm.ts";
@@ -41,6 +41,7 @@ export const TRIALS_SECTIONS: readonly Section<SimConfig>[] = [
     title: "Evolution",
     fields: [
       r({ id: "popSize", label: "Population", tip: "How many creatures are tested in each generation.", min: 4, max: 10000, step: 1, log: true, get: (c) => c.population.size, set: (c, v) => { c.population.size = v; } }),
+      r({ id: "runs", label: "Runs per creature", tip: "How many differently randomized food and poison layouts each creature is tested in per generation. Its score is the mean, so luck counts less. Each run costs the same time as the first, so 8 runs make a generation 8 times slower. The replay shows the first layout.", min: 1, max: MAX_RUNS, step: 1, get: (c) => c.population.runs ?? 1, set: (c, v) => { c.population.runs = v; } }),
       r({ id: "mutationRate", label: "Mutation rate", tip: "Chance that each number in a child's brain is randomly nudged. If a whole generation scores the same, the next one mutates three times as hard until selection has a signal again.", min: 0, max: 0.5, step: 0.005, fmt: "pct1", get: (c) => c.ga.mutationRate, set: (c, v) => { c.ga.mutationRate = v; } }),
       r({ id: "immigrants", label: "Newcomers", tip: "Share of each generation that is brand new random creatures. They help when the population is stuck.", min: 0, max: 0.2, step: 0.01, fmt: "pct", get: (c) => c.ga.immigrantFraction, set: (c, v) => { c.ga.immigrantFraction = v; } }),
       r({ id: "bigMutations", label: "Wild children", tip: "Share of children that get a large mutation, some numbers flipping sign. Rarely better, but can break out of a rut.", min: 0, max: 0.2, step: 0.01, fmt: "pct", get: (c) => c.ga.bigMutationFraction, set: (c, v) => { c.ga.bigMutationFraction = v; } }),
