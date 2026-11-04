@@ -447,7 +447,9 @@ function onDetail(d: SelectedDetails, founderName: string, founderStarter: boole
   s.founderName = founderName;
   s.founderStarter = founderStarter;
   const replan = s.last && formatPlan(s.last.plan) !== formatPlan(d.plan);
+  const first = !s.last;
   s.last = d;
+  if (first && d.plan.rayLength !== engine.creature.rayLength && (pendingFollow || following)) s.zoomed = false; // the zoom-in used the default ray length: aim again with the creature's own
   if (replan) s.brain = null;
   buildBrain();
 }
