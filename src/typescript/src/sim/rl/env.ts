@@ -57,6 +57,7 @@ export interface EnvSpec {
   collisionDamage?: boolean; // bumps cost energy and a creature killed by one gives its energy to the other
   learnerEnergy?: number; // the learner's start energy, the species' when left out
   poisonDamage?: number; // energy one poison item drains; lethal when left out (POISON_LETHAL)
+  livingCost?: number; // energy per second just for being alive (the engine's 2 when left out), to make time itself costly
   fast?: number; // share of the world under fast patches (terrain: 175% speed, so harder bumps)
   // Duel (#44): instead of the rivals, one scripted charger that moves straight at a fixed speed, starting `distance` away at
   // `bearing` radians off the learner's facing and heading at the learner plus `offset` (0 charges, pi/2 crosses, pi moves away).
@@ -130,6 +131,10 @@ export function envConfig(env: EnvSpec, seed: number): EcoConfig {
   const per = itemsPerDensity(base);
   base.world.foodDensity = env.food / per;
   base.world.poisonDensity = env.poison / per;
+  if (env.livingCost !== undefined) {
+    base.creature.livingCost = env.livingCost;
+    if (base.species) base.species[env.role]!.livingCost = env.livingCost;
+  }
   const total = env.rivals.reduce((a, r) => a + r.count, 1);
   base.eco = {
     ...base.eco,
@@ -520,7 +525,7 @@ export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | s
     const l = v.layout as Record<string, unknown> | null;
     if (!l || !(LAYOUT_KINDS as readonly unknown[]).includes(l.kind)) return `layout must be one of ${LAYOUT_KINDS.join(", ")}`;
     const [sw, sh] = size as number[];
-    const fixed = l.kind === "sprint" || l.kind === "cuedoor" || l.kind === "flash" || l.kind === "stops"; // no size parameter
+    const fixed = l.kind === "sprint" || l.kind === "cuedoor" || l.kind === "flash" || l.kind === "stops" || l.kind === "chain"; // no size parameter
     const round = l.kind === "patch" || l.kind === "islands"; // sized by a radius; ring by its lane; the walled ones by a gap
     const param = round ? l.radius : l.kind === "ring" ? l.lane : l.gap;
     // A patch must fit and three islands must fit apart; wall gaps leave wall on both sides of a door.
@@ -533,7 +538,7 @@ export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | s
     layout =
       l.kind === "sprint" ? { kind: "sprint", ...nearOf }
       : l.kind === "stops" ? { kind: "stops", ...(l.count === undefined ? {} : { count: l.count as number }) }
-      : l.kind === "cuedoor" || l.kind === "flash" ? { kind: l.kind }
+      : l.kind === "cuedoor" || l.kind === "flash" || l.kind === "chain" ? { kind: l.kind }
       : l.kind === "patch" || l.kind === "islands" ? { kind: l.kind, radius: param as number }
       : l.kind === "rooms" ? { kind: "rooms", gap: param as number, ...nearOf }
       : l.kind === "ring" ? { kind: "ring", lane: param as number }

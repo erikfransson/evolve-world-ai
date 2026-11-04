@@ -16,9 +16,10 @@ export type Layout =
   | { kind: "cuedoor" } // a T-maze: a cue bite beside the start (left or right), a walled corridor up, then two doors to separate rooms, the food in the cued one
   | { kind: "stops"; count?: number } // food in count (3) small clusters round a central start, dealt evenly (pair with foodVisibleFor): visit one, then recall where the others were
   | { kind: "flash" } // food at a middle distance around a central start, in all directions (pair with foodVisibleFor)
+  | { kind: "chain" } // food in a winding chain, each 85 from the last (inside a default look), the first 60 from the learner, who faces it
   | { kind: "sprint"; near?: number }; // a strip with the learner at one end and the food at the other (near of it halfway, as a first step)
 
-export const LAYOUT_KINDS = ["fence", "maze", "patch", "rooms", "islands", "sprint", "ring", "cuedoor", "flash", "stops"] as const;
+export const LAYOUT_KINDS = ["fence", "maze", "patch", "rooms", "islands", "sprint", "ring", "cuedoor", "flash", "stops", "chain"] as const;
 
 export interface Placed {
   items: ItemSpot[];
@@ -149,6 +150,29 @@ export function placeLayout(layout: Layout, size: readonly [number, number], foo
       const a = rng.next() * 2 * Math.PI;
       const d = 30 * Math.sqrt(rng.next());
       items.push({ x: c.x + d * Math.cos(a), y: c.y + d * Math.sin(a), kind: HIT_FOOD });
+    }
+    return { items, start, walls };
+  } else if (layout.kind === "chain") {
+    // A path that wanders up to 1 rad per step and turns back towards the middle at a wall, so the creature can run it straight from food to food.
+    const STEP = 85;
+    let x = rng.range(w * 0.3, w * 0.7);
+    let y = rng.range(h * 0.3, h * 0.7);
+    let a = rng.next() * 2 * Math.PI;
+    start = { x, y, heading: a };
+    for (let k = 0; k < food; k++) {
+      a += rng.range(-1, 1);
+      const d = k === 0 ? 60 : STEP;
+      let nx = x + d * Math.cos(a);
+      let ny = y + d * Math.sin(a);
+      if (nx < 2 * MARGIN || nx > w - 2 * MARGIN || ny < 2 * MARGIN || ny > h - 2 * MARGIN) {
+        a = Math.atan2(h / 2 - y, w / 2 - x) + rng.range(-0.5, 0.5);
+        nx = x + d * Math.cos(a);
+        ny = y + d * Math.sin(a);
+      }
+      x = nx;
+      y = ny;
+      items.push({ x, y, kind: HIT_FOOD });
+      if (k === 0) start.heading = Math.atan2(y - start.y, x - start.x);
     }
     return { items, start, walls };
   } else if (layout.kind === "ring") {

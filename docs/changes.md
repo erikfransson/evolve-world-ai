@@ -6,6 +6,7 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- RL Arena: new Time pressure env Hand to mouth (`hand-to-mouth`): ten bites in a winding chain, start energy 20 and a living cost of 5, so only a creature that runs straight from bite to bite survives. New `chain` layout and an optional `EnvSpec.livingCost` (energy per second just for being alive; off unless set, so existing envs are bit-identical). Poison-skill and clean-sweep candidates were screened and dropped as duplicates (`docs/rl-envs.md`).
 - Arena: a Poison cost setting (0 to 10, default 1, Evolutionary RL only) sets the ES poison cost, a Mix button in the Environments header picks the recommended mix (live-now once, as the picker holds each env once), and saved creature files from ES runs name the `poisonCost` their held-out scores include.
 - Poison follow-up: backprop's poison penalty is skipped on envs that set their own `reward.poison` (no double charge), and `rlTrain --poison` now defaults to the Arena ES cost 1 on envs without their own (`--poison 0` turns it off). `rlGrad --poison` stays 0.
 - RL environments: new reward weight `poison`, a cost per poison item the learner eats (a lethal bite included), off unless set. ES and backprop both see it. `rlTrain --poison W` and `rlGrad --poison W` set it on every env of a run; `rlGrad --logstd-min`, `--poison-penalty` and `--diag`, `rlTrain --mix`, `--budget`, `--from design:ID` and `--selfplay` come from the campaign branches.
