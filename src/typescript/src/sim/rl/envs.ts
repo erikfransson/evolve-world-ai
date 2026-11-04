@@ -402,3 +402,6 @@ export function groupOf(env: Pick<EnvSpec, "tags">): EnvGroup {
   if (t.has("caution") || t.has("navigate")) return "Avoid and find a way";
   return "Find food";
 }
+
+// Cost per poison bite that ES runs charge in the env reward unless an env sets its own (backprop has its own penalty instead).
+export const DEFAULT_POISON_COST = 1;

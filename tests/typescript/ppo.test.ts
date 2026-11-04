@@ -221,6 +221,20 @@ describe("env reward.poison in PPO", () => {
   });
 });
 
+describe("poison penalty with env reward.poison", () => {
+  it("is not charged on top of the env's own poison cost", () => {
+    const env = { ...BLANK_ENV, id: "t-poison", size: [200, 200] as [number, number], food: 0, poison: 40, seconds: 10, poisonDamage: 10, reward: { poison: 2 } };
+    const learner = randomLearner(env, 1);
+    const sizes = layerSizes(layoutConfig(env.world), learner.plan);
+    const ppo = new Ppo([env], learner, sizes, {}, 3);
+    ppo.setEnvs([env]);
+    const task = (ppo as unknown as { tasks(): Parameters<typeof playRollout>[2][] }).tasks()[0]!;
+    const total = (pen: number): number => stepRewards(env, learner.plan, task, pen).reduce((s, v) => s + v, 0);
+    expect(playRollout(env, learner.plan, task, null, {}).reward).toBeLessThan(0); // the learner must bite
+    expect(total(5)).toBe(total(0));
+  });
+});
+
 describe("PPO defaults", () => {
   it("keep exploring and charge poison in training only", () => {
     expect(PPO_DEFAULTS.logStdMin).toBe(-1);

@@ -474,7 +474,7 @@ export function playRollout(env: EnvSpec, plan: Learner["plan"], task: RolloutTa
   let eaten = 0;
   let kills = 0;
   let bites = 0; // poison bites already charged
-  const penalty = task.poisonPenalty ?? 0;
+  const penalty = env.reward.poison === undefined ? task.poisonPenalty ?? 0 : 0; // an env with its own poison cost is not charged twice
   const cost = penalty + (env.reward.poison ?? 0); // the env's own poison cost is in the episode reward, so each bite carries it on its step too
   // Stores the sample for this tick's input and means, and leaves each action's noise (std * eps) in held.
   const sampleAt = (input: Float32Array, u: Float64Array): void => {

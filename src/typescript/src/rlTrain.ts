@@ -2,6 +2,7 @@
 // Usage: node src/rlTrain.ts --env nibble [--from pool:39 | random:1 | file:creature.json] [--iters 60] [--pairs 16] [--sigma 0.08]
 //        [--lr 0.02] [--episodes 2] [--eval 16] [--every 10] [--vary 0] [--threads N] [--seed 1] [--out learner.json] [--library public/rl/library.json] [--save]
 //        [--mix nibble,far-food,...] [--selfplay [--crowd 5,50] [--lineage 0] [--foodw 3] [--poisonw 0]] [--budget SECONDS]
+// --poison W sets the cost per poison bite on every env; unset, envs without their own poison cost get 1 (the Arena ES default). Not with --selfplay.
 // --mix rotates through the envs, one per iteration (all candidates on it). --selfplay (S1) trains on a new procedurally drawn crowded world every
 // episode, the learner's genome playing half the bodies and the league (current weights, recent bests) the rest; the env is then ignored.
 // --from founder:ID starts from a Live founder of public/live-founders.json, design:ID from a fixed design of sim/rl/designPanel.ts. --budget stops after that many wall seconds (after iters at the latest).
@@ -15,7 +16,7 @@ import { parsePool } from "./sim/seedPool.ts";
 import type { PoolEntry } from "./sim/seedPool.ts";
 import { poolLearner, randomLearner, varied } from "./sim/rl/env.ts";
 import type { EnvSpec, Learner, Library } from "./sim/rl/env.ts";
-import { envById } from "./sim/rl/envs.ts";
+import { DEFAULT_POISON_COST, envById } from "./sim/rl/envs.ts";
 import { KINDS, fileLearner, parseCreatureFile } from "./sim/rl/creatureFile.ts";
 import { Trainer, heldSeeds } from "./sim/rl/trainer.ts";
 import { PROC_DEFAULTS, procEnv } from "./sim/rl/procEnv.ts";
@@ -50,7 +51,7 @@ const { values } = parseArgs({
     poisonw: { type: "string", default: "0" },
     foodw: { type: "string", default: String(PROC_DEFAULTS.foodWeight) },
     budget: { type: "string", default: "0" },
-    poison: { type: "string", default: "0" }, // reward.poison for every env of the mix (cost per poison bite)
+    poison: { type: "string" }, // reward.poison per poison bite; unset: DEFAULT_POISON_COST on envs without their own, set: on every env of the mix
   },
 });
 
@@ -124,12 +125,13 @@ else {
   process.exit(1);
 }
 
-const poisonCost = Number(values.poison);
-if (values.selfplay && poisonCost !== 0) {
+const poisonGiven = values.poison !== undefined;
+const poisonCost = poisonGiven ? Number(values.poison) : DEFAULT_POISON_COST;
+if (values.selfplay && poisonGiven && poisonCost !== 0) {
   console.error("error: --poison does not apply to --selfplay (the crowd world scores poison with --poisonw, a different unit)");
   process.exit(1);
 }
-const envs = (mix as EnvSpec[]).map((e) => varied(poisonCost === 0 ? e : { ...e, reward: { ...e.reward, poison: poisonCost } }, vary));
+const envs = (mix as EnvSpec[]).map((e) => varied(values.selfplay || poisonCost === 0 || (!poisonGiven && e.reward.poison !== undefined) ? e : { ...e, reward: { ...e.reward, poison: poisonCost } }, vary));
 const helpers = createNodeRlPool({ envs: [envs[0]!], plan: learner.plan, pool, library }, threads);
 const trainer = new Trainer(Float32Array.from(learner.genome), { pairs, sigma: num("sigma"), lr: num("lr") }, helpers, 1, episodes, seed);
 const evalSeeds = heldSeeds(evalCount);
