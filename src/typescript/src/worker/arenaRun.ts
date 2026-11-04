@@ -27,6 +27,13 @@ function backpropOptions(o: { lr?: number; episodes?: number } | undefined): { l
   return { lr: clamp(o?.lr, 0.0005, 0.01, 0.003), episodes: Math.round(clamp(o?.episodes, 4, 320, 16)) };
 }
 
+// ES runs charge each poison bite in the env reward (backprop has its own penalty); an env that sets its own poison cost keeps it.
+export const DEFAULT_POISON_COST = 1;
+function withPoisonCost(envs: EnvSpec[], start: Pick<Start, "method" | "options">): EnvSpec[] {
+  const cost = start.method === "backprop" ? 0 : clamp(start.options.poisonCost, 0, 10, DEFAULT_POISON_COST);
+  return cost === 0 ? envs : envs.map((e) => (e.reward.poison === undefined ? { ...e, reward: { ...e.reward, poison: cost } } : e));
+}
+
 export class ArenaRun {
   private readonly start: Start;
   private readonly post: Post;
@@ -45,12 +52,12 @@ export class ArenaRun {
   constructor(start: Start, assets: { pool: PoolEntry[] | null; library: Library }, makePool: (setup: RlSetup) => RlPool, post: Post) {
     this.start = start;
     this.post = post;
-    this.envs = start.envs;
+    this.envs = withPoisonCost(start.envs, start);
     this.heldSeeds = heldSeeds(Math.round(clamp(start.held, 1, 32, 4)));
     this.playback = start.playback !== false;
     this.assets = assets;
     if (start.gentle) this.setGentle(true);
-    this.pool = makePool({ envs: start.envs, plan: start.learner.plan, pool: assets.pool, library: assets.library });
+    this.pool = makePool({ envs: this.envs, plan: start.learner.plan, pool: assets.pool, library: assets.library });
   }
 
   pause(): void {
@@ -66,7 +73,7 @@ export class ArenaRun {
   }
 
   setEnvs(envs: EnvSpec[]): void {
-    if (envs.length) this.nextEnvs = envs;
+    if (envs.length) this.nextEnvs = withPoisonCost(envs, this.start);
   }
 
   setGentle(on: boolean): void {

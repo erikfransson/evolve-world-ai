@@ -7,6 +7,10 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 ## Unreleased
 
 - RL environments: new reward weight `poison`, a cost per poison item the learner eats (a lethal bite included), off unless set. ES and backprop both see it. `rlTrain --poison W` and `rlGrad --poison W` set it on every env of a run; `rlGrad --logstd-min`, `--poison-penalty` and `--diag`, `rlTrain --mix`, `--budget`, `--from design:ID` and `--selfplay` come from the campaign branches. The Arena UI has no field for it yet.
+- Arena, backprop (PPO): runs keep exploring (the action noise no longer shrinks below a floor of -1 in log units, was -3) and avoid poison more, because each poison bite now costs 1 reward in training only. The reported scores do not include that cost. In 8 designs on 2 seeds each, poison eaten went down in 7, survival went up in 6 and none got worse.
+- Arena, evolution (ES): each poison bite costs 1 reward in the env score, so ES runs avoid poison more too and their held-out scores drop where the learner bites (`poisonCost` run option, 0 turns it off, an env with its own poison cost keeps it). Live visitor training uses the same runner and gets the same cost.
+- `RECOMMENDED_MIX` in `sim/rl/envs.ts` is the env mix the D3 runs used (nibble, live-now, far-food, live-patch, minefield, live-famine, stings, live-now), for the Arena to offer as a preset. `rlGrad` defaults follow the new PPO defaults.
+- Fixes in the RL tools: `rlTrain --selfplay --poison` is rejected (use `--poisonw`), `rlGrad --logstd-min` is checked, a log-std floor above the start raises the start, diagnostic averages count only the minibatches they sum, and the web bundle no longer contains the self-play world code.
 
 ## 0.3.1 (2026-11-01)
 

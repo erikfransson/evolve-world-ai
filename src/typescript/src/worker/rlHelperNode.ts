@@ -2,6 +2,7 @@
 import { parentPort } from "node:worker_threads";
 import { rlHelper, rlTransferList } from "./rlPool.ts";
 import type { RlJob } from "./rlPool.ts";
+import "../sim/rl/procEnv.ts"; // registers self-play episodes in this thread
 
 const help = rlHelper();
 parentPort!.on("message", (job: RlJob) => {

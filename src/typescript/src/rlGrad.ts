@@ -14,7 +14,7 @@ import { layoutConfig, poolLearner, randomLearner, scoreLearner } from "./sim/rl
 import type { EnvSpec, Learner } from "./sim/rl/env.ts";
 import { ENVS, envById } from "./sim/rl/envs.ts";
 import { serialiseLearner } from "./sim/rl/library.ts";
-import { Ppo } from "./sim/rl/ppo.ts";
+import { LOG_STD_RANGE, PPO_DEFAULTS, Ppo } from "./sim/rl/ppo.ts";
 import { heldSeeds } from "./sim/rl/trainer.ts";
 import { parsePool } from "./sim/seedPool.ts";
 
@@ -33,9 +33,9 @@ const { values } = parseArgs({
     lr: { type: "string", default: "0.003" },
     logstd: { type: "string", default: "-0.5" },
     entropy: { type: "string", default: "0" },
-    "poison-penalty": { type: "string", default: "0" },
+    "poison-penalty": { type: "string", default: String(PPO_DEFAULTS.poisonPenalty) },
     poison: { type: "string", default: "0" }, // reward.poison for every env (cost per poison bite, in the env reward)
-    "logstd-min": { type: "string", default: "-3" },
+    "logstd-min": { type: "string", default: String(PPO_DEFAULTS.logStdMin) },
     repeat: { type: "string", default: "3" },
     "every-tick": { type: "boolean", default: false },
     "repeat-then": { type: "string" },
@@ -66,9 +66,14 @@ if (!learner) {
   console.error("error: --from must be pool:N, random:SEED, founder:ID or design:pN (src/sim/rl/designPanel.ts)");
   process.exit(1);
 }
+const logStdMin = num("logstd-min");
+if (!(Number.isFinite(logStdMin) && logStdMin >= LOG_STD_RANGE[0] && logStdMin <= LOG_STD_RANGE[1])) {
+  console.error(`error: --logstd-min must be a number from ${LOG_STD_RANGE[0]} to ${LOG_STD_RANGE[1]}`);
+  process.exit(1);
+}
 const sizes = layerSizes(layoutConfig(env.world), learner.plan);
 const ppo = new Ppo(envList, learner, sizes, {
-  episodes: num("episodes"), epochs: num("epochs"), minibatch: num("minibatch"), lr: num("lr"), logStd: num("logstd"), entropy: num("entropy"), repeat: num("repeat"), gamma: num("gamma"), everyTick: values["every-tick"], targetKl: num("target-kl"), poisonPenalty: num("poison-penalty"), logStdMin: num("logstd-min"), diag: values.diag !== undefined,
+  episodes: num("episodes"), epochs: num("epochs"), minibatch: num("minibatch"), lr: num("lr"), logStd: num("logstd"), entropy: num("entropy"), repeat: num("repeat"), gamma: num("gamma"), everyTick: values["every-tick"], targetKl: num("target-kl"), poisonPenalty: num("poison-penalty"), logStdMin, diag: values.diag !== undefined,
 }, num("seed"), pool);
 const seeds = heldSeeds(num("eval"));
 // The mean over the envs of each env's mean on the held-out seeds, as the Arena's held-out score.
