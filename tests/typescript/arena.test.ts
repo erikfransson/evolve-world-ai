@@ -4,12 +4,13 @@ import { drawRewardGraph, fitRange, latestValues, smooth, thin } from "../../src
 import { ARENA_KIND, bestFounder, change, customEnv, envsForKind, kindRejection, planSummary } from "../../src/typescript/src/ui/arenaPick.ts";
 import type { CustomEnvForm } from "../../src/typescript/src/ui/arenaPick.ts";
 import { DEFAULT_SPEED, FAVOURITES_KEY, MAX_FAVOURITES, SPEED_KEY, addFavourite, loadFavourites, loadSpeed, removeFavourite, saveSpeed } from "../../src/typescript/src/ui/arenaStore.ts";
-import { DEFAULT_DESIGN, designPlan, planDesign } from "../../src/typescript/src/ui/arenaForm.ts";
+import { DEFAULT_DESIGN, DEFAULT_RUN, designPlan, planDesign, startOptions, trainingRecord } from "../../src/typescript/src/ui/arenaForm.ts";
 import { resultLine, tileSub, tileTitle } from "../../src/typescript/src/ui/arenaTiles.ts";
 import { displayOrder, gridColumns, layoutsPerEnv, pageOf, phaseOf, unshownEnvs } from "../../src/typescript/src/ui/arenaLayout.ts";
 import { BLANK_ENV, envConfig } from "../../src/typescript/src/sim/rl/env.ts";
-import { ENVS } from "../../src/typescript/src/sim/rl/envs.ts";
-import { creatureFile, genomeLengthFor } from "../../src/typescript/src/sim/rl/creatureFile.ts";
+import { ENVS, RECOMMENDED_MIX } from "../../src/typescript/src/sim/rl/envs.ts";
+import { mixPick } from "../../src/typescript/src/ui/envSelect.ts";
+import { creatureFile, genomeLengthFor, parseCreatureFile } from "../../src/typescript/src/sim/rl/creatureFile.ts";
 import type { Recording } from "../../src/typescript/src/sim/rl/recording.ts";
 import { planOf } from "../../src/typescript/src/sim/sensors.ts";
 import { badCoordinateCalls, fakeCtx } from "./helpers.ts";
@@ -338,5 +339,30 @@ describe("arena design form", () => {
     expect(plan.hiddenLayers).toEqual([12]);
     expect(plan.memoryShort + plan.memoryLong).toBe(4);
     expect(designPlan(planDesign(plan))).toEqual(plan);
+  });
+});
+
+describe("poison cost and the recommended mix", () => {
+  it("Mix picks each recommended env once, skipping unknown ids", () => {
+    const picked = mixPick(RECOMMENDED_MIX, ENVS);
+    expect([...picked].sort()).toEqual([...new Set(RECOMMENDED_MIX)].sort());
+    expect(picked.size).toBe(7);
+    expect([...mixPick(["nibble", "no-such-env"], ENVS)]).toEqual(["nibble"]);
+  });
+
+  it("start options carry the poison cost for ES only", () => {
+    expect(startOptions({ ...DEFAULT_RUN, method: "es" }, 0.005).poisonCost).toBe(1);
+    expect(startOptions({ ...DEFAULT_RUN, method: "es", poisonCost: 3.5 }, 0.005).poisonCost).toBe(3.5);
+    expect("poisonCost" in startOptions({ ...DEFAULT_RUN, method: "backprop" }, 0.005)).toBe(false);
+  });
+
+  it("the saved file names the poison cost of ES runs, and old files still load", () => {
+    const base = { envs: ["nibble"], iterations: 5, from: "designed", heldStart: 1, heldEnd: 2 };
+    expect(trainingRecord({ ...base, poisonCost: 2 }, "2026-11-04").poisonCost).toBe(2);
+    expect("poisonCost" in trainingRecord({ ...base, poisonCost: null }, "2026-11-04")).toBe(false);
+    const plan = planOf(envConfig({ ...BLANK_ENV, world: "ecosystem" }, 1));
+    const f = creatureFile("forager", "x", { plan, genome: new Float32Array(genomeLengthFor("forager", plan)) }, trainingRecord({ ...base, poisonCost: 2 }, "2026-11-04"));
+    expect(JSON.parse(JSON.stringify(f)).training.poisonCost).toBe(2);
+    expect(typeof parseCreatureFile(JSON.stringify(f))).toBe("object");
   });
 });
