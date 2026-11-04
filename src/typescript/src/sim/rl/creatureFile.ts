@@ -31,7 +31,7 @@ export interface CreatureFile {
   name: string;
   plan: BodyPlan;
   genome: number[]; // in the kind's input layout
-  training: { envs: string[]; iterations: number; from: string; heldStart: number | null; heldEnd: number | null; date: string };
+  training: { envs: string[]; iterations: number; from: string; heldStart: number | null; heldEnd: number | null; date: string; poisonCost?: number }; // poisonCost: ES runs only, the reward cost per poison bite that heldStart and heldEnd include
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
