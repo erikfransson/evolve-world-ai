@@ -160,6 +160,7 @@ interface Selection {
   genome: Float32Array | null;
   brain: SelectedBrain | null;
   zoomed: boolean; // the zoom-in has started (it waits until the creature is on screen)
+  aimedZoom: number; // the zoom that zoom-in aimed for, to tell whether the user has zoomed since
 }
 let selection: Selection | null = null;
 let following = false;
@@ -387,7 +388,7 @@ function followSelected(): void {
 // Follows creature id: asks the server for its details and zooms in once it is on screen.
 function select(id: number): void {
   if (selection?.id === id) return;
-  selection = { id, last: null, founderName: "", founderStarter: false, died: false, genome: null, brain: null, zoomed: false };
+  selection = { id, last: null, founderName: "", founderStarter: false, died: false, genome: null, brain: null, zoomed: false, aimedZoom: 0 };
   link.select(id); // replaces the last one on the server: one message per click, so the select rate is not spent on letting go
   $("selectedCard").classList.add("has-sel");
   $("brainCard").hidden = false;
@@ -396,6 +397,14 @@ function select(id: number): void {
   zoomToSelection();
   markRecords();
   updateSelectedCard();
+}
+
+function followSpan(rayLength: number): number {
+  return Math.max(SELECT_MIN_SPAN, SELECT_RAY_LENGTHS * rayLength);
+}
+
+function followZoom(rayLength: number): number {
+  return Math.min(canvasW - 2 * overlayShift(), canvasH) / followSpan(rayLength);
 }
 
 function zoomToSelection(): void {
@@ -408,7 +417,8 @@ function zoomToSelection(): void {
   const rayLength = s.last?.plan.rayLength ?? engine.creature.rayLength;
   camera.cancel();
   camera.setFocusOffset(shift, 0);
-  camera.animateTo(scene.views.x[i]!, scene.views.y[i]!, Math.min(canvasW - 2 * shift, canvasH) / Math.max(SELECT_MIN_SPAN, SELECT_RAY_LENGTHS * rayLength));
+  camera.animateTo(scene.views.x[i]!, scene.views.y[i]!, followZoom(rayLength));
+  s.aimedZoom = camera.goal.zoom;
   pendingFollow = true;
   followAfter = camera.animationsCompleted + 1;
   setFollowing(true);
@@ -450,7 +460,8 @@ function onDetail(d: SelectedDetails, founderName: string, founderStarter: boole
   const replan = s.last && formatPlan(s.last.plan) !== formatPlan(d.plan);
   const first = !s.last;
   s.last = d;
-  if (first && d.plan.rayLength !== engine.creature.rayLength && (pendingFollow || following)) s.zoomed = false; // the zoom-in used the default ray length: aim again with the creature's own
+  // Aim again once the creature's own ray length changes the span, unless the user has zoomed since (a user zoom wins).
+  if (first && (pendingFollow || following) && followSpan(d.plan.rayLength) !== followSpan(engine.creature.rayLength) && Math.abs(camera.goal.zoom - s.aimedZoom) <= 1e-6 * s.aimedZoom) s.zoomed = false;
   if (replan) s.brain = null;
   buildBrain();
 }
