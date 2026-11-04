@@ -330,6 +330,33 @@ describe("memory envs", () => {
   });
 });
 
+describe("chain layout and energy-pressure env", () => {
+  const inside = (it: { x: number; y: number }, w: number, h: number): boolean => it.x >= 0 && it.x <= w && it.y >= 0 && it.y <= h;
+
+  it("chain winds food 85 apart inside the room, the first 60 from a start that faces it, the same for the same seed", () => {
+    for (let seed = 1; seed <= 20; seed++) {
+      const placed = placeLayout({ kind: "chain" }, [500, 500], 10, 0, seed);
+      expect(placed.items).toHaveLength(10);
+      expect(Math.hypot(placed.items[0]!.x - placed.start.x, placed.items[0]!.y - placed.start.y)).toBeCloseTo(60, 5);
+      expect(Math.atan2(placed.items[0]!.y - placed.start.y, placed.items[0]!.x - placed.start.x)).toBeCloseTo(placed.start.heading!, 5);
+      for (let k = 1; k < 10; k++) expect(Math.hypot(placed.items[k]!.x - placed.items[k - 1]!.x, placed.items[k]!.y - placed.items[k - 1]!.y)).toBeCloseTo(85, 5);
+      for (const it of placed.items) expect(inside(it, 500, 500)).toBe(true);
+      expect(placeLayout({ kind: "chain" }, [500, 500], 10, 0, seed)).toEqual(placed);
+    }
+  });
+
+  it("hand to mouth runs, keeps its layout through checkEnv and sits in Time pressure", () => {
+    {
+      const e = envById("hand-to-mouth")!;
+      const checked = checkEnv(JSON.parse(JSON.stringify(e)), "ecosystem", 0) as EnvSpec;
+      expect(typeof checked).not.toBe("string");
+      expect(checked.layout).toEqual(e.layout);
+      expect(runEpisode(e, randomLearner(e, 2), 3).seconds).toBeGreaterThan(0);
+    }
+    expect(groupOf(envById("hand-to-mouth")!)).toBe("Time pressure");
+  });
+});
+
 describe("learner input under the WASM kernels", () => {
   it("records the learner's rays and brain input, and backprop RL sees them", () => {
     const env = envById("nibble")!;
