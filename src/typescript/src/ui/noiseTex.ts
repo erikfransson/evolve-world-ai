@@ -21,11 +21,16 @@ export function valueNoise(x: number, y: number, seed: number, period = 0): numb
   const fy = y - iy;
   const sx = fx * fx * (3 - 2 * fx);
   const sy = fy * fy * (3 - 2 * fy);
-  const wrap = (i: number): number => (period > 0 ? ((i % period) + period) % period : i);
-  const x0 = wrap(ix);
-  const x1 = wrap(ix + 1);
-  const y0 = wrap(iy);
-  const y1 = wrap(iy + 1);
+  let x0 = ix;
+  let x1 = ix + 1;
+  let y0 = iy;
+  let y1 = iy + 1;
+  if (period > 0) {
+    x0 = ((x0 % period) + period) % period;
+    x1 = ((x1 % period) + period) % period;
+    y0 = ((y0 % period) + period) % period;
+    y1 = ((y1 % period) + period) % period;
+  }
   const a = hash(x0, y0, seed);
   const b = hash(x1, y0, seed);
   const c = hash(x0, y1, seed);
@@ -95,40 +100,62 @@ const floorImages = new Map<string, Canvas | null>(); // least recently used fir
 const FLOOR_IMAGES = 3;
 export const FLOOR_CELL = 80; // world units per pixel of the floor image, at most
 
-export function floorImage(width: number, height: number): { image: Canvas | null; cell: number } {
+// The floor image's size and cell for a world: a pixel per cell world units, pixel i centred on world i * cell.
+export function floorSize(width: number, height: number): { w: number; h: number; cell: number } {
   const cell = Math.min(FLOOR_CELL, Math.max(8, Math.max(width, height) / 400));
-  const w = Math.ceil(width / cell) + 1;
-  const h = Math.ceil(height / cell) + 1;
-  const key = `${w}x${h}@${cell}`;
-  let image = floorImages.get(key);
-  if (image !== undefined) floorImages.delete(key);
-  else {
-    const px = new Uint8ClampedArray(4 * w * h);
-    for (let j = 0; j < h; j++) {
-      for (let i = 0; i < w; i++) {
-        const x = i * cell;
-        const y = j * cell;
-        // broad drifts of silt, a lighter and a darker family, plus a faint finer mottle
-        const n = 0.7 * fbm(x / 2600, y / 2600, 5, 3) + 0.3 * fbm(x / 520, y / 520, 9, 2);
-        const k = 4 * (j * w + i);
-        if (n > 0) {
-          px[k] = 90;
-          px[k + 1] = 170;
-          px[k + 2] = 170;
-          px[k + 3] = Math.round(255 * 0.07 * Math.min(1, n * 1.6));
-        } else {
-          px[k] = 0;
-          px[k + 1] = 4;
-          px[k + 2] = 8;
-          px[k + 3] = Math.round(255 * 0.12 * Math.min(1, -n * 1.6));
-        }
+  return { w: Math.ceil(width / cell) + 1, h: Math.ceil(height / cell) + 1, cell };
+}
+
+// The floor image's RGBA pixels, which need no canvas (the build ships the Live map's, see live/mapAsset.ts).
+export function floorPixels(width: number, height: number): Uint8ClampedArray<ArrayBuffer> {
+  const { w, h, cell } = floorSize(width, height);
+  const px = new Uint8ClampedArray(4 * w * h);
+  for (let j = 0; j < h; j++) {
+    for (let i = 0; i < w; i++) {
+      const x = i * cell;
+      const y = j * cell;
+      // broad drifts of silt, a lighter and a darker family, plus a faint finer mottle
+      const n = 0.7 * fbm(x / 2600, y / 2600, 5, 3) + 0.3 * fbm(x / 520, y / 520, 9, 2);
+      const k = 4 * (j * w + i);
+      if (n > 0) {
+        px[k] = 90;
+        px[k + 1] = 170;
+        px[k + 2] = 170;
+        px[k + 3] = Math.round(255 * 0.07 * Math.min(1, n * 1.6));
+      } else {
+        px[k] = 0;
+        px[k + 1] = 4;
+        px[k + 2] = 8;
+        px[k + 3] = Math.round(255 * 0.12 * Math.min(1, -n * 1.6));
       }
     }
-    image = canvasOfPixels(w, h, px);
-    if (floorImages.size >= FLOOR_IMAGES) floorImages.delete(floorImages.keys().next().value!);
   }
+  return px;
+}
+
+function keepFloor(key: string, image: Canvas | null): void {
+  floorImages.delete(key);
+  if (floorImages.size >= FLOOR_IMAGES) floorImages.delete(floorImages.keys().next().value!);
   floorImages.set(key, image);
-  return { image, cell };
+}
+const floorKey = ({ w, h, cell }: { w: number; h: number; cell: number }): string => `${w}x${h}@${cell}`;
+
+// Makes floorImage use these pixels (floorPixels made elsewhere) for a world of this size instead of computing them. False when they do not fit.
+export function seedFloorImage(width: number, height: number, px: Uint8ClampedArray<ArrayBuffer>): boolean {
+  const size = floorSize(width, height);
+  if (px.length !== 4 * size.w * size.h) return false;
+  const key = floorKey(size);
+  if (!floorImages.get(key)) keepFloor(key, canvasOfPixels(size.w, size.h, px));
+  return true;
+}
+
+export function floorImage(width: number, height: number): { image: Canvas | null; cell: number } {
+  const size = floorSize(width, height);
+  const key = floorKey(size);
+  let image = floorImages.get(key);
+  if (image === undefined) image = canvasOfPixels(size.w, size.h, floorPixels(width, height));
+  keepFloor(key, image);
+  return { image, cell: size.cell };
 }
 
 // ---- Ground: a smooth colour tile (mottle and ripples) and a grain tile over it ----

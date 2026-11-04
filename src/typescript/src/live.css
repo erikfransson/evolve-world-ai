@@ -64,6 +64,8 @@
 .entry-text { margin: 0.1rem 0 0; max-width: 23rem; color: var(--muted); font-size: 0.9rem; line-height: 1.5; }
 .entry-live { display: inline-flex; align-items: center; gap: 0.45rem; margin: 0.35rem 0 0.2rem; padding: 0.25rem 0.75rem; border: 1px solid var(--border-hi); border-radius: 999px; background: var(--bg); font-size: 0.78rem; font-variant-numeric: tabular-nums; }
 .entry-live i { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--accent); animation: pulse 2s ease-out infinite; }
+.world-loading { position: absolute; left: 50%; top: 50%; z-index: 3; margin: 0; transform: translate(-50%, -50%); }
+.world-loading[hidden], .entry:not([hidden]) + .world-loading { display: none; }
 .entry-actions { display: flex; flex-direction: column; gap: 0.55rem; width: 100%; margin-top: 0.5rem; }
 .entry-actions .primary { padding: 0.75rem 1rem; }
 .entry-actions .secondary { padding: 0.65rem 1rem; font-size: 0.95rem; }
@@ -214,3 +216,6 @@ body:has(.layout.live) { height: auto; min-height: 100%; }
 .empty-note[hidden] { display: none; }
 .empty-note p { margin: 0; color: var(--text); }
 @media (max-width: 700px) { .empty-note { right: auto; bottom: auto; left: 50%; top: min(37.5cqw, 30vh); transform: translate(-50%, -50%); } } /* the middle of the 4:3 canvas, not of the column with the cards under it */
+/* The Live map's ground before any script has run: the shipped pictures (ui/groundBackdrop.ts), framed as the renderer frames the whole world (fitWorld: 96% of the tighter side,
+   the Inland Sea is 1.6 wide per high). The canvas stays clear until the script draws the same pictures on it. */
+#view { background: image-set(url("./live/maps/inland-sea-ground-0.025.webp") 1x, url("./live/maps/inland-sea-ground-0.05.webp") 2x) center / min(96cqw, 153.6cqh) auto no-repeat, url("./live/maps/inland-sea-ground-preview.webp") center / min(96cqw, 153.6cqh) auto no-repeat, #0b1d16; }

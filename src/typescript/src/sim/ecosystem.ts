@@ -328,10 +328,8 @@ export class Ecosystem {
     for (const s of this.table.states) this.items.clearPoison(s.x, s.y, r, this.rng, onFounder);
   }
 
-  // Makes food invisible to every creature's rays, or visible again; eating is unchanged (RL memory envs, which run with wasm off).
-  // The WASM sense kernel walks its own packed item copy and would still see food, so hiding needs the JS path.
+  // Makes food invisible to every creature's rays, or visible again; eating is unchanged (RL memory envs). Both sense paths read it.
   setFoodHidden(hidden: boolean): void {
-    if (hidden && this.kernels) throw new Error("hiding food needs the JS sense path (eco.wasm false)");
     this.items.foodHidden = hidden;
   }
 

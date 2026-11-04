@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { CREATURE_RECORD, ITEMS_HEADER, MAX_FRAME_CREATURES, PROTOCOL_VERSION, creatureFrameBytes, decodeCreatures, decodeItems, encodeItems } from "../../src/typescript/src/live/protocol.ts";
 import { encodeCreatures } from "./frameOracle.ts";
 import { LiveScene } from "../../src/typescript/src/live/scene.ts";
@@ -143,6 +144,11 @@ describe("live server helpers", () => {
     expect(serverUrl("?server=wss://a.example/x", false)).toBe(PUBLIC_SERVER);
     expect(serverUrl("?server=javascript:alert(1)", false)).toBe(PUBLIC_SERVER);
     expect(serverUrl("?server=not a url", true)).toBe(DEV_SERVER);
+  });
+
+  it("the page preconnects to the public server", () => {
+    const html = readFileSync(new URL("../../src/typescript/live/index.html", import.meta.url), "utf8");
+    expect(html).toContain(`<link rel="preconnect" href="${PUBLIC_SERVER.replace("wss:", "https:")}" crossorigin />`);
   });
 
   it("shares the upload budget round-robin", () => {

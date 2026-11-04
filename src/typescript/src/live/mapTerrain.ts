@@ -59,6 +59,7 @@ export function terrainFromParts(name: string, width: number, height: number, m:
   return t;
 }
 
+export const LIVE_MAP = "inland-sea"; // the map the live server runs (server/src/config.ts), built by the page before the hello names it
 export const MAP_TIMEOUT_MS = 60_000; // a map not built by then (a stuck or very slow worker) is given up, and the next hello tries again
 type MapWorker = Pick<Worker, "postMessage" | "terminate" | "onmessage" | "onerror">;
 const newWorker = (): MapWorker => new Worker(new URL("../worker/mapWorker.ts", import.meta.url), { type: "module" });

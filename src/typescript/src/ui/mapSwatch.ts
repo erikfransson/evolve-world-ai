@@ -4,6 +4,7 @@ import type { Terrain } from "../sim/terrain.ts";
 import { DRY_TINT, POISON_TINT, RICH_TINT } from "./mapTint.ts";
 import { FLOOR } from "./scene.ts";
 import { drawTerrain } from "./terrainScene.ts";
+import { withRockHere } from "./abyssRock.ts";
 
 // Legend swatches cut from the world itself: a small window of the map, drawn by the same code as the map, centred on a spot that
 // shows one kind of ground or region well. So mud in the legend is the mud on the map, at a zoom where its texture reads.
@@ -68,11 +69,13 @@ export function drawSwatch(canvas: HTMLCanvasElement, t: Terrain, spot: Spot, cs
   const view = { x0: spot.x - spanW / 2, x1: spot.x + spanW / 2, y0: spot.y - spanH / 2, y1: spot.y + spanH / 2 };
   ctx.setTransform(scale, 0, 0, scale, -view.x0 * scale, -view.y0 * scale);
   // drawn once, so again until no image is put off for a later frame
-  for (let i = 0, done = false; i < SWATCH_DRAWS && !done; i++) {
-    ctx.fillStyle = FLOOR;
-    ctx.fillRect(view.x0, view.y0, spanW, spanH);
-    done = drawTerrain(ctx, t, scale, view);
-  }
+  withRockHere(() => {
+    for (let i = 0, done = false; i < SWATCH_DRAWS && !done; i++) {
+      ctx.fillStyle = FLOOR;
+      ctx.fillRect(view.x0, view.y0, spanW, spanH);
+      done = drawTerrain(ctx, t, scale, view);
+    }
+  });
   ctx.setTransform(1, 0, 0, 1, 0, 0);
 }
 
