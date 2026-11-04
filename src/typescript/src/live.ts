@@ -55,7 +55,8 @@ import type { Terrain } from "./sim/terrain.ts";
 const MAX_CREATURE_PX = 60; // CSS px radius of a creature at the closest zoom
 const PICK_RADII = 3; // click reach in creature radii
 const PICK_MIN_PX = 14; // click reach never below this many CSS px
-const SELECT_RAY_LENGTHS = 4.5; // follow zoom for every jump to a creature: this many ray lengths across the free part of the view (Erik: 1.5x further out than 3)
+const SELECT_MIN_SPAN = 900; // follow zoom for every jump to a creature: world units across the free part of the view, at least (issue #75: 4.5 ray lengths of 150 was too close)
+const SELECT_RAY_LENGTHS = 3; // ... or this many ray lengths when that is wider, so long rays still fit
 const ZOOM_STEP = 1.6;
 const UI_INTERVAL_MS = 100;
 const BRAIN_INTERVAL_MS = 25;
@@ -407,7 +408,7 @@ function zoomToSelection(): void {
   const rayLength = s.last?.plan.rayLength ?? engine.creature.rayLength;
   camera.cancel();
   camera.setFocusOffset(shift, 0);
-  camera.animateTo(scene.views.x[i]!, scene.views.y[i]!, Math.min(canvasW - 2 * shift, canvasH) / (SELECT_RAY_LENGTHS * rayLength));
+  camera.animateTo(scene.views.x[i]!, scene.views.y[i]!, Math.min(canvasW - 2 * shift, canvasH) / Math.max(SELECT_MIN_SPAN, SELECT_RAY_LENGTHS * rayLength));
   pendingFollow = true;
   followAfter = camera.animationsCompleted + 1;
   setFollowing(true);
