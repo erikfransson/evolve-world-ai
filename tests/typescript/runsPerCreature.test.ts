@@ -1,7 +1,8 @@
 import { DEFAULT_CONFIG, MAX_RUNS, runsOf } from "../../src/typescript/src/sim/config.ts";
 import type { SimConfig } from "../../src/typescript/src/sim/config.ts";
-import { SerialEvaluator, runSeed } from "../../src/typescript/src/sim/evaluator.ts";
+import { SerialEvaluator, evaluateCreatures, runSeed } from "../../src/typescript/src/sim/evaluator.ts";
 import { Evolution } from "../../src/typescript/src/sim/evolution.ts";
+import { FRAME_FLOATS, FrameRecorder } from "../../src/typescript/src/sim/trajectory.ts";
 import { runEpisode } from "../../src/typescript/src/sim/episode.ts";
 
 const base: SimConfig = {
@@ -49,5 +50,31 @@ describe("runs per creature", () => {
       if (new Set(each).size > 1) differs = true;
     }
     expect(differs).toBe(true); // the layouts really differ
+  });
+});
+
+describe("past-generation replay with several runs", () => {
+  it("keeps the stored best-first order instead of re-ranking by run-0 scores", () => {
+    const cfg = withRuns(3);
+    const pop = new Evolution(cfg).population;
+    const n = 6;
+    const layoutSeed = 4242;
+    const run0 = Array.from({ length: n }, (_, i) => runEpisode(base, pop.genome(i), layoutSeed, i));
+    expect(new Set(run0).size).toBeGreaterThan(1);
+    // stored order: ascending run-0 score, the opposite of what re-ranking would give
+    const order = Array.from({ length: n }, (_, i) => i).sort((a, b) => run0[a]! - run0[b]! || a - b);
+    const genomes = new Float32Array(n * pop.genomeLength);
+    order.forEach((c, k) => genomes.set(pop.genome(c), k * pop.genomeLength));
+    const { frames } = evaluateCreatures(cfg, genomes, pop.genomeLength, layoutSeed, order);
+    const want = order.slice(1).map((c) => {
+      const rec = new FrameRecorder(1);
+      runEpisode(base, pop.genome(c), layoutSeed, c, rec);
+      return rec.result().data;
+    });
+    expect(frames.offsets.length).toBe(n);
+    for (let k = 0; k < n - 1; k++) {
+      const got = frames.data.subarray(frames.offsets[k]! * FRAME_FLOATS, frames.offsets[k + 1]! * FRAME_FLOATS);
+      expect(Array.from(got)).toEqual(Array.from(want[k]!));
+    }
   });
 });

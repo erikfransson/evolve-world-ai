@@ -57,6 +57,7 @@ export function evaluateCreatures(
   record?: RecordOptions,
 ): { fitness: Float64Array; frames: Trajectories } {
   const count = indices.length;
+  const multi = runsOf(config) > 1;
   const fitness = new Float64Array(count);
   const top = new TopFrames({ ...record, maxOthers: count - 1 });
   for (let start = 0; start < count; start += SERIAL_CHUNK) {
@@ -65,7 +66,9 @@ export function evaluateCreatures(
     for (let k = start; k < end; k++) {
       fitness[k] = runEpisode(config, genomes.subarray(k * genomeLength, (k + 1) * genomeLength), layoutSeed, indices[k]!, recorder);
     }
-    top.add(start, fitness.subarray(start, end), recorder.result());
+    // With several runs the re-simulated run-0 scores no longer follow the stored order (best mean first), so rank by position instead.
+    const rank = multi ? Float64Array.from({ length: end - start }, (_, j) => count - start - j) : fitness.subarray(start, end);
+    top.add(start, rank, recorder.result());
   }
   return { fitness, frames: top.result() };
 }
