@@ -144,6 +144,10 @@ describe("RL CLI option checks", () => {
     expect(r.code).toBe(1);
     expect(r.err).toContain("--poisonw");
   });
+  it("accepts --poison 0 with --selfplay (only a non-zero value is rejected) and leaves the default alone", async () => {
+    const r = await run("rlTrain", "--selfplay", "--poison", "0", "--iters", "0");
+    expect(r.err).not.toContain("--poisonw");
+  });
   it.each(["abc", "5", "-9"])("rejects --logstd-min %s", async (v) => {
     const r = await run("rlGrad", "--from", "random:1", "--logstd-min", v);
     expect(r.code).toBe(1);

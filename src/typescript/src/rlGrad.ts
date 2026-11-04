@@ -2,6 +2,7 @@
 // Usage: node src/rlGrad.ts --env nibble [--from random:1 | pool:0] [--seconds 60] [--iters 1000] [--episodes 16] [--epochs 2] [--lr 0.003]
 //        [--envs a,b,c|all] [--diag diag.csv] [--logstd=-0.5] [--repeat 3] [--every-tick] [--repeat-then 30:1] [--target-kl 0.02] [--gamma 0.995] [--eval 32] [--every 5] [--seed 1] [--out learner.json]
 // --envs trains on several envs as the Arena does (episode k plays env k % count); --from founder:ID starts from public/live-founders.json; --diag writes one CSV row per update (see PpoDiag).
+// --poison W adds a cost per poison bite to the env reward (default 0: PPO has its own training-only --poison-penalty, 1 by default, skipped on envs with their own poison cost).
 // --repeat-then S:N switches to repeat N after S seconds of training; --every-tick holds only the noise while the brain acts every tick.
 // Held-out: the mean action (the brain as it is) on HELD_BASE + k, as rlTrain. Time excludes the held-out checks.
 
@@ -34,7 +35,7 @@ const { values } = parseArgs({
     logstd: { type: "string", default: "-0.5" },
     entropy: { type: "string", default: "0" },
     "poison-penalty": { type: "string", default: String(PPO_DEFAULTS.poisonPenalty) },
-    poison: { type: "string", default: "0" }, // reward.poison for every env (cost per poison bite, in the env reward)
+    poison: { type: "string", default: "0" }, // reward.poison for every env (cost per poison bite, in the env reward); 0 by default since PPO has its own --poison-penalty
     "logstd-min": { type: "string", default: String(PPO_DEFAULTS.logStdMin) },
     repeat: { type: "string", default: "3" },
     "every-tick": { type: "boolean", default: false },

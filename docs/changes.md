@@ -6,6 +6,7 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- Poison follow-up: backprop's poison penalty is skipped on envs that set their own `reward.poison` (no double charge), and `rlTrain --poison` now defaults to the Arena ES cost 1 on envs without their own (`--poison 0` turns it off). `rlGrad --poison` stays 0.
 - RL environments: new reward weight `poison`, a cost per poison item the learner eats (a lethal bite included), off unless set. ES and backprop both see it. `rlTrain --poison W` and `rlGrad --poison W` set it on every env of a run; `rlGrad --logstd-min`, `--poison-penalty` and `--diag`, `rlTrain --mix`, `--budget`, `--from design:ID` and `--selfplay` come from the campaign branches. The Arena UI has no field for it yet.
 - Arena, backprop (PPO): runs keep exploring (the action noise no longer shrinks below a floor of -1 in log units, was -3) and avoid poison more, because each poison bite now costs 1 reward in training only. The reported scores do not include that cost. In 8 designs on 2 seeds each, poison eaten went down in 7, survival went up in 6 and none got worse.
 - Arena, evolution (ES): each poison bite costs 1 reward in the env score, so ES runs avoid poison more too and their held-out scores drop where the learner bites (`poisonCost` run option, 0 turns it off, an env with its own poison cost keeps it). Live visitor training uses the same runner and gets the same cost.
