@@ -37,6 +37,7 @@ export interface Rivals {
   count: number;
   source: RivalSource;
   energy?: number; // start energy, the species' when left out
+  speed?: number; // 0 to 1: the group are drifters (a brain that only thrusts at this share of full thrust, 0 = still) that hold their energy; left out they act as `source` says
 }
 
 export type Range = [number, number];
@@ -228,6 +229,7 @@ function randomRival(env: EnvSpec, seed: number, role: number, rivalSeed: number
 }
 
 // A brain that only thrusts at `speed` (0 to 1 of full thrust) and never turns: one ray, one silent neuron, a thrust bias.
+export const DRIFTER_HEAL = 8; // energy per second a drifting rival (Rivals.speed) regains, up to its start energy
 const DUEL_MARGIN = 30; // world units: the charger starts at least this far off, the learner at least distance plus this from the walls
 const CHARGER_PLAN: PlanView = { rayCount: 1, raySpread: 0, rayLength: 10, hiddenLayers: [1], memoryShort: 0, memoryLong: 0 };
 export function charger(world: EnvWorld, speed: number): Learner {
@@ -302,6 +304,16 @@ export function castFor(env: EnvSpec, config: EcoConfig, learner: Learner, seed:
   for (const rv of env.rivals) {
     const hue = species[rv.species]!.hue < 0 ? 205 : species[rv.species]!.hue;
     for (let k = 0; k < rv.count; k++) {
+      if (rv.speed !== undefined) {
+        // A drifter's thrust cost is paid back and it heals DRIFTER_HEAL energy/s (capped at its start, see runEpisode): gentle taps fall behind, a hard hit kills.
+        const d = charger(env.world, rv.speed);
+        const m = place(rv.species, d.plan, d.genome, hue);
+        if (start) m.y = Math.min(h - r, Math.max(r, start.y + rng.range(-20, 20)));
+        if (rv.energy !== undefined) m.energy = rv.energy;
+        m.upkeep = -(config.creature.thrustCost * rv.speed + DRIFTER_HEAL);
+        cast.push(m);
+        continue;
+      }
       let rival: Learner;
       const listId = rv.source === "self" ? (rv.species === env.role ? SELF : null) : rv.source.startsWith("library:") && libraryFits(rv.source.slice(8), env.world, rv.species) ? rv.source.slice(8) : null;
       if (rv.source === "pool" && pool?.length) rival = poolLearner(env, pool[rng.int(pool.length)]!);
@@ -361,6 +373,8 @@ export function runEpisode(
   const reach = 2 * config.creature.radius + 2; // bumping distance, for crediting a ram
   const ticks = Math.round(env.seconds / config.dt);
   const out: EpisodeResult = { reward: 0, food: 0, kills: 0, rams: 0, seconds: 0, energy: 0, poison: 0, poisonEnergy: 0, firstFood: -1, elapsed: 0, clearTime: -1, cells: 0, died: 0 };
+  const drifters: { m: (typeof eco.members)[number]; cap: number }[] = []; // rivals that heal back to their start energy
+  { let id = 1; for (const rv of env.rivals) for (let k = 0; k < rv.count; k++, id++) if (rv.speed !== undefined) { const m = eco.members.find((o) => o.id === id); if (m) drifters.push({ m, cap: m.creature.state.energy }); } }
   const rivalEnergy = new Map<number, number>(); // each rival's energy after the previous tick, for crediting rams
   if (env.collisionDamage) for (const m of eco.members) if (m.id !== 0) rivalEnergy.set(m.id, m.creature.state.energy); // so a death on the first tick is judged too
   let poisonBefore = eco.poisonEaten; // the world's poison count before the tick, to skip poison deaths
@@ -422,6 +436,7 @@ export function runEpisode(
       act(eco.get(0)!.creature);
       eco.finishTick();
     } else eco.step();
+    for (const d of drifters) if (d.m.creature.state.alive && d.m.creature.state.energy > d.cap) d.m.creature.state.energy = d.cap;
     onTick?.(eco);
     if (env.collisionDamage) for (const m of eco.members) if (m.id !== 0) rivalEnergy.set(m.id, m.creature.state.energy);
     const me = eco.get(0);
@@ -489,7 +504,8 @@ export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | s
     if (typeof src === "string" && src.startsWith("library:") && !libraryFits(src.slice(8), world, rv.species as number)) return "library rivals must come from an env of this world whose learner is of the rival's species";
     if (src === "self" && rv.species !== role) return "self rivals must be of the learner's species";
     if (rv.energy !== undefined && !n(rv.energy, L.energy)) return `rival energy must be ${L.energy[0]} to ${L.energy[1]}`;
-    rivals.push({ species: rv.species as number, count: rv.count as number, source: src as RivalSource, ...(rv.energy === undefined ? {} : { energy: rv.energy as number }) });
+    if (rv.speed !== undefined && !n(rv.speed, L.speed)) return `rival speed must be ${L.speed[0]} to ${L.speed[1]}`;
+    rivals.push({ species: rv.species as number, count: rv.count as number, source: src as RivalSource, ...(rv.energy === undefined ? {} : { energy: rv.energy as number }), ...(rv.speed === undefined ? {} : { speed: rv.speed as number }) });
   }
   if (rivals.reduce((a, r) => a + r.count, 0) > L.rivals[1]) return `at most ${L.rivals[1]} rivals`;
   const w = (v.reward ?? {}) as Record<string, unknown>;
