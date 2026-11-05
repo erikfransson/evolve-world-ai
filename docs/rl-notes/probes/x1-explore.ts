@@ -82,6 +82,27 @@ function seek(fallback: Act): Act {
   };
 }
 
+// Seeks food; with none in view goes straight until 3 bites came within 8 s (a rich spot), then circles in place (stays at it).
+function adaptive(seed: number, w: number, h: number): Act {
+  const go = straight(w, h);
+  const stay: Act = (c) => { c.outputs[OUT_TURN] = 1; c.outputs[OUT_THRUST] = 0.25; };
+  void seed;
+  const times: number[] = [];
+  let prev = -1;
+  let t = 0;
+  let camping = false;
+  const inner: Act = (c) => (camping ? stay(c) : go(c));
+  const seeker = seek(inner);
+  return (c) => {
+    const e = c.state.energy;
+    if (prev >= 0 && e - prev > 10) times.push(t);
+    prev = e;
+    t++;
+    if (!camping && times.filter((x) => t - x < 240).length >= 3) camping = true;
+    seeker(c);
+  };
+}
+
 interface Row { policy: string; group: string; reward: number; food: number; late: number; reach: number; gap: number; alive: number; cells: number; zero: number }
 function run(env: EnvSpec, name: string, group: string, learner: Learner, act?: (seed: number) => Act): Row {
   const eps: EpisodeResult[] = [];
@@ -120,6 +141,7 @@ for (const id of values.envs!.split(",")) {
     const sl = blank(sighted(R));
     rows.push(run(env, `seek-wiggle R${R}`, "seeker", sl, (s) => seek(wiggle(s))));
     rows.push(run(env, `seek-straight R${R}`, "seeker", sl, () => seek(straight(env.size[0], env.size[1]))));
+    rows.push(run(env, `seek-adaptive R${R}`, "seeker", sl, (s) => adaptive(s, env.size[0], env.size[1])));
   }
   for (let k = 0; k < Number(values.pools); k++) rows.push(run(env, `pool:${k}`, "founder", poolLearner(env, pool[k]!)));
   for (const f of founders) if (f.genome.length === genomeLengthIn("ecosystem", f.plan)) rows.push(run(env, f.id, "founder", { plan: f.plan, genome: Float32Array.from(f.genome) }));
