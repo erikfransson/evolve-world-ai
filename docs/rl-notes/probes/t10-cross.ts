@@ -1,5 +1,6 @@
 // T10 distinctness probe: train ES on each env of --train from a random body, score the result on each env of --targets.
 // Run from src/typescript: node ../../docs/rl-notes/probes/t10-cross.ts --targets thorny,bitter-rows --train thorny,bitter-rows,stings,minefield --bodies 1,2 --iters 60 --out /tmp/x.json
+// X1 addition: cells covered per episode (grid side = the learner's ray length) before and after, and for every other training env.
 // Prints, per body and target, the target's own gain (trained on itself, 64 held-out seeds) and every other training env's gain as a share of it (85% or more is a duplicate), plus poison bites per episode before and after.
 
 import { writeFileSync } from "node:fs";
@@ -44,16 +45,18 @@ for (const body of values.bodies!.split(",").map(Number)) {
     const base = scoreLearner(t, start, seeds);
     const own = scoreLearner(t, trained.get(t.id)!, seeds);
     const gain = own.reward - base.reward;
-    const row: Record<string, unknown> = { body, target: t.id, start: base.reward, own: own.reward, gain, poisonStart: base.poison, poisonOwn: own.poison, share: {} };
+    const row: Record<string, unknown> = { body, target: t.id, start: base.reward, own: own.reward, gain, poisonStart: base.poison, poisonOwn: own.poison, foodStart: base.food, foodOwn: own.food, cellsStart: base.cells, cellsOwn: own.cells, share: {}, cellShare: {} };
     const line: string[] = [];
     for (const id of trainIds) {
       if (id === t.id) continue;
       const r = scoreLearner(t, trained.get(id)!, seeds);
       const share = (r.reward - base.reward) / gain;
       (row.share as Record<string, number>)[id] = share;
-      line.push(`${id} ${(100 * share).toFixed(0)}% (${r.poison.toFixed(2)})`);
+      const cellShare = (r.cells - base.cells) / (own.cells - base.cells);
+      (row.cellShare as Record<string, number>)[id] = cellShare;
+      line.push(`${id} ${(100 * share).toFixed(0)}% (${r.poison.toFixed(2)}) cells ${(100 * cellShare).toFixed(0)}%`);
     }
-    console.log(`random:${body} ${t.id}: ${base.reward.toFixed(2)} -> ${own.reward.toFixed(2)} (gain ${gain.toFixed(2)}), poison bites/ep ${base.poison.toFixed(2)} -> ${own.poison.toFixed(2)}; others' share (poison bites/ep): ${line.join(", ")}`);
+    console.log(`random:${body} ${t.id}: ${base.reward.toFixed(2)} -> ${own.reward.toFixed(2)} (gain ${gain.toFixed(2)}), poison bites/ep ${base.poison.toFixed(2)} -> ${own.poison.toFixed(2)}; food ${base.food.toFixed(2)} -> ${own.food.toFixed(2)}; cells ${base.cells.toFixed(1)} -> ${own.cells.toFixed(1)}; others' share (poison bites/ep): ${line.join(", ")}`);
     results.push(row);
   }
 }

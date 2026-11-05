@@ -17,9 +17,10 @@ export type Layout =
   | { kind: "stops"; count?: number } // food in count (3) small clusters round a central start, dealt evenly (pair with foodVisibleFor): visit one, then recall where the others were
   | { kind: "flash" } // food at a middle distance around a central start, in all directions (pair with foodVisibleFor)
   | { kind: "chain" } // food in a winding chain, each 85 from the last (inside a default look), the first 60 from the learner, who faces it
+  | { kind: "horizon" } // the learner alone in the middle, 3 small food clusters 2 to 3 sight lengths away in random directions (needs rayLength)
   | { kind: "sprint"; near?: number }; // a strip with the learner at one end and the food at the other (near of it halfway, as a first step)
 
-export const LAYOUT_KINDS = ["fence", "maze", "patch", "rooms", "islands", "sprint", "ring", "cuedoor", "flash", "stops", "chain"] as const;
+export const LAYOUT_KINDS = ["fence", "maze", "patch", "rooms", "islands", "sprint", "ring", "cuedoor", "flash", "stops", "chain", "horizon"] as const;
 
 export interface Placed {
   items: ItemSpot[];
@@ -48,7 +49,8 @@ function hwall(items: ItemSpot[], y: number, x0: number, x1: number, gx: number,
 const spot = (rng: Rng, x0: number, x1: number, y0: number, y1: number): { x: number; y: number } => ({ x: rng.range(x0, x1), y: rng.range(y0, y1) });
 
 // The layout's items (food food items, poison extra scattered poison besides the walls) and the learner's start for this seed.
-export function placeLayout(layout: Layout, size: readonly [number, number], food: number, poison: number, seed: number): Placed {
+// rayLength is the learner's sight, read only by the horizon layout, which place things out of sight of it.
+export function placeLayout(layout: Layout, size: readonly [number, number], food: number, poison: number, seed: number, rayLength?: number): Placed {
   const rng = createRng(deriveSeed(seed, 0x1a70));
   const [w, h] = size;
   const items: ItemSpot[] = [];
@@ -150,6 +152,35 @@ export function placeLayout(layout: Layout, size: readonly [number, number], foo
       const a = rng.next() * 2 * Math.PI;
       const d = 30 * Math.sqrt(rng.next());
       items.push({ x: c.x + d * Math.cos(a), y: c.y + d * Math.sin(a), kind: HIT_FOOD });
+    }
+    return { items, start, walls };
+  } else if (layout.kind === "horizon") {
+    // Distances scale with the learner's sight R (50 is the shortest a design has; capped so the world still holds them), so a long-sighted design starts blind too.
+    const R = Math.max(50, Math.min(rayLength ?? 150, (Math.min(w, h) / 2 - 2 * MARGIN) / 2.2));
+    const rc = 25; // cluster radius
+    start = { x: w / 2, y: h / 2 };
+    const centres: { x: number; y: number }[] = [];
+    const base = rng.next() * 2 * Math.PI;
+    for (let k = 0; k < 3; k++) {
+      let c: { x: number; y: number } | null = null;
+      // 2 to 3 R from the start, at least 2 R from the other clusters, inside the world (the last tries relax the distances a little).
+      for (let tries = 0; tries < 400 && !c; tries++) {
+        const a = rng.next() * 2 * Math.PI;
+        const d = R * rng.range(2, 3) * (tries > 300 ? 0.9 : 1);
+        const q = { x: start.x + d * Math.cos(a), y: start.y + d * Math.sin(a) };
+        const inside = q.x >= MARGIN + rc && q.x <= w - MARGIN - rc && q.y >= MARGIN + rc && q.y <= h - MARGIN - rc;
+        if (inside && centres.every((o) => Math.hypot(o.x - q.x, o.y - q.y) >= 2 * R * (tries > 300 ? 0.8 : 1))) c = q;
+      }
+      if (!c) { // not reached in the shipped world (it holds 2 R for every sight up to 250): spread evenly at 2 R instead
+        const a = base + (k * 2 * Math.PI) / 3;
+        c = { x: Math.min(w - MARGIN - rc, Math.max(MARGIN + rc, start.x + 2 * R * Math.cos(a))), y: Math.min(h - MARGIN - rc, Math.max(MARGIN + rc, start.y + 2 * R * Math.sin(a))) };
+      }
+      centres.push(c);
+      for (let j = 0; j < Math.floor(food / 3) + (k < food % 3 ? 1 : 0); j++) { // the first clusters hold the extra
+        const a = rng.next() * 2 * Math.PI;
+        const d = rc * Math.sqrt(rng.next());
+        items.push({ x: c.x + d * Math.cos(a), y: c.y + d * Math.sin(a), kind: HIT_FOOD });
+      }
     }
     return { items, start, walls };
   } else if (layout.kind === "chain") {
