@@ -154,7 +154,7 @@ describe("RL CLI option checks", () => {
     expect(r.err).toContain("--logstd-min");
   });
   it.each([["rlGrad", "6k"], ["rlGrad", "1.5"], ["rlGrad", "0"], ["rlTrain", "6k"], ["rlTrain", "-3"]])("%s rejects --ckpt %s", async (script, v) => {
-    const r = await run(script, "--ckpt", v, "--ckpt-dir", scratchDir(), "--iters", "1");
+    const r = await run(script, `--ckpt=${v}`, "--ckpt-dir", scratchDir(), "--iters", "1");
     expect(r.code).toBe(1);
     expect(r.err).toContain("--ckpt must be");
   });
