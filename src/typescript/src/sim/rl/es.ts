@@ -1,4 +1,5 @@
 import type { Rng } from "../types.ts";
+import { assertFinite } from "./resume.ts";
 
 // Evolution strategies (Salimans et al. 2017): antithetic Gaussian perturbations of the weights, standardised (or centred-rank) fitness
 // shaping, and an Adam step along the estimated reward gradient. Small steps from a trained creature, so it is nudged, not replaced.
@@ -50,6 +51,12 @@ export class Es {
 
   load(s: EsState): void {
     if (s.theta.length !== this.theta.length || s.m.length !== this.m.length || s.v.length !== this.v.length) throw new Error("ES state does not fit");
+    if (s.spare !== null && s.spare.length !== this.options.pairs * this.theta.length) throw new Error("ES state does not fit (the noise drawn ahead is for another number of pairs)");
+    assertFinite("ES weight", s.theta);
+    assertFinite("ES moment", s.m);
+    assertFinite("ES moment", s.v);
+    if (s.spare) assertFinite("ES noise", s.spare);
+    assertFinite("ES step", s.step);
     this.theta.set(s.theta);
     this.m.set(s.m);
     this.v.set(s.v);

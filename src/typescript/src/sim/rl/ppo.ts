@@ -10,6 +10,7 @@ import { earlyWeight, layoutConfig, runEpisode } from "./env.ts";
 import type { EnvSpec, Learner, Library } from "./env.ts";
 import { HELD_BASE, scoreGenomes } from "./trainer.ts";
 import type { RlTrainer, Score, Scorer, StepResult } from "./trainer.ts";
+import { assertFinite } from "./resume.ts";
 
 // Backprop RL: PPO (Schulman et al. 2017) on the creature's own brain. The policy samples the pre-tanh turn and thrust of the brain's
 // output layer from a Gaussian with a learned, state-free log-std; the mean action (the brain as it is) is what plays held-out and in the
@@ -415,6 +416,9 @@ export class Adam {
 
   load(s: AdamState): void {
     if (s.m.length !== this.m.length || s.v.length !== this.v.length) throw new Error("Adam state does not fit");
+    assertFinite("Adam moment", s.m);
+    assertFinite("Adam moment", s.v);
+    assertFinite("Adam step", s.t);
     this.m.set(s.m);
     this.v.set(s.v);
     this.t = s.t;
@@ -642,6 +646,10 @@ export class Ppo {
 
   load(s: PpoState): void {
     if (s.theta.length !== this.theta.length || s.critic.length !== this.critic.length || s.logStd.length !== this.logStd.length) throw new Error("PPO state does not fit");
+    assertFinite("PPO weight", s.theta);
+    assertFinite("PPO critic weight", s.critic);
+    assertFinite("PPO log-std", s.logStd);
+    assertFinite("PPO counter", [s.rng, s.iter, s.episodesPlayed, s.envOffset]);
     this.theta.set(s.theta);
     this.critic.set(s.critic);
     this.logStd.set(s.logStd);

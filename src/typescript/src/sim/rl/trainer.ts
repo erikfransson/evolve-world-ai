@@ -2,6 +2,7 @@ import { createRng, deriveSeed } from "../rng.ts";
 import type { StatefulRng } from "../rng.ts";
 import type { EnvSpec } from "./env.ts";
 import { Es } from "./es.ts";
+import { assertFinite } from "./resume.ts";
 import type { Rollout, RolloutTask } from "./ppo.ts";
 import type { EsOptions, EsState } from "./es.ts";
 
@@ -100,6 +101,13 @@ export class Trainer implements RlTrainer {
   }
 
   load(s: TrainerState): void {
+    assertFinite("trainer rng", s.rng);
+    if (s.nextSeeds) assertFinite("trainer seed", s.nextSeeds);
+    if (s.nextSeeds && s.nextSeeds.length !== this.episodes) throw new Error("trainer state does not fit (the seeds drawn ahead are for another number of episodes)");
+    for (const b of s.bests) {
+      if (b.length !== this.es.theta.length) throw new Error("trainer state does not fit");
+      assertFinite("trainer best genome", b);
+    }
     this.es.load(s.es);
     this.rng.state = s.rng;
     this.nextSeeds = s.nextSeeds;

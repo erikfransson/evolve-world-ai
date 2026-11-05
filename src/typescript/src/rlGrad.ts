@@ -6,9 +6,11 @@
 // --repeat-then S:N switches to repeat N after S seconds of training; --every-tick holds only the noise while the brain acts every tick.
 // --state FILE resumes from FILE when it exists and saves the whole training state there at the end (genome, critic, log-std, Adam, rng), so --iters is the target total and --seconds the limit of this chunk;
 // --ckpt 2000,6000 --ckpt-dir DIR writes DIR/<iter>.json (a learner file for rlTransfer) when those updates are reached; --trace FILE appends one JSON line of log-std every --trace-every updates.
+// --state is for one run at a time and not with --repeat-then; it refuses to resume when the other settings (envs, --from, --seed, plan, options) differ.
+// A chunk killed before it ends leaves the last state, so the rerun repeats its updates and appends their --trace and logstd.jsonl lines again (dedupe by iter).
 // Held-out: the mean action (the brain as it is) on HELD_BASE + k, as rlTrain. Time excludes the held-out checks.
 
-import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { layerSizes } from "./sim/brain.ts";
@@ -18,7 +20,9 @@ import type { EnvSpec, Learner } from "./sim/rl/env.ts";
 import { ENVS, envById } from "./sim/rl/envs.ts";
 import { serialiseLearner } from "./sim/rl/library.ts";
 import { LOG_STD_RANGE, PPO_DEFAULTS, Ppo } from "./sim/rl/ppo.ts";
+import { assertSameSettings } from "./sim/rl/resume.ts";
 import { heldSeeds } from "./sim/rl/trainer.ts";
+import { parseCkpts, writeFileAtomic } from "./rlResume.ts";
 import { parsePool } from "./sim/seedPool.ts";
 
 const { values } = parseArgs({
@@ -84,8 +88,29 @@ const ppo = new Ppo(envList, learner, sizes, {
   episodes: num("episodes"), epochs: num("epochs"), minibatch: num("minibatch"), lr: num("lr"), logStd: num("logstd"), entropy: num("entropy"), repeat: num("repeat"), gamma: num("gamma"), everyTick: values["every-tick"], targetKl: num("target-kl"), poisonPenalty: num("poison-penalty"), logStdMin, diag: values.diag !== undefined,
 }, num("seed"), pool);
 const resumed = values.state !== undefined && existsSync(values.state);
-if (resumed) ppo.load(JSON.parse(readFileSync(values.state!, "utf8")));
-const ckpts = (values.ckpt ?? "").split(",").filter(Boolean).map(Number);
+if (values.state && values["repeat-then"]) {
+  console.error("error: --repeat-then cannot be resumed, so not with --state");
+  process.exit(1);
+}
+const { diag: _diag, ...settingOptions } = ppo.options;
+const settings = { envs: envList.map((e) => e.id), poison: num("poison"), from: values.from, seed: num("seed"), plan: learner.plan, options: settingOptions };
+if (resumed) {
+  try {
+    const saved = JSON.parse(readFileSync(values.state!, "utf8")) as { settings?: unknown };
+    if (saved.settings) assertSameSettings(saved.settings, settings);
+    else console.error("warning: the state file has no settings to compare (saved by an older version)");
+    ppo.load(saved as Parameters<Ppo["load"]>[0]);
+  } catch (e) {
+    console.error(`error: ${values.state}: ${(e as Error).message}`);
+    process.exit(1);
+  }
+}
+const ckptList = parseCkpts(values.ckpt, true);
+if (typeof ckptList === "string") {
+  console.error(`error: ${ckptList}`);
+  process.exit(1);
+}
+const ckpts = ckptList;
 if (ckpts.length && !values["ckpt-dir"]) {
   console.error("error: --ckpt needs --ckpt-dir");
   process.exit(1);
@@ -121,7 +146,7 @@ while (ppo.iter < num("iters") && busy < num("seconds") * 1000) {
   if (values.trace && step.iter % num("trace-every") === 0) appendFileSync(values.trace, JSON.stringify({ iter: step.iter, train: step.train, logStd: Array.from(ppo.logStd) }) + "\n");
   if (ckpts.includes(step.iter)) {
     mkdirSync(values["ckpt-dir"]!, { recursive: true });
-    writeFileSync(resolve(values["ckpt-dir"]!, `${step.iter}.json`), JSON.stringify(serialiseLearner({ plan: learner.plan, genome: ppo.theta })) + "\n");
+    writeFileAtomic(resolve(values["ckpt-dir"]!, `${step.iter}.json`), JSON.stringify(serialiseLearner({ plan: learner.plan, genome: ppo.theta })) + "\n");
     appendFileSync(resolve(values["ckpt-dir"]!, "logstd.jsonl"), JSON.stringify({ iter: step.iter, train: step.train, logStd: Array.from(ppo.logStd) }) + "\n");
   }
   const d = ppo.lastDiag;
@@ -132,8 +157,7 @@ while (ppo.iter < num("iters") && busy < num("seconds") * 1000) {
 }
 const end = held();
 if (values.state) {
-  writeFileSync(`${values.state}.tmp`, JSON.stringify(ppo.save()));
-  renameSync(`${values.state}.tmp`, values.state);
+  writeFileAtomic(values.state, JSON.stringify({ ...ppo.save(), settings }));
 }
 if (values.diag) writeFileSync(resolve(values.diag), csv.join("\n") + "\n");
 console.log(`held-out ${start.toFixed(3)} -> ${end.toFixed(3)} after ${ppo.episodesPlayed} episodes, ${(busy / 1000).toFixed(0)} s`);

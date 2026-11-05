@@ -1,7 +1,10 @@
+import { createRng } from "../../src/typescript/src/sim/rng.ts";
 import { layerSizes } from "../../src/typescript/src/sim/brain.ts";
 import { layoutConfig, randomLearner, scoreLearner } from "../../src/typescript/src/sim/rl/env.ts";
 import { envById } from "../../src/typescript/src/sim/rl/envs.ts";
 import { Ppo } from "../../src/typescript/src/sim/rl/ppo.ts";
+import { assertSameSettings } from "../../src/typescript/src/sim/rl/resume.ts";
+import { Es } from "../../src/typescript/src/sim/rl/es.ts";
 import { Trainer } from "../../src/typescript/src/sim/rl/trainer.ts";
 import type { RlTask, Scorer } from "../../src/typescript/src/sim/rl/trainer.ts";
 
@@ -39,5 +42,28 @@ describe("resume", () => {
     expect(Array.from(second.theta)).toEqual(Array.from(whole.theta));
     expect(json(second.save())).toEqual(json(whole.save()));
     expect(Array.from(whole.theta)).not.toEqual(Array.from(learner.genome));
+  });
+
+  it("ES: load refuses noise drawn for another number of pairs, and non-finite values", () => {
+    const small = new Es(Float32Array.from(learner.genome), { pairs: 2 });
+    small.prepare(createRng(1));
+    const saved = json(small.save());
+    expect(() => new Es(Float32Array.from(learner.genome), { pairs: 3 }).load(saved)).toThrow("pairs");
+    expect(() => new Es(Float32Array.from(learner.genome), { pairs: 2 }).load(json({ ...saved, m: saved.m.map(() => NaN) }))).toThrow("non-finite");
+    expect(() => new Es(Float32Array.from(learner.genome), { pairs: 2 }).load(saved)).not.toThrow();
+  });
+
+  it("PPO: load refuses a state with a non-finite number", () => {
+    const make = () => new Ppo([env], learner, sizes, { episodes: 2, epochs: 1 }, 7);
+    const saved = json(make().save());
+    expect(() => make().load({ ...saved, critic: saved.critic.map(() => NaN) })).toThrow("non-finite");
+    expect(() => make().load({ ...saved, policyAdam: { ...saved.policyAdam, m: saved.policyAdam.m.map(() => NaN) } })).toThrow("non-finite");
+  });
+
+  it("settings: equal after a JSON round trip, a difference is named", () => {
+    const a = { pairs: 2, from: "random:1", plan: { rayCount: 3 } };
+    expect(() => assertSameSettings(json(a), a)).not.toThrow();
+    expect(() => assertSameSettings(json(a), { ...a, pairs: 3 })).toThrow(/pairs: saved 2, now 3/);
+    expect(() => assertSameSettings(json(a), { ...a, plan: { rayCount: 4 } })).toThrow("plan");
   });
 });
