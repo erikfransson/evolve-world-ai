@@ -1,6 +1,8 @@
-import { checkEnv, randomLearner, runEpisode } from "../../src/typescript/src/sim/rl/env.ts";
+import { charger, checkEnv, envConfig, randomLearner, runEpisode } from "../../src/typescript/src/sim/rl/env.ts";
 import type { EnvSpec } from "../../src/typescript/src/sim/rl/env.ts";
-import type { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
+import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
+import { hurt } from "../../src/typescript/src/sim/physics.ts";
+import type { CreatureState } from "../../src/typescript/src/sim/types.ts";
 import { ENVS, envById, groupOf } from "../../src/typescript/src/sim/rl/envs.ts";
 
 const NEW_FIGHT = ["ambush", "turf-war", "cull", "corral"];
@@ -46,5 +48,104 @@ describe("fight envs", () => {
       checked++;
     }
     expect(checked).toBeGreaterThan(0);
+  });
+});
+
+describe("drifting rivals (Rivals.speed)", () => {
+  const base: EnvSpec = { id: "dr", name: "dr", description: "dr", world: "ecosystem", role: 0, size: [3000, 3000], food: 0, poison: 0, foodRegrow: 0, seconds: 5, rivals: [], collisionDamage: true, reward: { survive: 1 }, tags: [] };
+  const withSpeed = (speed: number | undefined, energy = 20): EnvSpec => ({ ...base, rivals: [{ species: 0, count: 1, source: "random", energy, ...(speed === undefined ? {} : { speed }) }] });
+  const still = randomLearner(base, 1);
+
+  // The rival's path length over the episode, with the learner far away in a big room.
+  const travelled = (env: EnvSpec, seed = 3): number => {
+    let last: { x: number; y: number } | null = null;
+    let total = 0;
+    runEpisode(env, still, seed, null, {}, (eco: Ecosystem) => {
+      const s = eco.members.find((m) => m.id === 1)!.creature.state;
+      if (last) total += Math.hypot(s.x - last.x, s.y - last.y);
+      last = { x: s.x, y: s.y };
+    });
+    return total;
+  };
+
+  it("are deterministic: the same seed gives the same result twice", () => {
+    const env = withSpeed(0.1);
+    expect(runEpisode(env, still, 5)).toEqual(runEpisode(env, still, 5));
+    expect(travelled(env, 9)).toBe(travelled(env, 9));
+  });
+
+  it("move slower the lower the speed, and not at all at 0", () => {
+    const [d0, d1, d5] = [0, 0.1, 0.5].map((v) => travelled(withSpeed(v)));
+    expect(d0).toBeLessThan(0.01);
+    expect(d1).toBeGreaterThan(d0 + 5); // top speed 0.1 x 80 = 8 u/s, 3 s, minus the ramp up
+    expect(d5).toBeGreaterThan(2 * d1);
+  });
+
+  it("heal back to their start energy and no further, and do not starve", () => {
+    let hit = false;
+    const seen: number[] = [];
+    const env = { ...withSpeed(0, 20), seconds: 6 };
+    runEpisode(env, still, 3, null, {}, (eco: Ecosystem) => {
+      const s = eco.members.find((m) => m.id === 1)!.creature.state;
+      if (!hit) { s.energy = 5; hit = true; }
+      seen.push(s.energy);
+    });
+    expect(seen[seen.length - 1]).toBeCloseTo(20, 6);
+    expect(Math.max(...seen)).toBeLessThanOrEqual(20);
+    expect(seen[60]).toBeGreaterThan(seen[1]!); // regaining after the hit
+  });
+
+  it("leave rivals without a speed as they were (no regen, no cap)", () => {
+    let e = 0;
+    runEpisode({ ...withSpeed(undefined, 20), seconds: 2 }, still, 3, null, {}, (eco: Ecosystem) => { e = eco.members.find((m) => m.id === 1)!.creature.state.energy; });
+    expect(e).toBeLessThan(20); // pays living cost
+  });
+
+  it("are checked: speed must lie in 0 to 1 and survives checkEnv", () => {
+    const ok = checkEnv(withSpeed(0.2), "ecosystem", 0);
+    expect(typeof ok).not.toBe("string");
+    expect((ok as EnvSpec).rivals[0]!.speed).toBe(0.2);
+    for (const bad of [-0.1, 1.5, NaN, "0.1"]) expect(typeof checkEnv({ ...base, rivals: [{ species: 0, count: 1, source: "random", speed: bad }] }, "ecosystem", 0)).toBe("string");
+    expect((checkEnv({ ...base, rivals: [{ species: 0, count: 1, source: "random" }] }, "ecosystem", 0) as EnvSpec).rivals[0]).not.toHaveProperty("speed");
+  });
+});
+
+describe("ramShare (faster mover takes less collision damage)", () => {
+  const env: EnvSpec = { id: "rs", name: "rs", description: "rs", world: "ecosystem", role: 0, size: [400, 400], food: 0, poison: 0, foodRegrow: 0, seconds: 5, rivals: [{ species: 0, count: 1, source: "random" }], collisionDamage: true, reward: {}, tags: [] };
+  // A full-thrust runner at x=100 heading +x and a still target at x=200, 5000 energy each, so neither dies from the pushing; returns [runner, target] energy after 2.5 s.
+  const hit = (ramShare?: number): [number, number] => {
+    const e = { ...env, ...(ramShare === undefined ? {} : { ramShare }) };
+    const run = charger("ecosystem", 0.999);
+    const rest = charger("ecosystem", 0);
+    const cast = [
+      { species: 0, plan: run.plan, genome: run.genome, x: 100, y: 200, heading: 0, hue: 0, energy: 5000 },
+      { species: 0, plan: rest.plan, genome: rest.genome, x: 200, y: 200, heading: Math.PI / 2, hue: 0, energy: 5000 },
+    ];
+    const eco = new Ecosystem(envConfig(e, 1), null, { cast });
+    for (let t = 0; t < 150; t++) eco.step();
+    return [eco.members[0]!.creature.state.energy, eco.members[1]!.creature.state.energy];
+  };
+
+  it("keeps the symmetric damage when left out, and moves it onto the slower one when set", () => {
+    const [r0, t0] = hit();
+    const [r1, t1] = hit(1);
+    expect(r1).toBeGreaterThan(r0 + 5); // the runner loses less
+    expect(t1).toBeLessThan(t0 - 5); // the still target loses more
+    expect(r1 + t1).toBeCloseTo(r0 + t0, 6); // the total damage is the same
+  });
+
+  it("gives equal shares to a head-on pair, and a ramShare of 0 changes nothing", () => {
+    expect(hit(0)).toEqual(hit());
+    const a = { energy: 100, alive: true } as CreatureState;
+    const b = { energy: 100, alive: true } as CreatureState;
+    hurt(a, b, 10, 0.3, 0, 0.5, 1.5);
+    expect([a.energy, b.energy]).toEqual([98.5, 95.5]);
+  });
+
+  it("is checked by checkEnv and kept", () => {
+    const ok = checkEnv({ ...env, ramShare: 0.7 }, "ecosystem", 0) as EnvSpec;
+    expect(ok.ramShare).toBe(0.7);
+    for (const bad of [-0.1, 1.1, NaN, "1"]) expect(typeof checkEnv({ ...env, seconds: 10, ramShare: bad }, "ecosystem", 0)).toBe("string");
+    expect(checkEnv({ ...env, seconds: 10 }, "ecosystem", 0)).not.toHaveProperty("ramShare");
   });
 });

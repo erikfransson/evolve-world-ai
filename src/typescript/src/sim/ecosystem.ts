@@ -65,6 +65,7 @@ export interface CastMember {
   heading: number;
   hue: number;
   energy?: number; // the species' start energy when left out
+  upkeep?: number; // energy per second besides thrust and turning, the plan's when left out (RL drifters set a negative one)
 }
 
 // One creature of the ecosystem with its family record. Objects are recycled after death, so hold ids, not references.
@@ -672,6 +673,7 @@ export class Ecosystem {
   private found(i: number, c: CastMember, fromPool: boolean): void {
     const m = this.spawn(c.genome, c.plan, c.x, c.y, c.heading, c.energy ?? this.species[c.species]!.startEnergy, c.species, this.traits);
     m.hue = c.hue;
+    if (c.upkeep !== undefined) m.creature.setUpkeep(c.upkeep);
     this.lineages.describe(i, c.hue, c.species, fromPool);
   }
 

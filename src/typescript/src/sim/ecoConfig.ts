@@ -33,6 +33,7 @@ export interface EcoConfig extends EngineConfig {
     collisionDamage: boolean; // a bounce costs both creatures energy; one that dies gives its energy to the other
     killEnergy: number; // extra energy for the survivor of a lethal bump, on top of the dead one's (a carcass); 0 makes a kill pay at most the damage taken
     damagePerSpeed: number; // energy each loses per unit/s of approach speed; 0.3 gives 48 for a head-on hit at top speed (160)
+    ramShare?: number; // 0 to 1, RL only: the faster mover of a bump takes less damage (see Contacts.bump); left out, both lose the same
     wasm: boolean; // sense and think on the WebAssembly SIMD kernels in src/sim/wasm/ when available (f32, not bit-identical to JS)
     thinkEvery: number; // each creature senses and thinks every this many ticks (staggered by id) and keeps its last outputs in between; 1 is every tick
     foundersVary: boolean; // founders draw their body plans from the ranges below, otherwise all get the config plan

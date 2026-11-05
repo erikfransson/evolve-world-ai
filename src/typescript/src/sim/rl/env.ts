@@ -37,6 +37,7 @@ export interface Rivals {
   count: number;
   source: RivalSource;
   energy?: number; // start energy, the species' when left out
+  speed?: number; // 0 to 1: the group are drifters (a brain that only thrusts at this share of full thrust, 0 = still) that hold their energy; left out they act as `source` says
 }
 
 export type Range = [number, number];
@@ -66,6 +67,7 @@ export interface EnvSpec {
   // Per-episode variation (#44): each factor f draws a multiplier in [1 - f, 1 + f] from the seed for the start energies,
   // the rival counts, the food and poison (and regrowth), and the world sides.
   augment?: { energy?: number; count?: number; items?: number; size?: number };
+  ramShare?: number; // 0 to 1, with collision damage: the faster mover of a bump takes less damage (eco.ramShare); left out, both lose the same
   killEnergy?: number; // with collision damage: extra energy for the survivor of a lethal bump (eco.killEnergy)
   foodVisibleFor?: number; // seconds: after this, rays pass through food (it stays edible), so finding it takes memory
   // Per item, per kill, per second alive, x energy signal at the end, and per second left when the learner has eaten all the
@@ -148,6 +150,7 @@ export function envConfig(env: EnvSpec, seed: number): EcoConfig {
     poisonMaxDensity: env.poison / per,
     collisionDamage: env.collisionDamage ?? false,
     killEnergy: env.killEnergy ?? 0,
+    ...(env.ramShare === undefined ? {} : { ramShare: env.ramShare }),
     birthEnergyRange: [BIRTHLESS, BIRTHLESS],
     birthDrift: 0,
     planDrift: 0,
@@ -228,6 +231,7 @@ function randomRival(env: EnvSpec, seed: number, role: number, rivalSeed: number
 }
 
 // A brain that only thrusts at `speed` (0 to 1 of full thrust) and never turns: one ray, one silent neuron, a thrust bias.
+export const DRIFTER_HEAL = 30; // energy per second a drifting rival (Rivals.speed) regains, up to its start energy
 const DUEL_MARGIN = 30; // world units: the charger starts at least this far off, the learner at least distance plus this from the walls
 const CHARGER_PLAN: PlanView = { rayCount: 1, raySpread: 0, rayLength: 10, hiddenLayers: [1], memoryShort: 0, memoryLong: 0 };
 export function charger(world: EnvWorld, speed: number): Learner {
@@ -302,6 +306,16 @@ export function castFor(env: EnvSpec, config: EcoConfig, learner: Learner, seed:
   for (const rv of env.rivals) {
     const hue = species[rv.species]!.hue < 0 ? 205 : species[rv.species]!.hue;
     for (let k = 0; k < rv.count; k++) {
+      if (rv.speed !== undefined) {
+        // A drifter's thrust cost is paid back and it heals DRIFTER_HEAL energy/s (capped at its start, see runEpisode): gentle taps fall behind, a hard hit kills.
+        const d = charger(env.world, rv.speed);
+        const m = place(rv.species, d.plan, d.genome, hue);
+        if (start) m.y = Math.min(h - r, Math.max(r, start.y + rng.range(-20, 20)));
+        if (rv.energy !== undefined) m.energy = rv.energy;
+        m.upkeep = -(config.creature.thrustCost * rv.speed + DRIFTER_HEAL);
+        cast.push(m);
+        continue;
+      }
       let rival: Learner;
       const listId = rv.source === "self" ? (rv.species === env.role ? SELF : null) : rv.source.startsWith("library:") && libraryFits(rv.source.slice(8), env.world, rv.species) ? rv.source.slice(8) : null;
       if (rv.source === "pool" && pool?.length) rival = poolLearner(env, pool[rng.int(pool.length)]!);
@@ -361,6 +375,8 @@ export function runEpisode(
   const reach = 2 * config.creature.radius + 2; // bumping distance, for crediting a ram
   const ticks = Math.round(env.seconds / config.dt);
   const out: EpisodeResult = { reward: 0, food: 0, kills: 0, rams: 0, seconds: 0, energy: 0, poison: 0, poisonEnergy: 0, firstFood: -1, elapsed: 0, clearTime: -1, cells: 0, died: 0 };
+  const drifters: { m: (typeof eco.members)[number]; cap: number }[] = []; // rivals that heal back to their start energy
+  { let id = 1; for (const rv of env.rivals) for (let k = 0; k < rv.count; k++, id++) if (rv.speed !== undefined) { const m = eco.members.find((o) => o.id === id); if (m) drifters.push({ m, cap: m.creature.state.energy }); } }
   const rivalEnergy = new Map<number, number>(); // each rival's energy after the previous tick, for crediting rams
   if (env.collisionDamage) for (const m of eco.members) if (m.id !== 0) rivalEnergy.set(m.id, m.creature.state.energy); // so a death on the first tick is judged too
   let poisonBefore = eco.poisonEaten; // the world's poison count before the tick, to skip poison deaths
@@ -422,6 +438,7 @@ export function runEpisode(
       act(eco.get(0)!.creature);
       eco.finishTick();
     } else eco.step();
+    for (const d of drifters) if (d.m.creature.state.alive && d.m.creature.state.energy > d.cap) d.m.creature.state.energy = d.cap;
     onTick?.(eco);
     if (env.collisionDamage) for (const m of eco.members) if (m.id !== 0) rivalEnergy.set(m.id, m.creature.state.energy);
     const me = eco.get(0);
@@ -464,7 +481,7 @@ export function scoreLearner(env: EnvSpec, learner: Learner, seeds: readonly num
 
 // Bounds a custom env must keep, so a page or a shared file cannot ask for a world that stalls the browser.
 const MAX_RIVAL_GROUPS = 8;
-export const ENV_LIMITS = { side: [200, 3000], items: [0, 300], regrow: [0, 10], seconds: [5, 180], rivals: [0, 30], weight: [-10, 10], energy: [1, 500], layoutSize: [20, 400], poisonDamage: [1, 100], killEnergy: [0, MAX_KILL_ENERGY], fast: [0, 0.3], augment: [0, 0.9], distance: [0, 1500], speed: [0, 1] } as const;
+export const ENV_LIMITS = { side: [200, 3000], items: [0, 300], regrow: [0, 10], seconds: [5, 180], rivals: [0, 30], weight: [-10, 10], energy: [1, 500], layoutSize: [20, 400], poisonDamage: [1, 100], killEnergy: [0, MAX_KILL_ENERGY], fast: [0, 0.3], augment: [0, 0.9], distance: [0, 1500], speed: [0, 1], ramShare: [0, 1] } as const;
 
 // A custom env rebuilt from checked fields, for the learner's world and species, or a reason it is not valid.
 export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | string {
@@ -489,7 +506,8 @@ export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | s
     if (typeof src === "string" && src.startsWith("library:") && !libraryFits(src.slice(8), world, rv.species as number)) return "library rivals must come from an env of this world whose learner is of the rival's species";
     if (src === "self" && rv.species !== role) return "self rivals must be of the learner's species";
     if (rv.energy !== undefined && !n(rv.energy, L.energy)) return `rival energy must be ${L.energy[0]} to ${L.energy[1]}`;
-    rivals.push({ species: rv.species as number, count: rv.count as number, source: src as RivalSource, ...(rv.energy === undefined ? {} : { energy: rv.energy as number }) });
+    if (rv.speed !== undefined && !n(rv.speed, L.speed)) return `rival speed must be ${L.speed[0]} to ${L.speed[1]}`;
+    rivals.push({ species: rv.species as number, count: rv.count as number, source: src as RivalSource, ...(rv.energy === undefined ? {} : { energy: rv.energy as number }), ...(rv.speed === undefined ? {} : { speed: rv.speed as number }) });
   }
   if (rivals.reduce((a, r) => a + r.count, 0) > L.rivals[1]) return `at most ${L.rivals[1]} rivals`;
   const w = (v.reward ?? {}) as Record<string, unknown>;
@@ -501,6 +519,7 @@ export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | s
   }
   if (v.learnerEnergy !== undefined && !n(v.learnerEnergy, L.energy)) return `start energy must be ${L.energy[0]} to ${L.energy[1]}`;
   if (v.poisonDamage !== undefined && !n(v.poisonDamage, L.poisonDamage)) return `poison damage must be ${L.poisonDamage[0]} to ${L.poisonDamage[1]}`;
+  if (v.ramShare !== undefined && !n(v.ramShare, L.ramShare)) return `ram share must be ${L.ramShare[0]} to ${L.ramShare[1]}`;
   if (v.fast !== undefined && !n(v.fast, L.fast)) return `fast patches must cover ${L.fast[0]} to ${L.fast[1]}`;
   const range = (x: unknown, lim: readonly [number, number]): x is Range => Array.isArray(x) && x.length === 2 && n(x[0], lim) && n(x[1], lim) && x[0] <= x[1];
   let duel: EnvSpec["duel"];
@@ -573,6 +592,7 @@ export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | s
     ...(v.poisonDamage === undefined ? {} : { poisonDamage: v.poisonDamage as number }),
     ...(v.killEnergy === undefined ? {} : { killEnergy: v.killEnergy as number }),
     ...(v.fast === undefined ? {} : { fast: v.fast as number }),
+    ...(v.ramShare === undefined ? {} : { ramShare: v.ramShare as number }),
     ...(duel ? { duel } : {}),
     ...(augment ? { augment } : {}),
     ...(v.foodVisibleFor === undefined ? {} : { foodVisibleFor: v.foodVisibleFor as number }),

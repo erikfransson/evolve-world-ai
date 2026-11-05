@@ -143,6 +143,12 @@ export class Creature {
     return this.energyUpkeep;
   }
 
+  // Overrides the plan's upkeep until the next reset (RL drifters).
+  setUpkeep(v: number): void {
+    this.energyUpkeep = v;
+    if (this.resident) this.resident.upkeep = v;
+  }
+
   // Energy per second right now: upkeep with old age, plus thrust and turning as of the last tick.
   get drain(): number {
     const c = this.config.creature;
