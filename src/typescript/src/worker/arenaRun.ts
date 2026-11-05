@@ -1,7 +1,7 @@
 import { deriveSeed } from "../sim/rng.ts";
 import type { PoolEntry } from "../sim/seedPool.ts";
 import type { EnvSpec, Library } from "../sim/rl/env.ts";
-import { DEFAULT_POISON_COST } from "../sim/rl/envs.ts";
+import { DEFAULT_POISON_COST, MAX_POISON_COST } from "../sim/rl/envs.ts";
 import { serialiseLearner } from "../sim/rl/library.ts";
 import { recordingBuffers } from "../sim/rl/recording.ts";
 import { BackpropTrainer } from "../sim/rl/ppo.ts";
@@ -30,7 +30,7 @@ function backpropOptions(o: { lr?: number; episodes?: number } | undefined): { l
 
 // ES runs charge each poison bite in the env reward (backprop has its own penalty); an env that sets its own poison cost keeps it.
 function withPoisonCost(envs: EnvSpec[], start: Pick<Start, "method" | "options">): EnvSpec[] {
-  const cost = start.method === "backprop" ? 0 : clamp(start.options.poisonCost, 0, 10, DEFAULT_POISON_COST);
+  const cost = start.method === "backprop" ? 0 : clamp(start.options.poisonCost, 0, MAX_POISON_COST, DEFAULT_POISON_COST);
   return cost === 0 ? envs : envs.map((e) => (e.reward.poison === undefined ? { ...e, reward: { ...e.reward, poison: cost } } : e));
 }
 

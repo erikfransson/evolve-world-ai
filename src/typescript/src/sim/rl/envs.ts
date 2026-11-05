@@ -383,7 +383,7 @@ export const ENVS: readonly EnvSpec[] = [
   bigger({ id: "live-commons", name: "Crowded commons", description: "Little food and many weak foragers. Ramming them pays.", size: [1000, 1000], food: 20, poison: 10, foodRegrow: 0.5, rivals: 25, rivalEnergy: 25, reward: { food: 0.5, ram: 2, survive: 0.02 } }),
 ];
 
-// A mix of envs that trained well in the D3 runs (poison down, survival up): offered as a preset by the Arena.
+// A mix of envs that trained well (poison down, survival up): offered as a preset by the Arena. live-now is listed twice on purpose, as an extra weight when the list is cycled as a mix.
 export const RECOMMENDED_MIX: readonly string[] = ["nibble", "live-now", "far-food", "live-patch", "minefield", "live-famine", "stings", "live-now"];
 
 export const envById = (id: string): EnvSpec | undefined => ENVS.find((e) => e.id === id);
@@ -410,3 +410,4 @@ export function groupOf(env: Pick<EnvSpec, "tags">): EnvGroup {
 
 // Cost per poison bite that ES runs charge in the env reward unless an env sets its own (backprop has its own penalty instead).
 export const DEFAULT_POISON_COST = 1;
+export const MAX_POISON_COST = 10; // upper end of the ES poison cost setting, 0 turns it off

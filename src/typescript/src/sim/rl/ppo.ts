@@ -6,6 +6,7 @@ import type { StatefulRng } from "../rng.ts";
 import type { PoolEntry } from "../seedPool.ts";
 import { OUTPUT_SIZE } from "../sensors.ts";
 import type { Rng } from "../types.ts";
+import { DEFAULT_POISON_COST } from "./envs.ts";
 import { earlyWeight, layoutConfig, runEpisode } from "./env.ts";
 import type { EnvSpec, Learner, Library } from "./env.ts";
 import { HELD_BASE, scoreGenomes } from "./trainer.ts";
@@ -57,7 +58,7 @@ export interface PpoDiag {
   epochs: number;
 }
 
-export const PPO_DEFAULTS: PpoOptions = { episodes: 16, epochs: 2, minibatch: 256, lr: 3e-3, criticLr: 3e-3, clip: 0.2, gamma: 0.995, lambda: 0.95, logStd: -0.5, entropy: 0, criticHidden: 32, repeat: 3, everyTick: false, targetKl: 0, logStdMin: -1, poisonPenalty: 1 };
+export const PPO_DEFAULTS: PpoOptions = { episodes: 16, epochs: 2, minibatch: 256, lr: 3e-3, criticLr: 3e-3, clip: 0.2, gamma: 0.995, lambda: 0.95, logStd: -0.5, entropy: 0, criticHidden: 32, repeat: 3, everyTick: false, targetKl: 0, logStdMin: -1, poisonPenalty: DEFAULT_POISON_COST };
 
 const ACTIONS = OUTPUT_SIZE; // turn, thrust
 const LOG_2PI = Math.log(2 * Math.PI);

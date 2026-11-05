@@ -88,6 +88,7 @@ const ppo = new Ppo(envList, learner, sizes, {
   episodes: num("episodes"), epochs: num("epochs"), minibatch: num("minibatch"), lr: num("lr"), logStd: num("logstd"), entropy: num("entropy"), repeat: num("repeat"), gamma: num("gamma"), everyTick: values["every-tick"], targetKl: num("target-kl"), poisonPenalty: num("poison-penalty"), logStdMin, diag: values.diag !== undefined,
 }, num("seed"), pool);
 const resumed = values.state !== undefined && existsSync(values.state);
+let start = NaN; // the held-out score of the first chunk's start, kept over the chunks
 if (values.state && values["repeat-then"]) {
   console.error("error: --repeat-then cannot be resumed, so not with --state");
   process.exit(1);
@@ -96,10 +97,11 @@ const { diag: _diag, ...settingOptions } = ppo.options;
 const settings = { envs: envList.map((e) => e.id), poison: num("poison"), from: values.from, seed: num("seed"), plan: learner.plan, options: settingOptions };
 if (resumed) {
   try {
-    const saved = JSON.parse(readFileSync(values.state!, "utf8")) as { settings?: unknown };
+    const saved = JSON.parse(readFileSync(values.state!, "utf8")) as { settings?: unknown; heldStart?: number | null };
     if (saved.settings) assertSameSettings(saved.settings, settings);
     else console.error("warning: the state file has no settings to compare (saved by an older version)");
     ppo.load(saved as Parameters<Ppo["load"]>[0]);
+    start = saved.heldStart ?? NaN;
   } catch (e) {
     console.error(`error: ${values.state}: ${(e as Error).message}`);
     process.exit(1);
@@ -122,7 +124,7 @@ const held = (): number => {
   perEnv = envList.map((e) => scoreLearner(e, { plan: learner.plan, genome: ppo.theta }, seeds, pool).reward);
   return perEnv.reduce((a, b) => a + b, 0) / perEnv.length;
 };
-const start = resumed ? NaN : held();
+if (!resumed) start = held();
 console.log(`env ${envList.map((e) => e.id).join(",")}, from ${values.from}, sizes ${sizes.join("-")}; held-out ${start.toFixed(3)} on ${seeds.length} seeds`);
 const curve: { iter: number; episodes: number; seconds: number; train: number; held?: number }[] = [{ iter: 0, episodes: 0, seconds: 0, train: NaN, held: start }];
 const [switchAt, switchTo] = values["repeat-then"] ? values["repeat-then"].split(":").map(Number) : [Infinity, 1];
@@ -157,8 +159,11 @@ while (ppo.iter < num("iters") && busy < num("seconds") * 1000) {
 }
 const end = held();
 if (values.state) {
-  writeFileAtomic(values.state, JSON.stringify({ ...ppo.save(), settings }));
+  writeFileAtomic(values.state, JSON.stringify({ ...ppo.save(), settings, heldStart: start }));
 }
-if (values.diag) writeFileSync(resolve(values.diag), csv.join("\n") + "\n");
+if (values.diag && csv.length) {
+  const more = resumed && existsSync(resolve(values.diag)); // a resumed chunk appends its rows to the earlier chunks, without a second header
+  (more ? appendFileSync : writeFileSync)(resolve(values.diag), (more ? csv.slice(1) : csv).join("\n") + "\n");
+}
 console.log(`held-out ${start.toFixed(3)} -> ${end.toFixed(3)} after ${ppo.episodesPlayed} episodes, ${(busy / 1000).toFixed(0)} s`);
 if (values.out) writeFileSync(resolve(values.out), JSON.stringify({ ...serialiseLearner({ plan: learner.plan, genome: ppo.theta }), env: envList.map((e) => e.id).join(","), from: values.from, heldStart: start, heldEnd: end, curve }) + "\n");

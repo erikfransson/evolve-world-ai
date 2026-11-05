@@ -1,4 +1,5 @@
 import { MEMORY_UNITS, memoryUnits } from "../sim/config.ts";
+import { DEFAULT_POISON_COST, MAX_POISON_COST } from "../sim/rl/envs.ts";
 import { PLAN_LIMITS } from "../sim/rl/creatureFile.ts";
 import type { CreatureFile } from "../sim/rl/creatureFile.ts";
 import type { BodyPlan } from "../sim/sensors.ts";
@@ -58,10 +59,10 @@ export interface RunConfig {
   tiles: string; // replays per env, one of LAYOUT_CHOICES
   bpLr: number; // backprop learning rate
   bpEpisodes: number; // backprop episodes per update
-  poisonCost: number; // ES only: reward cost per poison bite, 0 to 10
+  poisonCost: number; // ES only: reward cost per poison bite, 0 to MAX_POISON_COST
 }
 
-export const DEFAULT_RUN: RunConfig = { method: "es", population: 100, iterations: 5000, episodes: 1, sigma: 0.08, lr: 0.02, tiles: "auto", bpLr: 0.003, bpEpisodes: 16, poisonCost: 1 };
+export const DEFAULT_RUN: RunConfig = { method: "es", population: 100, iterations: 5000, episodes: 1, sigma: 0.08, lr: 0.02, tiles: "auto", bpLr: 0.003, bpEpisodes: 16, poisonCost: DEFAULT_POISON_COST };
 
 const rr = range<RunConfig>;
 const es = (c: RunConfig): boolean => c.method === "es";
@@ -83,7 +84,7 @@ const RUN_SECTIONS: readonly Section<RunConfig>[] = [
       rr({ id: "population", label: "Population", tip: "Candidate brains tried per iteration. More is steadier and slower.", min: 10, max: 5000, step: 10, log: true, enabledWhen: es, get: (c) => c.population, set: (c, v) => { c.population = v; } }),
       rr({ id: "iterations", label: "Iterations", tip: "The run stops after this many iterations (updates for Backprop RL).", min: 100, max: 200000, step: 100, log: true, get: (c) => c.iterations, set: (c, v) => { c.iterations = v; } }),
       rr({ id: "episodes", label: "Episodes per candidate", tip: "Worlds each candidate plays per environment and iteration. More is less noisy and slower.", min: 1, max: 40, step: 1, enabledWhen: es, get: (c) => c.episodes, set: (c, v) => { c.episodes = v; } }),
-      rr({ id: "poisonCost", label: "Poison cost", tip: "Reward lost per poison bite, so candidates learn to avoid poison (Evolutionary RL). 0 turns it off. Scores include it. Backprop RL has its own.", min: 0, max: 10, step: 0.5, enabledWhen: es, get: (c) => c.poisonCost, set: (c, v) => { c.poisonCost = v; } }),
+      rr({ id: "poisonCost", label: "Poison cost", tip: "Reward lost per poison bite, so candidates learn to avoid poison (Evolutionary RL). 0 turns it off. Scores include it. Backprop RL has its own.", min: 0, max: MAX_POISON_COST, step: 0.5, enabledWhen: es, get: (c) => c.poisonCost, set: (c, v) => { c.poisonCost = v; } }),
       { kind: "choice", id: "tiles", label: "Replays per environment", tip: "Every chosen environment gets its own tiles replaying the trained creature (Evolutionary RL: the iteration's best candidate; Backprop RL: the current policy), each on a different layout. Auto shows 4 layouts of a single environment, 2 each of two or three, and one each of more.", options: LAYOUT_CHOICES.map((n) => [n, n === "auto" ? "Auto" : n] as const), get: (c) => c.tiles, set: (c, v) => { c.tiles = v; } },
       rr({ id: "sigma", label: "Mutation size", tip: "How far each candidate is nudged from the current brain (sigma).", min: 0.01, max: 0.3, step: 0.01, fmt: "dens", advanced: true, enabledWhen: es, get: (c) => c.sigma, set: (c, v) => { c.sigma = v; } }),
       rr({ id: "lr", label: "Learning rate", tip: "How far the brain moves toward the better-scoring direction each iteration.", min: 0.002, max: 0.1, step: 0.002, fmt: "dens3", advanced: true, enabledWhen: es, get: (c) => c.lr, set: (c, v) => { c.lr = v; } }),

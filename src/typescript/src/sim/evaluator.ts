@@ -57,6 +57,7 @@ export function evaluateCreatures(
   record?: RecordOptions,
 ): { fitness: Float64Array; frames: Trajectories } {
   const count = indices.length;
+  // fitness is the run-0 score only when runs > 1 (not the mean the generation stored)
   const multi = runsOf(config) > 1;
   const fitness = new Float64Array(count);
   const top = new TopFrames({ ...record, maxOthers: count - 1 });

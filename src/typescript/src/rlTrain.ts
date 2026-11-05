@@ -159,12 +159,16 @@ if (ckpts.length && !values["ckpt-dir"]) {
 }
 let cpu = 0; // cumulative CPU seconds of the training steps, over all chunks
 let firstHeld = NaN; // the held-out score of the first chunk's start, kept over the chunks
-const settings = { envs: envs.map((e) => e.id), selfplay: values.selfplay ? procSpec : false, from: values.from, seed, plan: learner.plan, genomeLength: learner.genome.length, pairs, sigma: num("sigma"), lr: num("lr"), episodes, vary, poison: poisonGiven ? poisonCost : null };
+const settings = { envs: envs.map((e) => e.id), selfplay: values.selfplay ? procSpec : false, from: values.from, seed, plan: learner.plan, genomeLength: learner.genome.length, pairs, sigma: num("sigma"), lr: num("lr"), episodes, vary, poison: poisonCost };
 const resumed = values.state !== undefined && existsSync(values.state);
 if (resumed) {
   try {
     const saved = JSON.parse(readFileSync(values.state!, "utf8")) as { trainer: Parameters<Trainer["load"]>[0]; cpu: number; settings?: unknown; heldStart?: number | null };
-    if (saved.settings) assertSameSettings(saved.settings, settings);
+    if (saved.settings) {
+      const s = saved.settings as { poison?: number | null };
+      if (s.poison === null) s.poison = DEFAULT_POISON_COST; // older states stored null for the unset default
+      assertSameSettings(s, settings);
+    }
     else console.error("warning: the state file has no settings to compare (saved by an older version)");
     if (!(Number.isFinite(saved.cpu) && saved.cpu >= 0)) throw new Error("saved state has a bad CPU time");
     trainer.load(saved.trainer);
