@@ -6,6 +6,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+## 0.4.0 (2026-11-05)
+
 - Trials: the world canvas zooms (wheel, pinch, drag to pan, double-click zooms in, Fit button resets) with the shared Live camera, never past the whole world (#70).
 - Trials: the preview before Start puts the creature in open space, clear of rock, and turns it slowly so its rays sweep; the run itself is unchanged (#73).
 - Live World (#75): the follow zoom is less close: the view spans at least 900 world units (was 4.5 ray lengths, 675 for the default), or 3 ray lengths for long rays. It also used the default ray length until the creature details arrived, so long rays were followed too close; it now aims again with the creature's own.
