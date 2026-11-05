@@ -155,7 +155,7 @@ export function placeLayout(layout: Layout, size: readonly [number, number], foo
     }
     return { items, start, walls };
   } else if (layout.kind === "horizon") {
-    // Distances scale with the learner's sight R (50 is the shortest a design has; capped so the world still holds them), so a long-sighted design starts blind too.
+    // Distances scale with the learner's sight R (a design's sight can be as short as 10, so R is floored at 50; capped so the world still holds them), so a long-sighted design starts blind too.
     const R = Math.max(50, Math.min(rayLength ?? 150, (Math.min(w, h) / 2 - 2 * MARGIN) / 2.2));
     const rc = 25; // cluster radius
     start = { x: w / 2, y: h / 2 };

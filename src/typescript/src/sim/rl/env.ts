@@ -73,7 +73,7 @@ export interface EnvSpec {
   // ram: per rival that dies touching the learner while collision damage is on.
   // cross: per poison wall of the layout the learner got past (at any moment), a first reward on the way to food beyond it.
   // early: per item or ram, times the share of the episode still left at the bite (1 at the start, 0 at the end).
-  // explore: per grid cell (side = the learner's ray length) it newly entered, the start cell not counted.
+  // explore: per grid cell (side = max(20, the learner's ray length)) it newly entered, the start cell not counted.
   // poison: a cost per poison item the learner eats, a lethal bite included (positive values subtract; off when left out).
   reward: { explore?: number; food?: number; kill?: number; survive?: number; energy?: number; fast?: number; ram?: number; cross?: number; early?: number; poison?: number };
   proc?: ProcSpec; // self-play (S1): a new crowded world every episode, played by runCrowdEpisode; every other field is then unused
@@ -101,7 +101,7 @@ export interface EpisodeResult {
   firstFood: number; // seconds until the first bite, -1 when none
   elapsed: number; // seconds really played (seconds counts a cleared episode as lived to the end)
   clearTime: number; // seconds until the learner ate every starting item (speed-scored envs without regrowth), -1 when not
-  cells: number; // grid cells (side = the learner's ray length) the learner visited, its start cell included
+  cells: number; // grid cells (side = max(20, the learner's ray length)) the learner visited, its start cell included
   died: number; // 1 when the learner died before the episode ended, else 0
 }
 

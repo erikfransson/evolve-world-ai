@@ -2,8 +2,9 @@ import { createRng, deriveSeed } from "../rng.ts";
 import type { StatefulRng } from "../rng.ts";
 import type { EnvSpec } from "./env.ts";
 import { Es } from "./es.ts";
+import { assertFinite } from "./resume.ts";
 import type { Rollout, RolloutTask } from "./ppo.ts";
-import type { EsOptions } from "./es.ts";
+import type { EsOptions, EsState } from "./es.ts";
 
 // One ES training loop for the rlTrain CLI and the Arena worker: score candidates over the envs on shared seeds, step, check on held-out seeds.
 
@@ -63,6 +64,13 @@ export interface RlTrainer {
   setEnvs(scorer: Scorer, envs: readonly EnvSpec[]): void;
 }
 
+export interface TrainerState {
+  es: EsState;
+  rng: number;
+  nextSeeds: number[] | null;
+  bests: number[][];
+}
+
 export class Trainer implements RlTrainer {
   readonly es: Es;
   private readonly rng: StatefulRng;
@@ -85,6 +93,26 @@ export class Trainer implements RlTrainer {
   setEnvs(scorer: Scorer, envs: readonly EnvSpec[]): void {
     this.scorer = scorer;
     this.envs = envs.length;
+  }
+
+  // Resume state between steps: the ES state, the rng and the seeds drawn ahead (opt-in, JSON safe).
+  save(): TrainerState {
+    return { es: this.es.save(), rng: this.rng.state, nextSeeds: this.nextSeeds, bests: this.bests.map((b) => Array.from(b)) };
+  }
+
+  load(s: TrainerState): void {
+    assertFinite("trainer rng", s.rng);
+    if (s.nextSeeds) assertFinite("trainer seed", s.nextSeeds);
+    if (s.nextSeeds && s.nextSeeds.length !== this.episodes) throw new Error("trainer state does not fit (the seeds drawn ahead are for another number of episodes)");
+    for (const b of s.bests) {
+      if (b.length !== this.es.theta.length) throw new Error("trainer state does not fit");
+      assertFinite("trainer best genome", b);
+    }
+    this.es.load(s.es);
+    this.rng.state = s.rng;
+    this.nextSeeds = s.nextSeeds;
+    this.bests.length = 0;
+    for (const b of s.bests) this.bests.push(Float32Array.from(b));
   }
 
   get iter(): number {

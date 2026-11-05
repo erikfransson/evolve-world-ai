@@ -10,6 +10,7 @@ import { earlyWeight, layoutConfig, runEpisode } from "./env.ts";
 import type { EnvSpec, Learner, Library } from "./env.ts";
 import { HELD_BASE, scoreGenomes } from "./trainer.ts";
 import type { RlTrainer, Score, Scorer, StepResult } from "./trainer.ts";
+import { assertFinite } from "./resume.ts";
 
 // Backprop RL: PPO (Schulman et al. 2017) on the creature's own brain. The policy samples the pre-tanh turn and thrust of the brain's
 // output layer from a Gaussian with a learned, state-free log-std; the mean action (the brain as it is) is what plays held-out and in the
@@ -390,6 +391,12 @@ export class Mlp {
   }
 }
 
+export interface AdamState {
+  m: number[];
+  v: number[];
+  t: number;
+}
+
 export class Adam {
   private readonly m: Float64Array;
   private readonly v: Float64Array;
@@ -400,6 +407,21 @@ export class Adam {
     this.lr = lr;
     this.m = new Float64Array(n);
     this.v = new Float64Array(n);
+  }
+
+  // Moments and step count, for resuming a run (JSON safe: the numbers round-trip exactly).
+  save(): AdamState {
+    return { m: Array.from(this.m), v: Array.from(this.v), t: this.t };
+  }
+
+  load(s: AdamState): void {
+    if (s.m.length !== this.m.length || s.v.length !== this.v.length) throw new Error("Adam state does not fit");
+    assertFinite("Adam moment", s.m);
+    assertFinite("Adam moment", s.v);
+    assertFinite("Adam step", s.t);
+    this.m.set(s.m);
+    this.v.set(s.v);
+    this.t = s.t;
   }
 
   // Descends along grad.
@@ -552,6 +574,19 @@ export interface PpoStep {
   std: number[]; // policy std per action
 }
 
+export interface PpoState {
+  theta: number[];
+  critic: number[];
+  logStd: number[];
+  policyAdam: AdamState;
+  stdAdam: AdamState;
+  criticAdam: AdamState;
+  rng: number;
+  iter: number;
+  episodesPlayed: number;
+  envOffset: number;
+}
+
 export class Ppo {
   readonly theta: Float32Array; // the brain's genome
   readonly logStd: Float64Array;
@@ -598,6 +633,33 @@ export class Ppo {
     this.policyAdam = new Adam(this.theta.length, this.options.lr);
     this.stdAdam = new Adam(ACTIONS, this.options.lr);
     this.criticAdam = new Adam(this.critic.length, this.options.criticLr);
+  }
+
+  // Everything an update changes, so a run can stop and carry on later with identical results (opt-in, JSON safe).
+  save(): PpoState {
+    return {
+      theta: Array.from(this.theta), critic: Array.from(this.critic), logStd: Array.from(this.logStd),
+      policyAdam: this.policyAdam.save(), stdAdam: this.stdAdam.save(), criticAdam: this.criticAdam.save(),
+      rng: this.rng.state, iter: this.iter, episodesPlayed: this.episodesPlayed, envOffset: this.envOffset,
+    };
+  }
+
+  load(s: PpoState): void {
+    if (s.theta.length !== this.theta.length || s.critic.length !== this.critic.length || s.logStd.length !== this.logStd.length) throw new Error("PPO state does not fit");
+    assertFinite("PPO weight", s.theta);
+    assertFinite("PPO critic weight", s.critic);
+    assertFinite("PPO log-std", s.logStd);
+    assertFinite("PPO counter", [s.rng, s.iter, s.episodesPlayed, s.envOffset]);
+    this.theta.set(s.theta);
+    this.critic.set(s.critic);
+    this.logStd.set(s.logStd);
+    this.policyAdam.load(s.policyAdam);
+    this.stdAdam.load(s.stdAdam);
+    this.criticAdam.load(s.criticAdam);
+    this.rng.state = s.rng;
+    this.iter = s.iter;
+    this.episodesPlayed = s.episodesPlayed;
+    this.envOffset = s.envOffset;
   }
 
   // Holds each sample for n ticks from the next update on (a schedule, e.g. 3 to explore from a fresh design, then 1).
