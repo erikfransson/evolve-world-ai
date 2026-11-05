@@ -11,6 +11,7 @@ import { createRng } from "../../../src/typescript/src/sim/rng.ts";
 import { parsePool } from "../../../src/typescript/src/sim/seedPool.ts";
 import { OUT_THRUST, OUT_TURN } from "../../../src/typescript/src/sim/sensors.ts";
 import type { PlanView } from "../../../src/typescript/src/sim/sensors.ts";
+import type { Ecosystem } from "../../../src/typescript/src/sim/ecosystem.ts";
 import type { Creature } from "../../../src/typescript/src/sim/creature.ts";
 import { genomeLengthIn, layoutConfig, poolLearner, randomLearner, runEpisode } from "../../../src/typescript/src/sim/rl/env.ts";
 import type { EnvSpec, EpisodeResult, Learner } from "../../../src/typescript/src/sim/rl/env.ts";
@@ -28,11 +29,13 @@ const { values } = parseArgs({
     pools: { type: "string", default: "8" },
     randoms: { type: "string", default: "8" },
     out: { type: "string" },
+    reach: { type: "string", default: "3" },
   },
 });
 const seeds = heldSeeds(Number(values.seeds));
 const pool = parsePool(JSON.parse(readFileSync("public/pool.json", "utf8"))).entries;
 const founders = JSON.parse(readFileSync("public/live-founders.json", "utf8")).founders as { id: string; plan: PlanView; genome: number[] }[];
+const REACH = Number(values.reach); // bites that only the far patch can add up to (pasture: 3 near bites)
 const mean = (x: number[]): number => x.reduce((a, b) => a + b, 0) / x.length;
 
 const body = (rayLength: number): PlanView => ({ rayCount: 1, raySpread: 0, rayLength, hiddenLayers: [1], memoryShort: 0, memoryLong: 0 });
@@ -79,10 +82,51 @@ function seek(fallback: Act): Act {
   };
 }
 
-interface Row { policy: string; group: string; reward: number; food: number; alive: number; cells: number; zero: number }
+// Seeks food; with none in view goes straight until 3 bites came within 8 s (a rich spot), then circles in place (stays at it).
+function adaptive(seed: number, w: number, h: number): Act {
+  const go = straight(w, h);
+  const stay: Act = (c) => { c.outputs[OUT_TURN] = 1; c.outputs[OUT_THRUST] = 0.25; };
+  void seed;
+  const times: number[] = [];
+  let prev = -1;
+  let t = 0;
+  let camping = false;
+  const inner: Act = (c) => (camping ? stay(c) : go(c));
+  const seeker = seek(inner);
+  return (c) => {
+    const e = c.state.energy;
+    if (prev >= 0 && e - prev > 10) times.push(t);
+    prev = e;
+    t++;
+    if (!camping && times.filter((x) => t - x < 240).length >= 3) camping = true;
+    seeker(c);
+  };
+}
+
+interface Row { policy: string; group: string; reward: number; food: number; late: number; reach: number; gap: number; alive: number; cells: number; zero: number }
 function run(env: EnvSpec, name: string, group: string, learner: Learner, act?: (seed: number) => Act): Row {
-  const eps: EpisodeResult[] = seeds.map((s) => runEpisode(env, learner, s, pool, {}, undefined, act?.(s)));
-  return { policy: name, group, reward: mean(eps.map((e) => e.reward)), food: mean(eps.map((e) => e.food)), alive: mean(eps.map((e) => e.seconds)) / env.seconds, cells: mean(eps.map((e) => e.cells)), zero: eps.filter((e) => e.food === 0).length / eps.length };
+  const eps: EpisodeResult[] = [];
+  const gaps: number[] = []; // trail layout: path walked between consecutive bites after the first, over the gap between singles
+  const R = Math.max(50, Math.min(learner.plan.rayLength, 250));
+  for (const sd of seeds) {
+    let last: { x: number; y: number } | null = null;
+    let path = 0;
+    let eaten = 0;
+    const hook = env.layout?.kind === "trail" ? (eco: Ecosystem): void => {
+      const me = eco.get(0);
+      if (!me) return;
+      const st = me.creature.state;
+      if (last) path += Math.hypot(st.x - last.x, st.y - last.y);
+      last = { x: st.x, y: st.y };
+      if (me.eaten > eaten) {
+        if (eaten >= 1 && eaten <= 2) gaps.push(path / (1.8 * R + 10));
+        eaten = me.eaten;
+        path = 0;
+      }
+    } : undefined;
+    eps.push(runEpisode(env, learner, sd, pool, {}, hook, act?.(sd)));
+  }
+  return { policy: name, group, reward: mean(eps.map((e) => e.reward)), food: mean(eps.map((e) => e.food)), late: mean(eps.map((e) => e.late)), reach: eps.filter((e) => e.food > REACH).length / eps.length, gap: gaps.length ? mean(gaps) : NaN, alive: mean(eps.map((e) => e.seconds)) / env.seconds, cells: mean(eps.map((e) => e.cells)), zero: eps.filter((e) => e.food === 0).length / eps.length };
 }
 
 const all: Record<string, Row[]> = {};
@@ -97,14 +141,15 @@ for (const id of values.envs!.split(",")) {
     const sl = blank(sighted(R));
     rows.push(run(env, `seek-wiggle R${R}`, "seeker", sl, (s) => seek(wiggle(s))));
     rows.push(run(env, `seek-straight R${R}`, "seeker", sl, () => seek(straight(env.size[0], env.size[1]))));
+    rows.push(run(env, `seek-adaptive R${R}`, "seeker", sl, (s) => adaptive(s, env.size[0], env.size[1])));
   }
   for (let k = 0; k < Number(values.pools); k++) rows.push(run(env, `pool:${k}`, "founder", poolLearner(env, pool[k]!)));
   for (const f of founders) if (f.genome.length === genomeLengthIn("ecosystem", f.plan)) rows.push(run(env, f.id, "founder", { plan: f.plan, genome: Float32Array.from(f.genome) }));
   for (let k = 1; k <= Number(values.randoms); k++) rows.push(run(env, `random:${k}`, "random", randomLearner(env, k)));
   for (const d of DESIGN_PANEL) rows.push(run(env, `${d.id} (R${d.plan.rayLength})`, "panel", designLearner(d)));
   all[id] = rows;
-  console.log(`\n${id} (${seeds.length} seeds): reward food alive cells noFood`);
-  for (const r of rows) console.log(`  ${r.policy.padEnd(26)} ${r.group.padEnd(9)} ${r.reward.toFixed(2).padStart(6)} ${r.food.toFixed(2).padStart(5)} ${r.alive.toFixed(2).padStart(5)} ${r.cells.toFixed(1).padStart(6)} ${r.zero.toFixed(2)}`);
+  console.log(`\n${id} (${seeds.length} seeds): reward food late reach gap alive cells noFood`);
+  for (const r of rows) console.log(`  ${r.policy.padEnd(26)} ${r.group.padEnd(9)} ${r.reward.toFixed(2).padStart(6)} ${r.food.toFixed(2).padStart(5)} ${r.late.toFixed(2).padStart(5)} ${r.reach.toFixed(2)} ${r.gap.toFixed(2)} ${r.alive.toFixed(2).padStart(5)} ${r.cells.toFixed(1).padStart(6)} ${r.zero.toFixed(2)}`);
 }
 if (values.out) writeFileSync(values.out, JSON.stringify(all, null, 1) + "\n");
 process.exit(0);

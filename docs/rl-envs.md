@@ -18,6 +18,7 @@ Self-play envs (Melee, Brawl) score against the learner's own league, so their h
 | Far food (far-food) | Find food            | 3 food in a 400 x 400 room, search                  | 0.03 -> 0.61   | 0.53 -> 0.89 |
 | Patch (patch)       | Find food            | all food in one patch, start in the middle          | 0.00 -> 2.27   | 1.41 -> 1.63 |
 | Over the horizon (horizon) | Explore        | 10 food in 3 clusters 2 to 3 sight lengths out, 1600 x 1600 | 0.23 -> 5.92, 0.00 -> 2.36, 0.00 -> 2.69 (bodies 1 to 3) | |
+| Sparse trail (trail) | Explore            | line of 3 singles and a cache of 5, each 1.8 sight lengths on, start facing 30-60 degrees off | 0.55 -> 3.92, 0.00 -> 7.53, 0.00 -> 1.00 (bodies 1 to 3) | |
 | Clean sweep (sweep5) | Time pressure       | 5 food in 350 x 350, food 0.2 + clock left 0.2      | not trained (see Time pressure notes) | |
 | Minefield           | Avoid and find a way | 4 food among 12 lethal poison                       | 0.16 -> 0.94   | 0.47 -> 0.47 |
 | Fence (fence)       | Avoid and find a way | stinging wall with a gap, 2 food this side, +1 per wall crossed | 0.06 -> 1.84 (200 it) | PPO 60 s: 0.63 -> 1.94 |
@@ -198,6 +199,42 @@ Dropped after redesigns, same probes:
 - **Moving on** (`leaving` layout: a small start patch, then three patches out of sight, livingCost 4 to 5). Three versions: (1) start patch of 3, next patches in random directions, energy 60, 60 s: every learner starved after 11% to 31% of the episode (E3), the best founder scored 3.3 of 12; (2) start patch of 2, 14 food, energy 80, 40 s: random:1 trained 0.44 -> 6.28 with cells 2 -> 26, Horizon training reached 58% of it, but E1 1.30, E4 326 seeds, and seek + straight scored under seek + wiggle (1.31 against 3.50 at R 60), because the first two bites decide most of the reward; (3) as (2) with each patch roughly ahead of the last: random:1 learned only the start patch (0.44 -> 2.00, cells 2.0 -> 2.2) and Horizon training reached 104% of it (E1 1.11, E4 274 seeds, seek + straight 2.03 against seek + wiggle 2.50 at R 60). No version has both a baseline gap and a distinct learned skill, so it is dropped (a hook that spawns the next patch when one is cleared was not tried: the engine's item pool is fixed at the start).
 - **Explorer** (`wide` layout: sparse food, none within 1.5 R of the start, plus the `explore` reward). Two versions (1600 x 1600, 8 food, 0.04 per cell; 1200 x 1200, 12 food, 0.03). The reward dominates: blind straight roaming scored 4.1 at R 60, above every founder but one (5.5), at the first draft's weight 0.1, and after lowering it the trained creature gained 1.7 almost all from cells (food 0.05 -> 0.28 in version 1, 0.02 -> 0.61 in version 2). Horizon training reaches 96% and Patch 104% of its gain: a duplicate. The `explore` reward and the cell count stay in the engine for custom envs.
 - A shortest sight of 125 instead of 50 in Over the horizon (`horizon-f125`, so short-sighted bodies travel farther): random:1 gain fell to 0.88 and Far food reached 132%, so the floor of R stays 50.
+
+## Explore round 2 (2026-11-05, track X2)
+
+Erik asked for more takes on exploration than Horizon's "find fixed clusters out of sight once".
+Four candidates were built on the X1 probes (`x1-explore.ts` now also prints the second-half food `late`, the share of episodes above `--reach` bites, rooms entered and a trail gap ratio; `t10-cross.ts` prints `late` and reach for each trained creature). One ships.
+New engine facts: `EpisodeResult.late` is the food eaten in the second half of the episode, and a layout reads the learner's sight R as in Horizon. Rays are zero-width lines against item circles of radius 4, so a wall of items 18 apart (the `rooms` spacing) lets a ray through about 56% of the time; walls that must hide a room need items 8 apart.
+
+**Sparse trail** (Explore, `trail`): 1800 x 1800, three single bites and a cache of 5 (radius 25) on a line through the middle in a random direction, each 1.8 R + 10 further on, so the next one is out of sight on leaving the last; the first single is at max(20, 0.8 R), in view. The start heading is 0.5 to 1 rad off the line (random side), so going straight on misses it and the creature must turn once and then hold its course. 75 s, start energy 300, reward food 1.
+Baselines (32 seeds, food per episode, max 8; blind bodies have ray length R, seekers 12 rays all round and steer at food they see):
+
+| Policy                          | R 60 | R 150 | R 250 |
+| ------------------------------- | ---- | ----- | ----- |
+| spin in place                   | 0.00 | 0.00  | 0.00  |
+| wiggle (blind)                  | 0.66 | 0.25  | 0.13  |
+| straight, turn at wall (blind)  | 0.69 | 0.09  | 0.03  |
+| seek + wiggle                   | 3.16 | 2.88  | 1.59  |
+| seek + straight                 | 4.41 | 3.53  | 2.94  |
+
+Founders: pool:3 3.88, grazer 1.44, oracle 1.22, juggernaut 0.81 (best 49% of the maximum). The panel designs score 0 to 1.00 untrained (the 1.00 is the single in view), random designs 0 to 0.44.
+E1 2.16, E2 0.00, E3 0.73, E4 misses (113 seeds for 25% of the gap; sdPaired 2.63), E5 76% of random designs score 0, E8 14.9 ms per episode (a large world).
+Training (ES pop 200, 60 iterations, 64 seeds, bodies 1 / 2 / 3): food 0.55 -> 3.92, 0.00 -> 7.53, 0.00 -> 1.00. Body 3 barely learns it, so it learns on 2 of 3 bodies.
+Distinctness, share of Trail's own food gain (bodies 1 / 2 / 3): Far food 34% / 27% / 55%, Patch 27% / 13% / 34%, Sparse plains 12% / 20% / 84%, Islands -4% / 55% / 97%, Hand to mouth 13% / 13% / 86%, Horizon 19% / 31% / 227%, Sprint 60% / 0% / 0%.
+In the other direction, Trail training reaches this share of Horizon's gain: 62% / 107% / 0%.
+Honest reading: on bodies 1 and 2 Trail is clearly its own skill (no relative above 60%, Horizon training reaches 19% and 31%), and Trail training transfers to Horizon on body 2 (107%), so Horizon does not need it but Trail needs more than Horizon gives. On body 3 Trail does not learn within 60 iterations, and the relatives look like duplicates only because its own gain is 1.0.
+The shortcut to avoid: with the start heading within 0.25 rad of the line, blind straight scored 2.25 (28%) at R 150; at 0.5 to 1 rad it scores 0.09.
+Gap size matters: with singles 1.3 R + 10 apart a wiggle found the next single as well as a straight seeker (seek + wiggle 3.44, seek + straight 2.69 at R 150); at 1.8 R + 10 straight beats wiggle at every R.
+
+Dropped:
+- **Patrol** (`wide` layout: big empty world, 2 bites in sight and 2 beyond 1.5 R, the rest of 14 food regrowing at 0.5 per second at random spots; 1400 x 1400, 60 s, start energy 300). The baseline is good (spin 0, blind straight 1.0, seek + straight 6.1 against seek + wiggle 5.1 at R 150, second half 3.06 against 1.84; E1 3.23, E2 0.02, E4 40 seeds, E5 71%, E8 16.9 ms). The first draft (1600 x 1600, 12 food, regrow 0.4, start energy 150) starved every mover after 40% of the episode. Training fails the distinctness gate: Horizon training reaches 84% / 83% / 100% of Patrol's gain, Hand to mouth 88% on bodies 1 and 3 (gains 1.59, 4.55, 3.84; on body 1 the second-half food did not rise at all, 0.25 -> 0.25). Keeping moving where food regrows is the same travel skill Horizon trains.
+- **Greener pastures** (3 bites in view, 10 out of sight at 2 to 3 R, 40 s). The baseline did not separate directed from random travel at the reach measure (straight 1.97 against wiggle 1.16 at R 150, reversed at R 60), and eating the near bites then leaving is Horizon's skill. A trickling poor patch needs patch-local regrowth, which the engine does not have (regrowth is uniform over the map). Not trained.
+- **Hidden rooms** (`grid` layout: 3 x 3 rooms, 12 wall segments of poison items 8 apart with one door of 70 each, food in 3 of the 8 outer rooms, 1800 x 1800, 90 s). Every design died at the walls: alive 0.14 to 0.30 of the episode at sting 25 and at sting 10, 2 to 3 rooms entered, best founder 0.75 of 6 food, E1 1.70, E4 1873 seeds for 10%, random designs zero on every seed. A wall of touching items is a bath of stings for a creature that scrapes along it; the walls would need to be passable by cost, which makes them Four rooms again.
+
+**Explore round 3 (X3): Greener pastures with springs, dropped.** The idea was explore-exploit: leave a sure poor patch for a rich one and then stay, which needs food that regrows at a place. The engine regrows uniformly, so the build added an opt-in engine piece (`ItemEconomy.sites`, passed as an `Ecosystem` option, regrowth in discs chosen by weight; behaviour unchanged when unset) and a `springs` layout: 2 bites at a poor spring 0.6 R from the start, a rich spring (4 times the weight) 2 to 3 R away, out of sight, 1600 x 1600, regrowth 0.5 per second, 60 s, start energy 300, reward food 1. Both the piece and the layout are removed again.
+- Version 1 (global cap 12): ES learns it strongly (random:1 1.17 -> 19.67, random:2 0.00 -> 12.70) but the relatives do as well: Horizon training reaches 89% and Sparse trail 87% of its gain on body 1, Far food 92% on body 2 (Trail 70%, Horizon 23%). Baseline (32 seeds, R 150, food): spin 0, seek + wiggle 7.66, seek + straight 11.91, seek + straight then circling after 3 bites in 8 s 11.00. So a traveller does as well as a stayer and the "stay" skill is not needed.
+- Version 2 (cap 4, so a rich spring holds a stock of 4 and only staying pays; reach measure above 10 bites): the scripted baseline stays flat (seek + straight 4.63, seek + wiggle 5.41, seek + circle 5.91, none above 10), and ES from random:1 only learns the poor spring (1.17 -> 5.23, cells 4.5 -> 5.2) while Hand to mouth, Horizon and Sparse trail training reach 102%, 176% and 152% of that gain.
+- Why: a memoryless policy cannot tell "nothing in view because I have not found the rich spring" from "nothing in view because I emptied it", so staying cannot be learned without memory, and the travel skills already collect the stock. Comb, migrating food, radial density and rivals stripping home were not built: all reduce to the same two risks (travel training solves them, or they need memory).
 
 ## Notes
 

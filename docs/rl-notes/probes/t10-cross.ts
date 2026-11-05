@@ -1,11 +1,12 @@
 // T10 distinctness probe: train ES on each env of --train from a random body, score the result on each env of --targets.
 // Run from src/typescript: node ../../docs/rl-notes/probes/t10-cross.ts --targets thorny,bitter-rows --train thorny,bitter-rows,stings,minefield --bodies 1,2 --iters 60 --out /tmp/x.json
 // X1 addition: cells covered per episode (grid side = the learner's ray length) before and after, and for every other training env.
+// Also prints the late food (second half of the episode) and the share of episodes with more than --reach bites (the far patch of pasture), and the same for each other training env.
 // Prints, per body and target, the target's own gain (trained on itself, 64 held-out seeds) and every other training env's gain as a share of it (85% or more is a duplicate), plus poison bites per episode before and after.
 
 import { writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
-import { randomLearner, scoreLearner } from "../../../src/typescript/src/sim/rl/env.ts";
+import { randomLearner, runEpisode, scoreLearner } from "../../../src/typescript/src/sim/rl/env.ts";
 import type { Learner } from "../../../src/typescript/src/sim/rl/env.ts";
 import { envById } from "../../../src/typescript/src/sim/rl/envs.ts";
 import { Trainer, heldSeeds } from "../../../src/typescript/src/sim/rl/trainer.ts";
@@ -22,6 +23,7 @@ const { values } = parseArgs({
     seeds: { type: "string", default: "64" },
     threads: { type: "string", default: "2" },
     out: { type: "string" },
+    reach: { type: "string", default: "3" },
   },
 });
 const targets = values.targets!.split(",").map((id) => envById(id)!);
@@ -45,6 +47,11 @@ for (const body of values.bodies!.split(",").map(Number)) {
     const base = scoreLearner(t, start, seeds);
     const own = scoreLearner(t, trained.get(t.id)!, seeds);
     const gain = own.reward - base.reward;
+    const extra = (l: Learner): string => {
+      const eps = seeds.map((sd) => runEpisode(t, l, sd));
+      return `late ${(eps.reduce((a, e) => a + e.late, 0) / eps.length).toFixed(2)} reach ${(eps.filter((e) => e.food > Number(values.reach)).length / eps.length).toFixed(2)}`;
+    };
+    console.log(`  ${t.id} start ${extra(start)}; own ${extra(trained.get(t.id)!)}; ${trainIds.filter((id) => id !== t.id).map((id) => `${id} ${extra(trained.get(id)!)}`).join("; ")}`);
     const row: Record<string, unknown> = { body, target: t.id, start: base.reward, own: own.reward, gain, poisonStart: base.poison, poisonOwn: own.poison, foodStart: base.food, foodOwn: own.food, cellsStart: base.cells, cellsOwn: own.cells, share: {}, cellShare: {} };
     const line: string[] = [];
     for (const id of trainIds) {
