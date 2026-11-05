@@ -6,6 +6,8 @@ import { wasmAvailable } from "../../src/typescript/src/sim/wasm/loader.ts";
 import { creatureFile, parseCreatureFile } from "../../src/typescript/src/sim/rl/creatureFile.ts";
 import type { EnvSpec } from "../../src/typescript/src/sim/rl/env.ts";
 import { ENVS, ENV_GROUPS, RECOMMENDED_MIX, envById, groupOf } from "../../src/typescript/src/sim/rl/envs.ts";
+import { DESIGN_PANEL } from "../../src/typescript/src/sim/rl/designPanel.ts";
+import { OUT_THRUST } from "../../src/typescript/src/sim/sensors.ts";
 import { placeLayout } from "../../src/typescript/src/sim/rl/layouts.ts";
 import { Es, centredRanks, standardise } from "../../src/typescript/src/sim/rl/es.ts";
 import { parseLibrary, serialiseLearner } from "../../src/typescript/src/sim/rl/library.ts";
@@ -240,10 +242,10 @@ describe("env groups", () => {
     expect(groupOf(envById("live-patch")!)).toBe("Bigger");
   });
 
-  it("gives every forager group at least three envs", () => {
+  it("gives every forager group at least three envs (Explore has one, see docs/rl-envs.md)", () => {
     const count = new Map<string, number>();
     for (const e of ENVS) if (e.tags.includes("forager")) count.set(groupOf(e), (count.get(groupOf(e)) ?? 0) + 1);
-    for (const g of ENV_GROUPS) if (g !== "Advanced" && g !== "Custom") expect(count.get(g) ?? 0).toBeGreaterThanOrEqual(3);
+    for (const g of ENV_GROUPS) if (g !== "Advanced" && g !== "Custom" && g !== "Explore") expect(count.get(g) ?? 0).toBeGreaterThanOrEqual(3);
   });
 
   it("holds four Time pressure envs, Lap among them, filed with navigation tags but under Time pressure", () => {
@@ -354,6 +356,70 @@ describe("chain layout and energy-pressure env", () => {
       expect(runEpisode(e, randomLearner(e, 2), 3).seconds).toBeGreaterThan(0);
     }
     expect(groupOf(envById("hand-to-mouth")!)).toBe("Time pressure");
+  });
+});
+
+describe("horizon layout and the explore reward", () => {
+  const foodOf = (p: ReturnType<typeof placeLayout>) => p.items.filter((i) => i.kind === HIT_FOOD);
+  const env = envById("horizon")!;
+  const at = (seed: number, R: number) => placeLayout(env.layout!, env.size, env.food, env.poison, seed, R);
+
+  it("places the clusters beyond the learner's sight for any ray length, in other directions for other seeds, the same for the same seed", () => {
+    const dirs = new Set<number>();
+    for (const R of [50, 60, 150, 250]) {
+      for (let seed = 1; seed <= 25; seed++) {
+        const placed = at(seed, R);
+        expect(foodOf(placed)).toHaveLength(env.food);
+        for (const it of placed.items) {
+          expect(it.x >= 0 && it.x <= env.size[0] && it.y >= 0 && it.y <= env.size[1]).toBe(true);
+          expect(Math.hypot(it.x - placed.start.x, it.y - placed.start.y)).toBeGreaterThan(R);
+        }
+        // three clusters of 4, 3 and 3 in turn: different clusters lie more than a sight apart
+        const f = foodOf(placed);
+        const cl = (k: number): number => (k < 4 ? 0 : k < 7 ? 1 : 2);
+        for (let a = 0; a < f.length; a++) for (let b = a + 1; b < f.length; b++) if (cl(a) !== cl(b)) expect(Math.hypot(f[a]!.x - f[b]!.x, f[a]!.y - f[b]!.y)).toBeGreaterThan(R);
+        expect(at(seed, R)).toEqual(placed);
+        if (R === 150) dirs.add(Math.round(Math.atan2(f[0]!.y - placed.start.y, f[0]!.x - placed.start.x) * 4));
+      }
+    }
+    expect(dirs.size).toBeGreaterThan(5); // the direction is drawn per seed, so it cannot be memorised
+  });
+
+  it("starts every panel design with no food in sight", () => {
+    for (const d of DESIGN_PANEL) for (let seed = 1; seed <= 5; seed++) for (const it of foodOf(at(seed, d.plan.rayLength))) expect(Math.hypot(it.x - 800, it.y - 800)).toBeGreaterThan(d.plan.rayLength);
+  });
+
+  it("scores the explore reward per new cell once: 0 when unset, 0 standing still, cells not ticks when moving", () => {
+    const learner = randomLearner(env, 3);
+    const walk = (c: { outputs: Float32Array }): void => { c.outputs[OUT_THRUST] = 1; };
+    const a = runEpisode({ ...env, reward: { food: 1 } }, learner, 4, null, {}, undefined, walk);
+    expect(a.cells).toBeGreaterThan(1);
+    expect(a.reward).toBe(a.food); // unset: food only
+    expect(runEpisode({ ...env, reward: { food: 1, explore: 0 } }, learner, 4, null, {}, undefined, walk).reward).toBe(a.reward);
+    const b = runEpisode({ ...env, reward: { explore: 1 } }, learner, 4, null, {}, undefined, walk);
+    expect(b.cells).toBe(a.cells);
+    expect(b.reward).toBe(b.cells - 1); // the start cell is free
+    expect(b.cells).toBeLessThan(Math.round(env.seconds * 30) / 5); // a payment per tick would be far more
+    const still = runEpisode({ ...env, reward: { explore: 1 } }, learner, 4, null, {}, undefined, (c) => { c.outputs[OUT_THRUST] = 0; c.outputs[0] = 1; });
+    expect(still.cells).toBe(1);
+    expect(still.reward).toBe(0);
+  });
+
+  it("keeps the layout and the explore weight through checkEnv, and files the env under Explore", () => {
+    const checked = checkEnv(JSON.parse(JSON.stringify(env)), "ecosystem", 0) as EnvSpec;
+    expect(typeof checked).not.toBe("string");
+    expect(checked.layout).toEqual(env.layout);
+    expect(groupOf(env)).toBe("Explore");
+    expect((checkEnv({ ...JSON.parse(JSON.stringify(env)), reward: { explore: 0.3 } }, "ecosystem", 0) as EnvSpec).reward.explore).toBe(0.3);
+    expect(checkEnv({ ...JSON.parse(JSON.stringify(env)), reward: { explore: 99 } }, "ecosystem", 0)).toMatch(/explore/);
+  });
+});
+
+describe("clean sweep", () => {
+  it("is a Time pressure env with a small room, five bites and no poison", () => {
+    const e = envById("sweep5")!;
+    expect([e.size, e.food, e.poison, e.reward]).toEqual([[350, 350], 5, 0, { food: 0.2, fast: 0.2 }]);
+    expect(groupOf(e)).toBe("Time pressure");
   });
 });
 
