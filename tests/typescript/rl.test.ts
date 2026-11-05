@@ -415,6 +415,64 @@ describe("horizon layout and the explore reward", () => {
   });
 });
 
+describe("trail layout", () => {
+  const trail = envById("trail")!;
+  const at = (e: EnvSpec, seed: number, R = 150) => placeLayout(e.layout!, e.size, e.food, e.poison, seed, R);
+
+  it("trail spaces the singles 1.8 R + 10 apart on a line through the middle, only the first in view, the start heading 0.5 to 1 rad off the line", () => {
+    for (const R of [50, 60, 150, 250]) {
+      for (let seed = 1; seed <= 20; seed++) {
+        const p = at(trail, seed, R);
+        const f = p.items;
+        expect(f).toHaveLength(8);
+        const g = 1.8 * R + 10;
+        const first = Math.max(20, 0.8 * R);
+        expect(Math.hypot(f[0]!.x - p.start.x, f[0]!.y - p.start.y)).toBeCloseTo(first, 6);
+        for (const k of [1, 2]) expect(Math.hypot(f[k]!.x - f[k - 1]!.x, f[k]!.y - f[k - 1]!.y)).toBeCloseTo(g, 6);
+        for (const it of f.slice(1)) expect(Math.hypot(it.x - p.start.x, it.y - p.start.y)).toBeGreaterThan(R);
+        for (const it of f) expect(it.x >= 0 && it.x <= trail.size[0] && it.y >= 0 && it.y <= trail.size[1]).toBe(true);
+        const u = Math.atan2(f[1]!.y - f[0]!.y, f[1]!.x - f[0]!.x);
+        const off = Math.atan2(Math.sin(p.start.heading! - u), Math.cos(p.start.heading! - u));
+        expect(Math.abs(off)).toBeGreaterThanOrEqual(0.5 - 1e-9);
+        expect(Math.abs(off)).toBeLessThanOrEqual(1 + 1e-9);
+        const cache = { x: p.start.x + Math.cos(u) * (first + 3 * g), y: p.start.y + Math.sin(u) * (first + 3 * g) };
+        for (const it of f.slice(3)) expect(Math.hypot(it.x - cache.x, it.y - cache.y)).toBeLessThanOrEqual(25 + 1e-6);
+        expect(at(trail, seed, R)).toEqual(p);
+      }
+    }
+  });
+
+  it("counts late food as exactly the bites after the first half of the episode", () => {
+    const learner = randomLearner(trail, 3);
+    const seek = (c: { outputs: Float32Array; rays: readonly { kind: number; closeness: number }[]; rayOffsets: Float32Array }): void => {
+      let best = 0;
+      let at = -1;
+      c.rays.forEach((r, i) => { if (r.kind === HIT_FOOD && r.closeness > best) { best = r.closeness; at = i; } });
+      c.outputs[OUT_THRUST] = 1;
+      c.outputs[0] = at < 0 ? 0 : Math.max(-1, Math.min(1, 3 * c.rayOffsets[at]!));
+    };
+    let total = 0;
+    for (let seed = 1; seed <= 8; seed++) {
+      let atHalf = -1;
+      let ticks = 0;
+      const r = runEpisode(trail, learner, seed, null, {}, (eco) => { ticks++; if (ticks === Math.floor((trail.seconds * 30) / 2)) atHalf = eco.get(0)!.eaten; }, seek);
+      if (atHalf >= 0) expect(r.late).toBe(r.food - atHalf);
+      else expect(r.late).toBe(0);
+      total += r.food;
+    }
+    expect(total).toBeGreaterThan(0);
+  });
+
+  it("keeps its layout through checkEnv and files it under Explore", () => {
+    for (const e of [trail]) {
+      const checked = checkEnv(JSON.parse(JSON.stringify(e)), "ecosystem", 0) as EnvSpec;
+      expect(typeof checked).not.toBe("string");
+      expect(checked.layout).toEqual(e.layout);
+      expect(groupOf(e)).toBe("Explore");
+    }
+  });
+});
+
 describe("clean sweep", () => {
   it("is a Time pressure env with a small room, five bites and no poison", () => {
     const e = envById("sweep5")!;

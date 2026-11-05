@@ -17,10 +17,11 @@ export type Layout =
   | { kind: "stops"; count?: number } // food in count (3) small clusters round a central start, dealt evenly (pair with foodVisibleFor): visit one, then recall where the others were
   | { kind: "flash" } // food at a middle distance around a central start, in all directions (pair with foodVisibleFor)
   | { kind: "chain" } // food in a winding chain, each 85 from the last (inside a default look), the first 60 from the learner, who faces it
+  | { kind: "trail" } // a line of 3 single bites and a cache of 5, each 1.8 sight lengths on from the last (out of sight on leaving it), the first in view; the start heading is 0.5 to 1 rad off the line (needs rayLength)
   | { kind: "horizon" } // the learner alone in the middle, 3 small food clusters 2 to 3 sight lengths away in random directions (needs rayLength)
   | { kind: "sprint"; near?: number }; // a strip with the learner at one end and the food at the other (near of it halfway, as a first step)
 
-export const LAYOUT_KINDS = ["fence", "maze", "patch", "rooms", "islands", "sprint", "ring", "cuedoor", "flash", "stops", "chain", "horizon"] as const;
+export const LAYOUT_KINDS = ["fence", "maze", "patch", "rooms", "islands", "sprint", "ring", "cuedoor", "flash", "stops", "chain", "horizon", "trail"] as const;
 
 export interface Placed {
   items: ItemSpot[];
@@ -49,7 +50,7 @@ function hwall(items: ItemSpot[], y: number, x0: number, x1: number, gx: number,
 const spot = (rng: Rng, x0: number, x1: number, y0: number, y1: number): { x: number; y: number } => ({ x: rng.range(x0, x1), y: rng.range(y0, y1) });
 
 // The layout's items (food food items, poison extra scattered poison besides the walls) and the learner's start for this seed.
-// rayLength is the learner's sight, read only by the horizon layout, which place things out of sight of it.
+// rayLength is the learner's sight, read only by the horizon and trail layouts, which place things out of sight of it.
 export function placeLayout(layout: Layout, size: readonly [number, number], food: number, poison: number, seed: number, rayLength?: number): Placed {
   const rng = createRng(deriveSeed(seed, 0x1a70));
   const [w, h] = size;
@@ -152,6 +153,25 @@ export function placeLayout(layout: Layout, size: readonly [number, number], foo
       const a = rng.next() * 2 * Math.PI;
       const d = 30 * Math.sqrt(rng.next());
       items.push({ x: c.x + d * Math.cos(a), y: c.y + d * Math.sin(a), kind: HIT_FOOD });
+    }
+    return { items, start, walls };
+  } else if (layout.kind === "trail") {
+    // Singles 1.8 R + 10 apart, so the next is out of sight from the last; the line runs through the middle of the world in a random direction.
+    const R = Math.max(50, Math.min(rayLength ?? 150, 250));
+    const g = 1.8 * R + 10;
+    const first = Math.max(20, 0.8 * R);
+    const total = first + 3 * g;
+    const u = rng.next() * 2 * Math.PI;
+    const [ux, uy] = [Math.cos(u), Math.sin(u)];
+    const at = (d: number): { x: number; y: number } => ({ x: w / 2 + ux * (d - total / 2), y: h / 2 + uy * (d - total / 2) });
+    start = { ...at(0), heading: u + (rng.next() < 0.5 ? -1 : 1) * rng.range(0.5, 1) }; // off the line by 30 to 60 degrees, so going straight on misses the first single
+    const ds = [first, first + g, first + 2 * g];
+    for (const d of ds) items.push({ ...at(d), kind: HIT_FOOD });
+    const cache = at(total);
+    for (let k = 0; k < food - 3; k++) {
+      const a = rng.next() * 2 * Math.PI;
+      const d = 25 * Math.sqrt(rng.next());
+      items.push({ x: cache.x + d * Math.cos(a), y: cache.y + d * Math.sin(a), kind: HIT_FOOD });
     }
     return { items, start, walls };
   } else if (layout.kind === "horizon") {

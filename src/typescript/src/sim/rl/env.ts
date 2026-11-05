@@ -103,6 +103,7 @@ export interface EpisodeResult {
   firstFood: number; // seconds until the first bite, -1 when none
   elapsed: number; // seconds really played (seconds counts a cleared episode as lived to the end)
   clearTime: number; // seconds until the learner ate every starting item (speed-scored envs without regrowth), -1 when not
+  late: number; // food eaten in the second half of the episode
   cells: number; // grid cells (side = max(20, the learner's ray length)) the learner visited, its start cell included
   died: number; // 1 when the learner died before the episode ended, else 0
 }
@@ -374,7 +375,7 @@ export function runEpisode(
   if (onTick || act) eco.detail = 0;
   const reach = 2 * config.creature.radius + 2; // bumping distance, for crediting a ram
   const ticks = Math.round(env.seconds / config.dt);
-  const out: EpisodeResult = { reward: 0, food: 0, kills: 0, rams: 0, seconds: 0, energy: 0, poison: 0, poisonEnergy: 0, firstFood: -1, elapsed: 0, clearTime: -1, cells: 0, died: 0 };
+  const out: EpisodeResult = { reward: 0, food: 0, kills: 0, rams: 0, seconds: 0, energy: 0, poison: 0, poisonEnergy: 0, firstFood: -1, elapsed: 0, clearTime: -1, cells: 0, late: 0, died: 0 };
   const drifters: { m: (typeof eco.members)[number]; cap: number }[] = []; // rivals that heal back to their start energy
   { let id = 1; for (const rv of env.rivals) for (let k = 0; k < rv.count; k++, id++) if (rv.speed !== undefined) { const m = eco.members.find((o) => o.id === id); if (m) drifters.push({ m, cap: m.creature.state.energy }); } }
   const rivalEnergy = new Map<number, number>(); // each rival's energy after the previous tick, for crediting rams
@@ -424,6 +425,8 @@ export function runEpisode(
   const at = (x: number, y: number): number => Math.min(gy - 1, Math.max(0, Math.floor(y / cell))) * gx + Math.min(gx - 1, Math.max(0, Math.floor(x / cell)));
   const st0 = eco.get(0)?.creature.state;
   if (st0) { visited[at(st0.x, st0.y)] = 1; out.cells = 1; }
+  const half = Math.floor(ticks / 2);
+  let atHalf = -1; // food eaten when the first half ended
   let minY = Infinity; // the learner's highest point (walls run across, the food lies above them)
   // Only speed-scored envs without regrowth end early, and only when the learner itself ate every item (not a rival).
   const clearable = env.reward.fast !== undefined && env.food > 0 && env.foodRegrow === 0;
@@ -453,6 +456,7 @@ export function runEpisode(
     minY = Math.min(minY, me.creature.state.y);
     const ci = at(me.creature.state.x, me.creature.state.y);
     if (visited[ci] === 0) { visited[ci] = 1; out.cells++; }
+    if (t + 1 === half) atHalf = out.food;
     out.seconds = (t + 1) * config.dt;
     out.elapsed = out.seconds;
     if (clearable && me.eaten === env.food) {
@@ -462,6 +466,7 @@ export function runEpisode(
       break;
     }
   }
+  out.late = atHalf < 0 ? 0 : out.food - atHalf;
   const w = env.reward;
   const startEnergy = eco.species[env.role]!.startEnergy;
   out.reward = (w.food ?? 0) * out.food + (w.kill ?? 0) * out.kills + (w.survive ?? 0) * out.seconds + (w.energy ?? 0) * energySignal(out.energy, startEnergy) + (w.fast ?? 0) * cleared + (w.ram ?? 0) * out.rams + (w.cross ?? 0) * crossed(placed?.walls ?? [], minY, config.creature.radius) + (w.early ?? 0) * early + (w.explore ?? 0) * Math.max(0, out.cells - 1) - (w.poison ?? 0) * out.poison;
@@ -471,7 +476,7 @@ export function runEpisode(
 
 // Mean result over several seeds (layouts, positions and rivals all change with the seed).
 export function scoreLearner(env: EnvSpec, learner: Learner, seeds: readonly number[], pool: readonly PoolEntry[] | null = null, library: Library = {}): EpisodeResult {
-  const sum: EpisodeResult = { reward: 0, food: 0, kills: 0, rams: 0, seconds: 0, energy: 0, poison: 0, poisonEnergy: 0, firstFood: 0, elapsed: 0, clearTime: 0, cells: 0, died: 0 };
+  const sum: EpisodeResult = { reward: 0, food: 0, kills: 0, rams: 0, seconds: 0, energy: 0, poison: 0, poisonEnergy: 0, firstFood: 0, elapsed: 0, clearTime: 0, cells: 0, late: 0, died: 0 };
   for (const s of seeds) {
     const r = runEpisode(env, learner, s, pool, library);
     for (const k of Object.keys(sum) as (keyof EpisodeResult)[]) sum[k] += r[k] / seeds.length;
@@ -555,7 +560,7 @@ export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | s
     const l = v.layout as Record<string, unknown> | null;
     if (!l || !(LAYOUT_KINDS as readonly unknown[]).includes(l.kind)) return `layout must be one of ${LAYOUT_KINDS.join(", ")}`;
     const [sw, sh] = size as number[];
-    const fixed = l.kind === "sprint" || l.kind === "cuedoor" || l.kind === "flash" || l.kind === "stops" || l.kind === "chain" || l.kind === "horizon"; // no size parameter
+    const fixed = l.kind === "sprint" || l.kind === "cuedoor" || l.kind === "flash" || l.kind === "stops" || l.kind === "chain" || l.kind === "horizon" || l.kind === "trail"; // no size parameter
     const round = l.kind === "patch" || l.kind === "islands"; // sized by a radius; ring by its lane; the walled ones by a gap
     const param = round ? l.radius : l.kind === "ring" ? l.lane : l.gap;
     // A patch must fit and three islands must fit apart; wall gaps leave wall on both sides of a door.
@@ -568,7 +573,7 @@ export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | s
     layout =
       l.kind === "sprint" ? { kind: "sprint", ...nearOf }
       : l.kind === "stops" ? { kind: "stops", ...(l.count === undefined ? {} : { count: l.count as number }) }
-      : l.kind === "cuedoor" || l.kind === "flash" || l.kind === "chain" || l.kind === "horizon" ? { kind: l.kind }
+      : l.kind === "cuedoor" || l.kind === "flash" || l.kind === "chain" || l.kind === "horizon" || l.kind === "trail" ? { kind: l.kind }
       : l.kind === "patch" || l.kind === "islands" ? { kind: l.kind, radius: param as number }
       : l.kind === "rooms" ? { kind: "rooms", gap: param as number, ...nearOf }
       : l.kind === "ring" ? { kind: "ring", lane: param as number }
