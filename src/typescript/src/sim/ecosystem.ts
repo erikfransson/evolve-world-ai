@@ -65,6 +65,7 @@ export interface CastMember {
   heading: number;
   hue: number;
   energy?: number; // the species' start energy when left out
+  upkeep?: number; // energy per second besides thrust and turning, the plan's when left out (RL drifters set a negative one)
 }
 
 // One creature of the ecosystem with its family record. Objects are recycled after death, so hold ids, not references.
@@ -167,10 +168,8 @@ export class Ecosystem {
   readonly species: readonly Species[];
   // Living creatures in list order.
   readonly members: EcoCreature[];
-  // Genome weights of all living creatures, and the most births may bring it to: a birth waits while weights is above birthWeightCap.
-  // Not a setting and not saved: Live World sets the cap so every save stays small enough to write and read back (server/src/config.ts).
+  // Genome weights of all living creatures. Not a setting and not saved.
   weights = 0;
-  birthWeightCap = Infinity;
   // Id of a creature whose rays and brain input must be current after each tick (the selected one); the WASM sense leaves everyone else's stale.
   detail: number | null = null;
   // With the journal option: changes not yet drained by a helper coordinator (ecoShare.ts). born and died hold ids, items World.log records.
@@ -665,15 +664,16 @@ export class Ecosystem {
     this.counts[parent.species]!.births++;
   }
 
-  // True while another birth fits under the population cap and the weights cap; both only grow inside the birth loop.
+  // True while another birth fits under the population cap; the population only grows inside the birth loop.
   private birthRoom(birthCap: number): boolean {
-    return this.members.length < birthCap && this.weights <= this.birthWeightCap;
+    return this.members.length < birthCap;
   }
 
   // Places founder i with the birth traits in this.traits; the one path for drawn and cast founders.
   private found(i: number, c: CastMember, fromPool: boolean): void {
     const m = this.spawn(c.genome, c.plan, c.x, c.y, c.heading, c.energy ?? this.species[c.species]!.startEnergy, c.species, this.traits);
     m.hue = c.hue;
+    if (c.upkeep !== undefined) m.creature.setUpkeep(c.upkeep);
     this.lineages.describe(i, c.hue, c.species, fromPool);
   }
 

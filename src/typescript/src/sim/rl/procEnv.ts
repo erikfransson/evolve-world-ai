@@ -214,7 +214,7 @@ export function runCrowdStats(spec: ProcSpec, learner: Learner, seed: number, li
 export function runCrowdEpisode(spec: ProcSpec, learner: Learner, seed: number, library: Library = {}): EpisodeResult {
   const s = runCrowdStats(spec, learner, seed, library);
   // seconds holds the mean lived share (0 to 1), not seconds: the world length is not in the stats
-  return { reward: s.reward, food: s.bites, kills: 0, rams: 0, seconds: s.life, energy: 0, poison: s.poison, poisonEnergy: 0, firstFood: -1, elapsed: 0, clearTime: -1, cells: 0, died: 0 };
+  return { reward: s.reward, food: s.bites, kills: 0, rams: 0, seconds: s.life, energy: 0, poison: s.poison, poisonEnergy: 0, firstFood: -1, elapsed: 0, clearTime: -1, cells: 0, late: 0, died: 0 };
 }
 
 // The training env for rlTrain --selfplay: runEpisode plays it by runCrowdEpisode.

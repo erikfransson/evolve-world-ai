@@ -37,6 +37,7 @@ export const ENVS: readonly EnvSpec[] = [
   small({ id: "patch", name: "Patch", description: "All the food lies in one patch across the room. Find it, then clear it.", size: [450, 450], food: 10, poison: 4, seconds: 30, layout: { kind: "patch", radius: 70 }, tags: ["search"] }),
   // Exploring: the food lies beyond the learner's sight (its own ray length, read when the episode is placed), so scanning in place finds nothing
   small({ id: "horizon", name: "Over the horizon", description: "Nothing in sight. Three small clusters of food lie two to three sight lengths away, in directions that change every run. Leave, travel straight, clear a cluster, go on.", size: [1600, 1600], food: 10, poison: 0, seconds: 60, learnerEnergy: 200, layout: { kind: "horizon" }, reward: { food: 1 }, tags: ["explore"] }),
+  small({ id: "trail", name: "Sparse trail", description: "A line of single bites, each just out of sight of the last, ending in a cache. You face well off the line. Turn once, then keep your course.", size: [1800, 1800], food: 8, poison: 0, seconds: 75, learnerEnergy: 300, layout: { kind: "trail" }, reward: { food: 1 }, tags: ["explore"] }),
   // Time pressure (#56): every bite pays by the share of the episode left, so speed is paid per bite (a clear-all bonus is much noisier)
   small({ id: "fading", name: "Fading food", description: "Each bite is worth less as the clock runs down: two points at the start, nothing at the end. Eat early.", size: [400, 400], food: 8, poison: 0, seconds: 20, reward: { early: 2 }, tags: ["speed"] }),
   small({ id: "hand-to-mouth", name: "Hand to mouth", description: "Time itself drains energy, and ten bites wind away in a chain. Run straight from one to the next: every wasted second is a bite lost.", size: [500, 500], food: 10, poison: 0, seconds: 30, learnerEnergy: 20, livingCost: 5, layout: { kind: "chain" }, reward: { food: 1, survive: 0.05, fast: 0.05 }, tags: ["speed", "energy"] }),
@@ -206,6 +207,28 @@ export const ENVS: readonly EnvSpec[] = [
     learnerEnergy: 300,
     rivals: [{ species: PREY, count: 16, source: "pool", energy: 40 }],
     reward: { ram: 1 },
+    tags: ["fight"],
+  }),
+  small({
+    id: "stragglers",
+    name: "Stragglers",
+    description: "No food, and your energy is the clock. Four stragglers stand or drift slowly and heal fast. A small one falls to a bump, the big one only to a hit at full speed: take their energy to last the 30 s.",
+    size: [200, 200],
+    food: 0,
+    poison: 0,
+    foodRegrow: 0,
+    seconds: 30,
+    collisionDamage: true,
+    ramShare: 1,
+    killEnergy: 15,
+    learnerEnergy: 30,
+    rivals: [
+      { species: PREY, count: 1, source: "random", energy: 6, speed: 0 },
+      { species: PREY, count: 1, source: "random", energy: 6, speed: 0.1 },
+      { species: PREY, count: 1, source: "random", energy: 6, speed: 0.1 },
+      { species: PREY, count: 1, source: "random", energy: 44, speed: 0.05 },
+    ],
+    reward: { survive: 0.1, ram: 1, explore: 0.03 },
     tags: ["fight"],
   }),
   // Competing (self-play: rivals are the learner's own current brain and its recent best candidates)

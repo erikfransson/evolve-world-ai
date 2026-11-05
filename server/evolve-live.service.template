@@ -11,14 +11,14 @@ StartLimitBurst=5
 [Service]
 WorkingDirectory=@REPO@/server
 Environment=LIVE_STATE_DIR=@STATE@
-ExecStart=@NODE@/bin/node --max-old-space-size=768 --max-semi-space-size=4 src/main.ts
+ExecStart=@NODE@/bin/node --max-old-space-size=1536 --max-semi-space-size=4 src/main.ts
 Nice=19
 CPUSchedulingPolicy=idle
 IOSchedulingClass=idle
-MemoryMax=1G
+MemoryMax=2800M
 MemorySwapMax=0
 LimitNOFILE=4096
-TimeoutStopSec=60
+TimeoutStopSec=100
 # Only applies if the cpu controller is delegated to the user manager; Nice and idle scheduling are the real limit.
 CPUQuota=50%
 TasksMax=64

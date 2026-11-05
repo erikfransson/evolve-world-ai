@@ -16,7 +16,7 @@ import { encodeMembers } from "./memberFrame.ts";
 import { restoreState, saveState, snapshotState } from "../../src/typescript/src/sim/ecoState.ts";
 import { boardValue } from "../../src/typescript/src/sim/leaderboard.ts";
 import type { EcoSnapshot, EcoState } from "../../src/typescript/src/sim/ecoState.ts";
-import { BIRTH_WEIGHT_CAP, LIMITS, LIVE, MAX_LIVE_WEIGHTS, MAX_POPULATION, MAX_SEED_FOUNDERS, SEED_COPIES, itemHeadroom, mostCopies, seedRoom } from "./config.ts";
+import { LIMITS, LIVE, MAX_POPULATION, MAX_SEED_FOUNDERS, SEED_COPIES, itemHeadroom, mostCopies, seedRoom } from "./config.ts";
 import type { SeedFounder } from "./founders.ts";
 import { mapRegions } from "../../src/typescript/src/live/mapRegions.ts";
 import { mapVersion } from "../../src/typescript/src/sim/maps/index.ts";
@@ -280,7 +280,6 @@ export class LiveWorld {
     config.eco.foodMaxDensity = room.foodMaxDensity;
     config.eco.poisonMaxDensity = room.poisonMaxDensity;
     const eco = new Ecosystem(config, this.pool, { journal: this.helpers !== null });
-    eco.birthWeightCap = BIRTH_WEIGHT_CAP;
     const r = eco.retune({ eco: caps });
     if (!r.ok) throw new Error(`cannot set the item caps: ${r.reason}`);
     return eco;
@@ -532,8 +531,6 @@ export class LiveWorld {
     if (extra && (!Number.isInteger(extra.copies) || extra.copies < 1)) throw new Error("extra copies must be a whole number from 1");
     const own = founders.length * copies;
     const n = own + (extra?.copies ?? 0);
-    const weights = seedWeights(founders, copies, extra);
-    if (weights > BIRTH_WEIGHT_CAP) throw new Error(`${n} seeded creatures would hold ${weights} brain weights, over the ${BIRTH_WEIGHT_CAP} births stop at`); // so visitors' adds have the reserve from the start
     if (n > seedRoom(e.config.eco)) throw new Error(`${n} founders do not fit below the birth reserve (${seedRoom(e.config.eco)})`);
     const spots = this.freeSpots(n, random);
     if (spots.length < n) throw new Error("no room to seed the founders");
@@ -588,7 +585,6 @@ export class LiveWorld {
   addCreatures(req: AddRequest, random: () => number = Math.random): { ids: number[] } | { reason: string; now?: false } {
     const e = this.eco;
     if (e.population + req.copies > e.config.eco.maxPopulation) return { reason: "the world is full, try again later" };
-    if (e.weights + req.copies * req.genome.length > MAX_LIVE_WEIGHTS) return { reason: "the world holds all the brain weights it can save: fewer copies or a smaller brain may fit, or try again later" };
     // One name, one family on the list: a name a living family carries (any case), or a starter's, is refused; it frees when that family dies out.
     const wanted = req.name.toLowerCase();
     if (this.founders.some((f) => f.name.toLowerCase() === wanted) || e.lineageTable.someName((n) => wireName(n).name.toLowerCase() === wanted)) return { reason: `the name ${req.name} is taken by a family alive now, pick another`, now: false };
@@ -635,7 +631,6 @@ export class LiveWorld {
     const birthReserve = Math.min(eco.config.eco.birthReserve, Math.max(0, maxPopulation - 1)); // a reserve at the cap would stop every birth
     const r = eco.retune({ eco: { maxPopulation, birthReserve } });
     if (!r.ok) throw new Error(`cannot cap the population: ${r.reason}`);
-    eco.birthWeightCap = BIRTH_WEIGHT_CAP; // a save over it only waits for deaths before births resume
     this.eco = eco;
     this.owed = 0;
     this.attach();
@@ -669,10 +664,6 @@ export function groundShares(eco: Ecosystem, cols = 256): WireMap["ground"] {
 
 // The server's tick loop: advance, then again when the next tick is due. After maxFailures consecutive failed ticks it calls fatal
 // (main.ts exits with code 1, so systemd restarts from the last good save) and stops.
-// Brain weights a seed of `copies` of each founder (and the extra founder's copies) holds; a founder's pool variants share its plan.
-export const seedWeights = (founders: readonly SeedFounder[], copies: number, extra?: { founder: SeedFounder; copies: number }): number =>
-  founders.reduce((sum, f) => sum + f.genome.length * copies, 0) + (extra ? extra.founder.genome.length * extra.copies : 0);
-
 export function runTicks(live: Pick<LiveWorld, "advance" | "failedTicks">, maxFailures: number, fatal: (why: string) => void): void {
   const loop = async (): Promise<void> => {
     let wait = 100;

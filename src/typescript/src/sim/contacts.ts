@@ -180,10 +180,26 @@ export class Contacts {
   private bump(i: number, j: number, a: CreatureState, b: CreatureState, radius: number, e: number): void {
     const eco = this.config.eco;
     if (!a.alive || !b.alive) return; // an eaten prey; everyone else is alive until settle
+    let shareA = 1;
+    let shareB = 1;
+    if (eco.ramShare !== undefined && eco.collisionDamage) {
+      // Split the damage by each one's share of the closing speed along the line of centres: share f of the approach (a's) gives
+      // a x (1 + r (1 - 2f)) and b x (1 + r (2f - 1)), so the total stays 2 x damage and the one that moves more loses less.
+      const nx = b.x - a.x;
+      const ny = b.y - a.y;
+      const d = Math.hypot(nx, ny) || 1;
+      const sa = (a.vx * nx + a.vy * ny) / d;
+      const closing = sa - (b.vx * nx + b.vy * ny) / d;
+      if (closing > 0) {
+        const f = Math.min(1, Math.max(0, sa / closing));
+        shareA = 1 + eco.ramShare * (1 - 2 * f);
+        shareB = 1 + eco.ramShare * (2 * f - 1);
+      }
+    }
     if (!collide(a, b, radius, e, this.contact)) return;
     if (eco.collisionDamage) {
       const fresh = a.energy > 0 && b.energy > 0 && this.contact.speed > 0; // else hurt does nothing
-      hurt(a, b, this.contact.speed, eco.damagePerSpeed, eco.killEnergy);
+      hurt(a, b, this.contact.speed, eco.damagePerSpeed, eco.killEnergy, shareA, shareB);
       if (fresh) this.noteHurt(i, j, a, b, eco.damagePerSpeed * this.contact.speed);
     }
     this.confine(a);
