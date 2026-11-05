@@ -17,6 +17,8 @@ Self-play envs (Melee, Brawl) score against the learner's own league, so their h
 | Corridor (corridor) | Find food            | long 600 x 150 room                                 | 0.06 -> 0.69   | 0.97 -> 1.25 |
 | Far food (far-food) | Find food            | 3 food in a 400 x 400 room, search                  | 0.03 -> 0.61   | 0.53 -> 0.89 |
 | Patch (patch)       | Find food            | all food in one patch, start in the middle          | 0.00 -> 2.27   | 1.41 -> 1.63 |
+| Over the horizon (horizon) | Explore        | 10 food in 3 clusters 2 to 3 sight lengths out, 1600 x 1600 | 0.23 -> 5.92, 0.00 -> 2.36, 0.00 -> 2.69 (bodies 1 to 3) | |
+| Clean sweep (sweep5) | Time pressure       | 5 food in 350 x 350, food 0.2 + clock left 0.2      | not trained (see Time pressure notes) | |
 | Minefield           | Avoid and find a way | 4 food among 12 lethal poison                       | 0.16 -> 0.94   | 0.47 -> 0.47 |
 | Fence (fence)       | Avoid and find a way | stinging wall with a gap, 2 food this side, +1 per wall crossed | 0.06 -> 1.84 (200 it) | PPO 60 s: 0.63 -> 1.94 |
 | Four rooms (rooms)  | Avoid and find a way | four rooms with a door in each wall                 | 0.00 -> 0.28   | PPO 60 s: 0.00 -> 0.19 |
@@ -159,11 +161,43 @@ Distinctness (share of its own gain, bodies 1 / 2 / 3): Fading 69% / 69% / 50%, 
 Two borderline misses of the 85% rule (Race in body 1, Stings in body 2), the rest well under; kept because the energy pressure (a bite tops up less than a wasteful leg costs) is the thing Erik asked for and nothing else in Time pressure trains it.
 
 Dropped after the screen (same probe and cross check, 60-iteration ES from random bodies 1 and 2, poison bites per episode in brackets):
-- Clean sweep (5 food, score by the clock left at the fifth bite). Pure clear-all reward: best score 0.32, random designs score 0 on every seed, E1 0.96, E4 59%. With food 0.2 and fast 0.2 in a 350 x 350 room it passes E1 to E5 (E1 2.36, E4 25%) but Fading training reaches 154% of its gain and Race 116%: a duplicate.
+- Clean sweep (5 food, score by the clock left at the fifth bite). Re-added on Erik's request as `sweep5` (350 x 350, 15 s, reward food 0.2 + fast 0.2), kept although a duplicate in training: Fading training reaches 154% of its gain. Re-check 2026-11-05 (64 seeds): E1 2.48, E2 0.05, E3 0.99, E4 46 seeds for 25%, E5 80% of random designs score 0, E8 3.9 ms. Earlier probe: Pure clear-all reward: best score 0.32, random designs score 0 on every seed, E1 0.96, E4 59%. With food 0.2 and fast 0.2 in a 350 x 350 room it passes E1 to E5 (E1 2.36, E4 25%) but Fading training reaches 154% of its gain and Race 116%: a duplicate.
 - Sweep race (5 food, one pool rival, early 1.5 + food 0.5): E1 2.67, E3 0.85, but Fading training reaches 127% and Race 115% of its gain, and Clean sweep 102%.
 - Thorny (each food guarded by 2 thorns 20 to 25 beside it), Bitter rows (alternating food and poison rows), Sparse sting (4 food, 24 mild poison, `early`) and Bramble (60 s regrowing grove among poison). Final parameters (thorns and rows sting 50 at 100 energy, Sparse sting 15, Bramble 35): E1 2.0 to 3.8, E2 0.05 to 0.08, E4 15% to 24%, but Thorny (best founder alive 0.47) and Bitter rows (0.53) miss E3 because even the best founder dies of its stings, Bitter rows and Sparse sting miss E5 (0.92, 0.93). None is distinct: in body 1 Fading training reaches 92% of Thorny's gain and Lean times 89%, Lean times reaches 151% of Bitter rows, Thorny 121% of Sparse sting, Bitter rows 153% and Lean times 154% of Bramble.
   Poison bites per episode rise with training on every one of them, including on the env itself (Thorny 0.00 -> 1.61, relatives 1.09 to 1.64; Bitter rows 1.41 against 1.56 to 2.03; Bramble 2.03; Sparse sting 1.67): ES from a random body in 60 iterations learns to eat, not to avoid, so none of these envs cuts bites more than its relatives, and the poison reward term (R1) is what is missing for that skill, not another layout.
 - Decoy (poison clusters that look like food at range) cannot work: rays report food and poison as separate flags (`sensors.ts`, FEAT_FOOD and FEAT_POISON), so the two are never confusable.
+
+## Explore (2026-11-05, track X1)
+
+Erik's ask: creatures should leave and find food beyond their sensing range, not scan in place and walk to what they see.
+An Explore env must be out of sight for the learner's own design, so `placeLayout` takes the learner's `rayLength` as an optional last argument (read only by `horizon`, so existing layouts are bit-identical), and every distance is in sight lengths R (R is at least 50, the shortest a design can have, and is capped so the 1600 x 1600 world holds it).
+`EnvSpec.reward.explore` pays per grid cell newly entered (side = the learner's ray length, the start cell free) and `EpisodeResult.cells` counts the cells visited in every env (a Uint8Array grid, one index per tick); the term is off unless set.
+Probes: `docs/rl-notes/probes/x1-explore.ts` (scripted and founder baselines, with cells), `t10-cross.ts` (now also prints food and cells before and after, and each relative's cell share), `t3-snr.ts --scripted-ray 150` (scripted bodies with a sight that matches the layout; the default 10 makes the layout scale down to its 50 floor).
+
+**Over the horizon** (Explore, `horizon`): the learner in the middle of 1600 x 1600, 10 food in three small clusters (4, 3, 3, radius 25), each 2 to 3 R from the start and at least 2 R from the others, in random directions; 60 s, start energy 200, reward food 1.
+Baselines (32 seeds, food per episode, max 10; blind bodies with ray length R, seekers have 12 rays all round and steer at food they see):
+
+| Policy                  | R 60  | R 150 | R 250 |
+| ----------------------- | ----- | ----- | ----- |
+| spin in place           | 0.00  | 0.00  | 0.00  |
+| wiggle (blind)          | 1.53  | 0.06  | 0.03  |
+| straight, turn at wall (blind) | 2.13 | 0.38 | 0.25 |
+| seek + wiggle           | 3.88  | 2.03  | 1.41  |
+| seek + straight         | 6.44  | 4.03  | 2.53  |
+
+Cells per episode, same order: spin 1.0, wiggle 46.7 / 13.9 / 7.7, straight 64.3 / 18.2 / 10.9, seek + wiggle 48.4 / 14.7 / 8.4, seek + straight 76.3 / 21.7 / 11.6.
+Founders: best pool:3 4.69 food (47% of the maximum), then pool:6 3.56, pool:2 3.41, oracle 3.06; untrained random designs and all 8 panel designs score 0 to 0.28 (food-free on 81% to 100% of seeds).
+So spin scores exactly 0, directed travel beats the random walk at every ray length (seek + straight about 2 times seek + wiggle at R 150), and no founder is near the maximum.
+E1 2.35, E2 0.04, E3 0.73, E4 63 seeds for 25%, E5 misses (random designs score 0 on 96% of seeds), E8 14 ms per episode (a 1600-sided world; over the 10 ms limit, accepted as a larger env).
+Training (ES pop 200, 60 iterations, 64 seeds, random bodies 1 / 2 / 3): food 0.23 -> 5.92, 0.00 -> 2.36, 0.00 -> 2.69; cells 5.0 -> 43.5, 1.0 -> 24.3, 1.0 -> 15.7.
+Distinctness, share of its own food gain (bodies 1 / 2 / 3): Far food 15% / 154% / 0%, Patch 78% / 5% / 0%, Sparse plains 30% / 20% / 0%, Islands 21% / 91% / 0%, Hand to mouth 6% / 0% / 0%.
+Distinctness by cells covered (share of its own cell gain): Far food 74% / 83% / 16%, Patch 127% / 23% / 8%, Sparse plains 53% / 17% / 11%, Islands 108% / 35% / 0%, Hand to mouth 2% / 16% / 10%.
+Honest reading: body 3 is clearly distinct on both measures and body 1 on food (Patch 78%, under 85%), but on body 1 Patch and Islands raise coverage as much as horizon does (127% and 108%), and on body 2 Far food reaches 154% of the food gain and Islands 91%. A short-sighted body meets a horizon of 100 to 150 units, which Far food also trains. Coverage is a weak discriminator, since any env that teaches travel raises it; the food measure and the blind-spot start are what Over the horizon adds. Kept as the one Explore env.
+
+Dropped after redesigns, same probes:
+- **Moving on** (`leaving` layout: a small start patch, then three patches out of sight, livingCost 4 to 5). Three versions: (1) start patch of 3, next patches in random directions, energy 60, 60 s: every learner starved after 11% to 31% of the episode (E3), the best founder scored 3.3 of 12; (2) start patch of 2, 14 food, energy 80, 40 s: random:1 trained 0.44 -> 6.28 with cells 2 -> 26, Horizon training reached 58% of it, but E1 1.30, E4 326 seeds, and seek + straight scored under seek + wiggle (1.31 against 3.50 at R 60), because the first two bites decide most of the reward; (3) as (2) with each patch roughly ahead of the last: random:1 learned only the start patch (0.44 -> 2.00, cells 2.0 -> 2.2) and Horizon training reached 104% of it (E1 1.11, E4 274 seeds, seek + straight 2.03 against seek + wiggle 2.50 at R 60). No version has both a baseline gap and a distinct learned skill, so it is dropped (a hook that spawns the next patch when one is cleared was not tried: the engine's item pool is fixed at the start).
+- **Explorer** (`wide` layout: sparse food, none within 1.5 R of the start, plus the `explore` reward). Two versions (1600 x 1600, 8 food, 0.04 per cell; 1200 x 1200, 12 food, 0.03). The reward dominates: blind straight roaming scored 4.1 at R 60, above every founder but one (5.5), at the first draft's weight 0.1, and after lowering it the trained creature gained 1.7 almost all from cells (food 0.05 -> 0.28 in version 1, 0.02 -> 0.61 in version 2). Horizon training reaches 96% and Patch 104% of its gain: a duplicate. The `explore` reward and the cell count stay in the engine for custom envs.
+- A shortest sight of 125 instead of 50 in Over the horizon (`horizon-f125`, so short-sighted bodies travel farther): random:1 gain fell to 0.88 and Far food reached 132%, so the floor stays 50.
 
 ## Notes
 

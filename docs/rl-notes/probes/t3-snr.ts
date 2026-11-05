@@ -28,6 +28,7 @@ const { values } = parseArgs({
     pools: { type: "string", default: "4" },
     library: { type: "string", default: "public/rl/library.json" },
     out: { type: "string" },
+    "scripted-ray": { type: "string", default: "10" }, // ray length of the scripted bodies; layouts that scale with sight (Explore envs) need 150
   },
 });
 const SEEDS = Number(values.seeds);
@@ -45,7 +46,7 @@ const want = values.envs ? values.envs.split(",") : null;
 if (want) envs = envs.filter((e) => want.includes(e.id));
 
 // A one-ray, one-neuron brain whose outputs are constant: tanh(bias) for turn and thrust.
-const BIAS_PLAN: PlanView = { rayCount: 1, raySpread: 0, rayLength: 10, hiddenLayers: [1], memoryShort: 0, memoryLong: 0 };
+const BIAS_PLAN: PlanView = { rayCount: 1, raySpread: 0, rayLength: Number(values["scripted-ray"]), hiddenLayers: [1], memoryShort: 0, memoryLong: 0 };
 function scripted(turn: number, thrust: number): Learner {
   const sizes = layerSizes(layoutConfig("ecosystem"), BIAS_PLAN);
   const g = new Float32Array(genomeLength(sizes));
