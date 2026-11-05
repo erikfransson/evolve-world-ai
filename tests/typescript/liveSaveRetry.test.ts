@@ -256,10 +256,10 @@ describe("periodic save retry", () => {
     expect(files()).toBe(0);
   });
 
-  it("a stop whose pack takes the whole STOP_PACK_MS still verifies and finishes inside the unit's 60 s", () => {
+  it("a stop whose pack takes the whole STOP_PACK_MS still verifies and finishes inside the unit's 100 s", () => {
     for (const packed of [0, 5_000, 10_000, STOP_PACK_MS]) expect(packed + stopVerifyMs(packed)).toBeLessThanOrEqual(STOP_BUDGET_MS);
     expect(stopVerifyMs(0)).toBe(VERIFY_TIMEOUT_MS);
-    expect(stopVerifyMs(STOP_PACK_MS) + STOP_PACK_MS + 5_000).toBeLessThan(60_000); // pack, verify, and a few seconds of write and exit
+    expect(stopVerifyMs(STOP_PACK_MS) + STOP_PACK_MS + 5_000).toBeLessThan(100_000); // pack, verify, and a few seconds of write and exit
     expect(stopVerifyMs(STOP_BUDGET_MS * 2)).toBeGreaterThan(0); // never zero or negative: a late stop still gets its floor
     expect(stopVerifyMs(STOP_BUDGET_MS * 2)).toBeLessThanOrEqual(5_000);
   });

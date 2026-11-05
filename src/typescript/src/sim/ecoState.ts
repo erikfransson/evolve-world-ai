@@ -140,7 +140,7 @@ export function snapshotState(eco: Ecosystem): EcoSnapshot {
 // Limits a state is held to on restore; far above any real world, they only stop a corrupt or hostile state from exhausting memory or time.
 const MAX_RAYS = 64; // the WebAssembly kernels' limit
 const MAX_ITEM_SLOTS = 2_000_000;
-const MAX_GENOME_FLOATS = 30_000_000; // all creatures together, 120 MB
+export const MAX_GENOME_FLOATS = 40_000_000; // all creatures together, 160 MB: Live World at 5000 creatures of the largest add brain is 37.7 M
 const MIN_WORLD_SIZE = 500; // the settings forms' smallest world
 const MAX_WORLD_SIZE = 50_000;
 const MAX_BODY_RADIUS = 40; // half the gap terrain keeps between rock pieces, so a body always has room somewhere

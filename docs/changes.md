@@ -6,6 +6,9 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- Live: with no weight cap a mixed world settles near 4900 creatures (was about 3000), so a full world is the usual state: a tick costs about twice as much (liveBench mixed on the loaded host: 8.6 to 15.8 CPU ms per tick, speed achieved 3.67x to 2.0x, below the 3x target) and `room()` lets in only about 16 to 23 viewers there.
+- Live: no brain-weight cap any more (was 7 million, so mixed worlds stopped near 3000 creatures each summer); only the creature cap of 5000 holds births back. A full world of the largest brains an add allows is the bound the server's memory and save limits are now set for: such a world saves 208 MB of JSON and peaks at 1.8 GB at an admin load, so the unit gets MemoryMax 2800M (was 1G, above the main and save-worker heap caps together), `--max-old-space-size=1536` (was 768) and TimeoutStopSec 100 (was 60), saves may be 260 MB of JSON (was 50), the save workers' heap is 768 MB (was 384), a pack may take 30 s (was 10) and a restored save may hold 40 M genome floats (was 30 M). The installed unit must be reinstalled from the template for the new limits. Saves and before-reset folders together stay under 1 GB: after each save and reset the oldest before-reset folders, then the oldest saves are deleted, always keeping the newest two saves.
+
 ## 0.4.0 (2026-11-05)
 
 - Trials: the world canvas zooms (wheel, pinch, drag to pan, double-click zooms in, Fit button resets) with the shared Live camera, never past the whole world (#70).

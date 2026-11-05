@@ -3,23 +3,20 @@ import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { itemsPerDensity } from "../../src/typescript/src/sim/config.ts";
 import { MAX_ITEM_SLOTS, creatureFrameBytes, itemsBytes } from "../../src/typescript/src/live/protocol.ts";
 import { MAX_FOUNDERS } from "../../src/typescript/src/live/founders.ts";
-import { LIVE_BIRTH, MAX_ADD_GENOME, MAX_COPIES } from "../../src/typescript/src/live/add.ts";
+import { LIVE_BIRTH, MAX_COPIES } from "../../src/typescript/src/live/add.ts";
 
-// Also the admin's upper limit (tunables.ts). At 5000 a creature frame is 95 kB: room() lets in about 16 to 23 viewers at the full
-// population (fewer while items change fast). The save size and memory are bounded by MAX_LIVE_WEIGHTS below, not by this.
+// Also the admin's upper limit (tunables.ts), and with no brain-weight cap the usual state: a mixed world settles near 4900 creatures.
+// There a creature frame is about 95 kB and room() lets in only about 16 to 23 viewers (fewer while items change fast), and a tick costs
+// about twice the 3000-creature one (liveBench mixed, loaded host: 8.6 to 15.8 CPU ms per tick, speedAchieved 3.67 to 2.0).
+// It also bounds the save size and memory: at most MAX_POPULATION x MAX_ADD_GENOME (37.7 M) weights, about 5.4 MB of JSON per million
+// plus 9 MB of items. Measured 2026-11-05, items at the admin's largest caps, under MemoryMax=2200M and --max-old-space-size=1536,
+// peak RSS write / start / admin load:
+// 4955 creatures of the largest add brain, 37.4 M weights: 208 MB JSON (152 MB gzipped), 1389 / 1357 / 1785 MB.
+// 4970 founder copies, 11.0 M weights: 67 MB JSON, 410 / 473 / 592 MB (2 GB scope).
+// The unit has MemoryMax=2800M, above the heap caps together (main 1536 + save worker 768 + about 120 MB of WASM and code), so a
+// runaway worker meets its own heap limit before the cgroup OOM killer. Measured without helper threads (HELPER_THREADS 0): helpers
+// keep their own copies of the brains, so measure again under MemoryMax before setting LIVE_THREADS.
 export const MAX_POPULATION = 5000;
-// Genome weights the living world may hold, so every save can be written and read back inside the unit's MemoryMax of 1 GB. A save is
-// about 5.4 MB of JSON per million weights plus a few MB, nearly the same at 2900 and 5000 creatures. Measured at 2026-10-26 under
-// MemoryMax=1G and --max-old-space-size=768 like the unit, 50000 x 31250 world, items at the admin's largest caps, 7.02 M weights:
-// 2900 creatures save 45 MB, peak 605 MB writing, 556 MB at a start and 607 MB at an admin load over a full world; 5000 creatures
-// 45 MB, 623, 539 and 631 MB. Earlier (2026-10-22, 2 GB cap) 13 M weights were 77 MB of JSON and 1234 MB to read back.
-// The budget binds before the population for big brains: the three founders (2207 weights each on average) fill it near 2800 creatures,
-// the Juggernaut alone (1236) fits 5000. Measured without helper threads (HELPER_THREADS 0, the unit's default): helpers keep their
-// own copies of the brains, so measure again under MemoryMax before setting LIVE_THREADS.
-// Births stop WEIGHT_RESERVE short of it, as at the birth reserve, so visitors' adds still fit; adds past it are refused.
-export const MAX_LIVE_WEIGHTS = 7_000_000;
-export const WEIGHT_RESERVE = 100 * MAX_ADD_GENOME; // 100 of the largest brains an add allows, the birth reserve's 100 places
-export const BIRTH_WEIGHT_CAP = MAX_LIVE_WEIGHTS - WEIGHT_RESERVE - MAX_ADD_GENOME; // a child has at most MAX_ADD_GENOME (the plan ranges are within the add limits)
 
 // The one world this server runs: The Inland Sea map (src/sim/maps/inlandSea.ts) with the Ecosystem rules, collision damage on.
 // The admin channel (admin.ts) edits this object in place for the settings the engine reads every tick.
@@ -144,11 +141,12 @@ export const LIMITS = {
   saveRetryMs: [15, 30, 60].map((m) => m * 60 * 1000), // waits before the retries of a periodic save that failed for a transient reason; the last repeats until one succeeds
   keepStateMs: 4 * 24 * 60 * 60 * 1000, // saves older than this are deleted, except the newest six (state.ts)
   maxStateDirBytes: 2e9, // no save is written while the state directory holds more than this
-  maxSaveJsonBytes: 50e6, // a save may be at most this much JSON (Inland Sea at 30000 x 18750: 24 MB at 2500 creatures, 42 MB at 5000; the brain-weight budget keeps a full world near 45 MB); parsing runs in a worker with its own heap cap (saveParse.ts)
+  maxStateBytes: 1e9, // saves and before-reset folders together: after each save and reset the oldest are deleted down to this (StateStore.prune)
+  maxSaveJsonBytes: 260e6, // a save may be at most this much JSON (5000 creatures of the largest add brain: 210 MB, see MAX_POPULATION); parsing runs in a worker with its own heap cap (saveParse.ts)
   maxCatchUpS: 1, // after a stall longer than this the clock resyncs instead of racing to catch up
   sliceMs: 15, // simulation work per event-loop turn, so sockets stay served
   maxBufferedBytes: 1_500_000, // a viewer with more queued than this is skipped for frames (slow link); above a join's full item set (about 1 MB at the Inland Sea's largest caps)
-  hardBufferedBytes: 2_000_000, // more than this queued: the client is dropped (100 viewers x 2 MB stays well inside the 1 GB unit cap)
+  hardBufferedBytes: 2_000_000, // more than this queued: the client is dropped (100 viewers x 2 MB on top of the largest world's 1.8 GB admin load stays inside the unit's 2.8 GB)
   slowDropMs: 10_000, // a client above maxBufferedBytes for this long is dropped
   heartbeatMs: 30_000, // ws ping, a client that misses the pong is dropped
   idleDropMs: 60_000, // no message from the client for this long: dropped (the page pings every 20 s)
