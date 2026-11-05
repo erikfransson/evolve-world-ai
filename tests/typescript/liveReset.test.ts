@@ -113,7 +113,7 @@ describe("admin reset", () => {
   it("seedFounders itself keeps the founders below the birth reserve, whatever the caller checked", () => {
     const live = new LiveWorld(freshConfig(), null);
     const room = live.eco.config.eco.maxPopulation - live.eco.config.eco.birthReserve;
-    const jug = FOUNDERS.filter((f) => f.name === "Juggernaut"); // small enough brains that the room, not the weight budget, is what refuses
+    const jug = FOUNDERS.filter((f) => f.name === "Juggernaut"); // the room below the birth reserve is what refuses
     expect(() => live.seedFounders(jug, Math.random, room + 1)).toThrow(/do not fit below the birth reserve/);
     expect(live.eco.population).toBe(0);
   });

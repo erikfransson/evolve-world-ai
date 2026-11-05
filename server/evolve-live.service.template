@@ -15,7 +15,7 @@ ExecStart=@NODE@/bin/node --max-old-space-size=1536 --max-semi-space-size=4 src/
 Nice=19
 CPUSchedulingPolicy=idle
 IOSchedulingClass=idle
-MemoryMax=2300M
+MemoryMax=2800M
 MemorySwapMax=0
 LimitNOFILE=4096
 TimeoutStopSec=100

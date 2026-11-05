@@ -5,13 +5,17 @@ import { MAX_ITEM_SLOTS, creatureFrameBytes, itemsBytes } from "../../src/typesc
 import { MAX_FOUNDERS } from "../../src/typescript/src/live/founders.ts";
 import { LIVE_BIRTH, MAX_COPIES } from "../../src/typescript/src/live/add.ts";
 
-// Also the admin's upper limit (tunables.ts). At 5000 a creature frame is 95 kB: room() lets in about 16 to 23 viewers at the full
-// population (fewer while items change fast). Brain weights are not capped, so this also bounds the save size and memory: at most
-// MAX_POPULATION x MAX_ADD_GENOME (37.7 M) weights, about 5.4 MB of JSON per million plus 9 MB of items. Measured 2026-11-05 at
-// items at the admin's largest caps, under MemoryMax=2200M and --max-old-space-size=1536 (peak RSS write / start / admin load; the unit has 2300M):
+// Also the admin's upper limit (tunables.ts), and with no brain-weight cap the usual state: a mixed world settles near 4900 creatures.
+// There a creature frame is about 95 kB and room() lets in only about 16 to 23 viewers (fewer while items change fast), and a tick costs
+// about twice the 3000-creature one (liveBench mixed, loaded host: 8.6 to 15.8 CPU ms per tick, speedAchieved 3.67 to 2.0).
+// It also bounds the save size and memory: at most MAX_POPULATION x MAX_ADD_GENOME (37.7 M) weights, about 5.4 MB of JSON per million
+// plus 9 MB of items. Measured 2026-11-05, items at the admin's largest caps, under MemoryMax=2200M and --max-old-space-size=1536,
+// peak RSS write / start / admin load:
 // 4955 creatures of the largest add brain, 37.4 M weights: 208 MB JSON (152 MB gzipped), 1389 / 1357 / 1785 MB.
-// 4970 founder copies, 11.0 M weights: 67 MB JSON, 410 / 473 / 592 MB (2 GB scope). Without helper threads (HELPER_THREADS 0):
-// helpers keep their own copies of the brains, so measure again under MemoryMax before setting LIVE_THREADS.
+// 4970 founder copies, 11.0 M weights: 67 MB JSON, 410 / 473 / 592 MB (2 GB scope).
+// The unit has MemoryMax=2800M, above the heap caps together (main 1536 + save worker 768 + about 120 MB of WASM and code), so a
+// runaway worker meets its own heap limit before the cgroup OOM killer. Measured without helper threads (HELPER_THREADS 0): helpers
+// keep their own copies of the brains, so measure again under MemoryMax before setting LIVE_THREADS.
 export const MAX_POPULATION = 5000;
 
 // The one world this server runs: The Inland Sea map (src/sim/maps/inlandSea.ts) with the Ecosystem rules, collision damage on.
@@ -142,7 +146,7 @@ export const LIMITS = {
   maxCatchUpS: 1, // after a stall longer than this the clock resyncs instead of racing to catch up
   sliceMs: 15, // simulation work per event-loop turn, so sockets stay served
   maxBufferedBytes: 1_500_000, // a viewer with more queued than this is skipped for frames (slow link); above a join's full item set (about 1 MB at the Inland Sea's largest caps)
-  hardBufferedBytes: 2_000_000, // more than this queued: the client is dropped (100 viewers x 2 MB on top of the largest world's 1.8 GB admin load stays inside the unit's 2.3 GB)
+  hardBufferedBytes: 2_000_000, // more than this queued: the client is dropped (100 viewers x 2 MB on top of the largest world's 1.8 GB admin load stays inside the unit's 2.8 GB)
   slowDropMs: 10_000, // a client above maxBufferedBytes for this long is dropped
   heartbeatMs: 30_000, // ws ping, a client that misses the pong is dropped
   idleDropMs: 60_000, // no message from the client for this long: dropped (the page pings every 20 s)

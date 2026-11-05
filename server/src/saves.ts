@@ -5,7 +5,7 @@ import type { Value } from "./tunables.ts";
 import { PACK_TIMEOUT_MS, TooBig, VERIFY_TIMEOUT_MS, WorkerFailed, packSave, parseSave } from "./saveParse.ts";
 import { OtherWorld } from "./saveParse.ts";
 import type { LiveWorld } from "./liveWorld.ts";
-import { SEED_FILE } from "./state.ts";
+import { SEED_FILE, pruneLine } from "./state.ts";
 import { CARRY_FILE, MAX_CARRY_FILE_BYTES, NEXT_CARRY, REFUSED_CARRY, USED_CARRY, carryFounder, carryLine, checkCarry } from "./carry.ts";
 import type { CarryOrder } from "./carry.ts";
 import type { StateStore } from "./state.ts";
@@ -198,8 +198,8 @@ export class Saves {
       }
       let moved = `${saved}; ${n} saves and the admin settings moved to ${sub}`;
       try {
-        const gone = this.store.prune();
-        if (gone.length) moved += `; over the ${LIMITS.maxStateBytes / 1e6} MB state budget, deleted ${gone.join(", ")}`;
+        const line = pruneLine(this.store.prune(Date.now(), sub));
+        if (line) moved += `; ${line}`;
       } catch (e) {
         moved += `; pruning to the state budget failed: ${errText(e)}`;
       }
