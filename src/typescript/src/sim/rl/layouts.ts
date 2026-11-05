@@ -157,7 +157,8 @@ export function placeLayout(layout: Layout, size: readonly [number, number], foo
     return { items, start, walls };
   } else if (layout.kind === "trail") {
     // Singles 1.8 R + 10 apart, so the next is out of sight from the last; the line runs through the middle of the world in a random direction.
-    const R = Math.max(50, Math.min(rayLength ?? 150, 250));
+    // Capped so the line and the cache fit the world (half-length 3.1 R + 15, plus the cache radius 25); the shipped world holds R = 250.
+    const R = Math.max(50, Math.min(rayLength ?? 150, 250, (Math.min(w, h) / 2 - MARGIN - 40) / 3.1));
     const g = 1.8 * R + 10;
     const first = Math.max(20, 0.8 * R);
     const total = first + 3 * g;
@@ -166,7 +167,7 @@ export function placeLayout(layout: Layout, size: readonly [number, number], foo
     const at = (d: number): { x: number; y: number } => ({ x: w / 2 + ux * (d - total / 2), y: h / 2 + uy * (d - total / 2) });
     start = { ...at(0), heading: u + (rng.next() < 0.5 ? -1 : 1) * rng.range(0.5, 1) }; // off the line by 30 to 60 degrees, so going straight on misses the first single
     const ds = [first, first + g, first + 2 * g];
-    for (const d of ds) items.push({ ...at(d), kind: HIT_FOOD });
+    for (const d of ds.slice(0, food)) items.push({ ...at(d), kind: HIT_FOOD });
     const cache = at(total);
     for (let k = 0; k < food - 3; k++) {
       const a = rng.next() * 2 * Math.PI;

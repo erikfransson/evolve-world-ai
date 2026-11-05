@@ -566,6 +566,7 @@ export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | s
     // A patch must fit and three islands must fit apart; wall gaps leave wall on both sides of a door.
     const most = l.kind === "patch" ? Math.min(sw!, sh!) / 2 - 20 : l.kind === "islands" ? Math.min(sw!, sh!) / 6 - 10 : l.kind === "rooms" ? Math.min(sw!, sh!) / 4 - 20 : l.kind === "ring" ? Math.min(sw!, sh!) / 4 : sw! / 4;
     if (!fixed && !n(param, [L.layoutSize[0], Math.min(L.layoutSize[1], most)])) return `layout ${round ? "radius" : l.kind === "ring" ? "lane" : "gap"} must be ${L.layoutSize[0]} to ${Math.floor(Math.min(L.layoutSize[1], most))} for this world size`;
+    if (l.kind === "trail" && Math.min(sw!, sh!) < 440) return "the trail layout needs a world at least 440 wide and high";
     if (l.kind !== "patch" && l.kind !== "islands" && l.kind !== "sprint" && rivals.some((r) => r.count > 0)) return "this layout does not take rivals yet";
     if (l.near !== undefined && !(Number.isInteger(l.near) && (l.near as number) >= 0 && (l.near as number) <= (v.food as number))) return "near food must be a whole number up to the food count";
     if (l.kind === "stops" && l.count !== undefined && !(Number.isInteger(l.count) && (l.count as number) >= 1 && (l.count as number) <= 6)) return "stops count must be a whole number from 1 to 6";

@@ -442,6 +442,22 @@ describe("trail layout", () => {
     }
   });
 
+  it("clamps R to 50..250 and to the world, and places at most `food` items", () => {
+    for (const [R, c] of [[10, 50], [400, 250]] as const) {
+      const f = at(trail, 3, R).items;
+      expect(Math.hypot(f[2]!.x - f[1]!.x, f[2]!.y - f[1]!.y)).toBeCloseTo(1.8 * c + 10, 6);
+    }
+    const small: EnvSpec = { ...trail, size: [500, 500], food: 2 };
+    for (let seed = 1; seed <= 20; seed++) {
+      const p = at(small, seed, 250);
+      expect(p.items).toHaveLength(2);
+      for (const q of [...p.items, p.start]) expect(q.x >= 0 && q.x <= 500 && q.y >= 0 && q.y <= 500).toBe(true);
+      const w = at({ ...small, food: 8 }, seed, 250);
+      for (const q of w.items) expect(q.x >= 0 && q.x <= 500 && q.y >= 0 && q.y <= 500).toBe(true);
+    }
+    expect(typeof checkEnv({ ...JSON.parse(JSON.stringify(trail)), size: [400, 400] }, "ecosystem", 0)).toBe("string");
+  });
+
   it("counts late food as exactly the bites after the first half of the episode", () => {
     const learner = randomLearner(trail, 3);
     const seek = (c: { outputs: Float32Array; rays: readonly { kind: number; closeness: number }[]; rayOffsets: Float32Array }): void => {
@@ -451,16 +467,22 @@ describe("trail layout", () => {
       c.outputs[OUT_THRUST] = 1;
       c.outputs[0] = at < 0 ? 0 : Math.max(-1, Math.min(1, 3 * c.rayOffsets[at]!));
     };
+    const half = Math.floor((trail.seconds * 30) / 2);
     let total = 0;
+    let anyLate = 0;
     for (let seed = 1; seed <= 8; seed++) {
       let atHalf = -1;
       let ticks = 0;
-      const r = runEpisode(trail, learner, seed, null, {}, (eco) => { ticks++; if (ticks === Math.floor((trail.seconds * 30) / 2)) atHalf = eco.get(0)!.eaten; }, seek);
+      let calls = 0;
+      const lateSeek: typeof seek = (c) => { if (++calls > half) seek(c); else c.outputs[OUT_THRUST] = 0; }; // idle through the first half, then hunt
+      const r = runEpisode(trail, learner, seed, null, {}, (eco) => { ticks++; if (ticks === half) atHalf = eco.get(0)!.eaten; }, lateSeek);
       if (atHalf >= 0) expect(r.late).toBe(r.food - atHalf);
       else expect(r.late).toBe(0);
+      if (r.late > 0) anyLate++;
       total += r.food;
     }
     expect(total).toBeGreaterThan(0);
+    expect(anyLate).toBeGreaterThan(0);
   });
 
   it("keeps its layout through checkEnv and files it under Explore", () => {

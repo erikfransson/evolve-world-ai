@@ -82,22 +82,19 @@ function seek(fallback: Act): Act {
   };
 }
 
-interface Row { policy: string; group: string; reward: number; food: number; late: number; reach: number; rooms: number; gap: number; alive: number; cells: number; zero: number }
+interface Row { policy: string; group: string; reward: number; food: number; late: number; reach: number; gap: number; alive: number; cells: number; zero: number }
 function run(env: EnvSpec, name: string, group: string, learner: Learner, act?: (seed: number) => Act): Row {
   const eps: EpisodeResult[] = [];
-  const rooms: number[] = []; // grid layout: distinct rooms entered
   const gaps: number[] = []; // trail layout: path walked between consecutive bites after the first, over the gap between singles
   const R = Math.max(50, Math.min(learner.plan.rayLength, 250));
   for (const sd of seeds) {
-    const seen = new Set<number>();
     let last: { x: number; y: number } | null = null;
     let path = 0;
     let eaten = 0;
-    const hook = env.layout?.kind === "grid" || env.layout?.kind === "trail" ? (eco: Ecosystem): void => {
+    const hook = env.layout?.kind === "trail" ? (eco: Ecosystem): void => {
       const me = eco.get(0);
       if (!me) return;
       const st = me.creature.state;
-      seen.add(Math.min(2, Math.floor((st.x / env.size[0]) * 3)) + 3 * Math.min(2, Math.floor((st.y / env.size[1]) * 3)));
       if (last) path += Math.hypot(st.x - last.x, st.y - last.y);
       last = { x: st.x, y: st.y };
       if (me.eaten > eaten) {
@@ -107,9 +104,8 @@ function run(env: EnvSpec, name: string, group: string, learner: Learner, act?: 
       }
     } : undefined;
     eps.push(runEpisode(env, learner, sd, pool, {}, hook, act?.(sd)));
-    rooms.push(seen.size);
   }
-  return { policy: name, group, reward: mean(eps.map((e) => e.reward)), food: mean(eps.map((e) => e.food)), late: mean(eps.map((e) => e.late)), reach: eps.filter((e) => e.food > REACH).length / eps.length, rooms: mean(rooms), gap: gaps.length ? mean(gaps) : NaN, alive: mean(eps.map((e) => e.seconds)) / env.seconds, cells: mean(eps.map((e) => e.cells)), zero: eps.filter((e) => e.food === 0).length / eps.length };
+  return { policy: name, group, reward: mean(eps.map((e) => e.reward)), food: mean(eps.map((e) => e.food)), late: mean(eps.map((e) => e.late)), reach: eps.filter((e) => e.food > REACH).length / eps.length, gap: gaps.length ? mean(gaps) : NaN, alive: mean(eps.map((e) => e.seconds)) / env.seconds, cells: mean(eps.map((e) => e.cells)), zero: eps.filter((e) => e.food === 0).length / eps.length };
 }
 
 const all: Record<string, Row[]> = {};
@@ -130,8 +126,8 @@ for (const id of values.envs!.split(",")) {
   for (let k = 1; k <= Number(values.randoms); k++) rows.push(run(env, `random:${k}`, "random", randomLearner(env, k)));
   for (const d of DESIGN_PANEL) rows.push(run(env, `${d.id} (R${d.plan.rayLength})`, "panel", designLearner(d)));
   all[id] = rows;
-  console.log(`\n${id} (${seeds.length} seeds): reward food late reach rooms gap alive cells noFood`);
-  for (const r of rows) console.log(`  ${r.policy.padEnd(26)} ${r.group.padEnd(9)} ${r.reward.toFixed(2).padStart(6)} ${r.food.toFixed(2).padStart(5)} ${r.late.toFixed(2).padStart(5)} ${r.reach.toFixed(2)} ${r.rooms.toFixed(1)} ${r.gap.toFixed(2)} ${r.alive.toFixed(2).padStart(5)} ${r.cells.toFixed(1).padStart(6)} ${r.zero.toFixed(2)}`);
+  console.log(`\n${id} (${seeds.length} seeds): reward food late reach gap alive cells noFood`);
+  for (const r of rows) console.log(`  ${r.policy.padEnd(26)} ${r.group.padEnd(9)} ${r.reward.toFixed(2).padStart(6)} ${r.food.toFixed(2).padStart(5)} ${r.late.toFixed(2).padStart(5)} ${r.reach.toFixed(2)} ${r.gap.toFixed(2)} ${r.alive.toFixed(2).padStart(5)} ${r.cells.toFixed(1).padStart(6)} ${r.zero.toFixed(2)}`);
 }
 if (values.out) writeFileSync(values.out, JSON.stringify(all, null, 1) + "\n");
 process.exit(0);
