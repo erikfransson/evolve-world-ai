@@ -67,6 +67,7 @@ export interface EnvSpec {
   // Per-episode variation (#44): each factor f draws a multiplier in [1 - f, 1 + f] from the seed for the start energies,
   // the rival counts, the food and poison (and regrowth), and the world sides.
   augment?: { energy?: number; count?: number; items?: number; size?: number };
+  ramShare?: number; // 0 to 1, with collision damage: the faster mover of a bump takes less damage (eco.ramShare); left out, both lose the same
   killEnergy?: number; // with collision damage: extra energy for the survivor of a lethal bump (eco.killEnergy)
   foodVisibleFor?: number; // seconds: after this, rays pass through food (it stays edible), so finding it takes memory
   // Per item, per kill, per second alive, x energy signal at the end, and per second left when the learner has eaten all the
@@ -149,6 +150,7 @@ export function envConfig(env: EnvSpec, seed: number): EcoConfig {
     poisonMaxDensity: env.poison / per,
     collisionDamage: env.collisionDamage ?? false,
     killEnergy: env.killEnergy ?? 0,
+    ...(env.ramShare === undefined ? {} : { ramShare: env.ramShare }),
     birthEnergyRange: [BIRTHLESS, BIRTHLESS],
     birthDrift: 0,
     planDrift: 0,
@@ -229,7 +231,7 @@ function randomRival(env: EnvSpec, seed: number, role: number, rivalSeed: number
 }
 
 // A brain that only thrusts at `speed` (0 to 1 of full thrust) and never turns: one ray, one silent neuron, a thrust bias.
-export const DRIFTER_HEAL = 8; // energy per second a drifting rival (Rivals.speed) regains, up to its start energy
+export const DRIFTER_HEAL = 30; // energy per second a drifting rival (Rivals.speed) regains, up to its start energy
 const DUEL_MARGIN = 30; // world units: the charger starts at least this far off, the learner at least distance plus this from the walls
 const CHARGER_PLAN: PlanView = { rayCount: 1, raySpread: 0, rayLength: 10, hiddenLayers: [1], memoryShort: 0, memoryLong: 0 };
 export function charger(world: EnvWorld, speed: number): Learner {
@@ -479,7 +481,7 @@ export function scoreLearner(env: EnvSpec, learner: Learner, seeds: readonly num
 
 // Bounds a custom env must keep, so a page or a shared file cannot ask for a world that stalls the browser.
 const MAX_RIVAL_GROUPS = 8;
-export const ENV_LIMITS = { side: [200, 3000], items: [0, 300], regrow: [0, 10], seconds: [5, 180], rivals: [0, 30], weight: [-10, 10], energy: [1, 500], layoutSize: [20, 400], poisonDamage: [1, 100], killEnergy: [0, MAX_KILL_ENERGY], fast: [0, 0.3], augment: [0, 0.9], distance: [0, 1500], speed: [0, 1] } as const;
+export const ENV_LIMITS = { side: [200, 3000], items: [0, 300], regrow: [0, 10], seconds: [5, 180], rivals: [0, 30], weight: [-10, 10], energy: [1, 500], layoutSize: [20, 400], poisonDamage: [1, 100], killEnergy: [0, MAX_KILL_ENERGY], fast: [0, 0.3], augment: [0, 0.9], distance: [0, 1500], speed: [0, 1], ramShare: [0, 1] } as const;
 
 // A custom env rebuilt from checked fields, for the learner's world and species, or a reason it is not valid.
 export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | string {
@@ -517,6 +519,7 @@ export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | s
   }
   if (v.learnerEnergy !== undefined && !n(v.learnerEnergy, L.energy)) return `start energy must be ${L.energy[0]} to ${L.energy[1]}`;
   if (v.poisonDamage !== undefined && !n(v.poisonDamage, L.poisonDamage)) return `poison damage must be ${L.poisonDamage[0]} to ${L.poisonDamage[1]}`;
+  if (v.ramShare !== undefined && !n(v.ramShare, L.ramShare)) return `ram share must be ${L.ramShare[0]} to ${L.ramShare[1]}`;
   if (v.fast !== undefined && !n(v.fast, L.fast)) return `fast patches must cover ${L.fast[0]} to ${L.fast[1]}`;
   const range = (x: unknown, lim: readonly [number, number]): x is Range => Array.isArray(x) && x.length === 2 && n(x[0], lim) && n(x[1], lim) && x[0] <= x[1];
   let duel: EnvSpec["duel"];
@@ -589,6 +592,7 @@ export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | s
     ...(v.poisonDamage === undefined ? {} : { poisonDamage: v.poisonDamage as number }),
     ...(v.killEnergy === undefined ? {} : { killEnergy: v.killEnergy as number }),
     ...(v.fast === undefined ? {} : { fast: v.fast as number }),
+    ...(v.ramShare === undefined ? {} : { ramShare: v.ramShare as number }),
     ...(duel ? { duel } : {}),
     ...(augment ? { augment } : {}),
     ...(v.foodVisibleFor === undefined ? {} : { foodVisibleFor: v.foodVisibleFor as number }),

@@ -6,7 +6,7 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
-- RL environments: rival groups take an optional `speed` (0 to 1) that makes them still or slowly drifting targets that heal back to their start energy; left out, rivals behave as before. No env uses it yet (the Stragglers env built on it was dropped, see `docs/rl-envs.md`).
+- RL Arena: new Fight env Stragglers (`stragglers`): no food, four still or slowly drifting targets that heal fast, a learner whose energy runs out in about 12 s and who earns time by ramming them; the big target dies only to a hit at full speed. Two opt-in engine options back it: rival groups can take a `speed` (still or drifting targets that heal back to their start energy) and envs a `ramShare` (the faster mover of a bump takes less damage). Older envs are unchanged.
 - Trials: the world canvas zooms (wheel, pinch, drag to pan, double-click zooms in, Fit button resets) with the shared Live camera, never past the whole world (#70).
 - Trials: the preview before Start puts the creature in open space, clear of rock, and turns it slowly so its rays sweep; the run itself is unchanged (#73).
 - Live World (#75): the follow zoom is less close: the view spans at least 900 world units (was 4.5 ray lengths, 675 for the default), or 3 ray lengths for long rays. It also used the default ray length until the creature details arrived, so long rays were followed too close; it now aims again with the creature's own.
