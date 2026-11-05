@@ -6,15 +6,16 @@ import type { Carried } from "./carry.ts";
 // Unzips, parses and checks a save on a worker thread with its own small heap, so a crafted save (deep or many tiny JSON values)
 // can at worst kill that worker, never the server. Resolves with a state restoreState accepted there, rejects with the reason otherwise.
 // verifyOnly: only check, and resolve with nothing, so the rebuilt state (100 to 200 MB at 2500 creatures, more at the 5000 cap) never crosses to the main heap.
-export const PARSE_HEAP_MB = 384;
+export const PARSE_HEAP_MB = 768;
 const YOUNG_MB = 8; // young generation of every save worker: at 32 its scavenge space added 25 to 40 MB to the save peak (docs/perf-explore/verifymem.md)
 const PARSE_TIMEOUT_MS = 120_000;
-// A save's own check must finish well inside the unit's TimeoutStopSec=60, so a slow one cannot cost the shutdown save; a real one takes 3 to 6 s.
+// A save's own check must finish well inside the unit's TimeoutStopSec=100, so a slow one cannot cost the shutdown save; 12 to 15 s at the largest world (2026-11-05).
 export const VERIFY_TIMEOUT_MS = 40_000;
 const WORKER = new URL("./saveParseWorker.ts", import.meta.url);
 const PACK_WORKER = new URL("./saveWriteWorker.ts", import.meta.url);
-// With the verify after it, a save still finishes inside TimeoutStopSec=60; a real pack takes 1 to 3 s.
-export const PACK_TIMEOUT_MS = 10_000; // with VERIFY_TIMEOUT_MS inside the unit's TimeoutStopSec of 60 s, room left for the stop's own save
+// With the verify after it, a save still finishes inside TimeoutStopSec=100. The largest world (5000 creatures of the largest add brain, 208 MB of JSON)
+// packs in 16 to 19 s at idle priority on the busy host (load 9), a 3000-creature founder world in 1 to 3 s.
+export const PACK_TIMEOUT_MS = 30_000;
 
 // A save worker that timed out, ran out of memory or exited: transient, a later try may go through (saves.ts retries a periodic save). A save the worker judged bad is a plain Error.
 export class WorkerFailed extends Error {}

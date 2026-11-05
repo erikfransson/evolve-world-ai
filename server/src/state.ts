@@ -54,6 +54,42 @@ export function namesToDelete(names: readonly string[], now: number, keepMs: num
   return [...drop, ...names.filter((n) => META.test(n) && !kept.has(n))];
 }
 
+export const KEEP_IN_BUDGET = 2; // newest saves the byte budget never deletes
+
+// What to delete so the saves (with their sidecars) and the before-reset folders together hold at most `budget` bytes: older reset
+// folders oldest first, then saves oldest first except the KEEP_IN_BUDGET newest, then the newest reset folder's saves oldest first except
+// its newest, and only then that folder. saves: oldest first; folders: oldest first, each with its saves oldest first.
+export interface BudgetEntry { name: string; bytes: number }
+export function overBudget(saves: readonly BudgetEntry[], folders: readonly { name: string; bytes: number; saves: readonly BudgetEntry[] }[], budget: number): string[] {
+  let total = saves.reduce((s, e) => s + e.bytes, 0) + folders.reduce((s, f) => s + f.bytes, 0);
+  const out: string[] = [];
+  const take = (name: string, bytes: number): void => {
+    if (total <= budget) return;
+    out.push(name);
+    total -= bytes;
+  };
+  for (const f of folders.slice(0, -1)) take(f.name, f.bytes);
+  for (const s of saves.slice(0, Math.max(0, saves.length - KEEP_IN_BUDGET))) take(s.name, s.bytes);
+  const last = folders.at(-1);
+  if (last) {
+    let left = last.bytes;
+    for (const s of last.saves.slice(0, -1)) if (total > budget) { take(join(last.name, s.name), s.bytes); left -= s.bytes; }
+    take(last.name, left);
+  }
+  return out;
+}
+
+// Bytes of the regular files under dir, not following symlinks.
+function treeBytes(dir: string): number {
+  let total = 0;
+  for (const n of readdirSync(dir)) {
+    const st = lstatSync(join(dir, n));
+    if (st.isFile()) total += st.size;
+    else if (st.isDirectory()) total += treeBytes(join(dir, n));
+  }
+  return total;
+}
+
 // The bytes of a regular file, refusing symlinks (O_NOFOLLOW), FIFOs and devices (no blocking open, then fstat) and files over maxBytes.
 export function readRegularFile(file: string, maxBytes: number): Buffer {
   if (!lstatSync(file).isFile()) throw new Error("not a regular file");
@@ -113,6 +149,12 @@ export class StateStore {
     this.put(name, data);
     this.put(metaName(name), Buffer.from(JSON.stringify(meta)));
     this.rotate(at.getTime());
+    try {
+      const gone = this.prune(at.getTime());
+      if (gone.length) console.log(`state over its ${LIMITS.maxStateBytes / 1e6} MB budget, deleted ${gone.join(", ")}`);
+    } catch (e) {
+      console.error(`pruning to the state budget failed: ${e instanceof Error ? e.message : String(e)}`); // the save itself is written
+    }
     return name;
   }
 
@@ -124,6 +166,37 @@ export class StateStore {
 
   rotate(now = Date.now()): void {
     for (const name of namesToDelete(readdirSync(this.dir), now, LIMITS.keepStateMs)) unlinkSync(join(this.dir, name));
+  }
+
+  // Deletes old saves and before-reset folders until they hold at most LIMITS.maxStateBytes together (overBudget); returns the names deleted.
+  // Saves stamped in the future count but are never deleted; other files (admin token, seed copies, carry, overrides) are not counted or touched.
+  prune(now = Date.now()): string[] {
+    const withMeta = (dir: string, names: readonly string[], future: (n: string) => boolean): BudgetEntry[] =>
+      names.filter((n) => SAVE.test(n) && !future(n)).sort().flatMap((name) => {
+        try {
+          const st = lstatSync(join(dir, name));
+          if (!st.isFile()) return [];
+          let bytes = st.size;
+          try { const m = lstatSync(join(dir, metaName(name))); if (m.isFile()) bytes += m.size; } catch { /* no sidecar */ }
+          return [{ name, bytes }];
+        } catch { return []; }
+      });
+    const names = readdirSync(this.dir);
+    const saves = withMeta(this.dir, names, (n) => fromFuture(n, now));
+    const future = withMeta(this.dir, names, (n) => !fromFuture(n, now)).reduce((s, e) => s + e.bytes, 0);
+    const folders = names.filter((n) => RESET_DIR.test(n) && lstatSync(join(this.dir, n)).isDirectory()).sort().map((name) => {
+      const dir = join(this.dir, name);
+      return { name, bytes: treeBytes(dir), saves: withMeta(dir, readdirSync(dir), () => false) };
+    });
+    const gone = overBudget(saves, folders, LIMITS.maxStateBytes - future);
+    for (const n of gone) {
+      if (RESET_DIR.test(n)) rmSync(join(this.dir, n), { recursive: true, force: true });
+      else {
+        unlinkSync(join(this.dir, n));
+        rmSync(join(this.dir, n.replace(/\.json\.gz$/, ".meta.json")), { force: true });
+      }
+    }
+    return gone;
   }
 
   // Saves newest first. Reads only the file sizes and the small sidecars.

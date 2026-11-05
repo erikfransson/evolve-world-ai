@@ -1,11 +1,10 @@
-import { BIRTH_WEIGHT_CAP, LIMITS, SEED_COPIES, mostCopies, seedRoom } from "./config.ts";
+import { LIMITS, SEED_COPIES, mostCopies, seedRoom } from "./config.ts";
 import { IGNORED_OVERRIDES, OVERRIDES, PREVIOUS_OVERRIDES, loadOverrides, retireOverrides } from "./admin.ts";
 import type { SeedFounder } from "./founders.ts";
 import type { Value } from "./tunables.ts";
 import { PACK_TIMEOUT_MS, TooBig, VERIFY_TIMEOUT_MS, WorkerFailed, packSave, parseSave } from "./saveParse.ts";
 import { OtherWorld } from "./saveParse.ts";
 import type { LiveWorld } from "./liveWorld.ts";
-import { seedWeights } from "./liveWorld.ts";
 import { SEED_FILE } from "./state.ts";
 import { CARRY_FILE, MAX_CARRY_FILE_BYTES, NEXT_CARRY, REFUSED_CARRY, USED_CARRY, carryFounder, carryLine, checkCarry } from "./carry.ts";
 import type { CarryOrder } from "./carry.ts";
@@ -13,12 +12,12 @@ import type { StateStore } from "./state.ts";
 
 const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 const RESTORE_TRIES = 3; // saves of this world tried at startup before giving up, so a failing start exits in minutes and systemd stops retrying
-// The stop path (SIGTERM, TimeoutStopSec=60 in the unit): its save may pack for up to STOP_PACK_MS when none was in flight at the stop, and
+// The stop path (SIGTERM, TimeoutStopSec=100 in the unit): its save may pack for up to STOP_PACK_MS when none was in flight at the stop, and
 // its verify gets what is left of STOP_BUDGET_MS since the stop was asked, at least STOP_VERIFY_MIN_MS and at most VERIFY_TIMEOUT_MS.
-// Worst case pack + verify + write stays near STOP_BUDGET_MS, leaving the rest of the 60 s for the exit. A stop queued behind another
+// Worst case pack + verify + write stays near STOP_BUDGET_MS, leaving the rest of the 100 s for the exit. A stop queued behind another
 // save is skipped when that save went through after the stop, and does not start when less than a pack and the verify floor are left.
-export const STOP_PACK_MS = 25_000;
-export const STOP_BUDGET_MS = 50_000;
+export const STOP_PACK_MS = 40_000;
+export const STOP_BUDGET_MS = 80_000;
 const STOP_VERIFY_MIN_MS = 5_000;
 export const stopVerifyMs = (sinceStopMs: number): number => Math.max(STOP_VERIFY_MIN_MS, Math.min(VERIFY_TIMEOUT_MS, STOP_BUDGET_MS - sinceStopMs));
 interface Stop {
@@ -26,7 +25,7 @@ interface Stop {
   alone: boolean; // no other save was in flight then, so the pack may take STOP_PACK_MS
 }
 const UNREADABLE = "SAVE REFUSED: it would not restore, the last good save is kept";
-export const MAX_KEPT_RESETS = 3; // reset folders kept before a reset is refused: each holds the saves of the last 4 days (about 1 GB at 40 MB a save), outside the disk cap
+export const MAX_KEPT_RESETS = 3; // reset folders kept before a reset is refused; the state budget (LIMITS.maxStateBytes, StateStore.prune) deletes the oldest first
 
 // The copies a reset may ask for: whole, at least 1, and the founders all fit below the birth reserve. The reason when not.
 export function copiesProblem(copies: number, founders: number, eco: { maxPopulation: number; birthReserve: number }): string | null {
@@ -177,8 +176,6 @@ export class Saves {
       if (bad) throw new Error(bad);
       const room = seedRoom(this.live.freshEco) - copies * founders;
       if (carry && carry.copies > room) throw new Error(`${carry.copies} carried copies do not fit: ${room} places are left below the birth reserve after ${copies} of each founder`);
-      const weights = seedWeights(this.live.founders, copies, carry ? { founder: carryFounder(carry), copies: carry.copies } : undefined);
-      if (weights > BIRTH_WEIGHT_CAP) throw new Error(`the next world would start with ${weights} brain weights, over the ${BIRTH_WEIGHT_CAP} births stop at: seed fewer copies`);
       const carryText = carry ? JSON.stringify(carry) : "";
       if (carryText.length > MAX_CARRY_FILE_BYTES) throw new Error(`the carry order is ${carryText.length} bytes, over the ${MAX_CARRY_FILE_BYTES} the next start reads`);
       const kept = this.store.keptResets();
@@ -199,7 +196,13 @@ export class Saves {
         const again = await this.saveNow().then((l) => `, ${l}`, (s: unknown) => `, and saving again failed too: ${errText(s)}`);
         throw new Error(`reset stopped part-way, the world runs on${again}; check ${sub} before trying again (its admin settings no longer apply after a restart): ${errText(e)}`);
       }
-      const moved = `${saved}; ${n} saves and the admin settings moved to ${sub}`;
+      let moved = `${saved}; ${n} saves and the admin settings moved to ${sub}`;
+      try {
+        const gone = this.store.prune();
+        if (gone.length) moved += `; over the ${LIMITS.maxStateBytes / 1e6} MB state budget, deleted ${gone.join(", ")}`;
+      } catch (e) {
+        moved += `; pruning to the state budget failed: ${errText(e)}`;
+      }
       let carried = "";
       if (carry) {
         try {
@@ -276,13 +279,7 @@ export async function openWorld(saves: Saves, live: LiveWorld, stateDir: string,
   if (found === "unreadable") throw new Error("saves of this world are there but none restores: not starting a fresh world over them");
   const retired = retireOverrides(stateDir);
   if (retired) log(retired);
-  // Founders with bigger brains than the seed file's count was chosen for (a new founders file) start with fewer copies, not a failed start.
-  const perCopy = seedWeights(founders, 1);
-  const copies = Math.max(1, Math.min(live.seedCopies, Math.floor(BIRTH_WEIGHT_CAP / perCopy)));
-  if (copies < live.seedCopies) {
-    log(`SEED CUT: ${live.seedCopies} of each founder would hold ${perCopy * live.seedCopies} brain weights, over the ${BIRTH_WEIGHT_CAP} births stop at: seeding ${copies}`);
-    live.seedCopies = copies;
-  }
+  const copies = live.seedCopies;
   // A reset's carry order, checked again as an upload is: a bad or unreadable one is set aside and the world starts without it.
   try {
     store.remove(NEXT_CARRY); // only carry.json is carried: this one is from a reset that stopped between its write and its rename
@@ -295,7 +292,6 @@ export async function openWorld(saves: Saves, live: LiveWorld, stateDir: string,
     const raw = store.readJson(CARRY_FILE, MAX_CARRY_FILE_BYTES);
     const order = raw === null ? null : checkCarry(raw, live.freshAddRules(), seedRoom(live.freshEco) - copies * founders.length, founders.map((f) => f.name));
     if (typeof order === "string") refused = order;
-    else if (order && perCopy * copies + order.creature.genome.length * order.copies > BIRTH_WEIGHT_CAP) refused = `${order.copies} copies would take the world past the ${BIRTH_WEIGHT_CAP} brain weights births stop at`;
     else carry = order;
   } catch (e) {
     refused = errText(e);

@@ -160,6 +160,18 @@ Paired settle runs, the Live config seeded with 10 of each founder, seed 1, 60 s
 
 About 8% fewer creatures on average. Both sit near 2900-3200 for the first 20 minutes, where the four founders fill the brain-weight budget.
 
+
+## No brain-weight cap (2026-11-05)
+
+Erik removed `MAX_LIVE_WEIGHTS` (7 M): only the creature cap of 5000 holds births back. Worst case 5000 of the largest add brains (37.7 M weights). Items at the admin's largest caps, no helper threads, scratch harness through `Saves` (write, `restoreNewest`, admin `load` over a full world), peak RSS:
+
+| World                              | Weights | JSON   | gzip   | Write   | Start   | Admin load | Limits                    |
+| ---------------------------------- | ------- | ------ | ------ | ------- | ------- | ---------- | ------------------------- |
+| 4970 founder copies                | 11.0 M  | 67 MB  | 5 MB   | 410 MB  | 473 MB  | 592 MB     | 2 GB scope, 1792 MB heap  |
+| 4955 of the largest add brain      | 37.4 M  | 208 MB | 152 MB | 1389 MB | 1357 MB | 1785 MB    | 2200M scope, 1536 MB heap |
+
+Pack 16 to 19 s and verify 12 to 15 s for the largest world at idle priority, load 9 (3 runs). Limits set to that + about 25%: MemoryMax 2300M, heap 1536, save JSON 260 MB, worker heap 768 MB, pack timeout 30 s, stop pack 40 s, stop budget 80 s, TimeoutStopSec 100, `MAX_GENOME_FLOATS` 40 M (30 M refused the largest world's save). The founder copies compress well because they are clones; an evolved world of that size may be nearer 50 MB gzipped (estimate, random weights gzip to 73%). State budget 1 GB: at least six of the largest saves fit.
+
 ## Live brain and eye costs, three founders (2026-10-27)
 
 Erik chose free neurons and cheaper rays for Live only (option 2): `creature.neuronCost` 0 (was 0.005) and `creature.rayCost` 0.01 (was 0.02). The Ecosystem and Arena keep their costs. The Explorer leaves the founders, so a fresh world seeds Juggernaut, Oracle and Grazer.
