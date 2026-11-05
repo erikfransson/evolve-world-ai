@@ -35,8 +35,12 @@ export const ENVS: readonly EnvSpec[] = [
   small({ id: "corridor", name: "Corridor", description: "A long, narrow room with food along it. Turn around at the ends.", size: [600, 150], food: 4, poison: 2, seconds: 25, tags: ["seek", "shape"] }),
   small({ id: "far-food", name: "Far food", description: "Three pieces of food somewhere in a bigger room. Search.", size: [400, 400], food: 3, poison: 0, seconds: 30, tags: ["search"] }),
   small({ id: "patch", name: "Patch", description: "All the food lies in one patch across the room. Find it, then clear it.", size: [450, 450], food: 10, poison: 4, seconds: 30, layout: { kind: "patch", radius: 70 }, tags: ["search"] }),
+  // Exploring: the food lies beyond the learner's sight (its own ray length, read when the episode is placed), so scanning in place finds nothing
+  small({ id: "horizon", name: "Over the horizon", description: "Nothing in sight. Three small clusters of food lie two to three sight lengths away, in directions that change every run. Leave, travel straight, clear a cluster, go on.", size: [1600, 1600], food: 10, poison: 0, seconds: 60, learnerEnergy: 200, layout: { kind: "horizon" }, reward: { food: 1 }, tags: ["explore"] }),
   // Time pressure (#56): every bite pays by the share of the episode left, so speed is paid per bite (a clear-all bonus is much noisier)
   small({ id: "fading", name: "Fading food", description: "Each bite is worth less as the clock runs down: two points at the start, nothing at the end. Eat early.", size: [400, 400], food: 8, poison: 0, seconds: 20, reward: { early: 2 }, tags: ["speed"] }),
+  small({ id: "hand-to-mouth", name: "Hand to mouth", description: "Time itself drains energy, and ten bites wind away in a chain. Run straight from one to the next: every wasted second is a bite lost.", size: [500, 500], food: 10, poison: 0, seconds: 30, learnerEnergy: 20, livingCost: 5, layout: { kind: "chain" }, reward: { food: 1, survive: 0.05, fast: 0.05 }, tags: ["speed", "energy"] }),
+  small({ id: "sweep5", name: "Clean sweep", description: "Five bites in a small room, and the clock left when the last one is eaten pays too. Clear it fast.", size: [350, 350], food: 5, poison: 0, seconds: 15, reward: { food: 0.2, fast: 0.2 }, tags: ["speed"] }),
   small({ id: "stings", name: "Stings", description: "Fading food among stinging poison. Hurry, but a careless bite costs energy.", size: [400, 400], food: 8, poison: 4, seconds: 20, poisonDamage: 20, reward: { early: 2 }, tags: ["speed"] }),
   small({ id: "race", name: "Race", description: "A trained rival eats from the same small box, and each bite is worth more the sooner you take it.", size: [300, 300], food: 8, poison: 0, seconds: 15, rivals: [{ species: PREY, count: 1, source: "pool" }], reward: { early: 2 }, tags: ["speed"] }),
   small({ id: "lap", name: "Lap", description: "Food along a circular lane between two rings of stinging poison, and each bite pays more the sooner it comes. Follow the curve, fast, and never cut across.", size: [450, 450], food: 8, poison: 0, seconds: 25, layout: { kind: "ring", lane: 64 }, poisonDamage: 30, reward: { early: 2 }, tags: ["speed", "navigate"] }),
@@ -379,10 +383,13 @@ export const ENVS: readonly EnvSpec[] = [
   bigger({ id: "live-commons", name: "Crowded commons", description: "Little food and many weak foragers. Ramming them pays.", size: [1000, 1000], food: 20, poison: 10, foodRegrow: 0.5, rivals: 25, rivalEnergy: 25, reward: { food: 0.5, ram: 2, survive: 0.02 } }),
 ];
 
+// A mix of envs that trained well (poison down, survival up): offered as a preset by the Arena. live-now is listed twice on purpose, as an extra weight when the list is cycled as a mix.
+export const RECOMMENDED_MIX: readonly string[] = ["nibble", "live-now", "far-food", "live-patch", "minefield", "live-famine", "stings", "live-now"];
+
 export const envById = (id: string): EnvSpec | undefined => ENVS.find((e) => e.id === id);
 
 // Categories for choosing envs, in display order; groupOf files an env under one by its tags.
-export const ENV_GROUPS = ["Find food", "Time pressure", "Avoid and find a way", "Memory", "Energy", "Fight", "Compete", "Advanced", "Bigger", "Custom"] as const;
+export const ENV_GROUPS = ["Find food", "Explore", "Time pressure", "Avoid and find a way", "Memory", "Energy", "Fight", "Compete", "Advanced", "Bigger", "Custom"] as const;
 export type EnvGroup = (typeof ENV_GROUPS)[number];
 export const FOLDED_GROUPS: ReadonlySet<EnvGroup> = new Set(["Advanced", "Bigger"]); // the slow ones, folded in the gallery until opened
 
@@ -391,6 +398,7 @@ export function groupOf(env: Pick<EnvSpec, "tags">): EnvGroup {
   if (t.has("custom")) return "Custom";
   if (t.has("bigger")) return "Bigger";
   if (t.has("advanced")) return "Advanced";
+  if (t.has("explore")) return "Explore";
   if (t.has("speed")) return "Time pressure";
   if (t.has("compete")) return "Compete";
   if (t.has("fight")) return "Fight";
@@ -399,3 +407,7 @@ export function groupOf(env: Pick<EnvSpec, "tags">): EnvGroup {
   if (t.has("caution") || t.has("navigate")) return "Avoid and find a way";
   return "Find food";
 }
+
+// Cost per poison bite that ES runs charge in the env reward unless an env sets its own (backprop has its own penalty instead).
+export const DEFAULT_POISON_COST = 1;
+export const MAX_POISON_COST = 10; // upper end of the ES poison cost setting, 0 turns it off

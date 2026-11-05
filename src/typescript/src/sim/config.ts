@@ -10,6 +10,14 @@ export type SelectionMethod = "truncation" | "proportional";
 // Poison damage at or above this kills outright; below it poison drains that much energy.
 export const POISON_LETHAL = 100;
 
+export const MAX_RUNS = 64;
+
+// Layouts per creature and generation, a whole number in 1..MAX_RUNS whatever the config holds (old saves lack the field).
+export const runsOf = (c: { population: { runs?: number } }): number => {
+  const n = Math.round(c.population.runs ?? 1);
+  return Number.isNaN(n) ? 1 : Math.min(MAX_RUNS, Math.max(1, n));
+};
+
 export interface SimConfig {
   seed: number;
   dt: number; // seconds per tick
@@ -64,6 +72,7 @@ export interface SimConfig {
   };
   population: {
     size: number;
+    runs?: number; // independent food/poison layouts each creature is scored on per generation, its fitness is the mean; 1 to MAX_RUNS
   };
   ga: {
     selection: SelectionMethod;
@@ -127,7 +136,7 @@ export const DEFAULT_CONFIG: SimConfig = {
     maxLifeSeconds: 3600,
   },
   brain: { hiddenLayers: [6], memory: 0.25, shortRate: 0.3, longRate: 0.01 },
-  population: { size: 150 },
+  population: { size: 150, runs: 1 },
   ga: {
     selection: "truncation",
     eliteFraction: 0.02,

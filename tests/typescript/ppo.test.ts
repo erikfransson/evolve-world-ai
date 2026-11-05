@@ -1,8 +1,8 @@
 import { Brain, layerSizes, randomGenome } from "../../src/typescript/src/sim/brain.ts";
-import { layoutConfig, randomLearner, runEpisode } from "../../src/typescript/src/sim/rl/env.ts";
+import { BLANK_ENV, layoutConfig, randomLearner, runEpisode } from "../../src/typescript/src/sim/rl/env.ts";
 import { envById } from "../../src/typescript/src/sim/rl/envs.ts";
 import { createNodeRlPool } from "../../src/typescript/src/worker/nodePool.ts";
-import { Mlp, Ppo, playRollout } from "../../src/typescript/src/sim/rl/ppo.ts";
+import { Mlp, PPO_DEFAULTS, Ppo, playRollout } from "../../src/typescript/src/sim/rl/ppo.ts";
 import type { RolloutTask } from "../../src/typescript/src/sim/rl/ppo.ts";
 import { testRng } from "./helpers.ts";
 
@@ -143,5 +143,102 @@ describe("Ppo", () => {
       }),
     });
     expect(samples).toBeGreaterThan(env.seconds * 10); // more than repeat 3 could give
+  });
+
+  it("averages the diagnostic KL over every minibatch it summed, including the one that stopped the update", () => {
+    const ppo = new Ppo([env], learner, sizes, { episodes: 2, epochs: 2, minibatch: 64, lr: 0.1, targetKl: 1e-9, diag: true }, 7);
+    ppo.step();
+    const d = ppo.lastDiag!;
+    expect(d.klMax).toBeGreaterThan(0);
+    expect(d.kl).toBeLessThanOrEqual(d.klMax / 2 + 1e-12); // the first minibatch has KL 0, the second stopped
+  });
+
+  it("raises the initial log-std to a floor above it", () => {
+    const ppo = new Ppo([env], learner, sizes, { logStd: -2, logStdMin: -1 }, 7);
+    expect(Array.from(ppo.logStd)).toEqual([-1, -1]);
+  });
+
+  it("records diagnostics only when asked, and trains the same either way", () => {
+    const off = new Ppo([env], learner, sizes, { episodes: 2 }, 7);
+    const on = new Ppo([env], learner, sizes, { episodes: 2, diag: true }, 7);
+    off.step();
+    on.step();
+    expect(off.lastDiag).toBeNull();
+    expect(Array.from(on.theta)).toEqual(Array.from(off.theta));
+    const d = on.lastDiag!;
+    expect(d.layerNorm).toHaveLength(sizes.length - 1);
+    expect(d.gradNorm).toBeGreaterThan(0);
+    expect(d.clipActive).toBeGreaterThanOrEqual(0);
+    expect(d.clipActive).toBeLessThanOrEqual(1);
+    for (const f of d.saturated) expect(f).toBeGreaterThanOrEqual(0);
+    expect(d.logStd).toHaveLength(2);
+    expect(d.advStd).toBeGreaterThan(0);
+  });
+});
+
+// With a zero critic, gamma 1 and lambda 0 the advantage of a step is its own reward, so the tests read the per-step rewards.
+const stepRewards = (env: Parameters<typeof playRollout>[0], plan: Parameters<typeof playRollout>[1], task: Parameters<typeof playRollout>[2], poisonPenalty: number): Float64Array =>
+  playRollout(env, plan, { ...task, critic: new Float32Array(task.critic.length), gamma: 1, lambda: 0, poisonPenalty }, null, {}).adv;
+
+describe("poison penalty", () => {
+  it("lowers the return of an episode that eats poison, and nothing else", () => {
+    const env = { ...BLANK_ENV, id: "t-poison", size: [200, 200] as [number, number], food: 0, poison: 40, seconds: 10, poisonDamage: 10 }; // the random learner bites poison here
+    const learner = randomLearner(env, 1);
+    const sizes = layerSizes(layoutConfig(env.world), learner.plan);
+    const ppo = new Ppo([env], learner, sizes, {}, 3);
+    ppo.setEnvs([env]);
+    const task = (ppo as unknown as { tasks(): Parameters<typeof playRollout>[2][] }).tasks()[0]!;
+    const plain = playRollout(env, learner.plan, { ...task, poisonPenalty: 0 }, null, {});
+    const pen = playRollout(env, learner.plan, { ...task, poisonPenalty: 2 }, null, {});
+    expect(pen.reward).toBe(plain.reward);
+    // The penalty is 2 per bite, so the steps lose 2 x bites in total; the learner must really bite for this to hold.
+    const lost = stepRewards(env, learner.plan, task, 0).reduce((s, v) => s + v, 0) - stepRewards(env, learner.plan, task, 2).reduce((s, v) => s + v, 0);
+    expect(lost).toBeGreaterThanOrEqual(2 - 1e-9);
+    expect(Math.abs(lost / 2 - Math.round(lost / 2))).toBeLessThan(1e-9);
+    expect(pen.ret[0]!).toBeLessThan(plain.ret[0]! - 0.1);
+  });
+});
+
+describe("env reward.poison in PPO", () => {
+  it("charges each bite on its step and keeps the steps summing to the episode reward", () => {
+    const base = { ...BLANK_ENV, id: "t-poison", size: [200, 200] as [number, number], food: 0, poison: 40, seconds: 10, poisonDamage: 10 };
+    const env = { ...base, reward: { poison: 2 } };
+    const learner = randomLearner(env, 1);
+    const sizes = layerSizes(layoutConfig(env.world), learner.plan);
+    const ppo = new Ppo([env], learner, sizes, {}, 3);
+    ppo.setEnvs([env]);
+    const task = (ppo as unknown as { tasks(): Parameters<typeof playRollout>[2][] }).tasks()[0]!;
+    const plainEnv = playRollout(base, learner.plan, task, null, {});
+    const costly = playRollout(env, learner.plan, task, null, {});
+    expect(plainEnv.reward).toBe(0);
+    expect(costly.reward).toBeLessThan(0);
+    expect(costly.ret[0]!).toBeLessThan(plainEnv.ret[0]!);
+    // Each bite is charged on its own step: negative steps before the last one, in whole bite costs.
+    const steps = stepRewards(env, learner.plan, task, 0);
+    const early = Array.from(steps.slice(0, -1)).filter((v) => v < 0);
+    expect(early.length).toBeGreaterThan(0);
+    for (const v of early) expect(Math.abs(v / 2 - Math.round(v / 2))).toBeLessThan(1e-9);
+  });
+});
+
+describe("poison penalty with env reward.poison", () => {
+  it("is not charged on top of the env's own poison cost", () => {
+    const env = { ...BLANK_ENV, id: "t-poison", size: [200, 200] as [number, number], food: 0, poison: 40, seconds: 10, poisonDamage: 10, reward: { poison: 2 } };
+    const learner = randomLearner(env, 1);
+    const sizes = layerSizes(layoutConfig(env.world), learner.plan);
+    const ppo = new Ppo([env], learner, sizes, {}, 3);
+    ppo.setEnvs([env]);
+    const task = (ppo as unknown as { tasks(): Parameters<typeof playRollout>[2][] }).tasks()[0]!;
+    const total = (pen: number): number => stepRewards(env, learner.plan, task, pen).reduce((s, v) => s + v, 0);
+    expect(playRollout(env, learner.plan, task, null, {}).reward).toBeLessThan(0); // the learner must bite
+    expect(total(5)).toBe(total(0));
+  });
+});
+
+describe("PPO defaults", () => {
+  it("keep exploring and charge poison in training only", () => {
+    expect(PPO_DEFAULTS.logStdMin).toBe(-1);
+    expect(PPO_DEFAULTS.poisonPenalty).toBe(1);
+    expect(PPO_DEFAULTS.logStd).toBe(-0.5);
   });
 });

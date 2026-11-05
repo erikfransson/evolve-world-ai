@@ -18,6 +18,7 @@ import { plainText } from "./validate.ts";
 import { envById } from "./envs.ts";
 import { LAYOUT_KINDS, placeLayout } from "./layouts.ts";
 import type { Layout } from "./layouts.ts";
+import type { ProcSpec } from "./procEnv.ts"; // type only, so the web bundle does not pull procEnv in
 
 // RL environments (#27): short episodes on the Ecosystem engine, so a creature trained here acts exactly as it would in the
 // Ecosystem or the two-species hunt world. An environment is plain data: a small world, the learner's species, rivals, and reward weights.
@@ -56,6 +57,7 @@ export interface EnvSpec {
   collisionDamage?: boolean; // bumps cost energy and a creature killed by one gives its energy to the other
   learnerEnergy?: number; // the learner's start energy, the species' when left out
   poisonDamage?: number; // energy one poison item drains; lethal when left out (POISON_LETHAL)
+  livingCost?: number; // energy per second just for being alive (the engine's 2 when left out), to make time itself costly
   fast?: number; // share of the world under fast patches (terrain: 175% speed, so harder bumps)
   // Duel (#44): instead of the rivals, one scripted charger that moves straight at a fixed speed, starting `distance` away at
   // `bearing` radians off the learner's facing and heading at the learner plus `offset` (0 charges, pi/2 crosses, pi moves away).
@@ -71,7 +73,10 @@ export interface EnvSpec {
   // ram: per rival that dies touching the learner while collision damage is on.
   // cross: per poison wall of the layout the learner got past (at any moment), a first reward on the way to food beyond it.
   // early: per item or ram, times the share of the episode still left at the bite (1 at the start, 0 at the end).
-  reward: { food?: number; kill?: number; survive?: number; energy?: number; fast?: number; ram?: number; cross?: number; early?: number };
+  // explore: per grid cell (side = max(20, the learner's ray length)) it newly entered, the start cell not counted.
+  // poison: a cost per poison item the learner eats, a lethal bite included (positive values subtract; off when left out).
+  reward: { explore?: number; food?: number; kill?: number; survive?: number; energy?: number; fast?: number; ram?: number; cross?: number; early?: number; poison?: number };
+  proc?: ProcSpec; // self-play (S1): a new crowded world every episode, played by runCrowdEpisode; every other field is then unused
   tags: string[];
 }
 
@@ -96,6 +101,7 @@ export interface EpisodeResult {
   firstFood: number; // seconds until the first bite, -1 when none
   elapsed: number; // seconds really played (seconds counts a cleared episode as lived to the end)
   clearTime: number; // seconds until the learner ate every starting item (speed-scored envs without regrowth), -1 when not
+  cells: number; // grid cells (side = max(20, the learner's ray length)) the learner visited, its start cell included
   died: number; // 1 when the learner died before the episode ended, else 0
 }
 
@@ -127,6 +133,10 @@ export function envConfig(env: EnvSpec, seed: number): EcoConfig {
   const per = itemsPerDensity(base);
   base.world.foodDensity = env.food / per;
   base.world.poisonDensity = env.poison / per;
+  if (env.livingCost !== undefined) {
+    base.creature.livingCost = env.livingCost;
+    if (base.species) base.species[env.role]!.livingCost = env.livingCost;
+  }
   const total = env.rivals.reduce((a, r) => a + r.count, 1);
   base.eco = {
     ...base.eco,
@@ -317,6 +327,12 @@ const crossed = (walls: readonly number[], minY: number, radius: number): number
 let spareKernels: SenseKernels | null = null;
 export const dropSpareKernels = (): void => { spareKernels = null; }; // the next episode builds fresh ones (tests)
 
+// procEnv.ts registers how self-play episodes are played when a Node tool imports it; env.ts cannot import it (cycle, and the web bundle stays free of it).
+let crowdRunner: ((spec: ProcSpec, learner: Learner, seed: number, library: Library) => EpisodeResult) | null = null;
+export function registerCrowdRunner(run: NonNullable<typeof crowdRunner>): void {
+  crowdRunner = run;
+}
+
 // Plays one episode and scores the learner. onTick, when given, sees the world after every tick (the Arena draws it).
 // act, when given, may overwrite the learner's outputs after its brain ran and before it moves (a stochastic policy, rlGrad).
 export function runEpisode(
@@ -328,9 +344,14 @@ export function runEpisode(
   onTick?: (eco: Ecosystem) => void,
   act?: (learner: Creature) => void,
 ): EpisodeResult {
+  if (env.proc) {
+    if (onTick || act) throw new Error("self-play episodes cannot be drawn or played stochastically");
+    if (!crowdRunner) throw new Error("self-play episodes need procEnv.ts to be imported (Node tools only)");
+    return crowdRunner(env.proc, learner, seed, library);
+  }
   env = variantFor(env, seed);
   const config = episodeConfig(env, seed);
-  const placed = env.layout ? placeLayout(env.layout, env.size, env.food, env.poison, seed) : null;
+  const placed = env.layout ? placeLayout(env.layout, env.size, env.food, env.poison, seed, learner.plan.rayLength) : null;
   const cast = castFor(env, config, learner, seed, pool, library, placed?.start);
   const kernels = config.eco.wasm ? (spareKernels ?? SenseKernels.create(config)) : null;
   spareKernels = null; // taken, so an episode started inside this one's onTick builds its own
@@ -339,7 +360,7 @@ export function runEpisode(
   if (onTick || act) eco.detail = 0;
   const reach = 2 * config.creature.radius + 2; // bumping distance, for crediting a ram
   const ticks = Math.round(env.seconds / config.dt);
-  const out: EpisodeResult = { reward: 0, food: 0, kills: 0, rams: 0, seconds: 0, energy: 0, poison: 0, poisonEnergy: 0, firstFood: -1, elapsed: 0, clearTime: -1, died: 0 };
+  const out: EpisodeResult = { reward: 0, food: 0, kills: 0, rams: 0, seconds: 0, energy: 0, poison: 0, poisonEnergy: 0, firstFood: -1, elapsed: 0, clearTime: -1, cells: 0, died: 0 };
   const rivalEnergy = new Map<number, number>(); // each rival's energy after the previous tick, for crediting rams
   if (env.collisionDamage) for (const m of eco.members) if (m.id !== 0) rivalEnergy.set(m.id, m.creature.state.energy); // so a death on the first tick is judged too
   let poisonBefore = eco.poisonEaten; // the world's poison count before the tick, to skip poison deaths
@@ -380,6 +401,13 @@ export function runEpisode(
     out.energy = 0;
   };
   let cleared = 0; // seconds left when the learner ate the last food
+  const cell = Math.max(20, learner.plan.rayLength); // coverage grid: one byte per cell, one index per tick
+  const gx = Math.ceil(env.size[0] / cell);
+  const gy = Math.ceil(env.size[1] / cell);
+  const visited = new Uint8Array(gx * gy);
+  const at = (x: number, y: number): number => Math.min(gy - 1, Math.max(0, Math.floor(y / cell))) * gx + Math.min(gx - 1, Math.max(0, Math.floor(x / cell)));
+  const st0 = eco.get(0)?.creature.state;
+  if (st0) { visited[at(st0.x, st0.y)] = 1; out.cells = 1; }
   let minY = Infinity; // the learner's highest point (walls run across, the food lies above them)
   // Only speed-scored envs without regrowth end early, and only when the learner itself ate every item (not a rival).
   const clearable = env.reward.fast !== undefined && env.food > 0 && env.foodRegrow === 0;
@@ -406,6 +434,8 @@ export function runEpisode(
     out.kills = me.kills;
     out.energy = me.creature.state.energy;
     minY = Math.min(minY, me.creature.state.y);
+    const ci = at(me.creature.state.x, me.creature.state.y);
+    if (visited[ci] === 0) { visited[ci] = 1; out.cells++; }
     out.seconds = (t + 1) * config.dt;
     out.elapsed = out.seconds;
     if (clearable && me.eaten === env.food) {
@@ -417,14 +447,14 @@ export function runEpisode(
   }
   const w = env.reward;
   const startEnergy = eco.species[env.role]!.startEnergy;
-  out.reward = (w.food ?? 0) * out.food + (w.kill ?? 0) * out.kills + (w.survive ?? 0) * out.seconds + (w.energy ?? 0) * energySignal(out.energy, startEnergy) + (w.fast ?? 0) * cleared + (w.ram ?? 0) * out.rams + (w.cross ?? 0) * crossed(placed?.walls ?? [], minY, config.creature.radius) + (w.early ?? 0) * early;
+  out.reward = (w.food ?? 0) * out.food + (w.kill ?? 0) * out.kills + (w.survive ?? 0) * out.seconds + (w.energy ?? 0) * energySignal(out.energy, startEnergy) + (w.fast ?? 0) * cleared + (w.ram ?? 0) * out.rams + (w.cross ?? 0) * crossed(placed?.walls ?? [], minY, config.creature.radius) + (w.early ?? 0) * early + (w.explore ?? 0) * Math.max(0, out.cells - 1) - (w.poison ?? 0) * out.poison;
   if (kernels) spareKernels = kernels; // an episode that throws just drops them
   return out;
 }
 
 // Mean result over several seeds (layouts, positions and rivals all change with the seed).
 export function scoreLearner(env: EnvSpec, learner: Learner, seeds: readonly number[], pool: readonly PoolEntry[] | null = null, library: Library = {}): EpisodeResult {
-  const sum: EpisodeResult = { reward: 0, food: 0, kills: 0, rams: 0, seconds: 0, energy: 0, poison: 0, poisonEnergy: 0, firstFood: 0, elapsed: 0, clearTime: 0, died: 0 };
+  const sum: EpisodeResult = { reward: 0, food: 0, kills: 0, rams: 0, seconds: 0, energy: 0, poison: 0, poisonEnergy: 0, firstFood: 0, elapsed: 0, clearTime: 0, cells: 0, died: 0 };
   for (const s of seeds) {
     const r = runEpisode(env, learner, s, pool, library);
     for (const k of Object.keys(sum) as (keyof EpisodeResult)[]) sum[k] += r[k] / seeds.length;
@@ -464,7 +494,7 @@ export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | s
   if (rivals.reduce((a, r) => a + r.count, 0) > L.rivals[1]) return `at most ${L.rivals[1]} rivals`;
   const w = (v.reward ?? {}) as Record<string, unknown>;
   const reward: EnvSpec["reward"] = {};
-  for (const k of ["food", "kill", "survive", "energy", "fast", "ram", "cross", "early"] as const) {
+  for (const k of ["food", "kill", "survive", "energy", "fast", "ram", "cross", "early", "poison", "explore"] as const) {
     if (w[k] === undefined) continue;
     if (!n(w[k], L.weight)) return `reward ${k} must be ${L.weight[0]} to ${L.weight[1]}`;
     reward[k] = w[k] as number;
@@ -506,7 +536,7 @@ export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | s
     const l = v.layout as Record<string, unknown> | null;
     if (!l || !(LAYOUT_KINDS as readonly unknown[]).includes(l.kind)) return `layout must be one of ${LAYOUT_KINDS.join(", ")}`;
     const [sw, sh] = size as number[];
-    const fixed = l.kind === "sprint" || l.kind === "cuedoor" || l.kind === "flash" || l.kind === "stops"; // no size parameter
+    const fixed = l.kind === "sprint" || l.kind === "cuedoor" || l.kind === "flash" || l.kind === "stops" || l.kind === "chain" || l.kind === "horizon"; // no size parameter
     const round = l.kind === "patch" || l.kind === "islands"; // sized by a radius; ring by its lane; the walled ones by a gap
     const param = round ? l.radius : l.kind === "ring" ? l.lane : l.gap;
     // A patch must fit and three islands must fit apart; wall gaps leave wall on both sides of a door.
@@ -519,7 +549,7 @@ export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | s
     layout =
       l.kind === "sprint" ? { kind: "sprint", ...nearOf }
       : l.kind === "stops" ? { kind: "stops", ...(l.count === undefined ? {} : { count: l.count as number }) }
-      : l.kind === "cuedoor" || l.kind === "flash" ? { kind: l.kind }
+      : l.kind === "cuedoor" || l.kind === "flash" || l.kind === "chain" || l.kind === "horizon" ? { kind: l.kind }
       : l.kind === "patch" || l.kind === "islands" ? { kind: l.kind, radius: param as number }
       : l.kind === "rooms" ? { kind: "rooms", gap: param as number, ...nearOf }
       : l.kind === "ring" ? { kind: "ring", lane: param as number }

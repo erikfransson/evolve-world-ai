@@ -1,0 +1,76 @@
+# T10 D1: why backprop (PPO) hits a wall
+
+Append-only. Tools: `rlGrad.ts --diag out.csv` (per-update stats, `Ppo.lastDiag`, off by default and bit-identical when off), `--envs a,b|all`, `--from design:pN|founder:ID`, `--logstd-min`, `--poison-penalty`. Summaries: `probes/d1-summary.py`, `probes/d1-panel.py`. Raw CSV and genomes: `src/typescript/runs/d1/` (git-ignored). Battery: M1's `rlTransfer.ts` (rates per real minute, 32 seeds).
+
+## Results
+
+| claim | number | where |
+|-------|--------|-------|
+| Main cause: the learned policy std collapses to the floor (log-std -3, std 0.05) and the run stops exploring | minefield random:1, lr 5e-4: log-std turn -0.69 -> -3.0 by update ~5000; held-out peaks 1.40 at ~2000 then 1.2; same on stings (3.42 peak, 3.3 end) and all 42 envs mixed (3.03 peak, 2.28 end); panel p1 2.66 -> 1.89, p2 4.86 -> 4.69, p3 4.62 -> 3.73 | minefield-lr5e4, stings-lr5e4, all-lr5e4, panel-base-p1..p3 |
+| Clipping is always on from update ~2000 | share of minibatches with pre-clip grad norm > 0.5: 0.42 -> 0.92 -> 1.00; norm 0.54 -> 5.9 (1/std growth), 9.9 on p3 | same |
+| Not weight growth or saturation | hidden units with abs pre-activation > 2.5: 0.000 in every run; weight L2 first layer 6.0 -> 8.8, max abs weight < 1.0 | same |
+| Not critic failure | explained variance 0.3 -> 0.5 (minefield), 0.56 -> 0.71 (stings) | same |
+| KL grows, not tiny | approx KL 0.001 -> 0.015, clip fraction 0.002 -> 0.09 as std shrinks | same |
+| Arena trains only 16 of 42 envs when "all" is chosen | episode e plays env e % N with 16 episodes per update, so envs 17+ (truffles, two-stops, ..., live-commons) never train | ppo.ts `tasks()`, envs listing |
+| Poison has no reward term | stings/fence/ring/islands (damage 20-30, reward early/food only): a bite costs energy only. minefield/corridor (lethal): a bite ends the episode, costing only future food, through the critic | envs.ts, env.ts reward |
+| Fixes tried: poison penalty 1.0 per bite | p1 tiny (small scope) poison/min 5.74 -> 2.49, food/min 6.7 -> 8.7, survival 0.37 -> 0.50; bigger poison 2.21 -> 0.95. p6 big: no gain (small poison 2.69 -> 3.62, bigger 0.99 -> 0.97) | transfer.json, 1 seed, 2 designs |
+| Fixes tried: log-std floor -1.5 | p6: poison 2.69 -> 2.32 small, 0.99 -> 2.07 bigger; p1: 5.74 -> 5.22 small, no real change. No consistent effect | same |
+| Both together | p1: poison 3.78 small, 1.35 bigger; p6: 2.06 small, 1.67 bigger | same |
+
+## Findings in plain language
+
+- The wall is exploration collapse. Adam moves log-std by about the learning rate every minibatch, in a consistent direction, so std falls to the clamp at -3 within a few thousand updates even at lr 5e-4 (slow lr only delays it). With std 0.05 the policy cannot try anything new, the 1/std gradient inflation keeps clipping on, and held-out then drifts down in noise. The panel shows the same on small and large brains (p1, p2, p3).
+- Saturation and weight growth are not the problem here (zero saturated hidden units, max weight < 1). Erik's guess does not hold for fresh designs. Founders are different (T1: 67 to 78 percent saturated outputs).
+- Poison is only learned indirectly. Non-lethal poison has no reward cost at all, lethal poison only costs the future food. Observations are fine: each ray reports hit kind as separate food, poison, wall flags plus closeness, at any ray length. The return after a death is zero (no bootstrap), so the signal is not lost to gamma 0.985 per decision, but it is small and delayed, and the critic is only half right (explained variance 0.5 to 0.7).
+- A per-bite penalty helped the tiny brain clearly and did nothing for the big brain in one seed each. The log-std floor alone did not help in 300 s runs. These runs were short (300 s, 1250 updates for p6, so p6 had not collapsed yet). Treat them as leads, not as proof.
+
+## Not done
+
+Only designs p6 and p1 were scored on the battery for the fixes (lock contention made each run take about 20 min wall), one seed per cell. Entropy bonus, advantage normalisation per env and an lr schedule were not run. Next: fixed update counts instead of seconds, 3 seeds, all 8 panel designs, and test a std floor of -1 to -1.5 with the penalty at 500 to 5000 updates.
+
+## Log
+
+- 2026-10-31. Instrumented PPO, long runs on random:1 (minefield, stings, all envs) and panel baselines. Re-scored with the corrected battery (363ddf6).
+
+## D2: sweep over the 8-design panel (1 training seed)
+
+Setup: designs p1-p8, 4-env mix (minefield, stings, nibble, far-food), 2000 updates, lr 1e-3, Arena defaults otherwise, training seed 1 only (seed 2 and the full entropy variant dropped, see below). Scored with M1's battery, 64 seeds, paired per design and test seed against variant a. Cells are min / median / max over the 8 designs of the difference to a, then designs with a 95% CI above / below 0 ("up/down"). Good direction: food up, poison down, first food down, survival up. With one training seed the design-to-design noise is large (ES reruns moved food/min by -4.7 to +4.1), so only signs that are consistent across designs count.
+
+Variants: a base, b log-std floor -1.0, d poison penalty 1.0 per bite, e both. Variant c (entropy 0.01) was run on p1 and p2 only and dropped: it raised the std instead of holding it (log-std thrust +0.83 at 2000). Existing entropy option: a per-sample bonus on log-std in the Adam gradient, so 0.01 is not "a floor", it pushes std up.
+
+Log-std (mean over designs) at updates 500 / 1000 / 2000, turn and thrust:
+
+| variant | turn                | thrust              | held-out on the mix |
+|---------|---------------------|---------------------|---------------------|
+| a       | -1.24 -1.84 -2.72   | -1.02 -1.44 -2.10   | 3.53 3.37 3.25      |
+| b       | -0.99 -1.00 -1.00   | -0.94 -1.00 -0.99   | 3.47 3.49 3.68      |
+| d       | -1.25 -1.83 -2.58   | -1.08 -1.60 -2.30   | 3.18 3.38 3.33      |
+| e       | -0.96 -0.98 -1.00   | -0.96 -0.99 -0.99   | 3.29 3.36 3.65      |
+| c (p1, p2) | -0.55 -0.44 +0.11 | -0.10 +0.29 +0.83 | 3.40 3.23 3.42      |
+
+Pre-clip gradient norm at 2000: a 6.3, d 5.9, b 1.3, e 1.3. The floor removes the std collapse and the gradient blow-up, and the held-out curve rises with the floor (b 3.68, e 3.65) while base falls (3.53 to 3.25). The penalty alone does not touch the collapse.
+
+Battery, small scope (min / median / max, up / down of 8):
+
+| variant | food/min              | poison/min                  | first food s          | survival              |
+|---------|-----------------------|-----------------------------|-----------------------|-----------------------|
+| b       | -2.22 / 0.32 / 1.26 (0/1) | -3.29 / -1.08 / 2.74 (2/5) | -1.87 / -0.55 / 2.09 (2/2) | -0.18 / 0.09 / 0.13 (5/2) |
+| d       | -4.29 / -0.02 / 1.76 (1/2) | -5.80 / -1.31 / 1.51 (1/4) | -3.58 / -0.77 / 2.94 (2/2) | -0.08 / 0.05 / 0.31 (4/3) |
+| e       | -3.18 / 0.29 / 5.33 (2/3) | -5.01 / -1.93 / -0.01 (0/6) | -4.83 / -0.24 / 2.21 (2/2) | -0.05 / 0.07 / 0.32 (6/1) |
+
+Battery, bigger scope:
+
+| variant | food/min              | poison/min                  | first food s            | survival              |
+|---------|-----------------------|-----------------------------|-------------------------|-----------------------|
+| b       | -3.32 / 1.32 / 3.76 (5/1) | -2.38 / -0.21 / 1.46 (2/3) | -9.20 / -4.78 / 0.15 (0/5) | -0.10 / 0.09 / 0.15 (5/2) |
+| d       | -3.39 / -1.17 / 3.11 (3/4) | -3.84 / -0.92 / 1.84 (2/4) | -7.70 / 0.26 / 9.37 (2/3) | -0.12 / 0.08 / 0.31 (5/3) |
+| e       | -3.02 / 0.83 / 5.01 (5/2) | -3.52 / -1.19 / 1.54 (2/5) | -15.30 / -6.21 / 6.41 (2/5) | -0.10 / 0.08 / 0.39 (5/1) |
+
+Reading:
+- The log-std floor (b) fixes the mechanism: std stays at 0.37, gradients stay small, held-out on the mix keeps rising instead of sagging. On the battery it is a mild gain: bigger-scope food up in 5 of 8 designs, survival up in 5 of 8 on both scopes, first food 5 s earlier on bigger envs. Nothing clearly hurts.
+- The poison penalty alone (d) is mixed, no consistent gain (poison down 4, up 1 on small; food down 4 / up 3 on bigger). It does not stop the collapse, which fits.
+- The combination (e) is the most consistent: small-scope poison/min goes down in 6 of 8 designs and up in none (median -1.9, max -0.01), small survival up in 6 of 8, down in 1, bigger first food faster in 5 of 8. Food/min is not clearly hurt (small 2 up / 3 down, bigger 5 up / 2 down, median +0.3 / +0.8). The effect sizes are inside the single-seed noise for most single designs, so this rests on the sign consistency across designs.
+- Recommendation: make e (logStdMin -1.0 plus poison penalty 1.0) the candidate default for backprop, ship b (the floor alone) if the penalty is judged too invasive on custom envs. Entropy 0.01 is not recommended as built. Confirm with a second training seed on e vs a before changing defaults.
+- Caveats: one training seed, 2000 updates only, the d and e held-out numbers on the mix are not comparable with a and b because the penalty is in the training reward.
+
+Dropped to save lock time: seed 2 for all variants, and variant c beyond p1 and p2 (coordinator's call, queue2.sh).

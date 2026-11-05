@@ -1,4 +1,5 @@
 import type { Rng } from "../types.ts";
+import { assertFinite } from "./resume.ts";
 
 // Evolution strategies (Salimans et al. 2017): antithetic Gaussian perturbations of the weights, standardised (or centred-rank) fitness
 // shaping, and an Adam step along the estimated reward gradient. Small steps from a trained creature, so it is nudged, not replaced.
@@ -17,6 +18,14 @@ const BETA1 = 0.9;
 const BETA2 = 0.999;
 const EPS = 1e-8;
 
+export interface EsState {
+  theta: number[];
+  m: number[];
+  v: number[];
+  step: number;
+  spare: number[] | null; // next step's noise when prepare ran
+}
+
 export class Es {
   readonly theta: Float32Array;
   readonly options: EsOptions;
@@ -33,6 +42,27 @@ export class Es {
     this.m = new Float32Array(theta.length);
     this.v = new Float32Array(theta.length);
     this.noise = new Float32Array(this.options.pairs * theta.length);
+  }
+
+  // Weights, Adam moments, step and any noise drawn ahead, for resuming a run (JSON safe).
+  save(): EsState {
+    return { theta: Array.from(this.theta), m: Array.from(this.m), v: Array.from(this.v), step: this.step, spare: this.prepared ? Array.from(this.spare!) : null };
+  }
+
+  load(s: EsState): void {
+    if (s.theta.length !== this.theta.length || s.m.length !== this.m.length || s.v.length !== this.v.length) throw new Error("ES state does not fit");
+    if (s.spare !== null && s.spare.length !== this.options.pairs * this.theta.length) throw new Error("ES state does not fit (the noise drawn ahead is for another number of pairs)");
+    assertFinite("ES weight", s.theta);
+    assertFinite("ES moment", s.m);
+    assertFinite("ES moment", s.v);
+    if (s.spare) assertFinite("ES noise", s.spare);
+    assertFinite("ES step", s.step);
+    this.theta.set(s.theta);
+    this.m.set(s.m);
+    this.v.set(s.v);
+    this.step = s.step;
+    this.prepared = s.spare !== null;
+    if (s.spare) (this.spare ??= new Float32Array(s.spare.length)).set(s.spare);
   }
 
   // Draws the noise the next ask would, ahead of time and from the same rng calls in the same order (it does not need theta).

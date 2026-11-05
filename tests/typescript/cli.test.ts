@@ -137,3 +137,51 @@ describe.concurrent("buildPool.ts and ecoBench.ts", () => {
     expect(b.err).toContain("must be a number");
   });
 });
+
+describe("RL CLI option checks", () => {
+  it("rejects --poison with --selfplay and points to --poisonw", async () => {
+    const r = await run("rlTrain", "--selfplay", "--poison", "1");
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("--poisonw");
+  });
+  it("accepts --poison 0 with --selfplay (only a non-zero value is rejected) and leaves the default alone", async () => {
+    const r = await run("rlTrain", "--selfplay", "--poison", "0", "--iters", "0");
+    expect(r.err).not.toContain("--poisonw");
+  });
+  it.each(["abc", "5", "-9"])("rejects --logstd-min %s", async (v) => {
+    const r = await run("rlGrad", "--from", "random:1", "--logstd-min", v);
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("--logstd-min");
+  });
+  it.each([["rlGrad", "6k"], ["rlGrad", "1.5"], ["rlGrad", "0"], ["rlTrain", "6k"], ["rlTrain", "-3"]])("%s rejects --ckpt %s", async (script, v) => {
+    const r = await run(script, `--ckpt=${v}`, "--ckpt-dir", scratchDir(), "--iters", "1");
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("--ckpt must be");
+  });
+  it("rlGrad rejects --repeat-then with --state (it cannot be resumed)", async () => {
+    const r = await run("rlGrad", "--repeat-then", "5:1", "--state", resolve(scratchDir(), "s.json"), "--iters", "1");
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("--repeat-then");
+  });
+  it("rlGrad refuses to resume a state with other settings, and resumes one with the same", async () => {
+    const state = resolve(scratchDir(), "s.json");
+    const base = ["--from", "random:1", "--episodes", "2", "--eval", "1", "--seconds", "30", "--state", state];
+    expect((await run("rlGrad", ...base, "--iters", "1")).code).toBe(0);
+    const other = await run("rlGrad", ...base, "--iters", "2", "--lr", "0.001");
+    expect(other.code).toBe(1);
+    expect(other.err).toContain("cannot resume");
+    expect(other.err).toContain("lr");
+    const same = await run("rlGrad", ...base, "--iters", "2");
+    expect(same.code).toBe(0);
+    expect(same.out).toContain("after 4 episodes");
+  });
+  it("rlTrain refuses to resume a state with a bigger --pairs", async () => {
+    const state = resolve(scratchDir(), "s.json");
+    const base = ["--from", "random:1", "--episodes", "1", "--eval", "1", "--threads", "1", "--state", state];
+    expect((await run("rlTrain", ...base, "--pairs", "2", "--iters", "1")).code).toBe(0);
+    const other = await run("rlTrain", ...base, "--pairs", "3", "--iters", "2");
+    expect(other.code).toBe(1);
+    expect(other.err).toContain("cannot resume");
+    expect(other.err).toContain("pairs");
+  });
+});
