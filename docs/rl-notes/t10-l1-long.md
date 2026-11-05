@@ -68,3 +68,29 @@ Log-std (turn, thrust), from `runs/l1/*.trace.jsonl`:
 - Resume test `tests/typescript/rlResume.test.ts`: PPO and ES, stop, save through JSON, load, carry on, equals the uninterrupted run bit for bit. Fails (both) when the rng state is not restored, checked.
 - Tables: `probes/l1-tables.py`. Raw outputs in git-ignored `src/typescript/runs/l1/`.
 - 2026-11-04. rl, ppo, arena tests pass (184), rlBench fingerprint 1301207144.
+
+## Update 2026-11-05: bp-floor to 18k updates (p1, p3)
+
+Merged development (ab1c15c) into rl-long (6aafa93): rl, ppo, arena and rlResume tests pass (198), rlBench fingerprint 2726570458. Development now defaults PPO to a std floor of -1 and its own `poisonPenalty` 1 (skipped on envs with their own `reward.poison`); the continued runs pass `--poison 1 --poison-penalty 0 --logstd-min=-1`, which is the same training as before the merge. bp-floor, same settings, resumed from the saved states, chunks of 1200 s of steps. Log-std stayed at about -1.0 on both turn and thrust at 6k, 12k and 18k.
+
+| design | point | small food | small poison | small surv | held2 food | held2 poison | held2 surv | long food | long poison | long surv |
+|--------|------:|-----------:|-------------:|-----------:|-----------:|-------------:|-----------:|----------:|------------:|----------:|
+| p1-tiny |  6000 | 6.67 | 1.02 | 0.49 | 5.74 | 0.94 | 0.67 | 8.59 | 0.22 | 0.40 |
+| p1-tiny | 18000 | 7.28 | 0.75 | 0.54 | 5.55 | 0.52 | 0.71 | 7.97 | 0.11 | 0.38 |
+| p3-mid  |  6000 | 15.80 | 1.23 | 0.73 | 11.60 | 0.58 | 0.89 | 18.20 | 0.07 | 0.91 |
+| p3-mid  | 18000 | 17.96 | 0.94 | 0.77 | 8.51 | 0.97 | 0.72 | 13.34 | 0.11 | 0.74 |
+
+Paired 18k minus 6k over the 64 seeds (mean, 95% CI):
+
+| design | scope | food/min | poison/min | survival |
+|--------|-------|----------|------------|----------|
+| p1-tiny | small | +0.62 [-0.57, +1.80] | -0.27 [-0.60, +0.06] | +0.05 [+0.01, +0.08] |
+| p1-tiny | held2 | -0.19 [-0.83, +0.45] | -0.42 [-0.86, +0.01] | +0.04 [-0.01, +0.10] |
+| p3-mid  | small | +2.16 [+0.15, +4.18] | -0.29 [-0.64, +0.06] | +0.04 [0.00, +0.08] |
+| p3-mid  | held2 | -3.08 [-4.03, -2.14] | +0.39 [+0.08, +0.69] | -0.16 [-0.22, -0.11] |
+
+Reading:
+- p1 (tiny brain) plateaus. Everything moves less than the +-4 food noise floor, stings keep falling a little (held2 0.94 to 0.52, not clearly outside the CI). No decline.
+- p3 declines on the unseen Live-like envs even with the floor. held2 food -3.1, survival -0.16, stings +0.39 (CIs exclude 0), long survival 0.91 to 0.74. The held2 food drop is inside the +-4 single-seed food noise, but survival and stings are not food. At the same time small-scope food rises (+2.2) and small stings fall, so the policy keeps fitting the trained mix while its transfer to live-poison and live-commons gets worse. That is overfitting to the mix, not exploration collapse (std held at the floor).
+- So the floor removes the 6k wall for p1, but for p3 a later decline appears between 6k and 18k on held-out Live-like worlds. Best held-out point for p3 was 2k to 6k. One seed, two designs: a lead. A held-out-based early stop (keep the best of 2k, 6k, 18k) would have been the safer default; not tested with a second seed.
+- p6 was not continued (dropped by request).
