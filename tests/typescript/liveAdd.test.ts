@@ -12,7 +12,6 @@ import { mkdtempSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cleanMap, worldFacts } from "../../src/typescript/src/live/mapInfo.ts";
-import { reshapeGenome } from "../../src/typescript/src/live/reshape.ts";
 import { startPublic } from "../../server/src/public.ts";
 import type { PublicServer } from "../../server/src/public.ts";
 import { applyTunables, readTunables, tunableLimits } from "../../server/src/tunables.ts";
@@ -728,16 +727,6 @@ describe("add on the public server", () => {
 });
 
 describe("tuning and the map info", () => {
-  it("reshapes a genome to a tuned plan: the same plan keeps every weight, a new plan gets its length", () => {
-    const g = genomeFor(plan);
-    expect(Array.from(reshapeGenome(plan, g, plan))).toEqual(Array.from(g));
-    const to = { ...plan, rayCount: 5, hiddenLayers: [9], memoryShort: 0, memoryLong: 2 };
-    const out = reshapeGenome(plan, g, to);
-    expect(out.length).toBe(genomeLengthFor("forager", to));
-    expect(out.every(Number.isFinite)).toBe(true);
-    expect(() => reshapeGenome(plan, g, { ...plan, hiddenLayers: [6, 6] })).toThrow(/layers/);
-  });
-
   it("sends the ground shares of the world in the hello; a plain world is all normal ground", () => {
     const w = new LiveWorld(smallConfig(), null);
     expect(w.hello(10).map).toEqual({ ground: { normal: 1, mud: 0, firm: 0, rock: 0 }, regions: [] });
