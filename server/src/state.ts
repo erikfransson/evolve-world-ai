@@ -1,4 +1,4 @@
-import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readSync, readdirSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readSync, readdirSync, renameSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { gzip, gzipSync } from "node:zlib";
 import { promisify } from "node:util";
@@ -90,13 +90,15 @@ export function pruneLine(p: { gone: string[]; over: boolean; error?: string }):
   return parts.length ? `state budget ${LIMITS.maxStateBytes / 1e6} MB: ${parts.join("; ")}` : "";
 }
 
-// Bytes of the regular files under dir, not following symlinks.
+// Bytes of the regular files under dir, not following symlinks. An entry removed meanwhile counts nothing.
 function treeBytes(dir: string): number {
   let total = 0;
   for (const n of readdirSync(dir)) {
-    const st = lstatSync(join(dir, n));
-    if (st.isFile()) total += st.size;
-    else if (st.isDirectory()) total += treeBytes(join(dir, n));
+    try {
+      const st = lstatSync(join(dir, n));
+      if (st.isFile()) total += st.size;
+      else if (st.isDirectory()) total += treeBytes(join(dir, n));
+    } catch { /* removed meanwhile */ }
   }
   return total;
 }
@@ -133,15 +135,9 @@ export class StateStore {
     for (const n of readdirSync(dir)) if (TMP.test(n)) unlinkSync(join(dir, n)); // left by a crash mid-write
   }
 
-  // Total size of the files in the directory, for the disk cap.
+  // Total size of the files in the directory and its before-reset folders, for the disk cap.
   dirBytes(): number {
-    let total = 0;
-    for (const n of readdirSync(this.dir)) {
-      try {
-        total += statSync(join(this.dir, n)).size;
-      } catch { /* removed meanwhile */ }
-    }
-    return total;
+    return treeBytes(this.dir);
   }
 
   // Writes the gzipped JSON through a .tmp file and a rename, then rotates. Throws, writing nothing, when the directory is over the cap.

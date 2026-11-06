@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, symlinkSync, truncateSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, symlinkSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
@@ -440,6 +440,22 @@ describe("saves", () => {
       expect(readdirSync(dir)).toEqual(["filler"]);
       const live = world(5);
       await expect(new Saves(live, store).save()).rejects.toThrow(/not saved.*cap/);
+    } finally {
+      LIMITS.maxStateDirBytes = cap;
+    }
+  });
+
+  // Red without the recursion: the cap counted a before-reset folder as its directory entry, not the saves inside it.
+  it("counts the saves in before-reset folders toward the disk cap", async () => {
+    const dir = tmp();
+    const store = new StateStore(dir);
+    const cap = LIMITS.maxStateDirBytes;
+    LIMITS.maxStateDirBytes = 100000;
+    try {
+      mkdirSync(join(dir, "before-reset-2026-10-01T00-00-00-000Z"));
+      writeFileSync(join(dir, "before-reset-2026-10-01T00-00-00-000Z", saveName(at(5))), Buffer.alloc(200000));
+      expect(store.dirBytes()).toBeGreaterThanOrEqual(200000);
+      await expect(store.write("{}", { population: 1, tick: 1 }, at(0))).rejects.toThrow(/cap/);
     } finally {
       LIMITS.maxStateDirBytes = cap;
     }

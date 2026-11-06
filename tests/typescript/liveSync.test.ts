@@ -381,6 +381,32 @@ describe("failing ticks", () => {
     await second;
     expect(stepsBeforeReady).toEqual([false]);
   });
+
+  // Red without the check: the tick that awaited the helpers' start stepped the world a restore had meanwhile replaced, on this thread.
+  it("skips the tick, stepping neither world, when a restore replaced the world while the tick waited for the helpers' start", async () => {
+    const starts: (() => void)[] = [];
+    const pool = {
+      helpers: 1,
+      start: (): Promise<void> => new Promise<void>((r) => starts.push(r)),
+      async step(eco: LiveWorld["eco"]): Promise<void> {
+        eco.step();
+      },
+      close(): void {},
+    } as unknown as ThinkPool;
+    const world = new LiveWorld(smallConfig(), null, pool);
+    const old = world.eco;
+    const saved = JSON.parse(JSON.stringify(grown().saveState()));
+    const first = world.tick();
+    world.restoreState(saved);
+    const restoredAt = world.eco.tick;
+    starts[0]!();
+    await first;
+    expect(old.tick).toBe(0); // the discarded world was not stepped
+    expect(world.eco.tick).toBe(restoredAt); // nor the new one, before its helpers are ready
+    starts[1]!();
+    await world.tick();
+    expect(world.eco.tick).toBe(restoredAt + 1);
+  });
 });
 
 describe("admin load", () => {

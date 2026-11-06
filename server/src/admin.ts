@@ -183,8 +183,9 @@ function serveStatic(root: string): ReturnType<typeof createServer> {
 // {t:"blank-name", name} -> {t:"blanked", message}: the name is cleared from every family that carries it;
 // {t:"rename", name, to, force?} -> {t:"renamed", message}: every family named exactly `name` is named `to` (starters stay starters);
 // a `to` another living family carries is refused unless force;
-// {t:"reset", copies?} -> {t:"resetting", message}, then the server exits 75, the unit starts it again, and that start seeds a fresh world with `copies` (default
-// SEED_COPIES) of each founder; the world before is kept in before-reset-<time>/ in the state directory.
+// {t:"reset", copies?, carry?: {copies, name, from?}} -> {t:"resetting", message}, then the server exits 75, the unit starts it again, and that start seeds a fresh world with `copies` (default
+// SEED_COPIES) of each founder, plus carry.copies of the oldest creature of the running world (or of the listed save `from`) named carry.name;
+// the world before is kept in before-reset-<time>/ in the state directory.
 // The same port serves the built page (webRoot) over http.
 export function startAdmin(host: string, port: number, token: string, world: AdminWorld, stateDir: string, webRoot: string, saved: Record<string, Value>, commands: AdminCommands): { wss: WebSocketServer; close(): void } {
   const http = serveStatic(webRoot);

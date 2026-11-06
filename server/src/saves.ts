@@ -317,7 +317,7 @@ export async function openWorld(saves: Saves, live: LiveWorld, stateDir: string,
     } catch (m) {
       log(`${CARRY_FILE} not moved aside: ${errText(m)}`);
     }
-    n = live.seedFounders(founders, Math.random, copies); // seedFounders checks before it inserts, so the world is still empty
+    n = live.seedFounders(founders, Math.random, copies); // a seedFounders that throws leaves a fresh, empty world
   }
   if (carry) {
     const got = n - copies * founders.length;

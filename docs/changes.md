@@ -6,6 +6,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- Live fixes: a tick that waited for the helpers while a restore replaced the world no longer steps the discarded world (it is skipped); the 2 GB state directory cap now counts the saves inside before-reset folders; a founder refused part-way through a fresh seed with a carry no longer stops the start (the world is rebuilt fresh and seeded without the carry); liveBench with `--load` counts per-minute rates and mean population from the loaded tick.
+
 ## 0.4.1 (2026-11-05)
 
 - Live: with no weight cap a mixed world settles near 4900 creatures (was about 3000), so a full world is the usual state: a tick costs about twice as much (liveBench mixed on the loaded host: 8.6 to 15.8 CPU ms per tick, speed achieved 3.67x to 2.0x, below the 3x target) and `room()` lets in only about 16 to 23 viewers there.
