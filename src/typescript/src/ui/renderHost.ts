@@ -41,6 +41,7 @@ export interface RenderHost {
   reset(): void; // a new run
   frame(args: FrameArgs): boolean; // false when drawing has stopped for good
   pick(x: number, y: number, reach: number, run: number, views: SnapshotViews | null): void; // answers through onPick
+  die?(message: string): void; // the render worker is gone: stop drawing, report through onDead (worker host only)
   takePort(): MessagePort | null; // the simulation worker's end of the snapshot channel, once; null when the page draws
 }
 
@@ -102,10 +103,12 @@ class WorkerHost implements RenderHost {
 
   private readonly canvas: HTMLCanvasElement;
   private readonly worker: Worker;
+  private readonly events: RenderHostEvents;
 
   constructor(canvas: HTMLCanvasElement, worker: Worker, events: RenderHostEvents) {
     this.canvas = canvas;
     this.worker = worker;
+    this.events = events;
     fitCanvas(canvas);
     this.backW = canvas.width;
     this.backH = canvas.height;
@@ -114,15 +117,19 @@ class WorkerHost implements RenderHost {
     this.port = channel.port2;
     worker.postMessage({ type: "init", canvas: offscreen, port: channel.port1 } satisfies RenderInMessage, [offscreen, channel.port1]);
     // Any uncaught error stops worker drawing for good, even though the worker might survive it; a page note is safer than a half-drawn world.
-    worker.onerror = (e) => {
-      this.dead = true;
-      this.port = null;
-      events.onDead(e.message);
-    };
+    worker.onerror = (e) => this.die(e.message);
     worker.onmessage = (e: MessageEvent<RenderOutMessage>) => {
       const m = e.data;
       if (m.type === "picked" && m.request === this.pickRequests) events.onPick(m.id, m.x, m.y, m.run);
     };
+  }
+
+  // Drawing through the worker has stopped for good.
+  die(message: string): void {
+    if (this.dead) return;
+    this.dead = true;
+    this.port = null;
+    this.events.onDead(message);
   }
 
   backing = () => ({ width: this.backW, height: this.backH });

@@ -94,6 +94,7 @@ describe.each(["es", "backprop"] as const)("ArenaRun with %s", (method) => {
     await done;
     const rebased = out.find((m) => m.type === "rebased");
     expect(rebased?.type === "rebased" && rebased.perEnv).toHaveLength(2);
+    expect(rebased?.type === "rebased" && rebased.learner.genome.length).toBeGreaterThan(0); // Save pairs this learner with the rebased held-out value
     const lastHeld = out.filter((m) => m.type === "iteration" && m.it.perEnv).at(-1);
     expect(lastHeld?.type === "iteration" && lastHeld.it.perEnv).toHaveLength(2);
   });

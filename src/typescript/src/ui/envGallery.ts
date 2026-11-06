@@ -195,7 +195,7 @@ export class EnvGallery {
     c.t0 = performance.now();
     c.el.classList.add("has-clip");
     c.drawn = "";
-    this.paint(c, 0);
+    this.paint(c, c.t0);
   }
 
   // Animates visible cards while playing; while a run trains they hold a still frame (painted once each, when first on screen) to save CPU.

@@ -24,7 +24,7 @@ import { ARENA_HELD_SEEDS } from "./worker/rlProtocol.ts";
 import { BrainReplay } from "./ui/arenaBrain.ts";
 import { DEFAULT_DESIGN, DEFAULT_RUN, DESIGN_FORM, RUN_FORM, designPlan, planDesign, startOptions, trainingRecord } from "./ui/arenaForm.ts";
 import { ARENA_KIND, bestFounder, change, customEnv, envsForKind, kindRejection, planSummary } from "./ui/arenaPick.ts";
-import { addFavourite, loadFavourites, loadSpeed, removeFavourite, saveSpeed } from "./ui/arenaStore.ts";
+import { FAVOURITES_KEY, addFavourite, loadFavourites, loadSpeed, removeFavourite, saveSpeed } from "./ui/arenaStore.ts";
 import { drawCreaturePreview } from "./ui/creaturePreview.ts";
 import { PreviewScene } from "./ui/previewScene.ts";
 import { fitCanvas } from "./ui/canvas.ts";
@@ -256,9 +256,12 @@ function showFounderBlurb(): void {
 }
 
 function fillSaved(): void {
-  favourites = loadFavourites();
   const sel = $<HTMLSelectElement>("saved");
+  const kept = favourites[sel.selectedIndex]; // the pick survives a refill from another tab
+  favourites = loadFavourites();
   sel.replaceChildren(...favourites.map((f, i) => new Option(`${f.name} (${f.kind})`, String(i)))); // Option text, never HTML
+  const at = kept ? favourites.findIndex((f) => f.name === kept.name && f.kind === kept.kind) : -1;
+  if (at >= 0) sel.selectedIndex = at;
   showStart();
 }
 
@@ -303,7 +306,9 @@ const gallery = new EnvGallery($("gallery"), {
   setMany: (ids, on) => pick(setEnvs(picked, ids, on)),
   mix: () => pick(mixPick(RECOMMENDED_MIX, allEnvs())),
   remove: (id) => {
-    customs.splice(customs.findIndex((e) => e.id === id), 1);
+    const at = customs.findIndex((e) => e.id === id);
+    if (state === "running" || at < 0) return;
+    customs.splice(at, 1);
     picked.delete(id);
     showEnvs();
     showStart();
@@ -559,6 +564,7 @@ function onMessage(m: RlOutMessage): void {
     run.nextEnvs = null;
     run.startHeld = m.held;
     run.startPerEnv = m.perEnv;
+    run.latest = { iter: m.iter, learner: m.learner };
     const last = run.its[run.its.length - 1];
     run.its.push({ iter: m.iter, train: last?.train ?? m.held, best: last?.best ?? m.held, held: m.held, perEnv: m.perEnv, seconds: last?.seconds ?? 0 });
   } else if (m.type === "iteration") {
@@ -722,8 +728,12 @@ resetBtn.addEventListener("click", reset);
 $("saveFile").addEventListener("click", saveFile);
 $("saveBrowser").addEventListener("click", saveBrowser);
 $("unsave").addEventListener("click", () => {
-  removeFavourite(Number(input("saved").value));
+  const f = favourites[Number(input("saved").value)];
+  if (f) removeFavourite(f);
   fillSaved();
+});
+window.addEventListener("storage", (e) => {
+  if (e.key === FAVOURITES_KEY) fillSaved();
 });
 $("importFile").addEventListener("change", () => void importFile());
 $("poolEntry").addEventListener("change", showStart);

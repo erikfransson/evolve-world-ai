@@ -8,7 +8,7 @@ import { HIT_CREATURE, HIT_FOOD, HIT_NONE, HIT_POISON, HIT_WALL } from "../../sr
 import { LAYOUT as L } from "../../src/typescript/src/sim/wasm/layout.ts";
 import type { WasmBrainBank } from "../../src/typescript/src/sim/wasm/brainKernel.ts";
 import { F } from "../../src/typescript/src/sim/wasm/resident.ts";
-import { prepareRows } from "../../src/typescript/src/sim/wasm/residentStep.ts";
+import { prepareRows, senseThinkRows } from "../../src/typescript/src/sim/wasm/residentStep.ts";
 import { rockLowerBound } from "../../src/typescript/src/sim/wasm/senser.ts";
 import { SenseKernels } from "../../src/typescript/src/sim/wasm/senseKernels.ts";
 import { speciesEngine, speciesList } from "../../src/typescript/src/sim/species.ts";
@@ -606,5 +606,19 @@ describe("sense.wat (SenseKernels)", () => {
         expect(twin.every((v) => v.every(Number.isFinite))).toBe(true);
       }
     }
+  });
+
+  it("senseThinkRows leaves a detail creature outside its batch alone, as a helper thread's own-rows batch does", () => {
+    const { kernel, world, crowd, kernels } = check({ rays: 4, spread: 1, creatures: [[300, 300, 0], [320, 300, 3]], items }, false);
+    const spy = vi.spyOn((kernels as unknown as { senser: { readRays(): void } }).senser, "readRays");
+    const adopt = vi.spyOn(kernel[0]!, "adoptInput");
+    kernel[0]!.rays[0]!.closeness = 0.123;
+    const rows = Int32Array.of(kernel[1]!.resident!.ptr);
+    for (const every of [1, 3]) senseThinkRows(kernels, world, crowd, rows, Int32Array.of(1), 1, 0, every, () => 0, kernel[0]!);
+    expect(spy).not.toHaveBeenCalled();
+    expect(adopt).not.toHaveBeenCalled();
+    expect(kernel[0]!.rays[0]!.closeness).toBe(0.123);
+    senseThinkRows(kernels, world, crowd, Int32Array.of(kernel[0]!.resident!.ptr), Int32Array.of(0), 1, 0, 1, () => 0, kernel[0]!); // in the batch: read back
+    expect(spy).toHaveBeenCalledTimes(1);
   });
 });

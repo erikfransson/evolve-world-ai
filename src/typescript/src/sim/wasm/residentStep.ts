@@ -44,12 +44,16 @@ let thinkRows = new Int32Array(0);
 let thinkSelves = new Int32Array(0);
 
 // SenseKernels.prepare for the batch (the step needs every ground factor), then sense and think for those of it that think this tick (thinksNow); idOf gives the id
-// of crowd index self. detail gets its rays and input read back only when it thought, else they stay as of its last think.
+// of crowd index self. detail gets its rays and input read back only when it is in the batch and thought, else they stay as of its last think.
 export function senseThinkRows(kernels: SenseKernels, world: World, crowd: Crowd, rows: Int32Array, selves: Int32Array, n: number, tick: number, every: number,
   idOf: (self: number) => number, detail: Creature | null, prof: PhaseTimer | null = null): void {
   const store = kernels.store;
   kernels.prepare(rows, n, world, crowd);
-  if (every <= 1) return kernels.runRows(world, crowd, rows, selves, n, detail, prof);
+  if (every <= 1) {
+    let inBatch = false; // a helper thread's batch holds only its own rows, and detail may be another thread's
+    if (detail) for (let k = 0; k < n; k++) if (rows[k] === detail.resident!.ptr) { inBatch = true; break; }
+    return kernels.runRows(world, crowd, rows, selves, n, inBatch ? detail : null, prof);
+  }
   if (thinkRows.length < n) {
     thinkRows = new Int32Array(2 * n);
     thinkSelves = new Int32Array(2 * n);

@@ -226,3 +226,26 @@ describe("plan fields", () => {
     expect(new World(config, 16).cell).toBeGreaterThanOrEqual(40);
   });
 });
+
+describe("form input handling", () => {
+  it("shows a pair end that was pushed along, and refills a cleared seed box on change", () => {
+    document.body.innerHTML = '<form id="f"><div id="host"></div></form>';
+    const f = document.getElementById("f") as HTMLFormElement;
+    const pair = rangePair<{ seed: number; span: number[] }>({ id: "span", label: "Span", tip: "t", min: 0, max: 10, step: 1, get: (c) => c.span, set: (c, v) => { c.span = v; } });
+    const h = buildForm<{ seed: number; span: number[] }>(document.getElementById("host")!, {
+      defaults: { seed: 7, span: [2, 6] },
+      sections: [{ title: "Mini", fields: [{ kind: "seed", id: "seed", label: "Seed", tip: "t" }, ...pair] }],
+    });
+    h.fill({ seed: 7, span: [2, 6] });
+    h.init(f, () => undefined);
+    const lo = document.getElementById("spanMin") as HTMLInputElement;
+    const hi = document.getElementById("spanMax") as HTMLInputElement;
+    lo.value = "9";
+    lo.dispatchEvent(new Event("input", { bubbles: true }));
+    expect([Number(lo.value), Number(hi.value)]).toEqual(h.read().span); // the sliders show what the run uses
+    const seed = document.getElementById("seed") as HTMLInputElement;
+    seed.value = "";
+    seed.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(seed.value).toBe("7");
+  });
+});

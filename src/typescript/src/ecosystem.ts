@@ -35,7 +35,7 @@ const ZOOM_STEP = 1.6;
 const POOL_URL = new URL("../pool.json", document.baseURI).href;
 // Overrides for testing: ?threads=N helper threads (0 runs on one thread).
 const params = new URLSearchParams(location.search);
-const THREADS = params.has("threads") ? Math.max(0, Math.floor(Number(params.get("threads"))) || 0) : undefined;
+const THREADS = params.has("threads") ? Math.min(Math.max(Math.floor(Number(params.get("threads"))), 0), Math.min(navigator.hardwareConcurrency || 2, 16)) || 0 : undefined;
 
 interface Live {
   msg: EcoSnapshot;
@@ -213,6 +213,10 @@ function onSnapshot(e: MessageEvent<EcoOutMessage>): void {
         }
       });
     }
+    return;
+  }
+  if (msg.type === "renderLost") {
+    host?.die?.("no reply from the render worker");
     return;
   }
   if (msg.type === "error") {

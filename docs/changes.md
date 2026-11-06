@@ -6,6 +6,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- Page fixes from the 60-agent hunt: Arena Save after a rebase pairs the fresh learner with its held-out values, the saved list removes by identity (and follows saves in other tabs), a custom env cannot be deleted while training, and the tile grid repaints only when the picture changes; the Ecosystem idle preview re-scatters items when terrain settings change, the settings form refills an emptied seed and a pushed min/max pair, the Trials wall outline stays 3 device px at any zoom, `?threads=` is clamped, and a pasted preset is applied once. Worker robustness: pool and library downloads time out after 20 s and fall back, a failed rock worker is retired instead of swallowing jobs, the simulation worker notices a render worker that stopped answering (20 s) and the page shows a note, and the detail readback is skipped when the selected creature's row is not in the batch (helper threads).
+
 ## 0.4.3 (2026-11-06)
 
 - Fixes: a Trials evaluation worker that throws now fails the run visibly instead of hanging it, the Arena brain key sits inside the canvas at any zoom, and the RL transfer intervals are right for few seeds (exact t quantiles up to 30 degrees of freedom; the old approximation gave 9.7 instead of 12.7 at one). Stale docs and comments corrected, small tooling checks added. Engine results unchanged.

@@ -121,7 +121,7 @@ export class ArenaRun {
         this.pool.setEnvs(this.envs);
         trainer.setEnvs(this.pool, this.envs);
         const held = await trainer.held(this.heldSeeds);
-        this.post({ type: "rebased", iter: trainer.iter, held: held.mean, perEnv: held.perEnv });
+        this.post({ type: "rebased", iter: trainer.iter, held: held.mean, perEnv: held.perEnv, learner: serialiseLearner({ plan, genome: trainer.theta }) });
         this.showWanted = true;
       }
       this.pacer.began();

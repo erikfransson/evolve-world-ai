@@ -13,11 +13,16 @@ import type { Port } from "./port.ts";
 import { RlPool, inlineRlPort } from "./rlPool.ts";
 import type { RlDone, RlJob, RlSetup } from "./rlPool.ts";
 
+// A requested thread count held to 0..min(cores, 16); NaN counts as 0.
+export function clampThreads(n: number): number {
+  return Math.min(Math.max(Math.floor(n), 0), Math.min(navigator.hardwareConcurrency || 2, 16)) || 0;
+}
+
 // n new web workers as ports; on a failed spawn the ones already started are terminated and the error rethrown.
 function browserPorts<In, Out>(n: number, spawn: () => Worker, what: string): Port<In, Out>[] {
   const ports: Port<In, Out>[] = [];
   try {
-    for (let i = 0; i < n; i++) {
+    for (let i = 0, count = clampThreads(n); i < count; i++) {
       const worker = spawn();
       ports.push({
         post: (msg, transfer) => worker.postMessage(msg, transfer ?? []),

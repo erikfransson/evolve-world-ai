@@ -21,7 +21,7 @@ let assets: Promise<{ pool: PoolEntry[] | null; library: Library }> | undefined;
 const loadAssets = (poolUrl: string, libraryUrl: string): Promise<{ pool: PoolEntry[] | null; library: Library }> =>
   (assets ??= Promise.all([
     loadPool(poolUrl),
-    fetch(libraryUrl)
+    fetch(libraryUrl, { signal: AbortSignal.timeout?.(20_000) })
       .then((r) => (r.ok ? r.json() : null))
       .then(parseLibrary)
       .catch((): Library => parseLibrary(null)),
