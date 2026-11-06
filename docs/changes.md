@@ -6,6 +6,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- Fixes: a Trials evaluation worker that throws now fails the run visibly instead of hanging it, the Arena brain key sits inside the canvas at any zoom, and the RL transfer intervals are right for few seeds (exact t quantiles up to 30 degrees of freedom; the old approximation gave 9.7 instead of 12.7 at one). Stale docs and comments corrected, small tooling checks added. Engine results unchanged.
+
 ## 0.4.1 (2026-11-05)
 
 - Live: with no weight cap a mixed world settles near 4900 creatures (was about 3000), so a full world is the usual state: a tick costs about twice as much (liveBench mixed on the loaded host: 8.6 to 15.8 CPU ms per tick, speed achieved 3.67x to 2.0x, below the 3x target) and `room()` lets in only about 16 to 23 viewers there.

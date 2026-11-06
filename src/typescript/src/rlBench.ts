@@ -1,5 +1,5 @@
 // Times RL episodes per env and fingerprints the results, to check optimisations leave them identical.
-// Usage: nice -n 10 node src/rlBench.ts [--seeds 6] [--reps 3] [--env id] [--prof]
+// Usage: nice -n 10 node src/rlBench.ts [--seeds 6] [--reps 3] [--env id]
 import { existsSync, readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { parsePool } from "./sim/seedPool.ts";

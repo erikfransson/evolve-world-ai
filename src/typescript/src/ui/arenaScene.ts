@@ -1,4 +1,4 @@
-import { HIT_NONE } from "../sim/types.ts";
+import { HIT_FOOD, HIT_NONE, HIT_POISON } from "../sim/types.ts";
 import { CREATURE_FIELDS } from "../sim/rl/recording.ts";
 import type { Recording } from "../sim/rl/recording.ts";
 import { BACKGROUND, FLOOR, FOOD, POISON, RAY_COLORS, WALL } from "./scene.ts";
@@ -57,7 +57,7 @@ function drawItems(ctx: CanvasRenderingContext2D, rec: Recording, frame: number,
   const r = Math.max(rec.itemRadius, MIN_ITEM_PX / scale);
   const i0 = rec.itemStart[frame]!;
   const i1 = rec.itemStart[frame + 1]!;
-  for (const [kind, color] of [[1, FOOD], [2, POISON]] as const) {
+  for (const [kind, color] of [[HIT_FOOD, FOOD], [HIT_POISON, POISON]] as const) {
     ctx.fillStyle = color;
     ctx.beginPath();
     for (let i = i0; i < i1; i++) {

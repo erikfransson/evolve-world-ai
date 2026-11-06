@@ -233,7 +233,7 @@ function randomRival(env: EnvSpec, seed: number, role: number, rivalSeed: number
 
 // A brain that only thrusts at `speed` (0 to 1 of full thrust) and never turns: one ray, one silent neuron, a thrust bias.
 export const DRIFTER_HEAL = 30; // energy per second a drifting rival (Rivals.speed) regains, up to its start energy
-const DUEL_MARGIN = 30; // world units: the charger starts at least this far off, the learner at least distance plus this from the walls
+const DUEL_MARGIN = 30; // world units: the least duel distance, and the room kept between the farthest start and the walls
 const CHARGER_PLAN: PlanView = { rayCount: 1, raySpread: 0, rayLength: 10, hiddenLayers: [1], memoryShort: 0, memoryLong: 0 };
 export function charger(world: EnvWorld, speed: number): Learner {
   const sizes = layerSizes(layoutConfig(world), CHARGER_PLAN);
@@ -474,7 +474,7 @@ export function runEpisode(
   return out;
 }
 
-// Mean result over several seeds (layouts, positions and rivals all change with the seed).
+// Mean result over several seeds (layouts, positions and rivals all change with the seed). firstFood and clearTime average their -1 "never" sentinels as they are (no reader uses those two means; transferEpisode maps the sentinel per episode).
 export function scoreLearner(env: EnvSpec, learner: Learner, seeds: readonly number[], pool: readonly PoolEntry[] | null = null, library: Library = {}): EpisodeResult {
   const sum: EpisodeResult = { reward: 0, food: 0, kills: 0, rams: 0, seconds: 0, energy: 0, poison: 0, poisonEnergy: 0, firstFood: 0, elapsed: 0, clearTime: 0, cells: 0, late: 0, died: 0 };
   for (const s of seeds) {

@@ -9,7 +9,7 @@ const defaultNeurons = DEFAULT_CONFIG.brain.hiddenLayers[0]!;
 const r = range<SimConfig>;
 const plan = configPlanFields<SimConfig>(defaultNeurons);
 
-const SIZE_TIP = "Size of the box the creatures live in. For scale, the default vision range is 100 units.";
+const SIZE_TIP = "Size of the box the creatures live in. For scale, the default vision range is 150 units.";
 
 export const TRIALS_SECTIONS: readonly Section<SimConfig>[] = [
   {

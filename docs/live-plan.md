@@ -16,14 +16,14 @@ One shared world that keeps running on a small self-hosted server; visitors watc
 | Public access  | Tunnel from the host                   | HTTPS tunnel: fixed URL, no open router ports, host IP hidden                             |
 | Page           | `live/` on GitHub Pages                | Connects to the server over WebSocket; shows "world offline" when the host is off          |
 | Design, train  | Visitor's browser                      | Pretrain (Trials) and RL fine-tuning run client side, so the host only simulates the world   |
-| State          | `server/state/`, gitignored            | Gzipped save every 4 h and on stop, deleted after 4 days; restored on restart; admin can load any save |
+| State          | `server/state/`, gitignored            | Gzipped save every 4 h and on stop; the newest 6 are kept, older ones deleted after 4 days, and saves with before-reset folders stay under a 1 GB state budget (oldest deleted first, `StateStore.prune`); restored on restart; admin can load any save |
 
 No separate repo is needed.
 Hourly state stays out of git, since a world of about 1000 creatures is a few MB per save and would bloat the history; an occasional chosen snapshot can be committed by hand.
 
 ## Server
 - One world, Ecosystem rules: the Inland Sea map with collision damage on, room for 5000 creatures.
-- Runs as a `systemd --user` service: `Nice=19`, `MemoryMax`, `CPUQuota`, restart on crash, no access outside `server/state/`.
+- Runs as a `systemd --user` service: `Nice=19` with idle CPU and IO scheduling, `MemoryMax`, `CPUQuota`, restart on crash. Sandboxed: home hidden, repo read-only, only the state dir writable, IPv4/IPv6 sockets only (outbound connections are not blocked), see `server/evolve-live.service.template`.
 - Streams compact binary frames (positions, angles, colours) at about 5 Hz and the page interpolates; caps viewers so upload bandwidth stays bounded.
 - `room()` in `public.ts` judges by the current frame size, so viewers let in at a low population stay as it grows: at 5000 the creature frames of 100 viewers use about 1.9 of the 2.2 MB/s frame budget. Only the creature cap bounds the population (no brain-weight cap since 2026-11-05), so a mixed world now settles near 4900, where `room()` lets in about 16 to 23 new viewers. Accepted because send queues, frame skips and drops keep it bounded.
 - Admin: owner only. A separate admin port on loopback that the tunnel never exposes, plus a token kept on the host. It live-tunes world parameters, injects creatures, saves now, and loads a listed save to revert the world. Operations are documented privately.
@@ -32,7 +32,7 @@ Hourly state stays out of git, since a world of about 1000 creatures is a few MB
 
 ## Visitor flow
 1. Page opens into the running world, with a hideable "Add your creature" panel on top.
-2. Pick one of 4 named founders trained for the Live World (Explorer ranges far, Juggernaut rams, Oracle has the biggest brain, Grazer never fights), or upload a saved creature file.
+2. Pick one of 3 named founders trained for the Live World (Juggernaut rams, Oracle has the biggest brain, Grazer never fights), or upload a saved creature file.
 3. Tune plan and settings within the form limits; energy per second updates live.
 4. Optional toggles: Pretrain (quick Trials run) and RL fine-tune (RL envs from #27), both in the browser.
 5. Choose name (1 to 16 letters or digits) and colour, insert 1 to 10 copies at random free spots. The page then follows one and highlights its family (each copy founds its own lineage).

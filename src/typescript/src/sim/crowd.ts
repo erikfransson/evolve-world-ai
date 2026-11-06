@@ -5,7 +5,7 @@ import type { WasmCrowd } from "./wasm/crowdKernel.ts";
 
 type GridArrays = Pick<Crowd, "xs" | "ys" | "energies" | "species" | "owners" | "cellStart" | "occupied">;
 
-export const MAX_GRID_CREATURES = 0xffff; // cellStart holds slots as u16, and the engine allows 20000 creatures (ecoState MAX_CREATURES)
+export const MAX_GRID_CREATURES = 0xffff; // cellStart holds slots as u16, and the engine allows 20000 creatures (ecoConfig MAX_CREATURES)
 export const SMALL_SORT = 12; // up to this many creatures rebuildFrom sorts by insertion: RL episodes have 1-11 creatures, the radix sort pays off for crowds
 
 // Creatures in a uniform grid of cell size config.creature.rayLength, rebuilt each tick by a stable radix sort of the cell keys,
@@ -66,16 +66,6 @@ export class Crowd {
     this.species = new Int32Array(capacity);
     this.owners = new Int32Array(capacity);
     this.cellOf = new Int32Array(capacity);
-  }
-
-  cellIndex(x: number, y: number): number {
-    let cx = Math.floor(x / this.cell);
-    let cy = Math.floor(y / this.cell);
-    if (cx < 0) cx = 0;
-    else if (cx >= this.cols) cx = this.cols - 1;
-    if (cy < 0) cy = 0;
-    else if (cy >= this.rows) cy = this.rows - 1;
-    return cy * this.cols + cx;
   }
 
   // Snapshots positions and energies of states[0 .. n-1], and species[i] of each (all 0 without).

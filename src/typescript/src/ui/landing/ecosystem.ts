@@ -2,6 +2,7 @@ import { genomeLength, layerSizes } from "../../sim/brain.ts";
 import { collide } from "../../sim/physics.ts";
 import { createRng } from "../../sim/rng.ts";
 import type { Creature } from "../../sim/creature.ts";
+import { HIT_NONE } from "../../sim/types.ts";
 import type { HitKind } from "../../sim/types.ts";
 import { RAY_COLORS, beginFrame, drawItems } from "../scene.ts";
 import { LAUNCH_SPEED, POP_SECONDS, TICK_SECONDS, clamp, drawBirthRings, easeOutBack, foodWorld, nearestFood, sceneConfig, scriptedCreature, steer, ticksOf } from "./kit.ts";
@@ -126,10 +127,10 @@ export function ecosystemScene(seed: number): EcoScene {
         const s = b.creature.state;
         for (let k = 0; k < Math.min(FAN, rays.length); k++) {
           const hit = rays[k]!;
-          const d = hit.kind === 0 ? f.rayLength : f.rayLength * (1 - hit.closeness);
+          const d = hit.kind === HIT_NONE ? f.rayLength : f.rayLength * (1 - hit.closeness);
           const a = s.heading + offs[k]!;
           ctx.strokeStyle = RAY_COLORS[hit.kind]!;
-          ctx.globalAlpha = hit.kind === 0 ? 0.5 : 0.9;
+          ctx.globalAlpha = hit.kind === HIT_NONE ? 0.5 : 0.9;
           ctx.beginPath();
           ctx.moveTo(s.x, s.y);
           ctx.lineTo(s.x + Math.cos(a) * d, s.y + Math.sin(a) * d);

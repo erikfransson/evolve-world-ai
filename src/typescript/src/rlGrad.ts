@@ -24,6 +24,7 @@ import { assertSameSettings } from "./sim/rl/resume.ts";
 import { heldSeeds } from "./sim/rl/trainer.ts";
 import { parseCkpts, writeFileAtomic } from "./rlResume.ts";
 import { parsePool } from "./sim/seedPool.ts";
+import { parseFounders } from "./live/founders.ts";
 
 const { values } = parseArgs({
   options: {
@@ -71,9 +72,9 @@ const env = envList[0]!;
 const num = (k: keyof typeof values): number => Number(values[k]);
 const pool = existsSync(values.pool!) ? parsePool(JSON.parse(readFileSync(values.pool!, "utf8"))).entries : null;
 const [kind, arg] = values.from!.split(/:(.*)/);
-const founder = kind === "founder" ? (JSON.parse(readFileSync(values.founders!, "utf8")).founders as { id: string; plan: Learner["plan"]; genome: number[] }[]).find((f) => f.id === arg) : undefined;
+const founder = kind === "founder" ? parseFounders(JSON.parse(readFileSync(values.founders!, "utf8"))).find((f) => f.id === arg) : undefined;
 const design = kind === "design" ? DESIGN_PANEL.find((d) => d.id.startsWith(arg!)) : undefined;
-const learner = design ? designLearner(design) : founder ? { plan: founder.plan, genome: Float32Array.from(founder.genome) } : kind === "pool" && pool ? poolLearner(env, pool[Number(arg)]!) : kind === "random" ? randomLearner(env, Number(arg ?? 1)) : null;
+const learner = design ? designLearner(design) : founder ? { plan: founder.plan, genome: founder.genome } : kind === "pool" && pool ? poolLearner(env, pool[Number(arg)]!) : kind === "random" ? randomLearner(env, Number(arg ?? 1)) : null;
 if (!learner) {
   console.error("error: --from must be pool:N, random:SEED, founder:ID or design:pN (src/sim/rl/designPanel.ts)");
   process.exit(1);

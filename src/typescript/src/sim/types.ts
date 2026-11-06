@@ -56,7 +56,7 @@ export interface EpisodeView {
 export interface GenerationResult {
   generation: number;
   layoutSeed: number;
-  fitness: Float64Array; // per creature, seconds survived plus energy tiebreak
+  fitness: Float64Array; // per creature, seconds survived, an energy term and a small bonus for distance travelled
   bestIndex: number;
   bestFitness: number;
   meanFitness: number;

@@ -38,6 +38,7 @@ if (!values.out) fail("--out DIR is required");
 const iters = Number(values.iters);
 if (!Number.isInteger(iters) || iters < 1) fail("--iters must be a positive integer");
 const threads = parseThreads(values.threads);
+if (values.design && !DESIGN_PANEL.some((d) => d.id === values.design)) fail(`unknown --design ${values.design}, one of ${DESIGN_PANEL.map((d) => d.id).join(", ")}`);
 const envs = MIX.map((id) => envById(id) ?? fail(`env ${id}`)) as EnvSpec[];
 const pool = existsSync(values.pool!) ? parsePool(JSON.parse(readFileSync(values.pool!, "utf8"))).entries : null;
 const library = parseLibrary(existsSync(values.library!) ? JSON.parse(readFileSync(values.library!, "utf8")) : null);

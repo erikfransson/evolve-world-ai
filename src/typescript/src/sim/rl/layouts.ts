@@ -49,7 +49,7 @@ function hwall(items: ItemSpot[], y: number, x0: number, x1: number, gx: number,
 
 const spot = (rng: Rng, x0: number, x1: number, y0: number, y1: number): { x: number; y: number } => ({ x: rng.range(x0, x1), y: rng.range(y0, y1) });
 
-// The layout's items (food food items, poison extra scattered poison besides the walls) and the learner's start for this seed.
+// The layout's items (food: the food items, poison: extra scattered poison besides the walls) and the learner's start for this seed.
 // rayLength is the learner's sight, read only by the horizon and trail layouts, which place things out of sight of it.
 export function placeLayout(layout: Layout, size: readonly [number, number], food: number, poison: number, seed: number, rayLength?: number): Placed {
   const rng = createRng(deriveSeed(seed, 0x1a70));

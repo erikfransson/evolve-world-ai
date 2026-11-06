@@ -116,6 +116,10 @@ const hist = (f: (m: Measure) => number): string => [0, 0.25, 0.5, 0.75, 1].map(
 process.stderr.write(`alive shares 0..1: ${hist((m) => m.alive)}; eaten>=1: ${measures.filter((m) => m.eaten >= 1).length}; mean eaten ${measures.reduce((s, m) => s + m.eaten, 0) / measures.length}\n`);
 // Only creatures that kept half their copies alive and ate at least one food per copy count; the picks are distinct entries.
 const fit = measures.filter((m) => m.alive >= 0.5 && m.eaten >= 1);
+if (fit.length < 4) {
+  console.error(`only ${fit.length} of ${measures.length} pool creatures kept half their copies alive and ate; need 4 distinct picks`);
+  process.exit(1);
+}
 const taken = new Set<number>();
 const pick = (score: (m: Measure) => number): Measure => {
   const best = fit.filter((m) => !taken.has(m.index)).sort((a, b) => score(b) - score(a))[0]!;
