@@ -14,8 +14,8 @@
 
 .about p { margin: 0; color: var(--muted); font-size: 0.8rem; line-height: 1.45; }
 .retry { font-variant-numeric: tabular-nums; }
-.timer { gap: 0.55rem; }
-.season-pill { padding: 0.05rem 0.5rem; border-radius: 999px; font-size: 0.72rem; font-weight: 600; background: color-mix(in srgb, var(--season, #3ddc97) 22%, transparent); color: var(--season, #3ddc97); }
+.timer { gap: 0.7rem; height: auto; min-height: calc(2.2rem + 2px); padding: 0.25rem 1rem; font-size: 1.4rem; line-height: 1.2; }
+.season-pill { padding: 0.1rem 0.65rem; border-radius: 999px; font-size: 1.15rem; font-weight: 600; background: color-mix(in srgb, var(--season, #3ddc97) 22%, transparent); color: var(--season, #3ddc97); }
 .season-pill:empty { display: none; }
 .key.winter { color: rgba(150, 190, 235, 0.9); }
 .key.winter::before { height: 0.7em; vertical-align: -0.1em; background: rgba(150, 190, 235, 0.35); }

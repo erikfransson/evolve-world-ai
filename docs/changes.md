@@ -6,6 +6,12 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+## 0.4.2 (2026-11-06)
+
+- Live adds: no cap on visitor-added creatures alive (`add.aliveMax`, was 50; adds count against the population cap of 5000), 150 creatures per 5 minutes for everyone (`add.perWindow`, was 50) and 90 per visitor (`add.perVisitor`, was 30). An older overrides file's `add.aliveMax` is skipped with a log line, and an alive cap of 0 keeps adding off as `add.perWindow` 0.
+- Live: "Add your creature" has three start modes. A founder or an uploaded file keeps its rays and brain (those sliders are locked and show its values; name, copies, birth and colour stay editable), and Fresh brain starts from founder 0's body with a new random untrained brain and free ray and brain sliders (a new brain for each structure). The trained-brain reuse after a refused add now also depends on the mode. The server and protocol are unchanged; the panel no longer reshapes genomes (`reshape.ts` removed).
+- Live: the world clock and season tag are about 65% bigger, and an add that does not fit is told how many copies still fit (only the full world asks to try again later).
+
 ## 0.4.1 (2026-11-05)
 
 - Live: with no weight cap a mixed world settles near 4900 creatures (was about 3000), so a full world is the usual state: a tick costs about twice as much (liveBench mixed on the loaded host: 8.6 to 15.8 CPU ms per tick, speed achieved 3.67x to 2.0x, below the 3x target) and `room()` lets in only about 16 to 23 viewers there.

@@ -3,15 +3,17 @@ import { MUTATION_SCALE_RANGE } from "../sim/ecoInsert.ts";
 import { lineageName } from "./founders.ts";
 import type { Founder } from "./founders.ts";
 import { PLAN_LIMITS } from "../sim/rl/validate.ts";
+import { layerSizes, randomGenome } from "../sim/brain.ts";
+import { layoutConfig } from "../sim/rl/env.ts";
+import { createRng } from "../sim/rng.ts";
 import { lineageColor } from "../ui/lineagePanel.ts";
 import type { BodyPlan } from "../sim/sensors.ts";
 import { LIVE_BIRTH, NAME_MAX, NAME_RE, upkeepOf } from "./add.ts";
 import type { AddRequest, AddRules, Added, Birth, Refused } from "./add.ts";
-import { reshapeGenome } from "./reshape.ts";
 import { TRAIN_SECONDS, train } from "./training.ts";
 import type { TrainJob, TrainKind, TrainProgress } from "./training.ts";
 
-// "Add your creature": pick a founder or upload a file, tune it, optionally train it in this browser, name it and send it.
+// "Add your creature": pick a founder, upload a file or start a fresh brain, tune it, optionally train it in this browser, name it and send it.
 // Visitor text (names, file contents) only ever reaches the page through textContent and input values.
 
 interface Base {
@@ -79,12 +81,32 @@ const planOf = (base: BodyPlan, t: Tuned): BodyPlan => ({
   memoryShort: t.memShort,
   memoryLong: t.memLong,
 });
-const sameStructure = (a: BodyPlan, b: BodyPlan): boolean => a.rayCount === b.rayCount && a.memoryShort === b.memoryShort && a.memoryLong === b.memoryLong && a.hiddenLayers.join() === b.hiddenLayers.join();
+
+// Where the creature starts. A founder or a file keeps its rays and brain as they are; a fresh brain takes founder 0's plan as the
+// starting structure, a new random genome for each structure, and lets the visitor change the rays and the brain shape.
+export type StartMode = "founder" | "file" | "fresh";
+const START_MODES: readonly StartMode[] = ["founder", "file", "fresh"];
+const BRAIN_SLIDERS = ["rays", "spread", "length", "neurons", "memShort", "memLong"]; // the ones that change the BodyPlan or the brain shape
+export const frozenIn = (mode: StartMode, id: string): boolean => mode !== "fresh" && BRAIN_SLIDERS.includes(id);
+
+// A new untrained brain for a plan, initialised as the sim and the RL Arena do.
+export const freshGenome = (plan: BodyPlan, seed = Math.floor(Math.random() * 2 ** 31)): Float32Array => randomGenome(layerSizes(layoutConfig("ecosystem"), plan), createRng(seed));
+
+// What a trained brain was trained from; the same key means the trained genome can be reused.
+export interface TrainKey {
+  mode: StartMode;
+  from: Float32Array;
+  plan: string;
+  kinds: string;
+}
+export const sameTrainKey = (a: TrainKey, b: TrainKey): boolean => a.mode === b.mode && a.from === b.from && a.plan === b.plan && a.kinds === b.kinds;
 
 interface Slider {
   input: HTMLInputElement;
   out: HTMLOutputElement;
+  step: string; // the step while the slider is editable; a frozen one takes any, so it shows its exact value
   set(v: number): void;
+  blank(): void; // nothing to show yet
 }
 
 export interface AddPanelHooks {
@@ -98,7 +120,7 @@ export class AddPanel {
   private readonly hooks: AddPanelHooks;
   private rules: AddRules | null = null;
   private founders: Founder[] = [];
-  private source: "founder" | "file" = "founder";
+  private source: StartMode = "founder";
   private founder = 0;
   private file: Base | null = null;
   private t: Tuned | null = null;
@@ -106,7 +128,8 @@ export class AddPanel {
   private copies = 3; // matches the checked radio in live/index.html (#65)
   private job: TrainJob | null = null;
   // The last trained brain with what it was trained from, reused when an add is refused or fails and nothing changed since.
-  private trained: { from: Float32Array; plan: string; kinds: string; genome: Float32Array } | null = null;
+  private trained: { key: TrainKey; genome: Float32Array } | null = null;
+  private fresh: { plan: string; genome: Float32Array } | null = null; // the fresh brain of the current structure
   private waiting = false; // an add is on its way
   private lockedUntil = 0; // ms: the connection's add rate, or the server's retry time
   private lockTimer: ReturnType<typeof setInterval> | undefined;
@@ -119,7 +142,7 @@ export class AddPanel {
     this.buildTuning();
     this.$("addMin").addEventListener("click", () => this.minimise(true));
     this.$("addClose").addEventListener("click", () => this.close());
-    for (const r of root.querySelectorAll<HTMLInputElement>('input[name="addSource"]')) r.addEventListener("change", () => this.setSource(r.value === "file" ? "file" : "founder"));
+    for (const r of root.querySelectorAll<HTMLInputElement>('input[name="addSource"]')) r.addEventListener("change", () => this.setSource(START_MODES.find((m) => m === r.value) ?? "founder"));
     this.$<HTMLInputElement>("addFile").addEventListener("change", (e) => void this.readFile((e.target as HTMLInputElement).files?.[0] ?? null));
     const name = this.$<HTMLInputElement>("addName");
     name.maxLength = NAME_MAX;
@@ -199,6 +222,8 @@ export class AddPanel {
     if (r.t === "added") {
       this.say(`${r.name} is in the world: ${r.ids.length === 1 ? "one copy" : `${r.ids.length} copies`}.`, "ok");
       this.hooks.added(r);
+      this.fresh = null; // the next add starts from a new brain, not a clone of this one
+      this.trained = null;
     } else {
       if (r.retryS) this.lock(r.retryS);
       this.say(`Not added: ${r.reason}.`, "error");
@@ -215,7 +240,7 @@ export class AddPanel {
 
   private base(): Base | null {
     if (this.source === "file") return this.file;
-    const f = this.founders[this.founder];
+    const f = this.founders[this.source === "fresh" ? 0 : this.founder];
     return f ? { label: f.name, plan: f.plan, genome: f.genome } : null;
   }
 
@@ -248,10 +273,16 @@ export class AddPanel {
     this.refresh();
   }
 
-  private setSource(s: "founder" | "file"): void {
+  setSource(s: StartMode): void {
     this.source = s;
     this.$("addFounders").hidden = s !== "founder";
     this.$("addUpload").hidden = s !== "file";
+    this.$("addFreshHint").hidden = s !== "fresh";
+    const name = this.$<HTMLInputElement>("addName");
+    if (s !== "file" && (!name.value || name.dataset.auto === "1")) {
+      name.value = s === "fresh" ? "MyFresh" : `My${this.founders[this.founder]?.lineage ?? "Creature"}`.slice(0, NAME_MAX);
+      name.dataset.auto = "1";
+    }
     const b = this.base();
     if (b) this.t = tunedOf(b.plan, this.t?.birth ?? this.defaultBirth());
     this.syncSliders();
@@ -289,6 +320,7 @@ export class AddPanel {
     const msg = this.$("addFileMsg");
     msg.textContent = text;
     msg.classList.add("error");
+    this.syncSliders();
     this.refresh();
   }
 
@@ -324,11 +356,11 @@ export class AddPanel {
     input.min = String(min);
     input.max = String(max);
     input.step = String(step);
-    const paint = (): void => {
+    const paint = (shown = Number(input.value)): void => { // shown: the real value, which the input may clamp to its min and max
       const lo = Number(input.min);
       const hi = Number(input.max);
       input.style.setProperty("--p", `${hi > lo ? ((Number(input.value) - lo) / (hi - lo)) * 100 : 0}%`);
-      out.textContent = fmt(Number(input.value));
+      out.textContent = fmt(shown);
     };
     input.addEventListener("input", () => {
       paint();
@@ -340,9 +372,15 @@ export class AddPanel {
     this.sliders.set(id, {
       input,
       out,
+      step: String(step),
       set: (v) => {
         input.value = String(v);
+        paint(v);
+      },
+      blank: () => {
+        input.value = input.min;
         paint();
+        out.textContent = "–";
       },
     });
   }
@@ -362,9 +400,9 @@ export class AddPanel {
     const birth = this.$("addBirth");
     const t = (): Tuned => this.t!;
     this.slider(vision, "rays", "Rays", "How many rays it sees with. Each costs energy by its length.", L.rayCount[0], L.rayCount[1], 1, (v) => String(v), (v) => (t().rays = v));
-    this.slider(vision, "spread", "Spread", "The angle the rays fan out over.", 10, 360, 5, (v) => `${v}°`, (v) => (t().spreadDeg = v));
-    this.slider(vision, "length", "Ray length", "How far it sees. Longer rays cost more energy.", L.rayLength[0], L.rayLength[1], 10, (v) => String(v), (v) => (t().length = v));
-    this.slider(brain, "neurons", "Neurons per layer", "Size of each hidden layer. New neurons start silent and learn in training.", L.neurons[0], L.neurons[1], 1, (v) => String(v), (v) => {
+    this.slider(vision, "spread", "Spread", "The angle the rays fan out over.", 10, 360, 5, (v) => `${Number(v.toFixed(1))}°`, (v) => (t().spreadDeg = v));
+    this.slider(vision, "length", "Ray length", "How far it sees. Longer rays cost more energy.", L.rayLength[0], L.rayLength[1], 10, (v) => String(Number(v.toFixed(1))), (v) => (t().length = v));
+    this.slider(brain, "neurons", "Neurons per layer", "Size of each hidden layer. A fresh brain starts random and learns in training.", L.neurons[0], L.neurons[1], 1, (v) => String(v), (v) => {
       t().neurons = v;
       t().neuronsSet = true;
     });
@@ -380,15 +418,32 @@ export class AddPanel {
   private syncSliders(): void {
     const t = this.t;
     if (!t) return;
-    const values: Record<string, number> = { rays: t.rays, spread: t.spreadDeg, length: t.length, neurons: t.neurons, memShort: t.memShort, memLong: t.memLong, birthEnergy: t.birth.energy, birthCost: t.birth.cost, birthCooldown: t.birth.cooldown, mutation: t.mutation };
-    for (const [id, v] of Object.entries(values)) this.sliders.get(id)?.set(v);
     const b = this.base();
+    const values: Record<string, number> = { rays: t.rays, spread: t.spreadDeg, length: t.length, neurons: t.neurons, memShort: t.memShort, memLong: t.memLong, birthEnergy: t.birth.energy, birthCost: t.birth.cost, birthCooldown: t.birth.cooldown, mutation: t.mutation };
+    if (b && this.source !== "fresh") { // frozen: the plan's own values, not rounded to the sliders' steps
+      values.spread = (b.plan.raySpread * 180) / Math.PI;
+      values.length = b.plan.rayLength;
+    }
+    for (const [id, s] of this.sliders) {
+      s.input.step = frozenIn(this.source, id) ? "any" : s.step;
+      if (frozenIn(this.source, id) && !b) s.blank();
+      else if (id in values) s.set(values[id]!);
+    }
     this.$("addLayers").textContent = b ? `${b.plan.hiddenLayers.length} hidden ${b.plan.hiddenLayers.length === 1 ? "layer" : "layers"}` : "";
   }
 
   private plan(): BodyPlan | null {
     const b = this.base();
-    return b && this.t ? planOf(b.plan, this.t) : null;
+    if (!b || !this.t) return null;
+    return this.source === "fresh" ? planOf(b.plan, this.t) : { ...b.plan, hiddenLayers: b.plan.hiddenLayers.slice() }; // frozen: exactly the founder's or file's own plan
+  }
+
+  // The genome the creature starts from: the base's own, or for a fresh brain one new genome per structure.
+  private startGenome(b: Base, plan: BodyPlan): Float32Array {
+    if (this.source !== "fresh") return b.genome;
+    const key = JSON.stringify(plan);
+    if (this.fresh?.plan !== key) this.fresh = { plan: key, genome: freshGenome(plan) };
+    return this.fresh.genome;
   }
 
   private say(text: string, kind: "ok" | "error" | "" = ""): void {
@@ -436,7 +491,10 @@ export class AddPanel {
     go.disabled = !this.rules || !plan || !nameOk || this.waiting || training || left > 0;
     go.textContent = this.waiting ? "Adding…" : training ? "Training…" : left > 0 ? `Add again in ${left} s` : this.copies > 1 ? `Add ${this.copies} to the world` : "Add to the world";
     this.$("addOff").hidden = this.rules !== null;
-    for (const s of this.sliders.values()) s.input.disabled = training || this.waiting || !plan;
+    for (const [id, s] of this.sliders) s.input.disabled = training || this.waiting || !plan || frozenIn(this.source, id);
+    this.$("addFrozenHint").hidden = this.source === "fresh";
+    const busy = training || this.waiting; // the creature being sent is the one on screen, so no mode or founder change meanwhile
+    for (const e of this.root.querySelectorAll<HTMLInputElement | HTMLButtonElement>('input[name="addSource"], #addFile, .founder')) e.disabled = busy;
   }
 
   private progress(p: TrainProgress | null): void {
@@ -478,12 +536,12 @@ export class AddPanel {
     const plan = this.plan();
     const name = this.$<HTMLInputElement>("addName").value;
     if (!b || !plan || !this.t || !NAME_RE.test(name) || this.waiting || this.job) return;
-    let genome = sameStructure(b.plan, plan) ? b.genome : reshapeGenome(b.plan, b.genome, plan);
+    let genome = this.startGenome(b, plan);
     this.say("");
     const kinds = ["addPretrain", "addFinetune"].filter((id) => this.$<HTMLInputElement>(id).checked).join();
-    const key = { from: b.genome, plan: JSON.stringify(plan), kinds };
+    const key: TrainKey = { mode: this.source, from: genome, plan: JSON.stringify(plan), kinds };
     const t = this.trained;
-    if (kinds && t && t.from === key.from && t.plan === key.plan && t.kinds === key.kinds) genome = t.genome; // trained already, the add did not go in
+    if (kinds && t && sameTrainKey(t.key, key)) genome = t.genome; // trained already, the add did not go in
     else {
       const trained = await this.trainAll(plan, genome);
       if (!trained) {
@@ -491,7 +549,7 @@ export class AddPanel {
         return this.refresh();
       }
       genome = trained.genome;
-      if (kinds) this.trained = { ...key, genome };
+      if (kinds) this.trained = { key, genome };
       if (trained.away) { // never add while the visitor is away: the result waits for them
         this.say("Training stopped while this tab was hidden. Its result is kept: press Add to the world to add it.");
         return this.refresh();

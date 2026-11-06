@@ -39,7 +39,7 @@ Hourly state stays out of git, since a world of about 1000 creatures is a few MB
 
 ## Safety
 Follows "Uploaded creatures and settings" in `docs/modes-plan.md`: data only through `parseCreatureFile`, bounded cost, names rendered as text, re-validated on the server.
-Server limits: insert rate per visitor, cap on visitor creatures alive, name length and character filter.
+Server limits: insert rate per visitor and for everyone (added creatures count against the population cap), name length and character filter.
 The public port answers only the WebSocket upgrade and `GET /stats` (`{creatures, viewers}` for the landing page: CORS *, no request body read, rebuilt at most once a second, 5 a second for all callers with a burst of 20, past that a 503); every other request gets a 426.
 
 ### Uploads (L4, built)

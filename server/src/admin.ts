@@ -27,7 +27,8 @@ export function loadAdminToken(stateDir: string): string {
 export const OVERRIDES = "admin-overrides.json";
 export const PREVIOUS_OVERRIDES = "admin-overrides.previous-world.json";
 export const IGNORED_OVERRIDES = "admin-overrides.ignored.json";
-const DROPPED = ["add.aliveShare", "add.aliveFloor"]; // settings an older version had; skipped in a saved overrides file, the rest still applies
+// Settings an older version had, with what replaced them; skipped in a saved overrides file, the rest still applies.
+const DROPPED: Record<string, string> = { "add.aliveShare": "0.2.1: add.aliveMax", "add.aliveFloor": "0.2.1: add.aliveMax", "add.aliveMax": "after 0.4.1: adds count against eco.maxPopulation" };
 
 // A fresh world starts from liveConfig: the overrides of the world before are moved aside (one copy kept, an older one replaced),
 // so a later restart that restores the fresh world's save does not apply them. Returns the line to log, or null when there were none.
@@ -41,7 +42,7 @@ export function retireOverrides(stateDir: string): string | null {
 // Re-applies the settings the admin changed before the last restart and returns those applied, so later changes are merged into them.
 // Never all or nothing: a key this version does not know (a rollback past the version that added it) is skipped with a log line, the
 // known ones are applied together, and if they are refused together each is tried alone, a refused one skipped with its reason. So a
-// rollback never silently drops standing settings such as add.aliveMax. When anything is skipped the file is copied to IGNORED_OVERRIDES.
+// rollback never silently drops standing settings such as add.perWindow. When anything is skipped the file is copied to IGNORED_OVERRIDES.
 export function loadOverrides(stateDir: string, world: { eco: Ecosystem }): Record<string, Value> {
   const file = join(stateDir, OVERRIDES);
   if (!existsSync(file)) return {};
@@ -51,13 +52,18 @@ export function loadOverrides(stateDir: string, world: { eco: Ecosystem }): Reco
     const saved: unknown = JSON.parse(readFileSync(file, "utf8"));
     if (!saved || typeof saved !== "object" || Array.isArray(saved)) throw new Error("not an object of settings");
     const all = saved as Record<string, Value>;
-    // 0.2.0 turned adding off with both alive keys at 0; keep it off rather than reopen it with the new aliveMax default.
-    if (all["add.aliveShare"] === 0 && all["add.aliveFloor"] === 0 && !Object.hasOwn(all, "add.aliveMax")) all["add.aliveMax"] = 0;
+    // Adding was turned off with add.aliveMax 0 (0.2.1 to 0.4.1) or with both alive keys at 0 (0.2.0); keep it off with add.perWindow 0
+    // rather than reopen it now that those keys are gone.
+    const off = Object.hasOwn(all, "add.aliveMax") ? all["add.aliveMax"] === 0 : all["add.aliveShare"] === 0 && all["add.aliveFloor"] === 0;
+    if (off && all["add.perWindow"] !== 0) {
+      all["add.perWindow"] = 0;
+      console.log(`${OVERRIDES}: adding was off (alive cap 0), kept off with add.perWindow 0`);
+    }
     const known = tunableLimits();
     const kept: Record<string, Value> = {};
     for (const [k, v] of Object.entries(all)) {
       if (Object.hasOwn(known, k)) kept[k] = v;
-      else if (DROPPED.includes(k)) console.log(`${OVERRIDES}: ${k} is no longer a setting (0.2.1: add.aliveMax), skipped`);
+      else if (Object.hasOwn(DROPPED, k)) console.log(`${OVERRIDES}: ${k} is no longer a setting (${DROPPED[k]}), skipped`);
       else skipped.push(`${k} is not a setting of this version, skipped`);
     }
     if (!applyTunables(world.eco, kept)) applied = kept;
@@ -99,7 +105,7 @@ function carriedKeys(file: string): Record<string, unknown> {
     const saved: unknown = JSON.parse(readFileSync(file, "utf8"));
     if (!saved || typeof saved !== "object" || Array.isArray(saved)) return {};
     const known = tunableLimits();
-    return Object.fromEntries(Object.entries(saved).filter(([k]) => !Object.hasOwn(known, k) && !DROPPED.includes(k)));
+    return Object.fromEntries(Object.entries(saved).filter(([k]) => !Object.hasOwn(known, k) && !Object.hasOwn(DROPPED, k)));
   } catch {
     return {};
   }

@@ -75,7 +75,6 @@ export class LiveWorld {
   readonly freshEco: { maxPopulation: number; birthReserve: number }; // a fresh world's caps (the config this server starts from), bounding its seed
   private readonly freshBirth: AddRules["birth"]; // a fresh world's birth ranges, before any admin change (freshAddRules)
   seedCopies = SEED_COPIES; // of each founder this world was seeded with (saves.ts SEED_FILE), for the hello
-  private added = new Set<number>(); // ids of visitor-added creatures that may still live (pruned in aliveAdded)
   private map: WireMap = { ground: { normal: 1, mud: 0, firm: 0, rock: 0 }, regions: [] };
   private readonly home: { width: number; height: number; map: string }; // the world this server runs; a save of another is not restored
 
@@ -106,9 +105,6 @@ export class LiveWorld {
     this.eco.drainEvents();
     const name = this.config.world.map || undefined;
     this.map = { ...(name ? { name, version: mapVersion(name) } : {}), ground: groundShares(this.eco), regions: mapRegions(name) };
-    // Added creatures found named lineages (late rows of the lineage table, kept in saves); the living founders among them count.
-    // The starter founders a fresh world was seeded with (seedFounders, names behind STARTER_MARK) are no visitor adds.
-    this.added = new Set(this.eco.lineageTable.toState().late.filter((r) => r[5] !== "" && !r[5].startsWith(STARTER_MARK) && this.eco.get(r[0])).map((r) => r[0]));
     if (this.helpers) {
       const starting = this.helpers.start(this.eco);
       this.starting = starting;
@@ -472,12 +468,6 @@ export class LiveWorld {
     return encodeItems(this.eco.tick, { xs: w.xs, ys: w.ys, kinds: w.kinds, slots: w.count }, this.config.world);
   }
 
-  // Visitor-added creatures alive now (the inserted ones, not their children).
-  aliveAdded(): number {
-    for (const id of this.added) if (!this.eco.get(id)) this.added.delete(id);
-    return this.added.size;
-  }
-
   // What an add may ask for: the world's birth trait ranges and the costs behind energy per second.
   addRules(): AddRules {
     const { eco, creature } = this.config;
@@ -517,7 +507,7 @@ export class LiveWorld {
   }
 
   // Seeds a fresh world (no tick run, nobody in it) with `copies` (SEED_COPIES unless an admin reset asked for more) of each founder at random open spots, each copy the founder of a
-  // lineage with the founder's name (behind STARTER_MARK), each founder its own hue. Not visitor adds: they count toward no add cap (see attach).
+  // lineage with the founder's name (behind STARTER_MARK), each founder its own hue. Not visitor adds.
   // A founder with a pool gives each copy a genome from [genome, ...pool], in a shuffled order cycled through, so every variant is used once
   // before any repeats, and each fresh world draws its own subset when there are fewer copies than variants.
   // extra: one more founder with its own count (a reset's carried creature, carry.ts), its hue between the first two founders', seeded after
@@ -573,7 +563,7 @@ export class LiveWorld {
 
   // Blanks a visitor's name (as viewers see it, without the starter mark) on every family that carries it, for an admin who finds it
   // unfit; the families live on unnamed. Stats, details and the next save carry the change. Call between ticks (whenIdle).
-  // The name becomes BLANKED (or STARTER_MARK + BLANKED), which viewers see as no name, so a visitor family still counts as added.
+  // The name becomes BLANKED (or STARTER_MARK + BLANKED), which viewers see as no name.
   blankName(name: string): number {
     return this.eco.lineageTable.renameWhere((n) => wireName(n).name === name, (n) => (n.startsWith(STARTER_MARK) ? STARTER_MARK : "") + BLANKED);
   }
@@ -584,7 +574,8 @@ export class LiveWorld {
   // now: false when waiting will not help (the name is taken), so the page does not hold the Add button back.
   addCreatures(req: AddRequest, random: () => number = Math.random): { ids: number[] } | { reason: string; now?: false } {
     const e = this.eco;
-    if (e.population + req.copies > e.config.eco.maxPopulation) return { reason: "the world is full, try again later" };
+    const room = e.config.eco.maxPopulation - e.population;
+    if (req.copies > room) return room > 0 ? { reason: `only ${room} more ${room === 1 ? "creature fits" : "creatures fit"} right now, ask for ${room === 1 ? "1 copy" : `${room} copies or fewer`}`, now: false } : { reason: "the world is full, try again later" };
     // One name, one family on the list: a name a living family carries (any case), or a starter's, is refused; it frees when that family dies out.
     const wanted = req.name.toLowerCase();
     if (this.founders.some((f) => f.name.toLowerCase() === wanted) || e.lineageTable.someName((n) => wireName(n).name.toLowerCase() === wanted)) return { reason: `the name ${req.name} is taken by a family alive now, pick another`, now: false };
@@ -599,7 +590,6 @@ export class LiveWorld {
       const m = e.get(res.id)!;
       m.lastBirthTick = e.tick + Math.round(LIVE.add.birthHoldS / e.config.dt) - m.cooldownTicks;
       ids.push(res.id);
-      this.added.add(res.id);
     }
     return { ids };
   }
