@@ -213,6 +213,8 @@ describe("cleared boxes", () => {
     const env: EnvSpec = { ...envById("nibble")!, food: 3, poison: 0, size: [200, 200] };
     for (let seed = 1; seed < 40; seed++) {
       const r = runEpisode(env, randomLearner(env, seed), seed);
+      if (r.food >= env.food) expect(r.seconds).toBeLessThan(env.seconds); // clearing ends the episode early
+      else if (r.seconds < env.seconds) expect(r.energy).toBeLessThanOrEqual(0); // short of the clear, only starving ends it early
       if (r.food < env.food) expect(r.reward).toBe(r.food);
       else expect(r.reward).toBeGreaterThan(r.food); // cleared before the end: food plus 0.1 per second left
     }
@@ -227,6 +229,17 @@ describe("library rivals", () => {
     const env: EnvSpec = { ...envById("nibble")!, seconds: 5, rivals: [{ species: 0, count: 2, source: "library:hunt-grazers" }] };
     expect(() => runEpisode(env, randomLearner(env, 1), 3, null, lib)).not.toThrow();
     expect(checkEnv(env, "ecosystem", 0)).toMatch(/library/);
+  });
+});
+
+describe("every env", () => {
+  it("plays a short episode with a finite reward", () => {
+    for (const e of ENVS) {
+      const env: EnvSpec = { ...e, seconds: Math.min(e.seconds, 2) };
+      const r = runEpisode(env, randomLearner(env, 1), 1, null, {});
+      expect(Number.isFinite(r.reward), e.id).toBe(true);
+      expect(r.seconds, e.id).toBeGreaterThan(0);
+    }
   });
 });
 

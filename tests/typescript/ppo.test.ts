@@ -41,6 +41,108 @@ describe("Mlp", () => {
   });
 });
 
+describe("Mlp pair pass with fewer used outputs than the last layer", () => {
+  const sizes = [5, 6, 5, 4];
+  const used = 2;
+  const rng = testRng(11);
+  const params = Float64Array.from(randomGenome(sizes, rng), (w) => w + 0.1 * rng.normal());
+  const input = Float64Array.from({ length: 10 }, (_, i) => (i < 5 ? rng.normal() : 0)); // sample b has all inputs zero
+  const dA = Float64Array.of(0.7, -1.3, 0, 0);
+  const dB = Float64Array.of(-0.4, 0.9, 0, 0);
+  const pairLoss = (p: Float64Array): number => {
+    const a = new Mlp(sizes, used);
+    const b = new Mlp(sizes, used);
+    Mlp.forward2(a, b, p, input, 0, 5);
+    const ya = a.acts[3]!;
+    const yb = b.acts[3]!;
+    return dA[0]! * ya[0]! + dA[1]! * ya[1]! + dB[0]! * yb[0]! + dB[1]! * yb[1]!;
+  };
+
+  it("forward2 and backward2 equal two single passes", () => {
+    const a = new Mlp(sizes, used);
+    const b = new Mlp(sizes, used);
+    Mlp.forward2(a, b, params, input, 0, 5);
+    const sa = new Mlp(sizes, used);
+    const sb = new Mlp(sizes, used);
+    for (let j = 0; j < used; j++) {
+      expect(a.acts[3]![j]).toBeCloseTo(sa.forward(params, input, 0)[j]!, 12);
+      expect(b.acts[3]![j]).toBeCloseTo(sb.forward(params, input, 5)[j]!, 12);
+    }
+    const pair = new Float64Array(params.length);
+    Mlp.backward2(a, b, params, dA, dB, pair);
+    const single = new Float64Array(params.length);
+    sa.backward(params, dA, single);
+    sb.backward(params, dB, single);
+    for (let i = 0; i < params.length; i++) expect(pair[i]).toBeCloseTo(single[i]!, 12);
+  });
+
+  it("backward2 matches the finite-difference gradient", () => {
+    const a = new Mlp(sizes, used);
+    const b = new Mlp(sizes, used);
+    Mlp.forward2(a, b, params, input, 0, 5);
+    const grad = new Float64Array(params.length);
+    Mlp.backward2(a, b, params, dA, dB, grad);
+    const h = 1e-6;
+    for (let i = 0; i < params.length; i++) {
+      const p = params.slice();
+      p[i] += h;
+      const up = pairLoss(p);
+      p[i] -= 2 * h;
+      expect(grad[i]).toBeCloseTo((up - pairLoss(p)) / (2 * h), 5); // not 6: hidden units run fastTanh (error ~1e-4) but backprop uses the exact slope 1 - a^2
+    }
+  });
+});
+
+describe("Ppo policyLoss gradient", () => {
+  const env = { ...envById("nibble")!, seconds: 3 };
+  const learner = randomLearner(env, 1);
+  const sizes = layerSizes(layoutConfig(env.world), learner.plan);
+  const clip = PPO_DEFAULTS.clip;
+  const z = [0.3, -0.5];
+  const u0 = [0.1, -0.2];
+  const ls0 = [-0.5, -0.3];
+  // Independent copy of the loss -min(r A, clip(r) A) as a function of the net outputs u and log-stds.
+  const loss = (u: number[], ls: number[], logp0: number, A: number): number => {
+    let lp = 0;
+    for (let a = 0; a < 2; a++) lp += -0.5 * ((z[a]! - u[a]!) / Math.exp(ls[a]!)) ** 2 - ls[a]! - 0.5 * Math.log(2 * Math.PI);
+    const r = Math.exp(lp - logp0);
+    return -Math.min(r * A, Math.min(Math.max(r, 1 - clip), 1 + clip) * A);
+  };
+  const lpAt = (u: number[], ls: number[]): number => {
+    let lp = 0;
+    for (let a = 0; a < 2; a++) lp += -0.5 * ((z[a]! - u[a]!) / Math.exp(ls[a]!)) ** 2 - ls[a]! - 0.5 * Math.log(2 * Math.PI);
+    return lp;
+  };
+  // [advantage, log-ratio offset (logp0 = lp - offset)]: inside the clip range, clipped above (A > 0), unclipped below (A > 0), clipped below (A < 0), unclipped above (A < 0)
+  it.each([[1.5, 0.05], [1.5, 0.5], [1.5, -0.5], [-1.2, -0.5], [-1.2, 0.5]])("matches central differences for A %f and log-ratio %f", (A, offset) => {
+    const ppo = new Ppo([env], learner, sizes, {}, 7) as unknown as { policyNet: Mlp; logStd: Float64Array; policyLoss(b: unknown, i: number, net: Mlp, dOut: Float64Array, gStd: Float64Array): boolean };
+    ppo.logStd.set(ls0);
+    const net = ppo.policyNet;
+    const last = net.acts[net.sizes.length - 1]!;
+    last.set(u0);
+    const logp0 = lpAt(u0, ls0) - offset;
+    const batch = { z: Float64Array.from(z), logp: Float64Array.of(logp0), adv: Float64Array.of(A) };
+    const dOut = new Float64Array(last.length);
+    const gStd = new Float64Array(2);
+    const hit = ppo.policyLoss(batch, 0, net, dOut, gStd);
+    const clipped = (A > 0 && offset > Math.log(1 + clip)) || (A < 0 && offset < Math.log(1 - clip));
+    expect(hit).toBe(!clipped);
+    const h = 1e-6;
+    for (let a = 0; a < 2; a++) {
+      const up = u0.slice();
+      up[a]! += h;
+      const dn = u0.slice();
+      dn[a]! -= h;
+      expect(dOut[a]).toBeCloseTo((loss(up, ls0, logp0, A) - loss(dn, ls0, logp0, A)) / (2 * h), 6);
+      const lu = ls0.slice();
+      lu[a]! += h;
+      const ld = ls0.slice();
+      ld[a]! -= h;
+      expect(gStd[a]).toBeCloseTo((loss(u0, lu, logp0, A) - loss(u0, ld, logp0, A)) / (2 * h), 6);
+    }
+  });
+});
+
 describe("Ppo", () => {
   const env = { ...envById("nibble")!, seconds: 3 };
   const learner = randomLearner(env, 1);

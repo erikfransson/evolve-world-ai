@@ -7,6 +7,7 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 ## Unreleased
 
 - Fixes: a Trials evaluation worker that throws now fails the run visibly instead of hanging it, the Arena brain key sits inside the canvas at any zoom, and the RL transfer intervals are right for few seeds (exact t quantiles up to 30 degrees of freedom; the old approximation gave 9.7 instead of 12.7 at one). Stale docs and comments corrected, small tooling checks added. Engine results unchanged.
+- RL self-play: the first learner body of a drawn world now starts at the layout's start position (and heading when the layout fixes one), as in the Arena envs; it was placed at random and the start was dropped. Open worlds and the other bodies are unchanged. New tests for every env's short episode, `forward2`/`backward2` and `policyLoss` gradients, and stronger early-end, migration and `--poison 0` checks. The Antithetic-ES `decay` comment now says the term enters the gradient before Adam (behaviour unchanged).
 
 ## 0.4.2 (2026-11-06)
 

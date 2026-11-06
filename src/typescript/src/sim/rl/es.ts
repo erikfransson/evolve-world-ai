@@ -8,7 +8,7 @@ export interface EsOptions {
   pairs: number; // antithetic pairs per step, 2 x pairs episodes batches
   sigma: number; // perturbation std per weight
   lr: number; // Adam step size
-  decay: number; // L2 pull on the weights per step, x lr
+  decay: number; // L2 term decay x theta added to the gradient before the Adam step (so Adam rescales it)
   shaping: "rank" | "zscore"; // fitness shaping: centred ranks (outlier proof) or standardised rewards (optimises the mean)
 }
 
