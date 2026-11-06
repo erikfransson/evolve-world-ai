@@ -109,7 +109,12 @@ export interface EcoMapMessage {
   parts: MapParts;
 }
 
-export type EcoOutMessage = EcoSnapshot | EcoErrorMessage | EcoMapMessage;
+// The render worker stopped answering (no buffer back for seconds): the worker took the snapshot port back, the page should stop drawing through it.
+export interface EcoRenderLostMessage {
+  type: "renderLost";
+}
+
+export type EcoOutMessage = EcoSnapshot | EcoErrorMessage | EcoMapMessage | EcoRenderLostMessage;
 
 export interface SnapshotViews {
   count: number;

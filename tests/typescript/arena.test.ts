@@ -5,7 +5,7 @@ import { ARENA_KIND, bestFounder, change, customEnv, envsForKind, kindRejection,
 import type { CustomEnvForm } from "../../src/typescript/src/ui/arenaPick.ts";
 import { DEFAULT_SPEED, FAVOURITES_KEY, MAX_FAVOURITES, SPEED_KEY, addFavourite, loadFavourites, loadSpeed, removeFavourite, saveSpeed } from "../../src/typescript/src/ui/arenaStore.ts";
 import { DEFAULT_DESIGN, DEFAULT_RUN, designPlan, planDesign, startOptions, trainingRecord } from "../../src/typescript/src/ui/arenaForm.ts";
-import { resultLine, tileSub, tileTitle } from "../../src/typescript/src/ui/arenaTiles.ts";
+import { TileGrid, resultLine, tileSub, tileTitle } from "../../src/typescript/src/ui/arenaTiles.ts";
 import { displayOrder, gridColumns, layoutsPerEnv, pageOf, phaseOf, unshownEnvs } from "../../src/typescript/src/ui/arenaLayout.ts";
 import { BLANK_ENV, envConfig } from "../../src/typescript/src/sim/rl/env.ts";
 import { ENVS, RECOMMENDED_MIX } from "../../src/typescript/src/sim/rl/envs.ts";
@@ -206,8 +206,19 @@ describe("favourites", () => {
     expect(addFavourite(file("a"), store)).toBe(true);
     addFavourite(file("b"), store);
     expect(loadFavourites(store).map((f) => f.name)).toEqual(["b", "a"]);
-    removeFavourite(0, store);
+    removeFavourite(file("b"), store);
     expect(loadFavourites(store).map((f) => f.name)).toEqual(["a"]);
+  });
+
+  it("removes the creature that was picked even after another tab saved one", () => {
+    const store = memory();
+    addFavourite(file("a"), store);
+    const picked = loadFavourites(store)[0]!;
+    addFavourite(file("b"), store); // index of "a" shifts from 0 to 1
+    removeFavourite(picked, store);
+    expect(loadFavourites(store).map((f) => f.name)).toEqual(["b"]);
+    removeFavourite(picked, store); // already gone: nothing else is dropped
+    expect(loadFavourites(store).map((f) => f.name)).toEqual(["b"]);
   });
 
   it("keeps at most 20 and survives garbage and a refusing store", () => {
@@ -364,5 +375,32 @@ describe("poison cost and the recommended mix", () => {
     const f = creatureFile("forager", "x", { plan, genome: new Float32Array(genomeLengthFor("forager", plan)) }, trainingRecord({ ...base, poisonCost: 2 }, "2026-11-04"));
     expect(JSON.parse(JSON.stringify(f)).training.poisonCost).toBe(2);
     expect(typeof parseCreatureFile(JSON.stringify(f))).toBe("object");
+  });
+});
+
+describe("TileGrid repaints only when the picture changes", () => {
+  const setup = () => {
+    const root = document.createElement("div");
+    const grid = new TileGrid(root);
+    grid.setSlots([0]);
+    const canvas = root.querySelector("canvas")!;
+    Object.defineProperty(canvas, "clientWidth", { value: 100, configurable: true });
+    Object.defineProperty(canvas, "clientHeight", { value: 50, configurable: true });
+    let paints = 0;
+    const ctx = new Proxy({}, { get: (_t, k) => (k === "setTransform" ? () => void paints++ : () => {}), set: () => true });
+    (canvas as { getContext: unknown }).getContext = () => ctx;
+    grid.show({ iter: 1, genome: new Float32Array(1), recordings: [recording()], names: ["a"], envCount: 1 }, 0);
+    return { grid, canvas, paints: () => paints };
+  };
+  it("skips a paused clock and repaints on resize", () => {
+    const { grid, canvas, paints } = setup();
+    grid.draw(0);
+    grid.paused = true;
+    grid.draw(1000);
+    grid.draw(2000);
+    expect(paints()).toBe(1);
+    Object.defineProperty(canvas, "clientWidth", { value: 120, configurable: true });
+    grid.draw(3000);
+    expect(paints()).toBe(2);
   });
 });

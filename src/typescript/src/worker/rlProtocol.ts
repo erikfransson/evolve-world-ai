@@ -56,6 +56,6 @@ export type RlOutMessage =
   | { type: "iteration"; it: RlIteration }
   | { type: "show"; iter: number; genome: Float32Array; recordings: Recording[] } // the iteration's best candidate; recordings[0] carries brain inputs
   | { type: "learner"; iter: number; learner: StoredLearner } // the current (mean) genome, after each held-out check and at the end
-  | { type: "rebased"; iter: number; held: number; perEnv: number[] } // after an envs change: the current genome on the new envs' held-out seeds
+  | { type: "rebased"; iter: number; held: number; perEnv: number[]; learner: StoredLearner } // after an envs change: the current genome (and its learner) on the new envs' held-out seeds
   | { type: "done"; iter: number }
   | { type: "error"; message: string };

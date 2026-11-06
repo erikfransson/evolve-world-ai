@@ -8,13 +8,14 @@ import { BACKGROUND, FLOOR, FOOD, POISON, WALL } from "./scene.ts";
 import { drawTerrain } from "./terrainScene.ts";
 
 const MARGIN = 12; // CSS px around the world
+const TERRAIN_KEYS = ["stoneDensity", "ridgeDensity", "slowDensity", "fastDensity", "slowSize", "fastSize"] as const; // what terrainOf reads
 const FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
 
 // The starting items as the run will scatter them (same seed and stream), rebuilt only when the settings that shape them change.
 let cached: { key: string; world: World | null } = { key: "", world: null };
 export function startItems(config: EcoConfig): World | null {
   const { food, poison } = itemCounts(config);
-  const key = [config.seed, config.world.map, config.world.width, config.world.height, config.world.itemRadius, config.creature.rayLength, food, poison].join();
+  const key = [config.seed, config.world.map, config.world.width, config.world.height, config.world.itemRadius, config.creature.rayLength, food, poison, ...TERRAIN_KEYS.map((k) => config.world[k])].join();
   if (cached.key === key) return cached.world;
   let world: World | null = null;
   try {

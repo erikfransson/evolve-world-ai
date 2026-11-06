@@ -97,7 +97,7 @@ export interface IOOptions<M extends Mode> {
   form: HTMLFormElement;
   read(): ConfigOf[M];
   fill(config: ConfigOf[M]): void;
-  preset?: { get(): string; set(id: string): void }; // the preset picker; pasted settings select their preset
+  preset?: { get(): string; set(id: string, notify?: boolean): void }; // the preset picker; pasted settings select their preset
 }
 
 export interface SettingsIO {
@@ -234,9 +234,8 @@ export function initSettingsIO<M extends Mode>(o: IOOptions<M>): SettingsIO {
     } catch (e) {
       return { ok: false, message: e instanceof Error ? e.message : String(e) };
     }
-    o.preset?.set(preset);
     o.fill(pasted);
-    if (preset !== CUSTOM) o.preset?.set(preset); // the preset's world wins over pasted world values
+    o.preset?.set(preset, false); // after the fill, so the preset's world wins over pasted world values; the one input event is below
     clampRanges();
     const applied = o.read();
     o.fill(applied);

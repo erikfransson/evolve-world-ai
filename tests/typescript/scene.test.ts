@@ -1,4 +1,7 @@
-import { worldToCanvas } from "../../src/typescript/src/ui/scene.ts";
+import { beginFrame, worldToCanvas } from "../../src/typescript/src/ui/scene.ts";
+import { DEFAULT_CONFIG } from "../../src/typescript/src/sim/config.ts";
+import { Camera } from "../../src/typescript/src/ui/camera.ts";
+import { fakeCtx } from "./helpers.ts";
 
 describe("worldToCanvas", () => {
   it("centres a square world horizontally in a wide canvas", () => {
@@ -21,5 +24,16 @@ describe("worldToCanvas", () => {
       expect(t.offsetX + 1000 * t.scale).toBeLessThanOrEqual(cw);
       expect(t.offsetY + 600 * t.scale).toBeLessThanOrEqual(ch);
     }
+  });
+});
+
+describe("beginFrame", () => {
+  it("keeps the wall at least 3 device px wide when zoomed in", () => {
+    const { ctx, props } = fakeCtx(800, 600);
+    const { width, height } = DEFAULT_CONFIG.world;
+    const cam = new Camera(width, height, 800, 600);
+    cam.zoom = 8;
+    beginFrame(ctx, DEFAULT_CONFIG, 3, cam);
+    expect((props.lineWidth as number) * 8).toBeCloseTo(3);
   });
 });

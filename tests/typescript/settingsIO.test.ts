@@ -173,3 +173,18 @@ describe("Copy and Paste on the Ecosystem page", () => {
     expect(form.read()).toEqual(changed);
   });
 });
+
+describe("Paste with a preset", () => {
+  it("applies the pasted preset once and without its own input event", () => {
+    document.body.innerHTML = pageBody("trials");
+    buildTrials().fill(DEFAULT_CONFIG);
+    const form = document.getElementById("setup") as HTMLFormElement;
+    const calls: [string, boolean | undefined][] = [];
+    initSettingsIO({ mode: "trials", form, read: readConfig, fill: fillForm, preset: { get: () => "custom", set: (id, notify) => { calls.push([id, notify]); } } });
+    const id = "normal";
+    document.getElementById("pasteSettings")!.click();
+    (document.getElementById("ioText") as HTMLTextAreaElement).value = serialise("trials", DEFAULT_CONFIG, id);
+    document.getElementById("ioApply")!.click();
+    expect(calls).toEqual([[id, false]]);
+  });
+});

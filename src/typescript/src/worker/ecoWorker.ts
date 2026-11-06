@@ -1,4 +1,4 @@
-import type { EcoInMessage } from "./ecoProtocol.ts";
+import type { EcoInMessage, EcoOutMessage } from "./ecoProtocol.ts";
 import type { RenderSnapshot } from "./renderProtocol.ts";
 import { EcoRunner } from "./ecoRunner.ts";
 import { createBrowserThinkPool } from "./browserPool.ts";
@@ -10,8 +10,22 @@ import type { PoolEntry } from "../sim/seedPool.ts";
 
 let renderPort: MessagePort | null = null; // set when a render worker draws: snapshot buffers go to it, the page gets the rest
 const NO_BUFFER = new ArrayBuffer(0);
+// A live render worker hands a buffer back for every snapshot after its first (the first is held), so the clock starts at the second unreturned one;
+// 20 s of none, with 2+ out, means it died silently. Long, because a heavy first draw, GC or DevTools can stall a live worker for seconds.
+const RENDER_SILENCE_MS = 20_000;
+let unreturned = 0; // snapshots sent to the render port since a buffer last came back
+let lastBack = 0;
+function dropRender(): void {
+  renderPort?.close(); // the render worker died: later snapshots go to the page with their buffers
+  renderPort = null;
+}
 const runner = new EcoRunner((msg, transfer) => {
+  if (renderPort && msg.type === "snapshot" && unreturned >= 2 && performance.now() - lastBack > RENDER_SILENCE_MS) {
+    dropRender();
+    self.postMessage({ type: "renderLost" } satisfies EcoOutMessage);
+  }
   if (renderPort && msg.type === "snapshot") {
+    if (unreturned++ <= 1) lastBack = performance.now();
     const { buffer, selected, events } = msg;
     const toRender: RenderSnapshot = { type: "snapshot", run: msg.run, count: msg.count, itemCount: msg.itemCount, creatureCap: msg.creatureCap, itemCap: msg.itemCap, buffer, events, selected: selected && { ...selected, genome: null } };
     renderPort.postMessage(toRender, { transfer: [buffer] });
@@ -85,7 +99,8 @@ async function receive(msg: EcoInMessage): Promise<void> {
 self.onmessage = (e: MessageEvent<EcoInMessage | { type: "renderPort"; port: MessagePort } | { type: "renderGone" }>) => {
   if (e.data.type === "renderPort") {
     renderPort = e.data.port;
-    renderPort.onmessage = (p: MessageEvent<{ buffer: ArrayBuffer }>) => { queue = queue.then(() => receive({ type: "refill", buffer: p.data.buffer })); };
+    unreturned = 0;
+    renderPort.onmessage = (p: MessageEvent<{ buffer: ArrayBuffer }>) => { unreturned = 0; queue = queue.then(() => receive({ type: "refill", buffer: p.data.buffer })); };
     return;
   }
   if (e.data.type === "renderGone") {

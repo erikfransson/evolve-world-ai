@@ -248,7 +248,7 @@ export function beginFrame(ctx: CanvasRenderingContext2D, config: SimConfig, ful
   }
   drawTerrain(ctx, terrainOf(config), f.scale, seen);
   ctx.strokeStyle = WALL;
-  ctx.lineWidth = Math.max(2, 3 / f.scale);
+  ctx.lineWidth = 3 / f.scale; // 3 device px
   ctx.strokeRect(0, 0, ww, wh);
   return f;
 }

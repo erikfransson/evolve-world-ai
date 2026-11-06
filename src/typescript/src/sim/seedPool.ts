@@ -84,10 +84,12 @@ export function parsePool(data: unknown): { entries: PoolEntry[]; rejected: stri
   return { entries, rejected };
 }
 
-// Fetches and parses a pool; on any failure warns and returns null, so the caller falls back to random founders.
+const POOL_TIMEOUT_MS = 20_000; // a stalled download counts as a failed one (no signal where AbortSignal.timeout is missing, Safari before 16)
+
+// Fetches and parses a pool; on any failure (a timeout too) warns and returns null, so the caller falls back to random founders.
 export async function loadPool(url: string, fetchFn: typeof fetch = fetch): Promise<PoolEntry[] | null> {
   try {
-    const res = await fetchFn(url);
+    const res = await fetchFn(url, { signal: AbortSignal.timeout?.(POOL_TIMEOUT_MS) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const { entries, rejected } = parsePool(await res.json());
     if (rejected.length) console.warn(`seed pool: ${rejected.length} malformed entries skipped (${rejected[0]})`);

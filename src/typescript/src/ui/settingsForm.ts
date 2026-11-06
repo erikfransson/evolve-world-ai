@@ -265,11 +265,19 @@ export function buildForm<C extends object>(container: HTMLElement, spec: FormSp
       const target = e.target as HTMLInputElement;
       if (target.type === "range") syncSlider(target);
       const c = read();
+      // A pushed sibling of a [min, max] pair moved in the config only; show it.
+      if (fields.some((f) => f.kind === "range" && Math.abs(f.get(c) - sliderValue(el(f.id, HTMLInputElement))) > 1e-9 * Math.max(1, Math.abs(f.get(c))))) fill(c);
       syncHints(c);
       syncEnabled(c);
       onChange(c);
     });
     // Enter in a field would otherwise submit the form and reload the page, losing all settings.
+    // A cleared seed box reads as the default seed; show that instead of an empty box.
+    form.addEventListener("change", () => {
+      const seed = fields.find((f) => f.kind === "seed");
+      const box = seed && el(seed.id, HTMLInputElement);
+      if (box && !Number.isFinite(box.valueAsNumber)) box.value = String((read() as { seed: number }).seed);
+    });
     form.addEventListener("submit", (e) => e.preventDefault());
     const dice = document.getElementById("dice");
     if (dice) dice.onclick = () => {
