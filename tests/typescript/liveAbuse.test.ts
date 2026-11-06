@@ -120,7 +120,7 @@ describe("slow readers", () => {
   it("drops a client whose queue passes the hard cap", async () => {
     const { ws, done } = await slowClient(62518, LIMITS.hardBufferedBytes);
     expect(ws.bufferedAmount).toBeGreaterThan(LIMITS.hardBufferedBytes);
-    expect(dropReason(ws.bufferedAmount, state(), 1000)).toMatch(/hard cap/);
+    expect(dropReason(ws.bufferedAmount, state(), 1000, LIMITS)).toMatch(/hard cap/);
     done();
   });
 
@@ -130,18 +130,29 @@ describe("slow readers", () => {
     expect(ws.bufferedAmount).toBeLessThan(LIMITS.hardBufferedBytes);
     const c = state();
     c.lastMessageAt = 1000;
-    expect(dropReason(ws.bufferedAmount, c, 1000)).toBeNull();
-    expect(dropReason(ws.bufferedAmount, c, 1000 + LIMITS.slowDropMs - 1000)).toBeNull();
-    expect(dropReason(ws.bufferedAmount, c, 1000 + LIMITS.slowDropMs + 1000)).toMatch(/too long/);
+    expect(dropReason(ws.bufferedAmount, c, 1000, LIMITS)).toBeNull();
+    expect(dropReason(ws.bufferedAmount, c, 1000 + LIMITS.slowDropMs - 1000, LIMITS)).toBeNull();
+    expect(dropReason(ws.bufferedAmount, c, 1000 + LIMITS.slowDropMs + 1000, LIMITS)).toMatch(/too long/);
     done();
   });
 
   it("forgives a client that drains below the frame-skip level", () => {
     const c = state();
     c.lastMessageAt = 1000;
-    dropReason(LIMITS.maxBufferedBytes + 1, c, 1000);
-    expect(dropReason(0, c, 2000)).toBeNull();
+    dropReason(LIMITS.maxBufferedBytes + 1, c, 1000, LIMITS);
+    expect(dropReason(0, c, 2000, LIMITS)).toBeNull();
     expect(c.overSince).toBe(0);
+  });
+
+  it("takes its thresholds from the limits it is given: hard cap, idle and slow drop at small values", () => {
+    const small = { ...LIMITS, maxBufferedBytes: 100, hardBufferedBytes: 200, slowDropMs: 500, idleDropMs: 1000 };
+    expect(dropReason(300, state(), 0, small)).toMatch(/hard cap/);
+    const c = state();
+    expect(dropReason(150, c, 10, small)).toBeNull();
+    expect(dropReason(150, c, 610, small)).toMatch(/too long/);
+    const idle = state();
+    expect(dropReason(0, idle, 900, small)).toBeNull();
+    expect(dropReason(0, idle, 1100, small)).toBe("idle");
   });
 });
 
