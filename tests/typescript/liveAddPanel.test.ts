@@ -222,6 +222,16 @@ describe("add panel review fixes", () => {
     expect(sent[0]!.plan.raySpread).toBe(1.0);
   });
 
+  it("shows a spread under the slider's minimum as it is", async () => {
+    const { panel, founders } = await setup();
+    const { freshGenome } = await import("../../src/typescript/src/live/addPanel.ts");
+    const plan = { ...founders[0]!.plan, raySpread: (3 * Math.PI) / 180 };
+    const file = new File([JSON.stringify({ format: "evolve-world-creature", version: 1, kind: "forager", name: "Narrow", plan, genome: Array.from(freshGenome(plan, 3)), training: {} })], "n.json");
+    panel.setSource("file");
+    await (panel as unknown as { readFile(f: File): Promise<void> }).readFile(file);
+    expect(document.getElementById("add-spread")!.parentElement!.querySelector("output")!.textContent).toBe("3°");
+  });
+
   it("shows empty structure sliders for a file mode with no file, and no founder name on a fresh brain", async () => {
     const { panel } = await setup();
     panel.setSource("file");

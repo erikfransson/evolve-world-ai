@@ -356,11 +356,11 @@ export class AddPanel {
     input.min = String(min);
     input.max = String(max);
     input.step = String(step);
-    const paint = (): void => {
+    const paint = (shown = Number(input.value)): void => { // shown: the real value, which the input may clamp to its min and max
       const lo = Number(input.min);
       const hi = Number(input.max);
       input.style.setProperty("--p", `${hi > lo ? ((Number(input.value) - lo) / (hi - lo)) * 100 : 0}%`);
-      out.textContent = fmt(Number(input.value));
+      out.textContent = fmt(shown);
     };
     input.addEventListener("input", () => {
       paint();
@@ -375,7 +375,7 @@ export class AddPanel {
       step: String(step),
       set: (v) => {
         input.value = String(v);
-        paint();
+        paint(v);
       },
       blank: () => {
         input.value = input.min;
