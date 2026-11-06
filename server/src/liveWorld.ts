@@ -563,7 +563,7 @@ export class LiveWorld {
 
   // Blanks a visitor's name (as viewers see it, without the starter mark) on every family that carries it, for an admin who finds it
   // unfit; the families live on unnamed. Stats, details and the next save carry the change. Call between ticks (whenIdle).
-  // The name becomes BLANKED (or STARTER_MARK + BLANKED), which viewers see as no name, so a visitor family still counts as added.
+  // The name becomes BLANKED (or STARTER_MARK + BLANKED), which viewers see as no name.
   blankName(name: string): number {
     return this.eco.lineageTable.renameWhere((n) => wireName(n).name === name, (n) => (n.startsWith(STARTER_MARK) ? STARTER_MARK : "") + BLANKED);
   }
@@ -574,7 +574,8 @@ export class LiveWorld {
   // now: false when waiting will not help (the name is taken), so the page does not hold the Add button back.
   addCreatures(req: AddRequest, random: () => number = Math.random): { ids: number[] } | { reason: string; now?: false } {
     const e = this.eco;
-    if (e.population + req.copies > e.config.eco.maxPopulation) return { reason: "the world is full, try again later" };
+    const room = e.config.eco.maxPopulation - e.population;
+    if (req.copies > room) return room > 0 ? { reason: `only ${room} more ${room === 1 ? "creature fits" : "creatures fit"} right now, ask for ${room === 1 ? "1 copy" : `${room} copies or fewer`}`, now: false } : { reason: "the world is full, try again later" };
     // One name, one family on the list: a name a living family carries (any case), or a starter's, is refused; it frees when that family dies out.
     const wanted = req.name.toLowerCase();
     if (this.founders.some((f) => f.name.toLowerCase() === wanted) || e.lineageTable.someName((n) => wireName(n).name.toLowerCase() === wanted)) return { reason: `the name ${req.name} is taken by a family alive now, pick another`, now: false };

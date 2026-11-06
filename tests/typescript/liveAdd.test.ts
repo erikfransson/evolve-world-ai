@@ -276,6 +276,20 @@ describe("add caps (adds.ts)", () => {
     expect(gate.check(null, 1, fresh)?.reason).toBe("adding is off right now");
   });
 
+  it("the visitor map stays bounded at 4 x perWindow entries however many visitors add over time", () => {
+    LIVE.add.perWindow = 5;
+    const c = clock();
+    const gate = new AddGate(c.now);
+    const size = (): number => (gate as unknown as { visitors: Map<string, unknown> }).visitors.size;
+    let most = 0;
+    for (let i = 0; i < 500; i++) {
+      gate.record(`v${i}`, 1);
+      most = Math.max(most, size());
+      c.t += 61_000; // a new visitor every minute, so old entries leave the 5 minute window
+    }
+    expect(most).toBeLessThanOrEqual(4 * 5 + 1);
+  });
+
   it("per visitor: 3 creatures per window per address, other addresses unaffected, unknown address not limited per visitor", () => {
     LIVE.add.perVisitor = 3; // the mechanism, at a cap smaller than the default 90
     const c = clock();
@@ -510,7 +524,10 @@ describe("adding to the world (LiveWorld)", () => {
     const w = new LiveWorld(smallConfig(), null);
     w.eco.config.eco.maxPopulation = w.eco.population + 2;
     const before = w.eco.population;
-    expect(w.addCreatures(request({ copies: 3 }))).toEqual({ reason: "the world is full, try again later" });
+    expect(w.addCreatures(request({ copies: 3 }))).toEqual({ reason: "only 2 more creatures fit right now, ask for 2 copies or fewer", now: false });
+    expect(w.eco.population).toBe(before);
+    w.eco.config.eco.maxPopulation = before;
+    expect(w.addCreatures(request({ copies: 1 }))).toEqual({ reason: "the world is full, try again later" });
     expect(w.eco.population).toBe(before);
   });
 });
