@@ -66,7 +66,7 @@ export interface SimConfig {
     maxLifeSeconds: number; // safety stop only, normally a life ends when energy runs out
   };
   brain: {
-    hiddenLayers: number[]; // neurons per hidden layer, 1 to 4 layers of 1 to 32 (PLAN_LIMITS)
+    hiddenLayers: number[]; // neurons per hidden layer, 1 to 32 each (PLAN_LIMITS.neurons, checked by Ecosystem saves and pastes); at most 8 layers there, 4 in the forms and uploads
     memory: number; // 0 to 1, see memoryUnits; each unit is a leaky average of one brain output fed back as an input next tick
     shortRate: number; // per tick: m += rate * (target - m)
     longRate: number;

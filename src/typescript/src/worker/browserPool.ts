@@ -3,7 +3,7 @@ import { SerialEvaluator } from "../sim/evaluator.ts";
 import type { Evaluation, Evaluator } from "../sim/evaluator.ts";
 import type { Population } from "../sim/population.ts";
 import type { RecordOptions } from "../sim/trajectory.ts";
-import type { EvalDone, EvalJob, EvalPort } from "./evalPool.ts";
+import type { EvalJob, EvalPort, EvalReply } from "./evalPool.ts";
 import { PoolEvaluator, defaultThreads } from "./evalPool.ts";
 import { gentleController, idleMs } from "./pacer.ts";
 import type { DutyController } from "./pacer.ts";
@@ -117,7 +117,7 @@ function makeBrowserEvaluator(config: SimConfig, threads: number): BrowserEvalua
   if (threads <= 1 || typeof Worker === "undefined") return new BrowserEvaluator(config, null);
   let workers: EvalPort[];
   try {
-    workers = browserPorts<EvalJob, EvalDone>(threads, () => new Worker(new URL("./evalWorker.ts", import.meta.url), { type: "module" }), "evaluation worker");
+    workers = browserPorts<EvalJob, EvalReply>(threads, () => new Worker(new URL("./evalWorker.ts", import.meta.url), { type: "module" }), "evaluation worker");
   } catch (error) {
     console.warn("Nested workers unavailable, evaluating serially:", error);
     return new BrowserEvaluator(config, null);

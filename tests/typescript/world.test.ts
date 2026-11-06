@@ -216,6 +216,20 @@ describe("World", () => {
     expect(w.addItem(500, 500, HIT_POISON)).toBe(-1);
   });
 
+  it("item caches stay valid past 2^31 item changes", () => {
+    const c = cfg();
+    const w = new World(c, 4);
+    (w as unknown as { version: number }).version = 2 ** 31 - 2;
+    const cache = new RayCache();
+    const out: RayHit = { closeness: 0, kind: HIT_NONE, energy: 0, species: 0 };
+    castRay(w, 250, 300, 0, out, cache);
+    expect(out.kind).toBe(HIT_NONE);
+    for (let k = 0; k < 3; k++) w.addItem(300, 300, HIT_FOOD), w.removeItem(0);
+    w.addItem(300, 300, HIT_FOOD);
+    castRay(w, 250, 300, 0, out, cache);
+    expect(out.kind).toBe(HIT_FOOD);
+  });
+
   it("removeItem frees the slot, out of eating and ray reach, and addItem refills free slots", () => {
     const c = cfg();
     const w = new World(c, 2);

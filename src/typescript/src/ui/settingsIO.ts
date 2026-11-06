@@ -2,6 +2,7 @@ import { DEFAULT_CONFIG, overrideConfig } from "../sim/config.ts";
 import type { DeepPartial, SimConfig } from "../sim/config.ts";
 import { DEFAULT_ECO_CONFIG, MAX_CREATURES, MAX_THINK_EVERY, checkHiddenLayers } from "../sim/ecoConfig.ts";
 import type { EcoConfig } from "../sim/ecoConfig.ts";
+import { checkEcoBounds } from "../sim/retune.ts";
 import { checkRanges, migrateBirthKeys } from "../sim/species.ts";
 import { CUSTOM, ECO_PRESETS, TRIALS_PRESETS } from "../sim/presets.ts";
 import { isObj } from "../sim/guards.ts";
@@ -66,8 +67,12 @@ export function parseWithPreset<M extends Mode>(text: string, mode: M): Parsed<M
     const eco = (config as EcoConfig).eco;
     checkRanges(eco as unknown as Record<string, unknown>, "eco");
     if (!Number.isInteger(eco.thinkEvery) || eco.thinkEvery < 1 || eco.thinkEvery > MAX_THINK_EVERY) throw new Error(`config "eco.thinkEvery" must be a whole number from 1 to ${MAX_THINK_EVERY}.`);
+    checkEcoBounds(eco);
     checkHiddenLayers(config.brain.hiddenLayers);
-    for (const k of ["maxPopulation", "initialPopulation", "birthReserve"] as const) eco[k] = Math.min(eco[k], MAX_CREATURES);
+    for (const k of ["maxPopulation", "initialPopulation", "birthReserve"] as const) {
+      if (!Number.isInteger(eco[k]) || eco[k] < 0) throw new Error(`config "eco.${k}" must be a whole number from 0 to ${MAX_CREATURES}.`);
+      eco[k] = Math.min(eco[k], MAX_CREATURES);
+    }
   }
   return { config, preset, migrated };
 }

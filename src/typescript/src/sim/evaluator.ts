@@ -32,6 +32,7 @@ export function evaluateRange(
   out: Float64Array,
   genomeOffset = 0,
   record?: RecordOptions,
+  onProgress?: () => void, // called after each creature
 ): Trajectories | undefined {
   const recorder = record ? new FrameRecorder(end - start, record.maxFrames) : undefined;
   const runs = runsOf(config);
@@ -40,6 +41,7 @@ export function evaluateRange(
     let sum = runEpisode(config, genome, layoutSeed, i, recorder); // only run 0 is recorded
     for (let r = 1; r < runs; r++) sum += runEpisode(config, genome, runSeed(layoutSeed, r), i);
     out[i - start] = runs === 1 ? sum : sum / runs;
+    onProgress?.();
   }
   return recorder?.result();
 }

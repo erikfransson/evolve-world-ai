@@ -26,14 +26,31 @@ export const LIVE_MAX: Record<string, number> = {
   "world.foodEnergy": 10000, "world.poisonDamage": 10000, "mutation.std": 1,
 };
 
-type Kind = "nonneg" | "positive" | "unit" | "bool" | "count" | "range" | "posrange";
+// Throws when the eco regrowth, season or birth settings of a saved or pasted config are outside what the world can run (the same maxima as a live retune).
+export function checkEcoBounds(eco: EcoConfig["eco"]): void {
+  const num = (v: unknown, min: number, max: number, what: string, open = false): void => {
+    if (!(typeof v === "number" && (open ? v > min : v >= min) && v <= max)) throw new Error(`config "${what}" must be a number ${open ? "above" : "from"} ${min} ${open ? "up to" : "to"} ${max}.`);
+  };
+  const pair = (v: unknown, max: number, what: string): void => {
+    if (!Array.isArray(v) || v.length !== 2) throw new Error(`config "${what}" must be a [min, max] pair.`);
+    num(v[0], 0, max, `${what}[0]`);
+    num(v[1], 0, max, `${what}[1]`);
+  };
+  num(eco.yearMinutes, 0, LIVE_MAX["eco.yearMinutes"]!, "eco.yearMinutes", true); // also with seasons off: a live retune can turn them on, and 0 would then divide (winterness)
+  num(eco.winterFood, 0, 1, "eco.winterFood");
+  for (const k of ["foodRegrow", "poisonRegrow", "foodMaxDensity", "poisonMaxDensity"] as const) num(eco[k], 0, LIVE_MAX[`eco.${k}`]!, `eco.${k}`);
+  pair(eco.birthEnergyRange, Infinity, "eco.birthEnergyRange"); // no upper bound: RL envs set 1e9 to switch births off (rl/env.ts BIRTHLESS)
+  for (const k of ["birthCostRange", "birthCooldownRange"] as const) pair(eco[k], LIVE_MAX[`eco.${k}`]!, `eco.${k}`);
+}
+
+export type Kind = "nonneg" | "positive" | "unit" | "bool" | "count" | "range" | "posrange";
 type Live = typeof LIVE_FIELDS;
 export type RetunePatch = {
   [S in keyof Live]?: { [K in keyof Live[S]]?: Live[S][K] extends "bool" ? boolean : Live[S][K] extends "range" | "posrange" ? number[] : number };
 };
 export type RetuneResult = { ok: true; changed: string[] } | { ok: false; reason: string };
 
-function bad(kind: Kind, v: unknown, max = Infinity): boolean {
+export function bad(kind: Kind, v: unknown, max = Infinity): boolean {
   if (kind === "bool") return typeof v !== "boolean";
   if (kind === "range" || kind === "posrange") return !Array.isArray(v) || v.length !== 2 || !v.every((x) => typeof x === "number" && Number.isFinite(x) && x >= 0 && x <= max) || v[0] > v[1] || (kind === "posrange" && v[0] <= 0);
   if (typeof v !== "number" || !Number.isFinite(v) || v > max) return true;
@@ -59,5 +76,7 @@ export function checkRetune(patch: unknown, config: EcoConfig): { fields: [strin
       fields.push([section, key, v]);
     }
   }
+  const patched = (key: "maxPopulation" | "birthReserve"): number => ((patch as { eco?: Record<string, unknown> }).eco?.[key] as number | undefined) ?? config.eco[key];
+  if (patched("birthReserve") > 0 && patched("birthReserve") >= patched("maxPopulation")) return { reason: "eco.birthReserve must be below eco.maxPopulation" };
   return { fields };
 }

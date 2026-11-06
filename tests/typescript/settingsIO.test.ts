@@ -54,6 +54,9 @@ describe("settings JSON", () => {
     expect(() => paste({ brain: { hiddenLayers: new Array(10).fill(4) } })).toThrow(/at most 8 layers/);
     const big = paste({ eco: { maxPopulation: 70_000, initialPopulation: 1e9, birthReserve: 65_536 } }).eco;
     expect([big.maxPopulation, big.initialPopulation, big.birthReserve]).toEqual([MAX_CREATURES, MAX_CREATURES, MAX_CREATURES]);
+    for (const bad of [-1, 2.5]) for (const k of ["maxPopulation", "initialPopulation", "birthReserve"]) expect(() => paste({ eco: { [k]: bad } })).toThrow(new RegExp(`eco.${k}" must be a whole number`));
+    expect(() => paste({ eco: { foodRegrow: 5 } })).toThrow(/eco.foodRegrow" must be a number from 0 to 1/);
+    expect(() => paste({ eco: { yearMinutes: 0 } })).toThrow(/eco.yearMinutes/);
     const kept = paste({ eco: { maxPopulation: 4000, initialPopulation: 300 } }).eco;
     expect([kept.maxPopulation, kept.initialPopulation]).toEqual([4000, 300]);
   });

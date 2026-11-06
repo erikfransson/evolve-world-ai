@@ -98,12 +98,12 @@ export class World implements WorldView {
   private readonly freeSlots: Int32Array;
   private readonly freePos: Int32Array;
   private freeCount: number;
-  // Bumped by every item change; cellStamp[c] is the version of the last change in cell c.
+  // Bumped by every item change (stamps are Float64 so they stay exact past 2^31); cellStamp[c] is the version of the last change in cell c.
   private version = 0;
-  private readonly cellStamp: Int32Array;
+  private readonly cellStamp: Float64Array;
   // The same per block of BLOCK x BLOCK cells, so a cache check can skip whole blocks that did not change.
   private readonly blockCols: number;
-  private readonly blockStamp: Int32Array;
+  private readonly blockStamp: Float64Array;
   private readonly eatRange: CellRange = { rangeX0: 0, rangeX1: 0, rangeY0: 0, rangeY1: 0 };
   // When set, every item change is appended (ITEM_SET, slot, x, y, kind or ITEM_REMOVE, slot), so a copy of this world replaying them stays identical.
   log: number[] | null = null;
@@ -131,9 +131,9 @@ export class World implements WorldView {
     this.cols = Math.max(1, Math.ceil(this.width / this.cell));
     this.rows = Math.max(1, Math.ceil(this.height / this.cell));
     this.cellHead = new Int32Array(this.cols * this.rows).fill(-1);
-    this.cellStamp = new Int32Array(this.cols * this.rows);
+    this.cellStamp = new Float64Array(this.cols * this.rows);
     this.blockCols = Math.ceil(this.cols / BLOCK);
-    this.blockStamp = new Int32Array(this.blockCols * Math.ceil(this.rows / BLOCK));
+    this.blockStamp = new Float64Array(this.blockCols * Math.ceil(this.rows / BLOCK));
     this.nextItem = new Int32Array(capacity).fill(-1);
     this.itemCell = new Int32Array(capacity).fill(-1);
     // Lowest slot on top, so scatter takes its slots from the top.

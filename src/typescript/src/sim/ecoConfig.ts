@@ -2,6 +2,7 @@ import { DEFAULT_CONFIG } from "./config.ts";
 import type { EngineConfig } from "./config.ts";
 import { createRng, deriveSeed } from "./rng.ts";
 import type { StatefulRng } from "./rng.ts";
+import { PLAN_LIMITS } from "./rl/validate.ts";
 import type { SpeciesConfig } from "./species.ts";
 
 // Ecosystem: all creatures share one world, food and poison regrow, creatures reproduce on their own.
@@ -58,9 +59,14 @@ export const MAX_THINK_EVERY = 8; // eco.thinkEvery at most, for saves
 export const MAX_HIDDEN_LAYERS = 8; // brain.hiddenLayers at most: the brain kernels hold 10 layer sizes (wasmKernels.test.ts pins it)
 export const MAX_CREATURES = 20_000; // eco.maxPopulation at most, the crowd grid's 65535 guard stays out of reach
 
-// Throws when a pasted or saved brain has more hidden layers than the kernels hold, so a world fails at validation and not at its first attach.
+// Throws when a pasted or saved brain has more hidden layers than the kernels hold or a layer outside PLAN_LIMITS.neurons (the kernels' own hard
+// width is 1024), so a world fails at validation and not at its first attach.
 export function checkHiddenLayers(layers: readonly unknown[]): void {
   if (layers.length > MAX_HIDDEN_LAYERS) throw new Error(`config "brain.hiddenLayers" must have at most ${MAX_HIDDEN_LAYERS} layers, got ${layers.length}.`);
+  const [lo, hi] = PLAN_LIMITS.neurons;
+  layers.forEach((n, i) => {
+    if (typeof n !== "number" || !Number.isInteger(n) || n < lo || n > hi) throw new Error(`config "brain.hiddenLayers[${i}]" must be a whole number from ${lo} to ${hi} neurons, got ${JSON.stringify(n)}.`);
+  });
 }
 
 export const DEFAULT_ECO_CONFIG: EcoConfig = {

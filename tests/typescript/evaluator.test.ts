@@ -3,8 +3,8 @@ import type { SimConfig } from "../../src/typescript/src/sim/config.ts";
 import { SerialEvaluator } from "../../src/typescript/src/sim/evaluator.ts";
 import { Evolution } from "../../src/typescript/src/sim/evolution.ts";
 import { createBrowserEvaluator } from "../../src/typescript/src/worker/browserPool.ts";
-import { PoolEvaluator, defaultThreads, evalJob } from "../../src/typescript/src/worker/evalPool.ts";
-import type { EvalDone, EvalJob, EvalPort } from "../../src/typescript/src/worker/evalPool.ts";
+import { EVAL_STALL_MS, PoolEvaluator, defaultThreads, evalJob, heartbeat } from "../../src/typescript/src/worker/evalPool.ts";
+import type { EvalJob, EvalPort, EvalReply } from "../../src/typescript/src/worker/evalPool.ts";
 import { createNodeEvaluator } from "../../src/typescript/src/worker/nodePool.ts";
 
 const cfg: SimConfig = {
@@ -42,7 +42,7 @@ describe("parallel evaluation", () => {
 class FakeWorker implements EvalPort {
   posted: EvalJob[] = [];
   terminated = false;
-  private messageCallback: (msg: EvalDone) => void = () => {};
+  messageCallback: (msg: EvalReply) => void = () => {};
   private errorCallback: (error: unknown) => void = () => {};
 
   private readonly autoReply: boolean;
@@ -56,7 +56,7 @@ class FakeWorker implements EvalPort {
     this.posted.push(msg);
     if (this.autoReply) queueMicrotask(() => this.messageCallback(evalJob(msg)));
   }
-  onMessage(callback: (msg: EvalDone) => void): void { this.messageCallback = callback; }
+  onMessage(callback: (msg: EvalReply) => void): void { this.messageCallback = callback; }
   onError(callback: (error: unknown) => void): void { this.errorCallback = callback; }
   terminate(): void { this.terminated = true; }
   fail(error: unknown): void { this.errorCallback(error); }
@@ -97,6 +97,63 @@ describe("PoolEvaluator error state", () => {
     workers[0]!.fail(new Error("exited"));
     await expect(pool.evaluate(population, 5)).rejects.toThrow("exited");
     expect(workers[0]!.terminated).toBe(true);
+  });
+});
+
+describe("PoolEvaluator stall watchdog", () => {
+  const population = new Evolution(cfg).population;
+  afterEach(() => vi.useRealTimers());
+
+  it("a worker that never replies fails the call after the timeout and breaks the pool", async () => {
+    vi.useFakeTimers();
+    const workers = [new FakeWorker(false)];
+    const pool = new PoolEvaluator(cfg, workers);
+    const pending = pool.evaluate(population, 5);
+    const caught = pending.catch((e: Error) => e);
+    await vi.advanceTimersByTimeAsync(EVAL_STALL_MS + 1);
+    expect(String(await caught)).toMatch(/no evaluation result/);
+    expect(workers[0]!.terminated).toBe(true);
+    await expect(pool.evaluate(population, 5)).rejects.toThrow(/no evaluation result/);
+  });
+
+  it("progress messages keep a slow chunk alive, and silence after them still trips", async () => {
+    vi.useFakeTimers();
+    const worker = new FakeWorker(false);
+    const pool = new PoolEvaluator(cfg, [worker]);
+    const caught = pool.evaluate(population, 5).catch((e: Error) => e);
+    const job = worker.posted[0]!.job;
+    for (let s = 0; s < 600; s++) {
+      await vi.advanceTimersByTimeAsync(1000);
+      worker.messageCallback({ type: "progress", job });
+    }
+    worker.messageCallback({ type: "progress", job: job + 1 }); // another job's progress does not count
+    await vi.advanceTimersByTimeAsync(EVAL_STALL_MS - 1000);
+    worker.messageCallback({ type: "progress", job: job + 1 });
+    await vi.advanceTimersByTimeAsync(1001);
+    expect(String(await caught)).toMatch(/no evaluation result/);
+  });
+
+  it("evalJob reports once per creature and heartbeat posts at most once a second", () => {
+    vi.useFakeTimers();
+    const job: EvalJob = { type: "eval", job: 3, config: cfg, start: 0, end: 2, layoutSeed: 5, genomeLength: population.genomeLength, genomes: population.data.slice(0, 2 * population.genomeLength) };
+    let calls = 0;
+    evalJob(job, () => calls++);
+    expect(calls).toBe(2);
+    const posted: unknown[] = [];
+    const beat = heartbeat(3, (m) => posted.push(m));
+    beat();
+    vi.advanceTimersByTime(1000);
+    beat();
+    beat();
+    expect(posted).toEqual([{ type: "progress", job: 3 }]);
+  });
+
+  it("a job that finishes does not time out later", async () => {
+    vi.useFakeTimers();
+    const pool = new PoolEvaluator(cfg, [new FakeWorker(true)]);
+    await pool.evaluate(population, 5);
+    await vi.advanceTimersByTimeAsync(EVAL_STALL_MS * 2);
+    await expect(pool.evaluate(population, 5)).resolves.toBeDefined();
   });
 });
 
