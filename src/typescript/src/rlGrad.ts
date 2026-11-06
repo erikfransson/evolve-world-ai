@@ -23,8 +23,8 @@ import { LOG_STD_RANGE, PPO_DEFAULTS, Ppo } from "./sim/rl/ppo.ts";
 import { assertSameSettings } from "./sim/rl/resume.ts";
 import { heldSeeds } from "./sim/rl/trainer.ts";
 import { parseCkpts, writeFileAtomic } from "./rlResume.ts";
-import { parsePool } from "./sim/seedPool.ts";
 import { parseFounders } from "./live/founders.ts";
+import { fail, finiteNumber, loadLibraryFile, loadPoolFile, positiveInt, prepareOut } from "./cliArgs.ts";
 
 const { values } = parseArgs({
   options: {
@@ -52,7 +52,8 @@ const { values } = parseArgs({
     eval: { type: "string", default: "32" },
     every: { type: "string", default: "5" },
     seed: { type: "string", default: "1" },
-    pool: { type: "string", default: "public/pool.json" },
+    pool: { type: "string" },
+    library: { type: "string" },
     out: { type: "string" },
     state: { type: "string" },
     ckpt: { type: "string" },
@@ -62,15 +63,20 @@ const { values } = parseArgs({
   },
 });
 
-const envList0: EnvSpec[] = values.envs === "all" ? ENVS.filter((e) => e.world === "ecosystem") : (values.envs ?? values.env!).split(",").map((id) => envById(id)!);
-if (envList0.some((e) => !e)) {
-  console.error(`error: unknown env in "${values.envs ?? values.env}"`);
-  process.exit(1);
-}
-const envList = Number(values.poison) === 0 ? envList0 : envList0.map((e) => ({ ...e, reward: { ...e.reward, poison: Number(values.poison) } }));
+const envList0: (EnvSpec | undefined)[] = values.envs === "all" ? ENVS.filter((e) => e.world === "ecosystem") : (values.envs ?? values.env!).split(",").map((id) => envById(id));
+if (envList0.length === 0 || envList0.some((e) => !e)) fail(`unknown env in "${values.envs ?? values.env}"`);
+const envs0 = envList0 as EnvSpec[];
+// [kind, min]: "int" at least min, "real" at least min (finite); a bad value stops the run before any training.
+const NUMERIC = {
+  seconds: ["real", 0], iters: ["int", 1], episodes: ["int", 1], epochs: ["int", 1], minibatch: ["int", 1], lr: ["real", 1e-12], logstd: ["real"], entropy: ["real"], "poison-penalty": ["real"], poison: ["real"],
+  repeat: ["int", 1], "target-kl": ["real", 0], gamma: ["real", 0], eval: ["int", 1], every: ["int", 1], seed: ["int", 0], "trace-every": ["int", 1],
+} as const;
+const numbers = Object.fromEntries(Object.entries(NUMERIC).map(([k, [kind, min]]) => [k, kind === "int" ? positiveInt(k, values[k as keyof typeof values] as string, min) : finiteNumber(k, values[k as keyof typeof values] as string, min)]));
+const num = (k: keyof typeof NUMERIC): number => numbers[k]!;
+const envList = num("poison") === 0 ? envs0 : envs0.map((e) => ({ ...e, reward: { ...e.reward, poison: num("poison") } }));
 const env = envList[0]!;
-const num = (k: keyof typeof values): number => Number(values[k]);
-const pool = existsSync(values.pool!) ? parsePool(JSON.parse(readFileSync(values.pool!, "utf8"))).entries : null;
+const pool = loadPoolFile(values.pool);
+const library = loadLibraryFile(values.library);
 const [kind, arg] = values.from!.split(/:(.*)/);
 const founder = kind === "founder" ? parseFounders(JSON.parse(readFileSync(values.founders!, "utf8"))).find((f) => f.id === arg) : undefined;
 const design = kind === "design" ? DESIGN_PANEL.find((d) => d.id.startsWith(arg!)) : undefined;
@@ -79,15 +85,11 @@ if (!learner) {
   console.error("error: --from must be pool:N, random:SEED, founder:ID or design:pN (src/sim/rl/designPanel.ts)");
   process.exit(1);
 }
-const logStdMin = num("logstd-min");
-if (!(Number.isFinite(logStdMin) && logStdMin >= LOG_STD_RANGE[0] && logStdMin <= LOG_STD_RANGE[1])) {
-  console.error(`error: --logstd-min must be a number from ${LOG_STD_RANGE[0]} to ${LOG_STD_RANGE[1]}`);
-  process.exit(1);
-}
+const logStdMin = finiteNumber("logstd-min", values["logstd-min"], LOG_STD_RANGE[0], LOG_STD_RANGE[1]);
 const sizes = layerSizes(layoutConfig(env.world), learner.plan);
 const ppo = new Ppo(envList, learner, sizes, {
   episodes: num("episodes"), epochs: num("epochs"), minibatch: num("minibatch"), lr: num("lr"), logStd: num("logstd"), entropy: num("entropy"), repeat: num("repeat"), gamma: num("gamma"), everyTick: values["every-tick"], targetKl: num("target-kl"), poisonPenalty: num("poison-penalty"), logStdMin, diag: values.diag !== undefined,
-}, num("seed"), pool);
+}, num("seed"), pool, library);
 const resumed = values.state !== undefined && existsSync(values.state);
 let start = NaN; // the held-out score of the first chunk's start, kept over the chunks
 if (values.state && values["repeat-then"]) {
@@ -118,11 +120,12 @@ if (ckpts.length && !values["ckpt-dir"]) {
   console.error("error: --ckpt needs --ckpt-dir");
   process.exit(1);
 }
+for (const path of [values.out, values.diag, values.trace, values.state]) prepareOut(path);
 const seeds = heldSeeds(num("eval"));
 // The mean over the envs of each env's mean on the held-out seeds, as the Arena's held-out score.
 let perEnv: number[] = [];
 const held = (): number => {
-  perEnv = envList.map((e) => scoreLearner(e, { plan: learner.plan, genome: ppo.theta }, seeds, pool).reward);
+  perEnv = envList.map((e) => scoreLearner(e, { plan: learner.plan, genome: ppo.theta }, seeds, pool, library).reward);
   return perEnv.reduce((a, b) => a + b, 0) / perEnv.length;
 };
 if (!resumed) start = held();

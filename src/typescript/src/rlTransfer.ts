@@ -11,6 +11,7 @@ import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
 import { parseArgs } from "node:util";
+import { fail, libraryPath, poolPath, positiveInt, prepareOut } from "./cliArgs.ts";
 import { parsePool } from "./sim/seedPool.ts";
 import type { PoolEntry } from "./sim/seedPool.ts";
 import { poolLearner, randomLearner } from "./sim/rl/env.ts";
@@ -25,14 +26,14 @@ interface Job {
   learners: Learner[];
   seeds: number[];
   tasks: [number, number, number][]; // genome, env, seed index
-  poolPath: string;
-  libraryPath: string;
+  poolPath: string | null;
+  libraryPath: string | null;
 }
 type Row = Record<Metric, number>;
 
-const fileHash = (path: string): string | null => (existsSync(path) ? createHash("sha1").update(readFileSync(path)).digest("hex").slice(0, 12) : null);
-const loadPool = (path: string): PoolEntry[] | null => (existsSync(path) ? parsePool(JSON.parse(readFileSync(path, "utf8"))).entries : null);
-const loadLibrary = (path: string): Library => parseLibrary(existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : null);
+const fileHash = (path: string | null): string | null => (path !== null && existsSync(path) ? createHash("sha1").update(readFileSync(path)).digest("hex").slice(0, 12) : null);
+const loadPool = (path: string | null): PoolEntry[] | null => (path !== null ? parsePool(JSON.parse(readFileSync(path, "utf8"))).entries : null);
+const loadLibrary = (path: string | null): Library => parseLibrary(path !== null ? JSON.parse(readFileSync(path, "utf8")) : null);
 
 if (!isMainThread) {
   // Worker: plays its share of the episodes.
@@ -51,8 +52,8 @@ async function main(): Promise<void> {
       from: { type: "string", multiple: true },
       seeds: { type: "string", default: "64" },
       threads: { type: "string", default: "2" },
-      pool: { type: "string", default: "public/pool.json" },
-      library: { type: "string", default: "public/rl/library.json" },
+      pool: { type: "string" },
+      library: { type: "string" },
       founders: { type: "string", default: "public/live-founders.json" },
       out: { type: "string" },
       label: { type: "string", default: "" },
@@ -60,15 +61,11 @@ async function main(): Promise<void> {
       "baseline-name": { type: "string" },
     },
   });
-  const fail = (msg: string): never => {
-    console.error(`error: ${msg}`);
-    process.exit(1);
-  };
-  const count = Number(values.seeds), threads = Number(values.threads);
-  if (!Number.isInteger(count) || count < 2) fail("--seeds must be an integer of at least 2");
-  if (!Number.isInteger(threads) || threads < 1) fail("--threads must be a positive integer");
+  const count = positiveInt("seeds", values.seeds, 2), threads = positiveInt("threads", values.threads);
   const specs = values.from?.length ? values.from : fail("give at least one --from (founders, founder:NAME, random:SEED, pool:N, file:PATH)");
-  const pool = loadPool(values.pool!);
+  const poolFile = poolPath(values.pool), libraryFile = libraryPath(values.library);
+  const pool = loadPool(poolFile);
+  prepareOut(values.out);
 
   const foundersFile = (): { name: string; entry: unknown }[] => {
     const d = JSON.parse(readFileSync(values.founders!, "utf8")) as { founders?: { name?: string }[] };
@@ -118,7 +115,7 @@ async function main(): Promise<void> {
   const parts = await Promise.all(
     Array.from({ length: threads }, (_, w) => {
       const mine = share(w);
-      const job: Job = { learners: named.map((n) => n.learner), seeds, tasks: mine.map((i) => tasks[i]!), poolPath: values.pool!, libraryPath: values.library! };
+      const job: Job = { learners: named.map((n) => n.learner), seeds, tasks: mine.map((i) => tasks[i]!), poolPath: poolFile, libraryPath: libraryFile };
       return new Promise<Row[]>((ok, bad) => {
         const worker = new Worker(new URL(import.meta.url), { workerData: job });
         worker.on("message", ok);
@@ -188,7 +185,7 @@ async function main(): Promise<void> {
     }
   }
   if (values.out) {
-    const out = { format: "evolve-transfer-battery", version: 1, label: values.label, assets: { pool: fileHash(values.pool!), library: fileHash(values.library!) }, seedBase: TRANSFER_BASE, seedCount: count, wallSeconds: wall, threads, envs: envs.map((e) => ({ id: e.env.id, group: e.group })), metrics: METRICS, genomes: results, summary: sum, paired };
+    const out = { format: "evolve-transfer-battery", version: 1, label: values.label, assets: { pool: fileHash(poolFile), library: fileHash(libraryFile) }, seedBase: TRANSFER_BASE, seedCount: count, wallSeconds: wall, threads, envs: envs.map((e) => ({ id: e.env.id, group: e.group })), metrics: METRICS, genomes: results, summary: sum, paired };
     writeFileSync(resolve(values.out), JSON.stringify(out, (_, v) => (typeof v === "number" ? Math.round(v * 1e4) / 1e4 : v)) + "\n"); // 4 decimals keep the file small
   }
 }

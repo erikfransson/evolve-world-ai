@@ -37,7 +37,7 @@ for (const name of only) {
   let per: number;
   let theta: Float32Array;
   if (threads === 0) {
-    const ppo = new Ppo(envs, { plan: s.plan, genome }, sizes, options, 1);
+    const ppo = new Ppo(envs, { plan: s.plan, genome }, sizes, options, 1, null, null);
     ppo.step();
     const t0 = process.cpuUsage();
     for (let i = 0; i < iters; i++) ppo.step();
@@ -46,7 +46,7 @@ for (const name of only) {
     theta = ppo.theta;
   } else {
     const pool = createNodeRlPool({ envs, plan: s.plan, pool: null, library: {} }, threads);
-    const trainer = new BackpropTrainer({ plan: s.plan, genome }, envs, options, pool, 1);
+    const trainer = new BackpropTrainer({ plan: s.plan, genome }, envs, options, pool, 1, null, null);
     await trainer.step();
     const t0 = performance.now();
     for (let i = 0; i < iters; i++) await trainer.step();

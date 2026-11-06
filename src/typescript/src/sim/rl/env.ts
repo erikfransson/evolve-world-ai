@@ -475,10 +475,10 @@ export function runEpisode(
 }
 
 // Mean result over several seeds (layouts, positions and rivals all change with the seed). firstFood and clearTime average their -1 "never" sentinels as they are (no reader uses those two means; transferEpisode maps the sentinel per episode).
-export function scoreLearner(env: EnvSpec, learner: Learner, seeds: readonly number[], pool: readonly PoolEntry[] | null = null, library: Library = {}): EpisodeResult {
+export function scoreLearner(env: EnvSpec, learner: Learner, seeds: readonly number[], pool: readonly PoolEntry[] | null, library: Library | null): EpisodeResult {
   const sum: EpisodeResult = { reward: 0, food: 0, kills: 0, rams: 0, seconds: 0, energy: 0, poison: 0, poisonEnergy: 0, firstFood: 0, elapsed: 0, clearTime: 0, cells: 0, late: 0, died: 0 };
   for (const s of seeds) {
-    const r = runEpisode(env, learner, s, pool, library);
+    const r = runEpisode(env, learner, s, pool, library ?? {});
     for (const k of Object.keys(sum) as (keyof EpisodeResult)[]) sum[k] += r[k] / seeds.length;
   }
   return sum;

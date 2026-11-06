@@ -615,11 +615,11 @@ export class Ppo {
   private envOffset = 0;
 
   // Episode k of an update plays envs[(envOffset + k) % envs.length]; the offset moves on by the update's episodes, so every env trains even when there are more envs than episodes.
-  constructor(envs: readonly EnvSpec[], learner: Learner, sizes: readonly number[], options: Partial<PpoOptions>, seed: number, pool: readonly PoolEntry[] | null = null, library: Library = {}) {
+  constructor(envs: readonly EnvSpec[], learner: Learner, sizes: readonly number[], options: Partial<PpoOptions>, seed: number, pool: readonly PoolEntry[] | null, library: Library | null) {
     this.envs = envs;
     this.learner = learner;
     this.pool = pool;
-    this.library = library;
+    this.library = library ?? {};
     this.options = { ...PPO_DEFAULTS, ...options };
     this.theta = Float32Array.from(learner.genome);
     if (this.theta.length !== genomeLength(sizes)) throw new Error("genome does not fit the brain sizes");
@@ -912,7 +912,7 @@ export class BackpropTrainer implements RlTrainer {
   private scorer: Scorer;
   private envs: number;
 
-  constructor(learner: Learner, envs: readonly EnvSpec[], options: Partial<PpoOptions>, scorer: Scorer, seed: number, pool: readonly PoolEntry[] | null = null, library: Library = {}) {
+  constructor(learner: Learner, envs: readonly EnvSpec[], options: Partial<PpoOptions>, scorer: Scorer, seed: number, pool: readonly PoolEntry[] | null, library: Library | null) {
     this.ppo = new Ppo(envs, learner, layerSizes(layoutConfig(envs[0]!.world), learner.plan), options, seed, pool, library);
     this.scorer = scorer;
     this.envs = envs.length;
