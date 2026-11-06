@@ -6,7 +6,7 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
-- Live page fixes: a followed creature that died with no copy to move to no longer keeps full-rate frames and 40 Hz brain redraws (the dead brain is drawn once); the link closes and retries on a bad hello or an item set or delta that fails to decode, and backs off when a server drops right after its hello (the retry delay resets only after 10 s up); a throwing scene handler no longer makes the drain re-run earlier entries; wheel zoom while following keeps the creature in place when the view centre is offset; a new hello clears the old world's stats, season and copies; the map legend's Regions heading stays hidden while no region row shows. The map pictures were redrawn for the cameraInput change.
+- Live page fixes: a followed creature that died with no copy to move to no longer keeps full-rate frames and 40 Hz brain redraws (the dead brain is drawn once); the link closes and retries on a bad hello or an item set or delta that fails to decode, and backs off when a server drops right after its hello (the retry delay resets only after 10 s up); a throwing scene handler no longer makes the drain re-run earlier entries; wheel zoom while following keeps the creature in place when the view centre is offset; a new hello clears the old world's stats, season and copies; the map legend's Regions heading stays hidden while no region row shows. The map picture hash was updated for the cameraInput change (the pictures are unchanged).
 
 ## 0.4.3 (2026-11-06)
 

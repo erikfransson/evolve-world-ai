@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { LiveLink } from "../../src/typescript/src/live/connection.ts";
-import { MSG_ITEMS, PROTOCOL_VERSION } from "../../src/typescript/src/live/protocol.ts";
+import type { LinkHandlers } from "../../src/typescript/src/live/connection.ts";
+import { MSG_DELTA, MSG_ITEMS, PROTOCOL_VERSION, encodeDeltaChunk } from "../../src/typescript/src/live/protocol.ts";
 import { LiveScene } from "../../src/typescript/src/live/scene.ts";
 import { followsLive } from "../../src/typescript/src/live/detail.ts";
 
@@ -26,7 +27,7 @@ describe("live link failure modes", () => {
     send(): void {}
   }
   const hello = JSON.stringify({ t: "hello", version: PROTOCOL_VERSION, world: { width: 1000, height: 600 }, radius: 10, dt: 1 / 30, fullEnergy: 100, itemSlots: 4 });
-  const link = (): LiveLink => new LiveLink("ws://x", { onState() {}, onHello() {}, onCreatures() {}, onItems() {}, onDelta() {}, onDetail() {}, onGenome() {}, onStats() {}, onHistory() {} }, null);
+  const link = (over: Partial<LinkHandlers> = {}): LiveLink => new LiveLink("ws://x", { onState() {}, onHello() {}, onCreatures() {}, onItems() {}, onDelta() {}, onDetail() {}, onGenome() {}, onStats() {}, onHistory() {}, ...over }, null);
   const run = (body: () => void): void => {
     vi.useFakeTimers();
     vi.stubGlobal("WebSocket", FakeSocket);
@@ -59,6 +60,20 @@ describe("live link failure modes", () => {
       expect(ws.closed).toBe(false);
       ws.onmessage!({ data: new Uint8Array([MSG_ITEMS, 1, 2]).buffer });
       expect(ws.closed).toBe(true);
+    });
+  });
+
+  // Red without the split: a page handler that threw on a good delta closed the link, a reconnect loop for a page bug.
+  it("keeps the socket when a page handler throws on a good delta", () => {
+    run(() => {
+      let calls = 0;
+      link({ onDelta: () => { calls++; throw new Error("page bug"); } }).start();
+      const ws = FakeSocket.last!;
+      ws.onmessage!({ data: hello });
+      const chunk = encodeDeltaChunk(5, [{ slot: 1, kind: 1, x: 10, y: 10, tick: 5 }], [], { width: 1000, height: 600 })!;
+      ws.onmessage!({ data: new Uint8Array([MSG_DELTA, 1, ...chunk]).buffer }); // one chunk in a delta message
+      expect(calls).toBe(1);
+      expect(ws.closed).toBe(false);
     });
   });
 

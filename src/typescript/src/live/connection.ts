@@ -228,16 +228,23 @@ export class LiveLink {
 
   private message(data: unknown): void {
     this.lastMessage = Date.now();
-    let setFrame = false; // an item set or delta that fails to decode leaves the page's items wrong until a fresh set
+    let decoding = false; // only while an item set or delta decodes: a failure there leaves the page's items wrong until a fresh set (a handler that throws does not close the link)
     try {
       if (typeof data === "string") return this.text(JSON.parse(data) as ServerText);
       if (!(data instanceof ArrayBuffer) || !this.world) return;
       const type = frameType(data);
-      setFrame = type === MSG_ITEMS || type === MSG_DELTA;
       if (type === MSG_CREATURES) this.h.onCreatures(decodeCreatures(data, this.world));
-      else if (type === MSG_ITEMS) this.h.onItems(decodeItems(data, this.world, this.slots));
-      else if (type === MSG_DELTA) this.h.onDelta(decodeDelta(data, this.world, this.slots));
-      else if (type === MSG_DETAIL) {
+      else if (type === MSG_ITEMS) {
+        decoding = true;
+        const items = decodeItems(data, this.world, this.slots);
+        decoding = false;
+        this.h.onItems(items);
+      } else if (type === MSG_DELTA) {
+        decoding = true;
+        const deltas = decodeDelta(data, this.world, this.slots);
+        decoding = false;
+        this.h.onDelta(deltas);
+      } else if (type === MSG_DETAIL) {
         const d = decodeDetail(data);
         if (d.id === this.selected) this.h.onDetail(d);
       } else if (type === MSG_GENOME) {
@@ -246,7 +253,7 @@ export class LiveLink {
       }
     } catch (err) {
       console.warn("bad message from the server", err); // a malformed frame is dropped, the link stays
-      if (setFrame) this.ws?.close(); // the reconnect's hello brings a full item set
+      if (decoding) this.ws?.close(); // the reconnect's hello brings a full item set
     }
   }
 
