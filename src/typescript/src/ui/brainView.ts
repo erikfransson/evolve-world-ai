@@ -4,6 +4,7 @@ import { EXTRA_INPUTS, FEAT_CREATURE, FEAT_FOOD, FEAT_POISON, INPUT_EXTRA_SHORT,
 import type { InputLayout } from "../sim/sensors.ts";
 import { fitCanvas } from "./canvas.ts";
 import { FOOD, LABEL, OTHER, POISON } from "./palette.ts";
+import { clamp } from "../sim/mathUtil.ts";
 
 const POS_RGB = [255, 107, 107]; // red, positive
 const NEG_RGB = [78, 168, 255]; // blue, negative
@@ -106,7 +107,6 @@ export interface Layout {
   memoryOutY: number; // y of the S and L letters above the memory targets
 }
 
-const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
 
 // Memory unit k of a brain with memoryShort short units: 0 short, 1 long.
 const memoryKind = (k: number, memoryShort: number): number => (k < memoryShort ? 0 : 1);

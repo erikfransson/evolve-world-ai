@@ -24,7 +24,7 @@ Self-play envs (Melee, Brawl) score against the learner's own league, so their h
 | Fence (fence)       | Avoid and find a way | stinging wall with a gap, 2 food this side, +1 per wall crossed | 0.06 -> 1.84 (200 it) | PPO 60 s: 0.63 -> 1.94 |
 | Four rooms (rooms)  | Avoid and find a way | four rooms with a door in each wall                 | 0.00 -> 0.28   | PPO 60 s: 0.00 -> 0.19 |
 | Islands (islands)   | Avoid and find a way | food on three islands, poison in the water          | 0.00 -> 1.81   | PPO 60 s: 0.00 -> 1.56 |
-| Ring road (ring)    | Avoid and find a way | food on a lane between two stinging poison rings    | ES not recorded | PPO 60 s from pool: 9.35 |
+| Ring road (ring-road) | Avoid and find a way | food on a lane between two stinging poison rings    | ES not recorded | PPO 60 s from pool: 9.35 |
 | Bottleneck          | Avoid and find a way | the fence with two rivals at the gap                | not measured   |              |
 | Flash (flash)       | Memory               | 5 food all round in a 600 x 600 room, visible 2 s of 15 | memory 3.19 vs none 2.17 (600 it, pop 100, 6 seeds) | |
 | Glimpse (glimpse)   | Memory               | a patch of 12 food in 500 x 500, visible 1.5 s of 25 | memory 3.17 vs none 2.10 (6 seeds) | |
@@ -46,7 +46,7 @@ Self-play envs (Melee, Brawl) score against the learner's own league, so their h
 | Crowd (crowd)       | Compete              | many rivals on regrowing food                       | ES beats PPO   |              |
 | Patch war (patch-war) | Compete            | one regrowing patch, 5 pool rivals, bumps cost energy | 0.86 -> 9.01 (2026-10-28) | 5.65 -> 7.83 |
 
-Slower foragers, filed by tag since 2026-10-15: Sparse plains (forage-sparse) in Find food, Poison field in Avoid and find a way, Rivals in Compete, Endurance in Energy. Advanced now holds only hunters and prey (hidden while the Arena trains foragers only). Poison field and Endurance hardly move from random genomes even in 600 iterations (gains 0.0 to 0.4) but do from a pool founder (0.37 -> 0.95 and 0.80 -> 2.02).
+Slower foragers, filed by tag since 2026-10-15: Sparse plains (forage-sparse) in Find food, Poison field in Avoid and find a way, Rivals in Compete, Endurance in Energy. Advanced now holds only hunters and prey (hidden while the Arena trains foragers only): Hunt wanderers (hunt-wanderers), Hunt grazers (hunt-grazers), Hunt evaders (hunt-evaders) and Evade (evade), not measured here. Poison field and Endurance hardly move from random genomes even in 600 iterations (gains 0.0 to 0.4) but do from a pool founder (0.37 -> 0.95 and 0.80 -> 2.02).
 
 Bigger (Live-like, 90 s, start energy 300, lethal poison, bumps hurt, seed pool crowds; Busy meadow was dropped on 2026-10-15). Measured differently from the table above, as they are too slow for population 200: ES at population 100 for 200 iterations, held-out on 16 seeds, from random genomes of three bodies (5 to 12 rays, hidden 8 to 24+24, memory 0 to 8 units), 2 seeds each; mean over the 6 runs and the best run.
 

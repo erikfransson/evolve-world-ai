@@ -15,8 +15,8 @@ Vite multi-page build, so each mode has its own `index.html` and entry script.
 
 ## Ecosystem rules (defaults, all tunable before Start)
 - One world, all creatures live in it together, simulated in a worker and rendered live.
-- Food regrows at `foodRegrowRate` items per second per density cell, up to `foodMaxDensity`.
-- Poison regrows at `poisonRegrowRate` up to `poisonMaxDensity`, so the board cannot fill with poison.
+- Food regrows at `foodRegrow` items per second per density cell, up to `foodMaxDensity`.
+- Poison regrows at `poisonRegrow` up to `poisonMaxDensity`, so the board cannot fill with poison.
 - Start energy 50, one food gives 20.
 - Each creature carries its own birth energy, birth cost and birth cooldown, drawn for founders from run-setting ranges (defaults 100-225, 50-110, 5-20 s) and nudged by `birthDrift` in each child. The child starts with exactly the energy the parent pays, and a parent that pays all it has dies.
 - The child appears next to the parent and leaves at `birthSpeed` relative to it, split between them so momentum is kept and they do not collide at once.
@@ -58,7 +58,7 @@ Contract: `EcoConfig` in `src/sim/ecoConfig.ts`, built on `EngineConfig` (the sh
 - Top 3 per preset kept in this browser (localStorage); a global board needs a backend and comes later.
 - Lineages (#5, done): every creature carries its `founderId` (inherited, a founder is its own). The Lineages card shows the top 8 founders by live count as a stacked bar, a legend (pool or random, share, count) and a stacked share history; clicking a lineage dims everyone else in the world, and the Selected card names the creature's founder. A family tree view comes later.
 - Aging (#6, done): optional `eco.aging` (default off), `agingStart` seconds (120) and `agingRate` per minute (0.5); the upkeep is multiplied by 1 + rate x (age - start) / 60 after the start age.
-- Collision damage (#13, done): optional `eco.collisionDamage` (default off) and `damagePerSpeed` (0.3). Each bounce costs both creatures `damagePerSpeed` x the normal approach speed, once per impact (head-on at top speed, 160 units/s, costs 48). If exactly one dies, the survivor gains the dead one's energy from just before the hit; if both die, nobody does.
+- Collision damage (#13, done): optional `eco.collisionDamage` (default off) and `damagePerSpeed` (0.3). Each bounce costs both creatures `damagePerSpeed` x the normal approach speed, once per impact (head-on at closing speed 160 units/s, two creatures at top speed 80, costs 48). If exactly one dies, the survivor gains the dead one's energy from just before the hit; if both die, nobody does.
 
 ## Two-species engine (issue #12, was The Great Hunt)
 - The Great Hunt page and landing card were removed in 0.1.1. The engine stays and the RL Arena's hunt world uses it (`DEFAULT_PREDATOR_CONFIG`, `ecoBench --predators`).

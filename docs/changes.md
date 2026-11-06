@@ -6,6 +6,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- Cleanup (hunt 60): the object guard, `clamp`, the ray line and the item discs each live in one place now (`sim/guards.ts`, `sim/mathUtil.ts`, `strokeRay` and `fillItemDiscs` in `ui/scene.ts`), the population graph's axis time helper is `formatAxisTime` (no longer a second `formatDuration`), and stale numbers in `docs/` and the Inland Sea map header are corrected. Engine results unchanged.
+
 ## 0.4.3 (2026-11-06)
 
 - Fixes: a Trials evaluation worker that throws now fails the run visibly instead of hanging it, the Arena brain key sits inside the canvas at any zoom, and the RL transfer intervals are right for few seeds (exact t quantiles up to 30 degrees of freedom; the old approximation gave 9.7 instead of 12.7 at one). Stale docs and comments corrected, small tooling checks added. Engine results unchanged.

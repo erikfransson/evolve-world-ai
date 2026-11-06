@@ -6,6 +6,7 @@ import { checkPlan } from "./rl/validate.ts";
 import { FEAT_CREATURE, RAY_FEATURES, rayFeatureCount } from "./sensors.ts";
 import type { BodyPlan, PlanView } from "./sensors.ts";
 import type { Genome, Rng } from "./types.ts";
+import { isObj } from "./guards.ts";
 
 // Seed pool (#11): creatures trained headless in Trials by src/buildPool.ts, shipped as public/pool.json, used as Ecosystem founders.
 
@@ -55,7 +56,6 @@ export function trialsToEcoGenome(plan: PlanView, trials: Genome, target: Engine
 }
 
 const isNum = (v: unknown, min: number, max: number): v is number => typeof v === "number" && Number.isFinite(v) && v >= min && v <= max;
-const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
 // One JSON entry as a PoolEntry, or a reason it is malformed.
 function parseEntry(e: unknown): PoolEntry | string {

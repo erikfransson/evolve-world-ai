@@ -8,6 +8,7 @@ import { speciesList } from "../species.ts";
 import { HIT_POISON } from "../types.ts";
 import { placeLayout } from "./layouts.ts";
 import type { Layout, Placed } from "./layouts.ts";
+import { clamp } from "../mathUtil.ts";
 
 // Procedural self-play (S1): every episode is a new small world (size, layout, food, poison, regrowth, sting, length drawn from
 // the seed) with a crowd. The learner's genome plays `learners` of the bodies at once; the rest play league snapshots (SELF).
@@ -72,7 +73,6 @@ export interface ProcWorld {
 }
 
 const logUniform = (rng: { next(): number }, [lo, hi]: Range): number => lo * (hi / lo) ** rng.next();
-const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
 
 export function drawWorld(spec: ProcSpec, seed: number): ProcWorld {
   const rng = createRng(deriveSeed(seed, 0x9c0d));

@@ -1,8 +1,8 @@
 import type { MapSpec } from "./mapBuild.ts";
 
-// The Inland Sea: A shallow mud sea of rich food with plain islands, a poisoned north shore, dune fields, a drowned town and a curved cliff coast.
+// The Inland Sea: A shallow mud sea of rich food with plain islands, a poisoned north shore, dune fields and a curved cliff coast.
 // Generated from docs/world-maps/tools/map-F5.json by docs/world-maps/tools/to-engine.mjs (drafted at 54000 x 33600, scaled to 50000 x 31250, detail kept as at 40000 wide).
-// Then by hand: poison is scarce (basePoison 0.15, 0.15 in the drowned town) except on the Ashfall shore (3.5), as the launch plan asks.
+// Then by hand: poison is scarce (basePoison 0.15, 0.15 in the karst) except on the Ashfall shore (3.5), as the launch plan asks.
 export const INLAND_SEA: MapSpec = {
  "name": "inland-sea",
  "title": "The Inland Sea",
