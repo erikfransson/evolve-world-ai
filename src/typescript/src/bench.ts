@@ -1,13 +1,13 @@
 // Benchmark: times generations at a given population and prints a fingerprint of the results.
 // Usage: node src/bench.ts [--pop 1000] [--gens 3] [--seed 1] [--threads N]   (threads 1 = serial)
 
-import { parseArgs } from "node:util";
+import { strictArgs } from "./cliArgs.ts";
 import { DEFAULT_CONFIG, withOverrides } from "./sim/config.ts";
 import { Evolution } from "./sim/evolution.ts";
 import { createNodeEvaluator, parseThreads } from "./worker/nodePool.ts";
 
 // parameters
-const { values } = parseArgs({
+const { values } = strictArgs({
   options: {
     pop: { type: "string", default: "1000" },
     gens: { type: "string", default: "3" },

@@ -3,14 +3,14 @@
 
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { parseArgs } from "node:util";
+import { strictArgs } from "./cliArgs.ts";
 import { DEFAULT_CONFIG, withOverrides } from "./sim/config.ts";
 import type { SimConfig } from "./sim/config.ts";
 import { Evolution } from "./sim/evolution.ts";
 import { createNodeEvaluator, parseThreads } from "./worker/nodePool.ts";
 
 // parameters
-const { values } = parseArgs({
+const { values } = strictArgs({
   options: {
     generations: { type: "string" },
     out: { type: "string" },

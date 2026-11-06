@@ -1,7 +1,8 @@
 import { execFile } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { readdirSync } from "node:fs";
 import { resolve } from "node:path";
-import { withFileLock } from "../../src/typescript/src/cliArgs.ts";
+import { libraryHash, libraryResumeWarning, randomSeed, withFileLock } from "../../src/typescript/src/cliArgs.ts";
 import { ENVS } from "../../src/typescript/src/sim/rl/envs.ts";
 import { parseLibrary } from "../../src/typescript/src/sim/rl/library.ts";
 
@@ -107,5 +108,68 @@ describe("withFileLock", () => {
     utimesSync(`${file}.lock`, old, old);
     expect(() => withFileLock(file, () => { throw new Error("boom"); })).toThrow("boom");
     expect(existsSync(`${file}.lock`)).toBe(false);
+  });
+});
+
+describe("strict flags", () => {
+  const CLIS = ["rlTrain", "rlGrad", "rlTransfer", "rlBench", "rlBenchIter", "rlBenchPpo", "rlProof", "rlPanelTrain", "ecoBench", "headless", "buildPool", "bench", "wasmBench"];
+  it.each(CLIS)("%s names the unknown flag and the usage line, with no stack trace", async (script) => {
+    const r = await run(script, "--no-such-flag", "1");
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("--no-such-flag");
+    expect(r.err).toMatch(/Usage: .*node src\//);
+    expect(r.err).not.toContain("    at ");
+  });
+
+  it("rlBenchPpo and rlBenchIter list the valid ids for an unknown --only", async () => {
+    for (const script of ["rlBenchPpo", "rlBenchIter"]) {
+      const r = await run(script, "--only", "nope");
+      expect(r.code, script).toBe(1);
+      expect(r.err, script).toMatch(/unknown --only id "nope", valid: small,/);
+    }
+  });
+});
+
+describe("ecoBench --set", () => {
+  it.each(["__proto__.polluted=1", "constructor.prototype.polluted=1"])("refuses %s", async (assignment) => {
+    const r = await run("ecoBench", "--seconds", "0", "--pool", "none", "--set", assignment);
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("is not a setting");
+  });
+});
+
+describe("randomSeed", () => {
+  it("is 1 for a bare random, the number otherwise, and refuses junk", () => {
+    expect(randomSeed(undefined)).toBe(1);
+    expect(randomSeed("7")).toBe(7);
+    expect(() => randomSeed("x")).toThrow();
+  });
+});
+
+describe("library resume warning", () => {
+  it("warns on a missing or different library hash, not on a match", () => {
+    const a = libraryHash({ nibble: [] } as never), b = libraryHash({ escape: [] } as never);
+    expect(a).not.toBe(b);
+    expect(libraryResumeWarning(a, a)).toBeNull();
+    expect(libraryResumeWarning(undefined, a)).toContain("older version");
+    expect(libraryResumeWarning(b, a)).toContain("differs");
+  });
+});
+
+describe("withFileLock takeover", () => {
+  it("several processes contending over a stale lock never overlap and leave no files behind (smoke test, passes on the old code too)", async () => {
+    const dir = scratchDir();
+    const file = resolve(dir, "shared.json");
+    writeFileSync(`${file}.lock`, "");
+    const old = new Date(Date.now() - 3_600_000);
+    utimesSync(`${file}.lock`, old, old);
+    const mod = resolve(root, "src/cliArgs.ts");
+    // Each holder drops a marker with wx and sleeps; a failed wx means another holder was inside at once.
+    const code = `import { withFileLock } from ${JSON.stringify(mod)}; import { openSync, closeSync, unlinkSync, appendFileSync } from "node:fs";
+      for (let i = 0; i < 5; i++) withFileLock(${JSON.stringify(file)}, () => { try { closeSync(openSync(${JSON.stringify(file)} + ".in", "wx")); } catch { appendFileSync(${JSON.stringify(file)} + ".overlap", "x"); } Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20); try { unlinkSync(${JSON.stringify(file)} + ".in"); } catch {} }, 60_000, 30_000);`;
+    const procs = Array.from({ length: 6 }, () => new Promise<number>((done) => execFile(process.execPath, ["--input-type=module", "-e", code], { cwd: root }, (error) => done(error ? 1 : 0))));
+    expect(await Promise.all(procs)).toEqual(Array(6).fill(0));
+    expect(existsSync(`${file}.overlap`)).toBe(false);
+    expect(readdirSync(dir)).toEqual([]);
   });
 });

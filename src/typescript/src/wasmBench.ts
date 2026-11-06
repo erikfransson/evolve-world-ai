@@ -1,7 +1,7 @@
 // Benchmark: JS vs WebAssembly SIMD brain kernel, per-call time for a batch of creatures, plus the largest difference between them.
 // Usage: node src/wasmBench.ts [--sizes 1000,3000,10000] [--reps 20]
 
-import { parseArgs } from "node:util";
+import { strictArgs } from "./cliArgs.ts";
 import { Brain, layerSizes, randomGenome } from "./sim/brain.ts";
 import { DEFAULT_ECO_CONFIG } from "./sim/ecoConfig.ts";
 import { createRng } from "./sim/rng.ts";
@@ -10,7 +10,7 @@ import { MEMORY_UNITS } from "./sim/config.ts";
 import { WasmBrainBank } from "./sim/wasm/brainKernel.ts";
 
 // parameters
-const { values } = parseArgs({ options: { sizes: { type: "string", default: "1000,3000,10000" }, reps: { type: "string", default: "20" } } });
+const { values } = strictArgs({ options: { sizes: { type: "string", default: "1000,3000,10000" }, reps: { type: "string", default: "20" } } });
 const counts = values.sizes!.split(",").map(Number);
 const reps = Number(values.reps);
 const plans = {

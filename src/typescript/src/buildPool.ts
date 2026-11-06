@@ -5,7 +5,7 @@
 
 import { readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
-import { parseArgs } from "node:util";
+import { strictArgs } from "./cliArgs.ts";
 import { Worker, isMainThread, parentPort } from "node:worker_threads";
 import { writeFileAtomic } from "./rlResume.ts";
 import { layerSizes, randomGenome } from "./sim/brain.ts";
@@ -47,7 +47,7 @@ const STALL_GENERATIONS = 50; // a run whose fittest creature still validates be
 const MIN_GAIN = 1.5; // a kept creature lives at least this times as long as the random baseline
 const DECIMALS = 3; // genome rounding in the file; validation uses the rounded genomes
 
-const { values } = parseArgs({
+const { values } = strictArgs({
   options: {
     runs: { type: "string", default: "144" },
     generations: { type: "string", default: "200" },

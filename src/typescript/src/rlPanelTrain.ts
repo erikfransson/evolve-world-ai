@@ -1,12 +1,11 @@
 // Trains each design of the panel (designPanel.ts) with the Arena's default recipe and a fixed budget, as the reference every idea is compared against.
-// Usage: node src/rlPanelTrain.ts --method es|backprop --out DIR [--iters N] [--design p3-mid] [--threads 2]
+// Usage: node src/rlPanelTrain.ts --method es|backprop --out DIR [--iters N] [--design p3-mid] [--threads 2] [--pool FILE] [--library FILE]
 // Arena defaults: ES population 100 (50 pairs), sigma 0.08, lr 0.02, decay 0.005, 1 episode per step; backprop lr 0.003, 16 episodes per update.
 // Every step plays all envs of the mix, as the Arena does. Writes DIR/<design id>.json ({plan, genome}); the same fixed seeds for every run.
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { parseArgs } from "node:util";
-import { fail, loadLibraryFile, loadPoolFile, positiveInt } from "./cliArgs.ts";
+import { fail, loadLibraryFile, loadPoolFile, positiveInt, strictArgs } from "./cliArgs.ts";
 import { DESIGN_PANEL, designLearner } from "./sim/rl/designPanel.ts";
 import { envById } from "./sim/rl/envs.ts";
 import type { EnvSpec } from "./sim/rl/env.ts";
@@ -18,7 +17,7 @@ import { createNodeRlPool, parseThreads } from "./worker/nodePool.ts";
 
 // parameters
 const MIX = ["nibble", "far-food", "corridor", "patch", "minefield"]; // the transfer battery meets its own seeds, never these
-const { values } = parseArgs({
+const { values } = strictArgs({
   options: {
     method: { type: "string", default: "es" },
     out: { type: "string" },

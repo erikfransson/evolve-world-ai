@@ -2,7 +2,7 @@
 // so a speedup that should not change results can be checked for identical output.
 // Usage: node src/rlBenchIter.ts [--only small,big,...] [--iters 6] [--threads 2] [--episodes]
 //   --episodes also times single-thread episodes per second for each setup (no pool).
-import { parseArgs } from "node:util";
+import { fail, strictArgs } from "./cliArgs.ts";
 import { layerSizes, randomGenome } from "./sim/brain.ts";
 import { createRng } from "./sim/rng.ts";
 import { layoutConfig, runEpisode } from "./sim/rl/env.ts";
@@ -10,7 +10,7 @@ import { envById } from "./sim/rl/envs.ts";
 import { Trainer } from "./sim/rl/trainer.ts";
 import { createNodeRlPool } from "./worker/nodePool.ts";
 
-const { values } = parseArgs({
+const { values } = strictArgs({
   options: {
     only: { type: "string" },
     iters: { type: "string", default: "6" },
@@ -33,6 +33,7 @@ const SETUPS = {
 } as const;
 
 const only = values.only ? values.only.split(",") : Object.keys(SETUPS);
+for (const name of only) if (!Object.hasOwn(SETUPS, name)) fail(`unknown --only id "${name}", valid: ${Object.keys(SETUPS).join(", ")}`);
 const iters = Number(values.iters);
 const threads = Number(values.threads);
 
