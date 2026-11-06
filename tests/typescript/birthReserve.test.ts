@@ -29,7 +29,9 @@ describe("eco.birthReserve", () => {
     expect(peak).toBe(40); // births reach the reserve line and stop there
     const genome = randomGenome(layerSizes(eco.config, PLAN), createRng(2));
     let added = 0;
-    while (eco.insertCreature({ genome, plan: PLAN, x: 750, y: 750, hue: 5, name: "v" }).ok) added++;
+    const cap = eco.config.eco.maxPopulation;
+    while (added <= cap && eco.insertCreature({ genome, plan: PLAN, x: 750, y: 750, hue: 5, name: "v" }).ok) added++; // capped: an insert that never refuses would hang
+    expect(added).toBeLessThanOrEqual(cap);
     expect(eco.population).toBe(50);
     expect(added).toBeGreaterThanOrEqual(10);
   });

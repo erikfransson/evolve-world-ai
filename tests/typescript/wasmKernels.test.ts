@@ -5,7 +5,10 @@ import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { EXTRA_INPUTS, EXTRA_TERRAIN, INPUT_EXTRA_LABELS, inputLayout, planOf } from "../../src/typescript/src/sim/sensors.ts";
 import { LAYOUT as L } from "../../src/typescript/src/sim/wasm/layout.ts";
 import { WasmBrainBank } from "../../src/typescript/src/sim/wasm/brainKernel.ts";
-import { setWasmDisabled, wasmAvailable } from "../../src/typescript/src/sim/wasm/loader.ts";
+import { BRAIN_BYTES, CROWD_BYTES, FILL_BYTES, MEMBERS_BYTES, SENSE_BYTES, STEP_BYTES, setWasmDisabled, wasmAvailable } from "../../src/typescript/src/sim/wasm/loader.ts";
+import { WasmCrowd } from "../../src/typescript/src/sim/wasm/crowdKernel.ts";
+import { WasmMembers } from "../../src/typescript/src/sim/wasm/membersKernel.ts";
+import { Crowd } from "../../src/typescript/src/sim/crowd.ts";
 import { SenseKernels } from "../../src/typescript/src/sim/wasm/senseKernels.ts";
 import { readFileSync } from "node:fs";
 import { testRng } from "./helpers.ts";
@@ -52,8 +55,16 @@ describe("wasm toolchain", () => {
     spans.slice(1).forEach(([from], i) => expect(from).toBeGreaterThanOrEqual(spans[i]![1])); // no two fields overlap
   });
 
-  it("detects WebAssembly SIMD here", () => {
+  it("detects WebAssembly SIMD here, and the kernels of all six modules are created", () => {
     expect(wasmAvailable()).toBe(true);
+    // wasmAvailable() checks only the brain and sense bytes, so the skipIf guards of the other suites would not fire for a broken step, crowd, members or fill module
+    const modules = { brain: BRAIN_BYTES, sense: SENSE_BYTES, fill: FILL_BYTES, step: STEP_BYTES, crowd: CROWD_BYTES, members: MEMBERS_BYTES };
+    for (const [name, bytes] of Object.entries(modules)) expect(WebAssembly.validate(bytes), `${name} validates`).toBe(true);
+    expect(WasmBrainBank.createSync(), "brain").not.toBeNull();
+    const kernels = SenseKernels.create(DEFAULT_ECO_CONFIG); // the sense, fill and step kernels on one brain bank: null when any of them fails to link
+    expect(kernels, "sense, fill and step").not.toBeNull();
+    expect(WasmMembers.create(kernels!.store), "members").not.toBeNull();
+    expect(WasmCrowd.create(kernels!.store, new Crowd(DEFAULT_ECO_CONFIG)), "crowd").not.toBeNull();
   });
 });
 
@@ -339,9 +350,10 @@ describe("WasmBrainBank forwardRun", () => {
     const sizes = (s: number) => SIZE_SETS[s % 4]!;
     const outs = (list: number[]): number[][] => list.map((s) => Array.from(bank.f32.slice(bank.outputAt(s), bank.outputAt(s) + 2)));
     const inputs = new Map<number, Float32Array>();
+    const stored = new Map<number, number[]>(); // the sizes each slot was last set with: the inputs must match them
     const feed = (list: number[]): void => {
       for (const s of list) {
-        const a = new Float32Array(sizes(s)[0]!);
+        const a = new Float32Array(stored.get(s)![0]!);
         fillInput(a, rng);
         inputs.set(s, a);
         bank.f32.set(a, bank.inputAt(s));
@@ -351,11 +363,12 @@ describe("WasmBrainBank forwardRun", () => {
     const idle = 999; // run in the first call only, so a stamp reused after the wrap would list it wrongly if the marks were not cleared
     for (let round = 0; round < 600; round++) {
       // births in new slots (growing the slot tables), reshapes of old ones and releases
-      if (round === 0) { bank.set(idle, sizes(idle), randomGenome(sizes(idle), rng)); alive.add(idle); }
+      if (round === 0) { bank.set(idle, sizes(idle), randomGenome(sizes(idle), rng)); stored.set(idle, sizes(idle)); alive.add(idle); }
       const born = round < 5 ? 40 : 1 + (round % 3);
       for (let k = 0; k < born; k++) {
         const s = round < 5 ? alive.size - 1 : (round * 7 + k) % 300;
         bank.set(s, sizes(s + round), randomGenome(sizes(s + round), rng));
+        stored.set(s, sizes(s + round));
         alive.add(s);
       }
       if (round % 5 === 4) { const s = [...alive].filter((x) => x !== idle)[round % (alive.size - 1)]!; bank.release(s); alive.delete(s); }

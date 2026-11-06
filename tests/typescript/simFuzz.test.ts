@@ -10,9 +10,8 @@ import type { World } from "../../src/typescript/src/sim/world.ts";
 import { ECO_FORM } from "../../src/typescript/src/ui/ecoSettingsForm.ts";
 import type { FormSpec } from "../../src/typescript/src/ui/settingsForm.ts";
 import { TRIALS_FORM } from "../../src/typescript/src/ui/trialsForm.ts";
-import { ThinkPool, serveHelper } from "../../src/typescript/src/worker/ecoPool.ts";
-import type { HelperIn, HelperOut, HelperPort } from "../../src/typescript/src/worker/ecoPool.ts";
-import { testRng } from "./helpers.ts";
+import { ThinkPool } from "../../src/typescript/src/worker/ecoPool.ts";
+import { fakePorts, testRng } from "./helpers.ts";
 
 // parameters
 const SEED = 20260;
@@ -80,23 +79,6 @@ function huntConfig(rng: R, seed: number): EcoConfig {
   });
   c.seed = seed;
   return c;
-}
-
-// In-process helpers over cloned messages, as in the ecoPool tests.
-function fakePorts(n: number): HelperPort[] {
-  return Array.from({ length: n }, () => {
-    let reply: (msg: HelperOut) => void = () => {};
-    const handle = serveHelper((msg, transfer) => queueMicrotask(() => reply(structuredClone(msg, { transfer: transfer as ArrayBuffer[] }))));
-    return {
-      post: (msg: HelperIn, transfer?: Transferable[]) => {
-        const copy = structuredClone(msg, { transfer: (transfer ?? []) as ArrayBuffer[] });
-        queueMicrotask(() => handle(copy));
-      },
-      onMessage: (callback) => { reply = callback; },
-      onError: () => {},
-      terminate: () => {},
-    };
-  });
 }
 
 // The first broken invariant of the item grid, or "".
@@ -210,23 +192,29 @@ describe("simulation invariants under random settings", () => {
   for (let i = 0; i < ECO_CASES; i++) cases.push([`Ecosystem ${i}`, ecoConfig(rng, 100 + i)]);
   for (let i = 0; i < HUNT_CASES; i++) cases.push([`Hunting ${i}`, huntConfig(rng, 200 + i)]);
   const done = new Map<string, Ecosystem>();
+  // Memoised so no test depends on another one having run first.
+  const checkedRun = (name: string, config: EcoConfig): Ecosystem => {
+    let eco = done.get(name);
+    if (!eco) done.set(name, (eco = runChecked(structuredClone(config))));
+    return eco;
+  };
 
   it.each(cases)("%s keeps its invariants every tick and repeats exactly", (name, config) => {
-    const first = runChecked(structuredClone(config));
-    done.set(name, first);
+    const first = checkedRun(name, config);
     const again = new Ecosystem(structuredClone(config));
     for (let t = 0; t < TICKS; t++) again.step();
     expect(summary(again)).toBe(summary(first));
   }, 30_000);
 
   it.each(cases.filter((_c, i) => i % POOL_EVERY === 0))("%s gives the same run on 2 helpers as in one thread", async (name, config) => {
-    const serial = done.get(name) ?? runChecked(structuredClone(config));
+    const serial = checkedRun(name, config);
     expect(summary(await pooled(structuredClone(config)))).toBe(summary(serial));
   }, 30_000);
 
   it("the random configs reach births, deaths and kills, so the checks have something to see", () => {
     const total = { births: 0, deaths: 0, eaten: 0 };
-    for (const e of done.values()) {
+    for (const [name, config] of cases) {
+      const e = checkedRun(name, config);
       total.births += e.births;
       total.deaths += e.deaths;
       total.eaten += e.speciesCounts.reduce((a, s) => a + s.eaten, 0);
@@ -235,7 +223,7 @@ describe("simulation invariants under random settings", () => {
     expect(total.births).toBeGreaterThan(0);
     expect(total.deaths).toBeGreaterThan(0);
     expect(total.eaten).toBeGreaterThan(0);
-  });
+  }, 300_000);
 });
 
 describe("Trials episodes under random settings", () => {

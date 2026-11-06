@@ -6,6 +6,7 @@ import type { RenderSnapshot } from "../../src/typescript/src/worker/renderProto
 // The render worker module talks through `self`, so a stand-in is installed before it is imported.
 const sent: any[] = [];
 const given: any[] = [];
+let importMessages: any[] = []; // posted while the module loads, before beforeEach clears `sent`
 const port: any = { postMessage: (m: unknown) => given.push(m), onmessage: null };
 const scope: any = { postMessage: (m: unknown) => sent.push(m) };
 
@@ -22,6 +23,7 @@ describe("render worker", () => {
   beforeAll(async () => {
     (globalThis as any).self = scope;
     await import("../../src/typescript/src/worker/renderWorker.ts");
+    importMessages = [...sent];
     scope.onmessage({ data: { type: "init", canvas: { width: 100, height: 100, getContext: () => ({}) }, port } });
   });
   beforeEach(() => {
@@ -30,7 +32,7 @@ describe("render worker", () => {
   });
 
   it("says ready once loaded", () => {
-    // the ready message was posted at import time, before beforeEach cleared the list
+    expect(importMessages).toEqual([{ type: "ready" }]);
     expect(typeof scope.onmessage).toBe("function");
   });
 
@@ -52,17 +54,22 @@ describe("render worker", () => {
     expect(given[1].buffer).toBeInstanceOf(ArrayBuffer);
   });
 
-  it("draws a frame only for the run of the snapshot it holds", async () => {
+  it("draws a frame only for the run of the snapshot it holds", () => {
+    vi.useFakeTimers(); // the worker draws from a 16 ms timer; fake time flushes it deterministically
+    try {
     const { ctx, calls } = fakeCtx(100, 100);
     scope.onmessage({ data: { type: "init", canvas: { width: 100, height: 100, getContext: () => ctx }, port } });
     port.onmessage({ data: snapshot(5) });
     const cfg: EcoDrawConfig = { worldW: 400, worldH: 400, radius: 12, itemRadius: 4, species: [{ fullEnergy: 150, hunter: false }] };
     const frame = (run: number) => ({ type: "frame", run, view: { cx: 200, cy: 200, zoom: 1, focusX: 200, focusY: 200 }, cfg, selectedId: null, showRays: false, dpr: 1, highlight: -1 });
     scope.onmessage({ data: frame(4) }); // a frame requested before the new run started
-    await new Promise((r) => setTimeout(r, 50));
+    vi.advanceTimersByTime(100);
     expect(calls.length).toBe(0);
     scope.onmessage({ data: frame(5) });
-    await new Promise((r) => setTimeout(r, 50));
+    vi.advanceTimersByTime(100);
     expect(calls.length).toBeGreaterThan(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
