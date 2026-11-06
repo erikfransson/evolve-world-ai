@@ -165,7 +165,13 @@ export function runCrowdStats(spec: ProcSpec, learner: Learner, seed: number, li
       y = rng.range(r, height - r);
       if (!poisons.some((p) => (p.x - x) ** 2 + (p.y - y) ** 2 < CLEAR * CLEAR)) break;
     }
-    cast.push({ species: 0, plan: who.plan, genome: who.genome, x, y, heading: rng.next() * 2 * Math.PI, hue: k < w.learners ? 48 : hue < 0 ? 205 : hue, energy: w.energy });
+    let heading = rng.next() * 2 * Math.PI;
+    if (k === 0 && placed) { // the first learner body starts where the layout puts the learner (the draws above stay, so other bodies keep their spots)
+      x = placed.start.x;
+      y = placed.start.y;
+      if (placed.start.heading !== undefined) heading = placed.start.heading;
+    }
+    cast.push({ species: 0, plan: who.plan, genome: who.genome, x, y, heading, hue: k < w.learners ? 48 : hue < 0 ? 205 : hue, energy: w.energy });
   }
   const kernels = config.eco.wasm ? SenseKernels.create(config) : null;
   const eco = new Ecosystem(config, null, { cast, items: placed?.items, kernels: kernels ?? undefined });
