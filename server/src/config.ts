@@ -135,6 +135,10 @@ export const LIMITS = {
   headersTimeoutMs: 10_000, // an http request (the WebSocket upgrade) must arrive within this
   statsGetsPerSecond: 5, // GET /stats (the landing page's numbers), all callers together; past it a 503
   statsGetBurst: 20,
+  plainRequestsPerSecond: 5, // plain http requests other than GET /stats (all get a 426), all callers together; past it the socket is cut
+  plainRequestBurst: 20,
+  maxConnections: 300, // open sockets, upgraded viewers included (maxViewers 100 plus refused and half-open ones)
+  socketIdleMs: 20_000, // a socket that sends nothing for this long is closed, also one that never sent a byte
   statsEveryMs: 1000,
   stateEveryMs: 4 * 60 * 60 * 1000,
   saveRetryMs: [15, 30, 60].map((m) => m * 60 * 1000), // waits before the retries of a periodic save that failed for a transient reason; the last repeats until one succeeds

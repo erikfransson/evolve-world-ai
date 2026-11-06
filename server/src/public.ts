@@ -50,10 +50,14 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
   const timeouts = { headersTimeout: limits.headersTimeoutMs, requestTimeout: limits.headersTimeoutMs, connectionsCheckingInterval: 1000 };
   // Besides the upgrade, only GET /stats: two small numbers for the landing page, public, rebuilt at most once a statsEveryMs, never the request body.
   const statsGets = new TokenBucket(limits.statsGetsPerSecond, limits.statsGetBurst);
+  const plainRequests = new TokenBucket(limits.plainRequestsPerSecond, limits.plainRequestBurst); // the 426 answers, all callers together; past it the socket is cut
   let statsBody = "";
   let statsAt = -Infinity;
   const http = createServer(timeouts, (req, res) => {
-    if (req.method !== "GET" || req.url !== "/stats") return void res.writeHead(426, { connection: "close" }).end();
+    if (req.method !== "GET" || req.url !== "/stats") {
+      if (!plainRequests.take(1)) return void req.socket.destroy();
+      return void res.writeHead(426, { connection: "close" }).end();
+    }
     if (!statsGets.take(1)) return void res.writeHead(503, { connection: "close", "retry-after": "10" }).end();
     const now = performance.now(); // monotonic, so a clock step cannot freeze the numbers
     try {
@@ -76,6 +80,8 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
       })
       .end(statsBody);
   });
+  http.maxConnections = limits.maxConnections; // sockets over it are closed at accept, so silent ones cannot exhaust file descriptors
+  http.setTimeout(limits.socketIdleMs); // a socket silent this long is destroyed (an upgraded one is exempt: ws clears the timeout)
   http.on("error", (e) => {
     console.error(`public port ${port}: ${e.message}`);
     process.exit(1);
@@ -211,6 +217,7 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
       }
       if (++c.windowCount > limits.maxClientMessagesPerSecond) ws.terminate();
     };
+    const cut = (): boolean => ws.readyState !== ws.OPEN; // the rate cap terminated it: frames of the same chunk are still emitted, none is acted on
     ws.on("ping", counted); // not answered, see autoPong
     ws.on("pong", () => {
       c.alive = true;
@@ -219,6 +226,7 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
     ws.on("message", (data, isBinary) => {
       try {
         counted();
+        if (cut()) return;
         c.lastMessageAt = performance.now();
         const text = isBinary ? null : data.toString();
         if (text?.startsWith(ADD_PREFIX)) {
@@ -254,7 +262,7 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
     const beat = now - lastHeartbeat >= limits.heartbeatMs;
     if (beat) lastHeartbeat = now;
     for (const [ws, v] of viewers) {
-      if (dropReason(ws.bufferedAmount, v.c, now) || (v.setBlockedSince && now - v.setBlockedSince > limits.slowDropMs)) {
+      if (dropReason(ws.bufferedAmount, v.c, now, limits) || (v.setBlockedSince && now - v.setBlockedSince > limits.slowDropMs)) {
         ws.terminate(); // the second: a reader too slow to ever take the set it needs
         continue;
       }

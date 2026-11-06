@@ -6,6 +6,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- Live server hardening: a client cut off by the message rate cap no longer has the rest of its chunk acted on; the drop checks (hard cap, slow, idle) use the limits `startPublic` was given; plain http requests other than GET /stats are rate-bounded (past it the socket is cut), open sockets are capped at 300 and a socket silent for 20 s is closed; the admin CLI waits 200 s for save, load, reset and stop and says the command may still be running on timeout. The unit template no longer sets `CPUSchedulingPolicy=idle`, matching the deployed unit.
+
 ## 0.4.3 (2026-11-06)
 
 - Fixes: a Trials evaluation worker that throws now fails the run visibly instead of hanging it, the Arena brain key sits inside the canvas at any zoom, and the RL transfer intervals are right for few seeds (exact t quantiles up to 30 degrees of freedom; the old approximation gave 9.7 instead of 12.7 at one). Stale docs and comments corrected, small tooling checks added. Engine results unchanged.
