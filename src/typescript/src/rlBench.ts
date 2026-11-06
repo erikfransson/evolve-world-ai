@@ -1,13 +1,12 @@
 // Times RL episodes per env and fingerprints the results, to check optimisations leave them identical.
 // Usage: nice -n 10 node src/rlBench.ts [--seeds 6] [--reps 3] [--env id]
-import { parseArgs } from "node:util";
-import { fail, loadPoolFile, positiveInt } from "./cliArgs.ts";
+import { fail, loadPoolFile, positiveInt, strictArgs } from "./cliArgs.ts";
 import { poolLearner, randomLearner, runEpisode } from "./sim/rl/env.ts";
 import type { EpisodeResult, Learner } from "./sim/rl/env.ts";
 import { ENVS } from "./sim/rl/envs.ts";
 
 // parameters
-const { values } = parseArgs({ options: { seeds: { type: "string", default: "6" }, reps: { type: "string", default: "3" }, env: { type: "string" } } });
+const { values } = strictArgs({ options: { seeds: { type: "string", default: "6" }, reps: { type: "string", default: "3" }, env: { type: "string" } } });
 const seeds = Array.from({ length: positiveInt("seeds", values.seeds) }, (_, k) => 1000 + k);
 const reps = positiveInt("reps", values.reps);
 if (values.env && !ENVS.some((e) => e.id === values.env)) fail(`unknown env "${values.env}"`);

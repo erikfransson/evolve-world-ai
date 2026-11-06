@@ -2,15 +2,14 @@
 // then compared paired on those seeds with the pre-training copy, random designs and trivial policies, with bootstrap 95% intervals.
 // Usage: node src/rlProof.ts --env nibble [--learner es | ppo] [--from random | pool:N] [--runs 3] [--iters 60] [--checks 4] [--held 64]
 //        [--pairs 50] [--episodes 1] [--sigma 0.08] [--lr 0.02] (ES) [--every-tick] [--target-kl 0.02] [--repeat 3] [--ppo-lr 0.003] (PPO)
-//        [--randoms 8] [--boot 2000] [--threads 2] [--out proof.json]
+//        [--randoms 8] [--boot 2000] [--threads 2] [--pool FILE] [--library FILE] [--out proof.json]
 // --from random starts run k from random:k (a fresh design each run); pool:N starts every run from the same founder.
 // The final weights are the last iteration's (no checkpoint is picked), so the held-out seeds are never used to select.
 
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { parseArgs } from "node:util";
 import { genomeLength, layerSizes } from "./sim/brain.ts";
-import { fail, finiteNumber, loadLibraryFile, loadPoolFile, positiveInt, prepareOut } from "./cliArgs.ts";
+import { fail, finiteNumber, loadLibraryFile, loadPoolFile, positiveInt, prepareOut, strictArgs } from "./cliArgs.ts";
 import { OUT_THRUST, OUT_TURN } from "./sim/sensors.ts";
 import type { PlanView } from "./sim/sensors.ts";
 import { layoutConfig, poolLearner, randomLearner, runEpisode } from "./sim/rl/env.ts";
@@ -22,7 +21,7 @@ import type { Interval } from "./sim/rl/proofStats.ts";
 import { Trainer, heldSeeds } from "./sim/rl/trainer.ts";
 import { createNodeRlPool, parseThreads } from "./worker/nodePool.ts";
 
-const { values } = parseArgs({
+const { values } = strictArgs({
   options: {
     env: { type: "string", default: "nibble" },
     learner: { type: "string", default: "es" },

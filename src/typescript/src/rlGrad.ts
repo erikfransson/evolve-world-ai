@@ -1,6 +1,7 @@
 // Trains one creature in an RL environment with backprop RL (PPO on its own brain), on the main thread; a prototype to compare with rlTrain (ES).
 // Usage: node src/rlGrad.ts --env nibble [--from random:1 | pool:0] [--seconds 60] [--iters 1000] [--episodes 16] [--epochs 2] [--lr 0.003]
-//        [--envs a,b,c|all] [--diag diag.csv] [--logstd=-0.5] [--repeat 3] [--every-tick] [--repeat-then 30:1] [--target-kl 0.02] [--gamma 0.995] [--eval 32] [--every 5] [--seed 1] [--out learner.json]
+//        [--envs a,b,c|all] [--diag diag.csv] [--logstd=-0.5] [--entropy 0] [--minibatch 256] [--logstd-min=V] [--repeat 3] [--every-tick] [--repeat-then 30:1] [--target-kl 0.02] [--gamma 0.995] [--eval 32] [--every 5] [--seed 1] [--out learner.json]
+//        [--pool public/pool.json] [--library public/rl/library.json] [--founders public/live-founders.json] [--poison W] [--poison-penalty P] [--state FILE] [--ckpt N,N --ckpt-dir DIR] [--trace FILE] [--trace-every 250]
 // --envs trains on several envs as the Arena does (episode k plays env k % count); --from founder:ID starts from public/live-founders.json; --diag writes one CSV row per update (see PpoDiag).
 // --poison W adds a cost per poison bite to the env reward (default 0: PPO has its own training-only --poison-penalty, 1 by default, skipped on envs with their own poison cost).
 // --repeat-then S:N switches to repeat N after S seconds of training; --every-tick holds only the noise while the brain acts every tick.
@@ -12,7 +13,6 @@
 
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { parseArgs } from "node:util";
 import { layerSizes } from "./sim/brain.ts";
 import { DESIGN_PANEL, designLearner } from "./sim/rl/designPanel.ts";
 import { layoutConfig, poolLearner, randomLearner, scoreLearner } from "./sim/rl/env.ts";
@@ -24,9 +24,9 @@ import { assertSameSettings } from "./sim/rl/resume.ts";
 import { heldSeeds } from "./sim/rl/trainer.ts";
 import { parseCkpts, writeFileAtomic } from "./rlResume.ts";
 import { parseFounders } from "./live/founders.ts";
-import { fail, finiteNumber, loadLibraryFile, loadPoolFile, positiveInt, prepareOut } from "./cliArgs.ts";
+import { fail, finiteNumber, libraryHash, libraryResumeWarning, loadLibraryFile, loadPoolFile, positiveInt, prepareOut, randomSeed, strictArgs } from "./cliArgs.ts";
 
-const { values } = parseArgs({
+const { values } = strictArgs({
   options: {
     env: { type: "string", default: "nibble" },
     envs: { type: "string" },
@@ -80,7 +80,7 @@ const library = loadLibraryFile(values.library);
 const [kind, arg] = values.from!.split(/:(.*)/);
 const founder = kind === "founder" ? parseFounders(JSON.parse(readFileSync(values.founders!, "utf8"))).find((f) => f.id === arg) : undefined;
 const design = kind === "design" ? DESIGN_PANEL.find((d) => d.id.startsWith(arg!)) : undefined;
-const learner = design ? designLearner(design) : founder ? { plan: founder.plan, genome: founder.genome } : kind === "pool" && pool ? poolLearner(env, pool[Number(arg)]!) : kind === "random" ? randomLearner(env, Number(arg ?? 1)) : null;
+const learner = design ? designLearner(design) : founder ? { plan: founder.plan, genome: founder.genome } : kind === "pool" && pool ? poolLearner(env, pool[Number(arg)]!) : kind === "random" ? randomLearner(env, randomSeed(arg)) : null;
 if (!learner) {
   console.error("error: --from must be pool:N, random:SEED, founder:ID or design:pN (src/sim/rl/designPanel.ts)");
   process.exit(1);
@@ -90,6 +90,7 @@ const sizes = layerSizes(layoutConfig(env.world), learner.plan);
 const ppo = new Ppo(envList, learner, sizes, {
   episodes: num("episodes"), epochs: num("epochs"), minibatch: num("minibatch"), lr: num("lr"), logStd: num("logstd"), entropy: num("entropy"), repeat: num("repeat"), gamma: num("gamma"), everyTick: values["every-tick"], targetKl: num("target-kl"), poisonPenalty: num("poison-penalty"), logStdMin, diag: values.diag !== undefined,
 }, num("seed"), pool, library);
+const libHash = libraryHash(library);
 const resumed = values.state !== undefined && existsSync(values.state);
 let start = NaN; // the held-out score of the first chunk's start, kept over the chunks
 if (values.state && values["repeat-then"]) {
@@ -100,9 +101,11 @@ const { diag: _diag, ...settingOptions } = ppo.options;
 const settings = { envs: envList.map((e) => e.id), poison: num("poison"), from: values.from, seed: num("seed"), plan: learner.plan, options: settingOptions };
 if (resumed) {
   try {
-    const saved = JSON.parse(readFileSync(values.state!, "utf8")) as { settings?: unknown; heldStart?: number | null };
+    const saved = JSON.parse(readFileSync(values.state!, "utf8")) as { settings?: unknown; heldStart?: number | null; libraryHash?: string };
     if (saved.settings) assertSameSettings(saved.settings, settings);
     else console.error("warning: the state file has no settings to compare (saved by an older version)");
+    const libWarning = libraryResumeWarning(saved.libraryHash, libHash);
+    if (libWarning) console.error(`warning: ${libWarning}`);
     ppo.load(saved as Parameters<Ppo["load"]>[0]);
     start = saved.heldStart ?? NaN;
   } catch (e) {
@@ -163,7 +166,7 @@ while (ppo.iter < num("iters") && busy < num("seconds") * 1000) {
 }
 const end = held();
 if (values.state) {
-  writeFileAtomic(values.state, JSON.stringify({ ...ppo.save(), settings, heldStart: start }));
+  writeFileAtomic(values.state, JSON.stringify({ ...ppo.save(), settings, heldStart: start, libraryHash: libHash }));
 }
 if (values.diag && csv.length) {
   const more = resumed && existsSync(resolve(values.diag)); // a resumed chunk appends its rows to the earlier chunks, without a second header

@@ -1,6 +1,6 @@
 // Ecosystem benchmark: runs a seeded world headless and prints ticks/s, population over time and a fingerprint.
 // Usage: node src/ecoBench.ts [--seconds 120] [--seed 1] [--pop 300] [--width 12000] [--every 10] [--series 30]
-//   [--pool public/pool.json] [--threads 0] [--predators] [--preset ID] [--config file.json] [--set path=value ...]
+//   [--pool public/pool.json] [--threads 0] [--gentle] [--profile] [--predators] [--preset ID] [--config file.json] [--set path=value ...]
 // --config reads settings in the page's Copy format (an Ecosystem export) as the base; --preset applies a preset's world
 // and regrowth to the defaults (not with --config); --predators starts from the two-species (prey and predator) defaults.
 // --set overrides any config value after that, checked like a pasted config: --set eco.foodRegrow=0.04 --set species.1.speed=1.4
@@ -11,8 +11,7 @@
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { parseArgs } from "node:util";
-import { finiteNumber, positiveInt } from "./cliArgs.ts";
+import { fail, finiteNumber, positiveInt, strictArgs } from "./cliArgs.ts";
 import { overrideConfig } from "./sim/config.ts";
 import type { DeepPartial } from "./sim/config.ts";
 import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "./sim/ecoConfig.ts";
@@ -28,7 +27,7 @@ import { createNodeThinkPool } from "./worker/nodePool.ts";
 import { DutyController, FALLBACK_DUTY, Pacer } from "./worker/pacer.ts";
 
 // parameters
-const { values } = parseArgs({
+const { values } = strictArgs({
   options: {
     seconds: { type: "string", default: "120" },
     seed: { type: "string" },
@@ -62,13 +61,14 @@ function profileOutput(prof: PhaseTimer, steadyTicks: number, steadyCreatureTick
   };
 }
 
-// "path=value" assignments as one nested override.
+// "path=value" assignments as one nested override; a path through __proto__, constructor or prototype is refused (it would write Object.prototype).
 function overridesOf(assignments: readonly string[]): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const assignment of assignments) {
     const eq = assignment.indexOf("=");
     if (eq < 0) throw new Error(`--set needs path=value, got "${assignment}"`);
     const keys = assignment.slice(0, eq).split(".");
+    for (const k of keys) if (k === "__proto__" || k === "constructor" || k === "prototype") fail(`--set ${assignment.slice(0, eq)}: "${k}" is not a setting`);
     const raw = assignment.slice(eq + 1);
     let at = out;
     for (const k of keys.slice(0, -1)) at = (at[k] ??= {}) as Record<string, unknown>;

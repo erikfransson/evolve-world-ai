@@ -1,7 +1,7 @@
 // Scores creatures on a held-out transfer battery: Live-like "bigger" envs, a few small forager envs and one long Live-like episode,
 // on seeds that never met training, reporting survival, food and poison per minute alive and end energy (not the training reward).
 // Usage: node src/rlTransfer.ts --from panel [--from panel:DIR | founders | founder:Grazer | random:1 | pool:N | file:creature.json | learner:PATH] [--seeds 64]
-//        [--threads 2] [--label NAME] [--out transfer.json] [--baseline transfer-base.json [--baseline-name NAME]]
+//        [--threads 2] [--pool FILE] [--library FILE] [--founders FILE] [--label NAME] [--out transfer.json] [--baseline transfer-base.json [--baseline-name NAME]]
 // panel is the 8 untrained designs of designPanel.ts; panel:DIR the same designs with weights read from DIR/<design id>.json (rlPanelTrain.ts output).
 // --baseline pairs every genome with the baseline genome of the same name (else the first, or --baseline-name): paired t over seeds,
 // mean over envs, per design, then min, median and max over designs.
@@ -10,8 +10,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
-import { parseArgs } from "node:util";
-import { fail, libraryPath, poolPath, positiveInt, prepareOut } from "./cliArgs.ts";
+import { fail, libraryPath, poolPath, positiveInt, prepareOut, randomSeed, strictArgs } from "./cliArgs.ts";
 import { parsePool } from "./sim/seedPool.ts";
 import type { PoolEntry } from "./sim/seedPool.ts";
 import { poolLearner, randomLearner } from "./sim/rl/env.ts";
@@ -47,7 +46,7 @@ if (!isMainThread) {
 }
 
 async function main(): Promise<void> {
-  const { values } = parseArgs({
+  const { values } = strictArgs({
     options: {
       from: { type: "string", multiple: true },
       seeds: { type: "string", default: "64" },
@@ -93,7 +92,7 @@ async function main(): Promise<void> {
     else if (kind === "founder") {
       const f = foundersFile().find((x) => x.name === arg) ?? fail(`no founder "${arg}"`);
       named.push({ name: f.name, source: `${values.founders}`, learner: checked(f.name, f.entry) });
-    } else if (kind === "random") named.push({ name: spec, source: spec, learner: randomLearner({ world: "ecosystem", role: 0 }, Number(arg)) });
+    } else if (kind === "random") named.push({ name: spec, source: spec, learner: randomLearner({ world: "ecosystem", role: 0 }, randomSeed(arg)) });
     else if (kind === "pool") {
       const entry = pool?.[Number(arg)] ?? fail(`no pool entry ${arg}`);
       named.push({ name: spec, source: spec, learner: poolLearner({ world: "ecosystem" }, entry) });

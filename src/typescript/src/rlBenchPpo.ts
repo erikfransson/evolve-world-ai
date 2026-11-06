@@ -1,7 +1,7 @@
 // Backprop RL (PPO) speed: CPU seconds per update in typical setups, plus a checksum of the weights.
 // Usage: node src/rlBenchPpo.ts [--only small,big,lean,many,bigmany] [--iters 5] [--episodes 16] [--threads 0]
 //   --threads 0 plays the episodes on this thread (CPU seconds); N > 0 uses N helper threads through BackpropTrainer (wall seconds).
-import { parseArgs } from "node:util";
+import { fail, strictArgs } from "./cliArgs.ts";
 import { layerSizes, randomGenome } from "./sim/brain.ts";
 import { createRng } from "./sim/rng.ts";
 import { layoutConfig } from "./sim/rl/env.ts";
@@ -9,7 +9,7 @@ import { envById } from "./sim/rl/envs.ts";
 import { BackpropTrainer, Ppo } from "./sim/rl/ppo.ts";
 import { createNodeRlPool } from "./worker/nodePool.ts";
 
-const { values } = parseArgs({ options: { only: { type: "string" }, iters: { type: "string", default: "5" }, episodes: { type: "string", default: "16" }, threads: { type: "string", default: "0" } } });
+const { values } = strictArgs({ options: { only: { type: "string" }, iters: { type: "string", default: "5" }, episodes: { type: "string", default: "16" }, threads: { type: "string", default: "0" } } });
 const SMALL = { rayCount: 5, raySpread: (120 * Math.PI) / 180, rayLength: 180, hiddenLayers: [12], memoryShort: 2, memoryLong: 2 };
 const BIG = { rayCount: 16, raySpread: Math.PI, rayLength: 250, hiddenLayers: [64, 64], memoryShort: 8, memoryLong: 8 };
 const TEN = ["nibble", "corridor", "far-food", "patch", "minefield", "fence", "rooms", "islands", "sprint", "lean-times"];
@@ -21,6 +21,7 @@ const SETUPS = {
   bigmany: { envs: TEN, plan: BIG },
 } as const;
 const only = values.only ? values.only.split(",") : Object.keys(SETUPS);
+for (const name of only) if (!Object.hasOwn(SETUPS, name)) fail(`unknown --only id "${name}", valid: ${Object.keys(SETUPS).join(", ")}`);
 const checksum = (t: Float32Array): string => {
   let h = 0;
   for (let i = 0; i < t.length; i++) h = (h * 31 + Math.round(t[i]! * 1e6)) | 0;

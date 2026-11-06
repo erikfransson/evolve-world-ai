@@ -1,7 +1,7 @@
 // Fine-tunes one creature in an RL environment (#27) with evolution strategies, on worker threads.
 // Usage: node src/rlTrain.ts --env nibble [--from pool:39 | random:1 | file:creature.json] [--iters 60] [--pairs 16] [--sigma 0.08]
-//        [--lr 0.02] [--episodes 2] [--eval 16] [--every 10] [--vary 0] [--threads N] [--seed 1] [--out learner.json] [--library public/rl/library.json] [--save]
-//        [--mix nibble,far-food,...] [--selfplay [--crowd 5,50] [--lineage 0] [--foodw 3] [--poisonw 0]] [--budget SECONDS]
+//        [--lr 0.02] [--episodes 2] [--eval 16] [--every 10] [--vary 0] [--threads N] [--seed 1] [--out learner.json] [--pool public/pool.json] [--library public/rl/library.json] [--save]
+//        [--mix nibble,far-food,...] [--selfplay [--crowd 5,50] [--lineage 0] [--foodw 3] [--poisonw 0]] [--budget SECONDS] [--chunk SECONDS] [--state FILE] [--ckpt N,N --ckpt-dir DIR] [--poison W]
 // --poison W sets the cost per poison bite on every env; unset, envs without their own poison cost get 1 (the Arena ES default). Not with --selfplay.
 // --mix rotates through the envs, one per iteration (all candidates on it). --selfplay (S1) trains on a new procedurally drawn crowded world every
 // episode, the learner's genome playing half the bodies and the league (current weights, recent bests) the rest; the env is then ignored.
@@ -16,8 +16,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { parseArgs } from "node:util";
-import { fail, finiteNumber, DEFAULT_LIBRARY, loadLibraryFile, loadPoolFile, positiveInt, prepareOut, withFileLock } from "./cliArgs.ts";
+import { fail, finiteNumber, DEFAULT_LIBRARY, loadLibraryFile, loadPoolFile, positiveInt, prepareOut, randomSeed, withFileLock, strictArgs } from "./cliArgs.ts";
 import { poolLearner, randomLearner, varied } from "./sim/rl/env.ts";
 import type { EnvSpec, Learner } from "./sim/rl/env.ts";
 import { DEFAULT_POISON_COST, envById } from "./sim/rl/envs.ts";
@@ -32,7 +31,7 @@ import { serialiseLearner } from "./sim/rl/library.ts";
 import { createNodeRlPool, parseThreads } from "./worker/nodePool.ts";
 
 
-const { values } = parseArgs({
+const { values } = strictArgs({
   options: {
     env: { type: "string", default: "nibble" },
     from: { type: "string", default: "pool:0" },
@@ -98,7 +97,7 @@ else if (kind === "founder") {
   }
   learner = { plan: f.plan, genome: f.genome };
 }
-else if (kind === "random") learner = randomLearner(env, Number(arg ?? 1));
+else if (kind === "random") learner = randomLearner(env, randomSeed(arg));
 else if (kind === "file") {
   // A creature file (Arena "Save"), checked like any outside data.
   const file = parseCreatureFile(readFileSync(arg!, "utf8"));
