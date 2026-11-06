@@ -72,3 +72,83 @@ describe("add panel after training stopped in a hidden tab", () => {
     }
   });
 });
+
+describe("add panel start modes", () => {
+  const BRAIN = ["rays", "spread", "length", "neurons", "memShort", "memLong"];
+  const setup = async () => {
+    const { parseFounders } = await import("../../src/typescript/src/live/founders.ts");
+    const html = readFileSync(join(process.cwd(), "live/index.html"), "utf8");
+    document.body.innerHTML = html.slice(html.indexOf("<body>") + 6, html.indexOf("</body>"));
+    const sent: { plan: unknown; genome: Float32Array }[] = [];
+    const panel = new AddPanel(document.getElementById("addPanel")!, { send: (r) => (sent.push(r), true), added() {}, minimised() {} });
+    const founders = parseFounders(JSON.parse(readFileSync(join(process.cwd(), "public/live-founders.json"), "utf8")));
+    panel.setFounders(founders);
+    const disabled = (id: string): boolean => (document.getElementById(`add-${id}`) as HTMLInputElement).disabled;
+    return { panel, sent, founders, disabled };
+  };
+
+  it("freezes the ray and brain sliders for a founder and unfreezes them for a fresh brain, birth sliders stay editable", async () => {
+    const { panel, disabled } = await setup();
+    for (const id of BRAIN) expect(disabled(id), id).toBe(true);
+    for (const id of ["birthEnergy", "birthCost", "birthCooldown", "mutation"]) expect(disabled(id), id).toBe(false);
+    panel.setSource("fresh");
+    for (const id of BRAIN) expect(disabled(id), id).toBe(false);
+    expect(document.getElementById("addFreshHint")!.hidden).toBe(false);
+    panel.setSource("file"); // no file chosen yet: nothing to tune, and the brain sliders are frozen again
+    for (const id of BRAIN) expect(disabled(id), id).toBe(true);
+    panel.setSource("founder");
+    for (const id of BRAIN) expect(disabled(id), id).toBe(true);
+    expect(document.getElementById("addFreshHint")!.hidden).toBe(true);
+  });
+
+  it("shows the founder's own values on the frozen sliders and sends its genome and plan unchanged", async () => {
+    const { panel, sent, founders } = await setup();
+    const f = founders[0]!;
+    expect((document.getElementById("add-rays") as HTMLInputElement).value).toBe(String(f.plan.rayCount));
+    const { LiveWorld } = await import("../../server/src/liveWorld.ts");
+    const { smallConfig } = await import("./liveHelpers.ts");
+    panel.setRules(new LiveWorld(smallConfig(), null).addRules());
+    await (panel as unknown as { go(): Promise<void> }).go();
+    expect(sent[0]!.genome).toBe(f.genome);
+    expect(sent[0]!.plan).toEqual(f.plan);
+  });
+
+  it("makes a fresh genome of the right length for the chosen plan, a new one for each structure", async () => {
+    const { freshGenome } = await import("../../src/typescript/src/live/addPanel.ts");
+    const { genomeLengthIn } = await import("../../src/typescript/src/sim/rl/env.ts");
+    const { LiveWorld } = await import("../../server/src/liveWorld.ts");
+    const { smallConfig } = await import("./liveHelpers.ts");
+    const { panel, sent, founders } = await setup();
+    panel.setRules(new LiveWorld(smallConfig(), null).addRules());
+    panel.setSource("fresh");
+    const go = (): Promise<void> => (panel as unknown as { go(): Promise<void> }).go();
+    await go();
+    const first = sent[0]!;
+    expect(first.plan).toMatchObject({ ...founders[0]!.plan, raySpread: expect.closeTo(founders[0]!.plan.raySpread, 3) }); // the spread goes through whole degrees
+    expect(first.genome.length).toBe(genomeLengthIn("ecosystem", founders[0]!.plan));
+    expect(first.genome.every(Number.isFinite)).toBe(true);
+    expect(first.genome).not.toEqual(founders[0]!.genome); // a new random brain, not the founder's
+    panel.reply({ t: "refused", reason: "busy" });
+    await go();
+    expect(sent[1]!.genome).toBe(first.genome); // same structure, same brain (a retry keeps what was trained)
+    const rays = document.getElementById("add-rays") as HTMLInputElement;
+    rays.value = String(Number(rays.value) === 5 ? 6 : 5);
+    rays.dispatchEvent(new Event("input"));
+    panel.reply({ t: "refused", reason: "busy" });
+    await go();
+    const plan = sent[2]!.plan as typeof founders[0]["plan"];
+    expect(plan.rayCount).toBe(Number(rays.value));
+    expect(sent[2]!.genome).not.toBe(first.genome);
+    expect(sent[2]!.genome.length).toBe(genomeLengthIn("ecosystem", plan));
+    expect(freshGenome(plan, 1)).toEqual(freshGenome(plan, 1)); // seeded: same seed, same brain
+  });
+
+  it("keys the trained cache on the start mode", async () => {
+    const { sameTrainKey } = await import("../../src/typescript/src/live/addPanel.ts");
+    const from = new Float32Array(3);
+    const key = { mode: "founder" as const, from, plan: "{}", kinds: "addPretrain" };
+    expect(sameTrainKey(key, { ...key })).toBe(true);
+    expect(sameTrainKey(key, { ...key, mode: "fresh" })).toBe(false);
+    expect(sameTrainKey(key, { ...key, mode: "file" })).toBe(false);
+  });
+});

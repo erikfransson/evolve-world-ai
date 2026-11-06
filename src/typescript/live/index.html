@@ -164,8 +164,10 @@
               <div class="seg" role="radiogroup" aria-label="Start from">
                 <label><input type="radio" name="addSource" value="founder" checked /><span>A founder</span></label>
                 <label><input type="radio" name="addSource" value="file" /><span>Your file</span></label>
+                <label><input type="radio" name="addSource" value="fresh" /><span>Fresh brain</span></label>
               </div>
               <div id="addFounders" class="founders" role="radiogroup" aria-label="Founder"></div>
+              <p id="addFreshHint" class="hint" hidden>A fresh brain knows nothing yet. Train it below or it will wander at random. It starts from the first founder's body, which you can reshape.</p>
               <div id="addUpload" class="upload" hidden>
                 <label class="upload-drop"><input id="addFile" type="file" accept=".json,application/json" /><b>Choose a creature file</b><span>A forager saved in the RL Arena</span></label>
                 <p id="addFileMsg" class="hint" aria-live="polite"></p>
@@ -181,6 +183,7 @@
                   <span id="addBurnDelta" class="burn-delta"></span>
                 </div>
               </div>
+              <p id="addFrozenHint" class="hint">Rays and brain are fixed to keep what it learned. Choose Fresh brain to change them.</p>
               <h4>Vision</h4>
               <div id="addVision" class="tune-grid"></div>
               <h4>Brain <span id="addLayers" class="h4-note"></span></h4>

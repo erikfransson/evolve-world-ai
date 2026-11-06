@@ -6,6 +6,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- Live: "Add your creature" has three start modes. A founder or an uploaded file keeps its rays and brain (those sliders are locked and show its values; name, copies, birth and colour stay editable), and Fresh brain starts from founder 0's body with a new random untrained brain and free ray and brain sliders (a new brain for each structure). The trained-brain reuse after a refused add now also depends on the mode. The server and protocol are unchanged; the panel no longer reshapes genomes (`reshape.ts` removed).
+
 ## 0.4.1 (2026-11-05)
 
 - Live: with no weight cap a mixed world settles near 4900 creatures (was about 3000), so a full world is the usual state: a tick costs about twice as much (liveBench mixed on the loaded host: 8.6 to 15.8 CPU ms per tick, speed achieved 3.67x to 2.0x, below the 3x target) and `room()` lets in only about 16 to 23 viewers there.
