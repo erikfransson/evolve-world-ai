@@ -132,7 +132,10 @@ describe("BrainView", () => {
     const { canvas, calls, props } = fakeCanvas(320, 240);
     new BrainView(canvas).draw(brainFor(DEFAULT_CONFIG), false);
     expect(calls.filter((c) => c.name === "fillText").map((c) => c.args[0])).toContain("dead");
-    expect(props.globalAlpha).toBe(1);
+    const strokes = calls.filter((c) => c.name === "stroke");
+    expect(strokes.length).toBeGreaterThan(0);
+    expect(strokes.some((c) => c.alpha === 0.3)).toBe(true); // the network strokes are faded
+    expect(props.globalAlpha).toBe(1); // reset after the fade
   });
 
   it("redraws the same brain repeatedly and after a size change", () => {

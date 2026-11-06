@@ -100,6 +100,20 @@ describe.skipIf(!wasmAvailable())("the WebAssembly crowd grid equals Crowd.rebui
     });
   }
 
+  it("with 20000 creatures, the engine's cap (a grid guard of 0xffff creatures), array for array", () => {
+    const big = (c: EcoConfig): EcoConfig => ({ ...c, world: { ...c.world, width: 6000, height: 4000 }, eco: { ...c.eco, maxPopulation: 20000 } });
+    const eco = make(big, 20000);
+    const e = eco as Any;
+    expect(eco.members.length).toBe(20000);
+    expect(e.wasmCrowd).not.toBeNull();
+    for (let t = 0; t < 2; t++) {
+      eco.step();
+      e.gridCrowd(eco.members.length, e.multi ? e.table.kinds : undefined);
+      expect(crowdDifferences(eco)).toBe(0);
+    }
+    expect(eco.members.length).toBeGreaterThan(10000); // the grid held a big crowd, not a mostly dead one
+  }, 120_000);
+
   it("on randomised worlds of every size and species mix", () => {
     let bad = 0;
     for (let seed = 1; seed <= 20; seed++) {
@@ -417,6 +431,7 @@ describe.skipIf(!wasmAvailable())("the WebAssembly kernels at their edges", () =
       for (const build of [() => make((c) => c, 100), () => make(inland, 200)]) {
         const eco = build();
         useKernels(eco, { crowd: !js });
+        expect((eco as Any).wasmCrowd === null).toBe(js);
         for (let t = 0; t < 2; t++) eco.step();
         eco.members.forEach((m, i) => {
           const s = m.creature.state;
@@ -491,6 +506,7 @@ describe.skipIf(!wasmAvailable())("whole runs with the WebAssembly crowd grid an
   const run = (build: () => Ecosystem, ticks: number, js: boolean, midRun?: (eco: Ecosystem, t: number) => void): [number, number, number] => {
     const eco = build();
     useKernels(eco, { crowd: !js });
+    expect((eco as Any).wasmCrowd === null).toBe(js); // the WebAssembly side really runs the kernel
     for (let t = 0; t < ticks && !eco.extinct; t++) {
       midRun?.(eco, t);
       eco.step();
@@ -526,10 +542,12 @@ describe.skipIf(!wasmAvailable())("whole runs with the WebAssembly crowd grid an
     for (const [first, second] of [[false, true], [true, false]] as const) {
       const a = build();
       useKernels(a, { crowd: !first });
+      expect((a as Any).wasmCrowd === null).toBe(first);
       for (let t = 0; t < 60; t++) a.step();
       const state = JSON.parse(JSON.stringify(saveState(a))) as EcoState;
       const b = restoreState(state);
       useKernels(b, { crowd: !second });
+      expect((b as Any).wasmCrowd === null).toBe(second);
       for (let t = 0; t < 60; t++) a.step();
       for (let t = 0; t < 60; t++) b.step();
       expect([b.fingerprint(), b.population, b.deaths]).toEqual([a.fingerprint(), a.population, a.deaths]);

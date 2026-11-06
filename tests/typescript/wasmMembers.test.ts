@@ -31,6 +31,7 @@ describe.skipIf(!wasmAvailable())("the WebAssembly scans equal the loops", () =>
   it("settle: the same ticks counted and the same members listed, on rows with every kind of energy", () => {
     const eco = make(inland, 200);
     const e = eco as Any;
+    expect(e.wasmMembers).not.toBeNull(); // a null kernel would leave nothing to compare with the loop
     for (let t = 0; t < 3; t++) eco.step();
     const rng = createRng(5);
     for (let round = 0; round < 20; round++) {
@@ -52,6 +53,7 @@ describe.skipIf(!wasmAvailable())("the WebAssembly scans equal the loops", () =>
   it("birth candidates: the same members in the same order from any start, with energies at, below and above the threshold and NaN", () => {
     const eco = make((c) => c, 150);
     const e = eco as Any;
+    expect(e.wasmMembers).not.toBeNull();
     for (let t = 0; t < 3; t++) eco.step();
     const rng = createRng(9);
     for (let round = 0; round < 30; round++) {
@@ -85,6 +87,7 @@ describe.skipIf(!wasmAvailable())("the WebAssembly scans equal the loops", () =>
 
   it("mutate: the same genome and generator state with the kernel scan as without, for every length, rate and start state", () => {
     const e = make((c) => c, 1) as Any;
+    expect(e.wasmMembers).not.toBeNull(); // mutate() falls back to the JS loop when given null
     const rng = createRng(3);
     for (const rate of [1e-9, 0.01, 0.05, 0.3, 0.999, 4294967295 / 4294967296, 1, 2, 0, NaN]) {
       for (const n of [0, 1, 15, 16, 17, 19, 64, 1237, 4506]) {
@@ -107,6 +110,7 @@ describe.skipIf(!wasmAvailable())("the WebAssembly scans equal the loops", () =>
   it("with no members and with one", () => {
     const one = make((c) => c, 1);
     const e = one as Any;
+    expect(e.wasmMembers).not.toBeNull();
     expect(Array.from(e.wasmMembers.birthCandidates(e.table.rowAt, 1, new Float64Array([0]), 0))).toEqual([0]);
     expect(Array.from(e.wasmMembers.birthCandidates(e.table.rowAt, 0, new Float64Array(0), 0))).toEqual([]);
     expect(Array.from(e.wasmMembers.settle(e.table.rowAt, 0))).toEqual([]);
@@ -118,6 +122,7 @@ describe.skipIf(!wasmAvailable())("whole runs with the WebAssembly scans and wit
   const run = (build: () => Ecosystem, ticks: number, js: boolean, mid?: Mid): [number, number, number, number] => {
     const eco = build();
     useKernels(eco, { members: !js });
+    expect((eco as Any).wasmMembers === null).toBe(js); // the WebAssembly side really runs the kernel
     for (let t = 0; t < ticks && !eco.extinct; t++) {
       mid?.(eco, t);
       eco.step();
@@ -164,6 +169,7 @@ describe.skipIf(!wasmAvailable())("whole runs with the WebAssembly scans and wit
     for (const [first, second] of [[false, true], [true, false]] as const) {
       const a = build();
       useKernels(a, { members: !first });
+      expect((a as Any).wasmMembers === null).toBe(first);
       for (let t = 0; t < 50; t++) {
         churn(a, t);
         a.step();
@@ -171,6 +177,7 @@ describe.skipIf(!wasmAvailable())("whole runs with the WebAssembly scans and wit
       const state = JSON.parse(JSON.stringify(saveState(a))) as EcoState;
       const b = restoreState(state);
       useKernels(b, { members: !second });
+      expect((b as Any).wasmMembers === null).toBe(second);
       for (let t = 50; t < 100; t++) {
         churn(a, t);
         a.step();
