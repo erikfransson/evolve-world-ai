@@ -15,7 +15,7 @@ function cfg(wasm = false): EcoConfig {
   return {
     ...d, seed: 4,
     world: { ...d.world, width: 1500, height: 1500, foodDensity: 3 },
-    eco: { ...d.eco, wasm, initialPopulation: 10, maxPopulation: 200, foodRegrow: 2, foodMaxDensity: 3, structuralRate: 0, planDrift: 0,
+    eco: { ...d.eco, wasm, initialPopulation: 10, maxPopulation: 200, foodRegrow: 1, foodMaxDensity: 3, structuralRate: 0, planDrift: 0,
       birthEnergyRange: [21, 21], birthCostRange: [10, 10], birthCooldownRange: [0.5, 0.5] },
   };
 }

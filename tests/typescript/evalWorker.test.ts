@@ -3,6 +3,7 @@ vi.mock("../../src/typescript/src/worker/evalPool.ts", () => ({
     if (job.boom) throw new Error("boom");
     return { ok: true };
   },
+  heartbeat: () => () => {}, // the worker wires a progress callback; this test checks only the job path
   transferList: () => [],
 }));
 

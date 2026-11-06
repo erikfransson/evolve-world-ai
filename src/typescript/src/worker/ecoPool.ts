@@ -134,6 +134,7 @@ export class ThinkPool {
     const cold = this.fresh; // the first tick builds every creature's brain and runs cold code; its duration seeds the average, which only loosens the timeout
     const base = cold ? Math.max(START_MS, this.tickMs) : this.tickMs;
     const done = this.expect(tickTimeoutMs(base, this.avgTickMs));
+    done.catch(() => {}); // a throw in post or senseOwn skips the await below; a later fail() must not be an unhandled rejection
     this.fresh = false;
     const gen = this.gen;
     const started = performance.now();

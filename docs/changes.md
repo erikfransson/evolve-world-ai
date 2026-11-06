@@ -6,6 +6,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- Engine fixes from the 60-agent hunt: the world's item-change stamps are Float64 (they wrapped after 2^31 changes, weeks of one Live process, and the ray and eat caches then stopped invalidating); the helper pool cannot leave an unobserved rejection when a tick throws; the Trials evaluation pool fails a stalled job after 300 s of silence, with the workers sending a progress heartbeat every second so long chunks never trip it. Validation: save, paste and live retune now agree on bounds (year length above 0 up to 600 min, winter food 0 to 1, regrowth at most 1, caps at most 10, birth ranges non-negative, hidden layers 1 to 32 neurons each, whole population counts), the retune refuses a birth reserve at or above the population cap, species merges check kinds (positive speed, whole founders, ranges in order), a legacy birth value that is not a number is an error, and prototype names are unknown keys.
+
 ## 0.4.3 (2026-11-06)
 
 - Fixes: a Trials evaluation worker that throws now fails the run visibly instead of hanging it, the Arena brain key sits inside the canvas at any zoom, and the RL transfer intervals are right for few seeds (exact t quantiles up to 30 degrees of freedom; the old approximation gave 9.7 instead of 12.7 at one). Stale docs and comments corrected, small tooling checks added. Engine results unchanged.

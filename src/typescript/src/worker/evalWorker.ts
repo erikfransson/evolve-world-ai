@@ -1,5 +1,5 @@
 // Browser entry of an evaluation worker, spawned by the sim worker's pool.
-import { evalJob, transferList } from "./evalPool.ts";
+import { evalJob, heartbeat, transferList } from "./evalPool.ts";
 import type { EvalJob } from "./evalPool.ts";
 import { Pacer, gentleController } from "./pacer.ts";
 import type { DutyController } from "./pacer.ts";
@@ -16,7 +16,7 @@ self.onmessage = (e: MessageEvent<EvalJob>) => {
     if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
     pacer.began();
     const t0 = performance.now();
-    const done = evalJob(job);
+    const done = evalJob(job, heartbeat(job.job, (m) => self.postMessage(m)));
     self.postMessage(done, { transfer: transferList(done) });
     if (!job.gentle) return;
     controller ??= gentleController();

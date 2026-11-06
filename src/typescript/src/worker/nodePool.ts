@@ -3,7 +3,7 @@ import { Worker } from "node:worker_threads";
 import type { SimConfig } from "../sim/config.ts";
 import { SerialEvaluator } from "../sim/evaluator.ts";
 import type { Evaluator } from "../sim/evaluator.ts";
-import type { EvalDone, EvalJob } from "./evalPool.ts";
+import type { EvalJob, EvalReply } from "./evalPool.ts";
 import { PoolEvaluator, defaultThreads } from "./evalPool.ts";
 import { ThinkPool } from "./ecoPool.ts";
 import type { HelperIn, HelperOut, HelperPort } from "./ecoPool.ts";
@@ -50,7 +50,7 @@ export function nodeHelperPorts(helpers: number): HelperPort[] {
 // Pool of worker_threads, or the serial evaluator for one thread. Call close() so the process can exit.
 export function createNodeEvaluator(config: SimConfig, threads: number): Evaluator {
   if (threads <= 1) return new SerialEvaluator(config);
-  const workers = nodePorts<EvalJob, EvalDone>(threads, () => new Worker(new URL("./evalWorkerNode.ts", import.meta.url)), "evaluation worker");
+  const workers = nodePorts<EvalJob, EvalReply>(threads, () => new Worker(new URL("./evalWorkerNode.ts", import.meta.url)), "evaluation worker");
   return new PoolEvaluator(config, workers);
 }
 

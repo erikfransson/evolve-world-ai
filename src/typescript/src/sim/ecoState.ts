@@ -8,6 +8,7 @@ import { Ecosystem } from "./ecosystem.ts";
 import type { EcoCore, MemberRecord } from "./ecosystem.ts";
 import { mapSpec, mapVersion } from "./maps/index.ts";
 import type { LineageState } from "./lineages.ts";
+import { checkEcoBounds } from "./retune.ts";
 import type { PoolEntry } from "./seedPool.ts";
 import { OUTPUT_SIZE } from "./sensors.ts";
 import { checkRanges, mergeSpeciesList } from "./species.ts";
@@ -263,6 +264,11 @@ function checkedConfig(raw: unknown): EcoConfig {
   whole(eco.birthReserve, 0, MAX_CREATURES, "eco.birthReserve");
   whole(eco.initialPopulation, 0, MAX_CREATURES, "eco.initialPopulation");
   whole(eco.thinkEvery, 1, MAX_THINK_EVERY, "eco.thinkEvery");
+  try {
+    checkEcoBounds(eco);
+  } catch (e) {
+    invalid((e as Error).message);
+  }
   checkHiddenLayers(config.brain.hiddenLayers);
   return config;
 }
