@@ -110,7 +110,7 @@ function drawOther(ctx: CanvasRenderingContext2D, f: Frame, s: PlaybackState): v
 
 function drawBest(ctx: CanvasRenderingContext2D, f: Frame, s: CreatureState): void {
   const px = f.px;
-  const R = Math.max(f.creatureR, 6 * px); // true size so contact on screen matches eating
+  const R = Math.max(f.creatureR, 6 * px); // true size so contact on screen matches eating, but at least 6 screen pixels
   const e = energyRatio(f, s.energy);
   const alive = s.alive;
   if (alive) {

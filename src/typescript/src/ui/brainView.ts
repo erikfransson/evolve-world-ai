@@ -257,6 +257,7 @@ export class BrainView {
     this.drawNodes(placed, acts);
     this.drawGauges(placed, acts);
     this.drawLabels(placed, labels, acts);
+    this.drawKey(cssW, cssH);
     if (!alive) this.drawDead(cssW, cssH);
     ctx.globalAlpha = 1;
   }
@@ -481,20 +482,18 @@ export class BrainView {
       for (let k = OUTPUT_SIZE; k < yOut.length; k++) deepest = Math.max(deepest, yOut[k]!);
       ctx.fillText("memory", outLabelX, (yOut[OUTPUT_SIZE]! + deepest) / 2);
     }
-
-    this.drawKey();
   }
 
   // Tiny sign key at the bottom-right corner.
-  private drawKey(): void {
+  private drawKey(cssW: number, cssH: number): void {
     const ctx = this.ctx;
-    const y = this.canvas.clientHeight - 8;
+    const y = cssH - 8;
     const items = [["\u2212", NEG_RGB], ["+", POS_RGB]] as const;
     ctx.font = SMALL_FONT;
     ctx.textAlign = "right";
     ctx.lineWidth = 2;
     ctx.lineCap = "round";
-    let x = this.canvas.clientWidth - 8;
+    let x = cssW - 8;
     for (const [text, rgb] of items) {
       ctx.fillStyle = LABEL;
       ctx.fillText(text, x, y);

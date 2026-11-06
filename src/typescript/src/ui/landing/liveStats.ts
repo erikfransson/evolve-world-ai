@@ -42,7 +42,7 @@ export async function fetchStats(url: string, timeoutMs = 5000): Promise<LiveSta
   try {
     const r = await fetch(url, { signal: AbortSignal.timeout(timeoutMs), credentials: "omit", referrerPolicy: "no-referrer" });
     if (!r.ok || !r.body) return null;
-    // At most MAX_BYTES + 1 bytes are read, so a hostile server cannot fill the tab's memory.
+    // The size is checked after every chunk, so at most MAX_BYTES plus one chunk is held and a hostile server cannot fill the tab's memory.
     const reader = r.body.getReader();
     const parts: Uint8Array[] = [];
     let size = 0;

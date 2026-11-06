@@ -150,11 +150,11 @@ export function inlandMapScene(seed: number): MapScene {
           continue;
         }
         if (d.e >= BIRTH_AT && alive < MAP_CAP && (tick - d.born) * dt >= MIN_AGE_S) {
-          d.e = 0.5;
           const a = rng.range(0, 2 * Math.PI);
           const cx = d.x + Math.cos(a) * 4;
           const cy = d.y + Math.sin(a) * 4;
-          if (rockAt(cx, cy)) continue;
+          if (rockAt(cx, cy)) continue; // the parent keeps its energy and tries again next tick
+          d.e = 0.5;
           spawn(cx, cy, (d.hue + rng.range(-HUE_DRIFT, HUE_DRIFT) + 360) % 360, 0.45).h = a;
           rings.push({ at: tick, x: d.x, y: d.y, hue: d.hue });
           alive++;

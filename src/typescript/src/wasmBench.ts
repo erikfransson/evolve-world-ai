@@ -5,7 +5,8 @@ import { parseArgs } from "node:util";
 import { Brain, layerSizes, randomGenome } from "./sim/brain.ts";
 import { DEFAULT_ECO_CONFIG } from "./sim/ecoConfig.ts";
 import { createRng } from "./sim/rng.ts";
-import { planOf } from "./sim/sensors.ts";
+import { EXTRA_INPUTS, planOf } from "./sim/sensors.ts";
+import { MEMORY_UNITS } from "./sim/config.ts";
 import { WasmBrainBank } from "./sim/wasm/brainKernel.ts";
 
 // parameters
@@ -52,7 +53,7 @@ for (const [name, p] of Object.entries(plans)) {
       bank.set(c, sizes, g);
       const input = new Float32Array(sizes[0]!);
       for (let r = 0; r < p.rayCount; r++) if (rng.next() < 0.5) (input[r * 6] = rng.next()), (input[r * 6 + 1 + rng.int(5)] = 1);
-      input.fill(0.3, sizes[0]! - 4 - Math.round(16 * p.memory), sizes[0]!);
+      input.fill(0.3, sizes[0]! - EXTRA_INPUTS - Math.round(MEMORY_UNITS * p.memory), sizes[0]!);
       ins.push(input);
       outs.push(new Float32Array(sizes.at(-1)!));
       bank.f32.set(input, bank.inputAt(c));

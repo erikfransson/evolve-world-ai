@@ -11,6 +11,7 @@ let queue: Promise<void> = Promise.resolve(); // jobs run in order, each after t
 self.onmessage = (e: MessageEvent<EvalJob>) => {
   const job = e.data;
   queue = queue.then(async () => {
+    try {
     const wait = pacer.wait();
     if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
     pacer.began();
@@ -20,5 +21,9 @@ self.onmessage = (e: MessageEvent<EvalJob>) => {
     if (!job.gentle) return;
     controller ??= gentleController();
     pacer.finished(t0, controller.duty());
+    } catch (error) {
+      // Rethrown outside the chain it surfaces as the worker's error event, which breaks the pool visibly; the chain itself stays alive.
+      setTimeout(() => { throw error; });
+    }
   });
 };

@@ -54,7 +54,7 @@ for (const name of only) {
     const t0 = performance.now();
     while (performance.now() - t0 < 3000) {
       const r = runEpisode(envs[n % envs.length]!, learner, n);
-      ticks += Math.round(r.seconds * 30);
+      ticks += Math.round(r.seconds / layoutConfig("ecosystem").dt);
       n++;
     }
     const sec = (performance.now() - t0) / 1000;

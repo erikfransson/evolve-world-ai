@@ -347,7 +347,7 @@ function stone(rng: StatefulRng, w: number, h: number): { discs: Circle[]; area:
   return { discs, area };
 }
 
-// A ridge: a rocky range along a gently bent spine, two or three outcrops with passable gaps between them. An outcrop is an angular
+// A ridge: a rocky range along a gently bent spine, one to three outcrops with passable gaps between them. An outcrop is an angular
 // slab, a polygon whose edge kinks along both sides and that tapers at the ends, built as rows of discs along its edges like a
 // boulder. A few loose pebbles lie beside it.
 function ridge(rng: StatefulRng, w: number, h: number): { discs: Circle[]; area: number } {

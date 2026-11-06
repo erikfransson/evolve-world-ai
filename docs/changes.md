@@ -6,6 +6,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- Fixes: a Trials evaluation worker that throws now fails the run visibly instead of hanging it, the Arena brain key sits inside the canvas at any zoom, and the RL transfer intervals are right for few seeds (exact t quantiles up to 30 degrees of freedom; the old approximation gave 9.7 instead of 12.7 at one). Stale docs and comments corrected, small tooling checks added. Engine results unchanged.
+
 ## 0.4.2 (2026-11-06)
 
 - Live adds: no cap on visitor-added creatures alive (`add.aliveMax`, was 50; adds count against the population cap of 5000), 150 creatures per 5 minutes for everyone (`add.perWindow`, was 50) and 90 per visitor (`add.perVisitor`, was 30). An older overrides file's `add.aliveMax` is skipped with a log line, and an alive cap of 0 keeps adding off as `add.perWindow` 0.

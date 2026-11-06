@@ -1,5 +1,6 @@
 // "Gentle on CPU": browsers cannot set OS nice levels, so a gentle worker idles after each slice of work when other programs
-// want the CPU, and runs flat out when the machine is otherwise idle. Pacing only changes when work runs, never what it computes.
+// want the CPU. With the Compute Pressure API it runs flat out when the machine is otherwise idle, without it a fixed share stays idle.
+// Pacing only changes when work runs, never what it computes.
 
 export type Pressure = "nominal" | "fair" | "serious" | "critical"; // the Compute Pressure API's cpu states
 
@@ -64,7 +65,7 @@ export function gentleController(): DutyController {
 // Delays the start of the next job of one worker until the idle time after the previous jobs has passed.
 // Timers cannot sleep for a millisecond or two (browsers clamp nested timeouts to 4 ms), so idle time is owed until it reaches
 // MIN_SLEEP_MS, then slept in one go, and the real sleep (which overshoots) is paid back from later idle times.
-export const MIN_SLEEP_MS = 15;
+const MIN_SLEEP_MS = 15;
 const MAX_CREDIT_MS = 500;
 
 export class Pacer {
@@ -94,7 +95,7 @@ export class Pacer {
   // Call when the next job starts, after any wait: books the time really slept against the debt.
   began(): void {
     if (this.sleptFrom === null) return;
-    this.debt = Math.max(-MAX_CREDIT_MS, this.debt - (this.now() - this.sleptFrom)); // a long pause is not credit for later
+    this.debt = Math.max(-MAX_CREDIT_MS, this.debt - (this.now() - this.sleptFrom)); // credit for a long pause is capped at MAX_CREDIT_MS
     this.sleptFrom = null;
   }
 }
