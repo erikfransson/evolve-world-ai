@@ -115,7 +115,7 @@ describe("Ppo policyLoss gradient", () => {
   };
   // [advantage, log-ratio offset (logp0 = lp - offset)]: inside the clip range, clipped above (A > 0), unclipped below (A > 0), clipped below (A < 0), unclipped above (A < 0)
   it.each([[1.5, 0.05], [1.5, 0.5], [1.5, -0.5], [-1.2, -0.5], [-1.2, 0.5]])("matches central differences for A %f and log-ratio %f", (A, offset) => {
-    const ppo = new Ppo([env], learner, sizes, {}, 7) as unknown as { policyNet: Mlp; logStd: Float64Array; policyLoss(b: unknown, i: number, net: Mlp, dOut: Float64Array, gStd: Float64Array): boolean };
+    const ppo = new Ppo([env], learner, sizes, {}, 7, null, null) as unknown as { policyNet: Mlp; logStd: Float64Array; policyLoss(b: unknown, i: number, net: Mlp, dOut: Float64Array, gStd: Float64Array): boolean };
     ppo.logStd.set(ls0);
     const net = ppo.policyNet;
     const last = net.acts[net.sizes.length - 1]!;
@@ -154,7 +154,7 @@ describe("Ppo", () => {
 
   it("updates the genome and std, the same for the same seed", async () => {
     const run = async () => {
-      const ppo = new Ppo([env], learner, sizes, { episodes: 2, epochs: 1 }, 7);
+      const ppo = new Ppo([env], learner, sizes, { episodes: 2, epochs: 1 }, 7, null, null);
       const step = ppo.step();
       return { theta: Array.from(ppo.theta), step };
     };
@@ -167,11 +167,11 @@ describe("Ppo", () => {
 
   it("gives the same update whether the episodes play on this thread, one helper or several", async () => {
     const options = { episodes: 3, epochs: 1 };
-    const serial = new Ppo([env], learner, sizes, options, 7);
+    const serial = new Ppo([env], learner, sizes, options, 7, null, null);
     serial.step();
     for (const threads of [1, 2]) {
       const pool = createNodeRlPool({ envs: [env], plan: learner.plan, pool: null, library: {} }, threads);
-      const ppo = new Ppo([env], learner, sizes, options, 7);
+      const ppo = new Ppo([env], learner, sizes, options, 7, null, null);
       await ppo.stepWith(pool);
       pool.close();
       expect(Array.from(ppo.theta)).toEqual(Array.from(serial.theta));
@@ -179,7 +179,7 @@ describe("Ppo", () => {
   });
   it("trains every env when there are more envs than episodes per update", async () => {
     const envs = Array.from({ length: 7 }, () => env);
-    const ppo = new Ppo(envs, learner, sizes, { episodes: 3, epochs: 1 }, 7);
+    const ppo = new Ppo(envs, learner, sizes, { episodes: 3, epochs: 1 }, 7, null, null);
     const played: number[] = [];
     const player = { rollouts: async (tasks: readonly RolloutTask[]) => tasks.map((t) => (played.push(t.env), playRollout(envs[t.env]!, learner.plan, t, null, {}))) };
     for (let k = 0; k < 3; k++) await ppo.stepWith(player);
@@ -187,15 +187,15 @@ describe("Ppo", () => {
   });
 
   it("plays every tick with the held noise the same as a plain policy at repeat 1", () => {
-    const a = new Ppo([env], learner, sizes, { episodes: 2, epochs: 1, repeat: 1 }, 7);
-    const b = new Ppo([env], learner, sizes, { episodes: 2, epochs: 1, repeat: 1, everyTick: true }, 7);
+    const a = new Ppo([env], learner, sizes, { episodes: 2, epochs: 1, repeat: 1 }, 7, null, null);
+    const b = new Ppo([env], learner, sizes, { episodes: 2, epochs: 1, repeat: 1, everyTick: true }, 7, null, null);
     expect(b.step()).toEqual(a.step());
     expect(Array.from(b.theta)).toEqual(Array.from(a.theta));
   });
 
   it("holds only the noise with everyTick at repeat 3, and still learns", () => {
-    const a = new Ppo([env], learner, sizes, { episodes: 2, epochs: 1 }, 7);
-    const b = new Ppo([env], learner, sizes, { episodes: 2, epochs: 1, everyTick: true }, 7);
+    const a = new Ppo([env], learner, sizes, { episodes: 2, epochs: 1 }, 7, null, null);
+    const b = new Ppo([env], learner, sizes, { episodes: 2, epochs: 1, everyTick: true }, 7, null, null);
     a.step();
     b.step();
     expect(Array.from(b.theta)).not.toEqual(Array.from(a.theta));
@@ -205,7 +205,7 @@ describe("Ppo", () => {
   it("plays the same rollouts as before, with and without everyTick", async () => {
     const hash = async (everyTick: boolean): Promise<number> => {
       let h = 2166136261;
-      const ppo = new Ppo([env], learner, sizes, { episodes: 2, epochs: 1, everyTick }, 7);
+      const ppo = new Ppo([env], learner, sizes, { episodes: 2, epochs: 1, everyTick }, 7, null, null);
       await ppo.stepWith({
         rollouts: async (tasks) => tasks.map((t) => {
           const r = playRollout(env, learner.plan, t, null, {});
@@ -221,19 +221,19 @@ describe("Ppo", () => {
   });
 
   it("stops the epochs at the target KL before stepping on a far minibatch", () => {
-    const one = new Ppo([env], learner, sizes, { episodes: 2, epochs: 1 }, 7);
+    const one = new Ppo([env], learner, sizes, { episodes: 2, epochs: 1 }, 7, null, null);
     one.step();
-    const full = new Ppo([env], learner, sizes, { episodes: 2, epochs: 4 }, 7);
+    const full = new Ppo([env], learner, sizes, { episodes: 2, epochs: 4 }, 7, null, null);
     full.step();
     expect(full.lastEpochs).toBe(4);
-    const capped = new Ppo([env], learner, sizes, { episodes: 2, epochs: 4, targetKl: 1e-12 }, 7);
+    const capped = new Ppo([env], learner, sizes, { episodes: 2, epochs: 4, targetKl: 1e-12 }, 7, null, null);
     capped.step();
     expect(capped.lastEpochs).toBe(2); // epoch 1 steps at KL 0, epoch 2's first minibatch is past the target
     expect(Array.from(capped.theta)).toEqual(Array.from(one.theta));
   });
 
   it("switches the hold with setRepeat from the next update", async () => {
-    const ppo = new Ppo([env], learner, sizes, { episodes: 1, epochs: 1 }, 7);
+    const ppo = new Ppo([env], learner, sizes, { episodes: 1, epochs: 1 }, 7, null, null);
     expect(() => ppo.setRepeat(0)).toThrow();
     ppo.setRepeat(1);
     let samples = 0;
@@ -248,7 +248,7 @@ describe("Ppo", () => {
   });
 
   it("averages the diagnostic KL over every minibatch it summed, including the one that stopped the update", () => {
-    const ppo = new Ppo([env], learner, sizes, { episodes: 2, epochs: 2, minibatch: 64, lr: 0.1, targetKl: 1e-9, diag: true }, 7);
+    const ppo = new Ppo([env], learner, sizes, { episodes: 2, epochs: 2, minibatch: 64, lr: 0.1, targetKl: 1e-9, diag: true }, 7, null, null);
     ppo.step();
     const d = ppo.lastDiag!;
     expect(d.klMax).toBeGreaterThan(0);
@@ -256,13 +256,13 @@ describe("Ppo", () => {
   });
 
   it("raises the initial log-std to a floor above it", () => {
-    const ppo = new Ppo([env], learner, sizes, { logStd: -2, logStdMin: -1 }, 7);
+    const ppo = new Ppo([env], learner, sizes, { logStd: -2, logStdMin: -1 }, 7, null, null);
     expect(Array.from(ppo.logStd)).toEqual([-1, -1]);
   });
 
   it("records diagnostics only when asked, and trains the same either way", () => {
-    const off = new Ppo([env], learner, sizes, { episodes: 2 }, 7);
-    const on = new Ppo([env], learner, sizes, { episodes: 2, diag: true }, 7);
+    const off = new Ppo([env], learner, sizes, { episodes: 2 }, 7, null, null);
+    const on = new Ppo([env], learner, sizes, { episodes: 2, diag: true }, 7, null, null);
     off.step();
     on.step();
     expect(off.lastDiag).toBeNull();
@@ -287,7 +287,7 @@ describe("poison penalty", () => {
     const env = { ...BLANK_ENV, id: "t-poison", size: [200, 200] as [number, number], food: 0, poison: 40, seconds: 10, poisonDamage: 10 }; // the random learner bites poison here
     const learner = randomLearner(env, 1);
     const sizes = layerSizes(layoutConfig(env.world), learner.plan);
-    const ppo = new Ppo([env], learner, sizes, {}, 3);
+    const ppo = new Ppo([env], learner, sizes, {}, 3, null, null);
     ppo.setEnvs([env]);
     const task = (ppo as unknown as { tasks(): Parameters<typeof playRollout>[2][] }).tasks()[0]!;
     const plain = playRollout(env, learner.plan, { ...task, poisonPenalty: 0 }, null, {});
@@ -307,7 +307,7 @@ describe("env reward.poison in PPO", () => {
     const env = { ...base, reward: { poison: 2 } };
     const learner = randomLearner(env, 1);
     const sizes = layerSizes(layoutConfig(env.world), learner.plan);
-    const ppo = new Ppo([env], learner, sizes, {}, 3);
+    const ppo = new Ppo([env], learner, sizes, {}, 3, null, null);
     ppo.setEnvs([env]);
     const task = (ppo as unknown as { tasks(): Parameters<typeof playRollout>[2][] }).tasks()[0]!;
     const plainEnv = playRollout(base, learner.plan, task, null, {});
@@ -328,7 +328,7 @@ describe("poison penalty with env reward.poison", () => {
     const env = { ...BLANK_ENV, id: "t-poison", size: [200, 200] as [number, number], food: 0, poison: 40, seconds: 10, poisonDamage: 10, reward: { poison: 2 } };
     const learner = randomLearner(env, 1);
     const sizes = layerSizes(layoutConfig(env.world), learner.plan);
-    const ppo = new Ppo([env], learner, sizes, {}, 3);
+    const ppo = new Ppo([env], learner, sizes, {}, 3, null, null);
     ppo.setEnvs([env]);
     const task = (ppo as unknown as { tasks(): Parameters<typeof playRollout>[2][] }).tasks()[0]!;
     const total = (pen: number): number => stepRewards(env, learner.plan, task, pen).reduce((s, v) => s + v, 0);

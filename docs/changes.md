@@ -6,6 +6,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- RL tools: `rlGrad` now loads the rival library and passes it to training and held-out scoring (it ran Escape, Hunt: evaders and Evade against random rivals before); `library` is a required argument of `Ppo`, `BackpropTrainer` and `scoreLearner` (null for none). Shared `cliArgs.ts` rejects NaN and out-of-range numeric flags, an explicit `--pool` or `--library` that does not exist, and an `--env` that matches nothing (rlTrain, rlGrad, rlProof, rlTransfer, rlPanelTrain, ecoBench, rlBench); defaults are looked up in the package's `public/` and a missing one prints a note. `--out`, `--diag`, `--trace` and `--state` folders are created at the start. `rlTrain --save` locks, reads and rewrites the library atomically, and `buildPool` writes the pool atomically. The library gained trained `hunt-grazers` and `evade` entries, so Arena Evade and Hunt: evaders now play trained rivals instead of random ones (their scores shift).
+
 ## 0.4.3 (2026-11-06)
 
 - Fixes: a Trials evaluation worker that throws now fails the run visibly instead of hanging it, the Arena brain key sits inside the canvas at any zoom, and the RL transfer intervals are right for few seeds (exact t quantiles up to 30 degrees of freedom; the old approximation gave 9.7 instead of 12.7 at one). Stale docs and comments corrected, small tooling checks added. Engine results unchanged.

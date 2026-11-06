@@ -3,14 +3,14 @@
 // Arena defaults: ES population 100 (50 pairs), sigma 0.08, lr 0.02, decay 0.005, 1 episode per step; backprop lr 0.003, 16 episodes per update.
 // Every step plays all envs of the mix, as the Arena does. Writes DIR/<design id>.json ({plan, genome}); the same fixed seeds for every run.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { parsePool } from "./sim/seedPool.ts";
+import { fail, loadLibraryFile, loadPoolFile, positiveInt } from "./cliArgs.ts";
 import { DESIGN_PANEL, designLearner } from "./sim/rl/designPanel.ts";
 import { envById } from "./sim/rl/envs.ts";
 import type { EnvSpec } from "./sim/rl/env.ts";
-import { parseLibrary, serialiseLearner } from "./sim/rl/library.ts";
+import { serialiseLearner } from "./sim/rl/library.ts";
 import { BackpropTrainer } from "./sim/rl/ppo.ts";
 import { Trainer, heldSeeds } from "./sim/rl/trainer.ts";
 import type { RlTrainer } from "./sim/rl/trainer.ts";
@@ -25,23 +25,18 @@ const { values } = parseArgs({
     iters: { type: "string", default: "300" },
     design: { type: "string" },
     threads: { type: "string", default: "2" },
-    pool: { type: "string", default: "public/pool.json" },
-    library: { type: "string", default: "public/rl/library.json" },
+    pool: { type: "string" },
+    library: { type: "string" },
   },
 });
-const fail = (msg: string): never => {
-  console.error(`error: ${msg}`);
-  process.exit(1);
-};
 if (values.method !== "es" && values.method !== "backprop") fail("--method must be es or backprop");
 if (!values.out) fail("--out DIR is required");
-const iters = Number(values.iters);
-if (!Number.isInteger(iters) || iters < 1) fail("--iters must be a positive integer");
+const iters = positiveInt("iters", values.iters);
 const threads = parseThreads(values.threads);
 if (values.design && !DESIGN_PANEL.some((d) => d.id === values.design)) fail(`unknown --design ${values.design}, one of ${DESIGN_PANEL.map((d) => d.id).join(", ")}`);
 const envs = MIX.map((id) => envById(id) ?? fail(`env ${id}`)) as EnvSpec[];
-const pool = existsSync(values.pool!) ? parsePool(JSON.parse(readFileSync(values.pool!, "utf8"))).entries : null;
-const library = parseLibrary(existsSync(values.library!) ? JSON.parse(readFileSync(values.library!, "utf8")) : null);
+const pool = loadPoolFile(values.pool);
+const library = loadLibraryFile(values.library);
 const dir = resolve(values.out!);
 mkdirSync(dir, { recursive: true });
 
