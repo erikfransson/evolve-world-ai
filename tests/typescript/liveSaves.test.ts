@@ -461,6 +461,24 @@ describe("saves", () => {
     }
   });
 
+  // Red without the prune first: a directory over the cap from old, deletable saves refused every save, and nothing else pruned it.
+  it("prunes old saves first when the state directory is over the disk cap", async () => {
+    const dir = tmp();
+    const store = new StateStore(dir);
+    const caps = [LIMITS.maxStateDirBytes, LIMITS.maxStateBytes];
+    LIMITS.maxStateDirBytes = 1000;
+    LIMITS.maxStateBytes = 500;
+    try {
+      for (let d = 1; d <= 4; d++) writeFileSync(join(dir, saveName(at(d))), Buffer.alloc(400));
+      expect(store.dirBytes()).toBeGreaterThan(1000);
+      const name = await store.write("{}", { population: 1, tick: 1 }, at(0));
+      expect(existsSync(join(dir, name))).toBe(true);
+      expect(existsSync(join(dir, saveName(at(4))))).toBe(false);
+    } finally {
+      [LIMITS.maxStateDirBytes, LIMITS.maxStateBytes] = caps;
+    }
+  });
+
   it("saves the same with synchronous and asynchronous gzip", async () => {
     const store = new StateStore(tmp());
     const w = world(5);

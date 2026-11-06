@@ -6,7 +6,7 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
-- Live fixes: a tick that waited for the helpers while a restore replaced the world no longer steps the discarded world (it is skipped); the 2 GB state directory cap now counts the saves inside before-reset folders; a founder refused part-way through a fresh seed with a carry no longer stops the start (the world is rebuilt fresh and seeded without the carry); liveBench with `--load` counts per-minute rates and mean population from the loaded tick.
+- Live fixes: a tick that waited for the helpers while a restore replaced the world no longer steps the discarded world (it is skipped); the 2 GB state directory cap now counts the saves inside before-reset folders, and a save over that cap prunes to the state budget first instead of being refused for good; a founder refused part-way through a fresh seed with a carry no longer stops the start (the world is rebuilt fresh and seeded without the carry; an extinct reseed keeps its partly seeded world as before); liveBench with `--load` counts per-minute rates, profile windows and mean population from the loaded tick.
 
 ## 0.4.1 (2026-11-05)
 

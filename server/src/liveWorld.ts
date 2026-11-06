@@ -524,8 +524,10 @@ export class LiveWorld {
   // before any repeats, and each fresh world draws its own subset when there are fewer copies than variants.
   // extra: one more founder with its own count (a reset's carried creature, carry.ts), its hue between the first two founders', seeded after
   // the founders and best effort. Returns the creatures seeded.
-  // random: the server's own draws (spots, hues, variant order). Throws when the world is not fresh, or when a founder does not go in (then the world is fresh and empty again).
-  seedFounders(founders: readonly SeedFounder[], random: () => number = Math.random, copies = SEED_COPIES, extra?: { founder: SeedFounder; copies: number }): number {
+  // random: the server's own draws (spots, hues, variant order). Throws when the world is not fresh or a founder does not go in.
+  // fresh: on a refused founder, rebuild the fresh world before throwing, so the caller can seed it again (openWorld's retry without the carry);
+  // off (reseed), the founders seeded so far stay.
+  seedFounders(founders: readonly SeedFounder[], random: () => number = Math.random, copies = SEED_COPIES, extra?: { founder: SeedFounder; copies: number }, fresh = false): number {
     const e = this.eco;
     if (e.tick !== 0 || e.population !== 0 || e.lineageTable.toState().late.length !== 0) throw new Error("only a fresh, empty world is seeded");
     if (founders.length < 1 || founders.length > MAX_SEED_FOUNDERS) throw new Error(`1 to ${MAX_SEED_FOUNDERS} founders are seeded`);
@@ -552,8 +554,10 @@ export class LiveWorld {
       const genome = variants[k]![(i % copies) % variants[k]!.length]!;
       const res = e.insertCreature({ genome, plan: f.plan, x: p.x, y: p.y, heading: p.heading, hue: (hue0 + (360 * k) / founders.length) % 360, name: STARTER_MARK + f.name, ...(f.birth ? { birth: f.birth } : {}) }); // the start energy of a pool founder; its own birth traits or the range middles
       if (!res.ok) {
-        this.eco = this.build(this.config); // a fresh world again (same config, same seed), so the caller can seed once more
-        this.attach();
+        if (fresh) {
+          this.eco = this.build(this.config); // the same config and seed: the same fresh world
+          this.attach();
+        }
         throw new Error(`founder ${f.name} could not be seeded: ${res.reason}`);
       }
     }

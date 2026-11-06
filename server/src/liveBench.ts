@@ -252,7 +252,7 @@ while (eco.tick < ticks && !eco.extinct) {
     frameMs += performance.now() - f0;
   }
   winPop += eco.population;
-  if (winTicks && eco.tick % winTicks === 0) {
+  if (winTicks && (eco.tick - tick0) % winTicks === 0) {
     const c = process.cpuUsage(winCpu);
     const k = 1000 / (winPop / winTicks); // ms per tick per 1000 creatures
     const ph = prof ? Object.fromEntries([...prof.ms].map(([n, v]) => [n, +(((v - (winSnap.get(n) ?? 0)) / winTicks) * k).toFixed(3)])) : {};
