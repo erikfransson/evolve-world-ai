@@ -1,5 +1,6 @@
 import { checkMapSettings } from "./terrain.ts";
 import type { SpeciesConfig } from "./species.ts";
+import { isObj } from "./guards.ts";
 
 // All tunable values of a run. Units: world units, seconds, energy points.
 
@@ -179,8 +180,6 @@ export function maxLifeTicks(config: EngineConfig): number {
 
 export type DeepPartial<T> = T extends readonly unknown[] ? T : T extends object ? { [K in keyof T]?: DeepPartial<T[K]> } : T;
 
-const isPlain = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
-
 const describe = (v: unknown): string => (Array.isArray(v) ? "array" : v === null ? "null" : typeof v);
 
 // Writes over into target, which has the shape of a SimConfig branch. Arrays and scalars are replaced.
@@ -190,8 +189,8 @@ function applyOverrides(target: Record<string, unknown>, over: Record<string, un
     if (!Object.hasOwn(target, key)) throw new Error(`unknown config key "${where}"`);
     if (value === undefined) continue;
     const current = target[key];
-    if (isPlain(current)) {
-      if (!isPlain(value)) throw new Error(`config "${where}" must be an object, got ${describe(value)}`);
+    if (isObj(current)) {
+      if (!isObj(value)) throw new Error(`config "${where}" must be an object, got ${describe(value)}`);
       applyOverrides(current, value, where);
     } else if (Array.isArray(current)) {
       if (!Array.isArray(value)) throw new Error(`config "${where}" must be an array, got ${describe(value)}`);
@@ -213,7 +212,7 @@ function applyOverrides(target: Record<string, unknown>, over: Record<string, un
 
 // Returns a copy of base with overrides applied. Throws on unknown keys or values of the wrong type.
 export function overrideConfig<T extends object>(base: T, overrides: DeepPartial<T>): T {
-  if (!isPlain(overrides)) throw new Error(`config overrides must be an object, got ${describe(overrides)}`);
+  if (!isObj(overrides)) throw new Error(`config overrides must be an object, got ${describe(overrides)}`);
   const config = structuredClone(base);
   applyOverrides(config as Record<string, unknown>, overrides, "");
   const world = (config as { world?: object }).world;

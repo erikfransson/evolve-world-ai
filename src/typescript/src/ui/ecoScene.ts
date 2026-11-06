@@ -7,7 +7,7 @@ import type { ImpactEffects } from "./ecoImpacts.ts";
 import { readyTerrainOf } from "../sim/terrain.ts";
 import type { Terrain } from "../sim/terrain.ts";
 import type { TerrainSettings } from "../sim/terrain.ts";
-import { BACKGROUND, FLOOR, FOOD, POISON, RAY_COLORS, WALL } from "./scene.ts";
+import { BACKGROUND, FLOOR, FOOD, POISON, WALL, strokeRay } from "./scene.ts";
 import { DotAtlas } from "./dotAtlas.ts";
 import { TerrainCache } from "./terrainCache.ts";
 import { drawTerrain } from "./terrainScene.ts";
@@ -333,12 +333,7 @@ export class EcoRenderer {
         const kind = s.rayKinds[i]!;
         const d = kind === HIT_NONE ? rayLength : rayLength * (1 - s.rayCloseness[i]!);
         const a = (s.rayHeading ?? s.heading) + s.rayOffsets[i]!;
-        ctx.strokeStyle = RAY_COLORS[kind]!;
-        ctx.globalAlpha = kind === HIT_NONE ? 0.6 : 0.9;
-        ctx.beginPath();
-        ctx.moveTo(s.x, s.y);
-        ctx.lineTo(s.x + Math.cos(a) * d, s.y + Math.sin(a) * d);
-        ctx.stroke();
+        strokeRay(ctx, s.x, s.y, a, d, kind, kind === HIT_NONE ? 0.6 : 0.9);
       }
       ctx.globalAlpha = 1;
     }

@@ -4,7 +4,7 @@ import type { EcoConfig } from "../sim/ecoConfig.ts";
 import { HIT_FOOD, HIT_POISON } from "../sim/types.ts";
 import { World } from "../sim/world.ts";
 import { readyTerrainOf } from "../sim/terrain.ts";
-import { BACKGROUND, FLOOR, FOOD, POISON, WALL } from "./scene.ts";
+import { BACKGROUND, FLOOR, FOOD, POISON, WALL, fillItemDiscs } from "./scene.ts";
 import { drawTerrain } from "./terrainScene.ts";
 
 const MARGIN = 12; // CSS px around the world
@@ -31,17 +31,8 @@ export function startItems(config: EcoConfig): World | null {
 function drawItems(ctx: CanvasRenderingContext2D, world: World, config: EcoConfig, x: number, y: number, scale: number, dpr: number): void {
   const r = Math.max(config.world.itemRadius * scale, 0.9 * dpr);
   for (const [kind, color] of [[HIT_FOOD, FOOD], [HIT_POISON, POISON]] as const) {
-    ctx.fillStyle = color;
     ctx.globalAlpha = 0.85;
-    ctx.beginPath();
-    for (let i = 0; i < world.count; i++) {
-      if (world.kinds[i] !== kind) continue;
-      const cx = x + world.xs[i]! * scale;
-      const cy = y + world.ys[i]! * scale;
-      ctx.moveTo(cx + r, cy);
-      ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    }
-    ctx.fill();
+    fillItemDiscs(ctx, world, kind, color, r, x, y, scale);
   }
   ctx.globalAlpha = 1;
 }
