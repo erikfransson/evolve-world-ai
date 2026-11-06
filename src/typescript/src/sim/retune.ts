@@ -65,11 +65,11 @@ export function checkRetune(patch: unknown, config: EcoConfig): { fields: [strin
   if (typeof patch !== "object" || patch === null || Array.isArray(patch)) return { reason: "retune needs an object like { eco: { foodRegrow: 0.04 } }" };
   const fields: [string, string, unknown][] = [];
   for (const [section, values] of Object.entries(patch)) {
-    const table = (LIVE_FIELDS as Record<string, Record<string, Kind>>)[section];
+    const table = Object.hasOwn(LIVE_FIELDS, section) ? (LIVE_FIELDS as Record<string, Record<string, Kind>>)[section] : undefined; // own keys only, not Object.prototype names
     if (!table) return { reason: `"${section}" cannot be changed live, only ${Object.keys(LIVE_FIELDS).join(", ")}` };
     if (typeof values !== "object" || values === null || Array.isArray(values)) return { reason: `"${section}" must be an object` };
     for (const [key, v] of Object.entries(values)) {
-      const kind = table[key];
+      const kind = Object.hasOwn(table, key) ? table[key] : undefined;
       if (!kind) return { reason: `${section}.${key} cannot be changed live` };
       if (bad(kind, v, LIVE_MAX[`${section}.${key}`])) return { reason: `${section}.${key} has an invalid value ${JSON.stringify(v)} (${kind}${LIVE_MAX[`${section}.${key}`] === undefined ? "" : `, at most ${LIVE_MAX[`${section}.${key}`]}`})` };
       if ((kind === "range" || kind === "posrange") && config.species?.length) return { reason: `${section}.${key} is set per species in this world` };

@@ -59,14 +59,13 @@ describe("checkRetune", () => {
   });
 
   // Source finding: the tables are plain objects, so table[key] finds inherited names (Object.prototype), which count as a known kind and pass the number check.
-  // Fix by looking up with Object.hasOwn; then remove the .fails.
-  it.fails("refuses the field name constructor", () => {
+  it("refuses the field name constructor", () => {
     expect(refused({ eco: { constructor: 1 } })).toMatch(/eco\.constructor cannot be changed live/);
   });
-  it.fails("refuses the field name __proto__", () => {
+  it("refuses the field name __proto__", () => {
     expect(refused(JSON.parse('{"eco":{"__proto__":1}}'))).toMatch(/eco\.__proto__ cannot be changed live/);
   });
-  it.fails("refuses an inherited section name such as toString", () => {
+  it("refuses an inherited section name such as toString", () => {
     expect(refused({ toString: {} })).toMatch(/cannot be changed live/);
   });
 });
