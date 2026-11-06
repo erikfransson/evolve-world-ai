@@ -339,12 +339,32 @@ describe("saves", () => {
       expect(LIVE.add.perWindow).toBe(40);
       expect(log).toHaveBeenCalledWith(expect.stringMatching(/add.aliveShare is no longer a setting/));
       writeFileSync(join(dir, "admin-overrides.json"), JSON.stringify({ "add.aliveShare": 0, "add.aliveFloor": 0 })); // adding was off
-      expect(loadOverrides(dir, new LiveWorld(smallConfig(), null))).toEqual({ "add.aliveMax": 0 });
-      expect(LIVE.add.aliveMax).toBe(0);
+      expect(loadOverrides(dir, new LiveWorld(smallConfig(), null))).toEqual({ "add.perWindow": 0 });
+      expect(LIVE.add.perWindow).toBe(0);
     } finally {
       log.mockRestore();
       LIVE.add.perWindow = before;
-      LIVE.add.aliveMax = 50;
+    }
+  });
+
+  it("an overrides file up to 0.4.1 with add.aliveMax is skipped with a log line, the rest applied; an alive cap of 0 keeps adding off", () => {
+    const dir = tmp();
+    writeFileSync(join(dir, "admin-overrides.json"), JSON.stringify({ "add.aliveMax": 20, "add.perWindow": 40 }));
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const before = LIVE.add.perWindow;
+    try {
+      expect(loadOverrides(dir, new LiveWorld(smallConfig(), null))).toEqual({ "add.perWindow": 40 });
+      expect(LIVE.add.perWindow).toBe(40);
+      expect(log).toHaveBeenCalledWith(expect.stringMatching(/add.aliveMax is no longer a setting/));
+      expect(err).not.toHaveBeenCalled(); // a known old key, not an unknown one
+      writeFileSync(join(dir, "admin-overrides.json"), JSON.stringify({ "add.aliveMax": 0, "add.perWindow": 40 })); // adding was off
+      expect(loadOverrides(dir, new LiveWorld(smallConfig(), null))).toEqual({ "add.perWindow": 0 });
+      expect(LIVE.add.perWindow).toBe(0);
+    } finally {
+      log.mockRestore();
+      err.mockRestore();
+      LIVE.add.perWindow = before;
     }
   });
 
@@ -379,18 +399,19 @@ describe("saves", () => {
 
   it("a rollback past a setting keeps the standing ones: an unknown key is skipped with a log line, a valid key still applies", () => {
     const dir = tmp();
-    const file = { "eco.someFutureSetting": 3, "add.aliveMax": 20, "eco.hueDrift": 10, "add.perWindow": 99999 };
+    const perVisitor = LIVE.add.perVisitor;
+    const file = { "eco.someFutureSetting": 3, "add.perVisitor": 20, "eco.hueDrift": 10, "add.perWindow": 99999 };
     writeFileSync(join(dir, "admin-overrides.json"), JSON.stringify(file));
     const err = vi.spyOn(console, "error").mockImplementation(() => {});
     const w = new LiveWorld(smallConfig(), null);
     try {
-      expect(loadOverrides(dir, w)).toEqual({ "add.aliveMax": 20, "eco.hueDrift": 10 });
-      expect([LIVE.add.aliveMax, w.eco.config.eco.hueDrift]).toEqual([20, 10]);
+      expect(loadOverrides(dir, w)).toEqual({ "add.perVisitor": 20, "eco.hueDrift": 10 });
+      expect([LIVE.add.perVisitor, w.eco.config.eco.hueDrift]).toEqual([20, 10]);
       expect(err).toHaveBeenCalledWith(expect.stringMatching(/eco.someFutureSetting is not a setting of this version, skipped/));
       expect(err).toHaveBeenCalledWith(expect.stringMatching(/add.perWindow skipped: add.perWindow must be a whole number from 0 to 1000/)); // out of range: refused on its own
     } finally {
       err.mockRestore();
-      LIVE.add.aliveMax = 50;
+      LIVE.add.perVisitor = perVisitor;
     }
     expect(JSON.parse(readFileSync(join(dir, "admin-overrides.ignored.json"), "utf8"))).toEqual(file);
   });

@@ -296,15 +296,7 @@ describe("seeding a fresh world", () => {
       expect((e.world as unknown as { terrain: { touchesRock(x: number, y: number, r: number): boolean } }).terrain.touchesRock(m.creature.state.x, m.creature.state.y, live.config.creature.radius)).toBe(false);
     }
     expect([...names]).toEqual(founders.map((f) => [f.name, SEED_COPIES]));
-    expect(live.aliveAdded()).toBe(0);
-    // After a save and restore the seeds still are no adds; a visitor's add still is one.
-    live.step();
-    const r = live.addCreatures({ plan: founders[0]!.plan, genome: founders[0]!.genome, birth: { energy: 150, cost: 70, cooldown: 10 }, name: "Kiwi", hue: 10, copies: 2 }, seq(9));
-    expect("ids" in r).toBe(true);
-    expect(live.aliveAdded()).toBe(2);
-    const b = freshSmall();
-    b.restoreState(JSON.parse(JSON.stringify(live.saveState())));
-    expect(b.aliveAdded()).toBe(2); // without the seed rule in attach this is 2 + all the seeds
+    for (const m of e.members) expect(wireName(e.lineageName(m.founderId)).starter).toBe(true); // starters, not visitor adds
   });
 
   it("labels the seeds as starters, not added, in the stats, the details and the lineage list, also after a save and restore", () => {

@@ -8,9 +8,9 @@ const ADD_STRIKES = 3; // adds past the rate a connection may send (one more eac
 // "per 5 minutes", "per 90 s": the window as a visitor reads it.
 const per = (windowS: number): string => (windowS % 60 === 0 ? `per ${windowS / 60 === 1 ? "minute" : `${windowS / 60} minutes`}` : `per ${Math.round(windowS)} s`);
 
-// Adding is off while the admin set no room for it: no creatures per window, or no visitor creatures alive (aliveMax 0).
+// Adding is off while the admin set no room for it (no creatures per window).
 // The hello and rules then carry no rules.
-export const addingOn = (): boolean => LIVE.add.perWindow > 0 && LIVE.add.aliveMax > 0;
+export const addingOn = (): boolean => LIVE.add.perWindow > 0;
 
 // A connection's add rate: a burst, refilled at the admin's socket rate (read live), and the strikes past it.
 export interface AddPace {
@@ -53,9 +53,9 @@ export class AddPolicy {
   }
 }
 
-// The caps on visitor adds (LIVE.add, admin-tunable): creatures per window for everyone together and per visitor, the visitor-added
-// creatures alive at once, and a world that cannot keep up. Only adds that went in count. The clock is monotonic (a wall clock step back
-// would stretch the window) and injectable for tests.
+// The caps on visitor adds (LIVE.add, admin-tunable): creatures per window for everyone together and per visitor, and a world that
+// cannot keep up; added creatures count against the population cap (LiveWorld.addCreatures). Only adds that went in count. The clock
+// is monotonic (a wall clock step back would stretch the window) and injectable for tests.
 export class AddGate {
   private global: { at: number; n: number }[] = []; // successful adds in the window, oldest first
   private visitors = new Map<string, { at: number; n: number }[]>();
@@ -84,7 +84,7 @@ export class AddGate {
   }
 
   // null when an add of `copies` may go in now, else why not. visitor: the address key, or null when unknown.
-  check(visitor: string | null, copies: number, world: { aliveAdded: number; population: number; speed: number; paused: boolean }): Refused | null {
+  check(visitor: string | null, copies: number, world: { speed: number; paused: boolean }): Refused | null {
     const a = LIVE.add;
     const windowMs = a.windowS * 1000;
     const t = this.now();
@@ -92,10 +92,6 @@ export class AddGate {
     if (copies > a.maxCopies) return { t: "refused", reason: `at most ${a.maxCopies} copies` };
     if (world.paused) return { t: "refused", reason: "the world is paused, try again later", retryS: 60 };
     if (world.speed < a.minSpeed) return { t: "refused", reason: "the world is busy, try again in 30 s", retryS: 30 };
-    if (world.aliveAdded + copies > a.aliveMax) {
-      const room = a.aliveMax - world.aliveAdded;
-      return room > 0 ? { t: "refused", reason: `only ${room} more visitor ${room === 1 ? "creature fits" : "creatures fit"} right now, ask for ${room === 1 ? "1 copy" : `${room} copies or fewer`}` } : { t: "refused", reason: `${a.aliveMax} visitor creatures are alive already; try again when some have died`, retryS: 120 };
-    }
     const g = this.wait(this.global, a.perWindow, copies, windowMs);
     if (g) return Number.isFinite(g) ? { t: "refused", reason: `the world is busy with new creatures, try again in ${g} s`, retryS: g } : { t: "refused", reason: a.perWindow > 0 ? `at most ${a.perWindow} creatures go in ${per(a.windowS)}, ask for fewer copies` : "adding is off right now" };
     if (visitor !== null) {

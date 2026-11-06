@@ -147,8 +147,7 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
     v.adding = true;
     void live
       .whenIdle(() => {
-        const e = live.eco;
-        const no = policy.gate.check(v.visitor, req.copies, { aliveAdded: live.aliveAdded(), population: e.population, speed: live.speedForAdds(), paused: live.paused });
+        const no = policy.gate.check(v.visitor, req.copies, { speed: live.speedForAdds(), paused: live.paused });
         if (no) return no;
         const r = live.addCreatures(req);
         if ("reason" in r) return { t: "refused", reason: r.reason, ...(r.now === false ? {} : { retryS: 10 }) } satisfies Refused;
