@@ -52,7 +52,7 @@ describe("brain weights of the live world", () => {
     expect(add(live, MAX_COPIES)).toHaveProperty("ids");
     const cap = live.eco.config.eco.maxPopulation;
     live.eco.retune({ eco: { maxPopulation: live.eco.population + MAX_COPIES - 1, birthReserve: 0 } });
-    expect(add(live, MAX_COPIES, "Heavier")).toMatchObject({ reason: expect.stringMatching(/full/) });
+    expect(add(live, MAX_COPIES, "Heavier")).toMatchObject({ reason: expect.stringMatching(/only 9 more creatures fit/) });
     expect(live.eco.population).toBeLessThan(cap);
     expect(add(live, MAX_COPIES - 1, "Heaviest")).toHaveProperty("ids");
     expect(live.eco.population).toBe(live.eco.config.eco.maxPopulation);
