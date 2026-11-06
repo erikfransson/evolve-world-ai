@@ -6,6 +6,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- Retune refuses inherited names such as `constructor`, `__proto__` and `toString` as sections or fields (own-key lookup in checkRetune); the three expected-to-fail tests now pass.
+
 - Tests from the 60-agent hunt: the WASM parity tests now fail when a kernel is missing instead of comparing JS with JS, the kernel detection creates all six modules, the sense parity allows no kind or species mismatch (bounds set just above the measured 1.8e-5), a 20000-creature crowd-grid parity case; drawing tests flag any non-finite coordinate or property write; wall-clock asserts and unbounded loops in the worker tests are gone; new direct tests for contacts, item economy, insert and retune checks, genome validation, the fill kernel, block chunks and the Live protocol helpers (the retune prototype-key cases are marked expected-to-fail until that fix lands).
 
 - CLI hygiene from the 60-agent hunt: every CLI prints the usage line and the offending flag on an unknown option instead of a stack trace (strictArgs), usage comments list every flag (negative values as `--logstd=-0.5`), rlBenchPpo and rlBenchIter name the valid `--only` ids, ecoBench `--set` refuses `__proto__`, `constructor` and `prototype` path segments, a bare `random` seed means 1 in every tool (rlTransfer gave NaN), the stale-lock takeover in withFileLock moves the stale file aside so only one waiter wins, and rlGrad stores a hash of the rival library in its `--state` file and warns when a resume meets a different one.
