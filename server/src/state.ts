@@ -1,4 +1,4 @@
-import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readSync, readdirSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readSync, readdirSync, renameSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { gzip, gzipSync } from "node:zlib";
 import { promisify } from "node:util";
@@ -90,13 +90,15 @@ export function pruneLine(p: { gone: string[]; over: boolean; error?: string }):
   return parts.length ? `state budget ${LIMITS.maxStateBytes / 1e6} MB: ${parts.join("; ")}` : "";
 }
 
-// Bytes of the regular files under dir, not following symlinks.
+// Bytes of the regular files under dir, not following symlinks. An entry removed meanwhile counts nothing.
 function treeBytes(dir: string): number {
   let total = 0;
   for (const n of readdirSync(dir)) {
-    const st = lstatSync(join(dir, n));
-    if (st.isFile()) total += st.size;
-    else if (st.isDirectory()) total += treeBytes(join(dir, n));
+    try {
+      const st = lstatSync(join(dir, n));
+      if (st.isFile()) total += st.size;
+      else if (st.isDirectory()) total += treeBytes(join(dir, n));
+    } catch { /* removed meanwhile */ }
   }
   return total;
 }
@@ -133,15 +135,9 @@ export class StateStore {
     for (const n of readdirSync(dir)) if (TMP.test(n)) unlinkSync(join(dir, n)); // left by a crash mid-write
   }
 
-  // Total size of the files in the directory, for the disk cap.
+  // Total size of the files in the directory and its before-reset folders, for the disk cap.
   dirBytes(): number {
-    let total = 0;
-    for (const n of readdirSync(this.dir)) {
-      try {
-        total += statSync(join(this.dir, n)).size;
-      } catch { /* removed meanwhile */ }
-    }
-    return total;
+    return treeBytes(this.dir);
   }
 
   // Writes the gzipped JSON through a .tmp file and a rename, then rotates. Throws, writing nothing, when the directory is over the cap.
@@ -153,7 +149,17 @@ export class StateStore {
 
   // write for a save gzipped elsewhere (saves.ts packs it on a worker).
   async writeGzipped(data: Uint8Array, meta: { population: number; tick: number; world?: string }, at = new Date(), verify?: (gz: Uint8Array) => Promise<unknown>): Promise<string> {
-    const used = this.dirBytes();
+    let used = this.dirBytes();
+    if (used > LIMITS.maxStateDirBytes) {
+      // Over the cap from deletable saves or folders (nothing prunes at startup): prune first, or no save is written again.
+      try {
+        const line = pruneLine(this.prune(at.getTime()));
+        if (line) console.log(line);
+      } catch (e) {
+        console.error(`pruning to the state budget failed: ${e instanceof Error ? e.message : String(e)}`);
+      }
+      used = this.dirBytes();
+    }
     if (used > LIMITS.maxStateDirBytes) throw new Error(`state directory holds ${Math.round(used / 1e6)} MB, over the ${LIMITS.maxStateDirBytes / 1e6} MB cap: not saving`);
     if (verify) await verify(data);
     const name = saveName(at);
@@ -258,8 +264,8 @@ export class StateStore {
     return readdirSync(this.dir).filter((n) => isSaveName(n) && !listed.has(n)).length;
   }
 
-  // Moves every save and sidecar into the new subdirectory `sub` (kept: listing, rotation and the disk cap read only this directory's own
-  // files), oldest first, so a failure part-way leaves the newest saves in place for a restart. Then the extra state files named in
+  // Moves every save and sidecar into the new subdirectory `sub` (kept: listing and rotation read only this directory's own files; the
+  // disk cap and the state budget count the folder too), oldest first, so a failure part-way leaves the newest saves in place for a restart. Then the extra state files named in
   // `also` that exist. Returns how many saves moved. Throws when `sub` exists.
   moveAside(sub: string, also: readonly string[] = []): number {
     const to = join(this.dir, sub);

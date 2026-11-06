@@ -2,6 +2,7 @@
 // Prints CPU ms per steady tick, the phase profile, peak RSS and a fingerprint (equal runs give equal fingerprints).
 // Usage (in server/): node src/liveBench.ts [--seconds 60] [--copies 800] [--seed 1] [--founders ../src/typescript/public/live-founders.json]
 //   [--dt 0.0333] [--memcomp] [--only juggernaut,grazer] [--frames [--idle]] [--profile] [--profileEvery 300] [--every 10] [--threads 0] [--think 1] [--save 15]
+//   [--keep dir] [--load dir [--scatter]] [--reach]
 // --copies: copies of each founder seeded (3 founders x 800 = 2400 creatures, about 5.3 M brain weights; the campaign numbers were measured with 4 founders, 3200 creatures).
 // --only: seed these founder ids only (so --only juggernaut --copies 4900 fills the 5000 cap with small brains).
 // --frames: also encode the creature frame and item delta at the server's 5 Hz (FRAME_MS), as the public loop does for viewers.
@@ -174,11 +175,12 @@ const population: number[] = [eco.population];
 const ecoWindows: object[] = [];
 const minuteTicks = Math.max(1, Math.round(60 / dt));
 const sampleTicks = Math.max(1, Math.round(5 / dt)); // speed, turn and energy are sampled every 5 simulated seconds
-let wLast = { births: 0, deaths: 0, food: 0, poison: 0 };
+const tick0 = eco.tick; // 0, or the loaded save's tick: windows and means count from here
+let wLast = { births: eco.births, deaths: eco.deaths, food: eco.foodEaten, poison: eco.poisonEaten };
 let wSum = { speed: 0, turn: 0, energy: 0, n: 0, lifeS: 0, died: 0 };
 eco.onDeath = (m) => { wSum.lifeS += m.ageTicks * dt; wSum.died++; };
 function ecoWindow(): void {
-  const mins = (eco.tick - (ecoWindows.length * minuteTicks)) / minuteTicks;
+  const mins = (eco.tick - tick0 - ecoWindows.length * minuteTicks) / minuteTicks;
   const n = Math.max(1, wSum.n);
   ecoWindows.push({
     min: ecoWindows.length + 1, pop: eco.population, births: Math.round((eco.births - wLast.births) / mins), deaths: Math.round((eco.deaths - wLast.deaths) / mins),
@@ -250,7 +252,7 @@ while (eco.tick < ticks && !eco.extinct) {
     frameMs += performance.now() - f0;
   }
   winPop += eco.population;
-  if (winTicks && eco.tick % winTicks === 0) {
+  if (winTicks && (eco.tick - tick0) % winTicks === 0) {
     const c = process.cpuUsage(winCpu);
     const k = 1000 / (winPop / winTicks); // ms per tick per 1000 creatures
     const ph = prof ? Object.fromEntries([...prof.ms].map(([n, v]) => [n, +(((v - (winSnap.get(n) ?? 0)) / winTicks) * k).toFixed(3)])) : {};
@@ -260,7 +262,7 @@ while (eco.tick < ticks && !eco.extinct) {
     winPop = 0;
   }
   if (eco.tick % sampleTicks === 0) ecoSample();
-  if (eco.tick % minuteTicks === 0) ecoWindow();
+  if ((eco.tick - tick0) % minuteTicks === 0) ecoWindow();
   if (eco.tick % every === 0) population.push(eco.population);
   if (saves && !saving && eco.tick % saveEvery === 0) {
     const run: SaveRun = { tick: eco.tick, blockMs: 0, cpuMs: 0, maxBlockMs: 0, t0: performance.now(), done: null };
@@ -293,7 +295,7 @@ console.log(JSON.stringify({
   sysMsPerTick: +(cpu.system / 1000 / steadyTicks).toFixed(3),
   steadyMsPerTick: +((t1 - tWarm) / steadyTicks).toFixed(2),
   steadyPopulation: Math.round(steadyPop),
-  meanPopulation: Math.round(creatureTicks / Math.max(1, eco.tick)),
+  meanPopulation: Math.round(creatureTicks / Math.max(1, eco.tick - tick0)),
   speedAchieved: +((steadyTicks * dt * 1000) / (t1 - tWarm)).toFixed(2), // simulated seconds per wall second with no pacing (the set speed is LIVE.speed)
   ...(values.frames ? { frameMsPerTick: +(frameMs / steadyTicks).toFixed(3), frameKBPerSecond: Math.round(frameBytes / 1024 / (steadyTicks * dt)) } : {}),
   peakRssMB: Math.round(process.resourceUsage().maxRSS / 1024),

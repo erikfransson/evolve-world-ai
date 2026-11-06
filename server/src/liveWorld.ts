@@ -36,8 +36,6 @@ interface Capture {
   inputs: Float32Array;
 }
 
-// A save of another world (size or map) than the one this server runs, e.g. after the server moved to a new map.
-
 // The shared world: one Ecosystem stepped against the clock, on this thread or with helper threads that sense and think.
 // With helpers a tick awaits them, so everything else that reads or changes the world goes through whenIdle, between ticks.
 export class LiveWorld {
@@ -352,8 +350,12 @@ export class LiveWorld {
         } catch (e) {
           this.dropHelpers(e);
         }
+        if (eco !== this.eco) {
+          this.failedTicks = 0; // a restore during the wait replaced the world: this tick is skipped, the next steps the new one
+          return;
+        }
       }
-      if (this.helpers && eco === this.eco) {
+      if (this.helpers) {
         this.collectOps(); // changes made between ticks, before the pool empties the journal
         this.readAt = 0;
         this.inFlight = true;
@@ -513,7 +515,9 @@ export class LiveWorld {
   // extra: one more founder with its own count (a reset's carried creature, carry.ts), its hue between the first two founders', seeded after
   // the founders and best effort. Returns the creatures seeded.
   // random: the server's own draws (spots, hues, variant order). Throws when the world is not fresh or a founder does not go in.
-  seedFounders(founders: readonly SeedFounder[], random: () => number = Math.random, copies = SEED_COPIES, extra?: { founder: SeedFounder; copies: number }): number {
+  // fresh: on a refused founder, rebuild the fresh world before throwing, so the caller can seed it again (openWorld's retry without the carry);
+  // off (reseed), the founders seeded so far stay.
+  seedFounders(founders: readonly SeedFounder[], random: () => number = Math.random, copies = SEED_COPIES, extra?: { founder: SeedFounder; copies: number }, fresh = false): number {
     const e = this.eco;
     if (e.tick !== 0 || e.population !== 0 || e.lineageTable.toState().late.length !== 0) throw new Error("only a fresh, empty world is seeded");
     if (founders.length < 1 || founders.length > MAX_SEED_FOUNDERS) throw new Error(`1 to ${MAX_SEED_FOUNDERS} founders are seeded`);
@@ -539,7 +543,13 @@ export class LiveWorld {
       const p = spots[i]!;
       const genome = variants[k]![(i % copies) % variants[k]!.length]!;
       const res = e.insertCreature({ genome, plan: f.plan, x: p.x, y: p.y, heading: p.heading, hue: (hue0 + (360 * k) / founders.length) % 360, name: STARTER_MARK + f.name, ...(f.birth ? { birth: f.birth } : {}) }); // the start energy of a pool founder; its own birth traits or the range middles
-      if (!res.ok) throw new Error(`founder ${f.name} could not be seeded: ${res.reason}`);
+      if (!res.ok) {
+        if (fresh) {
+          this.eco = this.build(this.config); // the same config and seed: the same fresh world
+          this.attach();
+        }
+        throw new Error(`founder ${f.name} could not be seeded: ${res.reason}`);
+      }
     }
     // The extra founder last and best effort: one refused insert ends it, the founders are in (the caller sees the count).
     for (let i = own; i < n; i++) {
