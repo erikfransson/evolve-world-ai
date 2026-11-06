@@ -44,6 +44,7 @@ import { useRockFarm, warmRock } from "./ui/abyssRock.ts";
 import { rockFarm } from "./ui/rockFarm.ts";
 import { recastRays } from "./live/rayRecast.ts";
 import { paintMapLegendWhenSeen } from "./live/mapLegend.ts";
+import { followsLive } from "./live/detail.ts";
 import { mapSpec, mapVersion } from "./sim/maps/index.ts";
 import { BACKGROUND } from "./ui/palette.ts";
 import { prepareTerrain } from "./ui/terrainScene.ts";
@@ -269,6 +270,9 @@ function onHello(h: Hello): void {
   leaderPanel ??= new LeaderPanel(leaderCard, [], h.radius);
   leaderPanel.clear();
   clearSelection();
+  lastStats = null;
+  season = null;
+  myCopies = [];
   names = new Map();
   starters = new Set();
   familyOf = new Map();
@@ -643,9 +647,14 @@ function updateTimer(): void {
   }
 }
 
+let deadBrainDrawn: Selection | null = null;
 function drawBrain(now: number): void {
   const s = selection;
   if (!s?.brain || !s.last || !brainPanel.isExpanded() || now - lastBrainAt < BRAIN_INTERVAL_MS) return;
+  if (s.died) {
+    if (deadBrainDrawn === s) return; // the dead brain is drawn once
+    deadBrainDrawn = s;
+  }
   lastBrainAt = now;
   s.brain.brain.forward(s.last.inputs, s.brain.out);
   brainView.draw(s.brain.brain, !s.died, s.brain.layout);
@@ -681,7 +690,7 @@ const gate = new RevealGate();
 const IDLE_FRAME_MS = 1000 / 30 - 2; // with nothing followed or animating, draw at most 30 times a second (every frame while the world fades in)
 function frame(now: number): void {
   requestAnimationFrame(frame);
-  if (!selection && !camera.animating && now - revealAt > REVEAL_FADE_MS && now - lastDrawAt < IDLE_FRAME_MS) return;
+  if (!followsLive(selection) && !camera.animating && now - revealAt > REVEAL_FADE_MS && now - lastDrawAt < IDLE_FRAME_MS) return;
   lastDrawAt = now;
   const dpr = syncCanvas();
   const ctx = canvas.getContext("2d")!;
