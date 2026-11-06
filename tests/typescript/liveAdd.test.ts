@@ -183,14 +183,14 @@ describe("add message: encode and parse", () => {
 });
 
 describe("add caps (adds.ts)", () => {
-  const fresh = { aliveAdded: 0, population: 1000, speed: 4, paused: false };
+  const fresh = { speed: 4, paused: false };
   const clock = (): { now: () => number; t: number } => {
     const c = { t: 1_000_000, now: () => c.t };
     return c;
   };
 
   it("global window: 20 creatures per 5 minutes for everyone, then a wait until the oldest leaves the window", () => {
-    LIVE.add.perWindow = 20; // the mechanism, at a window smaller than the default 50
+    LIVE.add.perWindow = 20; // the mechanism, at a window smaller than the default 150
     const c = clock();
     const gate = new AddGate(c.now);
     for (let i = 0; i < 6; i++) {
@@ -221,14 +221,10 @@ describe("add caps (adds.ts)", () => {
     }
   });
 
-  it("visitor creatures alive are capped at add.aliveMax (50), whatever the population; an add past the room is told what fits", () => {
-    const gate = new AddGate(clock().now);
-    expect(LIVE.add.aliveMax).toBe(50);
-    for (const population of [0, 40, 850, 3000]) expect(gate.check(null, 10, { ...fresh, population, aliveAdded: 40 })).toBeNull();
-    expect(gate.check(null, 10, { ...fresh, population: 3000, aliveAdded: 45 })?.reason).toBe("only 5 more visitor creatures fit right now, ask for 5 copies or fewer");
-    expect(gate.check(null, 2, { ...fresh, aliveAdded: 49 })?.reason).toBe("only 1 more visitor creature fits right now, ask for 1 copy");
-    expect(gate.check(null, 1, { ...fresh, aliveAdded: 50 })).toMatchObject({ reason: "50 visitor creatures are alive already; try again when some have died", retryS: 120 });
-    LIVE.add.aliveMax = 0;
+  it("adding is on exactly while add.perWindow is above 0; there is no visitor-alive cap (adds count against eco.maxPopulation)", () => {
+    expect(addingOn()).toBe(true);
+    expect(tunableLimits()).not.toHaveProperty("add.aliveMax");
+    LIVE.add.perWindow = 0;
     expect(addingOn()).toBe(false);
   });
 
@@ -280,8 +276,22 @@ describe("add caps (adds.ts)", () => {
     expect(gate.check(null, 1, fresh)?.reason).toBe("adding is off right now");
   });
 
+  it("the visitor map stays bounded at 4 x perWindow entries however many visitors add over time", () => {
+    LIVE.add.perWindow = 5;
+    const c = clock();
+    const gate = new AddGate(c.now);
+    const size = (): number => (gate as unknown as { visitors: Map<string, unknown> }).visitors.size;
+    let most = 0;
+    for (let i = 0; i < 500; i++) {
+      gate.record(`v${i}`, 1);
+      most = Math.max(most, size());
+      c.t += 61_000; // a new visitor every minute, so old entries leave the 5 minute window
+    }
+    expect(most).toBeLessThanOrEqual(4 * 5 + 1);
+  });
+
   it("per visitor: 3 creatures per window per address, other addresses unaffected, unknown address not limited per visitor", () => {
-    LIVE.add.perVisitor = 3; // the mechanism, at a cap smaller than the default 10
+    LIVE.add.perVisitor = 3; // the mechanism, at a cap smaller than the default 90
     const c = clock();
     const gate = new AddGate(c.now);
     gate.record("1.2.3.4", 3);
@@ -324,7 +334,7 @@ describe("add caps (adds.ts)", () => {
     expect(f.eco.population).toBeGreaterThan(0);
     expect(applyTunables(v.eco, { reseed: 0 })).toBeNull();
     expect(applyTunables(v.eco, { reseed: 0.5 })).toMatch(/whole/);
-    expect(applyTunables(v.eco, { "add.aliveMax": 5000 })).toMatch(/add.aliveMax/);
+    expect(applyTunables(v.eco, { "add.aliveMax": 20 })).toMatch(/not a live setting/); // dropped after 0.4.1
     expect(applyTunables(v.eco, { "add.aliveFloor": 20 })).toMatch(/not a live setting/); // dropped in 0.2.1
   });
 
@@ -350,8 +360,8 @@ describe("add caps (adds.ts)", () => {
 
   it("the caps are admin settings with limits", () => {
     const eco = new LiveWorld(smallConfig(), null).eco;
-    expect(applyTunables(eco, { "add.perWindow": 5, "add.aliveMax": 20, "add.burst": 2 })).toBeNull();
-    expect([LIVE.add.perWindow, LIVE.add.aliveMax, LIVE.add.burst]).toEqual([5, 20, 2]);
+    expect(applyTunables(eco, { "add.perWindow": 5, "add.perVisitor": 20, "add.burst": 2 })).toBeNull();
+    expect([LIVE.add.perWindow, LIVE.add.perVisitor, LIVE.add.burst]).toEqual([5, 20, 2]);
     expect(applyTunables(eco, { "add.burst": 0 })).toMatch(/add.burst/);
     expect(readTunables(eco)["add.perWindow"]).toBe(5);
     expect(applyTunables(eco, { "add.maxCopies": 11 })).toMatch(/add.maxCopies/);
@@ -397,7 +407,7 @@ describe("adding to the world (LiveWorld)", () => {
     expect(JSON.stringify(a.saveState())).toBe(JSON.stringify(b.saveState()));
   });
 
-  it("names the lineages, counts the added alive, and a save keeps both", () => {
+  it("names the lineages, and a save keeps them", () => {
     const config = smallConfig();
     config.eco.initialPopulation = 3; // so the three named lineages are among the top 8 the stats list
     const a = new LiveWorld(config, null);
@@ -410,13 +420,11 @@ describe("adding to the world (LiveWorld)", () => {
       expect([m.founderId, a.eco.lineageName(id), Math.round(m.hue)]).toEqual([id, "Kiwi", 200]);
       expect(m.birth).toEqual({ energy: 150, cost: 70, cooldown: 10 });
     }
-    expect(a.aliveAdded()).toBe(3);
     const kiwi = a.stats(1).lineages!.filter((l) => l.name === "Kiwi"); // the three copies' families as one row
     expect(kiwi).toHaveLength(1);
     expect([kiwi[0]!.count, kiwi[0]!.founders]).toEqual([3, r.ids.slice(1)]);
     const b = new LiveWorld(config, null);
     b.restoreState(JSON.parse(JSON.stringify(a.saveState())));
-    expect(b.aliveAdded()).toBe(3);
     expect(b.eco.lineageName(r.ids[0]!)).toBe("Kiwi");
   });
 
@@ -462,7 +470,7 @@ describe("adding to the world (LiveWorld)", () => {
     }
   });
 
-  it("an added family that died out leaves no row, no name and no added count, before and after a save", () => {
+  it("an added family that died out leaves no row and no name, before and after a save", () => {
     LIVE.add.startEnergy = 10; // dies within seconds, and the birth hold keeps it childless
     const w = new LiveWorld(smallConfig(), null);
     const r = w.addCreatures(request({ copies: 1, name: "Brief" }), seq(5));
@@ -470,10 +478,10 @@ describe("adding to the world (LiveWorld)", () => {
     const id = r.ids[0]!;
     for (let t = 0; t < 30 / w.eco.config.dt && w.eco.get(id); t++) w.step();
     expect(w.eco.get(id)).toBeUndefined();
-    expect([w.aliveAdded(), w.eco.lineageName(id), w.eco.lineageTable.toState().late.length]).toEqual([0, "", 0]);
+    expect([w.eco.lineageName(id), w.eco.lineageTable.toState().late.length]).toEqual(["", 0]);
     const b = new LiveWorld(smallConfig(), null);
     b.restoreState(JSON.parse(JSON.stringify(w.saveState())));
-    expect([b.aliveAdded(), b.eco.lineageName(id), b.eco.lineageTable.toState().late.length]).toEqual([0, "", 0]);
+    expect([b.eco.lineageName(id), b.eco.lineageTable.toState().late.length]).toEqual(["", 0]);
   });
 
   it("refuses a name a living family or a starter carries (any case), and frees it when that family dies out", () => {
@@ -490,19 +498,20 @@ describe("adding to the world (LiveWorld)", () => {
     expect("ids" in w.addCreatures(request({ copies: 1, name: "Kiwi" }), seq(5))).toBe(true);
   });
 
-  it("a visitor adds three full adds of 10 back to back (30 a window), the shared 50 leaves 20 for others, and an 11th copy never goes in (#42)", () => {
+  it("a visitor adds nine full adds of 10 (90 a window), the shared 150 leaves 60 for others, and an 11th copy never goes in (#42)", () => {
+    expect([LIVE.add.perWindow, LIVE.add.perVisitor]).toEqual([150, 90]);
     const gate = new AddGate(() => 0);
-    const world = { aliveAdded: 0, population: 40, speed: 3, paused: false };
-    for (let k = 0; k < 3; k++) {
-      expect(gate.check("conn:1", 10, { ...world, aliveAdded: 10 * k })).toBeNull();
+    const world = { speed: 3, paused: false };
+    for (let k = 0; k < 9; k++) {
+      expect(gate.check("conn:1", 10, world)).toBeNull();
       gate.record("conn:1", 10);
     }
-    expect(gate.check("conn:1", 1, { ...world, aliveAdded: 30 })?.reason).toMatch(/a moment ago|per visitor/); // perVisitor 30 spent
-    expect(gate.check("conn:2", 10, { ...world, aliveAdded: 30 })).toBeNull(); // another visitor still gets in
-    gate.record("conn:2", 10);
-    expect(gate.check("conn:3", 10, { ...world, aliveAdded: 40 })).toBeNull(); // 40 + 10 = 50, the shared window and the alive cap
-    gate.record("conn:3", 10);
-    expect(gate.check("conn:4", 1, { ...world, aliveAdded: 0 })?.reason).toMatch(/busy with new creatures/); // the window, not the alive cap
+    expect(gate.check("conn:1", 1, world)?.reason).toMatch(/a moment ago|per visitor/); // perVisitor 90 spent
+    for (let k = 0; k < 6; k++) {
+      expect(gate.check(`conn:${k + 2}`, 10, world)).toBeNull(); // others still get in, up to 90 + 60 = 150
+      gate.record(`conn:${k + 2}`, 10);
+    }
+    expect(gate.check("conn:9", 1, world)?.reason).toMatch(/busy with new creatures/); // the shared window
     expect(new AddGate(() => 0).check(null, 11, world)?.reason).toMatch(/at most 10 copies/);
     const w = new LiveWorld(smallConfig(), null);
     const r = w.addCreatures(request({ copies: 10 }), seq(7));
@@ -514,8 +523,12 @@ describe("adding to the world (LiveWorld)", () => {
   it("refuses when the world is full, inserting nothing", () => {
     const w = new LiveWorld(smallConfig(), null);
     w.eco.config.eco.maxPopulation = w.eco.population + 2;
-    expect(w.addCreatures(request({ copies: 3 }))).toEqual({ reason: "the world is full, try again later" });
-    expect(w.aliveAdded()).toBe(0);
+    const before = w.eco.population;
+    expect(w.addCreatures(request({ copies: 3 }))).toEqual({ reason: "only 2 more creatures fit right now, ask for 2 copies or fewer", now: false });
+    expect(w.eco.population).toBe(before);
+    w.eco.config.eco.maxPopulation = before;
+    expect(w.addCreatures(request({ copies: 1 }))).toEqual({ reason: "the world is full, try again later" });
+    expect(w.eco.population).toBe(before);
   });
 });
 
@@ -526,7 +539,6 @@ afterEach(() => {
 });
 async function serve(port: number, change: Partial<typeof LIMITS> = {}, trust = false): Promise<LiveWorld> {
   LIVE.add.minSpeed = 0; // the test world does not run its clock
-  LIVE.add.aliveMax = 3000;
   const world = new LiveWorld(smallConfig(), null);
   for (let i = 0; i < 10; i++) world.step();
   const pub = startPublic("127.0.0.1", port, world, { ...LIMITS, ...change }, new AddGate(), trust);
@@ -647,7 +659,7 @@ describe("add on the public server", () => {
 
   it("trusted header missing: all such adds share one visitor cap", async () => {
     await serve(61410, {}, true);
-    LIVE.add.perVisitor = 3; // the mechanism, at a cap smaller than the default 10
+    LIVE.add.perVisitor = 3; // the mechanism, at a cap smaller than the default 90
     const a = client(61410);
     const b = client(61410);
     await Promise.all([a.hello, b.hello]);

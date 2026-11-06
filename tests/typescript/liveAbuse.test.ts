@@ -89,7 +89,6 @@ describe("admin blank-name", () => {
     const restored = new LiveWorld(smallConfig(), null);
     restored.restoreState(JSON.parse(JSON.stringify(world.saveState())));
     expect(wireName(restored.eco.lineageName(rude[0]!)).name).toBe(""); // a save keeps it blank
-    expect(restored.aliveAdded()).toBe(world.aliveAdded()); // and the families still count as visitor adds
     ws.send(JSON.stringify({ t: "rename", name: "Kind", to: "Gentle" }));
     ws.send(JSON.stringify({ t: "rename", name: "Kind", to: "no way" }));
     await vi.waitFor(() => expect(replies).toHaveLength(5));

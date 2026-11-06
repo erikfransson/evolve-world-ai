@@ -23,7 +23,6 @@ const OWN: Record<string, Limit & { whole?: boolean }> = {
   "add.perWindow": { min: 0, max: 1000, whole: true },
   "add.windowS": { min: 10, max: 86400 },
   "add.maxCopies": { min: 1, max: MAX_COPIES, whole: true },
-  "add.aliveMax": { min: 0, max: 100, whole: true },
   "add.burst": { min: 1, max: 10, whole: true },
   "add.perVisitor": { min: 0, max: 1000, whole: true },
   "add.socketEveryS": { min: 1, max: 3600 },
