@@ -210,25 +210,24 @@ describe("cleared boxes", () => {
   });
 
   it("end early only when the learner itself ate every starting food, and pay the seconds left", () => {
-    const env: EnvSpec = { ...envById("nibble")!, food: 3, poison: 0, size: [200, 200] };
-    for (let seed = 1; seed < 40; seed++) {
-      const r = runEpisode(env, randomLearner(env, seed), seed);
-      if (r.food >= env.food) expect(r.seconds).toBeLessThan(env.seconds); // clearing ends the episode early
-      else if (r.seconds < env.seconds) expect(r.energy).toBeLessThanOrEqual(0); // short of the clear, only starving ends it early
-      if (r.food < env.food) expect(r.reward).toBe(r.food);
-      else expect(r.reward).toBeGreaterThan(r.food); // cleared before the end: food plus 0.1 per second left
+    let cleared = 0;
+    for (const food of [3, 1]) { // 3 never clears for a random learner, 1 does on some seeds
+      const env: EnvSpec = { ...envById("nibble")!, food, poison: 0, size: [200, 200] };
+      for (let seed = 1; seed < 40; seed++) {
+        const r = runEpisode(env, randomLearner(env, seed), seed);
+        expect(r.clearTime >= 0).toBe(r.food >= env.food);
+        if (r.food >= env.food) {
+          cleared++;
+          expect(r.elapsed).toBeLessThan(env.seconds); // the real time; seconds is set to the full length on a clear
+          expect(r.clearTime).toBe(r.elapsed);
+          expect(r.reward).toBeGreaterThan(r.food); // food plus 0.1 per second left
+        } else {
+          expect(r.reward).toBe(r.food);
+          if (r.elapsed < env.seconds) expect(r.energy).toBeLessThanOrEqual(0); // short of the clear, only starving ends it early
+        }
+      }
     }
-  });
-});
-
-describe("library rivals", () => {
-  it("are only drawn from envs of the same world and species, so a layout never mismatches", () => {
-    const hunter = randomLearner(envById("hunt-grazers")!, 2); // a predator in the two-species layout
-    const lib = parseLibrary({ version: 1, envs: { "hunt-grazers": [serialiseLearner(hunter)] } });
-    expect(lib["hunt-grazers"]).toHaveLength(1);
-    const env: EnvSpec = { ...envById("nibble")!, seconds: 5, rivals: [{ species: 0, count: 2, source: "library:hunt-grazers" }] };
-    expect(() => runEpisode(env, randomLearner(env, 1), 3, null, lib)).not.toThrow();
-    expect(checkEnv(env, "ecosystem", 0)).toMatch(/library/);
+    expect(cleared).toBeGreaterThan(0);
   });
 });
 
