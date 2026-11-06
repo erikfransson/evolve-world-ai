@@ -36,7 +36,7 @@ export function checkEcoBounds(eco: EcoConfig["eco"]): void {
     num(v[0], 0, max, `${what}[0]`);
     num(v[1], 0, max, `${what}[1]`);
   };
-  num(eco.yearMinutes, 0, LIVE_MAX["eco.yearMinutes"]!, "eco.yearMinutes", true);
+  num(eco.yearMinutes, 0, LIVE_MAX["eco.yearMinutes"]!, "eco.yearMinutes", true); // also with seasons off: a live retune can turn them on, and 0 would then divide (winterness)
   num(eco.winterFood, 0, 1, "eco.winterFood");
   for (const k of ["foodRegrow", "poisonRegrow", "foodMaxDensity", "poisonMaxDensity"] as const) num(eco[k], 0, LIVE_MAX[`eco.${k}`]!, `eco.${k}`);
   pair(eco.birthEnergyRange, Infinity, "eco.birthEnergyRange"); // no upper bound: RL envs set 1e9 to switch births off (rl/env.ts BIRTHLESS)
