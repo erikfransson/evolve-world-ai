@@ -152,3 +152,91 @@ describe("add panel start modes", () => {
     expect(sameTrainKey(key, { ...key, mode: "file" })).toBe(false);
   });
 });
+
+describe("add panel review fixes", () => {
+  const setup = async () => {
+    const { parseFounders } = await import("../../src/typescript/src/live/founders.ts");
+    const { LiveWorld } = await import("../../server/src/liveWorld.ts");
+    const { smallConfig } = await import("./liveHelpers.ts");
+    const html = readFileSync(join(process.cwd(), "live/index.html"), "utf8");
+    document.body.innerHTML = html.slice(html.indexOf("<body>") + 6, html.indexOf("</body>"));
+    const sent: { plan: { raySpread: number }; genome: Float32Array }[] = [];
+    const panel = new AddPanel(document.getElementById("addPanel")!, { send: (r) => (sent.push(r as never), true), added() {}, minimised() {} });
+    panel.setRules(new LiveWorld(smallConfig(), null).addRules());
+    const founders = parseFounders(JSON.parse(readFileSync(join(process.cwd(), "public/live-founders.json"), "utf8")));
+    panel.setFounders(founders);
+    const go = (): Promise<void> => (panel as unknown as { go(): Promise<void> }).go();
+    const locked = (): boolean[] => [...document.querySelectorAll<HTMLInputElement | HTMLButtonElement>('#addPanel input[name="addSource"], #addPanel .founder')].map((e) => e.disabled);
+    return { panel, sent, founders, go, locked };
+  };
+
+  it("disables the source radios and founder buttons while training and while an add is in flight", async () => {
+    const training = await import("../../src/typescript/src/live/training.ts");
+    let finish: (g: Float32Array) => void = () => {};
+    const spy = vi.spyOn(training, "train").mockImplementation(() => ({ done: new Promise<Float32Array>((res) => (finish = res)), cancel() {}, stoppedHidden: false }));
+    try {
+      const { panel, go, locked, founders } = await setup();
+      expect(locked().every((d) => !d)).toBe(true);
+      (document.getElementById("addPretrain") as HTMLInputElement).checked = true;
+      const run = go();
+      expect(locked().length).toBeGreaterThan(3);
+      expect(locked().every(Boolean)).toBe(true); // training
+      finish(founders[0]!.genome);
+      await run;
+      expect(locked().every(Boolean)).toBe(true); // waiting for the reply
+      panel.reply({ t: "refused", reason: "busy" });
+      expect(locked().every((d) => !d)).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("gives the next fresh add a new brain after a successful add, but keeps it for a refused one", async () => {
+    const { panel, sent, go } = await setup();
+    panel.setSource("fresh");
+    await go();
+    panel.reply({ t: "refused", reason: "busy" });
+    await go();
+    expect(sent[1]!.genome).toBe(sent[0]!.genome);
+    panel.reply({ t: "added", ids: [1], name: "MyFresh" });
+    await go();
+    expect(sent[2]!.genome).not.toBe(sent[0]!.genome);
+    expect(sent[2]!.genome).not.toEqual(sent[0]!.genome);
+  });
+
+  it("shows an off-step file plan's own values on the frozen sliders and sends them", async () => {
+    const { panel, sent, founders, go } = await setup();
+    const { freshGenome } = await import("../../src/typescript/src/live/addPanel.ts");
+    const plan = { ...founders[0]!.plan, raySpread: 1.0, rayLength: 123.4 };
+    const file = new File([JSON.stringify({ format: "evolve-world-creature", version: 1, kind: "forager", name: "Odd", plan, genome: Array.from(freshGenome(plan, 3)), training: {} })], "odd.json");
+    panel.setSource("file");
+    await (panel as unknown as { readFile(f: File): Promise<void> }).readFile(file);
+    expect(document.getElementById("addFileMsg")!.classList.contains("error")).toBe(false);
+    const spread = document.getElementById("add-spread") as HTMLInputElement;
+    expect(spread.disabled).toBe(true);
+    expect(spread.step).toBe("any"); // a browser snaps a range to its step, so a frozen one takes any
+    expect(Number(spread.value)).toBeCloseTo(57.2958, 3);
+    expect(spread.parentElement!.querySelector("output")!.textContent).toBe("57.3°");
+    expect(document.getElementById("add-length")!.parentElement!.querySelector("output")!.textContent).toBe("123.4");
+    await go();
+    expect(sent[0]!.plan.raySpread).toBe(1.0);
+  });
+
+  it("shows empty structure sliders for a file mode with no file, and no founder name on a fresh brain", async () => {
+    const { panel } = await setup();
+    panel.setSource("file");
+    for (const id of ["rays", "spread", "length", "neurons", "memShort", "memLong"]) expect(document.getElementById(`add-${id}`)!.parentElement!.querySelector("output")!.textContent, id).toBe("–");
+    panel.setSource("fresh");
+    expect((document.getElementById("addName") as HTMLInputElement).value).toBe("MyFresh");
+    expect(document.getElementById("add-rays")!.parentElement!.querySelector("output")!.textContent).toBe("8");
+    expect((document.getElementById("add-spread") as HTMLInputElement).step).toBe("5");
+    panel.setSource("founder");
+    expect((document.getElementById("addName") as HTMLInputElement).value).toMatch(/^My(?!Fresh)/);
+  });
+
+  it("seeds a fresh brain differently on each default call", async () => {
+    const { freshGenome } = await import("../../src/typescript/src/live/addPanel.ts");
+    const { founders } = await setup();
+    expect(freshGenome(founders[0]!.plan)).not.toEqual(freshGenome(founders[0]!.plan));
+  });
+});

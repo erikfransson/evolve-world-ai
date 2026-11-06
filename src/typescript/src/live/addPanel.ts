@@ -104,7 +104,9 @@ export const sameTrainKey = (a: TrainKey, b: TrainKey): boolean => a.mode === b.
 interface Slider {
   input: HTMLInputElement;
   out: HTMLOutputElement;
+  step: string; // the step while the slider is editable; a frozen one takes any, so it shows its exact value
   set(v: number): void;
+  blank(): void; // nothing to show yet
 }
 
 export interface AddPanelHooks {
@@ -220,6 +222,8 @@ export class AddPanel {
     if (r.t === "added") {
       this.say(`${r.name} is in the world: ${r.ids.length === 1 ? "one copy" : `${r.ids.length} copies`}.`, "ok");
       this.hooks.added(r);
+      this.fresh = null; // the next add starts from a new brain, not a clone of this one
+      this.trained = null;
     } else {
       if (r.retryS) this.lock(r.retryS);
       this.say(`Not added: ${r.reason}.`, "error");
@@ -274,6 +278,11 @@ export class AddPanel {
     this.$("addFounders").hidden = s !== "founder";
     this.$("addUpload").hidden = s !== "file";
     this.$("addFreshHint").hidden = s !== "fresh";
+    const name = this.$<HTMLInputElement>("addName");
+    if (s !== "file" && (!name.value || name.dataset.auto === "1")) {
+      name.value = s === "fresh" ? "MyFresh" : `My${this.founders[this.founder]?.lineage ?? "Creature"}`.slice(0, NAME_MAX);
+      name.dataset.auto = "1";
+    }
     const b = this.base();
     if (b) this.t = tunedOf(b.plan, this.t?.birth ?? this.defaultBirth());
     this.syncSliders();
@@ -311,6 +320,7 @@ export class AddPanel {
     const msg = this.$("addFileMsg");
     msg.textContent = text;
     msg.classList.add("error");
+    this.syncSliders();
     this.refresh();
   }
 
@@ -362,9 +372,15 @@ export class AddPanel {
     this.sliders.set(id, {
       input,
       out,
+      step: String(step),
       set: (v) => {
         input.value = String(v);
         paint();
+      },
+      blank: () => {
+        input.value = input.min;
+        paint();
+        out.textContent = "–";
       },
     });
   }
@@ -384,9 +400,9 @@ export class AddPanel {
     const birth = this.$("addBirth");
     const t = (): Tuned => this.t!;
     this.slider(vision, "rays", "Rays", "How many rays it sees with. Each costs energy by its length.", L.rayCount[0], L.rayCount[1], 1, (v) => String(v), (v) => (t().rays = v));
-    this.slider(vision, "spread", "Spread", "The angle the rays fan out over.", 10, 360, 5, (v) => `${v}°`, (v) => (t().spreadDeg = v));
-    this.slider(vision, "length", "Ray length", "How far it sees. Longer rays cost more energy.", L.rayLength[0], L.rayLength[1], 10, (v) => String(v), (v) => (t().length = v));
-    this.slider(brain, "neurons", "Neurons per layer", "Size of each hidden layer. New neurons start silent and learn in training.", L.neurons[0], L.neurons[1], 1, (v) => String(v), (v) => {
+    this.slider(vision, "spread", "Spread", "The angle the rays fan out over.", 10, 360, 5, (v) => `${Number(v.toFixed(1))}°`, (v) => (t().spreadDeg = v));
+    this.slider(vision, "length", "Ray length", "How far it sees. Longer rays cost more energy.", L.rayLength[0], L.rayLength[1], 10, (v) => String(Number(v.toFixed(1))), (v) => (t().length = v));
+    this.slider(brain, "neurons", "Neurons per layer", "Size of each hidden layer. A fresh brain starts random and learns in training.", L.neurons[0], L.neurons[1], 1, (v) => String(v), (v) => {
       t().neurons = v;
       t().neuronsSet = true;
     });
@@ -402,9 +418,17 @@ export class AddPanel {
   private syncSliders(): void {
     const t = this.t;
     if (!t) return;
-    const values: Record<string, number> = { rays: t.rays, spread: t.spreadDeg, length: t.length, neurons: t.neurons, memShort: t.memShort, memLong: t.memLong, birthEnergy: t.birth.energy, birthCost: t.birth.cost, birthCooldown: t.birth.cooldown, mutation: t.mutation };
-    for (const [id, v] of Object.entries(values)) this.sliders.get(id)?.set(v);
     const b = this.base();
+    const values: Record<string, number> = { rays: t.rays, spread: t.spreadDeg, length: t.length, neurons: t.neurons, memShort: t.memShort, memLong: t.memLong, birthEnergy: t.birth.energy, birthCost: t.birth.cost, birthCooldown: t.birth.cooldown, mutation: t.mutation };
+    if (b && this.source !== "fresh") { // frozen: the plan's own values, not rounded to the sliders' steps
+      values.spread = (b.plan.raySpread * 180) / Math.PI;
+      values.length = b.plan.rayLength;
+    }
+    for (const [id, s] of this.sliders) {
+      s.input.step = frozenIn(this.source, id) ? "any" : s.step;
+      if (frozenIn(this.source, id) && !b) s.blank();
+      else if (id in values) s.set(values[id]!);
+    }
     this.$("addLayers").textContent = b ? `${b.plan.hiddenLayers.length} hidden ${b.plan.hiddenLayers.length === 1 ? "layer" : "layers"}` : "";
   }
 
@@ -469,6 +493,8 @@ export class AddPanel {
     this.$("addOff").hidden = this.rules !== null;
     for (const [id, s] of this.sliders) s.input.disabled = training || this.waiting || !plan || frozenIn(this.source, id);
     this.$("addFrozenHint").hidden = this.source === "fresh";
+    const busy = training || this.waiting; // the creature being sent is the one on screen, so no mode or founder change meanwhile
+    for (const e of this.root.querySelectorAll<HTMLInputElement | HTMLButtonElement>('input[name="addSource"], #addFile, .founder')) e.disabled = busy;
   }
 
   private progress(p: TrainProgress | null): void {
