@@ -229,3 +229,6 @@ export function decodeGenome(buf: ArrayBuffer | Uint8Array): { id: number; genom
   for (let i = 0; i < n; i++) genome[i] = dv.getInt16(13 + 2 * i, true) * scale;
   return { id: dv.getUint32(1, true), genome };
 }
+
+// Whether a followed creature still needs full-rate frames; one that died with no copy to move to is idle like no selection.
+export const followsLive = (sel: { died: boolean } | null): boolean => sel !== null && !sel.died;

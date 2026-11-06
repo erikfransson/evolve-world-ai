@@ -112,6 +112,13 @@ export function renderMapInfo(root: HTMLElement, hello: Hello): void {
     li.append(tile, t);
     items.push(li);
   }
+  // A region row stays hidden until the map paints it; no heading over rows that are all hidden.
+  items.forEach((li, i) => {
+    if (!li.classList.contains("lg-head")) return;
+    let k = i + 1;
+    while (k < items.length && !items[k]!.classList.contains("lg-head") && items[k]!.hidden) k++;
+    li.hidden = k >= items.length || items[k]!.classList.contains("lg-head");
+  });
   legend.replaceChildren(...items);
   const flat = g.mud + g.firm + g.rock === 0;
   $("infoLegendNote").textContent = flat ? "This world has no rock, mud or firm ground yet: every spot is plain ground." : "";

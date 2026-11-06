@@ -262,8 +262,11 @@ export class LiveScene {
 
   private drain(tick: number): void {
     let n = 0;
-    while (n < this.queue.length && this.queue[n]!.tick <= tick) this.run(this.queue[n++]!);
-    if (n) this.queue.splice(0, n);
+    try {
+      while (n < this.queue.length && this.queue[n]!.tick <= tick) this.run(this.queue[n++]!);
+    } finally {
+      if (n) this.queue.splice(0, n); // also after a throwing handler, so no entry runs twice
+    }
     this.syncItems();
   }
 
