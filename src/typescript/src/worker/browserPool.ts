@@ -3,7 +3,7 @@ import { SerialEvaluator } from "../sim/evaluator.ts";
 import type { Evaluation, Evaluator } from "../sim/evaluator.ts";
 import type { Population } from "../sim/population.ts";
 import type { RecordOptions } from "../sim/trajectory.ts";
-import type { EvalDone, EvalJob, EvalPort } from "./evalPool.ts";
+import type { EvalJob, EvalPort, EvalReply } from "./evalPool.ts";
 import { PoolEvaluator, defaultThreads } from "./evalPool.ts";
 import { gentleController, idleMs } from "./pacer.ts";
 import type { DutyController } from "./pacer.ts";
@@ -13,11 +13,16 @@ import type { Port } from "./port.ts";
 import { RlPool, inlineRlPort } from "./rlPool.ts";
 import type { RlDone, RlJob, RlSetup } from "./rlPool.ts";
 
+// A requested thread count held to 0..min(cores, 16); NaN counts as 0.
+export function clampThreads(n: number): number {
+  return Math.min(Math.max(Math.floor(n), 0), Math.min(navigator.hardwareConcurrency || 2, 16)) || 0;
+}
+
 // n new web workers as ports; on a failed spawn the ones already started are terminated and the error rethrown.
 function browserPorts<In, Out>(n: number, spawn: () => Worker, what: string): Port<In, Out>[] {
   const ports: Port<In, Out>[] = [];
   try {
-    for (let i = 0; i < n; i++) {
+    for (let i = 0, count = clampThreads(n); i < count; i++) {
       const worker = spawn();
       ports.push({
         post: (msg, transfer) => worker.postMessage(msg, transfer ?? []),
@@ -112,7 +117,7 @@ function makeBrowserEvaluator(config: SimConfig, threads: number): BrowserEvalua
   if (threads <= 1 || typeof Worker === "undefined") return new BrowserEvaluator(config, null);
   let workers: EvalPort[];
   try {
-    workers = browserPorts<EvalJob, EvalDone>(threads, () => new Worker(new URL("./evalWorker.ts", import.meta.url), { type: "module" }), "evaluation worker");
+    workers = browserPorts<EvalJob, EvalReply>(threads, () => new Worker(new URL("./evalWorker.ts", import.meta.url), { type: "module" }), "evaluation worker");
   } catch (error) {
     console.warn("Nested workers unavailable, evaluating serially:", error);
     return new BrowserEvaluator(config, null);

@@ -8,10 +8,12 @@ import { Ecosystem } from "./ecosystem.ts";
 import type { EcoCore, MemberRecord } from "./ecosystem.ts";
 import { mapSpec, mapVersion } from "./maps/index.ts";
 import type { LineageState } from "./lineages.ts";
+import { checkEcoBounds } from "./retune.ts";
 import type { PoolEntry } from "./seedPool.ts";
 import { OUTPUT_SIZE } from "./sensors.ts";
 import { checkRanges, mergeSpeciesList } from "./species.ts";
 import type { World, WorldSnapshot } from "./world.ts";
+import { isObj } from "./guards.ts";
 
 // Save and restore of a whole Ecosystem run as plain JSON-serialisable data. A restored world continues bit-identically
 // (same fingerprint tick for tick, with or without helper threads). Binary columns are base64 of little-endian typed arrays.
@@ -151,7 +153,6 @@ const MAX_NAME = 24; // characters of an inserted lineage's name
 const invalid = (what: string): never => {
   throw new Error(`saved state is invalid: ${what}`);
 };
-const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const whole = (v: unknown, min: number, max: number, what: string): number => (typeof v === "number" && Number.isInteger(v) && v >= min && v <= max ? v : invalid(`${what} must be a whole number from ${min} to ${max}`));
 
 // Numbers anywhere in value must be finite.
@@ -159,7 +160,7 @@ function allFinite(value: unknown, path: string): void {
   if (typeof value === "number") {
     if (!Number.isFinite(value)) invalid(`${path} is not a finite number`);
   } else if (Array.isArray(value)) value.forEach((v, i) => allFinite(v, `${path}[${i}]`));
-  else if (isObject(value)) for (const [k, v] of Object.entries(value)) allFinite(v, `${path}.${k}`);
+  else if (isObj(value)) for (const [k, v] of Object.entries(value)) allFinite(v, `${path}.${k}`);
 }
 
 // The saved mutation scales as a map from list position; an absent column (older saves) is all 1.
@@ -191,7 +192,7 @@ function checkBumpKills(raw: unknown, n: number): Map<number, number> {
 
 // The lineage table's columns and late rows hold the types Lineages.load expects: whole counts, finite hues, species in range, names as short plain text.
 function checkLineages(raw: unknown, species: number, nextId: number): void {
-  if (!isObject(raw)) return invalid("lineages are missing");
+  if (!isObj(raw)) return invalid("lineages are missing");
   const founders = raw.founders;
   for (const [k, col] of Object.entries({ live: raw.live, hue: raw.hue, species: raw.species, pool: raw.pool })) {
     if (!Array.isArray(col)) return invalid(`lineages.${k} is not a list`);
@@ -245,7 +246,7 @@ function currentGenomes(version: number, config: EcoConfig, plans: readonly numb
 
 // The saved config merged over the defaults (unknown keys and wrong types throw), with sizes held to sane bounds.
 function checkedConfig(raw: unknown): EcoConfig {
-  if (!isObject(raw)) return invalid("config is missing");
+  if (!isObj(raw)) return invalid("config is missing");
   allFinite(raw, "config");
   const { species, ...rest } = raw;
   const defaults = species === undefined ? DEFAULT_ECO_CONFIG : DEFAULT_PREDATOR_CONFIG;
@@ -263,6 +264,11 @@ function checkedConfig(raw: unknown): EcoConfig {
   whole(eco.birthReserve, 0, MAX_CREATURES, "eco.birthReserve");
   whole(eco.initialPopulation, 0, MAX_CREATURES, "eco.initialPopulation");
   whole(eco.thinkEvery, 1, MAX_THINK_EVERY, "eco.thinkEvery");
+  try {
+    checkEcoBounds(eco);
+  } catch (e) {
+    invalid((e as Error).message);
+  }
   checkHiddenLayers(config.brain.hiddenLayers);
   return config;
 }
@@ -328,9 +334,9 @@ export interface DecodedState {
 
 // Decodes and checks a saved state (config, limits, ranges, links of the items, ids, lineages); any violation throws an Error saying which.
 export function decodeState(state: EcoState): DecodedState {
-  if (!isObject(state) || (state.version !== STATE_VERSION && state.version !== OLDEST_VERSION)) throw new Error(`saved state has version ${isObject(state) ? String(state.version) : "none"}, this build reads versions ${OLDEST_VERSION} and ${STATE_VERSION}`);
+  if (!isObj(state) || (state.version !== STATE_VERSION && state.version !== OLDEST_VERSION)) throw new Error(`saved state has version ${isObj(state) ? String(state.version) : "none"}, this build reads versions ${OLDEST_VERSION} and ${STATE_VERSION}`);
   const { core, creatures: cr } = state;
-  if (!isObject(core) || !isObject(cr) || !isObject(state.items)) return invalid("core, items or creatures are missing");
+  if (!isObj(core) || !isObj(cr) || !isObj(state.items)) return invalid("core, items or creatures are missing");
   const config = checkedConfig(state.config);
   // A save without the field predates it and is taken to match the current map.
   const named = config.world.map ? mapSpec(config.world.map) : undefined;
@@ -348,7 +354,7 @@ export function decodeState(state: EcoState): DecodedState {
   for (const k of ["foodDue", "poisonDue"] as const) if (!(typeof core[k] === "number" && core[k] >= 0 && core[k] <= MAX_DUE)) invalid(`${k} is out of bounds`);
   if (!Array.isArray(core.counts) || core.counts.length !== species) invalid("species counts do not match the config");
   for (const c of core.counts) {
-    if (!isObject(c)) invalid("a species count is malformed");
+    if (!isObj(c)) invalid("a species count is malformed");
     for (const k of ["births", "deaths", "eaten"] as const) whole(c[k], 0, Number.MAX_SAFE_INTEGER, `species ${k}`); // eaten feeds the Live kills total
   }
   if (!Array.isArray(cr.plans) || cr.plans.length !== n) invalid("plan count does not match creature count");

@@ -4,17 +4,18 @@ import type { EcoConfig } from "../sim/ecoConfig.ts";
 import { HIT_FOOD, HIT_POISON } from "../sim/types.ts";
 import { World } from "../sim/world.ts";
 import { readyTerrainOf } from "../sim/terrain.ts";
-import { BACKGROUND, FLOOR, FOOD, POISON, WALL } from "./scene.ts";
+import { BACKGROUND, FLOOR, FOOD, POISON, WALL, fillItemDiscs } from "./scene.ts";
 import { drawTerrain } from "./terrainScene.ts";
 
 const MARGIN = 12; // CSS px around the world
+const TERRAIN_KEYS = ["stoneDensity", "ridgeDensity", "slowDensity", "fastDensity", "slowSize", "fastSize"] as const; // what terrainOf reads
 const FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
 
 // The starting items as the run will scatter them (same seed and stream), rebuilt only when the settings that shape them change.
 let cached: { key: string; world: World | null } = { key: "", world: null };
 export function startItems(config: EcoConfig): World | null {
   const { food, poison } = itemCounts(config);
-  const key = [config.seed, config.world.map, config.world.width, config.world.height, config.world.itemRadius, config.creature.rayLength, food, poison].join();
+  const key = [config.seed, config.world.map, config.world.width, config.world.height, config.world.itemRadius, config.creature.rayLength, food, poison, ...TERRAIN_KEYS.map((k) => config.world[k])].join();
   if (cached.key === key) return cached.world;
   let world: World | null = null;
   try {
@@ -30,17 +31,8 @@ export function startItems(config: EcoConfig): World | null {
 function drawItems(ctx: CanvasRenderingContext2D, world: World, config: EcoConfig, x: number, y: number, scale: number, dpr: number): void {
   const r = Math.max(config.world.itemRadius * scale, 0.9 * dpr);
   for (const [kind, color] of [[HIT_FOOD, FOOD], [HIT_POISON, POISON]] as const) {
-    ctx.fillStyle = color;
     ctx.globalAlpha = 0.85;
-    ctx.beginPath();
-    for (let i = 0; i < world.count; i++) {
-      if (world.kinds[i] !== kind) continue;
-      const cx = x + world.xs[i]! * scale;
-      const cy = y + world.ys[i]! * scale;
-      ctx.moveTo(cx + r, cy);
-      ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    }
-    ctx.fill();
+    fillItemDiscs(ctx, world, kind, color, r, x, y, scale);
   }
   ctx.globalAlpha = 1;
 }

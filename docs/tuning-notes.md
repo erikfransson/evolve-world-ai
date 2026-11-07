@@ -214,3 +214,4 @@ Better on all three seeds, kept. Trials fingerprint (`bench.ts --pop 300 --gens 
 - Evaluate each creature on two layouts to reduce layout luck.
 - Tournament with a larger size (5 to 7).
 - Plot best and mean fitness over generations on the page.
+- 2026-11-06: self-play (`runCrowdStats`, procEnv.ts) starts the first learner body at the layout's `placed.start` (heading too when set); before, every body was placed at random and the layout start was dropped. Random draws are kept, so other bodies and open worlds are unchanged. `rlBench` does not reach procEnv (its fingerprint 1144354221 with `--seeds 3 --reps 1` is the same before and after). Targeted check, `PROC_DEFAULTS`, random ecosystem learner, seeds 1-40, mean reward before -> after: patch (6 worlds) 1.0103 -> 1.0037, rooms (7) 0.9245 -> 0.9248, fence (5) 1.0406 -> 1.0409, islands (11) 0.9747 -> 0.9746, open (11) 0.9824 unchanged. Differences are small for a random brain; trained self-play runs will differ.

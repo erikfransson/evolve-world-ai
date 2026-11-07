@@ -8,7 +8,7 @@ import { HIT_CREATURE, HIT_FOOD, HIT_NONE, HIT_POISON, HIT_WALL } from "../../sr
 import { LAYOUT as L } from "../../src/typescript/src/sim/wasm/layout.ts";
 import type { WasmBrainBank } from "../../src/typescript/src/sim/wasm/brainKernel.ts";
 import { F } from "../../src/typescript/src/sim/wasm/resident.ts";
-import { prepareRows } from "../../src/typescript/src/sim/wasm/residentStep.ts";
+import { prepareRows, senseThinkRows } from "../../src/typescript/src/sim/wasm/residentStep.ts";
 import { rockLowerBound } from "../../src/typescript/src/sim/wasm/senser.ts";
 import { SenseKernels } from "../../src/typescript/src/sim/wasm/senseKernels.ts";
 import { speciesEngine, speciesList } from "../../src/typescript/src/sim/species.ts";
@@ -90,7 +90,9 @@ describe("sense.wat (SenseKernels)", () => {
       c.sense(world, crowd, k);
       c.encode();
     });
-    let bad = 0;
+    let mismatches = 0; // rays whose kind, species or energy differ: none are allowed
+    let maxDist = 0; // largest closeness difference among rays of the same kind
+    let maxInput = 0; // largest brain input difference
     const seen = new Set<number>();
     const species = new Set<number>();
     kernel.forEach((c, k) => {
@@ -104,16 +106,17 @@ describe("sense.wat (SenseKernels)", () => {
         if (exact) {
           expect(ray.kind).toBe(want.kind);
           expect(ray.closeness).toBe(want.closeness);
-        } else if (ray.kind !== want.kind || Math.abs(ray.closeness - want.closeness) > 1e-4 || (ray.kind === HIT_CREATURE && (ray.energy !== want.energy || ray.species !== want.species))) bad++;
+        } else if (ray.kind !== want.kind || (ray.kind === HIT_CREATURE && (ray.energy !== want.energy || ray.species !== want.species))) mismatches++;
+        else maxDist = Math.max(maxDist, Math.abs(ray.closeness - want.closeness));
       });
       const got = c.brain.layerActivations()[0]!;
       const want = ref.encode();
       expect(got.length).toBe(want.length);
       if (exact) expect(Array.from(got)).toEqual(Array.from(want));
-      else for (let i = 0; i < got.length; i++) if (Math.abs(got[i]! - want[i]!) > 1e-4) bad++;
+      else for (let i = 0; i < got.length; i++) maxInput = Math.max(maxInput, Math.abs(got[i]! - want[i]!));
       expect(Array.from(c.outputs).every(Number.isFinite)).toBe(true);
     });
-    return { bad, seen, species, world, crowd, kernels, batch, kernel, reference, rays: kernel.length * o.rays };
+    return { mismatches, maxDist, maxInput, seen, species, world, crowd, kernels, batch, kernel, reference, rays: kernel.length * o.rays };
   }
 
   // Runs every creature in turn as the detail one (the full path) and again with no detail record (the early-out, no-creature and lean paths for the others);
@@ -395,23 +398,29 @@ describe("sense.wat (SenseKernels)", () => {
   it("sees other creatures with their energy, within f32 rounding of the JS crowd rays", () => {
     const rng = createRng(7);
     const spots: Spot[] = Array.from({ length: 120 }, () => [rng.range(0, 600), rng.range(0, 400), rng.range(0, 7)]);
-    const { bad, rays } = check({ width: 600, height: 400, rays: 8, spread: 2, length: 120, creatures: spots, items: items.filter(([x, y]) => x < 600 && y < 400) }, false);
+    const { mismatches, maxDist, maxInput, rays } = check({ width: 600, height: 400, rays: 8, spread: 2, length: 120, creatures: spots, items: items.filter(([x, y]) => x < 600 && y < 400) }, false);
     expect(rays).toBe(960);
-    expect(bad).toBeLessThanOrEqual(2);
+    expect(maxDist).toBeLessThan(2e-5); // measured max 1.76e-5 in these scenes (f32 against f64)
+    expect(maxInput).toBeLessThan(2e-5);
+    expect(mismatches).toBe(0);
   });
 
   it("writes one flag per species and the energy after them, as the JS encoding does", () => {
     const rng = createRng(21);
     const spots: Spot[] = Array.from({ length: 120 }, () => [rng.range(0, 600), rng.range(0, 400), rng.range(0, 7)]);
-    const { bad, species, kernel } = check({ width: 600, height: 400, rays: 8, spread: 2, length: 120, creatures: spots, items: items.filter(([x, y]) => x < 600 && y < 400), species: 3 }, false);
+    const { mismatches, maxDist, maxInput, species, kernel } = check({ width: 600, height: 400, rays: 8, spread: 2, length: 120, creatures: spots, items: items.filter(([x, y]) => x < 600 && y < 400), species: 3 }, false);
     expect([...species].sort()).toEqual([0, 1, 2]);
     expect(kernel[0]!.brain.layerActivations()[0]!.length).toBe(8 * (5 + 3) + 5 + 4);
-    expect(bad).toBeLessThanOrEqual(2);
+    expect(maxDist).toBeLessThan(2e-5); // measured max 1.76e-5 in these scenes (f32 against f64)
+    expect(maxInput).toBeLessThan(2e-5);
+    expect(mismatches).toBe(0);
     check({ rays: 6, spread: 2, creatures: [[300, 300, 0], [900, 600, 2]], items, species: 2 }, true); // no creature in sight: flags all zero, exact
     const one = check({ width: 600, height: 400, rays: 8, spread: 2, length: 120, creatures: spots, items: items.filter(([x, y]) => x < 600 && y < 400), species: 1 }, false); // one species: the single flag of a seen creature is 1
     expect([...one.species]).toEqual([0]);
     expect(one.kernel[0]!.brain.layerActivations()[0]!.length).toBe(8 * 6 + 5 + 4);
-    expect(one.bad).toBeLessThanOrEqual(2);
+    expect(one.maxDist).toBeLessThan(2e-5);
+    expect(one.maxInput).toBeLessThan(2e-5);
+    expect(one.mismatches).toBe(0);
   });
 
   it("reads the outputs in place across a kernel memory growth", () => {
@@ -526,12 +535,14 @@ describe("sense.wat (SenseKernels)", () => {
         const spots: Spot[] = Array.from({ length: 40 }, () => [rng.range(-20, 1220), rng.range(-20, 820), rng.range(0, 7)]);
         for (let i = 0; i < 5; i++) spots.push([300 + 25 * i, 300, i], [6 + 3 * i, 400 + 9 * i, i]); // a clump, some against the left wall
         const r = check({ rays, spread: 1.5, length: 100, creatures: spots, items, species, blind }, false);
-        expect(r.bad).toBeLessThanOrEqual(2);
+        expect(r.maxDist).toBeLessThan(1e-5); // measured max 8.13e-6 over these 48 scenes, f32 against f64
+        expect(r.maxInput).toBeLessThan(1e-5); // measured max 8.11e-6
+        expect(r.mismatches).toBe(0);
         expect(r.kernels.inputOf(r.kernel[0]!).length).toBe(rays * stride + 5 + 4);
         let seen = 0;
         detailParity(r, (c, k, full) => {
           const want = r.reference[k]!.encode();
-          for (let i = 0; i < rays * stride; i++) expect(Math.abs(full[i]! - want[i]!)).toBeLessThanOrEqual(1e-4); // ray part; the body inputs after it follow the pre-step state
+          for (let i = 0; i < rays * stride; i++) expect(Math.abs(full[i]! - want[i]!)).toBeLessThan(1e-5); // ray part; the body inputs after it follow the pre-step state
           if (c.rays.some((ray) => ray.kind === HIT_CREATURE)) seen++;
         });
         if (!blind && rays >= 8) expect(seen).toBeGreaterThan(0);
@@ -606,5 +617,19 @@ describe("sense.wat (SenseKernels)", () => {
         expect(twin.every((v) => v.every(Number.isFinite))).toBe(true);
       }
     }
+  });
+
+  it("senseThinkRows leaves a detail creature outside its batch alone, as a helper thread's own-rows batch does", () => {
+    const { kernel, world, crowd, kernels } = check({ rays: 4, spread: 1, creatures: [[300, 300, 0], [320, 300, 3]], items }, false);
+    const spy = vi.spyOn((kernels as unknown as { senser: { readRays(): void } }).senser, "readRays");
+    const adopt = vi.spyOn(kernel[0]!, "adoptInput");
+    kernel[0]!.rays[0]!.closeness = 0.123;
+    const rows = Int32Array.of(kernel[1]!.resident!.ptr);
+    for (const every of [1, 3]) senseThinkRows(kernels, world, crowd, rows, Int32Array.of(1), 1, 0, every, () => 0, kernel[0]!);
+    expect(spy).not.toHaveBeenCalled();
+    expect(adopt).not.toHaveBeenCalled();
+    expect(kernel[0]!.rays[0]!.closeness).toBe(0.123);
+    senseThinkRows(kernels, world, crowd, Int32Array.of(kernel[0]!.resident!.ptr), Int32Array.of(0), 1, 0, 1, () => 0, kernel[0]!); // in the batch: read back
+    expect(spy).toHaveBeenCalledTimes(1);
   });
 });

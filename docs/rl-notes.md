@@ -9,7 +9,7 @@ Append-only: mark items done, do not rewrite. Track files in `docs/rl-notes/` ar
 |-----|----------|---------|----------|
 | C1a | backprop learns little? | No. From a fresh design it learns fast (nibble 0.13 to 3.04 in 45 s). From founders it starts near the ceiling (+0.05 to +0.14 in 60 s, any mode). The low training curve came from the 3-tick action hold (training score 1 to 1.5 below held-out); everyTick keeps them within 0.2. | t1-backprop.md, 128 held-out seeds |
 | C1a | KL stop | targetKl 0.02 stops the minefield damage (-0.47 to -0.09), no gain | t1-backprop.md |
-| C1b | good env | Criteria E1 to E8 (SNR at least 1.5, trivial policy at most 30% of best, per-bite time pressure, ...). Fail: aggressor, poison-field, endurance (standing still wins), forage-sparse, toll-road, glimpse, truffles | t3-envs.md, probes/t3-snr.ts |
+| C1b | good env | Criteria E1 to E8 (SNR at least 1.5, trivial policy at most 30% of best, per-bite time pressure, ...). Fail: aggressor, poison-field, endurance (standing still wins), forage-sparse, toll-road, glimpse, truffles. All seven still ship, kept as harder or slower envs without a redesign | t3-envs.md, probes/t3-snr.ts |
 | C1b | held-out size | Compare paired on the same seeds; 64 seeds track 128 fresh ones (r 0.96); 12 or 4 per env are too few for claims | t2-es.md, t3-envs.md |
 | C1c | ES best line | Luck: best candidate equals the mean on fresh seeds (1.88 vs 1.91); one episode separates candidates by 0 to 20% of its variance | t2-es.md |
 | C1c | ES split from founders | 10 pairs x 5 episodes beats 50 x 1 (far-food 0.87 vs 0.61 in 4 of 4 seeds, corridor 1.45 vs 1.26); minefield stuck at 0.5 | t2-es.md, 128 fresh seeds |

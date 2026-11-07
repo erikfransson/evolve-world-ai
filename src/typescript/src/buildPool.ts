@@ -3,10 +3,11 @@
 // With --refine, the entries of earlier pool files are also fine-tuned, each in its own training world, from a population of its mutated copies.
 // Usage: node src/buildPool.ts [--refine a.json,b.json] [--runs 144] [--generations 200] [--pop 200] [--size 120] [--threads 6] [--seed 1] [--out public/pool.json]
 
-import { readFileSync, statSync, writeFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
-import { parseArgs } from "node:util";
+import { strictArgs } from "./cliArgs.ts";
 import { Worker, isMainThread, parentPort } from "node:worker_threads";
+import { writeFileAtomic } from "./rlResume.ts";
 import { layerSizes, randomGenome } from "./sim/brain.ts";
 import { DEFAULT_CONFIG, memoryUnits, withOverrides } from "./sim/config.ts";
 import { DEFAULT_ECO_CONFIG } from "./sim/ecoConfig.ts";
@@ -46,7 +47,7 @@ const STALL_GENERATIONS = 50; // a run whose fittest creature still validates be
 const MIN_GAIN = 1.5; // a kept creature lives at least this times as long as the random baseline
 const DECIMALS = 3; // genome rounding in the file; validation uses the rounded genomes
 
-const { values } = parseArgs({
+const { values } = strictArgs({
   options: {
     runs: { type: "string", default: "144" },
     generations: { type: "string", default: "200" },
@@ -351,7 +352,7 @@ if (!isMainThread) {
     genome: c.genome,
   }));
   const command = `node src/buildPool.ts ${process.argv.slice(2).join(" ")}`.trim();
-  writeFileSync(outPath, JSON.stringify({ version: POOL_VERSION, command, entries }) + "\n");
+  writeFileAtomic(outPath, JSON.stringify({ version: POOL_VERSION, command, entries }) + "\n");
 
   const minutes = (performance.now() - t0) / 60000;
   const fit = chosen.map((c) => c.fitness);

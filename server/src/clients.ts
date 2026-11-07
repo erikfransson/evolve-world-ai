@@ -1,4 +1,4 @@
-import { LIMITS } from "./config.ts";
+import type { LIMITS } from "./config.ts";
 
 export interface ClientState {
   alive: boolean; // a pong came since the last heartbeat ping
@@ -9,11 +9,11 @@ export interface ClientState {
 }
 
 // Why a client should be dropped now, or null. Updates overSince from the send queue.
-export function dropReason(bufferedAmount: number, c: ClientState, now: number): string | null {
-  if (bufferedAmount > LIMITS.maxBufferedBytes) c.overSince ||= now;
+export function dropReason(bufferedAmount: number, c: ClientState, now: number, limits: typeof LIMITS): string | null {
+  if (bufferedAmount > limits.maxBufferedBytes) c.overSince ||= now;
   else c.overSince = 0;
-  if (bufferedAmount > LIMITS.hardBufferedBytes) return "send queue over the hard cap";
-  if (c.overSince && now - c.overSince > LIMITS.slowDropMs) return "send queue over the frame-skip level for too long";
-  if (now - c.lastMessageAt > LIMITS.idleDropMs) return "idle";
+  if (bufferedAmount > limits.hardBufferedBytes) return "send queue over the hard cap";
+  if (c.overSince && now - c.overSince > limits.slowDropMs) return "send queue over the frame-skip level for too long";
+  if (now - c.lastMessageAt > limits.idleDropMs) return "idle";
   return null;
 }

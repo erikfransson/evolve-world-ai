@@ -278,6 +278,24 @@ describe("a reset with a carried creature", () => {
     expect(lines.some((l) => /CARRY SHORT: only 2 of 5/.test(l))).toBe(true);
   });
 
+  // Red without the rebuild: a founder refused part-way left the world non-empty, and the fallback seed threw "only a fresh, empty world".
+  it("starts without the carry when a founder insert is refused part-way through the seed with it", async () => {
+    const dir = tmp();
+    writeFileSync(join(dir, CARRY_FILE), JSON.stringify(order(aged())));
+    const { Ecosystem } = await import("../../src/typescript/src/sim/ecosystem.ts");
+    const insert = Ecosystem.prototype.insertCreature;
+    let calls = 0;
+    vi.spyOn(Ecosystem.prototype, "insertCreature").mockImplementation(function (this: InstanceType<typeof Ecosystem>, spec) {
+      if (++calls === 3) return { ok: false, reason: "refused for the test" }; // the third founder copy, once
+      return insert.call(this, spec);
+    });
+    const { live, lines } = await start(dir);
+    vi.restoreAllMocks();
+    expect(live.eco.population).toBe(10 * FOUNDERS.length);
+    expect(named(live, "Ancient")).toBe(0);
+    expect(lines.some((l) => /refused, nothing carried: seeding with it failed \(founder .* could not be seeded/.test(l))).toBe(true);
+  });
+
   it("never carries a carry.next.json a reset left behind", async () => {
     const dir = tmp();
     writeFileSync(join(dir, NEXT_CARRY), JSON.stringify(order(aged())));

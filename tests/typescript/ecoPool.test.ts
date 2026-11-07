@@ -10,39 +10,9 @@ import { ThinkPool, defaultHelpers, serveHelper, tickTimeoutMs } from "../../src
 import type { HelperIn, HelperOut, HelperPort } from "../../src/typescript/src/worker/ecoPool.ts";
 import { EcoRunner } from "../../src/typescript/src/worker/ecoRunner.ts";
 import { createNodeThinkPool, nodeHelperPorts } from "../../src/typescript/src/worker/nodePool.ts";
-import { WASM_RUN_FINGERPRINT } from "./helpers.ts";
+import { WASM_RUN_FINGERPRINT, crowdedConfig, fakePorts } from "./helpers.ts";
 
-// A small crowded world with varied plans and structural mutations, so creatures are born and die within a few hundred ticks.
-function cfg(seed = 5): EcoConfig {
-  const d = structuredClone(DEFAULT_ECO_CONFIG);
-  return {
-    ...d,
-    seed,
-    world: { ...d.world, width: 900, height: 900 },
-    creature: { ...d.creature, startEnergy: 60 },
-    eco: { ...d.eco, initialPopulation: 60, foundersVary: true, structuralRate: 0.3, birthEnergyRange: [76, 76], birthCostRange: [75, 75], birthCooldownRange: [10, 10] },
-  };
-}
-
-// In-process helpers over cloned messages; failAt: the tick message on which the helper reports an error instead, or never answers with hang.
-function fakePorts(n: number, failAt = Infinity, hang = false): HelperPort[] {
-  return Array.from({ length: n }, () => {
-    let reply: (msg: HelperOut) => void = () => {};
-    let fail: (error: unknown) => void = () => {};
-    let ticks = 0;
-    const handle = serveHelper((msg, transfer) => queueMicrotask(() => reply(structuredClone(msg, { transfer: transfer as ArrayBuffer[] }))));
-    return {
-      post: (msg: HelperIn, transfer?: Transferable[]) => {
-        if (msg.type === "tick" && ++ticks >= failAt) return hang ? undefined : queueMicrotask(() => fail(new Error("helper lost")));
-        const copy = structuredClone(msg, { transfer: (transfer ?? []) as ArrayBuffer[] });
-        queueMicrotask(() => handle(copy));
-      },
-      onMessage: (callback) => { reply = callback; },
-      onError: (callback) => { fail = callback; },
-      terminate: () => {},
-    };
-  });
-}
+const cfg = (seed = 5): EcoConfig => crowdedConfig(seed);
 
 function serial(config: EcoConfig, ticks: number): Ecosystem {
   const eco = new Ecosystem(config);
@@ -235,14 +205,17 @@ describe("ThinkPool", () => {
         runner.handle({ type: "start", config: cfg(2), run: 2 });
         runner.handle({ type: "speed", speed: "max" });
         const eco = () => runner.ecosystem!;
-        while (eco().tick < 60) await runner.pumpAsync();
+        for (let pumps = 0; eco().tick < 60; pumps++) {
+          if (pumps > 2000) throw new Error(`runner stuck at tick ${eco().tick} after ${pumps} pumps`);
+          await runner.pumpAsync();
+        }
         expect(pool.alive).toBe(true);
         expect(eco().fingerprint()).toBe(serial(cfg(2), eco().tick).fingerprint());
       } finally {
         pool.close();
       }
     }
-  });
+  }, 60_000);
 });
 
 describe("WebAssembly kernels", () => {
@@ -364,10 +337,10 @@ describe("helper fallbacks", () => {
       }
       if (killedAt && !pool.alive && !failedAt) failedAt = tick;
     });
+    expect(String(warn.mock.calls[0]?.[1])).toMatch(/exited with code/); // the exit event, not the 5 s timeout
     warn.mockRestore();
     expect(pool.alive).toBe(false);
     expect(failedAt).toBeGreaterThan(0);
-    expect(failedAt - killedAt).toBeLessThanOrEqual(3); // noticed within a few ticks, not after the 5 s tick timeout
     expect(eco.fingerprint()).toBe(serial(cfg(), eco.tick).fingerprint());
   });
 });
@@ -517,12 +490,16 @@ describe("helper spare creature pool", () => {
     const lent = eco.members.filter((m) => m.creature.brain.lent);
     expect(lent.length).toBeGreaterThan(eco.members.length - 2); // all but the creature shown in detail
     const before = JSON.stringify(saveState(eco));
-    for (const m of eco.members) {
-      const g = m.creature.brain.genome;
-      expect(g.length).toBe(m.creature.brain.genomeLength);
-    }
+    const bytes = (g: ArrayLike<number>): Buffer => Buffer.from(Float32Array.from(g).buffer);
+    const lentBytes = eco.members.map((m) => {
+      const first = bytes(m.creature.brain.genome);
+      expect(first.length).toBe(4 * m.creature.brain.genomeLength);
+      expect(bytes(m.creature.brain.genome).equals(first)).toBe(true); // a second read of the bank is identical
+      return first;
+    });
     for (const m of eco.members) m.creature.brain.own(); // every brain back to its own copy, read from the bank
     expect(eco.members.every((m) => !m.creature.brain.lent)).toBe(true);
+    eco.members.forEach((m, i) => expect(bytes(m.creature.brain.genome).equals(lentBytes[i]!)).toBe(true)); // own copy equals what the bank lent, bit for bit
     expect(JSON.stringify(saveState(eco))).toBe(before);
   });
 

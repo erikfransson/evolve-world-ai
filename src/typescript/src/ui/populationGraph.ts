@@ -17,8 +17,8 @@ export interface PopulationSample {
 
 const compact = (v: number): string => (v >= 10000 ? `${Math.round(v / 1000)}k` : v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(Math.round(v)));
 
-// Simulated seconds as s, m:ss, hours or days, whichever reads best.
-export function formatDuration(t: number): string {
+// Simulated seconds as an axis label: s, m:ss, hours or days, whichever reads best (not the page tiles' formatDuration).
+export function formatAxisTime(t: number): string {
   const s = Math.round(t);
   if (s < 120) return `${s} s`;
   if (s < 3600) return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
@@ -134,7 +134,7 @@ export class PopulationGraph {
     ctx.fillStyle = LABEL;
     ctx.fillText("0 s", PAD.left, PAD.top + h + 3);
     ctx.textAlign = "right";
-    ctx.fillText(formatDuration(end), PAD.left + w, PAD.top + h + 3);
+    ctx.fillText(formatAxisTime(end), PAD.left + w, PAD.top + h + 3);
 
     if (this.eco) this.drawSeasons(this.eco, end, w, h);
     const line = (color: string, top: number, value: (p: PopulationSample) => number): void => {

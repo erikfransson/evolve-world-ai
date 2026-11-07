@@ -1,7 +1,8 @@
 import { createRng } from "../../sim/rng.ts";
 import { BACKGROUND, FOOD, OTHER, POISON, RAY_NONE, RAY_WALL, WALL } from "../palette.ts";
 import { beginFrame } from "../scene.ts";
-import { TICK_SECONDS, clamp, drawBirthRings, drawBursts, drawColoured, sceneConfig, ticksOf, wrapAngle } from "./kit.ts";
+import { clamp } from "../../sim/mathUtil.ts";
+import { TICK_SECONDS, drawBirthRings, drawBursts, drawColoured, sceneConfig, ticksOf, wrapAngle } from "./kit.ts";
 import type { Effect, Scene } from "./kit.ts";
 
 // RL Arena card: the same gold learner in four small training boxes. It starts clumsy and gets better over a loop,

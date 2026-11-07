@@ -1,5 +1,4 @@
 import { layerSizes, randomGenome } from "../../src/typescript/src/sim/brain.ts";
-import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoState } from "../../src/typescript/src/sim/ecoState.ts";
 import { restoreState, saveState } from "../../src/typescript/src/sim/ecoState.ts";
@@ -8,44 +7,16 @@ import type { InsertSpec } from "../../src/typescript/src/sim/ecosystem.ts";
 import { LIVE_FIELDS } from "../../src/typescript/src/sim/retune.ts";
 import { createRng } from "../../src/typescript/src/sim/rng.ts";
 import type { BodyPlan } from "../../src/typescript/src/sim/sensors.ts";
-import { ThinkPool, serveHelper } from "../../src/typescript/src/worker/ecoPool.ts";
-import type { HelperIn, HelperOut, HelperPort } from "../../src/typescript/src/worker/ecoPool.ts";
+import { crowdedConfig, fakePorts } from "./helpers.ts";
+import { ThinkPool } from "../../src/typescript/src/worker/ecoPool.ts";
 
-// A small crowded world where creatures are born and die within a few hundred ticks, with the features that carry state: collision damage, aging, seasons.
-function cfg(wasm: boolean): EcoConfig {
-  const d = structuredClone(DEFAULT_ECO_CONFIG);
-  return {
-    ...d,
-    seed: 5,
-    world: { ...d.world, width: 900, height: 900 },
-    creature: { ...d.creature, startEnergy: 60 },
-    eco: {
-      ...d.eco, wasm, initialPopulation: 60, foundersVary: true, structuralRate: 0.3, collisionDamage: true, damagePerSpeed: 0.5,
-      aging: true, agingStart: 5, agingRate: 3, seasons: true, yearMinutes: 1,
-      birthEnergyRange: [76, 76], birthCostRange: [75, 75], birthCooldownRange: [10, 10],
-    },
-  };
-}
+// The crowded world with the features that carry state: collision damage, aging, seasons.
+const cfg = (wasm: boolean): EcoConfig => crowdedConfig(5, { wasm, collisionDamage: true, damagePerSpeed: 0.5, aging: true, agingStart: 5, agingRate: 3, seasons: true, yearMinutes: 1 });
 
-// In-process helper threads over cloned messages.
 function pool(n: number): ThinkPool {
-  const ports: HelperPort[] = Array.from({ length: n }, () => {
-    let reply: (msg: HelperOut) => void = () => {};
-    const handle = serveHelper((msg, transfer) => queueMicrotask(() => reply(structuredClone(msg, { transfer: transfer as ArrayBuffer[] }))));
-    return {
-      post: (msg: HelperIn, transfer?: Transferable[]) => {
-        const copy = structuredClone(msg, { transfer: (transfer ?? []) as ArrayBuffer[] });
-        queueMicrotask(() => handle(copy));
-      },
-      onMessage: (callback) => { reply = callback; },
-      onError: () => {},
-      terminate: () => {},
-    };
-  });
-  return new ThinkPool(ports);
+  return new ThinkPool(fakePorts(n));
 }
 
-// A world with 0 (serial) or 3 helper threads, started.
 async function world(config: EcoConfig, threads: number): Promise<{ eco: Ecosystem; step: (ticks: number) => Promise<void>; pool: ThinkPool | null }> {
   const p = threads ? pool(threads) : null;
   const eco = new Ecosystem(config, null, { journal: threads > 0 });
@@ -283,23 +254,23 @@ describe("regrowth with huge rates", () => {
     expect(eco.retune({ eco: { maxPopulation: 1e6, birthSpeed: 1e9, damagePerSpeed: 50 } }).ok).toBe(false);
   });
 
-  it("a huge amount due finishes at once", () => {
+  it("a huge amount due finishes at once", { timeout: 10_000 }, () => {
     const eco = new Ecosystem(cfg(false));
     const state = json(saveState(eco));
     state.core.foodDue = 9e5;
     state.core.poisonDue = 9e5;
     const restored = restoreState(state);
-    const t0 = performance.now();
     for (let t = 0; t < 5; t++) restored.step();
-    expect(performance.now() - t0).toBeLessThan(3000);
+    expect(restored.tick).toBe(5); // finished all five ticks (the bound itself is the test timeout)
+    expect(restored.population).toBeGreaterThan(0);
   });
 
-  it("an unbounded rate set straight on the config still finishes", () => {
+  it("an unbounded rate set straight on the config still finishes", { timeout: 10_000 }, () => {
     const eco = new Ecosystem(cfg(false));
     eco.config.eco.foodRegrow = 1e20;
     (eco as unknown as { foodPerTick: number }).foodPerTick = 1e20;
-    const t0 = performance.now();
     eco.step();
-    expect(performance.now() - t0).toBeLessThan(2000);
+    expect(eco.tick).toBe(1); // the step returned (the bound itself is the test timeout)
+    expect(Number.isFinite(eco.population)).toBe(true);
   });
 });

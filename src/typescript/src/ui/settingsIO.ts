@@ -2,8 +2,10 @@ import { DEFAULT_CONFIG, overrideConfig } from "../sim/config.ts";
 import type { DeepPartial, SimConfig } from "../sim/config.ts";
 import { DEFAULT_ECO_CONFIG, MAX_CREATURES, MAX_THINK_EVERY, checkHiddenLayers } from "../sim/ecoConfig.ts";
 import type { EcoConfig } from "../sim/ecoConfig.ts";
+import { checkEcoBounds } from "../sim/retune.ts";
 import { checkRanges, migrateBirthKeys } from "../sim/species.ts";
 import { CUSTOM, ECO_PRESETS, TRIALS_PRESETS } from "../sim/presets.ts";
+import { isObj } from "../sim/guards.ts";
 
 // Copy and paste of the settings as JSON, shared by Trials and Ecosystem.
 export type Mode = "trials" | "ecosystem";
@@ -23,7 +25,6 @@ export function serialise<M extends Mode>(mode: M, config: ConfigOf[M], preset?:
   return JSON.stringify({ mode, ...(preset === undefined ? {} : { preset }), version: VERSION, angles: "radians", config }, null, 2);
 }
 
-const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
 export interface Parsed<M extends Mode> {
   config: ConfigOf[M];
@@ -41,7 +42,7 @@ export function parseWithPreset<M extends Mode>(text: string, mode: M): Parsed<M
   } catch (e) {
     throw new Error(`Not valid JSON (${e instanceof Error ? e.message : String(e)}).`);
   }
-  if (!isObject(data)) throw new Error("Expected a JSON object with mode, version and config.");
+  if (!isObj(data)) throw new Error("Expected a JSON object with mode, version and config.");
   for (const key of Object.keys(data)) {
     if (!["mode", "preset", "version", "angles", "config"].includes(key)) throw new Error(`Unknown key "${key}" at the top level.`);
   }
@@ -59,29 +60,33 @@ export function parseWithPreset<M extends Mode>(text: string, mode: M): Parsed<M
   if (data.config === undefined) return { config: structuredClone(DEFAULTS[mode]), preset, migrated };
   const defaults = DEFAULTS[mode];
   const pasted = data.config;
-  if (!isObject(pasted)) return { config: overrideConfig<ConfigOf[M]>(defaults, pasted as DeepPartial<ConfigOf[M]>), preset, migrated };
-  if (isObject(pasted.eco)) pasted.eco = migrateBirthKeys(pasted.eco, "eco", migrated);
+  if (!isObj(pasted)) return { config: overrideConfig<ConfigOf[M]>(defaults, pasted as DeepPartial<ConfigOf[M]>), preset, migrated };
+  if (isObj(pasted.eco)) pasted.eco = migrateBirthKeys(pasted.eco, "eco", migrated);
   const config = overrideConfig<ConfigOf[M]>(defaults, pasted as DeepPartial<ConfigOf[M]>);
   if ("eco" in config) {
     const eco = (config as EcoConfig).eco;
     checkRanges(eco as unknown as Record<string, unknown>, "eco");
     if (!Number.isInteger(eco.thinkEvery) || eco.thinkEvery < 1 || eco.thinkEvery > MAX_THINK_EVERY) throw new Error(`config "eco.thinkEvery" must be a whole number from 1 to ${MAX_THINK_EVERY}.`);
+    checkEcoBounds(eco);
     checkHiddenLayers(config.brain.hiddenLayers);
-    for (const k of ["maxPopulation", "initialPopulation", "birthReserve"] as const) eco[k] = Math.min(eco[k], MAX_CREATURES);
+    for (const k of ["maxPopulation", "initialPopulation", "birthReserve"] as const) {
+      if (!Number.isInteger(eco[k]) || eco[k] < 0) throw new Error(`config "eco.${k}" must be a whole number from 0 to ${MAX_CREATURES}.`);
+      eco[k] = Math.min(eco[k], MAX_CREATURES);
+    }
   }
   return { config, preset, migrated };
 }
 
 // Leaf paths where a and b differ, e.g. "world.width". Angles may differ by the form's whole-degree rounding.
 export function differences(a: unknown, b: unknown, path = ""): string[] {
-  if (isObject(a) && isObject(b)) return [...new Set([...Object.keys(a), ...Object.keys(b)])].flatMap((k) => differences(a[k], b[k], path ? `${path}.${k}` : k));
-  if (Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.some(isObject)) return a.flatMap((v, i) => differences(v, b[i], `${path}.${i}`));
+  if (isObj(a) && isObj(b)) return [...new Set([...Object.keys(a), ...Object.keys(b)])].flatMap((k) => differences(a[k], b[k], path ? `${path}.${k}` : k));
+  if (Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.some(isObj)) return a.flatMap((v, i) => differences(v, b[i], `${path}.${i}`));
   if (typeof a === "number" && typeof b === "number") return Math.abs(a - b) <= (path === "creature.raySpread" ? 0.009 : 1e-9) ? [] : [path];
   return JSON.stringify(a) === JSON.stringify(b) ? [] : [path];
 }
 
 const get = (o: unknown, path: string): string =>
-  JSON.stringify(path.split(".").reduce<unknown>((v, k) => (isObject(v) ? v[k] : Array.isArray(v) ? v[Number(k)] : undefined), o));
+  JSON.stringify(path.split(".").reduce<unknown>((v, k) => (isObj(v) ? v[k] : Array.isArray(v) ? v[Number(k)] : undefined), o));
 
 // What the form made of the pasted config, as a note for the dialog. Null when nothing changed.
 export function adjustmentNote(pasted: unknown, applied: unknown): string | null {
@@ -97,7 +102,7 @@ export interface IOOptions<M extends Mode> {
   form: HTMLFormElement;
   read(): ConfigOf[M];
   fill(config: ConfigOf[M]): void;
-  preset?: { get(): string; set(id: string): void }; // the preset picker; pasted settings select their preset
+  preset?: { get(): string; set(id: string, notify?: boolean): void }; // the preset picker; pasted settings select their preset
 }
 
 export interface SettingsIO {
@@ -234,9 +239,8 @@ export function initSettingsIO<M extends Mode>(o: IOOptions<M>): SettingsIO {
     } catch (e) {
       return { ok: false, message: e instanceof Error ? e.message : String(e) };
     }
-    o.preset?.set(preset);
     o.fill(pasted);
-    if (preset !== CUSTOM) o.preset?.set(preset); // the preset's world wins over pasted world values
+    o.preset?.set(preset, false); // after the fill, so the preset's world wins over pasted world values; the one input event is below
     clampRanges();
     const applied = o.read();
     o.fill(applied);

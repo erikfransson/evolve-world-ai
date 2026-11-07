@@ -56,12 +56,16 @@ export interface GenomeResult {
 
 export const mean = (a: readonly number[]): number => a.reduce((x, y) => x + y, 0) / (a.length || 1);
 export function median(...v: number[]): number {
+  if (v.length === 0) return NaN;
   const s = [...v].sort((a, b) => a - b);
   return s.length % 2 ? s[(s.length - 1) / 2]! : (s[s.length / 2 - 1]! + s[s.length / 2]!) / 2;
 }
 
-// Two-sided 95% t quantile (Cornish-Fisher expansion about the normal one; error below 1e-3 for df >= 8).
+const T975_SMALL = [12.706, 4.303, 3.182, 2.776, 2.571, 2.447, 2.365, 2.306, 2.262, 2.228, 2.201, 2.179, 2.16, 2.145, 2.131, 2.12, 2.11, 2.101, 2.093, 2.086, 2.08, 2.074, 2.069, 2.064, 2.06, 2.056, 2.052, 2.048, 2.045, 2.042]; // df 1..30
+
+// Two-sided 95% t quantile: table for df <= 30, else the Cornish-Fisher expansion about the normal one (error below 1e-3).
 export function t975(df: number): number {
+  if (df >= 1 && df <= 30 && Number.isInteger(df)) return T975_SMALL[df - 1]!;
   const z = 1.959964;
   const z3 = z ** 3, z5 = z ** 5, z7 = z ** 7;
   return z + (z3 + z) / (4 * df) + (5 * z5 + 16 * z3 + 3 * z) / (96 * df ** 2) + (3 * z7 + 19 * z5 + 17 * z3 - 15 * z) / (384 * df ** 3);

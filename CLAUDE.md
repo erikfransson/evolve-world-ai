@@ -10,8 +10,9 @@ Work in parallel when can be done
 
 ## Machine load
 Erik uses this laptop while many sessions and subagents run on it, so keep it responsive.
-- Run every build, test, benchmark, training run and render at `nice -n 19`, and tell subagents to do the same.
-- Run long jobs detached (`setsid nohup nice -n 19 ...`) with output logged.
+- Run every build, test, benchmark, training run and render as `nice -n 19 ionice -c3 chrt --idle 0 <cmd>` (lowest CPU and disk priority, yields to everything interactive), and tell subagents to do the same (Erik, 2026-10-16).
+- Run long jobs detached (`setsid nohup nice -n 19 ionice -c3 chrt --idle 0 ...`) with output logged.
+- Run at most one heavy job per session at a time, also for parallel seeds; queue the rest.
 - Cap threads at about 6 of the 8 cores per job, fewer when other sessions are busy. Check `uptime` and `free -g` before starting a big job.
 - Watch peak RSS. If the `available` column of `free -g` drops below 2 GB, stop your newest job and tell Erik.
 
@@ -35,7 +36,29 @@ Layout is in `README.md`. Follow `docs/coding-guidelines.md` for tests and revie
 - To release: set the new version in both files, rename "Unreleased" to the version with the date, open the pull request from `development` to `main`, and after the merge tag `main` as `vX.Y.Z` and make a GitHub release with the same notes.
 
 ### Review development to master merge
+Always run the tests.
 
+For larger releases:
+    Always run a separate independent /thermo-nuclear-code-quality-review .
+    Always run a separate independent /code-review  high+ .
+For smaller releases:
+    Run a basic sanity review
+
+For reviews use atleast Opus5.5+ (or better Fable5.1+).
+If changes are big, feel free to run reviews via multiple subagents.
+Make sure to also check for performance , and thats its good, and that changes from reviews doesnt negatively impact performance (for big live world kind of simulations).
+
+### Issues
+User @erikfransson will sometimes write suggestion in issues.
+Take them as suggestion and features wanted.
+Explore them and see if feasible or not.
+Reply if you fixed them or if they are deemed too large in scope or too complex and requires larger planning session or disscusion.
+If you fixed a GitLab issue, then you reply with a simple statement that I fixed this or I added this feature, it looks almost like you suggested, but a little bit different or whatever you did.
+You can reply with the simple two, three sentences, very short, concise, and for human to read.
+Always sign off your messages with last new line "from Erik's evolve agent".
+Close issues if u have resolved them.
+
+Suggestions from other users should be discussed with Erik, maybe small bug fixes can be implemented directly but not more than that without discussion, better safe than sorry here.
 
 ## Live world
 Safety of the server and of this laptop is the top priority for Live World, above features, looks and speed.

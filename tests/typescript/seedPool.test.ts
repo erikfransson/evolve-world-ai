@@ -154,4 +154,18 @@ describe("Ecosystem founders from a pool", () => {
     expect(run(cfg(), pool)).not.toBe(run(cfg(), null));
     expect(run(cfg({ poolFraction: 0 }), pool)).toBe(run(cfg(), null));
   });
+
+  it("returns null when the download stalls past its timeout", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const ctl = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(ctl.signal);
+    const stalled = ((_url: string, init?: RequestInit) =>
+      new Promise((_, reject) => init?.signal?.addEventListener("abort", () => reject(new Error("timed out"))))) as unknown as typeof fetch;
+    const pending = loadPool("pool.json", stalled);
+    ctl.abort();
+    expect(await pending).toBeNull();
+    expect(timeout).toHaveBeenCalledWith(20_000);
+    timeout.mockRestore();
+    warn.mockRestore();
+  }, 2000);
 });

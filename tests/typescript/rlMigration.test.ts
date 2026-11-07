@@ -34,7 +34,7 @@ describe("genomes made before the terrain input", () => {
     const at = inputLayout(layoutConfig(KINDS[kind].world), parsed.plan).terrainAt;
     expect(parsed.genome).toHaveLength(genomeLength(sizes));
     for (let row = 0; row < sizes[1]!; row++) expect(parsed.genome[row * sizes[0]! + at]).toBe(0);
-    expect(parsed.genome.length).toBe(current.length);
+    expect(parsed.genome).toEqual(current.map((v, i) => (i < sizes[0]! * sizes[1]! && i % sizes[0]! === at ? 0 : Math.fround(v))));
   });
 
   it("a genome that fits neither layout, or holds non-numbers, is still refused", () => {

@@ -42,7 +42,13 @@ export interface ZoomTarget {
   stats: HTMLElement;
 }
 
+interface Drawn {
+  rec: Recording | null;
+  key: string;
+}
+
 interface Tile {
+  drawn: Drawn; // what the canvas shows now
   k: number; // the recording this tile plays
   box: HTMLElement;
   canvas: HTMLCanvasElement;
@@ -63,6 +69,7 @@ export class TileGrid {
   private loop = 0; // seconds of the longest recording of the playing show
   private clock = 0; // playback seconds into the playing show, advanced by real time times speed
   private last = 0;
+  private zoomDrawn: Drawn = { rec: null, key: "" };
   private zoom: { k: number; target: ZoomTarget } | null = null;
   speed = 4; // playback seconds per real second; 0 is Max: the tiles hold their frame and a new show replaces the playing one
   paused = false; // holds every tile, and the large view, on its current frame
@@ -95,7 +102,7 @@ export class TileGrid {
     box.tabIndex = 0;
     box.setAttribute("role", "button");
     box.title = "Open large";
-    const tile: Tile = { k: 0, box, canvas: document.createElement("canvas"), title: document.createElement("b"), sub: document.createElement("small"), stats: document.createElement("span"), badge: document.createElement("i") };
+    const tile: Tile = { drawn: { rec: null, key: "" }, k: 0, box, canvas: document.createElement("canvas"), title: document.createElement("b"), sub: document.createElement("small"), stats: document.createElement("span"), badge: document.createElement("i") };
     box.addEventListener("click", () => this.onOpen(tile.k));
     box.addEventListener("keydown", (ev) => {
       if (ev.key !== "Enter" && ev.key !== " ") return;
@@ -130,6 +137,7 @@ export class TileGrid {
       t.box.classList.remove("empty");
       for (const e of [t.title, t.sub, t.stats, t.badge]) e.textContent = "";
       t.badge.hidden = true;
+      t.drawn.rec = null;
       t.canvas.getContext("2d")?.clearRect(0, 0, t.canvas.width, t.canvas.height); // setSlots keeps same-count canvases, so drop the old frame
     }
   }
@@ -137,6 +145,7 @@ export class TileGrid {
   // Shows tile k's recording large in `target` (null closes it); it keeps following tile k when a new show arrives.
   setZoom(k: number | null, target?: ZoomTarget): void {
     this.zoom = k === null || !target ? null : { k, target };
+    this.zoomDrawn.rec = null;
     if (this.playing) this.label();
   }
 
@@ -198,24 +207,29 @@ export class TileGrid {
       this.onFinished();
     }
     let first: { rec: Recording; frame: number } | null = null;
-    const paint = (rec: Recording, canvas: HTMLCanvasElement): number => {
+    // A canvas repaints only when its picture changes: recording, frame, size or pixel ratio.
+    const paint = (rec: Recording, canvas: HTMLCanvasElement, cache: Drawn): number => {
+      const f = frameAt(rec, this.clock); // each tile loops its own episode; a new show starts when the longest has played
+      const key = `${f}|${canvas.clientWidth}|${canvas.clientHeight}|${window.devicePixelRatio}`;
+      if (cache.rec === rec && cache.key === key) return f;
+      cache.rec = rec;
+      cache.key = key;
       const dpr = fitCanvas(canvas);
       const ctx = canvas.getContext("2d")!;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      const f = frameAt(rec, this.clock); // each tile loops its own episode; a new show starts when the longest has played
       drawArena(ctx, rec, f, canvas.clientWidth, canvas.clientHeight);
       return f;
     };
     for (const tile of this.tiles) {
       const rec = s?.recordings[tile.k];
       if (!rec || tile.canvas.clientWidth <= 0) continue;
-      const f = paint(rec, tile.canvas);
+      const f = paint(rec, tile.canvas, tile.drawn);
       if (tile.k === 0) first = { rec, frame: f };
     }
     const r0 = s && !s.preview ? s.recordings[0] : undefined;
     if (!first && r0) first = { rec: r0, frame: frameAt(r0, this.clock) }; // tile 0 on another page still drives the brain view
     const zoomRec = this.zoom && s?.recordings[this.zoom.k];
-    if (this.zoom && zoomRec) paint(zoomRec, this.zoom.target.canvas);
+    if (this.zoom && zoomRec) paint(zoomRec, this.zoom.target.canvas, this.zoomDrawn);
     return first;
   }
 }

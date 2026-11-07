@@ -1,43 +1,14 @@
 import { Brain, genomeLength } from "../../src/typescript/src/sim/brain.ts";
-import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
 import { ShareHelper } from "../../src/typescript/src/sim/ecoShare.ts";
 import { HIT_FOOD } from "../../src/typescript/src/sim/types.ts";
 import { SenseKernels } from "../../src/typescript/src/sim/wasm/senseKernels.ts";
 import { startItems } from "../../src/typescript/src/ui/ecoIdle.ts";
-import { ThinkPool, serveHelper } from "../../src/typescript/src/worker/ecoPool.ts";
-import type { HelperIn, HelperOut, HelperPort } from "../../src/typescript/src/worker/ecoPool.ts";
-import { WASM_RUN_FINGERPRINT, testRng } from "./helpers.ts";
+import { ThinkPool } from "../../src/typescript/src/worker/ecoPool.ts";
+import { WASM_RUN_FINGERPRINT, crowdedConfig, fakePorts, testRng } from "./helpers.ts";
 
-// The crowded small world of the ecoPool tests, so creatures are born and die within a few hundred ticks.
-function cfg(wasm: boolean): EcoConfig {
-  const d = structuredClone(DEFAULT_ECO_CONFIG);
-  return {
-    ...d,
-    seed: 5,
-    world: { ...d.world, width: 900, height: 900 },
-    creature: { ...d.creature, startEnergy: 60 },
-    eco: { ...d.eco, wasm, initialPopulation: 60, foundersVary: true, structuralRate: 0.3, birthEnergyRange: [76, 76], birthCostRange: [75, 75], birthCooldownRange: [10, 10] },
-  };
-}
-
-// In-process helpers over cloned messages.
-function fakePorts(n: number): HelperPort[] {
-  return Array.from({ length: n }, () => {
-    let reply: (msg: HelperOut) => void = () => {};
-    const handle = serveHelper((msg, transfer) => queueMicrotask(() => reply(structuredClone(msg, { transfer: transfer as ArrayBuffer[] }))));
-    return {
-      post: (msg: HelperIn, transfer?: Transferable[]) => {
-        const copy = structuredClone(msg, { transfer: (transfer ?? []) as ArrayBuffer[] });
-        queueMicrotask(() => handle(copy));
-      },
-      onMessage: (callback) => { reply = callback; },
-      onError: () => {},
-      terminate: () => {},
-    };
-  });
-}
+const cfg = (wasm: boolean): EcoConfig => crowdedConfig(5, { wasm });
 
 describe("watched creature with helpers", () => {
   // The watched id changes every tick and refreshDetail runs on some, as the page does while a creature is selected.

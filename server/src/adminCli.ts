@@ -5,9 +5,8 @@ import { WebSocket } from "ws";
 // Usage: npm run admin -- status | get | pause | resume | save | saves | load <name> | blank-name <name> | rename <from> <to> [--force] | reset [--copies N] [--carry-oldest K --carry-name NAME [--carry-from SAVE]] | stop | speed <x> | set key=value [key=value ...]
 const port = Number(process.env.LIVE_ADMIN_PORT ?? 8788);
 const stateDir = process.env.LIVE_STATE_DIR ?? fileURLToPath(new URL("../state", import.meta.url));
-const TIMEOUT_MS = 60_000; // a save or load of a big world takes seconds
-
 const [cmd, ...args] = process.argv.slice(2);
+const TIMEOUT_MS = ["save", "load", "reset", "stop"].includes(cmd ?? "") ? 200_000 : 60_000; // a load saves, then parses a restore (up to about 190 s); the rest answer at once
 const parse = (v: string): number | boolean | number[] => (v === "true" ? true : v === "false" ? false : v.includes(",") ? v.split(",").map(Number) : Number(v)); // a,b for a range
 
 function request(): object {
@@ -70,7 +69,7 @@ const fail = (why: string): never => {
   console.error(why);
   return process.exit(1);
 };
-setTimeout(() => fail(`no answer from the admin port ${port}`), TIMEOUT_MS).unref();
+setTimeout(() => fail(`no answer from the admin port ${port} in ${TIMEOUT_MS / 1000} s; "${cmd}" may still be running, check with status and saves`), TIMEOUT_MS).unref();
 ws.on("error", (e) => fail(`cannot reach the admin port ${port}: ${e.message}`));
 ws.on("close", (code, reason) => fail(`closed by the server (${code} ${reason})`));
 ws.on("open", () => ws.send(JSON.stringify({ t: "auth", token })));

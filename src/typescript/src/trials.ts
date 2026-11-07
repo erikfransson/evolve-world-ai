@@ -18,7 +18,7 @@ import type { ReplaySource } from "./ui/replay.ts";
 import { drawScene } from "./ui/scene.ts";
 import { paintTerrainLegend, syncTerrainLegend, terrainLegendHtml } from "./ui/terrainLegend.ts";
 import type { ViewOptions } from "./ui/scene.ts";
-import { TRIALS_LOCKED, TRIALS_PRESETS, CUSTOM, withTrialsPreset } from "./sim/presets.ts";
+import { TRIALS_LOCKED, TRIALS_PRESETS, withTrialsPreset } from "./sim/presets.ts";
 import { initRunSession, renderRunControls } from "./ui/runSession.ts";
 import { buildForm } from "./ui/settingsForm.ts";
 import { TRIALS_FORM } from "./ui/trialsForm.ts";

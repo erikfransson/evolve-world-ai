@@ -13,13 +13,13 @@ WorkingDirectory=@REPO@/server
 Environment=LIVE_STATE_DIR=@STATE@
 ExecStart=@NODE@/bin/node --max-old-space-size=1536 --max-semi-space-size=4 src/main.ts
 Nice=19
-CPUSchedulingPolicy=idle
+# Runs at the normal scheduling class (not SCHED_IDLE, which starves it on a busy host); Nice and IOSchedulingClass keep it polite.
 IOSchedulingClass=idle
 MemoryMax=2800M
 MemorySwapMax=0
 LimitNOFILE=4096
 TimeoutStopSec=100
-# Only applies if the cpu controller is delegated to the user manager; Nice and idle scheduling are the real limit.
+# Only applies if the cpu controller is delegated to the user manager; Nice and idle IO are the real limit.
 CPUQuota=50%
 TasksMax=64
 Restart=on-failure

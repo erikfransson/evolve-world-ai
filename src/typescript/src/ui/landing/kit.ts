@@ -5,6 +5,7 @@ import { Creature } from "../../sim/creature.ts";
 import { HIT_NONE } from "../../sim/types.ts";
 import type { CreatureState, HitKind, Rng } from "../../sim/types.ts";
 import { World } from "../../sim/world.ts";
+import { clamp } from "../../sim/mathUtil.ts";
 
 // Shared pieces of the small looping worlds on the landing page cards, built from the real simulation pieces.
 export interface Scene {
@@ -22,7 +23,6 @@ export const ticksOf = (seconds: number): number => Math.round(seconds / TICK_SE
 export const sceneConfig = (width: number, height: number, foodDensity: number, creature: Partial<SimConfig["creature"]> = {}): SimConfig =>
   withOverrides(DEFAULT_CONFIG, { world: { width, height, foodDensity, poisonDensity: 0, respawn: true }, creature });
 
-export const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
 export const wrapAngle = (a: number): number => Math.atan2(Math.sin(a), Math.cos(a));
 
 export function foodWorld(config: SimConfig, rng: Rng): World {

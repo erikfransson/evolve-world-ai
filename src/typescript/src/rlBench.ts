@@ -1,19 +1,17 @@
 // Times RL episodes per env and fingerprints the results, to check optimisations leave them identical.
-// Usage: nice -n 10 node src/rlBench.ts [--seeds 6] [--reps 3] [--env id] [--prof]
-import { existsSync, readFileSync } from "node:fs";
-import { parseArgs } from "node:util";
-import { parsePool } from "./sim/seedPool.ts";
+// Usage: nice -n 10 node src/rlBench.ts [--seeds 6] [--reps 3] [--env id]
+import { fail, loadPoolFile, positiveInt, strictArgs } from "./cliArgs.ts";
 import { poolLearner, randomLearner, runEpisode } from "./sim/rl/env.ts";
 import type { EpisodeResult, Learner } from "./sim/rl/env.ts";
 import { ENVS } from "./sim/rl/envs.ts";
 
 // parameters
-const { values } = parseArgs({ options: { seeds: { type: "string", default: "6" }, reps: { type: "string", default: "3" }, env: { type: "string" } } });
-const seeds = Array.from({ length: Number(values.seeds) }, (_, k) => 1000 + k);
-const reps = Number(values.reps);
+const { values } = strictArgs({ options: { seeds: { type: "string", default: "6" }, reps: { type: "string", default: "3" }, env: { type: "string" } } });
+const seeds = Array.from({ length: positiveInt("seeds", values.seeds) }, (_, k) => 1000 + k);
+const reps = positiveInt("reps", values.reps);
+if (values.env && !ENVS.some((e) => e.id === values.env)) fail(`unknown env "${values.env}"`);
 
-const pool = existsSync("public/pool.json") ? parsePool(JSON.parse(readFileSync("public/pool.json", "utf8"))).entries : null;
-if (!pool) throw new Error("public/pool.json missing");
+const pool = loadPoolFile(undefined) ?? fail("public/pool.json missing");
 const median = (a: number[]) => [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)]!;
 const cpuMs = () => { const u = process.cpuUsage(); return (u.user + u.system) / 1000; }; // CPU time, steady under machine load
 let hash = 0;

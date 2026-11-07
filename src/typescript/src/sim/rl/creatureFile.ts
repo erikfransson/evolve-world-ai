@@ -5,6 +5,7 @@ import { checkGenomeIn, serialiseLearner } from "./library.ts";
 export { PLAN_LIMITS, checkPlan } from "./validate.ts";
 import type { EnvWorld, Learner } from "./env.ts";
 import { PREDATOR, PREY } from "./env.ts";
+import { isObj } from "../guards.ts";
 
 // A saved creature (Arena "Save", later founder import and the Live upload). Plain JSON data, never code: parseCreatureFile
 // is the one gate a file passes, and it rebuilds every value it keeps from checked numbers and short strings, so nothing
@@ -34,7 +35,6 @@ export interface CreatureFile {
   training: { envs: string[]; iterations: number; from: string; heldStart: number | null; heldEnd: number | null; date: string; poisonCost?: number }; // poisonCost: ES runs only, the reward cost per poison bite that heldStart and heldEnd include
 }
 
-const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const text = (v: unknown, max = MAX_TEXT): string => plainText(v, max);
 
 // The genome length a creature of this kind and plan needs.

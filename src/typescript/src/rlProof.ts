@@ -2,28 +2,26 @@
 // then compared paired on those seeds with the pre-training copy, random designs and trivial policies, with bootstrap 95% intervals.
 // Usage: node src/rlProof.ts --env nibble [--learner es | ppo] [--from random | pool:N] [--runs 3] [--iters 60] [--checks 4] [--held 64]
 //        [--pairs 50] [--episodes 1] [--sigma 0.08] [--lr 0.02] (ES) [--every-tick] [--target-kl 0.02] [--repeat 3] [--ppo-lr 0.003] (PPO)
-//        [--randoms 8] [--boot 2000] [--threads 2] [--out proof.json]
+//        [--randoms 8] [--boot 2000] [--threads 2] [--pool FILE] [--library FILE] [--out proof.json]
 // --from random starts run k from random:k (a fresh design each run); pool:N starts every run from the same founder.
 // The final weights are the last iteration's (no checkpoint is picked), so the held-out seeds are never used to select.
 
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { parseArgs } from "node:util";
 import { genomeLength, layerSizes } from "./sim/brain.ts";
-import { parsePool } from "./sim/seedPool.ts";
+import { fail, finiteNumber, loadLibraryFile, loadPoolFile, positiveInt, prepareOut, strictArgs } from "./cliArgs.ts";
 import { OUT_THRUST, OUT_TURN } from "./sim/sensors.ts";
 import type { PlanView } from "./sim/sensors.ts";
 import { layoutConfig, poolLearner, randomLearner, runEpisode } from "./sim/rl/env.ts";
 import type { EnvSpec, Learner } from "./sim/rl/env.ts";
 import { envById } from "./sim/rl/envs.ts";
-import { parseLibrary } from "./sim/rl/library.ts";
 import { Ppo } from "./sim/rl/ppo.ts";
 import { curveSlope, mean, pairedDiff } from "./sim/rl/proofStats.ts";
 import type { Interval } from "./sim/rl/proofStats.ts";
 import { Trainer, heldSeeds } from "./sim/rl/trainer.ts";
 import { createNodeRlPool, parseThreads } from "./worker/nodePool.ts";
 
-const { values } = parseArgs({
+const { values } = strictArgs({
   options: {
     env: { type: "string", default: "nibble" },
     learner: { type: "string", default: "es" },
@@ -43,31 +41,22 @@ const { values } = parseArgs({
     randoms: { type: "string", default: "8" },
     boot: { type: "string", default: "2000" },
     threads: { type: "string", default: "2" },
-    pool: { type: "string", default: "public/pool.json" },
-    library: { type: "string", default: "public/rl/library.json" },
+    pool: { type: "string" },
+    library: { type: "string" },
     out: { type: "string" },
   },
 });
 
-const fail = (msg: string): never => {
-  console.error(`error: ${msg}`);
-  process.exit(1);
-};
 const env = envById(values.env!) ?? fail(`unknown env "${values.env}"`);
-const int = (k: "runs" | "iters" | "checks" | "held" | "pairs" | "episodes" | "repeat" | "randoms" | "boot"): number => {
-  const v = Number(values[k]);
-  return Number.isInteger(v) && v >= 1 ? v : fail(`--${k} must be a positive integer`);
-};
-const real = (k: "sigma" | "lr" | "ppo-lr" | "target-kl", zeroOk = false): number => {
-  const v = Number(values[k]);
-  return Number.isFinite(v) && (v > 0 || (zeroOk && v === 0)) ? v : fail(`--${k} must be a finite number above 0${zeroOk ? " (or 0 for off)" : ""}`);
-};
+const int = (k: "runs" | "iters" | "checks" | "held" | "pairs" | "episodes" | "repeat" | "randoms" | "boot"): number => positiveInt(k, values[k]);
+const real = (k: "sigma" | "lr" | "ppo-lr" | "target-kl", zeroOk = false): number => finiteNumber(k, values[k], zeroOk ? 0 : Number.MIN_VALUE);
 const [sigma, lr, ppoLr, targetKl] = [real("sigma"), real("lr"), real("ppo-lr"), real("target-kl", true)];
 const [runs, iters, checks, heldCount, randoms, boot] = (["runs", "iters", "checks", "held", "randoms", "boot"] as const).map(int);
 if (values.learner !== "es" && values.learner !== "ppo") fail("--learner must be es or ppo");
 const threads = parseThreads(values.threads);
-const pool = existsSync(values.pool!) ? parsePool(JSON.parse(readFileSync(values.pool!, "utf8"))).entries : null;
-const library = parseLibrary(existsSync(values.library!) ? JSON.parse(readFileSync(values.library!, "utf8")) : null);
+const pool = loadPoolFile(values.pool);
+const library = loadLibraryFile(values.library);
+prepareOut(values.out);
 const founder = /^pool:(\d+)$/.exec(values.from!);
 if (values.from !== "random" && !(founder && pool?.[Number(founder[1])])) fail("--from must be random or pool:N (with a pool file)");
 const startOf = (run: number): Learner => (founder ? poolLearner(env, pool![Number(founder[1])]!) : randomLearner(env, run));

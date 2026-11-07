@@ -1,4 +1,5 @@
 import type { BodyPlan } from "../sensors.ts";
+import { isObj } from "../guards.ts";
 
 // Checks shared by every gate for outside data: creature files, library entries and custom envs (see docs/modes-plan.md).
 
@@ -11,7 +12,6 @@ export const plainText = (v: unknown, max: number): string => (typeof v === "str
 // Plan limits: the Ecosystem's mutation ranges, which every page can run.
 export const PLAN_LIMITS = { rayCount: [1, 16], raySpread: [0, 2 * Math.PI], rayLength: [10, 400], layers: [1, 4], neurons: [1, 32], memory: [0, 8] } as const;
 
-const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const int = (v: unknown, [lo, hi]: readonly [number, number]): v is number => Number.isInteger(v) && (v as number) >= lo && (v as number) <= hi;
 export const num = (v: unknown, [lo, hi]: readonly [number, number]): v is number => typeof v === "number" && Number.isFinite(v) && v >= lo && v <= hi;
 

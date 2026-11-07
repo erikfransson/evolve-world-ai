@@ -1,5 +1,7 @@
 import type { EngineConfig } from "./config.ts";
 import type { EcoConfig } from "./ecoConfig.ts";
+import { bad } from "./retune.ts";
+import type { Kind } from "./retune.ts";
 
 // Species of a multi-species world (#12). Children keep their parent's species. A species is its identity and diet
 // plus overrides of the shared settings: whatever it leaves out it takes from eco and creature, so the Ecosystem is
@@ -96,6 +98,12 @@ export function founderCounts(species: readonly Species[], maxPopulation: number
 }
 
 const IDENTITY_TYPES: Record<string, "string" | "number" | "boolean" | "array"> = { name: "string", hue: "number", hueSpread: "number", plants: "boolean", prey: "array", eatEfficiency: "number", eatBaseline: "number", speed: "number" };
+// Value kinds of the numeric species fields, as retune.ts checks them (speed, start energy and the ray count and length ranges must be above 0).
+const FIELD_KINDS: Record<string, Kind> = {
+  hueSpread: "nonneg", eatEfficiency: "nonneg", eatBaseline: "nonneg", speed: "positive", founders: "count", poolFraction: "unit",
+  startEnergy: "positive", livingCost: "nonneg", thrustCost: "nonneg", turnCost: "nonneg",
+  birthEnergyRange: "range", birthCostRange: "range", birthCooldownRange: "range", rayCountRange: "posrange", raySpreadRange: "range", rayLengthRange: "posrange",
+};
 const RANGE_KEYS = new Set(["rayCountRange", "raySpreadRange", "rayLengthRange", "birthEnergyRange", "birthCostRange", "birthCooldownRange"]);
 
 // Settings saved before birth traits were heritable held single birthEnergy, birthCost and birthCooldown values and a childEnergy.
@@ -106,8 +114,9 @@ export function migrateBirthKeys(obj: Record<string, unknown>, where: string, no
     if (!(key in out)) continue;
     const v = out[key];
     delete out[key];
-    if (typeof v !== "number") continue; // left to the range keys' own checks
-    out[`${key}Range`] ??= [v, v];
+    if (typeof v !== "number") throw new Error(`config "${where}.${key}" must be a number.`);
+    if (out[`${key}Range`] !== undefined) continue;
+    out[`${key}Range`] = [v, v];
     notes.push(`${where}.${key} ${v} → ${key}Range [${v}, ${v}]`);
   }
   if ("childEnergy" in out) {
@@ -136,7 +145,7 @@ export function mergeSpeciesList(value: unknown, defaults: readonly SpeciesConfi
     item = migrateBirthKeys(item as Record<string, unknown>, where, notes);
     const out = structuredClone(defaults[i]!) as unknown as Record<string, unknown>;
     for (const [key, v] of Object.entries(item as Record<string, unknown>)) {
-      const type = IDENTITY_TYPES[key] ?? (RANGE_KEYS.has(key) ? "array" : key in SPECIES_OVERRIDES ? "number" : undefined);
+      const type = (Object.hasOwn(IDENTITY_TYPES, key) ? IDENTITY_TYPES[key] : undefined) ?? (RANGE_KEYS.has(key) ? "array" : Object.hasOwn(SPECIES_OVERRIDES, key) ? "number" : undefined);
       if (!type) throw new Error(`unknown config key "${where}.${key}"`);
       const ok = type === "array" ? Array.isArray(v) && v.every((x) => typeof x === "number" && Number.isFinite(x)) : type === "number" ? typeof v === "number" && Number.isFinite(v) : typeof v === type;
       if (!ok) throw new Error(`config "${where}.${key}" must be ${type === "array" ? "a list of numbers" : `a ${type}`}.`);
@@ -145,6 +154,9 @@ export function mergeSpeciesList(value: unknown, defaults: readonly SpeciesConfi
       out[key] = Array.isArray(v) ? v.slice() : v;
     }
     checkRanges(out, where);
+    for (const [key, kind] of Object.entries(FIELD_KINDS)) {
+      if (bad(kind, out[key])) throw new Error(`config "${where}.${key}" has an invalid value ${JSON.stringify(out[key])} (${kind}).`);
+    }
     return out as unknown as SpeciesConfig;
   });
 }

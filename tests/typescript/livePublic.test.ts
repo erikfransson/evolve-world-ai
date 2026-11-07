@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { createServer } from "node:net";
 import net from "node:net";
 // @ts-expect-error the web tsconfig finds no types for the server's ws
-import { WebSocket } from "../../server/node_modules/ws/wrapper.mjs";
+import { Sender, WebSocket } from "../../server/node_modules/ws/wrapper.mjs";
 import { LIMITS, MAX_POPULATION, liveConfig } from "../../server/src/config.ts";
 import { applyTunables, tunableLimits } from "../../server/src/tunables.ts";
 import { LiveWorld } from "../../server/src/liveWorld.ts";
@@ -107,6 +107,52 @@ describe("public server: connections", () => {
     const t0 = Date.now();
     await new Promise((r) => sock.on("close", r));
     expect(Date.now() - t0).toBeLessThan(4000);
+  });
+
+  it("drops a viewer that sends nothing for idleDropMs", async () => {
+    const port = 62471;
+    await serve(port, { idleDropMs: 1200 });
+    const v = viewer(port);
+    expect(await v.status).toBe("hello");
+    await Promise.race([v.closed, wait(6000).then(() => Promise.reject(new Error("not dropped")))]);
+  });
+
+  it("stops handling a client's messages once the message rate cut it off, also the rest of the same chunk", async () => {
+    const port = 62472;
+    const { world } = await serve(port, { maxClientMessagesPerSecond: 3, selectBurst: 100, selectsPerSecond: 100 });
+    const watch = vi.spyOn(world, "watch");
+    const v = viewer(port);
+    expect(await v.status).toBe("hello");
+    const frame = (id: number): Buffer => Buffer.concat(Sender.frame(Buffer.from(JSON.stringify({ t: "select", id })), { fin: true, rsv1: false, opcode: 1, mask: true, readOnly: false }));
+    v.ws._socket.write(Buffer.concat([1, 2, 3, 4, 5, 6, 7, 8].map(frame))); // one TCP chunk, so the server parses all eight before it can close
+    await v.closed;
+    expect(watch.mock.calls.length).toBeLessThanOrEqual(3);
+  });
+
+  it("answers a plain http request flood past the burst by cutting the socket, not with a 426", async () => {
+    const port = 62473;
+    await serve(port, { plainRequestsPerSecond: 0.001, plainRequestBurst: 3 });
+    const codes: (number | "cut")[] = [];
+    for (let i = 0; i < 8; i++) codes.push(await fetch(`http://127.0.0.1:${port}/`).then((r) => r.status, () => "cut" as const));
+    expect(codes).toEqual([426, 426, 426, "cut", "cut", "cut", "cut", "cut"]);
+  });
+
+  it("caps open sockets and closes silent ones that never send a byte, and still takes a viewer after", async () => {
+    const port = 62474;
+    await serve(port, { maxConnections: 5, socketIdleMs: 1500 });
+    let open = 0;
+    let closed = 0;
+    for (let i = 0; i < 12; i++) {
+      const sock = net.connect(port, "127.0.0.1");
+      sock.on("error", () => {});
+      sock.on("connect", () => open++);
+      sock.on("close", () => closed++);
+      sock.resume();
+    }
+    await vi.waitFor(() => expect(closed).toBeGreaterThanOrEqual(7), { timeout: 1200 }); // those past the cap, before any idle timeout
+    await vi.waitFor(() => expect(closed).toBe(12), { timeout: 6000 }); // the rest by the idle timeout
+    expect(open).toBeGreaterThan(0);
+    expect(await viewer(port).status).toBe("hello");
   });
 
   it("sends the hello of a new world to every viewer, even one held back from frames", async () => {

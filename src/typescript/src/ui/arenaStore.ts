@@ -40,8 +40,12 @@ export function addFavourite(file: CreatureFile, store: Store | null = defaultSt
   return write([file, ...loadFavourites(store)].slice(0, MAX_FAVOURITES), store);
 }
 
-export function removeFavourite(index: number, store: Store | null = defaultStore()): boolean {
-  return write(loadFavourites(store).filter((_, i) => i !== index), store);
+// Removes by content, not position, so a save in another tab cannot shift the target.
+export function removeFavourite(file: CreatureFile, store: Store | null = defaultStore()): boolean {
+  const key = JSON.stringify(file);
+  const list = loadFavourites(store);
+  const at = list.findIndex((f) => JSON.stringify(f) === key);
+  return write(at < 0 ? list : list.filter((_, i) => i !== at), store);
 }
 
 // Replay speed choice, kept per browser.

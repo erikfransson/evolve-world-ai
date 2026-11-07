@@ -1,7 +1,7 @@
-import { HIT_NONE } from "../sim/types.ts";
+import { HIT_FOOD, HIT_NONE, HIT_POISON } from "../sim/types.ts";
 import { CREATURE_FIELDS } from "../sim/rl/recording.ts";
 import type { Recording } from "../sim/rl/recording.ts";
-import { BACKGROUND, FLOOR, FOOD, POISON, RAY_COLORS, WALL } from "./scene.ts";
+import { BACKGROUND, FLOOR, FOOD, POISON, WALL, strokeRay } from "./scene.ts";
 import { SPECIES_COLORS, hunterPath } from "./speciesStyle.ts";
 
 const MIN_CREATURE_PX = 4; // never smaller than this on screen, so big worlds stay readable
@@ -57,7 +57,7 @@ function drawItems(ctx: CanvasRenderingContext2D, rec: Recording, frame: number,
   const r = Math.max(rec.itemRadius, MIN_ITEM_PX / scale);
   const i0 = rec.itemStart[frame]!;
   const i1 = rec.itemStart[frame + 1]!;
-  for (const [kind, color] of [[1, FOOD], [2, POISON]] as const) {
+  for (const [kind, color] of [[HIT_FOOD, FOOD], [HIT_POISON, POISON]] as const) {
     ctx.fillStyle = color;
     ctx.beginPath();
     for (let i = i0; i < i1; i++) {
@@ -103,17 +103,12 @@ function drawRays(ctx: CanvasRenderingContext2D, rec: Recording, frame: number, 
   const y = d[o + 1]!;
   const heading = d[o + 2]!;
   ctx.lineWidth = 1 / scale;
-  ctx.globalAlpha = 0.45;
   for (let k = 0; k < rec.rayCount; k++) {
     const at = 2 * (rec.rayCount * frame + k);
     const kind = rec.rays[at + 1]!;
     const length = kind === HIT_NONE ? rec.rayLength : rec.rayLength * (1 - rec.rays[at]!);
     const a = heading + rec.rayOffsets[k]!;
-    ctx.strokeStyle = RAY_COLORS[kind] ?? RAY_COLORS[0]!;
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    ctx.lineTo(x + Math.cos(a) * length, y + Math.sin(a) * length);
-    ctx.stroke();
+    strokeRay(ctx, x, y, a, length, kind, 0.45);
   }
   ctx.globalAlpha = 1;
 }

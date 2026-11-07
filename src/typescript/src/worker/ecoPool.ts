@@ -31,7 +31,7 @@ export function tickTimeoutMs(base: number, avgTickMs: number | null): number {
   return Math.max(base, Math.min(TICK_CAP_MS, TICK_SLACK * avgTickMs));
 }
 
-// Helper threads when none are asked for: leave one core for the page and one for the coordinator, at most 4; on a 4-core machine 6 were no faster than 4.
+// Helper threads when none are asked for: leave one core for the page, at most 4; on a 4-core machine 6 were no faster than 4.
 // Gentle on CPU: one fewer, leaving at least 2 cores free.
 export function defaultHelpers(cores: number, gentle = false): number {
   const normal = Math.max(1, Math.min(cores - 1, 4));
@@ -134,6 +134,7 @@ export class ThinkPool {
     const cold = this.fresh; // the first tick builds every creature's brain and runs cold code; its duration seeds the average, which only loosens the timeout
     const base = cold ? Math.max(START_MS, this.tickMs) : this.tickMs;
     const done = this.expect(tickTimeoutMs(base, this.avgTickMs));
+    done.catch(() => {}); // a throw in post or senseOwn skips the await below; a later fail() must not be an unhandled rejection
     this.fresh = false;
     const gen = this.gen;
     const started = performance.now();

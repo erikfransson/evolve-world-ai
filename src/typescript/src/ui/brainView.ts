@@ -4,6 +4,7 @@ import { EXTRA_INPUTS, FEAT_CREATURE, FEAT_FOOD, FEAT_POISON, INPUT_EXTRA_SHORT,
 import type { InputLayout } from "../sim/sensors.ts";
 import { fitCanvas } from "./canvas.ts";
 import { FOOD, LABEL, OTHER, POISON } from "./palette.ts";
+import { clamp } from "../sim/mathUtil.ts";
 
 const POS_RGB = [255, 107, 107]; // red, positive
 const NEG_RGB = [78, 168, 255]; // blue, negative
@@ -106,7 +107,6 @@ export interface Layout {
   memoryOutY: number; // y of the S and L letters above the memory targets
 }
 
-const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
 
 // Memory unit k of a brain with memoryShort short units: 0 short, 1 long.
 const memoryKind = (k: number, memoryShort: number): number => (k < memoryShort ? 0 : 1);
@@ -257,6 +257,7 @@ export class BrainView {
     this.drawNodes(placed, acts);
     this.drawGauges(placed, acts);
     this.drawLabels(placed, labels, acts);
+    this.drawKey(cssW, cssH);
     if (!alive) this.drawDead(cssW, cssH);
     ctx.globalAlpha = 1;
   }
@@ -481,20 +482,18 @@ export class BrainView {
       for (let k = OUTPUT_SIZE; k < yOut.length; k++) deepest = Math.max(deepest, yOut[k]!);
       ctx.fillText("memory", outLabelX, (yOut[OUTPUT_SIZE]! + deepest) / 2);
     }
-
-    this.drawKey();
   }
 
   // Tiny sign key at the bottom-right corner.
-  private drawKey(): void {
+  private drawKey(cssW: number, cssH: number): void {
     const ctx = this.ctx;
-    const y = this.canvas.clientHeight - 8;
+    const y = cssH - 8;
     const items = [["\u2212", NEG_RGB], ["+", POS_RGB]] as const;
     ctx.font = SMALL_FONT;
     ctx.textAlign = "right";
     ctx.lineWidth = 2;
     ctx.lineCap = "round";
-    let x = this.canvas.clientWidth - 8;
+    let x = cssW - 8;
     for (const [text, rgb] of items) {
       ctx.fillStyle = LABEL;
       ctx.fillText(text, x, y);

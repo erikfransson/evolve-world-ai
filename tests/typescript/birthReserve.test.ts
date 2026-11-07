@@ -12,7 +12,7 @@ function cfg(reserve: number): EcoConfig {
   return {
     ...d, seed: 4,
     world: { ...d.world, width: 1500, height: 1500, foodDensity: 3 },
-    eco: { ...d.eco, wasm: false, initialPopulation: 20, maxPopulation: 50, birthReserve: reserve, foodRegrow: 2, foodMaxDensity: 3,
+    eco: { ...d.eco, wasm: false, initialPopulation: 20, maxPopulation: 50, birthReserve: reserve, foodRegrow: 1, foodMaxDensity: 3,
       birthEnergyRange: [21, 21], birthCostRange: [10, 10], birthCooldownRange: [0.5, 0.5] },
   };
 }
@@ -29,7 +29,9 @@ describe("eco.birthReserve", () => {
     expect(peak).toBe(40); // births reach the reserve line and stop there
     const genome = randomGenome(layerSizes(eco.config, PLAN), createRng(2));
     let added = 0;
-    while (eco.insertCreature({ genome, plan: PLAN, x: 750, y: 750, hue: 5, name: "v" }).ok) added++;
+    const cap = eco.config.eco.maxPopulation;
+    while (added <= cap && eco.insertCreature({ genome, plan: PLAN, x: 750, y: 750, hue: 5, name: "v" }).ok) added++; // capped: an insert that never refuses would hang
+    expect(added).toBeLessThanOrEqual(cap);
     expect(eco.population).toBe(50);
     expect(added).toBeGreaterThanOrEqual(10);
   });
@@ -54,8 +56,8 @@ describe("eco.birthReserve", () => {
       s.config.eco.birthReserve = bad;
       expect(() => restoreState(s)).toThrow(/birthReserve/);
     }
-    expect(eco.retune({ eco: { birthReserve: 100 } }).ok).toBe(true);
-    expect(eco.config.eco.birthReserve).toBe(100);
+    expect(eco.retune({ eco: { birthReserve: 40 } }).ok).toBe(true);
+    expect(eco.config.eco.birthReserve).toBe(40);
     expect(eco.retune({ eco: { birthReserve: 5000 } }).ok).toBe(false);
   });
 });

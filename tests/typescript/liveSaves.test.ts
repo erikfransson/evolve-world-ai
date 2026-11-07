@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, symlinkSync, truncateSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, symlinkSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
@@ -463,6 +463,40 @@ describe("saves", () => {
       await expect(new Saves(live, store).save()).rejects.toThrow(/not saved.*cap/);
     } finally {
       LIMITS.maxStateDirBytes = cap;
+    }
+  });
+
+  // Red without the recursion: the cap counted a before-reset folder as its directory entry, not the saves inside it.
+  it("counts the saves in before-reset folders toward the disk cap", async () => {
+    const dir = tmp();
+    const store = new StateStore(dir);
+    const cap = LIMITS.maxStateDirBytes;
+    LIMITS.maxStateDirBytes = 100000;
+    try {
+      mkdirSync(join(dir, "before-reset-2026-10-01T00-00-00-000Z"));
+      writeFileSync(join(dir, "before-reset-2026-10-01T00-00-00-000Z", saveName(at(5))), Buffer.alloc(200000));
+      expect(store.dirBytes()).toBeGreaterThanOrEqual(200000);
+      await expect(store.write("{}", { population: 1, tick: 1 }, at(0))).rejects.toThrow(/cap/);
+    } finally {
+      LIMITS.maxStateDirBytes = cap;
+    }
+  });
+
+  // Red without the prune first: a directory over the cap from old, deletable saves refused every save, and nothing else pruned it.
+  it("prunes old saves first when the state directory is over the disk cap", async () => {
+    const dir = tmp();
+    const store = new StateStore(dir);
+    const caps = [LIMITS.maxStateDirBytes, LIMITS.maxStateBytes];
+    LIMITS.maxStateDirBytes = 1000;
+    LIMITS.maxStateBytes = 500;
+    try {
+      for (let d = 1; d <= 4; d++) writeFileSync(join(dir, saveName(at(d))), Buffer.alloc(400));
+      expect(store.dirBytes()).toBeGreaterThan(1000);
+      const name = await store.write("{}", { population: 1, tick: 1 }, at(0));
+      expect(existsSync(join(dir, name))).toBe(true);
+      expect(existsSync(join(dir, saveName(at(4))))).toBe(false);
+    } finally {
+      [LIMITS.maxStateDirBytes, LIMITS.maxStateBytes] = caps;
     }
   });
 

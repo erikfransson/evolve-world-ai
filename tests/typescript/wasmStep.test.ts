@@ -294,7 +294,10 @@ describe.skipIf(!wasmAvailable())("the WebAssembly step equals the Creature code
 // Whole runs: the WebAssembly step and the Creature code's step must not tell apart in anything the world reaches.
 describe.skipIf(!wasmAvailable())("whole runs with the WebAssembly step and with the Creature code's step", () => {
   const tick = (eco: Ecosystem, js: boolean): void => {
-    if (!js) return eco.step();
+    if (!js) {
+      expect((eco as Any).kernels).not.toBeNull(); // else both sides would run the Creature code
+      return eco.step();
+    }
     if (eco.extinct) return;
     eco.prepareTick();
     eco.sensePhase();

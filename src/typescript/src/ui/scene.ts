@@ -71,21 +71,34 @@ function energyHue(fill: number): number {
   return HUE_DEG[HUE_DEG.length - 1]!;
 }
 
-function fillItems(ctx: CanvasRenderingContext2D, f: Frame, w: WorldView, kind: number, color: string): void {
+// One ray from (x, y) at angle a, coloured by what it met (a HIT_* kind).
+export function strokeRay(ctx: CanvasRenderingContext2D, x: number, y: number, a: number, length: number, kind: number, alpha: number): void {
+  ctx.strokeStyle = RAY_COLORS[kind] ?? RAY_COLORS[0]!;
+  ctx.globalAlpha = alpha;
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x + Math.cos(a) * length, y + Math.sin(a) * length);
+  ctx.stroke();
+}
+
+// Discs of one kind from a world's item arrays, at x + xs * scale (the world's own coordinates by default).
+export function fillItemDiscs(ctx: CanvasRenderingContext2D, w: WorldView, kind: number, color: string, r: number, x = 0, y = 0, scale = 1): void {
   ctx.fillStyle = color;
   ctx.beginPath();
   for (let i = 0; i < w.count; i++) {
     if (w.kinds[i] !== kind) continue;
-    ctx.moveTo(w.xs[i]! + f.itemR, w.ys[i]!);
-    ctx.arc(w.xs[i]!, w.ys[i]!, f.itemR, 0, Math.PI * 2);
+    const cx = x + w.xs[i]! * scale;
+    const cy = y + w.ys[i]! * scale;
+    ctx.moveTo(cx + r, cy);
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
   }
   ctx.fill();
 }
 
 // Items of the best creature's world copy.
 export function drawItems(ctx: CanvasRenderingContext2D, f: Frame, w: WorldView): void {
-  fillItems(ctx, f, w, HIT_FOOD, FOOD);
-  fillItems(ctx, f, w, HIT_POISON, POISON);
+  fillItemDiscs(ctx, w, HIT_FOOD, FOOD, f.itemR);
+  fillItemDiscs(ctx, w, HIT_POISON, POISON, f.itemR);
 }
 
 // Cheap faint creature: body opacity scales with energy.
@@ -110,7 +123,7 @@ function drawOther(ctx: CanvasRenderingContext2D, f: Frame, s: PlaybackState): v
 
 function drawBest(ctx: CanvasRenderingContext2D, f: Frame, s: CreatureState): void {
   const px = f.px;
-  const R = Math.max(f.creatureR, 6 * px); // true size so contact on screen matches eating
+  const R = Math.max(f.creatureR, 6 * px); // true size so contact on screen matches eating, but at least 6 screen pixels
   const e = energyRatio(f, s.energy);
   const alive = s.alive;
   if (alive) {
@@ -179,15 +192,7 @@ function drawRays(ctx: CanvasRenderingContext2D, f: Frame, ep: EpisodeView): voi
     const hasHit = hit.kind !== HIT_NONE;
     const d = hasHit ? f.rayLength * (1 - hit.closeness) : f.rayLength;
     const a = s.heading + offsets[i]!;
-    const ex = s.x + Math.cos(a) * d;
-    const ey = s.y + Math.sin(a) * d;
-    const color = RAY_COLORS[hit.kind]!;
-    ctx.strokeStyle = color;
-    ctx.globalAlpha = hasHit ? 0.9 : 0.6;
-    ctx.beginPath();
-    ctx.moveTo(s.x, s.y);
-    ctx.lineTo(ex, ey);
-    ctx.stroke();
+    strokeRay(ctx, s.x, s.y, a, d, hit.kind, hasHit ? 0.9 : 0.6);
   }
   ctx.globalAlpha = 1;
 }
@@ -248,7 +253,7 @@ export function beginFrame(ctx: CanvasRenderingContext2D, config: SimConfig, ful
   }
   drawTerrain(ctx, terrainOf(config), f.scale, seen);
   ctx.strokeStyle = WALL;
-  ctx.lineWidth = Math.max(2, 3 / f.scale);
+  ctx.lineWidth = 3 / f.scale; // 3 device px
   ctx.strokeRect(0, 0, ww, wh);
   return f;
 }

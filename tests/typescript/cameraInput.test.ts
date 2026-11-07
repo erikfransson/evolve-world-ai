@@ -162,4 +162,17 @@ describe("wheel", () => {
     expect(cam.cx).toBeGreaterThan(cx);
     expect(cam.cy).toBeGreaterThan(cy);
   });
+
+  // Red without it: following with the view centre offset (Live's panels) hopped the view on every wheel step.
+  it("zooms while following about the view centre, not the canvas centre", () => {
+    const { canvas, cam } = setup();
+    cam.setFocusOffset(200, 60, true);
+    const t = { x: cam.cx, y: cam.cy }; // the followed creature, sitting at the view centre
+    cam.follow(() => t);
+    const before = cam.worldToScreen(t.x, t.y);
+    canvas.dispatchEvent(wheel({ deltaY: -3, deltaMode: 1 }));
+    const after = cam.worldToScreen(t.x, t.y);
+    expect(after.x).toBeCloseTo(before.x, 6);
+    expect(after.y).toBeCloseTo(before.y, 6);
+  });
 });

@@ -31,6 +31,8 @@ describe("transfer battery", () => {
   });
 
   it("t quantile and paired intervals", () => {
+    for (const [df, t] of [[1, 12.706], [2, 4.303], [5, 2.571], [10, 2.228], [30, 2.042]] as const) expect(t975(df)).toBeCloseTo(t, 3);
+    expect(t975(31)).toBeCloseTo(2.04, 2);
     expect(t975(9)).toBeCloseTo(2.262, 2);
     expect(t975(63)).toBeCloseTo(1.998, 2);
     const ci = tInterval([1, 2, 3, 4]);

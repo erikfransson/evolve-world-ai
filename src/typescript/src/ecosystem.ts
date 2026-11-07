@@ -9,6 +9,7 @@ import type { EcoConfig } from "./sim/ecoConfig.ts";
 import type { Board } from "./sim/leaderboard.ts";
 import type { EcoInMessage, EcoOutMessage, EcoSnapshot, SelectedDetails, SnapshotViews } from "./worker/ecoProtocol.ts";
 import { snapshotViews } from "./worker/ecoProtocol.ts";
+import { clampThreads } from "./worker/browserPool.ts";
 import { Camera } from "./ui/camera.ts";
 import type { Point } from "./ui/camera.ts";
 import { buildSelectedBrain } from "./ui/ecoBrain.ts";
@@ -35,7 +36,7 @@ const ZOOM_STEP = 1.6;
 const POOL_URL = new URL("../pool.json", document.baseURI).href;
 // Overrides for testing: ?threads=N helper threads (0 runs on one thread).
 const params = new URLSearchParams(location.search);
-const THREADS = params.has("threads") ? Math.max(0, Math.floor(Number(params.get("threads"))) || 0) : undefined;
+const THREADS = params.has("threads") ? clampThreads(Number(params.get("threads"))) : undefined;
 
 interface Live {
   msg: EcoSnapshot;
@@ -213,6 +214,10 @@ function onSnapshot(e: MessageEvent<EcoOutMessage>): void {
         }
       });
     }
+    return;
+  }
+  if (msg.type === "renderLost") {
+    host?.die?.("no reply from the render worker");
     return;
   }
   if (msg.type === "error") {

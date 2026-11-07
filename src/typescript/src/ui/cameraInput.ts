@@ -99,7 +99,7 @@ export function attachCameraInput(cam: Camera, canvas: HTMLCanvasElement, backin
     const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
     const factor = Math.exp(-e.deltaY * unit * (e.ctrlKey ? PINCH_WHEEL_K : WHEEL_K));
     if (cam.following) {
-      cam.zoomAt(backing().width / 2, backing().height / 2, factor); // keeps the followed target centred
+      cam.zoomAt(backing().width / 2 + cam.focusX, backing().height / 2 + cam.focusY, factor); // keeps the followed target where it sits on screen
       return;
     }
     cam.cancel();

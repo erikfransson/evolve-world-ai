@@ -306,7 +306,7 @@ export async function openWorld(saves: Saves, live: LiveWorld, stateDir: string,
   }
   let n: number;
   try {
-    n = live.seedFounders(founders, Math.random, copies, carry ? { founder: carryFounder(carry), copies: carry.copies } : undefined);
+    n = live.seedFounders(founders, Math.random, copies, carry ? { founder: carryFounder(carry), copies: carry.copies } : undefined, true);
   } catch (e) {
     if (!carry) throw e;
     // A carry that does not go in (no room left on the map, an insert refused) must not stop every restart: it is set aside instead.
@@ -317,7 +317,7 @@ export async function openWorld(saves: Saves, live: LiveWorld, stateDir: string,
     } catch (m) {
       log(`${CARRY_FILE} not moved aside: ${errText(m)}`);
     }
-    n = live.seedFounders(founders, Math.random, copies); // seedFounders checks before it inserts, so the world is still empty
+    n = live.seedFounders(founders, Math.random, copies); // with fresh set, a seedFounders that throws leaves a fresh, empty world
   }
   if (carry) {
     const got = n - copies * founders.length;

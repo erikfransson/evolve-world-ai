@@ -1,45 +1,14 @@
-import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
 import { restoreState, saveState } from "../../src/typescript/src/sim/ecoState.ts";
-import { ThinkPool, serveHelper } from "../../src/typescript/src/worker/ecoPool.ts";
-import type { HelperIn, HelperOut, HelperPort } from "../../src/typescript/src/worker/ecoPool.ts";
+import { ThinkPool } from "../../src/typescript/src/worker/ecoPool.ts";
 import { MAX_THINK_EVERY } from "../../src/typescript/src/sim/ecoConfig.ts";
-import { WASM_RUN_FINGERPRINT } from "./helpers.ts";
+import { WASM_RUN_FINGERPRINT, crowdedConfig, fakePorts } from "./helpers.ts";
 
 // eco.thinkEvery: a creature senses and thinks every k-th tick, staggered by id, and keeps its outputs in between.
 
-// The small crowded world of ecoPool.test.ts, with births and deaths within a few hundred ticks.
-function cfg(thinkEvery: number, wasm = true): EcoConfig {
-  const d = structuredClone(DEFAULT_ECO_CONFIG);
-  return {
-    ...d,
-    seed: 5,
-    world: { ...d.world, width: 900, height: 900 },
-    creature: { ...d.creature, startEnergy: 60 },
-    eco: { ...d.eco, wasm, thinkEvery, initialPopulation: 60, foundersVary: true, structuralRate: 0.3, birthEnergyRange: [76, 76], birthCostRange: [75, 75], birthCooldownRange: [10, 10] },
-  };
-}
-
-// In-process helpers over cloned messages; failAt: the tick message on which a helper reports an error.
-function ports(n: number, failAt = Infinity): HelperPort[] {
-  return Array.from({ length: n }, () => {
-    let reply: (msg: HelperOut) => void = () => {};
-    let fail: (error: unknown) => void = () => {};
-    let ticks = 0;
-    const handle = serveHelper((msg, transfer) => queueMicrotask(() => reply(structuredClone(msg, { transfer: transfer as ArrayBuffer[] }))));
-    return {
-      post: (msg: HelperIn, transfer?: Transferable[]) => {
-        if (msg.type === "tick" && ++ticks >= failAt) return queueMicrotask(() => fail(new Error("helper lost")));
-        const copy = structuredClone(msg, { transfer: (transfer ?? []) as ArrayBuffer[] });
-        queueMicrotask(() => handle(copy));
-      },
-      onMessage: (callback) => { reply = callback; },
-      onError: (callback) => { fail = callback; },
-      terminate: () => {},
-    };
-  });
-}
+const cfg = (thinkEvery: number, wasm = true): EcoConfig => crowdedConfig(5, { wasm, thinkEvery });
+const ports = fakePorts;
 
 function serial(config: EcoConfig, ticks: number): Ecosystem {
   const eco = new Ecosystem(config);
@@ -98,8 +67,16 @@ describe("thinkEvery", () => {
     const eco = new Ecosystem(cfg(1));
     const bank = (eco as unknown as { kernels: { brains: { stamp: number } } }).kernels.brains;
     bank.stamp = 255 - 2; // two ticks from the limit of the per-slot byte marks
-    for (let t = 0; t < 300; t++) eco.step();
-    expect(bank.stamp).toBeLessThan(300);
+    let wraps = 0;
+    let top = 0;
+    for (let t = 0; t < 300; t++) {
+      const before = bank.stamp;
+      eco.step();
+      if (bank.stamp < before) wraps++; // the stamp went back down: the marks were cleared and the stamps started over
+      top = Math.max(top, bank.stamp);
+    }
+    expect(wraps).toBeGreaterThanOrEqual(1);
+    expect(top).toBe(255); // reached the limit of the byte marks and never went past it
     expect(eco.fingerprint()).toBe(WASM_RUN_FINGERPRINT);
   });
 

@@ -24,7 +24,7 @@ Self-play envs (Melee, Brawl) score against the learner's own league, so their h
 | Fence (fence)       | Avoid and find a way | stinging wall with a gap, 2 food this side, +1 per wall crossed | 0.06 -> 1.84 (200 it) | PPO 60 s: 0.63 -> 1.94 |
 | Four rooms (rooms)  | Avoid and find a way | four rooms with a door in each wall                 | 0.00 -> 0.28   | PPO 60 s: 0.00 -> 0.19 |
 | Islands (islands)   | Avoid and find a way | food on three islands, poison in the water          | 0.00 -> 1.81   | PPO 60 s: 0.00 -> 1.56 |
-| Ring road (ring)    | Avoid and find a way | food on a lane between two stinging poison rings    | ES not recorded | PPO 60 s from pool: 9.35 |
+| Ring road (ring-road) | Avoid and find a way | food on a lane between two stinging poison rings    | ES not recorded | PPO 60 s from pool: 9.35 |
 | Bottleneck          | Avoid and find a way | the fence with two rivals at the gap                | not measured   |              |
 | Flash (flash)       | Memory               | 5 food all round in a 600 x 600 room, visible 2 s of 15 | memory 3.19 vs none 2.17 (600 it, pop 100, 6 seeds) | |
 | Glimpse (glimpse)   | Memory               | a patch of 12 food in 500 x 500, visible 1.5 s of 25 | memory 3.17 vs none 2.10 (6 seeds) | |
@@ -46,7 +46,7 @@ Self-play envs (Melee, Brawl) score against the learner's own league, so their h
 | Crowd (crowd)       | Compete              | many rivals on regrowing food                       | ES beats PPO   |              |
 | Patch war (patch-war) | Compete            | one regrowing patch, 5 pool rivals, bumps cost energy | 0.86 -> 9.01 (2026-10-28) | 5.65 -> 7.83 |
 
-Slower foragers, filed by tag since 2026-10-15: Sparse plains (forage-sparse) in Find food, Poison field in Avoid and find a way, Rivals in Compete, Endurance in Energy. Advanced now holds only hunters and prey (hidden while the Arena trains foragers only). Poison field and Endurance hardly move from random genomes even in 600 iterations (gains 0.0 to 0.4) but do from a pool founder (0.37 -> 0.95 and 0.80 -> 2.02).
+Slower foragers, filed by tag since 2026-10-15: Sparse plains (forage-sparse) in Find food, Poison field in Avoid and find a way, Rivals in Compete, Endurance in Energy. Advanced now holds only hunters and prey (hidden while the Arena trains foragers only): Hunt wanderers (hunt-wanderers), Hunt grazers (hunt-grazers), Hunt evaders (hunt-evaders) and Evade (evade), not measured here. Poison field and Endurance hardly move from random genomes even in 600 iterations (gains 0.0 to 0.4) but do from a pool founder (0.37 -> 0.95 and 0.80 -> 2.02).
 
 Bigger (Live-like, 90 s, start energy 300, lethal poison, bumps hurt, seed pool crowds; Busy meadow was dropped on 2026-10-15). Measured differently from the table above, as they are too slow for population 200: ES at population 100 for 200 iterations, held-out on 16 seeds, from random genomes of three bodies (5 to 12 rays, hidden 8 to 24+24, memory 0 to 8 units), 2 seeds each; mean over the 6 runs and the best run.
 
@@ -239,7 +239,8 @@ Dropped:
 ## Notes
 
 - 2026-10-11: dropped near-duplicates (forage-box, box, box-poison, nibble-poison, scatter). Fence and Zigzag with lethal walls never learned (no candidate got through); walls now sting (25 energy) and 2 food lie on the learner's side as a first step. Lean times showed no signal at 25-30 energy; raised to 40 energy, 8 food, food reward 0.5.
-- The library (`public/rl/library.json`) holds rivals by env id: one aggressor trained 200 iterations from pool:0 (held-out 1.21 -> 1.75), used by Escape. Rivals only come from envs of the same world and species.
+- The library (`public/rl/library.json`) holds rivals by env id: one aggressor trained 200 iterations from pool:0 (held-out 1.21 -> 1.75), used by Escape. Rivals only come from envs of the same world and species. A test keeps an entry for every `library:` source in `envs.ts`; an env whose source has none plays random rivals.
+- 2026-11-06: added `hunt-grazers` (300 iterations ES from pool:0, `--save`, 3.7 min; 0.81 on 48 fresh seeds, 8 random designs 0.38 mean and 0.58 best) and `evade` (300 iterations from pool:0 against that hunter, 1.7 min; 5.33, random designs 1.64 mean and 1.73 best), so Evade and Hunt: evaders no longer fall back to random rivals. Before this and the `rlGrad` fix, rlGrad runs on Escape, Evade and Hunt: evaders also played random rivals.
 - Fence and Zigzag learned the near food but not the gap (200 iterations: 1.47 and 1.0, under the 2 near items); with +1 per wall crossed they reach 1.84 and 1.41. Lean times stayed flat from random even with stinging poison: one lethal bite or quick starvation made rewards all-or-nothing; a pool founder learns it.
 - Backprop RL (PPO, `docs/rl-grad-notes.md`) learns faster than ES in wall time on every env tried, by far on Lean times (random 0.91 -> 2.91, pool 0.94 -> 5.99 in 60 s on one thread).
 - 2026-10-12: Memory group. Each memory env is checked with the same body with memory 4+4 vs 0+0 (ES, pop 100, 400 iterations, 3 seeds); only an env with a clear gap ships. Flash passes (1.60 vs 1.11). Signal door (a T-maze: cue bite left or right, corridor, one room in the time) shows no gap (3.84 vs 3.82) and is held back; its `cuedoor` layout stays for custom envs. Three arms never got past one corridor and was dropped, as was Patience.

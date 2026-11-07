@@ -28,6 +28,7 @@ const PING_EVERY_MS = 20_000;
 export const HIDDEN_CLOSE_MS = 3 * 60_000; // a tab hidden this long lets go of its viewer slot, and connects again when shown
 const STALE_MS = 15_000; // no message for this long counts as a dead link
 const OFFLINE_AFTER_FAILURES = 2; // the first try is "connecting", later failed ones "offline"
+const STABLE_MS = 10_000; // a link that dropped sooner after its hello does not reset the retry backoff
 const UPDATING_RETRY_S = 60; // while the server runs an older protocol (plus up to 25% jitter)
 
 const n = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : 0);
@@ -133,6 +134,7 @@ export class LiveLink {
   private updating = false; // the server runs an older protocol than this page: it is being updated, keep retrying
   private timer: ReturnType<typeof setTimeout> | undefined;
   private lastMessage = 0;
+  private upSince = 0; // Date.now() of the hello of this link, 0 before
   private readonly url: string;
   private readonly h: LinkHandlers;
 
@@ -215,6 +217,8 @@ export class LiveLink {
 
   private lost(): void {
     this.ws = null;
+    if (this.upSince && Date.now() - this.upSince >= STABLE_MS) this.failures = 0;
+    this.upSince = 0;
     // An older server costs it a full connect per try, so while it is being updated the page asks only about once a minute.
     const wait = this.updating ? UPDATING_RETRY_S * (1 + 0.25 * Math.random()) : retryDelayS(this.failures);
     this.failures++;
@@ -224,14 +228,23 @@ export class LiveLink {
 
   private message(data: unknown): void {
     this.lastMessage = Date.now();
+    let decoding = false; // only while an item set or delta decodes: a failure there leaves the page's items wrong until a fresh set (a handler that throws does not close the link)
     try {
       if (typeof data === "string") return this.text(JSON.parse(data) as ServerText);
       if (!(data instanceof ArrayBuffer) || !this.world) return;
       const type = frameType(data);
       if (type === MSG_CREATURES) this.h.onCreatures(decodeCreatures(data, this.world));
-      else if (type === MSG_ITEMS) this.h.onItems(decodeItems(data, this.world, this.slots));
-      else if (type === MSG_DELTA) this.h.onDelta(decodeDelta(data, this.world, this.slots));
-      else if (type === MSG_DETAIL) {
+      else if (type === MSG_ITEMS) {
+        decoding = true;
+        const items = decodeItems(data, this.world, this.slots);
+        decoding = false;
+        this.h.onItems(items);
+      } else if (type === MSG_DELTA) {
+        decoding = true;
+        const deltas = decodeDelta(data, this.world, this.slots);
+        decoding = false;
+        this.h.onDelta(deltas);
+      } else if (type === MSG_DETAIL) {
         const d = decodeDetail(data);
         if (d.id === this.selected) this.h.onDetail(d);
       } else if (type === MSG_GENOME) {
@@ -240,6 +253,7 @@ export class LiveLink {
       }
     } catch (err) {
       console.warn("bad message from the server", err); // a malformed frame is dropped, the link stays
+      if (decoding) this.ws?.close(); // the reconnect's hello brings a full item set
     }
   }
 
@@ -260,12 +274,16 @@ export class LiveLink {
         return this.h.onState("outdated", 0);
       }
       const hello = cleanHello(msg);
-      if (!hello) throw new Error("bad hello");
+      if (!hello) {
+        console.warn("bad hello from the server");
+        this.ws?.close(); // no world to draw frames on: retry, with backoff
+        return;
+      }
       this.full = false;
       this.world = msg.world;
       this.slots = msg.itemSlots;
       this.selected = null; // a new world: the server forgot the selection
-      this.failures = 0;
+      this.upSince = Date.now(); // failures reset in lost() once the link has held for STABLE_MS
       this.h.onHello(hello);
       this.h.onState("live", 0);
     } else if (msg.t === "stats") this.h.onStats(cleanStats(msg));

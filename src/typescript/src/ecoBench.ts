@@ -1,6 +1,6 @@
 // Ecosystem benchmark: runs a seeded world headless and prints ticks/s, population over time and a fingerprint.
 // Usage: node src/ecoBench.ts [--seconds 120] [--seed 1] [--pop 300] [--width 12000] [--every 10] [--series 30]
-//   [--pool public/pool.json] [--threads 0] [--predators] [--preset ID] [--config file.json] [--set path=value ...]
+//   [--pool public/pool.json] [--threads 0] [--gentle] [--profile] [--predators] [--preset ID] [--config file.json] [--set path=value ...]
 // --config reads settings in the page's Copy format (an Ecosystem export) as the base; --preset applies a preset's world
 // and regrowth to the defaults (not with --config); --predators starts from the two-species (prey and predator) defaults.
 // --set overrides any config value after that, checked like a pasted config: --set eco.foodRegrow=0.04 --set species.1.speed=1.4
@@ -11,7 +11,7 @@
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { parseArgs } from "node:util";
+import { fail, finiteNumber, loadPoolFile, positiveInt, strictArgs } from "./cliArgs.ts";
 import { overrideConfig } from "./sim/config.ts";
 import type { DeepPartial } from "./sim/config.ts";
 import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "./sim/ecoConfig.ts";
@@ -20,14 +20,13 @@ import { Ecosystem } from "./sim/ecosystem.ts";
 import "./sim/maps/index.ts"; // for --preset inland-sea
 import { PhaseTimer } from "./sim/profile.ts";
 import { ECO_PRESETS, PREDATOR_PRESETS, withEcoPreset } from "./sim/presets.ts";
-import { parsePool } from "./sim/seedPool.ts";
 import { checkRanges, mergeSpeciesList } from "./sim/species.ts";
 import { parseSettings } from "./ui/settingsIO.ts";
 import { createNodeThinkPool } from "./worker/nodePool.ts";
 import { DutyController, FALLBACK_DUTY, Pacer } from "./worker/pacer.ts";
 
 // parameters
-const { values } = parseArgs({
+const { values } = strictArgs({
   options: {
     seconds: { type: "string", default: "120" },
     seed: { type: "string" },
@@ -45,7 +44,7 @@ const { values } = parseArgs({
     profile: { type: "boolean" }, // CPU ms per phase per steady tick; serial only, with --threads the first lap also holds the wait for the helpers
   },
 });
-const num = (v: string | undefined, fallback: number): number => (v === undefined ? fallback : Number(v));
+const num = (name: string, v: string | undefined, fallback: number, min?: number): number => (v === undefined ? fallback : finiteNumber(name, v, min));
 
 // Per-phase CPU ms per steady tick (after the first quarter), and per 1000 creatures of the steady mean population.
 function profileOutput(prof: PhaseTimer, steadyTicks: number, steadyCreatureTicks: number): object {
@@ -61,13 +60,14 @@ function profileOutput(prof: PhaseTimer, steadyTicks: number, steadyCreatureTick
   };
 }
 
-// "path=value" assignments as one nested override.
+// "path=value" assignments as one nested override; a path through __proto__, constructor or prototype is refused (it would write Object.prototype).
 function overridesOf(assignments: readonly string[]): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const assignment of assignments) {
     const eq = assignment.indexOf("=");
     if (eq < 0) throw new Error(`--set needs path=value, got "${assignment}"`);
     const keys = assignment.slice(0, eq).split(".");
+    for (const k of keys) if (k === "__proto__" || k === "constructor" || k === "prototype") fail(`--set ${assignment.slice(0, eq)}: "${k}" is not a setting`);
     const raw = assignment.slice(eq + 1);
     let at = out;
     for (const k of keys.slice(0, -1)) at = (at[k] ??= {}) as Record<string, unknown>;
@@ -90,12 +90,12 @@ if (values.config !== undefined) {
     config = withEcoPreset(config, values.preset, presets);
   }
 }
-config.seed = num(values.seed, config.seed);
-const scale = num(values.width, config.world.width) / config.world.width;
+config.seed = num("seed", values.seed, config.seed);
+const scale = num("width", values.width, config.world.width, Number.MIN_VALUE) / config.world.width;
 const startPopulation = config.eco.initialPopulation;
 config.world.width *= scale;
 config.world.height *= scale;
-config.eco.initialPopulation = num(values.pop, Math.round(startPopulation * scale * scale));
+config.eco.initialPopulation = num("pop", values.pop, Math.round(startPopulation * scale * scale), 1);
 // --pop and --width scale every species' founders alike.
 const founderScale = config.eco.initialPopulation / startPopulation;
 config.species = config.species?.map((sp) => (sp.founders === undefined ? sp : { ...sp, founders: Math.round(sp.founders * founderScale) }));
@@ -108,13 +108,13 @@ if (speciesPatch !== undefined) {
   config.species = mergeSpeciesList(list.map((sp, i) => ({ ...sp, ...(speciesPatch as Record<number, object>)[i] })), list);
 }
 
-const seconds = num(values.seconds, 120);
-const every = Math.max(1, Math.round(num(values.every, 10) / config.dt));
-const seriesEvery = values.series === undefined ? 0 : Math.max(1, Math.round(Number(values.series) / config.dt));
+const seconds = num("seconds", values.seconds, 120, 0);
+const every = Math.max(1, Math.round(num("every", values.every, 10, Number.MIN_VALUE) / config.dt));
+const seriesEvery = values.series === undefined ? 0 : Math.max(1, Math.round(finiteNumber("series", values.series, Number.MIN_VALUE) / config.dt));
 const ticks = Math.round(seconds / config.dt);
 
-const pool = values.pool === "none" ? null : parsePool(JSON.parse(readFileSync(values.pool!, "utf8"))).entries;
-const threads = num(values.threads, 0);
+const pool = values.pool === "none" ? null : loadPoolFile(values.pool);
+const threads = positiveInt("threads", values.threads, 0);
 const helpers = threads > 0 ? createNodeThinkPool(threads) : null;
 const eco = new Ecosystem(config, pool, { journal: helpers !== null });
 const prof = values.profile ? new PhaseTimer() : null;
