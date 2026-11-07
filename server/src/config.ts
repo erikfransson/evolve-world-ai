@@ -116,6 +116,7 @@ export const HELPER_THREADS = 0;
 
 export const LIMITS = {
   maxViewers: 100,
+  maxViewersPerVisitor: 3, // open viewers per address (X-Forwarded-For, only with LIVE_TRUST_FORWARDED=1); the 4th gets "busy"; a household or office behind one address shares it
   maxSendBytesPerSecond: 3_000_000, // total upload budget, the home uplink is the limit; viewers get fewer frames, and none join past the slowest rate (budget.ts)
   connectBytesPerSecond: 300_000, // of the budget: catch-up frames for viewers that just connected, skipped when used up
   // The connect allowance holds this much at once: the largest full item set any world can have (all of the wire's MAX_ITEM_SLOTS in use)

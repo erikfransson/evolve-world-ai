@@ -160,6 +160,7 @@ export interface Pong {
 export interface Busy {
   t: "busy"; // sent before closing when the viewer cap is reached
   maxViewers: number;
+  perVisitor?: number; // present when this address already has that many viewers open, not when the world is full
 }
 // The add rules again after an admin change (add.* settings, birth ranges or costs), so an open page keeps to them.
 export interface Rules {

@@ -227,6 +227,28 @@ describe("live link", () => {
     }
   });
 
+  it("a busy reply naming the per-address cap reaches the page as tabs; a bad value is ignored", () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("WebSocket", FakeSocket);
+    try {
+      const seen: [string, number | undefined][] = [];
+      const link = new LiveLink("ws://x", { onState: (s, _r, tabs) => seen.push([s, tabs]), onHello() {}, onCreatures() {}, onItems() {}, onDelta() {}, onDetail() {}, onGenome() {}, onStats() {}, onHistory() {} });
+      link.start();
+      FakeSocket.last!.onmessage!({ data: JSON.stringify({ t: "busy", maxViewers: 100, perVisitor: 3 }) });
+      FakeSocket.last!.close();
+      expect(seen.at(-1)).toEqual(["full", 3]);
+      for (const bad of [1e9, -1, 2.5, "3", null]) {
+        vi.advanceTimersByTime(60_000);
+        FakeSocket.last!.onmessage!({ data: JSON.stringify({ t: "busy", maxViewers: 100, perVisitor: bad }) });
+        FakeSocket.last!.close();
+        expect(seen.at(-1)).toEqual(["full", 0]);
+      }
+    } finally {
+      vi.unstubAllGlobals();
+      vi.useRealTimers();
+    }
+  });
+
   it("keeps retrying a server older than the page, and asks for a reload only from a newer one", () => {
     vi.useFakeTimers();
     vi.stubGlobal("WebSocket", FakeSocket);

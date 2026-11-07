@@ -11,7 +11,7 @@ import { MAX_KILL_ENERGY } from "../sim/ecoConfig.ts";
 export type LinkState = "connecting" | "live" | "offline" | "full" | "updating" | "outdated";
 
 export interface LinkHandlers {
-  onState(state: LinkState, retryInS: number): void;
+  onState(state: LinkState, retryInS: number, tabs?: number): void; // tabs: with "full", the per-address viewer cap that was hit (0 or absent: the world is full)
   onHello(hello: Hello): void;
   onCreatures(frame: CreatureFrame): void;
   onItems(frame: ItemsSnapshot): void;
@@ -130,6 +130,7 @@ export class LiveLink {
   private slots = 0;
   private selected: number | null = null;
   private failures = 0;
+  private tabs = 0; // the per-address cap named by the busy reply, 0 when the world itself is full
   private full = false; // the server said it has no room, until the next hello
   private updating = false; // the server runs an older protocol than this page: it is being updated, keep retrying
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -198,6 +199,7 @@ export class LiveLink {
 
   private open(): void {
     this.full = false; // a busy reply on this try sets it again
+    this.tabs = 0;
     this.updating = false;
     let ws: WebSocket;
     try {
@@ -222,7 +224,7 @@ export class LiveLink {
     // An older server costs it a full connect per try, so while it is being updated the page asks only about once a minute.
     const wait = this.updating ? UPDATING_RETRY_S * (1 + 0.25 * Math.random()) : retryDelayS(this.failures);
     this.failures++;
-    this.h.onState(this.full ? "full" : this.updating ? "updating" : this.failures >= OFFLINE_AFTER_FAILURES ? "offline" : "connecting", Math.ceil(wait));
+    this.h.onState(this.full ? "full" : this.updating ? "updating" : this.failures >= OFFLINE_AFTER_FAILURES ? "offline" : "connecting", Math.ceil(wait), this.full ? this.tabs : 0);
     this.timer = setTimeout(() => this.open(), wait * 1000);
   }
 
@@ -280,6 +282,7 @@ export class LiveLink {
         return;
       }
       this.full = false;
+      this.tabs = 0;
       this.world = msg.world;
       this.slots = msg.itemSlots;
       this.selected = null; // a new world: the server forgot the selection
@@ -292,6 +295,9 @@ export class LiveLink {
       const r = cleanAddReply(msg);
       if (r) this.h.onAdd?.(r);
     } else if (msg.t === "rules") this.h.onRules?.(cleanAddRules(msg.add));
-    else if (msg.t === "busy") this.full = true; // the server closes next, lost() reports it with the retry time
+    else if (msg.t === "busy") {
+      this.full = true;
+      this.tabs = int(msg.perVisitor, 1, 100) ? (msg.perVisitor as number) : 0;
+    } // the server closes next, lost() reports it with the retry time
   }
 }

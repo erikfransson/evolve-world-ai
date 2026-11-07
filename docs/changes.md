@@ -6,6 +6,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- Live server: at most 3 open viewers per visitor address (`maxViewersPerVisitor`, from the tunnel's X-Forwarded-For, so only once `LIVE_TRUST_FORWARDED=1`); the 4th connection is told "busy" and cut, and the count is released on close. One client can no longer take all 100 viewer slots. Visitors sharing one address (a household, an office) share the 3.
+
 ## 0.5.0 (2026-11-07)
 
 - Retune refuses inherited names such as `constructor`, `__proto__` and `toString` as sections or fields (own-key lookup in checkRetune); the three expected-to-fail tests now pass.
