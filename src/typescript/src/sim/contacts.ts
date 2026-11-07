@@ -179,7 +179,8 @@ export class Contacts {
   // a and b are the states of members i and j.
   private bump(i: number, j: number, a: CreatureState, b: CreatureState, radius: number, e: number): void {
     const eco = this.config.eco;
-    if (!a.alive || !b.alive) return; // an eaten prey; everyone else is alive until settle
+    // A creature at 0 energy dies in settle (eaten, killed by an earlier bump or starved) and is gone next tick, so it no longer pushes.
+    if (!a.alive || !b.alive || !(a.energy > 0 && b.energy > 0)) return;
     let shareA = 1;
     let shareB = 1;
     if (eco.ramShare !== undefined && eco.collisionDamage) {

@@ -6,6 +6,13 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+## 0.6.0 (2026-11-07)
+
+- Live "Add your creature": one Train switch with a Light 30 s / Medium 75 s / Strong 200 s choice (`TRAIN_TIERS`). A fresh brain trains with PPO on the tier's recipe, a founder or file keeps the evolution protocol at half the tier's seconds per phase. The clock starts once the worker is ready, the countdown runs over the tier's seconds, a missing seed pool is noted in the panel, and the trained-brain cache keys on the tier and no longer reuses a partial run as finished. Browser only, nothing new goes to the server.
+- Live server: at most 20 open viewers per visitor address (`maxViewersPerVisitor`, from the tunnel's X-Forwarded-For, so only once `LIVE_TRUST_FORWARDED=1`); the 21st connection is told "busy" and cut, and the count is released on close. One client can no longer take all 100 viewer slots. Visitors sharing one address (a household, an office) share the 20.
+- A creature at 0 energy (killed by a bump earlier in the tick, or starved) no longer pushes or blocks others in collisions, like an eaten prey already did. Results change: ecoBench `--seconds 30 --pop 600` fingerprint 230580385, liveBench 623371842.
+- planMutation: the birth-trait comment now says a zero-minimum range is drawn linearly and still drifts by a factor, as the code does.
+
 ## 0.5.0 (2026-11-07)
 
 - Retune refuses inherited names such as `constructor`, `__proto__` and `toString` as sections or fields (own-key lookup in checkRetune); the three expected-to-fail tests now pass.

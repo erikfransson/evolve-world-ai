@@ -1,5 +1,8 @@
 // @vitest-environment happy-dom
 import { train } from "../../src/typescript/src/live/training.ts";
+import type { LivePhase } from "../../src/typescript/src/live/training.ts";
+
+const PHASE: LivePhase = { kind: "pretrain", envs: ["far-food"], seconds: 10, method: "es" };
 
 // A stand-in for the RL worker: records what the page sends, answers nothing.
 class FakeWorker {
@@ -18,6 +21,8 @@ class FakeWorker {
     this.terminated = true;
   }
 }
+
+const ready = (extra: object = {}): void => FakeWorker.last!.onmessage!({ data: { type: "ready", held: 0, perEnv: [], ...extra } } as MessageEvent); // the worker has loaded and scored the start brain
 
 const setHidden = (hidden: boolean): void => {
   Object.defineProperty(document, "hidden", { configurable: true, get: () => hidden });
@@ -38,8 +43,9 @@ describe("in-browser training", () => {
   it("caps the helper threads and waits, clock and worker, while the tab is hidden", async () => {
     const plan = { rayCount: 3, raySpread: 1, rayLength: 100, hiddenLayers: [4], memoryShort: 0, memoryLong: 0 };
     let ended = false;
-    const job = train("pretrain", plan, new Float32Array(10), () => {}, () => {}, 10);
+    const job = train(PHASE, plan, new Float32Array(10), () => {}, () => {}, 10);
     void job.done.then(() => (ended = true));
+    ready();
     const w = FakeWorker.last!;
     expect(w.sent[0]).toMatchObject({ type: "start", helpers: 3 });
     vi.advanceTimersByTime(4000);
@@ -62,8 +68,9 @@ describe("in-browser training", () => {
   it("ends a run hidden for more than ten minutes, freeing the worker", async () => {
     const plan = { rayCount: 3, raySpread: 1, rayLength: 100, hiddenLayers: [4], memoryShort: 0, memoryLong: 0 };
     let ended = false;
-    const job = train("pretrain", plan, new Float32Array(10), () => {}, () => {}, 10);
+    const job = train(PHASE, plan, new Float32Array(10), () => {}, () => {}, 10);
     void job.done.then(() => (ended = true));
+    ready();
     setHidden(true);
     vi.advanceTimersByTime(9.9 * 60_000);
     await Promise.resolve();
@@ -77,8 +84,9 @@ describe("in-browser training", () => {
   it("counts every hidden stretch toward the ten minutes, and says the run ended because the tab stayed hidden", async () => {
     const plan = { rayCount: 3, raySpread: 1, rayLength: 100, hiddenLayers: [4], memoryShort: 0, memoryLong: 0 };
     let ended = false;
-    const job = train("pretrain", plan, new Float32Array(10), () => {}, () => {}, 10);
+    const job = train(PHASE, plan, new Float32Array(10), () => {}, () => {}, 10);
     void job.done.then(() => (ended = true));
+    ready();
     for (let k = 0; k < 3; k++) { // hidden 4 min, shown 1 s, three times: 12 min hidden in all
       setHidden(true);
       vi.advanceTimersByTime(4 * 60_000);
@@ -93,9 +101,44 @@ describe("in-browser training", () => {
 
   it("does not call a run that ran out of visible time stopped by hiding", async () => {
     const plan = { rayCount: 3, raySpread: 1, rayLength: 100, hiddenLayers: [4], memoryShort: 0, memoryLong: 0 };
-    const job = train("pretrain", plan, new Float32Array(10), () => {}, () => {}, 10);
+    const job = train(PHASE, plan, new Float32Array(10), () => {}, () => {}, 10);
+    ready();
     vi.advanceTimersByTime(11_000);
     await job.done;
+    expect(job.stoppedHidden).toBe(false);
+  });
+
+  const hplan = { rayCount: 3, raySpread: 1, rayLength: 100, hiddenLayers: [4], memoryShort: 0, memoryLong: 0 };
+
+  it("does not end a run that got ready while hidden when its seconds pass", async () => {
+    setHidden(true);
+    let ended = false;
+    const job = train(PHASE, hplan, new Float32Array(10), () => {}, () => {}, 10);
+    void job.done.then(() => (ended = true));
+    ready();
+    vi.advanceTimersByTime(11_000); // hidden past the 10 s budget: the budget is visible time
+    await Promise.resolve();
+    expect(ended).toBe(false);
+    vi.advanceTimersByTime(10 * 60_000);
+    await Promise.resolve();
+    expect(ended).toBe(true);
+    expect(job.stoppedHidden).toBe(true);
+  });
+
+  it("gives a run that got ready while hidden its full seconds of visible time", async () => {
+    setHidden(true);
+    let ended = false;
+    const job = train(PHASE, hplan, new Float32Array(10), () => {}, () => {}, 10);
+    void job.done.then(() => (ended = true));
+    ready();
+    vi.advanceTimersByTime(20_000);
+    setHidden(false);
+    vi.advanceTimersByTime(9_900);
+    await Promise.resolve();
+    expect(ended).toBe(false);
+    vi.advanceTimersByTime(200);
+    await Promise.resolve();
+    expect(ended).toBe(true);
     expect(job.stoppedHidden).toBe(false);
   });
 });

@@ -10,8 +10,8 @@ import { lineageColor } from "../ui/lineagePanel.ts";
 import type { BodyPlan } from "../sim/sensors.ts";
 import { LIVE_BIRTH, NAME_MAX, NAME_RE, upkeepOf } from "./add.ts";
 import type { AddRequest, AddRules, Added, Birth, Refused } from "./add.ts";
-import { TRAIN_SECONDS, train } from "./training.ts";
-import type { TrainJob, TrainKind, TrainProgress } from "./training.ts";
+import { DEFAULT_TIER, TRAIN_TIERS, phasesFor, secondsLeft, tierById, train } from "./training.ts";
+import type { TrainJob, TrainProgress, TrainTier } from "./training.ts";
 
 // "Add your creature": pick a founder, upload a file or start a fresh brain, tune it, optionally train it in this browser, name it and send it.
 // Visitor text (names, file contents) only ever reaches the page through textContent and input values.
@@ -97,9 +97,9 @@ export interface TrainKey {
   mode: StartMode;
   from: Float32Array;
   plan: string;
-  kinds: string;
+  tier: string; // the training tier's id
 }
-export const sameTrainKey = (a: TrainKey, b: TrainKey): boolean => a.mode === b.mode && a.from === b.from && a.plan === b.plan && a.kinds === b.kinds;
+export const sameTrainKey = (a: TrainKey, b: TrainKey): boolean => a.mode === b.mode && a.from === b.from && a.plan === b.plan && a.tier === b.tier;
 
 interface Slider {
   input: HTMLInputElement;
@@ -128,7 +128,8 @@ export class AddPanel {
   private copies = 3; // matches the checked radio in live/index.html (#65)
   private job: TrainJob | null = null;
   // The last trained brain with what it was trained from, reused when an add is refused or fails and nothing changed since.
-  private trained: { key: TrainKey; genome: Float32Array } | null = null;
+  // A finished run is reused as often as needed; a partial one (the tab stayed hidden, or the worker failed) only once, for the add that waits for it.
+  private trained: { key: TrainKey; genome: Float32Array; partial: boolean } | null = null;
   private fresh: { plan: string; genome: Float32Array } | null = null; // the fresh brain of the current structure
   private waiting = false; // an add is on its way
   private lockedUntil = 0; // ms: the connection's add rate, or the server's retry time
@@ -160,6 +161,8 @@ export class AddPanel {
       this.copies = Number(r.value);
       this.refresh();
     });
+    this.$<HTMLInputElement>("addTrainOn").addEventListener("change", () => this.refresh());
+    this.buildTiers();
     this.$("addGo").addEventListener("click", () => void this.go());
     this.$("addCancel").addEventListener("click", () => this.cancelTraining());
     root.addEventListener("keydown", (e) => {
@@ -432,6 +435,28 @@ export class AddPanel {
     this.$("addLayers").textContent = b ? `${b.plan.hiddenLayers.length} hidden ${b.plan.hiddenLayers.length === 1 ? "layer" : "layers"}` : "";
   }
 
+  // The tier radios, filled from TRAIN_TIERS so the page and the data cannot drift apart.
+  private buildTiers(): void {
+    const box = this.$("addTiers");
+    for (const t of TRAIN_TIERS) {
+      const label = el("label");
+      const input = el("input");
+      input.type = "radio";
+      input.name = "addTier";
+      input.value = t.id;
+      input.checked = t.id === DEFAULT_TIER;
+      input.addEventListener("change", () => this.refresh());
+      label.append(input, el("span", "", `${t.label} ${t.seconds} s`));
+      box.append(label);
+    }
+  }
+
+  // null when the visitor does not want training.
+  private tier(): TrainTier | null {
+    if (!this.$<HTMLInputElement>("addTrainOn").checked) return null;
+    return tierById(this.root.querySelector<HTMLInputElement>('input[name="addTier"]:checked')?.value ?? DEFAULT_TIER);
+  }
+
   private plan(): BodyPlan | null {
     const b = this.base();
     if (!b || !this.t) return null;
@@ -493,42 +518,54 @@ export class AddPanel {
     this.$("addOff").hidden = this.rules !== null;
     for (const [id, s] of this.sliders) s.input.disabled = training || this.waiting || !plan || frozenIn(this.source, id);
     this.$("addFrozenHint").hidden = this.source === "fresh";
+    const on = this.$<HTMLInputElement>("addTrainOn");
+    on.disabled = training || this.waiting;
+    for (const r of this.root.querySelectorAll<HTMLInputElement>('input[name="addTier"]')) r.disabled = !on.checked || training || this.waiting;
+    this.$("addTrainHow").textContent = this.source === "fresh" ? "A fresh brain learns by reinforcement (PPO) on mixed rooms." : "Its brain is polished by evolution: food and poison first, then living among others.";
+    this.$("addTrainHow").hidden = !on.checked;
     const busy = training || this.waiting; // the creature being sent is the one on screen, so no mode or founder change meanwhile
     for (const e of this.root.querySelectorAll<HTMLInputElement | HTMLButtonElement>('input[name="addSource"], #addFile, .founder')) e.disabled = busy;
   }
 
-  private progress(p: TrainProgress | null): void {
+  // `run`: where this phase sits in the whole run (seconds before it, its own, the whole), so the bar and the countdown cover the tier's seconds.
+  private progress(p: TrainProgress | null, run?: { before: number; phase: number; total: number }): void {
     const box = this.$("addTrain");
     box.hidden = p === null;
-    if (!p) return;
-    this.$<HTMLElement>("addTrainFill").style.width = `${Math.round(p.share * 100)}%`;
-    const what = p.kind === "pretrain" ? "Pretraining" : "Fine-tuning among others";
+    if (!p || !run) return;
+    const left = secondsLeft(run.total, run.before, run.phase, p.share);
+    this.$<HTMLElement>("addTrainFill").style.width = `${Math.round(Math.min(1, (run.before + p.share * run.phase) / run.total) * 100)}%`;
+    const what = p.kind === "pretrain" ? "Pretraining" : p.kind === "finetune" ? "Fine-tuning among others" : "Training";
     const score = p.score !== null && p.start !== null ? ` · score ${p.start.toFixed(1)} → ${p.score.toFixed(1)}` : "";
-    this.$("addTrainText").textContent = `${what} · ${Math.max(0, Math.ceil((1 - p.share) * TRAIN_SECONDS))} s left · step ${p.iter}${score}`;
+    const rest = p.starting ? "Loading…" : `${what} · ${left} s left · step ${p.iter}${score}`;
+    this.$("addTrainText").textContent = p.poolMissing ? `${rest} · seed pool not loaded, rivals are random` : rest;
   }
 
-  // The trained genome, null when cancelled; away: a run ended because the tab stayed hidden, so the kinds after it are skipped and the
-  // add waits for the visitor to press Add again.
-  private async trainAll(plan: BodyPlan, genome: Float32Array): Promise<{ genome: Float32Array; away: boolean } | null> {
-    const kinds: TrainKind[] = [];
-    if (this.$<HTMLInputElement>("addPretrain").checked) kinds.push("pretrain");
-    if (this.$<HTMLInputElement>("addFinetune").checked) kinds.push("finetune");
+  // The trained genome, null when cancelled; away: a run ended because the tab stayed hidden, so the phases after it are skipped and the
+  // add waits for the visitor to press Add again; complete: every phase ran its time without a failure.
+  private async trainAll(plan: BodyPlan, genome: Float32Array, tier: TrainTier): Promise<{ genome: Float32Array; away: boolean; complete: boolean } | null> {
     let g = genome;
-    for (const kind of kinds) {
+    let complete = true;
+    let before = 0;
+    for (const phase of phasesFor(this.source === "fresh", tier)) {
       let failed = "";
-      const job = train(kind, plan, g, (p) => this.progress(p), (m) => (failed = m));
+      const run = { before, phase: phase.seconds, total: tier.seconds };
+      const job = train(phase, plan, g, (p) => this.progress(p, run), (m) => (failed = m));
+      before += phase.seconds;
       this.job = job;
       this.refresh();
       const out = await job.done;
       const cancelled = this.job !== job; // cancelTraining let go of it
       this.job = null;
       this.progress(null);
-      if (failed) this.say(`Training stopped (${failed}); adding it as it is.`, "error");
+      if (failed) {
+        this.say(`Training stopped (${failed}); adding it as it is.`, "error");
+        complete = false;
+      }
       if (cancelled) return null;
       if (out) g = out;
-      if (job.stoppedHidden || document.hidden) return { genome: g, away: true }; // hidden: also a run that failed or finished while away
+      if (job.stoppedHidden || document.hidden) return { genome: g, away: true, complete: false }; // hidden: also a run that failed or finished while away
     }
-    return { genome: g, away: false };
+    return { genome: g, away: false, complete };
   }
 
   private async go(): Promise<void> {
@@ -538,18 +575,20 @@ export class AddPanel {
     if (!b || !plan || !this.t || !NAME_RE.test(name) || this.waiting || this.job) return;
     let genome = this.startGenome(b, plan);
     this.say("");
-    const kinds = ["addPretrain", "addFinetune"].filter((id) => this.$<HTMLInputElement>(id).checked).join();
-    const key: TrainKey = { mode: this.source, from: genome, plan: JSON.stringify(plan), kinds };
+    const tier = this.tier();
+    const key: TrainKey = { mode: this.source, from: genome, plan: JSON.stringify(plan), tier: tier?.id ?? "" };
     const t = this.trained;
-    if (kinds && t && sameTrainKey(t.key, key)) genome = t.genome; // trained already, the add did not go in
-    else {
-      const trained = await this.trainAll(plan, genome);
+    if (tier && t && sameTrainKey(t.key, key)) { // trained already, the add did not go in
+      genome = t.genome;
+      if (t.partial) this.trained = null; // a partial run goes in once, it is not a finished one to reuse
+    } else if (tier) {
+      const trained = await this.trainAll(plan, genome, tier);
       if (!trained) {
         this.say("Training cancelled. Nothing was added.");
         return this.refresh();
       }
       genome = trained.genome;
-      if (kinds) this.trained = { key, genome };
+      this.trained = trained.complete || trained.away ? { key, genome, partial: !trained.complete } : null; // a partial run that went in at once is not kept for a retry
       if (trained.away) { // never add while the visitor is away: the result waits for them
         this.say("Training stopped while this tab was hidden. Its result is kept: press Add to the world to add it.");
         return this.refresh();
