@@ -17,11 +17,13 @@ let run: ArenaRun | null = null;
 let early: RlInMessage[] = []; // pause, envs and show messages that arrive while the assets still load, applied once the run exists
 let assets: Promise<{ pool: PoolEntry[] | null; library: Library }> | undefined;
 
+const LIBRARY_TIMEOUT_MS = 20_000; // a stalled library download counts as a missing one (as POOL_TIMEOUT_MS in seedPool)
+
 // Fetched once from the URLs of the first start; a missing library leaves the league rivals random.
 const loadAssets = (poolUrl: string, libraryUrl: string): Promise<{ pool: PoolEntry[] | null; library: Library }> =>
   (assets ??= Promise.all([
     loadPool(poolUrl),
-    fetch(libraryUrl, { signal: AbortSignal.timeout?.(20_000) })
+    fetch(libraryUrl, { signal: AbortSignal.timeout?.(LIBRARY_TIMEOUT_MS) })
       .then((r) => (r.ok ? r.json() : null))
       .then(parseLibrary)
       .catch((): Library => parseLibrary(null)),
