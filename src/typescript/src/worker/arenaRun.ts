@@ -109,7 +109,7 @@ export class ArenaRun {
     let lastBest: Float32Array | null = null; // the latest step's best candidate
     const start = await trainer.held(this.heldSeeds);
     if (this.stopped) return;
-    this.post({ type: "ready", held: start.mean, perEnv: start.perEnv });
+    this.post({ type: "ready", held: start.mean, perEnv: start.perEnv, poolMissing: this.assets.pool === null });
     if (this.playback) await this.show(tiles, 0, trainer.theta);
     while (!this.stopped && trainer.iter < options.iterations) {
       if (this.gate) await this.gate.wait;

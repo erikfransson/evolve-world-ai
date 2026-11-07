@@ -31,9 +31,9 @@ describe("add panel after training stopped in a hidden tab", () => {
   it("keeps the result and adds only when the visitor presses Add again", async () => {
     const training = await import("../../src/typescript/src/live/training.ts");
     const runs: string[] = [];
-    const spy = vi.spyOn(training, "train").mockImplementation((kind, _plan, genome) => {
-      runs.push(kind);
-      return { done: Promise.resolve(Float32Array.from(genome, (w) => w + 1)), cancel() {}, stoppedHidden: kind === "pretrain" };
+    const spy = vi.spyOn(training, "train").mockImplementation((phase, _plan, genome) => {
+      runs.push(phase.kind);
+      return { done: Promise.resolve(Float32Array.from(genome, (w) => w + 1)), cancel() {}, stoppedHidden: phase.kind === "pretrain" };
     });
     const { parseFounders } = await import("../../src/typescript/src/live/founders.ts");
     const { LiveWorld } = await import("../../server/src/liveWorld.ts");
@@ -44,8 +44,7 @@ describe("add panel after training stopped in a hidden tab", () => {
     const panel = new AddPanel(document.getElementById("addPanel")!, { send: (r) => (sent.push(r), true), added() {}, minimised() {} });
     panel.setRules(new LiveWorld(smallConfig(), null).addRules());
     panel.setFounders(parseFounders(JSON.parse(readFileSync(join(process.cwd(), "public/live-founders.json"), "utf8"))));
-    (document.getElementById("addPretrain") as HTMLInputElement).checked = true;
-    (document.getElementById("addFinetune") as HTMLInputElement).checked = true;
+    (document.getElementById("addTrainOn") as HTMLInputElement).checked = true;
     const go = (): Promise<void> => (panel as unknown as { go(): Promise<void> }).go();
     try {
       await go();
@@ -56,15 +55,15 @@ describe("add panel after training stopped in a hidden tab", () => {
       expect(runs).toEqual(["pretrain"]); // the kept result, not trained again
       expect(sent).toHaveLength(1);
       // A run that ends another way (a worker error) while the tab is hidden waits too.
-      spy.mockImplementation((kind, _plan, genome) => {
-        runs.push(kind);
+      spy.mockImplementation((phase, _plan, genome) => {
+        runs.push(phase.kind);
         return { done: Promise.resolve(Float32Array.from(genome)), cancel() {}, stoppedHidden: false };
       });
       panel.reply({ t: "refused", reason: "busy" }); // the server answered the add
-      (document.getElementById("addPretrain") as HTMLInputElement).checked = false; // another set of kinds: trained afresh
+      (() => { for (const r of document.querySelectorAll<HTMLInputElement>('input[name="addTier"]')) r.checked = r.value === "medium"; })(); document.getElementById("addTiers")!.dispatchEvent(new Event("change")); // another tier: trained afresh
       Object.defineProperty(document, "hidden", { configurable: true, get: () => true });
       await go();
-      expect(runs).toEqual(["pretrain", "finetune"]);
+      expect(runs).toEqual(["pretrain", "pretrain"]);
       expect(sent).toHaveLength(1);
     } finally {
       spy.mockRestore();
@@ -146,10 +145,11 @@ describe("add panel start modes", () => {
   it("keys the trained cache on the start mode", async () => {
     const { sameTrainKey } = await import("../../src/typescript/src/live/addPanel.ts");
     const from = new Float32Array(3);
-    const key = { mode: "founder" as const, from, plan: "{}", kinds: "addPretrain" };
+    const key = { mode: "founder" as const, from, plan: "{}", tier: "light" };
     expect(sameTrainKey(key, { ...key })).toBe(true);
     expect(sameTrainKey(key, { ...key, mode: "fresh" })).toBe(false);
     expect(sameTrainKey(key, { ...key, mode: "file" })).toBe(false);
+    expect(sameTrainKey(key, { ...key, tier: "medium" })).toBe(false); // another tier never reuses this train
   });
 });
 
@@ -173,11 +173,12 @@ describe("add panel review fixes", () => {
   it("disables the source radios and founder buttons while training and while an add is in flight", async () => {
     const training = await import("../../src/typescript/src/live/training.ts");
     let finish: (g: Float32Array) => void = () => {};
-    const spy = vi.spyOn(training, "train").mockImplementation(() => ({ done: new Promise<Float32Array>((res) => (finish = res)), cancel() {}, stoppedHidden: false }));
+    const gate = new Promise<Float32Array>((res) => (finish = res)); // one gate for both evolution phases
+    const spy = vi.spyOn(training, "train").mockImplementation(() => ({ done: gate, cancel() {}, stoppedHidden: false }));
     try {
       const { panel, go, locked, founders } = await setup();
       expect(locked().every((d) => !d)).toBe(true);
-      (document.getElementById("addPretrain") as HTMLInputElement).checked = true;
+      (document.getElementById("addTrainOn") as HTMLInputElement).checked = true;
       const run = go();
       expect(locked().length).toBeGreaterThan(3);
       expect(locked().every(Boolean)).toBe(true); // training
