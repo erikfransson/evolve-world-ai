@@ -20,13 +20,14 @@ export interface LivePhase {
   cap?: number; // episode length cap in seconds
   method: "es" | "backprop";
   backprop?: { lr: number; episodes: number };
+  es?: Partial<typeof ES_OPTIONS>; // the tier phase's own ES settings over ES_OPTIONS
 }
 const ES_ENVS = { pretrain: ["far-food", "patch", "minefield"], finetune: ["crowd", "rivals"] } as const;
 export const tierById = (id: string): TrainTier => TRAIN_TIERS.find((t) => t.id === id) ?? TRAIN_TIERS[0]!;
 
 // The phases a start mode trains in: a fresh brain follows the tier, anything else the evolution protocol scaled to the tier's seconds.
 export function phasesFor(fresh: boolean, tier: TrainTier): LivePhase[] {
-  if (fresh) return tier.phases.map((p) => ({ kind: "tier" as const, envs: p.envs, seconds: tier.seconds * p.share, cap: p.seconds, method: p.method, backprop: p.backprop }));
+  if (fresh) return tier.phases.map((p) => ({ kind: "tier" as const, envs: p.envs, seconds: tier.seconds * p.share, cap: p.seconds, method: p.method, backprop: p.backprop, es: p.es }));
   return (["pretrain", "finetune"] as const).map((kind) => ({ kind, envs: ES_ENVS[kind], seconds: tier.seconds / 2, method: "es" as const }));
 }
 
@@ -122,16 +123,17 @@ export function train(phase: LivePhase, plan: BodyPlan, genome: Float32Array, on
   const begin = (): void => {
     started = true;
     clearTimeout(timer);
-    since = performance.now();
-    timer = setTimeout(end, seconds * 1000);
     if (document.hidden) {
-      since = null; // hidden already: the hidden branch below starts the hidden stretch
+      since = null; // hidden already: start the hidden stretch, the visible clock waits
       hiddenSince = performance.now();
       timer = setTimeout(() => {
         stoppedHidden = true;
         end();
       }, HIDDEN_MAX_MS);
       worker?.postMessage({ type: "pause" } satisfies RlInMessage);
+    } else {
+      since = performance.now();
+      timer = setTimeout(end, seconds * 1000);
     }
   };
   const report = (): void => onProgress({ kind, share: !started ? 0 : Math.min(1, (used + (since === null ? 0 : performance.now() - since)) / (seconds * 1000)), starting: !started, poolMissing, iter, score, start });
@@ -172,7 +174,7 @@ export function train(phase: LivePhase, plan: BodyPlan, genome: Float32Array, on
     envs,
     learner: { plan: { ...plan, hiddenLayers: plan.hiddenLayers.slice() }, genome: Array.from(genome) },
     method: phase.method,
-    options: { ...ES_OPTIONS, ...backprop }, // RlRunOptions still carries the ES fields; PPO reads options.backprop
+    options: { ...ES_OPTIONS, ...phase.es, ...backprop }, // RlRunOptions still carries the ES fields; PPO reads options.backprop
     tiles: 1,
     seed: Math.floor(Math.random() * 0x7fffffff),
     poolUrl: new URL("pool.json", base).href,

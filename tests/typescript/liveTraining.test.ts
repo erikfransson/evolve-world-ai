@@ -107,4 +107,38 @@ describe("in-browser training", () => {
     await job.done;
     expect(job.stoppedHidden).toBe(false);
   });
+
+  const hplan = { rayCount: 3, raySpread: 1, rayLength: 100, hiddenLayers: [4], memoryShort: 0, memoryLong: 0 };
+
+  it("does not end a run that got ready while hidden when its seconds pass", async () => {
+    setHidden(true);
+    let ended = false;
+    const job = train(PHASE, hplan, new Float32Array(10), () => {}, () => {}, 10);
+    void job.done.then(() => (ended = true));
+    ready();
+    vi.advanceTimersByTime(11_000); // hidden past the 10 s budget: the budget is visible time
+    await Promise.resolve();
+    expect(ended).toBe(false);
+    vi.advanceTimersByTime(10 * 60_000);
+    await Promise.resolve();
+    expect(ended).toBe(true);
+    expect(job.stoppedHidden).toBe(true);
+  });
+
+  it("gives a run that got ready while hidden its full seconds of visible time", async () => {
+    setHidden(true);
+    let ended = false;
+    const job = train(PHASE, hplan, new Float32Array(10), () => {}, () => {}, 10);
+    void job.done.then(() => (ended = true));
+    ready();
+    vi.advanceTimersByTime(20_000);
+    setHidden(false);
+    vi.advanceTimersByTime(9_900);
+    await Promise.resolve();
+    expect(ended).toBe(false);
+    vi.advanceTimersByTime(200);
+    await Promise.resolve();
+    expect(ended).toBe(true);
+    expect(job.stoppedHidden).toBe(false);
+  });
 });

@@ -250,4 +250,26 @@ describe("add panel review fixes", () => {
     const { founders } = await setup();
     expect(freshGenome(founders[0]!.plan)).not.toEqual(freshGenome(founders[0]!.plan));
   });
+
+  it("uses a partial run for the one add it was trained for, not again after a refusal", async () => {
+    const training = await import("../../src/typescript/src/live/training.ts");
+    let runs = 0;
+    const spy = vi.spyOn(training, "train").mockImplementation((_phase, _plan, genome, _p, onError) => {
+      runs++;
+      onError("boom"); // a failed run: partial
+      return { done: Promise.resolve(Float32Array.from(genome, (w) => w + 1)), cancel() {}, stoppedHidden: false };
+    });
+    try {
+      const { panel, sent, go } = await setup();
+      panel.setSource("fresh"); // a fresh brain keeps its genome across a retry
+      (document.getElementById("addTrainOn") as HTMLInputElement).checked = true;
+      await go();
+      expect(sent).toHaveLength(1);
+      panel.reply({ t: "refused", reason: "busy" });
+      await go();
+      expect(runs).toBeGreaterThan(1); // trained again, the partial genome was not reused
+    } finally {
+      spy.mockRestore();
+    }
+  });
 });

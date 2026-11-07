@@ -588,7 +588,7 @@ export class AddPanel {
         return this.refresh();
       }
       genome = trained.genome;
-      this.trained = { key, genome, partial: !trained.complete };
+      this.trained = trained.complete || trained.away ? { key, genome, partial: !trained.complete } : null; // a partial run that went in at once is not kept for a retry
       if (trained.away) { // never add while the visitor is away: the result waits for them
         this.say("Training stopped while this tab was hidden. Its result is kept: press Add to the world to add it.");
         return this.refresh();

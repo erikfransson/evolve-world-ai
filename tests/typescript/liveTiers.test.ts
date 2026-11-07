@@ -243,3 +243,12 @@ describe("add panel tiers", () => {
     }
   });
 });
+
+describe("phasesFor carries a tier phase's own ES options", () => {
+  it("passes es through and leaves it out for PPO phases", () => {
+    const es = { pairs: 8, sigma: 0.1, lr: 0.05, decay: 0, episodes: 2 };
+    const t = { id: "x", label: "X", seconds: 10, phases: [{ envs: ["far-food"], share: 1, method: "es" as const, es }] };
+    expect(phasesFor(true, t as never)[0]!.es).toEqual(es);
+    expect(phasesFor(true, tier("light"))[0]!.es).toBeUndefined();
+  });
+});
