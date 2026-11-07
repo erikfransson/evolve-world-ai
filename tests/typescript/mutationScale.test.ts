@@ -36,13 +36,26 @@ function bred(scale: number | undefined, ticks = 600): { eco: Ecosystem; id: num
 
 describe("mutationScale", () => {
   it("is inherited exactly over several generations, and founders have 1", () => {
-    const { eco, id } = bred(3.5, 900);
-    const family = eco.members.filter((m) => m.founderId === id);
-    expect(Math.max(...family.map((m) => m.depth))).toBeGreaterThanOrEqual(3);
-    for (const m of family) expect(m.mutationScale).toBe(3.5);
-    const others = eco.members.filter((m) => m.founderId !== id);
-    expect(others.length).toBeGreaterThan(0);
-    for (const m of others) expect(m.mutationScale).toBe(1);
+    const config = cfg();
+    const eco = new Ecosystem(config);
+    const r = eco.insertCreature(spec(config, { mutationScale: 3.5 }));
+    if (!r.ok) throw new Error(r.reason);
+    let depth = 0;
+    let others = 0;
+    for (let t = 0; t < 900; t++) {
+      eco.step();
+      for (const m of eco.members) {
+        if (m.founderId === r.id) {
+          expect(m.mutationScale).toBe(3.5);
+          depth = Math.max(depth, m.depth);
+        } else {
+          expect(m.mutationScale).toBe(1);
+          others++;
+        }
+      }
+    }
+    expect(depth).toBeGreaterThanOrEqual(3);
+    expect(others).toBeGreaterThan(0); // checked every tick: the family may fill the world by the end
   });
 
   it("multiplies the mutation std: the children of a scale 4 creature differ from their parent four times as much", () => {

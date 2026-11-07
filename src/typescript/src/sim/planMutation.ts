@@ -117,7 +117,8 @@ export function remapWeights(oldSizes: readonly number[], old: Genome, maps: Uni
 
 // Heritable birth traits (#31): the energy at which a creature has a child, what the birth costs the parent (the child starts
 // with that much), and the seconds before its next birth. They are drawn and drift on a log scale, so a range of 50 to 10000 is
-// as likely to give 100 as 5000. A range with a zero minimum (a cooldown) is drawn and scaled linearly.
+// as likely to give 100 as 5000. A range with a zero minimum (a cooldown) is drawn linearly, since a log scale has no zero, and
+// still drifts by a factor.
 export interface BirthTraits {
   energy: number;
   cost: number;

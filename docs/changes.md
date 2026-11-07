@@ -6,6 +6,10 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- A creature at 0 energy (killed by a bump earlier in the tick, or starved) no longer pushes or blocks others in collisions, like an eaten prey already did. Results change: ecoBench `--seconds 30 --pop 600` fingerprint 230580385, liveBench 623371842.
+
+- planMutation: the birth-trait comment now says a zero-minimum range is drawn linearly and still drifts by a factor, as the code does.
+
 - Retune refuses inherited names such as `constructor`, `__proto__` and `toString` as sections or fields (own-key lookup in checkRetune); the three expected-to-fail tests now pass.
 
 - Tests from the 60-agent hunt: the WASM parity tests now fail when a kernel is missing instead of comparing JS with JS, the kernel detection creates all six modules, the sense parity allows no kind or species mismatch (bounds set just above the measured 1.8e-5), a 20000-creature crowd-grid parity case; drawing tests flag any non-finite coordinate or property write; wall-clock asserts and unbounded loops in the worker tests are gone; new direct tests for contacts, item economy, insert and retune checks, genome validation, the fill kernel, block chunks and the Live protocol helpers (the retune prototype-key cases are marked expected-to-fail until that fix lands).
