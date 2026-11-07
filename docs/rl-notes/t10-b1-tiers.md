@@ -34,7 +34,7 @@ Surv = survival share, food = food per minute. Poison per minute for the chosen 
 | strong | ppo-mix1  |        0.72 |       11.55 |       0.61 |       10.17 |      0.85 |     15.93 |
 | strong | ppo-mix30 |        0.70 |       11.12 |       0.59 |        9.49 |      0.76 |     14.43 |
 
-Other Light and Medium protocols (pre-only, live30-es, hyperA-live, ppo-hi8, ppo-mix30) are in the run files; none beat the rows above. Tables with min, median, max, up/down and seed agreement per body: `probes/b1-analyze.py`.
+Other Light and Medium protocols (pre-only, live30-es, hyperA-live, ppo-hi8, ppo-mix30) are in the run files; some have more food than the chosen row (Light ppo-mix30 bigger 7.62 against ppo-hi 6.62; Medium ppo-hi 9.42 and ppo-mix30 10.04 against ppo-mix 8.45) but lose on survival and poison, so the choice is a trade-off for Live survival. Tables with min, median, max, up/down and seed agreement per body: `probes/b1-analyze.py`.
 
 ## Chosen protocol against current (median over bodies of the paired difference, bodies with the CI above / below 0)
 
@@ -73,12 +73,14 @@ PPO on the recommended mix wins every tier on food and on Live lifespan and offs
 | Medium |      75 | PPO lr 0.003, 16 episodes per update                                   |
 | Strong |     200 | PPO lr 0.001, 16 episodes per update                                   |
 
-Why: Light has about 150 updates, so it needs the large step and short Live-like episodes (ppo-hi has the most food, and Live life 197 s against 130 untrained and 127 current). Medium picks lr 0.003 over 0.001 for lower poison and higher survival (bigger 0.76 against 0.71, poison per minute 1.05 against 1.39) at 1.4 food per minute less. Strong picks lr 0.001 (Live life 227 s, long survival 0.85).
+Why: Light has 71 to 119 updates in the probe (fewer in a browser, see Caveats), so it needs the large step and short Live-like episodes (ppo-hi has the most food, and Live life 197 s against 130 untrained and 127 current). Medium picks lr 0.003 over 0.001 for lower poison and higher survival (bigger 0.76 against 0.71, poison per minute 1.05 against 1.39) at 1.4 food per minute less. Strong picks lr 0.001 (Live life 227 s, long survival 0.85).
 
 ## Caveats
 
 - Training lowers survival on the short Live-like scopes against the untrained random brain (bigger 0.94 untrained, 0.70 to 0.76 trained): a random brain mostly sits still and keeps its starting energy. It eats more than 20 times as much and survives much longer in the 240 s runs and in the Live check, but it also bites poison more (bigger poison per minute 0.4 untrained, about 1.1 to 1.7 trained).
 - Spread: bodies differ a lot (the cells above list min and max in the analysis tables), and the screen has only 2 training seeds for most protocols, 6 for the leaders at Light and Medium, 2 at Strong.
 - The budget conversion rests on the assumed browser factor 1.79 (see Method). If the browser is slower the tiers get fewer updates; the PPO ranking at Light and Medium would need a recheck.
+- The single factor favours PPO: its update runs serially on the worker and its 16 episodes are uneven (one live-* episode can take a third of the episode time), so PPO reaches about 0.55 to 0.62 helper efficiency here against 0.85 for ES. A browser may give PPO 0.6 to 0.75 of the probe's updates. PPO still wins across tiers (Light PPO beats Medium current, Medium PPO beats Strong current), but per-tier quality and the lr per tier are optimistic; measure updates per tier in a real browser.
+- The Live check uses a fresh world that reaches the 4900 cap, so late births and child counts are suppressed, and life is censored at 240 s; a mature depleted world was not tested.
 - The held-out keep-best uses 4 seeds per env and the best of many checks (winner's curse); not re-scored here.
-- Founder and reshaped starts were not tested. Earlier notes found PPO from a trained brain flat or collapsing, so if "Add your creature" starts from a founder, check this before shipping the PPO tiers there.
+- Founder and reshaped starts were not tested. Earlier notes found PPO from a trained brain flat or collapsing, so if "Add your creature" starts from a founder, check this before shipping the PPO tiers there. Recommendation: use TRAIN_TIERS (PPO) for Fresh starts only, and keep today's ES protocol scaled to the tier seconds for Founder and Upload starts (PPO's 3-tick action hold hurt founders in t1-backprop, and PPO from a founder collapsed by 180 s in t6-ceiling-learner); optionally re-score start and kept brain on 16 to 32 held seeds and keep the start unless the kept brain wins.
