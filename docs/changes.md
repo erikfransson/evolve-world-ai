@@ -6,6 +6,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- Live server: at most 3 open viewers per visitor address (`maxViewersPerVisitor`, from the tunnel's X-Forwarded-For, so only once `LIVE_TRUST_FORWARDED=1`); the 4th connection is told "busy" and cut, and the count is released on close. One client can no longer take all 100 viewer slots. Visitors sharing one address (a household, an office) share the 3.
+
 - Retune refuses inherited names such as `constructor`, `__proto__` and `toString` as sections or fields (own-key lookup in checkRetune); the three expected-to-fail tests now pass.
 
 - Tests from the 60-agent hunt: the WASM parity tests now fail when a kernel is missing instead of comparing JS with JS, the kernel detection creates all six modules, the sense parity allows no kind or species mismatch (bounds set just above the measured 1.8e-5), a 20000-creature crowd-grid parity case; drawing tests flag any non-finite coordinate or property write; wall-clock asserts and unbounded loops in the worker tests are gone; new direct tests for contacts, item economy, insert and retune checks, genome validation, the fill kernel, block chunks and the Live protocol helpers (the retune prototype-key cases are marked expected-to-fail until that fix lands).

@@ -7,6 +7,7 @@ import { Sender, WebSocket } from "../../server/node_modules/ws/wrapper.mjs";
 import { LIMITS, MAX_POPULATION, liveConfig } from "../../server/src/config.ts";
 import { applyTunables, tunableLimits } from "../../server/src/tunables.ts";
 import { LiveWorld } from "../../server/src/liveWorld.ts";
+import { AddGate } from "../../server/src/adds.ts";
 import { startPublic } from "../../server/src/public.ts";
 import type { PublicServer } from "../../server/src/public.ts";
 import { smallConfig } from "./liveHelpers.ts";
@@ -15,8 +16,8 @@ import { smallConfig } from "./liveHelpers.ts";
 // The public server in this process on a small world, with test limits.
 type Limits = typeof LIMITS;
 const servers: PublicServer[] = [];
-async function serve(port: number, change: Partial<Limits> = {}, world = new LiveWorld(smallConfig(), null)): Promise<{ pub: PublicServer; world: LiveWorld }> {
-  const pub = startPublic("127.0.0.1", port, world, { ...LIMITS, ...change });
+async function serve(port: number, change: Partial<Limits> = {}, world = new LiveWorld(smallConfig(), null), trust = false): Promise<{ pub: PublicServer; world: LiveWorld }> {
+  const pub = startPublic("127.0.0.1", port, world, { ...LIMITS, ...change }, new AddGate(), trust);
   servers.push(pub);
   await new Promise<void>((r) => (pub.http.listening ? r() : pub.http.once("listening", () => r())));
   return { pub, world };
@@ -32,8 +33,8 @@ interface Viewer {
   status: Promise<"hello" | "busy" | number>; // what the server did first: hello, busy, or refused the upgrade with an http status
   closed: Promise<number>; // the close code
 }
-function viewer(port: number): Viewer {
-  const ws = new WebSocket(`ws://127.0.0.1:${port}/`);
+function viewer(port: number, headers: Record<string, string> = {}): Viewer {
+  const ws = new WebSocket(`ws://127.0.0.1:${port}/`, { headers });
   const v: Viewer = { ws, texts: [], binary: 0, status: null!, closed: null! };
   v.status = new Promise((resolve) => {
     ws.on("unexpected-response", (_req: unknown, res: { statusCode: number }) => resolve(res.statusCode));
@@ -95,6 +96,31 @@ describe("public server: connections", () => {
     vs[0]!.ws.close();
     await vi.waitFor(() => expect(pub.viewers()).toBe(2));
     expect(await viewer(port).status).toBe("hello");
+  });
+
+  it("a trusted address holds at most maxViewersPerVisitor viewers: the next is busy and cut, others still get in, close releases the count", async () => {
+    const port = 62414;
+    const { pub } = await serve(port, { maxViewersPerVisitor: 3 }, new LiveWorld(smallConfig(), null), true);
+    const from = (ip: string): Viewer => viewer(port, { "x-forwarded-for": ip });
+    const mine = [from("198.51.100.7"), from("198.51.100.7"), from("198.51.100.7")];
+    expect(await Promise.all(mine.map((v) => v.status))).toEqual(["hello", "hello", "hello"]);
+    const extra = from("198.51.100.7");
+    expect(await extra.status).toBe("busy");
+    expect(await extra.closed).toBe(1006);
+    expect(pub.viewers()).toBe(3);
+    expect(await from("198.51.100.8").status).toBe("hello"); // another address is not held back
+    mine[0]!.ws.close();
+    await vi.waitFor(() => expect(pub.viewers()).toBe(3));
+    expect(await from("198.51.100.7").status).toBe("hello"); // the closed one's slot is free again
+    for (let i = 0; i < 5; i++) expect(await from("198.51.100.7").status).toBe("busy"); // refused attempts leave no count behind
+    expect(pub.viewers()).toBe(4);
+  });
+
+  it("no per-address cap without a trusted address (the header is then ignored, or missing)", async () => {
+    await serve(62415, { maxViewersPerVisitor: 1 }, new LiveWorld(smallConfig(), null), false);
+    expect(await Promise.all([1, 2, 3].map(() => viewer(62415, { "x-forwarded-for": "198.51.100.7" }).status))).toEqual(["hello", "hello", "hello"]);
+    await serve(62416, { maxViewersPerVisitor: 1 }, new LiveWorld(smallConfig(), null), true);
+    expect(await Promise.all([1, 2, 3].map(() => viewer(62416).status))).toEqual(["hello", "hello", "hello"]); // header missing: only the global cap
   });
 
   it("closes a socket that never finishes its request headers", async () => {

@@ -5,7 +5,7 @@ import type { WebSocket } from "ws";
 import { creatureFrameBytes, parseClientMessage } from "../../src/typescript/src/live/protocol.ts";
 import { ADD_PREFIX, MAX_ADD_BYTES, parseAdd } from "../../src/typescript/src/live/add.ts";
 import type { Added, Refused } from "../../src/typescript/src/live/add.ts";
-import { AddGate, AddPolicy, visitorKey } from "./adds.ts";
+import { AddGate, AddPolicy, UNKNOWN_VISITOR, visitorKey } from "./adds.ts";
 import type { AddPace } from "./adds.ts";
 import type { Rules, ServerText } from "../../src/typescript/src/live/protocol.ts";
 import { MAX_STRIDE, RESYNC_S, RESYNC_SHARE, TokenBucket, fits, frameBudget, gets, sendStride } from "./budget.ts";
@@ -39,6 +39,7 @@ interface Viewer {
   historySent: boolean;
   pace: AddPace; // the connection's add rate and strikes (adds.ts)
   visitor: string; // key for the per-visitor add cap: the address when trusted, else this connection
+  address: string | null; // the trusted address counted against maxViewersPerVisitor, null when none (untrusted or header missing)
   adding: boolean; // an add waits for the tick in flight
   setBlockedSince: number; // when it first needed a full item set its send queue had no room for, 0 when not
 }
@@ -92,6 +93,8 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
   const connectBytes = new TokenBucket(limits.connectBytesPerSecond, Math.max(limits.connectBytesPerSecond, limits.connectBurstBytes)); // full item sets and history for new or lagging viewers
   const budget = frameBudget(limits);
   const policy = new AddPolicy(limits, gate);
+  // Open viewers per trusted address. Only registered viewers are counted and an entry goes at 0, so it holds at most maxViewers keys.
+  const perAddress = new Map<string, number>();
   let connections = 0; // numbers the connections for their own visitor key
   const sent = { frames: 0, items: 0, details: 0, text: 0 };
   let lastCreatures: Uint8Array | null = null;
@@ -128,6 +131,11 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
     if (!v) return;
     select(v, null);
     viewers.delete(ws);
+    if (v.address !== null) {
+      const n = (perAddress.get(v.address) ?? 1) - 1;
+      if (n > 0) perAddress.set(v.address, n);
+      else perAddress.delete(v.address);
+    }
   };
 
   // The world's history, once per viewer, from the connect allowance; tried again each frame until there is room.
@@ -170,6 +178,10 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
   wss.on("connection", (ws, req) => {
     ws.on("error", () => ws.terminate());
     if (!room()) return refuse(ws);
+    // A missing or malformed header (UNKNOWN_VISITOR) is not capped: it would put every such visitor under one limit; the global cap still holds.
+    const key = visitorKey(req.headers["x-forwarded-for"], trustForwarded);
+    const address = key === null || key === UNKNOWN_VISITOR ? null : key;
+    if (address !== null && (perAddress.get(address) ?? 0) >= limits.maxViewersPerVisitor) return refuse(ws);
     const now = performance.now();
     const v: Viewer = {
       c: { alive: true, lastMessageAt: now, overSince: 0, windowAt: now, windowCount: 0 },
@@ -185,10 +197,12 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
       pace: policy.connection(),
       // Without a trusted address each connection counts as a visitor of its own (perVisitor a window); a new connection costs an
       // accept (accepts per second) and a hello wait.
-      visitor: visitorKey(req.headers["x-forwarded-for"], trustForwarded) ?? `conn:${++connections}`,
+      visitor: key ?? `conn:${++connections}`,
+      address,
       adding: false,
     };
     viewers.set(ws, v);
+    if (address !== null) perAddress.set(address, (perAddress.get(address) ?? 0) + 1);
     ws.on("close", () => forget(ws));
     // With helper threads this may run after frame jobs queued before it; until it has run (ready), the viewer gets nothing else.
     void live.whenIdle(() => {
