@@ -52,7 +52,7 @@ export interface RlIteration {
 }
 
 export type RlOutMessage =
-  | { type: "ready"; held: number; perEnv: number[] } // the starting genome on the held-out seeds
+  | { type: "ready"; held: number; perEnv: number[]; poolMissing?: boolean } // the starting genome on the held-out seeds; poolMissing: the seed pool did not load, so live-* rivals are random
   | { type: "iteration"; it: RlIteration }
   | { type: "show"; iter: number; genome: Float32Array; recordings: Recording[] } // the iteration's best candidate; recordings[0] carries brain inputs
   | { type: "learner"; iter: number; learner: StoredLearner } // the current (mean) genome, after each held-out check and at the end
