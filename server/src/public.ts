@@ -118,7 +118,7 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
   };
   const sendText = (ws: WebSocket, msg: ServerText): void => send(ws, JSON.stringify(msg), "text");
   // Says why, then drops the socket: terminate, not close, so a refused caller holds nothing open.
-  const refuse = (ws: WebSocket): void => ws.send(JSON.stringify({ t: "busy", maxViewers: limits.maxViewers }), () => ws.terminate());
+  const refuse = (ws: WebSocket, perVisitor?: number): void => ws.send(JSON.stringify({ t: "busy", maxViewers: limits.maxViewers, ...(perVisitor ? { perVisitor } : {}) }), () => ws.terminate());
 
   const select = (v: Viewer, id: number | null): void => {
     if (v.selected !== null) live.unwatch(v.selected);
@@ -181,7 +181,7 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
     // A missing or malformed header (UNKNOWN_VISITOR) is not capped: it would put every such visitor under one limit; the global cap still holds.
     const key = visitorKey(req.headers["x-forwarded-for"], trustForwarded);
     const address = key === null || key === UNKNOWN_VISITOR ? null : key;
-    if (address !== null && (perAddress.get(address) ?? 0) >= limits.maxViewersPerVisitor) return refuse(ws);
+    if (address !== null && (perAddress.get(address) ?? 0) >= limits.maxViewersPerVisitor) return refuse(ws, limits.maxViewersPerVisitor);
     const now = performance.now();
     const v: Viewer = {
       c: { alive: true, lastMessageAt: now, overSince: 0, windowAt: now, windowCount: 0 },

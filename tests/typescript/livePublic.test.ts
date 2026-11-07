@@ -91,6 +91,7 @@ describe("public server: connections", () => {
     expect(await Promise.all(vs.map((v) => v.status))).toEqual(["hello", "hello", "hello"]);
     const extra = viewer(port);
     expect(await extra.status).toBe("busy");
+    expect(extra.texts[0]).not.toHaveProperty("perVisitor"); // a full world keeps the plain busy
     expect(await extra.closed).toBe(1006); // terminate, not a close handshake
     expect(pub.viewers()).toBe(3);
     vs[0]!.ws.close();
@@ -106,6 +107,7 @@ describe("public server: connections", () => {
     expect(await Promise.all(mine.map((v) => v.status))).toEqual(["hello", "hello", "hello"]);
     const extra = from("198.51.100.7");
     expect(await extra.status).toBe("busy");
+    expect(extra.texts[0]).toMatchObject({ t: "busy", perVisitor: 3 }); // says why
     expect(await extra.closed).toBe(1006);
     expect(pub.viewers()).toBe(3);
     expect(await from("198.51.100.8").status).toBe("hello"); // another address is not held back
