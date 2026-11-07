@@ -16,7 +16,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { fail, finiteNumber, DEFAULT_LIBRARY, loadLibraryFile, loadPoolFile, positiveInt, prepareOut, randomSeed, withFileLock, strictArgs } from "./cliArgs.ts";
+import { fail, finiteNumber, DEFAULT_LIBRARY, libraryHash, libraryResumeWarning, loadLibraryFile, loadPoolFile, positiveInt, prepareOut, randomSeed, withFileLock, strictArgs } from "./cliArgs.ts";
 import { poolLearner, randomLearner, varied } from "./sim/rl/env.ts";
 import type { EnvSpec, Learner } from "./sim/rl/env.ts";
 import { DEFAULT_POISON_COST, envById } from "./sim/rl/envs.ts";
@@ -136,16 +136,19 @@ if (ckpts.length && !values["ckpt-dir"]) {
 let cpu = 0; // cumulative CPU seconds of the training steps, over all chunks
 let firstHeld = NaN; // the held-out score of the first chunk's start, kept over the chunks
 const settings = { envs: envs.map((e) => e.id), selfplay: values.selfplay ? procSpec : false, from: values.from, seed, plan: learner.plan, genomeLength: learner.genome.length, pairs, sigma, lr, episodes, vary, poison: poisonCost };
+const libHash = libraryHash(library);
 const resumed = values.state !== undefined && existsSync(values.state);
 if (resumed) {
   try {
-    const saved = JSON.parse(readFileSync(values.state!, "utf8")) as { trainer: Parameters<Trainer["load"]>[0]; cpu: number; settings?: unknown; heldStart?: number | null };
+    const saved = JSON.parse(readFileSync(values.state!, "utf8")) as { trainer: Parameters<Trainer["load"]>[0]; cpu: number; settings?: unknown; heldStart?: number | null; libraryHash?: string };
     if (saved.settings) {
       const s = saved.settings as { poison?: number | null };
       if (s.poison === null) s.poison = DEFAULT_POISON_COST; // older states stored null for the unset default
       assertSameSettings(s, settings);
     }
     else console.error("warning: the state file has no settings to compare (saved by an older version)");
+    const libWarning = libraryResumeWarning(saved.libraryHash, libHash);
+    if (libWarning) console.error(`warning: ${libWarning}`);
     if (!(Number.isFinite(saved.cpu) && saved.cpu >= 0)) throw new Error("saved state has a bad CPU time");
     trainer.load(saved.trainer);
     cpu = saved.cpu;
@@ -201,7 +204,7 @@ if (end === undefined || curve.length === 1) {
 }
 helpers.close();
 if (values.state) {
-  writeFileAtomic(values.state, JSON.stringify({ trainer: trainer.save(), cpu, settings, heldStart: start }));
+  writeFileAtomic(values.state, JSON.stringify({ trainer: trainer.save(), cpu, settings, heldStart: start, libraryHash: libHash }));
   console.log(`state saved at iter ${trainer.iter}, ${cpu.toFixed(0)} s CPU`);
 }
 const result = { ...serialiseLearner({ plan: learner.plan, genome: es.theta }), env: env.id, from: values.from, heldStart: start, heldEnd: end, iters, curve };

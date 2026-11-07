@@ -11,7 +11,7 @@
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { fail, finiteNumber, positiveInt, strictArgs } from "./cliArgs.ts";
+import { fail, finiteNumber, loadPoolFile, positiveInt, strictArgs } from "./cliArgs.ts";
 import { overrideConfig } from "./sim/config.ts";
 import type { DeepPartial } from "./sim/config.ts";
 import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG } from "./sim/ecoConfig.ts";
@@ -20,7 +20,6 @@ import { Ecosystem } from "./sim/ecosystem.ts";
 import "./sim/maps/index.ts"; // for --preset inland-sea
 import { PhaseTimer } from "./sim/profile.ts";
 import { ECO_PRESETS, PREDATOR_PRESETS, withEcoPreset } from "./sim/presets.ts";
-import { parsePool } from "./sim/seedPool.ts";
 import { checkRanges, mergeSpeciesList } from "./sim/species.ts";
 import { parseSettings } from "./ui/settingsIO.ts";
 import { createNodeThinkPool } from "./worker/nodePool.ts";
@@ -114,7 +113,7 @@ const every = Math.max(1, Math.round(num("every", values.every, 10, Number.MIN_V
 const seriesEvery = values.series === undefined ? 0 : Math.max(1, Math.round(finiteNumber("series", values.series, Number.MIN_VALUE) / config.dt));
 const ticks = Math.round(seconds / config.dt);
 
-const pool = values.pool === "none" ? null : parsePool(JSON.parse(readFileSync(values.pool!, "utf8"))).entries;
+const pool = values.pool === "none" ? null : loadPoolFile(values.pool);
 const threads = positiveInt("threads", values.threads, 0);
 const helpers = threads > 0 ? createNodeThinkPool(threads) : null;
 const eco = new Ecosystem(config, pool, { journal: helpers !== null });
