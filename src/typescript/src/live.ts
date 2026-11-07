@@ -188,10 +188,10 @@ function onState(state: LinkState, retryInS: number, tabs = 0): void {
   if (state !== "live") {
     addPanel.disconnected();
     $("emptyNote").hidden = true;
-    $("entryLive").textContent = state === "connecting" ? "Connecting to the world" : state === "full" ? (tabs ? `Already open in ${tabs} tabs here, close one to watch` : "Full of viewers right now") : state === "updating" ? "The world is being updated, back soon" : state === "outdated" ? "This page is out of date, reload it" : "The world is offline right now";
+    $("entryLive").textContent = state === "connecting" ? "Connecting to the world" : state === "full" ? (tabs ? `${tabs} viewers already open from this network, close one to watch` : "Full of viewers right now") : state === "updating" ? "The world is being updated, back soon" : state === "outdated" ? "This page is out of date, reload it" : "The world is offline right now";
   }
   if (state === "connecting") setChip(state, "Connecting");
-  else if (state === "full") setChip(state, tabs ? `Open in ${tabs} tabs` : "Full of viewers", `, retrying in ${retryInS} s`);
+  else if (state === "full") setChip(state, tabs ? `${tabs} open from this network` : "Full of viewers", `, retrying in ${retryInS} s`);
   else if (state === "updating") setChip(state, "Updating", ", back soon");
   else if (state === "outdated") setChip(state, "Reload", " for the new version");
   else if (state === "live") {
