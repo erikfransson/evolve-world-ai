@@ -32,5 +32,4 @@ Work here is iterative and nothing is fixed; update or delete lines as soon as t
 - 2026-10-12: Inland Sea launch settings: new food values apply at launch (not to today's world); the world starts with 10 of each starter founder (Erik changed this from "starts empty", 2026-10-12), and an extinct world stays empty for visitors to repopulate; max population 3000 with births stopping 100 below it (Erik, 2026-10-14; admin-adjustable; 5000 since #63, see A7); seasons with a one hour year.
 
 ## Open questions for Erik
-- Release review rules: the "Review development to master merge" section in the checked-in CLAUDE.md is empty, and the `ionice -c3 chrt --idle 0` machine-load wording is only in Erik's local copy. Decide whether those edits land on development.
 - GitHub branch protection for `main`.
