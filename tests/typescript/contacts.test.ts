@@ -89,6 +89,16 @@ describe("Contacts.collideAll", () => {
     expect(contacts.drainEvents()).toBeNull();
   });
 
+  it("a creature killed by a bump, or already at 0 energy, no longer pushes or blocks the others", () => {
+    const states = [state(500, 500, { vx: 10 }), state(506, 500, { vx: -10, energy: 5 }), state(512, 500)]; // 0 kills 1 first, then 1 still overlaps 2
+    make(states, [0, 0, 0], { damage: true }).contacts.collideAll();
+    expect(states[1]!.energy).toBe(0);
+    expect([states[2]!.x, states[2]!.vx]).toEqual([512, 0]);
+    const starved = [state(500, 500, { energy: 0 }), state(504, 500)];
+    make(starved, [0, 0]).contacts.collideAll();
+    expect([starved[0]!.x, starved[1]!.x]).toEqual([500, 504]);
+  });
+
   it("keeps at most EVENT_CAP events between drains", () => {
     const pairs = EVENT_CAP + 8;
     const states = Array.from({ length: 2 * pairs }, (_, i) => state(20 + 30 * (i >> 1) + 6 * (i & 1), 500, { vx: i & 1 ? -10 : 10 })); // each pair collides, no two pairs touch

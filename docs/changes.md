@@ -7,6 +7,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 ## Unreleased
 
 - Live server: at most 3 open viewers per visitor address (`maxViewersPerVisitor`, from the tunnel's X-Forwarded-For, so only once `LIVE_TRUST_FORWARDED=1`); the 4th connection is told "busy" and cut, and the count is released on close. One client can no longer take all 100 viewer slots. Visitors sharing one address (a household, an office) share the 3.
+- A creature at 0 energy (killed by a bump earlier in the tick, or starved) no longer pushes or blocks others in collisions, like an eaten prey already did. Results change: ecoBench `--seconds 30 --pop 600` fingerprint 230580385, liveBench 623371842.
+- planMutation: the birth-trait comment now says a zero-minimum range is drawn linearly and still drifts by a factor, as the code does.
 
 ## 0.5.0 (2026-11-07)
 
