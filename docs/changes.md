@@ -6,6 +6,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- Lineages panel: a living lineage below 0.1% reads "<0.1%" (was 0%), and one beside others never reads 100% (">99.9%", or one decimal above 99%).
+
 ## 0.6.0 (2026-11-07)
 
 - Live "Add your creature": one Train switch with a Light 30 s / Medium 75 s / Strong 200 s choice (`TRAIN_TIERS`). A fresh brain trains with PPO on the tier's recipe, a founder or file keeps the evolution protocol at half the tier's seconds per phase. The clock starts once the worker is ready, the countdown runs over the tier's seconds, a missing seed pool is noted in the panel, and the trained-brain cache keys on the tier and no longer reuses a partial run as finished. Browser only, nothing new goes to the server.

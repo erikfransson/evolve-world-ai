@@ -1,5 +1,5 @@
 import { LINEAGE_STRIDE, LINEAGE_TOP } from "../../src/typescript/src/worker/ecoProtocol.ts";
-import { lineageRows, rowLiving, stackHistory } from "../../src/typescript/src/ui/lineagePanel.ts";
+import { lineageRows, rowLiving, sharePct, stackHistory } from "../../src/typescript/src/ui/lineagePanel.ts";
 
 const sample = (time: number, others: number, entries: [number, number, number][]): number[] => {
   const row = [time, others];
@@ -51,5 +51,17 @@ describe("stackHistory", () => {
 
   it("is empty without samples", () => {
     expect(stackHistory(new Float64Array(0)).times).toEqual([]);
+  });
+});
+
+describe("sharePct", () => {
+  it("shows a living lineage as at least 0.1% and one beside others below 100%", () => {
+    expect(sharePct(1 / 3340)).toBe("<0.1%");
+    expect(sharePct(4 / 3340)).toBe("0.1%");
+    expect(sharePct(3335 / 3340)).toBe("99.8%");
+    expect(sharePct(9999 / 10000)).toBe(">99.9%");
+    expect(sharePct(0)).toBe("0%");
+    expect(sharePct(1)).toBe("100%");
+    expect(sharePct(0.42)).toBe("42%");
   });
 });
