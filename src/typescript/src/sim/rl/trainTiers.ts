@@ -1,6 +1,7 @@
 // Training tiers for the Live page's "Add your creature" (data only: no imports, so the Live page bundle stays small).
 // A tier runs its phases in order on the Arena worker; phase k gets share[k] of the tier's TOTAL seconds, passes its best genome on, and
 // keeps the best brain seen on the held-out layouts (live/training.ts does the keeping). Env ids are those of envs.ts.
+// Light caps episodes at 20 s (docs/rl-notes/t10-b6-light.md: shorter episodes buy more updates in 30 s).
 // Chosen in docs/rl-notes/t10-b1-tiers.md: PPO (method "backprop") on the Arena's recommended mix beats today's ES protocol at every budget.
 // TRAIN_TIERS_TRAINED is for a start that is trained already (a founder or an upload), chosen in docs/rl-notes/t10-b2-trained-starts.md.
 
@@ -25,7 +26,7 @@ export interface TrainTier {
 const MIX = ["nibble", "live-now", "far-food", "live-patch", "minefield", "live-famine", "stings", "live-now"] as const;
 
 export const TRAIN_TIERS: readonly TrainTier[] = [
-  { id: "light", label: "Light", seconds: 30, phases: [{ envs: MIX, share: 1, seconds: 30, method: "backprop", backprop: { lr: 0.01, episodes: 16 } }] },
+  { id: "light", label: "Light", seconds: 30, phases: [{ envs: MIX, share: 1, seconds: 20, method: "backprop", backprop: { lr: 0.01, episodes: 16 } }] },
   { id: "medium", label: "Medium", seconds: 75, phases: [{ envs: MIX, share: 1, method: "backprop", backprop: { lr: 0.003, episodes: 16 } }] },
   { id: "strong", label: "Strong", seconds: 200, phases: [{ envs: MIX, share: 1, method: "backprop", backprop: { lr: 0.001, episodes: 16 } }] },
 ];

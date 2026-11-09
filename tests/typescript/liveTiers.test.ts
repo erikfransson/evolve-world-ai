@@ -34,7 +34,7 @@ describe("training tiers as phases", () => {
       expect(phases).toHaveLength(1);
       expect(phases[0]).toMatchObject({ method: "backprop", backprop: { lr, episodes: 16 }, seconds });
     }
-    expect(phasesFor(true, tier("light"))[0]!.cap).toBe(30);
+    expect(phasesFor(true, tier("light"))[0]!.cap).toBe(20);
     expect(phasesFor(true, tier("medium"))[0]!.cap).toBeUndefined();
     expect(phasesFor(true, tier("light"))[0]!.envs.filter((e) => e === "live-now")).toHaveLength(2); // the duplicate live-now stays
   });
@@ -78,7 +78,7 @@ describe("training worker start", () => {
     const m = FakeWorker.last!.sent[0]!;
     expect(m.method).toBe("backprop");
     expect(m.options).toMatchObject({ backprop: { lr: 0.01, episodes: 16 }, pairs: 24, sigma: 0.05, episodes: 1 });
-    expect(Math.max(...m.envs!.map((e) => e.seconds))).toBe(30);
+    expect(Math.max(...m.envs!.map((e) => e.seconds))).toBe(20);
     expect(m.envs!.length).toBe(8);
   });
 
