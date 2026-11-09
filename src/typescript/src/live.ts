@@ -278,6 +278,7 @@ function onHello(h: Hello): void {
   familyOf = new Map();
   lastLineages = [];
   addPanel.setRules(h.add);
+  addPanel.setMap(h.map, h.world);
   renderMapInfo($("info"), h);
 }
 

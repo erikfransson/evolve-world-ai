@@ -12,6 +12,9 @@ import { LIVE_BIRTH, NAME_MAX, NAME_RE, upkeepOf } from "./add.ts";
 import type { AddRequest, AddRules, Added, Birth, Refused } from "./add.ts";
 import { DEFAULT_TIER, TRAIN_TIERS, heldScore, phasesFor, secondsLeft, tierById, tierFor, train } from "./training.ts";
 import type { TrainProgress, TrainTier } from "./training.ts";
+import { createRegionPicker, pickerRegions } from "./regionPicker.ts";
+import type { RegionPicker } from "./regionPicker.ts";
+import type { WireMap } from "./protocol.ts";
 
 // "Add your creature": pick a founder, upload a file or start a fresh brain, tune it, optionally train it in this browser, name it and send it.
 // Visitor text (names, file contents) only ever reaches the page through textContent and input values.
@@ -119,6 +122,8 @@ export class AddPanel {
   private readonly root: HTMLElement;
   private readonly hooks: AddPanelHooks;
   private rules: AddRules | null = null;
+  private map: { map: WireMap; world: { width: number; height: number } } | null = null;
+  private readonly where: RegionPicker; // the spawn choice: not part of what a trained brain was trained from (TrainKey)
   private founders: Founder[] = [];
   private source: StartMode = "founder";
   private founder = 0;
@@ -142,6 +147,7 @@ export class AddPanel {
     this.root = root;
     this.hooks = hooks;
     this.buildTuning();
+    this.where = createRegionPicker(this.$("addWhere"), () => this.refresh());
     this.$("addMin").addEventListener("click", () => this.minimise(true));
     this.$("addClose").addEventListener("click", () => this.close());
     for (const r of root.querySelectorAll<HTMLInputElement>('input[name="addSource"]')) r.addEventListener("change", () => this.setSource(START_MODES.find((m) => m === r.value) ?? "founder"));
@@ -202,6 +208,7 @@ export class AddPanel {
   // From the hello: what this server allows; null switches adding off.
   setRules(rules: AddRules | null): void {
     this.rules = rules;
+    this.syncWhere();
     if (rules) {
       const b = rules.birth;
       this.range("birthEnergy", b.energy[0], b.energy[1], 1);
@@ -219,6 +226,16 @@ export class AddPanel {
       }
     }
     this.refresh();
+  }
+
+  // From the hello: the map, so the picker can draw its regions.
+  setMap(map: WireMap, world: { width: number; height: number }): void {
+    this.map = { map, world };
+    this.syncWhere();
+  }
+
+  private syncWhere(): void {
+    this.where.set(this.map ? pickerRegions(this.rules, this.map.map) : null, this.map?.world ?? { width: 0, height: 0 });
   }
 
   reply(r: Added | Refused): void {
@@ -649,7 +666,8 @@ export class AddPanel {
       }
     }
     const scale = Math.min(MUTATION_SCALE_RANGE[1], Math.max(MUTATION_SCALE_RANGE[0], 2 ** this.t.mutation));
-    const req: AddRequest = { plan, genome, birth: { ...this.t.birth }, name, hue: this.hue, copies: this.copies, ...(scale !== 1 ? { mutationScale: scale } : {}) };
+    const region = this.where.value(); // null (Anywhere) sends no field at all, and the picker only shows for a server that takes one
+    const req: AddRequest = { plan, genome, birth: { ...this.t.birth }, name, hue: this.hue, copies: this.copies, ...(scale !== 1 ? { mutationScale: scale } : {}), ...(region !== null ? { region } : {}) };
     if (!this.hooks.send(req)) {
       this.say("Not connected to the world right now. Try again when it is back.", "error");
       return this.refresh();

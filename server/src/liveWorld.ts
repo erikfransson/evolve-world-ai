@@ -23,7 +23,7 @@ import { mapSpec, mapVersion } from "../../src/typescript/src/sim/maps/index.ts"
 import type { MapRegion } from "../../src/typescript/src/sim/maps/mapBuild.ts";
 import { OtherWorld, otherWorldReason } from "./saveParse.ts";
 import type { Home } from "./saveParse.ts";
-import { BLANKED, STARTER_MARK, wireName } from "../../src/typescript/src/live/add.ts";
+import { BLANKED, MAX_SPAWN_REGION, STARTER_MARK, wireName } from "../../src/typescript/src/live/add.ts";
 import type { AddRequest, AddRules } from "../../src/typescript/src/live/add.ts";
 import { fullEnergy } from "../../src/typescript/src/sim/species.ts";
 import type { ThinkPool } from "../../src/typescript/src/worker/ecoPool.ts";
@@ -475,7 +475,8 @@ export class LiveWorld {
   addRules(): AddRules {
     const { eco, creature } = this.config;
     const pair = (r: number[]): [number, number] => [r[0]!, r[1]!];
-    return { maxCopies: LIVE.add.maxCopies, everyS: LIVE.add.socketEveryS, birth: { energy: pair(eco.birthEnergyRange), cost: pair(eco.birthCostRange), cooldown: pair(eco.birthCooldownRange) }, costs: { living: creature.livingCost, ray: creature.rayCost, neuron: creature.neuronCost } };
+    const spawn = this.spawnable().length;
+    return { maxCopies: LIVE.add.maxCopies, everyS: LIVE.add.socketEveryS, birth: { energy: pair(eco.birthEnergyRange), cost: pair(eco.birthCostRange), cooldown: pair(eco.birthCooldownRange) }, costs: { living: creature.livingCost, ray: creature.rayCost, neuron: creature.neuronCost }, ...(spawn > 0 && spawn <= MAX_SPAWN_REGION ? { spawnRegions: spawn } : {}) };
   }
 
   // The add rules of a fresh world (the birth ranges this server starts from, not the admin's): what a reset's carry must pass, at the
@@ -487,6 +488,11 @@ export class LiveWorld {
   // The rules for the hello and the rules message: null while adding is off.
   currentAddRules(): AddRules | null {
     return addingOn() ? this.addRules() : null;
+  }
+
+  // The regions of the map with geometry, in the order of the hello's map.regions (the home regions and "commons"); none for a map without it.
+  private spawnable(): readonly MapRegion[] {
+    return (this.config.world.map ? mapSpec(this.config.world.map) : undefined)?.regions ?? [];
   }
 
   // The home regions of the map (every region but "commons", in spec order); none for a map without regions.
@@ -602,6 +608,7 @@ export class LiveWorld {
 
   // Inserts a checked add request (live/add.ts parseAdd) as `copies` founders of new named lineages at random free spots, through the
   // engine's insertCreature, so a save keeps them. Call between ticks (whenIdle). random: the server's own draws, never the engine's.
+  // req.region: spawn inside that region (0.6 of its radius) instead of anywhere.
   // Returns the ids, or a reason and nothing inserted.
   // now: false when waiting will not help (the name is taken), so the page does not hold the Add button back.
   addCreatures(req: AddRequest, random: () => number = Math.random): { ids: number[] } | { reason: string; now?: false } {
@@ -611,8 +618,15 @@ export class LiveWorld {
     // One name, one family on the list: a name a living family carries (any case), or a starter's, is refused; it frees when that family dies out.
     const wanted = req.name.toLowerCase();
     if (this.founders.some((f) => f.name.toLowerCase() === wanted) || e.lineageTable.someName((n) => wireName(n).name.toLowerCase() === wanted)) return { reason: `the name ${req.name} is taken by a family alive now, pick another`, now: false };
-    const spots = this.freeSpots(req.copies, random);
-    if (spots.length < req.copies) return { reason: "no free spot found, try again" };
+    // A named region: its index in this world's own list, never coordinates. Beyond the list, or on a map without region geometry, nothing is inserted.
+    let disc: { x: number; y: number; r: number } | undefined;
+    if (req.region !== undefined) {
+      const g = this.spawnable()[req.region];
+      if (!g || req.region >= MAX_SPAWN_REGION) return { reason: "this world has no such region, pick another place", now: false };
+      disc = { x: g.x, y: g.y, r: 0.6 * g.r }; // the rule founder homes use
+    }
+    const spots = this.freeSpots(req.copies, random, disc);
+    if (spots.length < req.copies) return { reason: disc ? "that region is crowded, try another" : "no free spot found, try again" };
     const ids: number[] = [];
     for (const p of spots) {
       const res = e.insertCreature({ genome: req.genome, plan: req.plan, x: p.x, y: p.y, heading: p.heading, hue: req.hue, name: req.name, birth: req.birth, energy: LIVE.add.startEnergy, ...(req.mutationScale !== undefined ? { mutationScale: req.mutationScale } : {}) }); // tunables.ts bounds it
