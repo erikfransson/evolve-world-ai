@@ -21,6 +21,9 @@ const P = {
   popEvery: 5, // seconds between population.jsonl lines, a divisor of interval
   capBytes: 30e9, // PNG bytes per world folder, then frames stop and Chrome closes ("first hours only")
   popCapBytes: 500e6, // population.jsonl bytes per world folder
+  regionsCapBytes: 100e6, // regions.jsonl bytes per world folder
+  regionRadiusFactor: 2, // a creature belongs to the nearest map region within this many times its seeding radius (the realms are drawn about twice as wide as the home discs), else "elsewhere"
+  hueMatchDeg: 25, // a creature hue within this many degrees of a region hue counts for that hue's lineage, else "other"
   freeFloorBytes: 20e9, // frames stop when the disk has less free
   staleCaptures: 3, // same tick this many frame slots in a row = frozen, reload
   statsMaxAgeS: 15, // no stats for this long = link dead
@@ -72,6 +75,7 @@ log("start", { framing: P.framing, interval: P.interval, popEvery: P.popEvery, o
 const { WebSocket } = createRequire(import.meta.url)(P.ws);
 let hello = null; // { version, serverVersion, mapName, mapVersion, width, height }
 let stats = null, statsAt = 0; // latest stats, reduced to what is logged
+let wantCreatures = false, lastCreatures = null; // the latest creature frame (binary type 1), only while Chrome runs
 let link = null, failures = 0, linkTimer = null, pingTimer = null, lastMessage = 0, lastLinkLog = 0;
 const retryDelayS = (n) => Math.min(30, 2 ** n) * (1 + 0.25 * Math.random()); // 1 s doubling to 30 s with jitter, like the page
 
@@ -88,7 +92,7 @@ function cleanStats(m) {
 }
 function onLinkMessage(data, isBinary) {
   lastMessage = Date.now();
-  if (isBinary) return; // creature frames and item sets: not needed, not parsed
+  if (isBinary) { if (wantCreatures && data.length > 9 && data[0] === 1) lastCreatures = data; return; } // item sets and deltas are never parsed; the latest creature frame is kept only while frames are captured (regions.jsonl)
   try {
     if (data.length > MAX_TEXT) return;
     const m = JSON.parse(data.toString());
@@ -132,23 +136,26 @@ function startWorld(now) {
   const id = worldId();
   let dir = null;
   for (const d of readdirSync(OUT).sort().reverse()) if (d.startsWith(id + "_")) { dir = d; break; } // the newest folder of this world, so a script restart resumes it
-  let bytes = 0, frames = 0, lastTick = -1, popBytes = 0, size = null;
+  let bytes = 0, frames = 0, lastTick = -1, popBytes = 0, regionsBytes = 0, size = null;
   if (dir) {
     try { for (const l of readFileSync(join(OUT, dir, "frames.jsonl"), "utf8").split("\n")) if (l) { const r = JSON.parse(l); bytes += r.bytes; frames++; lastTick = r.tick; } } catch {}
     try { popBytes = statSync(join(OUT, dir, "population.jsonl")).size; } catch {}
+    try { regionsBytes = statSync(join(OUT, dir, "regions.jsonl")).size; } catch {}
     try { size = JSON.parse(readFileSync(join(OUT, dir, "world.json"), "utf8")).size ?? null; } catch {}
     try { // the last logged population tick, when no frame was saved yet
       const pl = readFileSync(join(OUT, dir, "population.jsonl"), "utf8").trimEnd().split("\n").pop();
       if (pl) lastTick = Math.max(lastTick, JSON.parse(pl).tick);
     } catch {}
-    if (lastTick > stats.tick + P.resetTickDrop) { dir = null; bytes = frames = popBytes = 0; size = null; } // the tick is behind the saved folder: it was reset meanwhile
+    if (lastTick > stats.tick + P.resetTickDrop) { dir = null; bytes = frames = popBytes = regionsBytes = 0; size = null; } // the tick is behind the saved folder: it was reset meanwhile
   }
   if (!dir) {
     dir = `${id}_${stamp(now).slice(0, 15)}z`;
     mkdirSync(join(OUT, dir), { recursive: true });
     writeFileSync(join(OUT, dir, "world.json"), JSON.stringify({ id, startedCapture: now.toISOString(), firstTick: stats.tick, simSeconds: stats.simSeconds, framing: P.framing, map: hello.mapName, mapVersion: hello.mapVersion, world: { width: hello.width, height: hello.height } }) + "\n");
   }
-  world = { id, dir, bytes, frames, popBytes, lastTick: stats.tick, capped: false, staleN: 0, lastCapturedTick: -1, size };
+  world = { id, dir, bytes, frames, popBytes, regionsBytes, lastTick: stats.tick, capped: false, staleN: 0, lastCapturedTick: -1, size };
+  loadRegions();
+  if (regionInfo) { const f = join(OUT, dir, "world.json"); try { const j = JSON.parse(readFileSync(f, "utf8")); j.regions = regionInfo; j.regionsNote = "regions.jsonl m = flat matrix, rows: regions then elsewhere, columns: lineages of hues then other"; writeFileSync(f, JSON.stringify(j) + "\n"); } catch {} }
   log("world folder", dir, { resumedBytes: bytes, resumedFrames: frames });
 }
 function logPopulation(now) {
@@ -157,6 +164,41 @@ function logPopulation(now) {
   const line = JSON.stringify({ time: now.toISOString(), tick: stats.tick, simSeconds: stats.simSeconds, population: stats.population, others: Math.max(0, stats.population - lin.reduce((a, l) => a + l.count, 0)), lineages: lin }) + "\n";
   appendFileSync(join(OUT, world.dir, "population.jsonl"), line);
   world.popBytes += line.length;
+}
+
+
+// ---- regions.jsonl: creatures per map region and hue bucket, one line per frame, from the viewer's creature frame (the page keeps its creature data in module scope, out of a script's reach)
+let regionInfo = null; // { ids, x, y, r, hueIds, hues } from the map spec of the repo (regions with centre, radius and seeding hue)
+function loadRegions() {
+  regionInfo = null;
+  try {
+    const src = readFileSync(join(REPO, "src/typescript/src/sim/maps", safe(hello.mapName, 20) + ".ts"), "utf8");
+    const a = src.indexOf('"regions": ['); if (a < 0) return;
+    const b = src.indexOf("\n ]", a);
+    const regs = JSON.parse(src.slice(a + 11, b + 3)).filter((g) => num(g?.x) !== null && num(g?.y) !== null && num(g?.r) !== null);
+    if (!regs.length || regs.length > 16) return;
+    const homes = regs.filter((g) => num(g.hue) !== null);
+    regionInfo = { ids: regs.map((g) => safe(g.id, 16)), x: regs.map((g) => g.x), y: regs.map((g) => g.y), r: regs.map((g) => g.r), hueIds: homes.map((g) => safe(g.id, 16)), hues: homes.map((g) => g.hue) };
+  } catch (err) { log("regions not read", String(err?.message ?? err).slice(0, 100)); }
+}
+// rows: the regions then "elsewhere"; columns: the seeding hues' lineages then "other"
+function logRegions(now, tick) {
+  if (!regionInfo || !lastCreatures || world.regionsBytes >= P.regionsCapBytes) return;
+  const buf = lastCreatures, dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  const count = dv.getUint32(5, true);
+  if (count > 20_000 || buf.length !== 9 + count * 19) return;
+  const R = regionInfo, nr = R.ids.length, nh = R.hues.length, m = new Array((nr + 1) * (nh + 1)).fill(0);
+  for (let i = 0, o = 9; i < count; i++, o += 19) {
+    const x = (dv.getUint16(o + 4, true) / 65535) * hello.width, y = (dv.getUint16(o + 6, true) / 65535) * hello.height, hue = (dv.getUint16(o + 13, true) / 65535) * 360;
+    let row = nr, best = Infinity;
+    for (let k = 0; k < nr; k++) { const d = Math.hypot(x - R.x[k], y - R.y[k]) / R.r[k]; if (d <= P.regionRadiusFactor && d < best) { best = d; row = k; } }
+    let col = nh, bd = P.hueMatchDeg;
+    for (let k = 0; k < nh; k++) { let d = Math.abs(hue - R.hues[k]) % 360; if (d > 180) d = 360 - d; if (d <= bd) { bd = d; col = k; } }
+    m[row * (nh + 1) + col]++;
+  }
+  const line = JSON.stringify({ time: now.toISOString(), tick, creatureTick: dv.getUint32(1, true), n: count, m }) + "\n";
+  appendFileSync(join(OUT, world.dir, "regions.jsonl"), line);
+  world.regionsBytes += line.length;
 }
 
 // ---- Chrome: only while frames are wanted; serves the built page on loopback and views it as one more viewer
@@ -187,16 +229,16 @@ async function launchChrome() {
     httpd = await serveStatic();
     pageUrl = `http://127.0.0.1:${P.pagePort}/live/index.html?server=${P.server}`;
     browser = await puppeteer.launch({ executablePath: P.chrome, headless: true, args: CHROME_ARGS });
-    browser.on("disconnected", () => { if (chromeState !== "closing") { log("chrome disconnected"); browser = page = null; chromeState = "off"; closeServer(); } });
+    browser.on("disconnected", () => { if (chromeState !== "closing") { log("chrome disconnected"); browser = page = null; chromeState = "off"; wantCreatures = false; lastCreatures = null; closeServer(); } });
     await loadPage();
-    chromeState = "ready";
+    chromeState = "ready"; wantCreatures = true;
     log("chrome ready", { pid: browser.process()?.pid });
   } catch (err) { log("chrome start failed", String(err?.message ?? err).slice(0, 200)); await closeChrome(); }
 }
 function closeServer() { try { httpd?.close(); httpd?.closeAllConnections?.(); } catch {} httpd = null; }
 async function closeChrome() {
   if (chromeState === "off" && !browser && !httpd) return;
-  chromeState = "closing";
+  chromeState = "closing"; wantCreatures = false; lastCreatures = null;
   const b = browser; browser = page = null; crop = null;
   try { await b?.close(); } catch { try { b?.process()?.kill("SIGKILL"); } catch {} }
   closeServer();
@@ -276,6 +318,7 @@ async function step(now, withFrame) {
   const { png, path } = await takeFrame(now, tick);
   world.bytes += png.length; world.frames++; world.lastCapturedTick = tick;
   const ms = Date.now() - t0;
+  try { logRegions(now, tick); } catch (err) { log("regions error", String(err?.message ?? err).slice(0, 100)); }
   appendFileSync(join(OUT, world.dir, "frames.jsonl"), JSON.stringify({ time: now.toISOString(), tick, population: stats.population, bytes: png.length, ms }) + "\n");
   log("frame", path.split("/").pop(), png.length, "B", ms, "ms", "pop", stats.population, "folder", Math.round(world.bytes / 1e6), "MB");
 }
