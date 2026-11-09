@@ -3,6 +3,8 @@
 // Usage: node src/rlTiers.ts --tier light|medium|strong --protocol NAME --designs p1,p2 --seed 1 --out DIR      (writes DIR/<design id>.json and DIR/<design id>.meta.json)
 //        node src/rlTiers.ts --calibrate [--design p3]                                                         (CPU per iteration and episodes per CPU second of the current protocol)
 //          add --cpu-per-second X to replace BROWSER_CPU_PER_SECOND
+//        node src/rlTiers.ts --tier T --protocol P --from SPEC --seed 1 --out DIR [--rescore 32]                (B2: trained starts, rlStarts.ts; DIR/<start name>.json, the meta has the re-score)
+//          a protocol name ending in +rb is (d) inside the budget: the start is re-scored first, training gets the budget less twice that cost, then the kept brain is re-scored
 //        node src/rlTiers.ts --list                                                                           (the protocol names)
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -13,6 +15,8 @@ import { EXTRA_DESIGNS } from "./sim/rl/b1Bodies.ts";
 import { RECOMMENDED_MIX, envById } from "./sim/rl/envs.ts";
 import { parseLibrary, serialiseLearner } from "./sim/rl/library.ts";
 import { TRAIN_TIERS } from "./sim/rl/trainTiers.ts";
+import { loadStarts } from "./rlStarts.ts";
+import type { Learner } from "./sim/rl/env.ts";
 import type { TrainPhase } from "./sim/rl/trainTiers.ts";
 import { ArenaRun } from "./worker/arenaRun.ts";
 import type { Start } from "./worker/arenaRun.ts";
@@ -43,9 +47,13 @@ export const PROTOCOLS: Record<string, Phase[]> = {
   "mix-es": [es(RECOMMENDED_MIX, 1)],
   "ppo-hi-h16": [held(bp(RECOMMENDED_MIX, 1, 0.01, 30), 16)],
   "ppo-mix-h16": [held(bp(RECOMMENDED_MIX, 1, 0.003), 16)],
+  ppo05: [bp(RECOMMENDED_MIX, 1, 0.0005)],
+  "es-s02": [es(PRE, 0.5, { sigma: 0.02 }), es(FINE, 0.5, { sigma: 0.02 })],
+  "es-h16": [held(es(PRE, 0.5), 16), held(es(FINE, 0.5), 16)],
+  "ppo05-h16": [held(bp(RECOMMENDED_MIX, 1, 0.0005), 16)],
 };
 
-const { values } = parseArgs({ options: { tier: { type: "string" }, protocol: { type: "string" }, designs: { type: "string" }, seed: { type: "string", default: "1" }, out: { type: "string" }, calibrate: { type: "boolean" }, list: { type: "boolean" }, design: { type: "string", default: "p3" }, final: { type: "boolean" }, "cpu-per-second": { type: "string" } } });
+const { values } = parseArgs({ options: { tier: { type: "string" }, protocol: { type: "string" }, designs: { type: "string" }, seed: { type: "string", default: "1" }, out: { type: "string" }, from: { type: "string" }, rescore: { type: "string", default: "32" }, calibrate: { type: "boolean" }, list: { type: "boolean" }, design: { type: "string", default: "p3" }, final: { type: "boolean" }, "cpu-per-second": { type: "string" } } });
 if (values.list) { console.log(Object.keys(PROTOCOLS).join(" ")); process.exit(0); }
 const pool = existsSync("public/pool.json") ? parsePool(JSON.parse(readFileSync("public/pool.json", "utf8"))).entries : null;
 const library = parseLibrary(existsSync("public/rl/library.json") ? JSON.parse(readFileSync("public/rl/library.json", "utf8")) : null);
@@ -94,6 +102,45 @@ if (values.calibrate) {
 }
 
 const tier = TRAIN_TIERS.find((t) => t.id === values.tier);
+// B2 (d): the start and the kept brain re-scored on `n` held seeds of the mix, as the worker's "ready" score (a run of 0 iterations).
+async function heldScore(l: Learner, n: number): Promise<{ score: number; cpu: number }> {
+  const t0 = cpu();
+  let score = NaN;
+  const msg: Start = {
+    type: "start", envs: RECOMMENDED_MIX.map((id) => envById(id)!), learner: serialiseLearner(l), method: "es", options: { ...ES_NOW, iterations: 0 } as Start["options"],
+    tiles: 1, seed: 1, poolUrl: "", libraryUrl: "", playback: false, gentle: false, helpers: 1, held: n,
+  };
+  const run = new ArenaRun(msg, { pool, library }, (setup) => new RlPool([inlineRlPort()], setup), (m) => { if (m.type === "ready") score = m.held; });
+  await run.run();
+  run.stop();
+  return { score, cpu: cpu() - t0 };
+}
+
+const inBudget = values.protocol?.endsWith("+rb") === true, baseProtocol = inBudget ? values.protocol!.slice(0, -3) : values.protocol!;
+if (values.from && tier && values.out && PROTOCOLS[baseProtocol]) {
+  const phases = PROTOCOLS[baseProtocol]!;
+  mkdirSync(values.out, { recursive: true });
+  const n = Number(values.rescore);
+  for (const s of loadStarts(values.from)) {
+    if (existsSync(resolve(values.out, `${s.name}.json`))) continue;
+    const first = inBudget ? await heldScore(s.learner, n) : null; // the start's re-score, paid before training (twice: the kept brain's costs about the same)
+    const budget = Math.max(0, tier.seconds * cpuPerSecond - (first ? 2 * first.cpu : 0));
+    let genome = s.learner.genome;
+    const metas: PhaseResult[] = [];
+    for (const [k, ph] of phases.entries()) {
+      const t = cpu();
+      const r = await runPhase(ph, s.learner.plan, genome, Number(values.seed) * 1000 + k, t + budget * ph.share);
+      genome = r.genome;
+      metas.push({ ...r, genome: new Float32Array(0) });
+    }
+    const out = { plan: s.learner.plan, genome };
+    const a = first ?? await heldScore(s.learner, n), b = metas.some((m) => m.kept) ? await heldScore(out, n) : a;
+    writeFileSync(resolve(values.out, `${s.name}.meta.json`), JSON.stringify({ tier: tier.id, protocol: values.protocol, budget, phases: metas, rescore: { seeds: n, start: a.score, kept: b.score, cpu: a.cpu + (b === a ? 0 : b.cpu) } }) + "\n");
+    writeFileSync(resolve(values.out, `${s.name}.json`), JSON.stringify(serialiseLearner(out)) + "\n");
+    console.log(s.name, metas.map((m) => `iters ${m.iters} checks ${m.checks} kept ${m.kept} cpu ${m.cpu.toFixed(0)}`).join(" | "), `rescore ${a.score.toFixed(2)} -> ${b.score.toFixed(2)} (${(a.cpu + b.cpu).toFixed(0)} s)`);
+  }
+  process.exit(0);
+}
 if (!tier || !values.out || !values.designs) { console.error("error: --tier, --designs and --out are needed"); process.exit(1); }
 const phases = values.final ? tier.phases.slice() : PROTOCOLS[values.protocol!];
 if (!phases) { console.error(`error: --protocol must be one of ${Object.keys(PROTOCOLS).join(" ")}`); process.exit(1); }
