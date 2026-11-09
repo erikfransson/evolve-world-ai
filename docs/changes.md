@@ -6,6 +6,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- Live "Add your creature": a founder's or an uploaded brain now gets a short PPO fine-tune (`TRAIN_TIERS_TRAINED`, same seconds), and is added only if it beats the original on a 32-seed re-score. Otherwise the original is added and the panel says so. The re-score runs in its own worker, with a "Checking…" state at the end.
+
 - RL Arena: the advanced run settings (mutation size, learning rates, episodes per update) always show instead of sitting under "More settings", greyed out when the training method does not use them. Other pages keep "More settings" (`Section.inline`).
 - Live World moves to The Six Realms (`clock`, 60000 x 37500, was the Inland Sea): six realms around a hub with trails, a dial ring and walls, `MapLayer.paint` colour washes baked into the ground picture, six founders seeded one per realm in their own colour (hue drift 0.75, was 3), food density 0.85 (`foodMaxDensity`, was 1.4). The first start after the promote begins a fresh world. Arena unchanged.
 - Lineages panel: a living lineage below 0.1% reads "<0.1%" (was 0%), and one beside others never reads 100% (">99.9%", or one decimal above 99%).
