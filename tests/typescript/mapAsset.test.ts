@@ -5,13 +5,14 @@ import { decodeMapAsset, encodeMapAsset, mapLoader, terrainFromAsset } from "../
 import { MAP_FILES } from "../../src/typescript/src/live/mapFiles.ts";
 import { builtHash, builtMap, mapSpec } from "../../src/typescript/src/sim/maps/index.ts";
 import { packMap } from "../../src/typescript/src/sim/maps/mapParts.ts";
+import { Terrain } from "../../src/typescript/src/sim/terrain.ts";
 import { tintPixels } from "../../src/typescript/src/ui/mapTint.ts";
 import { floorPixels } from "../../src/typescript/src/ui/noiseTex.ts";
 import { rockBodies } from "../../src/typescript/src/ui/rockOutline.ts";
 
-const NAME = "inland-sea";
+const NAME = "clock";
 const spec = mapSpec(NAME)!;
-const shipped = (): Uint8Array => new Uint8Array(gunzipSync(readFileSync(new URL("../../src/typescript/src/live/maps/inland-sea.bin", import.meta.url))));
+const shipped = (): Uint8Array => new Uint8Array(gunzipSync(readFileSync(new URL("../../src/typescript/src/live/maps/clock.bin", import.meta.url))));
 
 describe("the prebuilt Live map file", () => {
   it("equals a fresh build of the map and its drawing (else run node scripts/buildMapAsset.ts in src/typescript)", () => {
@@ -33,7 +34,8 @@ describe("the prebuilt Live map file", () => {
     expect(builtHash(NAME)).toBeTypeOf("string");
     expect(rockBodies(t)).toHaveLength(a.parts.ok ? a.parts.outlines.bodyLoops.length : -1);
     expect(Buffer.from(a.floor).equals(Buffer.from(floorPixels(spec.width, spec.height)))).toBe(true);
-    expect(Buffer.from(a.tint).equals(Buffer.from(tintPixels(t)))).toBe(true);
+    // the file carries no paint grid (looks only), the shipped wash already has it: compare with the wash of the builder's own terrain
+    expect(Buffer.from(a.tint).equals(Buffer.from(tintPixels(new Terrain(b.rock, b.ground, spec.width, spec.height, b.weights))))).toBe(true);
   }, 60_000);
 
   it("refuses a file of another map, version or size, or one that is cut short or corrupt", () => {

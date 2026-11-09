@@ -5,12 +5,14 @@ import type { DecodedState, EcoState } from "../../src/typescript/src/sim/ecoSta
 import { otherWorldReason } from "./saveParse.ts";
 import { oldestInState } from "./carry.ts";
 import type { Home } from "./saveParse.ts";
+import { seedBuiltMap } from "../../src/typescript/src/sim/maps/index.ts";
 
 // See saveParse.ts. Building the world once here runs every check of restoreState inside this worker's heap cap.
 // A real save is a few long base64 texts and some 15 000 commas and brackets (at most about 520 000 for 20 000 creatures), while a crafted one
 // of millions of tiny values ("[{},{},...]") makes JSON.parse allocate far more than its size and grind near the heap cap; it is refused unparsed.
 const MAX_JSON_TOKENS = 1_000_000;
-const { gz, maxJsonBytes, verifyOnly, home, carryFrom } = workerData as { gz: Uint8Array; maxJsonBytes: number; verifyOnly: boolean; home: Home | null; carryFrom: string | null };
+const { gz, maxJsonBytes, verifyOnly, home, carryFrom, map } = workerData as { gz: Uint8Array; maxJsonBytes: number; verifyOnly: boolean; home: Home | null; carryFrom: string | null; map?: Parameters<typeof seedBuiltMap>[1] & { name: string } | null };
+if (map) seedBuiltMap(map.name, map); // the server's own built map (saveParse.ts homeMap), checked to fit
 // Its own function, so the gunzipped bytes and their text are garbage before the world is built.
 function parseJson(): EcoState {
   const json = gunzipSync(gz, { maxOutputLength: maxJsonBytes, chunkSize: maxJsonBytes + 1 }); // one chunk, so no second copy is made to join them

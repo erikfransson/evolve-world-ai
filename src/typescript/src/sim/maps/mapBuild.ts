@@ -34,6 +34,7 @@ export interface MapLayer extends Outline {
   firm?: Texture;
   clearMud?: boolean; // removes mud under the layer (islands in a sea)
   edge?: number; // distance over which mud or firm fades in from the outline
+  paint?: { rgb: readonly [number, number, number]; alpha: number }; // a colour wash over the floor, for looks only (mapTint.ts draws it)
 }
 export interface MapRock extends Outline {
   id: string;
@@ -49,6 +50,14 @@ export interface MapRock extends Outline {
   onMud?: boolean;
   fadeX?: readonly [number, number];
 }
+export interface MapRegion {
+  id: string;
+  title: string;
+  x: number;
+  y: number;
+  r: number;
+  hue?: number; // degrees, the colour its seeded founder gets
+}
 export interface MapSpec {
   name: string;
   title: string;
@@ -61,6 +70,7 @@ export interface MapSpec {
   basePoison?: number;
   layers: readonly MapLayer[];
   rock: readonly MapRock[];
+  regions?: readonly MapRegion[]; // named areas of the map (seeding homes, region table); not used by the builder
 }
 
 export interface BuiltMap {
@@ -73,7 +83,7 @@ export interface BuiltMap {
 // Bump when a change here alters any built map: saves record it with the spec (mapVersion), and maps.test.ts pins the built data to catch a missed bump.
 export const MAP_BUILD = 2; // 2: stones keep out of every rock layer's passes
 
-const LIMITS = { layers: 64, points: 64, discs: MAX_MAP_DISCS, area: 2e9 }; // of a spec, and the world area it may cover
+const LIMITS = { layers: 128, points: 64, discs: MAX_MAP_DISCS, area: 2.5e9 }; // of a spec, and the world area it may cover
 
 const valueNoise = (x: number, y: number, s: number): number => noise(x, y, s, CUBIC_FADE);
 const fbm = (x: number, y: number, s: number): number => valueNoise(x, y, s) * 0.55 + valueNoise(x * 2.1, y * 2.1, s + 7) * 0.3 + valueNoise(x * 4.3, y * 4.3, s + 13) * 0.15;
@@ -331,12 +341,13 @@ export function buildMap(spec: MapSpec): BuiltMap {
     layer.thr = arr[Math.floor((1 - tx.coverage) * 3999)]!;
   }
   // The field at a point: food and poison weights and the mud and firm shares, from the layers in order.
-  const out = { food: 1, poison: 1, mud: 0, firm: 0 };
+  const out = { food: 1, poison: 1, mud: 0, firm: 0, r: 0, g: 0, b: 0, a: 0 };
   const field = (x: number, y: number): void => {
     let food = spec.baseFood ?? 1;
     let poison = spec.basePoison ?? 1;
     let mud = 0;
     let firm = 0;
+    let r = 0, g = 0, b = 0, a = 0; // the paint, straight alpha, each layer laid over the ones before
     for (const layer of layers) {
       const d = layer.outline(x, y);
       const fe = layer.feather ?? 800;
@@ -346,6 +357,17 @@ export function buildMap(spec: MapSpec): BuiltMap {
       const ins = clamp(0.5 - d / edge, 0, 1);
       if (layer.food !== undefined) food += (layer.food - food) * m;
       if (layer.poison !== undefined) poison += (layer.poison - poison) * m;
+      if (layer.paint) {
+        const la = clamp(layer.paint.alpha, 0, 1) * m;
+        const na = la + a * (1 - la);
+        if (na > 0) {
+          const [lr, lg, lb] = layer.paint.rgb;
+          r = (lr * la + r * a * (1 - la)) / na;
+          g = (lg * la + g * a * (1 - la)) / na;
+          b = (lb * la + b * a * (1 - la)) / na;
+          a = na;
+        }
+      }
       if (layer.clearMud) mud *= 1 - ins;
       if (layer.mud) {
         const tx = layer.mud;
@@ -362,6 +384,10 @@ export function buildMap(spec: MapSpec): BuiltMap {
     out.poison = poison;
     out.mud = mud;
     out.firm = firm;
+    out.r = r;
+    out.g = g;
+    out.b = b;
+    out.a = a;
   };
 
   // Ground and weights on the nodes of the ground raster; the padding ring stays 0 (weights too, never read there).
@@ -369,6 +395,7 @@ export function buildMap(spec: MapSpec): BuiltMap {
   const { cols, rows, cell } = ground;
   const food = new Uint8Array(cols * rows);
   const poison = new Uint8Array(cols * rows);
+  const paint = spec.layers.some((l) => l.paint) ? new Uint8Array(4 * cols * rows) : null;
   for (let j = GROUND_PAD; j < rows - GROUND_PAD; j++) {
     for (let i = GROUND_PAD; i < cols - GROUND_PAD; i++) {
       field((i - GROUND_PAD) * cell, (j - GROUND_PAD) * cell);
@@ -379,6 +406,7 @@ export function buildMap(spec: MapSpec): BuiltMap {
       ground.data[2 * n + 1] = firm;
       food[n] = Math.round(clamp(out.food * WEIGHT_UNIT, 0, 255));
       poison[n] = Math.round(clamp(out.poison * WEIGHT_UNIT, 0, 255));
+      if (paint) paint.set([out.r, out.g, out.b, out.a * 255].map((v) => Math.round(clamp(v, 0, 255))), 4 * n);
     }
   }
   oneKindPerNode(ground.data, 1); // firm ground wins over mud
@@ -486,7 +514,7 @@ export function buildMap(spec: MapSpec): BuiltMap {
   const nodes = (cols - 2 * GROUND_PAD) * (rows - 2 * GROUND_PAD);
   return {
     ground,
-    weights: new MapWeights(ground, food, poison, discsBlocked(rock, W)),
+    weights: new MapWeights(ground, food, poison, discsBlocked(rock, W), paint),
     rock,
     stats: { rockDiscs: rock.length, massifDiscs: massifDiscs, stones, mud: mudNodes / nodes, firm: firmNodes / nodes, rockShare: rockArea / (W * H) },
   };

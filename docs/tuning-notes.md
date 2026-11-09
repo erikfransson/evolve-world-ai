@@ -140,6 +140,10 @@ Slow ground covers 10.8% of the map (was 7.0%), fast 4.5% (was 3.0%).
 Bench, 2900 seeded founders, one thread, load 5-12: tick 15.0 ms at 30k, 15.9 at 40k, 16.4 at 50k; stats with records about 14 ms at all three; RSS about 210 MB. Cost follows the population, not the area.
 `eco.foodMaxDensity` 1.4 (was 1.5): at 156 250 items per density unit, 1.5 plus poison 0.01 passes the wire's 0.9 x 262144 item slots.
 
+## Live food on the Six Realms (2026-11-09)
+
+Chosen for isolation between realms, not for population. `foodMaxDensity` 1.0 is too open (population at the cap all hour, thousands of foreign settlers, Mire taken over), 0.7 too closed on an earlier layout (5-10 foreign arrivals per realm per hour), 0.85 tested on the final map (about 10-260 foreign births per realm per sim hour, every realm at least 93% own lineage after the Mire was moved out). Final: 0.85 with Mire food 1.7 -> 2.3 (the Mire crashed in its first winter and was taken over in half the seeds); then 1 realm of 18 lost to a neighbour over three 60-minute seeds. 0.8 was no better than 0.85. Admin-tunable up to 0.95 (item slots). Details in `docs/clock-map-notes.md`.
+
 ## Live brain-weight budget (2026-10-22, release review S1)
 
 At 2900 creatures on the 50000 x 31250 world, under `systemd-run --scope -p MemoryMax=1G` like the unit: the founder mix (5.4 M weights) saves 36 MB of JSON, peaks at 543 MB writing and 686 MB reading back; 2900 Oracles (13 M weights, 77 MB) and 2900 of the largest upload brains (22 M, 124 MB) were OOM-killed (2 GB cap: 926 MB writing, 1234 MB reading back for the Oracles).

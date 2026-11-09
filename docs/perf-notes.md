@@ -190,6 +190,17 @@ The server tick of the Inland Sea (one thread, cap 5000) went about 1.65x faster
 
 `liveBench` mixed fingerprint 789316651 -> 379728853 when the brain-weight cap went (2026-11-05): births no longer wait at 7 M weights, so the mixed world grows to about 4900 creatures (results change, not a bug).
 
+## Six Realms vs Inland Sea (liveBench, 2026-11-09)
+
+`node src/liveBench.ts --seconds 600` in `server/`, 2400 seeded (clock 6 founders x 400, development 3 x 800), seed 1, one thread, load about 3; clock 60000 x 37500 on `clock-map`, Inland Sea 50000 x 31250 on origin/development (1534479).
+
+| Map         | ms/tick (steady) | ms per 1000 creatures | steady population | speedAchieved | Peak RSS |
+|-------------|------------------|-----------------------|-------------------|---------------|----------|
+| Six Realms  | 11.9             | 2.41                  | 4900 (cap)        | 2.80          | 272 MB   |
+| Inland Sea  | 9.1              | 2.43                  | 3736              | 3.65          | 295 MB   |
+
+Cost per creature is the same; the clock map runs at the 5000 cap (food 1.0 vs 1.4 differs in growth), so the tick is longer. Build 7.8 s vs 2.3 s (more layers and rock discs).
+
 ## RL episodes (single thread)
 
 `nice -n 17 node src/rlBench.ts [--reps 3] [--env id]` in `src/typescript`: ms of CPU time per episode for pool:39 and a random learner over 6 seeds; the fingerprint hashes every result of every env in `ENVS`, so it must not change when an optimisation lands. It was 799232213 since 0.2.4 (time-pressure envs and fixed held-out seeds); with the Ambush, Turf war and Cull envs added it prints 1819613860, and the value without those three is still 799232213 (checked 2026-10-28), so the existing envs are unchanged; with Patch war and Live now added it prints 976191245 (2026-10-28); with Two stops (Memory) added it prints 238187872 (2026-10-28, `--reps 1`), and the value without it is still 976191245; with Corral and Lap added it prints 1301207144 (2026-10-28, `--reps 1`), and the value without them is still 238187872. Memory envs on WASM then moved it to 2696220189 (all envs, `--reps 1`); with Hand to mouth added it prints 2726570458 (2026-11-04), and the value without it is still 2696220189, so the existing envs are unchanged (the new `livingCost` field is read only when set). With Over the horizon and Clean sweep added it prints 2078579358 (2026-11-05, `--reps 1`), and the value without them is still 2726570458, so the existing envs are unchanged (the coverage grid adds one index per tick and `cells` is not hashed; `placeLayout`'s new argument is read only by `horizon`). With Stragglers added (rl-fight) it prints 3498660510; with Sparse trail added on top it prints 2091004155 (2026-11-05, `--reps 1`), and the value without it is still 3498660510, so the existing envs are unchanged (`EpisodeResult.late` is not hashed). Since dead creatures stop pushing in collisions (engine-contacts, 2026-11-07) it prints 3425942905 (old contacts on the same tree: 2091004155).

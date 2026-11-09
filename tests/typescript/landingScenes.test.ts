@@ -1,6 +1,6 @@
-import { TICK_SECONDS, WARMUP_TICKS, arenaScene, ecosystemScene, inlandMapScene } from "../../src/typescript/src/ui/landing/index.ts";
+import { TICK_SECONDS, WARMUP_TICKS, arenaScene, ecosystemScene, liveMapScene } from "../../src/typescript/src/ui/landing/index.ts";
 import { ECO_CAP } from "../../src/typescript/src/ui/landing/ecosystem.ts";
-import { MAP_CAP, rockAt } from "../../src/typescript/src/ui/landing/inlandMap.ts";
+import { MAP_CAP, rockAt } from "../../src/typescript/src/ui/landing/liveMap.ts";
 import { BIRTH_RING, RING_SECONDS, drawBirthRings } from "../../src/typescript/src/ui/landing/kit.ts";
 import { fetchStats, parseStats, statsText, statsUrl } from "../../src/typescript/src/ui/landing/liveStats.ts";
 
@@ -83,9 +83,9 @@ describe("arenaScene", () => {
   });
 });
 
-describe("inlandMapScene", () => {
+describe("liveMapScene", () => {
   it("keeps its creatures off rock and under the cap, with births and deaths, and stays finite", () => {
-    const scene = inlandMapScene(7);
+    const scene = liveMapScene(7);
     const ctx = finiteCtx();
     const start = scene.living();
     let low = Infinity;
@@ -105,7 +105,7 @@ describe("inlandMapScene", () => {
   });
 
   it("paints each creature in its lineage colour, lighter with energy", () => {
-    const scene = inlandMapScene(5);
+    const scene = liveMapScene(5);
     for (let t = 0; t < 60; t++) scene.step();
     const fills: string[] = [];
     const strokes = new Set<string>();
@@ -117,8 +117,8 @@ describe("inlandMapScene", () => {
   });
 
   it("is deterministic per seed", () => {
-    const a = inlandMapScene(3);
-    const b = inlandMapScene(3);
+    const a = liveMapScene(3);
+    const b = liveMapScene(3);
     for (let t = 0; t < 600; t++) { a.step(); b.step(); }
     expect(a.births).toBe(b.births);
     expect(a.dots()).toEqual(b.dots());

@@ -45,6 +45,8 @@ if (!Number.isInteger(threads) || threads < 0 || threads > 16) throw new Error("
 const founders = startup("founders file checked", () => loadPools(poolsFile, loadFounders(foundersFile), process.env.LIVE_FOUNDER_POOLS_FILE !== undefined)); // checked on every start, so a bad file shows at once
 console.log(`founder pools: ${founders.some((f) => f.pool) ? founders.map((f) => `${f.name} ${f.pool?.length ?? 0}`).join(", ") : "none"} (${poolsFile})`);
 const live = startup(`world built (${liveConfig.world.map || "random map"}, ${liveConfig.world.width} x ${liveConfig.world.height})`, () => new LiveWorld(liveConfig, pool, threads > 0 ? createNodeThinkPool(threads) : null));
+// On a map with regions every founder needs a home; refused here, so an admin reset cannot leave a world that no start can seed.
+if (live.seedGroups(founders.length) < founders.length) throw new Error(`${founders.length} founders but the map has ${live.seedGroups(founders.length)} home regions`);
 
 const saves = new Saves(live, store);
 let savedOverrides: Record<string, Value>;
@@ -102,12 +104,12 @@ const admin = startAdmin(HOST, adminPort, token, live, stateDir, webRoot, savedO
     if (exit.way) throw new Error(exit.way === "stop" ? "the server is stopping" : "a reset is under way");
     // The creature to carry, picked now: from the listed save asked for (another world's too), else the running world.
     let carry: CarryOrder | undefined;
-    const badCopies = copiesProblem(copies, founders.length, live.freshEco); // first, so the carry's room is not reported from a bad count
+    const badCopies = copiesProblem(copies, live.seedGroups(founders.length), live.freshEco); // first, so the carry's room is not reported from a bad count
     if (badCopies) throw new Error(badCopies);
     if (ask) {
       const creature = ask.from ? await store.readCarry(ask.from) : await live.whenIdle(() => oldestInWorld(live.eco));
       if (!creature) throw new Error(`no living creature to carry in ${ask.from ?? "the running world"}`);
-      const order = checkCarry({ version: 1, name: ask.name, copies: ask.copies, creature }, live.freshAddRules(), seedRoom(live.freshEco) - copies * founders.length, founders.map((f) => f.name));
+      const order = checkCarry({ version: 1, name: ask.name, copies: ask.copies, creature }, live.freshAddRules(), seedRoom(live.freshEco) - copies * live.seedGroups(founders.length), founders.map((f) => f.name));
       if (typeof order === "string") throw new Error(order);
       carry = order;
     }

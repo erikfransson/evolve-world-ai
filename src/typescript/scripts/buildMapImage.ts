@@ -9,9 +9,9 @@ import { join } from "node:path";
 import { createServer } from "vite";
 import { groundImageHashes } from "./mapImageHash.ts";
 
-const NAME = "inland-sea";
+const NAME = process.env.MAP ?? "inland-sea";
 const root = new URL("..", import.meta.url).pathname;
-const out = (f: string): string => join(root, "src/live/maps", f);
+const out = (f: string): string => join(process.env.OUT ?? join(root, "src/live/maps"), f); // OUT: write elsewhere, e.g. for draft previews
 
 const server = await createServer({ root, configFile: join(root, "vite.config.ts"), server: { port: 0, host: "127.0.0.1" }, logLevel: "warn" });
 await server.listen();
@@ -69,7 +69,7 @@ try {
     writeFileSync(file, bytes);
     console.log(`${file}: ${bytes.length} bytes`);
   }
-  writeFileSync(out(`${NAME}-ground.json`), JSON.stringify(groundImageHashes(NAME), null, 1) + "\n");
+  if (!process.env.OUT) writeFileSync(out(`${NAME}-ground.json`), JSON.stringify(groundImageHashes(NAME), null, 1) + "\n");
 } finally {
   await stop();
 }

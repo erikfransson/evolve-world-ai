@@ -30,7 +30,7 @@ export const MAX_KEPT_RESETS = 3; // reset folders kept before a reset is refuse
 // The copies a reset may ask for: whole, at least 1, and the founders all fit below the birth reserve. The reason when not.
 export function copiesProblem(copies: number, founders: number, eco: { maxPopulation: number; birthReserve: number }): string | null {
   const most = mostCopies(founders, eco);
-  return Number.isInteger(copies) && copies >= 1 && copies <= most ? null : `copies must be a whole number from 1 to ${most} (${founders} founders, room for ${seedRoom(eco)} below the birth reserve)`;
+  return Number.isInteger(copies) && copies >= 1 && copies <= most ? null : `copies must be a whole number from 1 to ${most} (${founders} founder groups, room for ${seedRoom(eco)} below the birth reserve)`;
 }
 
 // The copies in the seed file, or SEED_COPIES when there is none or it does not hold a valid count (logged).
@@ -151,9 +151,9 @@ export class Saves {
         console.error(`SAVE REFUSED: ${why}`);
         throw new Error(why);
       });
-      // The same parse and checks as a restore, on the worker with its heap cap; a save that fails them is never written.
+      // The same parse and checks as a restore (of this world, on its map handed over built), on the worker with its heap cap; a save that fails them is never written.
       const verify = (gz: Uint8Array): Promise<unknown> =>
-        parseSave(gz, LIMITS.maxSaveJsonBytes, true, undefined, stop ? stopVerifyMs(performance.now() - stop.at) : VERIFY_TIMEOUT_MS).catch((e: unknown) => {
+        parseSave(gz, LIMITS.maxSaveJsonBytes, true, this.live.homeWorld(), stop ? stopVerifyMs(performance.now() - stop.at) : VERIFY_TIMEOUT_MS).catch((e: unknown) => {
           console.error(UNREADABLE);
           const why = `it would not restore: ${errText(e)}`;
           throw e instanceof WorkerFailed ? new WorkerFailed(why) : new Error(why); // a verify worker that timed out or died is transient, a save it judged bad is not
@@ -172,9 +172,10 @@ export class Saves {
   // carry: a checked order (carry.ts) the next start seeds with the founders; it must fit below the birth reserve with them.
   reset(copies: number, founders: number, at = new Date(), carry?: CarryOrder): Promise<string> {
     return this.exclusive(async () => {
-      const bad = copiesProblem(copies, founders, this.live.freshEco);
+      const groups = this.live.seedGroups(founders);
+      const bad = copiesProblem(copies, groups, this.live.freshEco);
       if (bad) throw new Error(bad);
-      const room = seedRoom(this.live.freshEco) - copies * founders;
+      const room = seedRoom(this.live.freshEco) - copies * groups;
       if (carry && carry.copies > room) throw new Error(`${carry.copies} carried copies do not fit: ${room} places are left below the birth reserve after ${copies} of each founder`);
       const carryText = carry ? JSON.stringify(carry) : "";
       if (carryText.length > MAX_CARRY_FILE_BYTES) throw new Error(`the carry order is ${carryText.length} bytes, over the ${MAX_CARRY_FILE_BYTES} the next start reads`);
@@ -274,7 +275,7 @@ export async function openWorld(saves: Saves, live: LiveWorld, stateDir: string,
   const store = saves.store;
   live.founders = founders;
   const found = await saves.restoreNewest(log);
-  live.seedCopies = readSeedCopies(store, founders.length, live.freshEco, log);
+  live.seedCopies = readSeedCopies(store, live.seedGroups(founders.length), live.freshEco, log);
   if (found === "restored") return loadOverrides(stateDir, live);
   if (found === "unreadable") throw new Error("saves of this world are there but none restores: not starting a fresh world over them");
   const retired = retireOverrides(stateDir);
@@ -290,7 +291,7 @@ export async function openWorld(saves: Saves, live: LiveWorld, stateDir: string,
   let refused = "";
   try {
     const raw = store.readJson(CARRY_FILE, MAX_CARRY_FILE_BYTES);
-    const order = raw === null ? null : checkCarry(raw, live.freshAddRules(), seedRoom(live.freshEco) - copies * founders.length, founders.map((f) => f.name));
+    const order = raw === null ? null : checkCarry(raw, live.freshAddRules(), seedRoom(live.freshEco) - copies * live.seedGroups(founders.length), founders.map((f) => f.name));
     if (typeof order === "string") refused = order;
     else carry = order;
   } catch (e) {
@@ -320,7 +321,7 @@ export async function openWorld(saves: Saves, live: LiveWorld, stateDir: string,
     n = live.seedFounders(founders, Math.random, copies); // with fresh set, a seedFounders that throws leaves a fresh, empty world
   }
   if (carry) {
-    const got = n - copies * founders.length;
+    const got = n - copies * live.seedGroups(founders.length);
     if (got < carry.copies) log(`CARRY SHORT: only ${got} of ${carry.copies} copies named ${carry.name} went in (an insert was refused)`);
     log(`carried ${carryLine({ ...carry, copies: got }, live.config.dt)}`);
     try {
@@ -334,7 +335,7 @@ export async function openWorld(saves: Saves, live: LiveWorld, stateDir: string,
   } catch (e) {
     log(`${SEED_FILE} not written (${errText(e)}): the page shows the default count after a restart`); // as with a failed save, the world runs on
   }
-  log(`fresh world seeded with ${n} creatures, ${copies} of each of ${founders.map((f) => f.name).join(", ")}`);
+  log(`fresh world seeded with ${n} creatures, ${copies} in each of ${live.seedGroups(founders.length)} groups from ${founders.map((f) => f.name).join(", ")}`);
   // Saved at once, so a crash before the first 4-hourly save restores this world instead of starting yet another (and retiring its overrides).
   // A failed save is logged and the world runs on, as with any save.
   await saves.save().then(log, (e: unknown) => log(errText(e)));

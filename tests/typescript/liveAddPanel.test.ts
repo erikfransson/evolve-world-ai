@@ -234,12 +234,12 @@ describe("add panel review fixes", () => {
   });
 
   it("shows empty structure sliders for a file mode with no file, and no founder name on a fresh brain", async () => {
-    const { panel } = await setup();
+    const { panel, founders } = await setup();
     panel.setSource("file");
     for (const id of ["rays", "spread", "length", "neurons", "memShort", "memLong"]) expect(document.getElementById(`add-${id}`)!.parentElement!.querySelector("output")!.textContent, id).toBe("–");
     panel.setSource("fresh");
     expect((document.getElementById("addName") as HTMLInputElement).value).toBe("MyFresh");
-    expect(document.getElementById("add-rays")!.parentElement!.querySelector("output")!.textContent).toBe("8");
+    expect(document.getElementById("add-rays")!.parentElement!.querySelector("output")!.textContent).toBe(String(founders[0]!.plan.rayCount)); // a fresh brain takes founder 0's plan
     expect((document.getElementById("add-spread") as HTMLInputElement).step).toBe("5");
     panel.setSource("founder");
     expect((document.getElementById("addName") as HTMLInputElement).value).toMatch(/^My(?!Fresh)/);

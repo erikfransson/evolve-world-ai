@@ -17,6 +17,7 @@ import { Terrain, terrainOf } from "../../src/typescript/src/sim/terrain.ts";
 import { TERRAIN_FAST, TERRAIN_SLOW } from "../../src/typescript/src/sim/terrain.ts";
 import { HIT_FOOD, HIT_POISON } from "../../src/typescript/src/sim/types.ts";
 import { World } from "../../src/typescript/src/sim/world.ts";
+import clockPins from "./clockPins.json";
 import { fineOf, groundBodies } from "../../src/typescript/src/ui/groundOutline.ts";
 
 const SEA = MAPS["inland-sea"]!;
@@ -56,6 +57,13 @@ describe("The Inland Sea map", () => {
     expect(builtHash("inland-sea")).toBe(BUILT[MAP_BUILD]);
     expect(mapVersion("inland-sea")).toBe("57ab5ef0-2");
   });
+
+  // The Six Realms is still being designed: scripts/remakeClockAssets.sh rewrites clockPins.json with the new hash and version.
+  it("pins the Six Realms' built data and version (else run src/typescript/scripts/remakeClockAssets.sh)", () => {
+    expect(builtHash("clock")).toBe(clockPins.builtHash);
+    expect(mapVersion("clock")).toBe(clockPins.mapVersion);
+    expect([MAPS.clock!.width, MAPS.clock!.height]).toEqual([60000, 37500]);
+  }, 60_000);
 
   it("versions a map by its spec and MAP_BUILD, not by floating point results", () => {
     expect(mapVersion("inland-sea")).toMatch(new RegExp(`^[0-9a-f]{8}-${MAP_BUILD}$`));

@@ -1,11 +1,11 @@
 import { mapSpec } from "../sim/maps/index.ts";
-import { unpackMap } from "../sim/maps/mapParts.ts";
+import { MAX_MAP_DISCS, unpackMap } from "../sim/maps/mapParts.ts";
 import { Terrain } from "../sim/terrain.ts";
 import { useRockGeometry } from "../ui/rockOutline.ts";
 import type { RockGeometry } from "../ui/rockOutline.ts";
 import type { MapOut } from "../worker/mapWorker.ts";
 
-const MAX_ROCK = 8000; // discs, mapBuild's own limit, and so the most bodies
+const MAX_ROCK = MAX_MAP_DISCS; // discs, mapBuild's own limit, and so the most bodies
 export const MAX_OUTLINE_LOOPS = 65_536; // the Inland Sea has 209
 export const MAX_OUTLINE_POINTS = 1_000_000; // 16 MB of points; the Inland Sea has 12 674
 const OUTLINE_PAD = 1000; // world units outlines and boxes may reach past the walls
@@ -59,7 +59,7 @@ export function terrainFromParts(name: string, width: number, height: number, m:
   return t;
 }
 
-export const LIVE_MAP = "inland-sea"; // the map the live server runs (server/src/config.ts), built by the page before the hello names it
+export const LIVE_MAP = "clock"; // the map the live server runs (server/src/config.ts), built by the page before the hello names it
 export const MAP_TIMEOUT_MS = 60_000; // a map not built by then (a stuck or very slow worker) is given up, and the next hello tries again
 type MapWorker = Pick<Worker, "postMessage" | "terminate" | "onmessage" | "onerror">;
 const newWorker = (): MapWorker => new Worker(new URL("../worker/mapWorker.ts", import.meta.url), { type: "module" });
