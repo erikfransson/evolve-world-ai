@@ -8,7 +8,7 @@ import { ECO_RAY_LENGTH_MIN, ECO_SECTIONS } from "../../src/typescript/src/ui/ec
 import { World } from "../../src/typescript/src/sim/world.ts";
 import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { TRIALS_FORM, TRIALS_SECTIONS } from "../../src/typescript/src/ui/trialsForm.ts";
-import { DESIGN_FORM } from "../../src/typescript/src/ui/arenaForm.ts";
+import { DEFAULT_RUN, DESIGN_FORM, RUN_FORM } from "../../src/typescript/src/ui/arenaForm.ts";
 
 const deg = (d: number): number => (d * Math.PI) / 180;
 
@@ -151,6 +151,26 @@ describe("settings form pieces", () => {
     mode.value = "y";
     expect(form.read().mode).toBe("y");
     expect(() => el("mode", HTMLInputElement)).toThrow(/not a/);
+  });
+});
+
+describe("Arena run form", () => {
+  const off = (id: string): boolean => document.getElementById(id)!.closest(".field")!.classList.contains("dep-off");
+  it("shows every setting without a More settings fold and greys those the method does not use", () => {
+    document.body.innerHTML = '<form id="f"><div id="host"></div></form>';
+    const form = buildForm(document.getElementById("host")!, RUN_FORM);
+    expect(document.querySelector("details.more")).toBeNull();
+    form.fill({ ...DEFAULT_RUN, method: "es" });
+    expect(["sigma", "lr", "population", "episodes", "poisonCost"].map(off)).toEqual([false, false, false, false, false]);
+    expect(["bpLr", "bpEpisodes", "iterations", "tiles"].map(off)).toEqual([true, true, false, false]);
+    form.fill({ ...DEFAULT_RUN, method: "backprop" });
+    expect(["sigma", "lr", "population", "episodes", "poisonCost"].map(off)).toEqual([true, true, true, true, true]);
+    expect(["bpLr", "bpEpisodes"].map(off)).toEqual([false, false]);
+  });
+  it("other pages keep More settings", () => {
+    document.body.innerHTML = '<form id="f"><div id="host"></div></form>';
+    buildForm(document.getElementById("host")!, TRIALS_FORM);
+    expect(document.querySelector("details.more")).not.toBeNull();
   });
 });
 

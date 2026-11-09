@@ -43,6 +43,7 @@ export interface Section<C> {
   title: string;
   fields: readonly Field<C>[];
   folded?: boolean; // the whole section starts collapsed
+  inline?: boolean; // advanced fields sit with the others instead of under "More settings"
   swatch?: string; // CSS colour of a dot before the title
   note?: (c: C) => string; // live line under the title
 }
@@ -202,8 +203,8 @@ function fieldHtml<C>(f: Field<C>): string {
 function sectionHtml<C>(s: Section<C>, index = 0): string {
   const note = s.note ? `<p class="sec-note" id="secNote${index}"></p>` : "";
   const swatch = s.swatch ? `<i class="sw" style="background: ${s.swatch}"></i>` : "";
-  const main = s.fields.filter((f) => !f.advanced).map(fieldHtml).join("");
-  const advanced = s.fields.filter((f) => f.advanced);
+  const main = s.fields.filter((f) => s.inline || !f.advanced).map(fieldHtml).join("");
+  const advanced = s.inline ? [] : s.fields.filter((f) => f.advanced);
   const more = advanced.length ? `<details class="more"><summary>More settings</summary><div class="more-body">${advanced.map(fieldHtml).join("")}</div></details>` : "";
   if (s.folded) return `<details class="card fold"><summary><h3>${swatch}${s.title}</h3></summary>${note}${main}${more}</details>`;
   return `<section class="card"><h3>${swatch}${s.title}</h3>${note}${main}${more}</section>`;

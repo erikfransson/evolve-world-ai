@@ -71,6 +71,7 @@ const METHODS = [["es", "Evolutionary RL"], ["backprop", "Backprop RL"]] as cons
 const RUN_SECTIONS: readonly Section<RunConfig>[] = [
   {
     title: "Run",
+    inline: true, // every setting shows, the ones the method does not use greyed out
     fields: [
       {
         kind: "choice",
