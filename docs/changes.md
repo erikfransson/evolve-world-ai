@@ -7,6 +7,7 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 ## Unreleased
 
 - Live: the world clock text is 2x larger (timer 2.8rem, season 1.38rem) so it reads in time-lapse screenshots. On phones the timer is 1.6rem and the season stays 1.15rem so it fits.
+- Live clock map: Mire's starting colour is magenta (300) again and Flats blue is slightly lighter (230, was 240), so the three warm colours (Bloom 0, Mire 28, Blight 55) no longer sit side by side. Live default `hueDrift` 0.75 -> 0.25. Saves from before this change are refused as another map version, so the world needs a reset.
 
 ## 0.7.0 (2026-11-09)
 

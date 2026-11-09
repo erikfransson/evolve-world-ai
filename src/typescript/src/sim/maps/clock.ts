@@ -4488,7 +4488,7 @@ export const CLOCK: MapSpec = {
    "x": 50270,
    "y": 18750,
    "r": 3268,
-   "hue": 28
+   "hue": 300
   },
   {
    "id": "bloom",
@@ -4504,7 +4504,7 @@ export const CLOCK: MapSpec = {
    "x": 19400,
    "y": 30350,
    "r": 2881,
-   "hue": 240
+   "hue": 230
   },
   {
    "id": "steppe",

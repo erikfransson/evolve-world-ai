@@ -72,7 +72,7 @@ const exit = (pts, cx, cy, ux, uy) => {
 
 const layers = [], rocks = [], regions = [];
 // Founder colours: six hues about 60 degrees apart, each picked to stand out on its own realm's paint (Erik: very distinct groups).
-const HUES = { blight: 55, mire: 28, bloom: 0, flats: 240, steppe: 185, crags: 120 }; // founder colours; clear of food green (142) and poison magenta (291)
+const HUES = { blight: 55, mire: 300, bloom: 0, flats: 230, steppe: 185, crags: 120 }; // founder colours: Mire magenta 300 (Erik 2026-11-09, chosen over 28 and 320), Flats a lighter blue than 240; the three warm hues are not neighbours
 
 // the abyss: ashen badlands floor
 layers.push(layer("waste", poly([[-2000, -2000], [W / 2, -2500], [W + 2000, -2000], [W + 2500, H / 2], [W + 2000, H + 2000], [W / 2, H + 2500], [-2000, H + 2000], [-2500, H / 2]]), { warp: 0, feather: 0, food: WASTE.food, poison: WASTE.poison, ...paint([52, 45, 42], 0.46) }));
