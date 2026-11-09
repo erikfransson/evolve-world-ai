@@ -6,6 +6,7 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- RL Arena: the advanced run settings (mutation size, learning rates, episodes per update) always show instead of sitting under "More settings", greyed out when the training method does not use them. Other pages keep "More settings" (`Section.inline`).
 - Lineages panel: a living lineage below 0.1% reads "<0.1%" (was 0%), and one beside others never reads 100% (">99.9%", or one decimal above 99%).
 
 ## 0.6.0 (2026-11-07)
