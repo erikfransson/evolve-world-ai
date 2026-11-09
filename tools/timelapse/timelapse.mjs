@@ -1,179 +1,301 @@
-// Saves one PNG of the Live world every INTERVAL_S seconds, one folder per world (per reset). Plain read-only viewer of the public page.
-// Run: nice -n 19 ionice -c3 chrt --idle 0 node tools/timelapse/timelapse.mjs [framing=a|b|c] [base=<dir>] [maxRunS=<seconds>]
+// Time-lapse capture of the Live world: one PNG every INTERVAL_S seconds into one folder per world (per reset), plus population.jsonl every POP_EVERY_S.
+// Always on: a light websocket viewer (no browser) that reads hello and stats, detects resets and writes the population log.
+// Chrome (one more viewer) runs only while frames are wanted: it is closed when a folder reaches its cap or the disk gets low, and started again for a new world.
+// Run: nice -n 19 ionice -c3 chrt --idle 0 node tools/timelapse/timelapse.mjs [key=value ...]   (any parameter below can be overridden, e.g. framing=b interval=20 out=/path)
 import { createRequire } from "node:module";
-import { appendFileSync, statSync, mkdirSync, readFileSync, renameSync, statfsSync, writeFileSync, existsSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { appendFileSync, createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, statfsSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
+import { dirname, extname, join, normalize, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 
 // parameters
-const PUPPETEER = process.env.PUPPETEER ?? "/tmp/claude-1000/-home-erik-progs-evolve-world-ai/9b5abbad-4dc2-4d80-9b43-9341a2efeec2/scratchpad/tools/node_modules/puppeteer-core";
-const CHROME = "/usr/bin/google-chrome";
-const PAGE_URL = process.env.PAGE_URL ?? "https://erikfransson.github.io/evolve-world-ai/live/"; // a locally served page may add ?server=ws://127.0.0.1:8787
-const FRAMINGS = {
-  // CSS viewport 1920 x 1200 at deviceScaleFactor dsf: the canvas gets 1920*dsf x 1200*dsf pixels and the page's UI (time chip) keeps the same share of the frame
-  a: { w: 1920, h: 1200, dsf: 2, zoomIns: 0 }, // whole map, 3840 x 2400
-  b: { w: 1920, h: 1200, dsf: 4, zoomIns: 0 }, // whole map, 7680 x 4800
-  c: { w: 1920, h: 1200, dsf: 2, zoomIns: 3 }, // closer, centred on the hub, 3840 x 2400 (zoom step 1.6 each)
+const HERE = dirname(fileURLToPath(import.meta.url));
+const REPO = resolve(HERE, "../..");
+const P = {
+  out: "/home/erik/progs/evolve-world-ai/videos/timelapse", // output folder, one subfolder per world (inside a git checkout, so it gets a .gitignore with *)
+  server: "ws://127.0.0.1:8787", // the Live server (public port, loopback)
+  page: "", // folder of the built Live page (build-page.sh); default <REPO>/tools/timelapse/page
+  pagePort: 8793, // loopback port of the tiny static server for the built page
+  framing: "a", // a = whole map 3840x2400 before crop, b = 7680x4800, c = closer view
+  interval: 20, // seconds between frames, aligned to the wall clock
+  popEvery: 5, // seconds between population.jsonl lines, a divisor of interval
+  capBytes: 30e9, // PNG bytes per world folder, then frames stop and Chrome closes ("first hours only")
+  popCapBytes: 500e6, // population.jsonl bytes per world folder
+  freeFloorBytes: 20e9, // frames stop when the disk has less free
+  staleCaptures: 3, // same tick this many frame slots in a row = frozen, reload
+  statsMaxAgeS: 15, // no stats for this long = link dead
+  resetTickDrop: 100, // a tick this far below the last one = new world
+  cropMarginCss: 8, // CSS px around the world rectangle
+  maxRunS: 0, // stop after this many seconds, 0 = run until killed
+  chrome: "/usr/bin/google-chrome",
+  puppeteer: process.env.PUPPETEER ?? "/tmp/claude-1000/-home-erik-progs-evolve-world-ai/9b5abbad-4dc2-4d80-9b43-9341a2efeec2/scratchpad/tools/node_modules/puppeteer-core",
+  ws: join(REPO, "server/node_modules/ws"), // the ws package of the server
+  lna: 0, // 1 adds the Chrome flags that allow a public page to reach a local server (not needed for the local page)
 };
-const FRAMING = process.argv[2] ?? "a";
-const BASE = process.argv[3] ?? "./timelapse-frames";
-const MAX_RUN_S = Number(process.argv[4] ?? 0); // 0 = run until killed
-const INTERVAL_S = 20; // frames, aligned to the wall clock
-const POP_EVERY_S = 5; // population.jsonl lines, a divisor of INTERVAL_S
-const POP_CAP_BYTES = 500e6; // per world folder
+for (const a of process.argv.slice(2)) { const i = a.indexOf("="); if (i > 0 && a.slice(0, i) in P) P[a.slice(0, i)] = typeof P[a.slice(0, i)] === "number" ? Number(a.slice(i + 1)) : a.slice(i + 1); else { console.error("unknown argument", a); process.exit(2); } }
+const FRAMINGS = {
+  // CSS viewport 1920 x 1200 at deviceScaleFactor dsf; the PNG is cropped to the world rectangle plus margin (and the clock chip)
+  a: { w: 1920, h: 1200, dsf: 2, zoomIns: 0 },
+  b: { w: 1920, h: 1200, dsf: 4, zoomIns: 0 },
+  c: { w: 1920, h: 1200, dsf: 2, zoomIns: 3 }, // closer, centred on the hub (zoom step 1.6 each), not cropped
+};
+const F = FRAMINGS[P.framing];
+if (!F) { console.error("framing must be a, b or c"); process.exit(2); }
+const PAGE_DIR = resolve(P.page || join(HERE, "page"));
+const OUT = resolve(P.out);
+const MAX_TEXT = 512 * 1024; // the largest text message the light client parses
+const MAX_BINARY = 4 * 1024 * 1024; // the largest message it accepts at all
 const MAX_LINEAGES = 32; // per population line (the server sends at most 8)
-const CAP_BYTES = 10e9; // per world folder
-const FREE_FLOOR_BYTES = 20e9; // stop capturing when the disk has less free
-const STALE_CAPTURES = 3; // same tick this many captures in a row = frozen, reload
-const STATS_MAX_AGE_S = 15; // stats arrive about each second; older = link is dead
-const RESET_TICK_DROP = 100; // a tick this far below the last one = new world
-const SHOW_TIMER = true; // keep the simulated-time and season badge in the picture
-const METHOD = process.env.METHOD ?? "shot"; // "shot" = page.screenshot (includes the time chip, a DOM overlay), "canvas" = canvas.toDataURL (canvas only, faster, no chip)
-const CHROME_ARGS = ["--no-sandbox", "--disable-features=LocalNetworkAccessChecks,PrivateNetworkAccessChecks,BlockInsecurePrivateNetworkRequests", "--js-flags=--max-old-space-size=2048"]; // 1st: the public page is on the internet, the server resolves to this machine
-const HIDE_CSS = `.banner,.panel,.ov-stack,.zoom,#emptyNote,#entry,#worldLoading,.entry-live,${SHOW_TIMER ? "" : "#timer,"}.info{display:none!important}
+const PING_EVERY_MS = 20_000; // the page's keep-alive text
+const CHROME_ARGS = ["--no-sandbox", "--js-flags=--max-old-space-size=2048", ...(P.lna ? ["--disable-features=LocalNetworkAccessChecks,PrivateNetworkAccessChecks,BlockInsecurePrivateNetworkRequests"] : [])];
+const HIDE_CSS = `.banner,.panel,.ov-stack,.zoom,#emptyNote,#entry,#worldLoading,.entry-live,.info{display:none!important}
 html,body{overflow:hidden!important;height:100%!important;margin:0!important}
 .layout.live{position:fixed!important;inset:0!important;padding:0!important;margin:0!important;height:100vh!important;min-height:0!important}
 .stage{position:fixed!important;inset:0!important}
 .stage>canvas{border:0!important;border-radius:0!important}`;
+const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".webp": "image/webp", ".png": "image/png", ".svg": "image/svg+xml", ".woff2": "font/woff2", ".wasm": "application/wasm", ".ico": "image/x-icon" };
 
-const puppeteer = createRequire(import.meta.url)(PUPPETEER);
-const F = FRAMINGS[FRAMING];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const safe = (s, n = 40) => String(s ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, n) || "x";
 const stamp = (d) => d.toISOString().replace(/[-:]/g, "").replace(/\.\d+/, "");
 const log = (...a) => console.log(new Date().toISOString(), ...a);
-mkdirSync(BASE, { recursive: true });
+const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+mkdirSync(OUT, { recursive: true });
+if (!existsSync(join(OUT, ".gitignore"))) writeFileSync(join(OUT, ".gitignore"), "*\n"); // the output folder may sit inside a git checkout: keep frames out of git status
 
-// state fed by the page's websocket frames (CDP), so the page itself is untouched
-let hello = null, stats = null, statsAt = 0;
-let world = null; // { id, dir, bytes, frames, lastTick, capped, staleN }
-let browser = null, page = null, loads = 0, errorsInRow = 0;
+// what the built page was built for (build-page.sh writes it)
+let stampInfo = null;
+try { stampInfo = JSON.parse(readFileSync(join(PAGE_DIR, "timelapse-build.json"), "utf8")); } catch {}
+log("start", { framing: P.framing, interval: P.interval, popEvery: P.popEvery, out: OUT, server: P.server, page: PAGE_DIR, build: stampInfo });
 
-function worldId() {
-  const m = hello?.map ?? {};
-  return [safe(m.name, 20), `${Math.round(hello?.world?.width ?? 0)}x${Math.round(hello?.world?.height ?? 0)}`, safe(m.version, 20)].join("-");
+// ---- light client: read-only viewer, no browser. Sends only the page's "ping" text, never a select or an add.
+const { WebSocket } = createRequire(import.meta.url)(P.ws);
+let hello = null; // { version, serverVersion, mapName, mapVersion, width, height }
+let stats = null, statsAt = 0; // latest stats, reduced to what is logged
+let link = null, failures = 0, linkTimer = null, pingTimer = null, lastMessage = 0, lastLinkLog = 0;
+const retryDelayS = (n) => Math.min(30, 2 ** n) * (1 + 0.25 * Math.random()); // 1 s doubling to 30 s with jitter, like the page
+
+function cleanHello(m) {
+  const w = m?.world, mp = m?.map ?? {};
+  if (num(m?.version) === null || num(w?.width) === null || num(w?.height) === null) return null;
+  return { version: m.version, serverVersion: typeof m.serverVersion === "string" ? m.serverVersion.slice(0, 16) : "", mapName: typeof mp.name === "string" ? mp.name.slice(0, 40) : "", mapVersion: typeof mp.version === "string" ? mp.version.slice(0, 40) : "", width: w.width, height: w.height };
 }
-function onFrame(e) {
-  if (e.response.opcode !== 1) return;
-  let m;
-  try { m = JSON.parse(e.response.payloadData); } catch { return; }
-  if (m?.t === "hello") hello = m;
-  else if (m?.t === "stats" && Number.isFinite(m.tick)) { stats = m; statsAt = Date.now(); }
+function cleanStats(m) {
+  const tick = num(m?.tick), population = num(m?.population);
+  if (tick === null || population === null) return null;
+  const lineages = Array.isArray(m.lineages) ? m.lineages.slice(0, MAX_LINEAGES).map((l) => ({ founder: num(l?.founder) ?? -1, name: typeof l?.name === "string" ? safe(l.name, 24) : "", count: num(l?.count) ?? 0, hue: num(l?.hue) ?? -1, starter: l?.starter === true })) : [];
+  return { tick, simSeconds: num(m.simSeconds) ?? 0, population, lineages };
+}
+function onLinkMessage(data, isBinary) {
+  lastMessage = Date.now();
+  if (isBinary) return; // creature frames and item sets: not needed, not parsed
+  try {
+    if (data.length > MAX_TEXT) return;
+    const m = JSON.parse(data.toString());
+    if (m?.t === "hello") {
+      const h = cleanHello(m);
+      if (h) { hello = h; failures = 0; log("hello", h); }
+    } else if (m?.t === "stats") {
+      const s = cleanStats(m);
+      if (s) { stats = s; statsAt = Date.now(); }
+    } else if (m?.t === "busy") log("server says busy (viewer limit)");
+  } catch (err) { log("bad message", String(err?.message ?? err).slice(0, 100)); }
+}
+function connectLink() {
+  clearTimeout(linkTimer);
+  let ws;
+  try { ws = new WebSocket(P.server, { maxPayload: MAX_BINARY, perMessageDeflate: false, handshakeTimeout: 10_000 }); } catch (err) { return scheduleLink(String(err?.message ?? err)); }
+  link = ws; lastMessage = Date.now();
+  ws.on("message", onLinkMessage);
+  ws.on("error", (err) => { if (Date.now() - lastLinkLog > 30_000) { lastLinkLog = Date.now(); log("link error", String(err?.message ?? err).slice(0, 100)); } });
+  ws.on("close", () => { if (link === ws) { link = null; scheduleLink("closed"); } });
+}
+function scheduleLink(why) {
+  if (linkTimer) return;
+  const wait = retryDelayS(failures++);
+  if (failures <= 3 || failures % 10 === 0) log("link down", why, "retry in", wait.toFixed(1), "s");
+  linkTimer = setTimeout(() => { linkTimer = null; connectLink(); }, wait * 1000);
+}
+pingTimer = setInterval(() => {
+  try {
+    if (link?.readyState !== WebSocket.OPEN) return;
+    if (Date.now() - lastMessage > 15_000) { const ws = link; link = null; ws.terminate(); scheduleLink("stale"); return; }
+    link.send("ping");
+  } catch {}
+}, PING_EVERY_MS);
+connectLink();
+
+// ---- world folders
+let world = null; // { id, dir, bytes, frames, popBytes, lastTick, capped, staleN, lastCapturedTick, size }
+function worldId() { return [safe(hello?.mapName, 20), `${Math.round(hello?.width ?? 0)}x${Math.round(hello?.height ?? 0)}`, safe(hello?.mapVersion, 20)].join("-"); }
+function startWorld(now) {
+  const id = worldId();
+  let dir = null;
+  for (const d of readdirSync(OUT).sort().reverse()) if (d.startsWith(id + "_")) { dir = d; break; } // the newest folder of this world, so a script restart resumes it
+  let bytes = 0, frames = 0, lastTick = -1, popBytes = 0, size = null;
+  if (dir) {
+    try { for (const l of readFileSync(join(OUT, dir, "frames.jsonl"), "utf8").split("\n")) if (l) { const r = JSON.parse(l); bytes += r.bytes; frames++; lastTick = r.tick; } } catch {}
+    try { popBytes = statSync(join(OUT, dir, "population.jsonl")).size; } catch {}
+    try { size = JSON.parse(readFileSync(join(OUT, dir, "world.json"), "utf8")).size ?? null; } catch {}
+    try { // the last logged population tick, when no frame was saved yet
+      const pl = readFileSync(join(OUT, dir, "population.jsonl"), "utf8").trimEnd().split("\n").pop();
+      if (pl) lastTick = Math.max(lastTick, JSON.parse(pl).tick);
+    } catch {}
+    if (lastTick > stats.tick + P.resetTickDrop) { dir = null; bytes = frames = popBytes = 0; size = null; } // the tick is behind the saved folder: it was reset meanwhile
+  }
+  if (!dir) {
+    dir = `${id}_${stamp(now).slice(0, 15)}z`;
+    mkdirSync(join(OUT, dir), { recursive: true });
+    writeFileSync(join(OUT, dir, "world.json"), JSON.stringify({ id, startedCapture: now.toISOString(), firstTick: stats.tick, simSeconds: stats.simSeconds, framing: P.framing, map: hello.mapName, mapVersion: hello.mapVersion, world: { width: hello.width, height: hello.height } }) + "\n");
+  }
+  world = { id, dir, bytes, frames, popBytes, lastTick: stats.tick, capped: false, staleN: 0, lastCapturedTick: -1, size };
+  log("world folder", dir, { resumedBytes: bytes, resumedFrames: frames });
+}
+function logPopulation(now) {
+  if (world.popBytes >= P.popCapBytes) return;
+  const lin = stats.lineages;
+  const line = JSON.stringify({ time: now.toISOString(), tick: stats.tick, simSeconds: stats.simSeconds, population: stats.population, others: Math.max(0, stats.population - lin.reduce((a, l) => a + l.count, 0)), lineages: lin }) + "\n";
+  appendFileSync(join(OUT, world.dir, "population.jsonl"), line);
+  world.popBytes += line.length;
 }
 
-async function openPage() {
-  try { await browser?.close(); } catch {}
-  hello = stats = null; statsAt = 0;
-  browser = await puppeteer.launch({ executablePath: CHROME, headless: true, args: CHROME_ARGS });
-  browser.on("disconnected", () => { log("browser disconnected"); browser = null; });
-  await loadPage();
+// ---- Chrome: only while frames are wanted; serves the built page on loopback and views it as one more viewer
+let puppeteer = null; // loaded when Chrome is first needed, so the always-on part stays small
+let browser = null, page = null, httpd = null, chromeState = "off"; // off | starting | ready | closing
+let crop = null, pageUrl = "";
+function serveStatic() {
+  return new Promise((res, rej) => {
+    const s = createServer((req, rsp) => {
+      try {
+        const u = new URL(req.url ?? "/", "http://x");
+        let p = normalize(decodeURIComponent(u.pathname)); if (p.endsWith(sep) || p.endsWith("/")) p += "index.html";
+        const f = join(PAGE_DIR, p);
+        if (req.method !== "GET" || !f.startsWith(PAGE_DIR + sep) || !existsSync(f) || !statSync(f).isFile()) { rsp.writeHead(404).end(); return; }
+        rsp.writeHead(200, { "content-type": MIME[extname(f)] ?? "application/octet-stream" });
+        createReadStream(f).on("error", () => rsp.destroy()).pipe(rsp);
+      } catch { try { rsp.writeHead(400).end(); } catch {} }
+    });
+    s.once("error", rej);
+    s.listen(P.pagePort, "127.0.0.1", () => res(s));
+  });
+}
+async function launchChrome() {
+  if (chromeState !== "off") return;
+  chromeState = "starting";
+  try {
+    puppeteer ??= createRequire(import.meta.url)(P.puppeteer);
+    httpd = await serveStatic();
+    pageUrl = `http://127.0.0.1:${P.pagePort}/live/index.html?server=${P.server}`;
+    browser = await puppeteer.launch({ executablePath: P.chrome, headless: true, args: CHROME_ARGS });
+    browser.on("disconnected", () => { if (chromeState !== "closing") { log("chrome disconnected"); browser = page = null; chromeState = "off"; closeServer(); } });
+    await loadPage();
+    chromeState = "ready";
+    log("chrome ready", { pid: browser.process()?.pid });
+  } catch (err) { log("chrome start failed", String(err?.message ?? err).slice(0, 200)); await closeChrome(); }
+}
+function closeServer() { try { httpd?.close(); httpd?.closeAllConnections?.(); } catch {} httpd = null; }
+async function closeChrome() {
+  if (chromeState === "off" && !browser && !httpd) return;
+  chromeState = "closing";
+  const b = browser; browser = page = null; crop = null;
+  try { await b?.close(); } catch { try { b?.process()?.kill("SIGKILL"); } catch {} }
+  closeServer();
+  chromeState = "off";
+  log("chrome closed");
 }
 async function loadPage() {
-  loads++;
-  hello = stats = null; statsAt = 0;
   if (!page || page.isClosed()) {
     page = await browser.newPage();
     await page.setViewport({ width: F.w, height: F.h, deviceScaleFactor: F.dsf });
     await page.evaluateOnNewDocument(() => { try { sessionStorage.setItem("evolve.live.entry", "1"); } catch {} });
-    const c = await page.createCDPSession();
-    await c.send("Network.enable");
-    c.on("Network.webSocketFrameReceived", onFrame);
   }
-  await page.goto(PAGE_URL, { waitUntil: "load", timeout: 60000 });
+  await page.goto(pageUrl, { waitUntil: "load", timeout: 60000 });
   await page.addStyleTag({ content: HIDE_CSS });
-  const t0 = Date.now();
-  while (Date.now() - t0 < 60000) { // live link, hello and first stats in
-    if (hello && stats) break;
-    await sleep(500);
-  }
+  await page.waitForFunction(() => document.getElementById("chipText")?.textContent === "Live", { timeout: 60000 });
   await sleep(3000); // map picture and first reveal
   await page.evaluate((n) => { const $ = (i) => document.getElementById(i); $("zoomFit").click(); for (let i = 0; i < n; i++) $("zoomIn").click(); }, F.zoomIns);
   await sleep(2500); // camera animation
-  log("page loaded", { world: hello ? worldId() : null, tick: stats?.tick, load: loads });
+  crop = await computeCrop();
+  log("page loaded", { crop });
+}
+// The world rectangle as the fitted camera puts it (camera.ts fitWorld: zoom = min(cw/W, ch/H) * 0.96, world centred) plus a margin, with the clock chip kept inside; whole CSS px, even device px.
+async function computeCrop() {
+  if (P.framing === "c") return { x: 0, y: 0, width: F.w, height: F.h };
+  const chip = await page.evaluate(() => { const e = document.getElementById("timer"); const r = e && !e.hidden ? e.getBoundingClientRect() : null; return r ? { top: r.top, right: r.right, left: r.left } : null; });
+  const z = Math.min(F.w / hello.width, F.h / hello.height) * 0.96;
+  const ww = hello.width * z, wh = hello.height * z, x0 = (F.w - ww) / 2, y0 = (F.h - wh) / 2, m = P.cropMarginCss;
+  let left = x0 - m, top = y0 - m, right = x0 + ww + m, bottom = y0 + wh + m;
+  const c = chip ?? { top: 10, right: F.w - 55, left: F.w - 250 }; // chip not shown yet: its CSS place (ecosystem.css .timer)
+  top = Math.min(top, c.top - 4); right = Math.max(right, c.right + 4); left = Math.min(left, c.left - 4);
+  left = Math.max(0, Math.floor(left)); top = Math.max(0, Math.floor(top)); right = Math.min(F.w, Math.ceil(right)); bottom = Math.min(F.h, Math.ceil(bottom));
+  let width = right - left, height = bottom - top;
+  const even = (v) => (Math.round(v * F.dsf) % 2 === 0 ? v : v + 1);
+  width = Math.min(even(width), F.w - left); height = Math.min(even(height), F.h - top);
+  return { x: left, y: top, width, height };
+}
+async function takeFrame(now, tick) {
+  const png = Buffer.from(await page.screenshot({ type: "png", optimizeForSpeed: true, clip: crop }));
+  const size = [crop.width * F.dsf, crop.height * F.dsf];
+  if (world.size && (world.size[0] !== size[0] || world.size[1] !== size[1])) throw new Error(`frame size ${size} differs from this world's ${world.size}`);
+  if (!world.size) { world.size = size; const f = join(OUT, world.dir, "world.json"); const j = JSON.parse(readFileSync(f, "utf8")); j.size = size; j.crop = crop; writeFileSync(f, JSON.stringify(j) + "\n"); }
+  const path = join(OUT, world.dir, `${stamp(now)}_t${String(tick).padStart(9, "0")}.png`);
+  writeFileSync(path + ".tmp", png); renameSync(path + ".tmp", path);
+  return { png, path };
 }
 
-function startWorld(now) {
-  const id = worldId();
-  let dir = null;
-  for (const d of readdirSync(BASE).sort().reverse()) if (d.startsWith(id + "_")) { dir = d; break; } // resume the newest folder of this world after a script restart
-  let bytes = 0, frames = 0, lastTick = -1;
-  if (dir) {
-    try {
-      for (const l of readFileSync(join(BASE, dir, "frames.jsonl"), "utf8").split("\n")) if (l) { const r = JSON.parse(l); bytes += r.bytes; frames++; lastTick = r.tick; }
-    } catch {}
-    if (lastTick > (stats?.tick ?? 0) + RESET_TICK_DROP) { dir = null; bytes = frames = 0; } // the tick is behind the saved frames: it was reset meanwhile
-  }
-  if (!dir) {
-    dir = `${id}_${stamp(now).slice(0, 15)}z`;
-    mkdirSync(join(BASE, dir), { recursive: true });
-    writeFileSync(join(BASE, dir, "world.json"), JSON.stringify({ id, startedCapture: now.toISOString(), firstTick: stats?.tick, simSeconds: stats?.simSeconds, framing: FRAMING, width: F.w * F.dsf, height: F.h * F.dsf, map: hello?.map?.name, mapVersion: hello?.map?.version, world: hello?.world }) + "\n");
-  }
-  let popBytes = 0;
-  try { popBytes = statSync(join(BASE, dir, "population.jsonl")).size; } catch {}
-  world = { id, dir, bytes, frames, lastTick: stats?.tick ?? 0, capped: false, popBytes, staleN: 0, lastCapturedTick: -1 };
-  log("world folder", dir, { resumedBytes: bytes });
-}
-
-async function pngBytes() {
-  if (METHOD === "shot") return Buffer.from(await page.screenshot({ type: "png", captureBeyondViewport: false, optimizeForSpeed: true }));
-  const b64 = await page.evaluate(() => document.getElementById("view").toDataURL("image/png").slice(22));
-  return Buffer.from(b64, "base64");
-}
-
-// Every POP_EVERY_S: keeps page and world folder in order, logs the population, and every INTERVAL_S also saves a frame.
+// ---- the slot loop
+let errorsInRow = 0;
 async function step(now, withFrame) {
-  if (!browser || !page || page.isClosed()) { await openPage(); return; }
-  if (Date.now() - statsAt > STATS_MAX_AGE_S * 1000) { log("no stats for", Math.round((Date.now() - statsAt) / 1000), "s, reloading"); await loadPage(); return; }
+  const age = Date.now() - statsAt;
+  if (!hello || !stats || age > P.statsMaxAgeS * 1000) { if (Date.now() - lastLinkLog > 30_000) { lastLinkLog = Date.now(); log("no fresh stats", hello ? Math.round(age / 1000) + " s" : "no hello yet"); } return; }
   const tick = stats.tick, id = worldId();
-  if (!world || id !== world.id || tick < world.lastTick - RESET_TICK_DROP) { log("new world", { id, tick, was: world?.id, lastTick: world?.lastTick }); startWorld(now); }
+  if (!world || id !== world.id || tick < world.lastTick - P.resetTickDrop) {
+    log("new world", { id, tick, was: world?.id, lastTick: world?.lastTick });
+    await closeChrome(); // a reset restarts Chrome for a clean page
+    startWorld(now);
+  }
   world.lastTick = tick;
   logPopulation(now);
-  if (withFrame) await capture(now, tick);
-}
-// Counts per lineage as the page gets them (stats.lineages: the top 8 families by count, same-named ones summed, so the 6 founders plus up to 2 other families; the rest is "others").
-function logPopulation(now) {
-  if (world.popBytes >= POP_CAP_BYTES) return;
-  const lin = Array.isArray(stats.lineages) ? stats.lineages.slice(0, MAX_LINEAGES).map((l) => ({ founder: Number(l.founder) | 0, name: l.name ? safe(l.name, 24) : "", count: Number(l.count) | 0, starter: l.starter === true })) : [];
-  const line = JSON.stringify({ time: now.toISOString(), tick: stats.tick, population: stats.population, others: Math.max(0, stats.population - lin.reduce((a, l) => a + l.count, 0)), lineages: lin }) + "\n";
-  appendFileSync(join(BASE, world.dir, "population.jsonl"), line);
-  world.popBytes += line.length;
-}
-
-async function capture(now, tick) {
-  if (world.capped) return;
-  if (tick === world.lastCapturedTick) { if (++world.staleN >= STALE_CAPTURES) { log("frozen at tick", tick, "reloading"); world.staleN = 0; await loadPage(); } return; }
+  const versionOk = !stampInfo || stampInfo.protocol === hello.version;
+  if (!versionOk) { if (Date.now() - lastLinkLog > 60_000) { lastLinkLog = Date.now(); log("VERSION MISMATCH: server protocol", hello.version, "built page", stampInfo.protocol, "(commit " + stampInfo.commit + "), no frames until the page is rebuilt with build-page.sh"); } await closeChrome(); return; }
+  if (!existsSync(join(PAGE_DIR, "live/index.html"))) { if (Date.now() - lastLinkLog > 60_000) { lastLinkLog = Date.now(); log("built page missing in", PAGE_DIR, "run build-page.sh"); } return; }
+  const free = statfsSync(OUT); const freeBytes = free.bavail * free.bsize;
+  if (!world.capped && freeBytes < P.freeFloorBytes) { log("free disk", Math.round(freeBytes / 1e6), "MB under the floor, frames stopped for", world.dir); world.capped = true; }
+  if (!world.capped && world.bytes >= P.capBytes) { log("folder at cap", world.bytes, "B, frames stopped for", world.dir); world.capped = true; }
+  if (world.capped) { await closeChrome(); return; }
+  if (chromeState === "off") { void launchChrome(); return; }
+  if (chromeState !== "ready" || !withFrame) return;
+  if (!(await page.evaluate(() => document.getElementById("chipText")?.textContent === "Live").catch(() => false))) { world.offN = (world.offN ?? 0) + 1; if (world.offN >= 3) { log("page not live for 3 slots, reloading"); world.offN = 0; await loadPage(); } return; }
+  world.offN = 0;
+  if (tick === world.lastCapturedTick) {
+    if (++world.staleN >= P.staleCaptures) { log("frozen at tick", tick, "reloading"); world.staleN = 0; await loadPage(); try { link?.terminate(); } catch {} }
+    return;
+  }
   world.staleN = 0;
-  const free = statfsSync(BASE); const freeBytes = free.bavail * free.bsize;
-  if (freeBytes < FREE_FLOOR_BYTES) { log("free disk", Math.round(freeBytes / 1e9), "GB under floor, capture stopped for", world.dir); world.capped = true; return; }
-  if (world.bytes >= CAP_BYTES) { log("folder at cap", world.bytes, "capture stopped for", world.dir); world.capped = true; return; }
   const t0 = Date.now();
-  const png = await pngBytes();
-  const name = `${stamp(now)}_t${String(tick).padStart(9, "0")}.png`;
-  const path = join(BASE, world.dir, name);
-  writeFileSync(path + ".tmp", png); renameSync(path + ".tmp", path);
+  const { png, path } = await takeFrame(now, tick);
   world.bytes += png.length; world.frames++; world.lastCapturedTick = tick;
   const ms = Date.now() - t0;
-  appendFileSync(join(BASE, world.dir, "frames.jsonl"), JSON.stringify({ time: now.toISOString(), tick, population: stats.population, bytes: png.length, ms }) + "\n");
-  log("frame", name, png.length, "B", ms, "ms", "pop", stats.population, "folder", Math.round(world.bytes / 1e6), "MB");
+  appendFileSync(join(OUT, world.dir, "frames.jsonl"), JSON.stringify({ time: now.toISOString(), tick, population: stats.population, bytes: png.length, ms }) + "\n");
+  log("frame", path.split("/").pop(), png.length, "B", ms, "ms", "pop", stats.population, "folder", Math.round(world.bytes / 1e6), "MB");
 }
 
 const startedAt = Date.now();
-log("start", { FRAMING, F, METHOD, BASE, INTERVAL_S });
-let first = true;
 for (;;) {
   try {
-    if (!browser) await openPage();
-    const next = Math.ceil((Date.now() + 1) / (POP_EVERY_S * 1000)) * POP_EVERY_S * 1000;
-    if (MAX_RUN_S && next - startedAt > MAX_RUN_S * 1000) break;
-    if (first) { first = false; } 
+    const next = Math.ceil((Date.now() + 1) / (P.popEvery * 1000)) * P.popEvery * 1000;
+    if (P.maxRunS && next - startedAt > P.maxRunS * 1000) break;
     await sleep(Math.max(0, next - Date.now()));
-    await step(new Date(next), next % (INTERVAL_S * 1000) === 0);
+    await step(new Date(next), next % (P.interval * 1000) === 0);
     errorsInRow = 0;
   } catch (err) {
     errorsInRow++;
     log("error", String(err?.message ?? err).slice(0, 300), "in a row", errorsInRow);
-    try { if (errorsInRow >= 2) { errorsInRow = 0; if (browser && !page?.isClosed()) await loadPage(); else await openPage(); } } catch (e2) { log("recover failed", String(e2?.message ?? e2).slice(0, 200)); await sleep(5000); }
+    try { if (errorsInRow >= 2) { errorsInRow = 0; await closeChrome(); } } catch (e2) { log("recover failed", String(e2?.message ?? e2).slice(0, 200)); }
   }
 }
-try { await browser?.close(); } catch {}
+clearInterval(pingTimer); clearTimeout(linkTimer);
+try { link?.close(); } catch {}
+await closeChrome();
 log("done", { frames: world?.frames, bytes: world?.bytes });
 process.exit(0);

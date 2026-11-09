@@ -1,0 +1,29 @@
+# Time-lapse capture of the Live world. Not installed by anything here, see README.md. Replace @REPO@ (checkout), @NODE@ (node install dir), @OUT@ (output folder).
+[Unit]
+Description=Evolve World Live time-lapse capture
+After=network-online.target evolve-live.service
+
+[Service]
+WorkingDirectory=@REPO@
+ExecStart=@NODE@/bin/node tools/timelapse/timelapse.mjs out=@OUT@
+Nice=19
+IOSchedulingClass=idle
+CPUSchedulingPolicy=idle
+# The cap covers node and Chrome together (Chrome measured 1.2 to 1.4 GB while open, the light client alone far less).
+MemoryMax=2500M
+MemorySwapMax=0
+TasksMax=512
+Restart=always
+RestartSec=30
+# Reads the checkout (script, built page, ws package), writes only @OUT@; Chrome's profile goes to the private /tmp.
+ProtectHome=read-only
+ReadWritePaths=@OUT@
+PrivateTmp=yes
+ProtectSystem=strict
+NoNewPrivileges=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+
+[Install]
+WantedBy=default.target
