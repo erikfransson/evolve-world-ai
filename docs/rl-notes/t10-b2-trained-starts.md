@@ -110,3 +110,13 @@ The shipped ES was not re-run at B4's ES rate of 1.9, because that rate is withi
 - Budget model: B1's factor 1.79 for the screen, with only the leader re-run at 1.3. The re-score cost is one-thread CPU; with 3 helpers in a browser it would take less wall time.
 - The re-score uses the same held seeds every time (worker `heldSeeds`). Its choice is less noisy than 4-seed keep-best, but still a selection. In 2-seed Strong `+rb` it dropped a +2.7 gain for S-p3.
 - The Live check has 12 copies per cell in a fresh world capped at 4900; it supports the direction but cannot rank ppo05 against ppo05+r.
+
+## Review corrections (2026-11-09)
+- "Scaled ES hurts at every tier" is overstated.
+  - The long scope and part of bigger are live-* envs that are in RECOMMENDED_MIX, so PPO trained on them and ES did not.
+  - The independent checks are weaker: on held2, ES poison is -0.18 (0 up, 3 down), and the Live check gives 211.5 s against 215 s, inside the world-to-world swing.
+  - The defensible claim: ppo05 with the re-score does no harm, and the shipped ES can.
+- The "up/down" counts pool training seed × test seed as independent, but all training seeds share the 64 test seeds, so they overstate confidence. The only clear gain is the weak upload L-p6 (+4 to +6.5). Juggernaut and Oracle lose 0.2 to 0.6 without the re-score.
+- The re-score seeds include the 4 keep-best seeds (heldSeeds is a prefix), which slightly favours accepting the kept brain. The battery numbers include this.
+- The tested re-score rule is ES-scored: method "es", iterations 0, default poison cost 1, the uncapped mix, the "ready" held value. A backprop-scored re-score was never tested and ignores poison.
+- Visitor experience: for Juggernaut and Oracle, the re-score kept the start in every cell at every tier, so a default founder start usually comes back unchanged.
