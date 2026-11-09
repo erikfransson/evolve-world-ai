@@ -1,0 +1,12 @@
+{
+  "name": "evolve-timelapse",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Live world time-lapse capture. puppeteer-core never downloads a browser; Chrome is the system /usr/bin/google-chrome.",
+  "engines": { "node": ">=22" },
+  "dependencies": {
+    "puppeteer-core": "25.16.0",
+    "ws": "8.22.0"
+  }
+}

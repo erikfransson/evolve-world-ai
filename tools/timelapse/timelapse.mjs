@@ -14,6 +14,7 @@ const REPO = resolve(HERE, "../..");
 const P = {
   out: "/home/erik/progs/evolve-world-ai/videos/timelapse", // output folder, one subfolder per world (inside a git checkout, so it gets a .gitignore with *)
   server: "ws://127.0.0.1:8787", // the Live server (public port, loopback)
+  pageServer: "", // server address the page connects to, default the same as `server` (a test hook)
   page: "", // folder of the built Live page (build-page.sh); default <REPO>/tools/timelapse/page
   pagePort: 8793, // loopback port of the tiny static server for the built page
   framing: "a", // a = whole map 3840x2400 before crop, b = 7680x4800, c = closer view
@@ -32,8 +33,6 @@ const P = {
   chipInsetCss: 14, // the clock chip sits this many CSS px inside the top-right corner of the world rectangle (capture-only restyle)
   maxRunS: 0, // stop after this many seconds, 0 = run until killed
   chrome: "/usr/bin/google-chrome",
-  puppeteer: process.env.PUPPETEER ?? "/tmp/claude-1000/-home-erik-progs-evolve-world-ai/9b5abbad-4dc2-4d80-9b43-9341a2efeec2/scratchpad/tools/node_modules/puppeteer-core",
-  ws: join(REPO, "server/node_modules/ws"), // the ws package of the server
   extraCss: "", // file with CSS injected into the page after the hiding rules (a test hook)
   lna: 0, // 1 adds the Chrome flags that allow a public page to reach a local server (not needed for the local page)
 };
@@ -74,7 +73,7 @@ try { stampInfo = JSON.parse(readFileSync(join(PAGE_DIR, "timelapse-build.json")
 log("start", { framing: P.framing, interval: P.interval, popEvery: P.popEvery, out: OUT, server: P.server, page: PAGE_DIR, build: stampInfo });
 
 // ---- light client: read-only viewer, no browser. Sends only the page's "ping" text, never a select or an add.
-const { WebSocket } = createRequire(import.meta.url)(P.ws);
+const { WebSocket } = createRequire(import.meta.url)("ws"); // from tools/timelapse/node_modules (npm ci)
 let hello = null; // { version, serverVersion, mapName, mapVersion, width, height }
 let stats = null, statsAt = 0; // latest stats, reduced to what is logged
 let wantCreatures = false, lastCreatures = null; // the latest creature frame (binary type 1), only while Chrome runs
@@ -228,9 +227,9 @@ async function launchChrome() {
   if (chromeState !== "off") return;
   chromeState = "starting";
   try {
-    puppeteer ??= createRequire(import.meta.url)(P.puppeteer);
+    puppeteer ??= createRequire(import.meta.url)("puppeteer-core"); // from tools/timelapse/node_modules
     httpd = await serveStatic();
-    pageUrl = `http://127.0.0.1:${P.pagePort}/live/index.html?server=${P.server}`;
+    pageUrl = `http://127.0.0.1:${P.pagePort}/live/index.html?server=${P.pageServer || P.server}`;
     browser = await puppeteer.launch({ executablePath: P.chrome, headless: true, args: CHROME_ARGS });
     browser.on("disconnected", () => { if (chromeState !== "closing") { log("chrome disconnected"); browser = page = null; chromeState = "off"; wantCreatures = false; lastCreatures = null; closeServer(); } });
     await loadPage();
