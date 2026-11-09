@@ -2,7 +2,9 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { AddPanel } from "../../src/typescript/src/live/addPanel.ts";
-import { TRAIN_TIERS, cappedEnvs, phasesFor, secondsLeft, train } from "../../src/typescript/src/live/training.ts";
+import { TRAIN_TIERS, cappedEnvs, heldScore, phasesFor, secondsLeft, train } from "../../src/typescript/src/live/training.ts";
+import { TRAIN_TIERS_TRAINED } from "../../src/typescript/src/sim/rl/trainTiers.ts";
+import { RECOMMENDED_MIX } from "../../src/typescript/src/sim/rl/envs.ts";
 import type { LivePhase, TrainProgress } from "../../src/typescript/src/live/training.ts";
 
 class FakeWorker {
@@ -37,11 +39,11 @@ describe("training tiers as phases", () => {
     expect(phasesFor(true, tier("light"))[0]!.envs.filter((e) => e === "live-now")).toHaveLength(2); // the duplicate live-now stays
   });
 
-  it("keeps the evolution protocol for a founder or a file, half of the tier's seconds per phase", () => {
+  it("gives a founder or a file the trained-start tier: PPO lr 0.0005 on the mix, the tier's seconds", () => {
     for (const id of ["light", "medium", "strong"]) {
       const phases = phasesFor(false, tier(id));
-      expect(phases.map((p) => [p.kind, p.method, p.seconds])).toEqual([["pretrain", "es", tier(id).seconds / 2], ["finetune", "es", tier(id).seconds / 2]]);
-      expect(phases.map((p) => p.backprop)).toEqual([undefined, undefined]);
+      expect(phases.map((p) => [p.kind, p.method, p.seconds, p.backprop])).toEqual([["tier", "backprop", tier(id).seconds, { lr: 0.0005, episodes: 16 }]]);
+      expect(phases[0]!.envs).toEqual(TRAIN_TIERS_TRAINED.find((t) => t.id === id)!.phases[0]!.envs);
     }
   });
 
@@ -81,7 +83,7 @@ describe("training worker start", () => {
   });
 
   it("sends evolution strategies for the ES phases", () => {
-    train(phasesFor(false, tier("light"))[0]!, plan, new Float32Array(10), () => {}, () => {});
+    train({ kind: "tier", envs: ["far-food"], seconds: 10, method: "es" }, plan, new Float32Array(10), () => {}, () => {});
     const m = FakeWorker.last!.sent[0]!;
     expect(m.method).toBe("es");
     expect(m.options).toMatchObject({ pairs: 24, lr: 0.02 });
@@ -123,6 +125,55 @@ describe("training worker start", () => {
   });
 });
 
+describe("re-score worker", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "performance"] });
+    vi.stubGlobal("Worker", FakeWorker);
+    Object.defineProperty(document, "hidden", { configurable: true, get: () => false });
+  });
+  afterEach(() => {
+    Object.defineProperty(document, "hidden", { configurable: true, get: () => false });
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("starts a 0-iteration ES run on 32 held seeds, the whole uncapped mix and the default poison cost", () => {
+    heldScore(plan, new Float32Array(10), 32);
+    const m = FakeWorker.last!.sent[0] as unknown as { held: number; method: string; options: Record<string, unknown>; envs: { id: string; seconds: number }[] };
+    expect([m.method, m.held, m.options.iterations]).toEqual(["es", 32, 0]);
+    expect(m.options).not.toHaveProperty("poisonCost");
+    expect(m.envs.map((e) => e.id)).toEqual([...RECOMMENDED_MIX]);
+    expect(m.envs.find((e) => e.id === "live-now")!.seconds).toBeGreaterThan(30);
+  });
+
+  it("resolves with the ready score and frees the worker", async () => {
+    const job = heldScore(plan, new Float32Array(10), 32);
+    ready({ held: 4.5 });
+    expect(await job.done).toBe(4.5);
+    expect(FakeWorker.last!.terminated).toBe(true);
+  });
+
+  it("resolves null on a worker error, a timeout, a cancel and a hidden tab, freeing the worker each time", async () => {
+    let job = heldScore(plan, new Float32Array(10), 32);
+    FakeWorker.last!.onmessage!({ data: { type: "error", message: "x" } } as MessageEvent);
+    expect(await job.done).toBeNull();
+    expect(FakeWorker.last!.terminated).toBe(true);
+    job = heldScore(plan, new Float32Array(10), 32);
+    vi.advanceTimersByTime(61_000);
+    expect(await job.done).toBeNull();
+    expect(FakeWorker.last!.terminated).toBe(true);
+    job = heldScore(plan, new Float32Array(10), 32);
+    job.cancel();
+    expect(await job.done).toBeNull();
+    expect(FakeWorker.last!.terminated).toBe(true);
+    job = heldScore(plan, new Float32Array(10), 32);
+    Object.defineProperty(document, "hidden", { configurable: true, get: () => true });
+    document.dispatchEvent(new Event("visibilitychange"));
+    expect(await job.done).toBeNull();
+    expect(FakeWorker.last!.terminated).toBe(true);
+  });
+});
+
 describe("add panel tiers", () => {
   const setup = async () => {
     const { parseFounders } = await import("../../src/typescript/src/live/founders.ts");
@@ -151,9 +202,10 @@ describe("add panel tiers", () => {
     pick("strong");
   });
 
-  it("trains a fresh brain with the chosen tier's PPO phase and a founder with two ES phases", async () => {
+  it("trains a fresh brain with the chosen tier's PPO phase and a founder with the trained-start PPO phase", async () => {
     const training = await import("../../src/typescript/src/live/training.ts");
     const calls: LivePhase[] = [];
+    const score = vi.spyOn(training, "heldScore").mockImplementation(() => ({ done: Promise.resolve(1), cancel() {} }));
     const spy = vi.spyOn(training, "train").mockImplementation((phase, _p, genome) => {
       calls.push(phase);
       return { done: Promise.resolve(Float32Array.from(genome)), cancel() {}, stoppedHidden: false };
@@ -168,9 +220,10 @@ describe("add panel tiers", () => {
       panel.reply({ t: "refused", reason: "busy" });
       panel.setSource("founder");
       await go();
-      expect(calls.map((c) => [c.kind, c.method, c.seconds])).toEqual([["pretrain", "es", 37.5], ["finetune", "es", 37.5]]);
+      expect(calls.map((c) => [c.kind, c.method, c.seconds, c.backprop?.lr])).toEqual([["tier", "backprop", 75, 0.0005]]);
     } finally {
       spy.mockRestore();
+      score.mockRestore();
     }
   });
 
@@ -241,6 +294,130 @@ describe("add panel tiers", () => {
     } finally {
       spy.mockRestore();
     }
+  });
+});
+
+describe("add panel keeps a trained start only when the re-score says so", () => {
+  // scores: what heldScore answers in turn (the start first, then the trained brain); "cancel" leaves the job open until cancelled
+  const run = async (scores: (number | null)[], trainReturns: "better" | "same" = "better", hiddenAtEnd = false) => {
+    const training = await import("../../src/typescript/src/live/training.ts");
+    const { parseFounders } = await import("../../src/typescript/src/live/founders.ts");
+    const { LiveWorld } = await import("../../server/src/liveWorld.ts");
+    const { smallConfig } = await import("./liveHelpers.ts");
+    const html = readFileSync(join(process.cwd(), "live/index.html"), "utf8");
+    document.body.innerHTML = html.slice(html.indexOf("<body>") + 6, html.indexOf("</body>"));
+    const sent: { genome: Float32Array }[] = [];
+    const panel = new AddPanel(document.getElementById("addPanel")!, { send: (r) => (sent.push(r as never), true), added() {}, minimised() {} });
+    panel.setRules(new LiveWorld(smallConfig(), null).addRules());
+    const founders = parseFounders(JSON.parse(readFileSync(join(process.cwd(), "public/live-founders.json"), "utf8")));
+    panel.setFounders(founders);
+    (document.getElementById("addTrainOn") as HTMLInputElement).checked = true;
+    const queue = scores.slice();
+    const asked: number[] = [];
+    const trainCalls: number[] = [];
+    const jobs: { cancel: () => void }[] = [];
+    const s1 = vi.spyOn(training, "train").mockImplementation((_ph, _p, genome) => {
+      trainCalls.push(1);
+      if (hiddenAtEnd) Object.defineProperty(document, "hidden", { configurable: true, get: () => true });
+      return { done: Promise.resolve(trainReturns === "same" ? null : Float32Array.from(genome, (w) => w + 1)), cancel() {}, stoppedHidden: false };
+    });
+    const s2 = vi.spyOn(training, "heldScore").mockImplementation((_p, _g, seeds) => {
+      asked.push(seeds);
+      const next = queue.shift();
+      let resolve: (v: number | null) => void = () => {};
+      const done = new Promise<number | null>((r) => (resolve = r));
+      if (next === undefined) { const job = { done, cancel: () => resolve(null) }; jobs.push(job); return job; }
+      return { done: Promise.resolve(next), cancel() {} };
+    });
+    const go = (): Promise<void> => (panel as unknown as { go(): Promise<void> }).go();
+    const msg = (): string => document.getElementById("addMsg")!.textContent!;
+    const done = (): void => { s1.mockRestore(); s2.mockRestore(); Object.defineProperty(document, "hidden", { configurable: true, get: () => false }); };
+    return { sent, founders, go, msg, asked, trainCalls, jobs, done, panel };
+  };
+
+  it("adds the trained brain when it strictly beats the start, scoring both on 32 seeds", async () => {
+    const t = await run([1, 2]);
+    try {
+      await t.go();
+      expect(t.asked).toEqual([32, 32]);
+      expect(t.sent).toHaveLength(1);
+      expect(t.sent[0]!.genome[0]).toBeCloseTo(t.founders[0]!.genome[0]! + 1, 5);
+    } finally { t.done(); }
+  });
+
+  it("adds the original when the tie or a lower score comes back, and says so", async () => {
+    for (const kept of [1, 0.5, NaN]) {
+      const t = await run([1, kept]);
+      try {
+        await t.go();
+        expect(t.sent).toHaveLength(1);
+        expect(Array.from(t.sent[0]!.genome)).toEqual(Array.from(t.founders[0]!.genome));
+        expect(t.msg()).toMatch(/no better brain; adding the original/);
+      } finally { t.done(); }
+    }
+  });
+
+  it("adds the original without a second re-score when training kept nothing", async () => {
+    const t = await run([1], "same");
+    try {
+      await t.go();
+      expect(t.asked).toEqual([32]);
+      expect(Array.from(t.sent[0]!.genome)).toEqual(Array.from(t.founders[0]!.genome));
+      expect(t.msg()).toMatch(/adding the original/);
+    } finally { t.done(); }
+  });
+
+  it("falls back to the original when the re-score of the trained brain fails", async () => {
+    const t = await run([1, null]);
+    try {
+      await t.go();
+      expect(Array.from(t.sent[0]!.genome)).toEqual(Array.from(t.founders[0]!.genome));
+      expect(t.msg()).toMatch(/adding the original/);
+    } finally { t.done(); }
+  });
+
+  it("falls back to the original, without training, when the start cannot be scored", async () => {
+    const t = await run([null]);
+    try {
+      await t.go();
+      expect(t.trainCalls).toHaveLength(0);
+      expect(Array.from(t.sent[0]!.genome)).toEqual(Array.from(t.founders[0]!.genome));
+    } finally { t.done(); }
+  });
+
+  it("never adds the unchecked brain when the tab is hidden once training ends", async () => {
+    const t = await run([1, 5], "better", true);
+    try {
+      await t.go();
+      expect(t.sent).toHaveLength(0); // waits for the visitor
+      Object.defineProperty(document, "hidden", { configurable: true, get: () => false });
+      await t.go();
+      expect(Array.from(t.sent[0]!.genome)).toEqual(Array.from(t.founders[0]!.genome));
+    } finally { t.done(); }
+  });
+
+  it("adds nothing when the visitor cancels during the re-score of the trained brain", async () => {
+    const t = await run([1]);
+    try {
+      const go = t.go();
+      await vi.waitFor(() => expect(t.jobs).toHaveLength(1)); // the second re-score is open
+      expect(document.getElementById("addTrainText")!.textContent).toBe("Checking…");
+      expect(document.getElementById("addTrainFill")!.style.width).toBe("100%");
+      t.panel.cancelTraining();
+      await go;
+      expect(t.sent).toHaveLength(0);
+      expect(t.msg()).toMatch(/Nothing was added/);
+    } finally { t.done(); }
+  });
+
+  it("leaves a fresh brain without a re-score", async () => {
+    const t = await run([]);
+    try {
+      t.panel.setSource("fresh");
+      await t.go();
+      expect(t.asked).toEqual([]);
+      expect(t.sent).toHaveLength(1);
+    } finally { t.done(); }
   });
 });
 

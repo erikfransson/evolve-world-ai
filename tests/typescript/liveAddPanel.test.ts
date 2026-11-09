@@ -33,8 +33,9 @@ describe("add panel after training stopped in a hidden tab", () => {
     const runs: string[] = [];
     const spy = vi.spyOn(training, "train").mockImplementation((phase, _plan, genome) => {
       runs.push(phase.kind);
-      return { done: Promise.resolve(Float32Array.from(genome, (w) => w + 1)), cancel() {}, stoppedHidden: phase.kind === "pretrain" };
+      return { done: Promise.resolve(Float32Array.from(genome, (w) => w + 1)), cancel() {}, stoppedHidden: true };
     });
+    const scoreSpy = vi.spyOn(training, "heldScore").mockImplementation(() => ({ done: Promise.resolve(1), cancel() {} }));
     const { parseFounders } = await import("../../src/typescript/src/live/founders.ts");
     const { LiveWorld } = await import("../../server/src/liveWorld.ts");
     const { smallConfig } = await import("./liveHelpers.ts");
@@ -48,11 +49,11 @@ describe("add panel after training stopped in a hidden tab", () => {
     const go = (): Promise<void> => (panel as unknown as { go(): Promise<void> }).go();
     try {
       await go();
-      expect(runs).toEqual(["pretrain"]); // fine-tune skipped: the visitor is away
+      expect(runs).toEqual(["tier"]);
       expect(sent).toEqual([]); // and nothing added
       expect(document.getElementById("addMsg")!.textContent).toMatch(/stopped while this tab was hidden/);
       await go(); // the visitor is back and presses Add
-      expect(runs).toEqual(["pretrain"]); // the kept result, not trained again
+      expect(runs).toEqual(["tier"]); // the kept result, not trained again
       expect(sent).toHaveLength(1);
       // A run that ends another way (a worker error) while the tab is hidden waits too.
       spy.mockImplementation((phase, _plan, genome) => {
@@ -63,10 +64,11 @@ describe("add panel after training stopped in a hidden tab", () => {
       (() => { for (const r of document.querySelectorAll<HTMLInputElement>('input[name="addTier"]')) r.checked = r.value === "medium"; })(); document.getElementById("addTiers")!.dispatchEvent(new Event("change")); // another tier: trained afresh
       Object.defineProperty(document, "hidden", { configurable: true, get: () => true });
       await go();
-      expect(runs).toEqual(["pretrain", "pretrain"]);
+      expect(runs).toEqual(["tier", "tier"]);
       expect(sent).toHaveLength(1);
     } finally {
       spy.mockRestore();
+      scoreSpy.mockRestore();
       Object.defineProperty(document, "hidden", { configurable: true, get: () => false });
     }
   });
