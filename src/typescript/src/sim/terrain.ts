@@ -6,6 +6,7 @@ import { buildGroundField, GroundField } from "./groundField.ts";
 import { packMap, unpackMap } from "./maps/mapParts.ts";
 import type { MapParts } from "./maps/mapParts.ts";
 import type { MapWeights } from "./maps/weights.ts";
+import type { RockLook } from "./maps/mapBuild.ts";
 import { UNIFORM_FIELD } from "./spawnField.ts";
 import type { SpawnField } from "./spawnField.ts";
 
@@ -44,7 +45,7 @@ export const MAP_DENSITY_MAX = { stoneDensity: 0.2, ridgeDensity: 0.15, slowDens
 // The hand-designed maps, made known by importing maps/index.ts. Only the code that runs a map imports it, so Trials and the Arena leave out
 // the map generator and the specs, and a thread seeded with a map's arrays (seedMapTerrain) never needs them.
 export interface MapSource {
-  spec(name: string): { width: number; height: number } | undefined;
+  spec(name: string): { width: number; height: number; look?: { rock?: RockLook } } | undefined;
   built(name: string): { rock: readonly Circle[]; ground: GroundField; weights: MapWeights };
 }
 let maps: MapSource | null = null;
@@ -105,8 +106,9 @@ export class Terrain {
   readonly designed: boolean; // a hand-designed map, which the scenes draw in its own style
   readonly spawn: SpawnField; // where items appear: by the weights, or anywhere on the random map
   readonly empty: boolean; // no rock and no patches
+  readonly rockLook: RockLook | null; // a hand-designed map's own rock style (ui/abyssRock.ts), null for the default
 
-  constructor(rock: readonly Circle[], ground: GroundField | null, width: number, height: number, weights: MapWeights | null = null) {
+  constructor(rock: readonly Circle[], ground: GroundField | null, width: number, height: number, weights: MapWeights | null = null, rockLook: RockLook | null = null) {
     this.width = width;
     this.height = height;
     this.rockCount = rock.length;
@@ -128,6 +130,7 @@ export class Terrain {
     this.designed = weights !== null;
     this.spawn = weights ?? UNIFORM_FIELD;
     this.empty = rock.length === 0 && ground === null;
+    this.rockLook = rockLook;
   }
 
   private cellOf(x: number, y: number): number {
@@ -440,7 +443,7 @@ export function mapTerrain(name: string, width: number, height: number): Terrain
     if (!spec) throw new Error(`unknown map "${name}"`);
     if (width !== spec.width || height !== spec.height) throw new Error(`map ${name} needs a world of ${spec.width} x ${spec.height}`);
     const b = maps.built(name);
-    mapTerrains.set(name, (t = new Terrain(b.rock, b.ground, width, height, b.weights)));
+    mapTerrains.set(name, (t = new Terrain(b.rock, b.ground, width, height, b.weights, spec.look?.rock ?? null)));
   } else if (width !== t.width || height !== t.height) throw new Error(`map ${name} needs a world of ${t.width} x ${t.height}`);
   return t;
 }
@@ -462,7 +465,7 @@ export function seedMapTerrain(name: string, width: number, height: number, part
   const spec = maps?.spec(name); // a thread without the registry trusts the arrays' fit to the raster
   if (maps && (!spec || spec.width !== width || spec.height !== height)) throw new Error(`unknown map "${name}" or a world of the wrong size`);
   const map = unpackMap(width, height, parts);
-  if (!mapTerrains.has(name)) mapTerrains.set(name, new Terrain(map.rock, map.ground, width, height, map.weights));
+  if (!mapTerrains.has(name)) mapTerrains.set(name, new Terrain(map.rock, map.ground, width, height, map.weights, spec?.look?.rock ?? null));
 }
 
 // The map of a config, built once per process and shared by every world and creature that uses it.

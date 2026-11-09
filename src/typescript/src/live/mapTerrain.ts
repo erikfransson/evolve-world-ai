@@ -50,7 +50,7 @@ export function terrainFromParts(name: string, width: number, height: number, m:
   } catch {
     return null;
   }
-  const t = new Terrain(map.rock, map.ground, width, height, map.weights);
+  const t = new Terrain(map.rock, map.ground, width, height, map.weights, spec.look?.rock ?? null);
   try {
     useRockGeometry(t, m.outlines); // throws when the bodies are not this map's
   } catch {

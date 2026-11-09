@@ -11,9 +11,13 @@ import { MAX_MAP_DISC_R, MAX_MAP_DISCS } from "./mapParts.ts";
 
 type Pt = readonly [number, number];
 type Shape = { type: "poly"; pts: readonly Pt[] } | { type: "path"; path: readonly Pt[]; w: readonly number[] };
+// The shape of a patchy texture: soft blobs (fbm, the default), veins (a network of channels or cracks along warped cell borders) or plates (the cells between them).
+type Pattern = "blobs" | "veins" | "plates";
 interface Texture {
   coverage: number; // share of the layer that is mud or firm, 1 for all of it
   scale: number; // wavelength of the patchiness
+  pattern?: Pattern; // default blobs
+  keep?: number; // veins and plates: share of the cell borders that are veins or cracks, the rest heal over (default all)
   deep?: number; // mud only: distance over which the sea deepens (not used by the engine)
   inset?: number; // firm only: how far inside the layer's edge the firm ground starts
 }
@@ -34,7 +38,26 @@ export interface MapLayer extends Outline {
   firm?: Texture;
   clearMud?: boolean; // removes mud under the layer (islands in a sea)
   edge?: number; // distance over which mud or firm fades in from the outline
-  paint?: { rgb: readonly [number, number, number]; alpha: number }; // a colour wash over the floor, for looks only (mapTint.ts draws it)
+  paint?: Paint; // a colour wash over the floor, for looks only (mapTint.ts draws it)
+}
+interface Paint {
+  rgb: readonly [number, number, number];
+  alpha: number;
+  tex?: PaintTex;
+  crack?: { scale: number; width: number; keep?: number }; // only a network of cracks: plate size, crack width (world units), share of plate edges cracked
+  patch?: { scale: number; lo: number; hi: number }; // only where noise of this wavelength rises from lo to hi: broken, patchy paint
+  fade?: number; // paths: the paint fades in over this share of the length at each end
+}
+// A second colour laid into a paint where a pattern is on: cover is the share of the layer it takes, stretch widens the pattern along x (streaks).
+interface PaintTex {
+  pattern?: Pattern;
+  scale: number;
+  cover: number;
+  rgb: readonly [number, number, number];
+  alpha: number;
+  stretch?: number;
+  soft?: number; // width of the pattern's edge, 0.1 is crisp, 0.5 a soft mottle
+  keep?: number; // as Texture.keep
 }
 export interface MapRock extends Outline {
   id: string;
@@ -71,6 +94,18 @@ export interface MapSpec {
   layers: readonly MapLayer[];
   rock: readonly MapRock[];
   regions?: readonly MapRegion[]; // named areas of the map (seeding homes, region table); not used by the builder
+  look?: MapLook; // how the map is drawn, looks only; not used by the builder
+}
+// A map's own drawing style; a map without it draws in the default abyssal style.
+export interface MapLook {
+  rock?: RockLook; // rock lit from one side with a cast shadow (ui/abyssRock.ts), instead of basalt with a dark halo and an edge line
+}
+export interface RockLook {
+  stone?: "basalt" | "sandstone" | "granite"; // colour preset, default basalt
+  rgb?: readonly [number, number, number]; // albedo, overrides the preset
+  light?: number; // compass bearing the light comes from, degrees (0 north, 90 east, on screen), default 315: the north-west
+  shadow?: number; // opacity of the cast shadow, default 0.5
+  edge?: number; // opacity of a thin darker edge line, default 0.2, 0 for none
 }
 
 export interface BuiltMap {
@@ -88,10 +123,69 @@ const LIMITS = { layers: 128, points: 64, discs: MAX_MAP_DISCS, area: 2.5e9 }; /
 const valueNoise = (x: number, y: number, s: number): number => noise(x, y, s, CUBIC_FADE);
 const fbm = (x: number, y: number, s: number): number => valueNoise(x, y, s) * 0.55 + valueNoise(x * 2.1, y * 2.1, s + 7) * 0.3 + valueNoise(x * 4.3, y * 4.3, s + 13) * 0.15;
 const clamp = (v: number, a: number, b: number): number => Math.max(a, Math.min(b, v));
+// Distance between the nearest and second nearest jittered cell point (cell units, 0 on a border), on a domain-warped plane so borders wander.
+function cellBorder(x: number, y: number, s: number): number {
+  const wx = x + 0.45 * (fbm(x * 0.7, y * 0.7, s + 31) - 0.5) * 2;
+  const wy = y + 0.45 * (fbm(x * 0.7, y * 0.7, s + 37) - 0.5) * 2;
+  const ci = Math.floor(wx);
+  const cj = Math.floor(wy);
+  let f1 = 9;
+  let f2 = 9;
+  for (let a = -1; a <= 1; a++) {
+    for (let b = -1; b <= 1; b++) {
+      const dx = ci + a + 0.1 + 0.8 * hash(ci + a, cj + b, s + 51) - wx;
+      const dy = cj + b + 0.1 + 0.8 * hash(ci + a, cj + b, s + 53) - wy;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      if (d < f1) {
+        f2 = f1;
+        f1 = d;
+      } else if (d < f2) f2 = d;
+    }
+  }
+  return f2 - f1;
+}
+// A pattern's value at a point, higher where it is on; about 0 .. 1. keep < 1 heals that share of the borders (slow noise lifts them off the threshold).
+function patternAt(kind: Pattern, x: number, y: number, s: number, keep = 1): number {
+  if (kind === "blobs") return fbm(x, y, s);
+  let b = cellBorder(x, y, s) + 0.18 * (valueNoise(x * 2.3, y * 2.3, s + 61) - 0.5); // borders thicken and thin along their length
+  if (keep < 1) b += 0.6 * smoothRange(keep - 0.1, keep + 0.1, valueNoise(x * 0.8, y * 0.8, s + 67));
+  return kind === "veins" ? 1 - b : b;
+}
+// The value above which a pattern covers the given share, sampled like the mud texture's.
+function patternThreshold(kind: Pattern, s: number, cover: number, keep = 1): number {
+  const arr: number[] = [];
+  for (let n = 0; n < 4000; n++) arr.push(patternAt(kind, hash(n, 1, 9) * 40, hash(n, 2, 9) * 40, s, keep));
+  arr.sort((a, b) => a - b);
+  return arr[clamp(Math.floor((1 - cover) * 3999), 0, 3999)]!;
+}
 const smoothRange = (a: number, b: number, v: number): number => {
   const t = clamp((v - a) / (b - a), 0, 1);
   return t * t * (3 - 2 * t);
 };
+
+// A crack network: 1 on the edges of warped jittered-grid cells (plates of about c.scale), fading over c.width; a share 1 - keep of the edges is left out.
+function crackAt(x: number, y: number, c: NonNullable<Paint["crack"]>, s: number): number {
+  const wx = x + c.scale * 0.45 * (fbm(x / (c.scale * 1.7), y / (c.scale * 1.7), s + 1) - 0.5);
+  const wy = y + c.scale * 0.45 * (fbm(x / (c.scale * 1.7), y / (c.scale * 1.7), s + 2) - 0.5);
+  const fx = wx / c.scale;
+  const fy = wy / c.scale;
+  const ci = Math.floor(fx);
+  const cj = Math.floor(fy);
+  let d1 = 1e9;
+  let d2 = 1e9;
+  for (let a = -1; a <= 1; a++) {
+    for (let b = -1; b <= 1; b++) {
+      const px = ci + a + 0.1 + 0.8 * hash(ci + a, cj + b, s);
+      const py = cj + b + 0.1 + 0.8 * hash(ci + a, cj + b, s + 7);
+      const d = Math.hypot(fx - px, fy - py);
+      if (d < d1) [d2, d1] = [d1, d];
+      else if (d < d2) d2 = d;
+    }
+  }
+  const edge = ((d2 - d1) / 2) * c.scale; // about the distance to the nearest plate edge
+  const on = 1 - smoothRange(c.width * 0.3, c.width, edge);
+  return c.keep === undefined ? on : on * smoothRange(1 - c.keep - 0.08, 1 - c.keep + 0.08, valueNoise(x / (c.scale * 1.3), y / (c.scale * 1.3), s + 5));
+}
 
 // Closed (or open) Catmull-Rom curve through the points, per samples per segment.
 function catmull(pts: readonly Pt[], closed: boolean, per: number): Pt[] {
@@ -128,20 +222,22 @@ function toSegment(x: number, y: number, ax: number, ay: number, bx: number, by:
 interface Sdf {
   (x: number, y: number): number; // negative inside
   pad: { x0: number; x1: number; y0: number; y1: number };
+  along?: (x: number, y: number) => number; // paths asked for it: position along the path, 0 .. 1, of the nearest point
 }
 
 // An outline's signed distance after domain warp, edge roughness and, for paths, width wobble.
-function makeShape(layer: Outline, seed: number, k: number, kFine: number): Sdf {
+function makeShape(layer: Outline, seed: number, k: number, kFine: number, wantAlong = false): Sdf {
   const sh = layer.shape;
   const amp = layer.warp ?? 900;
   const rough = layer.rough ?? 300;
   const w1 = WARP_WAVE * k;
   const w2 = WARP_WAVE_FINE * k;
-  const warp = (x: number, y: number): Pt => [
+  const warp = (x: number, y: number): Pt => amp === 0 ? [x, y] : [
     x + amp * (fbm(x / w1, y / w1, seed + 1) - 0.5) * 2 + amp * 0.35 * (valueNoise(x / w2, y / w2, seed + 3) - 0.5) * 2,
     y + amp * (fbm(x / w1, y / w1, seed + 2) - 0.5) * 2 + amp * 0.35 * (valueNoise(x / w2, y / w2, seed + 4) - 0.5) * 2,
   ];
   let raw: (x: number, y: number) => number;
+  let lastT = 0; // a path's raw leaves the position along it here
   let pad: { x0: number; x1: number; y0: number; y1: number };
   if (sh.type === "poly") {
     const poly = catmull(sh.pts, true, 14);
@@ -216,6 +312,7 @@ function makeShape(layer: Outline, seed: number, k: number, kFine: number): Sdf 
       }
       near = bt;
       const t = (cum[bt]! + u * (cum[bt + 1]! - cum[bt]!)) / total;
+      lastT = t;
       return Math.sqrt(m) - wAt(t) / 2;
     };
   }
@@ -227,10 +324,12 @@ function makeShape(layer: Outline, seed: number, k: number, kFine: number): Sdf 
   const lc = Math.ceil((box.x1 - box.x0) / LATTICE) + 2;
   const lr = Math.ceil((box.y1 - box.y0) / LATTICE) + 2;
   const lat = new Float32Array(lc * lr);
+  const latT = wantAlong && sh.type === "path" ? new Float32Array(lc * lr) : null;
   for (let j = 0; j < lr; j++) {
     for (let i = 0; i < lc; i++) {
       const [qx, qy] = warp(box.x0 + i * LATTICE, box.y0 + j * LATTICE);
       lat[j * lc + i] = raw(qx, qy);
+      if (latT) latT[j * lc + i] = lastT;
     }
   }
   const outline = ((x: number, y: number): number => {
@@ -244,9 +343,21 @@ function makeShape(layer: Outline, seed: number, k: number, kFine: number): Sdf 
     const o = j * lc + i;
     let d = lat[o]! + (lat[o + 1]! - lat[o]!) * tx + (lat[o + lc]! - lat[o]!) * ty + (lat[o]! - lat[o + 1]! - lat[o + lc]! + lat[o + lc + 1]!) * tx * ty;
     if (layer.band) d = Math.abs(d) - layer.band;
-    return d + rough * (fbm(x / n1, y / n1, seed + 5) - 0.5) * 2 + rough * 0.4 * (valueNoise(x / n2, y / n2, seed + 6) - 0.5) * 2;
+    return rough === 0 ? d : d + rough * (fbm(x / n1, y / n1, seed + 5) - 0.5) * 2 + rough * 0.4 * (valueNoise(x / n2, y / n2, seed + 6) - 0.5) * 2;
   }) as Sdf;
   outline.pad = box;
+  if (latT) {
+    outline.along = (x, y) => {
+      const fx = clamp((x - box.x0) / LATTICE, 0, lc - 1.001);
+      const fy = clamp((y - box.y0) / LATTICE, 0, lr - 1.001);
+      const i = fx | 0;
+      const j = fy | 0;
+      const tx = fx - i;
+      const ty = fy - j;
+      const o = j * lc + i;
+      return latT[o]! + (latT[o + 1]! - latT[o]!) * tx + (latT[o + lc]! - latT[o]!) * ty + (latT[o]! - latT[o + 1]! - latT[o + lc]! + latT[o + lc + 1]!) * tx * ty;
+    };
+  }
   return outline;
 }
 
@@ -331,15 +442,21 @@ export function buildMap(spec: MapSpec): BuiltMap {
   const { width: W, height: H, seed } = spec;
   const k = spec.scale;
   const kFine = spec.fineScale ?? k;
-  const layers = spec.layers.map((layer, i) => ({ ...layer, outline: makeShape(layer, seed + 41 * i, k, kFine), i, thr: -1 }));
+  const layers = spec.layers.map((layer, i) => ({ ...layer, outline: makeShape(layer, seed + 41 * i, k, kFine, layer.paint?.fade !== undefined), i, thr: -1 }));
   for (const layer of layers) {
     const tx = layer.mud ?? layer.firm;
     if (!tx || tx.coverage >= 1) continue;
+    if (tx.pattern && tx.pattern !== "blobs") {
+      layer.thr = patternThreshold(tx.pattern, seed + 100 + layer.i, tx.coverage, tx.keep);
+      continue;
+    }
     const arr: number[] = [];
     for (let n = 0; n < 4000; n++) arr.push(fbm((hash(n, 1, 9) * 60000) / tx.scale, (hash(n, 2, 9) * 60000) / tx.scale, seed + 100 + layer.i));
     arr.sort((a, b) => a - b);
     layer.thr = arr[Math.floor((1 - tx.coverage) * 3999)]!;
   }
+  const texThr = layers.map((layer) => (layer.paint?.tex ? patternThreshold(layer.paint.tex.pattern ?? "blobs", seed + 300 + layer.i, layer.paint.tex.cover, layer.paint.tex.keep) : 0));
+  const texAt = (tx: Texture, x: number, y: number, s: number): number => (tx.pattern ? patternAt(tx.pattern, x / tx.scale, y / tx.scale, s, tx.keep) : fbm(x / tx.scale, y / tx.scale, s));
   // The field at a point: food and poison weights and the mud and firm shares, from the layers in order.
   const out = { food: 1, poison: 1, mud: 0, firm: 0, r: 0, g: 0, b: 0, a: 0 };
   const field = (x: number, y: number): void => {
@@ -358,10 +475,27 @@ export function buildMap(spec: MapSpec): BuiltMap {
       if (layer.food !== undefined) food += (layer.food - food) * m;
       if (layer.poison !== undefined) poison += (layer.poison - poison) * m;
       if (layer.paint) {
-        const la = clamp(layer.paint.alpha, 0, 1) * m;
+        let [lr, lg, lb] = layer.paint.rgb;
+        let pa = layer.paint.alpha;
+        const tx = layer.paint.tex;
+        if (tx) {
+          const v = patternAt(tx.pattern ?? "blobs", x / (tx.scale * (tx.stretch ?? 1)), y / tx.scale, seed + 300 + layer.i, tx.keep);
+          const p = clamp(0.5 + (v - texThr[layer.i]!) / (tx.soft ?? 0.1), 0, 1);
+          lr += (tx.rgb[0] - lr) * p;
+          lg += (tx.rgb[1] - lg) * p;
+          lb += (tx.rgb[2] - lb) * p;
+          pa += (tx.alpha - pa) * p;
+        }
+        let la = clamp(pa, 0, 1) * m;
+        const pt = layer.paint;
+        if (pt.crack) la *= crackAt(x, y, pt.crack, seed + 300 + layer.i);
+        if (pt.patch) la *= smoothRange(pt.patch.lo, pt.patch.hi, fbm(x / pt.patch.scale, y / pt.patch.scale, seed + 400 + layer.i));
+        if (pt.fade !== undefined && layer.outline.along) {
+          const t = layer.outline.along(x, y);
+          la *= smoothRange(0, pt.fade, t) * smoothRange(0, pt.fade, 1 - t);
+        }
         const na = la + a * (1 - la);
         if (na > 0) {
-          const [lr, lg, lb] = layer.paint.rgb;
           r = (lr * la + r * a * (1 - la)) / na;
           g = (lg * la + g * a * (1 - la)) / na;
           b = (lb * la + b * a * (1 - la)) / na;
@@ -371,12 +505,12 @@ export function buildMap(spec: MapSpec): BuiltMap {
       if (layer.clearMud) mud *= 1 - ins;
       if (layer.mud) {
         const tx = layer.mud;
-        const n = tx.coverage >= 1 ? 1 : clamp(0.5 + (fbm(x / tx.scale, y / tx.scale, seed + 100 + layer.i) - layer.thr) * 10, 0, 1);
+        const n = tx.coverage >= 1 ? 1 : clamp(0.5 + (texAt(tx, x, y, seed + 100 + layer.i) - layer.thr) * 10, 0, 1);
         mud = Math.max(mud, Math.min(ins, n));
       }
       if (layer.firm) {
         const tx = layer.firm;
-        const n = tx.coverage >= 1 ? 1 : clamp(0.5 + (fbm(x / tx.scale, y / tx.scale, seed + 100 + layer.i) - layer.thr) * 10, 0, 1);
+        const n = tx.coverage >= 1 ? 1 : clamp(0.5 + (texAt(tx, x, y, seed + 100 + layer.i) - layer.thr) * 10, 0, 1);
         firm = Math.max(firm, Math.min(clamp(0.5 - (d + (tx.inset ?? 0)) / edge, 0, 1), n));
       }
     }
