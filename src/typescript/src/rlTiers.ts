@@ -175,8 +175,7 @@ if (values.from && tier && values.out && PROTOCOLS[baseProtocol]) {
     let genome = s.learner.genome;
     const metas: PhaseResult[] = [];
     for (const [k, ph] of phases.entries()) {
-      const t = cpu();
-      const r = await runPhase(ph, s.learner.plan, genome, Number(values.seed) * 1000 + k, t + budget * ph.share);
+      const r = await runPhase(ph, s.learner.plan, genome, Number(values.seed) * 1000 + k, budget * ph.share);
       genome = r.genome;
       metas.push({ ...r, genome: new Float32Array(0) });
     }
