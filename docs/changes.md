@@ -6,6 +6,14 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+## 0.7.0 (2026-11-09)
+
+- Live "Add your creature": a founder's or an uploaded brain now gets a short PPO fine-tune (`TRAIN_TIERS_TRAINED`, same seconds), and is added only if it beats the original on a 32-seed re-score. Otherwise the original is added and the panel says so. The re-score runs in its own worker, with a "Checking…" state at the end.
+- RL Arena: the advanced run settings (mutation size, learning rates, episodes per update) always show instead of sitting under "More settings", greyed out when the training method does not use them. Other pages keep "More settings" (`Section.inline`).
+- Live World moves to The Six Realms (`clock`, 60000 x 37500, was the Inland Sea): six realms around a hub with trails, a dial ring and walls, `MapLayer.paint` colour washes baked into the ground picture, six founders seeded one per realm in their own colour (hue drift 0.75, was 3), food density 0.85 (`foodMaxDensity`, was 1.4). The first start after the promote begins a fresh world. Arena unchanged.
+- Lineages panel: a living lineage below 0.1% reads "<0.1%" (was 0%), and one beside others never reads 100% (">99.9%", or one decimal above 99%).
+- Live Light training tier for a fresh brain: episodes are capped at 20 s instead of 30 s, so the 30 s budget buys about a quarter more PPO updates (bigger-scope food up about 30% on the transfer battery at the browser's measured PPO budget, survival and poison unchanged; `docs/rl-notes/t10-b6-light.md`).
+
 ## 0.6.0 (2026-11-07)
 
 - Live "Add your creature": one Train switch with a Light 30 s / Medium 75 s / Strong 200 s choice (`TRAIN_TIERS`). A fresh brain trains with PPO on the tier's recipe, a founder or file keeps the evolution protocol at half the tier's seconds per phase. The clock starts once the worker is ready, the countdown runs over the tier's seconds, a missing seed pool is noted in the panel, and the trained-brain cache keys on the tier and no longer reuses a partial run as finished. Browser only, nothing new goes to the server.

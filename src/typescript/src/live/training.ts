@@ -1,13 +1,13 @@
 import type { EnvSpec } from "../sim/rl/env.ts";
-import { envById } from "../sim/rl/envs.ts";
-import { TRAIN_TIERS } from "../sim/rl/trainTiers.ts";
+import { RECOMMENDED_MIX, envById } from "../sim/rl/envs.ts";
+import { TRAIN_TIERS, TRAIN_TIERS_TRAINED } from "../sim/rl/trainTiers.ts";
 import type { TrainTier } from "../sim/rl/trainTiers.ts";
 import type { BodyPlan } from "../sim/sensors.ts";
 import type { RlInMessage, RlOutMessage } from "../worker/rlProtocol.ts";
 
 // Quick training in the visitor's browser before an add, on the RL Arena's worker, bounded in time and by a tier (Light, Medium, Strong).
-// A fresh brain trains with PPO on the tier's recipe (sim/rl/trainTiers.ts). A founder's or a file's brain keeps the gentler evolution
-// strategies protocol: pretrain (Trials skills on small rooms), then fine-tune (living among others), half of the tier's seconds each.
+// A fresh brain trains with PPO on the tier's recipe (sim/rl/trainTiers.ts). A founder's or a file's brain gets the gentler PPO recipe of
+// TRAIN_TIERS_TRAINED (same seconds), and the page keeps the trained brain only if it beats the start on a re-score (heldScore below).
 // A run waits while the tab is hidden, and its clock with it.
 export { TRAIN_TIERS };
 export type { TrainTier };
@@ -22,13 +22,15 @@ export interface LivePhase {
   backprop?: { lr: number; episodes: number };
   es?: Partial<typeof ES_OPTIONS>; // the tier phase's own ES settings over ES_OPTIONS
 }
-const ES_ENVS = { pretrain: ["far-food", "patch", "minefield"], finetune: ["crowd", "rivals"] } as const;
 export const tierById = (id: string): TrainTier => TRAIN_TIERS.find((t) => t.id === id) ?? TRAIN_TIERS[0]!;
 
-// The phases a start mode trains in: a fresh brain follows the tier, anything else the evolution protocol scaled to the tier's seconds.
+// The tier a start mode follows: a fresh brain the tier itself, a founder's or a file's brain the trained-start tier of the same id.
+export const tierFor = (fresh: boolean, tier: TrainTier): TrainTier => (fresh ? tier : TRAIN_TIERS_TRAINED.find((t) => t.id === tier.id) ?? tier);
+
+// The phases a start mode trains in.
 export function phasesFor(fresh: boolean, tier: TrainTier): LivePhase[] {
-  if (fresh) return tier.phases.map((p) => ({ kind: "tier" as const, envs: p.envs, seconds: tier.seconds * p.share, cap: p.seconds, method: p.method, backprop: p.backprop, es: p.es }));
-  return (["pretrain", "finetune"] as const).map((kind) => ({ kind, envs: ES_ENVS[kind], seconds: tier.seconds / 2, method: "es" as const }));
+  const t = tierFor(fresh, tier);
+  return t.phases.map((p) => ({ kind: "tier" as const, envs: p.envs, seconds: t.seconds * p.share, cap: p.seconds, method: p.method, backprop: p.backprop, es: p.es }));
 }
 
 // Envs longer than the cap become copies of the cap's length, held-out checks included (as rlTiers.ts does).
@@ -41,6 +43,7 @@ export const secondsLeft = (total: number, before: number, phase: number, share:
 
 const HELPERS = 3; // helper threads at most: about 50 MB each in Chrome, so a small device keeps its memory
 const HIDDEN_MAX_MS = 10 * 60_000; // hidden this long in all (every hidden stretch of the run counts), it ends with its best so far and frees the worker
+const SCORE_MAX_MS = 120_000; // a re-score (32 seeds x 8 envs, about 8 times the start score) has this long, sized for a slow phone
 const START_MAX_MS = 60_000; // the worker has this long to load its assets and score the start brain; the training clock starts after that
 const ES_OPTIONS = { pairs: 24, sigma: 0.05, lr: 0.02, decay: 0.005, episodes: 1, iterations: 100_000 }; // smaller steps than the Arena: polish, not relearn
 
@@ -201,4 +204,62 @@ export function train(phase: LivePhase, plan: BodyPlan, genome: Float32Array, on
       return stoppedHidden;
     },
   };
+}
+
+export interface ScoreJob {
+  done: Promise<number | null>; // null when it failed, timed out, was cancelled, or the tab is hidden
+  cancel(): void;
+}
+
+// The re-score of a brain: its mean reward on `seeds` held-out seeds per env of the uncapped recommended mix, as the worker's "ready" of a
+// 0-iteration run (poison costs 1 per bite). Its own worker, ended on every path; a hidden tab does not stop it (the worker cannot pause
+// its start score). null when the seed pool is missing: the rivals would differ from the start's score.
+export function heldScore(plan: BodyPlan, genome: Float32Array, seeds: number): ScoreJob {
+  let worker: Worker | null = null;
+  let finish: (v: number | null) => void = () => {};
+  const done = new Promise<number | null>((resolve) => (finish = resolve));
+  let ended = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const end = (v: number | null): void => {
+    if (ended) return;
+    ended = true;
+    clearTimeout(timer);
+    worker?.terminate();
+    worker = null;
+    finish(v);
+  };
+  try {
+    worker = new Worker(new URL("../worker/rlWorker.ts", import.meta.url), { type: "module" });
+  } catch {
+    queueMicrotask(() => end(null));
+    return { done, cancel: () => {} };
+  }
+  worker.onmessage = (ev: MessageEvent<RlOutMessage>) => {
+    const m = ev.data;
+    if (m.type === "ready") end(Number.isFinite(m.held) && m.poolMissing !== true ? m.held : null);
+    else if (m.type === "error" || m.type === "done") end(null);
+  };
+  worker.onerror = (e) => {
+    e.preventDefault();
+    end(null);
+  };
+  const base = new URL("../", document.baseURI);
+  const msg: RlInMessage = {
+    type: "start",
+    envs: RECOMMENDED_MIX.map(envById).filter((e): e is EnvSpec => e !== undefined),
+    learner: { plan: { ...plan, hiddenLayers: plan.hiddenLayers.slice() }, genome: Array.from(genome) },
+    method: "es",
+    options: { ...ES_OPTIONS, iterations: 0 },
+    held: seeds,
+    tiles: 1,
+    seed: 1,
+    poolUrl: new URL("pool.json", base).href,
+    libraryUrl: new URL("rl/library.json", base).href,
+    playback: false,
+    gentle: false,
+    helpers: HELPERS,
+  };
+  worker.postMessage(msg);
+  timer = setTimeout(() => end(null), SCORE_MAX_MS);
+  return { done, cancel: () => end(null) };
 }

@@ -1,7 +1,8 @@
-# Usage: [B1_SEEDS=1,2,3,4,5,6] python3 b1-analyze.py RUNDIR TIER [PROTOCOL ...]  -- RUNDIR holds t-untrained.json and t-<tier>-<protocol>-s<seed>.json (b1-score.ts output, 10 bodies, 64 test seeds).
+# Usage: [B1_BASE=current] [B1_SEEDS=1,2,3,4,5,6] python3 b1-analyze.py RUNDIR TIER [PROTOCOL ...]  -- RUNDIR holds t-untrained.json and t-<tier>-<protocol>-s<seed>.json (b1-score.ts output, 10 bodies, 64 test seeds).
 # Table 1: median over the 10 bodies of the mean over training seeds, per scope (bigger, held2, long, small) for survival, food/min, poison/min: untrained and each protocol.
 # Table 2: each protocol minus `current` (and minus untrained): min / median / max over bodies of the seed-mean difference, bodies with the pooled 95% CI above (up) / below (down) 0, and bodies where both seeds agree in sign.
 import json, sys, statistics as st, os
+BASE = os.environ.get('B1_BASE', 'current')  # protocol the others are compared against
 SEEDS = [int(x) for x in os.environ.get('B1_SEEDS', '1,2').split(',')]  # training seeds to pool
 d, tier = sys.argv[1], sys.argv[2]
 M = {"survival": "surv", "foodPerMin": "food/min", "poisonPerMin": "poison/min"}
@@ -45,4 +46,4 @@ def cmp(a, b, label):
             print(f"| {sc} | {lab} | {min(means):+.2f} | {st.median(means):+.2f} | {max(means):+.2f} | {sum(p[1] > 0 for p in pooled)} | {sum(p[2] < 0 for p in pooled)} | {agree}/{len(names)} |")
 for p in runs:
     cmp(p, None, f"{p} minus untrained")
-    if p != "current" and "current" in runs: cmp(p, "current", f"{p} minus current")
+    if p != BASE and BASE in runs: cmp(p, BASE, f"{p} minus {BASE}")

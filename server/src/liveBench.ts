@@ -1,4 +1,4 @@
-// Live World benchmark: the server's LiveWorld (liveConfig, The Inland Sea) seeded with the live founders, stepped headless on this thread.
+// Live World benchmark: the server's LiveWorld (liveConfig, The Six Realms) seeded with the live founders, stepped headless on this thread.
 // Prints CPU ms per steady tick, the phase profile, peak RSS and a fingerprint (equal runs give equal fingerprints).
 // Usage (in server/): node src/liveBench.ts [--seconds 60] [--copies 800] [--seed 1] [--founders ../src/typescript/public/live-founders.json]
 //   [--dt 0.0333] [--memcomp] [--only juggernaut,grazer] [--frames [--idle]] [--profile] [--profileEvery 300] [--every 10] [--threads 0] [--think 1] [--save 15]

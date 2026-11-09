@@ -24,6 +24,7 @@ import { decodeDetail } from "../../src/typescript/src/live/detail.ts";
 import { cleanStats } from "../../src/typescript/src/live/connection.ts";
 import { lineageRows } from "../../src/typescript/src/ui/lineagePanel.ts";
 import { genomeLengthFor } from "../../src/typescript/src/sim/rl/creatureFile.ts";
+import { MAX_MAP_DISCS } from "../../src/typescript/src/sim/maps/mapParts.ts";
 import { LIVE_MAP, MAP_TIMEOUT_MS, MAX_OUTLINE_LOOPS, MAX_OUTLINE_POINTS, MapCache, checkOutlines, loadMapTerrain, terrainFromParts } from "../../src/typescript/src/live/mapTerrain.ts";
 import { rockBodies, rockGeometry } from "../../src/typescript/src/ui/rockOutline.ts";
 import type { RockGeometry } from "../../src/typescript/src/ui/rockOutline.ts";
@@ -50,9 +51,9 @@ describe("item slots of the live world", () => {
   it("keeps the fixed headroom where it fits, and scales it down to the wire on a big world", () => {
     expect(itemHeadroom({ width: 2000, height: 1300 }, { foodMaxDensity: 0.7, poisonMaxDensity: 0.1 })).toEqual(ITEM_HEADROOM);
     expect(itemHeadroom({ width: 17000, height: 10600 }, { foodMaxDensity: 0.7, poisonMaxDensity: 0.1 })).toEqual(ITEM_HEADROOM);
-    // The Inland Sea (156 250 items per density unit) does not fit the fixed headroom: the admin gets what the wire has left.
-    expect(itemHeadroom(liveConfig.world, liveConfig.eco)).toEqual({ foodMaxDensity: 1.45, poisonMaxDensity: 0.05 });
-    expect(CAP_LIMITS).toEqual({ foodMaxDensity: 1.45, poisonMaxDensity: 0.05 });
+    // The Six Realms (225 000 items per density unit) does not fit the fixed headroom: the admin gets what the wire has left.
+    expect(itemHeadroom(liveConfig.world, liveConfig.eco)).toEqual({ foodMaxDensity: 0.95, poisonMaxDensity: 0.05 });
+    expect(CAP_LIMITS).toEqual({ foodMaxDensity: 0.95, poisonMaxDensity: 0.05 });
     const big = { width: 40000, height: 25000 }; // 100 000 items per density unit: the headroom is scaled down to the wire
     const room = itemHeadroom(big, liveConfig.eco);
     expect(room).toEqual({ foodMaxDensity: 2.3, poisonMaxDensity: 0.05 });
@@ -66,44 +67,44 @@ describe("item slots of the live world", () => {
     expect(() => itemHeadroom(big, { foodMaxDensity: 2.5, poisonMaxDensity: 0 })).toThrow(/item slots/);
   });
 
-  it("builds the Inland Sea world inside the wire's item slots, with the caps in force and admin held to the slots", () => {
+  it("builds the Live world on the Six Realms inside the wire's item slots, with the caps in force and admin held to the slots", () => {
     const live = new LiveWorld(structuredClone(liveConfig), null);
     const slots = live.hello(1).itemSlots;
-    expect(slots).toBe(234_376); // (1.45 + 0.05) x 156 250, rounded up
+    expect(slots).toBe(225_000); // (0.95 + 0.05) x 225 000
     expect(slots).toBeLessThanOrEqual(ITEM_SLOT_SHARE * MAX_ITEM_SLOTS);
-    expect([live.config.eco.foodMaxDensity, live.config.eco.poisonMaxDensity]).toEqual([1.4, 0.01]);
-    expect(live.eco.food).toBe(78_125);
-    expect(live.eco.poison).toBe(1563);
+    expect([live.config.eco.foodMaxDensity, live.config.eco.poisonMaxDensity]).toEqual([0.85, 0.01]);
+    expect(live.eco.food).toBe(112_500);
+    expect(live.eco.poison).toBe(2250);
     expect(applyTunables(live.eco, { "eco.foodMaxDensity": CAP_LIMITS.foodMaxDensity, "eco.poisonMaxDensity": CAP_LIMITS.poisonMaxDensity })).toBeNull();
-    expect(applyTunables(live.eco, { "eco.foodMaxDensity": CAP_LIMITS.foodMaxDensity + 0.1 })).toMatch(/at most 1.45/);
+    expect(applyTunables(live.eco, { "eco.foodMaxDensity": CAP_LIMITS.foodMaxDensity + 0.1 })).toMatch(/at most 0.95/);
     expect(applyTunables(live.eco, { "eco.poisonMaxDensity": 0.1 })).toMatch(/at most 0.05/);
     expect(live.eco.retune({ eco: { foodMaxDensity: 4 } })).toMatchObject({ ok: false, reason: expect.stringMatching(/item slots/) }); // the engine's own guard
     // A save made on other data of the same map counts as another world (startup starts fresh), not as a failure to retry.
     expect(() => live.restoreState({ ...live.saveState(), mapVersion: "00000000" })).toThrow(OtherWorld);
     // The page gets the map's name and its regions.
     const map = live.hello(1).map;
-    expect(map.name).toBe("inland-sea");
-    expect(map.ground.rock).toBeGreaterThan(0.02);
-    expect(map.ground.mud).toBeGreaterThan(0.02);
-    expect(map.regions.map((r) => [r.name, r.food, r.poison])).toEqual([
-      ["The Shallows", 1.6, 0], ["Isles", 1.5, 0], ["Ashfall Shore", 1.8, 3.5], ["Dune Coast", 0.65, 0.15], ["Drowned Town", 1.2, 0.15], ["Cliff Coast", 1, 0.15], ["Open plain", 1, 0.15],
-    ]);
+    expect(map.name).toBe("clock");
+    expect(map.ground.rock).toBeGreaterThan(0.005);
+    expect(map.ground.mud).toBeGreaterThan(0.005); // the map still has mud (about 2% now, rounded to 0.02)
+    // One row per region of the spec, its weights read from the built map (the exact values change with the design, so only their shape is pinned).
+    expect(map.regions.map((r) => r.name)).toEqual(mapSpec("clock")!.regions!.map((r) => r.title));
+    for (const r of map.regions) expect(r.food >= 0 && r.food < 4 && r.poison >= 0 && r.poison < 4 && r.ground.length > 0 && r.role.length > 0).toBe(true);
     expect(cleanMap(JSON.parse(JSON.stringify(map)))).toEqual(map);
     // The page compares it with its own bundle's mapVersion; the wire form survives cleanMap, so server and page agree.
-    expect(map.version).toBe(mapVersion("inland-sea"));
+    expect(map.version).toBe(mapVersion("clock"));
     expect(map.version).toMatch(/^[0-9a-f]{8}-[0-9]+$/);
-    expect(cleanMap(JSON.parse(JSON.stringify(live.hello(1).map))).version).toBe(mapVersion("inland-sea"));
+    expect(cleanMap(JSON.parse(JSON.stringify(live.hello(1).map))).version).toBe(mapVersion("clock"));
     expect(cleanMap({ ...map, version: "<b>" }).version).toBeUndefined();
     expect(cleanMap({ ...map, name: undefined, version: map.version }).version).toBeUndefined();
     expect(live.hello(1).summary).toMatchObject({ initialPopulation: 0, seedCopies: SEED_COPIES });
   }, 120_000);
 
   it("the page puts the map together from the worker's arrays only when they fit the map", () => {
-    const b = builtMap("inland-sea");
+    const b = builtMap("clock");
     const rock = Float64Array.from(b.rock.flatMap((d) => [d.x, d.y, d.r]));
     const outlines = rockGeometry(terrainOf({ seed: 1, world: { ...liveConfig.world } }));
     const parts = { ok: true as const, rock, ground: b.ground.data.slice(), food: b.weights.food.slice(), poison: b.weights.poison.slice(), outlines, ms: 0 };
-    const t = terrainFromParts("inland-sea", liveConfig.world.width, liveConfig.world.height, parts)!;
+    const t = terrainFromParts("clock", liveConfig.world.width, liveConfig.world.height, parts)!;
     expect(t.rockCount).toBe(b.rock.length);
     // A body whose outline simplified away (no loops) is allowed: a cumulative step of 0.
     const n = outlines.bodyLoops.length;
@@ -112,17 +113,17 @@ describe("item slots of the live world", () => {
     const bodies = rockBodies(t); // the worker's outlines, not traced again
     expect(bodies).toHaveLength(outlines.bodyLoops.length);
     expect(bodies[0]!.loops[0]!.slice(0, 4)).toEqual(Array.from(outlines.points.subarray(0, 4)));
-    expect(terrainFromParts("inland-sea", liveConfig.world.width, liveConfig.world.height, { ...parts, rock: rock.subarray(0, 30) })).toBeNull(); // outlines of other rock
-    expect(terrainFromParts("inland-sea", liveConfig.world.width, liveConfig.world.height, { ...parts, outlines: { ...outlines, points: Float64Array.from(outlines.points, (v, i) => (i === 5 ? NaN : v)) } })).toBeNull();
+    expect(terrainFromParts("clock", liveConfig.world.width, liveConfig.world.height, { ...parts, rock: rock.subarray(0, 30) })).toBeNull(); // outlines of other rock
+    expect(terrainFromParts("clock", liveConfig.world.width, liveConfig.world.height, { ...parts, outlines: { ...outlines, points: Float64Array.from(outlines.points, (v, i) => (i === 5 ? NaN : v)) } })).toBeNull();
     expect(t.valueAt(20000, 12500)).toBe(terrainOf({ seed: 1, world: { ...liveConfig.world } }).valueAt(20000, 12500));
-    expect(terrainFromParts("inland-sea", 17000, 10600, parts)).toBeNull();
+    expect(terrainFromParts("clock", 17000, 10600, parts)).toBeNull();
     expect(terrainFromParts("nowhere", liveConfig.world.width, liveConfig.world.height, parts)).toBeNull();
-    expect(terrainFromParts("inland-sea", liveConfig.world.width, liveConfig.world.height, { ...parts, ground: parts.ground.subarray(1) })).toBeNull();
-    expect(terrainFromParts("inland-sea", liveConfig.world.width, liveConfig.world.height, { ...parts, food: new Uint8Array(3) })).toBeNull();
-    expect(terrainFromParts("inland-sea", liveConfig.world.width, liveConfig.world.height, { ...parts, rock: Float64Array.from([1, 2]) })).toBeNull();
-    expect(terrainFromParts("inland-sea", liveConfig.world.width, liveConfig.world.height, { ...parts, rock: Float64Array.from([1, NaN, 3]) })).toBeNull();
-    expect(terrainFromParts("inland-sea", liveConfig.world.width, liveConfig.world.height, { ...parts, rock: new Float64Array(3 * 8001) })).toBeNull();
-    expect(terrainFromParts("inland-sea", liveConfig.world.width, liveConfig.world.height, { ok: false, message: "x" })).toBeNull();
+    expect(terrainFromParts("clock", liveConfig.world.width, liveConfig.world.height, { ...parts, ground: parts.ground.subarray(1) })).toBeNull();
+    expect(terrainFromParts("clock", liveConfig.world.width, liveConfig.world.height, { ...parts, food: new Uint8Array(3) })).toBeNull();
+    expect(terrainFromParts("clock", liveConfig.world.width, liveConfig.world.height, { ...parts, rock: Float64Array.from([1, 2]) })).toBeNull();
+    expect(terrainFromParts("clock", liveConfig.world.width, liveConfig.world.height, { ...parts, rock: Float64Array.from([1, NaN, 3]) })).toBeNull();
+    expect(terrainFromParts("clock", liveConfig.world.width, liveConfig.world.height, { ...parts, rock: new Float64Array(3 * (MAX_MAP_DISCS + 1)) })).toBeNull();
+    expect(terrainFromParts("clock", liveConfig.world.width, liveConfig.world.height, { ok: false, message: "x" })).toBeNull();
   }, 60_000);
 
   it("the page takes rock outlines only when their counts add up and every value is bounded and finite", () => {
@@ -152,8 +153,10 @@ describe("item slots of the live world", () => {
   }, 60_000);
 
   it("the page keeps only a known map name", () => {
-    expect(cleanMap({ name: "inland-sea" }).name).toBe("inland-sea");
+    expect(cleanMap({ name: "clock" }).name).toBe("clock");
     for (const name of ["", "nowhere", "__proto__", 5, "inland-sea ".repeat(100)]) expect(cleanMap({ name }).name).toBeUndefined();
+    expect(cleanMap({ name: "nowhere" }).unknown).toBe(true); // a newer server's map: the page says "Map updating"
+    for (const name of ["clock", "", 5, undefined]) expect(cleanMap({ name }).unknown).toBeUndefined();
   });
 });
 
@@ -384,7 +387,7 @@ describe("restoring at a new world", () => {
   });
 });
 
-describe("restoring Inland Sea saves of another size or map data", () => {
+describe("restoring Live-map saves of another size or map data", () => {
   it("counts them as other worlds at startup (the parse worker checks before the engine), so the server starts fresh", async () => {
     const live = new LiveWorld(structuredClone(liveConfig), null);
     const state = live.saveState();
@@ -395,7 +398,7 @@ describe("restoring Inland Sea saves of another size or map data", () => {
     const crafted = structuredClone(state) as unknown as { config: { world: Record<string, unknown> }; mapVersion: unknown };
     crafted.config.world.width = { toString: 0 }; // String() of this throws; the reason must not
     const craftedVersion = { ...structuredClone(state), mapVersion: { toString: 0 } };
-    for (const [save, why] of [[bigger, /40000 x 25000 world \(inland-sea\), this server runs 50000 x 31250 world \(inland-sea\)/], [older, /another version of the map inland-sea/], [crafted, /it is a object x 31250 world/], [craftedVersion, /another version of the map inland-sea \(object,/]] as const) {
+    for (const [save, why] of [[bigger, /40000 x 25000 world \(clock\), this server runs 60000 x 37500 world \(clock\)/], [older, /another version of the map clock/], [crafted, /it is a object x 37500 world/], [craftedVersion, /another version of the map clock \(object,/]] as const) {
       const store = new StateStore(tmp());
       await store.write(JSON.stringify(save), { population: 0, tick: 0 }, new Date());
       const lines: string[] = [];
@@ -557,7 +560,7 @@ describe("the page's map worker", () => {
     expect(MAP_TIMEOUT_MS).toBe(60_000);
     const w = silent();
     const t0 = Date.now();
-    expect(await loadMapTerrain("inland-sea", liveConfig.world.width, liveConfig.world.height, 50, () => w as never)).toBeNull();
+    expect(await loadMapTerrain("clock", liveConfig.world.width, liveConfig.world.height, 50, () => w as never)).toBeNull();
     expect(Date.now() - t0).toBeLessThan(5000);
     expect(w.terminated).toBe(1);
   });
@@ -569,11 +572,11 @@ describe("the page's map worker", () => {
       calls++;
       return answer;
     });
-    expect(await cache.get("inland-sea", liveConfig.world.width, liveConfig.world.height)).toBeNull();
+    expect(await cache.get("clock", liveConfig.world.width, liveConfig.world.height)).toBeNull();
     await Promise.resolve();
     answer = { width: liveConfig.world.width } as Terrain;
-    expect(await cache.get("inland-sea", liveConfig.world.width, liveConfig.world.height)).toBe(answer);
-    expect(await cache.get("inland-sea", liveConfig.world.width, liveConfig.world.height)).toBe(answer);
+    expect(await cache.get("clock", liveConfig.world.width, liveConfig.world.height)).toBe(answer);
+    expect(await cache.get("clock", liveConfig.world.width, liveConfig.world.height)).toBe(answer);
     expect(calls).toBe(2);
   });
 });

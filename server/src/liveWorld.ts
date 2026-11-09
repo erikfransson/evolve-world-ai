@@ -19,7 +19,8 @@ import type { EcoSnapshot, EcoState } from "../../src/typescript/src/sim/ecoStat
 import { LIMITS, LIVE, MAX_POPULATION, MAX_SEED_FOUNDERS, SEED_COPIES, itemHeadroom, mostCopies, seedRoom } from "./config.ts";
 import type { SeedFounder } from "./founders.ts";
 import { mapRegions } from "../../src/typescript/src/live/mapRegions.ts";
-import { mapVersion } from "../../src/typescript/src/sim/maps/index.ts";
+import { mapSpec, mapVersion } from "../../src/typescript/src/sim/maps/index.ts";
+import type { MapRegion } from "../../src/typescript/src/sim/maps/mapBuild.ts";
 import { OtherWorld, otherWorldReason } from "./saveParse.ts";
 import type { Home } from "./saveParse.ts";
 import { BLANKED, STARTER_MARK, wireName } from "../../src/typescript/src/live/add.ts";
@@ -396,7 +397,7 @@ export class LiveWorld {
     this.attach();
     if (this.eco.population === 0 && this.founders.length) {
       try {
-        const copies = Math.max(1, Math.min(this.seedCopies, mostCopies(this.founders.length, this.eco.config.eco))); // the admin may have lowered the room since
+        const copies = Math.max(1, Math.min(this.seedCopies, mostCopies(this.seedGroups(this.founders.length), this.eco.config.eco))); // the admin may have lowered the room since
         this.seedFounders(this.founders, Math.random, copies);
       } catch (e) {
         console.error(`reseed: founders not seeded: ${e instanceof Error ? e.message : String(e)}`);
@@ -488,8 +489,18 @@ export class LiveWorld {
     return addingOn() ? this.addRules() : null;
   }
 
-  // Up to n random spots inside the walls, clear of rock and of creatures, from the given draws (at most 40 tries a spot).
-  private freeSpots(n: number, random: () => number): { x: number; y: number; heading: number }[] {
+  // The home regions of the map (every region but "commons", in spec order); none for a map without regions.
+  private homes(): readonly MapRegion[] {
+    return ((this.config.world.map ? mapSpec(this.config.world.map) : undefined)?.regions ?? []).filter((g) => g.id !== "commons");
+  }
+
+  // The groups a fresh world seeds `copies` of each: one per home region on a map with regions, else one per founder.
+  seedGroups(founders: number): number {
+    return this.homes().length || founders;
+  }
+
+  // Up to n random spots inside the walls (or inside `disc`), clear of rock, of creatures and of `prior` spots not yet filled, from the given draws (at most 40 tries a spot).
+  private freeSpots(n: number, random: () => number, disc?: { x: number; y: number; r: number }, prior: readonly { x: number; y: number }[] = []): { x: number; y: number; heading: number }[] {
     const e = this.eco;
     const { width, height } = this.config.world;
     const r = this.config.creature.radius;
@@ -501,9 +512,15 @@ export class LiveWorld {
     };
     const spots: { x: number; y: number; heading: number }[] = [];
     for (let tries = 0; spots.length < n && tries < 40 * n; tries++) {
-      const x = margin + random() * (width - 2 * margin);
-      const y = margin + random() * (height - 2 * margin);
-      if (!(e.world as World).terrain.touchesRock(x, y, 2 * r) && !crowded(x, y, spots)) spots.push({ x, y, heading: random() * 2 * Math.PI });
+      let x = margin + random() * (width - 2 * margin);
+      let y = margin + random() * (height - 2 * margin);
+      if (disc) {
+        const a = random() * 2 * Math.PI, d = disc.r * Math.sqrt(random()); // uniform over the disc
+        x = disc.x + d * Math.cos(a);
+        y = disc.y + d * Math.sin(a);
+        if (x < margin || x > width - margin || y < margin || y > height - margin) continue;
+      }
+      if (!(e.world as World).terrain.touchesRock(x, y, 2 * r) && !crowded(x, y, spots) && !crowded(x, y, prior)) spots.push({ x, y, heading: random() * 2 * Math.PI });
     }
     return spots;
   }
@@ -523,10 +540,15 @@ export class LiveWorld {
     if (founders.length < 1 || founders.length > MAX_SEED_FOUNDERS) throw new Error(`1 to ${MAX_SEED_FOUNDERS} founders are seeded`);
     if (!Number.isInteger(copies) || copies < 1) throw new Error("copies must be a whole number from 1");
     if (extra && (!Number.isInteger(extra.copies) || extra.copies < 1)) throw new Error("extra copies must be a whole number from 1");
-    const own = founders.length * copies;
+    // A map with regions seeds its homes (every region but "commons", in spec order): home h gets founder h % F and `copies` creatures
+    // inside 0.6 of the region's radius, in the region's hue when it has one. Maps without regions seed `copies` of each founder anywhere.
+    const homes = this.homes();
+    if (homes.length && founders.length > homes.length) throw new Error(`${founders.length} founders but ${homes.length} home regions: every founder needs a home`);
+    const own = (homes.length || founders.length) * copies;
     const n = own + (extra?.copies ?? 0);
     if (n > seedRoom(e.config.eco)) throw new Error(`${n} founders do not fit below the birth reserve (${seedRoom(e.config.eco)})`);
-    const spots = this.freeSpots(n, random);
+    const home = homes.flatMap((g) => this.freeSpots(copies, random, { x: g.x, y: g.y, r: 0.6 * g.r }));
+    const spots = homes.length ? [...home, ...this.freeSpots(n - own, random, undefined, home)] : this.freeSpots(n, random);
     if (spots.length < n) throw new Error("no room to seed the founders");
     const hue0 = random() * 360;
     const variants = founders.map((f) => {
@@ -538,11 +560,11 @@ export class LiveWorld {
       return all;
     });
     for (let i = 0; i < own; i++) {
-      const k = Math.floor(i / copies);
+      const k = homes.length ? Math.floor(i / copies) % founders.length : Math.floor(i / copies);
       const f = founders[k]!;
       const p = spots[i]!;
       const genome = variants[k]![(i % copies) % variants[k]!.length]!;
-      const res = e.insertCreature({ genome, plan: f.plan, x: p.x, y: p.y, heading: p.heading, hue: (hue0 + (360 * k) / founders.length) % 360, name: STARTER_MARK + f.name, ...(f.birth ? { birth: f.birth } : {}) }); // the start energy of a pool founder; its own birth traits or the range middles
+      const res = e.insertCreature({ genome, plan: f.plan, x: p.x, y: p.y, heading: p.heading, hue: homes[Math.floor(i / copies)]?.hue ?? (hue0 + (360 * k) / founders.length) % 360, name: STARTER_MARK + f.name, ...(f.birth ? { birth: f.birth } : {}) }); // the start energy of a pool founder; its own birth traits or the range middles
       if (!res.ok) {
         if (fresh) {
           this.eco = this.build(this.config); // the same config and seed: the same fresh world

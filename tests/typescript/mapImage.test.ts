@@ -9,8 +9,8 @@ const dir = new URL("../../src/typescript/src/live/maps/", import.meta.url);
 
 describe("the shipped ground pictures of the Live map", () => {
   it("were drawn from the shipped map file and the current drawing code", () => {
-    const made = JSON.parse(readFileSync(new URL("inland-sea-ground.json", dir), "utf8")) as { map: string; look: string };
-    const now = groundImageHashes("inland-sea");
+    const made = JSON.parse(readFileSync(new URL("clock-ground.json", dir), "utf8")) as { map: string; look: string };
+    const now = groundImageHashes("clock");
     expect(made.map, `the map file changed since the pictures were drawn: run ${REMAKE}`).toBe(now.map);
     expect(made.look, `the drawing code changed since the pictures were drawn: run ${REMAKE}`).toBe(now.look);
   });
@@ -18,8 +18,8 @@ describe("the shipped ground pictures of the Live map", () => {
   it("are there for every scale, with a preview small enough to inline", () => {
     expect(Object.keys(GROUND_FILES)).toEqual(Object.keys(MAP_FILES));
     expect(GROUND_FILES[LIVE_MAP]).toBeDefined();
-    for (const s of BACKDROP_SCALES) expect(statSync(new URL(`inland-sea-ground-${s}.webp`, dir)).size).toBeGreaterThan(1000);
-    expect(statSync(new URL("inland-sea-ground-preview.webp", dir)).size).toBeLessThan(4096);
-    expect(readFileSync(new URL("../../src/typescript/src/live.css", import.meta.url), "utf8")).toContain("inland-sea-ground-preview.webp"); // inlined there by the build (under 4 kB)
+    for (const s of BACKDROP_SCALES) expect(statSync(new URL(`clock-ground-${s}.webp`, dir)).size).toBeGreaterThan(1000);
+    expect(statSync(new URL("clock-ground-preview.webp", dir)).size).toBeLessThan(4096);
+    expect(readFileSync(new URL("../../src/typescript/src/live.css", import.meta.url), "utf8")).toContain("clock-ground-preview.webp"); // inlined there by the build (under 4 kB)
   });
 });

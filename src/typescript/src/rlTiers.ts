@@ -2,6 +2,10 @@
 // keep-best on the held-out checks every 5 iterations, messages after the budget dropped as the browser's timer would). A tier's seconds become CPU seconds of this thread by BROWSER_CPU_PER_SECOND.
 // Usage: node src/rlTiers.ts --tier light|medium|strong --protocol NAME --designs p1,p2 --seed 1 --out DIR      (writes DIR/<design id>.json and DIR/<design id>.meta.json)
 //        node src/rlTiers.ts --calibrate [--design p3]                                                         (CPU per iteration and episodes per CPU second of the current protocol)
+//          add --cpu-per-second X to replace BROWSER_CPU_PER_SECOND
+//        node src/rlTiers.ts --tier T --protocol P --from SPEC --seed 1 --out DIR [--rescore 32]                (B2: trained starts, rlStarts.ts; DIR/<start name>.json, the meta has the re-score)
+//          a protocol name ending in +rb is (d) inside the budget: the start is re-scored first, training gets the budget less twice that cost, then the kept brain is re-scored
+//          add --clock-at-ready to start the budget after the start brain is scored, as live/training.ts does (B6; without it the initial check is charged to the budget)
 //        node src/rlTiers.ts --list                                                                           (the protocol names)
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -9,11 +13,16 @@ import { parseArgs } from "node:util";
 import { parsePool } from "./sim/seedPool.ts";
 import { DESIGN_PANEL, designLearner } from "./sim/rl/designPanel.ts";
 import { EXTRA_DESIGNS } from "./sim/rl/b1Bodies.ts";
+import type { EnvSpec } from "./sim/rl/env.ts";
 import { RECOMMENDED_MIX, envById } from "./sim/rl/envs.ts";
 import { parseLibrary, serialiseLearner } from "./sim/rl/library.ts";
 import { TRAIN_TIERS } from "./sim/rl/trainTiers.ts";
+import { loadStarts } from "./rlStarts.ts";
+import type { Learner } from "./sim/rl/env.ts";
 import type { TrainPhase } from "./sim/rl/trainTiers.ts";
 import { ArenaRun } from "./worker/arenaRun.ts";
+import { BackpropTrainer } from "./sim/rl/ppo.ts";
+import { heldSeeds } from "./sim/rl/trainer.ts";
 import type { Start } from "./worker/arenaRun.ts";
 import { RlPool, inlineRlPort } from "./worker/rlPool.ts";
 import type { RlOutMessage } from "./worker/rlProtocol.ts";
@@ -26,7 +35,12 @@ const PRE = ["far-food", "patch", "minefield"], FINE = ["crowd", "rivals"], LIVE
 const es = (envs: readonly string[], share: number, o: Partial<typeof ES_NOW> = {}, seconds?: number): TrainPhase => ({ envs, share, method: "es", es: { ...ES_NOW, ...o }, ...(seconds ? { seconds } : {}) });
 const bp = (envs: readonly string[], share: number, lr: number, seconds?: number, episodes = 16): TrainPhase => ({ envs, share, method: "backprop", backprop: { lr, episodes }, ...(seconds ? { seconds } : {}) });
 const HYPER = { pairs: 12, sigma: 0.08, lr: 0.03 };
-export const PROTOCOLS: Record<string, TrainPhase[]> = {
+type Phase = TrainPhase & { held?: number; every?: number; late?: number }; // every: iterations between checks (Live: 5); late: checks only in the last `late` fraction of the budget // held: seeds per env of the keep-best checks (the worker's Start.held, Live sends none: 4)
+const held = (p: TrainPhase, n: number): Phase => ({ ...p, held: n });
+// B6 levers that Live's code does not expose yet (ArenaRun's HELD_EVERY is a constant, Live sends no Start.held, the initial check is always made): run by runLoop, a copy of ArenaRun's loop.
+const loop = (p: TrainPhase, o: { held?: number; every?: number; late?: number }): Phase => ({ ...p, ...(o.held ? { held: o.held } : {}), ...(o.every ? { every: o.every } : {}), ...(o.late ? { late: o.late } : {}) });
+const HI = bp(RECOMMENDED_MIX, 1, 0.01, 30);
+export const PROTOCOLS: Record<string, Phase[]> = {
   current: [es(PRE, 0.5), es(FINE, 0.5)],
   "pre-only": [es(PRE, 1)],
   hyperA: [es(PRE, 0.5, HYPER), es(FINE, 0.5, HYPER)],
@@ -38,35 +52,55 @@ export const PROTOCOLS: Record<string, TrainPhase[]> = {
   "ppo-hi": [bp(RECOMMENDED_MIX, 1, 0.01, 30)],
   "ppo-hi8": [bp(RECOMMENDED_MIX, 1, 0.01, 30, 8)],
   "mix-es": [es(RECOMMENDED_MIX, 1)],
+  "ppo-hi-h16": [held(bp(RECOMMENDED_MIX, 1, 0.01, 30), 16)],
+  "ppo-mix-h16": [held(bp(RECOMMENDED_MIX, 1, 0.003), 16)],
+  ppo05: [bp(RECOMMENDED_MIX, 1, 0.0005)],
+  "es-s02": [es(PRE, 0.5, { sigma: 0.02 }), es(FINE, 0.5, { sigma: 0.02 })],
+  "es-h16": [held(es(PRE, 0.5), 16), held(es(FINE, 0.5), 16)],
+  "ppo05-h16": [held(bp(RECOMMENDED_MIX, 1, 0.0005), 16)],
+  // B6 data-only levers (TrainPhase fields): episodes per update, episode cap; "ppo-hi" is the former Light recipe (30 s cap)
+  "hi-e8": [bp(RECOMMENDED_MIX, 1, 0.01, 30, 8)],
+  "hi-c20": [bp(RECOMMENDED_MIX, 1, 0.01, 20)],
+  "hi-c15": [bp(RECOMMENDED_MIX, 1, 0.01, 15)],
+  "hi-c10": [bp(RECOMMENDED_MIX, 1, 0.01, 10)],
+  // B6 code levers (need live/training.ts and the worker): check interval, held seeds, late checks only
+  "hi-k10": [loop(HI, { every: 10 })],
+  "hi-h2": [loop(HI, { held: 2 })],
+  "hi-late": [loop(HI, { late: 1 / 3 })],
+  "hi-c20-k10": [loop(bp(RECOMMENDED_MIX, 1, 0.01, 20), { every: 10 })],
+  "hi-e8-k10": [loop(bp(RECOMMENDED_MIX, 1, 0.01, 30, 8), { every: 10 })],
 };
 
-const { values } = parseArgs({ options: { tier: { type: "string" }, protocol: { type: "string" }, designs: { type: "string" }, seed: { type: "string", default: "1" }, out: { type: "string" }, calibrate: { type: "boolean" }, list: { type: "boolean" }, design: { type: "string", default: "p3" }, final: { type: "boolean" } } });
+const { values } = parseArgs({ options: { tier: { type: "string" }, protocol: { type: "string" }, designs: { type: "string" }, seed: { type: "string", default: "1" }, out: { type: "string" }, from: { type: "string" }, rescore: { type: "string", default: "32" }, calibrate: { type: "boolean" }, list: { type: "boolean" }, design: { type: "string", default: "p3" }, final: { type: "boolean" }, "cpu-per-second": { type: "string" }, "clock-at-ready": { type: "boolean" } } });
 if (values.list) { console.log(Object.keys(PROTOCOLS).join(" ")); process.exit(0); }
 const pool = existsSync("public/pool.json") ? parsePool(JSON.parse(readFileSync("public/pool.json", "utf8"))).entries : null;
 const library = parseLibrary(existsSync("public/rl/library.json") ? JSON.parse(readFileSync("public/rl/library.json", "utf8")) : null);
 const ALL = [...DESIGN_PANEL, ...EXTRA_DESIGNS];
+const cpuPerSecond = values["cpu-per-second"] ? Number(values["cpu-per-second"]) : BROWSER_CPU_PER_SECOND; // B5: PPO gets about 1.3 in a real browser (B4)
 const cpu = (): number => { const u = process.cpuUsage(); return (u.user + u.system) / 1e6; };
 
 interface PhaseResult { genome: Float32Array; iters: number; checks: number; kept: boolean; cpu: number; start: number | null; best: number | null; episodes: number }
 // One phase as live/training.ts runs it: the best genome on the held-out checks (null change when none beat the start), until `deadline` (this process's CPU seconds).
-async function runPhase(phase: TrainPhase, plan: ReturnType<typeof designLearner>["plan"], genome: Float32Array, seed: number, deadline: number): Promise<PhaseResult> {
+async function runPhase(phase: Phase, plan: ReturnType<typeof designLearner>["plan"], genome: Float32Array, seed: number, span: number): Promise<PhaseResult> {
   const envs = phase.envs.map((id) => { const e = envById(id)!; return phase.seconds && e.seconds > phase.seconds ? { ...e, id: `${e.id}-${phase.seconds}`, seconds: phase.seconds } : e; });
   let best = -Infinity, start: number | null = null, score: number | null = null, latest: Float32Array | null = null, iters = 0, checks = 0, bestScore: number | null = null;
   const t0 = cpu();
   let expired = false;
+  let deadline = t0 + span;
   let run: ArenaRun | null = null;
   const post = (m: RlOutMessage): void => {
     if (expired) return;
     if (cpu() > deadline) { expired = true; run?.stop(); return; }
-    if (m.type === "ready") start = best = score = m.held;
+    if (m.type === "ready") { start = best = score = m.held; if (values["clock-at-ready"]) deadline = cpu() + span; }
     else if (m.type === "iteration") { iters = m.it.iter; if (m.it.held !== null) { score = m.it.held; checks++; } }
     else if (m.type === "learner" && score !== null && score > best) { best = score; bestScore = score; latest = Float32Array.from(m.learner.genome); }
   };
   const msg: Start = {
     type: "start", envs, learner: serialiseLearner({ plan, genome }), method: phase.method,
     options: { iterations: 100_000, ...(phase.es ?? { pairs: 24, sigma: 0.05, lr: 0.02, decay: 0.005, episodes: 1 }), ...(phase.backprop ? { backprop: phase.backprop, episodes: 1 } : {}) } as Start["options"],
-    tiles: 1, seed, poolUrl: "", libraryUrl: "", playback: false, gentle: false, helpers: 1,
+    tiles: 1, seed, poolUrl: "", libraryUrl: "", playback: false, gentle: false, helpers: 1, ...(phase.held ? { held: phase.held } : {}),
   };
+  if (phase.every || phase.late) return runLoop(phase, plan, genome, seed, envs, span);
   run = new ArenaRun(msg, { pool, library }, (setup) => new RlPool([inlineRlPort()], setup), post);
   try { await run.run(); } catch { /* a stopped pool ends the in-flight step */ }
   const out = latest as Float32Array | null;
@@ -74,13 +108,40 @@ async function runPhase(phase: TrainPhase, plan: ReturnType<typeof designLearner
   return { genome: out ?? genome, iters, checks, kept: out !== null, cpu: cpu() - t0, start, best: bestScore, episodes: iters * perIter + checks * 4 * envs.length };
 }
 
+// ArenaRun's loop with a check interval and a late-only window (keep-best as live/training.ts: the best check, started from the initial score).
+async function runLoop(phase: Phase, plan: ReturnType<typeof designLearner>["plan"], genome: Float32Array, seed: number, envs: EnvSpec[], span: number): Promise<PhaseResult> {
+  const t0 = cpu();
+  const rp = new RlPool([inlineRlPort()], { envs: envs, plan, pool, library });
+  const bpo = { lr: Math.min(0.01, Math.max(0.0005, phase.backprop!.lr)), episodes: Math.round(Math.min(320, Math.max(4, phase.backprop!.episodes))) };
+  const trainer = new BackpropTrainer({ plan, genome }, envs, bpo, rp, seed, pool, library);
+  const seeds = heldSeeds(phase.held ?? 4);
+  const init = await trainer.held(seeds);
+  let deadline = values["clock-at-ready"] ? cpu() + span : t0 + span;
+  const from = deadline - span * (phase.late ?? 1); // checks only after this CPU time
+  let best = init.mean, latest: Float32Array | null = null, bestScore: number | null = null, iters = 0, checks = 0;
+  try {
+    while (cpu() < deadline && iters < 100_000) {
+      await trainer.step();
+      iters = trainer.iter;
+      if (cpu() > deadline) break; // the browser's timer drops what finishes after the budget
+      if (iters % (phase.every ?? 5) === 0 && cpu() >= from) {
+        const h = await trainer.held(seeds);
+        if (cpu() > deadline) break;
+        checks++;
+        if (h.mean > best) { best = h.mean; bestScore = h.mean; latest = Float32Array.from(trainer.theta); }
+      }
+    }
+  } catch { /* closed pool */ }
+  rp.close();
+  return { genome: latest ?? genome, iters, checks, kept: latest !== null, cpu: cpu() - t0, start: init.mean, best: bestScore, episodes: iters * bpo.episodes + (checks + 1) * seeds.length * envs.length };
+}
+
 if (values.calibrate) {
   const d = ALL.find((x) => x.id.startsWith(values.design!))!;
   const l = designLearner(d);
   for (const [name, phases] of Object.entries(PROTOCOLS)) {
     for (const ph of phases) {
-      const t = cpu();
-      const r = await runPhase({ ...ph, share: 1 }, l.plan, l.genome, 1, t + 12); // 12 CPU seconds each
+      const r = await runPhase({ ...ph, share: 1 }, l.plan, l.genome, 1, 12); // 12 CPU seconds each
       console.log(`${name} [${ph.envs.join(",")}] ${ph.method}: ${(r.cpu / Math.max(1, r.iters)).toFixed(2)} CPU s/iteration, ${r.iters} iterations in ${r.cpu.toFixed(1)} s, ${(r.episodes / r.cpu).toFixed(1)} episodes/CPU s, kept ${r.kept}`);
     }
   }
@@ -88,6 +149,44 @@ if (values.calibrate) {
 }
 
 const tier = TRAIN_TIERS.find((t) => t.id === values.tier);
+// B2 (d): the start and the kept brain re-scored on `n` held seeds of the mix, as the worker's "ready" score (a run of 0 iterations).
+async function heldScore(l: Learner, n: number): Promise<{ score: number; cpu: number }> {
+  const t0 = cpu();
+  let score = NaN;
+  const msg: Start = {
+    type: "start", envs: RECOMMENDED_MIX.map((id) => envById(id)!), learner: serialiseLearner(l), method: "es", options: { ...ES_NOW, iterations: 0 } as Start["options"],
+    tiles: 1, seed: 1, poolUrl: "", libraryUrl: "", playback: false, gentle: false, helpers: 1, held: n,
+  };
+  const run = new ArenaRun(msg, { pool, library }, (setup) => new RlPool([inlineRlPort()], setup), (m) => { if (m.type === "ready") score = m.held; });
+  await run.run();
+  run.stop();
+  return { score, cpu: cpu() - t0 };
+}
+
+const inBudget = values.protocol?.endsWith("+rb") === true, baseProtocol = inBudget ? values.protocol!.slice(0, -3) : values.protocol!;
+if (values.from && tier && values.out && PROTOCOLS[baseProtocol]) {
+  const phases = PROTOCOLS[baseProtocol]!;
+  mkdirSync(values.out, { recursive: true });
+  const n = Number(values.rescore);
+  for (const s of loadStarts(values.from)) {
+    if (existsSync(resolve(values.out, `${s.name}.json`))) continue;
+    const first = inBudget ? await heldScore(s.learner, n) : null; // the start's re-score, paid before training (twice: the kept brain's costs about the same)
+    const budget = Math.max(0, tier.seconds * cpuPerSecond - (first ? 2 * first.cpu : 0));
+    let genome = s.learner.genome;
+    const metas: PhaseResult[] = [];
+    for (const [k, ph] of phases.entries()) {
+      const r = await runPhase(ph, s.learner.plan, genome, Number(values.seed) * 1000 + k, budget * ph.share);
+      genome = r.genome;
+      metas.push({ ...r, genome: new Float32Array(0) });
+    }
+    const out = { plan: s.learner.plan, genome };
+    const a = first ?? await heldScore(s.learner, n), b = metas.some((m) => m.kept) ? await heldScore(out, n) : a;
+    writeFileSync(resolve(values.out, `${s.name}.meta.json`), JSON.stringify({ tier: tier.id, protocol: values.protocol, budget, phases: metas, rescore: { seeds: n, start: a.score, kept: b.score, cpu: a.cpu + (b === a ? 0 : b.cpu) } }) + "\n");
+    writeFileSync(resolve(values.out, `${s.name}.json`), JSON.stringify(serialiseLearner(out)) + "\n");
+    console.log(s.name, metas.map((m) => `iters ${m.iters} checks ${m.checks} kept ${m.kept} cpu ${m.cpu.toFixed(0)}`).join(" | "), `rescore ${a.score.toFixed(2)} -> ${b.score.toFixed(2)} (${(a.cpu + b.cpu).toFixed(0)} s)`);
+  }
+  process.exit(0);
+}
 if (!tier || !values.out || !values.designs) { console.error("error: --tier, --designs and --out are needed"); process.exit(1); }
 const phases = values.final ? tier.phases.slice() : PROTOCOLS[values.protocol!];
 if (!phases) { console.error(`error: --protocol must be one of ${Object.keys(PROTOCOLS).join(" ")}`); process.exit(1); }
@@ -96,12 +195,11 @@ for (const id of values.designs.split(",")) {
   const d = ALL.find((x) => x.id.startsWith(id + "-") || x.id === id)!;
   if (existsSync(resolve(values.out, `${d.id}.json`))) continue;
   const l = designLearner(d);
-  const budget = tier.seconds * BROWSER_CPU_PER_SECOND;
+  const budget = tier.seconds * cpuPerSecond;
   let genome = l.genome;
   const metas: PhaseResult[] = [];
   for (const [k, ph] of phases.entries()) {
-    const t = cpu();
-    const r = await runPhase(ph, l.plan, genome, Number(values.seed) * 1000 + k, t + budget * ph.share);
+    const r = await runPhase(ph, l.plan, genome, Number(values.seed) * 1000 + k, budget * ph.share);
     genome = r.genome;
     metas.push({ ...r, genome: new Float32Array(0) });
   }

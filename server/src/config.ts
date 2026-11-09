@@ -18,20 +18,20 @@ import { LIVE_BIRTH, MAX_COPIES } from "../../src/typescript/src/live/add.ts";
 // keep their own copies of the brains, so measure again under MemoryMax before setting LIVE_THREADS.
 export const MAX_POPULATION = 5000;
 
-// The one world this server runs: The Inland Sea map (src/sim/maps/inlandSea.ts) with the Ecosystem rules, collision damage on.
+// The one world this server runs: The Six Realms map "clock" (src/sim/maps/clock.ts) with the Ecosystem rules, collision damage on.
 // The admin channel (admin.ts) edits this object in place for the settings the engine reads every tick.
 // Food values from the launch plan (docs/status.md A5): food worth 50, slow regrowth, a fairly high cap, scarce poison.
 export const liveConfig: EcoConfig = structuredClone(DEFAULT_ECO_CONFIG);
 liveConfig.seed = 1;
-liveConfig.world.map = "inland-sea";
-liveConfig.world.width = 50000;
-liveConfig.world.height = 31250;
+liveConfig.world.map = "clock";
+liveConfig.world.width = 60000;
+liveConfig.world.height = 37500;
 liveConfig.world.foodEnergy = 50;
 liveConfig.world.poisonDamage = 50; // a bite costs one food's worth, not the life (POISON_LETHAL is 100); see docs/tuning-notes.md
-liveConfig.world.poisonDensity = 0.01; // start counts stay at or below the caps (foodDensity 0.5 is 78 125 items)
+liveConfig.world.poisonDensity = 0.01; // start counts stay at or below the caps (foodDensity 0.5 is 112 500 items)
 liveConfig.eco.initialPopulation = 0; // a fresh world is seeded with the founders file instead (founders.ts)
 liveConfig.eco.foodRegrow = 0.00285;
-liveConfig.eco.foodMaxDensity = 1.4; // 1.5 needs more item slots than the wire carries at 50000 x 31250 (itemHeadroom)
+liveConfig.eco.foodMaxDensity = 0.85; // realms mostly isolated with rare contact (docs/clock-map-notes.md); the item slots leave the admin room up to 0.95 (itemHeadroom, CAP_LIMITS)
 liveConfig.eco.poisonRegrow = 0.0003;
 liveConfig.eco.poisonMaxDensity = 0.01;
 liveConfig.eco.collisionDamage = true;
@@ -47,7 +47,7 @@ liveConfig.eco.birthEnergyRange = [...LIVE_BIRTH.energy]; // wider than the Ecos
 liveConfig.eco.birthCostRange = [...LIVE_BIRTH.cost];
 liveConfig.eco.birthCooldownRange = [...LIVE_BIRTH.cooldown];
 liveConfig.eco.thinkEvery = 1; // 2 makes a tick about 1.5x cheaper (each creature senses and thinks every other tick) but raises churn 1.5-1.9x in 600 s runs (docs/perf-explore/think2.md); Erik decides
-liveConfig.eco.hueDrift = 3; // degrees (Ecosystem 8): families keep their colour longer, so the view reads as lineages
+liveConfig.eco.hueDrift = 0.75; // degrees (Ecosystem 8): families keep their realm colour for hundreds of generations, so the view reads as lineages (Erik, 2026-11-09; was 3)
 
 // A fresh world gets this many copies of each founder in the founders file, at random open spots; an admin reset may ask for more,
 // up to the room below the birth reserve (seedRoom).
@@ -65,7 +65,7 @@ export const MAX_FOUNDERS_FILE_BYTES = 512 * 1024; // 3 trained founders are 51 
 // Item slots are fixed when a world is built, so it is built with room for admin to raise the food and poison caps (densities).
 // Up to ITEM_HEADROOM where that fits (small worlds); else the slots are held to ITEM_SLOT_SHARE of the wire's MAX_ITEM_SLOTS:
 // poison gets POISON_ROOM times its cap (at most its ITEM_HEADROOM), food the rest, never below the caps in force.
-// The Inland Sea (156 250 items per density unit) does not fit it: food 1.45 and poison 0.05, 234 376 slots.
+// The Six Realms (225 000 items per density unit) does not fit it: see CAP_LIMITS.
 // Measured at about 1000 creatures on the old 17000 x 10600 world: caps 3 and 1 cost 20 MB more RSS at a save than 0.7 and 0.1.
 export const ITEM_HEADROOM = { foodMaxDensity: 3, poisonMaxDensity: 1 };
 export const ITEM_SLOT_SHARE = 0.9;
@@ -79,7 +79,7 @@ export function itemHeadroom(world: { width: number; height: number }, caps: Cap
   const fixed = { foodMaxDensity: Math.max(caps.foodMaxDensity, ITEM_HEADROOM.foodMaxDensity), poisonMaxDensity: Math.max(caps.poisonMaxDensity, ITEM_HEADROOM.poisonMaxDensity) };
   if (fixed.foodMaxDensity + fixed.poisonMaxDensity <= room) return fixed;
   if (caps.foodMaxDensity + caps.poisonMaxDensity > room) throw new Error(`food and poison caps ${caps.foodMaxDensity} and ${caps.poisonMaxDensity} need more item slots than the wire carries (${Math.floor(room * 100) / 100} density units at ${size(world)})`);
-  const poison = Math.max(caps.poisonMaxDensity, Math.min(ITEM_HEADROOM.poisonMaxDensity, POISON_ROOM * caps.poisonMaxDensity, room - caps.foodMaxDensity));
+  const poison = Math.max(caps.poisonMaxDensity, Math.floor(Math.min(ITEM_HEADROOM.poisonMaxDensity, POISON_ROOM * caps.poisonMaxDensity, room - caps.foodMaxDensity) * 1000) / 1000); // whole thousandths, so the slots stay under the share
   const food = Math.max(caps.foodMaxDensity, Math.min(ITEM_HEADROOM.foodMaxDensity, Math.floor((room - poison) * 20) / 20));
   return { foodMaxDensity: food, poisonMaxDensity: poison };
 }
@@ -121,7 +121,7 @@ export const LIMITS = {
   connectBytesPerSecond: 300_000, // of the budget: catch-up frames for viewers that just connected, skipped when used up
   // The connect allowance holds this much at once: the largest full item set any world can have (all of the wire's MAX_ITEM_SLOTS in use)
   // plus a creature frame at MAX_POPULATION, about 1.17 MB, so a new viewer always gets its set from it, after a reseed or a load too.
-  // At the 300 kB burst that went with the rate, the Inland Sea's sets (now up to about 1 MB) all came out of the frame budget's resync share.
+  // At the 300 kB burst that went with the rate, the first map's sets (up to about 1 MB) all came out of the frame budget's resync share.
   connectBurstBytes: itemsBytes(MAX_ITEM_SLOTS, MAX_ITEM_SLOTS) + creatureFrameBytes(MAX_POPULATION),
   maxTickFailures: 50, // consecutive failed ticks before the server exits (code 1) for systemd to restart it from the last good save
   textBytesPerViewer: 2000, // of the budget, per viewer slot: stats (with lineages, records every few seconds), hello and pong
@@ -149,7 +149,7 @@ export const LIMITS = {
   maxSaveJsonBytes: 260e6, // a save may be at most this much JSON (5000 creatures of the largest add brain: 210 MB, see MAX_POPULATION); parsing runs in a worker with its own heap cap (saveParse.ts)
   maxCatchUpS: 1, // after a stall longer than this the clock resyncs instead of racing to catch up
   sliceMs: 15, // simulation work per event-loop turn, so sockets stay served
-  maxBufferedBytes: 1_500_000, // a viewer with more queued than this is skipped for frames (slow link); above a join's full item set (about 1 MB at the Inland Sea's largest caps)
+  maxBufferedBytes: 1_500_000, // a viewer with more queued than this is skipped for frames (slow link); above a join's full item set (about 1 MB at the largest caps of the first map, the Inland Sea)
   hardBufferedBytes: 2_000_000, // more than this queued: the client is dropped (100 viewers x 2 MB on top of the largest world's 1.8 GB admin load stays inside the unit's 2.8 GB)
   slowDropMs: 10_000, // a client above maxBufferedBytes for this long is dropped
   heartbeatMs: 30_000, // ws ping, a client that misses the pong is dropped

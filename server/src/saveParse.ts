@@ -2,6 +2,8 @@ import { Worker } from "node:worker_threads";
 import { snapshotColumns } from "../../src/typescript/src/sim/ecoState.ts";
 import type { EcoSnapshot, EcoState } from "../../src/typescript/src/sim/ecoState.ts";
 import type { Carried } from "./carry.ts";
+import { packedMap } from "../../src/typescript/src/sim/maps/index.ts";
+import type { MapParts } from "../../src/typescript/src/sim/maps/mapParts.ts";
 
 // Unzips, parses and checks a save on a worker thread with its own small heap, so a crafted save (deep or many tiny JSON values)
 // can at worst kill that worker, never the server. Resolves with a state restoreState accepted there, rejects with the reason otherwise.
@@ -44,13 +46,21 @@ export function otherWorldReason(state: unknown, home: Home): string | null {
   return null;
 }
 
+// The running world's map as arrays, made once, so each save worker restores onto it without building the map again (about 8 s of CPU for the clock map).
+let packed: { name: string; parts: MapParts; stats: unknown } | null = null;
+function homeMap(home: Home | undefined): typeof packed {
+  if (!home?.map) return null;
+  if (packed?.name !== home.map) packed = { name: home.map, ...packedMap(home.map) };
+  return packed;
+}
+
 // home: when given, a save of another world rejects with OtherWorld before the engine's checks run.
 // verifyMs: the timeout of a verify-only check (the stop path shortens it to what is left of its budget).
 export function parseSave(gz: Uint8Array, maxJsonBytes: number, verifyOnly?: false, home?: Home): Promise<EcoState>;
 export function parseSave(gz: Uint8Array, maxJsonBytes: number, verifyOnly: true, home?: Home, verifyMs?: number): Promise<undefined>;
 export function parseSave(gz: Uint8Array, maxJsonBytes: number, verifyOnly = false, home?: Home, verifyMs = VERIFY_TIMEOUT_MS): Promise<EcoState | undefined> {
   return new Promise((resolve, reject) => {
-    const worker = new Worker(WORKER, { workerData: { gz, maxJsonBytes, verifyOnly, home: home ?? null, carryFrom: null }, resourceLimits: { maxOldGenerationSizeMb: PARSE_HEAP_MB, maxYoungGenerationSizeMb: YOUNG_MB }, stdout: false, stderr: false });
+    const worker = new Worker(WORKER, { workerData: { gz, maxJsonBytes, verifyOnly, home: home ?? null, carryFrom: null, map: homeMap(home) }, resourceLimits: { maxOldGenerationSizeMb: PARSE_HEAP_MB, maxYoungGenerationSizeMb: YOUNG_MB }, stdout: false, stderr: false });
     let settled = false;
     const finish = (err: Error | null, state?: EcoState | null): void => {
       if (settled) return;

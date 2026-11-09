@@ -57,6 +57,7 @@ export class MapWeights implements SpawnField {
   readonly rows: number;
   readonly food: Uint8Array;
   readonly poison: Uint8Array;
+  readonly paint: Uint8Array | null; // RGBA per node, a map's colour wash (looks only), or null
   readonly maxFood: number;
   readonly maxPoison: number;
   readonly capCols: number;
@@ -68,13 +69,14 @@ export class MapWeights implements SpawnField {
   private caps: CapStats | null = null; // made by the first use of the caps, which only the thread that counts items needs
 
   // blocked: whether a point is under rock, for the open share of the cap cells.
-  constructor(ground: GroundField, food: Uint8Array, poison: Uint8Array, blocked: (x: number, y: number) => boolean) {
+  constructor(ground: GroundField, food: Uint8Array, poison: Uint8Array, blocked: (x: number, y: number) => boolean, paint: Uint8Array | null = null) {
     this.cell = ground.cell;
     this.cols = ground.cols;
     this.rows = ground.rows;
     this.inv = 1 / ground.cell;
     this.food = food;
     this.poison = poison;
+    this.paint = paint;
     this.blocked = blocked;
     this.maxFood = food.reduce((m, v) => Math.max(m, v), 0);
     this.maxPoison = poison.reduce((m, v) => Math.max(m, v), 0);

@@ -97,6 +97,10 @@ export function rowLiving(founders: ArrayLike<number>, count: number, row: numbe
 }
 
 // The Lineages card: stacked bar of current shares, a legend that picks a lineage to highlight, and the shares over time.
+// A lineage's share as shown: a living lineage never reads 0%, and one beside others never reads 100%.
+export const sharePct = (s: number): string =>
+  s <= 0 || s >= 1 ? `${Math.round(s * 100)}%` : s < 0.001 ? "<0.1%" : s > 0.999 ? ">99.9%" : s < 0.1 ? `${(s * 100).toFixed(1)}%` : s > 0.99 ? `${(Math.floor(s * 1000) / 10).toFixed(1)}%` : `${Math.round(s * 100)}%`;
+
 export class LineagePanel {
   private readonly bar: HTMLElement;
   private readonly list: HTMLElement;
@@ -161,7 +165,7 @@ export class LineagePanel {
     if (signature === this.signature) return;
     this.signature = signature;
     this.bar.hidden = rows.length === 0;
-    const pct = (s: number): string => (s >= 0.995 || s < 0.001 ? `${Math.round(s * 100)}%` : s < 0.1 ? `${(s * 100).toFixed(1)}%` : `${Math.round(s * 100)}%`);
+    const pct = sharePct;
     this.bar.replaceChildren(
       ...rows.map((r) => {
         const seg = document.createElement("span");

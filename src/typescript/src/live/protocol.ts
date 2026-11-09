@@ -92,6 +92,7 @@ export interface WireMap {
   version?: string; // with a name: the server's mapVersion of it ("<8 hex>-<MAP_BUILD>"), so a page built with another design or builder can tell
   ground: { normal: number; mud: number; firm: number; rock: number }; // shares of the area, 0 to 1
   regions: WireRegion[];
+  unknown?: boolean; // set by the page (cleanMap), never sent: the server named a map this page does not have
 }
 export const MAX_REGIONS = 16;
 

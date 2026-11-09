@@ -1,19 +1,25 @@
-// Renders the Inland Sea picture and grid for the landing Live World card (src/ui/landing/inland-sea.webp, inlandGrid.ts). Open
-// /scripts/landing/mapshot.html under `npx vite` and save window.__out.webp and window.__out.grid.
-import { terrainOf } from "../../src/sim/terrain.ts";
+// Renders the Live map's picture and grid for the landing Live World card (src/ui/landing/live-map.webp, liveMapGrid.ts). scripts/landing/buildLandingMap.ts
+// opens this page in headless Chrome (?map=<name>, default the Live map) and saves window.__out.
+import { mapTerrain } from "../../src/sim/terrain.ts";
 import { mapSpec } from "../../src/sim/maps/index.ts";
-import { drawTerrain } from "../../src/ui/terrainScene.ts";
+import { LIVE_MAP } from "../../src/live/mapTerrain.ts";
+import { drawTerrain, prepareTerrain } from "../../src/ui/terrainScene.ts";
 import { FLOOR } from "../../src/ui/scene.ts";
-const spec = mapSpec("inland-sea")!;
+const spec = mapSpec(new URLSearchParams(location.search).get("map") ?? LIVE_MAP)!;
 const W = 1280, H = 800, GW = 160, GH = 100;
-const t = terrainOf({ seed: 0, world: { width: spec.width, height: spec.height, stoneDensity: 0, ridgeDensity: 0, slowDensity: 0, fastDensity: 0, map: spec.name } });
+const t = mapTerrain(spec.name, spec.width, spec.height);
 const c = document.getElementById("c") as HTMLCanvasElement;
 c.width = W; c.height = H;
 const ctx = c.getContext("2d")!;
 const s = W / spec.width;
 ctx.setTransform(s, 0, 0, s, 0, 0);
-ctx.fillStyle = FLOOR; ctx.fillRect(0, 0, spec.width, spec.height);
-drawTerrain(ctx, t, s);
+const view = { x0: 0, x1: spec.width, y0: 0, y1: spec.height };
+for (let pass = 0; pass < 1000; pass++) {
+  while (!prepareTerrain(t, s, view));
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, W, H); ctx.setTransform(s, 0, 0, s, 0, 0);
+  ctx.fillStyle = FLOOR; ctx.fillRect(0, 0, spec.width, spec.height);
+  if (drawTerrain(ctx, t, s, view)) break; // drawn with every image in place
+}
 const w = t.weights!;
 let maxF = 0, maxP = 0;
 const cw = spec.width / GW, ch = spec.height / GH;
