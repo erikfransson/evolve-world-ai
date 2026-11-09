@@ -129,7 +129,8 @@ export class AddPanel {
   private job: { cancel(): void } | null = null; // the training run or the re-score under way
   // The last trained brain with what it was trained from, reused when an add is refused or fails and nothing changed since.
   // A finished run is reused as often as needed; a partial one (the tab stayed hidden, or the worker failed) only once, for the add that waits for it.
-  private trained: { key: TrainKey; genome: Float32Array; partial: boolean } | null = null;
+  private trained: { key: TrainKey; genome: Float32Array; partial: boolean; original?: string } | null = null;
+  private originalWhy = ""; // why the original brain went in place of a trained one, for the reply line
   private fresh: { plan: string; genome: Float32Array } | null = null; // the fresh brain of the current structure
   private waiting = false; // an add is on its way
   private lockedUntil = 0; // ms: the connection's add rate, or the server's retry time
@@ -223,7 +224,7 @@ export class AddPanel {
   reply(r: Added | Refused): void {
     this.waiting = false;
     if (r.t === "added") {
-      this.say(`${r.name} is in the world: ${r.ids.length === 1 ? "one copy" : `${r.ids.length} copies`}.`, "ok");
+      this.say(`${r.name} is in the world: ${r.ids.length === 1 ? "one copy" : `${r.ids.length} copies`}.${this.originalWhy ? ` Training ${this.originalWhy}, so it is the original.` : ""}`, "ok");
       this.hooks.added(r);
       this.fresh = null; // the next add starts from a new brain, not a clone of this one
       this.trained = null;
@@ -547,7 +548,8 @@ export class AddPanel {
     this.$("addTrainText").textContent = text;
   }
 
-  // The re-score of a brain: its score, null when it failed or the tab is hidden, undefined when the visitor cancelled.
+  // The re-score of a brain: its score, null when it failed, undefined when the visitor cancelled. It runs on, hidden tab or not, and leaves
+  // the bar for the caller to hide, so the start's check flows into the training bar.
   private async check(plan: BodyPlan, genome: Float32Array, seeds: number, text: string, percent: number): Promise<number | null | undefined> {
     const job = heldScore(plan, genome, seeds);
     this.job = job;
@@ -556,23 +558,26 @@ export class AddPanel {
     const score = await job.done;
     const cancelled = this.job !== job;
     this.job = null;
-    this.progress(null);
     return cancelled ? undefined : score;
   }
 
-  // The trained genome, null when cancelled; away: a run ended because the tab stayed hidden, so the phases after it are skipped and the
-  // add waits for the visitor to press Add again; complete: every phase ran its time without a failure; original: the text to say when the
-  // start was kept (a trained start must beat the start on the re-score, and a failed or unfinished re-score keeps the start).
+  // The trained genome, null when cancelled; away: the tab was hidden when training ended, so the add waits for the visitor to press Add
+  // again; complete: every phase ran its time without a failure or a hidden stop; original: why the start was kept (a trained start must
+  // beat the start on the re-score; a failed re-score or a failed worker keeps the start). A hidden tab never drops a finished run: the
+  // re-score of the result still runs, and only the checked winner is returned.
   private async trainAll(plan: BodyPlan, genome: Float32Array, tier: TrainTier): Promise<{ genome: Float32Array; away: boolean; complete: boolean; original?: string } | null> {
     let g = genome;
     let complete = true;
+    let away = false;
+    let failure = "";
     let before = 0;
     const seeds = tierFor(this.source === "fresh", tier).rescore;
     let startScore: number | null = null;
     if (seeds) { // the start's score, during loading: the training clock has not started
       const s = await this.check(plan, genome, seeds, "Loading…", 0);
+      if (s === null || s === undefined) this.progress(null);
       if (s === undefined) return null;
-      if (s === null) return { genome, away: document.hidden, complete: false, original: "Could not check the start brain; adding the original." };
+      if (s === null) return { genome, away: document.hidden, complete: false, original: "could not be checked" };
       startScore = s;
     }
     for (const phase of phasesFor(this.source === "fresh", tier)) {
@@ -588,20 +593,27 @@ export class AddPanel {
       this.progress(null);
       if (failed) {
         this.say(`Training stopped (${failed}); adding it as it is.`, "error");
+        failure = `stopped (${failed})`;
         complete = false;
       }
       if (cancelled) return null;
       if (out) g = out;
-      if (job.stoppedHidden || document.hidden) return { genome: seeds ? genome : g, away: true, complete: false, ...(seeds ? { original: "Training stopped while this tab was hidden; the original is kept." } : {}) }; // hidden: also a run that failed or finished while away; an unchecked brain is never kept
+      if (job.stoppedHidden) complete = false;
+      if (job.stoppedHidden || document.hidden) { // the later phases are skipped while the visitor is away
+        away = true;
+        break;
+      }
     }
-    if (seeds && g === genome) return { genome, away: false, complete, original: "Training found no better brain; adding the original." };
-    if (seeds && startScore !== null) {
+    if (seeds) {
+      const none = failure || "found no better brain";
+      if (g === genome) return { genome, away, complete, original: none };
       const kept = await this.check(plan, g, seeds, "Checking…", 100);
+      this.progress(null);
       if (kept === undefined) return null;
-      if (kept === null) return { genome, away: document.hidden, complete: false, original: "Could not check the trained brain; adding the original." };
-      if (!(kept > startScore)) return { genome, away: false, complete, original: "Training found no better brain; adding the original." };
+      if (kept === null) return { genome, away, complete: false, original: "could not be checked" };
+      if (!(kept > (startScore ?? Infinity))) return { genome, away, complete, original: none };
     }
-    return { genome: g, away: false, complete };
+    return { genome: g, away, complete };
   }
 
   private async go(): Promise<void> {
@@ -617,6 +629,7 @@ export class AddPanel {
     let original = ""; // what to say when the original brain is added in place of a trained one
     if (tier && t && sameTrainKey(t.key, key)) { // trained already, the add did not go in
       genome = t.genome;
+      original = t.original ?? "";
       if (t.partial) this.trained = null; // a partial run goes in once, it is not a finished one to reuse
     } else if (tier) {
       const trained = await this.trainAll(plan, genome, tier);
@@ -626,9 +639,9 @@ export class AddPanel {
       }
       genome = trained.genome;
       original = trained.original ?? "";
-      this.trained = trained.complete || trained.away ? { key, genome, partial: !trained.complete } : null; // a partial run that went in at once is not kept for a retry
+      this.trained = trained.complete || trained.away ? { key, genome, partial: !trained.complete, ...(original ? { original } : {}) } : null; // a partial run that went in at once is not kept for a retry
       if (trained.away) { // never add while the visitor is away: the result waits for them
-        this.say(`Training stopped while this tab was hidden. ${original ? "The original is kept" : "Its result is kept"}: press Add to the world to add it.`);
+        this.say(`Training ${trained.complete ? "finished" : "stopped"} while this tab was hidden. ${original ? "The original is kept" : "Its result is kept"}: press Add to the world to add it.`);
         return this.refresh();
       }
     }
@@ -639,7 +652,8 @@ export class AddPanel {
       return this.refresh();
     }
     this.waiting = true; // the next add waits for this reply; past the connection's burst the server refuses with retryS, which locks
-    this.say(original ? `${original} Sending…` : "Sending…");
+    this.originalWhy = original;
+    this.say(original ? `Training ${original}; adding the original. Sending…` : "Sending…");
     this.refresh();
   }
 

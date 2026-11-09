@@ -43,6 +43,7 @@ export const secondsLeft = (total: number, before: number, phase: number, share:
 
 const HELPERS = 3; // helper threads at most: about 50 MB each in Chrome, so a small device keeps its memory
 const HIDDEN_MAX_MS = 10 * 60_000; // hidden this long in all (every hidden stretch of the run counts), it ends with its best so far and frees the worker
+const SCORE_MAX_MS = 120_000; // a re-score (32 seeds x 8 envs, about 8 times the start score) has this long, sized for a slow phone
 const START_MAX_MS = 60_000; // the worker has this long to load its assets and score the start brain; the training clock starts after that
 const ES_OPTIONS = { pairs: 24, sigma: 0.05, lr: 0.02, decay: 0.005, episodes: 1, iterations: 100_000 }; // smaller steps than the Arena: polish, not relearn
 
@@ -211,21 +212,18 @@ export interface ScoreJob {
 }
 
 // The re-score of a brain: its mean reward on `seeds` held-out seeds per env of the uncapped recommended mix, as the worker's "ready" of a
-// 0-iteration run (poison costs 1 per bite). Its own worker, ended on every path; a hidden tab ends it at once, so the caller falls back.
+// 0-iteration run (poison costs 1 per bite). Its own worker, ended on every path; a hidden tab does not stop it (the worker cannot pause
+// its start score). null when the seed pool is missing: the rivals would differ from the start's score.
 export function heldScore(plan: BodyPlan, genome: Float32Array, seeds: number): ScoreJob {
   let worker: Worker | null = null;
   let finish: (v: number | null) => void = () => {};
   const done = new Promise<number | null>((resolve) => (finish = resolve));
   let ended = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const onVisibility = (): void => {
-    if (document.hidden) end(null);
-  };
   const end = (v: number | null): void => {
     if (ended) return;
     ended = true;
     clearTimeout(timer);
-    document.removeEventListener("visibilitychange", onVisibility);
     worker?.terminate();
     worker = null;
     finish(v);
@@ -238,7 +236,7 @@ export function heldScore(plan: BodyPlan, genome: Float32Array, seeds: number): 
   }
   worker.onmessage = (ev: MessageEvent<RlOutMessage>) => {
     const m = ev.data;
-    if (m.type === "ready") end(Number.isFinite(m.held) ? m.held : null);
+    if (m.type === "ready") end(Number.isFinite(m.held) && m.poolMissing !== true ? m.held : null);
     else if (m.type === "error" || m.type === "done") end(null);
   };
   worker.onerror = (e) => {
@@ -262,8 +260,6 @@ export function heldScore(plan: BodyPlan, genome: Float32Array, seeds: number): 
     helpers: HELPERS,
   };
   worker.postMessage(msg);
-  document.addEventListener("visibilitychange", onVisibility);
-  timer = setTimeout(() => end(null), START_MAX_MS);
-  if (document.hidden) end(null);
+  timer = setTimeout(() => end(null), SCORE_MAX_MS);
   return { done, cancel: () => end(null) };
 }

@@ -153,13 +153,15 @@ describe("re-score worker", () => {
     expect(FakeWorker.last!.terminated).toBe(true);
   });
 
-  it("resolves null on a worker error, a timeout, a cancel and a hidden tab, freeing the worker each time", async () => {
+  it("resolves null on a worker error, a timeout, a cancel and a missing seed pool, freeing the worker each time", async () => {
     let job = heldScore(plan, new Float32Array(10), 32);
     FakeWorker.last!.onmessage!({ data: { type: "error", message: "x" } } as MessageEvent);
     expect(await job.done).toBeNull();
     expect(FakeWorker.last!.terminated).toBe(true);
     job = heldScore(plan, new Float32Array(10), 32);
-    vi.advanceTimersByTime(61_000);
+    vi.advanceTimersByTime(61_000); // a re-score has 120 s, longer than the start-up bound
+    expect(FakeWorker.last!.terminated).toBe(false);
+    vi.advanceTimersByTime(60_000);
     expect(await job.done).toBeNull();
     expect(FakeWorker.last!.terminated).toBe(true);
     job = heldScore(plan, new Float32Array(10), 32);
@@ -167,10 +169,18 @@ describe("re-score worker", () => {
     expect(await job.done).toBeNull();
     expect(FakeWorker.last!.terminated).toBe(true);
     job = heldScore(plan, new Float32Array(10), 32);
-    Object.defineProperty(document, "hidden", { configurable: true, get: () => true });
-    document.dispatchEvent(new Event("visibilitychange"));
+    ready({ held: 4.5, poolMissing: true }); // the rivals would differ from the start's score
     expect(await job.done).toBeNull();
     expect(FakeWorker.last!.terminated).toBe(true);
+  });
+
+  it("keeps scoring while the tab is hidden", async () => {
+    Object.defineProperty(document, "hidden", { configurable: true, get: () => true });
+    const job = heldScore(plan, new Float32Array(10), 32);
+    document.dispatchEvent(new Event("visibilitychange"));
+    expect(FakeWorker.last!.terminated).toBe(false);
+    ready({ held: 3 });
+    expect(await job.done).toBe(3);
   });
 });
 
@@ -299,7 +309,7 @@ describe("add panel tiers", () => {
 
 describe("add panel keeps a trained start only when the re-score says so", () => {
   // scores: what heldScore answers in turn (the start first, then the trained brain); "cancel" leaves the job open until cancelled
-  const run = async (scores: (number | null)[], trainReturns: "better" | "same" = "better", hiddenAtEnd = false) => {
+  const run = async (scores: (number | null)[], trainReturns: "better" | "same" = "better", hiddenAtEnd = false, failWith = "") => {
     const training = await import("../../src/typescript/src/live/training.ts");
     const { parseFounders } = await import("../../src/typescript/src/live/founders.ts");
     const { LiveWorld } = await import("../../server/src/liveWorld.ts");
@@ -316,8 +326,11 @@ describe("add panel keeps a trained start only when the re-score says so", () =>
     const asked: number[] = [];
     const trainCalls: number[] = [];
     const jobs: { cancel: () => void }[] = [];
-    const s1 = vi.spyOn(training, "train").mockImplementation((_ph, _p, genome) => {
+    const barHidden: boolean[] = []; // the progress bar's hidden flag when each training worker starts
+    const s1 = vi.spyOn(training, "train").mockImplementation((_ph, _p, genome, _prog, onError) => {
       trainCalls.push(1);
+      barHidden.push(Boolean(document.getElementById("addTrain")!.hidden));
+      if (failWith) onError(failWith);
       if (hiddenAtEnd) Object.defineProperty(document, "hidden", { configurable: true, get: () => true });
       return { done: Promise.resolve(trainReturns === "same" ? null : Float32Array.from(genome, (w) => w + 1)), cancel() {}, stoppedHidden: false };
     });
@@ -332,7 +345,7 @@ describe("add panel keeps a trained start only when the re-score says so", () =>
     const go = (): Promise<void> => (panel as unknown as { go(): Promise<void> }).go();
     const msg = (): string => document.getElementById("addMsg")!.textContent!;
     const done = (): void => { s1.mockRestore(); s2.mockRestore(); Object.defineProperty(document, "hidden", { configurable: true, get: () => false }); };
-    return { sent, founders, go, msg, asked, trainCalls, jobs, done, panel };
+    return { sent, founders, go, msg, asked, trainCalls, jobs, done, panel, barHidden };
   };
 
   it("adds the trained brain when it strictly beats the start, scoring both on 32 seeds", async () => {
@@ -385,14 +398,54 @@ describe("add panel keeps a trained start only when the re-score says so", () =>
     } finally { t.done(); }
   });
 
-  it("never adds the unchecked brain when the tab is hidden once training ends", async () => {
+  it("re-scores a finished run in a hidden tab and keeps the checked winner, saying it finished", async () => {
     const t = await run([1, 5], "better", true);
     try {
       await t.go();
+      expect(t.asked).toEqual([32, 32]); // the final check still ran
       expect(t.sent).toHaveLength(0); // waits for the visitor
+      expect(t.msg()).toMatch(/Training finished while this tab was hidden/);
+      Object.defineProperty(document, "hidden", { configurable: true, get: () => false });
+      await t.go();
+      expect(t.asked).toHaveLength(2); // cached, not trained again
+      expect(t.sent[0]!.genome[0]).toBeCloseTo(t.founders[0]!.genome[0]! + 1, 5);
+    } finally { t.done(); }
+  });
+
+  it("keeps the original, never the unchecked brain, when the hidden run's check loses", async () => {
+    const t = await run([1, 0.5], "better", true);
+    try {
+      await t.go();
+      expect(t.msg()).toMatch(/The original is kept/);
       Object.defineProperty(document, "hidden", { configurable: true, get: () => false });
       await t.go();
       expect(Array.from(t.sent[0]!.genome)).toEqual(Array.from(t.founders[0]!.genome));
+    } finally { t.done(); }
+  });
+
+  it("does not hide the bar between the start check and training", async () => {
+    const t = await run([1, 2]);
+    try {
+      await t.go();
+      expect(t.barHidden).toEqual([false]);
+    } finally { t.done(); }
+  });
+
+  it("names a training failure, not 'no better brain', when the original is kept", async () => {
+    const t = await run([1], "same", false, "boom");
+    try {
+      await t.go();
+      expect(t.msg()).toMatch(/Training stopped \(boom\); adding the original/);
+      expect(t.msg()).not.toMatch(/no better brain/);
+    } finally { t.done(); }
+  });
+
+  it("carries the original-kept note into the added line", async () => {
+    const t = await run([1, 0.5]);
+    try {
+      await t.go();
+      t.panel.reply({ t: "added", name: "MyJuggernaut", ids: [1, 2, 3] });
+      expect(t.msg()).toBe("MyJuggernaut is in the world: 3 copies. Training found no better brain, so it is the original.");
     } finally { t.done(); }
   });
 
