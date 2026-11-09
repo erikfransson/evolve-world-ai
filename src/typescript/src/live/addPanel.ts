@@ -580,7 +580,8 @@ export class AddPanel {
       if (s === null) return { genome, away: document.hidden, complete: false, original: "could not be checked" };
       startScore = s;
     }
-    for (const phase of phasesFor(this.source === "fresh", tier)) {
+    const phases = phasesFor(this.source === "fresh", tier);
+    for (const [i, phase] of phases.entries()) {
       let failed = "";
       const run = { before, phase: phase.seconds, total: tier.seconds };
       const job = train(phase, plan, g, (p) => this.progress(p, run), (m) => (failed = m));
@@ -601,6 +602,7 @@ export class AddPanel {
       if (job.stoppedHidden) complete = false;
       if (job.stoppedHidden || document.hidden) { // the later phases are skipped while the visitor is away
         away = true;
+        if (i < phases.length - 1) complete = false; // phases left: not a finished run
         break;
       }
     }
