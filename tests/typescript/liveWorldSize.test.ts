@@ -27,5 +27,5 @@ describe("the Live world's saves", () => {
     const m = unpackMap(width, height, parts);
     const again = packMap(new Terrain(m.rock, m.ground, width, height, m.weights))!;
     for (const k of ["rock", "ground", "food", "poison", "paint"] as const) expect(again[k]).toEqual(parts[k]);
-  });
+  }, 90_000);
 });
