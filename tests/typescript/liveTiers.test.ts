@@ -325,7 +325,7 @@ describe("add panel keeps a trained start only when the re-score says so", () =>
     const queue = scores.slice();
     const asked: number[] = [];
     const trainCalls: number[] = [];
-    const jobs: { cancel: () => void }[] = [];
+    const jobs: { cancel: () => void; resolve: (v: number | null) => void }[] = [];
     const barHidden: boolean[] = []; // the progress bar's hidden flag when each training worker starts
     const s1 = vi.spyOn(training, "train").mockImplementation((_ph, _p, genome, _prog, onError) => {
       trainCalls.push(1);
@@ -339,7 +339,7 @@ describe("add panel keeps a trained start only when the re-score says so", () =>
       const next = queue.shift();
       let resolve: (v: number | null) => void = () => {};
       const done = new Promise<number | null>((r) => (resolve = r));
-      if (next === undefined) { const job = { done, cancel: () => resolve(null) }; jobs.push(job); return job; }
+      if (next === undefined) { const job = { done, cancel: () => resolve(null) }; jobs.push({ ...job, resolve }); return job; }
       return { done: Promise.resolve(next), cancel() {} };
     });
     const go = (): Promise<void> => (panel as unknown as { go(): Promise<void> }).go();
@@ -404,6 +404,23 @@ describe("add panel keeps a trained start only when the re-score says so", () =>
       await t.go();
       expect(t.asked).toEqual([32, 32]); // the final check still ran
       expect(t.sent).toHaveLength(0); // waits for the visitor
+      expect(t.msg()).toMatch(/Training finished while this tab was hidden/);
+      Object.defineProperty(document, "hidden", { configurable: true, get: () => false });
+      await t.go();
+      expect(t.asked).toHaveLength(2); // cached, not trained again
+      expect(t.sent[0]!.genome[0]).toBeCloseTo(t.founders[0]!.genome[0]! + 1, 5);
+    } finally { t.done(); }
+  });
+
+  it("keeps the checked result and waits when the tab is hidden during the final check", async () => {
+    const t = await run([1]);
+    try {
+      const go = t.go();
+      await vi.waitFor(() => expect(t.jobs).toHaveLength(1)); // the final check is open
+      Object.defineProperty(document, "hidden", { configurable: true, get: () => true });
+      t.jobs[0]!.resolve(5);
+      await go;
+      expect(t.sent).toHaveLength(0);
       expect(t.msg()).toMatch(/Training finished while this tab was hidden/);
       Object.defineProperty(document, "hidden", { configurable: true, get: () => false });
       await t.go();

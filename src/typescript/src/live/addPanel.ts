@@ -612,6 +612,7 @@ export class AddPanel {
       const kept = await this.check(plan, g, seeds, "Checking…", 100);
       this.progress(null);
       if (kept === undefined) return null;
+      away ||= document.hidden; // hidden during the check: the result waits for the visitor
       if (kept === null) return { genome, away, complete: false, original: "could not be checked" };
       if (!(kept > (startScore ?? Infinity))) return { genome, away, complete, original: none };
     }
