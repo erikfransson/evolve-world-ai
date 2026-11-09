@@ -2,11 +2,11 @@ import { createRng } from "../../sim/rng.ts";
 import { makeCanvas } from "../canvas.ts";
 import { FLOOR } from "../scene.ts";
 import { FOOD, POISON } from "../palette.ts";
-import { GRID, GRID_H, GRID_W } from "./inlandGrid.ts";
+import { GRID, GRID_H, GRID_W } from "./liveMapGrid.ts";
 import { TICK_SECONDS, drawBirthRings, ticksOf } from "./kit.ts";
 import type { Effect, RingLook, Scene } from "./kit.ts";
 
-// Live World: the whole Inland Sea from above, a few hundred creatures of six lineages grazing its rich places, giving birth and dying out.
+// Live World: the whole Live map from above, a few hundred creatures of six lineages grazing its rich places, giving birth and dying out.
 // The map is the real one (a picture and a coarse grid of rock, food and poison); the creatures are scripted, not the engine's.
 
 const CELL = 10; // world units per grid cell
@@ -64,7 +64,7 @@ export interface MapScene extends Scene {
   dots(): readonly { x: number; y: number }[];
 }
 
-export function inlandMapScene(seed: number): MapScene {
+export function liveMapScene(seed: number): MapScene {
   const rng = createRng(seed);
   const dots: Dot[] = [];
   const rings: Effect[] = [];

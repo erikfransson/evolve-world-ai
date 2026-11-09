@@ -1,15 +1,15 @@
 import "./base.css";
 import "./landing.css";
 import { fitCanvas } from "./ui/canvas.ts";
-import { TICK_SECONDS, WARMUP_TICKS, arenaScene, ecosystemScene, inlandMapScene, trialsScene } from "./ui/landing/index.ts";
+import { TICK_SECONDS, WARMUP_TICKS, arenaScene, ecosystemScene, liveMapScene, trialsScene } from "./ui/landing/index.ts";
 import type { MapScene, Scene } from "./ui/landing/index.ts";
-import inlandSea from "./ui/landing/inland-sea.webp";
+import liveMap from "./ui/landing/live-map.webp";
 import { fetchStats, statsText, statsUrl } from "./ui/landing/liveStats.ts";
 import { TickClock } from "./ui/tickClock.ts";
 import { serverUrl } from "./live/serverUrl.ts";
 import { VERSION } from "./version.ts";
 
-const SCENES: Record<string, (seed: number) => Scene> = { trials: trialsScene, ecosystem: ecosystemScene, arena: arenaScene, live: inlandMapScene };
+const SCENES: Record<string, (seed: number) => Scene> = { trials: trialsScene, ecosystem: ecosystemScene, arena: arenaScene, live: liveMapScene };
 document.getElementById("version")!.textContent = `Evolve World v${VERSION}`;
 
 // The Live World card's numbers, once per visit; the line stays hidden when the server does not answer.
@@ -44,7 +44,7 @@ for (const canvas of document.querySelectorAll<HTMLCanvasElement>("canvas[data-s
 const mapCard = cards.find((c) => c.canvas.dataset.scene === "live");
 if (mapCard) {
   const img = new Image();
-  img.src = inlandSea;
+  img.src = liveMap;
   img.decode().then(
     () => {
       (mapCard.scene as MapScene).background = img;

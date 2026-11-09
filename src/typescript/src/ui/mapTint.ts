@@ -51,11 +51,17 @@ export function tintPixels(t: Terrain): Uint8ClampedArray<ArrayBuffer> {
       top = Math.max(top, a);
       rgb = [rgb[0]! + a * tints[i]!.rgb[0], rgb[1]! + a * tints[i]!.rgb[1], rgb[2]! + a * tints[i]!.rgb[2]];
     }
-    if (sum <= 0) continue;
-    image.data[4 * k] = rgb[0]! / sum;
-    image.data[4 * k + 1] = rgb[1]! / sum;
-    image.data[4 * k + 2] = rgb[2]! / sum;
-    image.data[4 * k + 3] = Math.round(255 * Math.min(1, top * wisp));
+    // A map's paint lies under the hazes, thinned a little where the wisps are thin so it is not a flat stamp.
+    const pa = w.paint ? (w.paint[4 * k + 3]! / 255) * (0.8 + 0.25 * (wisp - 0.6)) : 0;
+    const ta = sum > 0 ? Math.min(1, top * wisp) : 0;
+    const a = ta + pa * (1 - ta);
+    if (a <= 0) continue;
+    for (let c = 0; c < 3; c++) {
+      const tc = sum > 0 ? rgb[c]! / sum : 0;
+      const pc = pa > 0 ? w.paint![4 * k + c]! : 0;
+      image.data[4 * k + c] = (tc * ta + pc * pa * (1 - ta)) / a;
+    }
+    image.data[4 * k + 3] = Math.round(255 * a);
   }
   return image.data;
 }

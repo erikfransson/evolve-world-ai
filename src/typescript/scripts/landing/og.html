@@ -10,10 +10,10 @@ canvas{position:absolute;left:300px;top:-60px;width:600px;height:375px;transform
 <body><canvas id="c" width="1200" height="750"></canvas><div class="shade"></div>
 <div class="t"><div class="pill"><span class="dot"></span>LIVE</div><h1>Evolve World</h1><p>Tiny creatures with neural network brains evolve to survive. Watch them in your browser.</p></div>
 <script type="module">
-import { inlandMapScene } from "../../src/ui/landing/inlandMap.ts";
-import url from "../../src/ui/landing/inland-sea.webp";
+import { liveMapScene } from "../../src/ui/landing/liveMap.ts";
+import url from "../../src/ui/landing/live-map.webp";
 const c = document.getElementById("c"); const ctx = c.getContext("2d");
-const s = inlandMapScene(11); for (let i = 0; i < 900; i++) s.step();
+const s = liveMapScene(11); for (let i = 0; i < 900; i++) s.step();
 const img = new Image(); img.src = url; await img.decode(); s.background = img; await document.fonts.ready;
 s.draw(ctx); window.__done = true;
 </script></body></html>

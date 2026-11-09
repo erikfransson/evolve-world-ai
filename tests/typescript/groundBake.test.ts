@@ -30,7 +30,7 @@ const mainCtx = (scale: number): CanvasRenderingContext2D =>
 const paints = (): number => drawn.filter((c) => c.startsWith("fill") || c.startsWith("stroke")).length;
 
 // The Inland Sea with its own bitmap store (the modules are loaded again), and a view of 1600 x 900 px centred on its biggest patch.
-async function inlandSea() {
+async function liveMap() {
   vi.resetModules();
   const { ECO_PRESETS } = await import("../../src/typescript/src/sim/presets.ts");
   await import("../../src/typescript/src/sim/maps/index.ts");
@@ -65,12 +65,12 @@ describe("ground bitmaps of a patch larger than one bitmap", () => {
   afterAll(() => vi.unstubAllGlobals());
 
   it("is larger than one bitmap at the scales it is drawn from", async () => {
-    const { big } = await inlandSea();
+    const { big } = await liveMap();
     expect(Math.max(big.x1 - big.x0, big.y1 - big.y0) * 0.08).toBeGreaterThan(640);
   });
 
   it("bakes one bitmap per frame, then draws from bitmaps of at most 640 px and paints nothing on the canvas", async () => {
-    const { frame, settle } = await inlandSea();
+    const { frame, settle } = await liveMap();
     settle(0.05); // the textures, shelves and probe canvas, made once
     const from = bitmaps.length;
     frame(0.1);
@@ -86,7 +86,7 @@ describe("ground bitmaps of a patch larger than one bitmap", () => {
   });
 
   it("keeps a tier's bitmaps when the view moves to another tier and back", async () => {
-    const { frame, settle } = await inlandSea();
+    const { frame, settle } = await liveMap();
     settle(0.1); // tier 0.16
     settle(0.05); // tier 0.08
     drawn.length = 0;
@@ -97,7 +97,7 @@ describe("ground bitmaps of a patch larger than one bitmap", () => {
   });
 
   it("on a zoom in draws from the tier just left and paints nothing live while the new tier is baked", async () => {
-    const { frame, settle } = await inlandSea();
+    const { frame, settle } = await liveMap();
     settle(0.05); // tier 0.08 covers the whole map
     drawn.length = 0;
     const made = bitmaps.length;
@@ -106,7 +106,7 @@ describe("ground bitmaps of a patch larger than one bitmap", () => {
   });
 
   it("says when a stand-in tier drew, so a cache does not keep it; prepareGround makes the missing bitmaps, then the draw is complete", async () => {
-    const { frame, settle, prepare } = await inlandSea();
+    const { frame, settle, prepare } = await liveMap();
     settle(0.05); // tier 0.08
     expect(frame(0.1)).toBe(false); // tier 0.16 not yet baked: drawn from 0.08
     let calls = 0;
@@ -119,7 +119,7 @@ describe("ground bitmaps of a patch larger than one bitmap", () => {
   });
 
   it("on a zoom out finds the next coarser tier ready, and paints live only what no tier covers", async () => {
-    const { frame, settle } = await inlandSea();
+    const { frame, settle } = await liveMap();
     settle(0.3); // tier 0.32, and while idle the bitmaps of tier 0.16 for a view twice as wide
     const tier32 = bitmaps.length;
     drawn.length = 0;
@@ -137,7 +137,7 @@ describe("ground bitmaps of a patch larger than one bitmap", () => {
   });
 
   it("makes the shelves a frame's share at a time, says so while some wait, then draws complete", async () => {
-    const { frame } = await inlandSea();
+    const { frame } = await liveMap();
     const start = bitmaps.length;
     const perFrame: { n: number; cells: number }[] = [];
     let complete = false;
@@ -154,7 +154,7 @@ describe("ground bitmaps of a patch larger than one bitmap", () => {
   });
 
   it("holds at most the pixel budget however the scale changes", async () => {
-    const { settle, pixels } = await inlandSea();
+    const { settle, pixels } = await liveMap();
     for (const s of [0.02, 0.05, 0.1, 0.2, 0.3, 0.05, 0.3]) {
       settle(s);
       expect(pixels()).toBeLessThanOrEqual(MAX_PX);
@@ -162,7 +162,7 @@ describe("ground bitmaps of a patch larger than one bitmap", () => {
   });
 
   it("drops the tier least recently used first: A, B, A, C loses B", async () => {
-    const { settle, pixels } = await inlandSea();
+    const { settle, pixels } = await liveMap();
     for (const s of [0.05, 0.1, 0.05, 0.23]) settle(s); // tiers 0.08 (A, 0.9M px), 0.16 (B, 3.3M), 0.08, 0.32 (C, 6.1M): C needs B gone, then A fits beside it
     expect(pixels()).toBeLessThanOrEqual(MAX_PX);
     const made = bitmaps.length;

@@ -6,6 +6,7 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- Live World moves to The Six Realms (`clock`, 60000 x 37500, was the Inland Sea): six realms around a hub with trails, a dial ring and walls, `MapLayer.paint` colour washes baked into the ground picture, six founders seeded one per realm in their own colour (hue drift 0.75, was 3), food density 1.0. The first start after the promote begins a fresh world. Arena unchanged.
 - Lineages panel: a living lineage below 0.1% reads "<0.1%" (was 0%), and one beside others never reads 100% (">99.9%", or one decimal above 99%).
 
 ## 0.6.0 (2026-11-07)

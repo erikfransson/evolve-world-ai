@@ -285,7 +285,12 @@ let mapStale = false;
 let mapFailed = false; // the map of the latest hello could not be built: plain ground
 function showMap(h: Hello): void {
   const name = h.map.name;
-  if (!name) return;
+  // A map newer than this page (a cached page after a map change): plain ground, and the pill says so, until the page is reloaded.
+  if (!name) {
+    mapStale = h.map.unknown === true;
+    if (mapStale) renderStats();
+    return;
+  }
   const d = draw;
   // The server runs another design of this map than this page has: plain ground, and the pill says so, until the page is updated.
   mapStale = h.map.version !== undefined && h.map.version !== mapVersion(name);
@@ -718,7 +723,7 @@ function frame(now: number): void {
   // their hits), once the map's rock is known; until then, and when the page's map design is stale, the latest details' rays at the heading they were sensed at.
   const d = selection?.last;
   const selected = i >= 0 && !selection!.died ? ({ ...(d ?? { rayKinds: new Uint8Array(0), rayCloseness: new Float32Array(0), rayOffsets: new Float32Array(0), plan: { rayLength: 0 } }), alive: true, x: views.x[i]!, y: views.y[i]!, heading: views.heading[i]!, rayHeading: d?.heading } as SelectedDetails) : null;
-  if (selected && d && d.plan.rayLength > 0 && draw && hello && (!hello.map.name || (draw.map && !mapStale))) {
+  if (selected && d && d.plan.rayLength > 0 && draw && hello && !mapStale && (!hello.map.name || draw.map)) {
     const n = d.rayKinds.length;
     if (rayKinds.length !== n) {
       rayKinds = new Uint8Array(n);

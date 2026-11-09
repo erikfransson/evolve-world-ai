@@ -1,12 +1,14 @@
 import { INLAND_SEA } from "./inlandSea.ts";
+import { CLOCK } from "./clock.ts";
 import { registerMaps, Terrain } from "../terrain.ts";
-import { packMap } from "./mapParts.ts";
+import { packMap, unpackMap } from "./mapParts.ts";
+import type { MapParts } from "./mapParts.ts";
 import { buildMap, MAP_BUILD } from "./mapBuild.ts";
 import type { BuiltMap, MapSpec } from "./mapBuild.ts";
 
 // The hand-designed maps a world can name with world.map ("" for the random map). Each is built once per process from its spec alone,
 // so the name is all a save, a helper thread or a Live config needs.
-export const MAPS: Readonly<Record<string, MapSpec>> = { [INLAND_SEA.name]: INLAND_SEA };
+export const MAPS: Readonly<Record<string, MapSpec>> = { [INLAND_SEA.name]: INLAND_SEA, [CLOCK.name]: CLOCK };
 
 export const mapSpec = (name: string): MapSpec | undefined => (Object.hasOwn(MAPS, name) ? MAPS[name] : undefined);
 
@@ -19,6 +21,21 @@ export function builtMap(name: string): BuiltMap {
   let b = built.get(name);
   if (!b) built.set(name, (b = buildMap(spec)));
   return b;
+}
+
+// A built map as arrays for another thread (a save worker), so it need not build it again: seconds for a large map.
+export function packedMap(name: string): { parts: MapParts; stats: BuiltMap["stats"] } {
+  const b = builtMap(name);
+  const spec = mapSpec(name)!;
+  return { parts: packMap(new Terrain(b.rock, b.ground, spec.width, spec.height, b.weights))!, stats: b.stats };
+}
+
+// Takes a map packedMap made in this process's parent as this thread's built map; the arrays are checked to fit (unpackMap).
+// Only for arrays from the server itself, never from a file or a visitor.
+export function seedBuiltMap(name: string, packed: { parts: MapParts; stats: BuiltMap["stats"] }): void {
+  const spec = mapSpec(name);
+  if (!spec || built.has(name)) return;
+  built.set(name, { ...unpackMap(spec.width, spec.height, packed.parts), stats: packed.stats });
 }
 
 const fnv = (h: number, a: Uint8Array): number => {
@@ -46,7 +63,7 @@ export function builtHash(name: string): string {
   const b = builtMap(name);
   const spec = mapSpec(name)!;
   const parts = packMap(new Terrain(b.rock, b.ground, spec.width, spec.height, b.weights))!;
-  return hex([parts.ground, parts.food, parts.poison, new Uint8Array(parts.rock.buffer)].reduce(fnv, 0x811c9dc5));
+  return hex([parts.ground, parts.food, parts.poison, new Uint8Array(parts.rock.buffer), ...(parts.paint ? [parts.paint] : [])].reduce(fnv, 0x811c9dc5));
 }
 
 registerMaps({ spec: mapSpec, built: builtMap });

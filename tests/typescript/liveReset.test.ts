@@ -61,7 +61,7 @@ describe("admin reset", () => {
     expect(next.eco.tick).toBe(0);
     expect(next.eco.population).toBe(25 * FOUNDERS.length);
     expect(next.seedCopies).toBe(25);
-    expect(lines.some((l) => /fresh world seeded with \d+ creatures, 25 of each/.test(l))).toBe(true);
+    expect(lines.some((l) => /fresh world seeded with \d+ creatures, 25 in each of \d+ groups/.test(l))).toBe(true);
     expect(readdirSync(kept).filter((n) => n.endsWith(".json.gz")).length).toBe(3); // untouched
 
     // A restart later restores the fresh world, never one from the kept folder, and still reports its seed.
