@@ -6,6 +6,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- Arena reward graph (variant C): one plot of the gain since the start, with round ticks, held-out trend over its faint raw checks, a start baseline, and the best try as a sparkline in its tile.
+
 ## 0.7.0 (2026-11-09)
 
 - Live "Add your creature": a founder's or an uploaded brain now gets a short PPO fine-tune (`TRAIN_TIERS_TRAINED`, same seconds), and is added only if it beats the original on a 32-seed re-score. Otherwise the original is added and the panel says so. The re-score runs in its own worker, with a "Checking…" state at the end.

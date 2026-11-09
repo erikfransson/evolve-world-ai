@@ -82,10 +82,12 @@ details.more > summary { color: var(--text); font-weight: 500; font-size: 0.85re
 .kpi dd.empty { color: var(--muted); opacity: 0.6; }
 .graph-keys { padding: 0; gap: 1rem; }
 .key.train { color: #7dd3fc; }
-.key.best { color: #fbbf24; }
 .key.held { color: #3ddc97; font-weight: 600; }
-.key.held::before { height: 4px; border-radius: 2px; box-shadow: 0 0 6px currentColor; }
-#rewardView { display: block; width: 100%; height: clamp(200px, 29vh, 330px); }
+.key.held::before { height: 4px; border-radius: 2px; }
+.key.faint::before { display: none; }
+.kpi.best { position: relative; min-width: 9rem; }
+.kpi canvas.spark { position: absolute; top: 0.45rem; right: 0.6rem; width: 3.6rem; height: 1.3rem; }
+#rewardView { display: block; width: 100%; aspect-ratio: 2 / 1; }
 .per-env > summary { font-size: 0.8rem; }
 .per-env[hidden] { display: none; }
 .env-table { width: 100%; margin-top: 0.4rem; border-collapse: collapse; font-size: 0.78rem; font-variant-numeric: tabular-nums; }
@@ -183,6 +185,9 @@ fieldset.tab-off { display: none; }
   .kpis { width: 100%; }
   .kpi { flex: 1; min-width: 0; padding: 0.35rem 0.5rem; }
   .kpi dd { font-size: 1rem; }
+  .kpi.best { min-width: 0; }
+  .kpi canvas.spark { width: 2.6rem; right: 0.45rem; top: 0.4rem; }
+  #rewardView { aspect-ratio: 4 / 3; }
   .kpi dt { white-space: normal; font-size: 0.6rem; }
   .save-row { flex-wrap: wrap; }
   .save-row input { flex-basis: 100%; }
