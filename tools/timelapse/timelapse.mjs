@@ -23,7 +23,7 @@ const P = {
   capBytes: 30e9, // PNG bytes per world folder, then frames stop and Chrome closes ("first hours only")
   popCapBytes: 500e6, // population.jsonl bytes per world folder
   regionsCapBytes: 100e6, // regions.jsonl bytes per world folder
-  regionRadiusFactor: 2, // a creature belongs to the nearest map region within this many times its seeding radius (the realms are drawn about twice as wide as the home discs), else "elsewhere"
+  regionRadiusFactor: 2.5, // a creature belongs to the nearest map region within this many times its seeding radius r, else "elsewhere" (seeded creatures stay within 0.6 r, the painted realm is about 2.2 r wide, 99% of living creatures are within 2.4 to 2.7 r)
   hueMatchDeg: 25, // a creature hue within this many degrees of a region hue counts for that hue's lineage, else "other"
   freeFloorBytes: 20e9, // frames stop when the disk has less free
   staleCaptures: 3, // same tick this many frame slots in a row = frozen, reload

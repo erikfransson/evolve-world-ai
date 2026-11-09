@@ -13,6 +13,7 @@ CPUSchedulingPolicy=idle
 MemoryMax=2500M
 MemorySwapMax=0
 TasksMax=512
+TimeoutStopSec=30
 Restart=always
 RestartSec=30
 # Reads the checkout (script, built page, ws package), writes only @OUT@; Chrome's profile goes to the private /tmp.
