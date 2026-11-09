@@ -221,3 +221,23 @@ body:has(.layout.live) { height: auto; min-height: 100%; }
 /* The Live map's ground before any script has run: the shipped pictures (ui/groundBackdrop.ts), framed as the renderer frames the whole world (fitWorld: 96% of the tighter side,
    the Six Realms is 1.6 wide per high). The canvas stays clear until the script draws the same pictures on it. */
 #view { background: image-set(url("./live/maps/clock-ground-0.025.webp") 1x, url("./live/maps/clock-ground-0.05.webp") 2x) center / min(96cqw, 153.6cqh) auto no-repeat, url("./live/maps/clock-ground-preview.webp") center / min(96cqw, 153.6cqh) auto no-repeat, #0b1d16; }
+
+/* "Where" picker in the add panel (live/regionPicker.ts): Anywhere, then a small map of the regions, all radio inputs */
+.rp-group { display: flex; flex-direction: column; gap: 0.5rem; }
+.rp label { position: relative; display: block; cursor: pointer; }
+.rp input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.rp .rp-any { align-self: flex-start; }
+.rp-any .rp-dot { display: none; }
+.rp-any .rp-name { display: inline-block; padding: 0.3rem 0.8rem; background: var(--bg); border: 1px solid var(--border-hi); border-radius: 999px; font-size: 0.85rem; color: var(--muted); }
+.rp-any input:checked + .rp-dot + .rp-name { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
+.rp-any input:focus-visible + .rp-dot + .rp-name, .rp-spot input:focus-visible + .rp-dot { outline: 2px solid var(--accent); outline-offset: 2px; }
+.rp-map { position: relative; width: 100%; background: var(--bg); border: 1px solid var(--border-hi); border-radius: 10px; }
+.rp .rp-spot { position: absolute; aspect-ratio: 1; transform: translate(-50%, -50%); }
+.rp-spot .rp-dot { position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--border-hi); background: var(--card-hi); transition: border-color 0.12s, box-shadow 0.12s; }
+.rp-spot.hued .rp-dot { background: hsl(var(--rp-hue) 45% 26%); border-color: hsl(var(--rp-hue) 50% 42%); }
+.rp-spot:hover .rp-dot { border-color: var(--text); }
+.rp-spot input:checked + .rp-dot { border-color: #fff; box-shadow: 0 0 0 2px var(--accent), 0 0 12px var(--accent); }
+.rp-spot .rp-name { position: absolute; top: 100%; left: 50%; transform: translateX(-50%); margin-top: 1px; font-size: 0.62rem; line-height: 1.1; white-space: nowrap; color: var(--muted); pointer-events: none; }
+.rp-spot input:checked ~ .rp-name { color: var(--text); font-weight: 600; }
+.rp-cap { margin: 0; }
+.rp[hidden] { display: none; }

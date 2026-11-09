@@ -1,6 +1,6 @@
 // "Add your creature" on the wire (Live World protocol 4, see protocol.ts), shared by the page and the server.
 //
-// Client to server, text: {"t":"add","plan":Plan,"genome":<base64>,"birth":{"energy","cost","cooldown"},"name":<1-16 letters or digits>,"hue":<0..360>,"copies":<1..10>[,"mutationScale":<0.25..4>]}
+// Client to server, text: {"t":"add","plan":Plan,"genome":<base64>,"birth":{"energy","cost","cooldown"},"name":<1-16 letters or digits>,"hue":<0..360>,"copies":<1..10>[,"mutationScale":<0.25..4>][,"region":<0..15>]}
 //   plan: exactly the six creature-file plan fields within PLAN_LIMITS. genome: little-endian float32 weights in the forager (Ecosystem)
 //   layout for the plan, base64, every weight finite and within the creature-file bound. Exact keys everywhere; anything else is refused.
 // Server to client, text: Added {"t":"added","ids":[...],"name"} or Refused {"t":"refused","reason","retryS"?}.
@@ -17,6 +17,7 @@ const L = PLAN_LIMITS;
 // The largest forager genome PLAN_LIMITS allow, and the add message that carries it (base64 of 4 bytes a weight, plus room for the rest).
 export const MAX_ADD_GENOME = genomeLengthFor("forager", { rayCount: L.rayCount[1], raySpread: 1, rayLength: 100, hiddenLayers: Array<number>(L.layers[1]).fill(L.neurons[1]), memoryShort: L.memory[1], memoryLong: L.memory[1] });
 export const MAX_ADD_BYTES = Math.ceil((MAX_ADD_GENOME * 4) / 3) * 4 + 1024;
+export const MAX_SPAWN_REGION = 16; // a spawn region is an index below this (protocol.ts MAX_REGIONS); the server then checks it against its own map
 export const ADD_PREFIX = '{"t":"add",'; // encodeAdd puts t first; the server reads no longer message that does not start so
 
 // The Live World's birth trait ranges (wider than the Ecosystem's 100-225, 50-110, 5-20), so a visitor can make a creature that waits
@@ -37,6 +38,7 @@ export interface AddRequest {
   hue: number;
   copies: number;
   mutationScale?: number; // how strongly its descendants' brains change, MUTATION_SCALE_RANGE; missing is 1 (a page from before 0.2.1)
+  region?: number; // spawn inside this region of the server's map (its index in the hello's map.regions); missing is anywhere. Sent only to a server that advertises spawnRegions
 }
 
 // What the server allows, sent in the hello (null while adding is off): copies, birth trait ranges and the costs behind energy per second.
@@ -45,6 +47,7 @@ export interface AddRules {
   everyS: number; // a connection may add once per this many seconds (after a burst of the server's add.burst); one sent before a refusal's retryS is a strike, and strikes cut it off
   birth: { energy: [number, number]; cost: [number, number]; cooldown: [number, number] };
   costs: { living: number; ray: number; neuron: number }; // planUpkeep's livingCost, rayCost (per 100 units of ray), neuronCost
+  spawnRegions?: number; // how many of the map's regions an add may name (those with geometry, in the hello's order); missing: this server takes no region, and the page must not send one
 }
 
 export interface Added {
@@ -109,7 +112,7 @@ function fromBase64(s: unknown, n: number): Float32Array | null {
 
 export function encodeAdd(r: AddRequest): string {
   const plan = { rayCount: r.plan.rayCount, raySpread: r.plan.raySpread, rayLength: r.plan.rayLength, hiddenLayers: r.plan.hiddenLayers.slice(), memoryShort: r.plan.memoryShort, memoryLong: r.plan.memoryLong };
-  return JSON.stringify({ t: "add", plan, genome: toBase64(r.genome), birth: { energy: r.birth.energy, cost: r.birth.cost, cooldown: r.birth.cooldown }, name: r.name, hue: r.hue, copies: r.copies, ...(r.mutationScale !== undefined ? { mutationScale: r.mutationScale } : {}) });
+  return JSON.stringify({ t: "add", plan, genome: toBase64(r.genome), birth: { energy: r.birth.energy, cost: r.birth.cost, cooldown: r.birth.cooldown }, name: r.name, hue: r.hue, copies: r.copies, ...(r.mutationScale !== undefined ? { mutationScale: r.mutationScale } : {}), ...(r.region !== undefined ? { region: r.region } : {}) });
 }
 
 const isPlain = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v) && Object.getPrototypeOf(v) === Object.prototype;
@@ -132,7 +135,9 @@ export function parseAdd(data: string, rules: AddRules): AddRequest | string {
     return "not JSON";
   }
   const keys = ["t", "plan", "genome", "birth", "name", "hue", "copies"];
-  if (!isPlain(m) || !(exactKeys(m, keys) || exactKeys(m, [...keys, "mutationScale"])) || m.t !== "add") return "wrong fields";
+  if (!isPlain(m)) return "wrong fields";
+  const optional = ["mutationScale", "region"].filter((k) => Object.hasOwn(m, k)); // each may be absent, nothing else may be extra
+  if (!exactKeys(m, [...keys, ...optional]) || m.t !== "add") return "wrong fields";
   if (!isPlain(m.plan) || !exactKeys(m.plan, PLAN_KEYS)) return "wrong plan fields";
   if (!Array.isArray(m.plan.hiddenLayers) || m.plan.hiddenLayers.length > L.layers[1]) return "hiddenLayers must be 1 to 4 layers of 1 to 32";
   const plan = checkPlan(m.plan);
@@ -150,7 +155,8 @@ export function parseAdd(data: string, rules: AddRules): AddRequest | string {
   if (!inRange(m.hue, [0, 360])) return "hue must be 0 to 360";
   if (!Number.isInteger(m.copies) || !inRange(m.copies, [1, Math.min(MAX_COPIES, rules.maxCopies)])) return `copies must be 1 to ${Math.min(MAX_COPIES, rules.maxCopies)}`;
   if (m.mutationScale !== undefined && !inRange(m.mutationScale, MUTATION_SCALE_RANGE)) return `mutationScale must be a number from ${MUTATION_SCALE_RANGE[0]} to ${MUTATION_SCALE_RANGE[1]}`;
-  return { plan, genome: Float32Array.from(genome), birth: { energy: m.birth.energy, cost: m.birth.cost, cooldown: m.birth.cooldown }, name: m.name, hue: m.hue, copies: m.copies, ...(m.mutationScale !== undefined ? { mutationScale: m.mutationScale as number } : {}) };
+  if (m.region !== undefined && !(Number.isInteger(m.region) && inRange(m.region, [0, MAX_SPAWN_REGION - 1]))) return `region must be a whole number from 0 to ${MAX_SPAWN_REGION - 1}`;
+  return { plan, genome: Float32Array.from(genome), birth: { energy: m.birth.energy, cost: m.birth.cost, cooldown: m.birth.cooldown }, name: m.name, hue: m.hue, copies: m.copies, ...(m.mutationScale !== undefined ? { mutationScale: m.mutationScale as number } : {}), ...(m.region !== undefined ? { region: m.region as number } : {}) };
 }
 
 // Replies from the wire with sane values, or null.
@@ -177,5 +183,6 @@ export function cleanAddRules(r: unknown): AddRules | null {
   const { living, ray, neuron } = r.costs;
   if (!energy || !cost || !cooldown || !inRange(living, [0, 1e4]) || !inRange(ray, [0, 1e4]) || !inRange(neuron, [0, 1e4])) return null;
   if (!Number.isInteger(r.maxCopies) || !inRange(r.maxCopies, [1, MAX_COPIES]) || !inRange(r.everyS, [0, 86400])) return null;
-  return { maxCopies: r.maxCopies, everyS: r.everyS, birth: { energy, cost, cooldown }, costs: { living, ray, neuron } };
+  const spawn = Number.isInteger(r.spawnRegions) && inRange(r.spawnRegions, [1, MAX_SPAWN_REGION]) ? { spawnRegions: r.spawnRegions as number } : {};
+  return { maxCopies: r.maxCopies, everyS: r.everyS, birth: { energy, cost, cooldown }, costs: { living, ray, neuron }, ...spawn };
 }

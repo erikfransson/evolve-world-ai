@@ -45,6 +45,7 @@ The public port answers only the WebSocket upgrade and `GET /stats` (`{creatures
 ### Uploads (L4, built)
 - Adds are held to the creature-file `PLAN_LIMITS` and checks (`parseAdd` in `live/add.ts`), names to `[A-Za-z0-9]{1,16}`, shown via `textContent` only. Caps in `server/README.md`.
 - Visitor address: Tailscale Funnel (serve proxy mode, as set up here) sets `X-Forwarded-For` to the client address its ingress saw, overwriting any sent (tailscale source, `ipn/ipnlocal/serve.go`); checked in the source and on 2026-11-08 through the public Funnel ingress: a forged single or comma-list header arrived as one entry, the real client address (`LIVE_TRUST_FORWARDED=1` turns per-visitor limits on).
+- Spawn region: an add may carry one optional integer `region` (0 to 15, `parseAdd`), an index into the server's own region list, never coordinates or text. The server checks it against that world's map regions with geometry (beyond the list or no geometry: refused, nothing inserted) and searches the 0.6 x radius disc with the existing 40 tries a spot (crowded: refused, no partial insert). Existing add caps apply unchanged, no new server state, no per-tick cost. The server advertises `spawnRegions` in its add rules; a page sends `region` only then (older servers refuse unknown keys).
 - Open: test send backpressure through the real tunnel (a slow reader behind tailscaled must still be dropped by the send-queue caps).
 
 ## Build steps
