@@ -348,6 +348,7 @@ async function step(now, withFrame) {
   log("frame", path.split("/").pop(), png.length, "B", ms, "ms", "pop", stats.population, "folder", Math.round(world.bytes / 1e6), "MB");
 }
 
+for (const sig of ["SIGTERM", "SIGINT"]) process.on(sig, async () => { log("signal", sig, "closing Chrome and exiting"); writeStatus(); await closeChrome(); process.exit(0); });
 const startedAt = Date.now();
 for (;;) {
   try {
@@ -362,7 +363,7 @@ for (;;) {
     try { if (errorsInRow >= 2) { errorsInRow = 0; await closeChrome(); } } catch (e2) { log("recover failed", String(e2?.message ?? e2).slice(0, 200)); }
   }
 }
-setStatus("stopped", "the script ended"); writeStatus();
+writeStatus(); // keeps the last state (capped, disk-floor); a stale status.json tells the check the script is not running
 clearInterval(pingTimer); clearTimeout(linkTimer);
 try { link?.close(); } catch {}
 await closeChrome();
