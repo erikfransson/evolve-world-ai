@@ -49,6 +49,22 @@ describe("stackHistory", () => {
     for (let i = 0; i < 2; i++) for (let j = 1; j < s.bands.length; j++) expect(s.bands[j]!.lower[i]).toBeCloseTo(s.bands[j - 1]!.upper[i]!, 12);
   });
 
+  it("keeps a named group in one band even when its leading copy changed over time", () => {
+    // Group "J" was led by founder 2 early and by founder 5 now (2 died out), so its row is 5; founder 9 is another lineage.
+    const h = Float64Array.from([
+      ...sample(0, 0, [[2, 6, 100], [9, 4, 200]]),
+      ...sample(10, 0, [[9, 5, 200], [2, 5, 100]]),
+      ...sample(20, 0, [[9, 5, 200], [5, 5, 120]]),
+    ]);
+    const rowOf = (f: number): number => (f === 2 ? 5 : f);
+    const s = stackHistory(h, rowOf);
+    expect(s.bands.map((b) => b.founder)).toEqual([5, 9, -1]);
+    const j = s.bands[0]!;
+    expect(j.upper.map((u, i) => +(u - j.lower[i]!).toFixed(6))).toEqual([0.6, 0.5, 0.5]); // present at every sample, from t = 0
+    expect(j.color).toBe(stackHistory(Float64Array.from(sample(20, 0, [[5, 5, 120]]))).bands[0]!.color); // the row's current hue
+    expect(stackHistory(h).bands.map((b) => b.founder)).toEqual([2, 5, 9, -1]); // without the map it splits in two
+  });
+
   it("is empty without samples", () => {
     expect(stackHistory(new Float64Array(0)).times).toEqual([]);
   });

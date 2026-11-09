@@ -6,6 +6,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- Live Lineages chart: a named group's history is one band, so picking a row lights it from the left edge on (it was lit only from when its current leading copy took over, because samples name whichever copy led). Copies that died before the last stats are still outside it (needs a server-side group id).
+
 ## 0.7.0 (2026-11-09)
 
 - Live "Add your creature": a founder's or an uploaded brain now gets a short PPO fine-tune (`TRAIN_TIERS_TRAINED`, same seconds), and is added only if it beats the original on a 32-seed re-score. Otherwise the original is added and the panel says so. The re-score runs in its own worker, with a "Checking…" state at the end.

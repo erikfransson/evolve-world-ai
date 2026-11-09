@@ -620,7 +620,7 @@ function onStats(s: Stats, noted = false): void {
       syncFamily();
     }
     lastLineages = s.lineages;
-    lineages.setLineages(s.lineages.map((l): Lineage => ({ founder: l.founder, hue: l.hue, pool: l.pool, count: l.count, species: 0 })), s.population, names, starters);
+    lineages.setLineages(s.lineages.map((l): Lineage => ({ founder: l.founder, hue: l.hue, pool: l.pool, count: l.count, species: 0 })), s.population, names, starters, familyOf);
   }
   if (s.records) setRecords(s.records);
   $<HTMLButtonElement>("pickAge").disabled = !s.best;
