@@ -47,7 +47,7 @@ liveConfig.eco.birthEnergyRange = [...LIVE_BIRTH.energy]; // wider than the Ecos
 liveConfig.eco.birthCostRange = [...LIVE_BIRTH.cost];
 liveConfig.eco.birthCooldownRange = [...LIVE_BIRTH.cooldown];
 liveConfig.eco.thinkEvery = 1; // 2 makes a tick about 1.5x cheaper (each creature senses and thinks every other tick) but raises churn 1.5-1.9x in 600 s runs (docs/perf-explore/think2.md); Erik decides
-liveConfig.eco.hueDrift = 0.75; // degrees (Ecosystem 8): families keep their realm colour for hundreds of generations, so the view reads as lineages (Erik, 2026-11-09; was 3)
+liveConfig.eco.hueDrift = 0.25; // degrees (Ecosystem 8): families keep their realm colour for hundreds of generations, so the view reads as lineages (Erik, 2026-11-09; was 3, then 0.75, then 0.25 after about 30 generations per sim hour were measured)
 
 // A fresh world gets this many copies of each founder in the founders file, at random open spots; an admin reset may ask for more,
 // up to the room below the birth reserve (seedRoom).

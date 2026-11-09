@@ -6,7 +6,7 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
-- Live clock map: the Mire founder hue is 320 (was 28, close to Bloom 0 and Blight 55). Saves from before this change are refused as another map version, so the world needs a reset.
+- Live clock map: Mire's starting colour is magenta (300) again and Flats blue is slightly lighter (230, was 240), so the three warm colours (Bloom 0, Mire 28, Blight 55) no longer sit side by side. Live default `hueDrift` 0.75 -> 0.25. Saves from before this change are refused as another map version, so the world needs a reset.
 
 ## 0.7.0 (2026-11-09)
 

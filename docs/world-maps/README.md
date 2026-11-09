@@ -20,7 +20,7 @@ Six outer realms on a ring around a hub, joined by thin trails (food 0.5) rim to
 |--------|-----|----------------|
 | Crags  | 120 | Juggernaut     |
 | Blight | 55  | Oracle         |
-| Mire   | 320 | Gentle Grazer  |
+| Mire   | 300 | Gentle Grazer  |
 | Bloom  | 0   | Grazer         |
-| Flats  | 240 | Rammer         |
+| Flats  | 230 | Rammer         |
 | Steppe | 185 | Pathfinder     |
