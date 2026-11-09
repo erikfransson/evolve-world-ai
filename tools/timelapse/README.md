@@ -1,6 +1,7 @@
 # Live world time-lapse
 
 `timelapse.mjs` saves one PNG of the Live world every 20 s into `<out>/<world id>_<start>/`, one folder per world (per reset), and logs `population.jsonl` (every 5 s) and `frames.jsonl` next to them.
+`regions.jsonl` has per frame the creature counts per map region and hue (matrix layout in `world.json`).
 A light websocket viewer (no browser) is always on and detects resets.
 Chrome runs only while frames are wanted and closes when a folder reaches the cap (30 GB) or the disk has less than 20 GB free.
 At most 2 viewers connect from this machine (the light client and Chrome).
@@ -11,6 +12,11 @@ Other parameters (`framing`, `interval`, `capBytes`, `popEvery`, `server`, `page
 1. Build the page from the commit the server runs: `flock <repo>/.claude/heavy.lock nice -n 19 tools/timelapse/build-page.sh` (writes `tools/timelapse/page/` and a stamp with commit and protocol version).
    After a promote or any protocol change, rebuild from the new commit. On a version mismatch the script logs `VERSION MISMATCH` and takes no frames until you do.
 2. Chrome at `/usr/bin/google-chrome` and `puppeteer-core` (`puppeteer=<path to the package>` if it is not at the default).
+
+## After every world restart or reset
+1. `node tools/timelapse/check.mjs` (reads only the output folder, changes nothing, exit 0 = healthy, else one line saying what is wrong): current world folder, frames, newest frame and its age, gaps, frame size and byte spread, newest population line, folder size against the cap, free disk, capture active or stopped.
+2. Open the newest PNG and look at it.
+The capture script also warns (and reloads the page, and does not save the frame) when the page shows offline or loading, or a frame is under a third of the running median bytes.
 
 ## Service (user unit, not installed yet)
 ```

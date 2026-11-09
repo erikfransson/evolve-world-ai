@@ -29,10 +29,12 @@ const P = {
   statsMaxAgeS: 15, // no stats for this long = link dead
   resetTickDrop: 100, // a tick this far below the last one = new world
   cropMarginCss: 8, // CSS px around the world rectangle
+  chipInsetCss: 14, // the clock chip sits this many CSS px inside the top-right corner of the world rectangle (capture-only restyle)
   maxRunS: 0, // stop after this many seconds, 0 = run until killed
   chrome: "/usr/bin/google-chrome",
   puppeteer: process.env.PUPPETEER ?? "/tmp/claude-1000/-home-erik-progs-evolve-world-ai/9b5abbad-4dc2-4d80-9b43-9341a2efeec2/scratchpad/tools/node_modules/puppeteer-core",
   ws: join(REPO, "server/node_modules/ws"), // the ws package of the server
+  extraCss: "", // file with CSS injected into the page after the hiding rules (a test hook)
   lna: 0, // 1 adds the Chrome flags that allow a public page to reach a local server (not needed for the local page)
 };
 for (const a of process.argv.slice(2)) { const i = a.indexOf("="); if (i > 0 && a.slice(0, i) in P) P[a.slice(0, i)] = typeof P[a.slice(0, i)] === "number" ? Number(a.slice(i + 1)) : a.slice(i + 1); else { console.error("unknown argument", a); process.exit(2); } }
@@ -253,11 +255,16 @@ async function loadPage() {
     await page.evaluateOnNewDocument(() => { try { sessionStorage.setItem("evolve.live.entry", "1"); } catch {} });
   }
   await page.goto(pageUrl, { waitUntil: "load", timeout: 60000 });
-  await page.addStyleTag({ content: HIDE_CSS });
+  await page.addStyleTag({ content: HIDE_CSS + (P.extraCss ? readFileSync(P.extraCss, "utf8") : "") });
   await page.waitForFunction(() => document.getElementById("chipText")?.textContent === "Live", { timeout: 60000 });
   await sleep(3000); // map picture and first reveal
   await page.evaluate((n) => { const $ = (i) => document.getElementById(i); $("zoomFit").click(); for (let i = 0; i < n; i++) $("zoomIn").click(); }, F.zoomIns);
   await sleep(2500); // camera animation
+  if (P.framing !== "c") { // the chip moves inside the world rectangle's top-right corner, an even inset from the top and right border lines
+    const z = Math.min(F.w / hello.width, F.h / hello.height) * 0.96, ww = hello.width * z, wh = hello.height * z;
+    const top = (F.h - wh) / 2 + P.chipInsetCss, right = (F.w - ww) / 2 + P.chipInsetCss;
+    await page.addStyleTag({ content: `#timer{top:${top.toFixed(2)}px!important;right:${right.toFixed(2)}px!important;left:auto!important}` });
+  }
   crop = await computeCrop();
   log("page loaded", { crop });
 }
