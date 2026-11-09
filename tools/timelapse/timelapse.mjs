@@ -137,8 +137,9 @@ function startWorld(now) {
   let dir = null;
   for (const d of readdirSync(OUT).sort().reverse()) if (d.startsWith(id + "_")) { dir = d; break; } // the newest folder of this world, so a script restart resumes it
   let bytes = 0, frames = 0, lastTick = -1, popBytes = 0, regionsBytes = 0, size = null;
+  const recent = []; // bytes of the last frames, for the suspicious-frame check
   if (dir) {
-    try { for (const l of readFileSync(join(OUT, dir, "frames.jsonl"), "utf8").split("\n")) if (l) { const r = JSON.parse(l); bytes += r.bytes; frames++; lastTick = r.tick; } } catch {}
+    try { for (const l of readFileSync(join(OUT, dir, "frames.jsonl"), "utf8").split("\n")) if (l) { const r = JSON.parse(l); bytes += r.bytes; frames++; lastTick = r.tick; recent.push(r.bytes); if (recent.length > 21) recent.shift(); } } catch {}
     try { popBytes = statSync(join(OUT, dir, "population.jsonl")).size; } catch {}
     try { regionsBytes = statSync(join(OUT, dir, "regions.jsonl")).size; } catch {}
     try { size = JSON.parse(readFileSync(join(OUT, dir, "world.json"), "utf8")).size ?? null; } catch {}
@@ -153,7 +154,7 @@ function startWorld(now) {
     mkdirSync(join(OUT, dir), { recursive: true });
     writeFileSync(join(OUT, dir, "world.json"), JSON.stringify({ id, startedCapture: now.toISOString(), firstTick: stats.tick, simSeconds: stats.simSeconds, framing: P.framing, map: hello.mapName, mapVersion: hello.mapVersion, world: { width: hello.width, height: hello.height } }) + "\n");
   }
-  world = { id, dir, bytes, frames, popBytes, regionsBytes, lastTick: stats.tick, capped: false, staleN: 0, lastCapturedTick: -1, size };
+  world = { recent, id, dir, bytes, frames, popBytes, regionsBytes, lastTick: stats.tick, capped: false, staleN: 0, lastCapturedTick: -1, size };
   loadRegions();
   if (regionInfo) { const f = join(OUT, dir, "world.json"); try { const j = JSON.parse(readFileSync(f, "utf8")); j.regions = regionInfo; j.regionsNote = "regions.jsonl m = flat matrix, rows: regions then elsewhere, columns: lineages of hues then other"; writeFileSync(f, JSON.stringify(j) + "\n"); } catch {} }
   log("world folder", dir, { resumedBytes: bytes, resumedFrames: frames });
@@ -275,9 +276,12 @@ async function computeCrop() {
   width = Math.min(even(width), F.w - left); height = Math.min(even(height), F.h - top);
   return { x: left, y: top, width, height };
 }
+const pageShowsWorld = () => page.evaluate(() => document.getElementById("chipText")?.textContent === "Live" && document.getElementById("worldLoading")?.hidden === true).catch(() => false);
+const median = (a) => { const b = [...a].sort((x, y) => x - y); return b.length ? b[b.length >> 1] : 0; };
 async function takeFrame(now, tick) {
   const png = Buffer.from(await page.screenshot({ type: "png", optimizeForSpeed: true, clip: crop }));
   const size = [crop.width * F.dsf, crop.height * F.dsf];
+  if (world.recent.length >= 5 && png.length < median(world.recent) / 3) return { png, path: null, suspicious: true }; // a blank or offline page compresses far smaller
   if (world.size && (world.size[0] !== size[0] || world.size[1] !== size[1])) throw new Error(`frame size ${size} differs from this world's ${world.size}`);
   if (!world.size) { world.size = size; const f = join(OUT, world.dir, "world.json"); const j = JSON.parse(readFileSync(f, "utf8")); j.size = size; j.crop = crop; writeFileSync(f, JSON.stringify(j) + "\n"); }
   const path = join(OUT, world.dir, `${stamp(now)}_t${String(tick).padStart(9, "0")}.png`);
@@ -285,11 +289,23 @@ async function takeFrame(now, tick) {
   return { png, path };
 }
 
+// ---- status.json in the output folder: what the check script reads (it changes nothing)
+let statusState = "starting", statusMsg = "";
+function setStatus(state, msg = "") { statusState = state; statusMsg = msg; }
+function writeStatus() {
+  try {
+    const f = join(OUT, "status.json");
+    writeFileSync(f + ".tmp", JSON.stringify({ time: new Date().toISOString(), state: statusState, message: statusMsg, world: world?.dir ?? null, interval: P.interval, popEvery: P.popEvery, capBytes: P.capBytes, freeFloorBytes: P.freeFloorBytes, chrome: chromeState, pid: process.pid }) + "\n");
+    renameSync(f + ".tmp", f);
+  } catch {}
+}
+setInterval(writeStatus, 5000).unref();
+
 // ---- the slot loop
 let errorsInRow = 0;
 async function step(now, withFrame) {
   const age = Date.now() - statsAt;
-  if (!hello || !stats || age > P.statsMaxAgeS * 1000) { if (Date.now() - lastLinkLog > 30_000) { lastLinkLog = Date.now(); log("no fresh stats", hello ? Math.round(age / 1000) + " s" : "no hello yet"); } return; }
+  if (!hello || !stats || age > P.statsMaxAgeS * 1000) { setStatus("error", hello ? "no stats from the server for " + Math.round(age / 1000) + " s" : "no hello from the server yet"); if (Date.now() - lastLinkLog > 30_000) { lastLinkLog = Date.now(); log("no fresh stats", hello ? Math.round(age / 1000) + " s" : "no hello yet"); } return; }
   const tick = stats.tick, id = worldId();
   if (!world || id !== world.id || tick < world.lastTick - P.resetTickDrop) {
     log("new world", { id, tick, was: world?.id, lastTick: world?.lastTick });
@@ -299,23 +315,25 @@ async function step(now, withFrame) {
   world.lastTick = tick;
   logPopulation(now);
   const versionOk = !stampInfo || stampInfo.protocol === hello.version;
-  if (!versionOk) { if (Date.now() - lastLinkLog > 60_000) { lastLinkLog = Date.now(); log("VERSION MISMATCH: server protocol", hello.version, "built page", stampInfo.protocol, "(commit " + stampInfo.commit + "), no frames until the page is rebuilt with build-page.sh"); } await closeChrome(); return; }
+  if (!versionOk) { setStatus("error", "version mismatch: server protocol " + hello.version + ", built page " + stampInfo.protocol); if (Date.now() - lastLinkLog > 60_000) { lastLinkLog = Date.now(); log("VERSION MISMATCH: server protocol", hello.version, "built page", stampInfo.protocol, "(commit " + stampInfo.commit + "), no frames until the page is rebuilt with build-page.sh"); } await closeChrome(); return; }
   if (!existsSync(join(PAGE_DIR, "live/index.html"))) { if (Date.now() - lastLinkLog > 60_000) { lastLinkLog = Date.now(); log("built page missing in", PAGE_DIR, "run build-page.sh"); } return; }
   const free = statfsSync(OUT); const freeBytes = free.bavail * free.bsize;
-  if (!world.capped && freeBytes < P.freeFloorBytes) { log("free disk", Math.round(freeBytes / 1e6), "MB under the floor, frames stopped for", world.dir); world.capped = true; }
-  if (!world.capped && world.bytes >= P.capBytes) { log("folder at cap", world.bytes, "B, frames stopped for", world.dir); world.capped = true; }
-  if (world.capped) { await closeChrome(); return; }
-  if (chromeState === "off") { void launchChrome(); return; }
+  if (!world.capped && freeBytes < P.freeFloorBytes) { log("free disk", Math.round(freeBytes / 1e6), "MB under the floor, frames stopped for", world.dir); world.capped = true; world.why = "disk-floor"; }
+  if (!world.capped && world.bytes >= P.capBytes) { log("folder at cap", world.bytes, "B, frames stopped for", world.dir); world.capped = true; world.why = "cap"; }
+  if (world.capped) { setStatus(world.why === "cap" ? "capped" : "disk-floor", world.why === "cap" ? "folder reached the size cap" : "free disk under the floor"); await closeChrome(); return; }
+  if (chromeState === "off") { setStatus("capturing", "starting Chrome"); void launchChrome(); return; }
+  setStatus("capturing");
   if (chromeState !== "ready" || !withFrame) return;
-  if (!(await page.evaluate(() => document.getElementById("chipText")?.textContent === "Live").catch(() => false))) { world.offN = (world.offN ?? 0) + 1; if (world.offN >= 3) { log("page not live for 3 slots, reloading"); world.offN = 0; await loadPage(); } return; }
-  world.offN = 0;
+  if (!(await pageShowsWorld())) { log("WARNING page shows offline or loading at capture time, no frame, reloading"); setStatus("capturing", "page was offline or loading, reloaded"); await loadPage(); return; }
   if (tick === world.lastCapturedTick) {
     if (++world.staleN >= P.staleCaptures) { log("frozen at tick", tick, "reloading"); world.staleN = 0; await loadPage(); try { link?.terminate(); } catch {} }
     return;
   }
   world.staleN = 0;
   const t0 = Date.now();
-  const { png, path } = await takeFrame(now, tick);
+  const { png, path, suspicious } = await takeFrame(now, tick);
+  if (suspicious) { log("WARNING suspicious frame", png.length, "B vs median", median(world.recent), "B, not saved, reloading"); await loadPage(); return; }
+  world.recent.push(png.length); if (world.recent.length > 21) world.recent.shift();
   world.bytes += png.length; world.frames++; world.lastCapturedTick = tick;
   const ms = Date.now() - t0;
   try { logRegions(now, tick); } catch (err) { log("regions error", String(err?.message ?? err).slice(0, 100)); }
@@ -333,10 +351,11 @@ for (;;) {
     errorsInRow = 0;
   } catch (err) {
     errorsInRow++;
-    log("error", String(err?.message ?? err).slice(0, 300), "in a row", errorsInRow);
+    log("error", String(err?.message ?? err).slice(0, 300), "in a row", errorsInRow); setStatus("error", String(err?.message ?? err).slice(0, 120));
     try { if (errorsInRow >= 2) { errorsInRow = 0; await closeChrome(); } } catch (e2) { log("recover failed", String(e2?.message ?? e2).slice(0, 200)); }
   }
 }
+setStatus("stopped", "the script ended"); writeStatus();
 clearInterval(pingTimer); clearTimeout(linkTimer);
 try { link?.close(); } catch {}
 await closeChrome();
