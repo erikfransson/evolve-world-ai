@@ -265,10 +265,16 @@ let chromeFails = 0, chromeRetryAt = 0; // failed starts in a row, and when the 
 let chromeGen = 0;
 const closing = new Set(), launching = new Set(); // browser closes and launches still running: a start waits for both, so two Chromes never run at once
 const cancelled = () => new Error("cancelled by a close");
+const OWN_PGID = (() => { try { return Number(readFileSync("/proc/self/stat", "utf8").split(") ").pop().split(" ")[2]); } catch { return process.pid; } })();
+function killChrome(b) { // Chrome's whole process group, as puppeteer does (it starts Chrome detached), else the main process; never group 0, 1 or our own
+  const pid = b.process()?.pid;
+  if (Number.isInteger(pid) && pid > 1 && pid !== process.pid && pid !== OWN_PGID) { try { process.kill(-pid, "SIGKILL"); return; } catch {} }
+  try { b.process()?.kill("SIGKILL"); } catch {}
+}
 function closeBrowser(b) { // puppeteer's close awaits Chrome's exit with no time bound: a Chrome stuck in shutdown is killed after chromeCloseS, so no wait on `closing` outlasts that (the kill also ends puppeteer's own wait)
   let t;
   const timeout = new Promise((_, rej) => { t = setTimeout(() => rej(new Error("timeout")), P.chromeCloseS * 1000); });
-  return Promise.race([Promise.resolve().then(() => b.close()), timeout]).catch((err) => { if (err?.message === "timeout") log("chrome close took over", P.chromeCloseS, "s, killing it"); try { b.process()?.kill("SIGKILL"); } catch {} }).finally(() => clearTimeout(t));
+  return Promise.race([Promise.resolve().then(() => b.close()), timeout]).catch((err) => { if (err?.message === "timeout") log("chrome close took over", P.chromeCloseS, "s, killing it"); killChrome(b); }).finally(() => clearTimeout(t));
 }
 async function launchChrome(catchUp = false) { // catchUp: take a frame as soon as the page is live, for the slot that passed meanwhile
   if (chromeState !== "off") return;
@@ -398,8 +404,8 @@ setInterval(writeStatus, 5000).unref();
 
 // ---- the slot loop
 let errorsInRow = 0;
-let owedSince = null; // since when a frame is owed (capturing), null in states that expect none
-const owe = (yes) => { owedSince = yes ? owedSince ?? Date.now() : null; };
+let owedMs = null; // how long a frame has been owed (capturing), counted by the stall timer; null in states that expect none
+const owe = (yes) => { owedMs = yes ? owedMs ?? 0 : null; };
 async function step(now, withFrame) {
   const age = Date.now() - statsAt;
   if (!hello || !stats || age > P.statsMaxAgeS * 1000) { owe(false); setStatus("error", hello ? "no stats from the server for " + Math.round(age / 1000) + " s" : "no hello from the server yet"); if (Date.now() - lastLinkLog > 30_000) { lastLinkLog = Date.now(); log("no fresh stats", hello ? Math.round(age / 1000) + " s" : "no hello yet"); } return; }
@@ -435,9 +441,9 @@ async function step(now, withFrame) {
 async function writeFrame(now, tick) {
   const t0 = Date.now();
   const { png, path, suspicious } = await takeFrame(now, tick);
-  if (suspicious) { log("WARNING suspicious frame", png.length, "B vs median", median(world.recent), "B, not saved, reloading"); return false; }
+  if (suspicious) { owe(false); log("WARNING suspicious frame", png.length, "B vs median", median(world.recent), "B, not saved, reloading"); return false; }
   world.recent.push(png.length); if (world.recent.length > 21) world.recent.shift();
-  world.bytes += png.length; world.frames++; world.lastCapturedTick = tick; world.lastFrameAt = Date.now(); owedSince = Date.now();
+  world.bytes += png.length; world.frames++; world.lastCapturedTick = tick; world.lastFrameAt = Date.now(); owedMs = 0;
   const ms = Date.now() - t0;
   try { logRegions(now, tick); } catch (err) { log("regions error", String(err?.message ?? err).slice(0, 100)); }
   appendLog("frames.jsonl", JSON.stringify({ time: now.toISOString(), tick, population: stats.population, bytes: png.length, ms }) + "\n");
@@ -453,9 +459,13 @@ async function catchUpFrame() {
 }
 
 for (const sig of ["SIGTERM", "SIGINT"]) process.on(sig, async () => { log("signal", sig, "closing Chrome and exiting"); writeStatus(); await closeChrome(); process.exit(0); });
-setInterval(async () => { // a timer, so a step stuck on an await is caught too
-  if (!P.stallExitMin || owedSince === null || statusState !== "capturing" || Date.now() - owedSince < P.stallExitMin * 60_000) return;
-  owedSince = null; log("no frame for", P.stallExitMin, "min while capturing, exiting so the unit restarts"); setStatus("error", "no frame for " + P.stallExitMin + " min while capturing, restarting"); writeStatus(); await closeChrome(); process.exit(1);
+let stallTickAt = performance.now();
+setInterval(async () => { // a timer, so a step stuck on an await is caught too. It adds at most 15 s per tick, and only while capturing with fresh stats, so a suspend, a stopped process or a clock jump does not count
+  const t = performance.now(), dt = Math.min(t - stallTickAt, 15_000); stallTickAt = t;
+  if (!P.stallExitMin || owedMs === null || statusState !== "capturing" || Date.now() - statsAt > P.statsMaxAgeS * 1000) return;
+  owedMs += dt;
+  if (owedMs < P.stallExitMin * 60_000) return;
+  owedMs = null; log("no frame for", P.stallExitMin, "min while capturing, exiting so the unit restarts"); setStatus("error", "no frame for " + P.stallExitMin + " min while capturing, restarting"); writeStatus(); await closeChrome(); process.exit(1);
 }, 10_000).unref();
 const startedAt = Date.now();
 for (;;) {
