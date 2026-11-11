@@ -1,4 +1,4 @@
-// Live World wire protocol, shared by server/ and the live/ page. Version 4 (4: founder u32 in CREATURES, names, add; see docs/live-plan.md).
+// Live World wire protocol, shared by server/ and the live/ page. Version 6 (6: DELTA carries up to 64 frames; see docs/live-plan.md).
 //
 // Client to server, text only, at most MAX_CLIENT_MESSAGE_BYTES: "ping", or {"t":"select","id":<integer 0..MAX_ID>|null} (parseClientMessage),
 // or an add of at most MAX_ADD_BYTES (live/add.ts). Anything else gets the client cut off.
@@ -27,7 +27,7 @@
 import { HIT_FOOD, HIT_POISON } from "../sim/types.ts";
 import type { AddRules, Added, Refused } from "./add.ts";
 
-export const PROTOCOL_VERSION = 5;
+export const PROTOCOL_VERSION = 6;
 export const MSG_CREATURES = 1;
 export const MSG_ITEMS = 2;
 export const MSG_DETAIL = 3;
@@ -47,7 +47,9 @@ export const MAX_FRAME_CREATURES = 20_000; // creatures in one frame the page ta
 export const MAX_BACK_TICKS = (1 << 12) - 1; // back field of an op
 export const MAX_DELTA_OPS = 4096; // per server frame; more and the frame counts as too big, viewers get the full set instead
 export const MAX_DELTA_EVENTS = 32; // per server frame, the engine's EVENT_CAP
-export const MAX_DELTAS = 32; // per DELTA message; a viewer further behind gets the full set
+// Per DELTA message (u8 count); a viewer further behind gets the full set. At least the server's SLOWEST_STRIDE (60), so a viewer at the
+// slowest stride still gets changes. A DELTA is never larger than the full item set (ItemFeed.delta), whatever this is.
+export const MAX_DELTAS = 64;
 export const OP_REMOVE = 0;
 export const EVENT_BYTES = 7;
 export const HISTORY_FIELDS = 3; // time, population, food per population sample

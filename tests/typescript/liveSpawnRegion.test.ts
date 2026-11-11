@@ -3,7 +3,7 @@
 import { WebSocket } from "../../server/node_modules/ws/wrapper.mjs";
 import { AddGate } from "../../server/src/adds.ts";
 import { LIMITS, LIVE } from "../../server/src/config.ts";
-import { LiveWorld } from "../../server/src/liveWorld.ts";
+import { LiveWorld, MAX_ADD_SPOT_CHECKS } from "../../server/src/liveWorld.ts";
 import { startPublic } from "../../server/src/public.ts";
 import type { PublicServer } from "../../server/src/public.ts";
 import { MAX_SPAWN_REGION, cleanAddRules, encodeAdd, parseAdd } from "../../src/typescript/src/live/add.ts";
@@ -192,5 +192,74 @@ describe("parseAdd and the region", () => {
     expect(plain).not.toContain("region");
     expect(encodeAdd({ ...r, region: undefined })).toBe(plain);
     expect(encodeAdd({ ...r, region: 4 })).toBe(plain.slice(0, -1) + ',"region":4}');
+  });
+});
+
+describe("the spot search of one add", { timeout: 180_000 }, () => {
+  type Spot = { x: number; y: number };
+  type FreeSpots = (n: number, random: () => number, disc?: Spot & { r: number }, prior?: readonly Spot[], alive?: boolean, maxChecks?: number) => Spot[];
+
+  // Red without MAX_ADD_SPOT_CHECKS: every try of an add aimed at a packed region scanned most of the 11990 creatures before it failed,
+  // 400 tries for 10 copies, all refused with nothing inserted and nothing counted against the add caps.
+  it("stays under MAX_ADD_SPOT_CHECKS for an add aimed at a packed region at the cap, and draws the same spots for an add that finds room", () => {
+    const w = clockWorld();
+    const free = (w as unknown as { freeSpots: FreeSpots }).freeSpots.bind(w);
+    const g = regions[0]!;
+    const r = w.config.creature.radius;
+    const disc = 0.6 * g.r;
+    const target = w.config.eco.maxPopulation - 10; // room for one more full add
+    const put = (x: number, y: number): void => void w.eco.insertCreature({ genome, plan, x, y, heading: 0, hue: 10, name: `P${w.eco.population}`, birth: { energy: 150, cost: 70, cooldown: 10 }, energy: 300 });
+    // A grid 3 radii apart over the disc: every point of it is within 3 radii of a creature, so no try there finds room.
+    const crowd: Spot[] = [];
+    for (let x = g.x - disc; x <= g.x + disc; x += 3 * r) for (let y = g.y - disc; y <= g.y + disc; y += 3 * r) if (Math.hypot(x - g.x, y - g.y) < disc + 3 * r) crowd.push({ x, y });
+    const rnd = seq(11);
+    const elsewhere = (until: number): void => {
+      for (let k = 0; w.eco.population < until && k < 200_000; k++) {
+        const x = 500 + rnd() * (w.config.world.width - 1000);
+        const y = 500 + rnd() * (w.config.world.height - 1000);
+        if (Math.hypot(x - g.x, y - g.y) > disc + 10 * r) put(x, y);
+      }
+    };
+    elsewhere(target - crowd.length);
+    for (const p of crowd) if (w.eco.population < target) put(p.x, p.y); // last in the member list, so a failing try scans the rest first
+    elsewhere(target);
+    expect(w.eco.population).toBe(target);
+
+    // Distance checks against creatures: reads of a member by index while the member list is swapped for a counting proxy.
+    const real = w.eco.members;
+    let checks = 0;
+    const counting = new Proxy(real, {
+      get: (t, k, rc) => {
+        if (typeof k === "string" && k.charCodeAt(0) >= 48 && k.charCodeAt(0) <= 57) checks++;
+        return Reflect.get(t, k, rc);
+      },
+    });
+    const counted = <T>(f: () => T): [T, number] => {
+      checks = 0;
+      Object.defineProperty(w.eco, "members", { configurable: true, writable: true, value: counting });
+      try {
+        return [f(), checks];
+      } finally {
+        Object.defineProperty(w.eco, "members", { configurable: true, writable: true, value: real });
+      }
+    };
+    const [res, used] = counted(() => w.addCreatures(request({ region: 0, copies: 10 }), seq(5)));
+    expect(res).toMatchObject({ reason: expect.stringMatching(/region is crowded/) });
+    expect(w.eco.population).toBe(target);
+    expect(used).toBeLessThanOrEqual(MAX_ADD_SPOT_CHECKS + 2 * target); // the last try may finish its two scans
+    const [, unbounded] = counted(() => free(10, seq(5), { x: g.x, y: g.y, r: disc }));
+    expect(unbounded).toBeGreaterThan(MAX_ADD_SPOT_CHECKS + 2 * target); // the same search without the bound: this is the case it guards
+
+    // An add that finds room draws the same spots as without the bound, and inserts them.
+    const expected = free(10, seq(7));
+    const [quick, quickChecks] = counted(() => free(10, seq(7), undefined, [], true, MAX_ADD_SPOT_CHECKS));
+    expect(quick).toEqual(expected);
+    expect(quickChecks).toBeLessThan(MAX_ADD_SPOT_CHECKS);
+    const added = w.addCreatures(request({ copies: 10 }), seq(7));
+    if (!("ids" in added)) throw new Error(added.reason);
+    added.ids.forEach((id, i) => {
+      const s = w.eco.get(id)!.creature.state;
+      expect(Math.hypot(s.x - expected[i]!.x, s.y - expected[i]!.y)).toBeLessThan(0.01);
+    });
   });
 });
