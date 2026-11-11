@@ -6,7 +6,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
-- Live Lineages chart: a named group's history is one band, so picking a row lights it from the left edge on (it was lit only from when its current leading copy took over, because samples name whichever copy led). Copies that died before the last stats are still outside it (needs a server-side group id).
+- Live Lineages: a named group keeps one row id while it lives (its lowest founder when first listed, kept after that founder dies), so its history is one band from the first sample and picking its row lights the whole timeline (it was lit only from when the current leading copy took over). The chart also folds copies it knows of into one band, for older servers. No wire change; a rename starts the id over, the memory is not saved (history is not either).
+- Live Lineages chart covers the whole life of the world: at 180 samples the server keeps every second one and doubles the interval (was: the oldest 120 s sample fell off, so the chart held only the last 6 hours). Same 180-sample, about 30 KB bound; the page applies the same rule. History is still not saved, so a server restart starts it over. The Population chart keeps its 6-hour window.
 
 ## 0.7.0 (2026-11-09)
 

@@ -42,6 +42,8 @@ Follows "Uploaded creatures and settings" in `docs/modes-plan.md`: data only thr
 Server limits: insert rate per visitor and for everyone (added creatures count against the population cap), name length and character filter.
 The public port answers only the WebSocket upgrade and `GET /stats` (`{creatures, viewers}` for the landing page: CORS *, no request body read, rebuilt at most once a second, 5 a second for all callers with a burst of 20, past that a 503); every other request gets a 426.
 
+- Lineage group ids (`namedTop` memory in `Chronicle`): one number per living named group, keyed by the name key (server-parsed, never sent), pruned to the groups living now on every pass, so at most one per living family (at most maxPopulation, 5000). Not saved, reset with the world and its history. No new wire field.
+
 ### Uploads (L4, built)
 - Adds are held to the creature-file `PLAN_LIMITS` and checks (`parseAdd` in `live/add.ts`), names to `[A-Za-z0-9]{1,16}`, shown via `textContent` only. Caps in `server/README.md`.
 - Visitor address: Tailscale Funnel (serve proxy mode, as set up here) sets `X-Forwarded-For` to the client address its ingress saw, overwriting any sent (tailscale source, `ipn/ipnlocal/serve.go`); checked in the source and on 2026-11-08 through the public Funnel ingress: a forged single or comma-list header arrived as one entry, the real client address (`LIVE_TRUST_FORWARDED=1` turns per-visitor limits on).

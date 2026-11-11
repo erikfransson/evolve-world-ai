@@ -30,7 +30,7 @@ import { LiveLink, historyAxis } from "./live/connection.ts";
 import type { LinkState } from "./live/connection.ts";
 import { LiveScene } from "./live/scene.ts";
 import { serverUrl } from "./live/serverUrl.ts";
-import { HISTORY_FIELDS, LINEAGE_FIELDS, MAX_HISTORY, MAX_LINEAGE_HISTORY } from "./live/protocol.ts";
+import { HISTORY_FIELDS, LINEAGE_FIELDS, MAX_HISTORY, pushLineageSample } from "./live/protocol.ts";
 import type { Hello, Season, Stats } from "./live/protocol.ts";
 import { AddPanel } from "./live/addPanel.ts";
 import { parseFounders } from "./live/founders.ts";
@@ -578,8 +578,7 @@ function noteSamples(s: Stats): boolean {
     if (samples.length > MAX_HISTORY * HISTORY_FIELDS) samples.splice(0, HISTORY_FIELDS);
   }
   if (s.lineageSample) {
-    lineageHistory.push(...s.lineageSample);
-    if (lineageHistory.length > MAX_LINEAGE_HISTORY * LINEAGE_FIELDS) lineageHistory.splice(0, LINEAGE_FIELDS);
+    pushLineageSample(lineageHistory, s.lineageSample);
   }
   return seasonChanged;
 }
