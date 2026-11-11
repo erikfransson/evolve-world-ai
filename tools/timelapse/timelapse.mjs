@@ -31,6 +31,8 @@ const P = {
   resetTickDrop: 100, // a tick this far below the last one = new world
   cropMarginCss: 8, // CSS px around the world rectangle
   chipInsetCss: 14, // the clock chip sits this many CSS px inside the top-right corner of the world rectangle (capture-only restyle)
+  chromeRestartMin: 60, // minutes after which Chrome is closed and a fresh one started, right after a frame (its memory creeps up over hours), 0 = never
+  pageWaitS: 6, // seconds a page that shows offline or loading gets to reconnect by itself before it is reloaded
   maxRunS: 0, // stop after this many seconds, 0 = run until killed
   chrome: "/usr/bin/google-chrome",
   extraCss: "", // file with CSS injected into the page after the hiding rules (a test hook)
@@ -230,7 +232,8 @@ function serveStatic() {
     s.listen(P.pagePort, "127.0.0.1", () => res(s));
   });
 }
-async function launchChrome() {
+let chromeUpAt = 0; // when the current Chrome became ready
+async function launchChrome(catchUp = false) { // catchUp: take a frame as soon as the page is live, for the slot that passed meanwhile
   if (chromeState !== "off") return;
   chromeState = "starting";
   try {
@@ -240,11 +243,27 @@ async function launchChrome() {
     browser = await puppeteer.launch({ executablePath: P.chrome, headless: true, pipe: true, args: CHROME_ARGS }); // pipe: DevTools runs over inherited fds, no TCP port is opened
     browser.on("disconnected", () => { if (chromeState !== "closing") { log("chrome disconnected"); browser = page = null; chromeState = "off"; wantCreatures = false; lastCreatures = null; closeServer(); } });
     await loadPage();
-    chromeState = "ready"; wantCreatures = true;
+    wantCreatures = true; chromeUpAt = Date.now();
     log("chrome ready", { pid: browser.process()?.pid });
+    if (catchUp) await catchUpFrame(); // chromeState is still "starting": no slot frame can start meanwhile
+    if (chromeState === "starting") chromeState = "ready";
   } catch (err) { log("chrome start failed", String(err?.message ?? err).slice(0, 200)); await closeChrome(); }
 }
 function closeServer() { try { httpd?.close(); httpd?.closeAllConnections?.(); } catch {} httpd = null; }
+async function relaunchChrome() { // a clean new Chrome; its profile in /tmp goes with the old one
+  log("chrome relaunch after", Math.round((Date.now() - chromeUpAt) / 60000), "min");
+  await closeChrome();
+  await launchChrome(true);
+}
+async function reloadPage() { // page offline or loading, off the slot loop (the light client keeps logging): the page often reconnects by itself within seconds (the server drops a slow viewer), so wait a little, then reload; the frame follows as soon as the page is live
+  chromeState = "starting";
+  try {
+    for (let i = 0; i < P.pageWaitS && !(await pageShowsWorld()); i++) await sleep(1000);
+    if (!(await pageShowsWorld())) { log("page still not live, reloading"); await loadPage(); }
+    await catchUpFrame();
+  } catch (err) { log("reload failed", String(err?.message ?? err).slice(0, 200)); await closeChrome(); return; }
+  if (chromeState === "starting") chromeState = "ready";
+}
 async function closeChrome() {
   if (chromeState === "off" && !browser && !httpd) return;
   chromeState = "closing"; wantCreatures = false; lastCreatures = null;
@@ -290,6 +309,7 @@ async function computeCrop() {
   return { x: left, y: top, width, height };
 }
 const pageShowsWorld = () => page.evaluate(() => document.getElementById("chipText")?.textContent === "Live" && document.getElementById("worldLoading")?.hidden === true).catch(() => false);
+const pageState = () => page.evaluate(() => { const $ = (i) => document.getElementById(i); return { chip: $("chipText")?.textContent, offlineShown: $("offline")?.hidden === false, loadingShown: $("worldLoading")?.hidden === false, chipState: document.getElementById("chip")?.dataset?.state ?? null }; }).catch(() => null);
 const median = (a) => { const b = [...a].sort((x, y) => x - y); return b.length ? b[b.length >> 1] : 0; };
 async function takeFrame(now, tick) {
   const png = Buffer.from(await page.screenshot({ type: "png", optimizeForSpeed: true, clip: crop }));
@@ -337,21 +357,34 @@ async function step(now, withFrame) {
   if (chromeState === "off") { setStatus("capturing", "starting Chrome"); void launchChrome(); return; }
   setStatus("capturing");
   if (chromeState !== "ready" || !withFrame) return;
-  if (!(await pageShowsWorld())) { log("WARNING page shows offline or loading at capture time, no frame, reloading"); setStatus("capturing", "page was offline or loading, reloaded"); await loadPage(); return; }
+  if (!(await pageShowsWorld())) { log("WARNING page shows offline or loading at capture time, no frame yet, waiting for it", await pageState()); setStatus("capturing", "page was offline or loading, reloaded"); void reloadPage(); return; }
   if (tick === world.lastCapturedTick) {
     if (++world.staleN >= P.staleCaptures) { log("frozen at tick", tick, "reloading"); world.staleN = 0; await loadPage(); try { link?.terminate(); } catch {} }
     return;
   }
   world.staleN = 0;
+  if (!(await writeFrame(now, tick))) { await loadPage(); return; }
+  if (P.chromeRestartMin && Date.now() - chromeUpAt >= P.chromeRestartMin * 60_000) void relaunchChrome(); // the 20 s until the next slot are used for it
+}
+// one frame of the live page at slot time `now`; false when it looked blank (not saved)
+async function writeFrame(now, tick) {
   const t0 = Date.now();
   const { png, path, suspicious } = await takeFrame(now, tick);
-  if (suspicious) { log("WARNING suspicious frame", png.length, "B vs median", median(world.recent), "B, not saved, reloading"); await loadPage(); return; }
+  if (suspicious) { log("WARNING suspicious frame", png.length, "B vs median", median(world.recent), "B, not saved, reloading"); return false; }
   world.recent.push(png.length); if (world.recent.length > 21) world.recent.shift();
-  world.bytes += png.length; world.frames++; world.lastCapturedTick = tick;
+  world.bytes += png.length; world.frames++; world.lastCapturedTick = tick; world.lastFrameAt = Date.now();
   const ms = Date.now() - t0;
   try { logRegions(now, tick); } catch (err) { log("regions error", String(err?.message ?? err).slice(0, 100)); }
   appendLog("frames.jsonl", JSON.stringify({ time: now.toISOString(), tick, population: stats.population, bytes: png.length, ms }) + "\n");
   log("frame", path.split("/").pop(), png.length, "B", ms, "ms", "pop", stats.population, "folder", Math.round(world.bytes / 1e6), "MB");
+  return true;
+}
+// After a relaunch or reload: the slot that passed meanwhile gets its frame as soon as the page is live (not when the previous frame is under half an interval old, or the tick did not move).
+async function catchUpFrame() {
+  if (!world || world.capped || !stats || Date.now() - statsAt > P.statsMaxAgeS * 1000) return;
+  if (Date.now() - (world.lastFrameAt ?? 0) < P.interval * 500 || stats.tick === world.lastCapturedTick) return;
+  if (!(await pageShowsWorld())) { log("catch-up frame skipped, page not live"); return; }
+  await writeFrame(new Date(), stats.tick);
 }
 
 for (const sig of ["SIGTERM", "SIGINT"]) process.on(sig, async () => { log("signal", sig, "closing Chrome and exiting"); writeStatus(); await closeChrome(); process.exit(0); });

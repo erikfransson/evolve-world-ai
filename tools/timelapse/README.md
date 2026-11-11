@@ -9,6 +9,8 @@ The output folder defaults to `/home/erik/progs/evolve-world-ai/videos/timelapse
 Set it with `out=<dir>`.
 Other parameters (`framing`, `interval`, `capBytes`, `server`, `pagePort`) sit in the `P` block at the top of the script and take `key=value` arguments.
 Chrome is the system `/usr/bin/google-chrome`. `puppeteer-core` never downloads a browser, so nothing else is fetched.
+Chrome is closed and started fresh every `chromeRestartMin` minutes (default 60, 0 = never) right after a frame, because its memory creeps up over hours. A relaunch costs no frame, the frame for that slot comes 1 to 5 s late.
+A page that shows offline or loading at a slot gets `pageWaitS` (6) seconds to reconnect by itself (the server drops a slow viewer, which happens at the population boom), then is reloaded, and the frame follows as soon as the page is live.
 Chrome keeps its own sandbox (no `--no-sandbox`) and talks to the script over a pipe, so no DevTools port opens.
 The folder cap counts every file in the world folder (frames stop a little before it so the logs fit), and the logs stop at it.
 
