@@ -96,7 +96,7 @@ export interface MapSpec {
   rock: readonly MapRock[];
   regions?: readonly MapRegion[]; // named areas of the map (seeding homes, region table); not used by the builder
   look?: MapLook; // how the map is drawn, looks only; not used by the builder
-  solidRock?: boolean; // massifs close cracks two mask cells wide and small sealed pockets, stones keep SOLID_GAP clear of them, and ground an item could lie on but no creature reach is filled (fillUnreachable)
+  solidRock?: boolean; // stones keep SOLID_GAP clear of massifs, and ground an item could lie on but no creature reach is filled (fillUnreachable)
 }
 // A map's own drawing style; a map without it draws in the default abyssal style.
 export interface MapLook {
@@ -611,7 +611,6 @@ export function buildMap(spec: MapSpec): BuiltMap {
       }
     }
   }
-  if (spec.solidRock) solidify(mask, mcols, mrows);
   const rock: Disc[] = [];
   const massAt = (x: number, y: number): number => mask[clamp(Math.floor(y / MASS_CELL), 0, mrows - 1) * mcols + clamp(Math.floor(x / MASS_CELL), 0, mcols - 1)]! / 255;
   if (massifs.length > 0) rock.push(...massDiscs(mask, mcols, mrows));
@@ -699,8 +698,8 @@ const SOLID_GAP = 60; // world units a stone keeps from a massif on a solidRock 
 const SOLID_BODY = 12; // world units: the default creature's radius (config creature.radius), whose unreachable ground a solidRock map fills
 const FILL_CELL = 4; // world units of the raster the unreachable ground is found on
 const FILL_BUCKET = 400; // world units of the square each raster is centred on
+const FILL_SLACK = 5; // world units: a cell counts as a creature position when its centre is this much closer to rock than a creature may be, so no channel a creature fits through is missed between cell centres
 const FILL_HALO = 100; // world units of margin round it; sealed pockets up to about this size are found
-const MASK_POCKET = 64; // mask cells: sealed pockets up to this size (160 000 square units) are filled, larger enclosures are left as they are
 // True when a massif lies within d of (x, y), probed at 8 points round it.
 function clearOfMassif(massAt: (x: number, y: number) => number, x: number, y: number, d: number): boolean {
   for (let k = 0; k < 8; k++) if (massAt(x + d * Math.cos((k * Math.PI) / 4), y + d * Math.sin((k * Math.PI) / 4)) > 0.2) return true;
@@ -710,7 +709,8 @@ function clearOfMassif(massAt: (x: number, y: number) => number, x: number, y: n
 // Fills the ground where an item could lie but no creature could reach it: slits, notches, pinholes and sealed pockets in and between rock.
 // Judged for the smallest item and the default creature, on a raster round each FILL_BUCKET square with a FILL_HALO margin: a creature
 // position counts as reachable when it connects to the raster's border, so a pocket smaller than the halo is always found. Each filling
-// disc reaches exactly to the nearest reachable creature position, so it never takes ground a creature could stand on.
+// disc stops a grid step short of the nearest reachable creature position (exact Euclidean distance) and of the raster's edge, beyond
+// which ground is unseen, so it never takes ground a creature could stand on. Reachability is judged generously (FILL_SLACK), never the other way.
 // The squares are walked in a fixed order, so the result is the same on every build.
 function fillUnreachable(rock: Disc[], width: number, height: number): void {
   const S = FILL_CELL;
@@ -735,7 +735,11 @@ function fillUnreachable(rock: Disc[], width: number, height: number): void {
   const reach = Math.ceil((MAX_MAP_DISC_R + halo + SOLID_BODY) / B);
   const blocked = new Uint8Array(n * n); // bit 1: no item fits, bit 2: no creature fits
   const seen = new Uint8Array(n * n);
-  const dist = new Float32Array(n * n);
+  const dist = new Float64Array(n * n);
+  const line = new Float64Array(n);
+  const src = new Float64Array(n);
+  const v = new Int32Array(n);
+  const z = new Float64Array(n + 1);
   const stack = new Int32Array(n * n);
   for (const k of [...todo].sort((a, b) => a - b)) {
     const bx = Math.floor(k / 65536);
@@ -754,7 +758,7 @@ function fillUnreachable(rock: Disc[], width: number, height: number): void {
       }
     }
     const stamp = (d: Disc): void => {
-      const outer = d.r + SOLID_BODY;
+      const outer = d.r + SOLID_BODY - FILL_SLACK;
       const r1 = (d.r + item) ** 2;
       const r2 = outer * outer;
       for (let j = Math.max(0, Math.floor((d.y - outer - oy) / S)); j <= Math.min(n - 1, Math.floor((d.y + outer - oy) / S)); j++) {
@@ -794,32 +798,20 @@ function fillUnreachable(rock: Disc[], width: number, height: number): void {
       if (q >= n) visit(q - n);
       if (q + n < n * n) visit(q + n);
     }
-    let any = false;
-    for (let q = 0; q < n * n && !any; q++) any = !seen[q] && !(blocked[q]! & 1);
+    let any = false; // any item ground in the core that no creature position reaches
+    for (let j = lo; j < hi && !any; j++) for (let i = lo; i < hi && !any; i++) any = !seen[j * n + i] && !(blocked[j * n + i]! & 1);
     if (!any) continue;
-    for (let q = 0; q < n * n; q++) dist[q] = seen[q] ? 0 : 1e9;
-    const D = S * Math.SQRT2;
-    for (let j = 0; j < n; j++) {
-      for (let i = 0; i < n; i++) {
-        const q = j * n + i;
-        if (i > 0) dist[q] = Math.min(dist[q]!, dist[q - 1]! + S);
-        if (j > 0) dist[q] = Math.min(dist[q]!, dist[q - n]! + S, i > 0 ? dist[q - n - 1]! + D : 1e9, i < n - 1 ? dist[q - n + 1]! + D : 1e9);
-      }
-    }
-    for (let j = n - 1; j >= 0; j--) {
-      for (let i = n - 1; i >= 0; i--) {
-        const q = j * n + i;
-        if (i < n - 1) dist[q] = Math.min(dist[q]!, dist[q + 1]! + S);
-        if (j < n - 1) dist[q] = Math.min(dist[q]!, dist[q + n]! + S, i < n - 1 ? dist[q + n + 1]! + D : 1e9, i > 0 ? dist[q + n - 1]! + D : 1e9);
-      }
-    }
+    for (let q = 0; q < n * n; q++) dist[q] = seen[q] ? 0 : Infinity;
+    sqDist2d(dist, n, line, src, v, z);
+    // in the core: world units to the nearest creature position found, or to the raster's edge when that is nearer (ground beyond it is unseen)
+    for (let j = lo; j < hi; j++) for (let i = lo; i < hi; i++) dist[j * n + i] = Math.min(Math.sqrt(dist[j * n + i]!) * S, (Math.min(i, j, n - 1 - i, n - 1 - j) + 0.5) * S);
     // the core's unreachable item ground, deepest first, each filled by a disc reaching to the nearest creature position
     const lost: number[] = [];
     for (let j = lo; j < hi; j++) for (let i = lo; i < hi; i++) if (!(blocked[j * n + i]! & 1) && dist[j * n + i]! > SOLID_BODY + item) lost.push(j * n + i);
     lost.sort((a, b) => dist[b]! - dist[a]! || a - b);
     for (const q of lost) {
       if (blocked[q]! & 1) continue;
-      const r = Math.min(MAX_MAP_DISC_R, Math.floor(dist[q]! - SOLID_BODY - S)); // a grid step short, for the raster's error
+      const r = Math.min(MAX_MAP_DISC_R, Math.floor(dist[q]! - SOLID_BODY - S)); // a grid step short: a creature position may lie that far from its cell's centre
       if (r < 1) continue; // a sliver within a grid step of reach: left, rather than a loose speck of rock
       const d = { x: Math.round(ox + ((q % n) + 0.5) * S), y: Math.round(oy + (Math.floor(q / n) + 0.5) * S), r };
       rock.push(d);
@@ -829,42 +821,49 @@ function fillUnreachable(rock: Disc[], width: number, height: number): void {
   }
 }
 
-// Makes the massif mask solid: a closing (dilate, then erode, by one cell with 8 neighbours) fills cracks and notches up to two cells wide,
-// then every pocket of open cells sealed off from the mask's border and no bigger than SOLID_POCKET is filled.
-function solidify(mask: Uint8Array, cols: number, rows: number): void {
-  const on = (m: Uint8Array, i: number, j: number): boolean => i < 0 || j < 0 || i >= cols || j >= rows ? false : m[j * cols + i]! >= MASK_EDGE;
-  const grown = new Uint8Array(cols * rows);
-  for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
-    let any = false;
-    for (let b = -1; b <= 1 && !any; b++) for (let a = -1; a <= 1 && !any; a++) any = on(mask, i + a, j + b);
-    if (any) grown[j * cols + i] = 255;
+// Squared Euclidean distance transform in place (Felzenszwalb and Huttenlocher): f holds 0 at the sources and Infinity elsewhere, in cells.
+function sqDist2d(f: Float64Array, n: number, line: Float64Array, src: Float64Array, v: Int32Array, z: Float64Array): void {
+  for (let j = 0; j < n; j++) {
+    for (let k = 0; k < n; k++) line[k] = f[j * n + k]!;
+    if (sqDist1d(line, src, n, v, z)) for (let k = 0; k < n; k++) f[j * n + k] = line[k]!;
   }
-  for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
-    const k = j * cols + i;
-    if (mask[k]! >= MASK_EDGE) continue;
-    let all = true;
-    for (let b = -1; b <= 1 && all; b++) for (let a = -1; a <= 1 && all; a++) all = i + a >= 0 && j + b >= 0 && i + a < cols && j + b < rows && grown[(j + b) * cols + i + a]! >= MASK_EDGE;
-    if (all) mask[k] = 255;
+  for (let i = 0; i < n; i++) {
+    for (let k = 0; k < n; k++) line[k] = f[k * n + i]!;
+    if (sqDist1d(line, src, n, v, z)) for (let k = 0; k < n; k++) f[k * n + i] = line[k]!;
   }
-  const seen = new Uint8Array(cols * rows);
-  for (let start = 0; start < cols * rows; start++) {
-    if (seen[start] || mask[start]! >= MASK_EDGE) continue;
-    const cells = [start];
-    let open = false;
-    seen[start] = 1;
-    for (let q = 0; q < cells.length; q++) {
-      const k = cells[q]!;
-      const i = k % cols;
-      const j = (k - i) / cols;
-      if (i === 0 || j === 0 || i === cols - 1 || j === rows - 1) open = true;
-      for (const n of [i > 0 ? k - 1 : -1, i < cols - 1 ? k + 1 : -1, j > 0 ? k - cols : -1, j < rows - 1 ? k + cols : -1]) {
-        if (n < 0 || seen[n] || mask[n]! >= MASK_EDGE) continue;
-        seen[n] = 1;
-        cells.push(n);
-      }
+}
+
+// One line of sqDist2d, in place; false (and the line untouched) when it has no finite value.
+function sqDist1d(line: Float64Array, src: Float64Array, n: number, v: Int32Array, z: Float64Array): boolean {
+  let m = -1;
+  for (let q = 0; q < n; q++) {
+    const fq = line[q]!;
+    if (fq === Infinity) continue;
+    if (m < 0) {
+      m = 0;
+      v[0] = q;
+      z[0] = -Infinity;
+      z[1] = Infinity;
+      continue;
     }
-    if (!open && cells.length <= MASK_POCKET) for (const k of cells) mask[k] = 255;
+    let sp = (fq + q * q - (line[v[m]!]! + v[m]! * v[m]!)) / (2 * q - 2 * v[m]!);
+    while (sp <= z[m]!) {
+      m--;
+      sp = (fq + q * q - (line[v[m]!]! + v[m]! * v[m]!)) / (2 * q - 2 * v[m]!);
+    }
+    m++;
+    v[m] = q;
+    z[m] = sp;
+    z[m + 1] = Infinity;
   }
+  if (m < 0) return false;
+  src.set(line); // the parabolas read the original values
+  m = 0;
+  for (let q = 0; q < n; q++) {
+    while (z[m + 1]! < q) m++;
+    line[q] = (q - v[m]!) ** 2 + src[v[m]!]!;
+  }
+  return true;
 }
 
 // The outlines of a mask (cells at 128 or more) at its cell centres, as flat x, y lists in world units, the mask treated as 0 past its edge.
