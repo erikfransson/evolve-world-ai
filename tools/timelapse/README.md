@@ -24,6 +24,8 @@ systemctl --user daemon-reload
 systemctl --user enable --now evolve-timelapse
 ```
 The unit hides home except the checkout (read-only), node and the output folder, and drops the user D-Bus; `evolve-timelapse.service.template` comments each difference from the server unit.
+Open risk: Chrome needs `AF_UNIX`, so abstract Unix sockets stay reachable from the unit. On this laptop that is the Xwayland server (no cookie needed for the local user) and the ibus bus, so native code in the unit (a Chrome sandbox escape) could inject keys or read input. Closing it needs `PrivateNetwork=yes` plus a socket proxy to the Live port, which is not done.
+The unit's `/tmp`, `/var/tmp` and `/dev/shm` are small tmpfs mounts (256M, 16M, 64M; a run uses about 30 to 80 MB of `/tmp`, measured with framing `a`, not with `b`), `/home` is a read-only tmpfs (`HOME=/tmp`), and the syscall filter is `@system-service chroot`.
 It gives up after 5 failed starts in an hour: `systemctl --user reset-failed evolve-timelapse` then start it again.
 Wrap `npm ci` and `build-page.sh` in `flock <repo>/.claude/heavy.lock` where that lock is in use.
 Status: `systemctl --user status evolve-timelapse`. Log: `journalctl --user -u evolve-timelapse -f`. Stop: `systemctl --user stop evolve-timelapse`.
