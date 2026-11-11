@@ -13,6 +13,8 @@ In that mode the script exits with code 1 when for `socketDeadS` (180 s) every c
 Chrome is the system `/usr/bin/google-chrome`. `puppeteer-core` never downloads a browser, so nothing else is fetched.
 Chrome is closed and started fresh every `chromeRestartMin` minutes (default 60, 0 = never) right after a frame, because its memory creeps up over hours. A relaunch costs no frame, the frame for that slot comes 1 to 5 s late.
 A Chrome start that fails is retried after 10 s, doubling to 5 min, and logged at most every 30 s.
+A Chrome close that takes over `chromeCloseS` (20) seconds is ended with SIGKILL.
+When the script is capturing but saved no frame for `stallExitMin` (10) minutes, it exits with code 1 and the unit restarts it. This clock does not run while the server is down, the page shows offline, the tick stands still, the folder is capped or the page version does not match. Each such exit uses one of the unit's five starts per hour, so a stall that a restart does not heal leaves the unit failed after about an hour (`systemctl --user reset-failed evolve-timelapse` and a start bring it back).
 A page that shows offline or loading at a slot gets `pageWaitS` (6) seconds to reconnect by itself (the server drops a slow viewer, which happens at the population boom), then is reloaded, and the frame follows as soon as the page is live.
 Chrome keeps its own sandbox (no `--no-sandbox`) and talks to the script over a pipe, so no DevTools port opens.
 The folder cap counts every file in the world folder (frames stop a little before it so the logs fit), and the logs stop at it.
@@ -88,6 +90,7 @@ Everything in it may have been written by a compromised capture.
 - Never run `git` inside it: a planted `.git` with `core.fsmonitor` runs a command on `git status` there (git at the repo root does not read it).
 - Read it only with `check.mjs` and `popchart.mjs` (they follow no links, block on no FIFO, bound their reads and print no control characters). Build videos only from regular files (see Video), since the ffmpeg glob follows links. An image viewer or ffmpeg still parses data the attacker wrote, so a bug in them is the second step mentioned above.
 - Do not copy files out of it into places where they would be run or loaded.
+- If a compromise is suspected, stop the capture unit before running `popchart.mjs` on a folder it is writing: its path checks come before its reads and writes, so a process racing them could still redirect the chart into another folder.
 
 ## After a promote
 1. Update the checkout the unit runs from to the released commit.

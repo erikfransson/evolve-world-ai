@@ -37,6 +37,8 @@ const P = {
   chipInsetCss: 14, // the clock chip sits this many CSS px inside the top-right corner of the world rectangle (capture-only restyle)
   chromeRestartMin: 60, // minutes after which Chrome is closed and a fresh one started, right after a frame (its memory creeps up over hours), 0 = never
   pageWaitS: 6, // seconds a page that shows offline or loading gets to reconnect by itself before it is reloaded
+  chromeCloseS: 20, // seconds a Chrome close may take before its process is killed (puppeteer waits for the exit without a bound)
+  stallExitMin: 10, // minutes in the capturing state without a saved frame after which the script exits 1, so the unit restarts it (heals any hang); not counted while the server, the page's connection, a frozen tick, the cap or the version stop frames; 0 = never
   maxRunS: 0, // stop after this many seconds, 0 = run until killed
   chrome: "/usr/bin/google-chrome",
   extraCss: "", // file with CSS injected into the page after the hiding rules (a test hook)
@@ -263,6 +265,11 @@ let chromeFails = 0, chromeRetryAt = 0; // failed starts in a row, and when the 
 let chromeGen = 0;
 const closing = new Set(), launching = new Set(); // browser closes and launches still running: a start waits for both, so two Chromes never run at once
 const cancelled = () => new Error("cancelled by a close");
+function closeBrowser(b) { // puppeteer's close awaits Chrome's exit with no time bound: a Chrome stuck in shutdown is killed after chromeCloseS, so no wait on `closing` outlasts that (the kill also ends puppeteer's own wait)
+  let t;
+  const timeout = new Promise((_, rej) => { t = setTimeout(() => rej(new Error("timeout")), P.chromeCloseS * 1000); });
+  return Promise.race([Promise.resolve().then(() => b.close()), timeout]).catch((err) => { if (err?.message === "timeout") log("chrome close took over", P.chromeCloseS, "s, killing it"); try { b.process()?.kill("SIGKILL"); } catch {} }).finally(() => clearTimeout(t));
+}
 async function launchChrome(catchUp = false) { // catchUp: take a frame as soon as the page is live, for the slot that passed meanwhile
   if (chromeState !== "off") return;
   chromeState = "starting";
@@ -278,7 +285,7 @@ async function launchChrome(catchUp = false) { // catchUp: take a frame as soon 
     const lp = puppeteer.launch({ executablePath: P.chrome, headless: true, pipe: true, args: CHROME_ARGS }); // pipe: DevTools runs over inherited fds, no TCP port is opened
     launching.add(lp); try { b = await lp; } finally { launching.delete(lp); }
     if (stale()) throw cancelled();
-    if (browser) { const old = browser; browser = page = null; old.close().catch(() => { try { old.process()?.kill("SIGKILL"); } catch {} }); } // backstop: a live browser is never dropped unclosed
+    if (browser) { const old = browser; browser = page = null; void closeBrowser(old); } // backstop: a live browser is never dropped unclosed
     browser = b;
     b.on("disconnected", () => { if (browser !== b || chromeState === "closing") return; log("chrome disconnected"); browser = page = null; chromeState = "off"; wantCreatures = false; lastCreatures = null; closeServer(); });
     await loadPage(gen);
@@ -290,7 +297,7 @@ async function launchChrome(catchUp = false) { // catchUp: take a frame as soon 
     if (chromeState === "starting") chromeState = "ready";
     chromeFails = 0;
   } catch (err) {
-    if (b && browser !== b) { const old = b, done = (async () => { try { await old.close(); } catch { try { old.process()?.kill("SIGKILL"); } catch {} } })(); closing.add(done); await done; closing.delete(done); } // launched but never handed over (closeChrome closes a handed-over one)
+    if (b && browser !== b) { const done = closeBrowser(b); closing.add(done); await done; closing.delete(done); } // launched but never handed over (closeChrome closes a handed-over one)
     if (stale()) return; // cancelled by closeChrome: not a failure
     chromeFails++; chromeRetryAt = Date.now() + Math.min(300, 5 * 2 ** chromeFails) * 1000; // a lasting cause (full /tmp, no server) retries at 10 s doubling to 5 min, not every step
     logLimited("chrome start failed", "chrome start failed", chromeFails, "in a row:", String(err?.message ?? err).slice(0, 200)); await closeChrome();
@@ -320,7 +327,7 @@ async function closeChrome() {
   chromeState = "closing"; wantCreatures = false; lastCreatures = null;
   const b = browser, h = httpd; browser = page = null; httpd = null; crop = null; // this close owns these two; a newer start brings its own
   try { h?.close(); h?.closeAllConnections?.(); } catch {} // first, so a newer start can take the page port while the browser still closes
-  const done = (async () => { try { await b?.close(); } catch { try { b?.process()?.kill("SIGKILL"); } catch {} } })();
+  const done = b ? closeBrowser(b) : Promise.resolve();
   closing.add(done); await done; closing.delete(done);
   if (g === chromeGen) chromeState = "off"; // overtaken (a newer close or start ran meanwhile): the state is theirs
   log("chrome closed");
@@ -391,9 +398,11 @@ setInterval(writeStatus, 5000).unref();
 
 // ---- the slot loop
 let errorsInRow = 0;
+let owedSince = null; // since when a frame is owed (capturing), null in states that expect none
+const owe = (yes) => { owedSince = yes ? owedSince ?? Date.now() : null; };
 async function step(now, withFrame) {
   const age = Date.now() - statsAt;
-  if (!hello || !stats || age > P.statsMaxAgeS * 1000) { setStatus("error", hello ? "no stats from the server for " + Math.round(age / 1000) + " s" : "no hello from the server yet"); if (Date.now() - lastLinkLog > 30_000) { lastLinkLog = Date.now(); log("no fresh stats", hello ? Math.round(age / 1000) + " s" : "no hello yet"); } return; }
+  if (!hello || !stats || age > P.statsMaxAgeS * 1000) { owe(false); setStatus("error", hello ? "no stats from the server for " + Math.round(age / 1000) + " s" : "no hello from the server yet"); if (Date.now() - lastLinkLog > 30_000) { lastLinkLog = Date.now(); log("no fresh stats", hello ? Math.round(age / 1000) + " s" : "no hello yet"); } return; }
   const tick = stats.tick, id = worldId();
   if (!world || id !== world.id || tick < world.lastTick - P.resetTickDrop) {
     log("new world", { id, tick, was: world?.id, lastTick: world?.lastTick });
@@ -403,17 +412,18 @@ async function step(now, withFrame) {
   world.lastTick = tick;
   logPopulation(now);
   const versionOk = !stampInfo || stampInfo.protocol === hello.version;
-  if (!versionOk) { setStatus("error", "version mismatch: server protocol " + hello.version + ", built page " + stampInfo.protocol); if (Date.now() - lastLinkLog > 60_000) { lastLinkLog = Date.now(); log("VERSION MISMATCH: server protocol", hello.version, "built page", stampInfo.protocol, "(commit " + stampInfo.commit + "), no frames until the page is rebuilt with build-page.sh"); } await closeChrome(); return; }
-  if (!existsSync(join(PAGE_DIR, "live/index.html"))) { if (Date.now() - lastLinkLog > 60_000) { lastLinkLog = Date.now(); log("built page missing in", PAGE_DIR, "run build-page.sh"); } return; }
+  if (!versionOk) { owe(false); setStatus("error", "version mismatch: server protocol " + hello.version + ", built page " + stampInfo.protocol); if (Date.now() - lastLinkLog > 60_000) { lastLinkLog = Date.now(); log("VERSION MISMATCH: server protocol", hello.version, "built page", stampInfo.protocol, "(commit " + stampInfo.commit + "), no frames until the page is rebuilt with build-page.sh"); } await closeChrome(); return; }
+  if (!existsSync(join(PAGE_DIR, "live/index.html"))) { owe(false); if (Date.now() - lastLinkLog > 60_000) { lastLinkLog = Date.now(); log("built page missing in", PAGE_DIR, "run build-page.sh"); } return; }
   const free = statfsSync(OUT); const freeBytes = free.bavail * free.bsize;
   if (!world.capped && freeBytes < P.freeFloorBytes) { log("free disk", Math.round(freeBytes / 1e6), "MB under the floor, frames stopped for", world.dir); world.capped = true; world.why = "disk-floor"; }
   if (!world.capped && world.bytes >= frameCapBytes()) { log("folder at cap", world.bytes, "B, frames stopped for", world.dir); world.capped = true; world.why = "cap"; }
-  if (world.capped) { setStatus(world.why === "cap" ? "capped" : "disk-floor", world.why === "cap" ? "folder reached the size cap" : "free disk under the floor"); await closeChrome(); return; }
-  if (chromeState === "off") { if (Date.now() >= chromeRetryAt) { setStatus("capturing", "starting Chrome"); void launchChrome(); } else setStatus("error", "Chrome failed to start " + chromeFails + " times in a row"); return; }
-  setStatus("capturing");
+  if (world.capped) { owe(false); setStatus(world.why === "cap" ? "capped" : "disk-floor", world.why === "cap" ? "folder reached the size cap" : "free disk under the floor"); await closeChrome(); return; }
+  if (chromeState === "off") { if (Date.now() >= chromeRetryAt) { setStatus("capturing", "starting Chrome"); void launchChrome(); owe(true); } else { owe(false); setStatus("error", "Chrome failed to start " + chromeFails + " times in a row"); } return; }
+  setStatus("capturing"); owe(true);
   if (chromeState !== "ready" || !withFrame) return;
-  if (!(await pageShowsWorld())) { log("WARNING page shows offline or loading at capture time, no frame yet, waiting for it", await pageState()); setStatus("capturing", "page was offline or loading, reloaded"); void reloadPage(); return; }
-  if (tick === world.lastCapturedTick) {
+  if (!(await pageShowsWorld())) { log("WARNING page shows offline or loading at capture time, no frame yet, waiting for it", await pageState()); owe(false); setStatus("capturing", "page was offline or loading, reloaded"); void reloadPage(); return; }
+  if (tick === world.lastCapturedTick) { // the server's tick did not move
+    owe(false);
     if (++world.staleN >= P.staleCaptures) { log("frozen at tick", tick, "reloading"); world.staleN = 0; await loadPage(); try { link?.terminate(); } catch {} }
     return;
   }
@@ -427,7 +437,7 @@ async function writeFrame(now, tick) {
   const { png, path, suspicious } = await takeFrame(now, tick);
   if (suspicious) { log("WARNING suspicious frame", png.length, "B vs median", median(world.recent), "B, not saved, reloading"); return false; }
   world.recent.push(png.length); if (world.recent.length > 21) world.recent.shift();
-  world.bytes += png.length; world.frames++; world.lastCapturedTick = tick; world.lastFrameAt = Date.now();
+  world.bytes += png.length; world.frames++; world.lastCapturedTick = tick; world.lastFrameAt = Date.now(); owedSince = Date.now();
   const ms = Date.now() - t0;
   try { logRegions(now, tick); } catch (err) { log("regions error", String(err?.message ?? err).slice(0, 100)); }
   appendLog("frames.jsonl", JSON.stringify({ time: now.toISOString(), tick, population: stats.population, bytes: png.length, ms }) + "\n");
@@ -443,6 +453,10 @@ async function catchUpFrame() {
 }
 
 for (const sig of ["SIGTERM", "SIGINT"]) process.on(sig, async () => { log("signal", sig, "closing Chrome and exiting"); writeStatus(); await closeChrome(); process.exit(0); });
+setInterval(async () => { // a timer, so a step stuck on an await is caught too
+  if (!P.stallExitMin || owedSince === null || statusState !== "capturing" || Date.now() - owedSince < P.stallExitMin * 60_000) return;
+  owedSince = null; log("no frame for", P.stallExitMin, "min while capturing, exiting so the unit restarts"); setStatus("error", "no frame for " + P.stallExitMin + " min while capturing, restarting"); writeStatus(); await closeChrome(); process.exit(1);
+}, 10_000).unref();
 const startedAt = Date.now();
 for (;;) {
   try {

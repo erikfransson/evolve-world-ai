@@ -31,8 +31,8 @@ else {
   const w = join(OUT, dir), world = readJson(join(w, "world.json"));
   say("world folder:", clean(dir), "started", clean(world?.startedCapture ?? "?", 40), world ? `(first tick ${num(world.firstTick)})` : "");
   const frames = [];
-  const FRAMES_TAIL = 8e6; // about 20 days of frame lines; a longer log is read from its end
-  for (const l of (readHostile(join(w, "frames.jsonl"), Infinity, { tail: FRAMES_TAIL }) ?? "").split("\n")) { try { const f = JSON.parse(l), t = Date.parse(f?.time); if (num(f?.bytes) !== null && Number.isFinite(t)) frames.push({ time: new Date(t).toISOString(), tick: num(f.tick), bytes: f.bytes }); } catch {} }
+  const FRAMES_TAIL = 8e6; // about 20 days of frame lines; a longer log is read from its end, and a line over 16 kB is skipped unparsed (a real one is under 200 B)
+  for (const l of (readHostile(join(w, "frames.jsonl"), Infinity, { tail: FRAMES_TAIL }) ?? "").split("\n")) { if (l.length > 16384) continue; try { const f = JSON.parse(l), t = Date.parse(f?.time); if (num(f?.bytes) !== null && Number.isFinite(t)) frames.push({ time: new Date(t).toISOString(), tick: num(f.tick), bytes: f.bytes }); } catch {} }
   const bytes = frames.reduce((a, f) => a + f.bytes, 0);
   let framesLog = 0; try { framesLog = lstatSync(join(w, "frames.jsonl")).size; } catch {}
   if (framesLog > FRAMES_TAIL) say(`frames.jsonl is ${fmt(framesLog)}: counts below are from its last ${fmt(FRAMES_TAIL)}`);

@@ -14,6 +14,7 @@ const opt = Object.fromEntries(rest.map((a) => { const i = a.indexOf("="); retur
 const refuse = (...m) => { console.error("refused:", ...m); process.exit(1); };
 const MAX_INPUT = 64e6, MAX_LINES = 1_000_000, MAX_ROWS = 200_000, MAX_POINTS = 1_000_000, LINE_POINTS = 2000; // input bytes, lines scanned, rows kept, points kept in memory, points drawn per line (the plot is 1280 px wide)
 const MAX_LINEAGES = 64; // in the chart; the server sends at most 8 per line
+const MAX_LINE = 16384; // a longer line is skipped unparsed (a real one is under 1 kB; JSON.parse of one 60 MB line of `[` took 2.8 GB)
 const W = 1600, H = 900, L = 90, R = 230, T = 40, B = 70; // chart size and margins in px
 const CHROME = "/usr/bin/google-chrome";
 
@@ -52,6 +53,7 @@ for (let pos = 0; pos < text.length; ) { // line by line without split, so junk 
   if (!l) continue;
   if (++nLines > MAX_LINES) { capped = `only the first ${MAX_LINES} lines are read`; break; }
   if (nRows >= MAX_ROWS) { capped = `only the first ${MAX_ROWS} rows are charted`; break; }
+  if (l.length > MAX_LINE) continue;
   let r; try { r = JSON.parse(l); } catch { continue; }
   if (!r || typeof r !== "object" || Array.isArray(r) || num(r.simSeconds) === null) continue; // only object rows with a finite time
   const sim = r.simSeconds; t0 ??= sim;
