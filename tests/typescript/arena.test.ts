@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { drawArena, frameAt, learnerAlive, loopSeconds } from "../../src/typescript/src/ui/arenaScene.ts";
-import { drawRewardGraph, drawSpark, niceTicks, smooth, thin, thinMinMax, tickLabel } from "../../src/typescript/src/ui/rewardGraph.ts";
+import { drawRewardGraph, drawSpark, niceTicks, smooth, spreadLabels, thin, thinMinMax, tickLabel } from "../../src/typescript/src/ui/rewardGraph.ts";
 import { ARENA_KIND, bestFounder, change, customEnv, envsForKind, kindRejection, planSummary } from "../../src/typescript/src/ui/arenaPick.ts";
 import type { CustomEnvForm } from "../../src/typescript/src/ui/arenaPick.ts";
 import { DEFAULT_SPEED, FAVOURITES_KEY, MAX_FAVOURITES, SPEED_KEY, addFavourite, loadFavourites, loadSpeed, removeFavourite, saveSpeed } from "../../src/typescript/src/ui/arenaStore.ts";
@@ -160,14 +160,59 @@ describe("drawRewardGraph", () => {
     expect(named(short.calls, "lineTo")).toBe(0);
   });
 
-  it("smooths a noisy curve into its trend without shifting it", () => {
+  it("smooths a noisy curve into a trailing trend that starts at the first value", () => {
     const pts = Array.from({ length: 200 }, (_, i) => ({ iter: i, v: i / 10 + (i % 2 ? 1 : -1) }));
     const t = smooth(pts);
     expect(t).toHaveLength(200);
-    expect(Math.abs(t[100]!.v - 10)).toBeLessThan(0.25);
-    expect(smooth(pts, 3)).toHaveLength(200);
+    expect(t[0]!.v).toBe(pts[0]!.v); // nothing invented before the first sample
+    expect(Math.abs(t[100]!.v - (10 - 0.5))).toBeLessThan(0.5); // lags the rise by about half a window, no more
     expect(t.map((p) => p.iter)).toEqual(pts.map((p) => p.iter));
     expect(smooth([])).toEqual([]);
+    expect(smooth([{ iter: 0, v: 3 }, { iter: 5, v: -9 }, { iter: 10, v: 6 }]).map((p) => p.v)).toEqual([3, -3, 0]);
+    const rising = smooth(Array.from({ length: 50 }, (_, i) => ({ iter: i, v: i })));
+    expect(rising.every((p, i) => p.v <= i && (i === 0 || p.v >= rising[i - 1]!.v))).toBe(true);
+  });
+
+  it("spreads labels apart inside the plot, keeping their order", () => {
+    const ys = spreadLabels([{ y: 50, h: 14 }, { y: 52, h: 14 }, { y: 51, h: 30 }], 0, 200);
+    const sorted = [...ys].sort((a, b) => a - b);
+    expect(sorted[1]! - sorted[0]!).toBeGreaterThanOrEqual(14 - 1e-9);
+    expect(sorted[2]! - sorted[1]!).toBeGreaterThanOrEqual(22 - 1e-9);
+    expect(spreadLabels([{ y: 1, h: 10 }], 0, 100)[0]).toBe(5);
+    expect(spreadLabels([{ y: 99, h: 10 }, { y: 100, h: 10 }], 0, 100).every((y) => y <= 95)).toBe(true);
+    expect(spreadLabels([], 0, 10)).toEqual([]);
+  });
+
+  it("draws a short run raw with dots and no trend, and a long run as a trend", () => {
+    const mk = (n: number) => Array.from({ length: n }, (_, i) => ({ iter: i * 5 + 5, train: 1, best: 2, held: i + 0.5, perEnv: null, seconds: i }));
+    const short = fakeCtx(600, 300);
+    drawRewardGraph(short.ctx, mk(10), 0, 600, 300);
+    expect(named(short.calls, "arc")).toBe(11 + 1); // every check and the start, plus the ring on the latest
+    const long = fakeCtx(600, 300);
+    drawRewardGraph(long.ctx, mk(40), 0, 600, 300);
+    expect(named(long.calls, "arc")).toBe(1); // only the ring: the trend has no dots
+  });
+
+  it("ends the gain bracket on the ringed latest check, matching the headline", () => {
+    const { ctx, calls } = fakeCtx(600, 300);
+    const its = [10, 20, 30].map((i, k) => ({ iter: i, train: 1, best: 2, held: [1, 4, 2.5][k]!, perEnv: null, seconds: i }));
+    drawRewardGraph(ctx, its, 0, 600, 300);
+    const ring = calls.filter((c) => c.name === "arc").pop()!;
+    const lines = calls.filter((c) => c.name === "lineTo");
+    const bracketEnd = lines[lines.length - 2]!; // gutter bracket: up from the start to the latest, then back
+    expect(Math.abs((bracketEnd.args[1] as number) - (ring.args[1] as number))).toBeLessThan(1e-6);
+    expect(calls.filter((c) => c.name === "fillText").map((c) => c.args[0])).toContain("+2.5");
+  });
+
+  it("keeps raw held-out values on the scale and marks a lone outlier as off the scale", () => {
+    const mk = (spike: number) => Array.from({ length: 200 }, (_, i) => ({ iter: i * 5 + 5, train: 1, best: 2, held: i === 100 ? spike : 1 + (i % 3) * 0.1, perEnv: null, seconds: i }));
+    const text = (spike: number) => {
+      const { ctx, calls } = fakeCtx(600, 300);
+      drawRewardGraph(ctx, mk(spike), 1, 600, 300);
+      return calls.filter((c) => c.name === "fillText").map((c) => c.args[0] as string);
+    };
+    expect(text(1.3)).not.toContain("some raw checks are off the scale");
+    expect(text(50000)).toContain("some raw checks are off the scale");
   });
 
   it("does nothing when the canvas is too small", () => {

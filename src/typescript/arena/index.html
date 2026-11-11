@@ -118,11 +118,11 @@
             </div>
             <dl class="kpis">
               <div class="kpi train"><dt>Average try<span class="tip" tabindex="0" role="img" aria-label="Average reward per episode of the tries in the latest iteration, on the training worlds. The graph shows its trend." data-tip="Average reward per episode of the tries in the latest iteration, on the training worlds. The graph shows its trend.">ⓘ</span></dt><dd id="statTrain" class="empty">—</dd></div>
-              <div class="kpi best"><canvas class="spark" aria-label="Trend of the best try over the run"></canvas><dt><span id="statBestLabel">Best try (luck)</span><span class="tip" id="statBestTip" tabindex="0" role="img" aria-label="Reward of the best try in the latest iteration." data-tip="Reward of the best try in the latest iteration.">ⓘ</span></dt><dd id="statBest" class="empty">—</dd></div>
+              <div class="kpi best"><canvas class="spark" title="Best try per iteration, mostly luck" aria-label="Trend of the best try over the run, mostly luck"></canvas><dt><span id="statBestLabel">Best try (luck)</span><span class="tip" id="statBestTip" tabindex="0" role="img" aria-label="Reward of the best try in the latest iteration." data-tip="Reward of the best try in the latest iteration.">ⓘ</span></dt><dd id="statBest" class="empty">—</dd></div>
               <div class="kpi"><dt>Elapsed<span class="tip" tabindex="0" role="img" aria-label="Real time since training started." data-tip="Real time since training started.">ⓘ</span></dt><dd id="statTime" class="empty">—</dd></div>
             </dl>
           </header>
-          <span class="fit-foot graph-keys"><span class="key held" id="keyHeld">on new worlds</span><span class="key train" id="keyTrain">average try (training)</span><span class="key faint" id="keyRaw">bold: trend, faint: raw values</span></span>
+          <span class="fit-foot graph-keys"><span class="key held" id="keyHeld">on new worlds</span><span class="key train" id="keyTrain">average try (training)</span><span class="key faint" id="keyRaw">bold: trend, faint: raw values on new worlds</span></span>
           <canvas id="rewardView" aria-label="Reward per episode on new worlds and on training tries against training step, with the gain since the start"></canvas>
           <details class="more per-env" id="perEnv" hidden>
             <summary>Per environment</summary>
