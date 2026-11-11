@@ -5,7 +5,7 @@
 
 // parameters
 const W = 60000, H = 37500, CX = W / 2, CY = H / 2;
-const HUB = { rx: 7500, ry: 6600, food: 1.5 };
+const HUB = { rx: 7500, ry: 6600, food: 1.2 };
 const GROW = Math.sqrt(1.15); // realms 15% bigger in area than round 9
 // per realm: radii, silhouette features [angle deg, amplitude, width deg] (lobes positive, bays negative)
 const SIZE = {
@@ -27,7 +27,7 @@ const PLACE = process.env.PLACE ? JSON.parse(process.env.PLACE) : {
   crags: { ang: -124.4, len: 4795, rot: 0.26, k: 1.0 },
 };
 const WASTE = { food: 0.05, poison: 0.05 };
-const TRAIL = { food: 0.5, w: 1000 };
+const TRAIL = { food: 0.25, w: 1000 };
 // where each trail leaves the hub and enters its realm, turned off the line between their centres (deg: hub side, realm side), so the trails
 // run slanted or offset instead of as spokes; small on the walled realms' side, so the trail meets the gate head on
 const SKEW = { blight: [18, -10], mire: [-14, 6], bloom: [12, 8], flats: [-20, 14], steppe: [-8, -10], crags: [-22, 12] };
@@ -247,7 +247,7 @@ for (const l of [...report, `area vs round 9: ${areaReport.join(", ")}`]) consol
   layers.push(layer("commons-fringe", poly(grow(hubPts, CX, CY, 1.12)), { warp: 700, rough: 300, feather: 2600, paint: fr }));
 }
 layers.push(layer("commons", poly(hubPts), { warp: 600, rough: 450, feather: 450, food: HUB.food, poison: 0, clearMud: true, ...paint([38, 72, 70], 0.74, tex("blobs", 650, 0.4, [28, 50, 48], 0.72, { soft: 0.32 })) }));
-layers.push(layer("commons-core", poly(blob(CX + 700, CY - 400, 4300, 3600, 16, 0.18, 0.4)), { warp: 600, rough: 300, feather: 2400, food: 1.6, clearMud: true, ...paint([56, 98, 90], 0.24, tex("blobs", 450, 0.4, [40, 76, 70], 0.24, { soft: 0.35 })) }));
+layers.push(layer("commons-core", poly(blob(CX + 700, CY - 400, 4300, 3600, 16, 0.18, 0.4)), { warp: 600, rough: 300, feather: 2400, food: 1.3, clearMud: true, ...paint([56, 98, 90], 0.24, tex("blobs", 450, 0.4, [40, 76, 70], 0.24, { soft: 0.35 })) }));
 for (const [i, [dx, dy, rx, ry, rot]] of [[-2600, -1900, 1100, 650, 0.4], [2400, 1700, 800, 520, -0.3], [-900, 2900, 600, 380, 1.1]].entries()) {
   layers.push(layer(`commons-wet${i}`, poly(blob(CX + dx, CY + dy, rx * 1.9, ry * 1.9, 12, 0.3, rot)), { warp: 400, rough: 250, feather: 600, ...paint([20, 34, 32], 0.55, undefined, { patch: { scale: 500, lo: 0.3, hi: 0.46 } }) })); // boggy ground round each pool
   layers.push(layer(`commons-shore${i}`, poly(blob(CX + dx, CY + dy, rx * 1.12, ry * 1.12, 11, 0.3, rot)), { warp: 260, rough: 160, band: 90, feather: 200, ...paint([120, 150, 140], 0.3, undefined, { patch: { scale: 400, lo: 0.3, hi: 0.45 } }) }));
@@ -326,11 +326,11 @@ realm("mire", paint([88, 104, 44], 0.55, tex("blobs", 420, 0.45, [56, 72, 30], 0
   }
 }, 0.82);
 // The Bloom: dense dark canopy in clumps, broken by sunlit clearings and food-rich groves
-realm("bloom", paint([20, 92, 56], 0.7, tex("blobs", 1100, 0.32, [146, 146, 96], 0.6, { soft: 0.1 })), { food: 3.2, poison: 0 }, [[30, 120, 74], 0.4, 0.4], (x, y) => {
+realm("bloom", paint([20, 92, 56], 0.7, tex("blobs", 1100, 0.32, [146, 146, 96], 0.6, { soft: 0.1 })), { food: 2.4, poison: 0 }, [[30, 120, 74], 0.4, 0.4], (x, y) => {
   layers.push(tilt1(layer("bloom-canopy", poly(grow(RM.bloom.pts, x, y, 0.97)), { warp: 500, rough: 380, feather: 900, ...paint([8, 50, 30], 0, tex("blobs", 330, 0.4, [8, 50, 30], 0.55, { soft: 0.15 })) })));
   const pk = [[0, 0, 1700, 1400]];
   for (let i = 0; i < 6; i++) { const a = (i / 6) * 6.28 + 0.4, d = 2900 + (i % 2) * 300; pk.push([d * Math.cos(a), d * 0.82 * Math.sin(a), 800 + (i % 3) * 200, 650 + (i % 2) * 250]); }
-  pk.forEach(([dx, dy, rx, ry], i) => layers.push(layer(`bloom-grove${i}`, poly(blob(x + dx, y + dy, rx, ry, 10, 0.25)), { warp: 300, rough: 200, feather: 700, food: 3.98, ...paint([60, 170, 90], 0.25, tex("blobs", 260, 0.45, [20, 90, 50], 0.4, { soft: 0.25 })) })));
+  pk.forEach(([dx, dy, rx, ry], i) => layers.push(layer(`bloom-grove${i}`, poly(blob(x + dx, y + dy, rx, ry, 10, 0.25)), { warp: 300, rough: 200, feather: 700, food: 3.0, ...paint([60, 170, 90], 0.25, tex("blobs", 260, 0.45, [20, 90, 50], 0.4, { soft: 0.25 })) })));
 });
 // The Flats: a fine cracked clay pan, the cracks a dull brown close to the clay so creatures still read (cracks are ordinary ground)
 realm("flats", paint([128, 118, 94], 0.9), { food: 1.1, poison: 0, firm: { coverage: 0.86, scale: 950, pattern: "plates" }, edge: 700 }, [[170, 150, 110], 0.3, 0.3], () => {});

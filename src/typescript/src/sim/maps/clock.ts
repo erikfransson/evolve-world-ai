@@ -127,7 +127,7 @@ export const CLOCK: MapSpec = {
    "warp": 150,
    "rough": 160,
    "feather": 800,
-   "food": 0.5,
+   "food": 0.25,
    "clearMud": true,
    "wobble": 0.35
   },
@@ -159,7 +159,7 @@ export const CLOCK: MapSpec = {
    "warp": 150,
    "rough": 160,
    "feather": 800,
-   "food": 0.5,
+   "food": 0.25,
    "clearMud": true,
    "wobble": 0.35
   },
@@ -191,7 +191,7 @@ export const CLOCK: MapSpec = {
    "warp": 150,
    "rough": 160,
    "feather": 800,
-   "food": 0.5,
+   "food": 0.25,
    "clearMud": true,
    "wobble": 0.35
   },
@@ -223,7 +223,7 @@ export const CLOCK: MapSpec = {
    "warp": 150,
    "rough": 160,
    "feather": 800,
-   "food": 0.5,
+   "food": 0.25,
    "clearMud": true,
    "wobble": 0.35
   },
@@ -255,7 +255,7 @@ export const CLOCK: MapSpec = {
    "warp": 150,
    "rough": 160,
    "feather": 800,
-   "food": 0.5,
+   "food": 0.25,
    "clearMud": true,
    "wobble": 0.35
   },
@@ -287,7 +287,7 @@ export const CLOCK: MapSpec = {
    "warp": 150,
    "rough": 160,
    "feather": 800,
-   "food": 0.5,
+   "food": 0.25,
    "clearMud": true,
    "wobble": 0.35
   },
@@ -1396,7 +1396,7 @@ export const CLOCK: MapSpec = {
    "warp": 600,
    "rough": 450,
    "feather": 450,
-   "food": 1.5,
+   "food": 1.2,
    "poison": 0,
    "clearMud": true,
    "paint": {
@@ -1438,7 +1438,7 @@ export const CLOCK: MapSpec = {
    "warp": 600,
    "rough": 300,
    "feather": 2400,
-   "food": 1.6,
+   "food": 1.3,
    "clearMud": true,
    "paint": {
     "rgb": [56,98,90],
@@ -3586,7 +3586,7 @@ export const CLOCK: MapSpec = {
      "soft": 0.1
     }
    },
-   "food": 3.2,
+   "food": 2.4,
    "poison": 0
   },
   {
@@ -3696,7 +3696,7 @@ export const CLOCK: MapSpec = {
    "warp": 300,
    "rough": 200,
    "feather": 700,
-   "food": 3.98,
+   "food": 3,
    "paint": {
     "rgb": [60,170,90],
     "alpha": 0.25,
@@ -3730,7 +3730,7 @@ export const CLOCK: MapSpec = {
    "warp": 300,
    "rough": 200,
    "feather": 700,
-   "food": 3.98,
+   "food": 3,
    "paint": {
     "rgb": [60,170,90],
     "alpha": 0.25,
@@ -3764,7 +3764,7 @@ export const CLOCK: MapSpec = {
    "warp": 300,
    "rough": 200,
    "feather": 700,
-   "food": 3.98,
+   "food": 3,
    "paint": {
     "rgb": [60,170,90],
     "alpha": 0.25,
@@ -3798,7 +3798,7 @@ export const CLOCK: MapSpec = {
    "warp": 300,
    "rough": 200,
    "feather": 700,
-   "food": 3.98,
+   "food": 3,
    "paint": {
     "rgb": [60,170,90],
     "alpha": 0.25,
@@ -3832,7 +3832,7 @@ export const CLOCK: MapSpec = {
    "warp": 300,
    "rough": 200,
    "feather": 700,
-   "food": 3.98,
+   "food": 3,
    "paint": {
     "rgb": [60,170,90],
     "alpha": 0.25,
@@ -3866,7 +3866,7 @@ export const CLOCK: MapSpec = {
    "warp": 300,
    "rough": 200,
    "feather": 700,
-   "food": 3.98,
+   "food": 3,
    "paint": {
     "rgb": [60,170,90],
     "alpha": 0.25,
@@ -3900,7 +3900,7 @@ export const CLOCK: MapSpec = {
    "warp": 300,
    "rough": 200,
    "feather": 700,
-   "food": 3.98,
+   "food": 3,
    "paint": {
     "rgb": [60,170,90],
     "alpha": 0.25,
