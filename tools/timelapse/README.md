@@ -5,7 +5,7 @@ Next to the frames it writes `frames.jsonl`, `population.jsonl` (every 5 s, per 
 A light websocket viewer is always on and detects resets.
 Chrome runs only while frames are wanted and closes when a folder reaches the cap (30 GB) or the disk has less than 20 GB free.
 It takes 2 viewer slots on the server (the light client and Chrome). The server admits about 9 viewers at 12000 creatures, so the capture costs public capacity at a full world.
-The output folder defaults to `/home/erik/progs/evolve-world-ai/videos/timelapse` (it gets a `.gitignore` with `*`).
+The output folder defaults to `videos/timelapse` of the checkout (it gets a `.gitignore` with `*`).
 Set it with `out=<dir>`.
 Other parameters (`framing`, `interval`, `capBytes`, `server`, `pagePort`) sit in the `P` block at the top of the script and take `key=value` arguments.
 Chrome is the system `/usr/bin/google-chrome`. `puppeteer-core` never downloads a browser, so nothing else is fetched.

@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "../..");
 const P = {
-  out: "/home/erik/progs/evolve-world-ai/videos/timelapse", // output folder, one subfolder per world (inside a git checkout, so it gets a .gitignore with *)
+  out: resolve(HERE, "../../videos/timelapse"), // output folder, one subfolder per world (inside a git checkout, so it gets a .gitignore with *)
   server: "ws://127.0.0.1:8787", // the Live server (public port, loopback)
   pageServer: "", // server address the page connects to, default the same as `server` (a test hook)
   page: "", // folder of the built Live page (build-page.sh); default <REPO>/tools/timelapse/page
