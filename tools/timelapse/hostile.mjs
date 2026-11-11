@@ -1,5 +1,5 @@
 // Reading and writing a world folder from the host. The capture unit can write anything there (symlinks, FIFOs, huge files, escape sequences), so host tools treat it as hostile.
-import { closeSync, constants, fstatSync, openSync, readSync, renameSync, writeFileSync } from "node:fs";
+import { closeSync, constants, fstatSync, openSync, readSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 
 // A regular file's text (a Buffer with enc null), or null: no symlink is followed, a FIFO or device does not block, and a file over `max` bytes is refused.
@@ -22,5 +22,5 @@ export const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : nul
 export function writeFresh(out, data) {
   const tmp = `${out}.${randomBytes(6).toString("hex")}.tmp`;
   writeFileSync(tmp, data, { flag: "wx", mode: 0o644 });
-  renameSync(tmp, out);
+  try { renameSync(tmp, out); } catch (e) { try { unlinkSync(tmp); } catch {} throw e; } // e.g. a folder planted at `out`: no temporary file is left behind
 }
