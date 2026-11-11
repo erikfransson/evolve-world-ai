@@ -159,6 +159,20 @@ describe("The Inland Sea map", () => {
     expect(() => buildMap(wide)).toThrow(/wider than/);
   });
 
+  it("refuses a texture or paint value outside its range, naming the layer and the value", () => {
+    const one = SEA.layers[0]!;
+    const build = (l: Partial<MapSpec["layers"][number]>): unknown => buildMap({ ...SEA, rock: [], layers: [{ ...one, ...l }] });
+    const tex = { pattern: "blobs" as const, scale: 300, cover: 0.5, rgb: [10, 20, 30] as const, alpha: 0.5 };
+    expect(() => build({ paint: { rgb: [10, 20, 30], alpha: 1.5 } })).toThrow(new RegExp(`layer "${one.id}": paint.alpha 1.5`));
+    expect(() => build({ paint: { rgb: [10, 20, 300], alpha: 0.5 } })).toThrow(/paint colour 300/);
+    expect(() => build({ paint: { rgb: [10, 20, 30], alpha: 0.5, tex: { ...tex, scale: 0 } } })).toThrow(/paint.tex.scale 0/);
+    expect(() => build({ paint: { rgb: [10, 20, 30], alpha: 0.5, tex: { ...tex, cover: Number.NaN } } })).toThrow(/paint.tex.cover NaN/);
+    expect(() => build({ paint: { rgb: [10, 20, 30], alpha: 0.5, crack: { scale: 400, width: -1 } } })).toThrow(/paint.crack.width -1/);
+    expect(() => build({ paint: { rgb: [10, 20, 30], alpha: 0.5, patch: { scale: 400, lo: 0.6, hi: 0.4 } } })).toThrow(/paint.patch.hi 0.4/);
+    expect(() => build({ paint: { rgb: [10, 20, 30], alpha: 0.5 }, mud: { coverage: 2, scale: 500 } })).toThrow(/mud.coverage 2/);
+    expect(() => build({ firm: { coverage: 0.5, scale: 500, keep: 1.2 } })).toThrow(/firm.keep 1.2/);
+  });
+
   it("is the same map on a second build", () => {
     const small: MapSpec = { ...SEA, width: 20000, height: 22000, layers: SEA.layers.slice(0, 2), rock: SEA.rock.slice(0, 1) }; // holds the karst and its outcrops
     const a = buildMap(small);
