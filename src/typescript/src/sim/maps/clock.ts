@@ -2086,8 +2086,8 @@ export const CLOCK: MapSpec = {
      "soft": 0.16
     }
    },
-   "food": 2,
-   "poison": 3.8
+   "food": 2.3,
+   "poison": 3
   },
   {
    "id": "blight-rifts",

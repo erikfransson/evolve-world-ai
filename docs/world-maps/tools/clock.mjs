@@ -305,7 +305,7 @@ const realm = (id, mat, o, fringe, extra, wall) => {
 };
 
 // The Blight: a poisoned flat of fine bruised crust, cracked in places, a few long rifts, and oozing pockets
-realm("blight", paint([74, 36, 86], 0.62, tex("plates", 400, 0.8, [132, 90, 146], 0.55, { keep: 0.7, soft: 0.16 })), { food: 2.0, poison: 3.8 }, [[110, 60, 130], 0.35, 0.3], (x, y) => {
+realm("blight", paint([74, 36, 86], 0.62, tex("plates", 400, 0.8, [132, 90, 146], 0.55, { keep: 0.7, soft: 0.16 })), { food: 2.3, poison: 3.0 }, [[110, 60, 130], 0.35, 0.3], (x, y) => {
   layers.push(tilt1(layer("blight-rifts", poly(grow(RM.blight.pts, x, y, 0.95)), { warp: 400, rough: 200, feather: 900, ...paint([52, 20, 60], 0, tex("veins", 1300, 0.07, [52, 20, 60], 0.5, { keep: 0.4, soft: 0.2 })) })));
   layers.push(layer("blight-heart", poly(blob(x, y, 1900, 1500, 10, 0.18)), { warp: 400, rough: 200, feather: 1000, food: 3.0, poison: 1.0, clearMud: true, ...paint([132, 118, 70], 0.4, tex("plates", 380, 0.78, [154, 142, 92], 0.48, { keep: 0.7, soft: 0.16 })) }));
   for (const [dx, dy, rx, ry, rot] of [[1500, 900, 1500, 900, -0.3], [-3300, -800, 750, 480, 0.7], [-1300, -1600, 600, 420, -0.2], [3500, -1000, 520, 360, 0.9], [-800, 1700, 480, 320, 0.1], [3200, 1600, 650, 400, 0.4], [-4400, 900, 420, 300, 1.2]]) {
