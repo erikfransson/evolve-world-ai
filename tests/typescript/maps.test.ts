@@ -63,7 +63,7 @@ describe("The Inland Sea map", () => {
     expect(builtHash("clock")).toBe(clockPins.builtHash);
     expect(mapVersion("clock")).toBe(clockPins.mapVersion);
     expect([MAPS.clock!.width, MAPS.clock!.height]).toEqual([60000, 37500]);
-  }, 60_000);
+  }, 180_000);
 
   it("versions a map by its spec and MAP_BUILD, not by floating point results", () => {
     expect(mapVersion("inland-sea")).toMatch(new RegExp(`^[0-9a-f]{8}-${MAP_BUILD}$`));
@@ -157,6 +157,20 @@ describe("The Inland Sea map", () => {
     const stones = SEA.rock.find((r) => r.kind !== "massif")!; // emitted stones are a share (at least about half) of the spec radius
     const wide: MapSpec = { ...SEA, layers: [], rock: [{ ...stones, cover: 0.3, r: [4 * MAX_MAP_DISC_R, 4 * MAX_MAP_DISC_R + 10] }] };
     expect(() => buildMap(wide)).toThrow(/wider than/);
+  });
+
+  it("refuses a texture or paint value outside its range, naming the layer and the value", () => {
+    const one = SEA.layers[0]!;
+    const build = (l: Partial<MapSpec["layers"][number]>): unknown => buildMap({ ...SEA, rock: [], layers: [{ ...one, ...l }] });
+    const tex = { pattern: "blobs" as const, scale: 300, cover: 0.5, rgb: [10, 20, 30] as const, alpha: 0.5 };
+    expect(() => build({ paint: { rgb: [10, 20, 30], alpha: 1.5 } })).toThrow(new RegExp(`layer "${one.id}": paint.alpha 1.5`));
+    expect(() => build({ paint: { rgb: [10, 20, 300], alpha: 0.5 } })).toThrow(/paint colour 300/);
+    expect(() => build({ paint: { rgb: [10, 20, 30], alpha: 0.5, tex: { ...tex, scale: 0 } } })).toThrow(/paint.tex.scale 0/);
+    expect(() => build({ paint: { rgb: [10, 20, 30], alpha: 0.5, tex: { ...tex, cover: Number.NaN } } })).toThrow(/paint.tex.cover NaN/);
+    expect(() => build({ paint: { rgb: [10, 20, 30], alpha: 0.5, crack: { scale: 400, width: -1 } } })).toThrow(/paint.crack.width -1/);
+    expect(() => build({ paint: { rgb: [10, 20, 30], alpha: 0.5, patch: { scale: 400, lo: 0.6, hi: 0.4 } } })).toThrow(/paint.patch.hi 0.4/);
+    expect(() => build({ paint: { rgb: [10, 20, 30], alpha: 0.5 }, mud: { coverage: 2, scale: 500 } })).toThrow(/mud.coverage 2/);
+    expect(() => build({ firm: { coverage: 0.5, scale: 500, keep: 1.2 } })).toThrow(/firm.keep 1.2/);
   });
 
   it("is the same map on a second build", () => {

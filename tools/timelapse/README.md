@@ -104,7 +104,7 @@ Everything in it may have been written by a compromised capture.
 The script also warns, saves no frame and reloads the page when it shows offline or loading, or when a frame is under a third of the running median bytes.
 
 ## Video
-If ffmpeg is missing: `sudo apt install ffmpeg`.
+Needs ffmpeg (`sudo apt install ffmpeg`).
 The glob below would follow a link planted among the frames (and pull one of your own images into the video), so the frames are first hard-linked into a fresh folder, regular files only (`find -type f` skips links; give the world folder without a trailing slash, so a linked world folder is not entered either):
 ```
 F=$(mktemp -d)

@@ -1,3 +1,4 @@
+import type { RockLook } from "../sim/maps/mapBuild.ts";
 import type { Terrain } from "../sim/terrain.ts";
 import { buildBudget, spend } from "./canvas.ts";
 import type { BuildBudget } from "./canvas.ts";
@@ -35,6 +36,12 @@ const EDGE_LINE = "rgba(3, 11, 14, 0.6)";
 const EDGE_PX = 1.1; // screen px of the dark edge line (world units: scaled by 1 / scale)
 const PITS_FROM = 0.35; // scale (device px per world unit) from which the pit tile is drawn, full from PITS_FROM + 0.45
 const FLAT_BODY = "#2f3f43"; // quick drawing
+// A map's own rock look (RockLook): lit from one side, a soft shadow cast away from the light, no halo, a thin edge at most, no pit tile.
+const STONES = { basalt: [74, 76, 80], sandstone: [176, 128, 88], granite: [158, 152, 144] } as const;
+const LOOK_SHADOW = { off: 30, soft: 22, near: 0.22, near_s: 6 }; // world units per unit of body size: how far the shadow falls and over how much it softens; a faint contact shade
+const LOOK_REACH = LOOK_SHADOW.off + 2.5 * LOOK_SHADOW.soft; // world units the shadow reaches past the edge, times the body size
+const LOOK_PAD = MAX_SIZE * LOOK_REACH;
+const LOOK_EDGE_PX = 0.6;
 
 type Canvas = OffscreenCanvas | HTMLCanvasElement;
 
@@ -52,6 +59,7 @@ interface Item {
   body: RockBody;
   readonly outline: Path2D;
   readonly size: number; // 1 for a stone, up to 3 for a massif: scales the halo
+  readonly look?: RockLook; // the map's own rock look, if it has one
 }
 
 let nextId = 0;
@@ -74,6 +82,7 @@ function itemsOf(t: Terrain): Item[] {
           return outline;
         },
         size: Math.min(MAX_SIZE, Math.max(1, span / 300)),
+        ...(t.rockLook ? { look: t.rockLook } : {}),
       };
     });
     items.set(t, list);
@@ -94,6 +103,7 @@ export interface RockJob {
   id: number;
   size: number;
   body: { x0: number; y0: number; x1: number; y1: number; loops: number[][] };
+  look?: RockLook;
 }
 export interface RockPixels {
   px: Uint8ClampedArray<ArrayBuffer>;
@@ -109,6 +119,7 @@ const toRaster = (p: RockPixels): Raster | null => {
 };
 
 export function rasterPixels(item: RockJob, cell: number): RockPixels {
+  if (item.look) return lookPixels(item, cell, item.look);
   const b = item.body;
   const ox = Math.floor(b.x0 / cell) * cell - 2 * cell;
   const oy = Math.floor(b.y0 / cell) * cell - 2 * cell;
@@ -203,6 +214,7 @@ export function rasterPixels(item: RockJob, cell: number): RockPixels {
 // The silt shadow around a body as an alpha-only image (a pixel per cell, margin around the box), from the distance outside the edge: a tight dark falloff and a wide faint one,
 // lying a little lower than the body.
 export function haloPixels(item: RockJob, cell: number): RockPixels {
+  if (item.look) return shadowPixels(item, cell, item.look);
   const b = item.body;
   const reach = HALO_REACH * item.size;
   const m = haloMargin(item, cell);
@@ -232,7 +244,127 @@ export function haloPixels(item: RockJob, cell: number): RockPixels {
   return { px, ox, oy, w, h, cell };
 }
 
-const haloMargin = (item: RockJob, cell: number): number => Math.ceil((HALO_REACH * item.size) / cell) + 2;
+const haloMargin = (item: RockJob, cell: number): number => Math.ceil(((item.look ? LOOK_REACH : HALO_REACH) * item.size) / cell) + 2;
+
+// The light of a look: a unit vector towards it, from its compass bearing (on screen, y down) and an elevation of about 40 degrees.
+function lookLight(look: RockLook): { x: number; y: number; z: number } {
+  const a = ((look.light ?? 315) * Math.PI) / 180;
+  return { x: 0.75 * Math.sin(a), y: -0.75 * Math.cos(a), z: 0.66 };
+}
+
+// A body's image in a map's own look: a height made of a broad dome (from the distance to the edge) and eroded relief at several scales, lit from the look's
+// light, coloured by its stone with broad mottling and a fine grain. No rim light or encrustation: those are the abyssal look's.
+function lookPixels(item: RockJob, cell: number, look: RockLook): RockPixels {
+  const b = item.body;
+  const ox = Math.floor(b.x0 / cell) * cell - 2 * cell;
+  const oy = Math.floor(b.y0 / cell) * cell - 2 * cell;
+  const w = Math.ceil((b.x1 - ox) / cell) + 3;
+  const h = Math.ceil((b.y1 - oy) / cell) + 3;
+  const n = w * h;
+  const inside = fillLoops(b.loops, ox, oy, cell, w, h);
+  const dist = distance(inside, w, h);
+  const d = new Float32Array(n);
+  for (let k = 0; k < n; k++) if (inside[k]) d[k] = Math.max(0, dist[k]! - 0.5) * cell;
+  boxBlur(d, w, h, 2);
+  let dmax = 0;
+  for (let k = 0; k < n; k++) if (d[k]! > dmax) dmax = d[k]!;
+  const wd = Math.min(160, Math.max(8, 0.25 * dmax)); // the shoulder: a steep foot and a flatter, broken top, like a weathered outcrop
+  const lam0 = Math.max(6, 3 * cell); // finest relief the pixels hold
+  const lam1 = Math.max(lam0, Math.min(700, 1.6 * dmax)); // broadest relief, about the body's width
+  const height = new Float32Array(n);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const k = y * w + x;
+      const dd = d[k]!;
+      if (dd <= 0) continue;
+      const wx = ox + (x + 0.5) * cell;
+      const wy = oy + (y + 0.5) * cell;
+      let v = 0;
+      for (let lam = lam0, o = 0; lam <= lam1 * 1.01; lam *= 2.2, o++) {
+        const r = 1 - Math.abs(2 * fbm(wx / lam, wy / lam, 59 + 7 * o, 2) - 1);
+        v += 0.16 * lam * r * r; // crests and gullies, taller for broader ones
+      }
+      height[k] = 0.9 * wd * (1 - Math.exp(-dd / wd)) + v * smooth(0, Math.max(2 * cell, 0.3 * wd), dd);
+    }
+  }
+  const L = lookLight(look);
+  const norm = Math.hypot(L.x, L.y, L.z);
+  const lx = L.x / norm;
+  const ly = L.y / norm;
+  const lz = L.z / norm;
+  const at = (a: Float32Array, x: number, y: number): number => a[Math.min(h - 1, Math.max(0, y)) * w + Math.min(w - 1, Math.max(0, x))]!;
+  const base = look.rgb ?? STONES[look.stone ?? "basalt"];
+  const ao = 10 + 8 * item.size;
+  const px = new Uint8ClampedArray(4 * n);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const k = y * w + x;
+      const hx = (at(height, x + 1, y) - at(height, x - 1, y)) / (2 * cell);
+      const hy = (at(height, x, y + 1) - at(height, x, y - 1)) / (2 * cell);
+      const nl = (-hx * lx - hy * ly + lz) / Math.sqrt(hx * hx + hy * hy + 1);
+      const dd = d[k]!;
+      const lum = Math.max(0.12, 0.3 + 0.95 * nl) * (0.72 + 0.28 * smooth(0, ao, dd));
+      const wx = ox + (x + 0.5) * cell;
+      const wy = oy + (y + 0.5) * cell;
+      const m1 = fbm(wx / 170, wy / 170, 41, 3) - 0.5;
+      const m3 = fbm(wx / 600, wy / 600, 47, 2) - 0.5;
+      const grain = 1 + 0.07 * (hash2(x, y, item.id) - 0.5) * 2 + 0.1 * (valueNoise(wx / 40, wy / 40, 43) - 0.5);
+      const f = lum * grain * (1 + 0.12 * m1);
+      px[4 * k] = (base[0] * (1 + 0.1 * m3)) * f;
+      px[4 * k + 1] = base[1] * f;
+      px[4 * k + 2] = (base[2] * (1 - 0.1 * m3)) * f;
+      px[4 * k + 3] = 255;
+    }
+  }
+  return { px, ox, oy, w, h, cell };
+}
+
+// The shadow a body casts in a map's own look, as an alpha-only image: the body's shape moved away from the light and softened at its far edge, plus a faint contact shade.
+function shadowPixels(item: RockJob, cell: number, look: RockLook): RockPixels {
+  const b = item.body;
+  const m = haloMargin(item, cell);
+  const ox = Math.floor(b.x0 / cell) * cell - m * cell;
+  const oy = Math.floor(b.y0 / cell) * cell - m * cell;
+  const w = Math.ceil((b.x1 - ox) / cell) + m + 1;
+  const h = Math.ceil((b.y1 - oy) / cell) + m + 1;
+  const n = w * h;
+  const outside = fillLoops(b.loops, ox, oy, cell, w, h);
+  for (let k = 0; k < n; k++) outside[k] = outside[k] ? 0 : 1;
+  const dist = distance(outside, w, h); // cells to the body, 0 inside it
+  const at = (x: number, y: number): number => {
+    const i = Math.min(w - 2, Math.max(0, Math.floor(x)));
+    const j = Math.min(h - 2, Math.max(0, Math.floor(y)));
+    const tx = Math.min(1, Math.max(0, x - i));
+    const ty = Math.min(1, Math.max(0, y - j));
+    const a = dist[j * w + i]!;
+    const c = dist[j * w + i + 1]!;
+    const e = dist[(j + 1) * w + i]!;
+    const g = dist[(j + 1) * w + i + 1]!;
+    return Math.max(0, (a + (c - a) * tx + (e - a) * ty + (a - c - e + g) * tx * ty - 0.5) * cell);
+  };
+  const L = lookLight(look);
+  const ll = Math.hypot(L.x, L.y);
+  const off = LOOK_SHADOW.off * item.size;
+  const soft = LOOK_SHADOW.soft * item.size;
+  const sx = (-L.x / ll) * (off / cell); // the shadow falls away from the light
+  const sy = (-L.y / ll) * (off / cell);
+  const alpha = look.shadow ?? 0.5;
+  const px = new Uint8ClampedArray(4 * n);
+  const [r, g, bl] = SILT_SHADOW;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const cast = alpha * (1 - smooth(0, soft, at(x - sx, y - sy)));
+      const d = Math.max(0, dist[y * w + x]! - 0.5) * cell;
+      const near = LOOK_SHADOW.near * Math.exp(-d / (LOOK_SHADOW.near_s * item.size));
+      const k = 4 * (y * w + x);
+      px[k] = r;
+      px[k + 1] = g;
+      px[k + 2] = bl;
+      px[k + 3] = 255 * Math.min(0.85, cast + near * (1 - cast));
+    }
+  }
+  return { px, ox, oy, w, h, cell };
+}
 const keyOf = (item: { id: number }, cell: number, halo: boolean): string => `${item.id}:${cell}${halo ? "h" : ""}`;
 
 // Module-wide, not per map: the images of a map left behind stay until newer ones push them out of BUDGET_CELLS.
@@ -253,7 +385,7 @@ function rasterOf(item: Item, cell: number, halo: boolean, budget: BuildBudget):
     if (!waiting.has(key)) {
       waiting.add(key);
       const f = farm;
-      const job: RockJob = { id: item.id, size: item.size, body: { x0: item.body.x0, y0: item.body.y0, x1: item.body.x1, y1: item.body.y1, loops: item.body.loops } };
+      const job: RockJob = { id: item.id, size: item.size, body: { x0: item.body.x0, y0: item.body.y0, x1: item.body.x1, y1: item.body.y1, loops: item.body.loops }, ...(item.look ? { look: item.look } : {}) };
       f.build(job, cell, halo).then(
         (p) => {
           waiting.delete(key);
@@ -351,8 +483,10 @@ function pitPattern(ctx: CanvasRenderingContext2D): CanvasPattern | null {
   return p;
 }
 
-const shownIn = (t: Terrain, view: View): Item[] =>
-  itemsOf(t).filter(({ body: b }) => b.x1 + VIEW_PAD >= view.x0 && b.x0 - VIEW_PAD <= view.x1 && b.y1 + VIEW_PAD >= view.y0 && b.y0 - VIEW_PAD <= view.y1);
+const shownIn = (t: Terrain, view: View): Item[] => {
+  const pad = t.rockLook ? LOOK_PAD : VIEW_PAD;
+  return itemsOf(t).filter(({ body: b }) => b.x1 + pad >= view.x0 && b.x0 - pad <= view.x1 && b.y1 + pad >= view.y0 && b.y0 - pad <= view.y1);
+};
 
 // The images of the bodies in view at this scale, bodies before halos, built while budget allows.
 function imagesFor(shown: Item[], scale: number, budget: BuildBudget): { body: (Raster | null | undefined)[]; halo: (Raster | null | undefined)[] } {
@@ -403,8 +537,12 @@ export function drawRock(ctx: CanvasRenderingContext2D, t: Terrain, scale: numbe
     const hr = images.halo[i] === undefined ? standIn(item, Math.max(6, cellFor(scale, item.body)), true) : images.halo[i];
     if (hr) ctx.drawImage(hr.image as CanvasImageSource, 0, 0, hr.w, hr.h, hr.ox, hr.oy, hr.w * hr.cell, hr.h * hr.cell);
   });
-  const pitAlpha = smooth(PITS_FROM, PITS_FROM + 0.45, scale);
+  const look = t.rockLook;
+  const pitAlpha = look ? 0 : smooth(PITS_FROM, PITS_FROM + 0.45, scale);
   const pits = pitAlpha > 0 ? pitPattern(ctx) : null;
+  const edge = look ? (look.edge ?? 0.2) : 1;
+  const stone = look ? (look.rgb ?? STONES[look.stone ?? "basalt"]) : null;
+  const edgeStyle = stone ? `rgba(${Math.round(0.3 * stone[0])}, ${Math.round(0.3 * stone[1])}, ${Math.round(0.3 * stone[2])}, ${edge})` : EDGE_LINE;
   shown.forEach((item, i) => {
     const { outline, body } = item;
     const r = images.body[i] === undefined ? standIn(item, cellFor(scale, body), false) : images.body[i];
@@ -422,9 +560,11 @@ export function drawRock(ctx: CanvasRenderingContext2D, t: Terrain, scale: numbe
       ctx.fill(outline, "evenodd");
     }
     ctx.globalAlpha = 1; // a thin dark line just inside the edge, so the outline stays defined whatever the zoom
-    ctx.strokeStyle = EDGE_LINE;
-    ctx.lineWidth = 2 * Math.max(EDGE_PX * px, 0.8);
-    ctx.stroke(outline);
+    if (edge > 0) {
+      ctx.strokeStyle = edgeStyle;
+      ctx.lineWidth = 2 * Math.max((look ? LOOK_EDGE_PX : EDGE_PX) * px, look ? 0.4 : 0.8);
+      ctx.stroke(outline);
+    }
     ctx.restore();
   });
   ctx.imageSmoothingEnabled = smoothing;

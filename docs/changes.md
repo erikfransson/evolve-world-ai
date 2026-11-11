@@ -8,6 +8,14 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 - Live time-lapse tool: the capture unit gets its own network namespace and reaches the Live public port through a Unix socket served by a sandboxed `systemd-socket-proxyd` unit; it no longer sees the desktop's X server and ibus bus, host loopback, `/run` (system D-Bus, tailscaled, resolved), the webcam, microphone or GPU, and `clone3` and io_uring are refused. Overlapping Chrome starts no longer leave an orphan browser, failed starts back off, a Chrome close that hangs is killed after 20 s, the capture exits for a restart after 10 min without a frame while capturing, and `popchart.mjs` and `check.mjs` treat the output folder as hostile (no writes through links, no control characters).
 
+## 0.9.0 (2026-11-11)
+
+- Live: the Six Realms gets a gritty, natural look (a fresh world). Each realm has its own ground material, with lava flows, ember fissures, rock spines and shaded basalt rock with cast shadows. Outlines are irregular, trails worn and offset, the Blight and Mire walls are broken arcs, and the hub is a dark wet basin. Realms are about 15% bigger.
+- Live: no more food in pockets creatures cannot reach (#82). The Six Realms fills them with rock: unreachable food ground 56,340 to 2,412 u² in small specks, with no ground a creature can stand on taken.
+- Live: Six Realms food rebalanced for less contact between realms: trails 0.25, hub 1.2, Bloom 2.4, Blight 2.3 with less poison (3.0).
+- Map specs: range checks on texture, paint and crack values with a clear error. The share image and the landing card show the new map.
+- Live: the world clock and the zoom buttons hide while the "Add your creature" panel is open (they showed through it and made its header hard to read) and return when it is minimised or closed.
+
 ## 0.8.0 (2026-11-11)
 
 - Live: the Lineages chart dims the other bands at once when a row is selected, deselected or "Show all" is pressed, instead of at the next stats message.
@@ -26,7 +34,7 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 - Live protocol 6: a DELTA carries up to 64 frames of item changes (`MAX_DELTAS`, was 32), at least the slowest stride of 60, so viewers slowed past 32 frames get item changes again instead of a full item set on every turn. Pages and servers of protocol 5 and 6 do not mix: an older page is told to reload, a newer page waits with "updating".
 - Live server: one visitor address may hold at most a quarter of the viewers the upload budget admits at its connect (at least 2, at most 20): 2 at 12000 creatures, where 9 fit, so one address can no longer take every slot. Only with `LIVE_TRUST_FORWARDED=1`; without it there is still no per-address viewer cap.
 - Live server: one add's spot search stops after 500 000 distance checks to creatures (`MAX_ADD_SPOT_CHECKS`), so an add aimed at a packed region at the cap can no longer scan the whole population 400 times (about 2.1 M checks, 90 ms, measured); adds that find room draw the same spots.
-- Rollback: once the admin turns `eco.energyCap` on, saves carry it, which the 0.7.0 server refuses, so a rollback to 0.7.0 after a promote finds no restorable save and stops (exit 1). Roll back to a build that knows `energyCap`, or move the saves written since the promote out of the state directory first (`server/README.md`).
+- Rollback: roll back to a 0.8.x build, not to 0.7.0. The map version id changed with the realm colours, so 0.7.0 takes 0.8.0 saves for another map's and starts a fresh world, and the 0.8.0 saves then rotate out (`server/README.md`). A save with `eco.energyCap` on is also refused by builds that do not know the key.
 
 ## 0.7.0 (2026-11-09)
 
