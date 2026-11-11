@@ -44,7 +44,7 @@ Status: `systemctl --user status evolve-timelapse`. Log: `journalctl --user -u e
 The script also warns, saves no frame and reloads the page when it shows offline or loading, or when a frame is under a third of the running median bytes.
 
 ## Video
-ffmpeg is not installed: `sudo apt install ffmpeg`.
+Needs ffmpeg (`sudo apt install ffmpeg`).
 ```
 ffmpeg -framerate 30 -pattern_type glob -i '<world folder>/*.png' -c:v libx264 -crf 18 -preset slow -pix_fmt yuv420p out.mp4
 ```

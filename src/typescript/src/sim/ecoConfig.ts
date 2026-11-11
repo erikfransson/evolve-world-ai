@@ -32,7 +32,7 @@ export interface EcoConfig extends EngineConfig {
     agingRate: number; // upkeep grows by this fraction of itself per minute beyond agingStart
     collisions: boolean; // creatures bounce off each other
     collisionDamage: boolean; // a bounce costs both creatures energy; one that dies gives its energy to the other
-    energyCap: number; // 0 off; else a creature at or above this many times its own birth energy does not eat (the item stays for others). Live turns it on so a world held at its population cap cannot sit full of energy with no births and no deaths
+    energyCap: number; // 0 off; else a creature at or above this many times its own birth energy does not eat (the item stays for others). Made for Live (off there by default, the admin can turn it on) so a world held at its population cap cannot sit full of energy with no births and no deaths
     killEnergy: number; // extra energy for the survivor of a lethal bump, on top of the dead one's (a carcass); 0 makes a kill pay at most the damage taken
     damagePerSpeed: number; // energy each loses per unit/s of approach speed; 0.3 gives 48 for a head-on hit of two creatures at top speed (closing speed 160, each 80)
     ramShare?: number; // 0 to 1, RL only: the faster mover of a bump takes less damage (see Contacts.bump); left out, both lose the same

@@ -24,7 +24,7 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 - Live protocol 6: a DELTA carries up to 64 frames of item changes (`MAX_DELTAS`, was 32), at least the slowest stride of 60, so viewers slowed past 32 frames get item changes again instead of a full item set on every turn. Pages and servers of protocol 5 and 6 do not mix: an older page is told to reload, a newer page waits with "updating".
 - Live server: one visitor address may hold at most a quarter of the viewers the upload budget admits at its connect (at least 2, at most 20): 2 at 12000 creatures, where 9 fit, so one address can no longer take every slot. Only with `LIVE_TRUST_FORWARDED=1`; without it there is still no per-address viewer cap.
 - Live server: one add's spot search stops after 500 000 distance checks to creatures (`MAX_ADD_SPOT_CHECKS`), so an add aimed at a packed region at the cap can no longer scan the whole population 400 times (about 2.1 M checks, 90 ms, measured); adds that find room draw the same spots.
-- Rollback: once the admin turns `eco.energyCap` on, saves carry it, which the 0.7.0 server refuses, so a rollback to 0.7.0 after a promote finds no restorable save and stops (exit 1). Roll back to a build that knows `energyCap`, or move the saves written since the promote out of the state directory first (`server/README.md`).
+- Rollback: roll back to a 0.8.x build, not to 0.7.0. The map version id changed with the realm colours, so 0.7.0 takes 0.8.0 saves for another map's and starts a fresh world, and the 0.8.0 saves then rotate out (`server/README.md`). A save with `eco.energyCap` on is also refused by builds that do not know the key.
 
 ## 0.7.0 (2026-11-09)
 
