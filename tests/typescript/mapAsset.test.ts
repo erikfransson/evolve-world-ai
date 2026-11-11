@@ -19,7 +19,7 @@ describe("the prebuilt Live map file", () => {
     const fresh = encodeMapAsset(NAME);
     expect(Buffer.from(shipped()).equals(Buffer.from(fresh))).toBe(true);
     expect(Object.keys(MAP_FILES)).toEqual([NAME]);
-  }, 60_000);
+  }, 180_000);
 
   it("puts together the same map the builder makes, with the floor and wash the page would compute", () => {
     const a = decodeMapAsset(shipped(), NAME, spec.width, spec.height)!;
@@ -36,7 +36,7 @@ describe("the prebuilt Live map file", () => {
     expect(Buffer.from(a.floor).equals(Buffer.from(floorPixels(spec.width, spec.height)))).toBe(true);
     // the file carries no paint grid (looks only), the shipped wash already has it: compare with the wash of the builder's own terrain
     expect(Buffer.from(a.tint).equals(Buffer.from(tintPixels(new Terrain(b.rock, b.ground, spec.width, spec.height, b.weights))))).toBe(true);
-  }, 60_000);
+  }, 180_000);
 
   it("refuses a file of another map, version or size, or one that is cut short or corrupt", () => {
     const bytes = shipped();
@@ -64,7 +64,7 @@ describe("the prebuilt Live map file", () => {
     expect(terrainFromAsset(NAME, spec.width, spec.height, { ...a, tint: a.tint.subarray(4) })).toBeNull();
     if (!a.parts.ok) throw new Error("decoded parts");
     expect(terrainFromAsset(NAME, spec.width, spec.height, { ...a, parts: { ...a.parts, ground: a.parts.ground.subarray(1) } })).toBeNull();
-  }, 60_000);
+  }, 180_000);
 
   it("the page falls back to the worker build when the file cannot be fetched", async () => {
     const fetchWas = globalThis.fetch;

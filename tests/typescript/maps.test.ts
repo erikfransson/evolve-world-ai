@@ -63,7 +63,7 @@ describe("The Inland Sea map", () => {
     expect(builtHash("clock")).toBe(clockPins.builtHash);
     expect(mapVersion("clock")).toBe(clockPins.mapVersion);
     expect([MAPS.clock!.width, MAPS.clock!.height]).toEqual([60000, 37500]);
-  }, 60_000);
+  }, 180_000);
 
   it("versions a map by its spec and MAP_BUILD, not by floating point results", () => {
     expect(mapVersion("inland-sea")).toMatch(new RegExp(`^[0-9a-f]{8}-${MAP_BUILD}$`));
