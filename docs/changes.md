@@ -12,6 +12,7 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 - Live: no more food in pockets creatures cannot reach (#82). The Six Realms fills them with rock: unreachable food ground 56,340 to 2,412 u² in small specks, with no reachable ground taken.
 - Live: Six Realms food rebalanced for less contact between realms: trails 0.25, hub 1.2, Bloom 2.4, Blight 2.3 with less poison (3.0).
 - Map specs: range checks on texture, paint and crack values with a clear error. The share image and the landing card show the new map.
+- Live: the world clock and the zoom buttons hide while the "Add your creature" panel is open (they showed through it and made its header hard to read) and return when it is minimised or closed.
 
 ## 0.8.0 (2026-11-11)
 
