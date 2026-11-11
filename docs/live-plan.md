@@ -43,7 +43,7 @@ Server limits: insert rate per visitor and for everyone (added creatures count a
 The public port answers only the WebSocket upgrade and `GET /stats` (`{creatures, viewers}` for the landing page: CORS *, no request body read, rebuilt at most once a second, 5 a second for all callers with a burst of 20, past that a 503); every other request gets a 426.
 
 Selected-creature BIRTH (6): 12 bytes, sent just before each living DETAIL and paid from the same 3 kB/s detail allowance: birth wait as u16 tenths of a second (capped at 6553.5 s, non-finite or negative sent as 0) and a world-full bit. Its own message type, so pages and servers from before it skip or miss it.
-- Lineage group ids (`namedTop` memory in `Chronicle`): one number per living named group, keyed by the name key (server-parsed, never sent), pruned to the groups living now on every pass, so at most one per living family (at most maxPopulation, 5000). Not saved, reset with the world and its history. No new wire field.
+- Lineage group ids (`namedTop` memory in `Chronicle`): one number per living named group, keyed by the name key (server-parsed, never sent), pruned to the groups living now on every pass, so at most one per living family (at most maxPopulation, 12000). Not saved, reset with the world and its history. No new wire field.
 
 ### Population and load (12000 cap, 2026-11-09)
 - Cap `MAX_POPULATION` 12000 (Erik: run slower rather than cap), births stop 100 below it; the admin range and the engine's `LIVE_MAX` are 12000. A restored save keeps its own cap (a world saved at 5000 stays at 5000 until the admin raises it).
