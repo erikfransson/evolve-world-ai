@@ -12,6 +12,7 @@ import { NAME_MAX } from "../../src/typescript/src/live/add.ts";
 import {
   HISTORY_FIELDS, LINEAGE_FIELDS, MAX_DELTAS, MAX_DELTA_OPS, MAX_HISTORY, MAX_ID, MAX_LINEAGE_HISTORY, MSG_DELTA, decodeCreatures, decodeDelta, decodeItems, deltaMessage, encodeDeltaChunk, parseClientMessage,
 } from "../../src/typescript/src/live/protocol.ts";
+import { pushLineageSample } from "../../src/typescript/src/live/protocol.ts";
 import type { ItemOp, Stats } from "../../src/typescript/src/live/protocol.ts";
 import { cleanStats } from "../../src/typescript/src/live/connection.ts";
 import { EXTRA_INPUTS, inputLayout } from "../../src/typescript/src/sim/sensors.ts";
@@ -153,6 +154,39 @@ describe("item deltas", () => {
       expect(fulls).toBe(2 + reseeds); // the first frame, the resync after the stall, and one per new world
     }, 90_000); // deterministic, but about 5 s of simulation and checks at stride 1 that a loaded machine stretches past the default
   }
+
+  it("keeps the whole life of the world in the lineage history: the first sample stays, spacing is even, the count stays within the bound", () => {
+    const live = new LiveWorld(smallConfig(), null);
+    const ch = new Chronicle();
+    const stats = (): Stats => cleanStats({ t: "stats" } as Stats);
+    ch.observe(live.eco, stats(), false);
+    const first = JSON.parse(ch.history()).lineage[0];
+    for (let i = 0; i < 20 * MAX_LINEAGE_HISTORY; i++) {
+      live.eco.tick += Math.round(120 / live.config.dt);
+      ch.observe(live.eco, stats(), false);
+    }
+    const l: number[] = JSON.parse(ch.history()).lineage;
+    const n = l.length / LINEAGE_FIELDS;
+    expect(n).toBeLessThanOrEqual(MAX_LINEAGE_HISTORY);
+    expect(n).toBeGreaterThan(MAX_LINEAGE_HISTORY / 2);
+    expect(l[0]).toBe(first); // still the world's start
+    const times = Array.from({ length: n }, (_, i) => l[i * LINEAGE_FIELDS]!);
+    expect(times.at(-1)! - times[0]!).toBeGreaterThan(0.9 * 20 * MAX_LINEAGE_HISTORY * 120 - 2 * 120 * 2 ** 6); // all 20 x 180 intervals are covered
+    const gaps = times.slice(1).map((t, i) => t - times[i]!);
+    expect(Math.max(...gaps) - Math.min(...gaps)).toBeLessThanOrEqual(3); // even, up to the rounding of times to whole seconds
+    expect(JSON.stringify(JSON.parse(ch.history())).length).toBeLessThan(80_000);
+  });
+
+  it("pushLineageSample halves a full buffer by keeping each pair's first sample, so shares are exact and the start stays", () => {
+    const sample = (t: number): number[] => [t, 5, ...Array.from({ length: LINEAGE_FIELDS - 2 }, (_, k) => (k % 3 === 0 ? k : t + k))];
+    const buf: number[] = [];
+    for (let i = 0; i < MAX_LINEAGE_HISTORY; i++) expect(pushLineageSample(buf, sample(i * 10))).toBe(false);
+    expect(buf.length).toBe(MAX_LINEAGE_HISTORY * LINEAGE_FIELDS);
+    expect(pushLineageSample(buf, sample(5000))).toBe(true);
+    expect(buf.length).toBe((MAX_LINEAGE_HISTORY / 2 + 1) * LINEAGE_FIELDS);
+    for (let i = 0; i < MAX_LINEAGE_HISTORY / 2; i++) expect(buf.slice(i * LINEAGE_FIELDS, (i + 1) * LINEAGE_FIELDS)).toEqual(sample(2 * i * 10)); // each kept sample unchanged
+    expect(buf.slice(-LINEAGE_FIELDS)).toEqual(sample(5000));
+  });
 
   // Across seeds, so it does not hang on one random stream. A frame in which the world died out and started over is skipped.
   for (const seed of [1, 2, 3, 4, 5]) {
@@ -390,7 +424,8 @@ describe("history and records", () => {
     }
     const h = JSON.parse(ch.history());
     expect(h.samples.length).toBe(MAX_HISTORY * HISTORY_FIELDS);
-    expect(h.lineage.length).toBe(MAX_LINEAGE_HISTORY * LINEAGE_FIELDS);
+    expect(h.lineage.length).toBeLessThanOrEqual(MAX_LINEAGE_HISTORY * LINEAGE_FIELDS);
+    expect(h.lineage.length).toBeGreaterThan((MAX_LINEAGE_HISTORY / 2) * LINEAGE_FIELDS);
     expect(h.samples.at(-HISTORY_FIELDS)).toBe(Math.round(live.eco.tick * live.config.dt)); // the newest kept, the oldest dropped
     expect(ch.history().length).toBeLessThan(80_000);
   });

@@ -61,3 +61,57 @@ describe("eco.birthReserve", () => {
     expect(eco.retune({ eco: { birthReserve: 5000 } }).ok).toBe(false);
   });
 });
+
+// eco.energyCap: a world held at its cap with plenty of food. Red without the check in Ecosystem.eat: everyone ate on and stored
+// energy without bound (no birth room, nobody starving), the frozen state the Live server sat in.
+describe("eco.energyCap", () => {
+  // poison: mild poison everywhere (a bite costs 1), else none, so no one dies and the cap holds births at 0.
+  const capped = (energyCap: number, poison = false): Ecosystem => {
+    const c = cfg(0);
+    c.eco.maxPopulation = 20; // full from the start: births never have room
+    c.eco.energyCap = energyCap;
+    c.world.poisonDensity = poison ? 1.5 : 0;
+    c.eco.poisonRegrow = poison ? 1 : 0;
+    c.eco.poisonMaxDensity = poison ? 3 : 0;
+    c.world.poisonDamage = 1;
+    const eco = new Ecosystem(c);
+    for (const m of eco.members) m.creature.state.energy = 15; // below every cap tested, so the start energy does not count
+    return eco;
+  };
+
+  it("stops a creature eating at energyCap times its birth energy, and leaves the food for others", () => {
+    const on = capped(2);
+    const off = capped(0);
+    for (const eco of [on, off]) for (const m of eco.members) m.creature.state.energy = 10 * m.birth.energy; // well above the cap of 2
+    for (let t = 0; t < 900; t++) {
+      on.step();
+      off.step();
+    }
+    expect(off.foodEaten).toBeGreaterThan(0); // the same world without the ceiling eats
+    expect(on.foodEaten).toBe(0);
+  });
+
+  // Red with the check before the item lookup (a full creature skipped eating anything): full creatures were immune to poison.
+  it("still lets poison hurt a full creature, which leaves the food alone", () => {
+    const eco = capped(2, true);
+    for (const m of eco.members) m.creature.state.energy = 50 * m.birth.energy; // far above the cap
+    for (let t = 0; t < 900; t++) eco.step();
+    expect(eco.foodEaten).toBe(0);
+    expect(eco.poisonEaten).toBeGreaterThan(0);
+  });
+
+  it("is off by default, kept out of saves when off, restored when on, and refused between 0 and 1 or past its maximum", () => {
+    expect(DEFAULT_ECO_CONFIG.eco.energyCap).toBe(0);
+    expect("energyCap" in (saveState(capped(0)).config.eco as object)).toBe(false); // saves of other modes are unchanged
+    const back = restoreState(JSON.parse(JSON.stringify(saveState(capped(3)))));
+    expect(back.config.eco.energyCap).toBe(3);
+    const eco = capped(0);
+    expect(eco.retune({ eco: { energyCap: 0.5 } }).ok).toBe(false);
+    expect(eco.retune({ eco: { energyCap: 101 } }).ok).toBe(false);
+    expect(eco.retune({ eco: { energyCap: 5 } }).ok).toBe(true);
+    expect(eco.config.eco.energyCap).toBe(5);
+    const bad = JSON.parse(JSON.stringify(saveState(capped(3))));
+    bad.config.eco.energyCap = 0.5;
+    expect(() => restoreState(bad)).toThrow(/energyCap/);
+  });
+});

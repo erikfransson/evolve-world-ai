@@ -19,6 +19,7 @@
 //   event, 7 bytes: u8 kind (0 impact, 1 death) | u16 x | u16 y | u16 value (impact: energy lost, death: hue as 0..65535 over 360)
 // DETAIL (3), about 5 Hz, only to the viewer that selected the creature: see live/detail.ts.
 // GENOME (4), once per selection: see live/detail.ts.
+// BIRTH (6), with each DETAIL of a living creature, its birth cooldown and whether the world is full: see live/detail.ts.
 //
 // The page applies item changes, events, details, births and deaths when its interpolated tick passes theirs, so the world on
 // screen matches the simulation at that tick.
@@ -32,6 +33,7 @@ export const MSG_ITEMS = 2;
 export const MSG_DETAIL = 3;
 export const MSG_GENOME = 4;
 export const MSG_DELTA = 5;
+export const MSG_BIRTH = 6;
 export const PING = "ping";
 export const CREATURE_HEADER = 9;
 export const CREATURE_RECORD = 19;
@@ -41,7 +43,7 @@ export const MAX_AGE_S = 255; // ages at or above this are sent as this
 export const MAX_CLIENT_MESSAGE_BYTES = 256;
 export const MAX_ID = 0xffffffff; // ids are u32 on the wire
 export const MAX_ITEM_SLOTS = 1 << 18; // slot field of an op
-export const MAX_FRAME_CREATURES = 20_000; // creatures in one frame the page takes, the most a world holds (ecoState MAX_CREATURES); the server caps at 5000
+export const MAX_FRAME_CREATURES = 20_000; // creatures in one frame the page takes, the most a world holds (ecoState MAX_CREATURES); the server caps at 12000
 export const MAX_BACK_TICKS = (1 << 12) - 1; // back field of an op
 export const MAX_DELTA_OPS = 4096; // per server frame; more and the frame counts as too big, viewers get the full set instead
 export const MAX_DELTA_EVENTS = 32; // per server frame, the engine's EVENT_CAP
@@ -52,7 +54,19 @@ export const HISTORY_FIELDS = 3; // time, population, food per population sample
 export const LINEAGE_TOP = 8;
 export const LINEAGE_FIELDS = 2 + 3 * LINEAGE_TOP; // time, others, then (founder, count, hue) per top lineage; the Ecosystem's LINEAGE_STRIDE
 export const MAX_HISTORY = 1080; // population samples kept and sent
-export const MAX_LINEAGE_HISTORY = 180;
+export const MAX_LINEAGE_HISTORY = 180; // lineage samples kept and sent: at most 180 * LINEAGE_FIELDS numbers
+// Appends a lineage sample. A full buffer first keeps every second sample (the oldest stays, so the chart still starts at the world's
+// start) and returns true: the sampler then doubles its interval, so the samples stay evenly spaced and cover the whole life of the world.
+export function pushLineageSample(samples: number[], sample: readonly number[]): boolean {
+  const full = samples.length >= MAX_LINEAGE_HISTORY * LINEAGE_FIELDS;
+  if (full) {
+    let w = 0;
+    for (let r = 0; r < samples.length; r += 2 * LINEAGE_FIELDS) for (let k = 0; k < LINEAGE_FIELDS; k++) samples[w++] = samples[r + k]!;
+    samples.length = w;
+  }
+  samples.push(...sample);
+  return full;
+}
 export const MAX_RECORDS = 3; // per board
 
 export interface WorldSize {

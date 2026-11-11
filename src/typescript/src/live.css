@@ -14,9 +14,11 @@
 
 .about p { margin: 0; color: var(--muted); font-size: 0.8rem; line-height: 1.45; }
 .retry { font-variant-numeric: tabular-nums; }
-.timer { gap: 0.7rem; height: auto; min-height: calc(2.2rem + 2px); padding: 0.25rem 1rem; font-size: 1.4rem; line-height: 1.2; }
-.season-pill { padding: 0.1rem 0.65rem; border-radius: 999px; font-size: 1.15rem; font-weight: 600; background: color-mix(in srgb, var(--season, #3ddc97) 22%, transparent); color: var(--season, #3ddc97); }
-.season-pill:empty { display: none; }
+#timer { gap: 0.7rem; height: auto; min-height: calc(2.2rem + 2px); padding: 0.3rem 1.2rem; font-size: 2.8rem; line-height: 1.15; }
+#timer .season-pill { padding: 0.1rem 0.8rem; border-radius: 999px; font-size: 1.38rem; line-height: 1.3; font-weight: 600; background: color-mix(in srgb, var(--season, #3ddc97) 22%, transparent); color: var(--season, #3ddc97); }
+#timer .season-pill:empty { display: none; }
+#timer, #timer .season-pill { white-space: nowrap; }
+@media (max-width: 960px) { #timer { gap: 0.5rem; padding: 0.25rem 0.75rem; font-size: 1.6rem; } #timer .season-pill { padding: 0.1rem 0.6rem; font-size: 1.15rem; } } /* 2x timer does not fit the map column once the page is under 960 px wide; #timer beats ecosystem.css .timer whatever order the build links the stylesheets */
 .key.winter { color: rgba(150, 190, 235, 0.9); }
 .key.winter::before { height: 0.7em; vertical-align: -0.1em; background: rgba(150, 190, 235, 0.35); }
 
@@ -32,6 +34,8 @@
 .lead-cell.following { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
 .sel-id { margin-right: auto; color: var(--muted); font-size: 0.75rem; font-variant-numeric: tabular-nums; }
 .ov-selected:not(.has-sel) .sel-id { display: none; }
+.sel-birth { flex: none; min-width: 6.2rem; padding: 0 0.5rem; line-height: 1.25; border: 1px solid var(--border-hi); border-radius: 999px; background: var(--card-hi); color: var(--muted); font-size: 0.7rem; text-align: center; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sel-birth[hidden] { display: none; }
 .live .sel-facts { grid-template-columns: repeat(5, auto); }
 .brain-wait { text-align: center; padding: 1rem 0; }
 .brain-wait[hidden] { display: none; }
@@ -137,7 +141,7 @@ input.hue::-moz-range-progress { background: transparent; }
 .addp-msg { margin: 0; font-size: 0.8rem; line-height: 1.4; color: var(--muted); }
 .addp-msg:empty { display: none; }
 .addp-msg[data-kind="ok"] { color: var(--accent); }
-.add-peek { position: absolute; z-index: 3; top: 10px; right: 10px; display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.9rem; background: var(--accent); color: var(--on-accent); border: 0; font-weight: 600; box-shadow: 0 6px 22px rgba(0, 0, 0, 0.45); }
+.add-peek { position: absolute; z-index: 3; top: calc(10px + 3 * 2.2rem + 12px); right: 10px; display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.9rem; background: var(--accent); color: var(--on-accent); border: 0; font-weight: 600; box-shadow: 0 6px 22px rgba(0, 0, 0, 0.45); }
 .add-peek[hidden] { display: none; }
 .peek-dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--on-accent); }
 .sel-name { color: var(--text); font-weight: 600; }
@@ -219,3 +223,23 @@ body:has(.layout.live) { height: auto; min-height: 100%; }
 /* The Live map's ground before any script has run: the shipped pictures (ui/groundBackdrop.ts), framed as the renderer frames the whole world (fitWorld: 96% of the tighter side,
    the Six Realms is 1.6 wide per high). The canvas stays clear until the script draws the same pictures on it. */
 #view { background: image-set(url("./live/maps/clock-ground-0.025.webp") 1x, url("./live/maps/clock-ground-0.05.webp") 2x) center / min(96cqw, 153.6cqh) auto no-repeat, url("./live/maps/clock-ground-preview.webp") center / min(96cqw, 153.6cqh) auto no-repeat, #0b1d16; }
+
+/* "Where" picker in the add panel (live/regionPicker.ts): Anywhere, then a small map of the regions, all radio inputs */
+.rp-group { display: flex; flex-direction: column; gap: 0.5rem; }
+.rp label { position: relative; display: block; cursor: pointer; }
+.rp input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.rp .rp-any { align-self: flex-start; }
+.rp-any .rp-dot { display: none; }
+.rp-any .rp-name { display: inline-block; padding: 0.3rem 0.8rem; background: var(--bg); border: 1px solid var(--border-hi); border-radius: 999px; font-size: 0.85rem; color: var(--muted); }
+.rp-any input:checked + .rp-dot + .rp-name { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
+.rp-any input:focus-visible + .rp-dot + .rp-name, .rp-spot input:focus-visible + .rp-dot { outline: 2px solid var(--accent); outline-offset: 2px; }
+.rp-map { position: relative; width: 100%; background: var(--bg); border: 1px solid var(--border-hi); border-radius: 10px; }
+.rp .rp-spot { position: absolute; aspect-ratio: 1; transform: translate(-50%, -50%); }
+.rp-spot .rp-dot { position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--border-hi); background: var(--card-hi); transition: border-color 0.12s, box-shadow 0.12s; }
+.rp-spot.hued .rp-dot { background: hsl(var(--rp-hue) 45% 26%); border-color: hsl(var(--rp-hue) 50% 42%); }
+.rp-spot:hover .rp-dot { border-color: var(--text); }
+.rp-spot input:checked + .rp-dot { border-color: #fff; box-shadow: 0 0 0 2px var(--accent), 0 0 12px var(--accent); }
+.rp-spot .rp-name { position: absolute; top: 100%; left: 50%; transform: translateX(-50%); margin-top: 1px; font-size: 0.62rem; line-height: 1.1; white-space: nowrap; color: var(--muted); pointer-events: none; }
+.rp-spot input:checked ~ .rp-name { color: var(--text); font-weight: 600; }
+.rp-cap { margin: 0; }
+.rp[hidden] { display: none; }

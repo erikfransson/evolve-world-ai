@@ -1,6 +1,8 @@
 export const MAX_STRIDE = 5; // new viewers are let in only while each viewer would still get every 5th frame, 1 s apart at 5 Hz
 
-export const SLOWEST_STRIDE = 25; // the stride never goes past this (a frame each 5 s), whatever the cost; room() keeps it rare
+// The stride never goes past this (a frame each 12 s), whatever the cost; room() keeps it rare. Viewers let in at a low population stay
+// as it grows: at 60, 100 viewers of 228 kB frames (12000 creatures) take 1.9 MB/s, the share of the 2.2 MB/s frame budget 25 gave at 5000.
+export const SLOWEST_STRIDE = 60;
 export const RESYNC_SHARE = 0.5; // of the frame budget, at most this goes to full item sets while viewers wait for one
 export const RESYNC_S = 2; // full sets for the waiting viewers are spread over about this long
 

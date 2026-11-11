@@ -5,8 +5,8 @@ import { LIMITS } from "../../server/src/config.ts";
 import { LiveWorld } from "../../server/src/liveWorld.ts";
 import { startPublic } from "../../server/src/public.ts";
 import type { PublicServer } from "../../server/src/public.ts";
-import { MSG_DETAIL, MSG_GENOME } from "../../src/typescript/src/live/protocol.ts";
-import { decodeDetail } from "../../src/typescript/src/live/detail.ts";
+import { MSG_BIRTH, MSG_DETAIL, MSG_GENOME } from "../../src/typescript/src/live/protocol.ts";
+import { BIRTH_BYTES, decodeBirthWait, decodeDetail } from "../../src/typescript/src/live/detail.ts";
 import { smallConfig } from "./liveHelpers.ts";
 
 type Limits = typeof LIMITS;
@@ -14,6 +14,9 @@ const servers: PublicServer[] = [];
 async function serve(port: number, change: Partial<Limits> = {}): Promise<{ pub: PublicServer; world: LiveWorld }> {
   const world = new LiveWorld(smallConfig(), null);
   for (let i = 0; i < 30; i++) world.step();
+  return serveWorld(port, world, change);
+}
+async function serveWorld(port: number, world: LiveWorld, change: Partial<Limits> = {}): Promise<{ pub: PublicServer; world: LiveWorld }> {
   const pub = startPublic("127.0.0.1", port, world, { ...LIMITS, ...change });
   servers.push(pub);
   await new Promise<void>((r) => (pub.http.listening ? r() : pub.http.once("listening", () => r())));
@@ -27,6 +30,7 @@ const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms)
 interface Client {
   ws: WebSocket;
   details: Buffer[];
+  binary: Buffer[]; // details, births and genomes in arrival order
   genomes: number;
   detailBytes: number;
   closed: Promise<number>;
@@ -34,10 +38,12 @@ interface Client {
 }
 function client(port: number): Client {
   const ws = new WebSocket(`ws://127.0.0.1:${port}/`);
-  const c: Client = { ws, details: [], genomes: 0, detailBytes: 0, closed: null!, open: null! };
+  const c: Client = { ws, details: [], binary: [], genomes: 0, detailBytes: 0, closed: null!, open: null! };
   c.open = new Promise((r) => ws.on("message", (d: Buffer, bin: boolean) => { if (!bin && JSON.parse(d.toString()).t === "hello") r(); }));
   ws.on("message", (d: Buffer, bin: boolean) => {
     if (!bin) return;
+    if (d[0] === MSG_DETAIL || d[0] === MSG_BIRTH || d[0] === MSG_GENOME) c.binary.push(d);
+    if (d[0] === MSG_BIRTH) c.detailBytes += d.length;
     if (d[0] === MSG_DETAIL) {
       c.details.push(d);
       c.detailBytes += d.length;
@@ -109,6 +115,13 @@ describe("select: details", () => {
     expect(c.details.length).toBeLessThanOrEqual(12);
     expect(c.details.every((d) => decodeDetail(d).id === id)).toBe(true);
     expect(c.genomes).toBe(1);
+    // Each living detail comes right after the BIRTH of its tick and id, in one allowance take.
+    c.binary.forEach((d, k) => {
+      if (d[0] !== MSG_DETAIL) return;
+      const b = decodeBirthWait(c.binary[k - 1]!);
+      expect([b.id, b.tick, b.waitS >= 0, b.full]).toEqual([id, decodeDetail(d).tick, true, false]);
+    });
+    expect(c.binary.filter((d) => d[0] === MSG_BIRTH).length).toBe(c.details.length);
     select(c, null);
     await wait(300);
     const n = c.details.length;
@@ -126,6 +139,7 @@ describe("select: details", () => {
     await wait(1200);
     expect(c.details.length).toBe(1);
     expect(decodeDetail(c.details[0]!).details.alive).toBe(false);
+    expect(c.binary.length).toBe(1); // no BIRTH with a "died" detail
   });
 
   // Each viewer's details come out of its own allowance. Red without it: about 5 x 400 B/s of details plus the genome.
@@ -142,6 +156,26 @@ describe("select: details", () => {
     const seconds = (Date.now() - t0) / 1000;
     expect(c.detailBytes).toBeGreaterThan(0);
     expect(c.detailBytes).toBeLessThanOrEqual(burst + rate * seconds);
+  });
+
+  // A BIRTH goes in the same take as its detail. Red with only the detail taken: the allowance holds the detail alone and both go out.
+  it("counts a BIRTH against the detail allowance", async () => {
+    const port = 62447;
+    const world = new LiveWorld(smallConfig(), null);
+    for (let i = 0; i < 30; i++) world.step();
+    const id = world.eco.members[0]!.id;
+    world.watch(id);
+    world.refreshWatched();
+    const burst = world.detail(id)!.length + BIRTH_BYTES - 1;
+    world.unwatch(id);
+    const rate = 0.01; // so the refill cannot cover the 12 bytes
+    await serveWorld(port, world, { detailBytesPerViewer: rate, detailBurstBytes: burst });
+    const c = client(port);
+    await c.open;
+    select(c, id);
+    const t0 = Date.now();
+    await wait(1200);
+    expect(c.detailBytes).toBeLessThanOrEqual(burst + (rate * (Date.now() - t0)) / 1000);
   });
 
   // Selection changes past selectsPerSecond are ignored, so switching cannot pull genome after genome. Red without the limit.

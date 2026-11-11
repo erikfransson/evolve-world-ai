@@ -10,7 +10,8 @@ import { CAP_LIMITS, ITEM_HEADROOM, LIMITS, LIVE, MAX_POPULATION, ITEM_SLOT_SHAR
 import { lineageName, loadFounders, parseFounders } from "../../server/src/founders.ts";
 import { parseFounders as parsePageFounders } from "../../src/typescript/src/live/founders.ts";
 import { LiveWorld } from "../../server/src/liveWorld.ts";
-import { namedTop } from "../../server/src/chronicle.ts";
+import { Chronicle, namedTop } from "../../server/src/chronicle.ts";
+import type { Stats } from "../../src/typescript/src/live/protocol.ts";
 import { MAX_GROUP_FOUNDERS } from "../../src/typescript/src/live/protocol.ts";
 import { OtherWorld } from "../../server/src/saveParse.ts";
 import { Saves, openWorld } from "../../server/src/saves.ts";
@@ -195,6 +196,76 @@ describe("founders file", () => {
     const back = freshSmall();
     back.restoreState(JSON.parse(JSON.stringify(live.saveState())));
     expect(namedTop(back.eco, 8).find((g) => g.name === "Scout")).toMatchObject({ count: SEED_COPIES, starter: true }); // a save keeps it
+  });
+
+  describe("a named group keeps its id while it lives", () => {
+    const setup = () => {
+      const live = freshSmall();
+      const founders = loadFounders(FOUNDERS.pathname);
+      live.seedFounders(founders, seq(4));
+      const ids = new Map<string, number>();
+      const name = founders[0]!.name;
+      const row = (): ReturnType<typeof namedTop>[number] => namedTop(live.eco, 8, ids).find((g) => g.name === name)!;
+      const lowest = row().founder;
+      return { live, ids, name, row, lowest };
+    };
+
+    it("the id stays when its founder dies, the living founders are all listed, and the memory holds one number per group", () => {
+      const { live, ids, row, lowest } = setup();
+      live.eco.lineages.died(lowest); // the lowest copy dies out
+      const g = row();
+      expect(g.founder).toBe(lowest);
+      expect(g.others).toHaveLength(SEED_COPIES - 1);
+      expect(g.others).not.toContain(lowest);
+      expect(g.count).toBe(SEED_COPIES - 1);
+      expect(namedTop(live.eco, 8).find((x) => x.name === g.name)!.founder).toBeGreaterThan(lowest); // without the memory the id moves
+      expect(ids.size).toBe(namedTop(live.eco, 99).length);
+    });
+
+    it("the memory drops a group that died out, so a new group of that name starts fresh", () => {
+      const { live, ids, name, row } = setup();
+      const g = row();
+      for (const f of [g.founder, ...g.others]) live.eco.lineages.died(f);
+      expect(namedTop(live.eco, 99, ids).some((x) => x.name === name)).toBe(false);
+      expect(ids.has(`*${name.toLowerCase()}`)).toBe(false);
+      expect(ids.size).toBe(namedTop(live.eco, 99).length);
+    });
+
+    it("rename starts the group's id over under its new name, blank-name makes each family its own row", () => {
+      const { live, ids, name, row, lowest } = setup();
+      live.eco.lineages.died(lowest);
+      row();
+      live.renameName(name, "Scout");
+      const renamed = namedTop(live.eco, 8, ids).find((g) => g.name === "Scout")!;
+      expect(renamed.founder).toBeGreaterThan(lowest); // its lowest living founder now
+      expect(ids.has("*scout")).toBe(true);
+      expect(ids.has(`*${name.toLowerCase()}`)).toBe(false);
+      live.blankName("Scout");
+      const after = namedTop(live.eco, 99, ids);
+      expect(after.filter((g) => g.name === "")).toHaveLength(SEED_COPIES - 1);
+      expect(after.filter((g) => g.name === "").every((g) => g.others.length === 0)).toBe(true);
+      expect(ids.has("*scout")).toBe(false);
+    });
+
+    it("a group's history is one band from the first sample after its leader dies, and a save without the memory loads", () => {
+      const { live, lowest } = setup();
+      const ch = new Chronicle();
+      const stats = (): Stats => cleanStats({ t: "stats" } as Stats);
+      const step = (): void => { live.eco.tick += Math.round(120 / live.config.dt); ch.observe(live.eco, stats(), false); };
+      step();
+      live.eco.lineages.died(lowest);
+      step();
+      step();
+      const h: number[] = JSON.parse(ch.history()).lineage;
+      const idsPerSample = [0, 1, 2].map((i) => h.slice(i * 26 + 2).filter((_, j) => j % 3 === 0));
+      for (const s of idsPerSample) expect(s).toContain(lowest);
+      // The memory is not in saves (history is not either): a restored world lists each group by its lowest living founder again.
+      const fresh = freshSmall();
+      fresh.seedFounders(loadFounders(FOUNDERS.pathname), seq(4));
+      const back = freshSmall();
+      back.restoreState(JSON.parse(JSON.stringify(fresh.saveState())));
+      expect(namedTop(back.eco, 99, new Map()).every((g) => g.others.every((o) => o > g.founder))).toBe(true);
+    });
   });
 
   it("caps a row's other founders at MAX_GROUP_FOUNDERS on the server and on the page", () => {

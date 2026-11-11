@@ -1,14 +1,14 @@
 import type { EcoCreature, Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
 import { Leaderboard, boardValue } from "../../src/typescript/src/sim/leaderboard.ts";
-import { HISTORY_FIELDS, LINEAGE_FIELDS, MAX_GROUP_FOUNDERS, LINEAGE_TOP, MAX_HISTORY, MAX_LINEAGE_HISTORY, MAX_RECORDS, RECORD_BOARDS } from "../../src/typescript/src/live/protocol.ts";
+import { HISTORY_FIELDS, LINEAGE_FIELDS, MAX_GROUP_FOUNDERS, LINEAGE_TOP, MAX_HISTORY, MAX_RECORDS, RECORD_BOARDS, pushLineageSample } from "../../src/typescript/src/live/protocol.ts";
 import type { History, RecordBoard, Stats, WireLineage, WireRecord } from "../../src/typescript/src/live/protocol.ts";
 import { wireName } from "../../src/typescript/src/live/add.ts";
 
 export const SAMPLE_EVERY_S = 20; // simulated seconds between population samples: MAX_HISTORY of them span 6 simulated hours
-export const LINEAGE_EVERY_S = 120; // and between lineage samples, the same 6 hours
+export const LINEAGE_EVERY_S = 120; // and between the first lineage samples, 6 hours; each time the buffer fills the interval doubles (pushLineageSample), so the chart keeps the whole life of the world
 
 interface Group {
-  founder: number; // the lowest founder id in the group, so its colour and row stay put as families come and go
+  founder: number; // the group's id: the lowest founder id it had when first listed, kept after that founder dies (see namedTop)
   hue: number;
   pool: boolean;
   count: number;
@@ -34,7 +34,11 @@ export function parsedName(raw: string): { name: string; starter: boolean; key: 
 
 // The k largest families, with every family of the same visible name (the 10 seeded copies of a starter, a visitor's 1 to 10 copies)
 // counted as one; unnamed families stand alone. From the lineage table's kept counts, O(living families) per call.
-export function namedTop(eco: Ecosystem, k: number): Group[] {
+// ids: the caller's memory of each named group's id (the group's name key -> its lowest founder when first seen). A group keeps that
+// id after the founder dies, so its row and every history sample of it stay under one number; `others` then holds all its living
+// founders. Unnamed families are their own id. Pruned to the groups living now, so at most one number per living named group
+// (at most one per living family, so at most maxPopulation). Renaming a group (admin) gives it a new key and so a new id.
+export function namedTop(eco: Ecosystem, k: number, ids?: Map<string, number>): Group[] {
   const groups = new Map<string, Group>();
   eco.lineages.forEachLiving((founder, count, hue, pool) => {
     const { name, starter, key: nameKey } = parsedName(eco.lineageName(founder));
@@ -49,6 +53,19 @@ export function namedTop(eco: Ecosystem, k: number): Group[] {
       } else g.others.push(founder);
     }
   });
+  if (ids) {
+    for (const [key, g] of groups) {
+      if (!g.name) continue;
+      const id = ids.get(key);
+      if (id === undefined) ids.set(key, g.founder);
+      else if (id !== g.founder) {
+        const living = [g.founder, ...g.others];
+        g.others = living.filter((f) => f !== id); // a living id leaves the list, a dead one was never in it
+        g.founder = id;
+      }
+    }
+    for (const key of ids.keys()) if (!groups.has(key)) ids.delete(key); // groups that died out, or were renamed or blanked
+  }
   return [...groups.values()].sort((a, b) => b.count - a.count || a.founder - b.founder).slice(0, k);
 }
 
@@ -59,15 +76,19 @@ export class Chronicle {
   private lineage: number[] = []; // LINEAGE_FIELDS per sample
   private nextSample = -Infinity;
   private nextLineage = -Infinity;
+  private lineageEvery = LINEAGE_EVERY_S;
   private board = new Leaderboard(MAX_RECORDS);
   private historyJson: string | null = null;
   private watched: Ecosystem | null = null;
+  private groupIds = new Map<string, number>(); // namedTop's memory; not saved, history starts over with a world too
 
   // A new world (reseed or load): history and records start over.
   reset(eco: Ecosystem): void {
     this.samples = [];
     this.lineage = [];
     this.nextSample = this.nextLineage = -Infinity;
+    this.lineageEvery = LINEAGE_EVERY_S;
+    this.groupIds = new Map();
     this.board = new Leaderboard(MAX_RECORDS);
     this.historyJson = null;
     this.watched = eco;
@@ -87,7 +108,7 @@ export class Chronicle {
   observe(eco: Ecosystem, stats: Stats, records: boolean, viewed = true): void {
     if (this.watched !== eco) this.reset(eco);
     const t = eco.tick * eco.config.dt;
-    const top = viewed || t >= this.nextLineage ? namedTop(eco, LINEAGE_TOP) : []; // the family table is the dearest part of an idle pass
+    const top = viewed || t >= this.nextLineage ? namedTop(eco, LINEAGE_TOP, this.groupIds) : []; // the family table is the dearest part of an idle pass
     // An extinct world's clock stops (no ticks), so its 0 is sampled at once, or the graph would end on the last living count.
     const diedOut = eco.extinct && this.samples.length > 0 && this.samples[this.samples.length - 2] !== 0;
     if (t >= this.nextSample || diedOut) {
@@ -98,7 +119,6 @@ export class Chronicle {
       this.historyJson = null;
     }
     if (t >= this.nextLineage) {
-      this.nextLineage = t + LINEAGE_EVERY_S;
       let inTop = 0;
       for (const l of top) inTop += l.count;
       const s = [Math.round(t), eco.population - inTop];
@@ -107,8 +127,8 @@ export class Chronicle {
         s.push(l ? l.founder : -1, l ? l.count : 0, l ? Math.round(l.hue) : 0);
       }
       stats.lineageSample = s;
-      this.lineage.push(...s);
-      if (this.lineage.length > MAX_LINEAGE_HISTORY * LINEAGE_FIELDS) this.lineage.splice(0, LINEAGE_FIELDS);
+      if (pushLineageSample(this.lineage, s)) this.lineageEvery *= 2;
+      this.nextLineage = t + this.lineageEvery;
       this.historyJson = null;
     }
     if (!viewed) return;

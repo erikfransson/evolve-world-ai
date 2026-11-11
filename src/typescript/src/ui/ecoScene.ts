@@ -52,12 +52,20 @@ const DOT_RADIUS = 2.4; // CSS px; creatures never draw smaller than this when d
 const DOT_OUTLINE = "rgb(6, 12, 9)"; // drawn at OUTLINE_ALPHA, laid down once, so overlapping outlines do not darken
 const OUTLINE_ALPHA = 0.75;
 
-// Bright and saturated when young, lighter touch of grey-green when old.
+// Saturation and lightness (percent) of a creature of this hue at age share t (0 newborn, 1 at AGE_SATURATE_S): bright when young,
+// a little calmer when old but still clearly coloured, so a realm of old creatures does not turn muddy. Takes the hue so a per-hue curve can slot in.
+export const YOUNG_LOOK = { sat: 88, light: 64 };
+export const OLD_LOOK = { sat: 70, light: 54 };
+export function ageLook(_hue: number, t: number): { sat: number; light: number } {
+  return { sat: YOUNG_LOOK.sat + (OLD_LOOK.sat - YOUNG_LOOK.sat) * t, light: YOUNG_LOOK.light + (OLD_LOOK.light - YOUNG_LOOK.light) * t };
+}
+
 const STYLES: string[] = [];
 for (let h = 0; h < HUE_BUCKETS; h++) {
+  const hue = (h * 360) / HUE_BUCKETS;
   for (let a = 0; a < AGE_LEVELS; a++) {
-    const t = a / (AGE_LEVELS - 1);
-    STYLES.push(`hsl(${(h * 360) / HUE_BUCKETS}, ${Math.round(88 - 48 * t)}%, ${Math.round(64 - 20 * t)}%)`);
+    const { sat, light } = ageLook(hue, a / (AGE_LEVELS - 1));
+    STYLES.push(`hsl(${hue}, ${Math.round(sat)}%, ${Math.round(light)}%)`);
   }
 }
 

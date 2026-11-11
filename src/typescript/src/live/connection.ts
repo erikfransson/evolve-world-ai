@@ -1,7 +1,7 @@
-import { HISTORY_FIELDS, LINEAGE_FIELDS, LINEAGE_TOP, MAX_HISTORY, MAX_ITEM_SLOTS, MAX_LINEAGE_HISTORY, MAX_RECORDS, PING, PROTOCOL_VERSION, RECORD_BOARDS, decodeCreatures, decodeDelta, decodeItems, frameType, MSG_CREATURES, MSG_DELTA, MSG_DETAIL, MSG_GENOME, MSG_ITEMS, MAX_GROUP_FOUNDERS } from "./protocol.ts";
+import { HISTORY_FIELDS, LINEAGE_FIELDS, LINEAGE_TOP, MAX_HISTORY, MAX_ITEM_SLOTS, MAX_LINEAGE_HISTORY, MAX_RECORDS, PING, PROTOCOL_VERSION, RECORD_BOARDS, decodeCreatures, decodeDelta, decodeItems, frameType, MSG_BIRTH, MSG_CREATURES, MSG_DELTA, MSG_DETAIL, MSG_GENOME, MSG_ITEMS, MAX_GROUP_FOUNDERS } from "./protocol.ts";
 import type { CreatureFrame, Delta, Hello, History, ItemsSnapshot, ServerText, Stats, WireRecord } from "./protocol.ts";
-import { decodeDetail, decodeGenome } from "./detail.ts";
-import type { Detail } from "./detail.ts";
+import { decodeBirthWait, decodeDetail, decodeGenome } from "./detail.ts";
+import type { BirthWait, Detail } from "./detail.ts";
 import { retryDelayS } from "./serverUrl.ts";
 import { cleanAddReply, cleanAddRules, encodeAdd, validName } from "./add.ts";
 import type { AddRequest, AddRules, Added, Refused } from "./add.ts";
@@ -105,7 +105,7 @@ export function historyAxis(first: number, last: number, yearS: number): { shift
 export function cleanHello(h: Hello): Hello | null {
   const ok = isObj(h.world) && n(h.world.width) > 0 && n(h.world.height) > 0 && n(h.radius) > 0 && n(h.dt) > 0 && n(h.fullEnergy) > 0 && int(h.itemSlots, 0, MAX_ITEM_SLOTS);
   const s: Record<string, unknown> = isObj(h.summary) ? h.summary : {};
-  const seedCopies = int(s.seedCopies, 1, 5000) ? (s.seedCopies as number) : undefined; // up to MAX_POPULATION, an admin reset may seed many
+  const seedCopies = int(s.seedCopies, 1, 12000) ? (s.seedCopies as number) : undefined; // up to the server's MAX_POPULATION, an admin reset may seed many
   const energy = (v: unknown, max = 10_000): number | undefined => (typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= max ? v : undefined);
   const foodEnergy = energy(s.foodEnergy);
   const poisonDamage = energy(s.poisonDamage);
@@ -129,6 +129,7 @@ export class LiveLink {
   private world: Hello["world"] | null = null;
   private slots = 0;
   private selected: number | null = null;
+  private birth: BirthWait | null = null; // the last BIRTH message, for the DETAIL of the same tick and id that follows it
   private failures = 0;
   private tabs = 0; // the per-address cap named by the busy reply, 0 when the world itself is full
   private full = false; // the server said it has no room, until the next hello
@@ -246,8 +247,15 @@ export class LiveLink {
         const deltas = decodeDelta(data, this.world, this.slots);
         decoding = false;
         this.h.onDelta(deltas);
+      } else if (type === MSG_BIRTH) {
+        this.birth = null;
+        const b = decodeBirthWait(data);
+        if (b.id === this.selected) this.birth = b;
       } else if (type === MSG_DETAIL) {
+        const b = this.birth;
+        this.birth = null;
         const d = decodeDetail(data);
+        if (b && b.id === d.id && b.tick === d.tick && d.details.alive) d.birth = b;
         if (d.id === this.selected) this.h.onDetail(d);
       } else if (type === MSG_GENOME) {
         const g = decodeGenome(data);

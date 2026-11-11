@@ -9,13 +9,17 @@
 //   hues: 0..65535 over 360 degrees. closeness: 0..65535 over 0..1. offset: 0..65535 over -pi..pi. inputs: units of 1/INPUT_SCALE.
 //   A creature that has died is sent once with alive 0 and nothing after, then the server stops.
 // GENOME (4): u8 type | u32 id | u32 n | f32 scale | n x i16, weight = value * scale. Once per selection, when the viewer's detail allowance has room.
+// BIRTH (6): u8 type | u32 tick | u32 id | u16 wait | u8 flags, sent just before each living DETAIL of the same tick and id (one allowance take).
+//   wait: tenths of a simulated second until it may give birth (cooldown, or an added creature's birth hold), capped at 65535.
+//   flags bit 0: the world is at its birth cap (maxPopulation - birthReserve), so births wait for room. Other bits and bytes past 12 are ignored.
+//   Its own type, not a DETAIL field, so a page from before it ignores it and a page on a server from before it shows nothing.
 
 import { genomeLength } from "../sim/brain.ts";
 import { PLAN_LIMITS } from "../sim/rl/validate.ts";
 import { CREATURE_RAY_FEATURE_LABELS, EXTRA_INPUTS, OUTPUT_SIZE } from "../sim/sensors.ts";
 import type { BodyPlan, PlanView } from "../sim/sensors.ts";
 import type { SelectedDetails } from "../worker/ecoProtocol.ts";
-import { MSG_DETAIL, MSG_GENOME, q16, unq16 } from "./protocol.ts";
+import { MSG_BIRTH, MSG_DETAIL, MSG_GENOME, q16, unq16 } from "./protocol.ts";
 import { NAME_MAX, validName } from "./add.ts";
 
 export const INPUT_SCALE = 4096; // inputs are sent to 1/4096 and clamped to about +-8
@@ -120,6 +124,49 @@ export interface Detail {
   details: SelectedDetails; // alive false once it has died; genome always null, it comes in its own message
   founderName: string; // "" for none
   founderStarter: boolean;
+  birth?: BirthWait; // the BIRTH message of the same tick and id (LiveLink attaches it), absent from servers before it
+}
+
+// Why a creature with the energy for a child has none yet.
+export interface BirthWait {
+  tick: number;
+  id: number;
+  waitS: number; // simulated seconds until it may give birth, 0 to MAX_BIRTH_WAIT_S
+  full: boolean; // the world is at its birth cap
+}
+export const BIRTH_BYTES = 12;
+const BIRTH_MAX_BYTES = 64; // room for later fields an older page skips
+const WAIT_STEPS = 10; // wait in tenths of a second
+export const MAX_BIRTH_WAIT_S = 65535 / WAIT_STEPS;
+
+// waitS: the simulated seconds until it may give birth (anything not a positive number counts as none).
+export function encodeBirthWait(tick: number, id: number, waitS: number, full: boolean): Uint8Array {
+  const out = new Uint8Array(BIRTH_BYTES);
+  const dv = new DataView(out.buffer);
+  dv.setUint8(0, MSG_BIRTH);
+  dv.setUint32(1, tick, true);
+  dv.setUint32(5, id, true);
+  dv.setUint16(9, waitS > 0 ? Math.min(65535, Math.ceil(waitS * WAIT_STEPS)) : 0, true); // NaN fails the test and sends 0
+  dv.setUint8(11, full ? 1 : 0);
+  return out;
+}
+
+export function decodeBirthWait(buf: ArrayBuffer | Uint8Array): BirthWait {
+  const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (dv.byteLength < BIRTH_BYTES || dv.byteLength > BIRTH_MAX_BYTES || dv.getUint8(0) !== MSG_BIRTH) throw new Error("not a birth wait");
+  return { tick: dv.getUint32(1, true), id: dv.getUint32(5, true), waitS: dv.getUint16(9, true) / WAIT_STEPS, full: (dv.getUint8(11) & 1) === 1 };
+}
+
+// The selected card's note on why a creature at or above its birth energy has no child yet: "" when below it, when the server
+// sent no BIRTH (older server), or when nothing holds it back. The cooldown wins over a full world: it ends on its own.
+export function birthNote(d: { energy: number; birthEnergy: number }, w: { waitS: number; full: boolean } | null | undefined): string {
+  if (!w || !(d.energy >= d.birthEnergy)) return "";
+  if (Number.isFinite(w.waitS) && w.waitS > 0) {
+    const s = Math.min(w.waitS, MAX_BIRTH_WAIT_S);
+    return s < 100 ? `cooldown ${Math.ceil(s)} s` : `cooldown ${Math.ceil(s / 60)} min`;
+  }
+  return w.full === true ? "world full" : "";
 }
 
 const range = (v: number, [lo, hi]: readonly [number, number]): boolean => Number.isInteger(v) && v >= lo && v <= hi;

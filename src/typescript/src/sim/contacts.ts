@@ -46,17 +46,18 @@ export class Contacts {
   }
 
   // Member at eats: the item looked up for it in touched, or the first it touches now. Returns the kind of the item eaten (removed from the world), HIT_NONE for none.
+  // With eco.energyCap, a creature at or above that many times its birth energy leaves food where it is (poison still hurts it).
   eatAt(at: number, touched?: Int32Array): HitKind {
     const m = this.table.members[at]!;
     if (!this.species[m.species]!.plants) return HIT_NONE;
-    let eaten: number;
-    if (touched && (touched[at] < 0 || this.items.kinds[touched[at]] !== HIT_NONE)) {
-      // Items are only removed in the eat loop, so a looked-up item still there is still the first touched, and none stays none.
-      eaten = touched[at];
-      if (eaten >= 0) m.creature.eatItem(this.items, eaten);
-    } else eaten = m.creature.eat(this.items); // looked up item taken by an earlier creature, or no lookup
+    // Items are only removed in the eat loop, so a looked-up item still there is still the first touched, and none stays none;
+    // else (taken by an earlier creature, or no lookup) the first it touches now.
+    const eaten = touched && (touched[at] < 0 || this.items.kinds[touched[at]] !== HIT_NONE) ? touched[at] : m.creature.touched(this.items);
     if (eaten < 0) return HIT_NONE;
     const kind = this.items.kinds[eaten] as HitKind;
+    const cap = this.config.eco.energyCap;
+    if (kind === HIT_FOOD && cap > 0 && this.table.states[at]!.energy >= cap * this.table.birthEnergies[at]!) return HIT_NONE; // full: the food stays for others
+    m.creature.eatItem(this.items, eaten);
     if (kind === HIT_FOOD) m.eaten++;
     else if (kind === HIT_POISON) m.poisonBites++;
     this.items.removeItem(eaten); // so no one else eats it this tick

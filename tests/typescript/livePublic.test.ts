@@ -5,6 +5,8 @@ import net from "node:net";
 // @ts-expect-error the web tsconfig finds no types for the server's ws
 import { Sender, WebSocket } from "../../server/node_modules/ws/wrapper.mjs";
 import { LIMITS, MAX_POPULATION, liveConfig } from "../../server/src/config.ts";
+import { frameBudget } from "../../server/src/budget.ts";
+import { MAX_ITEM_SLOTS, creatureFrameBytes, itemsBytes } from "../../src/typescript/src/live/protocol.ts";
 import { applyTunables, tunableLimits } from "../../server/src/tunables.ts";
 import { LiveWorld } from "../../server/src/liveWorld.ts";
 import { AddGate } from "../../server/src/adds.ts";
@@ -292,6 +294,39 @@ describe("public server: upload budget", () => {
     expect(sent).toBeLessThanOrEqual(seconds * budget * 1.15); // a frame boundary of slack
   });
 
+  // The shipped budget as frames grow with the population: room() admits floor(frameBudget / frame) viewers, each at every 5th frame
+  // (23 at 5000 creatures, 14 at 8000, 9 at 12000), and every one past that gets "busy", which the page shows as a full world.
+  it("admits fewer viewers as the population grows, under the same upload budget, and tells the rest busy", async () => {
+    for (const [port, population, admitted] of [[62542, 5000, 23], [62543, 8000, 14], [62544, MAX_POPULATION, 9]] as const) {
+      expect(Math.floor(frameBudget(LIMITS) / creatureFrameBytes(population))).toBe(admitted);
+      const world = new LiveWorld(smallConfig(), null);
+      for (let i = 0; i < 5; i++) world.eco.step();
+      Object.defineProperty(world.eco, "population", { configurable: true, get: () => population }); // frames sized as at this population
+      const { pub } = await serve(port, { acceptBurst: 100 }, world);
+      await wait(300); // the first frame sets the per-viewer size
+      const vs: Viewer[] = [];
+      for (let i = 0; i < admitted + 3; i++) {
+        vs.push(viewer(port));
+        await vs.at(-1)!.status;
+      }
+      const outcome = await Promise.all(vs.map((v) => v.status));
+      expect(outcome.filter((s) => s === "hello").length).toBe(admitted);
+      expect(outcome.slice(admitted)).toEqual(["busy", "busy", "busy"]);
+      for (const v of vs) v.ws.terminate();
+      expect(pub.viewers()).toBe(admitted);
+    }
+  }, 60_000);
+
+  // The largest join a viewer can need at 12000 creatures (a full item set at every wire slot plus a creature frame) fits under the
+  // frame-skip level and the drop level, and in one connect allowance, so a join at the cap is never skipped or dropped for its own size.
+  it("keeps a join at the population cap under the per-viewer buffer limits", () => {
+    const join = itemsBytes(MAX_ITEM_SLOTS, MAX_ITEM_SLOTS) + creatureFrameBytes(MAX_POPULATION);
+    expect(join).toBeLessThan(LIMITS.maxBufferedBytes);
+    expect(join).toBeLessThan(LIMITS.hardBufferedBytes);
+    expect(LIMITS.connectBurstBytes).toBeGreaterThanOrEqual(join);
+    expect(creatureFrameBytes(MAX_POPULATION)).toBe(228_009);
+  });
+
   it("does not send the catch-up frames on connect past the connect allowance", async () => {
     const port = 62416;
     const world = new LiveWorld(smallConfig(), null);
@@ -307,17 +342,35 @@ describe("public server: upload budget", () => {
 });
 
 describe("live world", () => {
-  it("holds the population to 5000: the world, the admin limit, and a restored older save", () => {
+  it("holds the population to 12000: the world, the admin limit, and a restored older save", () => {
     expect(liveConfig.eco.maxPopulation).toBe(MAX_POPULATION);
-    expect(MAX_POPULATION).toBe(5000);
+    expect(MAX_POPULATION).toBe(12000);
     const world = new LiveWorld(smallConfig(), null);
-    expect(tunableLimits()["eco.maxPopulation"]!.max).toBe(5000);
-    expect(applyTunables(world.eco, { "eco.maxPopulation": 5001 })).toMatch(/at most 5000/);
-    expect(applyTunables(world.eco, { "eco.maxPopulation": 5000 })).toBeNull();
+    expect(tunableLimits()["eco.maxPopulation"]!.max).toBe(12000);
+    expect(applyTunables(world.eco, { "eco.maxPopulation": 12001 })).toMatch(/at most 12000/);
+    expect(applyTunables(world.eco, { "eco.maxPopulation": 12000 })).toBeNull();
     const old = new LiveWorld(smallConfig(), null);
-    old.eco.config.eco.maxPopulation = 10_000; // as saves made before the cap
+    old.eco.config.eco.maxPopulation = 20_000; // the most a save may hold (ecoState MAX_CREATURES)
+    world.restoreState(JSON.parse(JSON.stringify(old.saveState())));
+    expect(world.config.eco.maxPopulation).toBe(12000);
+  });
+
+  // A world saved under the 5000 cap keeps it (the admin raises it), and the admin settings saved then still apply.
+  it("restores a save and settings of the 5000 cap as they were", () => {
+    const old = new LiveWorld(smallConfig(), null);
+    old.eco.retune({ eco: { maxPopulation: 5000, birthReserve: 100, energyCap: 0 } }); // as saved before the energy cap
+    for (let i = 0; i < 20; i++) old.step();
+    const world = new LiveWorld(smallConfig(), null);
     world.restoreState(JSON.parse(JSON.stringify(old.saveState())));
     expect(world.config.eco.maxPopulation).toBe(5000);
+    expect(world.config.eco.birthReserve).toBe(100);
+    expect(world.eco.population).toBe(old.eco.population);
+    expect(world.eco.birthWeightCap).toBe(old.eco.birthWeightCap);
+    expect(world.config.eco.energyCap).toBe(liveConfig.eco.energyCap); // a save from before the energy cap (off in it) gets the server's
+    expect(liveConfig.eco.energyCap).toBe(5);
+    expect(applyTunables(world.eco, { "eco.maxPopulation": 5000, "eco.birthReserve": 100 })).toBeNull(); // an overrides file of then
+    expect(applyTunables(world.eco, { "eco.maxPopulation": 12000 })).toBeNull();
+    expect(world.config.eco.maxPopulation).toBe(12000);
   });
 
   it("reports speed 0 while paused", async () => {

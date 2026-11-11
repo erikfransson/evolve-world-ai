@@ -30,7 +30,7 @@ import { LiveLink, historyAxis } from "./live/connection.ts";
 import type { LinkState } from "./live/connection.ts";
 import { LiveScene } from "./live/scene.ts";
 import { serverUrl } from "./live/serverUrl.ts";
-import { HISTORY_FIELDS, LINEAGE_FIELDS, MAX_HISTORY, MAX_LINEAGE_HISTORY } from "./live/protocol.ts";
+import { HISTORY_FIELDS, LINEAGE_FIELDS, MAX_HISTORY, pushLineageSample } from "./live/protocol.ts";
 import type { Hello, Season, Stats } from "./live/protocol.ts";
 import { AddPanel } from "./live/addPanel.ts";
 import { parseFounders } from "./live/founders.ts";
@@ -44,7 +44,8 @@ import { useRockFarm, warmRock } from "./ui/abyssRock.ts";
 import { rockFarm } from "./ui/rockFarm.ts";
 import { recastRays } from "./live/rayRecast.ts";
 import { paintMapLegendWhenSeen } from "./live/mapLegend.ts";
-import { followsLive } from "./live/detail.ts";
+import { birthNote, followsLive } from "./live/detail.ts";
+import type { BirthWait } from "./live/detail.ts";
 import { mapSpec, mapVersion } from "./sim/maps/index.ts";
 import { BACKGROUND } from "./ui/palette.ts";
 import { prepareTerrain } from "./ui/terrainScene.ts";
@@ -157,6 +158,7 @@ interface Selection {
   last: SelectedDetails | null; // while alive
   founderName: string; // "" for none
   founderStarter: boolean;
+  birth: BirthWait | null; // with the latest details, null from a server before BIRTH
   died: boolean;
   genome: Float32Array | null;
   brain: SelectedBrain | null;
@@ -278,6 +280,7 @@ function onHello(h: Hello): void {
   familyOf = new Map();
   lastLineages = [];
   addPanel.setRules(h.add);
+  addPanel.setMap(h.map, h.world);
   renderMapInfo($("info"), h);
 }
 
@@ -397,7 +400,7 @@ function followSelected(): void {
 // Follows creature id: asks the server for its details and zooms in once it is on screen.
 function select(id: number): void {
   if (selection?.id === id) return;
-  selection = { id, last: null, founderName: "", founderStarter: false, died: false, genome: null, brain: null, zoomed: false, aimedZoom: 0 };
+  selection = { id, last: null, founderName: "", founderStarter: false, birth: null, died: false, genome: null, brain: null, zoomed: false, aimedZoom: 0 };
   link.select(id); // replaces the last one on the server: one message per click, so the select rate is not spent on letting go
   $("selectedCard").classList.add("has-sel");
   $("brainCard").hidden = false;
@@ -456,7 +459,7 @@ camera.onClick = (wx, wy) => {
 let rayKinds = new Uint8Array(0); // the selected creature's rays cast this frame (recastRays)
 let rayCloseness = new Float32Array(0);
 
-function onDetail(d: SelectedDetails, founderName: string, founderStarter: boolean): void {
+function onDetail(d: SelectedDetails, founderName: string, founderStarter: boolean, birth: BirthWait | undefined): void {
   const s = selection;
   if (!s || d.id !== s.id) return;
   if (!d.alive) {
@@ -466,6 +469,7 @@ function onDetail(d: SelectedDetails, founderName: string, founderStarter: boole
   }
   s.founderName = founderName;
   s.founderStarter = founderStarter;
+  s.birth = birth ?? null;
   const replan = s.last && formatPlan(s.last.plan) !== formatPlan(d.plan);
   const first = !s.last;
   s.last = d;
@@ -493,6 +497,7 @@ function updateSelectedCard(): void {
   const d = s.last;
   if (!d) {
     $("selEnergy").textContent = s.died ? "died" : "…";
+    $("selBirthWait").hidden = true;
     $("selId").textContent = `#${s.id}`;
     return;
   }
@@ -503,6 +508,11 @@ function updateSelectedCard(): void {
   meter.setAttribute("aria-valuemax", String(Math.round(full)));
   meter.setAttribute("aria-valuenow", String(Math.round(d.energy)));
   $("selEnergy").textContent = s.died ? "died" : `${Math.round(d.energy)} / ${Math.round(full)}`;
+  const note = s.died ? "" : birthNote(d, s.birth);
+  const wait = $("selBirthWait");
+  wait.textContent = note;
+  wait.hidden = !note;
+  wait.title = note === "world full" ? "Births wait while the world is at its population cap" : "Time before it may give birth again (an added creature also waits a while before its first)";
   $("selAge").textContent = durationText(d.age);
   $("selChildren").textContent = nf.format(d.children);
   $("selKills").textContent = nf.format(d.kills);
@@ -578,8 +588,7 @@ function noteSamples(s: Stats): boolean {
     if (samples.length > MAX_HISTORY * HISTORY_FIELDS) samples.splice(0, HISTORY_FIELDS);
   }
   if (s.lineageSample) {
-    lineageHistory.push(...s.lineageSample);
-    if (lineageHistory.length > MAX_LINEAGE_HISTORY * LINEAGE_FIELDS) lineageHistory.splice(0, LINEAGE_FIELDS);
+    pushLineageSample(lineageHistory, s.lineageSample);
   }
   return seasonChanged;
 }
@@ -620,7 +629,7 @@ function onStats(s: Stats, noted = false): void {
       syncFamily();
     }
     lastLineages = s.lineages;
-    lineages.setLineages(s.lineages.map((l): Lineage => ({ founder: l.founder, hue: l.hue, pool: l.pool, count: l.count, species: 0 })), s.population, names, starters);
+    lineages.setLineages(s.lineages.map((l): Lineage => ({ founder: l.founder, hue: l.hue, pool: l.pool, count: l.count, species: 0 })), s.population, names, starters, familyOf);
   }
   if (s.records) setRecords(s.records);
   $<HTMLButtonElement>("pickAge").disabled = !s.best;
@@ -758,7 +767,7 @@ function frame(now: number): void {
 
 scene.handlers = {
   onEvents: (events) => impacts.add(events, performance.now()),
-  onDetail: (d) => onDetail(d.details, d.founderName, d.founderStarter),
+  onDetail: (d) => onDetail(d.details, d.founderName, d.founderStarter, d.birth),
 };
 
 const link = new LiveLink(url, {
