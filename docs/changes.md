@@ -6,6 +6,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- Live: the world clock and the zoom buttons hide while the "Add your creature" panel is open (they showed through it and made its header hard to read) and return when it is minimised or closed.
+
 ## 0.8.0 (2026-11-11)
 
 - Live: the Lineages chart dims the other bands at once when a row is selected, deselected or "Show all" is pressed, instead of at the next stats message.
