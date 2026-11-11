@@ -16,6 +16,7 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 - Live Lineages: a named group keeps one row id while it lives (its lowest founder when first listed, kept after that founder dies), so its history is one band from the first sample and picking its row lights the whole timeline (it was lit only from when the current leading copy took over). The chart also folds copies it knows of into one band, for older servers. No wire change; a rename starts the id over, the memory is not saved (history is not either).
 - Live Lineages chart covers the whole life of the world: at 180 samples the server keeps every second one and doubles the interval (was: the oldest 120 s sample fell off, so the chart held only the last 6 hours). Same 180-sample, about 30 KB bound; the page applies the same rule. History is still not saved, so a server restart starts it over. The Population chart keeps its 6-hour window.
 - Creature dots keep more colour with age: the oldest look is now saturation 70% and lightness 54% (was 40% and 44%), so a realm of old creatures reads as its colour instead of muddy grey (`ageLook` in `ui/ecoScene.ts`, ready for a per-hue curve).
+- Arena reward graph (variant C): one plot of the gain since the start, with round ticks, held-out trend over its faint raw checks, a start baseline, and the best try as a sparkline in its tile.
 
 ## 0.7.0 (2026-11-09)
 

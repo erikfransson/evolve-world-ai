@@ -623,10 +623,9 @@ function render(): void {
   $("statGain").textContent = r && heldIt ? ` · ${iterText(heldIt.iter, r.method)}` : "";
   $("statBest").textContent = fixed(last?.best);
   const backprop = (r?.method ?? runForm.read().method) === "backprop";
-  $("statBestLabel").textContent = backprop ? "Luckiest episode" : "Luckiest candidate";
+  $("statBestLabel").textContent = backprop ? "Best episode (luck)" : "Best try (luck)";
   $("graphCard").hidden = !r;
-  $("keyBest").textContent = backprop ? "luckiest episode, own scale" : "luckiest candidate, own scale"; // the values stand in the KPIs above
-  const tip = (backprop ? "Reward of the best training episode in the latest update." : "Reward of the best candidate on its training episodes in the latest iteration.") + " Mostly luck: on held-out worlds it scores about like the current brain.";
+  const tip = (backprop ? "Reward of the best training episode in the latest update." : "Reward of the best try on its training episodes in the latest iteration.") + " Mostly luck: on held-out worlds it scores about like the current brain.";
   $("statBestTip").dataset.tip = tip;
   $("statBestTip").ariaLabel = tip;
   $("statTrain").textContent = fixed(last?.train);
