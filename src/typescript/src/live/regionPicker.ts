@@ -1,4 +1,4 @@
-import { mapSpec } from "../sim/maps/index.ts";
+import { mapSpec, mapVersion } from "../sim/maps/index.ts";
 import type { AddRules } from "./add.ts";
 import type { WireMap } from "./protocol.ts";
 
@@ -19,11 +19,12 @@ export interface RegionPicker {
 }
 
 // The regions to draw, matched by index to the hello's rows (map.regions), or null while the server does not take a region, the page
-// does not know the map's geometry, or the two disagree in count.
+// does not know the map's geometry, the server runs another design of the map (its map.version), or the two disagree in count.
 export function pickerRegions(rules: AddRules | null, map: WireMap): PickerRegion[] | null {
   const geo = map.name ? mapSpec(map.name)?.regions : undefined;
   const n = rules?.spawnRegions;
   if (!geo || !n || n !== geo.length || map.regions.length !== geo.length) return null;
+  if (map.version !== undefined && map.version !== mapVersion(map.name!)) return null;
   return geo.map((g, i) => ({ name: map.regions[i]!.name, x: g.x, y: g.y, r: g.r, ...(g.hue !== undefined ? { hue: g.hue } : {}) }));
 }
 
