@@ -4,7 +4,8 @@
 // A creature's place comes from the map's food field at its node: a realm or the hub (nearest region) at realm-level food, "trail" at trail-level food, else "waste". Its lineage is the home region its founder was seeded in.
 // arrivals: creatures that first walk into a region other than their lineage's home (once per creature per region); hubArrivals: those into "commons";
 // settlers: creatures born (first seen) in a region other than their lineage's home; foreignBirths: of those, per realm or hub they were born in
-// (the contact measure, Erik's target about 20 per realm per sim hour); deaths: per place.
+// (the contact measure, Erik's target about 20 per realm per sim hour); deaths: per place; energy: p50, p90 and max of creature energy (all and per place);
+// atCap / pinnedShare: whether the population is at the line where births stop (maxPopulation - birthReserve), and the share of ticks it was.
 
 import { appendFileSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
@@ -126,20 +127,32 @@ function classify(): void {
   }
 }
 
+// The p-quantile of sorted values (0 when empty).
+const quantile = (sorted: number[], p: number): number => (sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))]! : 0);
+const spread = (v: number[]): object => {
+  v.sort((a, b) => a - b);
+  return { p50: Math.round(quantile(v, 0.5)), p90: Math.round(quantile(v, 0.9)), max: Math.round(v[v.length - 1] ?? 0) };
+};
+const capLine = config.eco.maxPopulation - config.eco.birthReserve; // births stop here
+let pinnedTicks = 0; // ticks with the population at capLine or above
+
 function line(): object {
   const count = places.map(() => 0), energy = places.map(() => 0);
+  const energies = places.map((): number[] => []), all: number[] = [];
   const lineage = places.map(() => ({} as Record<string, number>));
   for (const m of eco.members) {
     const p = placeOf(m.creature.state.x, m.creature.state.y);
     count[p]!++;
     energy[p]! += m.creature.state.energy;
+    energies[p]!.push(m.creature.state.energy);
+    all.push(m.creature.state.energy);
     const h = places[lineageHome.get(m.founderId) ?? WASTE]!;
     lineage[p]![h] = (lineage[p]![h] ?? 0) + 1;
   }
   const place: Record<string, object> = {};
-  places.forEach((n, i) => { place[n] = { count: count[i], lineages: lineage[i], meanEnergy: count[i] ? +(energy[i]! / count[i]!).toFixed(1) : 0 }; });
+  places.forEach((n, i) => { place[n] = { count: count[i], lineages: lineage[i], meanEnergy: count[i] ? +(energy[i]! / count[i]!).toFixed(1) : 0, energy: spread(energies[i]!) }; });
   const byName = (a: number[]) => Object.fromEntries(places.map((n, i) => [n, a[i]]));
-  return { min: +(eco.tick * dt / 60).toFixed(2), pop: eco.population, place, arrivals: byName(arrivals), hubArrivals, settlers, foreignBirths: byName(foreignBirths), deaths: byName(deaths) };
+  return { min: +(eco.tick * dt / 60).toFixed(2), pop: eco.population, atCap: eco.population >= capLine, pinnedShare: +(pinnedTicks / Math.max(1, eco.tick)).toFixed(3), energy: spread(all), place, arrivals: byName(arrivals), hubArrivals, settlers, foreignBirths: byName(foreignBirths), deaths: byName(deaths) };
 }
 
 if (values.out) writeFileSync(values.out, "");
@@ -150,6 +163,7 @@ const t0 = performance.now();
 let cpu0 = process.cpuUsage();
 while (eco.tick < ticks && !eco.extinct) {
   live.step();
+  if (eco.population >= capLine) pinnedTicks++;
   if (eco.tick % classifyEvery === 0) classify();
   if (eco.tick % logEvery === 0) emit();
 }
@@ -165,5 +179,5 @@ for (const n of places) {
   const p = last.place[n];
   console.log(`${n.padEnd(w)}  ${String(p.count).padStart(6)} ${String(p.meanEnergy).padStart(7)} ${String(last.arrivals[n]).padStart(7)} ${String(last.deaths[n]).padStart(7)}  ${JSON.stringify(p.lineages)}`);
 }
-console.log(`hubArrivals ${hubArrivals} settlers ${settlers}`);
+console.log(`hubArrivals ${hubArrivals} settlers ${settlers}; energy ${JSON.stringify(last.energy)}; at the cap line (${capLine}) ${(100 * last.pinnedShare).toFixed(1)}% of ticks`);
 live.close();

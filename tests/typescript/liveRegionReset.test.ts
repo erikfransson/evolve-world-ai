@@ -140,14 +140,16 @@ describe("openWorld on clock", () => {
   }, 60_000);
 });
 
-// At the 12000 cap the copies bound (1983 a home) passes what the smaller home discs hold (about 1860 to 1950 spots, rock in them).
-describe("a clock seed at the 12000 cap that does not fit", () => {
-  const live = clockWorld();
+// At a raised cap of 18000 the copies bound (2983 a home) passes what the smallest home disc holds (about 2200 to 2400 spots, rock in them).
+// At the 12000 cap (1983 a home) every Six Realms home fits, so this path needs the higher cap.
+const BIG_CAP = 18000;
+describe("a clock seed at a raised cap that does not fit", () => {
+  const live = clockWorld(BIG_CAP);
   const most = Math.floor(seedRoom(live.freshEco) / H);
 
   // Red without the check in Saves.reset: the count was written, and every next start failed with "no room to seed the founders".
   it("is refused cleanly by the seed, the fit check and a reset, in bounded time, moving nothing", async () => {
-    expect(most).toBe(1983);
+    expect(most).toBe(2983);
     let t = performance.now();
     expect(() => live.seedFounders(FOUNDERS, seq(5), most)).toThrow(NoRoom);
     expect(performance.now() - t).toBeLessThan(15_000); // about 1 s on a quiet host
@@ -168,11 +170,11 @@ describe("a clock seed at the 12000 cap that does not fit", () => {
   // Red without the cut in openWorld: a seed file the map has no room for made every start throw (systemd restarts it in a loop).
   it("seeds the default count at a fresh start when the seed file's count has no room", async () => {
     const dir = tmp();
-    const fresh = clockWorld();
+    const fresh = clockWorld(BIG_CAP);
     writeFileSync(join(dir, "seed-copies"), `${most}\n`);
     const lines: string[] = [];
     await openWorld(new Saves(fresh, new StateStore(dir)), fresh, dir, FOUNDERS, (l) => lines.push(l));
-    expect(lines.join("\n")).toMatch(/SEED CUT: no room for 1983/);
+    expect(lines.join("\n")).toMatch(new RegExp(`SEED CUT: no room for ${most}`));
     expect(fresh.seedCopies).toBe(SEED_COPIES);
     expect(fresh.eco.population).toBe(H * SEED_COPIES);
   }, 120_000);

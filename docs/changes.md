@@ -6,6 +6,14 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+## 0.9.0 (2026-11-11)
+
+- Live: the Six Realms gets a gritty, natural look (a fresh world). Each realm has its own ground material, with lava flows, ember fissures, rock spines and shaded basalt rock with cast shadows. Outlines are irregular, trails worn and offset, the Blight and Mire walls are broken arcs, and the hub is a dark wet basin. Realms are about 15% bigger.
+- Live: no more food in pockets creatures cannot reach (#82). The Six Realms fills them with rock: unreachable food ground 56,340 to 2,412 u² in small specks, with no ground a creature can stand on taken.
+- Live: Six Realms food rebalanced for less contact between realms: trails 0.25, hub 1.2, Bloom 2.4, Blight 2.3 with less poison (3.0).
+- Map specs: range checks on texture, paint and crack values with a clear error. The share image and the landing card show the new map.
+- Live: the world clock and the zoom buttons hide while the "Add your creature" panel is open (they showed through it and made its header hard to read) and return when it is minimised or closed.
+
 ## 0.8.0 (2026-11-11)
 
 - Live: the Lineages chart dims the other bands at once when a row is selected, deselected or "Show all" is pressed, instead of at the next stats message.

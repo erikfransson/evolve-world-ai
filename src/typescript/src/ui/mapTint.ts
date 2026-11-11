@@ -18,8 +18,13 @@ export const visibleFrom = (t: { from: number; span: number; alpha: number }): n
 
 const images = new WeakMap<Terrain, OffscreenCanvas | HTMLCanvasElement | null>();
 
-const BLUR_UNITS = 140; // world units the wash is softened over: a haze, not a stamp
+const BLUR_UNITS = 140; // world units the wash of a map without paint is softened over: a haze, not a stamp
+const HAZE_SIGMA = 280; // a painted map's food and poison hazes get about this Gaussian width (whole box radii: 233 at 95-unit cells), the paint itself is not blurred
 const WISP_UNITS = 700; // size of the soft plumes that thin and thicken the haze
+const PAINT_STEP = 4; // a painted map's wash is shipped in steps of 4 levels, ordered-dithered, so it gzips small without terraces (maps without paint are unchanged)
+// 4 x 4 Bayer thresholds, centred: an ordered dither that breaks rounding steps into a fine even pattern (and repeats, so it gzips well)
+const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map((v) => (v + 0.5) / 16 - 0.5);
+const dithered = (v: number, i: number, j: number, step: number): number => step * Math.round(v / step + BAYER[(i & 3) + 4 * (j & 3)]!);
 
 // The wash's RGBA pixels, a pixel per raster node, which need no canvas (the build ships the Live map's, see live/mapAsset.ts).
 export function tintPixels(t: Terrain): Uint8ClampedArray<ArrayBuffer> {
@@ -36,8 +41,10 @@ export function tintPixels(t: Terrain): Uint8ClampedArray<ArrayBuffer> {
     layers[1]![k] = clamp01((DRY_TINT.from - food) / DRY_TINT.span) * DRY_TINT.alpha;
     layers[2]![k] = clamp01((food - RICH_TINT.from) / RICH_TINT.span) * RICH_TINT.alpha;
   }
-  const r = Math.max(1, Math.round(BLUR_UNITS / w.cell / 2));
+  const sc = HAZE_SIGMA / w.cell;
+  const r = w.paint ? Math.max(1, Math.round((Math.sqrt(1 + 4 * sc * sc) - 1) / 2)) : Math.max(1, Math.round(BLUR_UNITS / w.cell / 2)); // three box passes of radius r have a variance of r (r + 1) cells^2
   for (const layer of layers) boxBlur(layer, w.cols, w.rows, r);
+  const put = w.paint ? (v: number, i: number, j: number): number => dithered(v, i, j, PAINT_STEP) : (v: number): number => v; // the clamped array rounds
   for (let k = 0; k < n; k++) {
     const x = ((k % w.cols) - GROUND_PAD) * w.cell;
     const y = (Math.floor(k / w.cols) - GROUND_PAD) * w.cell;
@@ -56,12 +63,14 @@ export function tintPixels(t: Terrain): Uint8ClampedArray<ArrayBuffer> {
     const ta = sum > 0 ? Math.min(1, top * wisp) : 0;
     const a = ta + pa * (1 - ta);
     if (a <= 0) continue;
+    const i = k % w.cols;
+    const j = (k - i) / w.cols;
     for (let c = 0; c < 3; c++) {
       const tc = sum > 0 ? rgb[c]! / sum : 0;
       const pc = pa > 0 ? w.paint![4 * k + c]! : 0;
-      image.data[4 * k + c] = (tc * ta + pc * pa * (1 - ta)) / a;
+      image.data[4 * k + c] = put((tc * ta + pc * pa * (1 - ta)) / a, i + c, j);
     }
-    image.data[4 * k + 3] = Math.round(255 * a);
+    image.data[4 * k + 3] = w.paint ? put(255 * a, i + 3, j + 1) : Math.round(255 * a);
   }
   return image.data;
 }
