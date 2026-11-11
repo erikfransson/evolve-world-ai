@@ -152,6 +152,7 @@ export class LineagePanel {
     this.clear.hidden = founder === null;
     this.signature = ""; // repaint the pressed state
     for (const e of this.root().querySelectorAll<HTMLElement>("[data-founder]")) this.markPressed(e);
+    this.invalidate(); // the chart dims the other bands at once, not with the next stats
   }
 
   private root(): HTMLElement {

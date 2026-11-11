@@ -1,5 +1,6 @@
+import { fakeCanvas } from "./helpers.ts";
 import { LINEAGE_STRIDE, LINEAGE_TOP } from "../../src/typescript/src/worker/ecoProtocol.ts";
-import { lineageRows, rowLiving, sharePct, stackHistory } from "../../src/typescript/src/ui/lineagePanel.ts";
+import { LineagePanel, lineageRows, rowLiving, sharePct, stackHistory } from "../../src/typescript/src/ui/lineagePanel.ts";
 
 const sample = (time: number, others: number, entries: [number, number, number][]): number[] => {
   const row = [time, others];
@@ -79,5 +80,40 @@ describe("sharePct", () => {
     expect(sharePct(0)).toBe("0%");
     expect(sharePct(1)).toBe("100%");
     expect(sharePct(0.42)).toBe("42%");
+  });
+});
+
+describe("LineagePanel chart redraw", () => {
+  it("redraws the chart at once on select, deselect and Show all, with no new data", () => {
+    const frames: (() => void)[] = [];
+    vi.stubGlobal("window", { devicePixelRatio: 1 });
+    vi.stubGlobal("ResizeObserver", class { observe() {} });
+    vi.stubGlobal("requestAnimationFrame", (fn: () => void) => frames.push(fn));
+    const { canvas, calls } = fakeCanvas(300, 100);
+    const el = (): Record<string, unknown> => ({ hidden: false, addEventListener() {}, replaceChildren() {} });
+    const parts: Record<string, unknown> = { ".lin-bar": el(), ".lin-list": el(), ".lin-graph": canvas, ".lin-clear": el() };
+    const root = { querySelector: (q: string) => parts[q], querySelectorAll: () => [] };
+    (parts[".lin-list"] as Record<string, unknown>).parentElement = root;
+    const panel = new LineagePanel(root as unknown as HTMLElement, () => {});
+    panel.setHistory(Float64Array.from([...sample(0, 0, [[2, 1, 50], [7, 3, 100]]), ...sample(10, 0, [[2, 4, 50], [7, 2, 100]])]));
+    const flush = (): void => { frames.splice(0).forEach((f) => f()); };
+    const alphas = (): number[] => [...new Set(calls.filter((c) => c.name === "fill").map((c) => c.alpha as number))];
+    flush();
+    expect(alphas()).toEqual([1]);
+    calls.length = 0;
+    panel.pick(2); // click a row
+    flush();
+    expect(alphas().sort()).toEqual([0.3, 1]); // the others dim, the picked band stays
+    calls.length = 0;
+    panel.pick(null); // "Show all"
+    flush();
+    expect(alphas()).toEqual([1]);
+    panel.pick(7);
+    flush();
+    calls.length = 0;
+    panel.pick(7); // the same row again deselects
+    flush();
+    expect(alphas()).toEqual([1]);
+    vi.unstubAllGlobals();
   });
 });
