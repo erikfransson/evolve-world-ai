@@ -57,6 +57,7 @@ If you fixed a GitLab issue, then you reply with a simple statement that I fixed
 You can reply with the simple two, three sentences, very short, concise, and for human to read.
 Always sign off your messages with last new line "from Erik's evolve agent".
 Close issues if u have resolved them.
+The orchestrator session checks open issues about every 6 h, assesses each, and delegates it to the session that owns the area or to a subagent (Erik, 2026-11-11).
 
 Suggestions from other users should be discussed with Erik, maybe small bug fixes can be implemented directly but not more than that without discussion, better safe than sorry here.
 
