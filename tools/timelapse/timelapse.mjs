@@ -5,6 +5,7 @@
 import { createRequire } from "node:module";
 import { appendFileSync, closeSync, createReadStream, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, renameSync, statSync, statfsSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
+import { connect, createServer as createNetServer } from "node:net";
 import { dirname, extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -14,6 +15,8 @@ const REPO = resolve(HERE, "../..");
 const P = {
   out: resolve(HERE, "../../videos/timelapse"), // output folder, one subfolder per world (inside a git checkout, so it gets a .gitignore with *)
   server: "ws://127.0.0.1:8787", // the Live server (public port, loopback)
+  socket: "", // Unix socket of the host proxy to the Live public port (the unit runs without network); when set it replaces `server`
+  fwdPort: 8794, // with `socket`: loopback port of the forwarder from the unit's own network namespace to that socket
   pageServer: "", // server address the page connects to, default the same as `server` (a test hook)
   page: "", // folder of the built Live page (build-page.sh); default <REPO>/tools/timelapse/page
   pagePort: 8793, // loopback port of the tiny static server for the built page
@@ -71,10 +74,25 @@ const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
 mkdirSync(OUT, { recursive: true });
 if (!existsSync(join(OUT, ".gitignore"))) writeFileSync(join(OUT, ".gitignore"), "*\n"); // the output folder may sit inside a git checkout: keep frames out of git status
 
+// Proxied mode: Chrome needs a TCP URL, so each loopback connection is piped to the proxy socket, bytes only (nothing parsed); the light client uses it too.
+const MAX_FORWARDS = 4; // the light client, Chrome's page, and room for a reconnect overlapping the old connection
+if (P.socket) {
+  const fwd = createNetServer((c) => {
+    const u = connect(P.socket);
+    const end = () => { c.destroy(); u.destroy(); };
+    for (const s of [c, u]) { s.on("error", end); s.on("close", end); s.setTimeout(60_000, end); } // the server sends stats every second and both clients ping every 20 s
+    c.pipe(u); u.pipe(c); // pipe() pauses the reader when the writer is full, so each direction buffers at most about two stream buffers
+  });
+  fwd.maxConnections = MAX_FORWARDS;
+  await new Promise((res, rej) => { fwd.once("error", rej); fwd.listen(P.fwdPort, "127.0.0.1", res); });
+  fwd.on("error", (err) => logLimited("forwarder error", "forwarder error", String(err?.message ?? err).slice(0, 100)));
+  P.server = `ws://127.0.0.1:${P.fwdPort}`;
+}
+
 // what the built page was built for (build-page.sh writes it)
 let stampInfo = null;
 try { stampInfo = JSON.parse(readFileSync(join(PAGE_DIR, "timelapse-build.json"), "utf8")); } catch {}
-log("start", { framing: P.framing, interval: P.interval, popEvery: P.popEvery, out: OUT, server: P.server, page: PAGE_DIR, build: stampInfo });
+log("start", { framing: P.framing, interval: P.interval, popEvery: P.popEvery, out: OUT, server: P.server, socket: P.socket, page: PAGE_DIR, build: stampInfo });
 
 // ---- light client: read-only viewer, no browser. Sends only the page's "ping" text, never a select or an add.
 const { WebSocket } = createRequire(import.meta.url)("ws"); // from tools/timelapse/node_modules (npm ci)
@@ -233,6 +251,7 @@ function serveStatic() {
   });
 }
 let chromeUpAt = 0; // when the current Chrome became ready
+let chromeFails = 0, chromeRetryAt = 0; // failed starts in a row, and when the next start may be tried
 async function launchChrome(catchUp = false) { // catchUp: take a frame as soon as the page is live, for the slot that passed meanwhile
   if (chromeState !== "off") return;
   chromeState = "starting";
@@ -247,7 +266,11 @@ async function launchChrome(catchUp = false) { // catchUp: take a frame as soon 
     log("chrome ready", { pid: browser.process()?.pid });
     if (catchUp) await catchUpFrame(); // chromeState is still "starting": no slot frame can start meanwhile
     if (chromeState === "starting") chromeState = "ready";
-  } catch (err) { log("chrome start failed", String(err?.message ?? err).slice(0, 200)); await closeChrome(); }
+    chromeFails = 0;
+  } catch (err) {
+    chromeFails++; chromeRetryAt = Date.now() + Math.min(300, 5 * 2 ** chromeFails) * 1000; // a lasting cause (full /tmp, no server) retries at 10 s doubling to 5 min, not every step
+    logLimited("chrome start failed", "chrome start failed", chromeFails, "in a row:", String(err?.message ?? err).slice(0, 200)); await closeChrome();
+  }
 }
 function closeServer() { try { httpd?.close(); httpd?.closeAllConnections?.(); } catch {} httpd = null; }
 async function relaunchChrome() { // a clean new Chrome; its profile in /tmp goes with the old one
@@ -354,7 +377,7 @@ async function step(now, withFrame) {
   if (!world.capped && freeBytes < P.freeFloorBytes) { log("free disk", Math.round(freeBytes / 1e6), "MB under the floor, frames stopped for", world.dir); world.capped = true; world.why = "disk-floor"; }
   if (!world.capped && world.bytes >= frameCapBytes()) { log("folder at cap", world.bytes, "B, frames stopped for", world.dir); world.capped = true; world.why = "cap"; }
   if (world.capped) { setStatus(world.why === "cap" ? "capped" : "disk-floor", world.why === "cap" ? "folder reached the size cap" : "free disk under the floor"); await closeChrome(); return; }
-  if (chromeState === "off") { setStatus("capturing", "starting Chrome"); void launchChrome(); return; }
+  if (chromeState === "off") { if (Date.now() >= chromeRetryAt) { setStatus("capturing", "starting Chrome"); void launchChrome(); } else setStatus("error", "Chrome failed to start " + chromeFails + " times in a row"); return; }
   setStatus("capturing");
   if (chromeState !== "ready" || !withFrame) return;
   if (!(await pageShowsWorld())) { log("WARNING page shows offline or loading at capture time, no frame yet, waiting for it", await pageState()); setStatus("capturing", "page was offline or loading, reloaded"); void reloadPage(); return; }

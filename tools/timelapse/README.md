@@ -7,30 +7,47 @@ Chrome runs only while frames are wanted and closes when a folder reaches the ca
 It takes 2 viewer slots on the server (the light client and Chrome). The server admits about 9 viewers at 12000 creatures, so the capture costs public capacity at a full world.
 The output folder defaults to `videos/timelapse` of the checkout (it gets a `.gitignore` with `*`).
 Set it with `out=<dir>`.
-Other parameters (`framing`, `interval`, `capBytes`, `server`, `pagePort`) sit in the `P` block at the top of the script and take `key=value` arguments.
+Other parameters (`framing`, `interval`, `capBytes`, `server`, `socket`, `pagePort`) sit in the `P` block at the top of the script and take `key=value` arguments.
+A plain run (development) connects to `server` (default `ws://127.0.0.1:8787`). The unit passes `socket=<path>` instead: it has no network, and a forwarder inside the script pipes Chrome's and the light client's loopback connections (`127.0.0.1:<fwdPort>`, 8794, at most 4) to that Unix socket, bytes only.
 Chrome is the system `/usr/bin/google-chrome`. `puppeteer-core` never downloads a browser, so nothing else is fetched.
 Chrome is closed and started fresh every `chromeRestartMin` minutes (default 60, 0 = never) right after a frame, because its memory creeps up over hours. A relaunch costs no frame, the frame for that slot comes 1 to 5 s late.
+A Chrome start that fails is retried after 10 s, doubling to 5 min, and logged at most every 30 s.
 A page that shows offline or loading at a slot gets `pageWaitS` (6) seconds to reconnect by itself (the server drops a slow viewer, which happens at the population boom), then is reloaded, and the frame follows as soon as the page is live.
 Chrome keeps its own sandbox (no `--no-sandbox`) and talks to the script over a pipe, so no DevTools port opens.
 The folder cap counts every file in the world folder (frames stop a little before it so the logs fit), and the logs stop at it.
 
 ## Install
+Three units: `evolve-timelapse-proxy.socket` (the user manager creates `/run/user/<uid>/evolve-timelapse/`, mode 0700, and `live.sock` in it), `evolve-timelapse-proxy.service` (`systemd-socket-proxyd`, started on the first connection, forwards to the Live public port on 127.0.0.1 and nowhere else), and `evolve-timelapse.service` (the capture, in its own network namespace, sees that directory read-only at `/run/user/evolve-timelapse/`).
 Run these from a checkout at the released commit (the same commit the server runs).
 ```
 cd <repo>/tools/timelapse
 nice -n 19 npm ci
 nice -n 19 ./build-page.sh
 mkdir -p <output folder> ~/.config/systemd/user
+cp evolve-timelapse-proxy.socket ~/.config/systemd/user/
+sed -e 's|@PORT@|<Live public port, 8787>|' evolve-timelapse-proxy.service.template > ~/.config/systemd/user/evolve-timelapse-proxy.service
 sed -e 's|@REPO@|<repo>|' -e 's|@NODE@|<node dir, the one that holds bin/node>|' -e 's|@OUT@|<output folder>|' evolve-timelapse.service.template > ~/.config/systemd/user/evolve-timelapse.service
 systemctl --user daemon-reload
+systemctl --user enable --now evolve-timelapse-proxy.socket
 systemctl --user enable --now evolve-timelapse
 ```
-The unit hides home except the checkout (read-only), node and the output folder, and drops the user D-Bus; `evolve-timelapse.service.template` comments each difference from the server unit.
-Open risk: Chrome needs `AF_UNIX`, so abstract Unix sockets stay reachable from the unit. On this laptop that is the Xwayland server (no cookie needed for the local user) and the ibus bus, so native code in the unit (a Chrome sandbox escape) could inject keys or read input. Closing it needs `PrivateNetwork=yes` plus a socket proxy to the Live port, which is not done.
-The unit's `/tmp`, `/var/tmp` and `/dev/shm` are small tmpfs mounts (256M, 16M, 64M; a run uses about 30 to 80 MB of `/tmp`, measured with framing `a`, not with `b`), `/home` is a read-only tmpfs (`HOME=/tmp`), and the syscall filter is `@system-service chroot`.
+Check them:
+1. `ls -la /run/user/$(id -u)/evolve-timelapse` shows the directory as `drwx------` with `srw------- live.sock`.
+2. `curl -s --unix-socket /run/user/$(id -u)/evolve-timelapse/live.sock http://x/stats` prints `{"creatures":...,"viewers":...}` from the public port.
+3. `systemctl --user status evolve-timelapse-proxy.socket evolve-timelapse-proxy evolve-timelapse`: the socket listening, the proxy and the capture running.
+4. `P=$(systemctl --user show -p MainPID --value evolve-timelapse); readlink /proc/$P/ns/net /proc/self/ns/net; tail -n +3 /proc/$P/net/dev`: two different namespaces, and only `lo` in the capture's.
+5. The journal's `start` line shows `socket: '/run/user/evolve-timelapse/live.sock'`, then `chrome ready` and `frame` lines.
+
+The capture unit hides home except the checkout (read-only), node and the output folder, and drops the user D-Bus; `evolve-timelapse.service.template` comments each difference from the server unit.
+With `PrivateNetwork=yes` the desktop's abstract Unix sockets (Xwayland, ibus, session buses), the host loopback (the admin port included) and the internet are out of reach; checked under systemd 249 --user: X11 and ibus connects are refused, `DISPLAY=:0 xdpyinfo` cannot open the display, host loopback ports are refused, and there is no route out.
+Through the socket a compromised capture reaches only the Live public port, at most 4 connections at once, as a loopback client: the same handlers and limits as any visitor, except the per-address caps, since it sends no Funnel `X-Forwarded-For` (it can send its own).
+The proxy unit has no home, no writable path, no IPC and only IPv4 sockets, but it shares the host network, so a bug in `systemd-socket-proxyd` reached through the bytes it copies would reach the host loopback and the internet (a user manager cannot load the `IPAddressDeny=` filter).
+What remains open: the kernel's surface (Chrome needs user, pid and net namespaces, so this unit can create them), the output folder (writable, shared with whoever reads the frames), and processes of the same user outside the sandbox that read the frames or logs.
+The unit's `/tmp`, `/var/tmp` and `/dev/shm` are small tmpfs mounts (256M, 16M, 64M; a run uses about 30 to 80 MB of `/tmp`, measured with framing `a`, not with `b`), `/home` is a read-only tmpfs (`HOME=/tmp`), the host's `/run/lock` and `/dev/mqueue` are hidden, and the syscall filter is `@system-service chroot`.
 It gives up after 5 failed starts in an hour: `systemctl --user reset-failed evolve-timelapse` then start it again.
 Wrap `npm ci` and `build-page.sh` in `flock <repo>/.claude/heavy.lock` where that lock is in use.
-Status: `systemctl --user status evolve-timelapse`. Log: `journalctl --user -u evolve-timelapse -f`. Stop: `systemctl --user stop evolve-timelapse`.
+Status: `systemctl --user status evolve-timelapse`. Log: `journalctl --user -u evolve-timelapse -f` (the proxy: `-u evolve-timelapse-proxy`). Stop: `systemctl --user stop evolve-timelapse`.
+When the Live public port changes, change `@PORT@` in the installed proxy unit, `daemon-reload`, and `systemctl --user restart evolve-timelapse-proxy`.
 
 ## After a promote
 1. Update the checkout the unit runs from to the released commit.

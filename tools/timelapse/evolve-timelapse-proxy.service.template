@@ -1,0 +1,40 @@
+# Forwards the time-lapse socket (evolve-timelapse-proxy.socket) to the Live public port, bytes only (systemd's own proxy, nothing parsed). Replace @PORT@ (the public port, 8787 by default).
+# The target is fixed here, so a client of the socket reaches that one port and nothing else. The socket comes in as an inherited fd, so this unit sees no files of its own.
+[Unit]
+Description=Evolve World time-lapse proxy to the Live public port
+Requires=evolve-timelapse-proxy.socket
+After=evolve-timelapse-proxy.socket
+
+[Service]
+# At most 4 connections at once (the capture needs 2); more wait in the socket's backlog.
+ExecStart=/lib/systemd/systemd-socket-proxyd --connections-max=4 127.0.0.1:@PORT@
+Nice=19
+IOSchedulingClass=idle
+MemoryMax=64M
+MemorySwapMax=0
+# 4 connections x (2 sockets + 2 splice pipes), plus the listening socket and the log.
+LimitNOFILE=64
+TasksMax=8
+
+# Sandbox: no home, no writable path, no IPC, IPv4 only (it needs the host loopback, so no PrivateNetwork). Checked under systemd 249 --user, see README.md.
+PrivateUsers=yes
+ProtectSystem=strict
+TemporaryFileSystem=/home:ro /root:ro /run/user:ro
+InaccessiblePaths=-/tmp -/var/tmp -/run/lock -/dev/shm -/dev/mqueue
+PrivateDevices=yes
+PrivateIPC=yes
+NoNewPrivileges=yes
+# accept() on the inherited Unix socket needs no AF_UNIX; connect() to the target needs AF_INET.
+RestrictAddressFamilies=AF_INET
+RestrictNamespaces=yes
+RestrictRealtime=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProcSubset=pid
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+SystemCallArchitectures=native
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+UMask=0077

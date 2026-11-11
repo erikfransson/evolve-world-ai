@@ -1,0 +1,14 @@
+# The time-lapse unit's only way out: a Unix socket that evolve-timelapse-proxy.service forwards to the Live public port. Copy as is, see README.md.
+# The user manager creates %t/evolve-timelapse (mode 0700) and the socket in it; only this pair and evolve-timelapse.service (read-only bind) use the directory.
+[Unit]
+Description=Evolve World time-lapse proxy socket
+
+[Socket]
+ListenStream=%t/evolve-timelapse/live.sock
+DirectoryMode=0700
+SocketMode=0600
+Backlog=16
+RemoveOnStop=yes
+
+[Install]
+WantedBy=sockets.target

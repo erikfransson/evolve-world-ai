@@ -1,8 +1,11 @@
 # Time-lapse capture of the Live world. Not installed by anything here, see README.md. Replace @REPO@ (checkout), @NODE@ (node install dir), @OUT@ (output folder, must exist before start: BindPaths needs it).
 # It runs headless Chrome on pages the public server feeds, so it is sandboxed like the server (server/evolve-live.service.template), minus what Chrome needs (marked "differs").
+# It has no network: it reaches the Live public port only through evolve-timelapse-proxy.socket (a Unix socket in %t/evolve-timelapse, served by systemd-socket-proxyd).
 [Unit]
 Description=Evolve World Live time-lapse capture
-After=network-online.target evolve-live.service
+# The socket unit creates %t/evolve-timelapse, which the bind below needs before the sandbox starts.
+Requires=evolve-timelapse-proxy.socket
+After=evolve-timelapse-proxy.socket evolve-live.service
 # Same as the server: stop retrying after 5 failed starts in an hour.
 StartLimitIntervalSec=3600
 StartLimitBurst=5
@@ -11,7 +14,7 @@ StartLimitBurst=5
 WorkingDirectory=@REPO@
 # Home is read-only here (see the sandbox below), so Chrome's and the toolkits' per-user files go to the private /tmp.
 Environment=HOME=/tmp
-ExecStart=@NODE@/bin/node tools/timelapse/timelapse.mjs out=@OUT@
+ExecStart=@NODE@/bin/node tools/timelapse/timelapse.mjs out=@OUT@ socket=/run/user/evolve-timelapse/live.sock
 Nice=19
 IOSchedulingClass=idle
 # Differs: SCHED_IDLE (the server runs at the normal class, this one only fills idle time).
@@ -28,22 +31,27 @@ Restart=always
 RestartSec=30
 
 # Sandbox. Home is hidden except the checkout (read-only: script, built page, ws package), node, and the output folder (the only writable path). Chrome's profile goes to the private /tmp (a tmpfs, see below).
-# A user manager needs PrivateUsers for the mount sandbox below (checked under systemd 249 --user: without it the unit fails with "Failed to set up mount namespacing").
+# A user manager needs PrivateUsers for the mount sandbox below (checked under systemd 249 --user: without it the unit fails with "Failed to set up mount namespacing")
+# and for PrivateNetwork (without it the network namespace is skipped with only a log line, "network namespace setup failed, ignoring").
 # Chrome's own renderer sandbox stays on (no --no-sandbox) and works under every line here.
 PrivateUsers=yes
 # Differs: ProtectHome=tmpfs is not used, under systemd 249 --user it leaves /home a writable tmpfs (a write surface the cap below does not cover). Read-only tmpfs mounts hide the same three
 # places (/home, /root, and /run/user with the user D-Bus and systemd user socket); the binds below add the few paths needed. ReadOnlyPaths=/home was tried and exposes the real home, do not use it.
 TemporaryFileSystem=/home:ro /root:ro /run/user:ro
-BindReadOnlyPaths=@REPO@ @NODE@
+# The proxy socket's directory, read-only (connecting needs no write access) at a path outside %t, so /run/user/<uid> stays absent here.
+BindReadOnlyPaths=@REPO@ @NODE@ %t/evolve-timelapse:/run/user/evolve-timelapse
 BindPaths=@OUT@
 ProtectSystem=strict
 NoNewPrivileges=yes
-# Differs: Chrome needs AF_UNIX for its own process sockets. The /run/user tmpfs above already hides the runtime dir (user D-Bus, systemd user socket); the InaccessiblePaths line
-# keeps it hidden if that changes. The "-" is needed, the path is already gone and a plain InaccessiblePaths= would stop the start.
-# OPEN RISK: abstract Unix sockets stay reachable because Chrome needs AF_UNIX. On this laptop that means the Xwayland server (X11 clients of the local user need no cookie)
-# and the ibus bus, so native code in this unit could inject keys or read input. Closing it needs PrivateNetwork=yes plus a socket proxy to the Live port. Not done, the owner decides.
-RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
-InaccessiblePaths=-%t
+# Differs: its own network namespace with only a loopback. Abstract Unix sockets belong to the network namespace, so the desktop's (Xwayland, ibus, session buses) are out of reach,
+# as are the host loopback (the server's admin port) and the internet. Chrome and node talk over this private loopback (page server, forwarder to the proxy socket).
+PrivateNetwork=yes
+# Differs: Chrome needs AF_UNIX for its own process sockets, and AF_INET for the private loopback. No AF_INET6: nothing here uses it.
+RestrictAddressFamilies=AF_INET AF_UNIX
+# The /run/user tmpfs above already hides the runtime dir (user D-Bus, systemd user socket); this keeps it hidden if that changes. The "-" is needed, the path is already gone.
+# The host's /run/lock (shared, writable by every process) and /dev/mqueue stay out of reach as well: nothing here writes there.
+# (TemporaryFileSystem=/run/lock:ro was tried: under systemd 249 with NoNewPrivileges=yes that tmpfs comes up writable.)
+InaccessiblePaths=-%t -/run/lock -/dev/mqueue
 PrivateIPC=yes
 # Differs: no PrivateTmp, since it would win over the sized tmpfs below. These three are the only writable places besides @OUT@, in memory (counted in MemoryMax), so a compromised
 # process cannot fill the disk through them. Measured per run with framing a: /tmp peak 29 to 77 MB (Chrome profile), /var/tmp 0, /dev/shm 0 (Chrome runs with --disable-dev-shm-usage).

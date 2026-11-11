@@ -6,6 +6,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- Live time-lapse tool: the capture unit runs without network (`PrivateNetwork=yes`) and reaches only the Live public port, through a Unix socket served by a sandboxed `systemd-socket-proxyd` unit, so the desktop's X server and ibus bus are out of its reach; host `/run/lock` and `/dev/mqueue` are hidden, and failed Chrome starts back off.
+
 ## 0.8.0 (2026-11-11)
 
 - Live: the Lineages chart dims the other bands at once when a row is selected, deselected or "Show all" is pressed, instead of at the next stats message.
