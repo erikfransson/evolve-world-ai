@@ -13,7 +13,7 @@ import type { PublicServer } from "../../server/src/public.ts";
 import { Saves } from "../../server/src/saves.ts";
 import { StateStore } from "../../server/src/state.ts";
 import { ItemMirror } from "../../src/typescript/src/live/items.ts";
-import { MSG_DELTA, MSG_DETAIL, MSG_ITEMS, creatureFrameBytes, decodeCreatures, decodeDelta, decodeItems, deltaMessage, encodeDeltaChunk } from "../../src/typescript/src/live/protocol.ts";
+import { MAX_DELTAS, MSG_DELTA, MSG_DETAIL, MSG_ITEMS, creatureFrameBytes, decodeCreatures, decodeDelta, decodeItems, deltaMessage, encodeDeltaChunk } from "../../src/typescript/src/live/protocol.ts";
 import { encodeCreatures } from "./frameOracle.ts";
 import type { Stats } from "../../src/typescript/src/live/protocol.ts";
 import { decodeDetail, encodeDetail } from "../../src/typescript/src/live/detail.ts";
@@ -222,11 +222,18 @@ describe("upload budget", () => {
   });
 
   // Red at the old SLOWEST_STRIDE of 25: 100 viewers let in at a low population took 4.6 MB/s of creature frames once the world grew to
-  // 12000, twice the frame budget, so the upload bound did not hold.
+  // 12000, twice the frame budget, so the creature-frame bound did not hold. Item changes come on top (each viewer gets the world's
+  // change rate, at most a full item set per frame it gets); this covers the creature frames only.
   it("keeps the most viewers inside the frame budget at the population cap, at the slowest stride", () => {
     const full = (creatureFrameBytes(MAX_POPULATION) * 1000) / FRAME_MS; // bytes per second of one viewer at every frame
     expect((LIMITS.maxViewers * full) / SLOWEST_STRIDE).toBeLessThanOrEqual(frameBudget(LIMITS));
     expect(sendStride(LIMITS.maxViewers, full, 0, frameBudget(LIMITS))).toBeLessThanOrEqual(SLOWEST_STRIDE);
+  });
+
+  // Red at MAX_DELTAS 32: at strides 33 to 60 a viewer's last frame had left the delta ring on each of its turns, so it needed a full item set every time.
+  it("keeps the slowest stride inside the delta window, so a viewer at it still gets item changes", () => {
+    expect(SLOWEST_STRIDE).toBeLessThanOrEqual(MAX_DELTAS);
+    expect(MAX_DELTAS).toBeLessThanOrEqual(255); // the u8 count of a DELTA message
   });
 });
 

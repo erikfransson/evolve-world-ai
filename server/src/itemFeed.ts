@@ -1,6 +1,7 @@
 import { MAX_DELTAS, deltaMessage } from "../../src/typescript/src/live/protocol.ts";
 
 // The last MAX_DELTAS frames' item changes, so each viewer gets the changes since the last frame it got, whatever its stride.
+// Memory: 64 chunks of at most 7 + MAX_DELTA_OPS x 8 + MAX_DELTA_EVENTS x 7 bytes (33 kB) each, about 2.1 MB.
 export class ItemFeed {
   private readonly ring = new Map<number, Uint8Array | null>(); // by frame number; null for a frame too big to send as changes
 

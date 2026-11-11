@@ -103,6 +103,23 @@ describe("birth wait: server", () => {
     expect(read(w, id).full).toBe(true);
   });
 
+  // Red without the weight check: births wait at the brain-weight rail (Ecosystem.birthRoom), but the flag looked only at the population cap.
+  it("flags a world held at its brain-weight rail, as the engine holds the birth", () => {
+    const w = world();
+    const m = w.eco.members[0]!;
+    m.creature.state.energy = m.birth.energy + m.birth.cost + 50;
+    m.lastBirthTick = -Infinity;
+    expect(read(w, m.id).full).toBe(false);
+    w.eco.birthWeightCap = w.eco.weights / 2; // far under the weights now, so deaths in the next tick do not reopen births
+    const b = read(w, m.id);
+    expect(b).toMatchObject({ waitS: 0, full: true });
+    expect(w.eco.population).toBeLessThan(w.config.eco.maxPopulation - w.config.eco.birthReserve); // not the population cap
+    expect(birthNote({ energy: m.creature.state.energy, birthEnergy: m.birth.energy }, b)).toBe("world full");
+    const before = m.children;
+    w.step();
+    expect(m.children).toBe(before);
+  });
+
   // The note is true to the engine: with the energy, no wait and room the creature has a child on the next tick; with a wait it does not.
   it("matches the engine's birth rule", () => {
     for (const held of [false, true]) {

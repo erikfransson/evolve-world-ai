@@ -6,7 +6,7 @@ import type { AddRules } from "../../src/typescript/src/live/add.ts";
 import { parseFounders } from "../../src/typescript/src/live/founders.ts";
 import { cleanMap } from "../../src/typescript/src/live/mapInfo.ts";
 import { pickerRegions } from "../../src/typescript/src/live/regionPicker.ts";
-import { mapSpec } from "../../src/typescript/src/sim/maps/index.ts";
+import { mapSpec, mapVersion } from "../../src/typescript/src/sim/maps/index.ts";
 
 const NAMES = ["The Crags", "The Blight", "The Mire", "The Bloom", "The Flats", "The Steppe", "The Commons"];
 const spec = mapSpec("clock")!;
@@ -56,6 +56,24 @@ describe("the where picker", () => {
     panel.setMap(cleanMap({ name: "no-such-map", regions: [] }), world);
     expect(where.hidden).toBe(true);
     expect(pickerRegions(rules(), cleanMap({ name: "inland-sea", regions: [{ name: "a" }] }))).toBeNull();
+  });
+
+  // Red without the version check: the page drew its own design's spots under the server's names for another design of the map.
+  it("is hidden when the server runs another design of the map, and shown for the page's own version", async () => {
+    const { panel, sent, go, where, pick } = setup();
+    panel.setRules(rules());
+    const versioned = (version: string) => cleanMap({ name: "clock", version, ground: {}, regions: NAMES.map((name) => ({ name, food: 1, poison: 0, ground: "plain", role: "x" })) });
+    panel.setMap(versioned(mapVersion("clock")), world);
+    expect(where.hidden).toBe(false);
+    pick("3");
+    const other = versioned("0badc0de-1");
+    expect(other.version).toBe("0badc0de-1"); // well formed, not this page's
+    expect(pickerRegions(rules(), other)).toBeNull();
+    panel.setMap(other, world);
+    expect(where.hidden).toBe(true);
+    await go();
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).not.toHaveProperty("region");
   });
 
   it("shows Anywhere selected by default and a button for each region, named from the hello", () => {

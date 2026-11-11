@@ -31,6 +31,11 @@ import type { ThinkPool } from "../../src/typescript/src/worker/ecoPool.ts";
 // A seed whose founders find no open spots (seedFounders): nothing was inserted.
 export class NoRoom extends Error {}
 
+// A visitor's add checks at most this many distances to living creatures in its spot search (freeSpots), past it the add is refused as
+// crowded. An add aimed at a packed region at 11990 creatures did about 2.1 M (90 ms, every try failing after scanning most members);
+// an add that finds room uses 2 scans of the members a copy, 240 000 for 10 copies at 12000, so it draws the same spots as without the bound.
+export const MAX_ADD_SPOT_CHECKS = 500_000;
+
 // The selected creature's rays and brain input as of one tick.
 interface Capture {
   tick: number;
@@ -262,13 +267,15 @@ export class LiveWorld {
     });
   }
 
-  // The BIRTH message of a living creature (its birth cooldown or hold left, and whether births wait for room), or null. O(1).
+  // The BIRTH message of a living creature (its birth cooldown or hold left, and whether births wait for room: the population cap or
+  // the brain-weight rail, as Ecosystem.birthRoom holds them), or null. O(1).
   birthWait(id: number): Uint8Array | null {
     const e = this.eco;
     const m = e.get(id);
     if (!m) return null;
     const eco = e.config.eco;
-    return encodeBirthWait(e.tick, id, (m.lastBirthTick + m.cooldownTicks - e.tick) * e.config.dt, e.population >= eco.maxPopulation - eco.birthReserve);
+    const full = e.population >= eco.maxPopulation - eco.birthReserve || e.weights > e.birthWeightCap;
+    return encodeBirthWait(e.tick, id, (m.lastBirthTick + m.cooldownTicks - e.tick) * e.config.dt, full);
   }
 
   // The GENOME message of a living creature, or null.
@@ -521,19 +528,29 @@ export class LiveWorld {
   }
 
   // Up to n random spots inside the walls (or inside `disc`), clear of rock, of creatures (unless alive is false) and of `prior` spots not yet filled,
-  // from the given draws (at most 40 tries a spot).
-  private freeSpots(n: number, random: () => number, disc?: { x: number; y: number; r: number }, prior: readonly { x: number; y: number }[] = [], alive = true): { x: number; y: number; heading: number }[] {
+  // from the given draws (at most 40 tries a spot, and no new try once maxChecks distances to creatures are checked).
+  private freeSpots(n: number, random: () => number, disc?: { x: number; y: number; r: number }, prior: readonly { x: number; y: number }[] = [], alive = true, maxChecks = Infinity): { x: number; y: number; heading: number }[] {
     const e = this.eco;
     const { width, height } = this.config.world;
     const r = this.config.creature.radius;
     const margin = 4 * r;
+    let checks = 0;
     const crowded = (x: number, y: number, taken: readonly { x: number; y: number }[]): boolean => {
       for (const p of taken) if ((p.x - x) ** 2 + (p.y - y) ** 2 < (4 * r) ** 2) return true;
-      if (alive) for (const m of e.members) if ((m.creature.state.x - x) ** 2 + (m.creature.state.y - y) ** 2 < (3 * r) ** 2) return true;
+      if (!alive) return false;
+      const ms = e.members;
+      for (let i = 0; i < ms.length; i++) {
+        const s = ms[i]!.creature.state;
+        if ((s.x - x) ** 2 + (s.y - y) ** 2 < (3 * r) ** 2) {
+          checks += i + 1;
+          return true;
+        }
+      }
+      checks += ms.length;
       return false;
     };
     const spots: { x: number; y: number; heading: number }[] = [];
-    for (let tries = 0; spots.length < n && tries < 40 * n; tries++) {
+    for (let tries = 0; spots.length < n && tries < 40 * n && checks < maxChecks; tries++) {
       let x = margin + random() * (width - 2 * margin);
       let y = margin + random() * (height - 2 * margin);
       if (disc) {
@@ -667,7 +684,7 @@ export class LiveWorld {
       if (!g || req.region >= MAX_SPAWN_REGION) return { reason: "this world has no such region, pick another place", now: false };
       disc = { x: g.x, y: g.y, r: 0.6 * g.r }; // the rule founder homes use
     }
-    const spots = this.freeSpots(req.copies, random, disc);
+    const spots = this.freeSpots(req.copies, random, disc, [], true, MAX_ADD_SPOT_CHECKS);
     if (spots.length < req.copies) return { reason: disc ? "that region is crowded, try another" : "no free spot found, try again" };
     const ids: number[] = [];
     for (const p of spots) {

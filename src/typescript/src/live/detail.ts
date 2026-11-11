@@ -132,7 +132,7 @@ export interface BirthWait {
   tick: number;
   id: number;
   waitS: number; // simulated seconds until it may give birth, 0 to MAX_BIRTH_WAIT_S
-  full: boolean; // the world is at its birth cap
+  full: boolean; // births wait for room: the world is at its birth cap or its brain-weight rail
 }
 export const BIRTH_BYTES = 12;
 const BIRTH_MAX_BYTES = 64; // room for later fields an older page skips

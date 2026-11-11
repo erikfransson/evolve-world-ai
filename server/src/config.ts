@@ -39,7 +39,7 @@ liveConfig.world.poisonDamage = 50; // a bite costs one food's worth, not the li
 liveConfig.world.poisonDensity = 0.01; // start counts stay at or below the caps (foodDensity 0.5 is 112 500 items)
 liveConfig.eco.initialPopulation = 0; // a fresh world is seeded with the founders file instead (founders.ts)
 liveConfig.eco.foodRegrow = 0.00285;
-liveConfig.eco.foodMaxDensity = 0.85; // realms mostly isolated with rare contact (docs/clock-map-notes.md); the item slots leave the admin room up to 0.95 (itemHeadroom, CAP_LIMITS)
+liveConfig.eco.foodMaxDensity = 0.66; // a population near 3000 with peaks under 5000 (Erik, 2026-11-11: trial, watch a day; was 0.85, chosen for realm isolation, docs/clock-map-notes.md); the item slots leave the admin room up to 0.95 (itemHeadroom, CAP_LIMITS)
 liveConfig.eco.poisonRegrow = 0.0003;
 liveConfig.eco.poisonMaxDensity = 0.01;
 liveConfig.eco.collisionDamage = true;
@@ -47,10 +47,10 @@ liveConfig.eco.killEnergy = 5; // a kill also gives this much energy, on top of 
 liveConfig.creature.neuronCost = 0.0025; // half-price brains and eyes (Ecosystem 0.005 and 0.02) so all three founders can last (Erik, 2026-10-29, docs/tuning-notes.md)
 liveConfig.creature.rayCost = 0.01;
 liveConfig.eco.maxPopulation = MAX_POPULATION; // bounds the frame size; room() admits fewer viewers as frames grow, so the upload budget holds
-// A creature at 5 times its own birth energy (500 to 2500 at the Live birth range) stops eating until it spends some. Without it a world
-// held at its cap froze: births stopped, food kept coming, nobody starved (2026-11-10 production: 4900 for a day, one creature at 88632
-// energy with birth at 474). With it, winters and bumps take creatures again and births refill (docs/tuning-notes.md). Admin: 0 off, 1 to 100.
-export const ENERGY_CAP = 5;
+// Off (Erik, 2026-11-11: less food instead, see foodMaxDensity). The admin can set 1 to 100: a creature at that many times its own birth energy
+// stops eating until it spends some, made for a world held at its cap where nobody starved (2026-11-10 production: 4900 for a day, one
+// creature at 88632 energy with birth at 474; docs/tuning-notes.md).
+export const ENERGY_CAP = 0;
 liveConfig.eco.energyCap = ENERGY_CAP;
 liveConfig.eco.birthReserve = 100; // births stop 100 below the cap, so visitors can still add (insertCreature fills to maxPopulation)
 liveConfig.eco.seasons = true;

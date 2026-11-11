@@ -4,7 +4,7 @@ import { closeSync, openSync, readFileSync, readSync, readdirSync, statSync, sta
 import { join, resolve } from "node:path";
 
 const A = Object.fromEntries(process.argv.slice(2).map((a) => { const i = a.indexOf("="); return [a.slice(0, i), a.slice(i + 1)]; }));
-const OUT = resolve(A.out ?? "/home/erik/progs/evolve-world-ai/videos/timelapse");
+const OUT = resolve(A.out ?? join(import.meta.dirname, "../../videos/timelapse"));
 const bad = [];
 const readJson = (f) => { try { return JSON.parse(readFileSync(f, "utf8")); } catch { return null; } };
 const tailLine = (f) => { try { const fd = openSync(f, "r"), n = statSync(f).size, len = Math.min(n, 16384), b = Buffer.alloc(len); readSync(fd, b, 0, len, n - len); closeSync(fd); return b.toString().trimEnd().split("\n").pop(); } catch { return null; } };

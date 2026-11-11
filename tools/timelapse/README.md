@@ -5,10 +5,12 @@ Next to the frames it writes `frames.jsonl`, `population.jsonl` (every 5 s, per 
 A light websocket viewer is always on and detects resets.
 Chrome runs only while frames are wanted and closes when a folder reaches the cap (30 GB) or the disk has less than 20 GB free.
 It takes 2 viewer slots on the server (the light client and Chrome). The server admits about 9 viewers at 12000 creatures, so the capture costs public capacity at a full world.
-The output folder defaults to `/home/erik/progs/evolve-world-ai/videos/timelapse` (it gets a `.gitignore` with `*`).
+The output folder defaults to `videos/timelapse` of the checkout (it gets a `.gitignore` with `*`).
 Set it with `out=<dir>`.
 Other parameters (`framing`, `interval`, `capBytes`, `server`, `pagePort`) sit in the `P` block at the top of the script and take `key=value` arguments.
 Chrome is the system `/usr/bin/google-chrome`. `puppeteer-core` never downloads a browser, so nothing else is fetched.
+Chrome is closed and started fresh every `chromeRestartMin` minutes (default 60, 0 = never) right after a frame, because its memory creeps up over hours. A relaunch costs no frame, the frame for that slot comes 1 to 5 s late.
+A page that shows offline or loading at a slot gets `pageWaitS` (6) seconds to reconnect by itself (the server drops a slow viewer, which happens at the population boom), then is reloaded, and the frame follows as soon as the page is live.
 Chrome keeps its own sandbox (no `--no-sandbox`) and talks to the script over a pipe, so no DevTools port opens.
 The folder cap counts every file in the world folder (frames stop a little before it so the logs fit), and the logs stop at it.
 
@@ -42,7 +44,7 @@ Status: `systemctl --user status evolve-timelapse`. Log: `journalctl --user -u e
 The script also warns, saves no frame and reloads the page when it shows offline or loading, or when a frame is under a third of the running median bytes.
 
 ## Video
-ffmpeg is not installed: `sudo apt install ffmpeg`.
+Needs ffmpeg (`sudo apt install ffmpeg`).
 ```
 ffmpeg -framerate 30 -pattern_type glob -i '<world folder>/*.png' -c:v libx264 -crf 18 -preset slow -pix_fmt yuv420p out.mp4
 ```

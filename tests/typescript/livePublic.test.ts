@@ -5,8 +5,8 @@ import net from "node:net";
 // @ts-expect-error the web tsconfig finds no types for the server's ws
 import { Sender, WebSocket } from "../../server/node_modules/ws/wrapper.mjs";
 import { LIMITS, MAX_POPULATION, liveConfig } from "../../server/src/config.ts";
-import { frameBudget } from "../../server/src/budget.ts";
-import { MAX_ITEM_SLOTS, creatureFrameBytes, itemsBytes } from "../../src/typescript/src/live/protocol.ts";
+import { SLOWEST_STRIDE, frameBudget, sendStride } from "../../server/src/budget.ts";
+import { MAX_ITEM_SLOTS, MSG_CREATURES, MSG_DELTA, MSG_ITEMS, creatureFrameBytes, itemsBytes } from "../../src/typescript/src/live/protocol.ts";
 import { applyTunables, tunableLimits } from "../../server/src/tunables.ts";
 import { LiveWorld } from "../../server/src/liveWorld.ts";
 import { AddGate } from "../../server/src/adds.ts";
@@ -32,16 +32,20 @@ interface Viewer {
   ws: WebSocket;
   texts: { t: string }[];
   binary: number; // bytes of binary frames
+  kinds: Record<number, number>; // binary messages by type (their first byte)
   status: Promise<"hello" | "busy" | number>; // what the server did first: hello, busy, or refused the upgrade with an http status
   closed: Promise<number>; // the close code
 }
 function viewer(port: number, headers: Record<string, string> = {}): Viewer {
   const ws = new WebSocket(`ws://127.0.0.1:${port}/`, { headers });
-  const v: Viewer = { ws, texts: [], binary: 0, status: null!, closed: null! };
+  const v: Viewer = { ws, texts: [], binary: 0, kinds: {}, status: null!, closed: null! };
   v.status = new Promise((resolve) => {
     ws.on("unexpected-response", (_req: unknown, res: { statusCode: number }) => resolve(res.statusCode));
     ws.on("message", (d: Buffer, isBinary: boolean) => {
-      if (isBinary) return void (v.binary += d.length);
+      if (isBinary) {
+        v.kinds[d[0]!] = (v.kinds[d[0]!] ?? 0) + 1;
+        return void (v.binary += d.length);
+      }
       const m = JSON.parse(d.toString());
       v.texts.push(m);
       if (m.t === "hello" || m.t === "busy") resolve(m.t);
@@ -118,6 +122,30 @@ describe("public server: connections", () => {
     expect(await from("198.51.100.7").status).toBe("hello"); // the closed one's slot is free again
     for (let i = 0; i < 5; i++) expect(await from("198.51.100.7").status).toBe("busy"); // refused attempts leave no count behind
     expect(pub.viewers()).toBe(4);
+  });
+
+  // Red without the share: at 12000 creatures room() admits 9 viewers, and with the fixed cap of 20 one address took all 9.
+  it("at the population cap one trusted address gets a quarter of the viewers room() admits, so others still get in", async () => {
+    const port = 62546;
+    const world = new LiveWorld(smallConfig(), null);
+    for (let i = 0; i < 5; i++) world.eco.step();
+    Object.defineProperty(world.eco, "population", { configurable: true, get: () => MAX_POPULATION }); // frames sized as at the cap
+    const { pub } = await serve(port, { acceptBurst: 100 }, world, true);
+    await wait(300); // the first frame sets the per-viewer size
+    const admitted = Math.floor(frameBudget(LIMITS) / creatureFrameBytes(MAX_POPULATION));
+    expect(admitted).toBe(9);
+    const share = Math.floor(admitted / 4); // 2
+    const from = (ip: string): Viewer => viewer(port, { "x-forwarded-for": ip });
+    const mine: Viewer[] = [];
+    for (let i = 0; i < admitted; i++) {
+      mine.push(from("198.51.100.7"));
+      await mine.at(-1)!.status;
+    }
+    expect((await Promise.all(mine.map((v) => v.status))).filter((s) => s === "hello").length).toBe(share);
+    expect(mine[share]!.texts[0]).toMatchObject({ t: "busy", perVisitor: share });
+    const others = Array.from({ length: admitted - share }, (_, i) => from(`198.51.100.${20 + i}`));
+    expect(await Promise.all(others.map((v) => v.status))).toEqual(Array(admitted - share).fill("hello")); // the rest of the slots go to other addresses
+    expect(pub.viewers()).toBe(admitted);
   });
 
   it("no per-address cap without a trusted address (the header is then ignored, or missing)", async () => {
@@ -327,6 +355,35 @@ describe("public server: upload budget", () => {
     expect(creatureFrameBytes(MAX_POPULATION)).toBe(228_009);
   });
 
+  // Red at MAX_DELTAS 32: viewers let in at a low population stay as the frames grow, and at a stride past 32 the frame of a viewer's
+  // last turn had left the delta ring, so each turn sent a full item set (connect allowance or resync share) and never a DELTA again.
+  it("sends viewers at a stride between 33 and 60 item changes, not a full item set on every turn", async () => {
+    const port = 62547;
+    const world = new LiveWorld(smallConfig(), null);
+    for (let i = 0; i < 5; i++) world.eco.step();
+    let population = world.eco.population;
+    Object.defineProperty(world.eco, "population", { configurable: true, get: () => population });
+    const n = 10;
+    const limits = { maxViewers: n, textBytesPerViewer: 0, detailBytesPerViewer: 0, maxSendBytesPerSecond: 10_000 + LIMITS.connectBytesPerSecond, acceptBurst: 100 };
+    await serve(port, limits, world);
+    await wait(300);
+    const vs: Viewer[] = [];
+    for (let i = 0; i < n; i++) {
+      vs.push(viewer(port));
+      expect(await vs.at(-1)!.status).toBe("hello");
+    }
+    await vi.waitFor(() => expect(vs.every((v) => (v.kinds[MSG_ITEMS] ?? 0) >= 1)).toBe(true)); // each got its set on connect
+    population = 456; // the world grew: frames of 8.7 kB against a 10 kB/s frame budget
+    const stride = sendStride(n, creatureFrameBytes(population) * (1000 / 200), 0, frameBudget({ ...LIMITS, ...limits }));
+    expect(stride).toBeGreaterThan(32);
+    expect(stride).toBeLessThanOrEqual(SLOWEST_STRIDE);
+    await wait(400); // the next frame reads the new size
+    for (const v of vs) v.kinds = {};
+    await vi.waitFor(() => expect(vs.every((v) => (v.kinds[MSG_CREATURES] ?? 0) >= 1)).toBe(true), { timeout: 40_000, interval: 200 }); // a turn of every viewer, about stride / 5 s
+    expect(vs.map((v) => v.kinds[MSG_ITEMS] ?? 0)).toEqual(Array(n).fill(0));
+    expect(vs.every((v) => (v.kinds[MSG_DELTA] ?? 0) >= 1)).toBe(true); // the changes came with the turn's creature frame
+  }, 60_000);
+
   it("does not send the catch-up frames on connect past the connect allowance", async () => {
     const port = 62416;
     const world = new LiveWorld(smallConfig(), null);
@@ -367,7 +424,7 @@ describe("live world", () => {
     expect(world.eco.population).toBe(old.eco.population);
     expect(world.eco.birthWeightCap).toBe(old.eco.birthWeightCap);
     expect(world.config.eco.energyCap).toBe(liveConfig.eco.energyCap); // a save from before the energy cap (off in it) gets the server's
-    expect(liveConfig.eco.energyCap).toBe(5);
+    expect(liveConfig.eco.energyCap).toBe(0); // off on Live since 0.8.0, the admin can turn it on
     expect(applyTunables(world.eco, { "eco.maxPopulation": 5000, "eco.birthReserve": 100 })).toBeNull(); // an overrides file of then
     expect(applyTunables(world.eco, { "eco.maxPopulation": 12000 })).toBeNull();
     expect(world.config.eco.maxPopulation).toBe(12000);
