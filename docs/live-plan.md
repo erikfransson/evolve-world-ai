@@ -42,6 +42,8 @@ Follows "Uploaded creatures and settings" in `docs/modes-plan.md`: data only thr
 Server limits: insert rate per visitor and for everyone (added creatures count against the population cap), name length and character filter.
 The public port answers only the WebSocket upgrade and `GET /stats` (`{creatures, viewers}` for the landing page: CORS *, no request body read, rebuilt at most once a second, 5 a second for all callers with a burst of 20, past that a 503); every other request gets a 426.
 
+Selected-creature BIRTH (6): 12 bytes, sent just before each living DETAIL and paid from the same 3 kB/s detail allowance: birth wait as u16 tenths of a second (capped at 6553.5 s, non-finite or negative sent as 0) and a world-full bit. Its own message type, so pages and servers from before it skip or miss it.
+
 ### Uploads (L4, built)
 - Adds are held to the creature-file `PLAN_LIMITS` and checks (`parseAdd` in `live/add.ts`), names to `[A-Za-z0-9]{1,16}`, shown via `textContent` only. Caps in `server/README.md`.
 - Visitor address: Tailscale Funnel (serve proxy mode, as set up here) sets `X-Forwarded-For` to the client address its ingress saw, overwriting any sent (tailscale source, `ipn/ipnlocal/serve.go`); checked in the source and on 2026-11-08 through the public Funnel ingress: a forged single or comma-list header arrived as one entry, the real client address (`LIVE_TRUST_FORWARDED=1` turns per-visitor limits on).

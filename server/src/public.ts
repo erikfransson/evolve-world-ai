@@ -357,6 +357,7 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
     }
     live.refreshWatched();
     const cache = new Map<number, Uint8Array | null>();
+    const births = new Map<number, Uint8Array | null>();
     const genomes = new Map<number, Uint8Array | null>();
     for (const [ws, v] of viewers) {
       const id = v.selected;
@@ -365,7 +366,10 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
       const d = cache.get(id)!;
       if (!d) continue;
       const died = d[9] === 0;
-      if (v.details.take(d.length)) {
+      if (!died && !births.has(id)) births.set(id, live.birthWait(id));
+      const b = died ? null : births.get(id)!;
+      if (v.details.take(d.length + (b ? b.length : 0))) {
+        if (b) send(ws, b, "details"); // just before its detail, which the page attaches it to
         send(ws, d, "details");
         if (died) select(v, null); // told once, then nothing more
       } else if (died) select(v, null);

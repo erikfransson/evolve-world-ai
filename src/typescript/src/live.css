@@ -34,6 +34,8 @@
 .lead-cell.following { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
 .sel-id { margin-right: auto; color: var(--muted); font-size: 0.75rem; font-variant-numeric: tabular-nums; }
 .ov-selected:not(.has-sel) .sel-id { display: none; }
+.sel-birth { flex: none; min-width: 6.2rem; padding: 0 0.5rem; line-height: 1.25; border: 1px solid var(--border-hi); border-radius: 999px; background: var(--card-hi); color: var(--muted); font-size: 0.7rem; text-align: center; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sel-birth[hidden] { display: none; }
 .live .sel-facts { grid-template-columns: repeat(5, auto); }
 .brain-wait { text-align: center; padding: 1rem 0; }
 .brain-wait[hidden] { display: none; }

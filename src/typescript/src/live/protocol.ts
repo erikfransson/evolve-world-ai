@@ -19,6 +19,7 @@
 //   event, 7 bytes: u8 kind (0 impact, 1 death) | u16 x | u16 y | u16 value (impact: energy lost, death: hue as 0..65535 over 360)
 // DETAIL (3), about 5 Hz, only to the viewer that selected the creature: see live/detail.ts.
 // GENOME (4), once per selection: see live/detail.ts.
+// BIRTH (6), with each DETAIL of a living creature, its birth cooldown and whether the world is full: see live/detail.ts.
 //
 // The page applies item changes, events, details, births and deaths when its interpolated tick passes theirs, so the world on
 // screen matches the simulation at that tick.
@@ -32,6 +33,7 @@ export const MSG_ITEMS = 2;
 export const MSG_DETAIL = 3;
 export const MSG_GENOME = 4;
 export const MSG_DELTA = 5;
+export const MSG_BIRTH = 6;
 export const PING = "ping";
 export const CREATURE_HEADER = 9;
 export const CREATURE_RECORD = 19;
