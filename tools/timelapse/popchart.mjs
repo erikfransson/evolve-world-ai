@@ -50,6 +50,6 @@ writeFileSync(out, svg);
 console.log("wrote", out, rows.length, "rows,", lines.size, "lineages");
 if (opt.png === "1") {
   const png = out.replace(/\.svg$/, "") + ".png";
-  execFileSync(CHROME, ["--headless", "--no-sandbox", "--disable-gpu", `--window-size=${W},${H}`, `--screenshot=${png}`, "file://" + out], { stdio: "ignore" });
+  execFileSync(CHROME, ["--headless", "--disable-gpu", `--window-size=${W},${H}`, `--screenshot=${png}`, "file://" + out], { stdio: "ignore" });
   console.log("wrote", png);
 }

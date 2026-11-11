@@ -3,7 +3,7 @@
 // Chrome (one more viewer) runs only while frames are wanted: it is closed when a folder reaches its cap or the disk gets low, and started again for a new world.
 // Run: nice -n 19 ionice -c3 chrt --idle 0 node tools/timelapse/timelapse.mjs [key=value ...]   (any parameter below can be overridden, e.g. framing=b interval=20 out=/path)
 import { createRequire } from "node:module";
-import { appendFileSync, createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, statfsSync, writeFileSync } from "node:fs";
+import { appendFileSync, closeSync, createReadStream, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, renameSync, statSync, statfsSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { dirname, extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,7 +20,7 @@ const P = {
   framing: "a", // a = whole map 3840x2400 before crop, b = 7680x4800, c = closer view
   interval: 20, // seconds between frames, aligned to the wall clock
   popEvery: 5, // seconds between population.jsonl lines, a divisor of interval
-  capBytes: 30e9, // PNG bytes per world folder, then frames stop and Chrome closes ("first hours only")
+  capBytes: 30e9, // bytes of all files per world folder (frames stop a little before it, the logs stop at it) and Chrome closes ("first hours only")
   popCapBytes: 500e6, // population.jsonl bytes per world folder
   regionsCapBytes: 100e6, // regions.jsonl bytes per world folder
   regionRadiusFactor: 2.5, // a creature belongs to the nearest map region within this many times its seeding radius r, else "elsewhere" (seeded creatures stay within 0.6 r, the painted realm is about 2.2 r wide, 99% of living creatures are within 2.4 to 2.7 r)
@@ -51,7 +51,7 @@ const MAX_TEXT = 512 * 1024; // the largest text message the light client parses
 const MAX_BINARY = 4 * 1024 * 1024; // the largest message it accepts at all
 const MAX_LINEAGES = 32; // per population line (the server sends at most 8)
 const PING_EVERY_MS = 20_000; // the page's keep-alive text
-const CHROME_ARGS = ["--no-sandbox", "--js-flags=--max-old-space-size=2048", ...(P.lna ? ["--disable-features=LocalNetworkAccessChecks,PrivateNetworkAccessChecks,BlockInsecurePrivateNetworkRequests"] : [])];
+const CHROME_ARGS = ["--js-flags=--max-old-space-size=2048", ...(P.lna ? ["--disable-features=LocalNetworkAccessChecks,PrivateNetworkAccessChecks,BlockInsecurePrivateNetworkRequests"] : [])];
 const HIDE_CSS = `.banner,.panel,.ov-stack,.zoom,#emptyNote,#entry,#worldLoading,.entry-live,.info{display:none!important}
 html,body{overflow:hidden!important;height:100%!important;margin:0!important}
 .layout.live{position:fixed!important;inset:0!important;padding:0!important;margin:0!important;height:100vh!important;min-height:0!important}
@@ -63,6 +63,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const safe = (s, n = 40) => String(s ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, n) || "x";
 const stamp = (d) => d.toISOString().replace(/[-:]/g, "").replace(/\.\d+/, "");
 const log = (...a) => console.log(new Date().toISOString(), ...a);
+const lastLogged = new Map(); // a message from the server cannot flood the journal: at most one line per key every 30 s
+function logLimited(key, ...a) { const t = Date.now(); if (t - (lastLogged.get(key) ?? 0) < 30_000) return; lastLogged.set(key, t); log(...a); }
 const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
 mkdirSync(OUT, { recursive: true });
 if (!existsSync(join(OUT, ".gitignore"))) writeFileSync(join(OUT, ".gitignore"), "*\n"); // the output folder may sit inside a git checkout: keep frames out of git status
@@ -103,8 +105,8 @@ function onLinkMessage(data, isBinary) {
     } else if (m?.t === "stats") {
       const s = cleanStats(m);
       if (s) { stats = s; statsAt = Date.now(); }
-    } else if (m?.t === "busy") log("server says busy (viewer limit)");
-  } catch (err) { log("bad message", String(err?.message ?? err).slice(0, 100)); }
+    } else if (m?.t === "busy") logLimited("busy", "server says busy (viewer limit)");
+  } catch (err) { logLimited("bad message", "bad message", String(err?.message ?? err).slice(0, 100)); }
 }
 function connectLink() {
   clearTimeout(linkTimer);
@@ -133,6 +135,12 @@ connectLink();
 // ---- world folders
 let world = null; // { id, dir, bytes, frames, popBytes, lastTick, capped, staleN, lastCapturedTick, size }
 function worldId() { return [safe(hello?.mapName, 20), `${Math.round(hello?.width ?? 0)}x${Math.round(hello?.height ?? 0)}`, safe(hello?.mapVersion, 20)].join("-"); }
+const folderBytes = (d) => { let n = 0; try { for (const e of readdirSync(d, { withFileTypes: true })) if (e.isFile()) n += statSync(join(d, e.name)).size; } catch {} return n; }; // all files of a world folder
+const tailLine = (f) => { try { const fd = openSync(f, "r"); try { const n = statSync(f).size, len = Math.min(n, 16384), b = Buffer.alloc(len); readSync(fd, b, 0, len, n - len); return b.toString().trimEnd().split("\n").pop(); } finally { closeSync(fd); } } catch { return null; } }; // the last line, from the last 16 kB (a population line is under 1 kB)
+// The folder cap counts every file. Frames stop at capBytes minus the logs' own caps (at most a tenth of capBytes), so frames plus logs stay under capBytes; a log line is written only while the folder is under capBytes.
+const frameCapBytes = () => P.capBytes - Math.min(P.popCapBytes + P.regionsCapBytes, 0.1 * P.capBytes);
+const logRoom = () => world.capped && world.why === "disk-floor" ? false : world.bytes < P.capBytes;
+function appendLog(file, line) { const n = Buffer.byteLength(line); if (!logRoom()) return false; appendFileSync(join(OUT, world.dir, file), line); world.bytes += n; return true; }
 function startWorld(now) {
   const id = worldId();
   let dir = null;
@@ -140,12 +148,13 @@ function startWorld(now) {
   let bytes = 0, frames = 0, lastTick = -1, popBytes = 0, regionsBytes = 0, size = null;
   const recent = []; // bytes of the last frames, for the suspicious-frame check
   if (dir) {
-    try { for (const l of readFileSync(join(OUT, dir, "frames.jsonl"), "utf8").split("\n")) if (l) { const r = JSON.parse(l); bytes += r.bytes; frames++; lastTick = r.tick; recent.push(r.bytes); if (recent.length > 21) recent.shift(); } } catch {}
+    bytes = folderBytes(join(OUT, dir)); // what is on disk (frames, logs, leftovers), so a damaged frames.jsonl cannot hide bytes from the cap
+    try { for (const l of readFileSync(join(OUT, dir, "frames.jsonl"), "utf8").split("\n")) if (l) { try { const r = JSON.parse(l); if (!Number.isFinite(r.bytes) || !Number.isFinite(r.tick)) continue; frames++; lastTick = r.tick; recent.push(r.bytes); if (recent.length > 21) recent.shift(); } catch {} } } catch {} // a torn line (crash mid-append) is skipped
     try { popBytes = statSync(join(OUT, dir, "population.jsonl")).size; } catch {}
     try { regionsBytes = statSync(join(OUT, dir, "regions.jsonl")).size; } catch {}
     try { size = JSON.parse(readFileSync(join(OUT, dir, "world.json"), "utf8")).size ?? null; } catch {}
     try { // the last logged population tick, when no frame was saved yet
-      const pl = readFileSync(join(OUT, dir, "population.jsonl"), "utf8").trimEnd().split("\n").pop();
+      const pl = tailLine(join(OUT, dir, "population.jsonl"));
       if (pl) lastTick = Math.max(lastTick, JSON.parse(pl).tick);
     } catch {}
     if (lastTick > stats.tick + P.resetTickDrop) { dir = null; bytes = frames = popBytes = regionsBytes = 0; size = null; } // the tick is behind the saved folder: it was reset meanwhile
@@ -164,8 +173,7 @@ function logPopulation(now) {
   if (world.popBytes >= P.popCapBytes) return;
   const lin = stats.lineages;
   const line = JSON.stringify({ time: now.toISOString(), tick: stats.tick, simSeconds: stats.simSeconds, population: stats.population, others: Math.max(0, stats.population - lin.reduce((a, l) => a + l.count, 0)), lineages: lin }) + "\n";
-  appendFileSync(join(OUT, world.dir, "population.jsonl"), line);
-  world.popBytes += line.length;
+  if (appendLog("population.jsonl", line)) world.popBytes += Buffer.byteLength(line);
 }
 
 
@@ -199,8 +207,7 @@ function logRegions(now, tick) {
     m[row * (nh + 1) + col]++;
   }
   const line = JSON.stringify({ time: now.toISOString(), tick, creatureTick: dv.getUint32(1, true), n: count, m }) + "\n";
-  appendFileSync(join(OUT, world.dir, "regions.jsonl"), line);
-  world.regionsBytes += line.length;
+  if (appendLog("regions.jsonl", line)) world.regionsBytes += Buffer.byteLength(line);
 }
 
 // ---- Chrome: only while frames are wanted; serves the built page on loopback and views it as one more viewer
@@ -230,7 +237,7 @@ async function launchChrome() {
     puppeteer ??= createRequire(import.meta.url)("puppeteer-core"); // from tools/timelapse/node_modules
     httpd = await serveStatic();
     pageUrl = `http://127.0.0.1:${P.pagePort}/live/index.html?server=${P.pageServer || P.server}`;
-    browser = await puppeteer.launch({ executablePath: P.chrome, headless: true, args: CHROME_ARGS });
+    browser = await puppeteer.launch({ executablePath: P.chrome, headless: true, pipe: true, args: CHROME_ARGS }); // pipe: DevTools runs over inherited fds, no TCP port is opened
     browser.on("disconnected", () => { if (chromeState !== "closing") { log("chrome disconnected"); browser = page = null; chromeState = "off"; wantCreatures = false; lastCreatures = null; closeServer(); } });
     await loadPage();
     chromeState = "ready"; wantCreatures = true;
@@ -325,7 +332,7 @@ async function step(now, withFrame) {
   if (!existsSync(join(PAGE_DIR, "live/index.html"))) { if (Date.now() - lastLinkLog > 60_000) { lastLinkLog = Date.now(); log("built page missing in", PAGE_DIR, "run build-page.sh"); } return; }
   const free = statfsSync(OUT); const freeBytes = free.bavail * free.bsize;
   if (!world.capped && freeBytes < P.freeFloorBytes) { log("free disk", Math.round(freeBytes / 1e6), "MB under the floor, frames stopped for", world.dir); world.capped = true; world.why = "disk-floor"; }
-  if (!world.capped && world.bytes >= P.capBytes) { log("folder at cap", world.bytes, "B, frames stopped for", world.dir); world.capped = true; world.why = "cap"; }
+  if (!world.capped && world.bytes >= frameCapBytes()) { log("folder at cap", world.bytes, "B, frames stopped for", world.dir); world.capped = true; world.why = "cap"; }
   if (world.capped) { setStatus(world.why === "cap" ? "capped" : "disk-floor", world.why === "cap" ? "folder reached the size cap" : "free disk under the floor"); await closeChrome(); return; }
   if (chromeState === "off") { setStatus("capturing", "starting Chrome"); void launchChrome(); return; }
   setStatus("capturing");
@@ -343,7 +350,7 @@ async function step(now, withFrame) {
   world.bytes += png.length; world.frames++; world.lastCapturedTick = tick;
   const ms = Date.now() - t0;
   try { logRegions(now, tick); } catch (err) { log("regions error", String(err?.message ?? err).slice(0, 100)); }
-  appendFileSync(join(OUT, world.dir, "frames.jsonl"), JSON.stringify({ time: now.toISOString(), tick, population: stats.population, bytes: png.length, ms }) + "\n");
+  appendLog("frames.jsonl", JSON.stringify({ time: now.toISOString(), tick, population: stats.population, bytes: png.length, ms }) + "\n");
   log("frame", path.split("/").pop(), png.length, "B", ms, "ms", "pop", stats.population, "folder", Math.round(world.bytes / 1e6), "MB");
 }
 

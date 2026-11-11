@@ -4,11 +4,13 @@
 Next to the frames it writes `frames.jsonl`, `population.jsonl` (every 5 s, per founder lineage) and `regions.jsonl` (creature counts per map region and hue, one line per frame, layout in `world.json`).
 A light websocket viewer is always on and detects resets.
 Chrome runs only while frames are wanted and closes when a folder reaches the cap (30 GB) or the disk has less than 20 GB free.
-At most 2 viewers connect from this machine (the light client and Chrome).
+It takes 2 viewer slots on the server (the light client and Chrome). The server admits about 9 viewers at 12000 creatures, so the capture costs public capacity at a full world.
 The output folder defaults to `/home/erik/progs/evolve-world-ai/videos/timelapse` (it gets a `.gitignore` with `*`).
 Set it with `out=<dir>`.
 Other parameters (`framing`, `interval`, `capBytes`, `server`, `pagePort`) sit in the `P` block at the top of the script and take `key=value` arguments.
 Chrome is the system `/usr/bin/google-chrome`. `puppeteer-core` never downloads a browser, so nothing else is fetched.
+Chrome keeps its own sandbox (no `--no-sandbox`) and talks to the script over a pipe, so no DevTools port opens.
+The folder cap counts every file in the world folder (frames stop a little before it so the logs fit), and the logs stop at it.
 
 ## Install
 Run these from a checkout at the released commit (the same commit the server runs).
@@ -16,11 +18,13 @@ Run these from a checkout at the released commit (the same commit the server run
 cd <repo>/tools/timelapse
 nice -n 19 npm ci
 nice -n 19 ./build-page.sh
-mkdir -p ~/.config/systemd/user
+mkdir -p <output folder> ~/.config/systemd/user
 sed -e 's|@REPO@|<repo>|' -e 's|@NODE@|<node dir, the one that holds bin/node>|' -e 's|@OUT@|<output folder>|' evolve-timelapse.service.template > ~/.config/systemd/user/evolve-timelapse.service
 systemctl --user daemon-reload
 systemctl --user enable --now evolve-timelapse
 ```
+The unit hides home except the checkout (read-only), node and the output folder, and drops the user D-Bus; `evolve-timelapse.service.template` comments each difference from the server unit.
+It gives up after 5 failed starts in an hour: `systemctl --user reset-failed evolve-timelapse` then start it again.
 Wrap `npm ci` and `build-page.sh` in `flock <repo>/.claude/heavy.lock` where that lock is in use.
 Status: `systemctl --user status evolve-timelapse`. Log: `journalctl --user -u evolve-timelapse -f`. Stop: `systemctl --user stop evolve-timelapse`.
 

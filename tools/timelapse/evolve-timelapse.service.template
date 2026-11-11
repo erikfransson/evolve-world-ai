@@ -1,30 +1,58 @@
-# Time-lapse capture of the Live world. Not installed by anything here, see README.md. Replace @REPO@ (checkout), @NODE@ (node install dir), @OUT@ (output folder).
+# Time-lapse capture of the Live world. Not installed by anything here, see README.md. Replace @REPO@ (checkout), @NODE@ (node install dir), @OUT@ (output folder, must exist before start: BindPaths needs it).
+# It runs headless Chrome on pages the public server feeds, so it is sandboxed like the server (server/evolve-live.service.template), minus what Chrome needs (marked "differs").
 [Unit]
 Description=Evolve World Live time-lapse capture
 After=network-online.target evolve-live.service
+# Same as the server: stop retrying after 5 failed starts in an hour.
+StartLimitIntervalSec=3600
+StartLimitBurst=5
 
 [Service]
 WorkingDirectory=@REPO@
 ExecStart=@NODE@/bin/node tools/timelapse/timelapse.mjs out=@OUT@
 Nice=19
 IOSchedulingClass=idle
+# Differs: SCHED_IDLE (the server runs at the normal class, this one only fills idle time).
 CPUSchedulingPolicy=idle
-# The cap covers node and Chrome together (Chrome measured 1.2 to 1.4 GB while open, the light client alone far less).
+# Differs: the cap covers node and Chrome together (Chrome measured 1.2 to 1.4 GB while open). The server has CPUQuota=50%, which a user manager ignores here too (no cpu controller), so it is left out.
 MemoryMax=2500M
 MemorySwapMax=0
+LimitNOFILE=4096
+# Differs: Chrome runs many processes and threads (server 64).
 TasksMax=512
 TimeoutStopSec=30
+# Differs: always, so it also resumes after a clean exit. The start limit above ends a loop that cannot start.
 Restart=always
 RestartSec=30
-# Reads the checkout (script, built page, ws package), writes only @OUT@; Chrome's profile goes to the private /tmp.
-ProtectHome=read-only
-ReadWritePaths=@OUT@
-PrivateTmp=yes
+
+# Sandbox. Home is hidden except the checkout (read-only: script, built page, ws package), node, and the output folder (the only writable path). Chrome's profile goes to the private /tmp.
+# A user manager needs PrivateUsers for the mount sandbox below (checked under systemd 249 --user: without it the unit fails with "Failed to set up mount namespacing").
+# Chrome's own renderer sandbox stays on (no --no-sandbox) and works under every line here.
+PrivateUsers=yes
+ProtectHome=tmpfs
+BindReadOnlyPaths=@REPO@ @NODE@
+BindPaths=@OUT@
 ProtectSystem=strict
+PrivateTmp=yes
 NoNewPrivileges=yes
+# Differs: Chrome needs AF_UNIX for its own process sockets. ProtectHome=tmpfs already hides the runtime dir (user D-Bus, systemd user socket); the line below
+# keeps it hidden if that changes. The "-" is needed, the path is already gone and a plain InaccessiblePaths= would stop the start. Abstract sockets (X11) cannot be hidden without a private network namespace.
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+InaccessiblePaths=-%t
+PrivateIPC=yes
+TemporaryFileSystem=/dev/shm
+RestrictRealtime=yes
 ProtectKernelTunables=yes
 ProtectControlGroups=yes
+ProcSubset=pid
+# Differs: the server filters @system-service alone. Chrome's namespace sandbox also needs @mount, else its zygote dies.
+SystemCallFilter=@system-service @mount
+SystemCallErrorNumber=EPERM
+SystemCallArchitectures=native
+LockPersonality=yes
+# Differs: the server has RestrictNamespaces=yes. Chrome's sandbox creates user, pid and net namespaces (with only "user" or "user pid" it crashes), so only those three are allowed.
+RestrictNamespaces=user pid net
+UMask=0077
 
 [Install]
 WantedBy=default.target
