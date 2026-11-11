@@ -54,7 +54,19 @@ export const HISTORY_FIELDS = 3; // time, population, food per population sample
 export const LINEAGE_TOP = 8;
 export const LINEAGE_FIELDS = 2 + 3 * LINEAGE_TOP; // time, others, then (founder, count, hue) per top lineage; the Ecosystem's LINEAGE_STRIDE
 export const MAX_HISTORY = 1080; // population samples kept and sent
-export const MAX_LINEAGE_HISTORY = 180;
+export const MAX_LINEAGE_HISTORY = 180; // lineage samples kept and sent: at most 180 * LINEAGE_FIELDS numbers
+// Appends a lineage sample. A full buffer first keeps every second sample (the oldest stays, so the chart still starts at the world's
+// start) and returns true: the sampler then doubles its interval, so the samples stay evenly spaced and cover the whole life of the world.
+export function pushLineageSample(samples: number[], sample: readonly number[]): boolean {
+  const full = samples.length >= MAX_LINEAGE_HISTORY * LINEAGE_FIELDS;
+  if (full) {
+    let w = 0;
+    for (let r = 0; r < samples.length; r += 2 * LINEAGE_FIELDS) for (let k = 0; k < LINEAGE_FIELDS; k++) samples[w++] = samples[r + k]!;
+    samples.length = w;
+  }
+  samples.push(...sample);
+  return full;
+}
 export const MAX_RECORDS = 3; // per board
 
 export interface WorldSize {

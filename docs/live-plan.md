@@ -43,6 +43,7 @@ Server limits: insert rate per visitor and for everyone (added creatures count a
 The public port answers only the WebSocket upgrade and `GET /stats` (`{creatures, viewers}` for the landing page: CORS *, no request body read, rebuilt at most once a second, 5 a second for all callers with a burst of 20, past that a 503); every other request gets a 426.
 
 Selected-creature BIRTH (6): 12 bytes, sent just before each living DETAIL and paid from the same 3 kB/s detail allowance: birth wait as u16 tenths of a second (capped at 6553.5 s, non-finite or negative sent as 0) and a world-full bit. Its own message type, so pages and servers from before it skip or miss it.
+- Lineage group ids (`namedTop` memory in `Chronicle`): one number per living named group, keyed by the name key (server-parsed, never sent), pruned to the groups living now on every pass, so at most one per living family (at most maxPopulation, 5000). Not saved, reset with the world and its history. No new wire field.
 
 ### Uploads (L4, built)
 - Adds are held to the creature-file `PLAN_LIMITS` and checks (`parseAdd` in `live/add.ts`), names to `[A-Za-z0-9]{1,16}`, shown via `textContent` only. Caps in `server/README.md`.
