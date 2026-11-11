@@ -3,7 +3,7 @@
 // Chrome (one more viewer) runs only while frames are wanted: it is closed when a folder reaches its cap or the disk gets low, and started again for a new world.
 // Run: nice -n 19 ionice -c3 chrt --idle 0 node tools/timelapse/timelapse.mjs [key=value ...]   (any parameter below can be overridden, e.g. framing=b interval=20 out=/path)
 import { createRequire } from "node:module";
-import { appendFileSync, closeSync, createReadStream, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, renameSync, statSync, statfsSync, writeFileSync } from "node:fs";
+import { appendFileSync, closeSync, createReadStream, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, renameSync, statSync, statfsSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { connect, createServer as createNetServer } from "node:net";
 import { dirname, extname, join, normalize, resolve, sep } from "node:path";
@@ -17,6 +17,7 @@ const P = {
   server: "ws://127.0.0.1:8787", // the Live server (public port, loopback)
   socket: "", // Unix socket of the host proxy to the Live public port (the unit runs without network); when set it replaces `server`
   fwdPort: 8794, // with `socket`: loopback port of the forwarder from the unit's own network namespace to that socket
+  socketDeadS: 180, // with `socket`: exit 1 after this many seconds in which every connect to the socket failed, so the unit's restart starts the proxy socket again
   pageServer: "", // server address the page connects to, default the same as `server` (a test hook)
   page: "", // folder of the built Live page (build-page.sh); default <REPO>/tools/timelapse/page
   pagePort: 8793, // loopback port of the tiny static server for the built page
@@ -76,17 +77,21 @@ if (!existsSync(join(OUT, ".gitignore"))) writeFileSync(join(OUT, ".gitignore"),
 
 // Proxied mode: Chrome needs a TCP URL, so each loopback connection is piped to the proxy socket, bytes only (nothing parsed); the light client uses it too.
 const MAX_FORWARDS = 4; // the light client, Chrome's page, and room for a reconnect overlapping the old connection
+let socketOkAt = Date.now(), socketFailAt = 0; // the last connect to the proxy socket that worked, and the last that failed (socket missing: the proxy units failed or stopped)
 if (P.socket) {
   const fwd = createNetServer((c) => {
     const u = connect(P.socket);
     const end = () => { c.destroy(); u.destroy(); };
+    let up = false;
+    u.once("connect", () => { up = true; socketOkAt = Date.now(); });
+    u.once("error", () => { if (!up) socketFailAt = Date.now(); });
     for (const s of [c, u]) { s.on("error", end); s.on("close", end); s.setTimeout(60_000, end); } // the server sends stats every second and both clients ping every 20 s
     c.pipe(u); u.pipe(c); // pipe() pauses the reader when the writer is full, so each direction buffers at most about two stream buffers
   });
   fwd.maxConnections = MAX_FORWARDS;
   await new Promise((res, rej) => { fwd.once("error", rej); fwd.listen(P.fwdPort, "127.0.0.1", res); });
   fwd.on("error", (err) => logLimited("forwarder error", "forwarder error", String(err?.message ?? err).slice(0, 100)));
-  P.server = `ws://127.0.0.1:${P.fwdPort}`;
+  P.server = `ws://127.0.0.1:${fwd.address().port}`;
 }
 
 // what the built page was built for (build-page.sh writes it)
@@ -185,6 +190,7 @@ function startWorld(now) {
     writeFileSync(join(OUT, dir, "world.json"), JSON.stringify({ id, startedCapture: now.toISOString(), firstTick: stats.tick, simSeconds: stats.simSeconds, framing: P.framing, map: hello.mapName, mapVersion: hello.mapVersion, world: { width: hello.width, height: hello.height } }) + "\n");
   }
   world = { recent, id, dir, bytes, frames, popBytes, regionsBytes, lastTick: stats.tick, capped: false, staleN: 0, lastCapturedTick: -1, size };
+  chromeFails = 0; chromeRetryAt = 0; // a new world starts Chrome at once, not after an old world's back-off
   loadRegions();
   if (regionInfo) { const f = join(OUT, dir, "world.json"); try { const j = JSON.parse(readFileSync(f, "utf8")); j.regions = regionInfo; j.regionsNote = "regions.jsonl m = flat matrix, rows: regions then elsewhere, columns: lineages of hues then other"; writeFileSync(f, JSON.stringify(j) + "\n"); } catch {} }
   log("world folder", dir, { resumedBytes: bytes, resumedFrames: frames });
@@ -252,22 +258,36 @@ function serveStatic() {
 }
 let chromeUpAt = 0; // when the current Chrome became ready
 let chromeFails = 0, chromeRetryAt = 0; // failed starts in a row, and when the next start may be tried
+// closeChrome bumps the generation. A start or reload that finds another generation after an await was cancelled: it touches no global again, and a browser it launched itself it closes.
+// While the generation is unchanged, browser, page and httpd are still the ones this start or reload works on.
+let chromeGen = 0;
+const cancelled = () => new Error("cancelled by a close");
 async function launchChrome(catchUp = false) { // catchUp: take a frame as soon as the page is live, for the slot that passed meanwhile
   if (chromeState !== "off") return;
   chromeState = "starting";
+  const gen = ++chromeGen, stale = () => gen !== chromeGen;
+  let b = null;
   try {
     puppeteer ??= createRequire(import.meta.url)("puppeteer-core"); // from tools/timelapse/node_modules
-    httpd = await serveStatic();
+    const s = await serveStatic();
+    if (stale()) { s.close(); return; }
+    httpd = s;
     pageUrl = `http://127.0.0.1:${P.pagePort}/live/index.html?server=${P.pageServer || P.server}`;
-    browser = await puppeteer.launch({ executablePath: P.chrome, headless: true, pipe: true, args: CHROME_ARGS }); // pipe: DevTools runs over inherited fds, no TCP port is opened
-    browser.on("disconnected", () => { if (chromeState !== "closing") { log("chrome disconnected"); browser = page = null; chromeState = "off"; wantCreatures = false; lastCreatures = null; closeServer(); } });
-    await loadPage();
+    b = await puppeteer.launch({ executablePath: P.chrome, headless: true, pipe: true, args: CHROME_ARGS }); // pipe: DevTools runs over inherited fds, no TCP port is opened
+    if (stale()) throw cancelled();
+    browser = b;
+    b.on("disconnected", () => { if (browser !== b || chromeState === "closing") return; log("chrome disconnected"); browser = page = null; chromeState = "off"; wantCreatures = false; lastCreatures = null; closeServer(); });
+    await loadPage(gen);
+    if (stale()) return;
     wantCreatures = true; chromeUpAt = Date.now();
-    log("chrome ready", { pid: browser.process()?.pid });
+    log("chrome ready", { pid: b.process()?.pid });
     if (catchUp) await catchUpFrame(); // chromeState is still "starting": no slot frame can start meanwhile
+    if (stale()) return;
     if (chromeState === "starting") chromeState = "ready";
     chromeFails = 0;
   } catch (err) {
+    if (b && browser !== b) { try { await b.close(); } catch { try { b.process()?.kill("SIGKILL"); } catch {} } } // launched but never handed over (closeChrome closes a handed-over one)
+    if (stale()) return; // cancelled by closeChrome: not a failure
     chromeFails++; chromeRetryAt = Date.now() + Math.min(300, 5 * 2 ** chromeFails) * 1000; // a lasting cause (full /tmp, no server) retries at 10 s doubling to 5 min, not every step
     logLimited("chrome start failed", "chrome start failed", chromeFails, "in a row:", String(err?.message ?? err).slice(0, 200)); await closeChrome();
   }
@@ -280,14 +300,18 @@ async function relaunchChrome() { // a clean new Chrome; its profile in /tmp goe
 }
 async function reloadPage() { // page offline or loading, off the slot loop (the light client keeps logging): the page often reconnects by itself within seconds (the server drops a slow viewer), so wait a little, then reload; the frame follows as soon as the page is live
   chromeState = "starting";
+  const gen = chromeGen, stale = () => gen !== chromeGen;
   try {
-    for (let i = 0; i < P.pageWaitS && !(await pageShowsWorld()); i++) await sleep(1000);
-    if (!(await pageShowsWorld())) { log("page still not live, reloading"); await loadPage(); }
+    for (let i = 0; i < P.pageWaitS && !(await pageShowsWorld()); i++) { await sleep(1000); if (stale()) return; }
+    if (stale()) return;
+    if (!(await pageShowsWorld())) { if (stale()) return; log("page still not live, reloading"); await loadPage(gen); }
+    if (stale()) return;
     await catchUpFrame();
-  } catch (err) { log("reload failed", String(err?.message ?? err).slice(0, 200)); await closeChrome(); return; }
-  if (chromeState === "starting") chromeState = "ready";
+  } catch (err) { if (stale()) return; log("reload failed", String(err?.message ?? err).slice(0, 200)); await closeChrome(); return; }
+  if (!stale() && chromeState === "starting") chromeState = "ready";
 }
 async function closeChrome() {
+  chromeGen++; // cancels a start or reload in flight
   if (chromeState === "off" && !browser && !httpd) return;
   chromeState = "closing"; wantCreatures = false; lastCreatures = null;
   const b = browser; browser = page = null; crop = null;
@@ -296,24 +320,26 @@ async function closeChrome() {
   chromeState = "off";
   log("chrome closed");
 }
-async function loadPage() {
+async function loadPage(gen = chromeGen) { // throws when a close cancels it, before it touches page or crop again
+  const live = () => { if (gen !== chromeGen) throw cancelled(); };
   if (!page || page.isClosed()) {
-    page = await browser.newPage();
-    await page.setViewport({ width: F.w, height: F.h, deviceScaleFactor: F.dsf });
-    await page.evaluateOnNewDocument(() => { try { sessionStorage.setItem("evolve.live.entry", "1"); } catch {} });
+    const p = await browser.newPage(); live(); page = p;
+    await page.setViewport({ width: F.w, height: F.h, deviceScaleFactor: F.dsf }); live();
+    await page.evaluateOnNewDocument(() => { try { sessionStorage.setItem("evolve.live.entry", "1"); } catch {} }); live();
   }
-  await page.goto(pageUrl, { waitUntil: "load", timeout: 60000 });
-  await page.addStyleTag({ content: HIDE_CSS + (P.extraCss ? readFileSync(P.extraCss, "utf8") : "") });
-  await page.waitForFunction(() => document.getElementById("chipText")?.textContent === "Live", { timeout: 60000 });
-  await sleep(3000); // map picture and first reveal
-  await page.evaluate((n) => { const $ = (i) => document.getElementById(i); $("zoomFit").click(); for (let i = 0; i < n; i++) $("zoomIn").click(); }, F.zoomIns);
-  await sleep(2500); // camera animation
+  await page.goto(pageUrl, { waitUntil: "load", timeout: 60000 }); live();
+  await page.addStyleTag({ content: HIDE_CSS + (P.extraCss ? readFileSync(P.extraCss, "utf8") : "") }); live();
+  await page.waitForFunction(() => document.getElementById("chipText")?.textContent === "Live", { timeout: 60000 }); live();
+  await sleep(3000); live(); // map picture and first reveal
+  await page.evaluate((n) => { const $ = (i) => document.getElementById(i); $("zoomFit").click(); for (let i = 0; i < n; i++) $("zoomIn").click(); }, F.zoomIns); live();
+  await sleep(2500); live(); // camera animation
   if (P.framing !== "c") { // the chip moves inside the world rectangle's top-right corner, an even inset from the top and right border lines
     const z = Math.min(F.w / hello.width, F.h / hello.height) * 0.96, ww = hello.width * z, wh = hello.height * z;
     const top = (F.h - wh) / 2 + P.chipInsetCss, right = (F.w - ww) / 2 + P.chipInsetCss;
-    await page.addStyleTag({ content: `#timer{top:${top.toFixed(2)}px!important;right:${right.toFixed(2)}px!important;left:auto!important}` });
+    await page.addStyleTag({ content: `#timer{top:${top.toFixed(2)}px!important;right:${right.toFixed(2)}px!important;left:auto!important}` }); live();
   }
-  crop = await computeCrop();
+  const c = await computeCrop(); live();
+  crop = c;
   log("page loaded", { crop });
 }
 // The world rectangle as the fitted camera puts it (camera.ts fitWorld: zoom = min(cw/W, ch/H) * 0.96, world centred) plus a margin, with the clock chip kept inside; whole CSS px, even device px.
@@ -341,7 +367,8 @@ async function takeFrame(now, tick) {
   if (world.size && (world.size[0] !== size[0] || world.size[1] !== size[1])) throw new Error(`frame size ${size} differs from this world's ${world.size}`);
   if (!world.size) { world.size = size; const f = join(OUT, world.dir, "world.json"); const j = JSON.parse(readFileSync(f, "utf8")); j.size = size; j.crop = crop; writeFileSync(f, JSON.stringify(j) + "\n"); }
   const path = join(OUT, world.dir, `${stamp(now)}_t${String(tick).padStart(9, "0")}.png`);
-  writeFileSync(path + ".tmp", png); renameSync(path + ".tmp", path);
+  try { unlinkSync(path + ".tmp"); } catch {}
+  writeFileSync(path + ".tmp", png, { flag: "wx" }); renameSync(path + ".tmp", path); // wx: a planted symlink at the temporary name fails the write instead of redirecting it; rename replaces a link at the frame name
   return { png, path };
 }
 
@@ -417,6 +444,9 @@ for (;;) {
     const next = Math.ceil((Date.now() + 1) / (P.popEvery * 1000)) * P.popEvery * 1000;
     if (P.maxRunS && next - startedAt > P.maxRunS * 1000) break;
     await sleep(Math.max(0, next - Date.now()));
+    if (P.socket && socketFailAt > socketOkAt && Date.now() - socketOkAt > P.socketDeadS * 1000 && link?.readyState !== WebSocket.OPEN) { // the proxy socket is gone (its units failed or stopped): exit, and the unit's restart starts the socket again through Requires=
+      log("no working connect to the proxy socket for", Math.round((Date.now() - socketOkAt) / 1000), "s, exiting so the unit restarts with the socket"); setStatus("error", "proxy socket missing"); writeStatus(); await closeChrome(); process.exit(1);
+    }
     await step(new Date(next), next % (P.interval * 1000) === 0);
     errorsInRow = 0;
   } catch (err) {

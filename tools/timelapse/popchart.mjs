@@ -1,27 +1,34 @@
 // Line chart of population per founder lineage over simulated time, from a world folder's population.jsonl. Writes an SVG (dependency-free) and, with png=1, a PNG through headless Chrome.
 // Run: node tools/timelapse/popchart.mjs <world folder> [out=<file.svg>] [png=1]   View: open the SVG in a browser or image viewer.
-import { readFileSync, writeFileSync } from "node:fs";
+// The world folder is written by the capture unit, so everything read from it is hostile: names lose control characters, numbers must be finite, and outputs never write through a link.
+import { lstatSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
+import { clean, num, readHostile, writeFresh } from "./hostile.mjs";
 
 const [dir, ...rest] = process.argv.slice(2);
 if (!dir) { console.error("usage: node popchart.mjs <world folder> [out=file.svg] [png=1]"); process.exit(2); }
 const opt = Object.fromEntries(rest.map((a) => a.split("=")));
 const out = resolve(opt.out ?? join(dir, "population.svg"));
+try { if (lstatSync(dir).isSymbolicLink()) { console.error("the world folder is a symbolic link, refused"); process.exit(1); } } catch { console.error("no world folder", clean(dir, 200)); process.exit(1); }
+const MAX_LINEAGES = 64; // in the chart; the server sends at most 8 per line
 const W = 1600, H = 900, L = 90, R = 230, T = 40, B = 70; // chart size and margins in px
 const CHROME = "/usr/bin/google-chrome";
 
-const rows = readFileSync(join(dir, "population.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+const text = readHostile(join(dir, "population.jsonl"), 600e6); // the capture caps it at 500 MB
+if (text === null) { console.error("population.jsonl missing, not a regular file, or too large"); process.exit(1); }
+const rows = text.split("\n").map((l) => { try { const r = JSON.parse(l); return { simSeconds: num(r?.simSeconds) ?? 0, population: num(r?.population) ?? 0, lineages: Array.isArray(r?.lineages) ? r.lineages.slice(0, 32) : [] }; } catch { return null; } }).filter(Boolean);
 if (!rows.length) { console.error("no rows"); process.exit(1); }
-const t0 = rows[0].simSeconds ?? 0;
-const hours = (r) => ((r.simSeconds ?? 0) - t0) / 3600;
+const t0 = rows[0].simSeconds;
+const hours = (r) => (r.simSeconds - t0) / 3600;
 const lines = new Map(); // name (or founder id) -> { name, hue, pts: [[hours, count]] }
 rows.forEach((r, i) => {
-  for (const l of r.lineages ?? []) {
-    const key = l.name || "#" + l.founder; // the group's founder id is its lowest living one and changes as founders die, the name stays
-    let s = lines.get(key);
-    if (!s) lines.set(key, (s = { name: l.name || "#" + l.founder, hue: l.hue, pts: [] }));
-    s.pts.push([i, hours(r), l.count]);
+  for (const l of r.lineages) {
+    const name = clean(l?.name, 40) || "#" + (num(l?.founder) ?? "?"); // the group's founder id is its lowest living one and changes as founders die, the name stays
+    let s = lines.get(name);
+    if (!s) { if (lines.size >= MAX_LINEAGES) continue; lines.set(name, (s = { name, hue: num(l?.hue) ?? -1, pts: [] })); }
+    s.pts.push([i, hours(r), num(l?.count) ?? 0]);
   }
 });
 const total = rows.map((r) => [hours(r), r.population]);
@@ -31,7 +38,7 @@ const Y = niceMax(yMax);
 const px = (x) => L + (x / xMax) * (W - L - R), py = (y) => H - B - (y / Y) * (H - T - B);
 const colour = (hue, k) => (hue >= 0 ? `hsl(${hue},75%,58%)` : `hsl(${(k * 47) % 360},20%,70%)`); // legend creature colour on the page is hsl(hue, 75%, 58%)
 const path = (pts) => pts.map((p, i) => `${i ? "L" : "M"}${px(p[0]).toFixed(1)},${py(p[1]).toFixed(1)}`).join("");
-const esc = (s) => String(s).replace(/[&<>"]/g, "");
+const esc = (s) => clean(s).replace(/[&<>"']/g, "");
 let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="system-ui,sans-serif" font-size="16"><rect width="${W}" height="${H}" fill="#0b1a16"/>`;
 for (let i = 0; i <= 5; i++) { const y = (Y * i) / 5; svg += `<line x1="${L}" x2="${W - R}" y1="${py(y)}" y2="${py(y)}" stroke="#25403a"/><text x="${L - 10}" y="${py(y) + 5}" fill="#9db8b0" text-anchor="end">${Math.round(y)}</text>`; }
 const xStep = xMax > 48 ? 12 : xMax > 12 ? 4 : xMax > 4 ? 1 : 0.5;
@@ -46,10 +53,14 @@ for (const s of [...lines.values()].sort((a, b) => Math.max(...b.pts.map((p) => 
   ly += 26; svg += `<line x1="${W - R + 20}" x2="${W - R + 50}" y1="${ly}" y2="${ly}" stroke="${c}" stroke-width="3"/><text x="${W - R + 58}" y="${ly + 5}" fill="${c}">${esc(s.name)}</text>`;
 }
 svg += "</svg>\n";
-writeFileSync(out, svg);
+writeFresh(out, svg);
 console.log("wrote", out, rows.length, "rows,", lines.size, "lineages");
-if (opt.png === "1") {
-  const png = out.replace(/\.svg$/, "") + ".png";
-  execFileSync(CHROME, ["--headless", "--disable-gpu", `--window-size=${W},${H}`, `--screenshot=${png}`, "file://" + out], { stdio: "ignore" });
+if (opt.png === "1") { // Chrome renders in a private temporary folder; only the finished PNG is moved next to the SVG
+  const png = out.replace(/\.svg$/, "") + ".png", tmp = mkdtempSync(join(tmpdir(), "popchart-"));
+  try {
+    writeFileSync(join(tmp, "chart.svg"), svg, { flag: "wx" });
+    execFileSync(CHROME, ["--headless", "--disable-gpu", `--window-size=${W},${H}`, `--screenshot=${join(tmp, "chart.png")}`, "file://" + join(tmp, "chart.svg")], { stdio: "ignore" });
+    writeFresh(png, readFileSync(join(tmp, "chart.png")));
+  } finally { rmSync(tmp, { recursive: true, force: true }); }
   console.log("wrote", png);
 }
