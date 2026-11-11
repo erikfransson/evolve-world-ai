@@ -32,6 +32,7 @@ export interface EcoConfig extends EngineConfig {
     agingRate: number; // upkeep grows by this fraction of itself per minute beyond agingStart
     collisions: boolean; // creatures bounce off each other
     collisionDamage: boolean; // a bounce costs both creatures energy; one that dies gives its energy to the other
+    energyCap: number; // 0 off; else a creature at or above this many times its own birth energy does not eat (the item stays for others). Made for Live (off there by default, the admin can turn it on) so a world held at its population cap cannot sit full of energy with no births and no deaths
     killEnergy: number; // extra energy for the survivor of a lethal bump, on top of the dead one's (a carcass); 0 makes a kill pay at most the damage taken
     damagePerSpeed: number; // energy each loses per unit/s of approach speed; 0.3 gives 48 for a head-on hit of two creatures at top speed (closing speed 160, each 80)
     ramShare?: number; // 0 to 1, RL only: the faster mover of a bump takes less damage (see Contacts.bump); left out, both lose the same
@@ -54,6 +55,7 @@ export interface EcoConfig extends EngineConfig {
 }
 
 // world.foodDensity and world.poisonDensity are the starting densities.
+export const MAX_ENERGY_CAP = 100; // eco.energyCap at most; between 0 and 1 a creature could never reach its birth energy, so 0 or 1 to this
 export const MAX_KILL_ENERGY = 300; // eco.killEnergy at most, for saves and RL envs
 export const MAX_THINK_EVERY = 8; // eco.thinkEvery at most, for saves
 export const MAX_HIDDEN_LAYERS = 8; // brain.hiddenLayers at most: the brain kernels hold 10 layer sizes (wasmKernels.test.ts pins it)
@@ -100,6 +102,7 @@ export const DEFAULT_ECO_CONFIG: EcoConfig = {
     collisionDamage: false,
     damagePerSpeed: 0.3,
     killEnergy: 0,
+    energyCap: 0,
     wasm: true,
     thinkEvery: 1,
     foundersVary: true,

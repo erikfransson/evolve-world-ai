@@ -1,0 +1,65 @@
+# Time-lapse capture of the Live world. Not installed by anything here, see README.md. Replace @REPO@ (checkout), @NODE@ (node install dir), @OUT@ (output folder, must exist before start: BindPaths needs it).
+# It runs headless Chrome on pages the public server feeds, so it is sandboxed like the server (server/evolve-live.service.template), minus what Chrome needs (marked "differs").
+[Unit]
+Description=Evolve World Live time-lapse capture
+After=network-online.target evolve-live.service
+# Same as the server: stop retrying after 5 failed starts in an hour.
+StartLimitIntervalSec=3600
+StartLimitBurst=5
+
+[Service]
+WorkingDirectory=@REPO@
+# Home is read-only here (see the sandbox below), so Chrome's and the toolkits' per-user files go to the private /tmp.
+Environment=HOME=/tmp
+ExecStart=@NODE@/bin/node tools/timelapse/timelapse.mjs out=@OUT@
+Nice=19
+IOSchedulingClass=idle
+# Differs: SCHED_IDLE (the server runs at the normal class, this one only fills idle time).
+CPUSchedulingPolicy=idle
+# Differs: the cap covers node and Chrome together (Chrome measured 1.2 to 1.4 GB while open). The server has CPUQuota=50%, which a user manager ignores here too (no cpu controller), so it is left out.
+MemoryMax=2500M
+MemorySwapMax=0
+LimitNOFILE=4096
+# Differs: Chrome runs many processes and threads (server 64).
+TasksMax=512
+TimeoutStopSec=30
+# Differs: always, so it also resumes after a clean exit. The start limit above ends a loop that cannot start.
+Restart=always
+RestartSec=30
+
+# Sandbox. Home is hidden except the checkout (read-only: script, built page, ws package), node, and the output folder (the only writable path). Chrome's profile goes to the private /tmp (a tmpfs, see below).
+# A user manager needs PrivateUsers for the mount sandbox below (checked under systemd 249 --user: without it the unit fails with "Failed to set up mount namespacing").
+# Chrome's own renderer sandbox stays on (no --no-sandbox) and works under every line here.
+PrivateUsers=yes
+# Differs: ProtectHome=tmpfs is not used, under systemd 249 --user it leaves /home a writable tmpfs (a write surface the cap below does not cover). Read-only tmpfs mounts hide the same three
+# places (/home, /root, and /run/user with the user D-Bus and systemd user socket); the binds below add the few paths needed. ReadOnlyPaths=/home was tried and exposes the real home, do not use it.
+TemporaryFileSystem=/home:ro /root:ro /run/user:ro
+BindReadOnlyPaths=@REPO@ @NODE@
+BindPaths=@OUT@
+ProtectSystem=strict
+NoNewPrivileges=yes
+# Differs: Chrome needs AF_UNIX for its own process sockets. The /run/user tmpfs above already hides the runtime dir (user D-Bus, systemd user socket); the InaccessiblePaths line
+# keeps it hidden if that changes. The "-" is needed, the path is already gone and a plain InaccessiblePaths= would stop the start.
+# OPEN RISK: abstract Unix sockets stay reachable because Chrome needs AF_UNIX. On this laptop that means the Xwayland server (X11 clients of the local user need no cookie)
+# and the ibus bus, so native code in this unit could inject keys or read input. Closing it needs PrivateNetwork=yes plus a socket proxy to the Live port. Not done, the owner decides.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+InaccessiblePaths=-%t
+PrivateIPC=yes
+# Differs: no PrivateTmp, since it would win over the sized tmpfs below. These three are the only writable places besides @OUT@, in memory (counted in MemoryMax), so a compromised
+# process cannot fill the disk through them. Measured per run with framing a: /tmp peak 29 to 77 MB (Chrome profile), /var/tmp 0, /dev/shm 0 (Chrome runs with --disable-dev-shm-usage).
+TemporaryFileSystem=/tmp:size=256M /var/tmp:size=16M /dev/shm:size=64M
+RestrictRealtime=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+ProcSubset=pid
+# Differs: the server filters @system-service alone. Chrome's namespace sandbox also needs chroot, else its zygote dies (the rest of @mount is not needed).
+SystemCallFilter=@system-service chroot
+SystemCallErrorNumber=EPERM
+SystemCallArchitectures=native
+LockPersonality=yes
+# Differs: the server has RestrictNamespaces=yes. Chrome's sandbox creates user, pid and net namespaces (with only "user" or "user pid" it crashes), so only those three are allowed.
+RestrictNamespaces=user pid net
+UMask=0077
+
+[Install]
+WantedBy=default.target

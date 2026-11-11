@@ -1,5 +1,6 @@
+import { fakeCanvas } from "./helpers.ts";
 import { LINEAGE_STRIDE, LINEAGE_TOP } from "../../src/typescript/src/worker/ecoProtocol.ts";
-import { lineageRows, rowLiving, sharePct, stackHistory } from "../../src/typescript/src/ui/lineagePanel.ts";
+import { LineagePanel, lineageRows, rowLiving, sharePct, stackHistory } from "../../src/typescript/src/ui/lineagePanel.ts";
 
 const sample = (time: number, others: number, entries: [number, number, number][]): number[] => {
   const row = [time, others];
@@ -49,6 +50,22 @@ describe("stackHistory", () => {
     for (let i = 0; i < 2; i++) for (let j = 1; j < s.bands.length; j++) expect(s.bands[j]!.lower[i]).toBeCloseTo(s.bands[j - 1]!.upper[i]!, 12);
   });
 
+  it("keeps a named group in one band even when its leading copy changed over time", () => {
+    // Group "J" was led by founder 2 early and by founder 5 now (2 died out), so its row is 5; founder 9 is another lineage.
+    const h = Float64Array.from([
+      ...sample(0, 0, [[2, 6, 100], [9, 4, 200]]),
+      ...sample(10, 0, [[9, 5, 200], [2, 5, 100]]),
+      ...sample(20, 0, [[9, 5, 200], [5, 5, 120]]),
+    ]);
+    const rowOf = (f: number): number => (f === 2 ? 5 : f);
+    const s = stackHistory(h, rowOf);
+    expect(s.bands.map((b) => b.founder)).toEqual([5, 9, -1]);
+    const j = s.bands[0]!;
+    expect(j.upper.map((u, i) => +(u - j.lower[i]!).toFixed(6))).toEqual([0.6, 0.5, 0.5]); // present at every sample, from t = 0
+    expect(j.color).toBe(stackHistory(Float64Array.from(sample(20, 0, [[5, 5, 120]]))).bands[0]!.color); // the row's current hue
+    expect(stackHistory(h).bands.map((b) => b.founder)).toEqual([2, 5, 9, -1]); // without the map it splits in two
+  });
+
   it("is empty without samples", () => {
     expect(stackHistory(new Float64Array(0)).times).toEqual([]);
   });
@@ -63,5 +80,40 @@ describe("sharePct", () => {
     expect(sharePct(0)).toBe("0%");
     expect(sharePct(1)).toBe("100%");
     expect(sharePct(0.42)).toBe("42%");
+  });
+});
+
+describe("LineagePanel chart redraw", () => {
+  it("redraws the chart at once on select, deselect and Show all, with no new data", () => {
+    const frames: (() => void)[] = [];
+    vi.stubGlobal("window", { devicePixelRatio: 1 });
+    vi.stubGlobal("ResizeObserver", class { observe() {} });
+    vi.stubGlobal("requestAnimationFrame", (fn: () => void) => frames.push(fn));
+    const { canvas, calls } = fakeCanvas(300, 100);
+    const el = (): Record<string, unknown> => ({ hidden: false, addEventListener() {}, replaceChildren() {} });
+    const parts: Record<string, unknown> = { ".lin-bar": el(), ".lin-list": el(), ".lin-graph": canvas, ".lin-clear": el() };
+    const root = { querySelector: (q: string) => parts[q], querySelectorAll: () => [] };
+    (parts[".lin-list"] as Record<string, unknown>).parentElement = root;
+    const panel = new LineagePanel(root as unknown as HTMLElement, () => {});
+    panel.setHistory(Float64Array.from([...sample(0, 0, [[2, 1, 50], [7, 3, 100]]), ...sample(10, 0, [[2, 4, 50], [7, 2, 100]])]));
+    const flush = (): void => { frames.splice(0).forEach((f) => f()); };
+    const alphas = (): number[] => [...new Set(calls.filter((c) => c.name === "fill").map((c) => c.alpha as number))];
+    flush();
+    expect(alphas()).toEqual([1]);
+    calls.length = 0;
+    panel.pick(2); // click a row
+    flush();
+    expect(alphas().sort()).toEqual([0.3, 1]); // the others dim, the picked band stays
+    calls.length = 0;
+    panel.pick(null); // "Show all"
+    flush();
+    expect(alphas()).toEqual([1]);
+    panel.pick(7);
+    flush();
+    calls.length = 0;
+    panel.pick(7); // the same row again deselects
+    flush();
+    expect(alphas()).toEqual([1]);
+    vi.unstubAllGlobals();
   });
 });

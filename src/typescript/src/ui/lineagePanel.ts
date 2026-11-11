@@ -49,14 +49,16 @@ export interface Stack {
 }
 
 // Turns lineage history (LINEAGE_STRIDE numbers per sample, see ecoProtocol) into stacked shares. A founder outside the top at a sample counts as others there.
-export function stackHistory(h: Float64Array): Stack {
+// rowOf maps a founder to the row it is counted in (Live World: a named group's row is its lowest living founder, so a sample
+// holds whichever copy led the group then); the group's samples become one band under the row's id.
+export function stackHistory(h: Float64Array, rowOf: (f: number) => number = (f) => f): Stack {
   const n = Math.floor(h.length / LINEAGE_STRIDE);
   const hues = new Map<number, number>();
   for (let i = 0; i < n; i++) {
     for (let k = 0; k < LINEAGE_TOP; k++) {
       const at = i * LINEAGE_STRIDE + 2 + 3 * k;
       const id = h[at]!;
-      if (id >= 0) hues.set(id, h[at + 2]!);
+      if (id >= 0) hues.set(rowOf(id), h[at + 2]!);
     }
   }
   const ids = [...hues.keys()].sort((a, b) => a - b);
@@ -75,7 +77,7 @@ export function stackHistory(h: Float64Array): Stack {
       const id = h[base + 2 + 3 * k]!;
       if (id < 0) continue;
       const c = h[base + 3 + 3 * k]!;
-      counts[index.get(id)!] = c;
+      counts[index.get(rowOf(id))!]! += c;
       total += c;
     }
     stack.times.push(h[base]!);
@@ -108,6 +110,9 @@ export class LineagePanel {
   private readonly clear: HTMLButtonElement;
   private readonly onPick: (founder: number | null) => void;
   private stack: Stack = { times: [], bands: [] };
+  private history: Float64Array = new Float64Array(0);
+  private family = new Map<number, number>(); // founder -> the founder of its row, for groups
+  private familyKey = "";
   private picked: number | null = null;
   private pending = false;
   private signature = "";
@@ -147,6 +152,7 @@ export class LineagePanel {
     this.clear.hidden = founder === null;
     this.signature = ""; // repaint the pressed state
     for (const e of this.root().querySelectorAll<HTMLElement>("[data-founder]")) this.markPressed(e);
+    this.invalidate(); // the chart dims the other bands at once, not with the next stats
   }
 
   private root(): HTMLElement {
@@ -159,8 +165,14 @@ export class LineagePanel {
     e.classList.toggle("on", on);
   }
 
-  setLineages(lineages: readonly Lineage[], population: number, names?: ReadonlyMap<number, string>, starters?: ReadonlySet<number>): void {
+  setLineages(lineages: readonly Lineage[], population: number, names?: ReadonlyMap<number, string>, starters?: ReadonlySet<number>, family?: ReadonlyMap<number, number>): void {
     const rows = lineageRows(lineages, population, names, starters);
+    const key = family ? [...family].join(",") : "";
+    if (key !== this.familyKey) {
+      this.familyKey = key;
+      this.family = new Map(family);
+      this.setHistory(this.history); // the bands follow the groups
+    }
     const signature = rows.map((r) => `${r.founder}:${r.count}:${r.label}`).join(",") + `|${this.picked}`;
     if (signature === this.signature) return;
     this.signature = signature;
@@ -210,7 +222,8 @@ export class LineagePanel {
   }
 
   setHistory(h: Float64Array): void {
-    this.stack = stackHistory(h);
+    this.history = h;
+    this.stack = stackHistory(h, (f) => this.family.get(f) ?? f);
     this.invalidate();
   }
 
@@ -220,6 +233,9 @@ export class LineagePanel {
     this.bar.hidden = true;
     this.list.replaceChildren();
     this.stack = { times: [], bands: [] };
+    this.history = new Float64Array(0);
+    this.family = new Map();
+    this.familyKey = "";
     this.setHighlight(null);
     this.invalidate();
   }

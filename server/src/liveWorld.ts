@@ -5,7 +5,7 @@ import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { PoolEntry } from "../../src/typescript/src/sim/seedPool.ts";
 import { MAX_DELTA_EVENTS, MAX_DELTA_OPS, MAX_ITEM_SLOTS, PROTOCOL_VERSION, encodeDeltaChunk, encodeItems, itemsBytes } from "../../src/typescript/src/live/protocol.ts";
 import type { Hello, ItemOp, Stats, WireEvent, WireMap } from "../../src/typescript/src/live/protocol.ts";
-import { encodeDetail, encodeGenome } from "../../src/typescript/src/live/detail.ts";
+import { encodeBirthWait, encodeDetail, encodeGenome } from "../../src/typescript/src/live/detail.ts";
 import { ITEM_REMOVE, ITEM_SET } from "../../src/typescript/src/sim/world.ts";
 import type { World } from "../../src/typescript/src/sim/world.ts";
 import { EVENT_STRIDE } from "../../src/typescript/src/sim/ecosystem.ts";
@@ -16,17 +16,25 @@ import { encodeMembers } from "./memberFrame.ts";
 import { restoreState, saveState, snapshotState } from "../../src/typescript/src/sim/ecoState.ts";
 import { boardValue } from "../../src/typescript/src/sim/leaderboard.ts";
 import type { EcoSnapshot, EcoState } from "../../src/typescript/src/sim/ecoState.ts";
-import { LIMITS, LIVE, MAX_POPULATION, MAX_SEED_FOUNDERS, SEED_COPIES, itemHeadroom, mostCopies, seedRoom } from "./config.ts";
+import { BIRTH_WEIGHT_CAP, LIMITS, LIVE, MAX_LIVE_WEIGHTS, MAX_POPULATION, MAX_SEED_FOUNDERS, SEED_COPIES, itemHeadroom, mostCopies, seedRoom } from "./config.ts";
 import type { SeedFounder } from "./founders.ts";
 import { mapRegions } from "../../src/typescript/src/live/mapRegions.ts";
 import { mapSpec, mapVersion } from "../../src/typescript/src/sim/maps/index.ts";
 import type { MapRegion } from "../../src/typescript/src/sim/maps/mapBuild.ts";
 import { OtherWorld, otherWorldReason } from "./saveParse.ts";
 import type { Home } from "./saveParse.ts";
-import { BLANKED, STARTER_MARK, wireName } from "../../src/typescript/src/live/add.ts";
+import { BLANKED, MAX_SPAWN_REGION, STARTER_MARK, wireName } from "../../src/typescript/src/live/add.ts";
 import type { AddRequest, AddRules } from "../../src/typescript/src/live/add.ts";
 import { fullEnergy } from "../../src/typescript/src/sim/species.ts";
 import type { ThinkPool } from "../../src/typescript/src/worker/ecoPool.ts";
+
+// A seed whose founders find no open spots (seedFounders): nothing was inserted.
+export class NoRoom extends Error {}
+
+// A visitor's add checks at most this many distances to living creatures in its spot search (freeSpots), past it the add is refused as
+// crowded. An add aimed at a packed region at 11990 creatures did about 2.1 M (90 ms, every try failing after scanning most members);
+// an add that finds room uses 2 scans of the members a copy, 240 000 for 10 copies at 12000, so it draws the same spots as without the bound.
+export const MAX_ADD_SPOT_CHECKS = 500_000;
 
 // The selected creature's rays and brain input as of one tick.
 interface Capture {
@@ -72,6 +80,7 @@ export class LiveWorld {
   private readonly refreshes: TokenBucket;
   readonly chronicle = new Chronicle();
   readonly freshEco: { maxPopulation: number; birthReserve: number }; // a fresh world's caps (the config this server starts from), bounding its seed
+  private readonly energyCap: number; // the config's eco.energyCap, given to a restored save that has it off (saves from before the setting)
   private readonly freshBirth: AddRules["birth"]; // a fresh world's birth ranges, before any admin change (freshAddRules)
   seedCopies = SEED_COPIES; // of each founder this world was seeded with (saves.ts SEED_FILE), for the hello
   private map: WireMap = { ground: { normal: 1, mud: 0, firm: 0, rock: 0 }, regions: [] };
@@ -80,6 +89,7 @@ export class LiveWorld {
   // helpers: a pool of helper threads, owned from here on (close() closes it), or null to run on this thread.
   constructor(config: EcoConfig, pool: readonly PoolEntry[] | null, helpers: ThinkPool | null = null) {
     this.freshEco = { maxPopulation: config.eco.maxPopulation, birthReserve: config.eco.birthReserve };
+    this.energyCap = config.eco.energyCap;
     const pair = (r: number[]): [number, number] => [r[0]!, r[1]!];
     this.freshBirth = { energy: pair(config.eco.birthEnergyRange), cost: pair(config.eco.birthCostRange), cooldown: pair(config.eco.birthCooldownRange) };
     this.pool = pool;
@@ -257,6 +267,17 @@ export class LiveWorld {
     });
   }
 
+  // The BIRTH message of a living creature (its birth cooldown or hold left, and whether births wait for room: the population cap or
+  // the brain-weight rail, as Ecosystem.birthRoom holds them), or null. O(1).
+  birthWait(id: number): Uint8Array | null {
+    const e = this.eco;
+    const m = e.get(id);
+    if (!m) return null;
+    const eco = e.config.eco;
+    const full = e.population >= eco.maxPopulation - eco.birthReserve || e.weights > e.birthWeightCap;
+    return encodeBirthWait(e.tick, id, (m.lastBirthTick + m.cooldownTicks - e.tick) * e.config.dt, full);
+  }
+
   // The GENOME message of a living creature, or null.
   genome(id: number): Uint8Array | null {
     const m = this.eco.get(id);
@@ -275,6 +296,7 @@ export class LiveWorld {
     config.eco.foodMaxDensity = room.foodMaxDensity;
     config.eco.poisonMaxDensity = room.poisonMaxDensity;
     const eco = new Ecosystem(config, this.pool, { journal: this.helpers !== null });
+    eco.birthWeightCap = BIRTH_WEIGHT_CAP;
     const r = eco.retune({ eco: caps });
     if (!r.ok) throw new Error(`cannot set the item caps: ${r.reason}`);
     return eco;
@@ -475,7 +497,8 @@ export class LiveWorld {
   addRules(): AddRules {
     const { eco, creature } = this.config;
     const pair = (r: number[]): [number, number] => [r[0]!, r[1]!];
-    return { maxCopies: LIVE.add.maxCopies, everyS: LIVE.add.socketEveryS, birth: { energy: pair(eco.birthEnergyRange), cost: pair(eco.birthCostRange), cooldown: pair(eco.birthCooldownRange) }, costs: { living: creature.livingCost, ray: creature.rayCost, neuron: creature.neuronCost } };
+    const spawn = this.spawnable().length;
+    return { maxCopies: LIVE.add.maxCopies, everyS: LIVE.add.socketEveryS, birth: { energy: pair(eco.birthEnergyRange), cost: pair(eco.birthCostRange), cooldown: pair(eco.birthCooldownRange) }, costs: { living: creature.livingCost, ray: creature.rayCost, neuron: creature.neuronCost }, ...(spawn > 0 && spawn <= MAX_SPAWN_REGION ? { spawnRegions: spawn } : {}) };
   }
 
   // The add rules of a fresh world (the birth ranges this server starts from, not the admin's): what a reset's carry must pass, at the
@@ -489,6 +512,11 @@ export class LiveWorld {
     return addingOn() ? this.addRules() : null;
   }
 
+  // The regions of the map with geometry, in the order of the hello's map.regions (the home regions and "commons"); none for a map without it.
+  private spawnable(): readonly MapRegion[] {
+    return (this.config.world.map ? mapSpec(this.config.world.map) : undefined)?.regions ?? [];
+  }
+
   // The home regions of the map (every region but "commons", in spec order); none for a map without regions.
   private homes(): readonly MapRegion[] {
     return ((this.config.world.map ? mapSpec(this.config.world.map) : undefined)?.regions ?? []).filter((g) => g.id !== "commons");
@@ -499,19 +527,30 @@ export class LiveWorld {
     return this.homes().length || founders;
   }
 
-  // Up to n random spots inside the walls (or inside `disc`), clear of rock, of creatures and of `prior` spots not yet filled, from the given draws (at most 40 tries a spot).
-  private freeSpots(n: number, random: () => number, disc?: { x: number; y: number; r: number }, prior: readonly { x: number; y: number }[] = []): { x: number; y: number; heading: number }[] {
+  // Up to n random spots inside the walls (or inside `disc`), clear of rock, of creatures (unless alive is false) and of `prior` spots not yet filled,
+  // from the given draws (at most 40 tries a spot, and no new try once maxChecks distances to creatures are checked).
+  private freeSpots(n: number, random: () => number, disc?: { x: number; y: number; r: number }, prior: readonly { x: number; y: number }[] = [], alive = true, maxChecks = Infinity): { x: number; y: number; heading: number }[] {
     const e = this.eco;
     const { width, height } = this.config.world;
     const r = this.config.creature.radius;
     const margin = 4 * r;
+    let checks = 0;
     const crowded = (x: number, y: number, taken: readonly { x: number; y: number }[]): boolean => {
       for (const p of taken) if ((p.x - x) ** 2 + (p.y - y) ** 2 < (4 * r) ** 2) return true;
-      for (const m of e.members) if ((m.creature.state.x - x) ** 2 + (m.creature.state.y - y) ** 2 < (3 * r) ** 2) return true;
+      if (!alive) return false;
+      const ms = e.members;
+      for (let i = 0; i < ms.length; i++) {
+        const s = ms[i]!.creature.state;
+        if ((s.x - x) ** 2 + (s.y - y) ** 2 < (3 * r) ** 2) {
+          checks += i + 1;
+          return true;
+        }
+      }
+      checks += ms.length;
       return false;
     };
     const spots: { x: number; y: number; heading: number }[] = [];
-    for (let tries = 0; spots.length < n && tries < 40 * n; tries++) {
+    for (let tries = 0; spots.length < n && tries < 40 * n && checks < maxChecks; tries++) {
       let x = margin + random() * (width - 2 * margin);
       let y = margin + random() * (height - 2 * margin);
       if (disc) {
@@ -547,9 +586,10 @@ export class LiveWorld {
     const own = (homes.length || founders.length) * copies;
     const n = own + (extra?.copies ?? 0);
     if (n > seedRoom(e.config.eco)) throw new Error(`${n} founders do not fit below the birth reserve (${seedRoom(e.config.eco)})`);
-    const home = homes.flatMap((g) => this.freeSpots(copies, random, { x: g.x, y: g.y, r: 0.6 * g.r }));
-    const spots = homes.length ? [...home, ...this.freeSpots(n - own, random, undefined, home)] : this.freeSpots(n, random);
-    if (spots.length < n) throw new Error("no room to seed the founders");
+    const weights = this.seedWeights(founders, copies, extra);
+    if (weights > BIRTH_WEIGHT_CAP) throw new Error(`${n} seeded creatures would hold ${weights} brain weights, over the ${BIRTH_WEIGHT_CAP} births stop at`); // so visitors' adds have the reserve from the start
+    const spots = this.seedSpots(founders.length, copies, extra?.copies ?? 0, random, true);
+    if (spots.length < n) throw new NoRoom("no room to seed the founders");
     const hue0 = random() * 360;
     const variants = founders.map((f) => {
       const all = [f.genome, ...(f.pool ?? [])];
@@ -583,6 +623,30 @@ export class LiveWorld {
     return n;
   }
 
+  // The spots a seed of `copies` per group and `extra` more would take: inside 0.6 of each home region's radius, the extra anywhere clear of
+  // them; anywhere on a map without regions. alive false: as on the fresh map, the running world's creatures ignored (a reset's check).
+  // Fewer than asked when they do not fit, after at most 40 tries a spot (about 1 s for 12000 on the Six Realms).
+  private seedSpots(founders: number, copies: number, extra: number, random: () => number, alive: boolean): { x: number; y: number; heading: number }[] {
+    const homes = this.homes();
+    if (!homes.length) return this.freeSpots(founders * copies + extra, random, undefined, [], alive);
+    const home = homes.flatMap((g) => this.freeSpots(copies, random, { x: g.x, y: g.y, r: 0.6 * g.r }, [], alive));
+    return [...home, ...this.freeSpots(extra, random, undefined, home, alive)];
+  }
+
+  // True when a fresh world of this map would find spots for `copies` per group and `extra` more (a reset's check, so it never writes a
+  // count the next start cannot seed). The draws are random, so a count at the edge may still fail at the start; openWorld then seeds fewer.
+  seedFits(founders: number, copies: number, extra = 0, random: () => number = Math.random): boolean {
+    return this.seedSpots(founders, copies, extra, random, false).length >= this.seedGroups(founders) * copies + extra;
+  }
+
+  // Brain weights a seed of `copies` per group (seedGroups: home h gets founder h % F, or each founder its own) and the extra founder's copies holds;
+  // a founder's pool variants share its plan.
+  seedWeights(founders: readonly SeedFounder[], copies: number, extra?: { founder: SeedFounder; copies: number }): number {
+    let sum = extra ? extra.founder.genome.length * extra.copies : 0;
+    if (founders.length) for (let g = 0; g < this.seedGroups(founders.length); g++) sum += founders[g % founders.length]!.genome.length * copies;
+    return sum;
+  }
+
   // Renames every family whose name viewers see as `from` to `to` (both letters and digits), keeping the starter mark: a renamed
   // starter founder (the shipped file's names changed) stays a starter. Call between ticks (whenIdle).
   // `from` is the name exactly as viewers see it; a `to` another living family carries (any case, as the add rule compares) is refused
@@ -602,17 +666,26 @@ export class LiveWorld {
 
   // Inserts a checked add request (live/add.ts parseAdd) as `copies` founders of new named lineages at random free spots, through the
   // engine's insertCreature, so a save keeps them. Call between ticks (whenIdle). random: the server's own draws, never the engine's.
+  // req.region: spawn inside that region (0.6 of its radius) instead of anywhere.
   // Returns the ids, or a reason and nothing inserted.
   // now: false when waiting will not help (the name is taken), so the page does not hold the Add button back.
   addCreatures(req: AddRequest, random: () => number = Math.random): { ids: number[] } | { reason: string; now?: false } {
     const e = this.eco;
     const room = e.config.eco.maxPopulation - e.population;
     if (req.copies > room) return room > 0 ? { reason: `only ${room} more ${room === 1 ? "creature fits" : "creatures fit"} right now, ask for ${room === 1 ? "1 copy" : `${room} copies or fewer`}`, now: false } : { reason: "the world is full, try again later" };
+    if (e.weights + req.copies * req.genome.length > MAX_LIVE_WEIGHTS) return { reason: "the world holds all the brain weights it can save: fewer copies or a smaller brain may fit, or try again later" };
     // One name, one family on the list: a name a living family carries (any case), or a starter's, is refused; it frees when that family dies out.
     const wanted = req.name.toLowerCase();
     if (this.founders.some((f) => f.name.toLowerCase() === wanted) || e.lineageTable.someName((n) => wireName(n).name.toLowerCase() === wanted)) return { reason: `the name ${req.name} is taken by a family alive now, pick another`, now: false };
-    const spots = this.freeSpots(req.copies, random);
-    if (spots.length < req.copies) return { reason: "no free spot found, try again" };
+    // A named region: its index in this world's own list, never coordinates. Beyond the list, or on a map without region geometry, nothing is inserted.
+    let disc: { x: number; y: number; r: number } | undefined;
+    if (req.region !== undefined) {
+      const g = this.spawnable()[req.region];
+      if (!g || req.region >= MAX_SPAWN_REGION) return { reason: "this world has no such region, pick another place", now: false };
+      disc = { x: g.x, y: g.y, r: 0.6 * g.r }; // the rule founder homes use
+    }
+    const spots = this.freeSpots(req.copies, random, disc, [], true, MAX_ADD_SPOT_CHECKS);
+    if (spots.length < req.copies) return { reason: disc ? "that region is crowded, try another" : "no free spot found, try again" };
     const ids: number[] = [];
     for (const p of spots) {
       const res = e.insertCreature({ genome: req.genome, plan: req.plan, x: p.x, y: p.y, heading: p.heading, hue: req.hue, name: req.name, birth: req.birth, energy: LIVE.add.startEnergy, ...(req.mutationScale !== undefined ? { mutationScale: req.mutationScale } : {}) }); // tunables.ts bounds it
@@ -651,8 +724,12 @@ export class LiveWorld {
     const eco = restoreState(state, this.pool, { journal: this.helpers !== null });
     const maxPopulation = Math.min(eco.config.eco.maxPopulation, MAX_POPULATION); // older saves allowed more
     const birthReserve = Math.min(eco.config.eco.birthReserve, Math.max(0, maxPopulation - 1)); // a reserve at the cap would stop every birth
-    const r = eco.retune({ eco: { maxPopulation, birthReserve } });
+    // A save from before the energy cap has it off: it gets this server's, and creatures above it eat again once they spend down to it
+    // (no clamp, so a restore stays exact); admin overrides applied after the restore can still turn it off.
+    const energyCap = eco.config.eco.energyCap || this.energyCap;
+    const r = eco.retune({ eco: { maxPopulation, birthReserve, energyCap } });
     if (!r.ok) throw new Error(`cannot cap the population: ${r.reason}`);
+    eco.birthWeightCap = BIRTH_WEIGHT_CAP; // a save over it only waits for deaths before births resume
     this.eco = eco;
     this.owed = 0;
     this.attach();

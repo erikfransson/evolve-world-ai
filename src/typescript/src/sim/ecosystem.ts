@@ -169,8 +169,10 @@ export class Ecosystem {
   readonly species: readonly Species[];
   // Living creatures in list order.
   readonly members: EcoCreature[];
-  // Genome weights of all living creatures. Not a setting and not saved.
+  // Genome weights of all living creatures, and the most births may bring it to: a birth waits while weights is above birthWeightCap.
+  // Not a setting and not saved: Live World sets the cap so a world of the largest brains stays inside its memory and save limits (server/src/config.ts).
   weights = 0;
+  birthWeightCap = Infinity;
   // Id of a creature whose rays and brain input must be current after each tick (the selected one); the WASM sense leaves everyone else's stale.
   detail: number | null = null;
   // With the journal option: changes not yet drained by a helper coordinator (ecoShare.ts). born and died hold ids, items World.log records.
@@ -665,9 +667,9 @@ export class Ecosystem {
     this.counts[parent.species]!.births++;
   }
 
-  // True while another birth fits under the population cap; the population only grows inside the birth loop.
+  // True while another birth fits under the population cap and the weights cap; both only grow inside the birth loop.
   private birthRoom(birthCap: number): boolean {
-    return this.members.length < birthCap;
+    return this.members.length < birthCap && this.weights <= this.birthWeightCap;
   }
 
   // Places founder i with the birth traits in this.traits; the one path for drawn and cast founders.

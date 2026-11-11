@@ -106,6 +106,12 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
   const unstrided = (): number => deltaBytes * FRAME_HZ;
   // Room for one more viewer: under the cap, and all of them at the slowest frame rate stay inside the budget.
   const room = (): boolean => viewers.size < limits.maxViewers && fits(viewers.size + 1, strided(), unstrided(), budget, MAX_STRIDE);
+  // Open viewers one trusted address may hold: a quarter of what room() admits now (at least 2), at most maxViewersPerVisitor, so one
+  // address cannot fill every slot when large frames leave room for few (about 9 at 12000 creatures, so 2 an address).
+  const perAddressCap = (): number => {
+    const capacity = Math.min(limits.maxViewers, Math.floor(budget / (strided() / MAX_STRIDE + unstrided()))); // the viewers fits() takes now
+    return Math.min(limits.maxViewersPerVisitor, Math.max(2, Number.isFinite(capacity) ? Math.floor(capacity / 4) : 0));
+  };
 
   // Floods past the accept rate get a cheap 503 before the upgrade; a visitor at the cap is upgraded and told "busy", which a browser can show.
   const verifyClient = (_info: { req: IncomingMessage }, done: (ok: boolean, code?: number) => void): void => (accepts.take(1) ? done(true) : done(false, 503));
@@ -181,7 +187,10 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
     // A missing or malformed header (UNKNOWN_VISITOR) is not capped: it would put every such visitor under one limit; the global cap still holds.
     const key = visitorKey(req.headers["x-forwarded-for"], trustForwarded);
     const address = key === null || key === UNKNOWN_VISITOR ? null : key;
-    if (address !== null && (perAddress.get(address) ?? 0) >= limits.maxViewersPerVisitor) return refuse(ws, limits.maxViewersPerVisitor);
+    if (address !== null) {
+      const cap = perAddressCap();
+      if ((perAddress.get(address) ?? 0) >= cap) return refuse(ws, cap);
+    }
     const now = performance.now();
     const v: Viewer = {
       c: { alive: true, lastMessageAt: now, overSince: 0, windowAt: now, windowCount: 0 },
@@ -357,6 +366,7 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
     }
     live.refreshWatched();
     const cache = new Map<number, Uint8Array | null>();
+    const births = new Map<number, Uint8Array | null>();
     const genomes = new Map<number, Uint8Array | null>();
     for (const [ws, v] of viewers) {
       const id = v.selected;
@@ -365,7 +375,10 @@ export function startPublic(host: string, port: number, live: LiveWorld, limits:
       const d = cache.get(id)!;
       if (!d) continue;
       const died = d[9] === 0;
-      if (v.details.take(d.length)) {
+      if (!died && !births.has(id)) births.set(id, live.birthWait(id));
+      const b = died ? null : births.get(id)!;
+      if (v.details.take(d.length + (b ? b.length : 0))) {
+        if (b) send(ws, b, "details"); // just before its detail, which the page attaches it to
         send(ws, d, "details");
         if (died) select(v, null); // told once, then nothing more
       } else if (died) select(v, null);
