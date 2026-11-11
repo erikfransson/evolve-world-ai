@@ -6,7 +6,7 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
-- Live: the world clock text is 2x larger (timer 2.8rem, season 1.38rem) so it reads in time-lapse screenshots. On phones the timer is 1.6rem and the season stays 1.15rem so it fits.
+- Live: the world clock text is 2x larger (timer 2.8rem, season 1.38rem) so it reads in time-lapse screenshots. Under 960 px wide the timer is 1.6rem and the season stays 1.15rem so it fits. The `#timer` selectors keep these sizes winning over `.timer` in ecosystem.css, which the build links after live.css. The minimised "Add your creature" pill sits below the zoom buttons on desktop instead of over the clock.
 
 ## 0.7.0 (2026-11-09)
 

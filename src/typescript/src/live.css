@@ -14,11 +14,11 @@
 
 .about p { margin: 0; color: var(--muted); font-size: 0.8rem; line-height: 1.45; }
 .retry { font-variant-numeric: tabular-nums; }
-.timer { gap: 0.7rem; height: auto; min-height: calc(2.2rem + 2px); padding: 0.3rem 1.2rem; font-size: 2.8rem; line-height: 1.15; }
-.season-pill { padding: 0.1rem 0.8rem; border-radius: 999px; font-size: 1.38rem; line-height: 1.3; font-weight: 600; background: color-mix(in srgb, var(--season, #3ddc97) 22%, transparent); color: var(--season, #3ddc97); }
-.season-pill:empty { display: none; }
-.timer, .season-pill { white-space: nowrap; }
-@media (max-width: 700px) { .timer { gap: 0.5rem; padding: 0.25rem 0.75rem; font-size: 1.6rem; } .season-pill { padding: 0.1rem 0.6rem; font-size: 1.15rem; } } /* 2x timer does not fit a phone beside the buttons */
+#timer { gap: 0.7rem; height: auto; min-height: calc(2.2rem + 2px); padding: 0.3rem 1.2rem; font-size: 2.8rem; line-height: 1.15; }
+#timer .season-pill { padding: 0.1rem 0.8rem; border-radius: 999px; font-size: 1.38rem; line-height: 1.3; font-weight: 600; background: color-mix(in srgb, var(--season, #3ddc97) 22%, transparent); color: var(--season, #3ddc97); }
+#timer .season-pill:empty { display: none; }
+#timer, #timer .season-pill { white-space: nowrap; }
+@media (max-width: 960px) { #timer { gap: 0.5rem; padding: 0.25rem 0.75rem; font-size: 1.6rem; } #timer .season-pill { padding: 0.1rem 0.6rem; font-size: 1.15rem; } } /* 2x timer does not fit the map column once the page is under 960 px wide; #timer beats ecosystem.css .timer whatever order the build links the stylesheets */
 .key.winter { color: rgba(150, 190, 235, 0.9); }
 .key.winter::before { height: 0.7em; vertical-align: -0.1em; background: rgba(150, 190, 235, 0.35); }
 
@@ -139,7 +139,7 @@ input.hue::-moz-range-progress { background: transparent; }
 .addp-msg { margin: 0; font-size: 0.8rem; line-height: 1.4; color: var(--muted); }
 .addp-msg:empty { display: none; }
 .addp-msg[data-kind="ok"] { color: var(--accent); }
-.add-peek { position: absolute; z-index: 3; top: 10px; right: 10px; display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.9rem; background: var(--accent); color: var(--on-accent); border: 0; font-weight: 600; box-shadow: 0 6px 22px rgba(0, 0, 0, 0.45); }
+.add-peek { position: absolute; z-index: 3; top: calc(10px + 3 * 2.2rem + 12px); right: 10px; display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.9rem; background: var(--accent); color: var(--on-accent); border: 0; font-weight: 600; box-shadow: 0 6px 22px rgba(0, 0, 0, 0.45); }
 .add-peek[hidden] { display: none; }
 .peek-dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--on-accent); }
 .sel-name { color: var(--text); font-weight: 600; }
