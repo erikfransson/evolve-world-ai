@@ -5,7 +5,7 @@ import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { PoolEntry } from "../../src/typescript/src/sim/seedPool.ts";
 import { MAX_DELTA_EVENTS, MAX_DELTA_OPS, MAX_ITEM_SLOTS, PROTOCOL_VERSION, encodeDeltaChunk, encodeItems, itemsBytes } from "../../src/typescript/src/live/protocol.ts";
 import type { Hello, ItemOp, Stats, WireEvent, WireMap } from "../../src/typescript/src/live/protocol.ts";
-import { encodeDetail, encodeGenome } from "../../src/typescript/src/live/detail.ts";
+import { encodeBirthWait, encodeDetail, encodeGenome } from "../../src/typescript/src/live/detail.ts";
 import { ITEM_REMOVE, ITEM_SET } from "../../src/typescript/src/sim/world.ts";
 import type { World } from "../../src/typescript/src/sim/world.ts";
 import { EVENT_STRIDE } from "../../src/typescript/src/sim/ecosystem.ts";
@@ -255,6 +255,15 @@ export class LiveWorld {
       founderId: m.founderId, founderPool: e.lineages.fromPool(m.founderId), founderName: founder.name, founderStarter: founder.starter, founderHue: e.lineages.colour(m.founderId), hue: m.hue, upkeep: c.upkeep, drain: c.drain,
       birthEnergy: m.birth.energy, birthCost: m.birth.cost, birthCooldown: m.birth.cooldown, plan: c.plan, rayKinds: cap.kinds, rayCloseness: cap.closeness, rayOffsets: cap.offsets, inputs: cap.inputs,
     });
+  }
+
+  // The BIRTH message of a living creature (its birth cooldown or hold left, and whether births wait for room), or null. O(1).
+  birthWait(id: number): Uint8Array | null {
+    const e = this.eco;
+    const m = e.get(id);
+    if (!m) return null;
+    const eco = e.config.eco;
+    return encodeBirthWait(e.tick, id, (m.lastBirthTick + m.cooldownTicks - e.tick) * e.config.dt, e.population >= eco.maxPopulation - eco.birthReserve);
   }
 
   // The GENOME message of a living creature, or null.

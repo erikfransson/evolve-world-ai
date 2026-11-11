@@ -6,6 +6,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- Live selected creature: a small chip beside the energy shows why a creature at or above its birth energy has no child yet, its birth cooldown left ("cooldown 12 s", also an added creature's birth hold) or "world full" when births wait for room under the population cap. New BIRTH wire message (12 bytes with each detail); older pages ignore it and older servers show no chip.
+
 ## 0.7.0 (2026-11-09)
 
 - Live "Add your creature": a founder's or an uploaded brain now gets a short PPO fine-tune (`TRAIN_TIERS_TRAINED`, same seconds), and is added only if it beats the original on a 32-seed re-score. Otherwise the original is added and the panel says so. The re-score runs in its own worker, with a "Checking…" state at the end.
