@@ -1,7 +1,7 @@
 import { genomeLength, layerSizes, upgradeGenome } from "./brain.ts";
 import { ITEM_RADIUS_RANGE, overrideConfig } from "./config.ts";
 import type { DeepPartial } from "./config.ts";
-import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG, MAX_CREATURES, MAX_KILL_ENERGY, MAX_THINK_EVERY, checkHiddenLayers } from "./ecoConfig.ts";
+import { DEFAULT_ECO_CONFIG, DEFAULT_PREDATOR_CONFIG, MAX_CREATURES, MAX_ENERGY_CAP, MAX_KILL_ENERGY, MAX_THINK_EVERY, checkHiddenLayers } from "./ecoConfig.ts";
 import type { EcoConfig } from "./ecoConfig.ts";
 import { MUTATION_SCALE_RANGE } from "./ecoInsert.ts";
 import { Ecosystem } from "./ecosystem.ts";
@@ -86,6 +86,7 @@ export function snapshotState(eco: Ecosystem): EcoSnapshot {
   const config = structuredClone(eco.config);
   config.eco.wasm = eco.wasm;
   if (config.eco.thinkEvery === 1) delete (config.eco as Partial<typeof config.eco>).thinkEvery; // the default: left out, so saves read on servers from before the setting (restore fills it in)
+  if (config.eco.energyCap === 0) delete (config.eco as Partial<typeof config.eco>).energyCap; // likewise, off
   const members = eco.members;
   const n = members.length;
   const K = SCALARS.length;
@@ -260,6 +261,7 @@ function checkedConfig(raw: unknown): EcoConfig {
   if (!(config.dt > 0 && config.dt <= 1)) invalid("dt is out of bounds");
   if (!(creature.radius > 0 && creature.radius <= MAX_BODY_RADIUS && creature.rayLength > 0 && creature.rayLength <= 5000)) invalid("creature radius or ray length is out of bounds");
   if (!(eco.killEnergy >= 0 && eco.killEnergy <= MAX_KILL_ENERGY)) invalid("eco.killEnergy is out of bounds");
+  if (!(eco.energyCap === 0 || (eco.energyCap >= 1 && eco.energyCap <= MAX_ENERGY_CAP))) invalid("eco.energyCap is out of bounds");
   whole(eco.maxPopulation, 0, MAX_CREATURES, "eco.maxPopulation");
   whole(eco.birthReserve, 0, MAX_CREATURES, "eco.birthReserve");
   whole(eco.initialPopulation, 0, MAX_CREATURES, "eco.initialPopulation");

@@ -1,12 +1,12 @@
 // @vitest-environment node
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { checkCarry, carryFounder, oldestInWorld, CARRY_FILE } from "../../server/src/carry.ts";
 import type { CarryOrder } from "../../server/src/carry.ts";
-import { mostCopies, seedRoom } from "../../server/src/config.ts";
+import { SEED_COPIES, mostCopies, seedRoom } from "../../server/src/config.ts";
 import { loadFounders } from "../../server/src/founders.ts";
-import { LiveWorld } from "../../server/src/liveWorld.ts";
+import { LiveWorld, NoRoom } from "../../server/src/liveWorld.ts";
 import { Saves, copiesProblem, openWorld } from "../../server/src/saves.ts";
 import { StateStore } from "../../server/src/state.ts";
 import { mapSpec } from "../../src/typescript/src/sim/maps/index.ts";
@@ -21,12 +21,14 @@ const seq = (seed: number): (() => number) => {
   return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 2 ** 32);
 };
 const quiet = (): void => {};
-const clockWorld = (): LiveWorld => {
+// cap: the population cap the world starts from; 5000 (the cap before 12000) where a test needs the copies bound to fit the home discs.
+const clockWorld = (cap?: number): LiveWorld => {
   const c = smallConfig();
   c.world.map = "clock";
   c.world.width = spec.width;
   c.world.height = spec.height;
   c.eco.initialPopulation = 0;
+  if (cap) c.eco.maxPopulation = cap;
   return new LiveWorld(c, null);
 };
 const tmp = (): string => mkdtempSync(join(tmpdir(), "evolve-region-reset-"));
@@ -42,7 +44,7 @@ const source = ((): unknown => {
 const oneCarry = (live: LiveWorld, copies: number, room: number): CarryOrder | string => checkCarry({ version: 1, name: "Ancient", copies, creature: source }, live.addRules(), room);
 
 describe("clock reset bounds count home regions", () => {
-  const live = clockWorld();
+  const live = clockWorld(5000);
   const eco = live.freshEco;
   const most = Math.floor(seedRoom(eco) / H);
 
@@ -78,7 +80,7 @@ describe("clock reset bounds count home regions", () => {
 
 describe("a fresh clock world at the copies bound with a carry", () => {
   it("seeds 6*copies + carry creatures and keeps the carried ones 3 radii clear of every home founder", () => {
-    const live = clockWorld();
+    const live = clockWorld(5000);
     const copies = Math.floor(seedRoom(live.freshEco) / H);
     const extra = Math.min(40, seedRoom(live.freshEco) - copies * H);
     expect(extra).toBeGreaterThan(0);
@@ -114,7 +116,7 @@ describe("openWorld on clock", () => {
 
   it("refuses a carry that does not fit beside 6 homes' founders, by the carry check and not by a failed seeding", async () => {
     const dir = tmp();
-    const live = clockWorld();
+    const live = clockWorld(5000);
     const most = Math.floor(seedRoom(live.freshEco) / H);
     const room = seedRoom(live.freshEco) - most * H;
     writeFileSync(join(dir, "seed-copies"), `${most}\n`);
@@ -136,4 +138,42 @@ describe("openWorld on clock", () => {
     await openWorld(new Saves(live, new StateStore(dir)), live, dir, FOUNDERS.slice(0, 3), (l) => lines.push(l));
     expect(lines.join("\n")).toMatch(/ignored: copies must be a whole number from 1 to/);
   }, 60_000);
+});
+
+// At the 12000 cap the copies bound (1983 a home) passes what the smaller home discs hold (about 1860 to 1950 spots, rock in them).
+describe("a clock seed at the 12000 cap that does not fit", () => {
+  const live = clockWorld();
+  const most = Math.floor(seedRoom(live.freshEco) / H);
+
+  // Red without the check in Saves.reset: the count was written, and every next start failed with "no room to seed the founders".
+  it("is refused cleanly by the seed, the fit check and a reset, in bounded time, moving nothing", async () => {
+    expect(most).toBe(1983);
+    let t = performance.now();
+    expect(() => live.seedFounders(FOUNDERS, seq(5), most)).toThrow(NoRoom);
+    expect(performance.now() - t).toBeLessThan(15_000); // about 1 s on a quiet host
+    expect(live.eco.population).toBe(0);
+    expect(live.seedFits(H, most, 0, seq(5))).toBe(false);
+    expect(live.seedFits(H, 800, 0, seq(5))).toBe(true);
+    const dir = tmp();
+    const store = new StateStore(dir);
+    const saves = new Saves(live, store);
+    live.founders = FOUNDERS;
+    t = performance.now();
+    await expect(saves.reset(most, H)).rejects.toThrow(`${most} of each founder do not fit in the home regions`);
+    expect(performance.now() - t).toBeLessThan(15_000);
+    expect(readdirSync(dir).some((f) => f.startsWith("before-reset-"))).toBe(false);
+    expect(store.seedCopies()).toBeNull();
+  }, 120_000);
+
+  // Red without the cut in openWorld: a seed file the map has no room for made every start throw (systemd restarts it in a loop).
+  it("seeds the default count at a fresh start when the seed file's count has no room", async () => {
+    const dir = tmp();
+    const fresh = clockWorld();
+    writeFileSync(join(dir, "seed-copies"), `${most}\n`);
+    const lines: string[] = [];
+    await openWorld(new Saves(fresh, new StateStore(dir)), fresh, dir, FOUNDERS, (l) => lines.push(l));
+    expect(lines.join("\n")).toMatch(/SEED CUT: no room for 1983/);
+    expect(fresh.seedCopies).toBe(SEED_COPIES);
+    expect(fresh.eco.population).toBe(H * SEED_COPIES);
+  }, 120_000);
 });

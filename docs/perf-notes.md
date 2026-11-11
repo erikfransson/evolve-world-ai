@@ -201,6 +201,25 @@ The server tick of the Inland Sea (one thread, cap 5000) went about 1.65x faster
 
 Cost per creature is the same; the clock map runs at the 5000 cap (food 1.0 vs 1.4 differs in growth), so the tick is longer. Build 7.8 s vs 2.3 s (more layers and rock discs).
 
+## Live cap 12000 (liveBench, 2026-11-09)
+
+Branch `live-cap-12k`, one thread, busy host (load 4 to 6), one run each, so differences under about 10% are noise. `--fixed` holds births at the seeded count; 8000 and 12000 seed into discs widened 1.6x (the 0.6r homes hold about 1860 to 1950 each), and food lets the 12000 world fall to about 8200.
+
+| Seeded | Build      | ms/tick (wall) | ms per 1000 | speedAchieved | Peak RSS | Save JSON | Tick stall |
+|-------:|------------|---------------:|------------:|--------------:|---------:|----------:|-----------:|
+| 4896   | before     | 15.9           | 4.56        | 2.10          | 520 MB   | 45-48 MB  | 86-95 ms   |
+| 4896   | after      | 17.0           | 4.76        | 1.97          | 578 MB   | 45-48 MB  | 107-108 ms |
+| 7998   | after      | 25.4           | 4.27        | 1.31          | 755 MB   | 64-73 MB  | 132-232 ms |
+| 11880  | after      | 29.0           | 4.69        | 1.15          | 771 MB   | 61-79 MB  | 147-253 ms |
+
+`liveBench --fixed --copies 816` fingerprint 793739434 before and after (engine unchanged at equal cap). Default `liveBench --seconds 60` 682636478 -> 970767395: with the cap at 12000 births no longer stop at 4900 (steady 5701), results change, not a bug.
+
+Tick loop (`runTicks`, 40 s wall, no viewers): a duty cap (sleep after each behind slice, 80% of wall time) was tried and dropped. It cost about 20% of sim speed whenever behind (4896 creatures 2.52x -> 2.07x) and raised event-loop lag p95 by 5 to 12 ms. With the loop restored, 4896 creatures run at 2.77x on 0.98 of a core (2026-11-11, load about 4), the old loop's figure.
+
+Live page draw (headless Chrome, software raster, 1280 x 900, the real `EcoRenderer` on a synthetic frame): whole-world view 96 / 163 / 243 ms median at 5000 / 8000 / 12000 creatures, zoomed views 6 to 7 ms; frame decode under 1 ms. A GPU canvas was not measured.
+
+Worst world the weight rail allows (5000 of the largest add brains, 37.69 M weights, rail full), under a user scope with MemoryMax=2800M and `--max-old-space-size=1536`: 210 MB JSON, 330 ms tick stall, peak RSS 1422 MB writing, 1702 MB at a start, 1874 MB at an admin load.
+
 ## RL episodes (single thread)
 
 `nice -n 17 node src/rlBench.ts [--reps 3] [--env id]` in `src/typescript`: ms of CPU time per episode for pool:39 and a random learner over 6 seeds; the fingerprint hashes every result of every env in `ENVS`, so it must not change when an optimisation lands. It was 799232213 since 0.2.4 (time-pressure envs and fixed held-out seeds); with the Ambush, Turf war and Cull envs added it prints 1819613860, and the value without those three is still 799232213 (checked 2026-10-28), so the existing envs are unchanged; with Patch war and Live now added it prints 976191245 (2026-10-28); with Two stops (Memory) added it prints 238187872 (2026-10-28, `--reps 1`), and the value without it is still 976191245; with Corral and Lap added it prints 1301207144 (2026-10-28, `--reps 1`), and the value without them is still 238187872. Memory envs on WASM then moved it to 2696220189 (all envs, `--reps 1`); with Hand to mouth added it prints 2726570458 (2026-11-04), and the value without it is still 2696220189, so the existing envs are unchanged (the new `livingCost` field is read only when set). With Over the horizon and Clean sweep added it prints 2078579358 (2026-11-05, `--reps 1`), and the value without them is still 2726570458, so the existing envs are unchanged (the coverage grid adds one index per tick and `cells` is not hashed; `placeLayout`'s new argument is read only by `horizon`). With Stragglers added (rl-fight) it prints 3498660510; with Sparse trail added on top it prints 2091004155 (2026-11-05, `--reps 1`), and the value without it is still 3498660510, so the existing envs are unchanged (`EpisodeResult.late` is not hashed). Since dead creatures stop pushing in collisions (engine-contacts, 2026-11-07) it prints 3425942905 (old contacts on the same tree: 2091004155).

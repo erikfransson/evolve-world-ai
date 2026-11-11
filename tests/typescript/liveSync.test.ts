@@ -6,14 +6,14 @@ import { join } from "node:path";
 import { WebSocket } from "../../server/node_modules/ws/wrapper.mjs";
 import { startAdmin } from "../../server/src/admin.ts";
 import { SLOWEST_STRIDE, frameBudget, sendStride } from "../../server/src/budget.ts";
-import { LIMITS } from "../../server/src/config.ts";
+import { LIMITS, LIVE, MAX_POPULATION } from "../../server/src/config.ts";
 import { LiveWorld, runTicks } from "../../server/src/liveWorld.ts";
-import { startPublic } from "../../server/src/public.ts";
+import { FRAME_MS, startPublic } from "../../server/src/public.ts";
 import type { PublicServer } from "../../server/src/public.ts";
 import { Saves } from "../../server/src/saves.ts";
 import { StateStore } from "../../server/src/state.ts";
 import { ItemMirror } from "../../src/typescript/src/live/items.ts";
-import { MSG_DELTA, MSG_DETAIL, MSG_ITEMS, decodeCreatures, decodeDelta, decodeItems, deltaMessage, encodeDeltaChunk } from "../../src/typescript/src/live/protocol.ts";
+import { MSG_DELTA, MSG_DETAIL, MSG_ITEMS, creatureFrameBytes, decodeCreatures, decodeDelta, decodeItems, deltaMessage, encodeDeltaChunk } from "../../src/typescript/src/live/protocol.ts";
 import { encodeCreatures } from "./frameOracle.ts";
 import type { Stats } from "../../src/typescript/src/live/protocol.ts";
 import { decodeDetail, encodeDetail } from "../../src/typescript/src/live/detail.ts";
@@ -218,7 +218,15 @@ describe("upload budget", () => {
     expect(sendStride(100, 100_000, 1e9, 3_000_000, 1e9)).toBe(SLOWEST_STRIDE);
     expect(sendStride(100, 100_000, 0, 0)).toBe(SLOWEST_STRIDE);
     expect(sendStride(100, 100_000, 0, -5)).toBe(SLOWEST_STRIDE);
-    expect(sendStride(1000, 100_000, 0, 3_000_000)).toBe(SLOWEST_STRIDE);
+    expect(sendStride(10_000, 100_000, 0, 3_000_000)).toBe(SLOWEST_STRIDE);
+  });
+
+  // Red at the old SLOWEST_STRIDE of 25: 100 viewers let in at a low population took 4.6 MB/s of creature frames once the world grew to
+  // 12000, twice the frame budget, so the upload bound did not hold.
+  it("keeps the most viewers inside the frame budget at the population cap, at the slowest stride", () => {
+    const full = (creatureFrameBytes(MAX_POPULATION) * 1000) / FRAME_MS; // bytes per second of one viewer at every frame
+    expect((LIMITS.maxViewers * full) / SLOWEST_STRIDE).toBeLessThanOrEqual(frameBudget(LIMITS));
+    expect(sendStride(LIMITS.maxViewers, full, 0, frameBudget(LIMITS))).toBeLessThanOrEqual(SLOWEST_STRIDE);
   });
 });
 
@@ -345,6 +353,90 @@ describe("failing ticks", () => {
       expect(world.eco.tick - before).toBeLessThan(cap + 15); // the cap plus the ticks the mocked clock owed during the slices
     } finally {
       vi.mocked(performance.now).mockImplementation(realNow);
+    }
+  });
+
+  // The server loop on a mocked clock: each tick costs `cost` ms, and after each slice the clock moves by the wait advance returns
+  // (0 while behind: runTicks goes on at once). Returns the simulated seconds per wall second and the ticks run.
+  async function paced(cost: number, seconds: number, world = grown(), stallMs = 0): Promise<{ speed: number; ticks: number }> {
+    let clock = performance.now();
+    vi.spyOn(performance, "now").mockImplementation(() => clock);
+    let ticks = 0;
+    world.eco.step = () => {
+      clock += cost;
+      ticks++;
+    };
+    try {
+      clock += stallMs; // a stall (a long save, a suspended laptop) before the measured run
+      const start = clock;
+      while (clock - start < seconds * 1000) {
+        const w = await world.advance(); // not clock += await ...: that reads clock before the ticks moved it
+        clock += w;
+      }
+      return { speed: (ticks * world.config.dt * 1000) / (clock - start), ticks };
+    } finally {
+      vi.mocked(performance.now).mockRestore();
+    }
+  }
+
+  // Pins the behaviour a world past one core relies on at 12000 creatures (ticks of 30 ms and more): it runs slower in proportion to
+  // the tick cost, never faster than the set speed, with nothing owed piling up.
+  it("runs a world that cannot keep up slower in proportion to its tick cost, and one that keeps up at full speed", async () => {
+    const runs: { cost: number; speed: number }[] = [];
+    for (const cost of [2, 5, 10, 15, 20, 30, 45, 60]) runs.push({ cost, ...(await paced(cost, 20)) });
+    const dt = smallConfig().dt;
+    for (const r of runs) {
+      const ideal = Math.min(LIVE.speed, (dt * 1000) / r.cost); // what one core can run
+      expect(r.speed).toBeGreaterThan(0.95 * ideal);
+      expect(r.speed).toBeLessThanOrEqual(ideal * 1.01);
+    }
+    for (let i = 1; i < runs.length; i++) expect(runs[i]!.speed).toBeLessThanOrEqual(runs[i - 1]!.speed * 1.001); // no rise with cost
+    expect(runs[0]!.speed).toBeGreaterThan(0.99 * LIVE.speed); // 2 ms ticks keep up
+  });
+
+  // Red without the cap in advance: a 10 s stall owed 900 ticks, run back to back once the ticks got cheap again.
+  it("holds the catch-up to maxCatchUpS after a stall", async () => {
+    const world = grown();
+    const { ticks } = await paced(2, 2, world, 10_000);
+    const cap = LIMITS.maxCatchUpS / world.config.dt;
+    expect(ticks).toBeLessThanOrEqual(Math.ceil((2 * LIVE.speed) / world.config.dt + cap + 1));
+    expect(ticks).toBeGreaterThan((2 * LIVE.speed) / world.config.dt); // the owed ticks did run, up to the cap
+  });
+
+  // Ticks of 40 ms (a slice is one tick, as at 12000 creatures on a slow host): pings and admin messages are answered within about a slice.
+  it("answers a viewer's ping and the admin within a bounded time while behind with slow ticks", async () => {
+    const port = 62540;
+    await serve(port);
+    const dir = mkdtempSync(join(tmpdir(), "evolve-sync-"));
+    const world = grown();
+    const admin = startAdmin("127.0.0.1", 62541, "tok", { eco: world.eco, whenIdle: <T>(fn: () => T): Promise<T> => Promise.resolve(fn()) }, dir, dir, {}, { pause() {}, resume() {}, paused: () => false, saveNow: async () => "", listSaves: () => [], loadSave: async () => "", stop() {}, blankName: async () => 0, renameName: async () => 0, reset: async () => "" });
+    const d = driver(async () => (spin(40), 0));
+    try {
+      const c = client(port, grown());
+      await vi.waitFor(() => expect(c.log).toContain("hello"), { timeout: 5000 });
+      const lags: number[] = [];
+      for (let i = 0; i < 5; i++) {
+        await wait(250); // the server answers one ping per 200 ms
+        const n = c.log.filter((t) => t === "pong").length;
+        const t = performance.now();
+        c.ws.send("ping");
+        await vi.waitFor(() => expect(c.log.filter((t) => t === "pong").length).toBe(n + 1), { timeout: 5000, interval: 2 });
+        lags.push(performance.now() - t);
+      }
+      const ws = new WebSocket("ws://127.0.0.1:62541/");
+      sockets.push(ws);
+      const replies: string[] = [];
+      ws.on("message", (m: Buffer) => replies.push(JSON.parse(m.toString()).t));
+      await new Promise((r) => ws.on("open", r));
+      const t = performance.now();
+      ws.send(JSON.stringify({ t: "auth", token: "tok" }));
+      await vi.waitFor(() => expect(replies).toContain("authed"), { timeout: 5000, interval: 2 });
+      lags.push(performance.now() - t);
+      expect(Math.max(...lags)).toBeLessThan(400); // one 40 ms slice, with a wide margin for a loaded test host
+    } finally {
+      d.stop();
+      await d.stopped;
+      admin.close();
     }
   });
 
