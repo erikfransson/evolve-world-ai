@@ -424,7 +424,7 @@ describe("live world", () => {
     expect(world.eco.population).toBe(old.eco.population);
     expect(world.eco.birthWeightCap).toBe(old.eco.birthWeightCap);
     expect(world.config.eco.energyCap).toBe(liveConfig.eco.energyCap); // a save from before the energy cap (off in it) gets the server's
-    expect(liveConfig.eco.energyCap).toBe(5);
+    expect(liveConfig.eco.energyCap).toBe(0); // off on Live since 0.8.0, the admin can turn it on
     expect(applyTunables(world.eco, { "eco.maxPopulation": 5000, "eco.birthReserve": 100 })).toBeNull(); // an overrides file of then
     expect(applyTunables(world.eco, { "eco.maxPopulation": 12000 })).toBeNull();
     expect(world.config.eco.maxPopulation).toBe(12000);

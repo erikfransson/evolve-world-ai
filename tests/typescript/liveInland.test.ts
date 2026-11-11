@@ -73,7 +73,7 @@ describe("item slots of the live world", () => {
     const slots = live.hello(1).itemSlots;
     expect(slots).toBe(225_000); // (0.95 + 0.05) x 225 000
     expect(slots).toBeLessThanOrEqual(ITEM_SLOT_SHARE * MAX_ITEM_SLOTS);
-    expect([live.config.eco.foodMaxDensity, live.config.eco.poisonMaxDensity]).toEqual([0.85, 0.01]);
+    expect([live.config.eco.foodMaxDensity, live.config.eco.poisonMaxDensity]).toEqual([0.66, 0.01]);
     expect(live.eco.food).toBe(112_500);
     expect(live.eco.poison).toBe(2250);
     expect(applyTunables(live.eco, { "eco.foodMaxDensity": CAP_LIMITS.foodMaxDensity, "eco.poisonMaxDensity": CAP_LIMITS.poisonMaxDensity })).toBeNull();
