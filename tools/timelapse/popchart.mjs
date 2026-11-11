@@ -12,7 +12,7 @@ const [dirArg, ...rest] = process.argv.slice(2);
 if (!dirArg) { console.error("usage: node popchart.mjs <world folder> [outdir=<output folder>] [out=file.svg] [png=1]"); process.exit(2); }
 const opt = Object.fromEntries(rest.map((a) => { const i = a.indexOf("="); return [a.slice(0, i), a.slice(i + 1)]; }));
 const refuse = (...m) => { console.error("refused:", ...m); process.exit(1); };
-const MAX_INPUT = 64e6, MAX_ROWS = 200_000, MAX_POINTS = 1_000_000, LINE_POINTS = 2000; // input bytes, rows read, points kept in memory, points drawn per line (the plot is 1280 px wide)
+const MAX_INPUT = 64e6, MAX_LINES = 1_000_000, MAX_ROWS = 200_000, MAX_POINTS = 1_000_000, LINE_POINTS = 2000; // input bytes, lines scanned, rows kept, points kept in memory, points drawn per line (the plot is 1280 px wide)
 const MAX_LINEAGES = 64; // in the chart; the server sends at most 8 per line
 const W = 1600, H = 900, L = 90, R = 230, T = 40, B = 70; // chart size and margins in px
 const CHROME = "/usr/bin/google-chrome";
@@ -45,12 +45,16 @@ const text = readHostile(popFile, MAX_INPUT);
 if (text === null) refuse("population.jsonl is not a regular file, or too large");
 const lines = new Map(); // name (or founder id) -> { name, hue, max, pts: [[hours, count]] }
 const total = []; // [hours, population]
-let t0 = null, nRows = 0, nPoints = 0, capped = "";
-for (const l of text.split("\n")) {
+let t0 = null, nRows = 0, nPoints = 0, nLines = 0, capped = "";
+for (let pos = 0; pos < text.length; ) { // line by line without split, so junk lines cost no array
+  let e = text.indexOf("\n", pos); if (e < 0) e = text.length;
+  const l = text.slice(pos, e); pos = e + 1;
   if (!l) continue;
+  if (++nLines > MAX_LINES) { capped = `only the first ${MAX_LINES} lines are read`; break; }
   if (nRows >= MAX_ROWS) { capped = `only the first ${MAX_ROWS} rows are charted`; break; }
   let r; try { r = JSON.parse(l); } catch { continue; }
-  const sim = num(r?.simSeconds) ?? 0; t0 ??= sim;
+  if (!r || typeof r !== "object" || Array.isArray(r) || num(r.simSeconds) === null) continue; // only object rows with a finite time
+  const sim = r.simSeconds; t0 ??= sim;
   const h = (sim - t0) / 3600;
   total.push([h, num(r?.population) ?? 0]); nRows++;
   for (const g of Array.isArray(r?.lineages) ? r.lineages.slice(0, 32) : []) {
@@ -61,8 +65,8 @@ for (const l of text.split("\n")) {
     const c = num(g?.count) ?? 0; s.pts.push([h, c]); if (c > s.max) s.max = c; nPoints++;
   }
 }
-if (!nRows) refuse("no rows in population.jsonl");
 if (capped) console.error("note:", capped);
+if (!nRows) refuse("no rows in population.jsonl");
 const thin = (pts) => { const k = Math.ceil(pts.length / LINE_POINTS); return k <= 1 ? pts : pts.filter((_, i) => i % k === 0 || i === pts.length - 1); };
 let yMax = 1; for (const p of total) if (p[1] > yMax) yMax = p[1];
 const xMax = Math.max(1e-9, total.at(-1)[0]);
@@ -74,8 +78,9 @@ const path = (pts) => pts.map((p, i) => `${i ? "L" : "M"}${px(p[0]).toFixed(1)},
 const esc = (s) => clean(s).replace(/[&<>"']/g, "");
 let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="system-ui,sans-serif" font-size="16"><rect width="${W}" height="${H}" fill="#0b1a16"/>`;
 for (let i = 0; i <= 5; i++) { const y = (Y * i) / 5; svg += `<line x1="${L}" x2="${W - R}" y1="${py(y)}" y2="${py(y)}" stroke="#25403a"/><text x="${L - 10}" y="${py(y) + 5}" fill="#9db8b0" text-anchor="end">${Math.round(y)}</text>`; }
-const xStep = xMax > 48 ? 12 : xMax > 12 ? 4 : xMax > 4 ? 1 : 0.5;
-for (let x = 0; x <= xMax; x += xStep) svg += `<line x1="${px(x)}" x2="${px(x)}" y1="${T}" y2="${H - B}" stroke="#182d28"/><text x="${px(x)}" y="${H - B + 24}" fill="#9db8b0" text-anchor="middle">${x}</text>`;
+const niceStep = (v) => { const p = 10 ** Math.floor(Math.log10(v)); return [1, 2, 5, 10].map((m) => m * p).find((m) => m >= v); };
+const xStep = xMax > 240 ? niceStep(xMax / 20) : xMax > 48 ? 12 : xMax > 12 ? 4 : xMax > 4 ? 1 : 0.5; // at most about 20 ticks, whatever the range
+for (let i = 0, x = 0; x <= xMax && i <= 25; i++, x = i * xStep) svg += `<line x1="${px(x)}" x2="${px(x)}" y1="${T}" y2="${H - B}" stroke="#182d28"/><text x="${px(x)}" y="${H - B + 24}" fill="#9db8b0" text-anchor="middle">${x}</text>`;
 svg += `<text x="${(L + W - R) / 2}" y="${H - 16}" fill="#9db8b0" text-anchor="middle">simulated hours since the first row</text><text x="20" y="${H / 2}" fill="#9db8b0" transform="rotate(-90 20 ${H / 2})" text-anchor="middle">creatures alive</text>`;
 svg += `<path d="${path(thin(total))}" fill="none" stroke="#e8f0ed" stroke-width="2" stroke-dasharray="6 4"/>`;
 let k = 0, ly = T + 10;

@@ -261,6 +261,7 @@ let chromeFails = 0, chromeRetryAt = 0; // failed starts in a row, and when the 
 // closeChrome bumps the generation. A start or reload that finds another generation after an await was cancelled: it touches no global again, and a browser it launched itself it closes.
 // While the generation is unchanged, browser, page and httpd are still the ones this start or reload works on.
 let chromeGen = 0;
+const closing = new Set(), launching = new Set(); // browser closes and launches still running: a start waits for both, so two Chromes never run at once
 const cancelled = () => new Error("cancelled by a close");
 async function launchChrome(catchUp = false) { // catchUp: take a frame as soon as the page is live, for the slot that passed meanwhile
   if (chromeState !== "off") return;
@@ -273,8 +274,11 @@ async function launchChrome(catchUp = false) { // catchUp: take a frame as soon 
     if (stale()) { s.close(); return; }
     httpd = s;
     pageUrl = `http://127.0.0.1:${P.pagePort}/live/index.html?server=${P.pageServer || P.server}`;
-    b = await puppeteer.launch({ executablePath: P.chrome, headless: true, pipe: true, args: CHROME_ARGS }); // pipe: DevTools runs over inherited fds, no TCP port is opened
+    while (closing.size || launching.size) { await Promise.allSettled([...closing, ...launching]); if (stale()) throw cancelled(); } // a cancelled launch adds its close before this loop looks again
+    const lp = puppeteer.launch({ executablePath: P.chrome, headless: true, pipe: true, args: CHROME_ARGS }); // pipe: DevTools runs over inherited fds, no TCP port is opened
+    launching.add(lp); try { b = await lp; } finally { launching.delete(lp); }
     if (stale()) throw cancelled();
+    if (browser) { const old = browser; browser = page = null; old.close().catch(() => { try { old.process()?.kill("SIGKILL"); } catch {} }); } // backstop: a live browser is never dropped unclosed
     browser = b;
     b.on("disconnected", () => { if (browser !== b || chromeState === "closing") return; log("chrome disconnected"); browser = page = null; chromeState = "off"; wantCreatures = false; lastCreatures = null; closeServer(); });
     await loadPage(gen);
@@ -286,7 +290,7 @@ async function launchChrome(catchUp = false) { // catchUp: take a frame as soon 
     if (chromeState === "starting") chromeState = "ready";
     chromeFails = 0;
   } catch (err) {
-    if (b && browser !== b) { try { await b.close(); } catch { try { b.process()?.kill("SIGKILL"); } catch {} } } // launched but never handed over (closeChrome closes a handed-over one)
+    if (b && browser !== b) { const old = b, done = (async () => { try { await old.close(); } catch { try { old.process()?.kill("SIGKILL"); } catch {} } })(); closing.add(done); await done; closing.delete(done); } // launched but never handed over (closeChrome closes a handed-over one)
     if (stale()) return; // cancelled by closeChrome: not a failure
     chromeFails++; chromeRetryAt = Date.now() + Math.min(300, 5 * 2 ** chromeFails) * 1000; // a lasting cause (full /tmp, no server) retries at 10 s doubling to 5 min, not every step
     logLimited("chrome start failed", "chrome start failed", chromeFails, "in a row:", String(err?.message ?? err).slice(0, 200)); await closeChrome();
@@ -311,13 +315,14 @@ async function reloadPage() { // page offline or loading, off the slot loop (the
   if (!stale() && chromeState === "starting") chromeState = "ready";
 }
 async function closeChrome() {
-  chromeGen++; // cancels a start or reload in flight
+  const g = ++chromeGen; // cancels a start or reload in flight
   if (chromeState === "off" && !browser && !httpd) return;
   chromeState = "closing"; wantCreatures = false; lastCreatures = null;
-  const b = browser; browser = page = null; crop = null;
-  try { await b?.close(); } catch { try { b?.process()?.kill("SIGKILL"); } catch {} }
-  closeServer();
-  chromeState = "off";
+  const b = browser, h = httpd; browser = page = null; httpd = null; crop = null; // this close owns these two; a newer start brings its own
+  try { h?.close(); h?.closeAllConnections?.(); } catch {} // first, so a newer start can take the page port while the browser still closes
+  const done = (async () => { try { await b?.close(); } catch { try { b?.process()?.kill("SIGKILL"); } catch {} } })();
+  closing.add(done); await done; closing.delete(done);
+  if (g === chromeGen) chromeState = "off"; // overtaken (a newer close or start ran meanwhile): the state is theirs
   log("chrome closed");
 }
 async function loadPage(gen = chromeGen) { // throws when a close cancels it, before it touches page or crop again

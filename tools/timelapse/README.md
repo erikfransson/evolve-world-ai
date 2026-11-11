@@ -115,4 +115,4 @@ All frames of a world have the same even size, and file names sort by UTC time.
 ## Population chart
 `node tools/timelapse/popchart.mjs <world folder> outdir=<output folder> png=1` writes `population.svg` and `population.png`, one line per founder lineage, coloured from the hue the server sends.
 The world folder must be a real folder directly inside the output folder (`outdir` defaults to `videos/timelapse` of the checkout), and `out=<file.svg>` may point into that world folder or outside the output folder.
-It reads at most 64 MB, 200000 rows and 1000000 points, and says so when a cap cuts the chart.
+It reads at most 64 MB and 1000000 lines, keeps only rows that are JSON objects with a finite `simSeconds`, charts at most 200000 rows and 1000000 points, and says so when a cap cuts the chart.
