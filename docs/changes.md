@@ -6,6 +6,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- Creature dots keep more colour with age: the oldest look is now saturation 70% and lightness 54% (was 40% and 44%), so a realm of old creatures reads as its colour instead of muddy grey (`ageLook` in `ui/ecoScene.ts`, ready for a per-hue curve).
+
 ## 0.7.0 (2026-11-09)
 
 - Live "Add your creature": a founder's or an uploaded brain now gets a short PPO fine-tune (`TRAIN_TIERS_TRAINED`, same seconds), and is added only if it beats the original on a 32-seed re-score. Otherwise the original is added and the panel says so. The re-score runs in its own worker, with a "Checking…" state at the end.
