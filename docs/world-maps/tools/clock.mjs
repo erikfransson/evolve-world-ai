@@ -19,15 +19,19 @@ const SIZE = {
 // where each realm lies, as found land rather than a dial: bearing from the hub (deg, 0 east, 90 south), trail length rim to rim, tilt of its shape (rad), size factor.
 // Bearings and tilts are uneven on purpose; trail lengths stay close so every realm is about equally far from the hub (the Mire, invaded most, a little further).
 const PLACE = process.env.PLACE ? JSON.parse(process.env.PLACE) : {
-  blight: { ang: -44.8, len: 4581, rot: 0.29, k: 0.99 },
-  mire: { ang: 4.9, len: 5905, rot: -0.1, k: 1.01 },
-  bloom: { ang: 53.5, len: 5529, rot: -0.12, k: 1.0 },
-  flats: { ang: 136.9, len: 5233, rot: -0.22, k: 0.98 },
-  steppe: { ang: 185.3, len: 4526, rot: 0.28, k: 0.99 },
-  crags: { ang: -127.9, len: 4573, rot: 0.11, k: 1.0 },
+  blight: { ang: -41.3, len: 4782, rot: 0.18, k: 1.03 },
+  mire: { ang: 10.0, len: 6000, rot: 0.02, k: 1.01 },
+  bloom: { ang: 61.3, len: 5571, rot: -0.11, k: 1.0 },
+  flats: { ang: 139.9, len: 5779, rot: -0.3, k: 0.98 },
+  steppe: { ang: 187.7, len: 5445, rot: 0.29, k: 0.97 },
+  crags: { ang: -124.4, len: 4795, rot: 0.26, k: 1.0 },
 };
 const WASTE = { food: 0.05, poison: 0.05 };
 const TRAIL = { food: 0.5, w: 1000 };
+// where each trail leaves the hub and enters its realm, turned off the line between their centres (deg: hub side, realm side), so the trails
+// run slanted or offset instead of as spokes; small on the walled realms' side, so the trail meets the gate head on
+const SKEW = { blight: [18, -10], mire: [-14, 6], bloom: [12, 8], flats: [-20, 14], steppe: [-8, -10], crags: [-22, 12] };
+const OUTLINE_ROUGH = 0.05;
 const EMBER = [176, 66, 30]; // the glow in the lava fissures, dimmed so orange and red creatures still stand out
 // Erik's direction: the realms' colours a quarter of the way towards designer 2's saturated palette (their fill colour and opacity, before desaturation)
 const BRIGHTER = 0.25;
@@ -52,11 +56,13 @@ const layer = (id, shape, o = {}) => ({ id, shape, warp: 900, rough: 220, feathe
 const rock = (id, kind, shape, o = {}) => ({ id, kind, shape, warp: 900, rough: 220, feather: kind === "massif" ? 800 : 1500, cover: 0, ...o });
 const paint = (rgb, alpha, tex, o = {}) => ({ paint: { rgb, alpha, ...(tex ? { tex } : {}), ...o } });
 const tex = (pattern, scale, cover, rgb, alpha, o = {}) => ({ pattern, scale, cover, rgb, alpha, ...o });
-const lobed = (rx, ry, feats, b = 1, n = 56) => {
-  const ph = rnd() * 6.28;
+// rough: amplitude of seeded higher harmonics (4 to 11 lobes per turn), so an outline wanders instead of reading as an ellipse
+const lobed = (rx, ry, feats, b = 1, n = 56, rough = 0) => {
+  const ph = rnd() * 6.28, hs = rough ? [4, 5, 6, 7, 9, 11].map((k) => [k, (rough * (0.4 + 0.6 * rnd()) * 4) / k, rnd() * 6.28]) : [];
   return Array.from({ length: n }, (_, i) => {
     const a = (2 * Math.PI * i) / n;
     let f = b + 0.03 * Math.sin(3 * a + ph);
+    for (const [k, amp, p] of hs) f += amp * Math.sin(k * a + p);
     for (const [d, amp, w] of feats) { let dd = Math.abs(a - (d * Math.PI) / 180) % (2 * Math.PI); if (dd > Math.PI) dd = 2 * Math.PI - dd; f += amp * Math.exp(-((dd / ((w * Math.PI) / 180)) ** 2)); }
     return [R(rx * f * Math.cos(a)), R(ry * f * Math.sin(a))];
   });
@@ -118,10 +124,18 @@ const tilt = (pts, a) => pts.map(([x, y]) => [R(x * Math.cos(a) - y * Math.sin(a
 const hubPts = tilt(lobed(HUB.rx, HUB.ry, [[25, 0.2, 30], [105, -0.16, 26], [190, 0.14, 34], [250, -0.12, 20], [300, 0.1, 18], [345, 0.16, 22]], 0.95), 0.3).map(([x, y]) => [x + CX, y + CY]); // a lopsided basin, not a disc
 const DEFS = [["blight", "The Blight"], ["mire", "The Mire"], ["bloom", "The Bloom"], ["flats", "The Flats"], ["steppe", "The Steppe"], ["crags", "The Crags"]];
 const RM = {};
-const SHAPES = Object.fromEntries(DEFS.map(([id]) => [id, tilt(lobed(SIZE[id].rx * GROW * PLACE[id].k, SIZE[id].ry * GROW * PLACE[id].k, SIZE[id].f, SIZE[id].b), PLACE[id].rot)]));
+// the ends of a realm's trail, `inset` inside the hub rim and the realm rim, on the skewed bearings; ar is the realm side's bearing (its gate)
+const trailEnds = (id, mx, my, pts, inset) => {
+  const toHub = Math.atan2(CY - my, CX - mx), ah = toHub + Math.PI + (SKEW[id][0] * Math.PI) / 180, ar = toHub + (SKEW[id][1] * Math.PI) / 180;
+  const th = exit(hubPts, CX, CY, Math.cos(ah), Math.sin(ah)) - inset, tr = exit(pts, mx, my, Math.cos(ar), Math.sin(ar)) - inset;
+  return { hub: [CX + Math.cos(ah) * th, CY + Math.sin(ah) * th], realm: [mx + Math.cos(ar) * tr, my + Math.sin(ar) * tr], ar };
+};
+const SHAPES = Object.fromEntries(DEFS.map(([id]) => [id, tilt(lobed(SIZE[id].rx * GROW * PLACE[id].k, SIZE[id].ry * GROW * PLACE[id].k, SIZE[id].f, SIZE[id].b, 64, OUTLINE_ROUGH), PLACE[id].rot)]));
 for (const [id, title] of DEFS) {
   const S = SIZE[id], P = PLACE[id], RX = S.rx * GROW * P.k, RY = S.ry * GROW * P.k, shape = SHAPES[id], ux = Math.cos((P.ang * Math.PI) / 180), uy = Math.sin((P.ang * Math.PI) / 180);
-  const reach = exit(hubPts, CX, CY, ux, uy) + P.len + exit(shape, 0, 0, -ux, -uy); // centre so the rim-to-rim trail is P.len long
+  // centre so the skewed rim-to-rim trail (see trailEnds) is P.len long
+  let reach = exit(hubPts, CX, CY, ux, uy) + P.len + exit(shape, 0, 0, -ux, -uy);
+  for (let it = 0; it < 6; it++) { const e = trailEnds(id, CX + ux * reach, CY + uy * reach, shape.map(([px, py]) => [CX + ux * reach + px, CY + uy * reach + py]), 0); reach += P.len - Math.hypot(e.hub[0] - e.realm[0], e.hub[1] - e.realm[1]); }
   const x = CX + ux * reach, y = CY + uy * reach, deg = P.ang;
   const pts = shape.map(([px, py]) => [R(x + px), R(y + py)]);
   RM[id] = { id, title, deg, x, y, rx: RX, ry: RY, pts };
@@ -140,13 +154,11 @@ if (process.env.LAYOUT_ONLY) { // for a layout search: rim-to-rim gaps between n
 // of uneven width, whose paint fades out towards both ends (the food runs the whole way)
 const gate = {}, trailPts = [], report = [], trailPaint = []; // the trails' paint is laid after the realms, so the worn track runs on into the fringes and fades there
 Object.keys(RM).forEach((id) => {
-  const m = RM[id], dx = CX - m.x, dy = CY - m.y, dl = Math.hypot(dx, dy), ux = dx / dl, uy = dy / dl;
-  const tr = exit(m.pts, m.x, m.y, ux, uy), th = exit(hubPts, CX, CY, -ux, -uy);
-  report.push(`${id} deg ${m.deg.toFixed(1)} centre ${R(m.x)},${R(m.y)} trail rim-to-rim ${R(dl - tr - th)}`);
-  const a = [CX - ux * (th - 900), CY - uy * (th - 900)], b = [m.x + ux * (tr - 900), m.y + uy * (tr - 900)]; // ux points from the realm to the hub: both ends 900 inside the rims
+  const m = RM[id], rim = trailEnds(id, m.x, m.y, m.pts, 0), { hub: a, realm: b, ar } = trailEnds(id, m.x, m.y, m.pts, 900); // both ends 900 inside the rims
+  report.push(`${id} deg ${m.deg.toFixed(1)} centre ${R(m.x)},${R(m.y)} trail rim-to-rim ${R(Math.hypot(rim.hub[0] - rim.realm[0], rim.hub[1] - rim.realm[1]))}`);
   const pts = wander(a, b, 4, 0.36, 0.55);
   trailPts.push(...dense(pts, 4).slice(0, -3));
-  gate[id] = Math.atan2(a[1] - m.y, a[0] - m.x);
+  gate[id] = ar;
   const ws = pts.map(() => R(TRAIL.w * (0.7 + 0.6 * rnd())));
   layers.push(layer(`trail-${id}`, path(pts, ws.map((w) => R(w * 1.7))), { warp: 150, rough: 160, feather: 800, food: TRAIL.food, clearMud: true, wobble: 0.35 }));
   trailPaint.push(layer(`trail-${id}-verge`, path(pts, ws.map((w) => R(w * 1.7))), { warp: 150, rough: 160, feather: 800, wobble: 0.35, ...paint([104, 94, 74], 0.38, undefined, { fade: 0.05 }) }));
@@ -160,7 +172,7 @@ const order = ["blight", "mire", "bloom", "flats", "steppe", "crags"];
 const realmEdge = Object.fromEntries(order.map((id) => [id, dense(RM[id].pts)]));
 const hubEdge = dense(hubPts);
 const clearance = (x, y, edge, pts) => (inside(pts, x, y) ? -1 : 1) * Math.min(...edge.map(([u, v]) => Math.hypot(u - x, v - y)));
-const FLOWS = { 2: { sw: -0.25, reach: 6800, wk: 0.75, out: 1.9 }, 3: { sw: 0.45, reach: 2200, wk: 1.15, out: 1.9 }, 4: { sw: -0.35, reach: 3400, wk: 0.95, out: 1.4 }, 5: { sw: 0.3, reach: 2600, wk: 0.8, out: 1.9 } }; // by gap index: swing off the radial line (rad), inner end beyond the hub rim, width, outer end (times the gap's distance; under about 1.6 it wells up from a vent inside the map)
+const FLOWS = { 2: { sw: -0.25, reach: 6800, wk: 0.75, out: 1.9 }, 3: { sw: 0.45, reach: 2200, wk: 1.15, out: 1.9 }, 4: { sw: -0.15, reach: 2600, wk: 0.95, out: 1.9 }, 5: { sw: 0.3, reach: 2600, wk: 0.8, out: 1.9 } }; // by gap index: swing off the radial line (rad), inner end beyond the hub rim, width, outer end (times the gap's distance; under about 1.6 it wells up from a vent inside the map)
 const SPINES = { 0: [0.3, 3600], 1: [0.7, 4800] }; // the other gaps: where along the gap from the hub side (0) outwards, and length
 order.forEach((id, gi) => {
   const A = RM[id], B = RM[order[(gi + 1) % 6]], gx = B.x - A.x, gy = B.y - A.y, gl = Math.hypot(gx, gy), ex = gx / gl, ey = gy / gl;
@@ -276,11 +288,17 @@ const realm = (id, mat, o, fringe, extra, wall) => {
       wp.push([x + ux * t, y + uy * t]); sw.push(R(260 + 480 * e * Math.max(0.3, lump))); // ends no thinner than 260, so the tips by the gate do not crumble
     }
     layers.push(layer(`${id}-wall-shade`, path(wp, sw.map((w) => w * 2.4)), { warp: 200, rough: 160, feather: 700, taper: true, ...paint([12, 10, 14], 0.3) }));
-    const cuts = [0.26, 0.5, 0.75].map((f) => R(n * (f + 0.06 * (rnd() - 0.5)))), ends = [0, ...cuts, n], OV = 3;
-    for (let k = 0; k < 4; k++) {
-      const i0 = Math.max(0, ends[k] - OV), i1 = Math.min(n, ends[k + 1] + OV), off = [1, 0.968, 1.032, 0.985][k];
-      const seg = wp.slice(i0, i1 + 1).map(([px, py]) => [x + (px - x) * off, y + (py - y) * off]), ws = sw.slice(i0, i1 + 1).map((w, j) => ((k > 0 && j <= 2 * OV) || (k < 3 && j >= i1 - i0 - 2 * OV) ? Math.max(w, 480) : w)); // thick where the pieces overlap, so they join
-      rocks.push(rock(`${id}-wall${k}`, "massif", path(seg, ws), { warp: 240, rough: 100, feather: 260, wobble: 0.3, taper: false }));
+    // five pieces of uneven length, each a slanted arc (its own distance from the centre drifting along it) of its own thickness; a piece starts
+    // within 0.03 of where the last one ended, so the overlaps join
+    const P = 5, cuts = [0.17, 0.37, 0.6, 0.8].map((f) => R(n * (f + 0.08 * (rnd() - 0.5)))), ends = [0, ...cuts, n], OV = 3;
+    let off = 0.97 + 0.06 * rnd();
+    for (let k = 0; k < P; k++) {
+      const o0 = k === 0 ? off : Math.min(1.035, Math.max(0.955, off + 0.06 * (rnd() - 0.5))), o1 = Math.min(1.035, Math.max(0.955, o0 + 0.07 * (rnd() - 0.5))), thick = 0.75 + 0.55 * rnd();
+      off = o1;
+      const i0 = Math.max(0, ends[k] - OV), i1 = Math.min(n, ends[k + 1] + OV);
+      const seg = wp.slice(i0, i1 + 1).map(([px, py], j, all) => { const o = o0 + ((o1 - o0) * j) / (all.length - 1); return [x + (px - x) * o, y + (py - y) * o]; });
+      const ws = sw.slice(i0, i1 + 1).map((w, j) => ((k > 0 && j <= 2 * OV) || (k < P - 1 && j >= i1 - i0 - 2 * OV) ? Math.max(w * thick, 480) : Math.max(260, R(w * thick)))); // thick where the pieces overlap, so they join
+      rocks.push(rock(`${id}-wall${k}`, "massif", path(seg, ws), { warp: 240, rough: 70, feather: 260, wobble: 0.3, taper: false }));
     }
     rocks.push(rock(`${id}-wall-scree`, "talus", path(wp.map(([px, py]) => [x + (px - x) * 1.06, y + (py - y) * 1.06]), sw.map(() => 1300)), { warp: 300, rough: 160, feather: 700, cover: 0.14, clump: 650, pow: 1.4, r: [70, 160] }));
   }
@@ -348,6 +366,6 @@ layers.push(...trailPaint);
 const ORDER = ["crags", "blight", "mire", "bloom", "flats", "steppe", "commons"];
 regions.sort((a, b) => ORDER.indexOf(a.id) - ORDER.indexOf(b.id));
 console.error(`layers ${layers.length}, rock layers ${rocks.length}`);
-const spec = { name: "clock", title: "The Six Realms", look: { rock: { stone: "basalt" } }, seed: SEED, width: W, height: H, scale: 1, baseFood: WASTE.food, basePoison: WASTE.poison, layers, rock: rocks, regions };
+const spec = { name: "clock", title: "The Six Realms", look: { rock: { stone: "basalt" } }, solidRock: true, seed: SEED, width: W, height: H, scale: 1, baseFood: WASTE.food, basePoison: WASTE.poison, layers, rock: rocks, regions };
 const body = JSON.stringify(spec, (k, v) => (Array.isArray(v) && v.every((e) => typeof e === "number") ? `\u0000${JSON.stringify(v)}\u0000` : v), 1).replace(/"\\u0000(.*?)\\u0000"/g, "$1");
 console.log(`import type { MapSpec } from "./mapBuild.ts";\n\n// The Six Realms: six biome realms on a ring around a shared hub, apart by ashen badlands and joined to it by worn trails.\n// Generated by docs/world-maps/tools/clock.mjs; edit that and regenerate.\nexport const CLOCK: MapSpec = ${body};`);
