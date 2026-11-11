@@ -6,6 +6,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+## 0.9.0 (2026-11-11)
+
 - Live: the Six Realms gets a gritty, natural look (a fresh world). Each realm has its own ground material, with lava flows, ember fissures, rock spines and shaded basalt rock with cast shadows. Outlines are irregular, trails worn and offset, the Blight and Mire walls are broken arcs, and the hub is a dark wet basin. Realms are about 15% bigger.
 - Live: no more food in pockets creatures cannot reach (#82). The Six Realms fills them with rock: unreachable food ground 56,340 to 2,412 u² in small specks, with no reachable ground taken.
 - Live: Six Realms food rebalanced for less contact between realms: trails 0.25, hub 1.2, Bloom 2.4, Blight 2.3 with less poison (3.0).
