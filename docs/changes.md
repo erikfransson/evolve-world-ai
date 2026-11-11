@@ -6,7 +6,7 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
-- Live: the world clock text is 2x larger (timer 2.8rem, season 1.38rem) so it reads in time-lapse screenshots. On phones the timer is 1.6rem and the season stays 1.15rem so it fits.
+- Live: the world clock text is 2x larger (timer 2.8rem, season 1.38rem) so it reads in time-lapse screenshots. Under 960 px wide the timer is 1.6rem and the season stays 1.15rem so it fits. The `#timer` selectors keep these sizes winning over `.timer` in ecosystem.css, which the build links after live.css. The minimised "Add your creature" pill sits below the zoom buttons on desktop instead of over the clock.
 - Live clock map: Mire's starting colour is magenta (300) again and Flats blue is slightly lighter (230, was 240), so the three warm colours (Bloom 0, Mire 28, Blight 55) no longer sit side by side. Live default `hueDrift` 0.75 -> 0.25. Saves from before this change are refused as another map version, so the world needs a reset.
 - Live "Add your creature": a small map of the Six Realms lets a visitor choose where the copies spawn (a realm, the Commons or Anywhere). One optional `region` index on the add, advertised by the server as `spawnRegions` so older servers and pages keep working; same add limits.
 - Live selected creature: a small chip beside the energy shows why a creature at or above its birth energy has no child yet, its birth cooldown left ("cooldown 12 s", also an added creature's birth hold) or "world full" when births wait for room under the population cap. New BIRTH wire message (12 bytes with each detail); older pages ignore it and older servers show no chip.
