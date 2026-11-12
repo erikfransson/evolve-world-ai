@@ -79,13 +79,17 @@ describe("winter ground", () => {
   });
 
   // The clock map's pins live in clockPins.json (maps.test.ts), rewritten whenever its spec changes.
-  it("leaves maps without it as they were: no winter grid, the same pins", () => {
-    expect(builtMap("clock").weights.winter).toBeNull();
+  it("leaves maps without it as they were (no winter grid, the same pins) and gives the Six Realms hub its grid", () => {
     expect(builtMap("inland-sea").weights.winter).toBeNull();
-    expect(builtMap("clock").weights.winterLoss).toBe(0);
+    expect(builtMap("inland-sea").weights.winterLoss).toBe(0);
+    // The Six Realms hub is winter ground (0.05): about 15% of the open food weight fades at mid-winter. A number stored when the map is
+    // made once when a world's ItemEconomy is built (not in a tick), which regrow only reads.
+    expect(builtMap("clock").weights.winter).not.toBeNull();
+    expect(builtMap("clock").weights.winterLoss).toBeCloseTo(0.1499, 3);
     expect(builtHash("inland-sea")).toBe("2b29312d"); // as maps.test.ts pins them
     expect(mapVersion("inland-sea")).toBe("57ab5ef0-2");
-    expect(packMap(mapTerrain("clock", MAPS["clock"]!.width, MAPS["clock"]!.height))!.winter).toBeUndefined();
+    expect(packMap(mapTerrain("inland-sea", MAPS["inland-sea"]!.width, MAPS["inland-sea"]!.height))!.winter).toBeUndefined();
+    expect(packMap(mapTerrain("clock", MAPS["clock"]!.width, MAPS["clock"]!.height))!.winter).toBeDefined();
   }, 180_000);
 
   it("carries the winter grid through the arrays and the prebuilt file, and refuses a file where it is cut short, missing or corrupt", () => {

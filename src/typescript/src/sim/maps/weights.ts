@@ -68,7 +68,7 @@ export class MapWeights implements SpawnField {
   private readonly inv: number;
   private readonly blocked: (x: number, y: number) => boolean;
   private caps: CapStats | null = null; // made by the first use of the caps, which only the thread that counts items needs
-  private loss = -1; // winterLoss, made on first use
+  private loss = -1; // winterLoss, made on first use: by ItemEconomy's constructor, so a world's start pays it and no tick or drawing page does
 
   // blocked: whether a point is under rock, for the open share of the cap cells.
   constructor(ground: GroundField, food: Uint8Array, poison: Uint8Array, blocked: (x: number, y: number) => boolean, paint: Uint8Array | null = null, winter: Uint8Array | null = null) {
@@ -193,27 +193,27 @@ export class MapWeights implements SpawnField {
   }
 
   // The share of the food weight on open ground (nodes not under rock) that winter ground loses at mid-winter: sum of weight x (1 - share)
-  // over sum of weight. Regrowth scales by 1 - winterness x this, so the rest of the map keeps the global season; 0 without winter ground.
+  // over sum of weight, 0 without winter ground. Regrowth scales by 1 - winterness x this.
   get winterLoss(): number {
-    if (this.loss < 0) {
-      const { width, height, cols, rows, cell, food, winter } = this;
-      let all = 0;
-      let lost = 0;
-      if (winter) {
-        for (let j = GROUND_PAD; j < rows - GROUND_PAD; j++) {
-          for (let i = GROUND_PAD; i < cols - GROUND_PAD; i++) {
-            const x = (i - GROUND_PAD) * cell;
-            const y = (j - GROUND_PAD) * cell;
-            if (x >= width || y >= height || this.blocked(x, y)) continue;
-            const n = j * cols + i;
-            all += food[n]!;
-            lost += food[n]! * (1 - winter[n]! / 255);
-          }
-        }
-      }
-      this.loss = all > 0 ? lost / all : 0;
-    }
+    if (this.loss < 0) this.loss = this.winter ? this.lossOf(this.winter) : 0;
     return this.loss;
+  }
+
+  private lossOf(winter: Uint8Array): number {
+    const { width, height, cols, rows, cell, food } = this;
+    let all = 0;
+    let lost = 0;
+    for (let j = GROUND_PAD; j < rows - GROUND_PAD; j++) {
+      for (let i = GROUND_PAD; i < cols - GROUND_PAD; i++) {
+        const x = (i - GROUND_PAD) * cell;
+        const y = (j - GROUND_PAD) * cell;
+        if (x >= width || y >= height || this.blocked(x, y)) continue;
+        const n = j * cols + i;
+        all += food[n]!;
+        lost += food[n]! * (1 - winter[n]! / 255);
+      }
+    }
+    return all > 0 ? lost / all : 0;
   }
 
   // Items allowed in each cap cell for a density of the kind (as the world setting): exactly round(density * perDensity) in all, shared out in

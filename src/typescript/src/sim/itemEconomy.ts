@@ -42,6 +42,7 @@ export class ItemEconomy {
     this.config = config;
     this.items = items;
     this.rng = rng;
+    void items.terrain.weights?.winterLoss; // made now, at the world's start, so the first regrow does not stall a tick on it (about 0.4 s on the Six Realms)
     this.retune(caps);
   }
 
