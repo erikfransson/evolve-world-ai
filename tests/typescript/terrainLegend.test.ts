@@ -12,9 +12,13 @@ describe("terrain legend rows", () => {
     expect(terrainKinds(w).slice(0, 3)).toEqual([true, true, true]);
     expect(terrainKinds(w)[3]).toBe(true); // the Ashfall shore is poisoned
     expect(terrainKinds(w)[4]).toBe(true); // the sea is rich in food
+    expect(terrainKinds(w)[5]).toBe(false); // no winter ground
+  });
+  it("shows winter ground only for a map that has it (the Six Realms hub)", () => {
+    expect(terrainKinds({ stoneDensity: 0, ridgeDensity: 0, slowDensity: 0, fastDensity: 0, map: "clock" })[5]).toBe(true);
   });
   it("follows the densities on the random map", () => {
-    expect(terrainKinds(world("crowded"))).toEqual([false, false, false, false, false]);
+    expect(terrainKinds(world("crowded"))).toEqual([false, false, false, false, false, false]);
     expect(terrainKinds(world("highlands")).slice(0, 3)).toEqual([true, true, true]);
   });
 });
