@@ -30,6 +30,8 @@ const PLACE = process.env.PLACE ? JSON.parse(process.env.PLACE) : {
 // trails 18/64 (was 16/64, +12.5%; Erik: about 15% more along the pathways to the centre)
 const WASTE = { food: 0.0625, poison: 0.05 };
 const TRAIL = { food: 0.28125, w: 1000 };
+// the walled realms' back door (Erik 2026-11-12): wall points left open at the joint nearest the far side, away from the hub
+const WALL_OPEN = { blight: 5, mire: 3 }; // about 2000 between the tip centres on both (the Mire's far side is its long axis)
 // where each trail leaves the hub and enters its realm, turned off the line between their centres (deg: hub side, realm side), so the trails
 // run slanted or offset instead of as spokes; small on the walled realms' side, so the trail meets the gate head on
 const SKEW = { blight: [18, -10], mire: [-14, 6], bloom: [12, 8], flats: [-20, 14], steppe: [-8, -10], crags: [-22, 12] };
@@ -293,16 +295,23 @@ const realm = (id, mat, o, fringe, extra, wall) => {
     // five pieces of uneven length, each a slanted arc (its own distance from the centre drifting along it) of its own thickness; a piece starts
     // within 0.03 of where the last one ended, so the overlaps join
     const P = 5, cuts = [0.17, 0.37, 0.6, 0.8].map((f) => R(n * (f + 0.08 * (rnd() - 0.5)))), ends = [0, ...cuts, n], OV = 3;
+    // the joint nearest the far side is left open, G points between the tips (no rnd draws, so the rest of the map is unchanged)
+    const G = WALL_OPEN[id] ?? 0, gapAt = G ? ends.slice(1, P).reduce((b, c) => (Math.abs(c - n / 2) < Math.abs(b - n / 2) ? c : b)) : -1, gLo = gapAt - (G >> 1), gHi = gLo + G;
+    if (G) { const sh = layers.find((L) => L.id === `${id}-wall-shade`).shape; sh.w = sh.w.map((w, i) => (i > gLo && i < gHi ? 300 : w)); } // the ridge's shadow thins through the opening
+    if (G) console.error(`${id} wall opening ${G} points at ${R(wp[gapAt][0])},${R(wp[gapAt][1])}, tip centres ${R(Math.hypot(wp[gLo][0] - wp[gHi][0], wp[gLo][1] - wp[gHi][1]))} apart; the gate between the wall ends ${R(Math.hypot(wp[0][0] - wp[n][0], wp[0][1] - wp[n][1]))}`);
     let off = 0.97 + 0.06 * rnd();
     for (let k = 0; k < P; k++) {
       const o0 = k === 0 ? off : Math.min(1.035, Math.max(0.955, off + 0.06 * (rnd() - 0.5))), o1 = Math.min(1.035, Math.max(0.955, o0 + 0.07 * (rnd() - 0.5))), thick = 0.75 + 0.55 * rnd();
       off = o1;
-      const i0 = Math.max(0, ends[k] - OV), i1 = Math.min(n, ends[k + 1] + OV);
+      const openStart = k > 0 && ends[k] === gapAt, openEnd = k < P - 1 && ends[k + 1] === gapAt;
+      const i0 = openStart ? gHi : Math.max(0, ends[k] - OV), i1 = openEnd ? gLo : Math.min(n, ends[k + 1] + OV);
       const seg = wp.slice(i0, i1 + 1).map(([px, py], j, all) => { const o = o0 + ((o1 - o0) * j) / (all.length - 1); return [x + (px - x) * o, y + (py - y) * o]; });
-      const ws = sw.slice(i0, i1 + 1).map((w, j) => ((k > 0 && j <= 2 * OV) || (k < P - 1 && j >= i1 - i0 - 2 * OV) ? Math.max(w * thick, 480) : Math.max(260, R(w * thick)))); // thick where the pieces overlap, so they join
+      const ws = sw.slice(i0, i1 + 1).map((w, j) => ((openStart && j < 2) || (openEnd && j > i1 - i0 - 2) ? Math.max(260, R(w * thick * 0.6)) // a worn-down tip at the opening
+        : (k > 0 && !openStart && j <= 2 * OV) || (k < P - 1 && !openEnd && j >= i1 - i0 - 2 * OV) ? Math.max(w * thick, 480) : Math.max(260, R(w * thick)))); // thick where the pieces overlap, so they join
       rocks.push(rock(`${id}-wall${k}`, "massif", path(seg, ws), { warp: 240, rough: 70, feather: 260, wobble: 0.3, taper: false }));
     }
-    rocks.push(rock(`${id}-wall-scree`, "talus", path(wp.map(([px, py]) => [x + (px - x) * 1.06, y + (py - y) * 1.06]), sw.map(() => 1300)), { warp: 300, rough: 160, feather: 700, cover: 0.14, clump: 650, pow: 1.4, r: [70, 160] }));
+    const scree = (a, b, name) => rocks.push(rock(name, "talus", path(wp.slice(a, b + 1).map(([px, py]) => [x + (px - x) * 1.06, y + (py - y) * 1.06]), sw.slice(a, b + 1).map(() => 1300)), { warp: 300, rough: 160, feather: 700, cover: 0.14, clump: 650, pow: 1.4, r: [70, 160] }));
+    if (G) { scree(0, gLo - 1, `${id}-wall-scree`); scree(gHi + 1, n, `${id}-wall-scree2`); } else scree(0, n, `${id}-wall-scree`); // no scree in the opening
   }
 };
 
