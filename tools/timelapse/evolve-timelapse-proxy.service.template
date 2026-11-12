@@ -1,0 +1,48 @@
+# Forwards the time-lapse socket (evolve-timelapse-proxy.socket) to the Live public port, bytes only (systemd's own proxy: the kernel splices them, nothing is parsed). Replace @PORT@ (the public port, 8787 by default).
+# The target is fixed here, so a client of the socket reaches that one port and nothing else. The socket comes in as an inherited fd, so this unit sees no files of its own.
+[Unit]
+Description=Evolve World time-lapse proxy to the Live public port
+Requires=evolve-timelapse-proxy.socket
+After=evolve-timelapse-proxy.socket
+# A proxy that keeps failing stops after 10 starts in a minute (the socket then fails too); the capture notices the missing socket and its own restart starts the socket again.
+StartLimitIntervalSec=60
+StartLimitBurst=10
+
+[Service]
+# The 249 proxy admits one connection more than --connections-max, so 3 gives 4 at once, the capture's own cap (it needs 2). A further one is accepted and closed at once,
+# with a "Hit connection limit" journal line; it is not queued.
+ExecStart=/lib/systemd/systemd-socket-proxyd --connections-max=3 127.0.0.1:@PORT@
+UnsetEnvironment=DISPLAY WAYLAND_DISPLAY XAUTHORITY DBUS_SESSION_BUS_ADDRESS XDG_RUNTIME_DIR SESSION_MANAGER SSH_AUTH_SOCK SSH_AGENT_LAUNCHER GNOME_SETUP_DISPLAY XMODIFIERS GTK_MODULES QT_IM_MODULE
+Nice=19
+IOSchedulingClass=idle
+# SCHED_IDLE like the capture: the 249 proxy can spin a core on a hung-up client whose pipe is full, and the capture could trigger that on purpose.
+CPUSchedulingPolicy=idle
+MemoryMax=64M
+MemorySwapMax=0
+# 4 connections x (2 sockets + 2 splice pipes x 2 fds), plus the listening socket and stdio.
+LimitNOFILE=64
+TasksMax=8
+
+# Sandbox: no home, no writable path, no IPC, IPv4 only (it needs the host loopback, so no PrivateNetwork). Checked under systemd 249 --user, see README.md.
+PrivateUsers=yes
+ProtectSystem=strict
+TemporaryFileSystem=/home:ro /root:ro
+InaccessiblePaths=-/run -/tmp -/var/tmp -/dev/shm -/dev/mqueue
+PrivateDevices=yes
+PrivateIPC=yes
+NoNewPrivileges=yes
+# accept() on the inherited Unix socket needs no AF_UNIX; connect() to the target needs AF_INET.
+RestrictAddressFamilies=AF_INET
+RestrictNamespaces=yes
+RestrictRealtime=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+SystemCallFilter=@system-service
+# RestrictNamespaces covers unshare and clone but not clone3 in systemd 249; ENOSYS makes glibc fall back to clone. io_uring is not needed (systemd 249 has no @io_uring group, so the three calls are named).
+SystemCallFilter=~clone3:ENOSYS io_uring_setup io_uring_enter io_uring_register
+SystemCallErrorNumber=EPERM
+SystemCallArchitectures=native
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+UMask=0077
