@@ -4,7 +4,7 @@ What changed in each version, newest first, so release notes for any range (say 
 Each release is a pull request from `development` into `main`, tagged `vX.Y.Z` on `main`.
 Add notes under "Unreleased" as work lands on `development`, and turn that heading into the version number at release time.
 
-## Unreleased
+## 0.9.1 (2026-11-12)
 
 - Live: the Six Realms wastes carry twice the food (weight 3/64 to 6/64; the spec says 0.0875, but food weights are stored in steps of 1/64), so more creatures live and roam between the realms. Food regrowth is shared by the whole map, so the wastes' share of food placements goes from 13.1% to 18.0% and the realms, the hub and the trails each get about 5.6% less. The map version changes, so promoting starts a fresh world.
 - Live food defaults are now the values the running world has used since 2026-11-12: `eco.foodMaxDensity` 0.50 (was 0.66) and `eco.foodRegrow` 0.0020 (was 0.00285), for a population mean near 3,700 with peaks near 5,300 (was about 5,600 with peaks near 7,600).
