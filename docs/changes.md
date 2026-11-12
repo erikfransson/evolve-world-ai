@@ -6,9 +6,9 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
-- Live: the Six Realms wastes carry 1.75 times the food (0.0875, was 0.05), so more creatures live and roam between the realms. The map version changes, so the world needs a reset.
-- Live food defaults are now the values the running world has used since 2026-11-12: `eco.foodMaxDensity` 0.50 (was 0.66) and `eco.foodRegrow` 0.0020 (was 0.00285), for a population mean near 3600 instead of about 7000.
-- Live: the Grazer founder sees less far (rays 170 to 110, same brain), so it takes other realms more slowly. Probe seed 1 at Live food, 180 min: Grazer share 23% against 44% before, Blight held.
+- Live: the Six Realms wastes carry twice the food (weight 3/64 to 6/64; the spec says 0.0875, but food weights are stored in steps of 1/64), so more creatures live and roam between the realms. Food regrowth is shared by the whole map, so the wastes' share of food placements goes from 13.1% to 18.0% and the realms, the hub and the trails each get about 5.6% less. The map version changes, so promoting starts a fresh world.
+- Live food defaults are now the values the running world has used since 2026-11-12: `eco.foodMaxDensity` 0.50 (was 0.66) and `eco.foodRegrow` 0.0020 (was 0.00285), for a population mean near 3,700 with peaks near 5,300 (was about 5,600 with peaks near 7,600).
+- Live and RL Arena (same founders file): the Grazer founder sees less far (rays 170 to 110, same brain) to slow its spread. Ray length drifts 2% a birth within 50 to 250, so the lineage can evolve the handicap away. One probe on the 0.9.0 map (seed 1, stopped at 180 min) had the Grazer at 23% of the population against 44%; the probe of the shipped map is still running.
 - Live time-lapse tool: the capture unit gets its own network namespace and reaches the Live public port through a Unix socket served by a sandboxed `systemd-socket-proxyd` unit; it no longer sees the desktop's X server and ibus bus, host loopback, `/run` (system D-Bus, tailscaled, resolved), the webcam, microphone or GPU, and `clone3` and io_uring are refused. Overlapping Chrome starts no longer leave an orphan browser, failed starts back off, a Chrome close that hangs is killed after 20 s, the capture exits for a restart after 10 min without a frame while capturing, and `popchart.mjs` and `check.mjs` treat the output folder as hostile (no writes through links, no control characters).
 
 ## 0.9.0 (2026-11-11)

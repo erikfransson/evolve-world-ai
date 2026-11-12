@@ -26,7 +26,8 @@ const PLACE = process.env.PLACE ? JSON.parse(process.env.PLACE) : {
   steppe: { ang: 187.7, len: 5445, rot: 0.29, k: 0.97 },
   crags: { ang: -124.4, len: 4795, rot: 0.26, k: 1.0 },
 };
-const WASTE = { food: 0.0875, poison: 0.05 }; // food 0.05 -> 0.0875 (Erik 2026-11-12: more life between the realms)
+// Food weights are stored in steps of 1/64 (WEIGHT_UNIT): 0.0875 is stored as 6/64, twice the 3/64 that 0.05 gave (Erik 2026-11-12: more life between the realms).
+const WASTE = { food: 0.0875, poison: 0.05 };
 const TRAIL = { food: 0.25, w: 1000 };
 // where each trail leaves the hub and enters its realm, turned off the line between their centres (deg: hub side, realm side), so the trails
 // run slanted or offset instead of as spokes; small on the walled realms' side, so the trail meets the gate head on
