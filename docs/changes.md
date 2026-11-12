@@ -6,6 +6,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- Live: the Six Realms wastes carry 1.75 times the food (0.0875, was 0.05), so more creatures live and roam between the realms. The map version changes, so the world needs a reset.
+- Live food defaults are now the values the running world has used since 2026-11-12: `eco.foodMaxDensity` 0.50 (was 0.66) and `eco.foodRegrow` 0.0020 (was 0.00285), for a population mean near 3600 instead of about 7000.
 - Live time-lapse tool: the capture unit gets its own network namespace and reaches the Live public port through a Unix socket served by a sandboxed `systemd-socket-proxyd` unit; it no longer sees the desktop's X server and ibus bus, host loopback, `/run` (system D-Bus, tailscaled, resolved), the webcam, microphone or GPU, and `clone3` and io_uring are refused. Overlapping Chrome starts no longer leave an orphan browser, failed starts back off, a Chrome close that hangs is killed after 20 s, the capture exits for a restart after 10 min without a frame while capturing, and `popchart.mjs` and `check.mjs` treat the output folder as hostile (no writes through links, no control characters).
 
 ## 0.9.0 (2026-11-11)

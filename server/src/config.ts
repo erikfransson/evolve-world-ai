@@ -38,8 +38,9 @@ liveConfig.world.foodEnergy = 50;
 liveConfig.world.poisonDamage = 50; // a bite costs one food's worth, not the life (POISON_LETHAL is 100); see docs/tuning-notes.md
 liveConfig.world.poisonDensity = 0.01; // start counts stay at or below the caps (foodDensity 0.5 is 112 500 items)
 liveConfig.eco.initialPopulation = 0; // a fresh world is seeded with the founders file instead (founders.ts)
-liveConfig.eco.foodRegrow = 0.00285;
-liveConfig.eco.foodMaxDensity = 0.66; // a population near 3000 with peaks under 5000 (Erik, 2026-11-11: trial, watch a day; was 0.85, chosen for realm isolation, docs/clock-map-notes.md); the item slots leave the admin room up to 0.95 (itemHeadroom, CAP_LIMITS)
+// Erik 2026-11-12: the population was about 7000 at 0.66 and 0.00285; with these (run on Live since that morning) its mean is about 3600. Regrowth sets the population, the cap hardly binds.
+liveConfig.eco.foodRegrow = 0.0020;
+liveConfig.eco.foodMaxDensity = 0.50; // the item slots leave the admin room up to 0.95 (itemHeadroom, CAP_LIMITS)
 liveConfig.eco.poisonRegrow = 0.0003;
 liveConfig.eco.poisonMaxDensity = 0.01;
 liveConfig.eco.collisionDamage = true;

@@ -15,7 +15,7 @@ export const CLOCK: MapSpec = {
  "width": 60000,
  "height": 37500,
  "scale": 1,
- "baseFood": 0.05,
+ "baseFood": 0.0875,
  "basePoison": 0.05,
  "layers": [
   {
@@ -36,7 +36,7 @@ export const CLOCK: MapSpec = {
    "warp": 0,
    "rough": 220,
    "feather": 0,
-   "food": 0.05,
+   "food": 0.0875,
    "poison": 0.05,
    "paint": {
     "rgb": [46,40,38],
