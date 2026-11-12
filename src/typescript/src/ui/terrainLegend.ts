@@ -15,7 +15,7 @@ export const SWATCHES = {
   winter: `<circle cx="10" cy="10" r="7" fill="rgb(150 180 205)" fill-opacity="0.35" /><path d="M10 4.6 V15.4 M5.3 7.3 L14.7 12.7 M5.3 12.7 L14.7 7.3" stroke="#e6f0f6" stroke-opacity="0.8" stroke-width="1.1" stroke-linecap="round" />`,
 };
 // Whether a map spec has winter ground (a layer whose food fades in winter, MapLayer.winter).
-export const hasWinterGround = (name: string | undefined): boolean => (name ? (mapSpec(name)?.layers.some((l) => l.winter !== undefined && l.winter < 1) ?? false) : false);
+export const hasWinterGround = (name: string | undefined): boolean => (name ? (mapSpec(name)?.layers.some((l) => l.winterFood !== undefined && l.winterFood < 1) ?? false) : false);
 
 const ROWS = [
   { id: "legendRock", kind: "rock", swatch: SWATCHES.rock, label: "Rock: creatures bounce off, rays stop" },

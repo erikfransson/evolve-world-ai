@@ -36,7 +36,7 @@ interface Header {
   width: number;
   height: number;
   sizes: number[]; // bytes per section, in SECTIONS order
-  winter?: number; // bytes of the winter ground section after them, only for a map with winter ground (the others encode as before)
+  winterFood?: number; // bytes of the winter ground section after them, only for a map with winter ground (the others encode as before)
 }
 
 // The unzipped file of a map: magic, header length (u32), header JSON, then each section on an 8-byte boundary, the winter grid last if any.
@@ -48,7 +48,7 @@ export function encodeMapAsset(name: string): Uint8Array {
   const g = rockGeometry(t);
   const data: Record<Key, ArrayBufferView> = { ...parts, ...g, floor: floorPixels(spec.width, spec.height), tint: tintPixels(t) };
   const winter = parts.winter;
-  const header: Header = { name, version: mapVersion(name), width: spec.width, height: spec.height, sizes: SECTIONS.map((k) => data[k].byteLength), ...(winter ? { winter: winter.length } : {}) };
+  const header: Header = { name, version: mapVersion(name), width: spec.width, height: spec.height, sizes: SECTIONS.map((k) => data[k].byteLength), ...(winter ? { winterFood: winter.length } : {}) };
   const head = new TextEncoder().encode(JSON.stringify(header));
   let at = pad8(MAGIC.length + 4 + head.length);
   const out = new Uint8Array(at + header.sizes.reduce((s, n) => s + pad8(n), 0) + (winter ? pad8(winter.length) : 0));
@@ -94,10 +94,10 @@ export function decodeMapAsset(bytes: Uint8Array, name: string, width: number, h
       at += pad8(size!);
     }
     // The winter grid: there exactly when the map has winter ground, one byte per weight node.
-    if ((h.winter !== undefined) !== (mapSpec(name)?.layers.some((l) => l.winter !== undefined) ?? false)) return null;
+    if ((h.winterFood !== undefined) !== (mapSpec(name)?.layers.some((l) => l.winterFood !== undefined) ?? false)) return null;
     let winter: Uint8Array | undefined;
-    if (h.winter !== undefined) {
-      const size = h.winter;
+    if (h.winterFood !== undefined) {
+      const size = h.winterFood;
       if (!Number.isInteger(size) || size !== sizes[SECTIONS.indexOf("food")] || at + size > bytes.length) return null;
       winter = new Uint8Array(size);
       winter.set(bytes.subarray(at, at + size));
