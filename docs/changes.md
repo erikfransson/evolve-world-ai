@@ -8,6 +8,7 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 - Live (candidate, not released): the Six Realms wastes carry 4/64 food (1.33 times 0.9.0's 3/64, two thirds of 0.9.1's 6/64; Erik asked for 1.4x) and the trails 18/64 (was 16/64, 12.5% more; Erik asked for about 15%). Food weights are stored in steps of 1/64, so these are the nearest steps. New map version 2d6b753e-2, so promoting starts a fresh world.
 - Live (candidate): the Blight and Mire walls each have a natural break on the far side, away from the hub, out into the wastes, about 1,950 u clear (the trail gates are about 5,500 to 6,500 wide).
+- Live and RL Arena (same founders file): the Grazer founder's rays go from 110 to 140, so it holds its home again. One probe of the shipped map (seed 1, 6 simulated hours): the Grazer keeps the Bloom and ends at 29% of the population, and all six home lineages are alive at 6 h, though the Juggernaut takes the hub late and most of the Blight.
 
 ## 0.9.1 (2026-11-12)
 
