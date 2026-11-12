@@ -4,6 +4,11 @@ What changed in each version, newest first, so release notes for any range (say 
 Each release is a pull request from `development` into `main`, tagged `vX.Y.Z` on `main`.
 Add notes under "Unreleased" as work lands on `development`, and turn that heading into the version number at release time.
 
+## Unreleased
+
+- Live (candidate, not released): the Six Realms wastes carry 4/64 food (1.33 times 0.9.0's 3/64, two thirds of 0.9.1's 6/64; Erik asked for 1.4x) and the trails 18/64 (was 16/64, 12.5% more; Erik asked for about 15%). Food weights are stored in steps of 1/64, so these are the nearest steps. New map version 2d6b753e-2, so promoting starts a fresh world.
+- Live (candidate): the Blight and Mire walls each have a natural break on the far side, away from the hub, out into the wastes, about 1,950 u clear (the trail gates are about 5,500 to 6,500 wide).
+
 ## 0.9.1 (2026-11-12)
 
 - Live: the Six Realms wastes carry twice the food (weight 3/64 to 6/64; the spec says 0.0875, but food weights are stored in steps of 1/64), so more creatures live and roam between the realms. Food regrowth is shared by the whole map, so the wastes' share of food placements goes from 13.1% to 18.0% and the realms, the hub and the trails each get about 5.6% less. The map version changes, so promoting starts a fresh world.
