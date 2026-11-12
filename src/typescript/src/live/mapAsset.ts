@@ -36,9 +36,10 @@ interface Header {
   width: number;
   height: number;
   sizes: number[]; // bytes per section, in SECTIONS order
+  winter?: number; // bytes of the winter ground section after them, only for a map with winter ground (the others encode as before)
 }
 
-// The unzipped file of a map: magic, header length (u32), header JSON, then each section on an 8-byte boundary.
+// The unzipped file of a map: magic, header length (u32), header JSON, then each section on an 8-byte boundary, the winter grid last if any.
 export function encodeMapAsset(name: string): Uint8Array {
   const spec = mapSpec(name);
   if (!spec) throw new Error(`unknown map "${name}"`);
@@ -46,10 +47,11 @@ export function encodeMapAsset(name: string): Uint8Array {
   const parts = packMap(t)!;
   const g = rockGeometry(t);
   const data: Record<Key, ArrayBufferView> = { ...parts, ...g, floor: floorPixels(spec.width, spec.height), tint: tintPixels(t) };
-  const header: Header = { name, version: mapVersion(name), width: spec.width, height: spec.height, sizes: SECTIONS.map((k) => data[k].byteLength) };
+  const winter = parts.winter;
+  const header: Header = { name, version: mapVersion(name), width: spec.width, height: spec.height, sizes: SECTIONS.map((k) => data[k].byteLength), ...(winter ? { winter: winter.length } : {}) };
   const head = new TextEncoder().encode(JSON.stringify(header));
   let at = pad8(MAGIC.length + 4 + head.length);
-  const out = new Uint8Array(at + header.sizes.reduce((s, n) => s + pad8(n), 0));
+  const out = new Uint8Array(at + header.sizes.reduce((s, n) => s + pad8(n), 0) + (winter ? pad8(winter.length) : 0));
   out.set(new TextEncoder().encode(MAGIC), 0);
   new DataView(out.buffer).setUint32(MAGIC.length, head.length, true);
   out.set(head, MAGIC.length + 4);
@@ -58,6 +60,7 @@ export function encodeMapAsset(name: string): Uint8Array {
     out.set(new Uint8Array(v.buffer, v.byteOffset, v.byteLength), at);
     at += pad8(v.byteLength);
   }
+  if (winter) out.set(winter, at);
   return out;
 }
 
@@ -90,9 +93,18 @@ export function decodeMapAsset(bytes: Uint8Array, name: string, width: number, h
       out[k] = new T(copy.buffer);
       at += pad8(size!);
     }
+    // The winter grid: there exactly when the map has winter ground, one byte per weight node.
+    if ((h.winter !== undefined) !== (mapSpec(name)?.layers.some((l) => l.winter !== undefined) ?? false)) return null;
+    let winter: Uint8Array | undefined;
+    if (h.winter !== undefined) {
+      const size = h.winter;
+      if (!Number.isInteger(size) || size !== sizes[SECTIONS.indexOf("food")] || at + size > bytes.length) return null;
+      winter = new Uint8Array(size);
+      winter.set(bytes.subarray(at, at + size));
+    }
     const o = out as unknown as { rock: Float64Array; ground: Uint8Array; food: Uint8Array; poison: Uint8Array; bodyLoops: Uint32Array; loopPoints: Uint32Array; points: Float64Array; floor: Uint8ClampedArray<ArrayBuffer>; tint: Uint8ClampedArray<ArrayBuffer> };
     return {
-      parts: { ok: true, ms: 0, rock: o.rock, ground: o.ground, food: o.food, poison: o.poison, outlines: { bodyLoops: o.bodyLoops, loopPoints: o.loopPoints, points: o.points } },
+      parts: { ok: true, ms: 0, rock: o.rock, ground: o.ground, food: o.food, poison: o.poison, ...(winter ? { winter } : {}), outlines: { bodyLoops: o.bodyLoops, loopPoints: o.loopPoints, points: o.points } },
       floor: o.floor,
       tint: o.tint,
     };

@@ -215,6 +215,7 @@ export class World implements WorldView {
   }
 
   private readonly spot = { x: 0, y: 0 };
+  winterness = 0; // 0 mid-summer to 1 mid-winter, set each tick by ItemEconomy.regrow on a map with winter ground (MapWeights.winter), else 0
   private exhausted = false; // the last randomSpot used up its tries and took its last spot as it was
   private readonly rockRange = new Int32Array(4);
 
@@ -235,7 +236,7 @@ export class World implements WorldView {
       }
       x = rng.range(r, this.width - r);
       y = rng.range(r, this.height - r);
-    } while ((clear && (x - clear.x) ** 2 + (y - clear.y) ** 2 < clear.radius ** 2) || (picky && !spawn.accepts(wk, x, y, rng)) || this.terrain.touchesRock(x, y, r) || (tries++ < MAX_REJECTS && (reject?.(x, y) || this.tooClose(x, y, kind))));
+    } while ((clear && (x - clear.x) ** 2 + (y - clear.y) ** 2 < clear.radius ** 2) || (picky && !spawn.accepts(wk, x, y, rng, this.winterness)) || this.terrain.touchesRock(x, y, r) || (tries++ < MAX_REJECTS && (reject?.(x, y) || this.tooClose(x, y, kind))));
     this.spot.x = x;
     this.spot.y = y;
   }

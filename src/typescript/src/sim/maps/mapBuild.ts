@@ -37,6 +37,7 @@ export interface MapLayer extends Outline {
   poison?: number;
   mud?: Texture;
   firm?: Texture;
+  winter?: number; // winter ground: share of the food weight left at mid-winter, 0 to 1 (absent is 1, no extra winter); blends like food
   clearMud?: boolean; // removes mud under the layer (islands in a sea)
   edge?: number; // distance over which mud or firm fades in from the outline
   paint?: Paint; // a colour wash over the floor, for looks only (mapTint.ts draws it)
@@ -443,6 +444,7 @@ function check(spec: MapSpec): void {
     if (!(Number.isFinite(v) && (open ? v > lo : v >= lo) && v <= hi)) bad(`layer "${id}": ${what} ${v} is outside ${open ? "(" : "["}${lo}, ${hi}]`);
   };
   for (const layer of spec.layers) {
+    inRange(layer.id, "winter", layer.winter, 0, 1);
     for (const [name, tx] of [["mud", layer.mud], ["firm", layer.firm]] as const) {
       if (!tx) continue;
       inRange(layer.id, `${name}.scale`, tx.scale, 0, 1e6, true);
@@ -495,11 +497,12 @@ export function buildMap(spec: MapSpec): BuiltMap {
   }
   const texThr = layers.map((layer) => (layer.paint?.tex ? patternThreshold(layer.paint.tex.pattern ?? "blobs", seed + 300 + layer.i, layer.paint.tex.cover, layer.paint.tex.keep) : 0));
   const texAt = (tx: Texture, x: number, y: number, s: number): number => (tx.pattern ? patternAt(tx.pattern, x / tx.scale, y / tx.scale, s, tx.keep) : fbm(x / tx.scale, y / tx.scale, s));
-  // The field at a point: food and poison weights and the mud and firm shares, from the layers in order.
-  const out = { food: 1, poison: 1, mud: 0, firm: 0, r: 0, g: 0, b: 0, a: 0 };
+  // The field at a point: food and poison weights, winter share and the mud and firm shares, from the layers in order.
+  const out = { food: 1, poison: 1, winter: 1, mud: 0, firm: 0, r: 0, g: 0, b: 0, a: 0 };
   const field = (x: number, y: number): void => {
     let food = spec.baseFood ?? 1;
     let poison = spec.basePoison ?? 1;
+    let winter = 1;
     let mud = 0;
     let firm = 0;
     let r = 0, g = 0, b = 0, a = 0; // the paint, straight alpha, each layer laid over the ones before
@@ -512,6 +515,7 @@ export function buildMap(spec: MapSpec): BuiltMap {
       const ins = clamp(0.5 - d / edge, 0, 1);
       if (layer.food !== undefined) food += (layer.food - food) * m;
       if (layer.poison !== undefined) poison += (layer.poison - poison) * m;
+      if (layer.winter !== undefined) winter += (layer.winter - winter) * m;
       if (layer.paint) {
         let [lr, lg, lb] = layer.paint.rgb;
         let pa = layer.paint.alpha;
@@ -554,6 +558,7 @@ export function buildMap(spec: MapSpec): BuiltMap {
     }
     out.food = food;
     out.poison = poison;
+    out.winter = winter;
     out.mud = mud;
     out.firm = firm;
     out.r = r;
@@ -568,6 +573,7 @@ export function buildMap(spec: MapSpec): BuiltMap {
   const food = new Uint8Array(cols * rows);
   const poison = new Uint8Array(cols * rows);
   const paint = spec.layers.some((l) => l.paint) ? new Uint8Array(4 * cols * rows) : null;
+  const winter = spec.layers.some((l) => l.winter !== undefined) ? new Uint8Array(cols * rows) : null; // only for maps with winter ground
   for (let j = GROUND_PAD; j < rows - GROUND_PAD; j++) {
     for (let i = GROUND_PAD; i < cols - GROUND_PAD; i++) {
       field((i - GROUND_PAD) * cell, (j - GROUND_PAD) * cell);
@@ -578,6 +584,7 @@ export function buildMap(spec: MapSpec): BuiltMap {
       ground.data[2 * n + 1] = firm;
       food[n] = Math.round(clamp(out.food * WEIGHT_UNIT, 0, 255));
       poison[n] = Math.round(clamp(out.poison * WEIGHT_UNIT, 0, 255));
+      if (winter) winter[n] = Math.round(clamp(out.winter * 255, 0, 255));
       if (paint) paint.set([out.r, out.g, out.b, out.a * 255].map((v) => Math.round(clamp(v, 0, 255))), 4 * n);
     }
   }
@@ -688,7 +695,7 @@ export function buildMap(spec: MapSpec): BuiltMap {
   const nodes = (cols - 2 * GROUND_PAD) * (rows - 2 * GROUND_PAD);
   return {
     ground,
-    weights: new MapWeights(ground, food, poison, discsBlocked(rock, W), paint),
+    weights: new MapWeights(ground, food, poison, discsBlocked(rock, W), paint, winter),
     rock,
     stats: { rockDiscs: rock.length, massifDiscs: massifDiscs, stones, mud: mudNodes / nodes, firm: firmNodes / nodes, rockShare: rockArea / (W * H) },
   };
