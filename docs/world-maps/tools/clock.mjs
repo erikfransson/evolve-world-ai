@@ -5,7 +5,7 @@
 
 // parameters
 const W = 60000, H = 37500, CX = W / 2, CY = H / 2;
-const HUB = { rx: 7500, ry: 6600, food: 1.2, winter: 0.05 }; // winter ground (Erik 2026-11-12): the hub keeps 5% of its food at mid-winter, so no lineage can hold it as a standing army
+const HUB = { rx: 7500, ry: 6600, food: 1.2, winterFood: 0.05 }; // winter ground (Erik 2026-11-12): at mid-winter the hub regrows 5% of what the season gives elsewhere, so no lineage can hold it as a standing army
 const GROW = Math.sqrt(1.15); // realms 15% bigger in area than round 9
 // per realm: radii, silhouette features [angle deg, amplitude, width deg] (lobes positive, bays negative)
 const SIZE = {
@@ -30,8 +30,10 @@ const PLACE = process.env.PLACE ? JSON.parse(process.env.PLACE) : {
 // trails 18/64 (was 16/64, +12.5%; Erik: about 15% more along the pathways to the centre)
 const WASTE = { food: 0.0625, poison: 0.05 };
 const TRAIL = { food: 0.28125, w: 1000 };
-// the walled realms' back door (Erik 2026-11-12): wall points left open at the joint nearest the far side, away from the hub
-const WALL_OPEN = { blight: 5, mire: 3 }; // about 2000 between the tip centres on both (the Mire's far side is its long axis)
+// the walled realms' back door (Erik 2026-11-12): a break (radius) cut through the wall at the joint nearest the far side, away from the hub.
+// The wall and scree are laid as before and the break removes their discs afterwards (spec.breaks), so the rest of the map does not move.
+const WALL_OPEN = { blight: 1300, mire: 1250 }; // about 2,050 to 2,100 clear between the cut ends
+const breaks = [];
 // where each trail leaves the hub and enters its realm, turned off the line between their centres (deg: hub side, realm side), so the trails
 // run slanted or offset instead of as spokes; small on the walled realms' side, so the trail meets the gate head on
 const SKEW = { blight: [18, -10], mire: [-14, 6], bloom: [12, 8], flats: [-20, 14], steppe: [-8, -10], crags: [-22, 12] };
@@ -250,8 +252,8 @@ for (const l of [...report, `area vs round 9: ${areaReport.join(", ")}`]) consol
   layers.push(layer("commons-seat", poly(grow(hubPts, CX, CY, 1.03)), { warp: 600, rough: 300, band: 650, feather: 1300, ...paint([9, 8, 8], 0.42, undefined, { patch: { scale: 1500, lo: 0.25, hi: 0.45 } }) }));
   layers.push(layer("commons-fringe", poly(grow(hubPts, CX, CY, 1.12)), { warp: 700, rough: 300, feather: 2600, paint: fr }));
 }
-layers.push(layer("commons", poly(hubPts), { warp: 600, rough: 450, feather: 450, food: HUB.food, poison: 0, winter: HUB.winter, clearMud: true, ...paint([38, 72, 70], 0.74, tex("blobs", 650, 0.4, [28, 50, 48], 0.72, { soft: 0.32 })) }));
-layers.push(layer("commons-core", poly(blob(CX + 700, CY - 400, 4300, 3600, 16, 0.18, 0.4)), { warp: 600, rough: 300, feather: 2400, food: 1.3, winter: HUB.winter, clearMud: true, ...paint([56, 98, 90], 0.24, tex("blobs", 450, 0.4, [40, 76, 70], 0.24, { soft: 0.35 })) }));
+layers.push(layer("commons", poly(hubPts), { warp: 600, rough: 450, feather: 450, food: HUB.food, poison: 0, winterFood: HUB.winterFood, clearMud: true, ...paint([38, 72, 70], 0.74, tex("blobs", 650, 0.4, [28, 50, 48], 0.72, { soft: 0.32 })) }));
+layers.push(layer("commons-core", poly(blob(CX + 700, CY - 400, 4300, 3600, 16, 0.18, 0.4)), { warp: 600, rough: 300, feather: 2400, food: 1.3, winterFood: HUB.winterFood, clearMud: true, ...paint([56, 98, 90], 0.24, tex("blobs", 450, 0.4, [40, 76, 70], 0.24, { soft: 0.35 })) }));
 for (const [i, [dx, dy, rx, ry, rot]] of [[-2600, -1900, 1100, 650, 0.4], [2400, 1700, 800, 520, -0.3], [-900, 2900, 600, 380, 1.1]].entries()) {
   layers.push(layer(`commons-wet${i}`, poly(blob(CX + dx, CY + dy, rx * 1.9, ry * 1.9, 12, 0.3, rot)), { warp: 400, rough: 250, feather: 600, ...paint([20, 34, 32], 0.55, undefined, { patch: { scale: 500, lo: 0.3, hi: 0.46 } }) })); // boggy ground round each pool
   layers.push(layer(`commons-shore${i}`, poly(blob(CX + dx, CY + dy, rx * 1.12, ry * 1.12, 11, 0.3, rot)), { warp: 260, rough: 160, band: 90, feather: 200, ...paint([120, 150, 140], 0.3, undefined, { patch: { scale: 400, lo: 0.3, hi: 0.45 } }) }));
@@ -295,23 +297,24 @@ const realm = (id, mat, o, fringe, extra, wall) => {
     // five pieces of uneven length, each a slanted arc (its own distance from the centre drifting along it) of its own thickness; a piece starts
     // within 0.03 of where the last one ended, so the overlaps join
     const P = 5, cuts = [0.17, 0.37, 0.6, 0.8].map((f) => R(n * (f + 0.08 * (rnd() - 0.5)))), ends = [0, ...cuts, n], OV = 3;
-    // the joint nearest the far side is left open, G points between the tips (no rnd draws, so the rest of the map is unchanged)
-    const G = WALL_OPEN[id] ?? 0, gapAt = G ? ends.slice(1, P).reduce((b, c) => (Math.abs(c - n / 2) < Math.abs(b - n / 2) ? c : b)) : -1, gLo = gapAt - (G >> 1), gHi = gLo + G;
-    if (G) { const sh = layers.find((L) => L.id === `${id}-wall-shade`).shape; sh.w = sh.w.map((w, i) => (i > gLo && i < gHi ? 300 : w)); } // the ridge's shadow thins through the opening
-    if (G) console.error(`${id} wall opening ${G} points at ${R(wp[gapAt][0])},${R(wp[gapAt][1])}, tip centres ${R(Math.hypot(wp[gLo][0] - wp[gHi][0], wp[gLo][1] - wp[gHi][1]))} apart; the gate between the wall ends ${R(Math.hypot(wp[0][0] - wp[n][0], wp[0][1] - wp[n][1]))}`);
+    // the break sits on the joint nearest the far side (no rnd draws); the ridge's shadow thins through it
+    const B = WALL_OPEN[id] ?? 0, gapAt = B ? ends.slice(1, P).reduce((q, c) => (Math.abs(c - n / 2) < Math.abs(q - n / 2) ? c : q)) : -1;
+    if (B) {
+      const sh = layers.find((L) => L.id === `${id}-wall-shade`).shape, [bx, by] = wp[gapAt];
+      sh.w = sh.w.map((w, i) => (wp[i] && Math.hypot(wp[i][0] - bx, wp[i][1] - by) < B ? 300 : w));
+      breaks.push([R(bx), R(by), B]);
+      console.error(`${id} wall break radius ${B} at ${R(bx)},${R(by)}; the gate between the wall ends ${R(Math.hypot(wp[0][0] - wp[n][0], wp[0][1] - wp[n][1]))}`);
+    }
     let off = 0.97 + 0.06 * rnd();
     for (let k = 0; k < P; k++) {
       const o0 = k === 0 ? off : Math.min(1.035, Math.max(0.955, off + 0.06 * (rnd() - 0.5))), o1 = Math.min(1.035, Math.max(0.955, o0 + 0.07 * (rnd() - 0.5))), thick = 0.75 + 0.55 * rnd();
       off = o1;
-      const openStart = k > 0 && ends[k] === gapAt, openEnd = k < P - 1 && ends[k + 1] === gapAt;
-      const i0 = openStart ? gHi : Math.max(0, ends[k] - OV), i1 = openEnd ? gLo : Math.min(n, ends[k + 1] + OV);
+      const i0 = Math.max(0, ends[k] - OV), i1 = Math.min(n, ends[k + 1] + OV);
       const seg = wp.slice(i0, i1 + 1).map(([px, py], j, all) => { const o = o0 + ((o1 - o0) * j) / (all.length - 1); return [x + (px - x) * o, y + (py - y) * o]; });
-      const ws = sw.slice(i0, i1 + 1).map((w, j) => ((openStart && j < 2) || (openEnd && j > i1 - i0 - 2) ? Math.max(260, R(w * thick * 0.6)) // a worn-down tip at the opening
-        : (k > 0 && !openStart && j <= 2 * OV) || (k < P - 1 && !openEnd && j >= i1 - i0 - 2 * OV) ? Math.max(w * thick, 480) : Math.max(260, R(w * thick)))); // thick where the pieces overlap, so they join
+      const ws = sw.slice(i0, i1 + 1).map((w, j) => ((k > 0 && j <= 2 * OV) || (k < P - 1 && j >= i1 - i0 - 2 * OV) ? Math.max(w * thick, 480) : Math.max(260, R(w * thick)))); // thick where the pieces overlap, so they join
       rocks.push(rock(`${id}-wall${k}`, "massif", path(seg, ws), { warp: 240, rough: 70, feather: 260, wobble: 0.3, taper: false }));
     }
-    const scree = (a, b, name) => rocks.push(rock(name, "talus", path(wp.slice(a, b + 1).map(([px, py]) => [x + (px - x) * 1.06, y + (py - y) * 1.06]), sw.slice(a, b + 1).map(() => 1300)), { warp: 300, rough: 160, feather: 700, cover: 0.14, clump: 650, pow: 1.4, r: [70, 160] }));
-    if (G) { scree(0, gLo - 1, `${id}-wall-scree`); scree(gHi + 1, n, `${id}-wall-scree2`); } else scree(0, n, `${id}-wall-scree`); // no scree in the opening
+    rocks.push(rock(`${id}-wall-scree`, "talus", path(wp.map(([px, py]) => [x + (px - x) * 1.06, y + (py - y) * 1.06]), sw.map(() => 1300)), { warp: 300, rough: 160, feather: 700, cover: 0.14, clump: 650, pow: 1.4, r: [70, 160] }));
   }
 };
 
@@ -377,6 +380,6 @@ layers.push(...trailPaint);
 const ORDER = ["crags", "blight", "mire", "bloom", "flats", "steppe", "commons"];
 regions.sort((a, b) => ORDER.indexOf(a.id) - ORDER.indexOf(b.id));
 console.error(`layers ${layers.length}, rock layers ${rocks.length}`);
-const spec = { name: "clock", title: "The Six Realms", look: { rock: { stone: "basalt" } }, solidRock: true, seed: SEED, width: W, height: H, scale: 1, baseFood: WASTE.food, basePoison: WASTE.poison, layers, rock: rocks, regions };
+const spec = { name: "clock", title: "The Six Realms", look: { rock: { stone: "basalt" } }, solidRock: true, breaks, seed: SEED, width: W, height: H, scale: 1, baseFood: WASTE.food, basePoison: WASTE.poison, layers, rock: rocks, regions };
 const body = JSON.stringify(spec, (k, v) => (Array.isArray(v) && v.every((e) => typeof e === "number") ? `\u0000${JSON.stringify(v)}\u0000` : v), 1).replace(/"\\u0000(.*?)\\u0000"/g, "$1");
 console.log(`import type { MapSpec } from "./mapBuild.ts";\n\n// The Six Realms: six biome realms on a ring around a shared hub, apart by ashen badlands and joined to it by worn trails.\n// Generated by docs/world-maps/tools/clock.mjs; edit that and regenerate.\nexport const CLOCK: MapSpec = ${body};`);
