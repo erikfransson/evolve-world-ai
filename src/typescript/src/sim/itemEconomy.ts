@@ -56,20 +56,21 @@ export class ItemEconomy {
     this.poisonPerTick = config.eco.poisonRegrow * perDensity * config.dt;
   }
 
+  // Sets the world's winterness for tick number tick: the season on a map with winter ground, else 0. From the tick alone, so a restored
+  // world (Ecosystem.importCore) places nothing with summer weights before its first regrow.
+  season(tick: number): void {
+    const { eco } = this.config;
+    this.items.winterness = eco.seasons && this.items.terrain.weights?.winter ? winterness(eco, tick * this.config.dt) : 0;
+  }
+
   // One tick of regrowth, at tick number tick.
   // On a map with winter ground the season also fades the food weights there (MapWeights.accepts), and the count drops by the weight lost.
   regrow(tick: number): void {
     const { eco } = this.config;
+    this.season(tick);
     const weights = this.items.terrain.weights;
-    if (eco.seasons && weights?.winter) {
-      const t = tick * this.config.dt;
-      const v = winterness(eco, t);
-      this.items.winterness = v;
-      this.foodDue += this.foodPerTick * seasonFactor(eco, t) * (1 - v * weights.winterLoss);
-    } else {
-      this.items.winterness = 0;
-      this.foodDue += eco.seasons ? this.foodPerTick * seasonFactor(eco, tick * this.config.dt) : this.foodPerTick;
-    }
+    if (eco.seasons && weights?.winter) this.foodDue += this.foodPerTick * seasonFactor(eco, tick * this.config.dt) * (1 - this.items.winterness * weights.winterLoss);
+    else this.foodDue += eco.seasons ? this.foodPerTick * seasonFactor(eco, tick * this.config.dt) : this.foodPerTick;
     this.poisonDue += this.poisonPerTick;
     // At the cap the rest of the due items is dropped at once, so a huge rate cannot loop; below 2^53 the leftover fraction is what counting down leaves.
     while (this.foodDue >= 1 && this.food < this.foodCap) {

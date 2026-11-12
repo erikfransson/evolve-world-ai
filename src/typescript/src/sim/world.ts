@@ -215,7 +215,7 @@ export class World implements WorldView {
   }
 
   private readonly spot = { x: 0, y: 0 };
-  winterness = 0; // 0 mid-summer to 1 mid-winter, set each tick by ItemEconomy.regrow on a map with winter ground (MapWeights.winter), else 0
+  winterness = 0; // 0 mid-summer to 1 mid-winter, set by ItemEconomy.season (each regrow and at restore) on a map with winter ground (MapWeights.winter), else 0
   private exhausted = false; // the last randomSpot used up its tries and took its last spot as it was
   private readonly rockRange = new Int32Array(4);
 

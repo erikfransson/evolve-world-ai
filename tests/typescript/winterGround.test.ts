@@ -9,6 +9,7 @@ import { packMap, unpackMap } from "../../src/typescript/src/sim/maps/mapParts.t
 import { createRng } from "../../src/typescript/src/sim/rng.ts";
 import { mapTerrain } from "../../src/typescript/src/sim/terrain.ts";
 import { World } from "../../src/typescript/src/sim/world.ts";
+import { Ecosystem } from "../../src/typescript/src/sim/ecosystem.ts";
 import { decodeMapAsset, encodeMapAsset, terrainFromAsset } from "../../src/typescript/src/live/mapAsset.ts";
 
 // A small map, its left half (x < 2000) winter ground with nothing left at mid-winter; the control is the same map without winter ground.
@@ -55,6 +56,21 @@ describe("winter ground", () => {
     const summer = regrowAt("winter-test", 0, 4);
     expect(summer.xs).toEqual(regrowAt("winter-control", 0, 4).xs);
     expect(summer.patch).toBeGreaterThan(500);
+  });
+
+  // Red without ItemEconomy.season in importCore: a world restored in mid-winter kept winterness 0 until its first regrow, so founder and
+  // add spots in that tick took summer weights in the barren ground.
+  it("knows its season right after a restore, before the first tick, and then takes no spot in barren ground", () => {
+    const config = configOf("winter-test");
+    config.eco.initialPopulation = 4;
+    const eco = new Ecosystem(config);
+    const inner = eco as unknown as { items: World; economy: ItemEconomy };
+    expect(inner.items.winterness).toBe(0);
+    eco.importCore({ ...eco.exportCore(), tick: YEAR_TICKS / 2 });
+    expect(inner.items.winterness).toBeCloseTo(1, 9);
+    expect(Array.from({ length: 300 }, () => inner.economy.startOk(500, 1000, 10)).some(Boolean)).toBe(false);
+    inner.economy.season(0);
+    expect(Array.from({ length: 300 }, () => inner.economy.startOk(500, 1000, 10)).some(Boolean)).toBe(true);
   });
 
   it("refuses a winter share outside 0 to 1", () => {
