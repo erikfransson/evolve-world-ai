@@ -57,7 +57,7 @@ const ROWS: Row[] = [
   { group: "Regions", label: "Rich ground", kind: "rich", note: () => "the green wash: more food grows here, and more of it stays" },
   { group: "Regions", label: "Poisoned ground", kind: "poison", note: () => "the purple wash: poison grows here" },
   { group: "Regions", label: "Poor ground", kind: "dry", note: () => "the dry wash: little food grows here" },
-  { group: "Regions", label: "Winter ground", winter: true, svg: icon(SWATCHES.winter), note: () => "almost no food grows here in winter; it comes back each summer" },
+  { group: "Regions", label: "Winter ground", winter: true, svg: icon(SWATCHES.winter), note: () => "almost no food grows here in winter and it comes back each summer; the region table below marks it \"bare in winter\"" },
   { group: "Items", label: "Food", svg: ITEM_SWATCHES.food, note: (s) => `${s.foodEnergy !== undefined ? `+${Math.round(s.foodEnergy)} energy a bite; ` : ""}regrows, less in winter` },
   { group: "Items", label: "Poison", svg: ITEM_SWATCHES.poison, note: (s) => (s.poisonDamage === undefined || s.poisonDamage >= POISON_LETHAL ? "one bite kills" : s.poisonDamage === 0 ? "harmless here" : `−${Math.round(s.poisonDamage)} energy a bite`) },
   { group: "Creatures", label: "Creature", svg: ITEM_SWATCHES.creature, note: () => "the fill is its energy, the colour its family" },

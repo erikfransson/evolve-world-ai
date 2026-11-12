@@ -444,7 +444,7 @@ function check(spec: MapSpec): void {
     if (v === undefined) return;
     if (!(Number.isFinite(v) && (open ? v > lo : v >= lo) && v <= hi)) bad(`layer "${id}": ${what} ${v} is outside ${open ? "(" : "["}${lo}, ${hi}]`);
   };
-  if (spec.breaks !== undefined && !(Array.isArray(spec.breaks) && spec.breaks.length <= 16 && spec.breaks.every((q) => q.length === 3 && q.every(Number.isFinite) && q[2] > 0 && q[2] <= 5000))) bad("breaks must be at most 16 finite [x, y, radius] with a radius from 0 to 5000");
+  if (spec.breaks !== undefined && !(Array.isArray(spec.breaks) && spec.breaks.length <= 16 && spec.breaks.every((q) => Array.isArray(q) && q.length === 3 && q.every(Number.isFinite) && q[2] > 0 && q[2] <= 5000))) bad("breaks must be at most 16 finite [x, y, radius] with a radius over 0 and at most 5000");
   for (const layer of spec.layers) {
     inRange(layer.id, "winterFood", layer.winterFood, 0, 1);
     for (const [name, tx] of [["mud", layer.mud], ["firm", layer.firm]] as const) {
@@ -505,6 +505,7 @@ export function buildMap(spec: MapSpec): BuiltMap {
     let food = spec.baseFood ?? 1;
     let poison = spec.basePoison ?? 1;
     let wfood = food; // the winter food weight, food x share: blended itself, so the share falls monotonically across a feathered edge
+    let share = 1; // the share where there is food, kept through ground without food so a later food layer takes it up
     let mud = 0;
     let firm = 0;
     let r = 0, g = 0, b = 0, a = 0; // the paint, straight alpha, each layer laid over the ones before
@@ -515,8 +516,10 @@ export function buildMap(spec: MapSpec): BuiltMap {
       const m = clamp(0.5 - d / fe, 0, 1);
       const edge = layer.edge ?? 380;
       const ins = clamp(0.5 - d / edge, 0, 1);
-      if (layer.food !== undefined || layer.winterFood !== undefined) wfood += ((layer.food ?? food) * (layer.winterFood ?? (food > 0 ? wfood / food : 1)) - wfood) * m;
+      if (layer.food !== undefined || layer.winterFood !== undefined) wfood += ((layer.food ?? food) * (layer.winterFood ?? share) - wfood) * m;
       if (layer.food !== undefined) food += (layer.food - food) * m;
+      if (layer.winterFood !== undefined && !(food > 0)) share += (layer.winterFood - share) * m; // no food to carry it: the share itself
+      else if (food > 0) share = clamp(wfood / food, 0, 1);
       if (layer.poison !== undefined) poison += (layer.poison - poison) * m;
       if (layer.paint) {
         let [lr, lg, lb] = layer.paint.rgb;
@@ -560,7 +563,7 @@ export function buildMap(spec: MapSpec): BuiltMap {
     }
     out.food = food;
     out.poison = poison;
-    out.winter = food > 0 ? clamp(wfood / food, 0, 1) : 1;
+    out.winter = share;
     out.mud = mud;
     out.firm = firm;
     out.r = r;
@@ -688,9 +691,16 @@ export function buildMap(spec: MapSpec): BuiltMap {
     }
   });
   if (spec.breaks?.length) {
+    // A disc whose centre lies inside a break (its radius roughened by noise) goes; one in the band out to BREAK_TAPER times it shrinks
+    // with closeness, from BREAK_TIP of its radius at the cut to all of it, so the rock wears down to a tip. No draws.
     const nw = PASS_WAVE * k;
-    const open = (d: Disc): boolean => spec.breaks!.some(([bx, by, br], b) => Math.hypot(d.x - bx, d.y - by) < br * (0.85 + 0.3 * valueNoise(d.x / nw, d.y / nw, seed + 41 + b)));
-    for (let i = rock.length - 1; i >= 0; i--) if (open(rock[i]!)) rock.splice(i, 1);
+    const reach = (d: Disc): number => Math.min(...spec.breaks!.map(([bx, by, br], b) => Math.hypot(d.x - bx, d.y - by) / (br * (0.85 + 0.3 * valueNoise(d.x / nw, d.y / nw, seed + 41 + b)))));
+    for (let i = rock.length - 1; i >= 0; i--) {
+      const d = rock[i]!;
+      const q = reach(d);
+      if (q < 1) rock.splice(i, 1);
+      else if (q < BREAK_TAPER) d.r = Math.max(1, Math.round(d.r * (BREAK_TIP + ((1 - BREAK_TIP) * (q - 1)) / (BREAK_TAPER - 1))));
+    }
   }
   if (spec.solidRock) fillUnreachable(rock, W, H);
   if (rock.length > LIMITS.discs) throw new Error(`map "${spec.name}": ${rock.length} rock discs, the limit is ${LIMITS.discs}`);
@@ -708,6 +718,8 @@ export function buildMap(spec: MapSpec): BuiltMap {
   };
 }
 
+const BREAK_TAPER = 1.35; // a break's worn band, in break radii from its centre
+const BREAK_TIP = 0.5; // the share of a disc's radius left at the edge of a break
 const SOLID_GAP = 60; // world units a stone keeps from a massif on a solidRock map
 const SOLID_BODY = 12; // world units: the default creature's radius (config creature.radius), whose unreachable ground a solidRock map fills
 const FILL_CELL = 4; // world units of the raster the unreachable ground is found on

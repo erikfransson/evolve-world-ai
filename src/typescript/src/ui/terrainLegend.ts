@@ -14,7 +14,7 @@ export const SWATCHES = {
   rich: `<circle cx="10" cy="10" r="7" fill="rgb(56 196 116)" fill-opacity="0.5" />`,
   winter: `<circle cx="10" cy="10" r="7" fill="rgb(150 180 205)" fill-opacity="0.35" /><path d="M10 4.6 V15.4 M5.3 7.3 L14.7 12.7 M5.3 12.7 L14.7 7.3" stroke="#e6f0f6" stroke-opacity="0.8" stroke-width="1.1" stroke-linecap="round" />`,
 };
-// Whether a map spec has winter ground (a layer whose food fades in winter, MapLayer.winter).
+// Whether a map spec has winter ground (a layer whose food fades in winter, MapLayer.winterFood).
 export const hasWinterGround = (name: string | undefined): boolean => (name ? (mapSpec(name)?.layers.some((l) => l.winterFood !== undefined && l.winterFood < 1) ?? false) : false);
 
 const ROWS = [
@@ -59,8 +59,10 @@ export function terrainKinds(world: Pick<EngineConfig["world"], "stoneDensity" |
   ];
 }
 
-export function syncTerrainLegend({ world }: Pick<EngineConfig, "world">): void {
+// The winter ground row shows only with seasons on (eco.seasons), since without a winter the ground grows as any other.
+export function syncTerrainLegend({ world, eco }: Pick<EngineConfig, "world"> & { eco?: { seasons?: boolean } }): void {
   const show = terrainKinds(world);
+  show[5] &&= eco?.seasons === true;
   ROWS.forEach((r, i) => {
     const row = document.getElementById(r.id);
     if (row) row.hidden = !show[i];

@@ -127,6 +127,16 @@ describe("winter ground", () => {
     expect(Math.abs(yes / N - (0.75 * w.food[node(500, 1000)]!) / w.maxFood)).toBeLessThanOrEqual(3 / N);
   });
 
+  // Red with the share taken as 1 wherever food is 0: a food-0 layer inside winter ground, then a food layer on top, grew summer food in winter.
+  it("keeps the share through ground without food, so a food layer laid over it later is still winter ground", () => {
+    const whole = { type: "poly" as const, pts: [[-600, -600], [W + 600, -600], [W + 600, H + 600], [-600, H + 600]] as [number, number][] };
+    const holed: MapSpec = { ...spec("winter-holed"), baseFood: 1, layers: [{ ...patch, feather: 0, winterFood: 0.05 }, { id: "bare", shape: whole, warp: 0, rough: 0, feather: 0, food: 0 }, { id: "regrown", shape: whole, warp: 0, rough: 0, feather: 0, food: 2 }] };
+    const w = buildMap(holed).weights;
+    const node = (x: number, y: number) => (Math.round(y / w.cell) + P) * w.cols + Math.round(x / w.cell) + P;
+    expect(w.winter![node(500, 1000)]).toBe(Math.round(0.05 * 255)); // the patch: still 5% at mid-winter
+    expect(w.winter![node(3500, 1000)]).toBe(255); // outside it
+  });
+
   it("refuses a winter share outside 0 to 1", () => {
     for (const v of [-0.1, 1.1, NaN]) expect(() => buildMap(spec("bad", v))).toThrow(new RegExp(`layer "frost": winterFood ${v} is outside \\[0, 1\\]`));
     expect(() => buildMap(spec("ok", 0.5))).not.toThrow();

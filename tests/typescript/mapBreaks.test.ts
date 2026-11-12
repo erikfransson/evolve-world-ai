@@ -14,21 +14,30 @@ const ridge: MapSpec = {
 const key = (d: { x: number; y: number; r: number }): string => `${d.x},${d.y},${d.r}`;
 
 describe("map breaks", () => {
-  it("cut an opening through the placed rock and leave every disc outside it as it was", () => {
+  it("cut an opening through the placed rock, wear the rock down towards it, and leave every disc beyond that band as it was", () => {
     const before = buildMap(ridge).rock;
     const after = buildMap({ ...ridge, breaks: [[3000, 1350, 700]] }).rock;
-    const kept = new Set(after.map(key));
-    const gone = before.filter((d) => !kept.has(key(d)));
+    const at = (d: { x: number; y: number }): string => `${d.x},${d.y}`;
+    const dist = (d: { x: number; y: number }): number => Math.hypot(d.x - 3000, d.y - 1350);
+    const now = new Map(after.map((d) => [at(d), d]));
+    const gone = before.filter((d) => !now.has(at(d)));
+    const worn = before.filter((d) => now.has(at(d)) && now.get(at(d))!.r !== d.r);
     expect(gone.length).toBeGreaterThan(5);
-    for (const d of gone) expect(Math.hypot(d.x - 3000, d.y - 1350)).toBeLessThan(700 * 1.15); // only inside the roughened break
-    const old = new Set(before.map(key));
-    expect(after.filter((d) => !old.has(key(d))).every((d) => Math.hypot(d.x - 3000, d.y - 1350) < 700 * 1.15 + 400)).toBe(true); // fill only at the cut
-    expect(after.some((d) => Math.hypot(d.x - 3000, d.y - 1350) < 300)).toBe(false); // the middle is open
+    expect(worn.length).toBeGreaterThan(5);
+    for (const d of gone) expect(dist(d)).toBeLessThan(700 * 1.15); // only inside the roughened break
+    for (const d of worn) {
+      expect(dist(d)).toBeLessThan(700 * 1.15 * 1.35); // only in the worn band
+      expect(now.get(at(d))!.r).toBeLessThan(d.r);
+      expect(now.get(at(d))!.r).toBeGreaterThanOrEqual(Math.floor(d.r * 0.5)); // no thinner than half at the cut
+    }
+    const old = new Set(before.map(at));
+    expect(after.filter((d) => !old.has(at(d))).every((d) => dist(d) < 700 * 1.15 * 1.35 + 400)).toBe(true); // fill only at the cut
+    expect(after.some((d) => dist(d) < 300)).toBe(false); // the middle is open
   });
 
   it("refuses breaks that are not finite [x, y, radius] with a radius up to 5000, or too many", () => {
-    for (const breaks of [[[1, 2]], [[1, 2, 0]], [[1, 2, 6000]], [[1, NaN, 30]], Array.from({ length: 17 }, () => [1, 2, 3])] as unknown as [number, number, number][][]) {
-      expect(() => buildMap({ ...ridge, breaks })).toThrow(/breaks must be at most 16 finite/);
+    for (const breaks of [[[1, 2]], [[1, 2, 0]], [[1, 2, 6000]], [[1, NaN, 30]], [5], ["1,2,3"], Array.from({ length: 17 }, () => [1, 2, 3])] as unknown as [number, number, number][][]) {
+      expect(() => buildMap({ ...ridge, breaks })).toThrow(/breaks must be at most 16 finite \[x, y, radius\] with a radius over 0 and at most 5000/);
     }
   });
 });
