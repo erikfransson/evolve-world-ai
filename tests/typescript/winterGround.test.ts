@@ -175,8 +175,11 @@ describe("winter ground", () => {
     expect(mapVersion("inland-sea")).toBe("57ab5ef0-2");
     expect(packMap(mapTerrain("inland-sea", MAPS["inland-sea"]!.width, MAPS["inland-sea"]!.height))!.winter).toBeUndefined();
     expect(packMap(mapTerrain("clock", MAPS["clock"]!.width, MAPS["clock"]!.height))!.winter).toBeDefined();
-    // The region table is built once on the server and seasons can be retuned, so it carries no season tag; the legend row does (with seasons on).
-    expect(mapRegions("clock").some((r) => /winter/.test(r.role))).toBe(false);
+    // The region table is built once on the server and seasons can be retuned, so its text carries no season tag; the Commons alone is flagged
+    // as winter ground, which the legend row names while seasons are on.
+    const rows = mapRegions("clock");
+    expect(rows.some((r) => /winter/.test(r.role))).toBe(false);
+    expect(rows.filter((r) => r.winter).map((r) => r.name)).toEqual(["The Commons"]);
   }, 180_000);
 
   it("carries the winter grid through the arrays and the prebuilt file, and refuses a file where it is cut short, missing or corrupt", () => {

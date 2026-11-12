@@ -1,5 +1,5 @@
 import { builtMap, mapSpec } from "../sim/maps/index.ts";
-import { WEIGHT_UNIT } from "../sim/maps/weights.ts";
+import { SHARE_UNIT, WEIGHT_UNIT } from "../sim/maps/weights.ts";
 import { GROUND_PAD } from "../sim/groundField.ts";
 import type { BuiltMap } from "../sim/maps/mapBuild.ts";
 import type { WireRegion } from "./protocol.ts";
@@ -32,17 +32,19 @@ function builtRow(b: BuiltMap, g: { title: string; x: number; y: number; r: numb
   let poison = 0;
   let mud = 0;
   let firm = 0;
+  let winter = 0; // the share of the food left at mid-winter (MapLayer.winterFood), 1 off winter ground
   for (const [x, y] of pts) {
     const i = Math.round(x / w.cell) + GROUND_PAD + (Math.round(y / w.cell) + GROUND_PAD) * w.cols;
     food += w.food[i]! / WEIGHT_UNIT / pts.length;
     poison += w.poison[i]! / WEIGHT_UNIT / pts.length;
     mud += ground.blend(0, x, y) / pts.length;
     firm += ground.blend(1, x, y) / pts.length;
+    winter += (w.winter ? w.winter[i]! / SHARE_UNIT : 1) / pts.length;
   }
   const round = (v: number): number => Math.round(v * 100) / 100;
   const groundText = mud > 128 ? "mud, half speed" : firm > 128 ? "firm ground, fast" : mud > 40 ? "patches of mud" : firm > 40 ? "patches of firm ground" : "plain";
   const role = poison > 1 ? "poison, rich" : poison > 0.5 ? "some poison" : food >= 1.5 ? "rich" : food >= 0.3 ? "moderate" : "poor"; // 1 is plain food
-  return { name: g.title, food: round(food), poison: round(poison), ground: groundText, role };
+  return { name: g.title, food: round(food), poison: round(poison), ground: groundText, role, ...(winter < 0.5 ? { winter: true as const } : {}) };
 }
 
 // The region rows of a map by name, food and poison as the built weights (1 is plain food); none for the random map or an unknown name.

@@ -17,7 +17,7 @@ const text = (v: unknown, max: number): string => (typeof v === "string" ? v.rep
 export function cleanMap(m: unknown): WireMap {
   const g = isObj(m) && isObj(m.ground) ? m.ground : null;
   const ground = g ? { normal: share(g.normal), mud: share(g.mud), firm: share(g.firm), rock: share(g.rock) } : { normal: 1, mud: 0, firm: 0, rock: 0 };
-  const regions = isObj(m) && Array.isArray(m.regions) ? m.regions.slice(0, MAX_REGIONS).filter(isObj).map((r): WireRegion => ({ name: text(r.name, 40), food: rel(r.food), poison: rel(r.poison), ground: text(r.ground, 60), role: text(r.role, 60) })).filter((r) => r.name) : [];
+  const regions = isObj(m) && Array.isArray(m.regions) ? m.regions.slice(0, MAX_REGIONS).filter(isObj).map((r): WireRegion => ({ name: text(r.name, 40), food: rel(r.food), poison: rel(r.poison), ground: text(r.ground, 60), role: text(r.role, 60), ...(r.winter === true ? { winter: true as const } : {}) })).filter((r) => r.name) : [];
   const name = isObj(m) && typeof m.name === "string" && mapSpec(m.name) ? m.name : undefined;
   const version = name && isObj(m) && typeof m.version === "string" && /^[0-9a-f]{8}-[0-9]{1,6}$/.test(m.version) ? m.version : undefined;
   const unknown = !name && isObj(m) && typeof m.name === "string" && m.name !== "";
@@ -37,6 +37,11 @@ const ITEM_SWATCHES = {
   poison: `<circle cx="16" cy="19" r="2.6" fill="#e040fb" /><circle cx="32" cy="12" r="2.6" fill="#e040fb" />`,
 };
 
+// The regions that are mostly winter ground, as the start of the Winter ground note ("the Commons: "), or nothing.
+const winterPlaces = (map: WireMap): string => {
+  const names = map.regions.filter((r) => r.winter).map((r) => r.name.replace(/^The /, "the "));
+  return names.length ? `${names.join(" and ")}: ` : "";
+};
 // A 20 x 20 drawn icon (ui/terrainLegend.ts) in the middle of a 48 x 32 tile, until a swatch cut from the built map replaces it.
 const icon = (inner: string): string => `<g transform="translate(14 6)">${inner}</g>`;
 
@@ -44,7 +49,7 @@ type Kind = "rock" | "mud" | "firm" | "rich" | "poison" | "dry";
 interface Row {
   group: string;
   label: string;
-  note: (s: Hello["summary"]) => string;
+  note: (s: Hello["summary"], map: WireMap) => string;
   key?: keyof WireMap["ground"]; // shown only while the world has some of it
   winter?: true; // shown only when the page's own spec of the named map has winter ground and the hello says seasons are on
   kind?: Kind; // a swatch cut from the map once it is built (live/mapLegend.ts); region rows show only then
@@ -57,7 +62,7 @@ const ROWS: Row[] = [
   { group: "Regions", label: "Rich ground", kind: "rich", note: () => "the green wash: more food grows here, and more of it stays" },
   { group: "Regions", label: "Poisoned ground", kind: "poison", note: () => "the purple wash: poison grows here" },
   { group: "Regions", label: "Poor ground", kind: "dry", note: () => "the dry wash: little food grows here" },
-  { group: "Regions", label: "Winter ground", winter: true, svg: icon(SWATCHES.winter), note: () => "almost no food grows here in winter and it comes back each summer" },
+  { group: "Regions", label: "Winter ground", winter: true, svg: icon(SWATCHES.winter), note: (_, map) => `${winterPlaces(map)}almost no food grows here in winter and it comes back each summer` },
   { group: "Items", label: "Food", svg: ITEM_SWATCHES.food, note: (s) => `${s.foodEnergy !== undefined ? `+${Math.round(s.foodEnergy)} energy a bite; ` : ""}regrows, less in winter` },
   { group: "Items", label: "Poison", svg: ITEM_SWATCHES.poison, note: (s) => (s.poisonDamage === undefined || s.poisonDamage >= POISON_LETHAL ? "one bite kills" : s.poisonDamage === 0 ? "harmless here" : `−${Math.round(s.poisonDamage)} energy a bite`) },
   { group: "Creatures", label: "Creature", svg: ITEM_SWATCHES.creature, note: () => "the fill is its energy, the colour its family" },
@@ -112,7 +117,7 @@ export function renderMapInfo(root: HTMLElement, hello: Hello): void {
       if (!r.key) li.hidden = true; // a region row shows once the map has it (paintMapLegend)
     }
     const t = el("span");
-    t.append(el("b", "", r.label), el("span", "info-dim", ` · ${r.note(hello.summary)}`));
+    t.append(el("b", "", r.label), el("span", "info-dim", ` · ${r.note(hello.summary, map)}`));
     li.append(tile, t);
     items.push(li);
   }
