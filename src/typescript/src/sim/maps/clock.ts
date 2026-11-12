@@ -1398,6 +1398,7 @@ export const CLOCK: MapSpec = {
    "feather": 450,
    "food": 1.2,
    "poison": 0,
+   "winter": 0.05,
    "clearMud": true,
    "paint": {
     "rgb": [38,72,70],
@@ -1439,6 +1440,7 @@ export const CLOCK: MapSpec = {
    "rough": 300,
    "feather": 2400,
    "food": 1.3,
+   "winter": 0.05,
    "clearMud": true,
    "paint": {
     "rgb": [56,98,90],

@@ -5,7 +5,7 @@
 
 // parameters
 const W = 60000, H = 37500, CX = W / 2, CY = H / 2;
-const HUB = { rx: 7500, ry: 6600, food: 1.2 };
+const HUB = { rx: 7500, ry: 6600, food: 1.2, winter: 0.05 }; // winter ground (Erik 2026-11-12): the hub keeps 5% of its food at mid-winter, so no lineage can hold it as a standing army
 const GROW = Math.sqrt(1.15); // realms 15% bigger in area than round 9
 // per realm: radii, silhouette features [angle deg, amplitude, width deg] (lobes positive, bays negative)
 const SIZE = {
@@ -250,8 +250,8 @@ for (const l of [...report, `area vs round 9: ${areaReport.join(", ")}`]) consol
   layers.push(layer("commons-seat", poly(grow(hubPts, CX, CY, 1.03)), { warp: 600, rough: 300, band: 650, feather: 1300, ...paint([9, 8, 8], 0.42, undefined, { patch: { scale: 1500, lo: 0.25, hi: 0.45 } }) }));
   layers.push(layer("commons-fringe", poly(grow(hubPts, CX, CY, 1.12)), { warp: 700, rough: 300, feather: 2600, paint: fr }));
 }
-layers.push(layer("commons", poly(hubPts), { warp: 600, rough: 450, feather: 450, food: HUB.food, poison: 0, clearMud: true, ...paint([38, 72, 70], 0.74, tex("blobs", 650, 0.4, [28, 50, 48], 0.72, { soft: 0.32 })) }));
-layers.push(layer("commons-core", poly(blob(CX + 700, CY - 400, 4300, 3600, 16, 0.18, 0.4)), { warp: 600, rough: 300, feather: 2400, food: 1.3, clearMud: true, ...paint([56, 98, 90], 0.24, tex("blobs", 450, 0.4, [40, 76, 70], 0.24, { soft: 0.35 })) }));
+layers.push(layer("commons", poly(hubPts), { warp: 600, rough: 450, feather: 450, food: HUB.food, poison: 0, winter: HUB.winter, clearMud: true, ...paint([38, 72, 70], 0.74, tex("blobs", 650, 0.4, [28, 50, 48], 0.72, { soft: 0.32 })) }));
+layers.push(layer("commons-core", poly(blob(CX + 700, CY - 400, 4300, 3600, 16, 0.18, 0.4)), { warp: 600, rough: 300, feather: 2400, food: 1.3, winter: HUB.winter, clearMud: true, ...paint([56, 98, 90], 0.24, tex("blobs", 450, 0.4, [40, 76, 70], 0.24, { soft: 0.35 })) }));
 for (const [i, [dx, dy, rx, ry, rot]] of [[-2600, -1900, 1100, 650, 0.4], [2400, 1700, 800, 520, -0.3], [-900, 2900, 600, 380, 1.1]].entries()) {
   layers.push(layer(`commons-wet${i}`, poly(blob(CX + dx, CY + dy, rx * 1.9, ry * 1.9, 12, 0.3, rot)), { warp: 400, rough: 250, feather: 600, ...paint([20, 34, 32], 0.55, undefined, { patch: { scale: 500, lo: 0.3, hi: 0.46 } }) })); // boggy ground round each pool
   layers.push(layer(`commons-shore${i}`, poly(blob(CX + dx, CY + dy, rx * 1.12, ry * 1.12, 11, 0.3, rot)), { warp: 260, rough: 160, band: 90, feather: 200, ...paint([120, 150, 140], 0.3, undefined, { patch: { scale: 400, lo: 0.3, hi: 0.45 } }) }));

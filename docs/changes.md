@@ -7,6 +7,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 ## Unreleased
 
 - Live (candidate, not released): the Six Realms wastes carry 4/64 food (1.33 times 0.9.0's 3/64, two thirds of 0.9.1's 6/64; Erik asked for 1.4x) and the trails 18/64 (was 16/64, 12.5% more; Erik asked for about 15%). Food weights are stored in steps of 1/64, so these are the nearest steps. New map version 2d6b753e-2, so promoting starts a fresh world.
+- Maps: a new ground property, winter ground (a layer's `winter`, 0 to 1): the share of its food regrowth left at mid-winter. The rest of the map keeps the global season. Maps without it are unchanged.
+- Live (candidate H2): the Six Realms hub is winter ground at 0.05, so its food nearly stops at mid-winter and returns each summer (Erik: "a ground for severe winters ... into center hub"). New map version.
 - Live (candidate): the Blight and Mire walls each have a natural break on the far side, away from the hub, out into the wastes, about 1,950 u clear (the trail gates are about 5,500 to 6,500 wide).
 - Live and RL Arena (same founders file): the Grazer founder's rays go from 110 to 140, so it holds its home again. One probe of the shipped map (seed 1, 6 simulated hours): the Grazer keeps the Bloom and ends at 29% of the population, and all six home lineages are alive at 6 h, though the Juggernaut takes the hub late and most of the Blight.
 
