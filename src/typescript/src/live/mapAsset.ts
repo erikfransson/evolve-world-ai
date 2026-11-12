@@ -1,4 +1,5 @@
 import { mapSpec, mapVersion } from "../sim/maps/index.ts";
+import { hasWinterGround } from "../sim/maps/mapBuild.ts";
 import { packMap } from "../sim/maps/mapParts.ts";
 import { mapTerrain } from "../sim/terrain.ts";
 import type { Terrain } from "../sim/terrain.ts";
@@ -94,7 +95,8 @@ export function decodeMapAsset(bytes: Uint8Array, name: string, width: number, h
       at += pad8(size!);
     }
     // The winter grid: there exactly when the map has winter ground, one byte per weight node.
-    if ((h.winterFood !== undefined) !== (mapSpec(name)?.layers.some((l) => l.winterFood !== undefined) ?? false)) return null;
+    const spec = mapSpec(name);
+    if ((h.winterFood !== undefined) !== (spec ? hasWinterGround(spec) : false)) return null;
     let winter: Uint8Array | undefined;
     if (h.winterFood !== undefined) {
       const size = h.winterFood;

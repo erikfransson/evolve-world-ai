@@ -1,7 +1,7 @@
 import { MAX_REGIONS } from "./protocol.ts";
 import { POISON_LETHAL } from "../sim/config.ts";
 import { FAST_FACTOR, SLOW_FACTOR } from "../sim/terrain.ts";
-import { SWATCHES, hasWinterGround } from "../ui/terrainLegend.ts";
+import { SWATCHES, mapHasWinterGround } from "../ui/terrainLegend.ts";
 import { mapSpec } from "../sim/maps/index.ts";
 import type { Hello, WireMap, WireRegion } from "./protocol.ts";
 
@@ -46,7 +46,7 @@ interface Row {
   label: string;
   note: (s: Hello["summary"]) => string;
   key?: keyof WireMap["ground"]; // shown only while the world has some of it
-  winter?: true; // shown only when the page's own spec of the named map has winter ground
+  winter?: true; // shown only when the page's own spec of the named map has winter ground and the hello says seasons are on
   kind?: Kind; // a swatch cut from the map once it is built (live/mapLegend.ts); region rows show only then
   svg?: string;
 }
@@ -57,7 +57,7 @@ const ROWS: Row[] = [
   { group: "Regions", label: "Rich ground", kind: "rich", note: () => "the green wash: more food grows here, and more of it stays" },
   { group: "Regions", label: "Poisoned ground", kind: "poison", note: () => "the purple wash: poison grows here" },
   { group: "Regions", label: "Poor ground", kind: "dry", note: () => "the dry wash: little food grows here" },
-  { group: "Regions", label: "Winter ground", winter: true, svg: icon(SWATCHES.winter), note: () => "almost no food grows here in winter and it comes back each summer; the region table below marks it \"bare in winter\"" },
+  { group: "Regions", label: "Winter ground", winter: true, svg: icon(SWATCHES.winter), note: () => "almost no food grows here in winter and it comes back each summer" },
   { group: "Items", label: "Food", svg: ITEM_SWATCHES.food, note: (s) => `${s.foodEnergy !== undefined ? `+${Math.round(s.foodEnergy)} energy a bite; ` : ""}regrows, less in winter` },
   { group: "Items", label: "Poison", svg: ITEM_SWATCHES.poison, note: (s) => (s.poisonDamage === undefined || s.poisonDamage >= POISON_LETHAL ? "one bite kills" : s.poisonDamage === 0 ? "harmless here" : `−${Math.round(s.poisonDamage)} energy a bite`) },
   { group: "Creatures", label: "Creature", svg: ITEM_SWATCHES.creature, note: () => "the fill is its energy, the colour its family" },
@@ -99,7 +99,7 @@ export function renderMapInfo(root: HTMLElement, hello: Hello): void {
   let group = "";
   for (const r of ROWS) {
     if (r.key && !(g[r.key] > 0)) continue;
-    if (r.winter && !hasWinterGround(map.name)) continue;
+    if (r.winter && !(hello.summary.seasons && mapHasWinterGround(map.name))) continue;
     if (r.group !== group) {
       group = r.group;
       items.push(el("li", "lg-head", group));

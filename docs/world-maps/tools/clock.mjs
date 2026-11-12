@@ -32,7 +32,7 @@ const WASTE = { food: 0.0625, poison: 0.05 };
 const TRAIL = { food: 0.28125, w: 1000 };
 // the walled realms' back door (Erik 2026-11-12): a break (radius) cut through the wall at the joint nearest the far side, away from the hub.
 // The wall and scree are laid as before and the break removes their discs afterwards (spec.breaks), so the rest of the map does not move.
-const WALL_OPEN = { blight: 1300, mire: 1250 }; // about 2,050 to 2,100 clear between the cut ends
+const WALL_OPEN = { blight: 1300, mire: 1250 }; // break radius; about 2,270 (Blight) and 2,150 (Mire) clear at the narrowest, docs/tuning-notes.md
 const breaks = [];
 // where each trail leaves the hub and enters its realm, turned off the line between their centres (deg: hub side, realm side), so the trails
 // run slanted or offset instead of as spokes; small on the walled realms' side, so the trail meets the gate head on

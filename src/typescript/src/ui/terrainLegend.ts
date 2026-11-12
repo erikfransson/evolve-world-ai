@@ -1,5 +1,6 @@
 import type { EngineConfig } from "../sim/config.ts";
 import { mapSpec } from "../sim/maps/index.ts";
+import { hasWinterGround } from "../sim/maps/mapBuild.ts";
 import { POISON_TINT, RICH_TINT, visibleFrom } from "./mapTint.ts";
 import { FAST_FACTOR, SLOW_FACTOR } from "../sim/terrain.ts";
 import type { Terrain } from "../sim/terrain.ts";
@@ -14,8 +15,11 @@ export const SWATCHES = {
   rich: `<circle cx="10" cy="10" r="7" fill="rgb(56 196 116)" fill-opacity="0.5" />`,
   winter: `<circle cx="10" cy="10" r="7" fill="rgb(150 180 205)" fill-opacity="0.35" /><path d="M10 4.6 V15.4 M5.3 7.3 L14.7 12.7 M5.3 12.7 L14.7 7.3" stroke="#e6f0f6" stroke-opacity="0.8" stroke-width="1.1" stroke-linecap="round" />`,
 };
-// Whether a map spec has winter ground (a layer whose food fades in winter, MapLayer.winterFood).
-export const hasWinterGround = (name: string | undefined): boolean => (name ? (mapSpec(name)?.layers.some((l) => l.winterFood !== undefined && l.winterFood < 1) ?? false) : false);
+// Whether the named map has winter ground (sim/maps/mapBuild.ts hasWinterGround).
+export const mapHasWinterGround = (name: string | undefined): boolean => {
+  const spec = name ? mapSpec(name) : undefined;
+  return spec ? hasWinterGround(spec) : false;
+};
 
 const ROWS = [
   { id: "legendRock", kind: "rock", swatch: SWATCHES.rock, label: "Rock: creatures bounce off, rays stop" },
@@ -55,7 +59,7 @@ export function terrainKinds(world: Pick<EngineConfig["world"], "stoneDensity" |
     layers.some((l) => l.firm),
     [spec.basePoison, ...layers.map((l) => l.poison)].some((v) => (v ?? 1) > visibleFrom(POISON_TINT)),
     [spec.baseFood, ...layers.map((l) => l.food)].some((v) => (v ?? 1) > visibleFrom(RICH_TINT)),
-    hasWinterGround(world.map),
+    mapHasWinterGround(world.map),
   ];
 }
 

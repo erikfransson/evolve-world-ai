@@ -33,6 +33,14 @@ Work here is iterative and nothing is fixed; update or delete lines as soon as t
 - Follow-ups from the 0.9.1 reviews:
   - `livePublic.test.ts` "all viewers together stay inside the budget" is a wall-clock bound that failed once under load (19,705 against 19,375 bytes, load average about 7, c2 gate 2026-11-12); it passed 3 of 3 alone and in the H2 gate on an idle lock. A load flake, not a regression.
   - Winter ground: every save-parse worker also runs the winterLoss scan of the map (about 0.4 s per verify, host re-check of H2). Fix: send winterLoss with the packed map to the worker.
+  - Maintainability follow-ups of H2 (review-next-thermo, 2026-11-13):
+    - S1 Optional per-node grids (paint, winter) are plumbed by hand through eight places. At the next clock.bin regeneration, make one `NODE_GRIDS` record in mapParts with a generic asset `grids` header, keeping builtHash order.
+    - S2 The asset header key `winterFood` is a byte count. Rename it `winterBytes` (or fold it into S1), and check it against the node count, not the food section.
+    - S3 `breaks` (cut after placement, moves nothing) and `passes` (shape placement, moves the stream) overlap. Extract the copied roughened-radius formula, say on `MapSpec.breaks` when to use which, and count `stats.massifDiscs`/`stats.stones` after the breaks (now before).
+    - S4 Legend rows: a positional `terrainKinds` array with a magic index 5 and kind special cases, and in mapInfo a second ad-hoc flag beside `key`. Give each row a `has`/`show` predicate, type sync as `Pick<EngineConfig, "world" | "eco">`.
+    - S5 `field()` carries `wfood` and `share` for one quantity. A single-state form may differ by ulps, so adopt it only if the pins hold.
+    - S6 `SpawnField.accepts(..., winterness?)` is optional for no caller. Make it required.
+    - S7 clock.mjs finds the pushed `-wall-shade` layer by id to rewrite it, and fills a module-global `breaks` inside `realm()`. Push after the gap is known, and return the breaks. The wall comment's "breaks" (joints) clashes with `spec.breaks`.
   - The time-lapse checks only the protocol stamp, not the map version (`tools/timelapse/timelapse.mjs:420`, `build-page.sh`). Its README rebuilds the page after the promote, so on a map-only release it films plain ground under "Map updating" until then; rebuild before the reset, or stamp `mapVersion("clock")` and compare it with the hello.
   - Food weights are stored in steps of 1/64, coarse at low values (0.05 is 3/64, 0.0875 and 0.10 are both 6/64); a map spec value says less than it seems.
   - The Grazer's `measured` notes in `live-founders.json` (speed, the `grazer` note) were measured with rays 170.

@@ -12,6 +12,7 @@ export interface Disc {
   r: number;
 }
 
+export const SHARE_UNIT = 255; // winter share byte per 1.0 (MapLayer.winterFood): 255 is all of the summer food
 export const WEIGHT_UNIT = 64; // weight byte per 1.0, so weights run from 0 to just under 4
 export const CAP_CELL = 1000; // world units per cell of the local caps
 const OPEN_SAMPLES = 8; // sample points per side of a cap cell when finding its open share
@@ -68,7 +69,7 @@ export class MapWeights implements SpawnField {
   private readonly inv: number;
   private readonly blocked: (x: number, y: number) => boolean;
   private caps: CapStats | null = null; // made by the first use of the caps, which only the thread that counts items needs
-  private loss = -1; // winterLoss, made on first use: by ItemEconomy's constructor, so a world's start pays it and no tick or drawing page does
+  private loss = -1; // winterLoss, made on first use: ItemEconomy's constructor reads it, so a world's start pays it and no tick or drawing page does
 
   // blocked: whether a point is under rock, for the open share of the cap cells.
   constructor(ground: GroundField, food: Uint8Array, poison: Uint8Array, blocked: (x: number, y: number) => boolean, paint: Uint8Array | null = null, winter: Uint8Array | null = null) {
@@ -189,7 +190,7 @@ export class MapWeights implements SpawnField {
     if (kind !== 0) return rng.next() * this.maxPoison < this.poison[this.nodeAt(x, y)]!;
     const n = this.nodeAt(x, y);
     const w = this.winter;
-    return rng.next() * this.maxFood < (w === null ? this.food[n]! : this.food[n]! * (1 - winterness * (1 - w[n]! / 255)));
+    return rng.next() * this.maxFood < (w === null ? this.food[n]! : this.food[n]! * (1 - winterness * (1 - w[n]! / SHARE_UNIT)));
   }
 
   // The share of the food weight on open ground (nodes not under rock) that winter ground loses at mid-winter: sum of weight x (1 - share)
@@ -210,7 +211,7 @@ export class MapWeights implements SpawnField {
         if (x >= width || y >= height || this.blocked(x, y)) continue;
         const n = j * cols + i;
         all += food[n]!;
-        lost += food[n]! * (1 - winter[n]! / 255);
+        lost += food[n]! * (1 - winter[n]! / SHARE_UNIT);
       }
     }
     return all > 0 ? lost / all : 0;

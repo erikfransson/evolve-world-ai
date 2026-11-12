@@ -37,12 +37,13 @@ export class ItemEconomy {
   private readonly config: EcoConfig;
   private readonly items: World;
   private readonly rng: StatefulRng;
+  private readonly winterLoss: number; // MapWeights.winterLoss, made at the world's start so no tick pays its scan (about 0.4 s on the Six Realms); 0 without winter ground
 
   constructor(config: EcoConfig, items: World, rng: StatefulRng, caps: ItemCaps) {
     this.config = config;
     this.items = items;
     this.rng = rng;
-    void items.terrain.weights?.winterLoss; // made now, at the world's start, so the first regrow does not stall a tick on it (about 0.4 s on the Six Realms)
+    this.winterLoss = items.terrain.weights?.winterLoss ?? 0;
     this.retune(caps);
   }
 
@@ -69,9 +70,7 @@ export class ItemEconomy {
   regrow(tick: number): void {
     const { eco } = this.config;
     this.season(tick);
-    const weights = this.items.terrain.weights;
-    if (eco.seasons && weights?.winter) this.foodDue += this.foodPerTick * seasonFactor(eco, tick * this.config.dt) * (1 - this.items.winterness * weights.winterLoss);
-    else this.foodDue += eco.seasons ? this.foodPerTick * seasonFactor(eco, tick * this.config.dt) : this.foodPerTick;
+    this.foodDue += eco.seasons ? this.foodPerTick * seasonFactor(eco, tick * this.config.dt) * (1 - this.items.winterness * this.winterLoss) : this.foodPerTick;
     this.poisonDue += this.poisonPerTick;
     // At the cap the rest of the due items is dropped at once, so a huge rate cannot loop; below 2^53 the leftover fraction is what counting down leaves.
     while (this.foodDue >= 1 && this.food < this.foodCap) {

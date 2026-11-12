@@ -3,7 +3,8 @@ import { DEFAULT_ECO_CONFIG } from "../../src/typescript/src/sim/ecoConfig.ts";
 import type { EcoConfig } from "../../src/typescript/src/sim/ecoConfig.ts";
 import { capsOf, ItemEconomy } from "../../src/typescript/src/sim/itemEconomy.ts";
 import { MAPS, builtHash, builtMap, mapVersion } from "../../src/typescript/src/sim/maps/index.ts";
-import { buildMap } from "../../src/typescript/src/sim/maps/mapBuild.ts";
+import { buildMap, hasWinterGround } from "../../src/typescript/src/sim/maps/mapBuild.ts";
+import { mapHasWinterGround } from "../../src/typescript/src/ui/terrainLegend.ts";
 import type { MapSpec } from "../../src/typescript/src/sim/maps/mapBuild.ts";
 import { packMap, unpackMap } from "../../src/typescript/src/sim/maps/mapParts.ts";
 import { createRng } from "../../src/typescript/src/sim/rng.ts";
@@ -137,9 +138,29 @@ describe("winter ground", () => {
     expect(w.winter![node(3500, 1000)]).toBe(255); // outside it
   });
 
-  it("refuses a winter share outside 0 to 1", () => {
+  it("refuses a winter share outside 0 to 1, and on a layer with food 0", () => {
     for (const v of [-0.1, 1.1, NaN]) expect(() => buildMap(spec("bad", v))).toThrow(new RegExp(`layer "frost": winterFood ${v} is outside \\[0, 1\\]`));
     expect(() => buildMap(spec("ok", 0.5))).not.toThrow();
+    const bare: MapSpec = { ...spec("bare"), layers: [{ ...patch, food: 0, winterFood: 0.05 }] };
+    expect(() => buildMap(bare)).toThrow(/layer "frost": winterFood on a layer with food 0 has no food to fade/);
+  });
+
+  // hasWinterGround means a share under 1, in the builder, the asset and the legend alike.
+  it("treats a share of exactly 1 as ordinary ground: no winter grid, no asset section, no legend row", () => {
+    const one = spec("winter-one", 1);
+    expect(hasWinterGround(one)).toBe(false);
+    expect(hasWinterGround(spec("winter-near", 0.99))).toBe(true);
+    expect(buildMap(one).weights.winter).toBeNull();
+    registry["winter-one"] = one;
+    try {
+      const bytes = encodeMapAsset("winter-one");
+      const n = new DataView(bytes.buffer, bytes.byteOffset).getUint32(6, true);
+      expect(JSON.parse(new TextDecoder().decode(bytes.subarray(10, 10 + n))).winterFood).toBeUndefined();
+      expect(decodeMapAsset(bytes, "winter-one", W, H)).not.toBeNull();
+      expect(mapHasWinterGround("winter-one")).toBe(false);
+    } finally {
+      delete registry["winter-one"];
+    }
   });
 
   // The clock map's pins live in clockPins.json (maps.test.ts), rewritten whenever its spec changes.
@@ -154,9 +175,8 @@ describe("winter ground", () => {
     expect(mapVersion("inland-sea")).toBe("57ab5ef0-2");
     expect(packMap(mapTerrain("inland-sea", MAPS["inland-sea"]!.width, MAPS["inland-sea"]!.height))!.winter).toBeUndefined();
     expect(packMap(mapTerrain("clock", MAPS["clock"]!.width, MAPS["clock"]!.height))!.winter).toBeDefined();
-    // The region table (server text, no wire change) says so for the Commons only.
-    const rows = mapRegions("clock");
-    expect(rows.filter((r) => r.role.endsWith("bare in winter")).map((r) => r.name)).toEqual([rows.find((r) => /commons/i.test(r.name))!.name]);
+    // The region table is built once on the server and seasons can be retuned, so it carries no season tag; the legend row does (with seasons on).
+    expect(mapRegions("clock").some((r) => /winter/.test(r.role))).toBe(false);
   }, 180_000);
 
   it("carries the winter grid through the arrays and the prebuilt file, and refuses a file where it is cut short, missing or corrupt", () => {

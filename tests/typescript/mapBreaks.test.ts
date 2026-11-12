@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { buildMap } from "../../src/typescript/src/sim/maps/mapBuild.ts";
+import { builtMap, mapSpec } from "../../src/typescript/src/sim/maps/index.ts";
 import type { MapSpec } from "../../src/typescript/src/sim/maps/mapBuild.ts";
 
 // A ridge with scree beside it, built with and without a break through the middle of the ridge.
@@ -40,4 +41,23 @@ describe("map breaks", () => {
       expect(() => buildMap({ ...ridge, breaks })).toThrow(/breaks must be at most 16 finite \[x, y, radius\] with a radius over 0 and at most 5000/);
     }
   });
+
+  // The Six Realms' two wall openings stay wide: the narrowest rock-to-rock gap across each break (discs within 3500 of it, split by the line
+  // from the map centre through the break, so each side is one wall end). Breaks look only at disc centres, so a wall edit could narrow one.
+  it("keeps both Six Realms openings at least 1,800 u clear", () => {
+    const spec = mapSpec("clock")!;
+    const rock = builtMap("clock").rock;
+    expect(spec.breaks).toHaveLength(2);
+    for (const [bx, by] of spec.breaks!) {
+      const ux = -(by - spec.height / 2), uy = bx - spec.width / 2; // across the radial line
+      const near = rock.filter((d) => Math.hypot(d.x - bx, d.y - by) < 3500);
+      const side = (d: { x: number; y: number }): boolean => (d.x - bx) * ux + (d.y - by) * uy < 0;
+      const a = near.filter(side), b = near.filter((d) => !side(d));
+      expect(a.length).toBeGreaterThan(10);
+      expect(b.length).toBeGreaterThan(10);
+      let gap = Infinity;
+      for (const p of a) for (const q of b) gap = Math.min(gap, Math.hypot(p.x - q.x, p.y - q.y) - p.r - q.r);
+      expect(gap).toBeGreaterThan(1800);
+    }
+  }, 180_000);
 });
