@@ -4,6 +4,10 @@ What changed in each version, newest first, so release notes for any range (say 
 Each release is a pull request from `development` into `main`, tagged `vX.Y.Z` on `main`.
 Add notes under "Unreleased" as work lands on `development`, and turn that heading into the version number at release time.
 
+## Unreleased
+
+- CI: the test step runs again once when a test worker crashes natively and nothing else failed, so a runner crash no longer blocks the site deploy.
+
 ## 0.10.0 (2026-11-13)
 
 - Live: the Six Realms wastes carry 4/64 food (1.33 times 0.9.0's 3/64, two thirds of 0.9.1's 6/64; Erik asked for 1.4x) and the trails 18/64 (was 16/64, 12.5% more; Erik asked for about 15%). Food weights are stored in steps of 1/64, so these are the nearest steps. The map version changes, so promoting starts a fresh world.

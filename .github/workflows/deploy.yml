@@ -26,7 +26,7 @@ jobs:
       - run: npm ci
       # The Live server tests import the server package (ws).
       - run: npm ci --prefix ../../server
-      - run: npm run coverage
+      - run: bash scripts/ci-coverage.sh
       - run: npm run build
       # The site serves the coverage report and badge at coverage/.
       - run: cp -r coverage dist/coverage
