@@ -29,6 +29,9 @@ const PLACE = process.env.PLACE ? JSON.parse(process.env.PLACE) : {
 // Food weights are stored in steps of 1/64 (WEIGHT_UNIT), so these are exact steps: wastes 4/64 (0.9.0 had 3/64, 0.9.1 6/64; Erik 2026-11-12: 1.4x),
 // trails 18/64 (was 16/64, +12.5%; Erik: about 15% more along the pathways to the centre)
 const WASTE = { food: 0.0625, poison: 0.05 };
+// poison (Erik 2026-11-13: realms very low but there, wastes as before, the Blight a lot more): the realms and the hub at the lowest stored step (1/64),
+// the Blight's body and heart at the highest (255/64); with Live's poison pool raised to match (server/src/config.ts 0.0144) the Blight holds about 1.7 times its 0.10.0 poison and the wastes about 6% more
+const REALM_POISON = 0.015625, BLIGHT_POISON = 3.984375;
 const TRAIL = { food: 0.28125, w: 1000 };
 // the walled realms' back door (Erik 2026-11-12): a break (radius) cut through the wall at the joint nearest the far side, away from the hub.
 // The wall and scree are laid as before and the break removes their discs afterwards (spec.breaks), so the rest of the map does not move.
@@ -156,19 +159,46 @@ if (process.env.LAYOUT_ONLY) { // for a layout search: rim-to-rim gaps between n
   console.log(JSON.stringify({ gaps, room }));
   process.exit(0);
 }
-// trails: worn wandering tracks, not firm, from inside the hub rim to inside the realm rim: a dusty verge and a pale worn bed,
-// of uneven width, whose paint fades out towards both ends (the food runs the whole way)
+// trails: worn tracks, not firm, from inside the hub rim to inside the realm rim: a dusty verge and a pale worn bed tinted towards the realm's colour,
+// whose paint fades out towards both ends (the food runs the whole way). Each trail has its own course and width (Erik 2026-11-13: six unique,
+// natural pathways, no shared shape or strong bend halfway): sideways offset f(t) as a share of the straight length from the hub end (t 0) to the
+// realm end (t 1), and the width along it (times TRAIL.w). The walled realms' trails (Blight, Mire) level out at the realm end, so they meet their gate
+// head on. A little smooth noise of the trail's own seed rides on top, none at the ends. Paint: bed width (bw) and alpha (ba), tint of bed and verge (bt, vt).
+const ss = (e0, e1, t) => { const u = Math.max(0, Math.min(1, (t - e0) / (e1 - e0))); return u * u * (3 - 2 * u); };
+const COURSE = {
+  bloom: { f: (t) => 0.17 * Math.sin(2 * Math.PI * t), w: (t) => 1.15 + 0.15 * Math.sin(2 * Math.PI * t + 1), bt: 0.4, vt: 0.3, bw: 0.55 }, // the main road: a broad S
+  steppe: { f: (t) => -0.24 * Math.sin(Math.PI * t), w: () => 1.0, bt: 0.45, vt: 0.3, bw: 0.48, ba: 0.58 }, // one long bow
+  flats: { f: (t) => 0.06 * Math.sin(Math.PI * t), w: () => 0.85, noise: 1.6, bt: 0.35, vt: 0.25, bw: 0.42, ba: 0.55 }, // an almost straight causeway with small jitter
+  mire: { f: (t) => 0.11 * Math.sin(3 * Math.PI * t) * Math.sin(Math.PI * t) ** 1.5, w: (t) => 0.95 + 0.22 * Math.sin(6 * Math.PI * t), bt: 0.45, vt: 0.35, bw: 0.4, ba: 0.5 }, // a meander
+  crags: { f: (t) => 0.22 * ss(0.12, 0.45, t) * (1 - ss(0.55, 0.92, t)), w: (t) => 1.1 - 0.4 * ss(0.3, 0.45, t) * (1 - ss(0.55, 0.7, t)), bt: 0.45, vt: 0.3, bw: 0.36, ba: 0.52 }, // a dogleg, narrow at the jog
+  blight: { f: (t) => -0.15 * Math.sin(1.5 * Math.PI * t) * (1 - t) ** 2, w: (t) => 0.9 + 0.15 * Math.sin(4 * Math.PI * t + 2), bt: 0.5, vt: 0.35, bw: 0.38, ba: 0.5 }, // a hesitant wander, straight into its gate
+};
+const course = (id, a, b, n = 28) => {
+  const C = COURSE[id], dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy), nx = -dy / L, ny = dx / L;
+  let h = [...id].reduce((v, ch) => Math.imul(v ^ ch.charCodeAt(0), 16777619) >>> 0, 2166136261); // the trail's own noise seed, apart from rnd()
+  const r2 = () => ((h = (Math.imul(h, 1664525) + 1013904223) >>> 0) / 4294967296);
+  const waves = [[2.3, 0.012], [3.7, 0.007], [6.1, 0.004]].map(([fq, amp]) => [fq, amp * (C.noise ?? 1), r2() * 6.28]);
+  const pts = [], w = [];
+  for (let i = 0; i <= n; i++) {
+    const t = i / n, env = Math.sin(Math.PI * t) ** 1.5, off = (C.f(t) + env * waves.reduce((v, [fq, amp, ph]) => v + amp * Math.sin(2 * Math.PI * fq * t + ph), 0)) * L;
+    pts.push([a[0] + dx * t + nx * off, a[1] + dy * t + ny * off]); w.push(R(TRAIL.w * C.w(t)));
+  }
+  return { pts, w };
+};
 const gate = {}, trailPts = [], report = [], trailPaint = []; // the trails' paint is laid after the realms, so the worn track runs on into the fringes and fades there
 Object.keys(RM).forEach((id) => {
   const m = RM[id], rim = trailEnds(id, m.x, m.y, m.pts, 0), { hub: a, realm: b, ar } = trailEnds(id, m.x, m.y, m.pts, 900); // both ends 900 inside the rims
   report.push(`${id} deg ${m.deg.toFixed(1)} centre ${R(m.x)},${R(m.y)} trail rim-to-rim ${R(Math.hypot(rim.hub[0] - rim.realm[0], rim.hub[1] - rim.realm[1]))}`);
-  const pts = wander(a, b, 4, 0.36, 0.55);
+  wander(a, b, 4, 0.36, 0.55).forEach(() => rnd()); // the former wandering course and widths, drawn only so rnd() runs on as before and the rest of the map stays put
+  const { pts, w: ws } = course(id, a, b), C = COURSE[id];
   trailPts.push(...dense(pts, 4).slice(0, -3));
   gate[id] = ar;
-  const ws = pts.map(() => R(TRAIL.w * (0.7 + 0.6 * rnd())));
+  const plen = pts.slice(1).reduce((v, q, i) => v + Math.hypot(q[0] - pts[i][0], q[1] - pts[i][1]), 0), wmean = ws.reduce((v, x) => v + x, 0) / ws.length;
+  report.push(`trail ${id} course length ${R(plen)} mean width ${R(wmean)} food area ${R((plen * wmean * 1.7) / 1e6)} Mu2`);
   layers.push(layer(`trail-${id}`, path(pts, ws.map((w) => R(w * 1.7))), { warp: 150, rough: 160, feather: 800, food: TRAIL.food, clearMud: true, wobble: 0.35 }));
-  trailPaint.push(layer(`trail-${id}-verge`, path(pts, ws.map((w) => R(w * 1.7))), { warp: 150, rough: 160, feather: 800, wobble: 0.35, ...paint([104, 94, 74], 0.38, undefined, { fade: 0.05 }) }));
-  trailPaint.push(layer(`trail-${id}-bed`, path(pts, ws.map((w) => R(w * 0.5))), { warp: 30, rough: 60, feather: 260, wobble: 0.3, ...paint([204, 188, 146], 0.62, tex("blobs", 260, 0.3, [156, 138, 102], 0.55, { soft: 0.3 }), { fade: 0.06 }) }));
+  const tint = (c, k) => c.map((v, i) => R(v + (dsat(D2[id][0])[i] - v) * k));
+  trailPaint.push(layer(`trail-${id}-verge`, path(pts, ws.map((w) => R(w * 1.7))), { warp: 150, rough: 160, feather: 800, wobble: 0.35, ...paint(tint([104, 94, 74], C.vt), 0.38, undefined, { fade: 0.05 }) }));
+  trailPaint.push(layer(`trail-${id}-bed`, path(pts, ws.map((w) => R(w * C.bw))), { warp: 30, rough: 60, feather: 260, wobble: 0.3, ...paint(tint([204, 188, 146], C.bt), C.ba ?? 0.62, tex("blobs", 260, 0.3, tint([156, 138, 102], C.bt), C.ba ? R(C.ba * 0.89 * 100) / 100 : 0.55, { soft: 0.3 }), { fade: 0.06 }) }));
 });
 const nearTrail = (x, y) => Math.min(...trailPts.map(([tx, ty]) => Math.hypot(tx - x, ty - y)));
 
@@ -252,7 +282,7 @@ for (const l of [...report, `area vs round 9: ${areaReport.join(", ")}`]) consol
   layers.push(layer("commons-seat", poly(grow(hubPts, CX, CY, 1.03)), { warp: 600, rough: 300, band: 650, feather: 1300, ...paint([9, 8, 8], 0.42, undefined, { patch: { scale: 1500, lo: 0.25, hi: 0.45 } }) }));
   layers.push(layer("commons-fringe", poly(grow(hubPts, CX, CY, 1.12)), { warp: 700, rough: 300, feather: 2600, paint: fr }));
 }
-layers.push(layer("commons", poly(hubPts), { warp: 600, rough: 450, feather: 450, food: HUB.food, poison: 0, winterFood: HUB.winterFood, clearMud: true, ...paint([38, 72, 70], 0.74, tex("blobs", 650, 0.4, [28, 50, 48], 0.72, { soft: 0.32 })) }));
+layers.push(layer("commons", poly(hubPts), { warp: 600, rough: 450, feather: 450, food: HUB.food, poison: REALM_POISON, winterFood: HUB.winterFood, clearMud: true, ...paint([38, 72, 70], 0.74, tex("blobs", 650, 0.4, [28, 50, 48], 0.72, { soft: 0.32 })) }));
 layers.push(layer("commons-core", poly(blob(CX + 700, CY - 400, 4300, 3600, 16, 0.18, 0.4)), { warp: 600, rough: 300, feather: 2400, food: 1.3, winterFood: HUB.winterFood, clearMud: true, ...paint([56, 98, 90], 0.24, tex("blobs", 450, 0.4, [40, 76, 70], 0.24, { soft: 0.35 })) }));
 for (const [i, [dx, dy, rx, ry, rot]] of [[-2600, -1900, 1100, 650, 0.4], [2400, 1700, 800, 520, -0.3], [-900, 2900, 600, 380, 1.1]].entries()) {
   layers.push(layer(`commons-wet${i}`, poly(blob(CX + dx, CY + dy, rx * 1.9, ry * 1.9, 12, 0.3, rot)), { warp: 400, rough: 250, feather: 600, ...paint([20, 34, 32], 0.55, undefined, { patch: { scale: 500, lo: 0.3, hi: 0.46 } }) })); // boggy ground round each pool
@@ -319,15 +349,15 @@ const realm = (id, mat, o, fringe, extra, wall) => {
 };
 
 // The Blight: a poisoned flat of fine bruised crust, cracked in places, a few long rifts, and oozing pockets
-realm("blight", paint([74, 36, 86], 0.62, tex("plates", 400, 0.8, [132, 90, 146], 0.55, { keep: 0.7, soft: 0.16 })), { food: 2.3, poison: 3.0 }, [[110, 60, 130], 0.35, 0.3], (x, y) => {
+realm("blight", paint([74, 36, 86], 0.62, tex("plates", 400, 0.8, [132, 90, 146], 0.55, { keep: 0.7, soft: 0.16 })), { food: 2.3, poison: BLIGHT_POISON }, [[110, 60, 130], 0.35, 0.3], (x, y) => {
   layers.push(tilt1(layer("blight-rifts", poly(grow(RM.blight.pts, x, y, 0.95)), { warp: 400, rough: 200, feather: 900, ...paint([52, 20, 60], 0, tex("veins", 1300, 0.07, [52, 20, 60], 0.5, { keep: 0.4, soft: 0.2 })) })));
-  layers.push(layer("blight-heart", poly(blob(x, y, 1900, 1500, 10, 0.18)), { warp: 400, rough: 200, feather: 1000, food: 3.0, poison: 1.0, clearMud: true, ...paint([132, 118, 70], 0.4, tex("plates", 380, 0.78, [154, 142, 92], 0.48, { keep: 0.7, soft: 0.16 })) }));
+  layers.push(layer("blight-heart", poly(blob(x, y, 1900, 1500, 10, 0.18)), { warp: 400, rough: 200, feather: 1000, food: 3.0, poison: BLIGHT_POISON, clearMud: true, ...paint([132, 118, 70], 0.4, tex("plates", 380, 0.78, [154, 142, 92], 0.48, { keep: 0.7, soft: 0.16 })) }));
   for (const [dx, dy, rx, ry, rot] of [[1500, 900, 1500, 900, -0.3], [-3300, -800, 750, 480, 0.7], [-1300, -1600, 600, 420, -0.2], [3500, -1000, 520, 360, 0.9], [-800, 1700, 480, 320, 0.1], [3200, 1600, 650, 400, 0.4], [-4400, 900, 420, 300, 1.2]]) {
     layers.push(layer(`blight-seep${dx}`, poly(blob(x + dx, y + dy, rx, ry, 10, 0.3, rot)), { warp: 250, rough: 140, feather: 300, ...paint([74, 16, 70], 0.7, tex("blobs", 220, 0.4, [168, 40, 150], 0.6, { soft: 0.25 })) }));
   }
 }, 0.78);
 // The Mire: a marsh of reed mats, three meandering channels that branch into a broken web of narrower leads, open pools, and three firmer hummocks
-realm("mire", paint([88, 104, 44], 0.55, tex("blobs", 420, 0.45, [56, 72, 30], 0.6, { soft: 0.2 })), { food: 2.3, poison: 0, mud: { coverage: 0.45, scale: 1000, pattern: "veins", keep: 0.5 } }, [[80, 96, 44], 0.35, 0.35], (x, y) => {
+realm("mire", paint([88, 104, 44], 0.55, tex("blobs", 420, 0.45, [56, 72, 30], 0.6, { soft: 0.2 })), { food: 2.3, poison: REALM_POISON, mud: { coverage: 0.45, scale: 1000, pattern: "veins", keep: 0.5 } }, [[80, 96, 44], 0.35, 0.35], (x, y) => {
   for (const [k, [a, b, w]] of [[[-5600, 700], [5200, -500], 520], [[-3400, -2700], [1600, 3000], 420], [[2400, -3100], [4600, 2200], 360]].entries()) {
     const ch = wander([x + a[0], y + a[1]], [x + b[0], y + b[1]], 4, 0.28, 0.7);
     layers.push(layer(`mire-channel${k}`, path(ch, ch.map(() => R(w * (0.6 + 0.8 * rnd())))), { warp: 200, rough: 100, feather: 300, wobble: 0.45, taper: true, mud: { coverage: 1, scale: 1300 } }));
@@ -340,16 +370,16 @@ realm("mire", paint([88, 104, 44], 0.55, tex("blobs", 420, 0.45, [56, 72, 30], 0
   }
 }, 0.82);
 // The Bloom: dense dark canopy in clumps, broken by sunlit clearings and food-rich groves
-realm("bloom", paint([20, 92, 56], 0.7, tex("blobs", 1100, 0.32, [146, 146, 96], 0.6, { soft: 0.1 })), { food: 2.4, poison: 0 }, [[30, 120, 74], 0.4, 0.4], (x, y) => {
+realm("bloom", paint([20, 92, 56], 0.7, tex("blobs", 1100, 0.32, [146, 146, 96], 0.6, { soft: 0.1 })), { food: 2.4, poison: REALM_POISON }, [[30, 120, 74], 0.4, 0.4], (x, y) => {
   layers.push(tilt1(layer("bloom-canopy", poly(grow(RM.bloom.pts, x, y, 0.97)), { warp: 500, rough: 380, feather: 900, ...paint([8, 50, 30], 0, tex("blobs", 330, 0.4, [8, 50, 30], 0.55, { soft: 0.15 })) })));
   const pk = [[0, 0, 1700, 1400]];
   for (let i = 0; i < 6; i++) { const a = (i / 6) * 6.28 + 0.4, d = 2900 + (i % 2) * 300; pk.push([d * Math.cos(a), d * 0.82 * Math.sin(a), 800 + (i % 3) * 200, 650 + (i % 2) * 250]); }
   pk.forEach(([dx, dy, rx, ry], i) => layers.push(layer(`bloom-grove${i}`, poly(blob(x + dx, y + dy, rx, ry, 10, 0.25)), { warp: 300, rough: 200, feather: 700, food: 3.0, ...paint([60, 170, 90], 0.25, tex("blobs", 260, 0.45, [20, 90, 50], 0.4, { soft: 0.25 })) })));
 });
 // The Flats: a fine cracked clay pan, the cracks a dull brown close to the clay so creatures still read (cracks are ordinary ground)
-realm("flats", paint([128, 118, 94], 0.9), { food: 1.1, poison: 0, firm: { coverage: 0.86, scale: 950, pattern: "plates" }, edge: 700 }, [[170, 150, 110], 0.3, 0.3], () => {});
+realm("flats", paint([128, 118, 94], 0.9), { food: 1.1, poison: REALM_POISON, firm: { coverage: 0.86, scale: 950, pattern: "plates" }, edge: 700 }, [[170, 150, 110], 0.3, 0.3], () => {});
 // The Steppe: dry tussock grassland with bare patches and scattered oases of open water ringed by green
-realm("steppe", paint([186, 156, 72], 0.5, tex("blobs", 450, 0.42, [128, 110, 56], 0.48, { soft: 0.35 })), { food: 0.95, poison: 0 }, [[170, 140, 66], 0.35, 0.35], (x, y) => {
+realm("steppe", paint([186, 156, 72], 0.5, tex("blobs", 450, 0.42, [128, 110, 56], 0.48, { soft: 0.35 })), { food: 0.95, poison: REALM_POISON }, [[170, 140, 66], 0.35, 0.35], (x, y) => {
   for (const [i, [dx, dy, sz]] of [[-2900, -900, 1.1], [-600, 1300, 0.8], [1700, -1500, 1.0], [3600, 900, 0.75], [600, -200, 0.6], [-4300, 1500, 0.7]].entries()) {
     const ox = x + dx, oy = y + dy; // scattered, not round a centre
     layers.push(layer(`oasis${i}`, poly(blob(ox, oy, 1000 * sz, 780 * sz, 10, 0.3)), { warp: 700, rough: 400, feather: 900, food: 3.6, ...paint([104, 132, 62], 0.42, tex("blobs", 340, 0.4, [62, 100, 46], 0.5, { soft: 0.25 }), { patch: { scale: 700, lo: 0.3, hi: 0.5 } }) }));
@@ -357,7 +387,7 @@ realm("steppe", paint([186, 156, 72], 0.5, tex("blobs", 450, 0.42, [128, 110, 56
   }
 });
 // The Crags: dark rock ground cut by gullies, rugged basalt outcrops in broken lines, scree aprons and loose boulders
-realm("crags", paint([70, 78, 92], 0.6, tex("veins", 1100, 0.22, [40, 44, 54], 0.66, { keep: 0.6, soft: 0.25 })), { food: 1.5, poison: 0 }, [[90, 104, 124], 0.4, 0.35], (x, y) => {
+realm("crags", paint([70, 78, 92], 0.6, tex("veins", 1100, 0.22, [40, 44, 54], 0.66, { keep: 0.6, soft: 0.25 })), { food: 1.5, poison: REALM_POISON }, [[90, 104, 124], 0.4, 0.35], (x, y) => {
   // two broken lines of outcrops: each a run of short rugged pieces, offset and of uneven size, not one smooth ridge
   const lines = [wander([x - 4300, y + 900], [x + 3900, y - 1300], 4, 0.12, 0.8), wander([x - 3100, y + 2600], [x + 3700, y + 1700], 4, 0.12, 0.8)];
   lines.forEach((ln, li) => {
