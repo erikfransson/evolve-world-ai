@@ -48,7 +48,7 @@ describe("colonyScore", () => {
     const lineage = new Map<number, "defender" | "raider">(), rng = lcg(9);
     seedDefenders(eco, colony, rng, lineage);
     seedRaiders(eco, colony, rng, lineage);
-    expect(count(eco, lineage, 0)).toEqual({ min: 0, defender: 12, raider: 6, total: 18 });
+    expect(count(eco, lineage, 0)).toEqual({ min: 0, defender: 12, raider: 6, total: 18, immigrant: 0, arrived: 0 });
     expect(share({ defender: 12, total: 18 })).toBeCloseTo(2 / 3);
     expect(share({ defender: 0, total: 0 })).toBe(0);
   });
@@ -57,5 +57,12 @@ describe("colonyScore", () => {
     const a = runSeed(params, colony, 3, 0.5, 0.25), b = runSeed(params, colony, 3, 0.5, 0.25);
     expect(a).toEqual(b);
     expect(a.samples.map((s) => s.min)).toEqual([0, 0.25, 0.5]);
+  });
+
+  it("adds immigrants at the asked rate, repeatably, and none by default", () => {
+    const a = runSeed(params, colony, 3, 1, 0.5, 0, 6), b = runSeed(params, colony, 3, 1, 0.5, 0, 6);
+    expect(a).toEqual(b);
+    expect(a.samples[a.samples.length - 1]!.arrived).toBe(6);
+    expect(runSeed(params, colony, 3, 1, 0.5).samples.every((s) => s.arrived === 0 && s.immigrant === 0)).toBe(true);
   });
 });

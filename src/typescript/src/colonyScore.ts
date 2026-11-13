@@ -2,7 +2,7 @@
 // Score = the defender lineage's share of all living creatures after --minutes of sim time, per seed and as the mean over the seeds.
 // Live rules (liveConfig, births on) on a plain world with Blight-like food and poison; defenders start spread over the world, raiders in one cluster.
 // Usage: nice -n 19 node src/colonyScore.ts [--defender oracle] [--raider grazer] [--defenders 40] [--raiders 10] [--candidate file.json]
-//   [--seeds 101,102,...,108] [--minutes 30] [--every 5] [--warmup 0] [--size 6000] [--food 1.15] [--poison 0.03] [--foodRegrow 0.0046] [--poisonRegrow 0.0009] [--out colony.jsonl] [--founders file]
+//   [--seeds 101,102,...,108] [--minutes 30] [--every 5] [--warmup 0] [--immigrate 0] [--size 6000] [--food 1.15] [--poison 0.03] [--foodRegrow 0.0046] [--poisonRegrow 0.0009] [--out colony.jsonl] [--founders file]
 // --candidate: {plan, genome} (an rlTrain --out file) replacing the defender's plan and genome; its birth traits are kept. The default seeds are held out: never train on them.
 
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
@@ -31,7 +31,7 @@ export function mulberry32(seed: number): () => number {
 
 export interface ColonyParams { size: number; food: number; poison: number; foodRegrow: number; poisonRegrow: number }
 export interface Colony { defenders: number; raiders: number; defender: SeedFounder; raider: SeedFounder }
-export interface Sample { min: number; defender: number; raider: number; total: number }
+export interface Sample { min: number; defender: number; raider: number; total: number; immigrant: number; arrived: number } // immigrant: living raiders descending from an immigrant (the rest of raider come from the seeded cluster); arrived: immigrants inserted so far
 
 // Live's config on a plain size x size world with the given item caps (also the start counts, so the world starts at the caps).
 export function colonyConfig(p: ColonyParams, seed: number): EcoConfig {
@@ -55,8 +55,9 @@ export const share = (s: { defender: number; total: number }): number => (s.tota
 type Lineages = Map<number, "defender" | "raider">;
 
 // Inserts `n` copies of f at spots drawn by `spot`, clear of every living creature, and records their founder ids in lineage.
-function place(eco: Ecosystem, f: SeedFounder, n: number, who: "defender" | "raider", hue: number, spot: () => { x: number; y: number }, rng: () => number, lineage: Lineages): void {
+function place(eco: Ecosystem, f: SeedFounder, n: number, who: "defender" | "raider", hue: number, spot: () => { x: number; y: number }, rng: () => number, lineage: Lineages): number[] {
   const r = eco.config.creature.radius;
+  const ids: number[] = [];
   const clear = (x: number, y: number): boolean => eco.members.every((m) => (m.creature.state.x - x) ** 2 + (m.creature.state.y - y) ** 2 > (2.5 * r) ** 2);
   for (let i = 0; i < n; i++) {
     for (let tries = 0; ; tries++) {
@@ -66,9 +67,11 @@ function place(eco: Ecosystem, f: SeedFounder, n: number, who: "defender" | "rai
       const res = eco.insertCreature({ genome: f.genome, plan: f.plan, x, y, heading: rng() * 2 * Math.PI, hue, name: who, ...(f.birth ? { birth: f.birth } : {}) });
       if (!res.ok) continue;
       lineage.set(res.id, who);
+      ids.push(res.id);
       break;
     }
   }
+  return ids;
 }
 
 // The defenders at uniform random spots over the world.
@@ -89,19 +92,23 @@ export function seedRaiders(eco: Ecosystem, c: Colony, rng: () => number, lineag
   return center;
 }
 
-export function count(eco: Ecosystem, lineage: Lineages, min: number): Sample {
-  let defender = 0, raider = 0;
+export function count(eco: Ecosystem, lineage: Lineages, min: number, immigrants: ReadonlySet<number> = new Set()): Sample {
+  let defender = 0, raider = 0, immigrant = 0;
   for (const m of eco.members) {
     const who = lineage.get(m.founderId);
     if (who === "defender") defender++;
-    else if (who === "raider") raider++;
+    else if (who === "raider") {
+      raider++;
+      if (immigrants.has(m.founderId)) immigrant++;
+    }
   }
-  return { min, defender, raider, total: eco.members.length };
+  return { min, defender, raider, total: eco.members.length, immigrant, arrived: immigrants.size };
 }
 
 // One seed: seed the defenders, run `warmup` minutes alone (0: the raiders start with them), insert the raiders, then run `minutes`
 // more of sim time, sampling every `every` minutes (and at the raiders' arrival and the end). Sample minutes count from the raiders' arrival.
-export function runSeed(p: ColonyParams, c: Colony, seed: number, minutes: number, every: number, warmup = 0): { seed: number; samples: Sample[]; share: number; extinct: boolean } {
+// immigrate: further raiders per sim minute, each a fresh founder copy at a random spot along one world edge (picked per seed).
+export function runSeed(p: ColonyParams, c: Colony, seed: number, minutes: number, every: number, warmup = 0, immigrate = 0): { seed: number; samples: Sample[]; share: number; extinct: boolean } {
   const config = colonyConfig(p, seed);
   const eco = new Ecosystem(config, null);
   const rng = mulberry32(seed), lineage: Lineages = new Map();
@@ -109,14 +116,27 @@ export function runSeed(p: ColonyParams, c: Colony, seed: number, minutes: numbe
   const minute = (m: number) => Math.round((m * 60) / config.dt);
   while (eco.tick < minute(warmup) && !eco.extinct) eco.step();
   seedRaiders(eco, c, rng, lineage);
+  const { width, height } = config.world, r = config.creature.radius;
+  const edge = Math.floor(rng() * 4); // 0 left, 1 right, 2 top, 3 bottom
+  const along = (): { x: number; y: number } => {
+    const u = rng();
+    const w = r + 1, x = edge < 2 ? (edge === 0 ? w : width - w) : r + u * (width - 2 * r), y = edge < 2 ? r + u * (height - 2 * r) : (edge === 2 ? w : height - w);
+    return { x, y };
+  };
+  const immigrants = new Set<number>();
+  let sent = 0; // arrivals due so far
   const t0 = eco.tick, end = t0 + minute(minutes), sampleEvery = Math.max(1, minute(every));
   const at = () => +(((eco.tick - t0) * config.dt) / 60).toFixed(2);
-  const samples = [count(eco, lineage, 0)];
+  const sample = () => count(eco, lineage, at(), immigrants);
+  const samples = [sample()];
   while (eco.tick < end && !eco.extinct) {
     eco.step();
-    if ((eco.tick - t0) % sampleEvery === 0) samples.push(count(eco, lineage, at()));
+    for (const due = Math.floor((immigrate * (eco.tick - t0) * config.dt) / 60 + 1e-9); sent < due; sent++) {
+      try { for (const id of place(eco, c.raider, 1, "raider", 0, along, rng, lineage)) immigrants.add(id); } catch { /* a crowded edge or a full world skips the arrival */ }
+    }
+    if ((eco.tick - t0) % sampleEvery === 0) samples.push(sample());
   }
-  if (samples[samples.length - 1]!.min !== at()) samples.push(count(eco, lineage, at()));
+  if (samples[samples.length - 1]!.min !== at()) samples.push(sample());
   return { seed, samples, share: share(samples[samples.length - 1]!), extinct: eco.extinct };
 }
 
@@ -131,6 +151,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       seeds: { type: "string", default: "101,102,103,104,105,106,107,108" }, // held out
       minutes: { type: "string", default: "30" },
       every: { type: "string", default: "5" },
+      immigrate: { type: "string", default: "0" }, // raiders per sim minute arriving along one world edge
       warmup: { type: "string", default: "0" }, // minutes the defenders run alone before the raiders arrive
       size: { type: "string", default: "6000" },
       food: { type: "string", default: String(0.5 * 2.3) }, // Live's 0.50 x the Blight's 2.3
@@ -155,17 +176,17 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const minutes = Number(values.minutes), every = Number(values.every);
   if (values.out) writeFileSync(values.out, "");
   const itemSlots = Math.round((p.food + p.poison) * (p.size * p.size) / 1e4);
-  console.log(`defender ${values.candidate ?? defender.id} x${colony.defenders} vs ${raider.id} x${colony.raiders}; ${p.size}x${p.size}, food ${p.food}, poison ${p.poison} (${itemSlots} item slots), regrow ${p.foodRegrow} / ${p.poisonRegrow}, ${minutes} min after ${values.warmup} min warm-up`);
-  console.log("seed  defender raider total  share  wall_s");
+  console.log(`defender ${values.candidate ?? defender.id} x${colony.defenders} vs ${raider.id} x${colony.raiders}; ${p.size}x${p.size}, food ${p.food}, poison ${p.poison} (${itemSlots} item slots), regrow ${p.foodRegrow} / ${p.poisonRegrow}, ${minutes} min after ${values.warmup} min warm-up, ${values.immigrate} immigrants/min`);
+  console.log("seed  defender raider(imm) total  share  wall_s");
   const shares: number[] = [];
   const t0 = performance.now();
   for (const seed of seeds) {
     const t = performance.now();
-    const r = runSeed(p, colony, seed, minutes, every, Number(values.warmup));
+    const r = runSeed(p, colony, seed, minutes, every, Number(values.warmup), Number(values.immigrate));
     if (values.out) appendFileSync(values.out, JSON.stringify(r) + "\n");
     const last = r.samples[r.samples.length - 1]!;
     shares.push(r.share);
-    console.log(`${String(seed).padEnd(5)} ${String(last.defender).padStart(8)} ${String(last.raider).padStart(6)} ${String(last.total).padStart(5)}  ${r.share.toFixed(3)}  ${((performance.now() - t) / 1000).toFixed(1)}${r.extinct ? " EXTINCT" : ""}`);
+    console.log(`${String(seed).padEnd(5)} ${String(last.defender).padStart(8)} ${`${last.raider}(${last.immigrant})`.padStart(10)} ${String(last.total).padStart(5)}  ${r.share.toFixed(3)}  ${((performance.now() - t) / 1000).toFixed(1)}${r.extinct ? " EXTINCT" : ""}`);
   }
   const mean = shares.reduce((a, b) => a + b, 0) / shares.length;
   console.log(`mean share ${mean.toFixed(3)}  min ${Math.min(...shares).toFixed(3)}  max ${Math.max(...shares).toFixed(3)}  wall ${((performance.now() - t0) / 1000).toFixed(1)}s  peak RSS ${Math.round(process.resourceUsage().maxRSS / 1024)} MB`);
