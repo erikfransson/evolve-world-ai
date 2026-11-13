@@ -14,7 +14,7 @@
 
 .about p { margin: 0; color: var(--muted); font-size: 0.8rem; line-height: 1.45; }
 .retry { font-variant-numeric: tabular-nums; }
-#timer { gap: 0.7rem; height: auto; min-height: calc(2.2rem + 2px); padding: 0.3rem 1.2rem; font-size: 2.8rem; line-height: 1.15; }
+#timer { gap: 0.7rem; height: auto; min-height: calc(2.2rem + 2px); padding: 0.3rem 1.2rem; font-size: 1.96rem; line-height: 1.15; }
 #timer .season-pill { padding: 0.1rem 0.8rem; border-radius: 999px; font-size: 1.38rem; line-height: 1.3; font-weight: 600; background: color-mix(in srgb, var(--season, #3ddc97) 22%, transparent); color: var(--season, #3ddc97); }
 #timer .season-pill:empty { display: none; }
 #timer, #timer .season-pill { white-space: nowrap; }
