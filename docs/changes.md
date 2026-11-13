@@ -6,6 +6,7 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- Live: the world clock's time is 70% of its former size (2.8rem to 1.96rem); the season label is unchanged. The narrow layout (under 960 px) keeps its 1.6rem timer.
 - CI: the test step runs again once when a test worker crashes natively and nothing else failed, so a runner crash no longer blocks the site deploy.
 
 ## 0.10.0 (2026-11-13)
