@@ -41,7 +41,9 @@ export function loadPool(file: string, realm: string): Source[] {
   if (!Array.isArray(g) || !g.length) throw new Error(`pool ${file}: no creatures in realm "${realm}"`);
   return g.map((m) => ({ plan: m.plan, genome: Float32Array.from(m.genome), ...(m.birth ? { birth: m.birth } : {}), ...(m.mutationScale ? { mutationScale: m.mutationScale } : {}) }));
 }
-export interface Sample { min: number; defender: number; raider: number; total: number; immigrant: number; arrived: number } // immigrant: living raiders descending from an immigrant (the rest of raider come from the seeded cluster); arrived: immigrants inserted so far
+export interface Sample { min: number; defender: number; raider: number; total: number; immigrant: number; arrived: number; traits?: Traits }
+// Living defenders' medians of the birth traits and generations, and their children per minute of summed age (--traits).
+export interface Traits { energy: number; cost: number; cooldown: number; depth: number; kidsPerMin: number } // immigrant: living raiders descending from an immigrant (the rest of raider come from the seeded cluster); arrived: immigrants inserted so far
 
 // Live's config on a plain size x size world with the given item caps (also the start counts, so the world starts at the caps).
 export function colonyConfig(p: ColonyParams, seed: number): EcoConfig {
@@ -118,10 +120,20 @@ export function count(eco: Ecosystem, lineage: Lineages, min: number, immigrants
   return { min, defender, raider, total: eco.members.length, immigrant, arrived: immigrants.size };
 }
 
+const median = (a: number[]): number => (a.length ? a.sort((x, y) => x - y)[Math.floor(a.length / 2)]! : 0);
+export function defenderTraits(eco: Ecosystem, lineage: Lineages): Traits {
+  const ds = eco.members.filter((m) => lineage.get(m.founderId) === "defender");
+  const ageMin = ds.reduce((a, m) => a + m.ageTicks, 0) * eco.config.dt / 60;
+  return {
+    energy: median(ds.map((m) => m.birth.energy)), cost: median(ds.map((m) => m.birth.cost)), cooldown: median(ds.map((m) => m.birth.cooldown)), depth: median(ds.map((m) => m.depth)),
+    kidsPerMin: ageMin > 0 ? ds.reduce((a, m) => a + m.children, 0) / ageMin : 0,
+  };
+}
+
 // One seed: seed the defenders, run `warmup` minutes alone (0: the raiders start with them), insert the raiders, then run `minutes`
 // more of sim time, sampling every `every` minutes (and at the raiders' arrival and the end). Sample minutes count from the raiders' arrival.
 // immigrate: further raiders per sim minute, each a fresh founder copy at a random spot along one world edge (picked per seed).
-export function runSeed(p: ColonyParams, c: Colony, seed: number, minutes: number, every: number, warmup = 0, immigrate = 0): { seed: number; samples: Sample[]; share: number; extinct: boolean } {
+export function runSeed(p: ColonyParams, c: Colony, seed: number, minutes: number, every: number, warmup = 0, immigrate = 0, traits = false): { seed: number; samples: Sample[]; share: number; extinct: boolean } {
   const config = colonyConfig(p, seed);
   const eco = new Ecosystem(config, null);
   const rng = mulberry32(seed), lineage: Lineages = new Map();
@@ -140,7 +152,7 @@ export function runSeed(p: ColonyParams, c: Colony, seed: number, minutes: numbe
   let sent = 0; // arrivals due so far
   const t0 = eco.tick, end = t0 + minute(minutes), sampleEvery = Math.max(1, minute(every));
   const at = () => +(((eco.tick - t0) * config.dt) / 60).toFixed(2);
-  const sample = () => count(eco, lineage, at(), immigrants);
+  const sample = (): Sample => (traits ? { ...count(eco, lineage, at(), immigrants), traits: defenderTraits(eco, lineage) } : count(eco, lineage, at(), immigrants));
   const samples = [sample()];
   while (eco.tick < end && !eco.extinct) {
     eco.step();
@@ -165,6 +177,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       minutes: { type: "string", default: "30" },
       every: { type: "string", default: "5" },
       immigrate: { type: "string", default: "0" }, // raiders per sim minute arriving along one world edge
+      traits: { type: "boolean", default: false }, // add the living defenders' birth-trait medians, depth and children per minute to each sample
       warmup: { type: "string", default: "0" }, // minutes the defenders run alone before the raiders arrive
       size: { type: "string", default: "6000" },
       food: { type: "string", default: String(0.5 * 2.3) }, // Live's 0.50 x the Blight's 2.3
@@ -202,7 +215,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const t0 = performance.now();
   for (const seed of seeds) {
     const t = performance.now();
-    const r = runSeed(p, colony, seed, minutes, every, Number(values.warmup), Number(values.immigrate));
+    const r = runSeed(p, colony, seed, minutes, every, Number(values.warmup), Number(values.immigrate), values.traits);
     if (values.out) appendFileSync(values.out, JSON.stringify(r) + "\n");
     const last = r.samples[r.samples.length - 1]!;
     shares.push(r.share);
