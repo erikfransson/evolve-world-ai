@@ -59,6 +59,21 @@ describe("colonyScore", () => {
     expect(a.samples.map((s) => s.min)).toEqual([0, 0.25, 0.5]);
   });
 
+  it("draws defenders and raiders from a pool with the pool's birth traits, repeatably", () => {
+    const e = new Ecosystem(colonyConfig(params, 1), null).config.eco.birthEnergyRange;
+    const mk = (energy: number) => ({ plan: PLAN, genome, birth: { energy, cost: 60 }, mutationScale: 1 });
+    const energies = [e[0]! * 1.5, e[0]! * 2, e[0]! * 2.5];
+    const pooled: Colony = { ...colony, defenderPool: energies.map(mk), raiderPool: [mk(energies[2]!)] };
+    const eco = new Ecosystem(colonyConfig(params, 1), null);
+    const lineage = new Map<number, "defender" | "raider">(), rng = lcg(4);
+    seedDefenders(eco, pooled, rng, lineage);
+    seedRaiders(eco, pooled, rng, lineage);
+    const got = (who: string) => new Set(eco.members.filter((m) => lineage.get(m.founderId) === who).map((m) => +m.birth.energy.toFixed(3)));
+    expect(got("defender")).toEqual(new Set(energies.map((v) => +v.toFixed(3))));
+    expect(got("raider")).toEqual(new Set([+energies[2]!.toFixed(3)]));
+    expect(runSeed(params, pooled, 3, 0.5, 0.25)).toEqual(runSeed(params, pooled, 3, 0.5, 0.25));
+  });
+
   it("adds immigrants at the asked rate, repeatably, and none by default", () => {
     const a = runSeed(params, colony, 3, 1, 0.5, 0, 6), b = runSeed(params, colony, 3, 1, 0.5, 0, 6);
     expect(a).toEqual(b);

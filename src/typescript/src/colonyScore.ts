@@ -2,7 +2,7 @@
 // Score = the defender lineage's share of all living creatures after --minutes of sim time, per seed and as the mean over the seeds.
 // Live rules (liveConfig, births on) on a plain world with Blight-like food and poison; defenders start spread over the world, raiders in one cluster.
 // Usage: nice -n 19 node src/colonyScore.ts [--defender oracle] [--raider grazer] [--defenders 40] [--raiders 10] [--candidate file.json]
-//   [--seeds 101,102,...,108] [--minutes 30] [--every 5] [--warmup 0] [--immigrate 0] [--size 6000] [--food 1.15] [--poison 0.03] [--foodRegrow 0.0046] [--poisonRegrow 0.0009] [--out colony.jsonl] [--founders file]
+//   [--seeds 101,102,...,108] [--minutes 30] [--every 5] [--warmup 0] [--immigrate 0] [--size 6000] [--food 1.15] [--poison 0.03] [--foodRegrow 0.0046] [--poisonRegrow 0.0009] [--defender-pool FILE:REALM] [--raider-pool FILE:REALM] [--out colony.jsonl] [--founders file]
 // --candidate: {plan, genome} (an rlTrain --out file) replacing the defender's plan and genome; its birth traits are kept. The default seeds are held out: never train on them.
 
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
@@ -13,7 +13,7 @@ import type { SeedFounder } from "../../../server/src/founders.ts";
 import type { EcoConfig } from "./sim/ecoConfig.ts";
 import { Ecosystem } from "./sim/ecosystem.ts";
 import type { BodyPlan } from "./sim/sensors.ts";
-import { strictArgs } from "./cliArgs.ts";
+import { fail, strictArgs } from "./cliArgs.ts";
 
 const NO_MAP = ""; // world.map of a plain world (DEFAULT config)
 const RAID_RADIUS = 300, RAID_WALL = 1000; // the raiders' cluster radius and its centre's least distance to the walls
@@ -30,7 +30,17 @@ export function mulberry32(seed: number): () => number {
 }
 
 export interface ColonyParams { size: number; food: number; poison: number; foodRegrow: number; poisonRegrow: number }
-export interface Colony { defenders: number; raiders: number; defender: SeedFounder; raider: SeedFounder }
+// What one creature is inserted with: a founder, or a pool member (an evolved creature from saveCreatures.ts).
+export interface Source { plan: BodyPlan; genome: ArrayLike<number>; birth?: { energy: number; cost: number; cooldown?: number }; mutationScale?: number }
+// defenderPool / raiderPool: when set, each defender (raider) is drawn from it instead of the founder, round-robin from a seeded random start.
+export interface Colony { defenders: number; raiders: number; defender: SeedFounder; raider: SeedFounder; defenderPool?: readonly Source[]; raiderPool?: readonly Source[] }
+
+// The group `realm` of a saveCreatures.ts file, checked to be a non-empty list of {plan, genome}.
+export function loadPool(file: string, realm: string): Source[] {
+  const g = (JSON.parse(readFileSync(file, "utf8")) as { groups?: Record<string, Source[]> }).groups?.[realm];
+  if (!Array.isArray(g) || !g.length) throw new Error(`pool ${file}: no creatures in realm "${realm}"`);
+  return g.map((m) => ({ plan: m.plan, genome: Float32Array.from(m.genome), ...(m.birth ? { birth: m.birth } : {}), ...(m.mutationScale ? { mutationScale: m.mutationScale } : {}) }));
+}
 export interface Sample { min: number; defender: number; raider: number; total: number; immigrant: number; arrived: number } // immigrant: living raiders descending from an immigrant (the rest of raider come from the seeded cluster); arrived: immigrants inserted so far
 
 // Live's config on a plain size x size world with the given item caps (also the start counts, so the world starts at the caps).
@@ -55,17 +65,20 @@ export const share = (s: { defender: number; total: number }): number => (s.tota
 type Lineages = Map<number, "defender" | "raider">;
 
 // Inserts `n` copies of f at spots drawn by `spot`, clear of every living creature, and records their founder ids in lineage.
-function place(eco: Ecosystem, f: SeedFounder, n: number, who: "defender" | "raider", hue: number, spot: () => { x: number; y: number }, rng: () => number, lineage: Lineages): number[] {
+function place(eco: Ecosystem, from: readonly Source[], n: number, who: "defender" | "raider", hue: number, spot: () => { x: number; y: number }, rng: () => number, lineage: Lineages): number[] {
   const r = eco.config.creature.radius;
   const ids: number[] = [];
+  const start = Math.floor(rng() * from.length);
   const clear = (x: number, y: number): boolean => eco.members.every((m) => (m.creature.state.x - x) ** 2 + (m.creature.state.y - y) ** 2 > (2.5 * r) ** 2);
   for (let i = 0; i < n; i++) {
+    const f = from[(start + i) % from.length]!;
+    let why = "";
     for (let tries = 0; ; tries++) {
-      if (tries === 200) throw new Error(`no room to place a ${who}`);
+      if (tries === 200) throw new Error(`no room to place a ${who}${why ? `: ${why}` : ""}`);
       const { x, y } = spot();
       if (!clear(x, y)) continue;
-      const res = eco.insertCreature({ genome: f.genome, plan: f.plan, x, y, heading: rng() * 2 * Math.PI, hue, name: who, ...(f.birth ? { birth: f.birth } : {}) });
-      if (!res.ok) continue;
+      const res = eco.insertCreature({ genome: f.genome, plan: f.plan, x, y, heading: rng() * 2 * Math.PI, hue, name: who, ...(f.birth ? { birth: f.birth } : {}), ...(f.mutationScale ? { mutationScale: f.mutationScale } : {}) });
+      if (!res.ok) { why = res.reason; continue; }
       lineage.set(res.id, who);
       ids.push(res.id);
       break;
@@ -78,14 +91,14 @@ function place(eco: Ecosystem, f: SeedFounder, n: number, who: "defender" | "rai
 export function seedDefenders(eco: Ecosystem, c: Colony, rng: () => number, lineage: Lineages): void {
   const { width, height } = eco.config.world;
   const r = eco.config.creature.radius;
-  place(eco, c.defender, c.defenders, "defender", 120, () => ({ x: r + rng() * (width - 2 * r), y: r + rng() * (height - 2 * r) }), rng, lineage);
+  place(eco, c.defenderPool ?? [c.defender], c.defenders, "defender", 120, () => ({ x: r + rng() * (width - 2 * r), y: r + rng() * (height - 2 * r) }), rng, lineage);
 }
 
 // The raiders in one cluster of radius RAID_RADIUS around a random centre at least RAID_WALL from the walls; returns the centre.
 export function seedRaiders(eco: Ecosystem, c: Colony, rng: () => number, lineage: Lineages): { x: number; y: number } {
   const { width, height } = eco.config.world;
   const center = { x: RAID_WALL + rng() * (width - 2 * RAID_WALL), y: RAID_WALL + rng() * (height - 2 * RAID_WALL) };
-  place(eco, c.raider, c.raiders, "raider", 0, () => {
+  place(eco, c.raiderPool ?? [c.raider], c.raiders, "raider", 0, () => {
     const a = rng() * 2 * Math.PI, d = RAID_RADIUS * Math.sqrt(rng());
     return { x: center.x + d * Math.cos(a), y: center.y + d * Math.sin(a) };
   }, rng, lineage);
@@ -132,7 +145,7 @@ export function runSeed(p: ColonyParams, c: Colony, seed: number, minutes: numbe
   while (eco.tick < end && !eco.extinct) {
     eco.step();
     for (const due = Math.floor((immigrate * (eco.tick - t0) * config.dt) / 60 + 1e-9); sent < due; sent++) {
-      try { for (const id of place(eco, c.raider, 1, "raider", 0, along, rng, lineage)) immigrants.add(id); } catch { /* a crowded edge or a full world skips the arrival */ }
+      try { for (const id of place(eco, c.raiderPool ?? [c.raider], 1, "raider", 0, along, rng, lineage)) immigrants.add(id); } catch { /* a crowded edge or a full world skips the arrival */ }
     }
     if ((eco.tick - t0) % sampleEvery === 0) samples.push(sample());
   }
@@ -158,6 +171,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       poison: { type: "string", default: String(3 * liveConfig.eco.poisonMaxDensity) }, // 3x Live's 0.01
       foodRegrow: { type: "string", default: String(2.3 * liveConfig.eco.foodRegrow) }, // items per second per density unit; the cap is not what limits a settled world, the regrowth is
       poisonRegrow: { type: "string", default: String(3 * liveConfig.eco.poisonRegrow) },
+      "defender-pool": { type: "string" }, // FILE:REALM of a saveCreatures.ts file: draw the defenders from that group
+      "raider-pool": { type: "string" }, // FILE:REALM: draw the raiders (cluster and immigrants) from that group
       out: { type: "string" },
       founders: { type: "string", default: fileURLToPath(new URL("../public/live-founders.json", import.meta.url)) },
     },
@@ -171,12 +186,17 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     defender.genome = Float32Array.from(cand.genome);
   }
   const p: ColonyParams = { size: Number(values.size), food: Number(values.food), poison: Number(values.poison), foodRegrow: Number(values.foodRegrow), poisonRegrow: Number(values.poisonRegrow) };
-  const colony: Colony = { defenders: Number(values.defenders), raiders: Number(values.raiders), defender, raider };
+  const pool = (arg: string | undefined): Source[] | undefined => {
+    if (!arg) return undefined;
+    const at = arg.lastIndexOf(":");
+    return at < 1 ? fail(`pool must be FILE:REALM, got "${arg}"`) : loadPool(arg.slice(0, at), arg.slice(at + 1));
+  };
+  const colony: Colony = { defenders: Number(values.defenders), raiders: Number(values.raiders), defender, raider, ...(values["defender-pool"] ? { defenderPool: pool(values["defender-pool"])! } : {}), ...(values["raider-pool"] ? { raiderPool: pool(values["raider-pool"])! } : {}) };
   const seeds = values.seeds!.split(",").map(Number);
   const minutes = Number(values.minutes), every = Number(values.every);
   if (values.out) writeFileSync(values.out, "");
   const itemSlots = Math.round((p.food + p.poison) * (p.size * p.size) / 1e4);
-  console.log(`defender ${values.candidate ?? defender.id} x${colony.defenders} vs ${raider.id} x${colony.raiders}; ${p.size}x${p.size}, food ${p.food}, poison ${p.poison} (${itemSlots} item slots), regrow ${p.foodRegrow} / ${p.poisonRegrow}, ${minutes} min after ${values.warmup} min warm-up, ${values.immigrate} immigrants/min`);
+  console.log(`defender ${values["defender-pool"] ?? values.candidate ?? defender.id} x${colony.defenders} vs ${values["raider-pool"] ?? raider.id} x${colony.raiders}; ${p.size}x${p.size}, food ${p.food}, poison ${p.poison} (${itemSlots} item slots), regrow ${p.foodRegrow} / ${p.poisonRegrow}, ${minutes} min after ${values.warmup} min warm-up, ${values.immigrate} immigrants/min`);
   console.log("seed  defender raider(imm) total  share  wall_s");
   const shares: number[] = [];
   const t0 = performance.now();
