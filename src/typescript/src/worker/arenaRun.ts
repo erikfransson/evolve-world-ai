@@ -2,7 +2,7 @@ import { deriveSeed } from "../sim/rng.ts";
 import type { PoolEntry } from "../sim/seedPool.ts";
 import type { EnvSpec, Library } from "../sim/rl/env.ts";
 import { DEFAULT_POISON_COST, MAX_POISON_COST } from "../sim/rl/envs.ts";
-import { serialiseLearner } from "../sim/rl/library.ts";
+import { missingFounders, serialiseLearner } from "../sim/rl/library.ts";
 import { recordingBuffers } from "../sim/rl/recording.ts";
 import { BackpropTrainer } from "../sim/rl/ppo.ts";
 import { Trainer, heldSeeds } from "../sim/rl/trainer.ts";
@@ -73,7 +73,16 @@ export class ArenaRun {
   }
 
   setEnvs(envs: EnvSpec[]): void {
-    if (envs.length) this.nextEnvs = withPoisonCost(envs, this.start);
+    if (envs.length) {
+      this.nextEnvs = withPoisonCost(envs, this.start);
+      this.warnFounders(this.nextEnvs);
+    }
+  }
+
+  // Founder rivals the library lacks are random, which makes scores look valid; say so.
+  private warnFounders(envs: readonly EnvSpec[]): void {
+    const missing = missingFounders(envs, this.assets.library);
+    if (missing.length) this.post({ type: "note", message: `The Live founders did not load, so ${missing.map((k) => k.slice(8)).join(", ")} rivals are random creatures and scores in those environments are not against the founders.` });
   }
 
   setGentle(on: boolean): void {
@@ -107,6 +116,7 @@ export class ArenaRun {
         : new Trainer(genome, options, this.pool, this.envs.length, options.episodes, this.start.seed);
     const t0 = performance.now();
     let lastBest: Float32Array | null = null; // the latest step's best candidate
+    this.warnFounders(this.envs);
     const start = await trainer.held(this.heldSeeds);
     if (this.stopped) return;
     this.post({ type: "ready", held: start.mean, perEnv: start.perEnv, poolMissing: this.assets.pool === null });

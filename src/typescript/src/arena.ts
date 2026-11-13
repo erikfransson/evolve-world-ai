@@ -576,7 +576,8 @@ function onMessage(m: RlOutMessage): void {
     grid.show({ iter: m.iter, genome: m.genome, recordings: m.recordings, names: m.recordings.map((_, k) => run!.envs[k % run!.envs.length]!.name), envCount: run.envs.length, policy: run.method === "backprop" }, performance.now());
     $("note").hidden = true;
     layoutTiles();
-  } else if (m.type === "done") setState("idle");
+  } else if (m.type === "note") $("startNote").textContent = m.message;
+  else if (m.type === "done") setState("idle");
   else if (m.type === "error") return fail(m.message);
   render();
 }

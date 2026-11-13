@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import type { ParseArgsConfig } from "node:util";
 import { FOUNDER_PREFIX } from "./sim/rl/env.ts";
+import { FOUNDER_IDS } from "./sim/rl/envs.ts";
 import type { Library } from "./sim/rl/env.ts";
 import { parseLibrary, withFounders } from "./sim/rl/library.ts";
 import { parseFounders } from "./live/founders.ts";
@@ -81,7 +82,10 @@ export function loadPoolFile(given: string | undefined): PoolEntry[] | null {
 // The Live founders of public/live-founders.json (none when the file is absent, so founder rivals are random ones).
 export function loadFounders(given?: string): ReturnType<typeof parseFounders> {
   const path = given ?? resolve(PACKAGE_ROOT, "public/live-founders.json");
-  return existsSync(path) ? parseFounders(JSON.parse(readFileSync(path, "utf8"))) : [];
+  const list = existsSync(path) ? parseFounders(JSON.parse(readFileSync(path, "utf8"))) : [];
+  const lacking = FOUNDER_IDS.filter((id) => !list.some((f) => f.id === id));
+  if (lacking.length) console.error(`warning: ${existsSync(path) ? path : `no ${path}`} lacks the founders ${lacking.join(", ")}, so those founder rivals are random creatures`);
+  return list;
 }
 
 // The rival library with the founders (founder:<id> rivals) in it.

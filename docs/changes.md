@@ -6,7 +6,7 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
-- RL Arena: a Founders group of four envs (`bloom-race`, `crags-brawl`, `blight`, `six-realms`) where the learner competes against frozen copies of the Live founders and is scored on seconds alive only. New rival source `founder:<id>`; the founders ride in the library under that key (`withFounders`), loaded by `rlTrain`, `rlGrad`, `rlTiers`, `rlTransfer` and passed to the Arena worker through an optional `foundersUrl`. Without the founders those rivals are random. Baselines: `docs/rl-notes/probes/founders-baseline.ts`.
+- RL Arena: a Founders group of four envs (`bloom-race`, `crags-brawl`, `blight`, `six-realms`) where the learner competes against frozen copies of the Live founders and is scored on seconds alive only. New rival source `founder:<id>`; the founders ride in the library under that key (`withFounders`), loaded by `rlTrain`, `rlGrad`, `rlTiers`, `rlTransfer` and passed to the Arena worker through an optional `foundersUrl`. Without the founders those rivals are random, which the Arena (a note) and the CLIs (a warning) now say; `rlGrad --envs all` and `rlBench` keep their old env set (name a Founders env by id). Baselines: `docs/rl-notes/probes/founders-baseline.ts`.
 - RL tools: `colonyScore.ts` scores how well a founder holds poison-rich ground against a raider colony, a raider stream (`--immigrate`) or evolved creatures (`--defender-pool`, `--raider-pool`) on held-out seeds, with `--traits` and `--mud`/`--firm`. `saveCreatures.ts` samples evolved creatures per home lineage from a Live save.
 
 ## 0.10.1 (2026-11-13)

@@ -25,7 +25,7 @@ const mix = (x: number) => {
 console.log("env".padEnd(16), "learner".padEnd(8), "ms/episode (median of reps)");
 let total = 0;
 for (const env of ENVS) {
-  if (values.env && env.id !== values.env) continue;
+  if (values.env ? env.id !== values.env : env.tags.includes("founders")) continue; // the fingerprint stays the pre-Founders set; name a Founders env with --env
   const learners: [string, Learner][] = [["pool:39", poolLearner(env, pool[39]!)], ["random", randomLearner(env, 7)]];
   for (const [name, learner] of learners) {
     const times: number[] = [];

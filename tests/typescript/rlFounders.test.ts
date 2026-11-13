@@ -1,9 +1,16 @@
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { parseFounders } from "../../src/typescript/src/live/founders.ts";
+import { ArenaRun } from "../../src/typescript/src/worker/arenaRun.ts";
+import { RlPool, inlineRlPort } from "../../src/typescript/src/worker/rlPool.ts";
+import type { RlOutMessage } from "../../src/typescript/src/worker/rlProtocol.ts";
 import { castFor, checkEnv, envConfig, randomLearner, runEpisode } from "../../src/typescript/src/sim/rl/env.ts";
 import type { EnvSpec } from "../../src/typescript/src/sim/rl/env.ts";
 import { ENVS, FOUNDER_IDS, PREY, envById, groupOf } from "../../src/typescript/src/sim/rl/envs.ts";
-import { withFounders } from "../../src/typescript/src/sim/rl/library.ts";
+import { libraryHash } from "../../src/typescript/src/cliArgs.ts";
+import { serialiseLearner, withFounders } from "../../src/typescript/src/sim/rl/library.ts";
 
 // Founder rivals (frozen Live founders as "founder:<id>") and the Founders env group.
 
@@ -71,4 +78,40 @@ describe("Founders envs", () => {
       expect(r.reward, id).toBeLessThan(env.seconds * 0.6);
     }
   });
+});
+
+describe("founders missing or present", () => {
+  const short: EnvSpec = { ...envById("bloom-race")!, seconds: 3 };
+  const play = async (lib: typeof library): Promise<RlOutMessage[]> => {
+    const out: RlOutMessage[] = [];
+    const learner = serialiseLearner(randomLearner(short, 2));
+    const start = { type: "start" as const, envs: [short], learner, method: "es" as const, options: { pairs: 1, sigma: 0.08, lr: 0.02, decay: 0.005, episodes: 1, iterations: 1 }, tiles: 1, seed: 1, poolUrl: "", libraryUrl: "" };
+    await new ArenaRun(start, { pool: null, library: lib }, (setup) => new RlPool([inlineRlPort()], setup), (m) => out.push(m)).run();
+    return out;
+  };
+
+  it("tells the page when an env's founder rivals are random, and stays quiet with the founders", async () => {
+    const notes = (await play({})).filter((m) => m.type === "note");
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toMatchObject({ message: expect.stringContaining("grazer, gentle") });
+    expect((await play(library)).some((m) => m.type === "note")).toBe(false);
+  });
+
+  it("keeps the library hash when founders are added", () => {
+    const lib = { nibble: [randomLearner(envById("nibble")!, 1)] };
+    expect(libraryHash(withFounders(lib, founders))).toBe(libraryHash(lib));
+    expect(libraryHash(withFounders({}, founders))).toBe(libraryHash({}));
+  });
+
+  it("rlTrain --save writes no founder entries", () => {
+    const dir = mkdtempSync(join(tmpdir(), "founders-save-"));
+    try {
+      const file = join(dir, "library.json");
+      execFileSync("node", ["src/rlTrain.ts", "--env", "nibble", "--from", "random:1", "--iters", "1", "--eval", "1", "--pairs", "1", "--threads", "1", "--library", file, "--save"], { cwd: join(import.meta.dirname, "../../src/typescript"), stdio: "pipe" });
+      const saved = JSON.parse(readFileSync(file, "utf8")) as { envs: Record<string, unknown> };
+      expect(Object.keys(saved.envs)).toEqual(["nibble"]);
+    } finally {
+      rmSync(dir, { recursive: true });
+    }
+  }, 60_000);
 });

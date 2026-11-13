@@ -62,3 +62,9 @@ export function withFounders(library: Library, founders: readonly { id: string; 
   for (const f of founders) out[`${FOUNDER_PREFIX}${f.id}`] = [{ plan: f.plan, genome: Float32Array.from(f.genome) }];
   return out;
 }
+
+// The founder rival sources of these envs that the library has no list for: those rivals would be random brains.
+export function missingFounders(envs: readonly { rivals: readonly { source: string }[] }[], library: Library): string[] {
+  const keys = new Set(envs.flatMap((e) => e.rivals.map((r) => r.source)).filter((k) => k.startsWith(FOUNDER_PREFIX)));
+  return [...keys].filter((k) => !Object.hasOwn(library, k));
+}

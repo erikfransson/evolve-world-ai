@@ -59,4 +59,5 @@ export type RlOutMessage =
   | { type: "learner"; iter: number; learner: StoredLearner } // the current (mean) genome, after each held-out check and at the end
   | { type: "rebased"; iter: number; held: number; perEnv: number[]; learner: StoredLearner } // after an envs change: the current genome (and its learner) on the new envs' held-out seeds
   | { type: "done"; iter: number }
+  | { type: "note"; message: string } // shown to the person, e.g. that founder rivals are random because the founders did not load
   | { type: "error"; message: string };

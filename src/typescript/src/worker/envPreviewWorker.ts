@@ -17,6 +17,7 @@ const SEED = 20261011;
 const EVERY = 3;
 const CLIP_SECONDS = 24; // longer episodes are cut, so big worlds stay quick to record
 
+const FOUNDERS_TIMEOUT_MS = 20_000; // a stalled founders download counts as a missing one (as in rlWorker)
 let assets: Promise<{ pool: PoolEntry[] | null; library: Library }> | undefined;
 const loadAssets = (poolUrl: string, libraryUrl: string, foundersUrl?: string) =>
   (assets ??= Promise.all([
@@ -25,7 +26,7 @@ const loadAssets = (poolUrl: string, libraryUrl: string, foundersUrl?: string) =
       .then((r) => (r.ok ? r.json() : null))
       .then(parseLibrary)
       .catch((): Library => parseLibrary(null)),
-    foundersUrl === undefined ? [] : fetch(foundersUrl).then((r) => (r.ok ? r.json() : null)).then((d) => parseFounders(d)).catch(() => []),
+    foundersUrl === undefined ? [] : fetch(foundersUrl, { signal: AbortSignal.timeout?.(FOUNDERS_TIMEOUT_MS) }).then((r) => (r.ok ? r.json() : null)).then((d) => parseFounders(d)).catch(() => []),
   ]).then(([pool, library, founders]) => ({ pool, library: withFounders(library, founders) })));
 
 // The founder with the highest fitness.
