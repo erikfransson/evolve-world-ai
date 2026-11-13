@@ -63,7 +63,7 @@ export function builtHash(name: string): string {
   const b = builtMap(name);
   const spec = mapSpec(name)!;
   const parts = packMap(new Terrain(b.rock, b.ground, spec.width, spec.height, b.weights))!;
-  return hex([parts.ground, parts.food, parts.poison, new Uint8Array(parts.rock.buffer), ...(parts.paint ? [parts.paint] : [])].reduce(fnv, 0x811c9dc5));
+  return hex([parts.ground, parts.food, parts.poison, new Uint8Array(parts.rock.buffer), ...(parts.paint ? [parts.paint] : []), ...(parts.winter ? [parts.winter] : [])].reduce(fnv, 0x811c9dc5));
 }
 
 registerMaps({ spec: mapSpec, built: builtMap });
