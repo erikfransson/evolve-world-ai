@@ -43,7 +43,7 @@ export function loadPool(file: string, realm: string): Source[] {
 }
 export interface Sample { min: number; defender: number; raider: number; total: number; immigrant: number; arrived: number; traits?: Traits }
 // Living defenders' medians of the birth traits and generations, and their children per minute of summed age (--traits).
-export interface Traits { energy: number; cost: number; cooldown: number; depth: number; kidsPerMin: number } // immigrant: living raiders descending from an immigrant (the rest of raider come from the seeded cluster); arrived: immigrants inserted so far
+export interface Traits { energy: number; cost: number; cooldown: number; depth: number; kidsPerMin: number; food: number; poison: number } // food, poison: items lying in the world // immigrant: living raiders descending from an immigrant (the rest of raider come from the seeded cluster); arrived: immigrants inserted so far
 
 // Live's config on a plain size x size world with the given item caps (also the start counts, so the world starts at the caps).
 export function colonyConfig(p: ColonyParams, seed: number): EcoConfig {
@@ -127,6 +127,7 @@ export function defenderTraits(eco: Ecosystem, lineage: Lineages): Traits {
   return {
     energy: median(ds.map((m) => m.birth.energy)), cost: median(ds.map((m) => m.birth.cost)), cooldown: median(ds.map((m) => m.birth.cooldown)), depth: median(ds.map((m) => m.depth)),
     kidsPerMin: ageMin > 0 ? ds.reduce((a, m) => a + m.children, 0) / ageMin : 0,
+    food: eco.food, poison: eco.poison,
   };
 }
 
