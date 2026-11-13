@@ -1,5 +1,5 @@
 import { itemsPerDensity } from "./config.ts";
-import { seasonFactor } from "./ecoConfig.ts";
+import { seasonFactor, winterness } from "./ecoConfig.ts";
 import type { EcoConfig } from "./ecoConfig.ts";
 import type { StatefulRng } from "./rng.ts";
 import { terrainOf } from "./terrain.ts";
@@ -37,11 +37,13 @@ export class ItemEconomy {
   private readonly config: EcoConfig;
   private readonly items: World;
   private readonly rng: StatefulRng;
+  private readonly winterLoss: number; // MapWeights.winterLoss, made at the world's start so no tick pays its scan (about 0.4 s on the Six Realms); 0 without winter ground
 
   constructor(config: EcoConfig, items: World, rng: StatefulRng, caps: ItemCaps) {
     this.config = config;
     this.items = items;
     this.rng = rng;
+    this.winterLoss = items.terrain.weights?.winterLoss ?? 0;
     this.retune(caps);
   }
 
@@ -56,9 +58,19 @@ export class ItemEconomy {
     this.poisonPerTick = config.eco.poisonRegrow * perDensity * config.dt;
   }
 
+  // Sets the world's winterness for tick number tick: the season on a map with winter ground, else 0. From the tick alone, so a restored
+  // world (Ecosystem.importCore) places nothing with summer weights before its first regrow.
+  season(tick: number): void {
+    const { eco } = this.config;
+    this.items.winterness = eco.seasons && this.items.terrain.weights?.winter ? winterness(eco, tick * this.config.dt) : 0;
+  }
+
   // One tick of regrowth, at tick number tick.
+  // On a map with winter ground the season also fades the food weights there (MapWeights.accepts), and the count drops by the weight lost.
   regrow(tick: number): void {
-    this.foodDue += this.config.eco.seasons ? this.foodPerTick * seasonFactor(this.config.eco, tick * this.config.dt) : this.foodPerTick;
+    const { eco } = this.config;
+    this.season(tick);
+    this.foodDue += eco.seasons ? this.foodPerTick * seasonFactor(eco, tick * this.config.dt) * (1 - this.items.winterness * this.winterLoss) : this.foodPerTick;
     this.poisonDue += this.poisonPerTick;
     // At the cap the rest of the due items is dropped at once, so a huge rate cannot loop; below 2^53 the leftover fraction is what counting down leaves.
     while (this.foodDue >= 1 && this.food < this.foodCap) {
@@ -86,6 +98,6 @@ export class ItemEconomy {
   // Whether a founder may start at (x, y): clear of rock, and on a map with weights accepted by the food weight, so founders favour the rich places.
   startOk(x: number, y: number, r: number): boolean {
     const t = this.items.terrain;
-    return !t.touchesRock(x, y, r) && t.spawn.accepts(0, x, y, this.rng);
+    return !t.touchesRock(x, y, r) && t.spawn.accepts(0, x, y, this.rng, this.items.winterness);
   }
 }

@@ -12,6 +12,7 @@ export interface Disc {
   r: number;
 }
 
+export const SHARE_UNIT = 255; // winter share byte per 1.0 (MapLayer.winterFood): 255 is all of the summer food
 export const WEIGHT_UNIT = 64; // weight byte per 1.0, so weights run from 0 to just under 4
 export const CAP_CELL = 1000; // world units per cell of the local caps
 const OPEN_SAMPLES = 8; // sample points per side of a cap cell when finding its open share
@@ -58,6 +59,7 @@ export class MapWeights implements SpawnField {
   readonly food: Uint8Array;
   readonly poison: Uint8Array;
   readonly paint: Uint8Array | null; // RGBA per node, a map's colour wash (looks only), or null
+  readonly winter: Uint8Array | null; // per node the share of the food weight left at mid-winter (255 is all), or null for a map without winter ground
   readonly maxFood: number;
   readonly maxPoison: number;
   readonly capCols: number;
@@ -67,9 +69,10 @@ export class MapWeights implements SpawnField {
   private readonly inv: number;
   private readonly blocked: (x: number, y: number) => boolean;
   private caps: CapStats | null = null; // made by the first use of the caps, which only the thread that counts items needs
+  private loss = -1; // winterLoss, made on first use: ItemEconomy's constructor reads it, so a world's start pays it and no tick or drawing page does
 
   // blocked: whether a point is under rock, for the open share of the cap cells.
-  constructor(ground: GroundField, food: Uint8Array, poison: Uint8Array, blocked: (x: number, y: number) => boolean, paint: Uint8Array | null = null) {
+  constructor(ground: GroundField, food: Uint8Array, poison: Uint8Array, blocked: (x: number, y: number) => boolean, paint: Uint8Array | null = null, winter: Uint8Array | null = null) {
     this.cell = ground.cell;
     this.cols = ground.cols;
     this.rows = ground.rows;
@@ -77,6 +80,7 @@ export class MapWeights implements SpawnField {
     this.food = food;
     this.poison = poison;
     this.paint = paint;
+    this.winter = winter;
     this.blocked = blocked;
     this.maxFood = food.reduce((m, v) => Math.max(m, v), 0);
     this.maxPoison = poison.reduce((m, v) => Math.max(m, v), 0);
@@ -159,7 +163,7 @@ export class MapWeights implements SpawnField {
   }
 
   get bytes(): number {
-    return this.food.length + this.poison.length;
+    return this.food.length + this.poison.length + (this.winter?.length ?? 0);
   }
 
   capIndex(x: number, y: number): number {
@@ -168,16 +172,49 @@ export class MapWeights implements SpawnField {
     return cy * this.capCols + cx;
   }
 
-  // The weight byte of a kind (0 food, 1 poison) at (x, y): the nearest node's.
-  byteAt(kind: number, x: number, y: number): number {
+  // The index of the node nearest (x, y).
+  private nodeAt(x: number, y: number): number {
     const i = Math.min(this.cols - 2, Math.max(1, Math.round(x * this.inv) + GROUND_PAD));
     const j = Math.min(this.rows - 2, Math.max(1, Math.round(y * this.inv) + GROUND_PAD));
-    return (kind === 0 ? this.food : this.poison)[j * this.cols + i]!;
+    return j * this.cols + i;
   }
 
-  // Whether a draw of rng lands inside the weight of a kind at (x, y): accepted with probability weight / maximum weight.
-  accepts(kind: number, x: number, y: number, rng: Rng): boolean {
-    return rng.next() * (kind === 0 ? this.maxFood : this.maxPoison) < this.byteAt(kind, x, y);
+  // The weight byte of a kind (0 food, 1 poison) at (x, y): the nearest node's.
+  byteAt(kind: number, x: number, y: number): number {
+    return (kind === 0 ? this.food : this.poison)[this.nodeAt(x, y)]!;
+  }
+
+  // Whether a draw of rng lands inside the weight of a kind at (x, y): accepted with probability weight / maximum weight. On winter ground
+  // the food weight fades towards its winter share as winterness (0 mid-summer, 1 mid-winter) rises; one draw either way.
+  accepts(kind: number, x: number, y: number, rng: Rng, winterness = 0): boolean {
+    if (kind !== 0) return rng.next() * this.maxPoison < this.poison[this.nodeAt(x, y)]!;
+    const n = this.nodeAt(x, y);
+    const w = this.winter;
+    return rng.next() * this.maxFood < (w === null ? this.food[n]! : this.food[n]! * (1 - winterness * (1 - w[n]! / SHARE_UNIT)));
+  }
+
+  // The share of the food weight on open ground (nodes not under rock) that winter ground loses at mid-winter: sum of weight x (1 - share)
+  // over sum of weight, 0 without winter ground. Regrowth scales by 1 - winterness x this.
+  get winterLoss(): number {
+    if (this.loss < 0) this.loss = this.winter ? this.lossOf(this.winter) : 0;
+    return this.loss;
+  }
+
+  private lossOf(winter: Uint8Array): number {
+    const { width, height, cols, rows, cell, food } = this;
+    let all = 0;
+    let lost = 0;
+    for (let j = GROUND_PAD; j < rows - GROUND_PAD; j++) {
+      for (let i = GROUND_PAD; i < cols - GROUND_PAD; i++) {
+        const x = (i - GROUND_PAD) * cell;
+        const y = (j - GROUND_PAD) * cell;
+        if (x >= width || y >= height || this.blocked(x, y)) continue;
+        const n = j * cols + i;
+        all += food[n]!;
+        lost += food[n]! * (1 - winter[n]! / SHARE_UNIT);
+      }
+    }
+    return all > 0 ? lost / all : 0;
   }
 
   // Items allowed in each cap cell for a density of the kind (as the world setting): exactly round(density * perDensity) in all, shared out in

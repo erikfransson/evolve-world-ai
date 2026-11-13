@@ -1,10 +1,10 @@
 import { insidePolygon, marchingSquares, simplifyClosed } from "../../geom/contour.ts";
 import { CUBIC_FADE, GROUND_PAD, GroundField, hash, oneKindPerNode, valueNoise as noise } from "../groundField.ts";
 import { createRng } from "../rng.ts";
-import { discsBlocked, MapWeights, WEIGHT_UNIT } from "./weights.ts";
+import { discsBlocked, MapWeights, SHARE_UNIT, WEIGHT_UNIT } from "./weights.ts";
 import type { Disc } from "./weights.ts";
 import { MAX_MAP_DISC_R, MAX_MAP_DISCS } from "./mapParts.ts";
-import { ITEM_RADIUS_RANGE } from "../config.ts";
+import { fillUnreachable } from "./fillUnreachable.ts";
 
 // Builds the ground, the food and poison weights and the rock of a hand-designed map (docs/world-maps/) from its spec. Port of the draft generator
 // docs/world-maps/tools/gen.mjs, evaluated on the nodes of the ground raster. The result depends on the spec alone, so every thread builds the same map.
@@ -37,6 +37,7 @@ export interface MapLayer extends Outline {
   poison?: number;
   mud?: Texture;
   firm?: Texture;
+  winterFood?: number; // winter ground: the share of this layer's food regrowth left at mid-winter, 0 to 1, on top of eco.winterFood (absent keeps the share of the ground below; 1 everywhere without it). The winter food weight (food x share) blends like food
   clearMud?: boolean; // removes mud under the layer (islands in a sea)
   edge?: number; // distance over which mud or firm fades in from the outline
   paint?: Paint; // a colour wash over the floor, for looks only (mapTint.ts draws it)
@@ -74,6 +75,8 @@ export interface MapRock extends Outline {
   onMud?: boolean;
   fadeX?: readonly [number, number];
 }
+// Whether a map has winter ground: a layer whose share of food at mid-winter is under 1 (a share of exactly 1 is ordinary ground).
+export const hasWinterGround = (spec: MapSpec): boolean => spec.layers.some((l) => l.winterFood !== undefined && l.winterFood < 1);
 export interface MapRegion {
   id: string;
   title: string;
@@ -97,6 +100,7 @@ export interface MapSpec {
   regions?: readonly MapRegion[]; // named areas of the map (seeding homes, region table); not used by the builder
   look?: MapLook; // how the map is drawn, looks only; not used by the builder
   solidRock?: boolean; // stones keep SOLID_GAP clear of massifs, and ground an item could lie on but no creature reach is filled (fillUnreachable)
+  breaks?: readonly (readonly [number, number, number])[]; // x, y, radius: openings cut through the placed rock (discs whose centre lies inside, the edge roughened), with no draws, so nothing else moves
 }
 // A map's own drawing style; a map without it draws in the default abyssal style.
 export interface MapLook {
@@ -442,7 +446,10 @@ function check(spec: MapSpec): void {
     if (v === undefined) return;
     if (!(Number.isFinite(v) && (open ? v > lo : v >= lo) && v <= hi)) bad(`layer "${id}": ${what} ${v} is outside ${open ? "(" : "["}${lo}, ${hi}]`);
   };
+  if (spec.breaks !== undefined && !(Array.isArray(spec.breaks) && spec.breaks.length <= 16 && spec.breaks.every((q) => Array.isArray(q) && q.length === 3 && q.every(Number.isFinite) && q[2] > 0 && q[2] <= 5000))) bad("breaks must be at most 16 finite [x, y, radius] with a radius over 0 and at most 5000");
   for (const layer of spec.layers) {
+    inRange(layer.id, "winterFood", layer.winterFood, 0, 1);
+    if (layer.winterFood !== undefined && layer.food === 0) bad(`layer "${layer.id}": winterFood on a layer with food 0 has no food to fade; leave it out`);
     for (const [name, tx] of [["mud", layer.mud], ["firm", layer.firm]] as const) {
       if (!tx) continue;
       inRange(layer.id, `${name}.scale`, tx.scale, 0, 1e6, true);
@@ -495,11 +502,13 @@ export function buildMap(spec: MapSpec): BuiltMap {
   }
   const texThr = layers.map((layer) => (layer.paint?.tex ? patternThreshold(layer.paint.tex.pattern ?? "blobs", seed + 300 + layer.i, layer.paint.tex.cover, layer.paint.tex.keep) : 0));
   const texAt = (tx: Texture, x: number, y: number, s: number): number => (tx.pattern ? patternAt(tx.pattern, x / tx.scale, y / tx.scale, s, tx.keep) : fbm(x / tx.scale, y / tx.scale, s));
-  // The field at a point: food and poison weights and the mud and firm shares, from the layers in order.
-  const out = { food: 1, poison: 1, mud: 0, firm: 0, r: 0, g: 0, b: 0, a: 0 };
+  // The field at a point: food and poison weights, winter share and the mud and firm shares, from the layers in order.
+  const out = { food: 1, poison: 1, winter: 1, mud: 0, firm: 0, r: 0, g: 0, b: 0, a: 0 };
   const field = (x: number, y: number): void => {
     let food = spec.baseFood ?? 1;
     let poison = spec.basePoison ?? 1;
+    let wfood = food; // the winter food weight, food x share: blended itself, so the share falls monotonically across a feathered edge
+    let share = 1; // the share where there is food, kept through ground without food so a later food layer takes it up
     let mud = 0;
     let firm = 0;
     let r = 0, g = 0, b = 0, a = 0; // the paint, straight alpha, each layer laid over the ones before
@@ -510,7 +519,10 @@ export function buildMap(spec: MapSpec): BuiltMap {
       const m = clamp(0.5 - d / fe, 0, 1);
       const edge = layer.edge ?? 380;
       const ins = clamp(0.5 - d / edge, 0, 1);
+      if (layer.food !== undefined || layer.winterFood !== undefined) wfood += ((layer.food ?? food) * (layer.winterFood ?? share) - wfood) * m;
       if (layer.food !== undefined) food += (layer.food - food) * m;
+      if (layer.winterFood !== undefined && !(food > 0)) share += (layer.winterFood - share) * m; // no food to carry it: the share itself
+      else if (food > 0) share = clamp(wfood / food, 0, 1);
       if (layer.poison !== undefined) poison += (layer.poison - poison) * m;
       if (layer.paint) {
         let [lr, lg, lb] = layer.paint.rgb;
@@ -554,6 +566,7 @@ export function buildMap(spec: MapSpec): BuiltMap {
     }
     out.food = food;
     out.poison = poison;
+    out.winter = share;
     out.mud = mud;
     out.firm = firm;
     out.r = r;
@@ -568,6 +581,7 @@ export function buildMap(spec: MapSpec): BuiltMap {
   const food = new Uint8Array(cols * rows);
   const poison = new Uint8Array(cols * rows);
   const paint = spec.layers.some((l) => l.paint) ? new Uint8Array(4 * cols * rows) : null;
+  const winter = hasWinterGround(spec) ? new Uint8Array(cols * rows) : null; // only for maps with winter ground
   for (let j = GROUND_PAD; j < rows - GROUND_PAD; j++) {
     for (let i = GROUND_PAD; i < cols - GROUND_PAD; i++) {
       field((i - GROUND_PAD) * cell, (j - GROUND_PAD) * cell);
@@ -578,6 +592,7 @@ export function buildMap(spec: MapSpec): BuiltMap {
       ground.data[2 * n + 1] = firm;
       food[n] = Math.round(clamp(out.food * WEIGHT_UNIT, 0, 255));
       poison[n] = Math.round(clamp(out.poison * WEIGHT_UNIT, 0, 255));
+      if (winter) winter[n] = Math.round(clamp(out.winter * SHARE_UNIT, 0, SHARE_UNIT));
       if (paint) paint.set([out.r, out.g, out.b, out.a * 255].map((v) => Math.round(clamp(v, 0, 255))), 4 * n);
     }
   }
@@ -678,6 +693,7 @@ export function buildMap(spec: MapSpec): BuiltMap {
       }
     }
   });
+  if (spec.breaks?.length) cutBreaks(rock, spec.breaks, seed, PASS_WAVE * k);
   if (spec.solidRock) fillUnreachable(rock, W, H);
   if (rock.length > LIMITS.discs) throw new Error(`map "${spec.name}": ${rock.length} rock discs, the limit is ${LIMITS.discs}`);
   // The same bounds unpackMap holds the arrays to, so a map that builds can always be handed to another thread.
@@ -688,182 +704,32 @@ export function buildMap(spec: MapSpec): BuiltMap {
   const nodes = (cols - 2 * GROUND_PAD) * (rows - 2 * GROUND_PAD);
   return {
     ground,
-    weights: new MapWeights(ground, food, poison, discsBlocked(rock, W), paint),
+    weights: new MapWeights(ground, food, poison, discsBlocked(rock, W), paint, winter),
     rock,
     stats: { rockDiscs: rock.length, massifDiscs: massifDiscs, stones, mud: mudNodes / nodes, firm: firmNodes / nodes, rockShare: rockArea / (W * H) },
   };
 }
 
+const BREAK_TAPER = 1.35; // a break's worn band, in break radii from its centre
+const BREAK_TIP = 0.5; // the share of a disc's radius left at the edge of a break
 const SOLID_GAP = 60; // world units a stone keeps from a massif on a solidRock map
-const SOLID_BODY = 12; // world units: the default creature's radius (config creature.radius), whose unreachable ground a solidRock map fills
-const FILL_CELL = 4; // world units of the raster the unreachable ground is found on
-const FILL_BUCKET = 400; // world units of the square each raster is centred on
-const FILL_SLACK = 5; // world units: a cell counts as a creature position when its centre is this much closer to rock than a creature may be, so no channel a creature fits through is missed between cell centres
-const FILL_HALO = 100; // world units of margin round it; sealed pockets up to about this size are found
+// Cuts the openings of a map's breaks through the placed rock, with no draws: a disc whose centre lies inside a break (its radius
+// roughened by noise of wavelength nw) goes; one in the band out to BREAK_TAPER times it shrinks with closeness, from BREAK_TIP of its
+// radius at the cut to all of it, so the rock wears down to a tip.
+function cutBreaks(rock: Disc[], breaks: readonly (readonly [number, number, number])[], seed: number, nw: number): void {
+  const reach = (d: Disc): number => Math.min(...breaks.map(([bx, by, br], b) => Math.hypot(d.x - bx, d.y - by) / (br * (0.85 + 0.3 * valueNoise(d.x / nw, d.y / nw, seed + 41 + b)))));
+  for (let i = rock.length - 1; i >= 0; i--) {
+    const d = rock[i]!;
+    const q = reach(d);
+    if (q < 1) rock.splice(i, 1);
+    else if (q < BREAK_TAPER) d.r = Math.max(1, Math.round(d.r * (BREAK_TIP + ((1 - BREAK_TIP) * (q - 1)) / (BREAK_TAPER - 1))));
+  }
+}
+
 // True when a massif lies within d of (x, y), probed at 8 points round it.
 function clearOfMassif(massAt: (x: number, y: number) => number, x: number, y: number, d: number): boolean {
   for (let k = 0; k < 8; k++) if (massAt(x + d * Math.cos((k * Math.PI) / 4), y + d * Math.sin((k * Math.PI) / 4)) > 0.2) return true;
   return false;
-}
-
-// Fills the ground where an item could lie but no creature could reach it: slits, notches, pinholes and sealed pockets in and between rock.
-// Judged for the smallest item and the default creature, on a raster round each FILL_BUCKET square with a FILL_HALO margin: a creature
-// position counts as reachable when it connects to the raster's border, so a pocket smaller than the halo is always found. Each filling
-// disc stops a grid step short of the nearest reachable creature position (exact Euclidean distance) and of the raster's edge, beyond
-// which ground is unseen, so it never takes ground a creature could stand on. Reachability is judged generously (FILL_SLACK), never the other way.
-// The squares are walked in a fixed order, so the result is the same on every build.
-function fillUnreachable(rock: Disc[], width: number, height: number): void {
-  const S = FILL_CELL;
-  const B = FILL_BUCKET;
-  const halo = FILL_HALO;
-  const n = Math.ceil((B + 2 * halo) / S);
-  const item = ITEM_RADIUS_RANGE[0];
-  const key = (bx: number, by: number): number => bx * 65536 + by;
-  const byBucket = new Map<number, Disc[]>();
-  const todo = new Set<number>();
-  const index = (d: Disc): void => {
-    const k = key(Math.floor(d.x / B), Math.floor(d.y / B));
-    if (!byBucket.has(k)) byBucket.set(k, []);
-    byBucket.get(k)!.push(d);
-  };
-  for (const d of rock) {
-    index(d);
-    for (let by = Math.max(0, Math.floor((d.y - d.r - item) / B)); by <= Math.floor((d.y + d.r + item) / B); by++) {
-      for (let bx = Math.max(0, Math.floor((d.x - d.r - item) / B)); bx <= Math.floor((d.x + d.r + item) / B); bx++) todo.add(key(bx, by));
-    }
-  }
-  const reach = Math.ceil((MAX_MAP_DISC_R + halo + SOLID_BODY) / B);
-  const blocked = new Uint8Array(n * n); // bit 1: no item fits, bit 2: no creature fits
-  const seen = new Uint8Array(n * n);
-  const dist = new Float64Array(n * n);
-  const line = new Float64Array(n);
-  const src = new Float64Array(n);
-  const v = new Int32Array(n);
-  const z = new Float64Array(n + 1);
-  const stack = new Int32Array(n * n);
-  for (const k of [...todo].sort((a, b) => a - b)) {
-    const bx = Math.floor(k / 65536);
-    const by = k - bx * 65536;
-    const ox = bx * B - halo;
-    const oy = by * B - halo;
-    blocked.fill(0);
-    if (ox < SOLID_BODY || oy < SOLID_BODY || ox + n * S > width - SOLID_BODY || oy + n * S > height - SOLID_BODY) {
-      for (let j = 0; j < n; j++) {
-        for (let i = 0; i < n; i++) {
-          const x = ox + (i + 0.5) * S;
-          const y = oy + (j + 0.5) * S;
-          const edge = Math.min(x, y, width - x, height - y);
-          blocked[j * n + i] = (edge < item ? 1 : 0) | (edge < SOLID_BODY ? 2 : 0);
-        }
-      }
-    }
-    const stamp = (d: Disc): void => {
-      const outer = d.r + SOLID_BODY - FILL_SLACK;
-      const r1 = (d.r + item) ** 2;
-      const r2 = outer * outer;
-      for (let j = Math.max(0, Math.floor((d.y - outer - oy) / S)); j <= Math.min(n - 1, Math.floor((d.y + outer - oy) / S)); j++) {
-        const dy2 = (oy + (j + 0.5) * S - d.y) ** 2;
-        for (let i = Math.max(0, Math.floor((d.x - outer - ox) / S)), row = j * n; i <= Math.min(n - 1, Math.floor((d.x + outer - ox) / S)); i++) {
-          if (blocked[row + i] === 3) continue;
-          const q = (ox + (i + 0.5) * S - d.x) ** 2 + dy2;
-          if (q < r2) blocked[row + i] |= q < r1 ? 3 : 2;
-        }
-      }
-    };
-    for (let b = -reach; b <= reach; b++) for (let a = -reach; a <= reach; a++) for (const d of byBucket.get(key(bx + a, by + b)) ?? []) stamp(d);
-    const lo = Math.floor(halo / S);
-    const hi = Math.min(n, lo + Math.ceil(B / S));
-    let free = false; // any item ground in the core at all (not so inside a massif)
-    for (let j = lo; j < hi && !free; j++) for (let i = lo; i < hi && !free; i++) free = !(blocked[j * n + i]! & 1);
-    if (!free) continue;
-    // creature positions joined to the border, then the distance of every cell to the nearest of them
-    seen.fill(0);
-    let top = 0;
-    const visit = (m: number): void => {
-      if (seen[m] || blocked[m]! & 2) return;
-      seen[m] = 1;
-      stack[top++] = m;
-    };
-    for (let c = 0; c < n; c++) {
-      visit(c);
-      visit((n - 1) * n + c);
-      visit(c * n);
-      visit(c * n + n - 1);
-    }
-    while (top > 0) {
-      const q = stack[--top]!;
-      const i = q % n;
-      if (i > 0) visit(q - 1);
-      if (i < n - 1) visit(q + 1);
-      if (q >= n) visit(q - n);
-      if (q + n < n * n) visit(q + n);
-    }
-    let any = false; // any item ground in the core that no creature position reaches
-    for (let j = lo; j < hi && !any; j++) for (let i = lo; i < hi && !any; i++) any = !seen[j * n + i] && !(blocked[j * n + i]! & 1);
-    if (!any) continue;
-    for (let q = 0; q < n * n; q++) dist[q] = seen[q] ? 0 : Infinity;
-    sqDist2d(dist, n, line, src, v, z);
-    // in the core: world units to the nearest creature position found, or to the raster's edge when that is nearer (ground beyond it is unseen)
-    for (let j = lo; j < hi; j++) for (let i = lo; i < hi; i++) dist[j * n + i] = Math.min(Math.sqrt(dist[j * n + i]!) * S, (Math.min(i, j, n - 1 - i, n - 1 - j) + 0.5) * S);
-    // the core's unreachable item ground, deepest first, each filled by a disc reaching to the nearest creature position
-    const lost: number[] = [];
-    for (let j = lo; j < hi; j++) for (let i = lo; i < hi; i++) if (!(blocked[j * n + i]! & 1) && dist[j * n + i]! > SOLID_BODY + item) lost.push(j * n + i);
-    lost.sort((a, b) => dist[b]! - dist[a]! || a - b);
-    for (const q of lost) {
-      if (blocked[q]! & 1) continue;
-      const r = Math.min(MAX_MAP_DISC_R, Math.floor(dist[q]! - SOLID_BODY - S)); // a grid step short: a creature position may lie that far from its cell's centre
-      if (r < 1) continue; // a sliver within a grid step of reach: left, rather than a loose speck of rock
-      const d = { x: Math.round(ox + ((q % n) + 0.5) * S), y: Math.round(oy + (Math.floor(q / n) + 0.5) * S), r };
-      rock.push(d);
-      index(d);
-      stamp(d);
-    }
-  }
-}
-
-// Squared Euclidean distance transform in place (Felzenszwalb and Huttenlocher): f holds 0 at the sources and Infinity elsewhere, in cells.
-function sqDist2d(f: Float64Array, n: number, line: Float64Array, src: Float64Array, v: Int32Array, z: Float64Array): void {
-  for (let j = 0; j < n; j++) {
-    for (let k = 0; k < n; k++) line[k] = f[j * n + k]!;
-    if (sqDist1d(line, src, n, v, z)) for (let k = 0; k < n; k++) f[j * n + k] = line[k]!;
-  }
-  for (let i = 0; i < n; i++) {
-    for (let k = 0; k < n; k++) line[k] = f[k * n + i]!;
-    if (sqDist1d(line, src, n, v, z)) for (let k = 0; k < n; k++) f[k * n + i] = line[k]!;
-  }
-}
-
-// One line of sqDist2d, in place; false (and the line untouched) when it has no finite value.
-function sqDist1d(line: Float64Array, src: Float64Array, n: number, v: Int32Array, z: Float64Array): boolean {
-  let m = -1;
-  for (let q = 0; q < n; q++) {
-    const fq = line[q]!;
-    if (fq === Infinity) continue;
-    if (m < 0) {
-      m = 0;
-      v[0] = q;
-      z[0] = -Infinity;
-      z[1] = Infinity;
-      continue;
-    }
-    let sp = (fq + q * q - (line[v[m]!]! + v[m]! * v[m]!)) / (2 * q - 2 * v[m]!);
-    while (sp <= z[m]!) {
-      m--;
-      sp = (fq + q * q - (line[v[m]!]! + v[m]! * v[m]!)) / (2 * q - 2 * v[m]!);
-    }
-    m++;
-    v[m] = q;
-    z[m] = sp;
-    z[m + 1] = Infinity;
-  }
-  if (m < 0) return false;
-  src.set(line); // the parabolas read the original values
-  m = 0;
-  for (let q = 0; q < n; q++) {
-    while (z[m + 1]! < q) m++;
-    line[q] = (q - v[m]!) ** 2 + src[v[m]!]!;
-  }
-  return true;
 }
 
 // The outlines of a mask (cells at 128 or more) at its cell centres, as flat x, y lists in world units, the mask treated as 0 past its edge.

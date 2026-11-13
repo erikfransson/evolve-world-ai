@@ -20,9 +20,9 @@ self.onmessage = (e: MessageEvent<MapIn>) => {
     const t0 = performance.now();
     const terrain = mapTerrain(spec.name, spec.width, spec.height);
     const shared = packMap(terrain)!;
-    const parts = { rock: shared.rock, ground: shared.ground.slice(), food: shared.food.slice(), poison: shared.poison.slice(), ...(shared.paint ? { paint: shared.paint.slice() } : {}) }; // copies, since the worker's cached Terrain keeps its own
+    const parts = { rock: shared.rock, ground: shared.ground.slice(), food: shared.food.slice(), poison: shared.poison.slice(), ...(shared.paint ? { paint: shared.paint.slice() } : {}), ...(shared.winter ? { winter: shared.winter.slice() } : {}) }; // copies, since the worker's cached Terrain keeps its own
     const outlines = rockGeometry(terrain);
-    const buffers = [parts.rock.buffer, parts.ground.buffer, parts.food.buffer, parts.poison.buffer, ...(parts.paint ? [parts.paint.buffer] : []), outlines.bodyLoops.buffer, outlines.loopPoints.buffer, outlines.points.buffer];
+    const buffers = [parts.rock.buffer, parts.ground.buffer, parts.food.buffer, parts.poison.buffer, ...(parts.paint ? [parts.paint.buffer] : []), ...(parts.winter ? [parts.winter.buffer] : []), outlines.bodyLoops.buffer, outlines.loopPoints.buffer, outlines.points.buffer];
     post({ ok: true, ...parts, outlines, ms: Math.round(performance.now() - t0)}, buffers);
   } catch (err) {
     post({ ok: false, message: err instanceof Error ? err.message : String(err) });

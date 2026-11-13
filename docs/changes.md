@@ -4,6 +4,15 @@ What changed in each version, newest first, so release notes for any range (say 
 Each release is a pull request from `development` into `main`, tagged `vX.Y.Z` on `main`.
 Add notes under "Unreleased" as work lands on `development`, and turn that heading into the version number at release time.
 
+## 0.10.0 (2026-11-13)
+
+- Live: the Six Realms wastes carry 4/64 food (1.33 times 0.9.0's 3/64, two thirds of 0.9.1's 6/64; Erik asked for 1.4x) and the trails 18/64 (was 16/64, 12.5% more; Erik asked for about 15%). Food weights are stored in steps of 1/64, so these are the nearest steps. The map version changes, so promoting starts a fresh world.
+- Maps: a new ground property, winter ground (a layer's `winterFood`, 0 to 1): the share of its food regrowth left at mid-winter, on top of the global winter (`eco.winterFood`). A layer without it keeps the share of the ground below, and the winter food (food times share) blends across a feathered edge like food. The rest of the map keeps the global season, and maps without it are unchanged. The legend shows a Winter ground row for a map that has it.
+- Live: the Six Realms hub is winter ground at 0.05 (Erik: "a ground for severe winters ... into center hub"): at mid-winter it regrows 5% of what the season gives elsewhere, with Live's `eco.winterFood` 0.4 that is 2% of its summer rate, and it is back to full each summer. While seasons are on, the Live legend shows a Winter ground row that names the Commons.
+- Live: the Blight and Mire walls each have a natural break on the far side, away from the hub, out into the wastes, about 2,270 u (Blight) and 2,150 u (Mire) clear at the narrowest (the trail gates are about 5,500 to 6,500 wide). The break is cut after the rock is laid (a map's `breaks`) and the rock wears down to a thinner tip towards it; every rock disc farther than about 1.5 break radii is as in 0.9.1.
+- Live and RL Arena (same founders file): the Grazer founder's rays go from 110 to 140, so it holds its home again. One probe on the 0.9.1 map (seed 1, 6 simulated hours): the Grazer keeps the Bloom and ends at 29% of the population, and all six home lineages are alive at 6 h, though the Juggernaut takes the hub late and most of the Blight.
+- Known weak spot: in six probes of this map (three seeds, 6 simulated hours, with and without the hub winter) every run lost a realm. With the hub winter the hub empties each winter and its holder changes, and only the Blight falls (3 of 3, at 100 to 250 min, the Oracle dies out); without it the Juggernaut holds the hub for hours and the Mire and Steppe fall as well. A fix for the Blight is being probed.
+
 ## 0.9.1 (2026-11-12)
 
 - Live: the Six Realms wastes carry twice the food (weight 3/64 to 6/64; the spec says 0.0875, but food weights are stored in steps of 1/64), so more creatures live and roam between the realms. Food regrowth is shared by the whole map, so the wastes' share of food placements goes from 13.1% to 18.0% and the realms, the hub and the trails each get about 5.6% less. The map version changes, so promoting starts a fresh world.

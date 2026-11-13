@@ -5,7 +5,7 @@
 
 // parameters
 const W = 60000, H = 37500, CX = W / 2, CY = H / 2;
-const HUB = { rx: 7500, ry: 6600, food: 1.2 };
+const HUB = { rx: 7500, ry: 6600, food: 1.2, winterFood: 0.05 }; // winter ground (Erik 2026-11-12): at mid-winter the hub regrows 5% of what the season gives elsewhere, so no lineage can hold it as a standing army
 const GROW = Math.sqrt(1.15); // realms 15% bigger in area than round 9
 // per realm: radii, silhouette features [angle deg, amplitude, width deg] (lobes positive, bays negative)
 const SIZE = {
@@ -26,9 +26,14 @@ const PLACE = process.env.PLACE ? JSON.parse(process.env.PLACE) : {
   steppe: { ang: 187.7, len: 5445, rot: 0.29, k: 0.97 },
   crags: { ang: -124.4, len: 4795, rot: 0.26, k: 1.0 },
 };
-// Food weights are stored in steps of 1/64 (WEIGHT_UNIT): 0.0875 is stored as 6/64, twice the 3/64 that 0.05 gave (Erik 2026-11-12: more life between the realms).
-const WASTE = { food: 0.0875, poison: 0.05 };
-const TRAIL = { food: 0.25, w: 1000 };
+// Food weights are stored in steps of 1/64 (WEIGHT_UNIT), so these are exact steps: wastes 4/64 (0.9.0 had 3/64, 0.9.1 6/64; Erik 2026-11-12: 1.4x),
+// trails 18/64 (was 16/64, +12.5%; Erik: about 15% more along the pathways to the centre)
+const WASTE = { food: 0.0625, poison: 0.05 };
+const TRAIL = { food: 0.28125, w: 1000 };
+// the walled realms' back door (Erik 2026-11-12): a break (radius) cut through the wall at the joint nearest the far side, away from the hub.
+// The wall and scree are laid as before and the break removes their discs afterwards (spec.breaks), so the rest of the map does not move.
+const WALL_OPEN = { blight: 1300, mire: 1250 }; // break radius; about 2,270 (Blight) and 2,150 (Mire) clear at the narrowest, docs/tuning-notes.md
+const breaks = [];
 // where each trail leaves the hub and enters its realm, turned off the line between their centres (deg: hub side, realm side), so the trails
 // run slanted or offset instead of as spokes; small on the walled realms' side, so the trail meets the gate head on
 const SKEW = { blight: [18, -10], mire: [-14, 6], bloom: [12, 8], flats: [-20, 14], steppe: [-8, -10], crags: [-22, 12] };
@@ -247,8 +252,8 @@ for (const l of [...report, `area vs round 9: ${areaReport.join(", ")}`]) consol
   layers.push(layer("commons-seat", poly(grow(hubPts, CX, CY, 1.03)), { warp: 600, rough: 300, band: 650, feather: 1300, ...paint([9, 8, 8], 0.42, undefined, { patch: { scale: 1500, lo: 0.25, hi: 0.45 } }) }));
   layers.push(layer("commons-fringe", poly(grow(hubPts, CX, CY, 1.12)), { warp: 700, rough: 300, feather: 2600, paint: fr }));
 }
-layers.push(layer("commons", poly(hubPts), { warp: 600, rough: 450, feather: 450, food: HUB.food, poison: 0, clearMud: true, ...paint([38, 72, 70], 0.74, tex("blobs", 650, 0.4, [28, 50, 48], 0.72, { soft: 0.32 })) }));
-layers.push(layer("commons-core", poly(blob(CX + 700, CY - 400, 4300, 3600, 16, 0.18, 0.4)), { warp: 600, rough: 300, feather: 2400, food: 1.3, clearMud: true, ...paint([56, 98, 90], 0.24, tex("blobs", 450, 0.4, [40, 76, 70], 0.24, { soft: 0.35 })) }));
+layers.push(layer("commons", poly(hubPts), { warp: 600, rough: 450, feather: 450, food: HUB.food, poison: 0, winterFood: HUB.winterFood, clearMud: true, ...paint([38, 72, 70], 0.74, tex("blobs", 650, 0.4, [28, 50, 48], 0.72, { soft: 0.32 })) }));
+layers.push(layer("commons-core", poly(blob(CX + 700, CY - 400, 4300, 3600, 16, 0.18, 0.4)), { warp: 600, rough: 300, feather: 2400, food: 1.3, winterFood: HUB.winterFood, clearMud: true, ...paint([56, 98, 90], 0.24, tex("blobs", 450, 0.4, [40, 76, 70], 0.24, { soft: 0.35 })) }));
 for (const [i, [dx, dy, rx, ry, rot]] of [[-2600, -1900, 1100, 650, 0.4], [2400, 1700, 800, 520, -0.3], [-900, 2900, 600, 380, 1.1]].entries()) {
   layers.push(layer(`commons-wet${i}`, poly(blob(CX + dx, CY + dy, rx * 1.9, ry * 1.9, 12, 0.3, rot)), { warp: 400, rough: 250, feather: 600, ...paint([20, 34, 32], 0.55, undefined, { patch: { scale: 500, lo: 0.3, hi: 0.46 } }) })); // boggy ground round each pool
   layers.push(layer(`commons-shore${i}`, poly(blob(CX + dx, CY + dy, rx * 1.12, ry * 1.12, 11, 0.3, rot)), { warp: 260, rough: 160, band: 90, feather: 200, ...paint([120, 150, 140], 0.3, undefined, { patch: { scale: 400, lo: 0.3, hi: 0.45 } }) }));
@@ -292,6 +297,14 @@ const realm = (id, mat, o, fringe, extra, wall) => {
     // five pieces of uneven length, each a slanted arc (its own distance from the centre drifting along it) of its own thickness; a piece starts
     // within 0.03 of where the last one ended, so the overlaps join
     const P = 5, cuts = [0.17, 0.37, 0.6, 0.8].map((f) => R(n * (f + 0.08 * (rnd() - 0.5)))), ends = [0, ...cuts, n], OV = 3;
+    // the break sits on the joint nearest the far side (no rnd draws); the ridge's shadow thins through it
+    const B = WALL_OPEN[id] ?? 0, gapAt = B ? ends.slice(1, P).reduce((q, c) => (Math.abs(c - n / 2) < Math.abs(q - n / 2) ? c : q)) : -1;
+    if (B) {
+      const sh = layers.find((L) => L.id === `${id}-wall-shade`).shape, [bx, by] = wp[gapAt];
+      sh.w = sh.w.map((w, i) => (wp[i] && Math.hypot(wp[i][0] - bx, wp[i][1] - by) < B ? 300 : w));
+      breaks.push([R(bx), R(by), B]);
+      console.error(`${id} wall break radius ${B} at ${R(bx)},${R(by)}; the gate between the wall ends ${R(Math.hypot(wp[0][0] - wp[n][0], wp[0][1] - wp[n][1]))}`);
+    }
     let off = 0.97 + 0.06 * rnd();
     for (let k = 0; k < P; k++) {
       const o0 = k === 0 ? off : Math.min(1.035, Math.max(0.955, off + 0.06 * (rnd() - 0.5))), o1 = Math.min(1.035, Math.max(0.955, o0 + 0.07 * (rnd() - 0.5))), thick = 0.75 + 0.55 * rnd();
@@ -367,6 +380,6 @@ layers.push(...trailPaint);
 const ORDER = ["crags", "blight", "mire", "bloom", "flats", "steppe", "commons"];
 regions.sort((a, b) => ORDER.indexOf(a.id) - ORDER.indexOf(b.id));
 console.error(`layers ${layers.length}, rock layers ${rocks.length}`);
-const spec = { name: "clock", title: "The Six Realms", look: { rock: { stone: "basalt" } }, solidRock: true, seed: SEED, width: W, height: H, scale: 1, baseFood: WASTE.food, basePoison: WASTE.poison, layers, rock: rocks, regions };
+const spec = { name: "clock", title: "The Six Realms", look: { rock: { stone: "basalt" } }, solidRock: true, breaks, seed: SEED, width: W, height: H, scale: 1, baseFood: WASTE.food, basePoison: WASTE.poison, layers, rock: rocks, regions };
 const body = JSON.stringify(spec, (k, v) => (Array.isArray(v) && v.every((e) => typeof e === "number") ? `\u0000${JSON.stringify(v)}\u0000` : v), 1).replace(/"\\u0000(.*?)\\u0000"/g, "$1");
 console.log(`import type { MapSpec } from "./mapBuild.ts";\n\n// The Six Realms: six biome realms on a ring around a shared hub, apart by ashen badlands and joined to it by worn trails.\n// Generated by docs/world-maps/tools/clock.mjs; edit that and regenerate.\nexport const CLOCK: MapSpec = ${body};`);

@@ -102,6 +102,7 @@ export interface WireRegion {
   poison: number; // the map's weight, 0 for none
   ground: string;
   role: string;
+  winter?: true; // mostly winter ground (mean share at mid-winter under 0.5); the legend names it while seasons are on
 }
 export interface WireMap {
   name?: string; // a hand-designed map (sim/maps/index.ts MAPS) of the world's size, absent for the random map

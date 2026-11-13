@@ -828,6 +828,7 @@ export class Ecosystem {
     this.tick = c.tick; this.births = c.births; this.deaths = c.deaths; this.foodEaten = c.foodEaten; this.poisonEaten = c.poisonEaten;
     this.food = c.food; this.poison = c.poison; this.rng.state = c.rngState; this.economy.foodDue = c.foodDue; this.economy.poisonDue = c.poisonDue; this.nextId = c.nextId;
     this.contacts.bumpKills = c.bumpKills ?? 0;
+    this.economy.season(this.tick); // winter ground is not saved: it follows from the tick
     if (c.counts.length !== this.counts.length) throw new Error("saved species counts do not fit this world");
     c.counts.forEach((x, i) => {
       const to = this.counts[i]!;
