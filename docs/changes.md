@@ -4,6 +4,10 @@ What changed in each version, newest first, so release notes for any range (say 
 Each release is a pull request from `development` into `main`, tagged `vX.Y.Z` on `main`.
 Add notes under "Unreleased" as work lands on `development`, and turn that heading into the version number at release time.
 
+## Unreleased
+
+- RL tools: `colonyScore.ts` scores how well a founder holds poison-rich ground against a raider colony, a raider stream (`--immigrate`) or evolved creatures (`--defender-pool`, `--raider-pool`) on held-out seeds, with `--traits` and `--mud`/`--firm`. `saveCreatures.ts` samples evolved creatures per home lineage from a Live save.
+
 ## 0.10.1 (2026-11-13)
 
 - Live: the world clock's time is 70% of its former size (2.8rem to 1.96rem); the season label is unchanged. The narrow layout (under 960 px) keeps its 1.6rem timer.
