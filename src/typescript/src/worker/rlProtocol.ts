@@ -31,6 +31,7 @@ export type RlInMessage =
       seed: number;
       poolUrl: string;
       libraryUrl: string;
+      foundersUrl?: string; // the Live founders (public/live-founders.json) as founder:<id> rivals; left out or missing, those rivals are random
       playback?: boolean; // false (Max speed): no shows except the last one, see the "playback" message; default true
       gentle?: boolean; // Gentle on CPU: fewer helpers and idle time after each step (pacing only, same results)
       helpers?: number; // at most this many helper threads (each holds its own copy of the envs, pool and library), default from the cores

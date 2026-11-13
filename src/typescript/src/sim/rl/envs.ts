@@ -3,6 +3,9 @@ import type { EnvSpec } from "./env.ts"; // types only, so env.ts can import thi
 export const PREY = 0; // species index of the forager / prey
 export const PREDATOR = 1;
 
+// The Live founders of public/live-founders.json, the ids a "founder:<id>" rival may name (a test keeps this equal to the file).
+export const FOUNDER_IDS: readonly string[] = ["juggernaut", "oracle", "gentle", "grazer", "rammer", "pathfinder"];
+
 // The environment index. Ids are stable: keep an env's id when tuning it, add a new one for a new task.
 
 // Small, quick tasks first: one idea each, a few items, short episodes. Each takes milliseconds, so a population of hundreds
@@ -27,6 +30,19 @@ const bigger = ({ rivals, rivalEnergy, ...o }: Pick<EnvSpec, "id" | "name" | "de
   learnerEnergy: 300,
   rivals: [{ species: PREY, count: rivals, source: "pool", ...(rivalEnergy === undefined ? {} : { energy: rivalEnergy }) }],
   tags: ["forager", "bigger"],
+});
+
+// Founder envs: survival is the only reward; the rivals are `[count, founder id]` groups.
+const founders = ({ rivals, ...o }: Pick<EnvSpec, "id" | "name" | "description" | "size" | "food" | "poison" | "foodRegrow" | "seconds" | "learnerEnergy"> & Partial<Pick<EnvSpec, "layout">> & { rivals: [number, string][] }): EnvSpec => ({
+  ...o,
+  world: "ecosystem",
+  role: PREY,
+  collisionDamage: true,
+  poisonDamage: 50,
+  killEnergy: 5,
+  rivals: rivals.map(([count, id]) => ({ species: PREY, count, source: `founder:${id}` as const })),
+  reward: { survive: 1 },
+  tags: ["forager", "founders"],
 });
 
 export const ENVS: readonly EnvSpec[] = [
@@ -404,6 +420,13 @@ export const ENVS: readonly EnvSpec[] = [
   bigger({ id: "live-poison", name: "Poison country", description: "More poison than food over a big land, with rivals. Tell the two apart or die.", size: [1500, 1500], food: 40, poison: 90, foodRegrow: 1, rivals: 12, reward: { food: 1, survive: 0.05 } }),
   bigger({ id: "live-now", name: "Live now", description: "Live's rules as of 2026-10 in a small patch: a sting costs one bite (20), a kill adds 5 energy, food regrows slowly, the crowd is trained foragers. No seasons.", size: [1200, 1200], food: 60, poison: 20, foodRegrow: 0.6, poisonDamage: 20, killEnergy: 5, rivals: 20, reward: { food: 1, survive: 0.03 } }),
   bigger({ id: "live-commons", name: "Crowded commons", description: "Little food and many weak foragers. Ramming them pays.", size: [1000, 1000], food: 20, poison: 10, foodRegrow: 0.5, rivals: 25, rivalEnergy: 25, reward: { food: 0.5, ram: 2, survive: 0.02 } }),
+
+  // Founders: Live rules (bumps hurt, sting 50, a kill adds 5) against frozen Live founders. Reward is time alive, so each start
+  // energy is set so that a creature which does not eat is dead well before the end (founder bodies burn about 2.2 to 2.6 energy/s).
+  founders({ id: "bloom-race", name: "Bloom race", description: "A rich regrowing patch shared with eight Grazers and four Gentle Grazers. Eat your share or starve.", size: [600, 600], food: 40, poison: 0, foodRegrow: 1.5, seconds: 180, learnerEnergy: 120, layout: { kind: "patch", radius: 130 }, rivals: [[8, "grazer"], [4, "gentle"]] }),
+  founders({ id: "crags-brawl", name: "Crags brawl", description: "Food among six Juggernauts and four Rammers, who ram for energy. Eat, and keep out of their way.", size: [800, 800], food: 80, poison: 10, foodRegrow: 1.5, seconds: 180, learnerEnergy: 120, rivals: [[6, "juggernaut"], [4, "rammer"]] }),
+  founders({ id: "blight", name: "Blight", description: "Poison-heavy ground, two stings for every bite of food, and eight Oracles. Read the ground before you eat.", size: [700, 700], food: 60, poison: 120, foodRegrow: 2, seconds: 180, learnerEnergy: 120, rivals: [[8, "oracle"]] }),
+  founders({ id: "six-realms", name: "Six Realms melee", description: "A big patch with three of each Live founder, Live-like food and poison. Outlast them all.", size: [1000, 1000], food: 120, poison: 60, foodRegrow: 2.5, seconds: 180, learnerEnergy: 120, layout: { kind: "patch", radius: 220 }, rivals: [[3, "juggernaut"], [3, "oracle"], [3, "gentle"], [3, "grazer"], [3, "rammer"], [3, "pathfinder"]] }),
 ];
 
 // A mix of envs that trained well (poison down, survival up): offered as a preset by the Arena. live-now is listed twice on purpose, as an extra weight when the list is cycled as a mix.
@@ -412,13 +435,14 @@ export const RECOMMENDED_MIX: readonly string[] = ["nibble", "live-now", "far-fo
 export const envById = (id: string): EnvSpec | undefined => ENVS.find((e) => e.id === id);
 
 // Categories for choosing envs, in display order; groupOf files an env under one by its tags.
-export const ENV_GROUPS = ["Find food", "Explore", "Time pressure", "Avoid and find a way", "Memory", "Energy", "Fight", "Compete", "Advanced", "Bigger", "Custom"] as const;
+export const ENV_GROUPS = ["Find food", "Explore", "Time pressure", "Avoid and find a way", "Memory", "Energy", "Fight", "Compete", "Founders", "Advanced", "Bigger", "Custom"] as const;
 export type EnvGroup = (typeof ENV_GROUPS)[number];
 export const FOLDED_GROUPS: ReadonlySet<EnvGroup> = new Set(["Advanced", "Bigger"]); // the slow ones, folded in the gallery until opened
 
 export function groupOf(env: Pick<EnvSpec, "tags">): EnvGroup {
   const t = new Set(env.tags);
   if (t.has("custom")) return "Custom";
+  if (t.has("founders")) return "Founders";
   if (t.has("bigger")) return "Bigger";
   if (t.has("advanced")) return "Advanced";
   if (t.has("explore")) return "Explore";

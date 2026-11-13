@@ -10,14 +10,14 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
-import { fail, libraryPath, poolPath, positiveInt, prepareOut, randomSeed, strictArgs } from "./cliArgs.ts";
+import { fail, libraryPath, loadFounders, poolPath, positiveInt, prepareOut, randomSeed, strictArgs } from "./cliArgs.ts";
 import { parsePool } from "./sim/seedPool.ts";
 import type { PoolEntry } from "./sim/seedPool.ts";
 import { poolLearner, randomLearner } from "./sim/rl/env.ts";
 import type { Learner, Library } from "./sim/rl/env.ts";
 import { fileLearner, parseCreatureFile } from "./sim/rl/creatureFile.ts";
 import { DESIGN_PANEL, designLearner } from "./sim/rl/designPanel.ts";
-import { checkLearner, parseLibrary } from "./sim/rl/library.ts";
+import { checkLearner, parseLibrary, withFounders } from "./sim/rl/library.ts";
 import { METRICS, TRANSFER_BASE, batteryEnvs, median, pairedDifference, summarise, transferEpisode, transferSeeds } from "./sim/rl/transfer.ts";
 import type { Ci, GenomeResult, Metric, PerSeed } from "./sim/rl/transfer.ts";
 
@@ -32,7 +32,7 @@ type Row = Record<Metric, number>;
 
 const fileHash = (path: string | null): string | null => (path !== null && existsSync(path) ? createHash("sha1").update(readFileSync(path)).digest("hex").slice(0, 12) : null);
 const loadPool = (path: string | null): PoolEntry[] | null => (path !== null ? parsePool(JSON.parse(readFileSync(path, "utf8"))).entries : null);
-const loadLibrary = (path: string | null): Library => parseLibrary(path !== null ? JSON.parse(readFileSync(path, "utf8")) : null);
+const loadLibrary = (path: string | null): Library => withFounders(parseLibrary(path !== null ? JSON.parse(readFileSync(path, "utf8")) : null), loadFounders());
 
 if (!isMainThread) {
   // Worker: plays its share of the episodes.

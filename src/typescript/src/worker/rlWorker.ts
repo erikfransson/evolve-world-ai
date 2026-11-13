@@ -1,7 +1,8 @@
 import { loadPool } from "../sim/seedPool.ts";
 import type { PoolEntry } from "../sim/seedPool.ts";
 import type { Library } from "../sim/rl/env.ts";
-import { parseLibrary } from "../sim/rl/library.ts";
+import { parseLibrary, withFounders } from "../sim/rl/library.ts";
+import { parseFounders } from "../live/founders.ts";
 import { ArenaRun } from "./arenaRun.ts";
 import { createBrowserRlPool } from "./browserPool.ts";
 import { defaultThreads } from "./evalPool.ts";
@@ -20,14 +21,15 @@ let assets: Promise<{ pool: PoolEntry[] | null; library: Library }> | undefined;
 const LIBRARY_TIMEOUT_MS = 20_000; // a stalled library download counts as a missing one (as POOL_TIMEOUT_MS in seedPool)
 
 // Fetched once from the URLs of the first start; a missing library leaves the league rivals random.
-const loadAssets = (poolUrl: string, libraryUrl: string): Promise<{ pool: PoolEntry[] | null; library: Library }> =>
+const loadAssets = (poolUrl: string, libraryUrl: string, foundersUrl?: string): Promise<{ pool: PoolEntry[] | null; library: Library }> =>
   (assets ??= Promise.all([
     loadPool(poolUrl),
     fetch(libraryUrl, { signal: AbortSignal.timeout?.(LIBRARY_TIMEOUT_MS) })
       .then((r) => (r.ok ? r.json() : null))
       .then(parseLibrary)
       .catch((): Library => parseLibrary(null)),
-  ]).then(([pool, library]) => ({ pool, library })));
+    foundersUrl === undefined ? [] : fetch(foundersUrl, { signal: AbortSignal.timeout?.(LIBRARY_TIMEOUT_MS) }).then((r) => (r.ok ? r.json() : null)).then((d) => parseFounders(d)).catch(() => []),
+  ]).then(([pool, library, founders]) => ({ pool, library: withFounders(library, founders) })));
 
 const gentleThreads = (gentle: boolean): number => defaultThreads(navigator.hardwareConcurrency || 2, gentle);
 
@@ -45,7 +47,7 @@ self.onmessage = (e: MessageEvent<RlInMessage>) => {
   const msg = e.data;
   if (msg.type === "start") {
     if (!msg.envs.length) return report("choose at least one environment");
-    void loadAssets(msg.poolUrl, msg.libraryUrl)
+    void loadAssets(msg.poolUrl, msg.libraryUrl, msg.foundersUrl)
       .then((loaded) => {
         const r = (run = new ArenaRun(msg, loaded, (setup) => createBrowserRlPool(setup, Math.min(gentleThreads(msg.gentle ?? false), Math.max(1, Number.isFinite(msg.helpers) ? msg.helpers! : Infinity))), post));
         for (const m of early) apply(m);

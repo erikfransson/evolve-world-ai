@@ -16,7 +16,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { fail, finiteNumber, DEFAULT_LIBRARY, libraryHash, libraryResumeWarning, loadLibraryFile, loadPoolFile, positiveInt, prepareOut, randomSeed, withFileLock, strictArgs } from "./cliArgs.ts";
+import { fail, finiteNumber, DEFAULT_LIBRARY, libraryHash, libraryResumeWarning, loadFounders, loadLibraryFile, loadPoolFile, positiveInt, prepareOut, randomSeed, withFileLock, strictArgs } from "./cliArgs.ts";
 import { poolLearner, randomLearner, varied } from "./sim/rl/env.ts";
 import type { EnvSpec, Learner } from "./sim/rl/env.ts";
 import { DEFAULT_POISON_COST, envById } from "./sim/rl/envs.ts";
@@ -27,7 +27,7 @@ import { parseCkpts, writeFileAtomic } from "./rlResume.ts";
 import { PROC_DEFAULTS, procEnv } from "./sim/rl/procEnv.ts";
 import { parseFounders } from "./live/founders.ts";
 import { DESIGN_PANEL, designLearner } from "./sim/rl/designPanel.ts";
-import { serialiseLearner } from "./sim/rl/library.ts";
+import { serialiseLearner, withFounders } from "./sim/rl/library.ts";
 import { createNodeRlPool, parseThreads } from "./worker/nodePool.ts";
 
 
@@ -81,7 +81,7 @@ const sigma = finiteNumber("sigma", values.sigma, Number.MIN_VALUE);
 const lr = finiteNumber("lr", values.lr, Number.MIN_VALUE);
 const threads = parseThreads(values.threads);
 const pool = loadPoolFile(values.pool);
-const library = values.save && values.library !== undefined && !existsSync(values.library) ? {} : loadLibraryFile(values.library); // --save may start a new library file
+const library = values.save && values.library !== undefined && !existsSync(values.library) ? withFounders({}, loadFounders()) : loadLibraryFile(values.library); // --save may start a new library file
 prepareOut(values.out);
 prepareOut(values.state);
 

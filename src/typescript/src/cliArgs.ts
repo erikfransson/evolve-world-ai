@@ -5,8 +5,10 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import type { ParseArgsConfig } from "node:util";
+import { FOUNDER_PREFIX } from "./sim/rl/env.ts";
 import type { Library } from "./sim/rl/env.ts";
-import { parseLibrary } from "./sim/rl/library.ts";
+import { parseLibrary, withFounders } from "./sim/rl/library.ts";
+import { parseFounders } from "./live/founders.ts";
 import { parsePool } from "./sim/seedPool.ts";
 import type { PoolEntry } from "./sim/seedPool.ts";
 
@@ -38,7 +40,8 @@ export function randomSeed(arg: string | undefined): number {
 }
 
 // A short hash of a rival library, kept in resumable states to notice a library that changed since.
-export const libraryHash = (library: Library): string => createHash("sha256").update(JSON.stringify(library)).digest("hex").slice(0, 16);
+// The founder lists (withFounders) are left out, so states saved before founder rivals existed still match.
+export const libraryHash = (library: Library): string => createHash("sha256").update(JSON.stringify(Object.fromEntries(Object.entries(library).filter(([k]) => !k.startsWith(FOUNDER_PREFIX))))).digest("hex").slice(0, 16);
 
 // The warning for resuming a state saved against another rival library, or null when it matches.
 export function libraryResumeWarning(saved: string | undefined, current: string): string | null {
@@ -75,9 +78,16 @@ export function loadPoolFile(given: string | undefined): PoolEntry[] | null {
   return path === null ? null : parsePool(JSON.parse(readFileSync(path, "utf8"))).entries;
 }
 
+// The Live founders of public/live-founders.json (none when the file is absent, so founder rivals are random ones).
+export function loadFounders(given?: string): ReturnType<typeof parseFounders> {
+  const path = given ?? resolve(PACKAGE_ROOT, "public/live-founders.json");
+  return existsSync(path) ? parseFounders(JSON.parse(readFileSync(path, "utf8"))) : [];
+}
+
+// The rival library with the founders (founder:<id> rivals) in it.
 export function loadLibraryFile(given: string | undefined): Library {
   const path = libraryPath(given);
-  return parseLibrary(path === null ? null : JSON.parse(readFileSync(path, "utf8")));
+  return withFounders(parseLibrary(path === null ? null : JSON.parse(readFileSync(path, "utf8"))), loadFounders());
 }
 
 // Creates the folder of an output file now, so a long run does not lose its result to a missing folder at the end.

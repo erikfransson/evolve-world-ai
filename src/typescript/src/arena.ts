@@ -330,7 +330,7 @@ previewWorker.onmessage = (ev: MessageEvent<PreviewOut>) => {
 function requestClips(envs: readonly EnvSpec[]): void {
   const fresh = envs.filter((e) => !requested.has(e.id));
   for (const e of fresh) requested.add(e.id);
-  if (fresh.length) previewWorker.postMessage({ type: "record", envs: fresh, poolUrl: POOL_URL, libraryUrl: LIBRARY_URL } satisfies PreviewIn);
+  if (fresh.length) previewWorker.postMessage({ type: "record", envs: fresh, poolUrl: POOL_URL, libraryUrl: LIBRARY_URL, foundersUrl: FOUNDERS_URL } satisfies PreviewIn);
 }
 
 function showEnvs(): void {
@@ -536,7 +536,7 @@ function begin(): void {
   grid.clear();
   page = 0;
   brainReplay.reset();
-  send({ type: "start", envs, learner: serialiseLearner(start.learner), method: cfg.method, options, tiles: layouts, tilesPerEnv: true, held: ARENA_HELD_SEEDS, seed, poolUrl: POOL_URL, libraryUrl: LIBRARY_URL, gentle: $<HTMLInputElement>("gentle").checked, playback: grid.speed > 0 });
+  send({ type: "start", envs, learner: serialiseLearner(start.learner), method: cfg.method, options, tiles: layouts, tilesPerEnv: true, held: ARENA_HELD_SEEDS, seed, poolUrl: POOL_URL, libraryUrl: LIBRARY_URL, foundersUrl: FOUNDERS_URL, gentle: $<HTMLInputElement>("gentle").checked, playback: grid.speed > 0 });
   $("note").textContent = "Starting…";
   $("note").hidden = false;
   setState("running");
