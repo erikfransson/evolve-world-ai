@@ -1,12 +1,13 @@
-// Pulls evolved creatures out of a Live save (server/src/saveParse.ts format) for colonyScore: a sample of each home lineage's living members.
+// Pulls evolved creatures out of a Live save (gzip JSON as server/src/saveParse.ts packs it) for colonyScore: a sample of each home lineage's living members.
 // Usage (in src/typescript/): node src/saveCreatures.ts --save run.m90.save.gz --lineages run.lineages.json --out creatures.json [--per 60] [--seed 1]
 // --lineages maps founder id to home realm ({"12": "blight", ...}, as clockProbe seeds them). Lineage is by descent, not by where a creature stands.
 // Output: {save, tick, minutes, groups: {realm: [{plan, genome, birth, mutationScale, x, y, energy, depth}]}}, at most --per per realm, drawn at random.
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
-import { parseSave } from "../../../server/src/saveParse.ts";
+import { gunzipSync } from "node:zlib";
 import { decodeState, SCALARS } from "./sim/ecoState.ts";
+import type { EcoState } from "./sim/ecoState.ts";
 
 const { values } = parseArgs({
   options: {
@@ -21,7 +22,9 @@ const { values } = parseArgs({
 if (!values.save || !values.lineages || !values.out) throw new Error("--save, --lineages and --out are required");
 
 const home = new Map<number, string>(Object.entries(JSON.parse(readFileSync(values.lineages, "utf8")) as Record<string, string>).map(([k, v]) => [Number(k), v]));
-const state = await parseSave(new Uint8Array(readFileSync(values.save)), 2 ** 31 - 1);
+// Plain gunzip and JSON, not saveParse: the probe saves may come from a candidate map whose version this checkout refuses, and only the creatures are read.
+const state = JSON.parse(gunzipSync(readFileSync(values.save)).toString("utf8")) as EcoState;
+delete state.mapVersion; // decodeState refuses another map version; the map does not matter for the creatures
 const d = decodeState(state);
 const K = SCALARS.length;
 const at = (name: (typeof SCALARS)[number]): number => SCALARS.indexOf(name);
