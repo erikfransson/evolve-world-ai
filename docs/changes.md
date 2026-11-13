@@ -7,6 +7,7 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 ## Unreleased
 
 - CI: the test step runs again once when a test worker crashes natively and nothing else failed, so a runner crash no longer blocks the site deploy.
+- Live: the Six Realms trails each have their own course and look (Erik: "make 6 unique pathways", the same zigzag on all six looked artificial): the Bloom's a broad S and the widest, the Steppe's one long bow, the Flats' an almost straight causeway, the Mire's a meander, the Crags' a dogleg that narrows at the jog, the Blight's a slow drift that runs straight into its gate. Each worn bed is tinted towards its realm's colour. The trail ends, the realms, rocks and lava flows are as before, but trail food now lies along the new courses (course length 6,650 to 8,960 u, was 6,860 to 8,640). The map version changes, so promoting starts a fresh world.
 
 ## 0.10.0 (2026-11-13)
 

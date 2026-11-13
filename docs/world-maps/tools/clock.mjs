@@ -156,19 +156,46 @@ if (process.env.LAYOUT_ONLY) { // for a layout search: rim-to-rim gaps between n
   console.log(JSON.stringify({ gaps, room }));
   process.exit(0);
 }
-// trails: worn wandering tracks, not firm, from inside the hub rim to inside the realm rim: a dusty verge and a pale worn bed,
-// of uneven width, whose paint fades out towards both ends (the food runs the whole way)
+// trails: worn tracks, not firm, from inside the hub rim to inside the realm rim: a dusty verge and a pale worn bed tinted towards the realm's colour,
+// whose paint fades out towards both ends (the food runs the whole way). Each trail has its own course and width (Erik 2026-11-13: six unique,
+// natural pathways, no shared shape or strong bend halfway): sideways offset f(t) as a share of the straight length from the hub end (t 0) to the
+// realm end (t 1), and the width along it (times TRAIL.w). The walled realms' trails (Blight, Mire) level out at the realm end, so they meet their gate
+// head on. A little smooth noise of the trail's own seed rides on top, none at the ends. Paint: bed width (bw) and alpha (ba), tint of bed and verge (bt, vt).
+const ss = (e0, e1, t) => { const u = Math.max(0, Math.min(1, (t - e0) / (e1 - e0))); return u * u * (3 - 2 * u); };
+const COURSE = {
+  bloom: { f: (t) => 0.17 * Math.sin(2 * Math.PI * t), w: (t) => 1.15 + 0.15 * Math.sin(2 * Math.PI * t + 1), bt: 0.4, vt: 0.3, bw: 0.55 }, // the main road: a broad S
+  steppe: { f: (t) => -0.24 * Math.sin(Math.PI * t), w: () => 1.0, bt: 0.45, vt: 0.3, bw: 0.48, ba: 0.58 }, // one long bow
+  flats: { f: (t) => 0.06 * Math.sin(Math.PI * t), w: () => 0.85, noise: 1.6, bt: 0.35, vt: 0.25, bw: 0.42, ba: 0.55 }, // an almost straight causeway with small jitter
+  mire: { f: (t) => 0.11 * Math.sin(3 * Math.PI * t) * Math.sin(Math.PI * t) ** 1.5, w: (t) => 0.95 + 0.22 * Math.sin(6 * Math.PI * t), bt: 0.45, vt: 0.35, bw: 0.4, ba: 0.5 }, // a meander
+  crags: { f: (t) => 0.22 * ss(0.12, 0.45, t) * (1 - ss(0.55, 0.92, t)), w: (t) => 1.1 - 0.4 * ss(0.3, 0.45, t) * (1 - ss(0.55, 0.7, t)), bt: 0.45, vt: 0.3, bw: 0.36, ba: 0.52 }, // a dogleg, narrow at the jog
+  blight: { f: (t) => -0.15 * Math.sin(1.5 * Math.PI * t) * (1 - t) ** 2, w: (t) => 0.9 + 0.15 * Math.sin(4 * Math.PI * t + 2), bt: 0.5, vt: 0.35, bw: 0.38, ba: 0.5 }, // a hesitant wander, straight into its gate
+};
+const course = (id, a, b, n = 28) => {
+  const C = COURSE[id], dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy), nx = -dy / L, ny = dx / L;
+  let h = [...id].reduce((v, ch) => Math.imul(v ^ ch.charCodeAt(0), 16777619) >>> 0, 2166136261); // the trail's own noise seed, apart from rnd()
+  const r2 = () => ((h = (Math.imul(h, 1664525) + 1013904223) >>> 0) / 4294967296);
+  const waves = [[2.3, 0.012], [3.7, 0.007], [6.1, 0.004]].map(([fq, amp]) => [fq, amp * (C.noise ?? 1), r2() * 6.28]);
+  const pts = [], w = [];
+  for (let i = 0; i <= n; i++) {
+    const t = i / n, env = Math.sin(Math.PI * t) ** 1.5, off = (C.f(t) + env * waves.reduce((v, [fq, amp, ph]) => v + amp * Math.sin(2 * Math.PI * fq * t + ph), 0)) * L;
+    pts.push([a[0] + dx * t + nx * off, a[1] + dy * t + ny * off]); w.push(R(TRAIL.w * C.w(t)));
+  }
+  return { pts, w };
+};
 const gate = {}, trailPts = [], report = [], trailPaint = []; // the trails' paint is laid after the realms, so the worn track runs on into the fringes and fades there
 Object.keys(RM).forEach((id) => {
   const m = RM[id], rim = trailEnds(id, m.x, m.y, m.pts, 0), { hub: a, realm: b, ar } = trailEnds(id, m.x, m.y, m.pts, 900); // both ends 900 inside the rims
   report.push(`${id} deg ${m.deg.toFixed(1)} centre ${R(m.x)},${R(m.y)} trail rim-to-rim ${R(Math.hypot(rim.hub[0] - rim.realm[0], rim.hub[1] - rim.realm[1]))}`);
-  const pts = wander(a, b, 4, 0.36, 0.55);
+  wander(a, b, 4, 0.36, 0.55).forEach(() => rnd()); // the former wandering course and widths, drawn only so rnd() runs on as before and the rest of the map stays put
+  const { pts, w: ws } = course(id, a, b), C = COURSE[id];
   trailPts.push(...dense(pts, 4).slice(0, -3));
   gate[id] = ar;
-  const ws = pts.map(() => R(TRAIL.w * (0.7 + 0.6 * rnd())));
+  const plen = pts.slice(1).reduce((v, q, i) => v + Math.hypot(q[0] - pts[i][0], q[1] - pts[i][1]), 0), wmean = ws.reduce((v, x) => v + x, 0) / ws.length;
+  report.push(`trail ${id} course length ${R(plen)} mean width ${R(wmean)} food area ${R((plen * wmean * 1.7) / 1e6)} Mu2`);
   layers.push(layer(`trail-${id}`, path(pts, ws.map((w) => R(w * 1.7))), { warp: 150, rough: 160, feather: 800, food: TRAIL.food, clearMud: true, wobble: 0.35 }));
-  trailPaint.push(layer(`trail-${id}-verge`, path(pts, ws.map((w) => R(w * 1.7))), { warp: 150, rough: 160, feather: 800, wobble: 0.35, ...paint([104, 94, 74], 0.38, undefined, { fade: 0.05 }) }));
-  trailPaint.push(layer(`trail-${id}-bed`, path(pts, ws.map((w) => R(w * 0.5))), { warp: 30, rough: 60, feather: 260, wobble: 0.3, ...paint([204, 188, 146], 0.62, tex("blobs", 260, 0.3, [156, 138, 102], 0.55, { soft: 0.3 }), { fade: 0.06 }) }));
+  const tint = (c, k) => c.map((v, i) => R(v + (dsat(D2[id][0])[i] - v) * k));
+  trailPaint.push(layer(`trail-${id}-verge`, path(pts, ws.map((w) => R(w * 1.7))), { warp: 150, rough: 160, feather: 800, wobble: 0.35, ...paint(tint([104, 94, 74], C.vt), 0.38, undefined, { fade: 0.05 }) }));
+  trailPaint.push(layer(`trail-${id}-bed`, path(pts, ws.map((w) => R(w * C.bw))), { warp: 30, rough: 60, feather: 260, wobble: 0.3, ...paint(tint([204, 188, 146], C.bt), C.ba ?? 0.62, tex("blobs", 260, 0.3, tint([156, 138, 102], C.bt), C.ba ? R(C.ba * 0.89 * 100) / 100 : 0.55, { soft: 0.3 }), { fade: 0.06 }) }));
 });
 const nearTrail = (x, y) => Math.min(...trailPts.map(([tx, ty]) => Math.hypot(tx - x, ty - y)));
 
