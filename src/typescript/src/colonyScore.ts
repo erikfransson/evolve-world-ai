@@ -29,7 +29,7 @@ export function mulberry32(seed: number): () => number {
   };
 }
 
-export interface ColonyParams { size: number; food: number; poison: number; foodRegrow: number; poisonRegrow: number }
+export interface ColonyParams { size: number; food: number; poison: number; foodRegrow: number; poisonRegrow: number; mud?: number; firm?: number } // mud, firm: world.slowDensity and fastDensity (half and 175% speed ground), 0 when left out
 // What one creature is inserted with: a founder, or a pool member (an evolved creature from saveCreatures.ts).
 export interface Source { plan: BodyPlan; genome: ArrayLike<number>; birth?: { energy: number; cost: number; cooldown?: number }; mutationScale?: number }
 // defenderPool / raiderPool: when set, each defender (raider) is drawn from it instead of the founder, round-robin from a seeded random start.
@@ -41,9 +41,9 @@ export function loadPool(file: string, realm: string): Source[] {
   if (!Array.isArray(g) || !g.length) throw new Error(`pool ${file}: no creatures in realm "${realm}"`);
   return g.map((m) => ({ plan: m.plan, genome: Float32Array.from(m.genome), ...(m.birth ? { birth: m.birth } : {}), ...(m.mutationScale ? { mutationScale: m.mutationScale } : {}) }));
 }
-export interface Sample { min: number; defender: number; raider: number; total: number; immigrant: number; arrived: number; traits?: Traits }
+export interface Sample { min: number; defender: number; raider: number; total: number; immigrant: number; arrived: number; traits?: Traits } // immigrant: living raiders descending from an immigrant (the rest of raider come from the seeded cluster); arrived: immigrants inserted so far
 // Living defenders' medians of the birth traits and generations, and their children per minute of summed age (--traits).
-export interface Traits { energy: number; cost: number; cooldown: number; depth: number; kidsPerMin: number; food: number; poison: number } // food, poison: items lying in the world // immigrant: living raiders descending from an immigrant (the rest of raider come from the seeded cluster); arrived: immigrants inserted so far
+export interface Traits { energy: number; cost: number; cooldown: number; depth: number; kidsPerMin: number; food: number; poison: number } // food, poison: items lying in the world
 
 // Live's config on a plain size x size world with the given item caps (also the start counts, so the world starts at the caps).
 export function colonyConfig(p: ColonyParams, seed: number): EcoConfig {
@@ -58,6 +58,8 @@ export function colonyConfig(p: ColonyParams, seed: number): EcoConfig {
   config.world.poisonDensity = p.poison;
   config.eco.foodRegrow = p.foodRegrow;
   config.eco.poisonRegrow = p.poisonRegrow;
+  config.world.slowDensity = p.mud ?? 0;
+  config.world.fastDensity = p.firm ?? 0;
   return config;
 }
 
@@ -185,6 +187,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       poison: { type: "string", default: String(3 * liveConfig.eco.poisonMaxDensity) }, // 3x Live's 0.01
       foodRegrow: { type: "string", default: String(2.3 * liveConfig.eco.foodRegrow) }, // items per second per density unit; the cap is not what limits a settled world, the regrowth is
       poisonRegrow: { type: "string", default: String(3 * liveConfig.eco.poisonRegrow) },
+      mud: { type: "string", default: "0" }, // world.slowDensity: ground where creatures move at half speed
+      firm: { type: "string", default: "0" }, // world.fastDensity: ground where they move at 175%
       "defender-pool": { type: "string" }, // FILE:REALM of a saveCreatures.ts file: draw the defenders from that group
       "raider-pool": { type: "string" }, // FILE:REALM: draw the raiders (cluster and immigrants) from that group
       out: { type: "string" },
@@ -199,7 +203,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     defender.plan = cand.plan;
     defender.genome = Float32Array.from(cand.genome);
   }
-  const p: ColonyParams = { size: Number(values.size), food: Number(values.food), poison: Number(values.poison), foodRegrow: Number(values.foodRegrow), poisonRegrow: Number(values.poisonRegrow) };
+  const p: ColonyParams = { size: Number(values.size), food: Number(values.food), poison: Number(values.poison), foodRegrow: Number(values.foodRegrow), poisonRegrow: Number(values.poisonRegrow), mud: Number(values.mud), firm: Number(values.firm) };
   const pool = (arg: string | undefined): Source[] | undefined => {
     if (!arg) return undefined;
     const at = arg.lastIndexOf(":");
