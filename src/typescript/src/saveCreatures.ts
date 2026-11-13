@@ -6,6 +6,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { gunzipSync } from "node:zlib";
+import { LIMITS } from "../../../server/src/config.ts";
 import { decodeState, SCALARS } from "./sim/ecoState.ts";
 import type { EcoState } from "./sim/ecoState.ts";
 
@@ -23,7 +24,7 @@ if (!values.save || !values.lineages || !values.out) throw new Error("--save, --
 
 const home = new Map<number, string>(Object.entries(JSON.parse(readFileSync(values.lineages, "utf8")) as Record<string, string>).map(([k, v]) => [Number(k), v]));
 // Plain gunzip and JSON, not saveParse: the probe saves may come from a candidate map whose version this checkout refuses, and only the creatures are read.
-const state = JSON.parse(gunzipSync(readFileSync(values.save)).toString("utf8")) as EcoState;
+const state = JSON.parse(gunzipSync(readFileSync(values.save), { maxOutputLength: LIMITS.maxSaveJsonBytes }).toString("utf8")) as EcoState;
 delete state.mapVersion; // decodeState refuses another map version; the map does not matter for the creatures
 const d = decodeState(state);
 const K = SCALARS.length;
