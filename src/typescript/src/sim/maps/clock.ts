@@ -1473,7 +1473,7 @@ export const CLOCK: MapSpec = {
    "rough": 450,
    "feather": 450,
    "food": 1.2,
-   "poison": 0,
+   "poison": 0.015625,
    "winterFood": 0.05,
    "clearMud": true,
    "paint": {
@@ -2165,7 +2165,7 @@ export const CLOCK: MapSpec = {
     }
    },
    "food": 2.3,
-   "poison": 3
+   "poison": 3.984375
   },
   {
    "id": "blight-rifts",
@@ -2276,7 +2276,7 @@ export const CLOCK: MapSpec = {
    "rough": 200,
    "feather": 1000,
    "food": 3,
-   "poison": 1,
+   "poison": 3.984375,
    "clearMud": true,
    "paint": {
     "rgb": [132,118,70],
@@ -2928,7 +2928,7 @@ export const CLOCK: MapSpec = {
     }
    },
    "food": 2.3,
-   "poison": 0,
+   "poison": 0.015625,
    "mud": {
     "coverage": 0.45,
     "scale": 1000,
@@ -3665,7 +3665,7 @@ export const CLOCK: MapSpec = {
     }
    },
    "food": 2.4,
-   "poison": 0
+   "poison": 0.015625
   },
   {
    "id": "bloom-canopy",
@@ -4323,7 +4323,7 @@ export const CLOCK: MapSpec = {
     "alpha": 0.85
    },
    "food": 1.1,
-   "poison": 0,
+   "poison": 0.015625,
    "firm": {
     "coverage": 0.86,
     "scale": 950,
@@ -4670,7 +4670,7 @@ export const CLOCK: MapSpec = {
     }
    },
    "food": 0.95,
-   "poison": 0
+   "poison": 0.015625
   },
   {
    "id": "oasis0",
@@ -5390,7 +5390,7 @@ export const CLOCK: MapSpec = {
     }
    },
    "food": 1.5,
-   "poison": 0
+   "poison": 0.015625
   },
   {
    "id": "crags-scree-paint1",

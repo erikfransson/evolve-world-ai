@@ -36,13 +36,13 @@ liveConfig.world.width = 60000;
 liveConfig.world.height = 37500;
 liveConfig.world.foodEnergy = 50;
 liveConfig.world.poisonDamage = 50; // a bite costs one food's worth, not the life (POISON_LETHAL is 100); see docs/tuning-notes.md
-liveConfig.world.poisonDensity = 0.01; // start counts stay at or below the caps (foodDensity 0.5 is 112 500 items)
+liveConfig.world.poisonDensity = 0.0144; // start counts stay at or below the caps (foodDensity 0.5 is 112 500 items)
 liveConfig.eco.initialPopulation = 0; // a fresh world is seeded with the founders file instead (founders.ts)
 // Erik 2026-11-12: at 0.66 and 0.00285 the population mean was about 5,600 with peaks near 7,600; with these (on Live since that morning) about 3,700 with peaks near 5,300. Regrowth sets the population, the cap hardly binds.
 liveConfig.eco.foodRegrow = 0.0020;
 liveConfig.eco.foodMaxDensity = 0.50; // the item slots leave the admin room up to 0.95 (itemHeadroom, CAP_LIMITS)
 liveConfig.eco.poisonRegrow = 0.0003;
-liveConfig.eco.poisonMaxDensity = 0.01;
+liveConfig.eco.poisonMaxDensity = 0.0144; // Erik 2026-11-13: the Blight a lot more poison, the realms a trace, the wastes a little more; most of it lands in the Blight (map weights)
 liveConfig.eco.collisionDamage = true;
 liveConfig.eco.killEnergy = 5; // a kill also gives this much energy, on top of the loser's (Erik, 2026-10-17: at 25 the Juggernaut took over, tuning-notes)
 liveConfig.creature.neuronCost = 0.0025; // half-price brains and eyes (Ecosystem 0.005 and 0.02) so all three founders can last (Erik, 2026-10-29, docs/tuning-notes.md)
