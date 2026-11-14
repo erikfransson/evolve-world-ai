@@ -23,7 +23,7 @@ describe("lit family switch-off on the Selected card", () => {
     expect(chip.hidden).toBe(false);
     expect(chip.querySelector("img")).toBeNull();
     expect(chip.textContent).toContain("<img src=x onerror=alert(1)>");
-    expect(chip.getAttribute("aria-label")).toContain("Switch off");
+    expect(chip.getAttribute("aria-label")).toMatch(/^Family lit: .*, switch off$/); // the spoken name starts with the visible text
     syncLitChip(chip, litLabel(9, new Map()));
     expect(chip.textContent).toContain("Founder #9");
     syncLitChip(chip, null);

@@ -9,5 +9,5 @@ export function syncLitChip(chip: HTMLElement, label: string | null): void {
   if (label === null) return;
   const text = `Family lit: ${label} ✕`;
   if (chip.textContent !== text) chip.textContent = text;
-  chip.setAttribute("aria-label", `Switch off the family highlight (${label})`);
+  chip.setAttribute("aria-label", `Family lit: ${label}, switch off`); // starts with the visible words, for voice control
 }

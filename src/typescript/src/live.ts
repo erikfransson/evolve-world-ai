@@ -832,7 +832,10 @@ $("follow").addEventListener("click", () => {
     setFollowing(false);
   } else if (selection && scene.slotOf(selection.id) >= 0) followSelected();
 });
-$("litFamily").addEventListener("click", () => setHighlight(-1));
+$("litFamily").addEventListener("click", () => {
+  setHighlight(-1);
+  $("pickAge").focus(); // the chip hides on its click: keyboard focus stays on the card
+});
 $("selFounder").addEventListener("click", () => {
   const f = selection?.last?.founderId;
   if (f !== undefined && f >= 0) lineages.pick(rowOf(f));
