@@ -16,7 +16,7 @@ const say = (...a) => console.log(...a);
 
 const st = readJson(join(OUT, "status.json"));
 const status = st && { time: clean(st.time, 40), state: clean(st.state, 20), message: clean(st.message, 160), chrome: clean(st.chrome, 20), world: typeof st.world === "string" ? st.world : null, interval: num(st.interval), capBytes: num(st.capBytes), freeFloorBytes: num(st.freeFloorBytes) };
-const interval = status?.interval ?? 20, cap = status?.capBytes ?? 30e9, floor = status?.freeFloorBytes ?? 20e9;
+const interval = status?.interval ?? 20, cap = status?.capBytes ?? 50e9, floor = status?.freeFloorBytes ?? 20e9;
 let dir = A.world ?? status?.world;
 if (!dir) { try { dir = readdirSync(OUT, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name).sort().pop(); } catch {} }
 if (dir && (dir.includes("/") || dir === ".." || dir === ".")) dir = null; // a folder name, not a path

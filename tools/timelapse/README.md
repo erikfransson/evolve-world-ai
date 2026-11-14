@@ -3,7 +3,7 @@
 `timelapse.mjs` saves one PNG of the Live world every 20 s into `<out>/<world id>_<start>/`, one folder per world (per reset).
 Next to the frames it writes `frames.jsonl`, `population.jsonl` (every 5 s, per founder lineage) and `regions.jsonl` (creature counts per map region and hue, one line per frame, layout in `world.json`).
 A light websocket viewer is always on and detects resets.
-Chrome runs only while frames are wanted and closes when a folder reaches the cap (30 GB) or the disk has less than 20 GB free.
+Chrome runs only while frames are wanted and closes when a folder reaches the cap (50 GB) or the disk has less than 20 GB free.
 It takes 2 viewer slots on the server (the light client and Chrome). The server admits about 9 viewers at 12000 creatures, so the capture costs public capacity at a full world.
 The output folder defaults to `videos/timelapse` of the checkout (it gets a `.gitignore` with `*`).
 Set it with `out=<dir>`.

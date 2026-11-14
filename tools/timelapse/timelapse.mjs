@@ -24,7 +24,7 @@ const P = {
   framing: "a", // a = whole map 3840x2400 before crop, b = 7680x4800, c = closer view
   interval: 20, // seconds between frames, aligned to the wall clock
   popEvery: 5, // seconds between population.jsonl lines, a divisor of interval
-  capBytes: 30e9, // bytes of all files per world folder (frames stop a little before it, the logs stop at it) and Chrome closes ("first hours only")
+  capBytes: 50e9, // bytes of all files per world folder (frames stop a little before it, the logs stop at it) and Chrome closes ("first hours only")
   popCapBytes: 500e6, // population.jsonl bytes per world folder
   regionsCapBytes: 100e6, // regions.jsonl bytes per world folder
   regionRadiusFactor: 2.5, // a creature belongs to the nearest map region within this many times its seeding radius r, else "elsewhere" (seeded creatures stay within 0.6 r, the painted realm is about 2.2 r wide, 99% of living creatures are within 2.4 to 2.7 r)
