@@ -2,7 +2,7 @@
 
 `timelapse.mjs` saves one PNG of the Live world every 20 s into `<out>/<world id>_<start>/`, one folder per world (per reset).
 Next to the frames it writes `frames.jsonl`, `population.jsonl` (every 5 s, per founder lineage) and `regions.jsonl` (creature counts per map region and hue, one line per frame, layout in `world.json`).
-A light websocket viewer is always on and detects resets.
+A light websocket viewer is always on, detects resets and writes the state log (`state-NNNNN.evs`, see State log), from which a renderer can redraw the world long after the PNG cap.
 Chrome runs only while frames are wanted and closes when a folder reaches the cap (50 GB) or the disk has less than 20 GB free.
 It takes 2 viewer slots on the server (the light client and Chrome). The server admits about 9 viewers at 12000 creatures, so the capture costs public capacity at a full world.
 The output folder defaults to `videos/timelapse` of the checkout (it gets a `.gitignore` with `*`).
@@ -17,7 +17,9 @@ A Chrome close that takes over `chromeCloseS` (20) seconds is ended with SIGKILL
 When the script is capturing but saved no frame for `stallExitMin` (10) minutes, it exits with code 1 and the unit restarts it. This clock does not run while the server is down or its stats are stale, the page shows offline, the tick stands still, the folder is capped or the page version does not match, nor while the laptop sleeps or the process is stopped, and a frame held back as suspicious restarts it. Each such exit uses one of the unit's five starts per hour, so a stall that a restart does not heal leaves the unit failed after about an hour (`systemctl --user reset-failed evolve-timelapse` and a start bring it back).
 A page that shows offline or loading at a slot gets `pageWaitS` (6) seconds to reconnect by itself (the server drops a slow viewer, which happens at the population boom), then is reloaded, and the frame follows as soon as the page is live.
 Chrome keeps its own sandbox (no `--no-sandbox`) and talks to the script over a pipe, so no DevTools port opens.
-The folder cap counts every file in the world folder (frames stop a little before it so the logs fit), and the logs stop at it.
+The folder cap counts every file in the world folder but the state log (frames stop a little before it so the logs fit), and the logs stop at it.
+The state log has its own cap, `stateCapBytes` (30 GB per world), and also stops under the free-disk floor; it goes on when the disk has room again.
+`frames=0` runs without Chrome and PNGs, logs only (a test hook).
 
 ## Install
 Three units:
@@ -88,7 +90,7 @@ The proxy runs in the host network with only IPv4 sockets and no writable path; 
 ## Handling the output folder
 Everything in it may have been written by a compromised capture.
 - Never run `git` inside it: a planted `.git` with `core.fsmonitor` runs a command on `git status` there (git at the repo root does not read it).
-- Read it only with `check.mjs` and `popchart.mjs` (they follow no links, block on no FIFO, bound their reads and print no control characters). Build videos only from regular files (see Video), since the ffmpeg glob follows links. An image viewer or ffmpeg still parses data the attacker wrote, so a bug in them is the second step mentioned above.
+- Read it only with `check.mjs`, `popchart.mjs` and `stateLog.mjs` (they follow no links, block on no FIFO, bound their reads and print no control characters). Build videos only from regular files (see Video), since the ffmpeg glob follows links. An image viewer or ffmpeg still parses data the attacker wrote, so a bug in them is the second step mentioned above.
 - Do not copy files out of it into places where they would be run or loaded.
 - If a compromise is suspected, stop the capture unit before running `popchart.mjs` on a folder it is writing: its path checks come before its reads and writes, so a process racing them could still redirect the chart into another folder.
 
@@ -119,3 +121,28 @@ All frames of a world have the same even size, and file names sort by UTC time.
 `node tools/timelapse/popchart.mjs <world folder> outdir=<output folder> png=1` writes `population.svg` and `population.png`, one line per founder lineage, coloured from the hue the server sends.
 The world folder must be a real folder directly inside the output folder (`outdir` defaults to `videos/timelapse` of the checkout), and `out=<file.svg>` may point into that world folder or outside the output folder.
 It reads at most 64 MB and 1000000 lines, keeps only rows that are JSON objects with a finite `simSeconds`, charts at most 200000 rows and 1000000 points, and says so when a cap cuts the chart.
+
+## State log
+The light client keeps what the server sends every viewer and writes it to `state-NNNNN.evs` in the world folder, in its own process and independent of Chrome and of the PNG cap.
+Parameters: `stateEvery` (5 s between creature records, on the wall clock), `itemsEvery` (30 s between item records), `burstEvery` and `burstSeconds` (a burst of 1 Hz creature records, 60 s every 1200 s, for smooth close-ups; 0 turns either off), `stateKeyEvery` (600 s between full records), `stateCapBytes` (30 GB), `stateFileBytes` (256 MB per file), `stateMaxDeaths` (4096 per record).
+Measured on a local test server (Six Realms, 2,100 to 3,200 creatures, 20,500 items, 2026-11-14): 7.5 bytes a creature in a 5 s record, 6.5 in a burst record, 11.5 in a full one; a full item set 97 kB, the changes over 30 s 42 kB (7,500 slots).
+At 4,000 creatures and 20,000 items that is about 0.79 GB a day with the defaults (38 days in 30 GB), 0.70 GB without bursts, 0.49 GB with `stateEvery=10` and no bursts. Item churn grows with the population; the changes never take more than a full set, which bounds the items at 0.29 GB a day.
+Read it with `stateLog.mjs`: `readStateLog(dir)` yields the records of all files in order, `ItemState` rebuilds the item set.
+It reads the folder as hostile, like `check.mjs`: regular files only, no link followed, bounded reads, every length checked, inflation capped. The text in header and lineage records is data: strip control characters before printing it.
+
+Layout, little-endian:
+- A file is `EVOSTATE` (8 bytes), then records. Files sort by name; the next one starts when a record would pass `stateFileBytes`.
+- A record is `A5 5E 7A 1E` | u32 body bytes (at most 4 MiB) | u8 type | u8 flags (bit 0: the body is raw deflate) | u32 crc32 of type, flags and stored body | body. A bad sync, length, crc or body is skipped up to the next sync, so a torn tail or one corrupt record loses only itself.
+- 1 header, JSON: `format` (1), `protocol` (6, the wire's), `creatureRecord` (19), `world` {width, height}, `dt` (simulated seconds per tick), `map`, `mapVersion`, `serverVersion`, `itemSlots`, `radius`, `itemRadius`, `fullEnergy` (from the hello), `build` (the built page's stamp: commit, protocol), `params`, `session`, `part` (file number), `resumed`, `openedAt`. Every file starts with one, and each start of the script appends one.
+- 2 creatures (the first frame in each `stateEvery` slot; the server sends the light client 1 to 5 frames a second, fewer when it is busy) and 3 burst (1 Hz in a burst, the slots between regular records): f64 wallMs | f64 simSeconds | u32 tick | u32 population (stats) | u32 itemSeq | f32 winterness (0 summer to 1 mid-winter, -1 without seasons) | f32 yearMinutes | f32 winterFood | u32 count | u32 seq | u32 baseSeq | 19 byte planes of count bytes (plane j holds byte j of each creature).
+  The creatures are sorted by id. Bytes 0 to 3 hold the id as the gap to the previous id (the first from 0). When baseSeq is not 0xffffffff, a creature whose id is in record baseSeq stores the zigzag difference to it of x, y, heading, hue (u16), radius, energy, age (u8), and of founder the u32 difference; a creature new since then is stored as is. baseSeq 0xffffffff is a full record (the first of a session, after a failed write, every `stateKeyEvery` s). `readStateLog` undoes all this and gives `records`, count x 19 bytes in the wire layout of `src/typescript/src/live/protocol.ts` (u32 id | u16 x | u16 y | u16 heading | u8 radius | u8 energy | u8 age | u16 hue | u32 founder), or null when the base was lost (until the next full record).
+- 4 item set: f64 wallMs | u32 tick | u32 seq | u32 slots | u32 n | ceil(slots / 4) bytes of 2-bit kinds by slot (0 free, 1 food, 2 poison) | n u16 x | n u16 y, in slot order. Written first, after a gap in the chain, every `stateKeyEvery` s, and when the changes would be larger.
+- 5 item changes since the last item record: f64 wallMs | u32 tick | u32 seq | u32 baseSeq | u32 n | u32 m | n u32 words (slot gap to the previous changed slot | kind << 18) as 4 byte planes | m u16 x | m u16 y for the n words with kind not 0, in order. Kind 0 frees the slot. It applies only to the set of seq baseSeq.
+- 6 deaths since the last record: f64 wallMs | u32 tick | u32 n | u32 dropped (over `stateMaxDeaths`) | n u16 ticks before tick | n u16 x | n u16 y | n u16 hue.
+- 7 lineages, JSON {wallMs, tick, lineages: [{founder, hue, starter, count, name, founders}]}, when the table's make-up changes (not its counts; `population.jsonl` has those every 5 s). Names are kept only for starter lineages. founders lists the other founder ids counted in the row.
+
+Units: x, y are u16 over the world (world x = x / 65535 x width), heading 0 to 65535 over 0 to 2 pi, radius in quarter units, energy 0 to 255 of `fullEnergy`, age whole seconds capped at 255, hue 0 to 65535 over 360 degrees, as on the wire. Item x, y the same.
+The lineages, item and death records that go with a creature record come right before it, with its tick. The item set to draw with a creature record is the one whose seq equals its itemSeq (`ItemState.seq`), as of the last item record, at most `itemsEvery` s older; 0xffffffff means unknown (no full set since the light client connected).
+Gaps: while the server is down, the link is down or the stats are stale nothing is written, so the wall times jump. A restart of the script appends a header with a new `session` (and `resumed: true` on the first), and the chains start again from full records. A reset opens a new world folder.
+The ground on the page is the map (`src/typescript/src/sim/maps`) and the winter tint from winterness, nothing else in it changes over time. Not on the wire, so not here: a newborn's parent, the cause of a death, whether a creature eats or attacks. Impact events are left out.
+`world.json` gets `camera` with the first PNG (framings a and b): PNG pixel = ((origin + world units x zoom) - crop corner) x dsf, per axis, so rendered frames can be lined up with the PNGs.
