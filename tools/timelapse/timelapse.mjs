@@ -458,7 +458,11 @@ async function takeFrame(now, tick) {
   const size = [crop.width * F.dsf, crop.height * F.dsf];
   if (world.recent.length >= 5 && png.length < median(world.recent) / 3) return { png, path: null, suspicious: true }; // a blank or offline page compresses far smaller
   if (world.size && (world.size[0] !== size[0] || world.size[1] !== size[1])) throw new Error(`frame size ${size} differs from this world's ${world.size}`);
-  if (!world.size) { world.size = size; const f = join(OUT, world.dir, "world.json"); const j = JSON.parse(readFileSync(f, "utf8")); j.size = size; j.crop = crop; writeJsonAtomic(f, j); }
+  if (!world.size) { // the frame is kept when world.json cannot be written, and the next frame tries again
+    const f = join(OUT, world.dir, "world.json");
+    try { const j = JSON.parse(readFileSync(f, "utf8")); j.size = size; j.crop = crop; writeJsonAtomic(f, j); world.size = size; }
+    catch (err) { logLimited("world.json", "world.json not updated with size and crop", String(err?.message ?? err).slice(0, 100)); }
+  }
   const path = join(OUT, world.dir, `${stamp(now)}_t${String(tick).padStart(9, "0")}.png`);
   try { unlinkSync(path + ".tmp"); } catch {}
   writeFileSync(path + ".tmp", png, { flag: "wx" }); renameSync(path + ".tmp", path); // wx: a planted symlink at the temporary name fails the write instead of redirecting it; rename replaces a link at the frame name
@@ -550,7 +554,7 @@ for (;;) {
     if (P.maxRunS && next - startedAt > P.maxRunS * 1000) break;
     await sleep(Math.max(0, next - Date.now()));
     itemsResync(false); // no full set for a minute (never sent, or refused while a resync was not allowed)
-    if (stateOpenError && world && Date.now() - Date.parse(stateOpenError.startedAt) >= RESYNC_MS) openStateLog(world.id, world.dir); // a failed open is tried again once a minute
+    if (stateOpenError && world && hello && stats && worldId() === world.id && stats.tick >= world.lastTick - P.resetTickDrop && Date.now() - Date.parse(stateOpenError.startedAt) >= RESYNC_MS) openStateLog(world.id, world.dir); // a failed open is tried again once a minute, never on a folder the server has already left (step() opens the new world's)
     if (P.socket && socketFailAt > socketOkAt && Date.now() - socketOkAt > P.socketDeadS * 1000 && link?.readyState !== WebSocket.OPEN) { // the proxy socket is gone (its units failed or stopped): exit, and the unit's restart starts the socket again through Requires=
       log("no working connect to the proxy socket for", Math.round((Date.now() - socketOkAt) / 1000), "s, exiting so the unit restarts with the socket"); setStatus("error", "proxy socket missing"); writeStatus(); await closeChrome(); process.exit(1);
     }
