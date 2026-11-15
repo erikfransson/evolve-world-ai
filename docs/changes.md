@@ -4,7 +4,7 @@ What changed in each version, newest first, so release notes for any range (say 
 Each release is a pull request from `development` into `main`, tagged `vX.Y.Z` on `main`.
 Add notes under "Unreleased" as work lands on `development`, and turn that heading into the version number at release time.
 
-## Unreleased
+## 0.10.2 (2026-11-15)
 
 - Live: a lit family can always be switched off. "World view" clears the family highlight, and the Selected creature card shows "Family lit: <name> ✕" while a family is lit and nothing is selected. One `setHighlight` helper keeps the page, the Lineages card and the Selected card in step.
 - Time-lapse: a state log next to the PNGs (`state-NNNNN.evs`, reader `tools/timelapse/stateLog.mjs`), written by the light client: creatures every 5 s with 1 Hz bursts, the item set every 30 s, deaths and the lineage table, compressed against the record before, with its own 30 GB cap per world (about 38 days at 4,000 creatures, 14 at 12,000), so a world can be redrawn long after the PNG cap. `check.mjs` reports it.
