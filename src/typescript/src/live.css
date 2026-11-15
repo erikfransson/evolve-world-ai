@@ -28,6 +28,10 @@
 .sel-founder.family.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .sel-founder.family.on b { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 
+/* switch-off for a lit family while nothing is selected */
+.lit-family { display: block; width: 100%; margin-bottom: 0.4rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lit-family[hidden], .ov-selected.has-sel .lit-family { display: none; }
+
 /* records: living entries can be followed */
 .lead-cell.live-pick { cursor: pointer; border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
 .lead-cell.live-pick:hover, .lead-cell.live-pick:focus-visible { background: var(--card-hi); border-color: var(--accent); outline: none; }

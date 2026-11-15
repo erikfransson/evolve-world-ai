@@ -31,6 +31,7 @@ export type RlInMessage =
       seed: number;
       poolUrl: string;
       libraryUrl: string;
+      foundersUrl?: string; // the Live founders (public/live-founders.json) as founder:<id> rivals; left out or missing, those rivals are random
       playback?: boolean; // false (Max speed): no shows except the last one, see the "playback" message; default true
       gentle?: boolean; // Gentle on CPU: fewer helpers and idle time after each step (pacing only, same results)
       helpers?: number; // at most this many helper threads (each holds its own copy of the envs, pool and library), default from the cores
@@ -58,4 +59,5 @@ export type RlOutMessage =
   | { type: "learner"; iter: number; learner: StoredLearner } // the current (mean) genome, after each held-out check and at the end
   | { type: "rebased"; iter: number; held: number; perEnv: number[]; learner: StoredLearner } // after an envs change: the current genome (and its learner) on the new envs' held-out seeds
   | { type: "done"; iter: number }
+  | { type: "note"; message: string } // shown to the person, e.g. that founder rivals are random because the founders did not load
   | { type: "error"; message: string };

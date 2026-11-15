@@ -15,7 +15,7 @@ import type { BodyPlan, PlanView } from "../sensors.ts";
 import { speciesList, speciesRanges } from "../species.ts";
 import type { Genome } from "../types.ts";
 import { plainText } from "./validate.ts";
-import { envById } from "./envs.ts";
+import { FOUNDER_IDS, PREY, envById } from "./envs.ts";
 import { LAYOUT_KINDS, placeLayout } from "./layouts.ts";
 import type { Layout } from "./layouts.ts";
 import type { ProcSpec } from "./procEnv.ts"; // type only, so the web bundle does not pull procEnv in
@@ -29,8 +29,10 @@ export { PREDATOR, PREY } from "./envs.ts";
 // Who the other creatures are: random genomes, seed-pool founders, or trained creatures from the library (by env id).
 // "self": copies of the learner's own current weights and its recent best candidates (self-play; the trainer keeps the
 // list in the library under SELF), so it always meets rivals of its own level.
-export type RivalSource = "random" | "pool" | "self" | `library:${string}`;
+// "founder:<id>": copies of a shipped Live founder (frozen brain), kept in the library under that same string (withFounders in library.ts).
+export type RivalSource = "random" | "pool" | "self" | `library:${string}` | `founder:${string}`;
 export const SELF = "self";
+export const FOUNDER_PREFIX = "founder:";
 
 export interface Rivals {
   species: number;
@@ -318,7 +320,8 @@ export function castFor(env: EnvSpec, config: EcoConfig, learner: Learner, seed:
         continue;
       }
       let rival: Learner;
-      const listId = rv.source === "self" ? (rv.species === env.role ? SELF : null) : rv.source.startsWith("library:") && libraryFits(rv.source.slice(8), env.world, rv.species) ? rv.source.slice(8) : null;
+      // A founder source is its own library key; without the founders in the library it falls back to a random rival, like a missing library list.
+      const listId = rv.source === "self" ? (rv.species === env.role ? SELF : null) : rv.source.startsWith("library:") && libraryFits(rv.source.slice(8), env.world, rv.species) ? rv.source.slice(8) : rv.source.startsWith(FOUNDER_PREFIX) ? rv.source : null;
       if (rv.source === "pool" && pool?.length) rival = poolLearner(env, pool[rng.int(pool.length)]!);
       else if (listId !== null && Object.hasOwn(library, listId) && library[listId]!.length) {
         const list = library[listId]!;
@@ -507,7 +510,8 @@ export function checkEnv(e: unknown, world: EnvWorld, role: number): EnvSpec | s
     const src = rv.source;
     if (!Number.isInteger(rv.species) || (rv.species as number) < 0 || (rv.species as number) >= species) return "rival species does not exist in this world";
     if (!Number.isInteger(rv.count) || (rv.count as number) < 0) return "rival count must be a whole number";
-    if (src !== "random" && src !== "pool" && src !== "self" && !(typeof src === "string" && /^library:[a-z0-9-]{1,40}$/.test(src))) return "rival source must be random, pool, self or library:<env id>";
+    if (src !== "random" && src !== "pool" && src !== "self" && !(typeof src === "string" && /^library:[a-z0-9-]{1,40}$/.test(src)) && !(typeof src === "string" && src.startsWith(FOUNDER_PREFIX))) return "rival source must be random, pool, self, library:<env id> or founder:<id>";
+    if (typeof src === "string" && src.startsWith(FOUNDER_PREFIX) && (!FOUNDER_IDS.includes(src.slice(FOUNDER_PREFIX.length)) || world !== "ecosystem" || rv.species !== PREY)) return `founder rivals must be a forager of the Ecosystem world, one of ${FOUNDER_IDS.join(", ")}`;
     if (typeof src === "string" && src.startsWith("library:") && !libraryFits(src.slice(8), world, rv.species as number)) return "library rivals must come from an env of this world whose learner is of the rival's species";
     if (src === "self" && rv.species !== role) return "self rivals must be of the learner's species";
     if (rv.energy !== undefined && !n(rv.energy, L.energy)) return `rival energy must be ${L.energy[0]} to ${L.energy[1]}`;

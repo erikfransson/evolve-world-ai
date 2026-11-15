@@ -1,6 +1,7 @@
 // Time-lapse capture of the Live world: one PNG every INTERVAL_S seconds into one folder per world (per reset), plus population.jsonl every POP_EVERY_S.
 // Always on: a light websocket viewer (no browser) that reads hello and stats, detects resets and writes the population log.
 // Chrome (one more viewer) runs only while frames are wanted: it is closed when a folder reaches its cap or the disk gets low, and started again for a new world.
+// The light client also writes the state log (stateLog.mjs): creature frames, the item set, deaths and lineages, with its own cap, so a world can be redrawn long after the PNG cap.
 // Run: nice -n 19 ionice -c3 chrt --idle 0 node tools/timelapse/timelapse.mjs [key=value ...]   (any parameter below can be overridden, e.g. framing=b interval=20 out=/path)
 import { createRequire } from "node:module";
 import { appendFileSync, closeSync, createReadStream, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, renameSync, statSync, statfsSync, unlinkSync, writeFileSync } from "node:fs";
@@ -8,6 +9,7 @@ import { createServer } from "node:http";
 import { connect, createServer as createNetServer } from "node:net";
 import { dirname, extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { FILE_RE, ItemTracker, PROTOCOL, RESYNC_MS, StateRecorder, StateWriter, itemsResyncDue } from "./stateLog.mjs";
 
 // parameters
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -24,12 +26,21 @@ const P = {
   framing: "a", // a = whole map 3840x2400 before crop, b = 7680x4800, c = closer view
   interval: 20, // seconds between frames, aligned to the wall clock
   popEvery: 5, // seconds between population.jsonl lines, a divisor of interval
-  capBytes: 30e9, // bytes of all files per world folder (frames stop a little before it, the logs stop at it) and Chrome closes ("first hours only")
+  capBytes: 50e9, // bytes of all files per world folder but the state log (frames stop a little before it, the logs stop at it) and Chrome closes ("first hours only")
   popCapBytes: 500e6, // population.jsonl bytes per world folder
   regionsCapBytes: 100e6, // regions.jsonl bytes per world folder
   regionRadiusFactor: 2.5, // a creature belongs to the nearest map region within this many times its seeding radius r, else "elsewhere" (seeded creatures stay within 0.6 r, the painted realm is about 2.2 r wide, 99% of living creatures are within 2.4 to 2.7 r)
   hueMatchDeg: 25, // a creature hue within this many degrees of a region hue counts for that hue's lineage, else "other"
-  freeFloorBytes: 20e9, // frames stop when the disk has less free
+  freeFloorBytes: 20e9, // frames stop when the disk has less free, and so does the state log
+  stateEvery: 5, // seconds between creature records of the state log, aligned to the wall clock, 0 = none
+  itemsEvery: 30, // seconds between item records (the changed slots) of the state log, at a creature record
+  burstEvery: 1200, // seconds between bursts of 1 Hz creature records in the state log (smooth close-ups), 0 = none
+  burstSeconds: 60, // length of each burst, 0 = none
+  stateKeyEvery: 600, // seconds between full records in the state log (creatures and item set; differences in between)
+  stateCapBytes: 30e9, // state log bytes per world folder, counted apart from capBytes
+  stateFileBytes: 256e6, // a state log file rolls over to the next at this size
+  stateMaxDeaths: 4096, // death events kept per state record, the rest are counted as dropped
+  frames: 1, // 0 = no PNG frames and no Chrome, only the logs (a test hook)
   staleCaptures: 3, // same tick this many frame slots in a row = frozen, reload
   statsMaxAgeS: 15, // no stats for this long = link dead
   resetTickDrop: 100, // a tick this far below the last one = new world
@@ -112,28 +123,65 @@ const retryDelayS = (n) => Math.min(30, 2 ** n) * (1 + 0.25 * Math.random()); //
 function cleanHello(m) {
   const w = m?.world, mp = m?.map ?? {};
   if (num(m?.version) === null || num(w?.width) === null || num(w?.height) === null) return null;
-  return { version: m.version, serverVersion: typeof m.serverVersion === "string" ? m.serverVersion.slice(0, 16) : "", mapName: typeof mp.name === "string" ? mp.name.slice(0, 40) : "", mapVersion: typeof mp.version === "string" ? mp.version.slice(0, 40) : "", width: w.width, height: w.height };
+  return { version: m.version, serverVersion: typeof m.serverVersion === "string" ? m.serverVersion.slice(0, 16) : "", mapName: typeof mp.name === "string" ? mp.name.slice(0, 40) : "", mapVersion: typeof mp.version === "string" ? mp.version.slice(0, 40) : "", width: w.width, height: w.height, dt: num(m.dt), itemSlots: num(m.itemSlots), radius: num(m.radius), itemRadius: num(m.itemRadius), fullEnergy: num(m.fullEnergy) };
 }
 function cleanStats(m) {
   const tick = num(m?.tick), population = num(m?.population);
   if (tick === null || population === null) return null;
-  const lineages = Array.isArray(m.lineages) ? m.lineages.slice(0, MAX_LINEAGES).map((l) => ({ founder: num(l?.founder) ?? -1, name: typeof l?.name === "string" ? safe(l.name, 24) : "", count: num(l?.count) ?? 0, hue: num(l?.hue) ?? -1, starter: l?.starter === true })) : [];
-  return { tick, simSeconds: num(m.simSeconds) ?? 0, population, lineages };
+  const raw = Array.isArray(m.lineages) ? m.lineages.slice(0, MAX_LINEAGES) : [];
+  const lineages = raw.map((l) => ({ founder: num(l?.founder) ?? -1, name: typeof l?.name === "string" ? safe(l.name, 24) : "", count: num(l?.count) ?? 0, hue: num(l?.hue) ?? -1, starter: l?.starter === true }));
+  const founders = raw.map((l) => (Array.isArray(l?.founders) ? l.founders.slice(0, 32).filter((f) => num(f) !== null) : [])); // for the state log only (population.jsonl lines stay as they were)
+  const se = m.season, season = num(se?.yearMinutes) > 0 && num(se?.winterFood) !== null ? { yearMinutes: se.yearMinutes, winterFood: se.winterFood } : null;
+  return { tick, simSeconds: num(m.simSeconds) ?? 0, population, lineages, founders, season };
 }
+const items = new ItemTracker(P.stateMaxDeaths); // the item set and deaths from ITEMS and DELTA, for the state log; at most 2^18 slots
+let recorder = null; // the state log of the current world folder
 function onLinkMessage(data, isBinary) {
   lastMessage = Date.now();
-  if (isBinary) { if (wantCreatures && data.length > 9 && data[0] === 1) lastCreatures = data; return; } // item sets and deltas are never parsed; the latest creature frame is kept only while frames are captured (regions.jsonl)
+  if (isBinary) {
+    try {
+      const type = data[0];
+      if (type === 1) { if (wantCreatures && data.length > 9) lastCreatures = data; recordState(data); } // the latest creature frame is kept only while frames are captured (regions.jsonl)
+      else if (type === 2) { if (!items.full(data)) { logLimited("bad items", "item set refused:", items.error); itemsResync(true); } }
+      else if (type === 5) { if (!items.delta(data)) { logLimited("bad delta", "item changes refused:", items.error); itemsResync(true); } }
+    } catch (err) { logLimited("bad binary", "bad binary message", String(err?.message ?? err).slice(0, 100)); }
+    return;
+  }
   try {
     if (data.length > MAX_TEXT) return;
     const m = JSON.parse(data.toString());
     if (m?.t === "hello") {
       const h = cleanHello(m);
-      if (h) { hello = h; failures = 0; log("hello", h); }
+      if (h) { hello = h; helloAt = Date.now(); failures = 0; items.reset(); log("hello", h); }
     } else if (m?.t === "stats") {
       const s = cleanStats(m);
       if (s) { stats = s; statsAt = Date.now(); }
     } else if (m?.t === "busy") logLimited("busy", "server says busy (viewer limit)");
   } catch (err) { logLimited("bad message", "bad message", String(err?.message ?? err).slice(0, 100)); }
+}
+// The item set refused, or missing for a minute: reconnect, so the server sends a full set (as the page does, live/connection.ts). At most once a minute, whatever the server sends,
+// and only while a state log records it (not paused for another protocol).
+let itemsResyncAt = 0, helloAt = 0;
+function itemsResync(refused) {
+  const s = { on: !!recorder && hello?.version === PROTOCOL, open: link?.readyState === WebSocket.OPEN, valid: items.valid, invalidSince: items.invalidSince, lastResyncAt: itemsResyncAt, helloAt, refused };
+  if (!itemsResyncDue(s, Date.now())) return;
+  itemsResyncAt = Date.now(); log("item set unknown, reconnecting for a full set");
+  const ws = link; link = null; try { ws.terminate(); } catch {} scheduleLink("item resync");
+}
+// A creature frame for the state log, with the stats it needs (the recorder keeps one per stateEvery slot and refuses a frame whose length or count is wrong)
+let stateLogged = "";
+function recordState(buf) {
+  if (!recorder || !hello || !stats || buf.length < 9 || Date.now() - statsAt > P.statsMaxAgeS * 1000) return;
+  if (hello.version !== PROTOCOL) { recorder.paused = `server protocol ${hello.version}, the format stores ${PROTOCOL}`; logLimited("state protocol", "state log paused:", recorder.paused); return; }
+  recorder.paused = "";
+  const tick = buf.readUInt32LE(1), dTick = tick - stats.tick;
+  const simSeconds = hello.dt > 0 && Math.abs(dTick) < 1e5 ? stats.simSeconds + dTick * hello.dt : stats.simSeconds;
+  const lineages = stats.lineages.map((l, i) => ({ ...l, founders: stats.founders[i] }));
+  const r = recorder.creatures(buf, Date.now(), { simSeconds, population: stats.population, season: stats.season, lineages });
+  if (r === -1) logLimited("bad frame", "creature frame refused (length or count)");
+  else if (r === -2) logLimited("state record failed", "state record failed:", recorder.error);
+  const st = recorder.writer.state;
+  if (st !== stateLogged) { stateLogged = st; log("state log", st, recorder.writer.error || "", Math.round(recorder.writer.bytes / 1e6), "MB"); }
 }
 function connectLink() {
   clearTimeout(linkTimer);
@@ -162,7 +210,7 @@ connectLink();
 // ---- world folders
 let world = null; // { id, dir, bytes, frames, popBytes, lastTick, capped, staleN, lastCapturedTick, size }
 function worldId() { return [safe(hello?.mapName, 20), `${Math.round(hello?.width ?? 0)}x${Math.round(hello?.height ?? 0)}`, safe(hello?.mapVersion, 20)].join("-"); }
-const folderBytes = (d) => { let n = 0; try { for (const e of readdirSync(d, { withFileTypes: true })) if (e.isFile()) n += statSync(join(d, e.name)).size; } catch {} return n; }; // all files of a world folder
+const folderBytes = (d) => { let n = 0; try { for (const e of readdirSync(d, { withFileTypes: true })) if (e.isFile() && !FILE_RE.test(e.name)) n += statSync(join(d, e.name)).size; } catch {} return n; }; // all files of a world folder but the state log (its own cap)
 const tailLine = (f) => { try { const fd = openSync(f, "r"); try { const n = statSync(f).size, len = Math.min(n, 16384), b = Buffer.alloc(len); readSync(fd, b, 0, len, n - len); return b.toString().trimEnd().split("\n").pop(); } finally { closeSync(fd); } } catch { return null; } }; // the last line, from the last 16 kB (a population line is under 1 kB)
 // The folder cap counts every file. Frames stop at capBytes minus the logs' own caps (at most a tenth of capBytes), so frames plus logs stay under capBytes; a log line is written only while the folder is under capBytes.
 const frameCapBytes = () => P.capBytes - Math.min(P.popCapBytes + P.regionsCapBytes, 0.1 * P.capBytes);
@@ -194,8 +242,33 @@ function startWorld(now) {
   world = { recent, id, dir, bytes, frames, popBytes, regionsBytes, lastTick: stats.tick, capped: false, staleN: 0, lastCapturedTick: -1, size };
   chromeFails = 0; chromeRetryAt = 0; // a new world starts Chrome at once, not after an old world's back-off
   loadRegions();
-  if (regionInfo) { const f = join(OUT, dir, "world.json"); try { const j = JSON.parse(readFileSync(f, "utf8")); j.regions = regionInfo; j.regionsNote = "regions.jsonl m = flat matrix, rows: regions then elsewhere, columns: lineages of hues then other"; writeFileSync(f, JSON.stringify(j) + "\n"); } catch {} }
-  log("world folder", dir, { resumedBytes: bytes, resumedFrames: frames });
+  if (regionInfo) { const f = join(OUT, dir, "world.json"); try { const j = JSON.parse(readFileSync(f, "utf8")); j.regions = regionInfo; j.regionsNote = "regions.jsonl m = flat matrix, rows: regions then elsewhere, columns: lineages of hues then other"; writeJsonAtomic(f, j); } catch {} }
+  if (P.framing !== "c") patchWorldJson(dir, { camera: camera() }); // also a folder from before the state log, whose world.json has its size already
+  openStateLog(id, dir);
+  log("world folder", dir, { resumedBytes: bytes, resumedFrames: frames, stateBytes: recorder?.writer.bytes ?? null });
+}
+// A JSON file through a fresh temporary name and a rename, so a link planted at either name is replaced, never written through.
+function writeJsonAtomic(f, j) {
+  try { unlinkSync(f + ".tmp"); } catch {}
+  writeFileSync(f + ".tmp", JSON.stringify(j) + "\n", { flag: "wx" }); renameSync(f + ".tmp", f);
+}
+// Adds the fields world.json lacks, keeping the rest.
+function patchWorldJson(dir, fields) {
+  const f = join(OUT, dir, "world.json");
+  try {
+    const j = JSON.parse(readFileSync(f, "utf8")), add = Object.entries(fields).filter(([k]) => !(k in j));
+    if (!add.length) return;
+    for (const [k, v] of add) j[k] = v;
+    writeJsonAtomic(f, j);
+  } catch (err) { log("world.json not updated", String(err?.message ?? err).slice(0, 100)); }
+}
+let stateOpenError = null; // the state log of this folder could not be opened: what status.json says instead
+function openStateLog(id, dir) { // appends to the folder's state log, if there is one: the first header of this run says resumed, and the wall times show the gap
+  recorder?.writer.close(); recorder = null; stateLogged = ""; stateOpenError = null;
+  if (!(P.stateEvery > 0 || (P.burstEvery > 0 && P.burstSeconds > 0))) return;
+  const header = { worldId: id, map: hello.mapName, mapVersion: hello.mapVersion, serverVersion: hello.serverVersion, world: { width: hello.width, height: hello.height }, dt: hello.dt, itemSlots: hello.itemSlots, radius: hello.radius, itemRadius: hello.itemRadius, fullEnergy: hello.fullEnergy, build: stampInfo, params: { stateEvery: P.stateEvery, itemsEvery: P.itemsEvery, burstEvery: P.burstEvery, burstSeconds: P.burstSeconds, stateKeyEvery: P.stateKeyEvery, framing: P.framing, interval: P.interval } };
+  try { recorder = new StateRecorder(new StateWriter(join(OUT, dir), { capBytes: P.stateCapBytes, fileBytes: P.stateFileBytes, freeFloorBytes: P.freeFloorBytes, header }), items, { every: P.stateEvery, itemsEvery: P.itemsEvery, burstEvery: P.burstEvery, burstSeconds: P.burstSeconds, keyEvery: P.stateKeyEvery, resetTickDrop: P.resetTickDrop }); }
+  catch (err) { const error = String(err?.message ?? err).slice(0, 100); log("state log not opened", error); stateOpenError = { state: "error", opened: false, error, startedAt: new Date().toISOString(), every: P.stateEvery, itemsEvery: P.itemsEvery, burstEvery: P.burstEvery, burstSeconds: P.burstSeconds }; }
 }
 function logPopulation(now) {
   if (world.popBytes >= P.popCapBytes) return;
@@ -375,6 +448,8 @@ async function computeCrop() {
   width = Math.min(even(width), F.w - left); height = Math.min(even(height), F.h - top);
   return { x: left, y: top, width, height };
 }
+// The fitted camera of framings a and b (the same fit as computeCrop): PNG pixel = ((origin + world * zoom) - crop corner) * dsf, per axis. Framing c is zoomed by the page, not recorded.
+const camera = () => { if (P.framing === "c") return null; const z = Math.min(F.w / hello.width, F.h / hello.height) * 0.96; return { zoom: z, origin: [(F.w - hello.width * z) / 2, (F.h - hello.height * z) / 2], dsf: F.dsf, viewport: [F.w, F.h], note: "PNG px = ((origin + world units * zoom) - crop.x or crop.y) * dsf; zoom in CSS px per world unit" }; };
 const pageShowsWorld = () => page.evaluate(() => document.getElementById("chipText")?.textContent === "Live" && document.getElementById("worldLoading")?.hidden === true).catch(() => false);
 const pageState = () => page.evaluate(() => { const $ = (i) => document.getElementById(i); return { chip: $("chipText")?.textContent, offlineShown: $("offline")?.hidden === false, loadingShown: $("worldLoading")?.hidden === false, chipState: document.getElementById("chip")?.dataset?.state ?? null }; }).catch(() => null);
 const median = (a) => { const b = [...a].sort((x, y) => x - y); return b.length ? b[b.length >> 1] : 0; };
@@ -383,7 +458,11 @@ async function takeFrame(now, tick) {
   const size = [crop.width * F.dsf, crop.height * F.dsf];
   if (world.recent.length >= 5 && png.length < median(world.recent) / 3) return { png, path: null, suspicious: true }; // a blank or offline page compresses far smaller
   if (world.size && (world.size[0] !== size[0] || world.size[1] !== size[1])) throw new Error(`frame size ${size} differs from this world's ${world.size}`);
-  if (!world.size) { world.size = size; const f = join(OUT, world.dir, "world.json"); const j = JSON.parse(readFileSync(f, "utf8")); j.size = size; j.crop = crop; writeFileSync(f, JSON.stringify(j) + "\n"); }
+  if (!world.size) { // the frame is kept when world.json cannot be written, and the next frame tries again
+    const f = join(OUT, world.dir, "world.json");
+    try { const j = JSON.parse(readFileSync(f, "utf8")); j.size = size; j.crop = crop; writeJsonAtomic(f, j); world.size = size; }
+    catch (err) { logLimited("world.json", "world.json not updated with size and crop", String(err?.message ?? err).slice(0, 100)); }
+  }
   const path = join(OUT, world.dir, `${stamp(now)}_t${String(tick).padStart(9, "0")}.png`);
   try { unlinkSync(path + ".tmp"); } catch {}
   writeFileSync(path + ".tmp", png, { flag: "wx" }); renameSync(path + ".tmp", path); // wx: a planted symlink at the temporary name fails the write instead of redirecting it; rename replaces a link at the frame name
@@ -396,7 +475,7 @@ function setStatus(state, msg = "") { statusState = state; statusMsg = msg; }
 function writeStatus() {
   try {
     const f = join(OUT, "status.json");
-    writeFileSync(f + ".tmp", JSON.stringify({ time: new Date().toISOString(), state: statusState, message: statusMsg, world: world?.dir ?? null, interval: P.interval, popEvery: P.popEvery, capBytes: P.capBytes, freeFloorBytes: P.freeFloorBytes, chrome: chromeState, pid: process.pid }) + "\n");
+    writeFileSync(f + ".tmp", JSON.stringify({ time: new Date().toISOString(), state: statusState, message: statusMsg, world: world?.dir ?? null, interval: P.interval, popEvery: P.popEvery, capBytes: P.capBytes, freeFloorBytes: P.freeFloorBytes, chrome: chromeState, pid: process.pid, stateLog: recorder?.status() ?? stateOpenError }) + "\n");
     renameSync(f + ".tmp", f);
   } catch {}
 }
@@ -417,13 +496,14 @@ async function step(now, withFrame) {
   }
   world.lastTick = tick;
   logPopulation(now);
+  if (!P.frames) { owe(false); setStatus("logs-only", "PNG frames off (frames=0)"); return; }
   const versionOk = !stampInfo || stampInfo.protocol === hello.version;
   if (!versionOk) { owe(false); setStatus("error", "version mismatch: server protocol " + hello.version + ", built page " + stampInfo.protocol); if (Date.now() - lastLinkLog > 60_000) { lastLinkLog = Date.now(); log("VERSION MISMATCH: server protocol", hello.version, "built page", stampInfo.protocol, "(commit " + stampInfo.commit + "), no frames until the page is rebuilt with build-page.sh"); } await closeChrome(); return; }
   if (!existsSync(join(PAGE_DIR, "live/index.html"))) { owe(false); if (Date.now() - lastLinkLog > 60_000) { lastLinkLog = Date.now(); log("built page missing in", PAGE_DIR, "run build-page.sh"); } return; }
   const free = statfsSync(OUT); const freeBytes = free.bavail * free.bsize;
   if (!world.capped && freeBytes < P.freeFloorBytes) { log("free disk", Math.round(freeBytes / 1e6), "MB under the floor, frames stopped for", world.dir); world.capped = true; world.why = "disk-floor"; }
   if (!world.capped && world.bytes >= frameCapBytes()) { log("folder at cap", world.bytes, "B, frames stopped for", world.dir); world.capped = true; world.why = "cap"; }
-  if (world.capped) { owe(false); setStatus(world.why === "cap" ? "capped" : "disk-floor", world.why === "cap" ? "folder reached the size cap" : "free disk under the floor"); await closeChrome(); return; }
+  if (world.capped) { owe(false); setStatus(world.why === "cap" ? "capped" : "disk-floor", world.why === "cap" ? "folder reached the size cap, the state log goes on" : "free disk under the floor"); await closeChrome(); return; }
   if (chromeState === "off") { if (Date.now() >= chromeRetryAt) { setStatus("capturing", "starting Chrome"); void launchChrome(); owe(true); } else { owe(false); setStatus("error", "Chrome failed to start " + chromeFails + " times in a row"); } return; }
   setStatus("capturing"); owe(true);
   if (chromeState !== "ready" || !withFrame) return;
@@ -473,6 +553,8 @@ for (;;) {
     const next = Math.ceil((Date.now() + 1) / (P.popEvery * 1000)) * P.popEvery * 1000;
     if (P.maxRunS && next - startedAt > P.maxRunS * 1000) break;
     await sleep(Math.max(0, next - Date.now()));
+    itemsResync(false); // no full set for a minute (never sent, or refused while a resync was not allowed)
+    if (stateOpenError && world && hello && stats && worldId() === world.id && stats.tick >= world.lastTick - P.resetTickDrop && Date.now() - Date.parse(stateOpenError.startedAt) >= RESYNC_MS) openStateLog(world.id, world.dir); // a failed open is tried again once a minute, never on a folder the server has already left (step() opens the new world's)
     if (P.socket && socketFailAt > socketOkAt && Date.now() - socketOkAt > P.socketDeadS * 1000 && link?.readyState !== WebSocket.OPEN) { // the proxy socket is gone (its units failed or stopped): exit, and the unit's restart starts the socket again through Requires=
       log("no working connect to the proxy socket for", Math.round((Date.now() - socketOkAt) / 1000), "s, exiting so the unit restarts with the socket"); setStatus("error", "proxy socket missing"); writeStatus(); await closeChrome(); process.exit(1);
     }

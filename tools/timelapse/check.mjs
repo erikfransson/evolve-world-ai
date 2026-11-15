@@ -1,9 +1,10 @@
-// Sanity check of a running (or finished) time-lapse capture. Reads only the output folder (status.json, frames.jsonl, population.jsonl, the newest PNG header); changes nothing.
-// Run: node tools/timelapse/check.mjs [out=<dir>] [world=<folder name>]   Exit 0 = healthy (capturing with a fresh frame, or stopped by the cap), else 1 with one plain line saying what is wrong.
+// Sanity check of a running (or finished) time-lapse capture. Reads only the output folder (status.json, frames.jsonl, population.jsonl, the newest PNG header, the state log's file sizes and times); changes nothing.
+// Run: node tools/timelapse/check.mjs [out=<dir>] [world=<folder name>]   Exit 0 = healthy (capturing with a fresh frame, or stopped by the cap, and the state log fresh or at its cap), else 1 with one plain line saying what is wrong.
 // The capture unit writes the output folder, so every file there is hostile input: bounded reads that follow no link and never block, numbers checked, text printed without control characters.
 import { lstatSync, readdirSync, statfsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { clean, num, readHostile } from "./hostile.mjs";
+import { stateLogHealth } from "./stateLog.mjs";
 
 const A = Object.fromEntries(process.argv.slice(2).map((a) => { const i = a.indexOf("="); return [a.slice(0, i), a.slice(i + 1)]; }));
 const OUT = resolve(A.out ?? join(import.meta.dirname, "../../videos/timelapse"));
@@ -16,7 +17,7 @@ const say = (...a) => console.log(...a);
 
 const st = readJson(join(OUT, "status.json"));
 const status = st && { time: clean(st.time, 40), state: clean(st.state, 20), message: clean(st.message, 160), chrome: clean(st.chrome, 20), world: typeof st.world === "string" ? st.world : null, interval: num(st.interval), capBytes: num(st.capBytes), freeFloorBytes: num(st.freeFloorBytes) };
-const interval = status?.interval ?? 20, cap = status?.capBytes ?? 30e9, floor = status?.freeFloorBytes ?? 20e9;
+const interval = status?.interval ?? 20, cap = status?.capBytes ?? 50e9, floor = status?.freeFloorBytes ?? 20e9;
 let dir = A.world ?? status?.world;
 if (!dir) { try { dir = readdirSync(OUT, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name).sort().pop(); } catch {} }
 if (dir && (dir.includes("/") || dir === ".." || dir === ".")) dir = null; // a folder name, not a path
@@ -53,10 +54,19 @@ else {
   const pl = tailLine(join(w, "population.jsonl"));
   if (pl) { try { const p = JSON.parse(pl), t = clean(p.time, 40); say("newest population line:", t, `age ${age(t)} s, tick ${num(p.tick)}, population ${num(p.population)}`); if (!(age(t) <= 60)) bad.push(`population.jsonl newest line is ${age(t)} s old`); } catch { say("newest population line: unreadable"); } }
   else { say("newest population line: none"); bad.push("no population.jsonl line"); }
+  const own = dir === status?.world, raw = own && st?.stateLog && typeof st.stateLog === "object" ? st.stateLog : null; // status.json describes the script's current folder only
+  const sl = raw && { state: clean(raw.state, 20), error: clean(raw.error, 100), opened: raw.opened !== false, startedAt: clean(raw.startedAt, 40), lastCreatureAt: typeof raw.lastCreatureAt === "string" ? clean(raw.lastCreatureAt, 40) : null, capBytes: num(raw.capBytes), every: num(raw.every) ?? 0, burstEvery: num(raw.burstEvery) ?? 0, itemsValid: raw.itemsValid !== false, itemsInvalidS: num(raw.itemsInvalidS) ?? 0 };
+  let sBytes = 0, sFiles = 0, sNewest = 0;
+  try { for (const e of readdirSync(w, { withFileTypes: true })) { if (!e.isFile() || !/^state-\d{5}\.evs$/.test(e.name)) continue; const s = lstatSync(join(w, e.name)); sBytes += s.size; sFiles++; sNewest = Math.max(sNewest, s.mtimeMs); } } catch {}
+  const sAge = sNewest ? Math.round((Date.now() - sNewest) / 1000) : null;
+  say("state log:", sFiles ? `${sFiles} files, ${fmt(sBytes)} of cap ${fmt(sl?.capBytes ?? 30e9)}, newest write ${sAge} s ago` : "no files", sl ? `(${sl.state}${sl.error ? ": " + sl.error : ""}${sl.itemsValid ? "" : `, item set unknown for ${sl.itemsInvalidS} s`})` : !own && status ? "(status.json is for another folder, not judged)" : "(not written by this script version)");
+  const sh = stateLogHealth(sl, { count: sFiles, newestMs: sNewest }, Date.now());
+  if (!sh.ok) bad.push(sh.reason);
   let freeB = null; try { const f = statfsSync(OUT); freeB = f.bavail * f.bsize; } catch {}
   say("free disk:", freeB === null ? "?" : fmt(freeB), "floor", fmt(floor));
   const state = status?.state;
-  if (state === "capped") say("capture: stopped by the size cap (healthy)");
+  if (state === "capped") say(`capture: PNG frames stopped by the size cap (healthy${sl ? " while the state log runs" : ""})`);
+  else if (state === "logs-only") say("capture: PNG frames off (frames=0), logs only");
   else if (state === "capturing" && fresh) say("capture: active");
   else if (state === "capturing" && !frames.length && world && age(world.startedCapture) < 150) say("capture: starting (no frame yet, folder is", age(world.startedCapture), "s old)");
   else if (state === "capturing") { say("capture: not producing frames"); bad.push(frames.length ? `capture says active but the newest frame is ${age(frames.at(-1).time)} s old` : "capture says active but no frame exists"); }

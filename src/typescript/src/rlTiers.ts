@@ -15,7 +15,8 @@ import { DESIGN_PANEL, designLearner } from "./sim/rl/designPanel.ts";
 import { EXTRA_DESIGNS } from "./sim/rl/b1Bodies.ts";
 import type { EnvSpec } from "./sim/rl/env.ts";
 import { RECOMMENDED_MIX, envById } from "./sim/rl/envs.ts";
-import { parseLibrary, serialiseLearner } from "./sim/rl/library.ts";
+import { loadFounders } from "./cliArgs.ts";
+import { parseLibrary, serialiseLearner, withFounders } from "./sim/rl/library.ts";
 import { TRAIN_TIERS } from "./sim/rl/trainTiers.ts";
 import { loadStarts } from "./rlStarts.ts";
 import type { Learner } from "./sim/rl/env.ts";
@@ -74,7 +75,7 @@ export const PROTOCOLS: Record<string, Phase[]> = {
 const { values } = parseArgs({ options: { tier: { type: "string" }, protocol: { type: "string" }, designs: { type: "string" }, seed: { type: "string", default: "1" }, out: { type: "string" }, from: { type: "string" }, rescore: { type: "string", default: "32" }, calibrate: { type: "boolean" }, list: { type: "boolean" }, design: { type: "string", default: "p3" }, final: { type: "boolean" }, "cpu-per-second": { type: "string" }, "clock-at-ready": { type: "boolean" } } });
 if (values.list) { console.log(Object.keys(PROTOCOLS).join(" ")); process.exit(0); }
 const pool = existsSync("public/pool.json") ? parsePool(JSON.parse(readFileSync("public/pool.json", "utf8"))).entries : null;
-const library = parseLibrary(existsSync("public/rl/library.json") ? JSON.parse(readFileSync("public/rl/library.json", "utf8")) : null);
+const library = withFounders(parseLibrary(existsSync("public/rl/library.json") ? JSON.parse(readFileSync("public/rl/library.json", "utf8")) : null), loadFounders());
 const ALL = [...DESIGN_PANEL, ...EXTRA_DESIGNS];
 const cpuPerSecond = values["cpu-per-second"] ? Number(values["cpu-per-second"]) : BROWSER_CPU_PER_SECOND; // B5: PPO gets about 1.3 in a real browser (B4)
 const cpu = (): number => { const u = process.cpuUsage(); return (u.user + u.system) / 1e6; };

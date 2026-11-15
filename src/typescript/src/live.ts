@@ -45,6 +45,7 @@ import { rockFarm } from "./ui/rockFarm.ts";
 import { recastRays } from "./live/rayRecast.ts";
 import { paintMapLegendWhenSeen } from "./live/mapLegend.ts";
 import { birthNote, followsLive } from "./live/detail.ts";
+import { litLabel, syncLitChip } from "./live/litChip.ts";
 import type { BirthWait } from "./live/detail.ts";
 import { mapSpec, mapVersion } from "./sim/maps/index.ts";
 import { BACKGROUND } from "./ui/palette.ts";
@@ -268,7 +269,7 @@ function onHello(h: Hello): void {
   lineageHistory = [];
   showHistory();
   lineages.reset();
-  highlight = -1;
+  setHighlight(-1);
   leaderPanel ??= new LeaderPanel(leaderCard, [], h.radius);
   leaderPanel.clear();
   clearSelection();
@@ -528,6 +529,13 @@ function updateSelectedCard(): void {
   syncFamily();
 }
 
+// The one place that lights or clears a family (-1 for none): the module variable, the Lineages card and the Selected card's controls move together.
+function setHighlight(f: number): void {
+  highlight = f;
+  lineages.setHighlight(f >= 0 ? f : null);
+  syncFamily();
+}
+
 // The family toggle on the selected card. When one founder's family is the whole world, lighting it dims nobody, so it says so.
 function syncFamily(): void {
   const f = selection?.last?.founderId;
@@ -537,6 +545,7 @@ function syncFamily(): void {
   b.setAttribute("aria-pressed", String(on));
   const size = lastStats?.lineages?.find((l) => f !== undefined && l.founder === rowOf(f))?.count ?? 0;
   const everyone = !!lastStats && lastStats.population > 0 && size >= lastStats.population;
+  syncLitChip($("litFamily"), highlight >= 0 ? litLabel(highlight, names) : null);
   $("selFamilyLabel").textContent = everyone ? (on ? "Everyone shares this founder" : "Everyone's founder") : on ? "Family lit" : "Highlight family";
 }
 
@@ -613,23 +622,16 @@ function onStats(s: Stats, noted = false): void {
     if (names.size > 200) names = new Map([...names].slice(-100)); // only the listed ones matter; old ones go
     if (litName && !s.lineages.some((l) => l.founder === highlight)) {
       const row = s.lineages.find((l) => l.name === litName);
-      if (row) {
-        highlight = row.founder;
-        lineages.setHighlight(highlight);
-        syncFamily();
-      }
+      if (row) setHighlight(row.founder);
     }
     // A lit family that died out lets go, so everyone gets their colour back (the views still hold its fading ghosts for a moment).
     // A family lit in the last 3 s is kept: a visitor's new copies reach the views a frame and a motion span after the add's reply.
     const now = performance.now();
     if (highlight !== litOf) [litOf, litAt] = [highlight, now];
-    if (highlight >= 0 && now - litAt > 3000 && scene.views.count > 0 && !rowLiving(scene.views.founder, scene.views.count, highlight, rowOf)) {
-      highlight = -1;
-      lineages.setHighlight(null);
-      syncFamily();
-    }
+    if (highlight >= 0 && now - litAt > 3000 && scene.views.count > 0 && !rowLiving(scene.views.founder, scene.views.count, highlight, rowOf)) setHighlight(-1);
     lastLineages = s.lineages;
     lineages.setLineages(s.lineages.map((l): Lineage => ({ founder: l.founder, hue: l.hue, pool: l.pool, count: l.count, species: 0 })), s.population, names, starters, familyOf);
+    syncFamily(); // a lit family's name may have just arrived
   }
   if (s.records) setRecords(s.records);
   $<HTMLButtonElement>("pickAge").disabled = !s.best;
@@ -820,6 +822,7 @@ $("zoomFit").addEventListener("click", () => {
 });
 $("worldView").addEventListener("click", () => {
   clearSelection();
+  setHighlight(-1);
   camera.animateToFit();
 });
 $("follow").addEventListener("click", () => {
@@ -828,6 +831,10 @@ $("follow").addEventListener("click", () => {
     camera.follow(null);
     setFollowing(false);
   } else if (selection && scene.slotOf(selection.id) >= 0) followSelected();
+});
+$("litFamily").addEventListener("click", () => {
+  setHighlight(-1);
+  $("pickAge").focus(); // the chip hides on its click: keyboard focus stays on the card
 });
 $("selFounder").addEventListener("click", () => {
   const f = selection?.last?.founderId;
@@ -847,9 +854,7 @@ function followNextCopy(dead: number): void {
   setTimeout(() => {
     if (selection?.id !== dead || scene.slotOf(next) < 0) return; // the visitor picked something else meanwhile
     select(next);
-    highlight = rowOf(next); // a copy's family is counted in its name's row
-    lineages.setHighlight(highlight);
-    syncFamily();
+    setHighlight(rowOf(next)); // a copy's family is counted in its name's row
   }, 1500);
 }
 
@@ -862,9 +867,7 @@ const addPanel = new AddPanel($("addPanel"), {
     myCopies = r.ids.slice();
     const id = r.ids[0]!; // an added creature founds its own lineage: its id is the family's founder
     select(id);
-    highlight = rowOf(id);
-    lineages.setHighlight(highlight);
-    syncFamily();
+    setHighlight(rowOf(id));
   },
   minimised: (on) => ($("addPeek").hidden = !on),
 });

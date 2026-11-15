@@ -63,7 +63,7 @@ const { values } = strictArgs({
   },
 });
 
-const envList0: (EnvSpec | undefined)[] = values.envs === "all" ? ENVS.filter((e) => e.world === "ecosystem") : (values.envs ?? values.env!).split(",").map((id) => envById(id));
+const envList0: (EnvSpec | undefined)[] = values.envs === "all" ? ENVS.filter((e) => e.world === "ecosystem" && !e.tags.includes("founders")) : (values.envs ?? values.env!).split(",").map((id) => envById(id));
 if (envList0.length === 0 || envList0.some((e) => !e)) fail(`unknown env in "${values.envs ?? values.env}"`);
 const envs0 = envList0 as EnvSpec[];
 // [kind, min]: "int" at least min, "real" at least min (finite); a bad value stops the run before any training.
