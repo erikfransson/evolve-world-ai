@@ -91,7 +91,7 @@ export class ItemTracker {
     this.valid = false; this.slots = 0; this.tick = 0; this.error = ""; this.invalidSince = Date.now();
     this.maxDeaths = maxDeaths; this.dTick = new Uint32Array(maxDeaths); this.dXyh = new Uint16Array(3 * maxDeaths); this.nDeaths = 0; this.dropped = 0;
   }
-  reset() { this.invalid(); this.clearDeaths(); } // a new hello (a reconnect or a new world): the server sends a full set again, and deaths kept so far may be another world's
+  reset() { this.invalid(); } // a new hello: the server sends a full set again (deaths kept so far stay: a new recorder clears them, and the tick filter drops another world's)
   clearDeaths() { this.nDeaths = 0; this.dropped = 0; }
   invalid() { if (this.valid || !this.invalidSince) this.invalidSince = Date.now(); this.valid = false; }
   bad(why) { this.invalid(); this.error = why; return false; }
@@ -189,7 +189,7 @@ export class StateWriter {
       if (this.fd === null || this.fileSize + rec.length > this.fileBytes) this.open(rec.length);
       this.put(rec);
     } catch (err) { this.state = "error"; this.error = String(err?.message ?? err).slice(0, 100); this.close(); return false; }
-    this.records++; this.lastAt = t; this.state = "writing";
+    this.records++; this.lastAt = t; this.state = "writing"; this.error = "";
     return true;
   }
   close() { if (this.fd !== null) { try { closeSync(this.fd); } catch {} this.fd = null; } }
@@ -201,7 +201,7 @@ export class StateRecorder {
     Object.assign(this, { writer, items, every, itemsEvery, burstEvery, burstSeconds, keyEvery, resetTickDrop });
     this.slot = -1; this.bslot = -1; this.islot = -1; this.lastTick = -1; this.seq = randomSeq(); this.lastKeyAt = -Infinity; this.lineSig = "";
     this.cSeq = randomSeq(); this.cBase = null; this.cKeyAt = -Infinity; // the last creature record written (sorted), the base of the next one
-    this.startedAt = Date.now(); this.paused = ""; this.error = "";
+    this.startedAt = Date.now(); this.paused = ""; this.error = ""; this.lastCreatureAt = 0;
     items.clearDeaths(); // deaths kept before this world folder are not its own
   }
   // A CREATURES wire message at wall time wallMs, with what the stats say: { simSeconds, population, season: { yearMinutes, winterFood } | null }.
@@ -235,6 +235,7 @@ export class StateRecorder {
     encodeCreatures(sorted.recs, count, base, raw, META);
     if (!this.writer.write(type, raw)) { this.cBase = null; return 0; }
     this.cSeq = nextSeq(this.cSeq); this.cBase = sorted; if (!base) this.cKeyAt = wallMs;
+    this.lastCreatureAt = Date.now(); this.error = ""; // a creature record written: what the check judges by, and an earlier throw is over
     return type;
   }
   // The item set at this record: a full set (first, after a gap in the chain, every keyEvery s), else the slots changed since the last items record. Returns its sequence number, NO_SEQ while unknown.
@@ -301,7 +302,7 @@ export class StateRecorder {
   status() {
     const w = this.writer;
     const it = this.items;
-    return { state: this.paused ? "paused" : w.state, error: this.paused || this.error || w.error, startedAt: new Date(this.startedAt).toISOString(), itemsValid: it.valid, itemsInvalidS: it.valid ? 0 : Math.round((Date.now() - it.invalidSince) / 1000), bytes: w.bytes, capBytes: w.capBytes, records: w.records, lastRecordAt: w.lastAt ? new Date(w.lastAt).toISOString() : null, file: w.index, every: this.every, itemsEvery: this.itemsEvery, burstEvery: this.burstEvery, burstSeconds: this.burstSeconds };
+    return { state: this.paused ? "paused" : w.state, error: this.paused || this.error || w.error, startedAt: new Date(this.startedAt).toISOString(), lastCreatureAt: this.lastCreatureAt ? new Date(this.lastCreatureAt).toISOString() : null, itemsValid: it.valid, itemsInvalidS: it.valid ? 0 : Math.round((Date.now() - it.invalidSince) / 1000), bytes: w.bytes, capBytes: w.capBytes, records: w.records, lastRecordAt: w.lastAt ? new Date(w.lastAt).toISOString() : null, file: w.index, every: this.every, itemsEvery: this.itemsEvery, burstEvery: this.burstEvery, burstSeconds: this.burstSeconds };
   }
 }
 const clampU32 = (v) => (Number.isFinite(v) ? Math.min(0xffffffff, Math.max(0, Math.round(v))) : 0);
@@ -347,7 +348,8 @@ export function* readStateFile(path, maxFileBytes = 2 ** 32) {
     };
     const next = (from) => { // the offset of the next sync at or after from, or size
       for (let p = from; p < size; ) {
-        ensure(p, Math.min(buf.length, size - p));
+        if (p < start || p + SYNC.length > start + have) ensure(p, Math.min(buf.length, size - p)); // search the window already read; refill only past it
+
         const i = buf.subarray(0, have).indexOf(SYNC, p - start);
         if (i >= 0) return start + i;
         if (start + have >= size) return size;
@@ -355,8 +357,8 @@ export function* readStateFile(path, maxFileBytes = 2 ** 32) {
       }
       return size;
     };
-    let pos = 0;
-    if (!ensure(0, MAGIC.length) || !buf.subarray(0, MAGIC.length).equals(MAGIC)) { const n = next(0); yield { file, offset: 0, type: 0, bytes: n }; pos = n; } else pos = MAGIC.length;
+    let pos = 0, skip = -1; // skip: where the run of bytes skipped so far began, yielded as one record
+    if (!ensure(0, MAGIC.length) || !buf.subarray(0, MAGIC.length).equals(MAGIC)) { skip = 0; pos = next(0); } else pos = MAGIC.length;
     while (pos < size) {
       let ok = ensure(pos, REC_HEAD) && buf.subarray(pos - start, pos - start + 4).equals(SYNC);
       let len = 0, type = 0, flags = 0;
@@ -364,13 +366,16 @@ export function* readStateFile(path, maxFileBytes = 2 ** 32) {
       let rec = null;
       if (ok) {
         const o = pos - start, body = buf.subarray(o + REC_HEAD, o + REC_HEAD + len);
-        if ((crcBytes += len) > crcBudget) { yield { file, offset: pos, type: 0, bytes: size - pos, budget: true }; return; } // stop reading this file
+        if ((crcBytes += len) > crcBudget) { const at = skip >= 0 ? skip : pos; yield { file, offset: at, type: 0, bytes: size - at, budget: true }; return; } // stop reading this file
         if (crc32(body, crc32(buf.subarray(o + 8, o + 10))) === buf.readUInt32LE(o + 10)) { try { rec = decodeRecord(type, flags, body); } catch { rec = null; } }
       }
-      if (!rec) { const n = next(pos + 1); yield { file, offset: pos, type: 0, bytes: n - pos }; pos = n; continue; }
+      if (!rec) { if (skip < 0) skip = pos; pos = next(pos + 1); continue; }
+      if (skip >= 0 && pos > skip) yield { file, offset: skip, type: 0, bytes: pos - skip };
+      skip = -1;
       yield { file, offset: pos, ...rec };
       pos += REC_HEAD + len;
     }
+    if (skip >= 0 && size > skip) yield { file, offset: skip, type: 0, bytes: size - skip };
   } finally { try { closeSync(fd); } catch {} }
 }
 const need = (cond) => { if (!cond) throw new Error("bad record"); };
@@ -443,16 +448,25 @@ export class ItemState {
 }
 
 // check.mjs's verdict on a world folder's state log. sl: the cleaned stateLog of status.json (null: none, or a script without a state log);
-// files: { count, newestMs } of the state files; nowMs. Returns { ok, reason }.
+// files: { count } of the state files; nowMs. Returns { ok, reason }.
 export function stateLogHealth(sl, files, nowMs) {
   if (!sl || !(sl.every > 0 || sl.burstEvery > 0)) return { ok: true, reason: "" };
   if (sl.state === "capped") return { ok: true, reason: "" };
   if (sl.opened === false) return { ok: false, reason: `state log not opened${sl.error ? ": " + sl.error : ""}` };
   if (sl.state === "disk-floor") return { ok: false, reason: "state log stopped: free disk under the floor" };
   if (sl.state === "paused") return { ok: false, reason: `state log paused${sl.error ? ": " + sl.error : ""}` };
-  const maxAge = sl.every > 0 ? Math.max(30, 3 * sl.every) : sl.burstEvery + 90, age = files.count ? (nowMs - files.newestMs) / 1000 : null;
-  if (age === null) { const since = (nowMs - Date.parse(sl.startedAt)) / 1000; if (!(since >= -60 && since < 60)) return { ok: false, reason: `no state log files (${sl.state})` }; } // a minute for the first record after the state log started
-  else if (!(age >= -60 && age <= maxAge)) return { ok: false, reason: `state log newest write is ${Math.round(age)} s old (${sl.state}${sl.error ? ": " + sl.error : ""})` };
+  const maxAge = sl.every > 0 ? Math.max(30, 3 * sl.every) : sl.burstEvery + 90, age = sl.lastCreatureAt ? (nowMs - Date.parse(sl.lastCreatureAt)) / 1000 : null; // the last creature record, not any write (item or death records alone do not count)
+  if (age === null) { const since = (nowMs - Date.parse(sl.startedAt)) / 1000; if (!(since >= -60 && since < 60)) return { ok: false, reason: `no creature record ${files.count ? "since the state log started" : "and no state log files"} (${sl.state})` }; } // a minute for the first record after the state log started
+  else if (!(age >= -60 && age <= maxAge)) return { ok: false, reason: `state log newest creature record is ${Math.round(age)} s old (${sl.state}${sl.error ? ": " + sl.error : ""})` };
   if (sl.itemsValid === false && sl.itemsInvalidS > 90) return { ok: false, reason: `state log item set unknown for ${sl.itemsInvalidS} s` };
   return { ok: true, reason: "" };
+}
+
+// Whether the light client should reconnect for a full item set (live/connection.ts does the same on a bad set). s: { on (a recorder that is not paused for protocol),
+// open (the link), valid, invalidSince, lastResyncAt, helloAt, refused (a message was just refused) }. At most once a minute; without a refusal only after a minute
+// without a set and a minute after the hello, so a fresh connection gets time for its first set.
+export const RESYNC_MS = 60_000;
+export function itemsResyncDue(s, nowMs) {
+  if (!s.on || !s.open || s.valid || nowMs - s.lastResyncAt < RESYNC_MS) return false;
+  return s.refused || (s.invalidSince > 0 && nowMs - s.invalidSince > RESYNC_MS && nowMs - s.helloAt > RESYNC_MS);
 }

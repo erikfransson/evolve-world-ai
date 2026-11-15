@@ -211,7 +211,7 @@ describe("time-lapse state log", () => {
     const got = records(dir);
     expect(got.filter((r: any) => r.type === S.T.CREATURES).length).toBe(1);
     expect(got.some((r: any) => r.file === "state-00001.evs" || r.file === "state-00002.evs")).toBe(false);
-    expect(got.filter((r: any) => r.file === "state-00003.evs").map((r: any) => r.type)).toEqual([0, 0, S.T.LINEAGES]); // the huge length, then the bomb
+    expect(got.filter((r: any) => r.file === "state-00003.evs").map((r: any) => r.type)).toEqual([0, S.T.LINEAGES]); // the huge length and the bomb, skipped as one run
     expect(bomb.length).toBeLessThan(S.MAX_BODY); // the bomb really fits the stored limit
   });
 });
@@ -277,8 +277,8 @@ describe("time-lapse state log, review round", () => {
     const f0 = frame(5); f0.writeUInt32LE(50, 1);
     expect(r2.rec.creatures(f0, 1e12 - 5000, INFO)).toBe(S.T.CREATURES);
     expect(records(dir).filter((x: any) => x.type === S.T.DEATHS).length).toBe(0); // not even counted as dropped
-    r2.items.delta(deltaWith(500, [{ tick: 999_000, x: 1, y: 2, hue: 3 }]));
-    r2.items.reset(); // and so does a new hello
+    r2.items.delta(deltaWith(500, [{ tick: 999_000, x: 1, y: 2, hue: 3 }])); // another world's death, kept across a hello, then dropped by its tick
+    r2.items.reset();
     r2.items.delta(deltaWith(500, [{ tick: 99_990, x: 100, y: 200, hue: 300 }, { tick: 100_000, x: 400, y: 500, hue: 600 }, { tick: 100_001, x: 7, y: 7, hue: 7 }]));
     r2.items.delta(deltaWith(500, [{ tick: 30_000, x: 9, y: 9, hue: 9 }]));
     const f = frame(5); f.writeUInt32LE(100_000, 1);
@@ -286,7 +286,12 @@ describe("time-lapse state log, review round", () => {
     const d = records(dir).filter((x: any) => x.type === S.T.DEATHS);
     expect(d.length).toBe(1);
     expect([...d[0].back]).toEqual([10, 0]); expect([...d[0].x]).toEqual([100, 400]); expect([...d[0].y]).toEqual([200, 500]); expect([...d[0].hue]).toEqual([300, 600]);
-    expect(d[0].dropped).toBe(2); // one after the record's tick, one more than 65535 ticks before
+    expect(d[0].dropped).toBe(3); // one after the record's tick, one more than 65535 ticks before, one of another world
+    const d3 = fresh(), r3 = rig(d3), g3 = frame(5); g3.writeUInt32LE(100_000, 1);
+    r3.items.delta(deltaWith(500, [{ tick: 99_995, x: 11, y: 12, hue: 13 }]));
+    r3.items.reset(); // a reconnect to the same world keeps the deaths received before it
+    r3.rec.creatures(g3, 1e12, INFO);
+    expect([...records(d3).find((x: any) => x.type === S.T.DEATHS).back]).toEqual([5]);
     const t = new S.ItemTracker(1);
     t.dropped = 0xffffffff - 1;
     t.delta(deltaWith(500, [{ tick: 1, x: 0, y: 0, hue: 0 }, { tick: 1, x: 0, y: 0, hue: 0 }, { tick: 1, x: 0, y: 0, hue: 0 }, { tick: 1, x: 0, y: 0, hue: 0 }]));
@@ -327,8 +332,11 @@ describe("time-lapse state log, review round", () => {
     const real = writer.write.bind(writer);
     writer.write = () => { throw new Error("boom"); };
     expect(rec.creatures(frame(10), 1e12 + 600_000, INFO)).toBe(-2);
+    expect(rec.status().error).toBe("boom");
     writer.write = real;
     expect(rec.creatures(frame(10), 1e12 + 605_000, INFO)).toBe(S.T.CREATURES);
+    expect(rec.status().error).toBe(""); // cleared by the record written after it
+    expect(Date.now() - Date.parse(rec.status().lastCreatureAt)).toBeLessThan(5000);
   });
 
   it("loses only the corrupt record: a flipped byte in a death record keeps the creature chain and the item set", () => {
@@ -412,13 +420,13 @@ describe("time-lapse state log, review round", () => {
     const dea = Buffer.alloc(20 + 16); dea.writeUInt32LE(1, 12); // says 1 death, holds 2
     const ok = S.encodeRecord(S.T.LINEAGES, Buffer.from("{}"), false);
     writeFileSync(join(dir, "state-00000.evs"), Buffer.concat([S.MAGIC, bad(S.T.CREATURES, cre), bad(S.T.ITEMS_KEY, key), bad(S.T.ITEMS_DIFF, dif), bad(S.T.DEATHS, dea), ok]));
-    expect(records(dir).map((x: any) => x.type)).toEqual([0, 0, 0, 0, S.T.LINEAGES]);
+    expect(records(dir).map((x: any) => x.type)).toEqual([0, S.T.LINEAGES]); // the four skipped as one run
     expect([...S.readStateLog(dir, { maxFileBytes: 100 })].map((x: any) => x.type)).toEqual([0]);
   });
 
   it("judges a state log for check.mjs", () => {
     const now = 1e12, sl = (o: Record<string, unknown>) => ({ state: "writing", error: "", opened: true, startedAt: new Date(now - 3600e3).toISOString(), every: 5, burstEvery: 1200, itemsValid: true, itemsInvalidS: 0, ...o });
-    const h = (o: Record<string, unknown> | null, age: number | null) => S.stateLogHealth(o && sl(o), age === null ? { count: 0, newestMs: 0 } : { count: 1, newestMs: now - age * 1000 }, now).ok;
+    const h = (o: Record<string, unknown> | null, age: number | null) => S.stateLogHealth(o && sl({ lastCreatureAt: age === null ? null : new Date(now - age * 1000).toISOString(), ...o }), { count: 1 }, now).ok; // age: of the last creature record
     expect(h(null, null)).toBe(true); // a script without a state log
     expect(h({}, 3)).toBe(true);
     expect(h({}, 100)).toBe(false);
@@ -433,5 +441,27 @@ describe("time-lapse state log, review round", () => {
     expect(h({ itemsValid: false, itemsInvalidS: 30 }, 3)).toBe(true);
     expect(h({ itemsValid: false, itemsInvalidS: 120 }, 3)).toBe(false);
     expect(h({ every: 0, burstEvery: 0 }, null)).toBe(true); // switched off
+    expect(S.stateLogHealth(sl({ lastCreatureAt: new Date(now - 300e3).toISOString() }), { count: 1, newestMs: now }, now).ok).toBe(false); // fresh files without creature records are not enough
+  });
+  it("reconnects for an item set only when it is due", () => {
+    const now = 1e12, base = { on: true, open: true, valid: false, invalidSince: now - 120e3, lastResyncAt: now - 120e3, helloAt: now - 120e3, refused: false };
+    const due = (o: Record<string, unknown>) => S.itemsResyncDue({ ...base, ...o }, now);
+    expect(due({})).toBe(true); // no set for two minutes
+    expect(due({ refused: true, invalidSince: now, helloAt: now - 1000 })).toBe(true); // a refusal reconnects at once
+    expect(due({ valid: true })).toBe(false);
+    expect(due({ on: false })).toBe(false); // state log off or paused for protocol
+    expect(due({ on: false, refused: true })).toBe(false);
+    expect(due({ open: false })).toBe(false);
+    expect(due({ lastResyncAt: now - 30e3, refused: true })).toBe(false); // at most once a minute
+    expect(due({ helloAt: now - 2000 })).toBe(false); // a fresh connection gets a minute for its first set
+    expect(due({ invalidSince: now - 30e3 })).toBe(false);
+  });
+
+  it("reads a file of repeated record starts in about a second", () => {
+    const dir = fresh();
+    writeFileSync(join(dir, "state-00000.evs"), Buffer.concat([S.MAGIC, Buffer.alloc(12 << 20, S.SYNC)])); // every head's length is past MAX_BODY
+    const t0 = performance.now(); // in a child with a time limit: the slow way takes hours and would block the test worker
+    expect(childOk(`const S = await import(${JSON.stringify(MOD)}); const got = [...S.readStateLog(${JSON.stringify(dir)})]; if (got.length !== 1 || got[0].type !== 0) process.exit(1);`)).toBe(true); // one skipped run, not 3 million
+    expect(performance.now() - t0).toBeLessThan(5000);
   });
 });

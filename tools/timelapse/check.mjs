@@ -55,7 +55,7 @@ else {
   if (pl) { try { const p = JSON.parse(pl), t = clean(p.time, 40); say("newest population line:", t, `age ${age(t)} s, tick ${num(p.tick)}, population ${num(p.population)}`); if (!(age(t) <= 60)) bad.push(`population.jsonl newest line is ${age(t)} s old`); } catch { say("newest population line: unreadable"); } }
   else { say("newest population line: none"); bad.push("no population.jsonl line"); }
   const own = dir === status?.world, raw = own && st?.stateLog && typeof st.stateLog === "object" ? st.stateLog : null; // status.json describes the script's current folder only
-  const sl = raw && { state: clean(raw.state, 20), error: clean(raw.error, 100), opened: raw.opened !== false, startedAt: clean(raw.startedAt, 40), capBytes: num(raw.capBytes), every: num(raw.every) ?? 0, burstEvery: num(raw.burstEvery) ?? 0, itemsValid: raw.itemsValid !== false, itemsInvalidS: num(raw.itemsInvalidS) ?? 0 };
+  const sl = raw && { state: clean(raw.state, 20), error: clean(raw.error, 100), opened: raw.opened !== false, startedAt: clean(raw.startedAt, 40), lastCreatureAt: typeof raw.lastCreatureAt === "string" ? clean(raw.lastCreatureAt, 40) : null, capBytes: num(raw.capBytes), every: num(raw.every) ?? 0, burstEvery: num(raw.burstEvery) ?? 0, itemsValid: raw.itemsValid !== false, itemsInvalidS: num(raw.itemsInvalidS) ?? 0 };
   let sBytes = 0, sFiles = 0, sNewest = 0;
   try { for (const e of readdirSync(w, { withFileTypes: true })) { if (!e.isFile() || !/^state-\d{5}\.evs$/.test(e.name)) continue; const s = lstatSync(join(w, e.name)); sBytes += s.size; sFiles++; sNewest = Math.max(sNewest, s.mtimeMs); } } catch {}
   const sAge = sNewest ? Math.round((Date.now() - sNewest) / 1000) : null;

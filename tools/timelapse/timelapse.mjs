@@ -9,7 +9,7 @@ import { createServer } from "node:http";
 import { connect, createServer as createNetServer } from "node:net";
 import { dirname, extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { FILE_RE, ItemTracker, PROTOCOL, StateRecorder, StateWriter } from "./stateLog.mjs";
+import { FILE_RE, ItemTracker, PROTOCOL, RESYNC_MS, StateRecorder, StateWriter, itemsResyncDue } from "./stateLog.mjs";
 
 // parameters
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -142,8 +142,8 @@ function onLinkMessage(data, isBinary) {
     try {
       const type = data[0];
       if (type === 1) { if (wantCreatures && data.length > 9) lastCreatures = data; recordState(data); } // the latest creature frame is kept only while frames are captured (regions.jsonl)
-      else if (type === 2) { if (!items.full(data)) { logLimited("bad items", "item set refused:", items.error); itemsResync(); } }
-      else if (type === 5) { if (!items.delta(data)) { logLimited("bad delta", "item changes refused:", items.error); itemsResync(); } }
+      else if (type === 2) { if (!items.full(data)) { logLimited("bad items", "item set refused:", items.error); itemsResync(true); } }
+      else if (type === 5) { if (!items.delta(data)) { logLimited("bad delta", "item changes refused:", items.error); itemsResync(true); } }
     } catch (err) { logLimited("bad binary", "bad binary message", String(err?.message ?? err).slice(0, 100)); }
     return;
   }
@@ -152,18 +152,19 @@ function onLinkMessage(data, isBinary) {
     const m = JSON.parse(data.toString());
     if (m?.t === "hello") {
       const h = cleanHello(m);
-      if (h) { hello = h; failures = 0; items.reset(); log("hello", h); }
+      if (h) { hello = h; helloAt = Date.now(); failures = 0; items.reset(); log("hello", h); }
     } else if (m?.t === "stats") {
       const s = cleanStats(m);
       if (s) { stats = s; statsAt = Date.now(); }
     } else if (m?.t === "busy") logLimited("busy", "server says busy (viewer limit)");
   } catch (err) { logLimited("bad message", "bad message", String(err?.message ?? err).slice(0, 100)); }
 }
-// The item set refused, or missing for a minute: reconnect, so the server sends a full set (as the page does, live/connection.ts). At most once a minute, whatever the server sends.
-const ITEMS_RESYNC_MS = 60_000;
-let itemsResyncAt = 0;
-function itemsResync() {
-  if (items.valid || Date.now() - itemsResyncAt < ITEMS_RESYNC_MS || link?.readyState !== WebSocket.OPEN) return;
+// The item set refused, or missing for a minute: reconnect, so the server sends a full set (as the page does, live/connection.ts). At most once a minute, whatever the server sends,
+// and only while a state log records it (not paused for another protocol).
+let itemsResyncAt = 0, helloAt = 0;
+function itemsResync(refused) {
+  const s = { on: !!recorder && hello?.version === PROTOCOL, open: link?.readyState === WebSocket.OPEN, valid: items.valid, invalidSince: items.invalidSince, lastResyncAt: itemsResyncAt, helloAt, refused };
+  if (!itemsResyncDue(s, Date.now())) return;
   itemsResyncAt = Date.now(); log("item set unknown, reconnecting for a full set");
   const ws = link; link = null; try { ws.terminate(); } catch {} scheduleLink("item resync");
 }
@@ -241,20 +242,24 @@ function startWorld(now) {
   world = { recent, id, dir, bytes, frames, popBytes, regionsBytes, lastTick: stats.tick, capped: false, staleN: 0, lastCapturedTick: -1, size };
   chromeFails = 0; chromeRetryAt = 0; // a new world starts Chrome at once, not after an old world's back-off
   loadRegions();
-  if (regionInfo) { const f = join(OUT, dir, "world.json"); try { const j = JSON.parse(readFileSync(f, "utf8")); j.regions = regionInfo; j.regionsNote = "regions.jsonl m = flat matrix, rows: regions then elsewhere, columns: lineages of hues then other"; writeFileSync(f, JSON.stringify(j) + "\n"); } catch {} }
+  if (regionInfo) { const f = join(OUT, dir, "world.json"); try { const j = JSON.parse(readFileSync(f, "utf8")); j.regions = regionInfo; j.regionsNote = "regions.jsonl m = flat matrix, rows: regions then elsewhere, columns: lineages of hues then other"; writeJsonAtomic(f, j); } catch {} }
   if (P.framing !== "c") patchWorldJson(dir, { camera: camera() }); // also a folder from before the state log, whose world.json has its size already
   openStateLog(id, dir);
   log("world folder", dir, { resumedBytes: bytes, resumedFrames: frames, stateBytes: recorder?.writer.bytes ?? null });
 }
-// Adds the fields world.json lacks, keeping the rest, through a temporary file and a rename.
+// A JSON file through a fresh temporary name and a rename, so a link planted at either name is replaced, never written through.
+function writeJsonAtomic(f, j) {
+  try { unlinkSync(f + ".tmp"); } catch {}
+  writeFileSync(f + ".tmp", JSON.stringify(j) + "\n", { flag: "wx" }); renameSync(f + ".tmp", f);
+}
+// Adds the fields world.json lacks, keeping the rest.
 function patchWorldJson(dir, fields) {
   const f = join(OUT, dir, "world.json");
   try {
     const j = JSON.parse(readFileSync(f, "utf8")), add = Object.entries(fields).filter(([k]) => !(k in j));
     if (!add.length) return;
     for (const [k, v] of add) j[k] = v;
-    try { unlinkSync(f + ".tmp"); } catch {}
-    writeFileSync(f + ".tmp", JSON.stringify(j) + "\n", { flag: "wx" }); renameSync(f + ".tmp", f);
+    writeJsonAtomic(f, j);
   } catch (err) { log("world.json not updated", String(err?.message ?? err).slice(0, 100)); }
 }
 let stateOpenError = null; // the state log of this folder could not be opened: what status.json says instead
@@ -453,7 +458,7 @@ async function takeFrame(now, tick) {
   const size = [crop.width * F.dsf, crop.height * F.dsf];
   if (world.recent.length >= 5 && png.length < median(world.recent) / 3) return { png, path: null, suspicious: true }; // a blank or offline page compresses far smaller
   if (world.size && (world.size[0] !== size[0] || world.size[1] !== size[1])) throw new Error(`frame size ${size} differs from this world's ${world.size}`);
-  if (!world.size) { world.size = size; const f = join(OUT, world.dir, "world.json"); const j = JSON.parse(readFileSync(f, "utf8")); j.size = size; j.crop = crop; writeFileSync(f, JSON.stringify(j) + "\n"); }
+  if (!world.size) { world.size = size; const f = join(OUT, world.dir, "world.json"); const j = JSON.parse(readFileSync(f, "utf8")); j.size = size; j.crop = crop; writeJsonAtomic(f, j); }
   const path = join(OUT, world.dir, `${stamp(now)}_t${String(tick).padStart(9, "0")}.png`);
   try { unlinkSync(path + ".tmp"); } catch {}
   writeFileSync(path + ".tmp", png, { flag: "wx" }); renameSync(path + ".tmp", path); // wx: a planted symlink at the temporary name fails the write instead of redirecting it; rename replaces a link at the frame name
@@ -544,7 +549,8 @@ for (;;) {
     const next = Math.ceil((Date.now() + 1) / (P.popEvery * 1000)) * P.popEvery * 1000;
     if (P.maxRunS && next - startedAt > P.maxRunS * 1000) break;
     await sleep(Math.max(0, next - Date.now()));
-    if (!items.valid && items.invalidSince && Date.now() - items.invalidSince > ITEMS_RESYNC_MS) itemsResync(); // no full set for a minute (never sent, or refused while a resync was not allowed)
+    itemsResync(false); // no full set for a minute (never sent, or refused while a resync was not allowed)
+    if (stateOpenError && world && Date.now() - Date.parse(stateOpenError.startedAt) >= RESYNC_MS) openStateLog(world.id, world.dir); // a failed open is tried again once a minute
     if (P.socket && socketFailAt > socketOkAt && Date.now() - socketOkAt > P.socketDeadS * 1000 && link?.readyState !== WebSocket.OPEN) { // the proxy socket is gone (its units failed or stopped): exit, and the unit's restart starts the socket again through Requires=
       log("no working connect to the proxy socket for", Math.round((Date.now() - socketOkAt) / 1000), "s, exiting so the unit restarts with the socket"); setStatus("error", "proxy socket missing"); writeStatus(); await closeChrome(); process.exit(1);
     }
