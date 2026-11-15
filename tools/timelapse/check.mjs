@@ -4,6 +4,7 @@
 import { lstatSync, readdirSync, statfsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { clean, num, readHostile } from "./hostile.mjs";
+import { stateLogHealth } from "./stateLog.mjs";
 
 const A = Object.fromEntries(process.argv.slice(2).map((a) => { const i = a.indexOf("="); return [a.slice(0, i), a.slice(i + 1)]; }));
 const OUT = resolve(A.out ?? join(import.meta.dirname, "../../videos/timelapse"));
@@ -53,13 +54,14 @@ else {
   const pl = tailLine(join(w, "population.jsonl"));
   if (pl) { try { const p = JSON.parse(pl), t = clean(p.time, 40); say("newest population line:", t, `age ${age(t)} s, tick ${num(p.tick)}, population ${num(p.population)}`); if (!(age(t) <= 60)) bad.push(`population.jsonl newest line is ${age(t)} s old`); } catch { say("newest population line: unreadable"); } }
   else { say("newest population line: none"); bad.push("no population.jsonl line"); }
-  const sl = st?.stateLog && typeof st.stateLog === "object" ? { state: clean(st.stateLog.state, 20), error: clean(st.stateLog.error, 100), capBytes: num(st.stateLog.capBytes), every: num(st.stateLog.every) ?? 0, burstEvery: num(st.stateLog.burstEvery) ?? 0 } : null; // null: a script without a state log
+  const own = dir === status?.world, raw = own && st?.stateLog && typeof st.stateLog === "object" ? st.stateLog : null; // status.json describes the script's current folder only
+  const sl = raw && { state: clean(raw.state, 20), error: clean(raw.error, 100), opened: raw.opened !== false, startedAt: clean(raw.startedAt, 40), capBytes: num(raw.capBytes), every: num(raw.every) ?? 0, burstEvery: num(raw.burstEvery) ?? 0, itemsValid: raw.itemsValid !== false, itemsInvalidS: num(raw.itemsInvalidS) ?? 0 };
   let sBytes = 0, sFiles = 0, sNewest = 0;
   try { for (const e of readdirSync(w, { withFileTypes: true })) { if (!e.isFile() || !/^state-\d{5}\.evs$/.test(e.name)) continue; const s = lstatSync(join(w, e.name)); sBytes += s.size; sFiles++; sNewest = Math.max(sNewest, s.mtimeMs); } } catch {}
-  const sAge = sNewest ? Math.round((Date.now() - sNewest) / 1000) : null, sMaxAge = sl?.every > 0 ? Math.max(30, 3 * sl.every) : (sl?.burstEvery ?? 0) + 90;
-  say("state log:", sFiles ? `${sFiles} files, ${fmt(sBytes)} of cap ${fmt(sl?.capBytes ?? 30e9)}, newest write ${sAge} s ago` : "no files", sl ? `(${sl.state}${sl.error ? ": " + sl.error : ""})` : "(not written by this script version)");
-  const stateOk = !sl || !(sl.every > 0 || sl.burstEvery > 0) || sl.state === "capped" || (sl.state !== "disk-floor" && (sAge !== null ? sAge <= sMaxAge : !!world && age(world.startedCapture) < 60)); // a new folder gets a minute for its first record
-  if (!stateOk) bad.push(sl.state === "disk-floor" ? "state log stopped: free disk under the floor" : sFiles ? `state log newest write is ${sAge} s old (${sl.state})` : `no state log files (${sl.state})`);
+  const sAge = sNewest ? Math.round((Date.now() - sNewest) / 1000) : null;
+  say("state log:", sFiles ? `${sFiles} files, ${fmt(sBytes)} of cap ${fmt(sl?.capBytes ?? 30e9)}, newest write ${sAge} s ago` : "no files", sl ? `(${sl.state}${sl.error ? ": " + sl.error : ""}${sl.itemsValid ? "" : `, item set unknown for ${sl.itemsInvalidS} s`})` : !own && status ? "(status.json is for another folder, not judged)" : "(not written by this script version)");
+  const sh = stateLogHealth(sl, { count: sFiles, newestMs: sNewest }, Date.now());
+  if (!sh.ok) bad.push(sh.reason);
   let freeB = null; try { const f = statfsSync(OUT); freeB = f.bavail * f.bsize; } catch {}
   say("free disk:", freeB === null ? "?" : fmt(freeB), "floor", fmt(floor));
   const state = status?.state;
