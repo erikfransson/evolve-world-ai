@@ -1,5 +1,11 @@
 /* Live World page: the Ecosystem layout without the run controls. Builds on style.css and ecosystem.css. */
 .banner .chip { margin-left: auto; }
+.banner .tagline { flex: 0 1000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } /* the tagline gives way first, never the status */
+/* "New version · Reload" (live/freshness.ts), left of the status chip */
+.banner .fresh { flex: none; margin-left: auto; height: 2rem; padding: 0 0.85rem; border-radius: 999px; border-color: var(--accent); font-size: 0.8rem; white-space: nowrap; }
+.banner .fresh[hidden] { display: none; }
+.banner .fresh:not([hidden]) + .chip { margin-left: 0; flex-shrink: 0; } /* the status never gives way to the button */
+@media (max-width: 900px) { .banner .fresh:not([hidden]) + .chip:not([data-state="live"]) .chip-more { display: none; } } /* keeps a long status ("Full of viewers, retrying in …") on the row */
 .chip { display: flex; align-items: center; gap: 0.5rem; min-width: 0; height: 2rem; padding: 0 0.85rem; background: var(--card); border: 1px solid var(--border-hi); border-radius: 999px; font-size: 0.8rem; font-weight: 500; font-variant-numeric: tabular-nums; }
 .chip i { flex: none; width: 0.55rem; height: 0.55rem; border-radius: 50%; background: var(--muted); }
 .chip[data-state="live"] i { background: var(--accent); box-shadow: 0 0 0 0 rgba(61, 220, 151, 0.6); animation: pulse 2s ease-out infinite; }
@@ -28,9 +34,16 @@
 .sel-founder.family.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .sel-founder.family.on b { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 
-/* switch-off for a lit family while nothing is selected */
-.lit-family { display: block; width: 100%; margin-bottom: 0.4rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lit-family[hidden], .ov-selected.has-sel .lit-family { display: none; }
+/* switch-off for a lit family, unless the card's own family toggle is the pressed one (litChip.ts) */
+.lit-family { display: flex; justify-content: center; gap: 0.35em; width: 100%; margin-bottom: 0.4rem; white-space: nowrap; }
+.lit-family[hidden] { display: none; }
+.lit-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.lit-x { flex: none; } /* a cut name keeps its ✕ */
+/* the same switch-off on the folded card's chip, where the card body and its own toggle are hidden */
+.lit-family-min { position: relative; display: flex; gap: 0.35em; min-width: 0; max-width: 13rem; padding: 0.1rem 0.55rem; white-space: nowrap; font-size: 0.7rem; border-color: var(--accent); }
+.lit-family-min[hidden], .ov-selected:not(.min) .lit-family-min { display: none; }
+.ov-selected.min .ov-head h2 { flex: none; white-space: nowrap; } /* the chip gives way, the title stays one line */
+.ov-selected.min:has(.lit-family-min:not([hidden])) .sel-id { display: none; } /* room for the family name on a narrow chip */
 
 /* records: living entries can be followed */
 .lead-cell.live-pick { cursor: pointer; border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
@@ -46,6 +59,14 @@
 
 @media (max-width: 700px) {
   .banner .chip { flex: none; height: 1.8rem; padding: 0 0.65rem; font-size: 0.75rem; }
+  .banner:has(.fresh:not([hidden])) { flex-wrap: wrap; row-gap: 0; } /* no room beside the status on a phone: the reload button takes a row of its own */
+  .banner .fresh { order: 2; margin-top: 0.4rem; height: 1.8rem; padding: 0 0.6rem; font-size: 0.75rem; position: relative; z-index: 31; } /* above the entry card's scrim (z-index 30), so it stays clickable */
+  .banner:has(.fresh:not([hidden]))::after { content: ""; order: 1; flex-basis: 100%; } /* a line break: the status stays on row 1 */
+  .banner:has(.fresh:not([hidden])) .back { flex: 1 1 1.6rem; max-width: max-content; } /* wrapping counts the back link's full width unless its base is small */
+  .banner .fresh:not([hidden]) + .chip { margin-left: auto; }
+  body:has(.banner .fresh:not([hidden])) .entry { padding-top: 5.5rem; } /* the entry card starts below the banner, so Reload does not sit on it */
+  body:has(.addp:not([hidden])) .banner .fresh { z-index: auto; } /* the full-screen Add panel covers it, so a missed tap cannot reload away a draft */
+  .lit-family-min::before { content: ""; position: absolute; inset: -6px 0; } /* a 32 px touch target, the chip row unchanged */
   .banner .back { min-width: 1.6rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } /* the back link gives way, so the status reads in full */
   .chip-more { display: none; }
   .about { display: none; }

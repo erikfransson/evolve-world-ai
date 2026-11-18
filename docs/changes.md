@@ -6,6 +6,8 @@ Add notes under "Unreleased" as work lands on `development`, and turn that headi
 
 ## Unreleased
 
+- Live: a tab left open learns when a newer page is deployed. The build writes `live/version.json`, the page asks it every 30 minutes while visible and when shown again (at most every 5 minutes, 200 bytes, 10 s timeout) and then offers a "New version · Reload" button. It never reloads by itself.
+- Live: the "Family lit: <name> ✕" switch-off also sits on the folded Selected creature card's chip, so a lit family can be cleared with that card minimised, and on the open card when the selected creature belongs to another family. Whenever a family is lit there is exactly one switch-off in view.
 - Time-lapse: a replay renderer (`tools/timelapse/replay.mjs`, page built by `build-replay.sh`) redraws a world from its state log with the Live page's own drawing code, as PNG frames or H.264, FFV1 or ProRes video: the capture's framing (lines up with the PNGs), crops, close-ups and keyframed camera moves, interpolation by creature id, gap policy, clean plates and a per-frame sidecar of time, season, lineage and region counts. It stops early and keeps the video when free memory or disk runs low or on the first Ctrl-C, counts and prints its plan before drawing (`planMax`), cross-fades creatures from dots to bodies in a zoom, and has a winter-tint strength (`winterTint`). The capture folder is read as hostile input: record times, framing and sizes are ranged, outputs are refused inside the capture folder and written fresh.
 
 ## 0.10.2 (2026-11-15)
