@@ -14,7 +14,7 @@ One shared world that keeps running on a small self-hosted server; visitors watc
 | -------------- | -------------------------------------- | ----------------------------------------------------------------------------------------- |
 | World server   | `server/` in this repo, Node           | Runs the Ecosystem engine at 3x real time under `nice -n 19`, memory capped               |
 | Public access  | Tunnel from the host                   | HTTPS tunnel: fixed URL, no open router ports, host IP hidden                             |
-| Page           | `live/` on GitHub Pages                | Connects to the server over WebSocket; shows "world offline" when the host is off          |
+| Page           | `live/` on GitHub Pages                | Connects to the server over WebSocket; shows "world offline" when the host is off; reads its own `live/version.json` every 30 min while visible to offer a reload |
 | Design, train  | Visitor's browser                      | Pretrain (Trials) and RL fine-tuning run client side, so the host only simulates the world   |
 | State          | `server/state/`, gitignored            | Gzipped save every 4 h and on stop; the newest 6 are kept, older ones deleted after 4 days, and saves with before-reset folders stay under a 1 GB state budget (oldest deleted first, `StateStore.prune`); restored on restart; admin can load any save |
 

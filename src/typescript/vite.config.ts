@@ -1,5 +1,16 @@
 import { resolve } from "node:path";
 import { defineConfig } from "vitest/config";
+import type { Plugin } from "vite";
+import { versionFileText } from "./src/live/freshness.ts";
+
+// live/version.json in the build, from version.ts: an open Live tab asks it to learn that a newer page is deployed (src/live/freshness.ts).
+export const liveVersionFile: Plugin = {
+  name: "live-version-file",
+  apply: "build",
+  generateBundle() {
+    this.emitFile({ type: "asset", fileName: "live/version.json", source: versionFileText() });
+  },
+};
 
 // One HTML entry per page: the landing page plus a folder per mode.
 const pages = ["index.html", "trials/index.html", "ecosystem/index.html", "live/index.html", "arena/index.html", "predators/index.html"]; // predators/ is only a redirect to the landing page for old links
@@ -7,6 +18,7 @@ const pages = ["index.html", "trials/index.html", "ecosystem/index.html", "live/
 // Relative base works on any host path (e.g. GitHub Pages project sites).
 export default defineConfig({
   base: "./",
+  plugins: [liveVersionFile],
   build: {
     rollupOptions: {
       input: pages.map((p) => resolve(import.meta.dirname, p)),

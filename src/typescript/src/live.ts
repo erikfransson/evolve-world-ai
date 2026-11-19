@@ -45,7 +45,8 @@ import { rockFarm } from "./ui/rockFarm.ts";
 import { recastRays } from "./live/rayRecast.ts";
 import { paintMapLegendWhenSeen } from "./live/mapLegend.ts";
 import { birthNote, followsLive } from "./live/detail.ts";
-import { litLabel, syncLitChip } from "./live/litChip.ts";
+import { litLabel, litSwitches, syncLitChip } from "./live/litChip.ts";
+import { watchFreshness } from "./live/freshness.ts";
 import type { BirthWait } from "./live/detail.ts";
 import { mapSpec, mapVersion } from "./sim/maps/index.ts";
 import { BACKGROUND } from "./ui/palette.ts";
@@ -95,6 +96,7 @@ backdrop.load(devicePixelRatio);
 const chip = $("chip");
 const versionEl = $("version");
 versionEl.textContent = versionLabel(null); // the page's own version until the server says hello
+watchFreshness($<HTMLButtonElement>("freshReload"));
 const mobile = window.matchMedia("(max-width: 700px)").matches;
 const camera = new Camera(1, 1, 1, 1);
 const renderer = new EcoRenderer();
@@ -388,6 +390,7 @@ function clearSelection(): void {
   $("selectedCard").classList.remove("has-sel");
   $("brainCard").hidden = true;
   markRecords();
+  syncFamily(); // the pressed family toggle went with the selection: the card's own switch-off shows at once
 }
 
 function followSelected(): void {
@@ -410,6 +413,7 @@ function select(id: number): void {
   zoomToSelection();
   markRecords();
   updateSelectedCard();
+  syncFamily(); // the new creature's family is not known yet: until it is, the switch-off shows
 }
 
 function followSpan(rayLength: number): number {
@@ -545,7 +549,9 @@ function syncFamily(): void {
   b.setAttribute("aria-pressed", String(on));
   const size = lastStats?.lineages?.find((l) => f !== undefined && l.founder === rowOf(f))?.count ?? 0;
   const everyone = !!lastStats && lastStats.population > 0 && size >= lastStats.population;
-  syncLitChip($("litFamily"), highlight >= 0 ? litLabel(highlight, names) : null);
+  const lit = litSwitches(highlight >= 0 ? litLabel(highlight, names) : null, on);
+  syncLitChip($("litFamily"), lit.card);
+  syncLitChip($("litFamilyMin"), lit.chip); // on the folded card's chip
   $("selFamilyLabel").textContent = everyone ? (on ? "Everyone shares this founder" : "Everyone's founder") : on ? "Family lit" : "Highlight family";
 }
 
@@ -835,6 +841,10 @@ $("follow").addEventListener("click", () => {
 $("litFamily").addEventListener("click", () => {
   setHighlight(-1);
   $("pickAge").focus(); // the chip hides on its click: keyboard focus stays on the card
+});
+$("litFamilyMin").addEventListener("click", () => {
+  setHighlight(-1);
+  $("selectedCard").querySelector<HTMLElement>(".ov-toggle")!.focus(); // the chip hides on its click: keyboard focus stays on the folded card
 });
 $("selFounder").addEventListener("click", () => {
   const f = selection?.last?.founderId;
