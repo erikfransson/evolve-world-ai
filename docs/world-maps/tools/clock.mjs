@@ -5,7 +5,7 @@
 
 // parameters
 const W = 60000, H = 37500, CX = W / 2, CY = H / 2;
-const HUB = { rx: 7500, ry: 6600, food: 1.2, winterFood: 0.05 }; // winter ground (Erik 2026-11-12): at mid-winter the hub regrows 5% of what the season gives elsewhere, so no lineage can hold it as a standing army
+const HUB = { rx: 7500, ry: 6600, food: 1.2, winterFood: 0.0625 }; // winter ground (Erik 2026-11-12, 0.05 to 0.0625 on 2026-11-14): at mid-winter the hub regrows 6.25% of what the season gives elsewhere, so no lineage can hold it as a standing army
 const GROW = Math.sqrt(1.15); // realms 15% bigger in area than round 9
 // per realm: radii, silhouette features [angle deg, amplitude, width deg] (lobes positive, bays negative)
 const SIZE = {
@@ -407,6 +407,47 @@ realm("crags", paint([70, 78, 92], 0.6, tex("veins", 1100, 0.22, [40, 44, 54], 0
 });
 
 layers.push(...trailPaint);
+
+// islands of hope (Erik 2026-11-15): two small fertile refuges out in the wastes, on the west side below the lava flow and toward the top-right corner. No trail,
+// no richer ground and no founders lead to them, so only a wanderer that crosses the wastes finds one. Realm food, the global season only,
+// the realms' trace of poison. Laid after every other layer and rock, so nothing else on the map moves. Not regions: those seed founders.
+// Names (Erik 2026-11-19): `holm` is the Island of Hope, `fold` is the Secret. The layer ids stay, they are part of the built map.
+const ISLE = { food: 2.4, core: 3.0 };
+const ISLES = {
+  fold: { x: 3000, y: 26200, rx: 1700, ry: 1300, rot: -0.55, f: [[30, 0.16, 30], [150, -0.16, 24], [250, 0.12, 30], [318, 0.07, 12], [340, -0.1, 12]], core: [-450, 250, 760, 540], cx: -1500, cy: 25850 }, // west, on the flow's south bank, as far from the Steppe as from the Flats (Erik: both about equally likely to reach it); cx, cy: where the rock faces, here the map edge, so the open side is turned evenly to both realms
+  holm: { x: 56000, y: 5800, rx: 1900, ry: 1500, rot: 0.4, f: [[80, -0.18, 22], [200, 0.14, 30], [320, 0.1, 26], [128, 0.08, 12], [150, -0.09, 12]], core: [350, -200, 860, 620], cx: W + 1500, cy: -1500 }, // top right
+};
+// the outlines and the rich cores first, before the look draws from rnd(), so another look keeps the same food
+for (const I of Object.values(ISLES)) {
+  const c = Math.cos(I.rot), s = Math.sin(I.rot);
+  I.pts = tilt(lobed(I.rx, I.ry, I.f, 1, 48, OUTLINE_ROUGH), I.rot).map(([px, py]) => [R(I.x + px), R(I.y + py)]);
+  I.corePts = blob(R(I.x + I.core[0] * c - I.core[1] * s), R(I.y + I.core[0] * s + I.core[1] * c), I.core[2], I.core[3], 10, 0.22, I.rot);
+}
+const isle = (id, I) => {
+  const { x, y, pts } = I;
+  const body = (rgb, alpha, dark, grain = 380, da = 0.6) => layer(id, poly(pts), { warp: 260, rough: 240, feather: 450, food: ISLE.food, poison: REALM_POISON, ...paint(rgb, alpha, tex("blobs", grain, 0.42, dark, da, { soft: 0.22 })) });
+  const core = (rgb, dark) => layer(`${id}-core`, poly(I.corePts), { warp: 200, rough: 160, feather: 600, food: ISLE.core, ...paint(rgb, 0.25, tex("blobs", 260, 0.45, dark, 0.4, { soft: 0.25 })) });
+  const seat = () => layer(`${id}-seat`, poly(grow(pts, x, y, 1.04)), { warp: 300, rough: 160, band: 280, feather: 520, ...paint([9, 8, 8], 0.5, undefined, { patch: { scale: 900, lo: 0.25, hi: 0.45 } }) });
+  const fringe = (rgb, k = 1.12) => layer(`${id}-fringe`, poly(grow(pts, x, y, k)), { warp: 400, rough: 220, feather: 800, paint: { rgb, alpha: 0, tex: tex("blobs", 500, 0.38, rgb, 0.32, { soft: 0.08 }) } });
+  const ua = Math.atan2(I.cy - y, I.cx - x); // towards the map edge or corner it backs onto
+  // a meadow sheltered by a broken arc of basalt on its side toward the map edge, the walled realms' ridge in small
+  layers.push(layer(`${id}-wash`, poly(grow(pts, x, y, 1.28)), { warp: 500, rough: 220, feather: 1200, ...paint([84, 98, 64], 0.08) }), seat(), fringe([92, 106, 62]), body([98, 120, 62], 0.56, [52, 76, 40], 300, 0.7), core([134, 146, 92], [82, 106, 58]));
+  layers.push(layer(`${id}-bloom`, poly(grow(pts, x, y, 0.86)), { warp: 300, rough: 200, feather: 700, paint: { rgb: [186, 178, 120], alpha: 0, tex: tex("blobs", 320, 0.24, [186, 178, 120], 0.5, { soft: 0.12 }) } })); // sunlit patches of flowering grass
+  // the arc: pieces of very different length over about half the shore, each at its own distance (en echelon, like the walls), the rest open;
+  // lumpy widths from thin necks to thick shoulders and ragged ends, as the walls, and scree spilling down the waste side
+  const arc = id === "fold" ? [[-1.85, -1.35, 1.15], [-1.05, 0.08, 1.05], [0.52, 1.25, 1.12]] : [[-1.5, -1.05, 1.1], [-0.75, 0.6, 1.12], [0.9, 1.35, 1.04]];
+  const reach = (a) => exit(pts, x, y, Math.cos(a), Math.sin(a)), sm = id === "fold"; // the Fold's rock follows a smoothed shore, so no piece bends round a sharp lobe corner
+  const rim = (a, o) => { const t = (sm ? (reach(a - 0.15) + reach(a) + reach(a + 0.15)) / 3 : reach(a)) * o; return [x + Math.cos(a) * t, y + Math.sin(a) * t]; };
+  arc.forEach(([b0, b1, o], k) => {
+    const m = Math.max(4, R((b1 - b0) * 10)), ph = rnd() * 6, seg = Array.from({ length: m + 1 }, (_, i) => rim(ua + b0 + ((b1 - b0) * i) / m, o + 0.02 * Math.sin(i * 0.8 + ph)));
+    rocks.push(rock(`${id}-reef${k}`, "massif", path(seg, seg.map((_, j) => { const e = Math.sin((Math.PI * j) / m) ** 0.6; return R(Math.max(260, 330 * (0.75 + 0.25 * e) * (1 + 0.18 * Math.sin(j * 1.3 + ph) + 0.12 * (rnd() - 0.5)))); })), { warp: 240, rough: 70, feather: 260, wobble: 0.3, taper: false })); // width swinging about 20% along the piece, ends blunt and no thinner than 260, edge noise as the walls'
+  });
+  const sc = Array.from({ length: 13 }, (_, i) => rim(ua + arc[0][0] + ((arc[arc.length - 1][1] - arc[0][0]) * i) / 12, sm ? 1.4 : 1.26));
+  rocks.push(rock(`${id}-reef-scree`, "talus", path(sc, sc.map(() => (sm ? 450 : 700))), { warp: 300, rough: 160, feather: sm ? 350 : 600, cover: 0.1, clump: 500, pow: 1.4, r: [60, 140] }));
+  const edge = dense(pts), gapTo = (ids) => R(Math.min(...ids.map((o) => Math.min(...edge.map(([u, v]) => Math.min(...realmEdge[o].map(([p, q]) => Math.hypot(u - p, v - q))))))));
+  console.error(`isle ${id} centre ${x},${y} area ${(area(pts) / 1e6).toFixed(1)} Mu2, outline to the nearest realm ${gapTo(order)}, to a trail ${R(Math.min(...edge.map(([u, v]) => nearTrail(u, v))))}, to the map edge ${R(Math.min(...pts.map(([u, v]) => Math.min(u, v, W - u, H - v))))}`);
+};
+for (const [id, I] of Object.entries(ISLES)) isle(id, I);
 const ORDER = ["crags", "blight", "mire", "bloom", "flats", "steppe", "commons"];
 regions.sort((a, b) => ORDER.indexOf(a.id) - ORDER.indexOf(b.id));
 console.error(`layers ${layers.length}, rock layers ${rocks.length}`);

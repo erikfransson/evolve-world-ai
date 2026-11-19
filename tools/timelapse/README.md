@@ -96,7 +96,7 @@ Everything in it may have been written by a compromised capture.
 
 ## After a promote
 1. Update the checkout the unit runs from to the released commit.
-2. `./build-page.sh` in `tools/timelapse` (the stamp must match the server's protocol version, else the log says `VERSION MISMATCH` and no frames are taken).
+2. `./build-page.sh` in `tools/timelapse` (the stamp must match the server's protocol version, else the log says `VERSION MISMATCH` and no frames are taken; a new map version needs the rebuild too, else the frames show plain ground and nothing is logged about it).
 3. `systemctl --user restart evolve-timelapse`.
 
 ## After a reset
