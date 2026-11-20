@@ -19,7 +19,7 @@ A page that shows offline or loading at a slot gets `pageWaitS` (6) seconds to r
 Chrome keeps its own sandbox (no `--no-sandbox`) and talks to the script over a pipe, so no DevTools port opens.
 The folder cap counts every file in the world folder but the state log (frames stop a little before it so the logs fit), and the logs stop at it.
 The state log has its own cap, `stateCapBytes` (30 GB per world), and also stops under the free-disk floor; it goes on when the disk has room again.
-`frames=0` runs without Chrome and PNGs, logs only (a test hook).
+`frames=0` runs without Chrome and PNGs, logs only. The Live unit runs this way since 2026-11-20 (Erik: the state log and the replay renderer make the PNGs unnecessary); it takes one viewer slot and about no CPU. `check.mjs` then does not judge frames, and earlier PNGs of the folder may be removed.
 
 ## Install
 Three units:

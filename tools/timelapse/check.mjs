@@ -1,5 +1,5 @@
 // Sanity check of a running (or finished) time-lapse capture. Reads only the output folder (status.json, frames.jsonl, population.jsonl, the newest PNG header, the state log's file sizes and times); changes nothing.
-// Run: node tools/timelapse/check.mjs [out=<dir>] [world=<folder name>]   Exit 0 = healthy (capturing with a fresh frame, or stopped by the cap, and the state log fresh or at its cap), else 1 with one plain line saying what is wrong.
+// Run: node tools/timelapse/check.mjs [out=<dir>] [world=<folder name>]   Exit 0 = healthy (capturing with a fresh frame, stopped by the cap or running logs only with frames=0, and the state log fresh or at its cap), else 1 with one plain line saying what is wrong.
 // The capture unit writes the output folder, so every file there is hostile input: bounded reads that follow no link and never block, numbers checked, text printed without control characters.
 import { lstatSync, readdirSync, statfsSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -39,7 +39,9 @@ else {
   if (framesLog > FRAMES_TAIL) say(`frames.jsonl is ${fmt(framesLog)}: counts below are from its last ${fmt(FRAMES_TAIL)}`);
   say("frames written:", frames.length, "| folder", fmt(bytes), "of cap", fmt(cap), `(${((bytes / cap) * 100).toFixed(1)}%)`);
   let fresh = false;
-  if (frames.length) {
+  const logsOnly = dir === status?.world && status?.state === "logs-only"; // PNG capture is off: frames.jsonl is history and its PNGs may have been removed, so they are not judged
+  if (logsOnly) say("frames: not judged (logs only)");
+  else if (frames.length) {
     const last = frames.at(-1), a = age(last.time);
     fresh = a <= 2 * interval + 5;
     say("newest frame:", last.time, `age ${a} s, tick ${last.tick}, ${last.bytes} B`);

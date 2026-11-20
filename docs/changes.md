@@ -4,6 +4,10 @@ What changed in each version, newest first, so release notes for any range (say 
 Each release is a pull request from `development` into `main`, tagged `vX.Y.Z` on `main`.
 Add notes under "Unreleased" as work lands on `development`, and turn that heading into the version number at release time.
 
+## Unreleased
+
+- Time-lapse: the Live capture runs logs only (`frames=0` in the unit template, no Chrome and no PNGs; the state log and the replay renderer replace them), and `check.mjs` reports healthy in that mode without judging frames.
+
 ## 0.11.0 (2026-11-19)
 
 - Live, next map version: two hidden mini islands on the Six Realms, the Island of Hope toward the top-right corner and the Secret on the west side, on the south bank of the western lava flow and about as far from the Steppe as from the Flats. The page does not label them. Each is a small meadow (9.2 and 7.3 million u², about a tenth of a realm) at the richest realms' food (154/64, a 192/64 core; the Flats average 69/64 and the Steppe 105/64), the realms' trace of poison and the global season, sheltered by a broken basalt arc on its side toward the map edge. No trail, wash of richer ground or founders lead to them; they are not regions. Map version cedf5b54-2 to 0be9e68f-2. The map builder allows 160 layers (was 128).

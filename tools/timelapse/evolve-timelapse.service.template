@@ -16,7 +16,7 @@ WorkingDirectory=@REPO@
 Environment=HOME=/tmp
 # The user manager hands every unit the desktop session's addresses; none of them is reachable from here, and none is needed.
 UnsetEnvironment=DISPLAY WAYLAND_DISPLAY XAUTHORITY DBUS_SESSION_BUS_ADDRESS XDG_RUNTIME_DIR SESSION_MANAGER SSH_AUTH_SOCK SSH_AGENT_LAUNCHER GNOME_SETUP_DISPLAY XMODIFIERS GTK_MODULES QT_IM_MODULE
-ExecStart=@NODE@/bin/node tools/timelapse/timelapse.mjs out=@OUT@ socket=/tmp/evolve-timelapse/live.sock
+ExecStart=@NODE@/bin/node tools/timelapse/timelapse.mjs out=@OUT@ socket=/tmp/evolve-timelapse/live.sock frames=0
 Nice=19
 IOSchedulingClass=idle
 # Differs: SCHED_IDLE (the server runs at the normal class, this one only fills idle time).

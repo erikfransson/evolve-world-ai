@@ -465,3 +465,25 @@ describe("time-lapse state log, review round", () => {
     expect(performance.now() - t0).toBeLessThan(5000);
   });
 });
+
+describe("check.mjs without PNG frames", () => {
+  // A capture folder as the unit leaves it: frames.jsonl lists frames, no PNG file exists (frames=0 since, PNGs removed).
+  const run = (state: string): { code: number; out: string } => {
+    const out = fresh(), w = join(out, "w"), now = new Date().toISOString();
+    execFileSync("mkdir", [w]);
+    writeFileSync(join(out, "status.json"), JSON.stringify({ time: now, state, message: "", chrome: "off", world: "w", interval: 20 }));
+    writeFileSync(join(w, "world.json"), JSON.stringify({ startedCapture: new Date(Date.now() - 3600e3).toISOString(), firstTick: 1 }));
+    writeFileSync(join(w, "frames.jsonl"), `${JSON.stringify({ time: now, tick: 5, bytes: 8e6 })}\n`);
+    writeFileSync(join(w, "population.jsonl"), `${JSON.stringify({ time: now, tick: 5, population: 10 })}\n`);
+    try { return { code: 0, out: execFileSync(process.execPath, [new URL("../../tools/timelapse/check.mjs", import.meta.url).pathname, `out=${out}`], { timeout: 20_000, stdio: "pipe" }).toString() }; }
+    catch (e) { const x = e as { status?: number; stdout?: Buffer }; return { code: x.status ?? -1, out: String(x.stdout ?? "") }; }
+  };
+  it("is healthy in logs-only mode and still flags a missing PNG while capturing", () => {
+    const logs = run("logs-only");
+    expect(logs.out).toMatch(/^HEALTHY$/m);
+    expect(logs.code).toBe(0);
+    const cap = run("capturing");
+    expect(cap.code).toBe(1);
+    expect(cap.out).toContain("newest frame file cannot be read");
+  });
+});
